@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- 
+    ============================================
+    CFAlarm für TimeOffice - Lint Konfiguration
+    ============================================
+    
+    Diese Datei unterdrückt bekannte False Positives und passt die Lint-Prüfungen
+    an die spezifischen Anforderungen unserer App an.
+    
+    Letzte Aktualisierung: August 2025
+    -->
+
+    <!-- ================= KRITISCHE FALSE POSITIVES ================= -->
+    
+    <!-- 
+    BatteryLife: REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+    Begründung: Wir verwenden dies nur in createBatteryOptimizationIntent(),
+    welches einen Intent zurückgibt aber NICHT direkt ausführt.
+    Der User muss aktiv zustimmen. Dies ist Play Store konform.
+    -->
+    <issue id="BatteryLife">
+        <ignore path="**/BatteryOptimizationManager.kt" />
+    </issue>
+    
+    <!-- 
+    CustomX509TrustManager: Philips Hue Bridge Zertifikat-Handling
+    Begründung: Wird ausschließlich für die lokale Kommunikation mit der 
+    Philips Hue Bridge verwendet (selbst-signierte Zertifikate).
+    Nicht für Internet-Kommunikation genutzt.
+    TODO: Später durch Certificate Pinning ersetzen
+    -->
+    <issue id="CustomX509TrustManager">
+        <ignore path="**/TrustAllCertificatesManager.kt" />
+    </issue>
+    
+    <!-- ================= DEPENDENCY UPDATES ================= -->
+    
+    <!-- 
+    NewerVersionAvailable: Bibliotheks-Updates
+    Begründung: Wir updaten Dependencies bewusst und kontrolliert,
+    nicht automatisch bei jeder Minor-Version.
+    Severity auf "informational" reduziert statt "warning"
+    -->
+    <issue id="NewerVersionAvailable" severity="informational" />
+    
+    <!-- 
+    GradleDependency: Ähnlich wie NewerVersionAvailable
+    -->
+    <issue id="GradleDependency" severity="informational" />
+    
+    <!-- ================= SDK VERSION CHECKS ================= -->
+    
+    <!-- 
+    ObsoleteSdkInt: Unnötige SDK Version Checks
+    Begründung: Unsere minSdk ist 26, aber manche Checks bleiben für
+    Kompatibilität mit älteren Bibliotheken.
+    -->
+    <issue id="ObsoleteSdkInt" severity="informational" />
+    
+    <!-- ================= RESSOURCEN ================= -->
+    
+    <!-- 
+    UnusedResources: Ungenutzte Ressourcen
+    Begründung: Manche Ressourcen sind für zukünftige Features vorbereitet
+    (z.B. OnePlus-spezifische Strings). Severity reduziert.
+    -->
+    <issue id="UnusedResources" severity="informational" />
+    
+    <!-- ================= CODE STYLE ================= -->
+    
+    <!-- 
+    SetTextI18n: Hardcoded Text Concatenation
+    Begründung: Für Debug-Ausgaben und technische Werte akzeptabel
+    -->
+    <issue id="SetTextI18n" severity="informational" />
+    
+    <!-- 
+    HardcodedText: Ähnlich wie SetTextI18n
+    Nur in Debug-Builds relevant
+    -->
+    <issue id="HardcodedText" severity="informational" />
+    
+    <!-- ================= PERFORMANCE ================= -->
+    
+    <!-- 
+    UseValueOf: Number Boxing Performance
+    Nicht kritisch für unsere App-Größe
+    -->
+    <issue id="UseValueOf" severity="informational" />
+    
+    <!-- 
+    UseSparseArrays: HashMap vs SparseArray
+    HashMap ist oft lesbarer, Performance-Unterschied minimal
+    -->
+    <issue id="UseSparseArrays" severity="informational" />
+    
+    <!-- ================= ACCESSIBILITY ================= -->
+    
+    <!-- 
+    ContentDescription: Fehlende Bildbeschreibungen
+    TODO: Später für bessere Accessibility hinzufügen
+    -->
+    <issue id="ContentDescription" severity="informational" />
+    
+    <!-- ================= AKTIVIERTE PRÜFUNGEN (STRENGER) ================= -->
+    
+    <!-- 
+    Diese Checks wollen wir STRENGER haben:
+    -->
+    
+    <!-- Sicherheitsprobleme immer als Error -->
+    <issue id="HardcodedCredentials" severity="error" />
+    <issue id="InsecureBaseConfiguration" severity="error" />
+    <issue id="UnencryptedIntent" severity="error" />
+    <issue id="WorldReadableFiles" severity="error" />
+    <issue id="WorldWriteableFiles" severity="error" />
+    
+    <!-- Memory Leaks als Error -->
+    <issue id="StaticFieldLeak" severity="error" />
+    <issue id="LeakCanary" severity="error" />
+    
+    <!-- Crash-Risiken als Error -->
+    <issue id="NullSafeMutableLiveData" severity="error" />
+    <issue id="FragmentLiveDataObserve" severity="error" />
+    
+    <!-- ================= BASELINE ================= -->
+    
+    <!-- 
+    Für existierende Probleme können wir eine Baseline erstellen:
+    ./gradlew lintFix
+    
+    Dies erstellt eine lint-baseline.xml mit allen aktuellen Problemen,
+    die dann ignoriert werden bis sie gefixt sind.
+    -->
+    
+</lint>

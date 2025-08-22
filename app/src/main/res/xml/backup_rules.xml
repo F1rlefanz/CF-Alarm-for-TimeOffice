@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   SECURITY-HARDENED Full Backup Rules (Android 6.0-11 compatibility)
+   
+   PRINCIPLE: Include only safe data, exclude ALL sensitive data
+   SECURITY IMPACT: Prevents token leakage through legacy backup mechanisms
+   
+   Note: This file is used for Android 6.0 to 11 (API 23-30)
+   For Android 12+ (API 31+), see data_extraction_rules.xml
+   
+   See https://developer.android.com/guide/topics/data/autobackup
+-->
+<full-backup-content>
+    <!-- SIMPLIFIED APPROACH: Include only explicitly safe data -->
+    <!-- No wildcards or exclusions of non-included paths -->
+    
+    <!-- Safe app configuration that can be backed up -->
+    <include domain="sharedpref" path="shift_config.xml"/>
+    <include domain="sharedpref" path="alarm_settings.xml"/>
+    <include domain="sharedpref" path="ui_preferences.xml"/>
+    <include domain="sharedpref" path="app_preferences.xml"/>
+    
+    <!-- Safe app database (non-sensitive user data) -->
+    <include domain="database" path="app_database.db"/>
+    
+    <!-- Note: By not including sensitive paths, they are automatically excluded -->
+    <!-- This approach is Lint-compliant and secure -->
+</full-backup-content>

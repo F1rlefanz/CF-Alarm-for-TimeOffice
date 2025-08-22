@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.12.0" type="baseline" client="gradle" dependencies="false" name="AGP (8.12.0)" variant="fatal" version="8.12.0">
+
+    <issue
+        id="FullBackupContent"
+        message="`cf_alarm_tokens.xml` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;sharedpref&quot; path=&quot;cf_alarm_tokens.xml&quot;/>"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="15"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`encrypted_token_storage.xml` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;sharedpref&quot; path=&quot;encrypted_token_storage.xml&quot;/>"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="16"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`oauth2_tokens.xml` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;sharedpref&quot; path=&quot;oauth2_tokens.xml&quot;/>"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="17"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`google_auth_tokens.xml` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;sharedpref&quot; path=&quot;google_auth_tokens.xml&quot;/>"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="18"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`hue_bridge_config.xml` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;sharedpref&quot; path=&quot;hue_bridge_config.xml&quot;/>"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="21"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`hue_authentication.xml` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;sharedpref&quot; path=&quot;hue_authentication.xml&quot;/>"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="22"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`cf_alarm_auth.xml` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;sharedpref&quot; path=&quot;cf_alarm_auth.xml&quot;/>"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="25"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.key` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;file&quot; path=&quot;.*\.key&quot;/>"
+        errorLine2="                                 ~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="28"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.token` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;file&quot; path=&quot;.*\.token&quot;/>"
+        errorLine2="                                 ~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="29"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.pem` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;file&quot; path=&quot;.*\.pem&quot;/>"
+        errorLine2="                                 ~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="30"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.p12` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;file&quot; path=&quot;.*\.p12&quot;/>"
+        errorLine2="                                 ~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="31"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.keystore` is not in an included path"
+        errorLine1="    &lt;exclude domain=&quot;file&quot; path=&quot;.*\.keystore&quot;/>"
+        errorLine2="                                 ~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/backup_rules.xml"
+            line="32"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`cf_alarm_tokens.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;cf_alarm_tokens.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="12"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`encrypted_token_storage.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;encrypted_token_storage.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="13"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`oauth2_tokens.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;oauth2_tokens.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="14"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`google_auth_tokens.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;google_auth_tokens.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="15"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`hue_bridge_config.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;hue_bridge_config.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="18"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`hue_authentication.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;hue_authentication.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="19"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.key` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;.*\.key&quot;/>"
+        errorLine2="                                     ~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="27"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.token` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;.*\.token&quot;/>"
+        errorLine2="                                     ~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="28"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`.*\.pem` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;file&quot; path=&quot;.*\.pem&quot;/>"
+        errorLine2="                                     ~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="29"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`cf_alarm_tokens.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;cf_alarm_tokens.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="34"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`encrypted_token_storage.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;encrypted_token_storage.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="35"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`oauth2_tokens.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;oauth2_tokens.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="36"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`google_auth_tokens.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;google_auth_tokens.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="37"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`hue_bridge_config.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;hue_bridge_config.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="38"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="FullBackupContent"
+        message="`hue_authentication.xml` is not in an included path"
+        errorLine1="        &lt;exclude domain=&quot;sharedpref&quot; path=&quot;hue_authentication.xml&quot;/>"
+        errorLine2="                                           ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/xml/data_extraction_rules.xml"
+            line="39"
+            column="44"/>
+    </issue>
+
+</issues>

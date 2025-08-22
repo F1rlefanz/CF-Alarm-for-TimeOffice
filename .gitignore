@@ -1,0 +1,86 @@
+# ================================
+# 🔐 SECURITY - ABSOLUTE PRIORITY
+# ================================
+
+# 🚨 PRODUCTION KEYSTORES - NEVER COMMIT!
+*.keystore
+Keystore Passwort.txt
+*.jks
+keystore.properties
+release.properties
+signing.properties
+
+# 🚨 SENSITIVE CONFIGURATION 
+google-services.json.backup
+firebase-debug.json
+local.properties
+
+# 🚨 INTERNAL DOCUMENTATION - KEEP PRIVATE!
+KEYSTORE_SECURITY_GUIDE.md
+DEPLOYMENT_SETUP.md
+DEBUG_LOGGING_GUIDE.md
+validate-signing.ps1
+EMERGENCY_SECURITY_BREACH.md
+
+# 🚨 BUSINESS DOCUMENTS
+*Store*Listing*
+🎯*.docx
+*.docx
+
+# ================================
+# 📱 ANDROID PROJECT FILES
+# ================================
+
+# Generated files
+*.iml
+.gradle
+/local.properties
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+
+# IDE files
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/dictionaries/
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+
+# ================================
+# 🧪 DEVELOPMENT ARTIFACTS
+# ================================
+
+# Debug and log files
+*.log
+*.tmp
+debug_logs.txt
+dependencies.txt
+
+# Backup and temp directories
+/Logcatexporte/
+/Project*Problems*/
+/_backup/
+/.temp_files/
+/deleted/
+
+# Cleanup scripts and artifacts
+generate-icons.ps1
+.gitignore-cleanup
+.gitignore-SECURE
+remove-files.sh
+.kotlin/
+
+# ================================
+# 🔐 SECURITY VALIDATION
+# ================================
+
+# Sensitive scripts that could expose credentials
+validate-*.ps1
+deploy-*.sh
+setup-*.bat

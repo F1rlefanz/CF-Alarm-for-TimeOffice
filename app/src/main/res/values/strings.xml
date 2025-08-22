@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">CF-Alarm for TimeOffice</string>
+    <!-- CLEANUP 2025: Removed 27 unused OnePlus-specific strings that were never implemented -->
+    <!-- Current OnePlus support: Simple hint dialog in BatteryOptimizationHelper.kt -->
+</resources>

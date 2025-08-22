@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "675666202583",
+    "project_id": "cfalarmfortimeoffice-bae03e14",
+    "storage_bucket": "cfalarmfortimeoffice-bae03e14.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:675666202583:android:024834ae6f57ba90864592",
+        "android_client_info": {
+          "package_name": "com.github.f1rlefanz.cf_alarmfortimeoffice"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfAXEcXYSGkAe-ly_-glO2jtAOpCwC9aQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

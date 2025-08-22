@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   SECURITY-HARDENED Data Extraction Rules
+   
+   PRINCIPLE: Include only safe data, exclude ALL sensitive data
+   SECURITY IMPACT: Prevents token leakage through cloud backups
+   
+   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- SIMPLIFIED APPROACH: Include only explicitly safe data -->
+        <!-- Safe app configuration that can be backed up -->
+        <include domain="sharedpref" path="shift_config.xml"/>
+        <include domain="sharedpref" path="alarm_settings.xml"/>
+        <include domain="sharedpref" path="ui_preferences.xml"/>
+        <include domain="sharedpref" path="app_preferences.xml"/>
+        
+        <!-- Safe app database (non-sensitive user data) -->
+        <include domain="database" path="app_database.db"/>
+        
+        <!-- Note: Sensitive data (tokens, auth) automatically excluded by not being included -->
+    </cloud-backup>
+    
+    <!-- Device transfer: Same safe configuration for better user experience -->
+    <device-transfer>
+        <include domain="sharedpref" path="shift_config.xml"/>
+        <include domain="sharedpref" path="alarm_settings.xml"/>
+        <include domain="sharedpref" path="ui_preferences.xml"/>
+        <include domain="sharedpref" path="app_preferences.xml"/>
+        
+        <!-- Safe app database -->
+        <include domain="database" path="app_database.db"/>
+        
+        <!-- Note: Sensitive data automatically excluded by not being included -->
+    </device-transfer>
+</data-extraction-rules>

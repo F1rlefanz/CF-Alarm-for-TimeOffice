@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     
+    <!-- Google Account Access for Calendar API -->
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    
     <!-- Hue Bridge Discovery permissions -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />

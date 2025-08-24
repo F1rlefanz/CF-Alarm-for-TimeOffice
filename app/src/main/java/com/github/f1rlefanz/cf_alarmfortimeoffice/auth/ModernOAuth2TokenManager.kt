@@ -80,83 +80,57 @@ class ModernOAuth2TokenManager(
     
     /**
      * Authorize Calendar API access for an authenticated user.
-     * Use this after successful Credential Manager sign-in.
+     * Uses GoogleAuthUtil with GET_ACCOUNTS permission to get Calendar API token.
      * 
-     * MODERNIZED: Uses GoogleAuthUtil to get actual Calendar API token
-     * CRITICAL DIAGNOSTIC: Enhanced error reporting and token validation
+     * This is the working solution that doesn't require a backend server.
      */
     suspend fun authorizeCalendarAccess(userEmail: String): AuthResult = withContext(Dispatchers.IO) {
         try {
-            Logger.business(LogTags.OAUTH, "🔐 MODERN-AUTH: Authorizing Calendar access for user: $userEmail")
-            
-            // CRITICAL FIX: Get a real Calendar API token instead of placeholder
-            Logger.business(LogTags.OAUTH, "🔗 MODERN-AUTH: Requesting Calendar API token from Google for authenticated user")
+            Logger.business(LogTags.OAUTH, "🔐 AUTH: Authorizing Calendar access for user: $userEmail")
             
             // Create Google Account for token request
             val googleAccount = android.accounts.Account(userEmail, "com.google")
             
-            // Request actual Calendar API access token
-            val calendarToken = GoogleAuthUtil.getToken(
-                context,
-                googleAccount,
-                "oauth2:${CalendarScopes.CALENDAR_READONLY}"
-            )
+            // Request Calendar API access token using GoogleAuthUtil
+            val calendarToken = try {
+                GoogleAuthUtil.getToken(
+                    context,
+                    googleAccount,
+                    "oauth2:${CalendarScopes.CALENDAR_READONLY}"
+                )
+            } catch (e: Exception) {
+                Logger.e(LogTags.OAUTH, "❌ Failed to get Calendar token", e)
+                return@withContext AuthResult.Failure("Calendar authorization failed: ${e.localizedMessage}")
+            }
             
             if (calendarToken.isNullOrEmpty()) {
-                Logger.e(LogTags.OAUTH, "❌ MODERN-AUTH: Empty Calendar API token received from GoogleAuthUtil")
+                Logger.e(LogTags.OAUTH, "❌ Empty Calendar API token received")
                 return@withContext AuthResult.Failure("Failed to obtain Calendar API token")
             }
             
-            Logger.business(LogTags.OAUTH, "✅ MODERN-AUTH: Successfully obtained Calendar API token (${calendarToken.take(20)}...)")
-            Logger.d(LogTags.OAUTH, "📊 TOKEN-INFO: Token length=${calendarToken.length}, scope=${CalendarScopes.CALENDAR_READONLY}")
-            
-            // Calculate expiration (Google tokens typically valid for 1 hour)
-            val expiresInSeconds = 3600L // 1 hour
+            Logger.business(LogTags.OAUTH, "✅ Successfully obtained Calendar API token")
             
             // Create token data with real token
             val tokenData = TokenData.fromOAuthResponse(
                 accessToken = calendarToken,
-                refreshToken = "google_managed_credentials", 
-                expiresInSeconds = expiresInSeconds,
+                refreshToken = "google_managed", 
+                expiresInSeconds = 3600L, // 1 hour
                 scope = CalendarScopes.CALENDAR_READONLY
             )
             
             // Store token
             val storeResult = tokenStorage.saveToken(tokenData)
             if (storeResult.isFailure) {
-                Logger.e(LogTags.TOKEN, "❌ MODERN-AUTH: Failed to store Calendar token: ${storeResult.exceptionOrNull()}")
+                Logger.e(LogTags.TOKEN, "❌ Failed to store Calendar token: ${storeResult.exceptionOrNull()}")
                 return@withContext AuthResult.Failure("Failed to store Calendar authorization")
             }
             
-            Logger.business(LogTags.TOKEN, "✅ MODERN-AUTH: Calendar token stored successfully")
-            
-            // Create user info
-            val userInfo = UserInfo(
-                email = userEmail,
-                displayName = "", // We don't have display name from email alone
-                id = userEmail
-            )
-            
-            Logger.business(LogTags.OAUTH, "✅ MODERN-AUTH: Calendar authorization completed successfully for $userEmail")
-            Logger.business(LogTags.OAUTH, "📊 READY: Calendar API calls will now use real OAuth2 token")
-            
+            Logger.business(LogTags.TOKEN, "✅ Calendar token stored successfully")
             AuthResult.Success(tokenData)
             
         } catch (e: Exception) {
-            Logger.e(LogTags.OAUTH, "❌ MODERN-AUTH: Calendar authorization failed for $userEmail", e)
-            
-            // Enhanced error reporting
-            val errorMessage = when {
-                e.message?.contains("NetworkError") == true -> "Calendar authorization failed: No internet connection"
-                e.message?.contains("ServiceDisabled") == true -> "Calendar authorization failed: Google Calendar API is disabled"
-                e.message?.contains("UserRecoverableAuth") == true -> "Calendar authorization failed: User interaction required"
-                e.message?.contains("GoogleAuthException") == true -> "Calendar authorization failed: Google authentication error"
-                e.message?.contains("Account not found") == true -> "Calendar authorization failed: Google account not found on device"
-                else -> "Calendar authorization failed: ${e.localizedMessage}"
-            }
-            
-            Logger.e(LogTags.OAUTH, "💡 ERROR-HELP: $errorMessage")
-            AuthResult.Failure(errorMessage)
+            Logger.e(LogTags.OAUTH, "❌ Calendar authorization failed", e)
+            AuthResult.Failure("Calendar authorization failed: ${e.localizedMessage}")
         }
     }
     
@@ -239,14 +213,14 @@ class ModernOAuth2TokenManager(
     }
     
     /**
-     * CRITICAL FIX: Enhanced user email retrieval with better diagnostics and fallbacks
-     * Gets user email from SharedPreferences (consistent with AuthViewModel) with Android Accounts fallback
+     * Gets user email from SharedPreferences (where AuthViewModel stores it)
+     * Falls back to Android Accounts if available (requires GET_ACCOUNTS permission)
      */
     private fun getUserEmailFromAccounts(): String? {
         return try {
-            Logger.d(LogTags.AUTH, "🔍 EMAIL-LOOKUP: Searching for user email...")
+            Logger.d(LogTags.AUTH, "🔍 EMAIL-LOOKUP: Retrieving user email...")
             
-            // CRITICAL FIX: Read from SharedPreferences where AuthViewModel stores it
+            // First try: Read from SharedPreferences where AuthViewModel stores it
             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
             val email = prefs.getString("current_user_email", null)
             
@@ -255,48 +229,30 @@ class ModernOAuth2TokenManager(
                 return email
             }
             
-            Logger.w(LogTags.AUTH, "⚠️ EMAIL-MISSING: No user email found in SharedPreferences, trying Android Accounts fallback")
+            Logger.w(LogTags.AUTH, "⚠️ EMAIL-MISSING: No user email in SharedPreferences, trying Android Accounts")
             
-            // FALLBACK: Try Android Accounts system if SharedPreferences is empty
-            val accountManager = context.getSystemService(Context.ACCOUNT_SERVICE) as android.accounts.AccountManager
-            val accounts = accountManager.getAccountsByType("com.google")
-            
-            Logger.d(LogTags.AUTH, "📱 ANDROID-ACCOUNTS: Found ${accounts.size} Google accounts on device")
-            
-            if (accounts.isEmpty()) {
-                Logger.e(LogTags.AUTH, "❌ NO-ACCOUNTS: No Google accounts found on device")
-                Logger.e(LogTags.AUTH, "💡 ACCOUNT-HELP: User needs to add Google account to device in Settings")
-                return null
+            // Fallback: Try Android Accounts (requires GET_ACCOUNTS permission)
+            try {
+                val accountManager = context.getSystemService(Context.ACCOUNT_SERVICE) as android.accounts.AccountManager
+                val accounts = accountManager.getAccountsByType("com.google")
+                
+                if (accounts.isNotEmpty()) {
+                    val fallbackEmail = accounts.first().name
+                    Logger.business(LogTags.AUTH, "✅ EMAIL-FALLBACK: Found email via Android Accounts: $fallbackEmail")
+                    
+                    // Save to SharedPreferences for next time
+                    prefs.edit().putString("current_user_email", fallbackEmail).apply()
+                    return fallbackEmail
+                }
+            } catch (e: SecurityException) {
+                Logger.w(LogTags.AUTH, "No GET_ACCOUNTS permission, cannot use fallback")
             }
             
-            val fallbackEmail = accounts.firstOrNull()?.name
-            
-            if (fallbackEmail != null) {
-                Logger.business(LogTags.AUTH, "✅ EMAIL-FALLBACK: User email retrieved from Android Accounts: $fallbackEmail")
-                
-                // Save to SharedPreferences for future use
-                prefs.edit().putString("current_user_email", fallbackEmail).apply()
-                Logger.d(LogTags.AUTH, "💾 EMAIL-SAVED: Email saved to SharedPreferences for future use")
-                
-                return fallbackEmail
-            } else {
-                Logger.e(LogTags.AUTH, "❌ EMAIL-ERROR: Found Google accounts but no email addresses")
-                return null
-            }
+            Logger.e(LogTags.AUTH, "❌ EMAIL-ERROR: No user email found - user needs to sign in")
+            null
             
         } catch (e: Exception) {
             Logger.e(LogTags.AUTH, "❌ EMAIL-EXCEPTION: Error getting user email", e)
-            
-            // Enhanced error reporting
-            when {
-                e.message?.contains("SecurityException") == true -> {
-                    Logger.e(LogTags.AUTH, "💡 PERMISSION-HELP: App doesn't have permission to access accounts")
-                }
-                e.message?.contains("AccountManager") == true -> {
-                    Logger.e(LogTags.AUTH, "💡 ACCOUNT-HELP: AccountManager service not available")
-                }
-            }
-            
             null
         }
     }

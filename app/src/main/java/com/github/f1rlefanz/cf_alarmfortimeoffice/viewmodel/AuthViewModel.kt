@@ -240,14 +240,28 @@ class AuthViewModel(
                 
                 if (signInResult.success && signInResult.credentialResponse != null) {
                     // Extract user info from credential
-                    val (_, displayName, email) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse)
+                    val (_, displayName, initialEmail) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse)
                     
-                    if (email != null) {
+                    // ENHANCED: Try enhanced email extraction with multiple fallbacks
+                    val enhancedEmail = credentialAuthManager.getEmailWithFallback(context, initialEmail)
+                    
+                    // CRITICAL FIX: Handle case where email extraction failed completely
+                    val finalEmail = if (enhancedEmail.isNullOrEmpty() || enhancedEmail == "user.needs.to.enter@gmail.com") {
+                        // Check if we have a previously saved manual email
+                        val savedEmail = com.github.f1rlefanz.cf_alarmfortimeoffice.auth.EmailInputDialog.getSavedManualEmail(context)
+                        savedEmail ?: enhancedEmail // Use saved email or fallback to extracted email (might be placeholder)
+                    } else {
+                        enhancedEmail
+                    }
+                    
+                    Logger.business(LogTags.AUTH, "📊 EMAIL-EXTRACTION: initial=$initialEmail, enhanced=$enhancedEmail, final=$finalEmail")
+                    
+                    if (!finalEmail.isNullOrEmpty() && finalEmail != "user.needs.to.enter@gmail.com") {
                         // CRITICAL FIX: Don't store placeholder token, let Calendar authorization handle real tokens
                         // The AuthData token is only used for auth state tracking, not for API calls
                         val authData = AuthData(
                             isLoggedIn = true,
-                            email = email,
+                            email = finalEmail,
                             displayName = displayName,
                             accessToken = null // No token here - real tokens managed by ModernOAuth2TokenManager
                         )
@@ -256,7 +270,7 @@ class AuthViewModel(
                         try {
                             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
                             prefs.edit {
-                                putString("current_user_email", email)
+                                putString("current_user_email", finalEmail)
                                 putString("current_user_display_name", displayName)
                                 putLong("auth_timestamp", System.currentTimeMillis())
                             }
@@ -270,14 +284,14 @@ class AuthViewModel(
                                 updateAuthState { currentState ->
                                     currentState.copy(
                                         userAuth = UserAuthState.authenticated(
-                                            email,
+                                            finalEmail,
                                             displayName ?: "",
                                             null // No placeholder token
                                         ),
                                         calendarOps = currentState.calendarOps.copy(calendarsLoading = false)
                                     )
                                 }
-                                Logger.business(LogTags.AUTH, "Sign-in successful", email)
+                                Logger.business(LogTags.AUTH, "Sign-in successful", finalEmail)
                                 
                                 // CRITICAL FIX: Automatically trigger Calendar authorization after sign-in
                                 Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization for signed-in user")
@@ -292,12 +306,34 @@ class AuthViewModel(
                                 }
                             }
                     } else {
+                        // CRITICAL FIX: Email extraction failed - show manual input dialog
+                        Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT-REQUIRED: Email extraction failed completely")
+                        
                         updateAuthState { currentState ->
                             currentState.copy(
                                 calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                                errors = AppErrorState.authenticationError("Keine E-Mail-Adresse erhalten")
+                                errors = AppErrorState.authenticationError("E-Mail-Eingabe erforderlich - automatische Erkennung fehlgeschlagen")
                             )
                         }
+                        
+                        // Show manual email input dialog
+                        val emailDialog = com.github.f1rlefanz.cf_alarmfortimeoffice.auth.EmailInputDialog(context)
+                        emailDialog.showEmailInputDialog(
+                            onEmailProvided = { manualEmail ->
+                                Logger.business(LogTags.AUTH, "✅ MANUAL-INPUT: User provided email, retrying authentication")
+                                // Retry the authentication process with manual email
+                                handleManualEmailAndContinueAuth(context, manualEmail, displayName)
+                            },
+                            onCancelled = {
+                                Logger.w(LogTags.AUTH, "❌ MANUAL-INPUT: User cancelled email input")
+                                updateAuthState { currentState ->
+                                    currentState.copy(
+                                        calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                                        errors = AppErrorState.authenticationError("Anmeldung abgebrochen - E-Mail-Adresse benötigt")
+                                    )
+                                }
+                            }
+                        )
                     }
                 } else {
                     val errorMessage = signInResult.error ?: "Unbekannter Fehler bei der Anmeldung"
@@ -503,6 +539,82 @@ class AuthViewModel(
                 Logger.e(LogTags.AUTH, "❌ UI-THREAD-OPT: Failed to trigger calendar reload", e)
             } finally {
                 triggerInProgress = false
+            }
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Handle manual email input and continue authentication
+     */
+    private fun handleManualEmailAndContinueAuth(context: Context, manualEmail: String, displayName: String?) {
+        viewModelScope.launch {
+            try {
+                Logger.business(LogTags.AUTH, "🔄 MANUAL-INPUT: Continuing authentication with manual email: $manualEmail")
+                
+                updateAuthState { currentState ->
+                    currentState.copy(
+                        calendarOps = currentState.calendarOps.copy(calendarsLoading = true),
+                        errors = AppErrorState.EMPTY
+                    )
+                }
+                
+                val authData = AuthData(
+                    isLoggedIn = true,
+                    email = manualEmail,
+                    displayName = displayName,
+                    accessToken = null
+                )
+                
+                // Save to both DataStore and SharedPreferences
+                try {
+                    val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
+                    prefs.edit {
+                        putString("current_user_email", manualEmail)
+                        putString("current_user_display_name", displayName)
+                        putLong("auth_timestamp", System.currentTimeMillis())
+                    }
+                    Logger.d(LogTags.AUTH, "✅ MANUAL-INPUT: Email saved to SharedPreferences")
+                } catch (e: Exception) {
+                    Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT: Failed to save to SharedPreferences", e)
+                }
+                
+                authDataStoreRepository.updateAuthData(authData)
+                    .onSuccess {
+                        updateAuthState { currentState ->
+                            currentState.copy(
+                                userAuth = UserAuthState.authenticated(
+                                    manualEmail,
+                                    displayName ?: "",
+                                    null
+                                ),
+                                calendarOps = currentState.calendarOps.copy(calendarsLoading = false)
+                            )
+                        }
+                        
+                        Logger.business(LogTags.AUTH, "✅ MANUAL-INPUT: Authentication completed with manual email")
+                        
+                        // Auto-trigger Calendar authorization
+                        Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization for manual email user")
+                        requestCalendarAuthorization()
+                    }
+                    .onFailure { error ->
+                        updateAuthState { currentState ->
+                            currentState.copy(
+                                calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                                errors = AppErrorState.authenticationError("Fehler beim Speichern der Anmeldedaten: ${error.message}")
+                            )
+                        }
+                        Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT: Failed to save auth data", error)
+                    }
+                    
+            } catch (e: Exception) {
+                updateAuthState { currentState ->
+                    currentState.copy(
+                        calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                        errors = AppErrorState.authenticationError("Fehler bei manueller E-Mail-Verarbeitung: ${e.message}")
+                    )
+                }
+                Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT: Exception during manual email processing", e)
             }
         }
     }

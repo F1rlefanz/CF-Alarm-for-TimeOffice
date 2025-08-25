@@ -12,7 +12,12 @@
           "package_name": "com.github.f1rlefanz.cf_alarmfortimeoffice"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "675666202583-rg1djd2itfes6v61n6bqi9o22bis1l5h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCfAXEcXYSGkAe-ly_-glO2jtAOpCwC9aQ"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "675666202583-rg1djd2itfes6v61n6bqi9o22bis1l5h.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

@@ -240,28 +240,14 @@ class AuthViewModel(
                 
                 if (signInResult.success && signInResult.credentialResponse != null) {
                     // Extract user info from credential
-                    val (_, displayName, initialEmail) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse)
+                    val (_, displayName, initialEmail) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse, context)
                     
-                    // ENHANCED: Try enhanced email extraction with multiple fallbacks
-                    val enhancedEmail = credentialAuthManager.getEmailWithFallback(context, initialEmail)
+                    Logger.business(LogTags.AUTH, "📊 EMAIL-EXTRACTION: initial=$initialEmail, final=$initialEmail")
                     
-                    // CRITICAL FIX: Handle case where email extraction failed completely
-                    val finalEmail = if (enhancedEmail.isNullOrEmpty() || enhancedEmail == "user.needs.to.enter@gmail.com") {
-                        // Check if we have a previously saved manual email
-                        val savedEmail = com.github.f1rlefanz.cf_alarmfortimeoffice.auth.EmailInputDialog.getSavedManualEmail(context)
-                        savedEmail ?: enhancedEmail // Use saved email or fallback to extracted email (might be placeholder)
-                    } else {
-                        enhancedEmail
-                    }
-                    
-                    Logger.business(LogTags.AUTH, "📊 EMAIL-EXTRACTION: initial=$initialEmail, enhanced=$enhancedEmail, final=$finalEmail")
-                    
-                    if (!finalEmail.isNullOrEmpty() && finalEmail != "user.needs.to.enter@gmail.com") {
-                        // CRITICAL FIX: Don't store placeholder token, let Calendar authorization handle real tokens
-                        // The AuthData token is only used for auth state tracking, not for API calls
+                    if (!initialEmail.isNullOrEmpty() && initialEmail != "user.needs.to.enter@gmail.com") {
                         val authData = AuthData(
                             isLoggedIn = true,
-                            email = finalEmail,
+                            email = initialEmail,
                             displayName = displayName,
                             accessToken = null // No token here - real tokens managed by ModernOAuth2TokenManager
                         )
@@ -270,7 +256,7 @@ class AuthViewModel(
                         try {
                             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
                             prefs.edit {
-                                putString("current_user_email", finalEmail)
+                                putString("current_user_email", initialEmail)
                                 putString("current_user_display_name", displayName)
                                 putLong("auth_timestamp", System.currentTimeMillis())
                             }
@@ -284,14 +270,14 @@ class AuthViewModel(
                                 updateAuthState { currentState ->
                                     currentState.copy(
                                         userAuth = UserAuthState.authenticated(
-                                            finalEmail,
+                                            initialEmail,
                                             displayName ?: "",
                                             null // No placeholder token
                                         ),
                                         calendarOps = currentState.calendarOps.copy(calendarsLoading = false)
                                     )
                                 }
-                                Logger.business(LogTags.AUTH, "Sign-in successful", finalEmail)
+                                Logger.business(LogTags.AUTH, "Sign-in successful", initialEmail)
                                 
                                 // CRITICAL FIX: Automatically trigger Calendar authorization after sign-in
                                 Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization for signed-in user")

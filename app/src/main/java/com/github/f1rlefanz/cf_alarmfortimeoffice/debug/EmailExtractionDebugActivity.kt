@@ -67,7 +67,7 @@ class EmailExtractionDebugActivity : AppCompatActivity() {
                 if (signInResult.success && signInResult.credentialResponse != null) {
                     debugInfo.append("Extracting user info...\n")
                     
-                    val (userId, displayName, email) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse)
+                    val (userId, displayName, email) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse, this@EmailExtractionDebugActivity)
                     
                     debugInfo.append("\n=== EXTRACTION RESULTS ===\n")
                     debugInfo.append("User ID: $userId\n")

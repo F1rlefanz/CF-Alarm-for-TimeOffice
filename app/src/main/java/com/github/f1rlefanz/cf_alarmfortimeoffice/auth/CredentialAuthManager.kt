@@ -97,7 +97,7 @@ class CredentialAuthManager(private val context: Context) {
         Logger.d(LogTags.AUTH, "Local sign-out")
     }
 
-    fun extractUserInfo(response: GetCredentialResponse?): Triple<String?, String?, String?> {
+    suspend fun extractUserInfo(response: GetCredentialResponse?, activityContext: Context): Triple<String?, String?, String?> {
         val credential = response?.credential
         
         if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
@@ -109,214 +109,122 @@ class CredentialAuthManager(private val context: Context) {
                 
                 Logger.d(LogTags.AUTH, "🔍 EXTRACT-START: Raw userId=$userId, displayName=$displayName")
                 
-                // CRITICAL FIX: Try different methods to get the email
-                var email: String? = null
+                // HYBRID-FLOW: Try to extract email using Google Sign-In silentSignIn
+                // This should work because Credential Manager just authenticated the user
+                var email: String? = getEmailWithHybridFlow(activityContext)
                 
-                // Method 1: Try to get from data bundle (various possible keys)
-                try {
-                    val bundleKeys = arrayOf(
-                        "com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID",
-                        "email",
-                        "account_name",
-                        "user_email"
-                    )
-                    
-                    for (key in bundleKeys) {
-                        email = credential.data.getString(key)
-                        if (!email.isNullOrEmpty() && email.contains("@")) {
-                            Logger.business(LogTags.AUTH, "✅ EMAIL-BUNDLE: Found email via bundle key '$key': $email")
-                            break
-                        }
-                    }
-                } catch (e: Exception) {
-                    Logger.w(LogTags.AUTH, "⚠️ EMAIL-BUNDLE: Bundle key extraction failed", e)
+                if (!email.isNullOrEmpty()) {
+                    Logger.business(LogTags.AUTH, "✅ HYBRID-SUCCESS: Email extracted successfully: $email")
+                    return Triple(userId, displayName, email)
                 }
                 
-                // Method 2: Enhanced JWT Token Parsing with better error handling
-                if (email.isNullOrEmpty() || !email.contains("@")) {
-                    Logger.d(LogTags.AUTH, "🔄 EMAIL-JWT: Attempting JWT token parsing...")
-                    
-                    try {
-                        val idToken = googleIdTokenCredential.idToken
-                        Logger.d(LogTags.AUTH, "📝 JWT-DEBUG: Token length: ${idToken.length}")
-                        Logger.d(LogTags.AUTH, "📝 JWT-DEBUG: Token start: ${idToken.take(50)}...")
-                        
-                        val parts = idToken.split(".")
-                        if (parts.size == 3) {
-                            val header = parts[0]
-                            val payload = parts[1]
-                            val signature = parts[2]
-                            
-                            Logger.d(LogTags.AUTH, "📝 JWT-DEBUG: Header length: ${header.length}, Payload length: ${payload.length}")
-                            
-                            // IMPROVED Base64 decoding with multiple attempts
-                            val decodedPayload = try {
-                                // First attempt: URL_SAFE with NO_PADDING
-                                android.util.Base64.decode(
-                                    payload, 
-                                    android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
-                                )
-                            } catch (e: Exception) {
-                                Logger.w(LogTags.AUTH, "🔄 JWT-DECODE: First decode attempt failed, trying alternative", e)
-                                
-                                try {
-                                    // Second attempt: URL_SAFE without NO_PADDING
-                                    android.util.Base64.decode(payload, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
-                                } catch (e2: Exception) {
-                                    Logger.w(LogTags.AUTH, "🔄 JWT-DECODE: Second decode attempt failed, trying default", e2)
-                                    
-                                    // Third attempt: Default Base64
-                                    android.util.Base64.decode(payload, android.util.Base64.DEFAULT)
-                                }
-                            }
-                            
-                            val decodedString = String(decodedPayload, Charsets.UTF_8)
-                            Logger.d(LogTags.AUTH, "📝 JWT-PAYLOAD: $decodedString")
-                            
-                            val jsonObject = org.json.JSONObject(decodedString)
-                            
-                            // Enhanced email field search
-                            val emailFields = arrayOf("email", "upn", "preferred_username", "unique_name")
-                            
-                            for (field in emailFields) {
-                                if (jsonObject.has(field)) {
-                                    val foundEmail = jsonObject.getString(field)
-                                    if (!foundEmail.isNullOrEmpty() && foundEmail.contains("@")) {
-                                        email = foundEmail
-                                        Logger.business(LogTags.AUTH, "✅ EMAIL-JWT: Found email via field '$field': $email")
-                                        break
-                                    }
-                                }
-                            }
-                            
-                            if (email.isNullOrEmpty() || !email.contains("@")) {
-                                // Log all available fields for debugging
-                                val availableFields = jsonObject.keys().asSequence().toList()
-                                Logger.w(LogTags.AUTH, "⚠️ EMAIL-JWT: No email found. Available fields: $availableFields")
-                            }
-                            
-                        } else {
-                            Logger.e(LogTags.AUTH, "❌ EMAIL-JWT: Invalid JWT format - expected 3 parts, got ${parts.size}")
-                        }
-                    } catch (e: Exception) {
-                        Logger.e(LogTags.AUTH, "❌ EMAIL-JWT: JWT parsing failed", e)
-                        Logger.d(LogTags.AUTH, "🔍 JWT-ERROR: Exception type: ${e.javaClass.simpleName}, message: ${e.message}")
-                    }
+                // FALLBACK: Traditional methods if Hybrid Flow fails
+                Logger.w(LogTags.AUTH, "⚠️ HYBRID-FAILED: Falling back to traditional methods")
+                email = getEmailWithFallback(activityContext, null)
+                
+                if (!email.isNullOrEmpty()) {
+                    Logger.business(LogTags.AUTH, "✅ FALLBACK-SUCCESS: Email extracted via fallback: $email")
+                    return Triple(userId, displayName, email)
                 }
                 
-                // Method 3: Enhanced Android Account Manager Fallback
-                if (email.isNullOrEmpty() || !email.contains("@")) {
-                    Logger.d(LogTags.AUTH, "🔄 EMAIL-ACCOUNTS: Attempting AccountManager fallback...")
-                    
-                    try {
-                        val accountManager = context.getSystemService(Context.ACCOUNT_SERVICE) as android.accounts.AccountManager
-                        
-                        // CRITICAL FIX: Try different account types
-                        val googleAccounts = accountManager.getAccountsByType("com.google")
-                        val gmailAccounts = accountManager.getAccountsByType("com.gmail")
-                        val allAccounts = accountManager.accounts
-                        
-                        Logger.d(LogTags.AUTH, "📱 ACCOUNTS-DEBUG: Found ${googleAccounts.size} Google accounts")
-                        Logger.d(LogTags.AUTH, "📱 ACCOUNTS-DEBUG: Found ${gmailAccounts.size} Gmail accounts") 
-                        Logger.d(LogTags.AUTH, "📱 ACCOUNTS-DEBUG: Found ${allAccounts.size} total accounts")
-                        
-                        // Try different account sources
-                        val candidateEmail = when {
-                            googleAccounts.isNotEmpty() -> {
-                                Logger.d(LogTags.AUTH, "🔄 Using Google account: ${googleAccounts[0].name}")
-                                googleAccounts[0].name
-                            }
-                            gmailAccounts.isNotEmpty() -> {
-                                Logger.d(LogTags.AUTH, "🔄 Using Gmail account: ${gmailAccounts[0].name}")
-                                gmailAccounts[0].name
-                            }
-                            allAccounts.any { it.name.contains("@") } -> {
-                                val emailAccount = allAccounts.first { it.name.contains("@") }
-                                Logger.d(LogTags.AUTH, "🔄 Using email-like account: ${emailAccount.name} (${emailAccount.type})")
-                                emailAccount.name
-                            }
-                            else -> {
-                                Logger.w(LogTags.AUTH, "⚠️ No email-like accounts found")
-                                null
-                            }
-                        }
-                        
-                        if (!candidateEmail.isNullOrEmpty() && candidateEmail.contains("@")) {
-                            email = candidateEmail
-                            Logger.business(LogTags.AUTH, "✅ EMAIL-ACCOUNTS: Found email via AccountManager: $email")
-                        }
-                        
-                    } catch (e: SecurityException) {
-                        Logger.w(LogTags.AUTH, "❌ EMAIL-ACCOUNTS: SecurityException - GET_ACCOUNTS permission issue", e)
-                    } catch (e: Exception) {
-                        Logger.e(LogTags.AUTH, "❌ EMAIL-ACCOUNTS: AccountManager failed", e)
-                    }
-                }
+                // If all methods fail, this indicates a configuration problem
+                Logger.e(LogTags.AUTH, "❌ EMAIL-FAILED: No email found despite One Tap UI showing it")
+                Logger.e(LogTags.AUTH, "💡 This indicates Google Cloud Console configuration issue or device setup problem")
                 
-                // Method 4: USER INPUT FALLBACK - If we still have no email
-                if (email.isNullOrEmpty() || !email.contains("@")) {
-                    Logger.e(LogTags.AUTH, "❌ CRITICAL-ERROR: No email extracted after all methods!")
-                    Logger.e(LogTags.AUTH, "📊 FINAL-DEBUG: userId=$userId, email=$email, displayName=$displayName")
-                    
-                    // CRITICAL FIX: Extract email from Google's "sub" field if possible
-                    if (userId?.contains("@") == true) {
-                        email = userId
-                        Logger.business(LogTags.AUTH, "🔄 FALLBACK: Using userId as email (it contains @): $email")
-                    } else {
-                        Logger.e(LogTags.AUTH, "💥 TOTAL-FAILURE: Calendar API authorization will definitely fail!")
-                        Logger.e(LogTags.AUTH, "💡 SOLUTION: Try different Google account or check Google Cloud Console setup")
-                        
-                        // FINAL FALLBACK: This should prompt user for manual input
-                        Logger.w(LogTags.AUTH, "🆘 MANUAL-INPUT-REQUIRED: Email extraction failed completely")
-                        Logger.w(LogTags.AUTH, "🆘 MANUAL-INPUT: Showing email input dialog as fallback")
-                    }
-                }
-                
-                // Enhanced storage with multiple locations
-                if (!email.isNullOrEmpty() && email.contains("@")) {
-                    try {
-                        // Store in multiple SharedPreferences for reliability
-                        val authPrefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-                        authPrefs.edit().putString("user_email", email).apply()
-                        
-                        val cfAlarmPrefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
-                        cfAlarmPrefs.edit().putString("current_user_email", email).apply()
-                        
-                        // Additional fallback storage
-                        val mainPrefs = context.getSharedPreferences("${context.packageName}_preferences", Context.MODE_PRIVATE)
-                        mainPrefs.edit().putString("google_user_email", email).apply()
-                        
-                        Logger.business(LogTags.AUTH, "💾 EMAIL-STORE: Email saved to multiple SharedPreferences")
-                        Logger.business(LogTags.AUTH, "🎯 FINAL-SUCCESS: Extracted user info - UserId=$userId, Email=$email, Name=$displayName")
-                        
-                    } catch (e: Exception) {
-                        Logger.e(LogTags.AUTH, "❌ EMAIL-STORE: Failed to store email", e)
-                    }
-                } else {
-                    Logger.e(LogTags.AUTH, "❌ FINAL-FAILURE: No valid email found for Calendar API authorization")
-                }
-                
-                return Triple(userId, displayName, email)
+                return Triple(userId, displayName, null)
                 
             } catch (e: Exception) {
-                Logger.e(LogTags.AUTH, "❌ EXTRACT-FATAL: Critical error parsing Google ID Token Credential", e)
-                Logger.d(LogTags.AUTH, "🔍 FATAL-DEBUG: Exception: ${e.javaClass.simpleName}, message: ${e.message}")
+                Logger.e(LogTags.AUTH, "❌ EXTRACT-FATAL: Critical error parsing credential", e)
             }
         }
         
-        Logger.w(LogTags.AUTH, "❌ EXTRACT-TYPE: Credential is not of expected GoogleIdTokenCredential type")
-        Logger.d(LogTags.AUTH, "🔍 TYPE-DEBUG: Credential type: ${credential?.javaClass?.simpleName}")
-        
+        Logger.w(LogTags.AUTH, "❌ EXTRACT-TYPE: Credential is not GoogleIdTokenCredential type")
         return Triple(null, null, null)
     }
 
     /**
-     * ENHANCED EMAIL EXTRACTION: Fallback to Google Sign-In API if Credential Manager fails
-     * This provides better compatibility and more reliable email extraction
+     * HYBRID-FLOW EMAIL EXTRACTION: Uses Google Sign-In silentSignIn after Credential Manager success
+     * This is Gemini's recommended approach: Modern UI + Reliable data retrieval
      */
-    @Suppress("DEPRECATION") // GoogleSignIn API: Complex migration, keeping for email reliability
+    @Suppress("DEPRECATION") // GoogleSignIn API: Needed for reliable email extraction
+    suspend fun getEmailWithHybridFlow(activityContext: Context): String? {
+        Logger.d(LogTags.AUTH, "🔄 HYBRID-FLOW: Starting silent sign-in for email extraction...")
+        
+        return try {
+            // Create GoogleSignInOptions with email request
+            val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
+                com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
+            )
+                .requestIdToken(googleWebClientId) // Same Web Client ID
+                .requestEmail() // Explicitly request email
+                .requestProfile() // Request profile for display name
+                .build()
+            
+            val googleSignInClient = com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(activityContext, gso)
+            
+            Logger.d(LogTags.AUTH, "🔄 HYBRID-FLOW: Performing silent sign-in...")
+            
+            // Use silentSignIn() - this should work after successful Credential Manager flow
+            val silentSignInTask = googleSignInClient.silentSignIn()
+            
+            // Convert to coroutine-friendly approach
+            val account = try {
+                // Check if task is already complete (cached)
+                if (silentSignInTask.isComplete) {
+                    silentSignInTask.result
+                } else {
+                    // Wait for task completion
+                    kotlinx.coroutines.suspendCancellableCoroutine<com.google.android.gms.auth.api.signin.GoogleSignInAccount?> { continuation ->
+                        silentSignInTask.addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                continuation.resume(task.result) { /* cleanup */ }
+                            } else {
+                                continuation.resume(null) { /* cleanup */ }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Logger.w(LogTags.AUTH, "⚠️ HYBRID-FLOW: Silent sign-in task failed", e)
+                null
+            }
+            
+            if (account != null) {
+                val email = account.email
+                val displayName = account.displayName
+                val userId = account.id
+                
+                if (!email.isNullOrEmpty()) {
+                    Logger.business(LogTags.AUTH, "✅ HYBRID-FLOW: Successfully extracted email: $email")
+                    Logger.d(LogTags.AUTH, "✅ HYBRID-FLOW: Profile data - userId=$userId, displayName=$displayName")
+                    
+                    // Store email for future use
+                    val authPrefs = activityContext.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+                    authPrefs.edit().putString("user_email", email).apply()
+                    Logger.d(LogTags.AUTH, "💾 HYBRID-FLOW: Email stored to SharedPreferences")
+                    
+                    return email
+                } else {
+                    Logger.w(LogTags.AUTH, "⚠️ HYBRID-FLOW: Silent sign-in succeeded but no email in account")
+                }
+            } else {
+                Logger.w(LogTags.AUTH, "⚠️ HYBRID-FLOW: Silent sign-in returned null account")
+            }
+            
+            Logger.e(LogTags.AUTH, "❌ HYBRID-FLOW: Failed to extract email via silent sign-in")
+            null
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.AUTH, "❌ HYBRID-FLOW: Critical error in hybrid flow", e)
+            null
+        }
+    }
+    
+    /**
+     * FALLBACK EMAIL EXTRACTION: Traditional methods for when Hybrid Flow fails
+     */
     suspend fun getEmailWithFallback(activityContext: Context, userEmail: String?): String? {
-        Logger.d(LogTags.AUTH, "🔍 EMAIL-FALLBACK: Starting enhanced email extraction...")
+        Logger.d(LogTags.AUTH, "🔍 EMAIL-FALLBACK: Starting traditional email extraction...")
         
         // Method 1: Use provided userEmail if valid
         if (!userEmail.isNullOrEmpty() && userEmail.contains("@") && !userEmail.contains("user.needs.to.enter")) {
@@ -324,33 +232,7 @@ class CredentialAuthManager(private val context: Context) {
             return userEmail
         }
         
-        // Method 2: Try Google Sign-In API (more reliable for email)
-        try {
-            Logger.d(LogTags.AUTH, "🔄 EMAIL-GSI: Trying Google Sign-In API for email...")
-            
-            val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
-                com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
-            )
-                .requestEmail() // Explicitly request email
-                .requestProfile()
-                .requestIdToken(googleWebClientId)
-                .build()
-            
-            val googleSignInClient = com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(activityContext, gso)
-            val lastSignedInAccount = com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(activityContext)
-            
-            if (lastSignedInAccount != null && !lastSignedInAccount.email.isNullOrEmpty()) {
-                Logger.business(LogTags.AUTH, "✅ EMAIL-GSI: Found email via Google Sign-In: ${lastSignedInAccount.email}")
-                return lastSignedInAccount.email
-            } else {
-                Logger.d(LogTags.AUTH, "ℹ️ EMAIL-GSI: No valid signed-in account found")
-            }
-            
-        } catch (e: Exception) {
-            Logger.w(LogTags.AUTH, "⚠️ EMAIL-GSI: Google Sign-In fallback failed", e)
-        }
-        
-        // Method 3: Try AccountManager (less reliable on modern Android)
+        // Method 2: Try AccountManager 
         try {
             Logger.d(LogTags.AUTH, "🔄 EMAIL-ACCOUNT: Trying AccountManager...")
             val accountManager = activityContext.getSystemService(Context.ACCOUNT_SERVICE) as android.accounts.AccountManager
@@ -365,7 +247,7 @@ class CredentialAuthManager(private val context: Context) {
             Logger.w(LogTags.AUTH, "⚠️ EMAIL-ACCOUNT: AccountManager failed", e)
         }
         
-        // Method 4: Check SharedPreferences for previously stored email
+        // Method 3: Check SharedPreferences for previously stored email
         try {
             val prefs = activityContext.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
             val storedEmail = prefs.getString("user_email", null)
@@ -378,7 +260,7 @@ class CredentialAuthManager(private val context: Context) {
             Logger.w(LogTags.AUTH, "⚠️ EMAIL-STORED: SharedPreferences check failed", e)
         }
         
-        Logger.e(LogTags.AUTH, "❌ EMAIL-FALLBACK: All email extraction methods failed")
+        Logger.e(LogTags.AUTH, "❌ EMAIL-FALLBACK: All traditional email extraction methods failed")
         return null
     }
     fun diagnoseEmailExtraction(context: Context): String {

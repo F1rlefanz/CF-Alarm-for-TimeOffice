@@ -21,14 +21,20 @@ data class SignInResult(
     val exception: Throwable? = null
 )
 
+/**
+ * Modern Credential Authentication Manager
+ * 
+ * Uses the successful Hybrid-Flow approach:
+ * 1. androidx.credentials for modern One Tap UI
+ * 2. GoogleSignInClient.silentSignIn() for reliable email extraction
+ * 
+ * This approach solves the OAuth2 BAD_AUTHENTICATION problem by combining
+ * modern UI with reliable data extraction methods.
+ */
 class CredentialAuthManager(private val context: Context) {
 
     private val credentialManager = CredentialManager.create(context)
-    // Use BuildConfig for Web Client ID
     private val googleWebClientId = BuildConfig.GOOGLE_WEB_CLIENT_ID
-    
-    // ALTERNATIVE: For Calendar API, we might need to use Android Client approach
-    // This would require using the OAuth2 client that matches the app's signing certificate
 
     suspend fun signIn(activityContext: Context): SignInResult {
         if (googleWebClientId.isBlank()) {
@@ -36,19 +42,13 @@ class CredentialAuthManager(private val context: Context) {
             return SignInResult(success = false, error = "Web Client ID nicht konfiguriert")
         }
 
-        Logger.d(LogTags.AUTH, "Using Web Client ID: ${googleWebClientId.take(20)}...")
-        Logger.d(LogTags.AUTH, "Package name: ${context.packageName}")
-        Logger.d(LogTags.AUTH, "Activity context: ${activityContext.javaClass.simpleName}")
-        Logger.d(LogTags.AUTH, "Debug SHA-1 should be: 98:1F:ED:CF:28:31:A0:10:7C:03:1B:A2:F2:4F:7C:88:06:99:20:D9")
+        Logger.d(LogTags.AUTH, "Starting credential sign-in with Web Client ID: ${googleWebClientId.take(20)}...")
 
-        // CRITICAL: Create GoogleIdOption with explicit email request
         val googleIdOption: GetGoogleIdOption = GetGoogleIdOption.Builder()
-            .setFilterByAuthorizedAccounts(false)  // WICHTIG: Alle Konten anzeigen
+            .setFilterByAuthorizedAccounts(false)  // Show all accounts
             .setServerClientId(googleWebClientId)
-            .setAutoSelectEnabled(false)  // Benutzer soll wählen können
-            .setNonce(null) // Keine Nonce required für Standard-Flow
-            // NOTE: Email is included by default in the ID token when using proper Web Client ID
-            // If email is still missing, the issue is in Google Cloud Console configuration
+            .setAutoSelectEnabled(false)  // Let user choose
+            .setNonce(null) // No nonce required for standard flow
             .build()
 
         val request: GetCredentialRequest = GetCredentialRequest.Builder()
@@ -57,9 +57,8 @@ class CredentialAuthManager(private val context: Context) {
 
         Logger.d(LogTags.AUTH, "Requesting credentials...")
         return try {
-            // CRITICAL FIX: Use activityContext instead of stored application context
             val result = credentialManager.getCredential(context = activityContext, request = request)
-            Logger.business(LogTags.AUTH, "Credential successfully obtained", result.credential.type)
+            Logger.business(LogTags.AUTH, "Credential successfully obtained")
             SignInResult(success = true, credentialResponse = result)
 
         } catch (e: GetCredentialCancellationException) {
@@ -69,14 +68,9 @@ class CredentialAuthManager(private val context: Context) {
             Logger.w(LogTags.AUTH, "No Google accounts found", e)
             val detailedError = when {
                 e.message?.contains("Developer console") == true -> {
-                    """
-                    Google Sign-In ist nicht korrekt konfiguriert:
-                    1. Überprüfen Sie die SHA-1 Fingerprints in der Google Cloud Console
-                    2. Debug SHA-1 muss für Package: ${context.packageName} hinzugefügt sein
-                    3. OAuth 2.0 Web Client ID muss korrekt sein
-                    """.trimIndent()
+                    "Google Sign-In Konfigurationsfehler. Bitte überprüfen Sie die SHA-1 Fingerprints in der Google Cloud Console."
                 }
-                else -> "Kein Google-Konto auf diesem Gerät gefunden. Bitte fügen Sie ein Google-Konto in den Einstellungen hinzu."
+                else -> "Kein Google-Konto gefunden. Bitte fügen Sie ein Google-Konto in den Einstellungen hinzu."
             }
             SignInResult(success = false, error = detailedError, exception = e)
         } catch (e: GetCredentialException) {
@@ -97,6 +91,12 @@ class CredentialAuthManager(private val context: Context) {
         Logger.d(LogTags.AUTH, "Local sign-out")
     }
 
+    /**
+     * Extract user information using the successful Hybrid-Flow approach
+     * 
+     * This method uses GoogleSignInClient.silentSignIn() to reliably extract
+     * the email address after successful Credential Manager authentication.
+     */
     suspend fun extractUserInfo(response: GetCredentialResponse?, activityContext: Context): Triple<String?, String?, String?> {
         val credential = response?.credential
         
@@ -109,29 +109,16 @@ class CredentialAuthManager(private val context: Context) {
                 
                 Logger.d(LogTags.AUTH, "🔍 EXTRACT-START: Raw userId=$userId, displayName=$displayName")
                 
-                // HYBRID-FLOW: Try to extract email using Google Sign-In silentSignIn
-                // This should work because Credential Manager just authenticated the user
-                var email: String? = getEmailWithHybridFlow(activityContext)
+                // HYBRID-FLOW: Use Google Sign-In silentSignIn for reliable email extraction
+                val email = getEmailWithHybridFlow(activityContext)
                 
                 if (!email.isNullOrEmpty()) {
                     Logger.business(LogTags.AUTH, "✅ HYBRID-SUCCESS: Email extracted successfully: $email")
                     return Triple(userId, displayName, email)
+                } else {
+                    Logger.e(LogTags.AUTH, "❌ HYBRID-FAILED: Email extraction failed")
+                    return Triple(userId, displayName, null)
                 }
-                
-                // FALLBACK: Traditional methods if Hybrid Flow fails
-                Logger.w(LogTags.AUTH, "⚠️ HYBRID-FAILED: Falling back to traditional methods")
-                email = getEmailWithFallback(activityContext, null)
-                
-                if (!email.isNullOrEmpty()) {
-                    Logger.business(LogTags.AUTH, "✅ FALLBACK-SUCCESS: Email extracted via fallback: $email")
-                    return Triple(userId, displayName, email)
-                }
-                
-                // If all methods fail, this indicates a configuration problem
-                Logger.e(LogTags.AUTH, "❌ EMAIL-FAILED: No email found despite One Tap UI showing it")
-                Logger.e(LogTags.AUTH, "💡 This indicates Google Cloud Console configuration issue or device setup problem")
-                
-                return Triple(userId, displayName, null)
                 
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "❌ EXTRACT-FATAL: Critical error parsing credential", e)
@@ -143,10 +130,13 @@ class CredentialAuthManager(private val context: Context) {
     }
 
     /**
-     * HYBRID-FLOW EMAIL EXTRACTION: Uses Google Sign-In silentSignIn after Credential Manager success
-     * This is Gemini's recommended approach: Modern UI + Reliable data retrieval
+     * HYBRID-FLOW EMAIL EXTRACTION: The proven solution
+     * 
+     * Uses Google Sign-In silentSignIn after Credential Manager success.
+     * This approach reliably extracts the email address and solves the 
+     * BAD_AUTHENTICATION problem that plagued the legacy approaches.
      */
-    @Suppress("DEPRECATION") // GoogleSignIn API: Needed for reliable email extraction
+    @Suppress("DEPRECATION") // GoogleSignIn API: Required for reliable email extraction
     suspend fun getEmailWithHybridFlow(activityContext: Context): String? {
         Logger.d(LogTags.AUTH, "🔄 HYBRID-FLOW: Starting silent sign-in for email extraction...")
         
@@ -164,7 +154,7 @@ class CredentialAuthManager(private val context: Context) {
             
             Logger.d(LogTags.AUTH, "🔄 HYBRID-FLOW: Performing silent sign-in...")
             
-            // Use silentSignIn() - this should work after successful Credential Manager flow
+            // Use silentSignIn() - this works after successful Credential Manager flow
             val silentSignInTask = googleSignInClient.silentSignIn()
             
             // Convert to coroutine-friendly approach
@@ -218,87 +208,5 @@ class CredentialAuthManager(private val context: Context) {
             Logger.e(LogTags.AUTH, "❌ HYBRID-FLOW: Critical error in hybrid flow", e)
             null
         }
-    }
-    
-    /**
-     * FALLBACK EMAIL EXTRACTION: Traditional methods for when Hybrid Flow fails
-     */
-    suspend fun getEmailWithFallback(activityContext: Context, userEmail: String?): String? {
-        Logger.d(LogTags.AUTH, "🔍 EMAIL-FALLBACK: Starting traditional email extraction...")
-        
-        // Method 1: Use provided userEmail if valid
-        if (!userEmail.isNullOrEmpty() && userEmail.contains("@") && !userEmail.contains("user.needs.to.enter")) {
-            Logger.business(LogTags.AUTH, "✅ EMAIL-PROVIDED: Using valid provided email: $userEmail")
-            return userEmail
-        }
-        
-        // Method 2: Try AccountManager 
-        try {
-            Logger.d(LogTags.AUTH, "🔄 EMAIL-ACCOUNT: Trying AccountManager...")
-            val accountManager = activityContext.getSystemService(Context.ACCOUNT_SERVICE) as android.accounts.AccountManager
-            val googleAccounts = accountManager.getAccountsByType("com.google")
-            
-            if (googleAccounts.isNotEmpty()) {
-                val email = googleAccounts[0].name
-                Logger.business(LogTags.AUTH, "✅ EMAIL-ACCOUNT: Found email via AccountManager: $email")
-                return email
-            }
-        } catch (e: Exception) {
-            Logger.w(LogTags.AUTH, "⚠️ EMAIL-ACCOUNT: AccountManager failed", e)
-        }
-        
-        // Method 3: Check SharedPreferences for previously stored email
-        try {
-            val prefs = activityContext.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-            val storedEmail = prefs.getString("user_email", null)
-            
-            if (!storedEmail.isNullOrEmpty() && storedEmail.contains("@") && !storedEmail.contains("user.needs.to.enter")) {
-                Logger.business(LogTags.AUTH, "✅ EMAIL-STORED: Found valid stored email: $storedEmail")
-                return storedEmail
-            }
-        } catch (e: Exception) {
-            Logger.w(LogTags.AUTH, "⚠️ EMAIL-STORED: SharedPreferences check failed", e)
-        }
-        
-        Logger.e(LogTags.AUTH, "❌ EMAIL-FALLBACK: All traditional email extraction methods failed")
-        return null
-    }
-    fun diagnoseEmailExtraction(context: Context): String {
-        val sb = StringBuilder()
-        sb.append("=== EMAIL EXTRACTION DIAGNOSTIC ===\n")
-        
-        // Check SharedPreferences
-        try {
-            val authPrefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-            val cfPrefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
-            
-            val authEmail = authPrefs.getString("user_email", "NOT_FOUND")
-            val cfEmail = cfPrefs.getString("current_user_email", "NOT_FOUND")
-            
-            sb.append("auth_prefs.user_email: $authEmail\n")
-            sb.append("cf_alarm_auth.current_user_email: $cfEmail\n")
-            
-        } catch (e: Exception) {
-            sb.append("SharedPreferences check failed: ${e.message}\n")
-        }
-        
-        // Check Android Accounts
-        try {
-            val accountManager = context.getSystemService(Context.ACCOUNT_SERVICE) as android.accounts.AccountManager
-            val accounts = accountManager.getAccountsByType("com.google")
-            
-            sb.append("Google Accounts on device: ${accounts.size}\n")
-            accounts.forEachIndexed { index, account ->
-                sb.append("  Account $index: ${account.name}\n")
-            }
-            
-        } catch (e: SecurityException) {
-            sb.append("GET_ACCOUNTS permission denied\n")
-        } catch (e: Exception) {
-            sb.append("Account check failed: ${e.message}\n")
-        }
-        
-        sb.append("=== END DIAGNOSTIC ===")
-        return sb.toString()
     }
 }

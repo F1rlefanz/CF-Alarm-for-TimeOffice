@@ -244,15 +244,15 @@ class AuthViewModel(
                     
                     Logger.business(LogTags.AUTH, "📊 EMAIL-EXTRACTION: initial=$initialEmail, final=$initialEmail")
                     
-                    if (!initialEmail.isNullOrEmpty() && initialEmail != "user.needs.to.enter@gmail.com") {
+                    if (!initialEmail.isNullOrEmpty()) {
                         val authData = AuthData(
                             isLoggedIn = true,
                             email = initialEmail,
                             displayName = displayName,
-                            accessToken = null // No token here - real tokens managed by ModernOAuth2TokenManager
+                            accessToken = null // Real tokens managed by ModernOAuth2TokenManager
                         )
                         
-                        // CRITICAL FIX: Also save email to SharedPreferences for CalendarRepository
+                        // Save email to SharedPreferences for CalendarRepository
                         try {
                             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
                             prefs.edit {
@@ -260,7 +260,7 @@ class AuthViewModel(
                                 putString("current_user_display_name", displayName)
                                 putLong("auth_timestamp", System.currentTimeMillis())
                             }
-                            Logger.d(LogTags.AUTH, "CRITICAL-FIX: Saved user email to SharedPreferences for CalendarRepository access")
+                            Logger.d(LogTags.AUTH, "✅ Saved user email to SharedPreferences for CalendarRepository access")
                         } catch (e: Exception) {
                             Logger.w(LogTags.AUTH, "Could not save user email to SharedPreferences", e)
                         }
@@ -272,15 +272,15 @@ class AuthViewModel(
                                         userAuth = UserAuthState.authenticated(
                                             initialEmail,
                                             displayName ?: "",
-                                            null // No placeholder token
+                                            null
                                         ),
                                         calendarOps = currentState.calendarOps.copy(calendarsLoading = false)
                                     )
                                 }
-                                Logger.business(LogTags.AUTH, "Sign-in successful", initialEmail)
+                                Logger.business(LogTags.AUTH, "✅ Sign-in successful: $initialEmail")
                                 
-                                // CRITICAL FIX: Automatically trigger Calendar authorization after sign-in
-                                Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization for signed-in user")
+                                // Automatically trigger Calendar authorization
+                                Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization")
                                 requestCalendarAuthorization()
                             }
                             .onFailure { error ->
@@ -292,34 +292,15 @@ class AuthViewModel(
                                 }
                             }
                     } else {
-                        // CRITICAL FIX: Email extraction failed - show manual input dialog
-                        Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT-REQUIRED: Email extraction failed completely")
+                        // Hybrid-Flow failed - this should rarely happen with the working implementation
+                        Logger.e(LogTags.AUTH, "❌ HYBRID-FLOW: Email extraction failed - unexpected error")
                         
                         updateAuthState { currentState ->
                             currentState.copy(
                                 calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                                errors = AppErrorState.authenticationError("E-Mail-Eingabe erforderlich - automatische Erkennung fehlgeschlagen")
+                                errors = AppErrorState.authenticationError("Anmeldung fehlgeschlagen: E-Mail-Adresse konnte nicht ermittelt werden")
                             )
                         }
-                        
-                        // Show manual email input dialog
-                        val emailDialog = com.github.f1rlefanz.cf_alarmfortimeoffice.auth.EmailInputDialog(context)
-                        emailDialog.showEmailInputDialog(
-                            onEmailProvided = { manualEmail ->
-                                Logger.business(LogTags.AUTH, "✅ MANUAL-INPUT: User provided email, retrying authentication")
-                                // Retry the authentication process with manual email
-                                handleManualEmailAndContinueAuth(context, manualEmail, displayName)
-                            },
-                            onCancelled = {
-                                Logger.w(LogTags.AUTH, "❌ MANUAL-INPUT: User cancelled email input")
-                                updateAuthState { currentState ->
-                                    currentState.copy(
-                                        calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                                        errors = AppErrorState.authenticationError("Anmeldung abgebrochen - E-Mail-Adresse benötigt")
-                                    )
-                                }
-                            }
-                        )
                     }
                 } else {
                     val errorMessage = signInResult.error ?: "Unbekannter Fehler bei der Anmeldung"
@@ -365,10 +346,9 @@ class AuthViewModel(
                     .onSuccess {
                         updateAuthState { AuthState.EMPTY }
                         
-                        // CRITICAL FIX: Also clear SharedPreferences if context is available
+                        // Clear SharedPreferences
                         try {
                             val ctx = context ?: run {
-                                // Try to get context from credentialAuthManager
                                 val field = credentialAuthManager::class.java.getDeclaredField("context")
                                 field.isAccessible = true
                                 field.get(credentialAuthManager) as? Context
@@ -377,7 +357,7 @@ class AuthViewModel(
                             ctx?.let {
                                 val prefs = it.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
                                 prefs.edit { clear() }
-                                Logger.d(LogTags.AUTH, "CRITICAL-FIX: Cleared SharedPreferences on sign-out")
+                                Logger.d(LogTags.AUTH, "✅ Cleared SharedPreferences on sign-out")
                             }
                         } catch (e: Exception) {
                             Logger.w(LogTags.AUTH, "Could not clear SharedPreferences on sign-out", e)
@@ -530,84 +510,7 @@ class AuthViewModel(
     }
     
     /**
-     * CRITICAL FIX: Handle manual email input and continue authentication
-     */
-    private fun handleManualEmailAndContinueAuth(context: Context, manualEmail: String, displayName: String?) {
-        viewModelScope.launch {
-            try {
-                Logger.business(LogTags.AUTH, "🔄 MANUAL-INPUT: Continuing authentication with manual email: $manualEmail")
-                
-                updateAuthState { currentState ->
-                    currentState.copy(
-                        calendarOps = currentState.calendarOps.copy(calendarsLoading = true),
-                        errors = AppErrorState.EMPTY
-                    )
-                }
-                
-                val authData = AuthData(
-                    isLoggedIn = true,
-                    email = manualEmail,
-                    displayName = displayName,
-                    accessToken = null
-                )
-                
-                // Save to both DataStore and SharedPreferences
-                try {
-                    val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
-                    prefs.edit {
-                        putString("current_user_email", manualEmail)
-                        putString("current_user_display_name", displayName)
-                        putLong("auth_timestamp", System.currentTimeMillis())
-                    }
-                    Logger.d(LogTags.AUTH, "✅ MANUAL-INPUT: Email saved to SharedPreferences")
-                } catch (e: Exception) {
-                    Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT: Failed to save to SharedPreferences", e)
-                }
-                
-                authDataStoreRepository.updateAuthData(authData)
-                    .onSuccess {
-                        updateAuthState { currentState ->
-                            currentState.copy(
-                                userAuth = UserAuthState.authenticated(
-                                    manualEmail,
-                                    displayName ?: "",
-                                    null
-                                ),
-                                calendarOps = currentState.calendarOps.copy(calendarsLoading = false)
-                            )
-                        }
-                        
-                        Logger.business(LogTags.AUTH, "✅ MANUAL-INPUT: Authentication completed with manual email")
-                        
-                        // Auto-trigger Calendar authorization
-                        Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization for manual email user")
-                        requestCalendarAuthorization()
-                    }
-                    .onFailure { error ->
-                        updateAuthState { currentState ->
-                            currentState.copy(
-                                calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                                errors = AppErrorState.authenticationError("Fehler beim Speichern der Anmeldedaten: ${error.message}")
-                            )
-                        }
-                        Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT: Failed to save auth data", error)
-                    }
-                    
-            } catch (e: Exception) {
-                updateAuthState { currentState ->
-                    currentState.copy(
-                        calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                        errors = AppErrorState.authenticationError("Fehler bei manueller E-Mail-Verarbeitung: ${e.message}")
-                    )
-                }
-                Logger.e(LogTags.AUTH, "❌ MANUAL-INPUT: Exception during manual email processing", e)
-            }
-        }
-    }
-    
-    /**
      * Sets a callback to trigger calendar reload after successful authentication
-     * This allows loose coupling between AuthViewModel and CalendarViewModel
      */
     fun setCalendarReloadTrigger(trigger: () -> Unit) {
         calendarReloadTrigger = trigger

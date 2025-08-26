@@ -113,6 +113,6 @@ object AppConstants {
     const val VERSION_NAME = "1.0.0"
     const val VERSION_CODE = 1
     
-    /** Google Web Client ID für OAuth */
-    const val GOOGLE_WEB_CLIENT_ID = "931091152160-8s3nd7os2p61ac6ecm799gjhekkf0b4i.apps.googleusercontent.com"
+    // OAuth Client ID ist jetzt ausschließlich in BuildConfig verfügbar
+    // BuildConfig.GOOGLE_WEB_CLIENT_ID wird zur Laufzeit aus build.gradle.kts geladen
 }

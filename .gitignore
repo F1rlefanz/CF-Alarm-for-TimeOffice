@@ -4,7 +4,6 @@
 
 # 🚨 PRODUCTION KEYSTORES - NEVER COMMIT!
 *.keystore
-Keystore Passwort.txt
 *.jks
 keystore.properties
 release.properties

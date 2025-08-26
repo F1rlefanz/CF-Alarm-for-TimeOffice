@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -11,20 +14,29 @@ plugins {
     alias(libs.plugins.firebase.crashlytics)
 }
 
+// ==============================
+// 🔐 SECURE KEYSTORE PROPERTIES LOADING
+// ==============================
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.github.f1rlefanz.cf_alarmfortimeoffice"
     compileSdk = 36  // Updated for androidx.core 1.17.0 requirement
 
     // ==============================
-    // 🔐 PROFESSIONAL SIGNING CONFIGURATION
+    // 🔐 SECURE SIGNING CONFIGURATION
     // ==============================
     signingConfigs {
         create("release") {
-            // Production signing configuration
-            storeFile = file("../cf-alarm-release.keystore")
-            storePassword = "CFAlarm2025!"
-            keyAlias = "cf-alarm-key"
-            keyPassword = "CFAlarm2025!"
+            // Secure production signing - NO hardcoded passwords!
+            storeFile = file(keystoreProperties["storeFile"] as String? ?: "../cf-alarm-release.keystore")
+            storePassword = keystoreProperties["storePassword"] as String? ?: System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = keystoreProperties["keyAlias"] as String? ?: "cf-alarm-key"
+            keyPassword = keystoreProperties["keyPassword"] as String? ?: System.getenv("KEY_PASSWORD")
             
             // Enhanced security settings
             enableV1Signing = true  // JAR Signature (for older Android versions)
@@ -33,10 +45,10 @@ android {
             enableV4Signing = true  // APK Signature Scheme v4 (Android 11+)
         }
         
-        // Debug signing config (explicit for clarity)
+        // Debug signing config (uses default Android debug keystore)
         getByName("debug") {
-            // Uses default debug keystore from ~/.android/debug.keystore
-            // This is automatic, but explicitly documented for transparency
+            // Uses ~/.android/debug.keystore automatically
+            // No configuration needed - handled by Android SDK
         }
     }
 
@@ -44,16 +56,20 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.0.3"
+        versionCode = 6
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
 
-        // BuildConfig constants for Google OAuth
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"931091152160-8s3nd7os2p61ac6ecm799gjhekkf0b4i.apps.googleusercontent.com\"")
+        // Secure OAuth Client ID loading - supports different environments
+        val googleWebClientId = keystoreProperties["googleWebClientId"] as String? 
+            ?: System.getenv("GOOGLE_WEB_CLIENT_ID") 
+            ?: "931091152160-8s3nd7os2p61ac6ecm799gjhekkf0b4i.apps.googleusercontent.com" // Fallback for development
+        
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     buildTypes {

@@ -9,7 +9,7 @@
 
 **Smart Wecker-App mit Google Calendar & Philips Hue Integration**
 
-[📱 Download APK](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/releases) • [📖 Documentation](https://f1rlefanz.github.io/CF-Alarm-for-TimeOffice) • [🐛 Bug Report](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues) • [💬 Discussions](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/discussions)
+[📖 Documentation](https://f1rlefanz.github.io/CF-Alarm-for-TimeOffice)
 
 </div>
 
@@ -35,7 +35,6 @@
 
 ### ⚙️ **Enterprise Features**
 - **Flexible Schichtmodelle** mit benutzerdefinierten Zeiten
-- **Multi-Kalender Support** für komplexe Arbeitszeiten
 - **Backup & Restore** für Konfigurationsdaten
 - **Debug-Modi** für Entwickler und Power-User
 
@@ -46,15 +45,15 @@
 - **Google Account** für Calendar-Integration
 - **Philips Hue Bridge** (optional) für Lichtsteuerung
 
-### Download & Installation
-1. **APK herunterladen** von den [GitHub Releases](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/releases)
-2. **Unbekannte Quellen aktivieren** in den Android-Einstellungen
-3. **APK installieren** und App-Berechtigungen gewähren
+### Anmeldung, Download & Installation
+1. Nachricht an Entwickler mit der bitte zur Teilnahme am internen Test
+2. Herunterladen der App über erhaltenen Link
+3. Installatinon
 4. **Google Account verbinden** für Calendar-Zugriff
 5. **Philips Hue einrichten** (optional)
 
 ### Erste Schritte
-1. **App öffnen** und Willkommens-Tutorial durchlaufen
+1. **App öffnen** und Ersteinrichtung durchführen
 2. **Google Calendar autorisieren** für Terminzugriff
 3. **Schichtzeiten konfigurieren** nach ihren Arbeitszeiten
 4. **Philips Hue Bridge** suchen und verbinden (optional)
@@ -63,66 +62,14 @@
 ## 🔧 Konfiguration
 
 ### Grundeinstellungen
-- **Vorlaufzeit**: Wie früh vor Schichtbeginn geweckt werden soll
-- **Schichtarten**: Früh (6:00-14:00), Spät (14:00-22:00), Nacht (22:00-6:00)
-- **Wochentage**: Welche Tage für automatische Alarmierung berücksichtigt werden
-- **Kalender-Filter**: Spezifische Kalender oder Keywords für Schicht-Erkennung
+- **Kalender-Filter**: TimeOffice-Kalender auswählen
+- **Weckzeit**: Wann vor Schichtbeginn geweckt werden soll und
+- **Schichtarten**: Mustererkennung für z.B. Früh, Spät, Nacht einrichten
 
 ### Erweiterte Features
-- **Graduelle Lautstärke**: Sanfter Alarm-Start mit ansteigender Lautstärke
 - **Snooze-Verhalten**: Anpassbare Snooze-Zeiten je Schichtart
 - **Hue-Szenarien**: Verschiedene Licht-Profile für unterschiedliche Situationen
-- **Backup-Alarme**: Fallback-Alarme bei Calendar-API Problemen
-
-## 🏗️ Für Entwickler
-
-### Technische Details
-- **Sprache**: Kotlin mit Android Jetpack
-- **Architektur**: MVVM mit Repository Pattern
-- **Database**: Room für lokale Datenspeicherung
-- **Network**: Retrofit für API-Kommunikation
-- **Security**: Keystore für sensitive Daten
-
-### Build Requirements
-```bash
-# Android Studio Narwhal oder neuer
-# Kotlin 1.9+
-# Gradle 8.0+
-# minSdk 26, targetSdk 34
-
-./gradlew assembleDebug
-```
-
-### API Integration
-```kotlin
-// Google Calendar API
-implementation 'com.google.api-client:google-api-client-android:1.34.1'
-implementation 'com.google.apis:google-api-services-calendar:v3-rev20220715-2.0.0'
-
-// Philips Hue SDK
-implementation 'com.philips.lighting:hue-android-sdk:1.19.0'
-```
-
-### Contributing
-1. **Fork** das Repository
-2. **Feature Branch** erstellen (`git checkout -b feature/amazing-feature`)
-3. **Changes committen** (`git commit -m 'Add amazing feature'`)
-4. **Branch pushen** (`git push origin feature/amazing-feature`)
-5. **Pull Request** erstellen
-
-## 📋 Roadmap
-
-### Version 1.1.0 (Q4 2025)
-- [ ] **Widgets** für Home-Screen Integration
-- [ ] **Wear OS** Unterstützung für Smartwatches
-- [ ] **Spotify Integration** für Musik-Alarme
-- [ ] **Erweiterte Statistiken** für Schlafmuster-Analyse
-
-### Version 1.2.0 (Q1 2026)
-- [ ] **Smart Home Integration** (Alexa, Google Assistant)
-- [ ] **Team-Features** für Schichtplan-Koordination
-- [ ] **Cloud-Sync** für Multi-Device Nutzung
-- [ ] **Machine Learning** für intelligente Weckzeit-Optimierung
+- **Manuelle-Alarme**: Falls bei Diensttausch TimeOffice noch nicht aktualisert wurde oder bei Calendar-API Problemen
 
 ## 📄 Lizenz
 
@@ -137,14 +84,12 @@ Dieses Projekt steht unter der **MIT License** - siehe [LICENSE](LICENSE) Datei 
 
 ## 🌟 Credits
 
-Entwickelt mit ❤️ in Deutschland von [F1rlefanz](https://github.com/F1rlefanz)
-
----
-
 <div align="center">
 
-**Made for Time Office Workers** • **Built with Android** • **Powered by Google Calendar**
+**Made for Time Office Users** • **Built with Android Studio** • **Powered by Claude 4 und Gemini 2.5 Pro**
 
 ⭐ **Star das Repository wenn es dir hilft!** ⭐
+---
 
+**Entwickelt mit ❤️ in Deutschland von [F1rlefanz](https://github.com/F1rlefanz)**
 </div>

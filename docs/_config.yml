@@ -1,0 +1,97 @@
+# GitHub Pages Jekyll Configuration for CF Alarm Documentation
+title: "CF Alarm for Time Office"
+description: "Smart alarm app with Google Calendar and Philips Hue integration - Documentation & Support"
+author: "Christoph F."
+url: "https://f1rlefanz.github.io"
+baseurl: "/CF-Alarm-for-TimeOffice"
+
+# GitHub repository info
+repository: f1rlefanz/cf-alarmfortimeoffice
+github_username: f1rlefanz
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+theme: minima
+
+# Kramdown settings for better code highlighting
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    block:
+      line_numbers: false
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# SEO settings
+lang: de-DE
+locale: de_DE
+
+# Social media
+twitter:
+  username: # Add if available
+  card: summary
+
+# Navigation pages (shown in header)
+header_pages:
+  - troubleshooting.md
+  - developer-guide.md
+  - advanced-setup.md
+  - contributing.md
+
+# Collections
+collections:
+  guides:
+    output: true
+    permalink: /:collection/:name/
+
+# Default front matter
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+      author: "CF Alarm Team"
+  - scope:
+      path: ""
+      type: "guides"
+    values:
+      layout: default
+
+# Exclude from processing
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+  - .sass-cache/
+  - .jekyll-cache/
+  - gemfiles/
+  - node_modules/
+  - "*.tmp"
+  - "*.bak"
+
+# Include files
+include:
+  - _pages
+
+# Sass settings
+sass:
+  style: compressed
+
+# Pagination
+paginate: 10
+paginate_path: "/page:num/"
+
+# Custom variables
+version: "1.0.4"
+android_min_version: "8.0 (API 26)"
+google_play_url: "#" # Update when available
+
+# Analytics (privacy-friendly)
+google_analytics: # Add GA4 ID if needed (optional)

@@ -24,9 +24,11 @@ import kotlin.time.Duration.Companion.minutes
  * 
  * PHASE 1: Event-driven health checks (foreground/background awareness)
  * PHASE 2: Smart scheduling (pre-alarm health checks via WorkManager)
+ * 
+ * MEMORY LEAK FIX: Uses WeakReference to Context to prevent memory leaks
  */
 class HueBridgeConnectionManager private constructor(
-    private val context: Context
+    context: Context
 ) {
     companion object {
         @Volatile
@@ -52,11 +54,15 @@ class HueBridgeConnectionManager private constructor(
         private val BACKGROUND_HEALTH_CHECK_INTERVAL = 30.minutes  // Rare background checks
     }
     
+    // Use WeakReference to prevent memory leaks
+    private val contextRef = java.lang.ref.WeakReference(context.applicationContext)
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val apiClient = HueApiClient()
     
-    // PHASE 2: Smart Scheduler integration
-    private val smartScheduler by lazy { HueSmartScheduler.getInstance(context) }
+    // PHASE 2: Smart Scheduler integration  
+    private val smartScheduler by lazy { 
+        contextRef.get()?.let { HueSmartScheduler.getInstance(it) }
+    }
     
     // Thread-safe connection state
     private val currentConnectionState = AtomicReference<ConnectionState>(ConnectionState.DISCONNECTED)
@@ -70,9 +76,8 @@ class HueBridgeConnectionManager private constructor(
     private var lastForegroundCheck = 0L
     private var lastManualCheck = 0L
     
-    // Connection state flow for reactive UI updates
+    // Connection state flow for reactive UI updates (currently not exposed but kept for future use)
     private val _connectionStatus = MutableStateFlow<ConnectionState>(ConnectionState.DISCONNECTED)
-    val connectionStatus: StateFlow<ConnectionState> = _connectionStatus.asStateFlow()
     
     /**
      * Connection state with comprehensive status information
@@ -102,7 +107,7 @@ class HueBridgeConnectionManager private constructor(
         startSmartHealthMonitoring()
         
         // PHASE 2: Initialize smart scheduling system
-        smartScheduler.initializeSmartScheduling()
+        smartScheduler?.initializeSmartScheduling()
         
         Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection manager initialized")
     }
@@ -195,7 +200,7 @@ class HueBridgeConnectionManager private constructor(
                 Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Bridge connection set and validated")
                 
                 // PHASE 2: Trigger smart schedule recalculation after successful connection
-                smartScheduler.recalculateSchedule()
+                smartScheduler?.recalculateSchedule()
                 
                 Result.success(Unit)
             } else {
@@ -445,7 +450,7 @@ class HueBridgeConnectionManager private constructor(
         healthCheckScope.cancel()
         
         // PHASE 2: Cleanup smart scheduler
-        smartScheduler.cleanup()
+        smartScheduler?.cleanup()
         
         Logger.d(LogTags.HUE_BRIDGE, "🧹 BRIDGE-MANAGER: Cleanup completed")
     }

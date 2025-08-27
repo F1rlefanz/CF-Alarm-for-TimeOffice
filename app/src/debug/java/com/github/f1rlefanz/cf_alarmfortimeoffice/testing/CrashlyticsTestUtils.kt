@@ -4,7 +4,6 @@ import androidx.credentials.exceptions.NoCredentialException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.google.firebase.crashlytics.FirebaseCrashlytics
-import kotlinx.coroutines.TimeoutCancellationException
 
 /**
  * 🧪 FIREBASE CRASHLYTICS TEST UTILITIES

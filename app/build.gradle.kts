@@ -56,8 +56,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.4"
+        versionCode = 7
+        versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -175,8 +175,8 @@ android {
         // Enable HTML and XML reports
         htmlReport = true
         xmlReport = true
-        htmlOutput = file("$buildDir/reports/lint/lint-report.html")
-        xmlOutput = file("$buildDir/reports/lint/lint-report.xml")
+        htmlOutput = file("${layout.buildDirectory.get()}/reports/lint/lint-report.html")
+        xmlOutput = file("${layout.buildDirectory.get()}/reports/lint/lint-report.xml")
     }
 
     packaging {

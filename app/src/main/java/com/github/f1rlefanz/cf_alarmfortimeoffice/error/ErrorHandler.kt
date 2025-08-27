@@ -193,8 +193,8 @@ object ErrorHandler {
             state["device_manufacturer"] = Build.MANUFACTURER
             state["device_model"] = Build.MODEL
             
-        } catch (e: Exception) {
-            state["app_state_error"] = e.message ?: "unknown"
+        } catch (_: Exception) {
+            state["app_state_error"] = "Error collecting app state"
         }
         
         return state
@@ -207,7 +207,7 @@ object ErrorHandler {
         return try {
             // Simplified check - assume true for now to avoid ProcessLifecycleOwner dependency issues
             true
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
@@ -221,7 +221,7 @@ object ErrorHandler {
             val network = connectivityManager.activeNetwork ?: return false
             val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
@@ -233,7 +233,7 @@ object ErrorHandler {
         return try {
             val batteryManager = appContext.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
             batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             -1
         }
     }
@@ -243,13 +243,10 @@ object ErrorHandler {
      */
     private fun isInDozeMode(): Boolean {
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-                powerManager.isDeviceIdleMode
-            } else {
-                false
-            }
-        } catch (e: Exception) {
+            // API 26+ (minSdk) always supports device idle mode check
+            val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            powerManager.isDeviceIdleMode
+        } catch (_: Exception) {
             false
         }
     }
@@ -261,7 +258,7 @@ object ErrorHandler {
         return try {
             val result = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(appContext)
             result == ConnectionResult.SUCCESS
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
@@ -317,7 +314,10 @@ object ErrorHandler {
      * 
      * Creates memory-efficient exception handlers for coroutine scopes
      * Integrates with centralized error handling and logging
+     * 
+     * Note: Currently not used but kept for future coroutine error handling needs
      */
+    @Suppress("unused")
     fun createCoroutineExceptionHandler(
         context: String,
         onError: ((AppError) -> Unit)? = null
@@ -330,7 +330,10 @@ object ErrorHandler {
      * MEMORY-EFFICIENT error severity classification
      * 
      * Used for prioritizing error handling and logging
+     * 
+     * Note: Currently not used but kept for future error prioritization features
      */
+    @Suppress("unused")
     fun getErrorSeverity(error: AppError): ErrorSeverity = when (error) {
         is AppError.SystemError,
         is AppError.AuthenticationError,

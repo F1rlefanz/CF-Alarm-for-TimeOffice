@@ -1,556 +1,300 @@
 ---
 layout: default
-title: Troubleshooting Guide
+title: Problemlösung
 ---
 
 {% include navigation.md %}
 
-# 🆘 Troubleshooting Guide
+# 🆘 Problemlösung
 
-## 🔍 Quick Diagnosis
+## 🔍 Schnelldiagnose
 
-**Before starting**: Update to the latest app version and restart your device.
+**Bevor Sie beginnen**: Aktualisieren Sie auf die neueste App-Version und starten Sie Ihr Gerät neu.
 
-### ⚡ Most Common Issues (90% of cases)
+### ⚡ Häufigste Probleme (90% der Fälle)
 
-1. **Alarms not working** → Disable battery optimization
-2. **Calendar not syncing** → Check internet connection & permissions  
-3. **Hue lights not responding** → Verify same WiFi network
-4. **Android 14+ issues** → Enable "Alarms & Reminders" permission
-
----
-
-## 🚨 Alarm Issues
-
-### OnePlus Devices (ColorOS/OxygenOS)
-
-**Problem:** Alarms don't trigger reliably
-
-**Solution Steps:**
-1. **Settings** → **Battery** → **Battery Optimization**
-2. Search for **CF Alarm** → Select **Don't Optimize**
-3. **Settings** → **Apps** → **CF Alarm** → **Battery**
-4. Enable **Allow background activity**
-5. Enable **Allow auto-launch**
-
-> 💡 **OnePlus Tip**: Also check **Settings** → **Privacy Permissions** → **Startup Manager** → Enable CF Alarm
-
-### Samsung Devices (One UI 4.0+)
-
-**Problem:** App gets killed in background
-
-**Solution Steps:**
-1. **Settings** → **Apps** → **CF Alarm** → **Battery**
-2. Select **Unrestricted** battery usage
-3. **Settings** → **Device Care** → **Battery** → **App Power Management**
-4. Add **CF Alarm** to **Never sleeping apps**
-5. **Settings** → **Apps** → **CF Alarm** → **Permissions**
-6. Ensure **"Appear on top"** is enabled
-
-**Samsung Secure Folder:** If using work profile, configure separately in Secure Folder.
-
-### Xiaomi/MIUI Devices
-
-**Problem:** MIUI's aggressive background management
-
-**Solution Steps:**
-1. **Settings** → **Apps** → **Manage Apps** → **CF Alarm**
-2. Enable **Autostart**
-3. **Battery & Performance** → **Battery** → **App Battery Saver**
-4. Set CF Alarm to **No restrictions**
-5. **Other Permissions** → Enable **Display pop-up windows**
-
-**MIUI 13+**: Also check **Settings** → **Privacy Protection** → **Special App Access**
-
-### Huawei/Honor Devices (EMUI/MagicUI)
-
-**Problem:** Ultra-aggressive power management
-
-**Solution Steps:**
-1. **Settings** → **Battery** → **Launch**
-2. Find **CF Alarm** → **Manage manually**
-3. Enable ALL three options:
-   - **Auto-launch** ✅
-   - **Secondary launch** ✅  
-   - **Run in background** ✅
-4. **Settings** → **Apps & Notifications** → **CF Alarm** → **Battery**
-5. Select **Don't optimize**
+1. **Alarme funktionieren nicht** → Batterieoptimierung deaktivieren
+2. **Kalender synchronisiert nicht** → Internetverbindung & Berechtigungen prüfen  
+3. **Hue-Lichter reagieren nicht** → Gleiches WLAN-Netzwerk überprüfen
+4. **Android 14+ Probleme** → "Alarme & Erinnerungen" Berechtigung aktivieren
 
 ---
 
-## 📅 Calendar Sync Problems
+## 🚨 Alarm-Probleme
 
-### Authentication Issues
+### OnePlus Geräte (ColorOS/OxygenOS)
 
-#### "Sign in required" Error
-**Cause:** OAuth token expired or revoked
+**Problem:** Alarme werden nicht zuverlässig ausgelöst
 
-**Solution:**
-1. Open CF Alarm → **Settings** → **Account**
-2. Tap **Sign Out** → **Sign In Again**
-3. Grant all requested permissions
-4. Select correct work calendar
+**Lösungsschritte:**
+1. **Einstellungen** → **Akku** → **Akkuoptimierung**
+2. Nach **CF Alarm** suchen → **Nicht optimieren** wählen
+3. **Einstellungen** → **Apps** → **CF Alarm** → **Akku**
+4. **Hintergrundaktivität erlauben** aktivieren
+5. **Automatisches Starten erlauben** aktivieren
 
-#### Wrong Calendar Selected  
-**Cause:** Multiple calendars available
+> 💡 **OnePlus Tipp**: Auch **Einstellungen** → **Datenschutz-Berechtigungen** → **Startup Manager** → CF Alarm aktivieren prüfen
 
-**Solution:**
-1. **Settings** → **Calendar Selection**
-2. Choose your work calendar (not personal)
-3. Verify calendar contains work events
-4. **Sync** button to refresh
+### Samsung Geräte (One UI 4.0+)
 
-#### Google Account Restrictions
-**Cause:** Google Workspace admin restrictions
+**Problem:** App wird im Hintergrund beendet
 
-**Solution:**
-1. Contact your IT administrator
-2. Request OAuth app approval for CF Alarm
-3. Alternatively: Use personal Google account for work calendar access
+**Lösungsschritte:**
+1. **Einstellungen** → **Apps** → **CF Alarm** → **Akku**
+2. **Uneingeschränkt** für Akkuverbrauch wählen
+3. **Einstellungen** → **Gerätewartung** → **Akku** → **App-Energieverwaltung**
+4. **CF Alarm** zu **Nie ruhende Apps** hinzufügen
+5. **Einstellungen** → **Apps** → **CF Alarm** → **Berechtigungen**
+6. Sicherstellen, dass **"Über anderen Apps anzeigen"** aktiviert ist
 
-### Network & Sync Issues
+### Xiaomi/MIUI Geräte
 
-#### Calendar Events Not Loading
-**Diagnostics:**
+**Problem:** MIUI's aggressive Hintergrundverwaltung
+
+**Lösungsschritte:**
+1. **Einstellungen** → **Apps** → **Apps verwalten** → **CF Alarm**
+2. **Autostart** aktivieren
+3. **Akku & Leistung** → **Akku** → **App-Akku-Sparer**
+4. CF Alarm auf **Keine Einschränkungen** setzen
+5. **Weitere Berechtigungen** → **Pop-up-Fenster anzeigen** aktivieren
+
+### Huawei/Honor Geräte (EMUI/MagicUI)
+
+**Problem:** Ultra-aggressive Energieverwaltung
+
+**Lösungsschritte:**
+1. **Einstellungen** → **Akku** → **Start**
+2. **CF Alarm** finden → **Manuell verwalten**
+3. ALLE drei Optionen aktivieren:
+   - **Automatischer Start** ✅
+   - **Sekundärer Start** ✅  
+   - **Im Hintergrund ausführen** ✅
+4. **Einstellungen** → **Apps & Benachrichtigungen** → **CF Alarm** → **Akku**
+5. **Nicht optimieren** wählen
+
+---
+
+## 📅 Kalender-Synchronisation Probleme
+
+### Authentifizierung-Probleme
+
+#### "Anmeldung erforderlich" Fehler
+**Ursache:** OAuth-Token abgelaufen oder widerrufen
+
+**Lösung:**
+1. CF Alarm öffnen → **Einstellungen** → **Konto**
+2. **Abmelden** → **Erneut anmelden**
+3. Alle angeforderten Berechtigungen gewähren
+4. Korrekten Arbeitskalender auswählen
+
+#### Falscher Kalender ausgewählt  
+**Ursache:** Mehrere Kalender verfügbar
+
+**Lösung:**
+1. **Einstellungen** → **Kalenderauswahl**
+2. Ihren Arbeitskalender wählen (nicht privat)
+3. Überprüfen, ob Kalender Arbeitstermine enthält
+4. **Synchronisieren** zum Aktualisieren
+
+### Netzwerk & Synchronisation Probleme
+
+#### Kalenderereignisse werden nicht geladen
+**Diagnose:**
 ```
-Settings → About → Connection Test
+Einstellungen → Info → Verbindungstest
 ```
 
-**Solutions:**
-1. **WiFi Issues**: Switch to mobile data temporarily
-2. **Proxy/VPN**: Disable temporarily to test
-3. **Corporate Firewall**: Request whitelisting for `*.googleapis.com`
-4. **Clear Cache**: Settings → Apps → CF Alarm → Storage → Clear Cache
-
-#### Partial Calendar Sync
-**Cause:** Large calendar with many events
-
-**Solution:**
-1. **Settings** → **Calendar Sync** → **Date Range**  
-2. Reduce to **30 days** instead of 90 days
-3. **Manual Sync** to test
-4. Gradually increase range if working
+**Lösungen:**
+1. **WLAN-Probleme**: Vorübergehend zu mobilen Daten wechseln
+2. **Proxy/VPN**: Vorübergehend deaktivieren zum Testen
+3. **Unternehmens-Firewall**: Freigabe für `*.googleapis.com` anfordern
+4. **Cache leeren**: Einstellungen → Apps → CF Alarm → Speicher → Cache leeren
 
 ---
 
-## 💡 Philips Hue Issues
+## 💡 Philips Hue Probleme
 
-### Bridge Discovery Problems
+### Bridge-Erkennungsprobleme
 
-#### Bridge Not Found
-**Diagnostics:**
-1. Both devices on same WiFi network? ✅
-2. Bridge power LED solid blue? ✅
-3. Hue app works on same device? ✅
+#### Bridge nicht gefunden
+**Diagnose:**
+1. Beide Geräte im gleichen WLAN-Netzwerk? ✅
+2. Bridge Power-LED leuchtet kontinuierlich blau? ✅
+3. Hue-App funktioniert auf dem gleichen Gerät? ✅
 
-**Solutions:**
-1. **Network Reset**: Restart WiFi router
-2. **Bridge Reset**: Unplug bridge 30 seconds, reconnect
-3. **Manual IP**: Settings → Hue → Manual Bridge IP
-4. **UPnP Check**: Enable UPnP on router (if disabled)
+**Lösungen:**
+1. **Netzwerk-Reset**: WLAN-Router neu starten
+2. **Bridge-Reset**: Bridge 30 Sekunden trennen, wieder verbinden
+3. **Manuelle IP**: Einstellungen → Hue → Manuelle Bridge-IP
+4. **UPnP prüfen**: UPnP am Router aktivieren (falls deaktiviert)
 
-#### Link Button Timeout
-**Problem:** 30-second pairing window too short
+### Lichtsteuerungs-Probleme
 
-**Solution:**
-1. **Prepare First**: Open CF Alarm → Settings → Hue → Add Bridge
-2. **Press Link Button** on bridge (LED blinks)
-3. **Immediately** tap "Search" in app
-4. **Multiple Attempts**: Bridge allows 30 attempts in 10 minutes
+#### Lichter reagieren nicht
+**Diagnose in Hue-App:**
+1. Können Sie Lichter manuell steuern? ✅
+2. Sind Lichter im richtigen Raum/Gruppe? ✅
+3. Bridge-Firmware aktualisiert? ✅
 
-### Light Control Issues
-
-#### Lights Not Responding
-**Diagnostics in Hue App:**
-1. Can you control lights manually? ✅
-2. Are lights in correct room/group? ✅
-3. Bridge firmware updated? ✅
-
-**CF Alarm Solutions:**
-1. **Settings** → **Hue** → **Refresh Lights**
-2. **Test Lights**: Tap test button for each light
-3. **Re-pair Bridge**: Remove and add bridge again
-4. **Network Stability**: Check WiFi signal strength
-
-#### Sunrise Simulation Not Working
-**Common Causes:**
-- Lights already on (room not dark)
-- Light bulbs don't support color temperature
-- Bridge version 1 (not supported)
-
-**Solutions:**
-1. **Room Conditions**: Ensure room is dark when alarm starts
-2. **Bulb Compatibility**: Use color/white ambiance bulbs
-3. **Timing Test**: Set test alarm 5 minutes ahead
-4. **Manual Override**: Settings → Hue → Force Sunrise Always
+**CF Alarm Lösungen:**
+1. **Einstellungen** → **Hue** → **Lichter aktualisieren**
+2. **Lichter testen**: Test-Button für jedes Licht tippen
+3. **Bridge neu koppeln**: Bridge entfernen und wieder hinzufügen
 
 ---
 
-## 🔔 Notification & Permission Issues
+## 🔔 Benachrichtigungs- & Berechtigungsprobleme
 
-### Android 13/14 Specific Issues
+### Android 13/14 spezifische Probleme
 
-#### Missing "Alarms & Reminders" Permission
-**Problem:** New Android 14+ permission not granted
+#### Fehlende "Alarme & Erinnerungen" Berechtigung
+**Problem:** Neue Android 14+ Berechtigung nicht gewährt
 
-**Solution:**
-1. **Settings** → **Apps** → **CF Alarm** → **Permissions**
-2. **Special App Access** → **Alarms & Reminders**
-3. Enable **CF Alarm** ✅
-4. **Restart app** to apply changes
+**Lösung:**
+1. **Einstellungen** → **Apps** → **CF Alarm** → **Berechtigungen**
+2. **Spezieller App-Zugriff** → **Alarme & Erinnerungen**
+3. **CF Alarm** aktivieren ✅
+4. **App neu starten** um Änderungen anzuwenden
 
-#### Notification Categories Disabled
-**Problem:** Granular notification control
+### Nicht-Stören-Probleme
 
-**Solution:**
-1. **Settings** → **Apps** → **CF Alarm** → **Notifications**
-2. Enable **all notification categories**:
-   - Alarm Notifications ✅
-   - Calendar Sync ✅
-   - Hue Control ✅
-   - Error Messages ✅
+#### Alarme durch Nicht-Stören stumm
+**Problem:** Nicht-Stören blockiert Alarmtöne
 
-### Do Not Disturb Issues
-
-#### Alarms Silenced by DND
-**Problem:** DND blocking alarm sounds
-
-**Solution:**
-1. **Settings** → **Sound** → **Do Not Disturb**
-2. **Exceptions** → **Apps** → Add **CF Alarm**
-3. **OR** **Alarms** → **Always Allow** ✅
-
-#### Scheduled DND Conflicts
-**Problem:** Work DND schedule conflicts with alarm times
-
-**Solution:**
-1. **DND Schedule**: Exclude early morning hours (5-7 AM)
-2. **CF Alarm Priority**: Settings → Notifications → **Allow Override DND**
-3. **Volume Override**: Settings → Sounds → **Alarm Volume Override**
+**Lösung:**
+1. **Einstellungen** → **Ton** → **Nicht stören**
+2. **Ausnahmen** → **Apps** → **CF Alarm** hinzufügen
+3. **ODER** **Alarme** → **Immer erlauben** ✅
 
 ---
 
-## ⚡ Performance & Battery Issues
+## ⚡ Leistungs- & Akkuprobleme
 
-### High Battery Usage
+### Hoher Akkuverbrauch
 
-#### Background Activity Analysis
-**Check Usage:**
-1. **Settings** → **Battery** → **CF Alarm**
-2. Review **Background Activity** percentage
-3. **Expected**: 2-5% daily usage
-4. **Excessive**: 10%+ indicates issues
+#### Hintergrundaktivitäts-Analyse
+**Verbrauch prüfen:**
+1. **Einstellungen** → **Akku** → **CF Alarm**
+2. **Hintergrundaktivität** Prozentsatz überprüfen
+3. **Erwartet**: 2-5% täglicher Verbrauch
+4. **Übermäßig**: 10%+ deutet auf Probleme hin
 
-**Optimization:**
-1. **Reduce Sync Frequency**: Settings → Calendar → Sync Interval → 30 minutes
-2. **Disable Hue Features**: If not needed
-3. **Location Services**: Disable if not using location features
-4. **Background Refresh**: Settings → Apps → CF Alarm → Battery → Optimize
-
-### App Performance Issues
-
-#### Slow Startup / UI Lag
-**Causes & Solutions:**
-1. **Low Storage**: Ensure 500MB+ free space
-2. **Memory Pressure**: Close background apps
-3. **Cache Buildup**: Settings → Apps → CF Alarm → Storage → Clear Cache
-4. **Database Size**: Settings → Advanced → Reset Calendar Cache
-
-#### Crashes on Startup
-**Emergency Recovery:**
-1. **Force Stop**: Settings → Apps → CF Alarm → Force Stop
-2. **Clear Cache**: (Don't use Clear Data yet)
-3. **Restart Device**
-4. **Last Resort**: Clear Data (will reset all settings)
-
-**Debug Info Collection:**
-1. **Before Clearing Data**: Settings → Support → Export Logs
-2. **Send Logs**: Create GitHub issue with log attachment
+**Optimierung:**
+1. **Sync-Häufigkeit reduzieren**: Einstellungen → Kalender → Sync-Intervall → 30 Minuten
+2. **Hue-Features deaktivieren**: Falls nicht benötigt
+3. **Standortdienste**: Deaktivieren falls nicht verwendet
+4. **Hintergrund-Aktualisierung**: Einstellungen → Apps → CF Alarm → Akku → Optimieren
 
 ---
 
-## 🔧 Advanced Troubleshooting
+## 🔧 Erweiterte Problembehandlung
 
-### Developer Options Debug
+### Entwickleroptionen-Debug
 
-#### Enable Detailed Logging
-1. **Settings** → **About** → Tap **Version** 7 times
-2. **Developer Options** unlocked
-3. **CF Alarm Settings** → **Developer Options** → **Verbose Logging** ✅
-4. **Reproduce Issue**
-5. **Settings** → **Support** → **Export Debug Logs**
+#### Detaillierte Protokollierung aktivieren
+1. **Einstellungen** → **Info** → **Version** 7x tippen
+2. **Entwickleroptionen** freigeschaltet
+3. **CF Alarm Einstellungen** → **Entwickleroptionen** → **Ausführliche Protokollierung** ✅
+4. **Problem reproduzieren**
+5. **Einstellungen** → **Support** → **Debug-Logs exportieren**
 
-#### Network Traffic Analysis
-**For connection issues:**
-1. **Developer Options** → **Network Logging** ✅
-2. **Reproduce sync issue**
-3. **Export Logs** → Check for HTTP errors
-4. **Common Issues**: 403 (permissions), 429 (rate limits), 500 (server errors)
+### Factory Reset (Nukleare Option)
 
-### Factory Reset (Nuclear Option)
+**Wenn alles andere fehlschlägt:**
 
-**When all else fails:**
+⚠️ **WARNUNG**: Dies löscht ALLE App-Daten einschließlich:
+- Alle Alarmkonfigurationen
+- Google-Kontoverbindung  
+- Philips Hue Kopplungen
+- Benutzerdefinierte Einstellungen
 
-⚠️ **WARNING**: This deletes ALL app data including:
-- All alarm configurations
-- Google account connection  
-- Philips Hue pairings
-- Custom settings
-
-**Steps:**
-1. **Backup First**: Settings → Backup → Export Settings File
-2. **Settings** → **Apps** → **CF Alarm** → **Storage**
-3. **Clear Data** → **Delete** → **OK**
-4. **Restart App** → Go through setup again
-5. **Restore**: Import settings file (if compatible)
+**Schritte:**
+1. **Erst Backup**: Einstellungen → Backup → Einstellungsdatei exportieren
+2. **Einstellungen** → **Apps** → **CF Alarm** → **Speicher**
+3. **Daten löschen** → **Löschen** → **OK**
+4. **App neu starten** → Setup erneut durchführen
+5. **Wiederherstellen**: Einstellungsdatei importieren (falls kompatibel)
 
 ---
 
-## 📱 Device-Specific Known Issues
+## 📱 Gerätespezifische bekannte Probleme
 
-### Flagship Devices
+### Budget-/Mittelklasse-Probleme
 
-#### Google Pixel Issues
-- **Adaptive Battery**: Can be overly aggressive
-- **Solution**: Settings → Battery → Adaptive preferences → CF Alarm → Unrestricted
+#### Unzureichender RAM (2GB-3GB Geräte)
+- **Symptome**: App häufig beendet, langsame Leistung
+- **Lösungen**: 
+  - Alle unnötigen Apps vor dem Schlafen schließen
+  - Live-Wallpaper deaktivieren
+  - Kalender-Sync-Häufigkeit auf 60 Minuten reduzieren
 
-#### Samsung Galaxy Ultra Series
-- **Enhanced Processing**: Can delay alarm processing
-- **Solution**: Developer Options → Disable Window Animation Scale
-
-### Budget/Mid-Range Issues
-
-#### Insufficient RAM (2GB-3GB devices)
-- **Symptoms**: App killed frequently, slow performance
-- **Solutions**: 
-  - Close all unnecessary apps before sleep
-  - Disable live wallpapers
-  - Reduce calendar sync frequency to 60 minutes
-
-#### Storage Issues (32GB devices)
-- **Symptoms**: Database errors, sync failures
-- **Solutions**:
-  - Maintain 1GB+ free storage
-  - Move photos/videos to cloud storage
-  - Uninstall unused apps
+#### Speicherprobleme (32GB Geräte)
+- **Symptome**: Datenbankfehler, Sync-Fehler
+- **Lösungen**:
+  - 1GB+ freien Speicher aufrechterhalten
+  - Fotos/Videos in Cloud-Speicher verschieben
+  - Ungenutzte Apps deinstallieren
 
 ---
 
-## 🆘 Emergency Contact & Support
+## 🆘 Notfallkontakt & Support
 
-### Before Contacting Support
+### Vor Kontaktaufnahme mit Support
 
-**Gather This Information:**
-- **Device**: Brand, model, Android version
-- **App Version**: Settings → About → Version
-- **Issue Type**: Alarm, Calendar, Hue, Performance
-- **Steps Tried**: List troubleshooting steps attempted
-- **Frequency**: Always, sometimes, specific conditions
-- **Error Messages**: Exact text (screenshot preferred)
+**Diese Informationen sammeln:**
+- **Gerät**: Marke, Modell, Android-Version
+- **App-Version**: Einstellungen → Info → Version
+- **Problemtyp**: Alarm, Kalender, Hue, Leistung
+- **Versuchte Schritte**: Auflistung der durchgeführten Problembehandlungsschritte
+- **Häufigkeit**: Immer, manchmal, spezifische Bedingungen
+- **Fehlermeldungen**: Genauer Text (Screenshot bevorzugt)
 
-### Support Channels (Response Time)
+### Support-Kanäle (Antwortzeit)
 
-1. **🔥 Critical Alarm Failures** (4 hours):
-   - **Email**: emergency@cf-alarm.app
-   - **Include**: Device info, alarm time missed, impact
+1. **🔥 Kritische Alarmausfälle** (4 Stunden):
+   - **E-Mail**: emergency@cf-alarm.app
+   - **Einschließen**: Geräteinformationen, verpasste Alarmzeit, Auswirkungen
 
-2. **🐛 Bug Reports** (24-48 hours):
-   - **GitHub Issues**: [Report Bug](https://github.com/f1rlefanz/cf-alarmfortimeoffice/issues/new?template=bug_report.md)
-   - **Include**: Logs, screenshots, reproduction steps
+2. **🐛 Fehlerberichte** (24-48 Stunden):
+   - **GitHub Issues**: [Fehler melden](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues/new?template=bug_report.md)
+   - **Einschließen**: Logs, Screenshots, Reproduktionsschritte
 
-3. **❓ General Questions** (3-5 days):
-   - **GitHub Discussions**: [Ask Question](https://github.com/f1rlefanz/cf-alarmfortimeoffice/discussions)
-   - **Community Support**: Other users can help
+3. **❓ Allgemeine Fragen** (3-5 Tage):
+   - **GitHub Diskussionen**: [Frage stellen](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/discussions)
+   - **Community-Support**: Andere Benutzer können helfen
 
-4. **💼 Enterprise Support** (4 hours business days):
-   - **Email**: enterprise@cf-alarm.app
-   - **Available**: For organizations with 10+ devices
+### Log-Export Anweisungen
 
-### Log Export Instructions
-
-**For Technical Issues:**
-1. **Settings** → **Support** → **Prepare Support Package**
-2. **Include**:
-   - System information ✅
-   - Recent logs (24 hours) ✅
-   - Network diagnostics ✅
-   - Permission status ✅
-3. **Export** → Share via email or GitHub issue
-4. **Privacy**: Logs contain NO personal calendar data
+**Für technische Probleme:**
+1. **Einstellungen** → **Support** → **Support-Paket vorbereiten**
+2. **Einschließen**:
+   - Systeminformationen ✅
+   - Aktuelle Logs (24 Stunden) ✅
+   - Netzwerkdiagnose ✅
+   - Berechtigungsstatus ✅
+3. **Exportieren** → Per E-Mail oder GitHub-Issue teilen
+4. **Datenschutz**: Logs enthalten KEINE persönlichen Kalenderdaten
 
 ---
 
-## ✅ Success Rate by Issue Type
+## ✅ Erfolgsrate nach Problemtyp
 
-Based on community feedback:
+Basierend auf Community-Feedback:
 
-| Issue Type | Self-Resolution Rate | Avg. Resolution Time |
-|------------|---------------------|----------------------|
-| Battery Optimization | **95%** | 5-10 minutes |
-| Calendar Permissions | **90%** | 2-5 minutes |
-| Hue Bridge Setup | **85%** | 10-15 minutes |
-| Android 14+ Permissions | **90%** | 3-7 minutes |
-| Performance Issues | **75%** | 15-30 minutes |
-| Device-Specific Problems | **80%** | 20-45 minutes |
+| Problemtyp | Selbstlösungsrate | Durchschnittliche Lösungszeit |
+|------------|-------------------|--------------------------------|
+| Batterieoptimierung | **95%** | 5-10 Minuten |
+| Kalenderberechtigungen | **90%** | 2-5 Minuten |
+| Hue Bridge Setup | **85%** | 10-15 Minuten |
+| Android 14+ Berechtigungen | **90%** | 3-7 Minuten |
+| Leistungsprobleme | **75%** | 15-30 Minuten |
+| Gerätespezifische Probleme | **80%** | 20-45 Minuten |
 
-**Most issues are resolved within 15 minutes following this guide!** 🎯
-
----
-
-📚 **Related Documentation:**
-- [🏠 Privacy Policy](/) 
-- [⚙️ Advanced Setup Guide](advanced-setup)
-- [💻 Developer Documentation](developer-guide)
-
-### 📅 Calendar Sync Issues
-
-#### Google Calendar Not Loading
-**Problem:** Calendar events don't appear
-**Solution:**
-1. Check **internet connection**
-2. Go to **Settings** → **Account** → **Sign Out** → **Sign In** again
-3. Verify **calendar permissions** in Android settings
-4. Clear app cache: **Settings** → **Apps** → **CF Alarm** → **Storage** → **Clear Cache**
-
-#### Wrong Calendar Selected
-**Problem:** Events from wrong calendar showing
-**Solution:**
-1. Open app → **Settings** → **Calendar Selection**
-2. Choose the correct work calendar
-3. **Sync** will update automatically
-
-#### Authentication Expired
-**Problem:** "Authentication required" error
-**Solution:**
-1. **Settings** → **Account** → **Re-authenticate**
-2. Grant all required permissions
-3. If persistent: revoke app permissions in Google Account settings and re-add
-
-### 💡 Philips Hue Problems
-
-#### Bridge Not Found
-**Problem:** Cannot discover Hue Bridge
-**Solution:**
-1. Ensure phone and bridge are on **same WiFi network**
-2. Check bridge **power connection**
-3. Press bridge **Link Button** and retry within 30 seconds
-4. Restart WiFi router if necessary
-
-#### Lights Not Responding
-**Problem:** Hue lights don't react to alarms
-**Solution:**
-1. Test lights in **Philips Hue app** first
-2. Check **light selection** in CF Alarm settings
-3. Verify bridge **firmware is updated**
-4. Re-pair bridge in CF Alarm settings
-
-#### Hue Bridge v1 Issues
-**Problem:** Old bridge not supported
-**Solution:**
-- **Hue Bridge v1 is not supported** (discontinued 2020)
-- **Upgrade to Bridge v2** or newer required
-- Check bridge model on bottom label
-
-### 🔔 Notification Issues
-
-#### Android 13/14 Permission Issues
-**Problem:** Notifications not showing
-**Solution:**
-1. **Settings** → **Apps** → **CF Alarm** → **Permissions**
-2. Enable **Notifications**
-3. For Android 14: Enable **Alarms & Reminders** permission
-4. Check **Do Not Disturb** settings
-
-#### Notification Sound Not Playing
-**Problem:** Silent notifications
-**Solution:**
-1. Check **device volume** (not just media volume)
-2. **Settings** → **Apps** → **CF Alarm** → **Notifications**
-3. Verify **notification category** settings
-4. Check **Do Not Disturb** exceptions
-
-### ⚡ Performance Issues
-
-#### App Crashes on Startup
-**Problem:** App closes immediately
-**Solution:**
-1. **Restart device**
-2. **Clear app cache**: Settings → Apps → CF Alarm → Storage → Clear Cache
-3. **Update app** to latest version
-4. If persistent: **Clear app data** (will reset settings)
-
-#### High Battery Usage
-**Problem:** App consuming too much battery
-**Solution:**
-1. Check **background refresh** frequency in settings
-2. **Reduce calendar sync** interval
-3. **Disable Hue features** if not needed
-4. Review **alarm frequency** - too many alarms increase usage
-
-#### Slow Performance
-**Problem:** App responds slowly
-**Solution:**
-1. **Restart app**
-2. **Clear cache** as above
-3. Check available **device storage** (need 100MB+ free)
-4. **Reduce calendar history** in settings
-
-### 🔧 Advanced Troubleshooting
-
-#### Enable Debug Logging
-1. **Settings** → **About** → Tap version 7 times
-2. **Developer Options** → **Enable Detailed Logging**
-3. Reproduce issue
-4. **Settings** → **Support** → **Export Logs**
-
-#### Network Connectivity Issues
-1. **WiFi**: Ensure stable connection
-2. **Mobile Data**: Check data permissions for app
-3. **Proxy/VPN**: May interfere with Google API calls
-4. **Firewall**: Corporate networks may block OAuth
-
-#### Factory Reset (Last Resort)
-**Warning: This will delete all app data**
-1. **Settings** → **Apps** → **CF Alarm** → **Storage**
-2. **Clear Data** → **Delete**
-3. **Restart app** and reconfigure
-
-### 📱 Device-Specific Issues
-
-#### Huawei/Honor Devices
-- **Battery optimization** particularly aggressive
-- **Settings** → **Battery** → **Launch** → **CF Alarm** → **Manage manually**
-- Enable all three options: **Auto-launch**, **Secondary launch**, **Run in background**
-
-#### Oppo/Realme Devices
-- **Settings** → **Battery** → **Battery Optimization** → **CF Alarm** → **Don't optimize**
-- **Settings** → **Privacy Permissions** → **Startup Manager** → Enable **CF Alarm**
-
-#### Nokia Devices
-- Similar to stock Android, but check **Adaptive Battery** settings
-- **Settings** → **Battery** → **Adaptive preferences** → **CF Alarm** → **Unrestricted**
-
-### 🆘 Still Need Help?
-
-#### Before Contacting Support
-1. **Update** to latest app version
-2. **Try** basic troubleshooting above
-3. **Note** your device model and Android version
-4. **Export logs** if available
-
-#### Contact Options
-- **GitHub Issues**: [Report Bug](https://github.com/f1rlefanz/cf-alarmfortimeoffice/issues)
-- **Email Support**: support@cf-alarm.app
-- **Community**: [GitHub Discussions](https://github.com/f1rlefanz/cf-alarmfortimeoffice/discussions)
-
-#### What to Include
-- **Device model** and **Android version**
-- **App version**
-- **Steps to reproduce** the issue
-- **Screenshots** if relevant
-- **Error messages** (exact text)
-- **Log files** (if available)
+**Die meisten Probleme werden innerhalb von 15 Minuten mit diesem Leitfaden gelöst!** 🎯
 
 ---
 
-**Most issues can be resolved with proper Android permissions and battery optimization settings!** 🔋
+📚 **Verwandte Dokumentation:**
+- [🏠 Startseite](/) 
+- [⚙️ Erweiterte Setup-Anleitung](advanced-setup)
+- [💻 Entwicklerdokumentation](developer-guide)

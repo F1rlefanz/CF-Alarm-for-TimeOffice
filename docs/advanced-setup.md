@@ -1,52 +1,50 @@
 ---
 layout: default
-title: Advanced Setup Guide
+title: Erweiterte Setup-Anleitung
 ---
 
 {% include navigation.md %}
 
-# ⚙️ Advanced Setup Guide
+# ⚙️ Erweiterte Setup-Anleitung
 
-## Enterprise & Power User Configuration
+## Unternehmens- & Power-User-Konfiguration
 
-This guide covers advanced configuration options for power users, enterprise deployments, and complex setups.
+Diese Anleitung behandelt erweiterte Konfigurationsoptionen für Power-User, Unternehmensbereitstellungen und komplexe Setups.
 
-## 🔐 Security Hardening
+## 🔐 Sicherheitshärtung
 
-### Enhanced Authentication
+### Erweiterte Authentifizierung
 
-#### Custom OAuth Client Configuration
+#### Benutzerdefinierte OAuth-Client-Konfiguration
 ```properties
-# keystore.properties - Advanced OAuth setup
-googleWebClientId=YOUR_CUSTOM_CLIENT_ID
+# keystore.properties - Erweiterte OAuth-Einrichtung
+googleWebClientId=IHRE_BENUTZERDEFINIERTE_CLIENT_ID
 restrictToOrganization=true
-allowedDomains=yourcompany.com,partner.com
+allowedDomains=ihrunternehmen.com,partner.com
 ```
-
-#### Multi-Account Support
 
 #### Google Workspace Integration
 1. **Admin Console Setup**:
-   - Configure OAuth consent screen for internal use
-   - Set up domain-wide delegation (if needed)
-   - Define user access policies
+   - OAuth-Zustimmungsbildschirm für interne Nutzung konfigurieren
+   - Domain-weite Delegation einrichten (falls benötigt)
+   - Benutzerzugriffsrichtlinien definieren
 
-2. **App Configuration**:
+2. **App-Konfiguration**:
 ```kotlin
-// Support multiple Google accounts
+// Unterstützung für mehrere Google-Konten
 class MultiAccountManager {
     fun addAccount(accountType: AccountType) {
-        // Handle multiple calendar sources
-        // Separate authentication contexts
+        // Mehrere Kalenderquellen verwalten
+        // Separate Authentifizierungskontexte
     }
 }
 ```
 
-## 🏢 Enterprise Deployment
+## 🏢 Unternehmensbereitstellung
 
-### Mass Configuration
+### Massenkonfiguration
 
-#### Configuration Profiles
+#### Konfigurationsprofile
 ```xml
 <!-- res/xml/enterprise_config.xml -->
 <enterprise-config>
@@ -64,21 +62,21 @@ class MultiAccountManager {
 </enterprise-config>
 ```
 
-## 🏠 Advanced Smart Home Integration
+## 🏠 Erweiterte Smart Home Integration
 
-### Philips Hue Advanced Setup
+### Philips Hue Erweiterte Einrichtung
 
-#### Scene Programming
+#### Szenenprogrammierung
 ```json
 {
   "wake_scenes": {
-    "gentle_wake": {
+    "sanftes_wecken": {
       "duration": 30,
       "start_brightness": 1,
       "end_brightness": 80,
       "color_temperature": "warm_to_cool"
     },
-    "emergency_wake": {
+    "notfall_wecken": {
       "immediate": true,
       "brightness": 100,
       "color": "red_alert"
@@ -91,7 +89,7 @@ class MultiAccountManager {
 ```yaml
 # configuration.yaml
 automation:
-  - alias: "CF Alarm Trigger"
+  - alias: "CF Alarm Auslöser"
     trigger:
       - platform: webhook
         webhook_id: cf_alarm_webhook
@@ -101,78 +99,78 @@ automation:
           entity_id: light.bedroom_lights
 ```
 
-## 🔧 Performance Optimization
+## 🔧 Leistungsoptimierung
 
-### Background Processing
+### Hintergrundverarbeitung
 
-#### Work Manager Configuration
+#### Work Manager Konfiguration
 ```kotlin
-// Advanced WorkManager setup
+// Erweiterte WorkManager-Einrichtung
 class AlarmWorkManagerConfig {
     fun setupOptimizedWorkers() {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .setRequiresBatteryNotLow(true)
-            .setRequiresDeviceIdle(false) // Critical for alarms
+            .setRequiresDeviceIdle(false) // Kritisch für Alarme
             .build()
     }
 }
 ```
 
-## 📱 Multi-Device Scenarios
+## 📱 Multi-Device-Szenarien
 
-### Shared Device Configuration
+### Geteilte Gerätekonfiguration
 
-#### Family/Team Setup
+#### Familie/Team-Setup
 ```kotlin
 class SharedDeviceManager {
     fun setupMultiUserProfiles() {
-        // Separate alarm profiles per user
-        // Individual calendar connections
-        // Privacy isolation
+        // Separate Alarmprofile pro Benutzer
+        // Individuelle Kalenderverbindungen
+        // Datenschutzisolierung
     }
 }
 ```
 
-## 🧪 Developer & Testing Features
+## 🧪 Entwickler- & Test-Features
 
-### Debug Configuration
+### Debug-Konfiguration
 
-#### Advanced Logging
+#### Erweiterte Protokollierung
 ```kotlin
-// Production-safe debug features
+// Produktionssichere Debug-Features
 class AdvancedDebugger {
     fun enableDetailedLogging() {
         if (BuildConfig.DEBUG || isDebugModeEnabled()) {
-            // Enhanced logging capabilities
+            // Erweiterte Protokollierungsfähigkeiten
         }
     }
 }
 ```
 
-## 🌐 Internationalization & Localization
+## 🌐 Internationalisierung & Lokalisierung
 
-### Advanced Localization
+### Erweiterte Lokalisierung
 
-#### RTL Language Support
+#### RTL-Sprachen-Unterstützung
 ```xml
-<!-- res/values-ar/strings.xml (Arabic example) -->
+<!-- res/values-ar/strings.xml (Arabisch-Beispiel) -->
 <resources>
     <string name="app_name">منبه CF لمكتب الوقت</string>
     <string name="calendar_sync">مزامنة التقويم</string>
 </resources>
 ```
 
-## 🔒 Compliance & Privacy
+## 🔒 Compliance & Datenschutz
 
-### GDPR Compliance (EU)
+### DSGVO-Konformität (EU)
 
-#### Data Processing Documentation
+#### Datenverarbeitungs-Dokumentation
 ```kotlin
 class GDPRComplianceManager {
     fun documentDataProcessing() {
         val processingRecord = DataProcessingRecord(
-            purpose = "Calendar-based alarm scheduling",
+            purpose = "Kalenderbasierte Alarmplanung",
             legalBasis = LegalBasis.CONSENT,
             retention = RetentionPolicy.USER_CONTROLLED
         )
@@ -180,30 +178,30 @@ class GDPRComplianceManager {
 }
 ```
 
-## 🚀 Performance Monitoring
+## 🚀 Leistungsüberwachung
 
-### Advanced Metrics
+### Erweiterte Metriken
 
-#### Custom Performance Monitoring
+#### Benutzerdefinierte Leistungsüberwachung
 ```kotlin
 class PerformanceMonitor {
     fun trackAlarmAccuracy() {
         metrics.timer("alarm.accuracy") {
-            // Measure time between scheduled and actual alarm
+            // Zeit zwischen geplanten und tatsächlichen Alarm messen
         }
     }
 }
 ```
 
-## 📋 Configuration Templates
+## 📋 Konfigurationsvorlagen
 
-### Enterprise Template
+### Unternehmensvorlage
 ```json
 {
   "enterprise_config": {
     "authentication": {
       "require_work_account": true,
-      "allowed_domains": ["company.com"],
+      "allowed_domains": ["unternehmen.com"],
       "session_timeout": 480
     },
     "features": {
@@ -215,11 +213,11 @@ class PerformanceMonitor {
 }
 ```
 
-## 🆘 Expert Support
+## 🆘 Expertenunterstützung
 
-### Advanced Diagnostics
+### Erweiterte Diagnose
 
-#### System Information Export
+#### Systeminformations-Export
 ```kotlin
 class SystemDiagnostics {
     fun generateDiagnosticReport(): DiagnosticReport {
@@ -233,15 +231,128 @@ class SystemDiagnostics {
 }
 ```
 
-## 📞 Expert Contact
+## 🔧 Erweiterte Alarmkonfiguration
 
-For advanced configuration assistance:
+### Schichtspezifische Einstellungen
 
-- **Enterprise Support**: enterprise@cf-alarm.app
-- **Developer Consultation**: dev@cf-alarm.app
-- **Security Issues**: security@cf-alarm.app
-- **Custom Integration**: integration@cf-alarm.app
+#### Individuelle Schichtprofile
+```kotlin
+class ShiftProfileManager {
+    fun createShiftProfile(shiftType: ShiftType): ShiftProfile {
+        return when(shiftType) {
+            ShiftType.EARLY -> ShiftProfile(
+                wakeUpOffset = Duration.ofMinutes(90),
+                hueScene = "gentle_sunrise",
+                snoozeInterval = Duration.ofMinutes(5)
+            )
+            ShiftType.LATE -> ShiftProfile(
+                wakeUpOffset = Duration.ofMinutes(60),
+                hueScene = "standard_wake",
+                snoozeInterval = Duration.ofMinutes(10)
+            )
+            ShiftType.NIGHT -> ShiftProfile(
+                wakeUpOffset = Duration.ofMinutes(120),
+                hueScene = "red_alert",
+                snoozeInterval = Duration.ofMinutes(3)
+            )
+        }
+    }
+}
+```
+
+### Erweiterte Kalenderintegration
+
+#### Mehrere Kalenderquellen
+```kotlin
+class MultiCalendarManager {
+    fun syncMultipleCalendars() {
+        val calendars = listOf(
+            "primary", // Hauptkalender
+            "work@company.com", // Arbeitskalender
+            "team@company.com" // Teamkalender
+        )
+        
+        calendars.forEach { calendarId ->
+            syncCalendar(calendarId)
+        }
+    }
+}
+```
+
+## 📱 Geräteoptimierung
+
+### Herstellerspezifische Optimierungen
+
+#### Samsung One UI Optimierungen
+```kotlin
+class SamsungOptimizer {
+    fun optimizeForOneUI() {
+        // Bixby-Routinen Integration
+        // Edge-Panel Integration
+        // Samsung Health Integration
+    }
+}
+```
+
+#### MIUI Optimierungen
+```kotlin
+class MIUIOptimizer {
+    fun optimizeForMIUI() {
+        // Autostart-Manager
+        // Battery Saver Ausnahmen
+        // MIUI-spezifische Berechtigungen
+    }
+}
+```
+
+## 🔍 Erweiterte Debugging-Tools
+
+### Produktions-Debug
+
+#### Remote-Debugging
+```kotlin
+class RemoteDebugManager {
+    fun enableRemoteDebugging() {
+        if (isAuthorizedDeveloper()) {
+            // Sichere Remote-Debug-Verbindung
+            // Verschlüsselte Log-Übertragung
+        }
+    }
+}
+```
+
+### Crash-Analyse
+
+#### Detaillierte Crash-Berichte
+```kotlin
+class CrashAnalyzer {
+    fun analyzeCrash(crashReport: CrashReport) {
+        val analysis = CrashAnalysis(
+            stackTrace = crashReport.stackTrace,
+            deviceState = getDeviceStateAtCrash(),
+            userActions = getLastUserActions(),
+            systemResources = getSystemResourcesAtCrash()
+        )
+    }
+}
+```
+
+## 📞 Experten-Kontakt
+
+Für erweiterte Konfigurationshilfe:
+
+- **Unternehmensunterstützung**: enterprise@cf-alarm.app
+- **Entwicklerberatung**: dev@cf-alarm.app
+- **Sicherheitsfragen**: security@cf-alarm.app
+- **Benutzerdefinierte Integration**: integration@cf-alarm.app
+
+### Kostenpflichtige Unterstützung
+
+#### Enterprise Support Pakete
+- **Bronze**: E-Mail-Support, 48h Antwortzeit
+- **Silber**: Telefon-Support, 24h Antwortzeit
+- **Gold**: Direkter Entwicklerzugang, 4h Antwortzeit
 
 ---
 
-**Advanced setup complete!** 🎯 For specific configurations, consult our [developer community](https://github.com/f1rlefanz/cf-alarmfortimeoffice/discussions).
+**Erweiterte Einrichtung abgeschlossen!** 🎯 Für spezifische Konfigurationen konsultieren Sie unsere [Entwickler-Community](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/discussions).

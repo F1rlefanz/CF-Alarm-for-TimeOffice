@@ -66,13 +66,6 @@
             margin-bottom: 2rem;
         }
 
-        .version-badge {
-            background: rgba(255,255,255,0.2);
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-        }
-
         /* Navigation */
         .nav {
             background: var(--card);
@@ -129,62 +122,35 @@
             font-size: 1.2rem;
             color: var(--text-light);
             max-width: 800px;
-            margin: 0 auto;
+            margin: 0 auto 2rem;
         }
 
-        /* Cards */
-        .cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-bottom: 4rem;
-        }
-
-        .card {
+        .readme-content {
             background: var(--card);
             border-radius: var(--radius);
             padding: 2rem;
+            margin: 2rem 0;
             box-shadow: var(--shadow);
-            transition: all 0.3s ease;
+            text-align: left;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-        }
-
-        .card-icon {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            color: white;
-            margin-bottom: 1.5rem;
-        }
-
-        .card h3 {
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .card p {
-            color: var(--text-light);
-            margin-bottom: 1.5rem;
-        }
-
-        .card a {
+        .readme-content h3 {
             color: var(--accent);
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s ease;
+            margin-bottom: 1rem;
+            font-size: 1.4rem;
         }
 
-        .card a:hover {
-            color: var(--primary);
+        .readme-content ul {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+
+        .readme-content li {
+            margin-bottom: 0.5rem;
+            color: var(--text-light);
         }
 
         /* Features */
@@ -226,58 +192,6 @@
         .feature p {
             color: var(--text-light);
             font-size: 0.9rem;
-        }
-
-        /* Quick Links */
-        .quick-links {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            border-radius: var(--radius);
-            padding: 3rem;
-            text-align: center;
-            color: white;
-            margin: 4rem 0;
-        }
-
-        .quick-links h2 {
-            font-size: 2rem;
-            margin-bottom: 2rem;
-        }
-
-        .quick-links-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-top: 2rem;
-        }
-
-        .quick-link {
-            background: rgba(255,255,255,0.1);
-            border: 2px solid rgba(255,255,255,0.2);
-            border-radius: var(--radius);
-            padding: 1.5rem;
-            text-decoration: none;
-            color: white;
-            transition: all 0.3s ease;
-        }
-
-        .quick-link:hover {
-            background: rgba(255,255,255,0.2);
-            transform: translateY(-3px);
-        }
-
-        .quick-link-icon {
-            font-size: 2rem;
-            margin-bottom: 1rem;
-        }
-
-        .quick-link h3 {
-            font-size: 1.1rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .quick-link p {
-            font-size: 0.9rem;
-            opacity: 0.8;
         }
 
         /* Footer */
@@ -323,8 +237,7 @@
             .container { padding: 2rem 1rem; }
             .intro h2 { font-size: 2rem; }
             .nav-content { flex-direction: column; align-items: center; gap: 1rem; }
-            .cards { grid-template-columns: 1fr; }
-            .features, .quick-links { padding: 2rem; }
+            .features { padding: 2rem; }
             .footer-links { flex-direction: column; gap: 1rem; }
         }
     </style>
@@ -336,7 +249,6 @@
             <div class="app-logo">⏰</div>
             <h1>CF Alarm for Time Office</h1>
             <p class="subtitle">Smart Wecker-App mit Google Calendar & Philips Hue Integration</p>
-            <div class="version-badge">Version 1.0.4 • Android 8.0+</div>
         </div>
     </header>
 
@@ -349,6 +261,7 @@
             <a href="advanced-setup">⚙️ Konfiguration</a>
             <a href="contributing">🤝 Mitwirken</a>
             <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice">📱 GitHub</a>
+            <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice&hl=en-US&ah=ho_wZZXFGSy0IF7c4AoUAtPr0cw">📲 Play Store</a>
         </div>
     </nav>
 
@@ -359,34 +272,40 @@
             <p>Willkommen zur offiziellen Dokumentation von CF Alarm for Time Office. Hier finden Sie alles für die optimale Nutzung der App.</p>
         </section>
 
-        <section class="cards">
-            <div class="card">
-                <div class="card-icon">🔒</div>
-                <h3>Datenschutzerklärung</h3>
-                <p>DSGVO-konforme Datenschutzerklärung für Google Play Store und Nutzer-Transparenz.</p>
-                <a href="privacy">Datenschutz lesen →</a>
-            </div>
+        <!-- App Description from README -->
+        <section class="readme-content">
+            <h3>🚀 Features</h3>
+            
+            <h4>📅 Google Calendar Integration</h4>
+            <ul>
+                <li><strong>Automatische Alarm-Erstellung</strong> basierend auf Kalenderterminen</li>
+                <li><strong>OAuth 2.0 Sicherheit</strong> für sichere Google-Anmeldung</li>
+                <li><strong>Schichtmuster-Erkennung</strong> für Früh-, Spät- und Nachtschichten</li>
+                <li><strong>Intelligente Weckzeit-Berechnung</strong> mit konfigurierbaren Vorlaufzeiten</li>
+            </ul>
 
-            <div class="card">
-                <div class="card-icon">🆘</div>
-                <h3>Problembehebung</h3>
-                <p>Umfassender Guide für häufige Probleme mit gerätespezifischen Lösungen.</p>
-                <a href="troubleshooting">Probleme lösen →</a>
-            </div>
+            <h4>💡 Philips Hue Integration</h4>
+            <ul>
+                <li><strong>Sunrise-Simulation</strong> für natürliches Aufwachen</li>
+                <li><strong>Intelligente Lichtsteuerung</strong> mit gradueller Helligkeitsanpassung</li>
+                <li><strong>Farb-Anpassungen</strong> je nach Schichtart</li>
+                <li><strong>Bridge-Auto-Discovery</strong> für einfache Einrichtung</li>
+            </ul>
 
-            <div class="card">
-                <div class="card-icon">💻</div>
-                <h3>Entwickler-Guide</h3>
-                <p>Technische Dokumentation mit Architektur, APIs und Contributing Guidelines.</p>
-                <a href="developer-guide">Entwickler-Guide →</a>
-            </div>
+            <h4>🔋 Performance & Sicherheit</h4>
+            <ul>
+                <li><strong>Batterieoptimiert</strong> mit intelligentem Background-Management</li>
+                <li><strong>AES-256-GCM Verschlüsselung</strong> für sensitive Daten</li>
+                <li><strong>Lokale Datenspeicherung</strong> - keine Cloud-Abhängigkeit</li>
+                <li><strong>Android 14+ Kompatibilität</strong> mit modernsten Features</li>
+            </ul>
 
-            <div class="card">
-                <div class="card-icon">⚙️</div>
-                <h3>Erweiterte Konfiguration</h3>
-                <p>Enterprise-Features und Power-User-Einstellungen für professionelle Nutzer.</p>
-                <a href="advanced-setup">Konfiguration →</a>
-            </div>
+            <h4>📱 Installation</h4>
+            <ul>
+                <li><strong>Android 8.0</strong> (API Level 26) oder höher</li>
+                <li><strong>Google Account</strong> für Calendar-Integration</li>
+                <li><strong>Philips Hue Bridge</strong> (optional) für Lichtsteuerung</li>
+            </ul>
         </section>
 
         <section class="features">
@@ -424,45 +343,18 @@
                 </div>
             </div>
         </section>
-
-        <section class="quick-links">
-            <h2>Schnellzugriff</h2>
-            <p>Direkte Links zu den wichtigsten Ressourcen</p>
-            <div class="quick-links-grid">
-                <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice/releases" class="quick-link">
-                    <div class="quick-link-icon">📱</div>
-                    <h3>APK Download</h3>
-                    <p>Neueste Version herunterladen</p>
-                </a>
-                <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice/issues" class="quick-link">
-                    <div class="quick-link-icon">🐛</div>
-                    <h3>Bug Report</h3>
-                    <p>Probleme melden</p>
-                </a>
-                <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice/discussions" class="quick-link">
-                    <div class="quick-link-icon">💬</div>
-                    <h3>Community</h3>
-                    <p>Fragen & Diskussionen</p>
-                </a>
-                <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice" class="quick-link">
-                    <div class="quick-link-icon">⭐</div>
-                    <h3>GitHub Projekt</h3>
-                    <p>Source Code & Entwicklung</p>
-                </a>
-            </div>
-        </section>
     </main>
 
     <footer class="footer">
         <div class="footer-content">
             <div class="footer-links">
                 <a href="privacy">Datenschutz</a>
-                <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice/blob/main/LICENSE">MIT License</a>
-                <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice/blob/main/CHANGELOG.md">Changelog</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE">MIT License</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/CHANGELOG.md">Changelog</a>
                 <a href="mailto:support@cf-alarm.app">Kontakt</a>
             </div>
             <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
-            <p>Open Source Project • <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice">View on GitHub</a></p>
+            <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice">View on GitHub</a></p>
         </div>
     </footer>
 </body>

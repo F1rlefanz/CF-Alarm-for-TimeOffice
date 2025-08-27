@@ -1,180 +1,273 @@
 ---
 layout: default
-title: Contributing Guide
+title: Mitwirken-Leitfaden
 ---
 
 {% include navigation.md %}
 
-# 🤝 Contributing to CF Alarm for Time Office
+# 🤝 Mitwirken an CF Alarm for Time Office
 
-## Welcome Contributors! 🎉
+## Willkommen Mitwirkende! 🎉
 
-We're excited that you want to contribute to CF Alarm for Time Office! This document provides guidelines and information for contributors.
+Wir freuen uns, dass Sie zu CF Alarm for Time Office beitragen möchten! Dieses Dokument bietet Richtlinien und Informationen für Mitwirkende.
 
-## Quick Start
+## Schnellstart
 
-1. **Fork** the repository
-2. **Clone** your fork locally
-3. **Create** a feature branch
-4. **Make** your changes
-5. **Test** thoroughly
-6. **Submit** a pull request
+1. **Fork** des Repositorys erstellen
+2. **Klonen** Sie Ihren Fork lokal
+3. **Erstellen** Sie einen Feature-Branch
+4. **Machen** Sie Ihre Änderungen
+5. **Testen** Sie gründlich
+6. **Senden** Sie einen Pull-Request
 
-## Development Setup
+## Entwicklungssetup
 
-### Prerequisites
+### Voraussetzungen
 
-- **Android Studio** 2025.1.1 (Narwhal) or newer
+- **Android Studio** 2025.1.1 (Narwhal) oder neuer
 - **JDK** 17 (LTS)
 - **Android SDK** API 36
 - **Kotlin** 2.1.0+
 
-### Getting Started
+### Erste Schritte
 
 ```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/cf-alarmfortimeoffice.git
-cd cf-alarmfortimeoffice
+# Ihren Fork klonen
+git clone https://github.com/IHR_BENUTZERNAME/CF-Alarm-for-TimeOffice.git
+cd CF-Alarm-for-TimeOffice
 
-# Create keystore.properties (see Security Setup)
+# keystore.properties erstellen (siehe Sicherheitssetup)
 touch keystore.properties
 
-# Open in Android Studio
-# Build → Sync Project with Gradle Files
+# In Android Studio öffnen
+# Build → Projekt mit Gradle-Dateien synchronisieren
 ```
 
-## 🔐 Security Setup
+## 🔐 Sicherheitssetup
 
-Create `keystore.properties` in project root:
+`keystore.properties` im Projektstamm erstellen:
 
 ```properties
 storeFile=./debug.keystore
 storePassword=android
 keyAlias=androiddebugkey  
 keyPassword=android
-googleWebClientId=YOUR_GOOGLE_CLIENT_ID
+googleWebClientId=IHRE_GOOGLE_CLIENT_ID
 ```
 
-## Code Guidelines
+## Code-Richtlinien
 
-### Architecture
-- Follow **MVVM + Clean Architecture**
-- Use **Repository Pattern** for data access
-- Implement **UseCase classes** for business logic
-- Apply **Dependency Injection** with Hilt
+### Architektur
+- **MVVM + Clean Architecture** befolgen
+- **Repository Pattern** für Datenzugriff verwenden
+- **UseCase-Klassen** für Business-Logik implementieren
+- **Dependency Injection** mit Hilt anwenden
 
-### Code Style
-- Follow **Kotlin Coding Conventions**
-- Use **meaningful variable names**
-- Write **comprehensive comments**
-- Keep functions **small and focused**
+### Code-Stil
+- **Kotlin Coding Conventions** befolgen
+- **Aussagekräftige Variablennamen** verwenden
+- **Umfassende Kommentare** schreiben
+- Funktionen **klein und fokussiert** halten
 
-### Testing
-- Write **unit tests** for business logic
-- Add **integration tests** for repositories
-- Test **edge cases** and error scenarios
-- Maintain **test coverage** above 80%
+### Testen
+- **Unit-Tests** für Business-Logik schreiben
+- **Integrationstests** für Repositories hinzufügen
+- **Edge-Cases** und Fehlerszenarien testen
+- **Testabdeckung** über 80% halten
 
-## What We're Looking For
+## Wonach wir suchen
 
-### 🐛 Bug Reports
-- Clear **reproduction steps**
-- **Device information** (Android version, model)
-- **Screenshots** if applicable
-- **Logs** when relevant
+### 🐛 Fehlerberichte
+- Klare **Reproduktionsschritte**
+- **Geräteinformationen** (Android-Version, Modell)
+- **Screenshots** falls zutreffend
+- **Logs** wenn relevant
 
-### ✨ Feature Requests
-- **Detailed description** of the feature
-- **Use case** explanation
-- **Mockups** or wireframes (if UI related)
-- **Implementation suggestions**
+### ✨ Feature-Anfragen
+- **Detaillierte Beschreibung** des Features
+- **Anwendungsfall** Erklärung
+- **Mockups** oder Wireframes (bei UI-bezogenen Features)
+- **Implementierungsvorschläge**
 
-### 🔧 Code Contributions
-- **Clean, well-tested code**
-- **Documentation updates**
-- **Security best practices**
-- **Performance optimizations**
+### 🔧 Code-Beiträge
+- **Sauberer, gut getesteter Code**
+- **Dokumentations-Updates**
+- **Sicherheits-Best-Practices**
+- **Leistungsoptimierungen**
 
-## Development Areas
+## Entwicklungsbereiche
 
-### High Priority
+### Hohe Priorität
 - **Wear OS Integration**
-- **Music Service Integration**
-- **Battery Optimization**
-- **Accessibility Improvements**
+- **Musik-Service Integration**
+- **Akkuoptimierung**
+- **Barrierefreiheits-Verbesserungen**
 
-### Medium Priority
-- **UI/UX Enhancements**
-- **Additional Smart Home Platforms**
-- **Advanced Notification Features**
-- **Widget Development**
+### Mittlere Priorität
+- **UI/UX-Verbesserungen**
+- **Weitere Smart Home Plattformen**
+- **Erweiterte Benachrichtigungs-Features**
+- **Widget-Entwicklung**
 
-### Documentation
-- **API Documentation**
-- **User Guides**
-- **Troubleshooting Guides**
-- **Translation (i18n)**
+### Dokumentation
+- **API-Dokumentation**
+- **Benutzerhandbücher**
+- **Problembehandlungsanleitungen**
+- **Übersetzung (i18n)**
 
-## Pull Request Process
+## Pull-Request-Prozess
 
-### Before Submitting
-1. **Test** your changes thoroughly
-2. **Update** documentation if needed
-3. **Add** tests for new functionality
-4. **Follow** our code style guidelines
-5. **Rebase** on latest main branch
+### Vor dem Einreichen
+1. **Testen** Sie Ihre Änderungen gründlich
+2. **Aktualisieren** Sie die Dokumentation falls nötig
+3. **Fügen** Sie Tests für neue Funktionalität hinzu
+4. **Befolgen** Sie unsere Code-Stil-Richtlinien
+5. **Rebase** auf neuesten main-Branch
 
-### PR Requirements
-- **Clear title** describing the change
-- **Detailed description** of what was changed
-- **Link to related issues**
-- **Screenshots** for UI changes
-- **Test results** included
+### PR-Anforderungen
+- **Klarer Titel** der die Änderung beschreibt
+- **Detaillierte Beschreibung** was geändert wurde
+- **Link zu verwandten Issues**
+- **Screenshots** für UI-Änderungen
+- **Testergebnisse** enthalten
 
-### Review Process
-1. **Automated checks** must pass
-2. **Code review** by maintainers
-3. **Testing** on multiple devices
-4. **Approval** and merge
+### Review-Prozess
+1. **Automatische Prüfungen** müssen bestehen
+2. **Code-Review** durch Maintainer
+3. **Testen** auf mehreren Geräten
+4. **Genehmigung** und Merge
 
-## Community Guidelines
+## Community-Richtlinien
 
-### Be Respectful
-- **Constructive feedback** only
-- **Welcoming** to new contributors
-- **Professional** communication
-- **Inclusive** language
+### Respektvoll sein
+- **Konstruktives Feedback** nur
+- **Einladend** für neue Mitwirkende
+- **Professionelle** Kommunikation
+- **Inklusive** Sprache
 
-### Be Helpful
-- **Share knowledge** and expertise
-- **Help** other contributors
-- **Document** your solutions
-- **Respond promptly** to feedback
+### Hilfreich sein
+- **Wissen und Expertise** teilen
+- **Anderen Mitwirkenden** helfen
+- **Lösungen dokumentieren**
+- **Schnell** auf Feedback antworten
 
-## Getting Help
+## Hilfe erhalten
 
-### Documentation
-- [Developer Guide](developer-guide)
-- [API Reference](api-reference)
-- [Troubleshooting](troubleshooting)
+### Dokumentation
+- [Entwickler-Leitfaden](developer-guide)
+- [API-Referenz](api-reference)
+- [Problembehandlung](troubleshooting)
 
-### Communication
-- **GitHub Issues** for bugs and features
-- **GitHub Discussions** for general questions
-- **Email** for security-related issues
+### Kommunikation
+- **GitHub Issues** für Bugs und Features
+- **GitHub Discussions** für allgemeine Fragen
+- **E-Mail** für sicherheitsbezogene Themen
 
-## Recognition
+## Anerkennung
 
-Contributors will be:
-- **Listed** in our Contributors section
-- **Credited** in release notes
-- **Invited** to beta testing programs
-- **Welcomed** to maintainer team (long-term contributors)
+Mitwirkende werden:
+- **Aufgelistet** in unserem Contributors-Bereich
+- **Erwähnt** in Release-Notes
+- **Eingeladen** zu Beta-Test-Programmen
+- **Willkommen geheißen** im Maintainer-Team (langfristige Mitwirkende)
 
-## License
+## Häufige Beitragsarten
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+### Code-Beiträge
+- **Neue Features** implementieren
+- **Bugs** beheben
+- **Performance** verbessern
+- **Code-Refactoring**
+- **Tests** hinzufügen
+
+### Dokumentations-Beiträge
+- **README** verbessern
+- **API-Dokumentation** erweitern
+- **Tutorials** schreiben
+- **Übersetzungen** hinzufügen
+
+### Design-Beiträge
+- **UI/UX Verbesserungen**
+- **Icons** und Grafiken
+- **Mockups** für neue Features
+- **Barrierefreiheit** verbessern
+
+## Entwicklungsrichtlinien
+
+### Branch-Strategie
+- `main` - Stabile Production-Releases
+- `develop` - Entwicklungsintegration
+- `feature/feature-name` - Neue Features
+- `bugfix/bug-description` - Fehlerbehebungen
+- `hotfix/critical-fix` - Kritische Produktionsfixes
+
+### Commit-Nachrichten
+```
+type(scope): kurze Beschreibung
+
+Längere Beschreibung falls nötig...
+
+- Aufzählungspunkte für Details
+- Weitere Änderungen
+
+Fixes #123
+```
+
+Typen: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+### Code-Review-Kriterien
+- **Funktionalität**: Code erfüllt Anforderungen
+- **Lesbarkeit**: Code ist klar und verständlich
+- **Performance**: Keine unnötigen Performance-Einbußen
+- **Sicherheit**: Sicherheitsbest-Practices befolgt
+- **Tests**: Angemessene Testabdeckung
+- **Dokumentation**: Nötige Dokumentation aktualisiert
+
+## Technische Standards
+
+### Code-Qualität
+- **Keine Compiler-Warnungen**
+- **Lint-Regeln** befolgen
+- **Code-Coverage** mindestens 80%
+- **Performance-Benchmarks** bestehen
+
+### Sicherheitsstandards
+- **Keine hardcoded Secrets**
+- **Input-Validierung**
+- **Sichere API-Aufrufe**
+- **Datenverschlüsselung** wo nötig
+
+## Release-Zyklus
+
+### Versionsnummerierung
+Wir verwenden [Semantic Versioning](https://semver.org/):
+- **Major** (X.0.0): Breaking Changes
+- **Minor** (0.X.0): Neue Features, rückwärtskompatibel
+- **Patch** (0.0.X): Bugfixes, rückwärtskompatibel
+
+### Release-Zeitplan
+- **Major Releases**: Alle 6 Monate
+- **Minor Releases**: Monatlich
+- **Patch Releases**: Bei Bedarf
+
+## Support für Mitwirkende
+
+### Mentorship-Programm
+- **Neue Mitwirkende** erhalten einen Mentor
+- **1-zu-1 Unterstützung** für erste PRs
+- **Feedback** und Lernmöglichkeiten
+
+### Entwickler-Werkzeuge
+- **Pre-commit Hooks** für Code-Qualität
+- **CI/CD Pipeline** für automatisierte Tests
+- **Development Environment** Setup-Scripts
+
+## Lizenz
+
+Durch Mitwirken stimmen Sie zu, dass Ihre Beiträge unter der MIT-Lizenz lizenziert werden.
 
 ---
 
-**Thank you for contributing to CF Alarm for Time Office!** 🚀
+**Vielen Dank für Ihren Beitrag zu CF Alarm for Time Office!** 🚀
+
+Ihre Beiträge helfen dabei, die beste Alarm-App für Time Office Nutzer zu schaffen. Jeder Beitrag, egal wie klein, macht einen Unterschied!

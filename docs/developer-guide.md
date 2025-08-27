@@ -1,89 +1,89 @@
 ---
 layout: default
-title: Developer Guide  
+title: Entwickler-Leitfaden  
 ---
 
 {% include navigation.md %}
 
-# 💻 Developer Guide
+# 💻 Entwickler-Leitfaden
 
-## Architecture Overview
+## Architektur-Übersicht
 
-CF Alarm for Time Office follows **Clean Architecture** principles with **MVVM pattern**.
+CF Alarm for Time Office folgt **Clean Architecture** Prinzipien mit **MVVM-Pattern**.
 
-### Layer Structure
+### Schicht-Struktur
 
 ```
-Presentation (UI) Layer
+Präsentationsschicht (UI)
 ├── Activities & Fragments
 ├── ViewModels
 └── Compose UI Components
 
-Domain Layer
+Domain-Schicht
 ├── Use Cases
 ├── Repository Interfaces
 └── Domain Models
 
-Data Layer
-├── Repository Implementations
-├── Data Sources (Local/Remote)
-└── Database/Network/Storage
+Datenschicht
+├── Repository Implementierungen
+├── Datenquellen (Lokal/Remote)
+└── Datenbank/Netzwerk/Speicher
 ```
 
-## Project Structure
+## Projektstruktur
 
-### Core Modules
+### Kernmodule
 
 ```
 app/src/main/java/com/github/f1rlefanz/cf_alarmfortimeoffice/
-├── ui/                     # Presentation Layer
-│   ├── screens/           # Compose Screens
-│   ├── components/        # Reusable UI Components
+├── ui/                     # Präsentationsschicht
+│   ├── screens/           # Compose Bildschirme
+│   ├── components/        # Wiederverwendbare UI Komponenten
 │   └── theme/             # App Theming
 ├── viewmodel/             # ViewModels
 ├── usecase/               # Business Logic Use Cases
-├── repository/            # Data Repository Implementations
-├── data/                  # Data Sources
-├── model/                 # Data Models
-├── auth/                  # Authentication Management
-├── calendar/              # Calendar Integration
+├── repository/            # Daten Repository Implementierungen
+├── data/                  # Datenquellen
+├── model/                 # Datenmodelle
+├── auth/                  # Authentifizierungsverwaltung
+├── calendar/              # Kalender Integration
 ├── hue/                   # Philips Hue Integration
-├── service/               # Background Services
-├── util/                  # Utility Classes
+├── service/               # Hintergrunddienste
+├── util/                  # Utility Klassen
 └── di/                    # Dependency Injection
 ```
 
-## Key Technologies
+## Schlüsseltechnologien
 
-### Core Android
-- **Kotlin 2.1.0** - Primary language
-- **Jetpack Compose** - Modern UI toolkit
-- **Android SDK 36** - Target platform
-- **Material 3** - Design system
+### Kern Android
+- **Kotlin 2.1.0** - Hauptsprache
+- **Jetpack Compose** - Modernes UI-Toolkit
+- **Android SDK 36** - Zielplattform
+- **Material 3** - Designsystem
 
-### Architecture Components
-- **Hilt** - Dependency injection
-- **ViewModel** - UI state management
-- **LiveData/StateFlow** - Reactive data
-- **Room** - Local database (planned)
+### Architektur-Komponenten
+- **Hilt** - Dependency Injection
+- **ViewModel** - UI-Zustandsverwaltung
+- **LiveData/StateFlow** - Reaktive Daten
+- **Room** - Lokale Datenbank (geplant)
 
-### Authentication & APIs
-- **Google OAuth 2.0** - Calendar authentication
-- **Credential Manager** - Modern auth flow
-- **Google Calendar API** - Calendar data access
-- **Retrofit** - HTTP client for Hue API
+### Authentifizierung & APIs
+- **Google OAuth 2.0** - Kalender-Authentifizierung
+- **Credential Manager** - Moderner Auth-Flow
+- **Google Calendar API** - Kalenderdatenzugriff
+- **Retrofit** - HTTP-Client für Hue API
 
-### Security
-- **EncryptedSharedPreferences** - Secure local storage
-- **Android Keystore** - Key management
-- **AES-256-GCM** - Data encryption
+### Sicherheit
+- **EncryptedSharedPreferences** - Sichere lokale Speicherung
+- **Android Keystore** - Schlüsselverwaltung
+- **AES-256-GCM** - Datenverschlüsselung
 
-## Development Setup
+## Entwicklungssetup
 
-### Environment Requirements
+### Umgebungsanforderungen
 
 ```bash
-# Required versions
+# Erforderliche Versionen
 Android Studio: 2025.1.1+
 JDK: 17 (LTS)
 Android SDK: API 26-36
@@ -91,43 +91,43 @@ Kotlin: 2.1.0+
 Gradle: 9.0.0+
 ```
 
-### Initial Setup
+### Ersteinrichtung
 
-1. **Clone Repository**
+1. **Repository klonen**
 ```bash
-git clone https://github.com/f1rlefanz/cf-alarmfortimeoffice.git
-cd cf-alarmfortimeoffice
+git clone https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice.git
+cd CF-Alarm-for-TimeOffice
 ```
 
-2. **Create Keystore Configuration**
+2. **Keystore-Konfiguration erstellen**
 ```bash
-# Create keystore.properties (NEVER commit this!)
+# keystore.properties erstellen (NIEMALS committen!)
 touch keystore.properties
 ```
 
-Add to `keystore.properties`:
+Zu `keystore.properties` hinzufügen:
 ```properties
 storeFile=./debug.keystore
 storePassword=android
 keyAlias=androiddebugkey
 keyPassword=android
-googleWebClientId=YOUR_CLIENT_ID_FROM_GOOGLE_CLOUD_CONSOLE
+googleWebClientId=IHRE_CLIENT_ID_AUS_GOOGLE_CLOUD_CONSOLE
 ```
 
 3. **Google Cloud Console Setup**
-- Create project in [Google Cloud Console](https://console.cloud.google.com/)
-- Enable **Google Calendar API**
-- Create **OAuth 2.0 credentials** (Android app)
-- Add your debug/release SHA-1 fingerprints
+- Projekt in [Google Cloud Console](https://console.cloud.google.com/) erstellen
+- **Google Calendar API** aktivieren
+- **OAuth 2.0 Anmeldedaten** erstellen (Android-App)
+- Debug/Release SHA-1 Fingerabdrücke hinzufügen
 
-4. **Build Project**
+4. **Projekt erstellen**
 ```bash
 ./gradlew assembleDebug
 ```
 
-## Code Guidelines
+## Code-Richtlinien
 
-### Architecture Patterns
+### Architektur-Pattern
 
 #### ViewModels
 ```kotlin
@@ -191,9 +191,9 @@ class CalendarRepositoryImpl @Inject constructor(
 }
 ```
 
-### Security Best Practices
+### Sicherheits-Best-Practices
 
-#### Token Management
+#### Token-Verwaltung
 ```kotlin
 class SecureTokenManager @Inject constructor(
     private val encryptedPrefs: EncryptedSharedPreferences
@@ -205,29 +205,13 @@ class SecureTokenManager @Inject constructor(
     }
     
     private fun encrypt(data: String): String {
-        // Use Android Keystore for encryption
-        // AES-256-GCM implementation
+        // Android Keystore für Verschlüsselung verwenden
+        // AES-256-GCM Implementierung
     }
 }
 ```
 
-#### Network Security
-```kotlin
-// Network Security Config (res/xml/network_security_config.xml)
-<network-security-config>
-    <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">googleapis.com</domain>
-    </domain-config>
-    
-    <!-- Allow local HTTP for Hue Bridge -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain>192.168.0.0/16</domain>
-        <domain>10.0.0.0/8</domain>
-    </domain-config>
-</network-security-config>
-```
-
-## Testing Strategy
+## Test-Strategie
 
 ### Unit Tests
 ```kotlin
@@ -243,7 +227,7 @@ class CalendarUseCaseTest {
     private lateinit var calendarUseCase: CalendarUseCase
     
     @Test
-    fun `getUpcomingEvents returns events when authenticated`() = runTest {
+    fun `getUpcomingEvents gibt Events zurück wenn authentifiziert`() = runTest {
         // Given
         given(authRepository.isAuthenticated()).willReturn(true)
         given(calendarRepository.getEvents(any(), any()))
@@ -259,57 +243,41 @@ class CalendarUseCaseTest {
 }
 ```
 
-### Integration Tests
-```kotlin
-@HiltAndroidTest
-class CalendarIntegrationTest {
-    
-    @get:Rule
-    var hiltRule = HiltAndroidRule(this)
-    
-    @Test
-    fun calendarSyncWorkflow() {
-        // Test complete calendar sync workflow
-        // From authentication to event display
-    }
-}
-```
-
 ## Debugging
 
-### Logging Strategy
+### Logging-Strategie
 ```kotlin
 object Logger {
     fun d(tag: String, message: String) {
         if (BuildConfig.DEBUG) {
             Log.d(tag, message)
         }
-        // Also log to file for production debug
+        // Auch in Datei für Production-Debug protokollieren
         logToFile(tag, message)
     }
 }
 ```
 
-### Debug Features
-- **Developer Options** in app settings
-- **Log Export** functionality
-- **Network Traffic Logging**
-- **Database Inspection** (Room Inspector)
+### Debug-Features
+- **Entwickleroptionen** in App-Einstellungen
+- **Log-Export** Funktionalität
+- **Netzwerkverkehr-Protokollierung**
+- **Datenbankinspektion** (Room Inspector)
 
-## Performance Optimization
+## Leistungsoptimierung
 
-### Memory Management
+### Speicherverwaltung
 ```kotlin
 class MemoryOptimizer {
     fun optimizeForLowMemory() {
-        // Clear image caches
-        // Reduce background processing
-        // Optimize object pools
+        // Bild-Caches leeren
+        // Hintergrundverarbeitung reduzieren
+        // Objekt-Pools optimieren
     }
 }
 ```
 
-### Battery Optimization
+### Akkuoptimierung
 ```kotlin
 class BatteryOptimizer {
     fun requestBatteryOptimizationExemption(context: Context) {
@@ -322,9 +290,9 @@ class BatteryOptimizer {
 }
 ```
 
-## Release Process
+## Release-Prozess
 
-### Build Configuration
+### Build-Konfiguration
 ```kotlin
 // build.gradle.kts
 android {
@@ -341,20 +309,7 @@ android {
 }
 ```
 
-### Signing Configuration
-```kotlin
-// Secure signing with keystore.properties
-signingConfigs {
-    create("release") {
-        storeFile = file(keystoreProperties["storeFile"] as String)
-        storePassword = keystoreProperties["storePassword"] as String
-        keyAlias = keystoreProperties["keyAlias"] as String
-        keyPassword = keystoreProperties["keyPassword"] as String
-    }
-}
-```
-
-## API Documentation
+## API-Dokumentation
 
 ### Calendar API Integration
 ```kotlin
@@ -386,36 +341,36 @@ interface HueApi {
 }
 ```
 
-## Contributing
+## Mitwirken
 
-### Code Review Checklist
-- [ ] Follows architecture patterns
-- [ ] Includes appropriate tests
-- [ ] Security best practices applied
-- [ ] Performance considerations addressed
-- [ ] Documentation updated
-- [ ] Accessibility requirements met
+### Code-Review-Checkliste
+- [ ] Folgt Architektur-Pattern
+- [ ] Enthält angemessene Tests
+- [ ] Sicherheits-Best-Practices angewendet
+- [ ] Leistungsaspekte berücksichtigt
+- [ ] Dokumentation aktualisiert
+- [ ] Barrierefreiheitsanforderungen erfüllt
 
-### Pull Request Template
+### Pull-Request-Vorlage
 ```markdown
-## Description
-Brief description of changes
+## Beschreibung
+Kurze Beschreibung der Änderungen
 
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation update
+## Art der Änderung
+- [ ] Fehlerbehebung
+- [ ] Neue Funktion
+- [ ] Breaking Change
+- [ ] Dokumentations-Update
 
-## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests pass
-- [ ] Manual testing completed
+## Tests
+- [ ] Unit-Tests hinzugefügt/aktualisiert
+- [ ] Integrationstests bestanden
+- [ ] Manuelle Tests abgeschlossen
 
-## Screenshots (if applicable)
-Add screenshots for UI changes
+## Screenshots (falls zutreffend)
+Screenshots für UI-Änderungen hinzufügen
 ```
 
 ---
 
-**Happy coding!** 🚀 For questions, check [GitHub Discussions](https://github.com/f1rlefanz/cf-alarmfortimeoffice/discussions)
+**Frohes Programmieren!** 🚀 Für Fragen, schauen Sie in die [GitHub Diskussionen](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/discussions)

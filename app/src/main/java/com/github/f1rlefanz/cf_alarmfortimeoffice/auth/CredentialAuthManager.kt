@@ -13,6 +13,8 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.google.android.gms.common.GoogleApiAvailability
 
 data class SignInResult(
     val success: Boolean,
@@ -66,6 +68,30 @@ class CredentialAuthManager(private val context: Context) {
             SignInResult(success = false, error = "Anmeldung wurde abgebrochen.", exception = e)
         } catch (e: NoCredentialException) {
             Logger.w(LogTags.AUTH, "No Google accounts found", e)
+            
+            // FIREBASE CRASHLYTICS: Critical auth failure reporting
+            try {
+                val crashlytics = com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
+                crashlytics.setCustomKey("auth_flow_step", "getCredential")
+                crashlytics.setCustomKey("auth_error_type", "no_credential_found")
+                
+                // Check Google Play Services availability
+                val googleServicesAvailable = GoogleApiAvailability.getInstance()
+                    .isGooglePlayServicesAvailable(context) == com.google.android.gms.common.ConnectionResult.SUCCESS
+                crashlytics.setCustomKey("auth_google_services_available", googleServicesAvailable)
+                
+                crashlytics.log("AUTH CRITICAL: No Google credentials found. User cannot sign in.")
+                
+                // Report as non-fatal error for monitoring
+                if (!BuildConfig.DEBUG) {
+                    crashlytics.recordException(e)
+                }
+                
+                Logger.d(LogTags.AUTH, "📊 NoCredentialException reported to Firebase Crashlytics")
+            } catch (ex: Exception) {
+                Logger.e(LogTags.AUTH, "Failed to report NoCredentialException to Firebase", ex)
+            }
+            
             val detailedError = when {
                 e.message?.contains("Developer console") == true -> {
                     "Google Sign-In Konfigurationsfehler. Bitte überprüfen Sie die SHA-1 Fingerprints in der Google Cloud Console."

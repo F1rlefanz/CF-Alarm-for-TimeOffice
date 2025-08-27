@@ -21,6 +21,8 @@ import kotlinx.coroutines.withContext
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.EventsPage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import java.io.IOException
 import java.net.UnknownHostException
 import java.time.LocalDateTime
@@ -76,6 +78,29 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
                     Logger.w(LogTags.CALENDAR_API, "No calendars found in Google Calendar API response")
                     Logger.d(LogTags.CALENDAR_API, "Full API response: $calendarList")
                     Logger.i(LogTags.CALENDAR_API, "DIAGNOSTIC: User account appears to have no calendars or calendar access is restricted")
+                    
+                    // FIREBASE CRASHLYTICS: Critical calendar issue reporting
+                    try {
+                        val crashlytics = FirebaseCrashlytics.getInstance()
+                        crashlytics.setCustomKey("calendar_issue_type", "empty_list_on_success")
+                        crashlytics.setCustomKey("calendar_response_etag", calendarList.etag ?: "none")
+                        
+                        // Check if access token looks valid
+                        val tokenIsValidFormat = accessToken.startsWith("ya29.")
+                        crashlytics.setCustomKey("calendar_token_is_valid_format", tokenIsValidFormat)
+                        
+                        crashlytics.log("CALENDAR CRITICAL: Might indicate account with no calendars or API scope issue.")
+                        
+                        // Report as non-fatal error for monitoring
+                        if (!BuildConfig.DEBUG) {
+                            val customException = IllegalStateException("Calendar API returned empty list for valid account")
+                            crashlytics.recordException(customException)
+                        }
+                        
+                        Logger.d(LogTags.CALENDAR_API, "📊 Empty calendar list reported to Firebase Crashlytics")
+                    } catch (ex: Exception) {
+                        Logger.e(LogTags.CALENDAR_API, "Failed to report empty calendar list to Firebase", ex)
+                    }
                     
                     // Enhanced diagnostic logging
                     Logger.d(LogTags.CALENDAR_API, "DIAGNOSTIC: API Response Details:")

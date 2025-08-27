@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.app.Application
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +49,9 @@ class CFAlarmApplication : Application() {
     
     override fun onCreate() {
         super.onCreate()
+        
+        // Initialize ErrorHandler first for Firebase Crashlytics
+        ErrorHandler.initialize(this)
         
         // Initialize Firebase first
         initializeFirebase()

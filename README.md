@@ -45,9 +45,9 @@
 - **Philips Hue Bridge** (optional) für Lichtsteuerung
 
 ### Download & Installation
-1. Nachricht an Entwickler mit der Bitte zur Teilnahme am internen Test
-2. Herunterladen der App über den erhaltenen Link
-3. Installation
+1. **Nachricht an Entwickler** mit der Bitte zur Teilnahme am internen Test
+2. **Herunterladen** der App über den erhaltenen Link
+3. **Installation**
 4. **Google Account verbinden** für Calendar-Zugriff
 5. **Philips Hue einrichten** (optional)
 
@@ -73,13 +73,6 @@
 ## 📄 Lizenz
 
 Dieses Projekt steht unter der **MIT License** - siehe [LICENSE](LICENSE) Datei für Details.
-
-## 🤝 Support & Community
-
-- **📖 Dokumentation**: [F1rlefanz.github.io/CF-Alarm-for-TimeOffice](https://F1rlefanz.github.io/CF-Alarm-for-TimeOffice)
-- **🐛 Bug Reports**: [GitHub Issues](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues)
-- **💡 Feature Requests**: [GitHub Discussions](https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/discussions)
-- **📧 Direkter Kontakt**: [support@cf-alarm.app](mailto:support@cf-alarm.app)
 
 ## 🌟 Credits
 

@@ -265,7 +265,7 @@ dependencies {
     // Firebase (2025 Standards) 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.analytics) // For breadcrumb logs
+    implementation(libs.firebase.analytics) // Required for Crashlytics breadcrumb logs
 
     // Desugaring for LocalDateTime support
     coreLibraryDesugaring(libs.desugar.jdk.libs)

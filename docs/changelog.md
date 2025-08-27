@@ -5,6 +5,27 @@ Alle wichtigen Änderungen an diesem Projekt werden in dieser Datei dokumentiert
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2025-08-27
+
+### 🔥 Firebase Crashlytics Integration
+- **Non-Fatal Error Monitoring**: Vollständige Sichtbarkeit in App-Probleme
+- **3 Critical Failure Points**: Google Auth, Calendar API, Hue Bridge Timeouts
+- **App State Context**: Automatische Erfassung von Netzwerk, Battery, Device Info
+- **Error Categorization**: Strukturierte Firebase Dashboard-Filter
+
+### 🔧 Code Quality
+- **Memory Leak Fix**: WeakReference in HueBridgeConnectionManager 
+- **Lint Warnings**: Alle 8+ Warnungen behoben (unused parameters, API checks)
+- **Build Optimization**: Deprecated buildDir ersetzt
+- **Debug Testing**: CrashlyticsTestUtils für Validierung
+
+### 🎯 Production Ready
+- **Release Build**: Crashlytics nur in Production aktiv
+- **Custom Keys**: Firebase Dashboard-Filter (auth, calendar, hue, network)
+- **Breadcrumb Logging**: Strukturierte Debugging-Information
+
+---
+
 ## [1.0.4] - 2025-08-26
 
 ### 🔐 Security (KRITISCH)

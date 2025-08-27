@@ -1,18 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     
+    <!-- DEBUG-ONLY Activities -->
     <application>
-        <!-- 🧪 DEBUG ONLY: Firebase Crashlytics Test Activity -->
         <activity
-            android:name=".testing.CrashlyticsTestActivity"
+            android:name=".debug.CrashlyticsTestActivity"
             android:exported="true"
-            android:theme="@style/Theme.CFAlarmForTimeOffice"
-            android:label="🧪 Crashlytics Tests">
+            android:label="🧪 Crashlytics Test"
+            android:theme="@style/Theme.CFAlarmForTimeOffice">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
     </application>
-    
 </manifest>

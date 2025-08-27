@@ -94,8 +94,8 @@ object CrashlyticsTestUtils {
             
             crashlytics.log("HUE TIMEOUT TEST: Bridge did not respond. Last successful connection was 24h ago.")
             
-            // Create and report the exception
-            val simulatedException = TimeoutCancellationException("TEST: Hue Bridge connection timeout simulation")
+            // Create and report the exception (using generic Exception since TimeoutCancellationException constructor is internal)
+            val simulatedException = Exception("TEST: Hue Bridge connection timeout simulation (TimeoutCancellationException)")
             crashlytics.recordException(simulatedException)
             
             Logger.i(LogTags.ERROR, "✅ TEST: Hue Bridge timeout simulation reported to Firebase Crashlytics")

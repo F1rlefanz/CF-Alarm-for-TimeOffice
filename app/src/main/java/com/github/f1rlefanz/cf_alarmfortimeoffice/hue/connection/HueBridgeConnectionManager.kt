@@ -7,7 +7,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
-import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -329,9 +328,7 @@ class HueBridgeConnectionManager private constructor(
                 crashlytics.log("HUE TIMEOUT: Bridge did not respond. Last successful connection was ${hoursAgo}h ago.")
                 
                 // Report as non-fatal error for monitoring
-                if (!BuildConfig.DEBUG) {
-                    crashlytics.recordException(e)
-                }
+                crashlytics.recordException(e)
                 
                 Logger.d(LogTags.HUE_BRIDGE, "📊 Hue Bridge timeout reported to Firebase Crashlytics")
             } catch (ex: Exception) {

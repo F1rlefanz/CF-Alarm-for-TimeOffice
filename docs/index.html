@@ -28,77 +28,67 @@
             background: var(--bg);
         }
 
-        /* Header */
-        .header {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            padding: 3rem 0;
-            text-align: center;
-        }
-
-        .header-content {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 2rem;
-        }
-
-        .app-logo {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto 2rem;
-            background: rgba(255,255,255,0.15);
-            border-radius: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 3rem;
-        }
-
-        .header h1 {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            font-weight: 700;
-        }
-
-        .header .subtitle {
-            font-size: 1.3rem;
-            opacity: 0.9;
-            margin-bottom: 2rem;
-        }
-
-        /* Navigation */
+        /* Navigation - jetzt als erste Sektion */
         .nav {
             background: var(--card);
             box-shadow: var(--shadow);
-            padding: 1rem 0;
-            position: sticky;
-            top: 0;
-            z-index: 100;
+            padding: 2rem 0;
+            text-align: center;
         }
 
         .nav-content {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 2rem;
+        }
+
+        .app-logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: white;
+        }
+
+        .nav h1 {
+            font-size: 2.2rem;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .nav .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+        }
+
+        .nav-links {
             display: flex;
             justify-content: center;
             flex-wrap: wrap;
-            gap: 2rem;
+            gap: 1.5rem;
         }
 
-        .nav a {
+        .nav-links a {
             color: var(--text);
             text-decoration: none;
-            padding: 0.5rem 1rem;
+            padding: 0.8rem 1.2rem;
             border-radius: var(--radius);
             transition: all 0.3s ease;
             font-weight: 500;
+            border: 2px solid transparent;
         }
 
-        .nav a:hover {
+        .nav-links a:hover {
             background: var(--accent);
             color: white;
             transform: translateY(-2px);
+            border-color: var(--accent);
         }
 
         /* Main Content */
@@ -143,6 +133,13 @@
             font-size: 1.4rem;
         }
 
+        .readme-content h4 {
+            color: var(--text);
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+
         .readme-content ul {
             margin: 1rem 0;
             padding-left: 2rem;
@@ -151,47 +148,6 @@
         .readme-content li {
             margin-bottom: 0.5rem;
             color: var(--text-light);
-        }
-
-        /* Features */
-        .features {
-            background: var(--card);
-            border-radius: var(--radius);
-            padding: 3rem;
-            margin: 4rem 0;
-            box-shadow: var(--shadow);
-        }
-
-        .features h2 {
-            text-align: center;
-            font-size: 2.2rem;
-            margin-bottom: 3rem;
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 2rem;
-        }
-
-        .feature {
-            text-align: center;
-            padding: 1.5rem;
-        }
-
-        .feature-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .feature h3 {
-            font-size: 1.2rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .feature p {
-            color: var(--text-light);
-            font-size: 0.9rem;
         }
 
         /* Footer */
@@ -232,36 +188,33 @@
 
         /* Responsive */
         @media (max-width: 768px) {
-            .header h1 { font-size: 2.2rem; }
-            .header .subtitle { font-size: 1.1rem; }
+            .nav h1 { font-size: 1.8rem; }
+            .nav .subtitle { font-size: 1rem; }
             .container { padding: 2rem 1rem; }
             .intro h2 { font-size: 2rem; }
-            .nav-content { flex-direction: column; align-items: center; gap: 1rem; }
-            .features { padding: 2rem; }
+            .nav-links { flex-direction: column; align-items: center; gap: 1rem; }
             .footer-links { flex-direction: column; gap: 1rem; }
+            .nav { padding: 1.5rem 0; }
         }
     </style>
 </head>
 <body>
-    <!-- Header -->
-    <header class="header">
-        <div class="header-content">
+    <!-- Navigation (ehemals Header) -->
+    <nav class="nav">
+        <div class="nav-content">
             <div class="app-logo">⏰</div>
             <h1>CF Alarm for Time Office</h1>
             <p class="subtitle">Smart Wecker-App mit Google Calendar & Philips Hue Integration</p>
-        </div>
-    </header>
-
-    <!-- Navigation -->
-    <nav class="nav">
-        <div class="nav-content">
-            <a href="privacy">🔒 Datenschutz</a>
-            <a href="troubleshooting">🆘 Support</a>
-            <a href="developer-guide">💻 Entwickler</a>
-            <a href="advanced-setup">⚙️ Konfiguration</a>
-            <a href="contributing">🤝 Mitwirken</a>
-            <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice">📱 GitHub</a>
-            <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice&hl=en-US&ah=ho_wZZXFGSy0IF7c4AoUAtPr0cw">📲 Play Store</a>
+            
+            <div class="nav-links">
+                <a href="privacy">🔒 Datenschutz</a>
+                <a href="troubleshooting">🆘 Support</a>
+                <a href="developer-guide">💻 Entwickler</a>
+                <a href="advanced-setup">⚙️ Konfiguration</a>
+                <a href="contributing">🤝 Mitwirken</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice">📱 GitHub</a>
+                <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice&hl=en-US&ah=ho_wZZXFGSy0IF7c4AoUAtPr0cw">📲 Play Store</a>
+            </div>
         </div>
     </nav>
 

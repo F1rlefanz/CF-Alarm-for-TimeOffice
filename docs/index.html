@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="assets/css/main.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏰</text></svg>">
     <link rel="canonical" href="https://f1rlefanz.github.io/CF-Alarm-for-TimeOffice/">
+    <link rel="manifest" href="manifest.json">
     
     <!-- Open Graph / Social Media -->
     <meta property="og:type" content="website">
@@ -27,6 +28,10 @@
     <meta name="application-name" content="CF Alarm for Time Office">
     <meta name="theme-color" content="#667eea">
     <meta name="color-scheme" content="light dark">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="CF Alarm Docs">
     
     <!-- Performance & SEO -->
     <meta name="robots" content="index, follow">
@@ -50,7 +55,8 @@
         "author": {
             "@type": "Person",
             "name": "Christoph F."
-        }
+        },
+        "url": "https://f1rlefanz.github.io/CF-Alarm-for-TimeOffice/"
     }
     </script>
 </head>
@@ -139,7 +145,7 @@
         </div>
     </footer>
 
-    <!-- Service Worker for PWA capabilities (future) -->
+    <!-- Modern JavaScript for progressive enhancement -->
     <script>
         // Progressive Web App registration
         if ('serviceWorker' in navigator) {
@@ -153,6 +159,27 @@
         document.addEventListener('DOMContentLoaded', () => {
             // Fade in animation trigger
             document.body.classList.add('loaded');
+            
+            // Modern interaction enhancements
+            const links = document.querySelectorAll('a[href^="http"]');
+            links.forEach(link => {
+                link.setAttribute('rel', 'external noopener');
+                if (!link.hasAttribute('target')) {
+                    link.setAttribute('target', '_blank');
+                }
+            });
+        });
+
+        // Enhanced accessibility
+        document.addEventListener('keydown', (e) => {
+            // Skip link functionality
+            if (e.key === 'Tab' && !e.shiftKey) {
+                const skipLink = document.querySelector('.sr-only');
+                if (document.activeElement === skipLink) {
+                    e.preventDefault();
+                    document.getElementById('main-content').focus();
+                }
+            }
         });
     </script>
 </body>

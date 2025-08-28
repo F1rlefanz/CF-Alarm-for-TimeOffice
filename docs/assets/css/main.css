@@ -187,12 +187,13 @@ body.loaded {
   font-weight: 400;
 }
 
-/* Modern navigation links with better accessibility */
+/* Modern navigation links - IMPROVED RESPONSIVE BEHAVIOR */
 .nav-links {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--space-2);
+  max-width: 100%;
 }
 
 .nav-links a {
@@ -209,6 +210,8 @@ body.loaded {
   border: 1px solid var(--outline);
   transition: all var(--duration-200) cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: var(--shadow-xs);
+  white-space: nowrap;
+  flex: 0 0 auto; /* Verhindert dass Links schrumpfen */
 }
 
 .nav-links a:hover,
@@ -443,7 +446,7 @@ blockquote {
   margin-bottom: var(--space-2);
 }
 
-/* Responsive design with modern breakpoints */
+/* IMPROVED RESPONSIVE DESIGN - Navigation optimiert */
 @media (max-width: 640px) {
   .nav h1 {
     font-size: var(--text-3xl);
@@ -457,9 +460,10 @@ blockquote {
     font-size: var(--text-4xl);
   }
   
+  /* Kleinere Screens: Grid Layout für bessere Kontrolle */
   .nav-links {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--space-2);
     width: 100%;
     max-width: 400px;
@@ -477,6 +481,42 @@ blockquote {
   
   .footer-links {
     flex-direction: column;
+    gap: var(--space-4);
+  }
+}
+
+/* Mittlere Screens - Bessere Flexbox Kontrolle */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .nav-links {
+    max-width: 90%;
+    justify-content: center;
+  }
+  
+  .nav-links a {
+    font-size: var(--text-sm);
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+/* Große Screens - Optimiert für Play Store Button */
+@media (min-width: 1025px) {
+  .nav-links {
+    max-width: 1000px; /* Erhöht die maximale Breite */
+    justify-content: center;
+    gap: var(--space-3); /* Etwas größerer Abstand */
+  }
+  
+  .nav-links a {
+    font-size: var(--text-sm);
+    padding: var(--space-3) var(--space-5); /* Etwas mehr Padding */
+    min-width: fit-content; /* Verhindert Schrumpfen */
+  }
+}
+
+/* Extra große Screens */
+@media (min-width: 1400px) {
+  .nav-links {
+    max-width: 1200px;
     gap: var(--space-4);
   }
 }

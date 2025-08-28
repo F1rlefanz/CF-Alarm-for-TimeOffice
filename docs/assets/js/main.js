@@ -40,9 +40,11 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// HIDE-ON-SCROLL NAVIGATION Implementation
+// HIDE-ON-SCROLL NAVIGATION & BREADCRUMB Implementation
 function initHideOnScrollNav() {
     const nav = document.getElementById('main-nav') || document.querySelector('.nav');
+    const breadcrumb = document.querySelector('.breadcrumb');
+    
     if (!nav) return;
 
     // Add ID if not present
@@ -52,8 +54,8 @@ function initHideOnScrollNav() {
 
     let lastScrollY = window.scrollY;
     let isNavVisible = true;
-    const navHeight = nav.offsetHeight;
-    const scrollThreshold = navHeight; // Start hiding after nav height
+    const navHeight = nav.offsetHeight + (breadcrumb ? breadcrumb.offsetHeight : 0);
+    const scrollThreshold = navHeight; // Start hiding after combined height
 
     function updateNavVisibility() {
         const currentScrollY = window.scrollY;
@@ -80,11 +82,19 @@ function initHideOnScrollNav() {
 
     function hideNav() {
         nav.classList.add('nav-hidden');
+        // AUCH BREADCRUMB VERSTECKEN!
+        if (breadcrumb) {
+            breadcrumb.classList.add('breadcrumb-hidden');
+        }
         isNavVisible = false;
     }
 
     function showNav() {
         nav.classList.remove('nav-hidden');
+        // AUCH BREADCRUMB ZEIGEN!
+        if (breadcrumb) {
+            breadcrumb.classList.remove('breadcrumb-hidden');
+        }
         isNavVisible = true;
     }
 

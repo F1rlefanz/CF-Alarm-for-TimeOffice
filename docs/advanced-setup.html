@@ -3,13 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Konfiguration - CF Alarm for Time Office">
-    <title>Konfiguration - CF Alarm for Time Office</title>
+    <meta name="description" content="Erweiterte Konfiguration für CF Alarm for Time Office">
+    <title>Erweiterte Konfiguration - CF Alarm for Time Office</title>
     <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
+    <!-- Skip to main content for accessibility -->
+    <a href="#main-content" class="sr-only">Zum Hauptinhalt springen</a>
+
     <!-- Navigation -->
-    <nav class="nav">
+    <nav class="nav" id="main-nav" role="navigation" aria-label="Hauptnavigation">
         <div class="nav-content container">
             <div class="app-logo" aria-label="CF Alarm Logo">⏰</div>
             <h1>CF Alarm for Time Office</h1>
@@ -22,8 +25,8 @@
                 <a href="developer-guide.html">💻 Entwickler</a>
                 <a href="advanced-setup.html" class="active" aria-current="page">⚙️ Konfiguration</a>
                 <a href="contributing.html">🤝 Mitwirken</a>
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external">📱 GitHub</a>
-                <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice" rel="external">📲 Play Store</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">📱 GitHub</a>
+                <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice" rel="external noopener" target="_blank">📲 Play Store</a>
             </div>
         </div>
     </nav>
@@ -31,38 +34,79 @@
     <!-- Breadcrumb -->
     <div class="breadcrumb">
         <div class="breadcrumb-content container">
-            <a href="index.html">🏠 Startseite</a> → <span>⚙️ Konfiguration</span>
+            <a href="index.html">🏠 Startseite</a> → <span>⚙️ Erweiterte Konfiguration</span>
         </div>
     </div>
 
     <!-- Main Content -->
-    <main class="container">
+    <main id="main-content" class="container">
         <div class="page-header">
-            <h2>⚙️ Konfiguration</h2>
-            <p>Erweiterte Einstellungen und Konfigurationsoptionen</p>
+            <h2>⚙️ Erweiterte Konfiguration</h2>
+            <p>Detaillierte Anleitung zur optimalen Einrichtung von CF Alarm for Time Office</p>
         </div>
 
         <div class="content-card">
-            <h3>🚧 In Entwicklung</h3>
-            <p>Diese Seite wurde temporär geleert. Neue Inhalte folgen in zukünftigen Updates.</p>
+            <h3>📅 Google Calendar Setup</h3>
             
+            <h4>🔑 OAuth 2.0 Konfiguration</h4>
+            <ul>
+                <li><strong>Google Cloud Console:</strong> Projekt erstellen und Calendar API aktivieren</li>
+                <li><strong>OAuth Client:</strong> Android-Anwendung registrieren</li>
+                <li><strong>SHA-1 Fingerprint:</strong> Debug- und Release-Keys hinzufügen</li>
+            </ul>
+
+            <h4>🏂 TimeOffice Integration</h4>
+            <ul>
+                <li><strong>Kalender freigeben:</strong> TimeOffice → Einstellungen → Google Kalender aktivieren</li>
+                <li><strong>Synchronisation:</strong> Automatische Sync-Intervalle konfigurieren</li>
+                <li><strong>Kategorien:</strong> Schichttypen (Früh/Spät/Nacht) definieren</li>
+            </ul>
+
+            <h3>💡 Philips Hue Konfiguration</h3>
+            
+            <h4>🌉 Bridge Setup</h4>
+            <ul>
+                <li><strong>Netzwerk:</strong> Bridge und Smartphone im gleichen WLAN</li>
+                <li><strong>Bridge-Button:</strong> Physischen Button vor Koppelung drücken</li>
+                <li><strong>Auto-Discovery:</strong> App findet Bridge automatisch</li>
+            </ul>
+
+            <h4>🌈 Licht-Szenarien</h4>
+            <ul>
+                <li><strong>Morgen-Simulation:</strong> Graduelle Helligkeitssteigerung</li>
+                <li><strong>Farbtemperatur:</strong> Warmes Licht am Morgen, kalt am Tag</li>
+                <li><strong>Timing:</strong> 15 Minuten vor Alarmzeit starten</li>
+            </ul>
+
+            <h3>⚙️ Erweiterte Einstellungen</h3>
+            
+            <h4>🔋 Power Management</h4>
+            <ul>
+                <li><strong>Batterieoptimierung:</strong> CF Alarm von Optimierung ausschließen</li>
+                <li><strong>Autostart:</strong> App-Start beim Systemboot aktivieren</li>
+                <li><strong>Background:</strong> Hintergrund-Verarbeitung erlauben</li>
+            </ul>
+
             <blockquote>
-                <strong>💡 Tipp:</strong> Schauen Sie in der Zwischenzeit in den <a href="developer-guide.html">Entwickler-Guide</a> oder besuchen Sie unser <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external">GitHub Repository</a> für erweiterte Konfigurationen.
+                <strong>💡 Pro-Tipp:</strong> Für optimale Performance alle Berechtigungen gewähren und Batterieoptimierung deaktivieren.
             </blockquote>
         </div>
     </main>
 
-    <footer class="footer">
+    <footer class="footer" role="contentinfo">
         <div class="footer-content container">
             <div class="footer-links">
                 <a href="privacy.html">Datenschutz</a>
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external">MIT License</a>
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/CHANGELOG.md" rel="external">Changelog</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
+                <a href="changelog.html">Changelog</a>
                 <a href="mailto:support@cf-alarm.app">Kontakt</a>
             </div>
             <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
-            <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external">View on GitHub</a></p>
+            <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>
         </div>
     </footer>
+
+    <!-- Central JavaScript -->
+    <script src="assets/js/main.js"></script>
 </body>
 </html>

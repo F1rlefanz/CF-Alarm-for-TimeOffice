@@ -64,8 +64,8 @@
     <!-- Skip to main content for accessibility -->
     <a href="#main-content" class="sr-only">Zum Hauptinhalt springen</a>
 
-    <!-- Navigation -->
-    <nav class="nav" role="navigation" aria-label="Hauptnavigation">
+    <!-- Navigation with Hide-on-Scroll -->
+    <nav class="nav" id="main-nav" role="navigation" aria-label="Hauptnavigation">
         <div class="nav-content container">
             <div class="app-logo" aria-label="CF Alarm Logo">⏰</div>
             <h1>CF Alarm for Time Office</h1>
@@ -145,7 +145,7 @@
         </div>
     </footer>
 
-    <!-- Modern JavaScript for progressive enhancement -->
+    <!-- Modern JavaScript with Hide-on-Scroll Navigation -->
     <script>
         // Progressive Web App registration
         if ('serviceWorker' in navigator) {
@@ -168,6 +168,9 @@
                     link.setAttribute('target', '_blank');
                 }
             });
+
+            // HIDE-ON-SCROLL Navigation
+            initHideOnScrollNav();
         });
 
         // Enhanced accessibility
@@ -181,6 +184,64 @@
                 }
             }
         });
+
+        // HIDE-ON-SCROLL NAVIGATION Implementation
+        function initHideOnScrollNav() {
+            const nav = document.getElementById('main-nav');
+            if (!nav) return;
+
+            let lastScrollY = window.scrollY;
+            let isNavVisible = true;
+            const navHeight = nav.offsetHeight;
+            const scrollThreshold = navHeight; // Start hiding after nav height
+
+            function updateNavVisibility() {
+                const currentScrollY = window.scrollY;
+                const scrollDirection = currentScrollY > lastScrollY ? 'down' : 'up';
+                const scrollDistance = Math.abs(currentScrollY - lastScrollY);
+
+                // Don't hide if we're at the very top
+                if (currentScrollY <= scrollThreshold) {
+                    if (!isNavVisible) {
+                        showNav();
+                    }
+                } 
+                // Hide on scroll down (after threshold)
+                else if (scrollDirection === 'down' && scrollDistance > 5 && isNavVisible) {
+                    hideNav();
+                } 
+                // Show on scroll up
+                else if (scrollDirection === 'up' && scrollDistance > 5 && !isNavVisible) {
+                    showNav();
+                }
+
+                lastScrollY = currentScrollY;
+            }
+
+            function hideNav() {
+                nav.classList.add('nav-hidden');
+                isNavVisible = false;
+            }
+
+            function showNav() {
+                nav.classList.remove('nav-hidden');
+                isNavVisible = true;
+            }
+
+            // Throttled scroll event for better performance
+            let ticking = false;
+            function onScroll() {
+                if (!ticking) {
+                    requestAnimationFrame(() => {
+                        updateNavVisibility();
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            }
+
+            window.addEventListener('scroll', onScroll, { passive: true });
+        }
     </script>
 </body>
 </html>

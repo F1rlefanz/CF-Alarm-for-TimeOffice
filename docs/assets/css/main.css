@@ -356,11 +356,22 @@ body.loaded {
   color: var(--on-surface);
 }
 
-/* Breadcrumb navigation */
+/* BREADCRUMB AUCH MIT HIDE-ON-SCROLL! */
 .breadcrumb {
   background: var(--surface);
   border-bottom: 1px solid var(--outline);
   padding-block: var(--space-4);
+  position: sticky;
+  top: 0;
+  z-index: 49; /* Eins unter der Navigation */
+  /* HIDE-ON-SCROLL Animation für Breadcrumb */
+  transform: translateY(0);
+  transition: transform var(--duration-300) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Breadcrumb versteckt sich auch */
+.breadcrumb.breadcrumb-hidden {
+  transform: translateY(-100%);
 }
 
 .breadcrumb-content {
@@ -606,7 +617,8 @@ blockquote {
   }
   
   /* Disable hide-on-scroll for reduced motion */
-  .nav {
+  .nav,
+  .breadcrumb {
     transform: translateY(0) !important;
     transition: none !important;
   }

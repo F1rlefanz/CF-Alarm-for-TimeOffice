@@ -152,7 +152,7 @@ body.loaded {
   }
 }
 
-/* Navigation - Modern glass morphism effect */
+/* HIDE-ON-SCROLL Navigation - Modern glass morphism effect */
 .nav {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
@@ -161,6 +161,14 @@ body.loaded {
   position: sticky;
   top: 0;
   z-index: 50;
+  /* HIDE-ON-SCROLL Animation */
+  transform: translateY(0);
+  transition: transform var(--duration-300) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hide-on-Scroll States */
+.nav.nav-hidden {
+  transform: translateY(-100%);
 }
 
 .nav-content {
@@ -595,6 +603,12 @@ blockquote {
   body {
     opacity: 1;
     transition: none;
+  }
+  
+  /* Disable hide-on-scroll for reduced motion */
+  .nav {
+    transform: translateY(0) !important;
+    transition: none !important;
   }
 }
 

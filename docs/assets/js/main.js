@@ -1,18 +1,15 @@
-// CF Alarm for Time Office - Modern JavaScript with Hide-on-Scroll Navigation
-// Progressive Web App registration
+// CF Alarm for Time Office - Einfaches JavaScript ohne Hide-on-Scroll
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        // Future: register service worker for offline capabilities
         console.log('PWA capabilities ready');
     });
 }
 
-// Modern loading performance
 document.addEventListener('DOMContentLoaded', () => {
-    // Fade in animation trigger
+    // Fade in animation
     document.body.classList.add('loaded');
     
-    // Modern interaction enhancements
+    // External links
     const links = document.querySelectorAll('a[href^="http"]');
     links.forEach(link => {
         link.setAttribute('rel', 'external noopener');
@@ -20,14 +17,12 @@ document.addEventListener('DOMContentLoaded', () => {
             link.setAttribute('target', '_blank');
         }
     });
-
-    // HIDE-ON-SCROLL Navigation
-    initHideOnScrollNav();
+    
+    console.log('Simple navigation loaded - no hide-on-scroll complexity!');
 });
 
-// Enhanced accessibility
+// Accessibility
 document.addEventListener('keydown', (e) => {
-    // Skip link functionality
     if (e.key === 'Tab' && !e.shiftKey) {
         const skipLink = document.querySelector('.sr-only');
         if (document.activeElement === skipLink) {
@@ -39,76 +34,3 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
-
-// HIDE-ON-SCROLL NAVIGATION & BREADCRUMB Implementation
-function initHideOnScrollNav() {
-    const nav = document.getElementById('main-nav') || document.querySelector('.nav');
-    const breadcrumb = document.querySelector('.breadcrumb');
-    
-    if (!nav) return;
-
-    // Add ID if not present
-    if (!nav.id) {
-        nav.id = 'main-nav';
-    }
-
-    let lastScrollY = window.scrollY;
-    let isNavVisible = true;
-    const navHeight = nav.offsetHeight + (breadcrumb ? breadcrumb.offsetHeight : 0);
-    const scrollThreshold = navHeight; // Start hiding after combined height
-
-    function updateNavVisibility() {
-        const currentScrollY = window.scrollY;
-        const scrollDirection = currentScrollY > lastScrollY ? 'down' : 'up';
-        const scrollDistance = Math.abs(currentScrollY - lastScrollY);
-
-        // Don't hide if we're at the very top
-        if (currentScrollY <= scrollThreshold) {
-            if (!isNavVisible) {
-                showNav();
-            }
-        } 
-        // Hide on scroll down (after threshold)
-        else if (scrollDirection === 'down' && scrollDistance > 5 && isNavVisible) {
-            hideNav();
-        } 
-        // Show on scroll up
-        else if (scrollDirection === 'up' && scrollDistance > 5 && !isNavVisible) {
-            showNav();
-        }
-
-        lastScrollY = currentScrollY;
-    }
-
-    function hideNav() {
-        nav.classList.add('nav-hidden');
-        // AUCH BREADCRUMB VERSTECKEN!
-        if (breadcrumb) {
-            breadcrumb.classList.add('breadcrumb-hidden');
-        }
-        isNavVisible = false;
-    }
-
-    function showNav() {
-        nav.classList.remove('nav-hidden');
-        // AUCH BREADCRUMB ZEIGEN!
-        if (breadcrumb) {
-            breadcrumb.classList.remove('breadcrumb-hidden');
-        }
-        isNavVisible = true;
-    }
-
-    // Throttled scroll event for better performance
-    let ticking = false;
-    function onScroll() {
-        if (!ticking) {
-            requestAnimationFrame(() => {
-                updateNavVisibility();
-                ticking = false;
-            });
-            ticking = true;
-        }
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-}

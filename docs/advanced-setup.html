@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Erweiterte Konfiguration für CF Alarm for Time Office">
-    <title>Erweiterte Konfiguration - CF Alarm for Time Office</title>
+    <meta name="description" content="Setup-Anleitung für CF Alarm for Time Office - Schritt für Schritt zur perfekten Konfiguration">
+    <title>Setup-Anleitung - CF Alarm for Time Office</title>
     <link rel="stylesheet" href="assets/css/main.css">
 </head>
 <body>
@@ -22,9 +22,7 @@
                 <a href="index.html">🏠 Startseite</a>
                 <a href="privacy.html">🔒 Datenschutz</a>
                 <a href="troubleshooting.html">🆘 Support</a>
-                <a href="developer-guide.html">💻 Entwickler</a>
-                <a href="advanced-setup.html" class="active" aria-current="page">⚙️ Konfiguration</a>
-                <a href="contributing.html">🤝 Mitwirken</a>
+                <a href="advanced-setup.html" class="active" aria-current="page">⚙️ Setup</a>
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">📱 GitHub</a>
                 <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice" rel="external noopener" target="_blank">📲 Play Store</a>
             </div>
@@ -34,62 +32,150 @@
     <!-- Breadcrumb -->
     <div class="breadcrumb">
         <div class="breadcrumb-content container">
-            <a href="index.html">🏠 Startseite</a> → <span>⚙️ Erweiterte Konfiguration</span>
+            <a href="index.html">🏠 Startseite</a> → <span>⚙️ Setup-Anleitung</span>
         </div>
     </div>
 
     <!-- Main Content -->
     <main id="main-content" class="container">
         <div class="page-header">
-            <h2>⚙️ Erweiterte Konfiguration</h2>
-            <p>Detaillierte Anleitung zur optimalen Einrichtung von CF Alarm for Time Office</p>
+            <h2>⚙️ Setup-Anleitung</h2>
+            <p>Schritt-für-Schritt Anleitung zur optimalen Einrichtung von CF Alarm for Time Office</p>
         </div>
 
+        <!-- Schnellstart -->
         <div class="content-card">
-            <h3>📅 Google Calendar Setup</h3>
+            <h3>🚀 Schnellstart (5 Minuten)</h3>
+
+            <h4>1. TimeOffice Kalender aktivieren</h4>
+            <ul>
+                <li><strong>In TimeOffice:</strong> Einstellungen → Google Kalender aktivieren</li>
+                <li><strong>Dienstplan synchronisieren lassen</strong> (dauert ein paar Minuten)</li>
+                <li><strong>In CF Alarm:</strong> TimeOffice-Kalender auswählen</li>
+            </ul>
             
-            <h4>🔑 OAuth 2.0 Konfiguration</h4>
+            <h4>2. App installieren & erste Anmeldung</h4>
             <ul>
-                <li><strong>Google Cloud Console:</strong> Projekt erstellen und Calendar API aktivieren</li>
-                <li><strong>OAuth Client:</strong> Android-Anwendung registrieren</li>
-                <li><strong>SHA-1 Fingerprint:</strong> Debug- und Release-Keys hinzufügen</li>
+                <li><strong>App herunterladen</strong> über den bereitgestellten Link</li>
+                <li><strong>Bei erstem Start:</strong> Google Account auswählen für Calendar-Zugriff</li>
+                <li><strong>Berechtigungen gewähren:</strong> Kalender und Benachrichtigungen</li>
             </ul>
 
-            <h4>🏂 TimeOffice Integration</h4>
+            <h4>3. Grundeinstellungen</h4>
             <ul>
-                <li><strong>Kalender freigeben:</strong> TimeOffice → Einstellungen → Google Kalender aktivieren</li>
-                <li><strong>Synchronisation:</strong> Automatische Sync-Intervalle konfigurieren</li>
-                <li><strong>Kategorien:</strong> Schichttypen (Früh/Spät/Nacht) definieren</li>
-            </ul>
-
-            <h3>💡 Philips Hue Konfiguration</h3>
-            
-            <h4>🌉 Bridge Setup</h4>
-            <ul>
-                <li><strong>Netzwerk:</strong> Bridge und Smartphone im gleichen WLAN</li>
-                <li><strong>Bridge-Button:</strong> Physischen Button vor Koppelung drücken</li>
-                <li><strong>Auto-Discovery:</strong> App findet Bridge automatisch</li>
-            </ul>
-
-            <h4>🌈 Licht-Szenarien</h4>
-            <ul>
-                <li><strong>Morgen-Simulation:</strong> Graduelle Helligkeitssteigerung</li>
-                <li><strong>Farbtemperatur:</strong> Warmes Licht am Morgen, kalt am Tag</li>
-                <li><strong>Timing:</strong> 15 Minuten vor Alarmzeit starten</li>
-            </ul>
-
-            <h3>⚙️ Erweiterte Einstellungen</h3>
-            
-            <h4>🔋 Power Management</h4>
-            <ul>
-                <li><strong>Batterieoptimierung:</strong> CF Alarm von Optimierung ausschließen</li>
-                <li><strong>Autostart:</strong> App-Start beim Systemboot aktivieren</li>
-                <li><strong>Background:</strong> Hintergrund-Verarbeitung erlauben</li>
+                <li><strong>Weckzeit:</strong> Z.B. 60 Minuten vor Schichtbeginn</li>
+                <li><strong>Schichtarten:</strong> Früh, Spät, Nacht konfigurieren</li>
             </ul>
 
             <blockquote>
-                <strong>💡 Pro-Tipp:</strong> Für optimale Performance alle Berechtigungen gewähren und Batterieoptimierung deaktivieren.
+                <strong>✅ Fertig!</strong> CF Alarm erstellt automatisch Wecker basierend auf Ihren TimeOffice-Terminen.
             </blockquote>
+        </div>
+
+        <!-- Häufige Stolperfallen -->
+        <div class="content-card">
+            <h3>⚠️ Häufige Stolperfallen vermeiden</h3>
+            
+            <h4>🔋 Batterieoptimierung (WICHTIG!)</h4>
+            <ul>
+                <li><strong>Problem:</strong> Android "optimiert" CF Alarm weg → keine Alarme</li>
+                <li><strong>Lösung:</strong> Android Einstellungen → Apps → CF Alarm → Akku → "Nicht optimieren"</li>
+                <li><strong>OnePlus/Xiaomi:</strong> Zusätzlich "Autostart" aktivieren</li>
+                <li><strong>Test:</strong> Mit manuellen Alarm testen</li>
+            </ul>
+
+            <h4>📅 TimeOffice Kalender-Probleme</h4>
+            <ul>
+                <li><strong>Kalender nicht sichtbar?</strong> TimeOffice → Google Kalender erst aktivieren, dann 10 Min warten</li>
+                <li><strong>Alte Termine?</strong> Google Calendar App öffnen → Aktualisieren</li>
+                <li><strong>Keine Termine?</strong> In Google Calendar prüfen ob TimeOffice-Kalender sichtbar ist</li>
+            </ul>
+
+            <h4>🔔 Benachrichtigungs-Probleme</h4>
+            <ul>
+                <li><strong>Stille Alarme?</strong> Android Einstellungen → Apps → CF Alarm → Benachrichtigungen → alle aktivieren</li>
+                <li><strong>Nicht-Stören-Modus:</strong> CF Alarm als Ausnahme hinzufügen</li>
+                <li><strong>Kein Vollbild-Alarm?</strong> "Über anderen Apps anzeigen" Berechtigung prüfen</li>
+            </ul>
+
+            <h4>📱 Verschiedene Android-Versionen</h4>
+            <ul>
+                <li><strong>Android 12+:</strong> "Exakte Alarme" Berechtigung gewähren</li>
+                <li><strong>Samsung:</strong> "App im Hintergrund laufen lassen" aktivieren</li>
+                <li><strong>Huawei:</strong> CF Alarm in "Geschützte Apps" hinzufügen</li>
+            </ul>
+        </div>
+
+        <!-- Philips Hue Setup -->
+        <div class="content-card">
+            <h3>💡 Philips Hue Setup (Optional)</h3>
+            
+            <h4>🌉 Hue Bridge verbinden</h4>
+            <ul>
+                <li><strong>Voraussetzung:</strong> Handy und Hue Bridge im gleichen WLAN</li>
+                <li><strong>CF Alarm:</strong> Hue Tab → "Bridge suchen"</li>
+                <li><strong>Bridge-Taste drücken</strong> wenn CF Alarm danach fragt</li>
+                <li><strong>Automatische Erkennung</strong> dauert 10-30 Sekunden</li>
+            </ul>
+
+            <h4>🌅 Licht-Szenarien</h4>
+            <ul>
+                <li><strong>Sanftes Aufwachen:</strong> Licht startet 15 Min vor Weckzeit</li>
+                <li><strong>Helligkeit:</strong> Von 1% auf 80% über 10 Minuten</li>
+                <li><strong>Farbe:</strong> Warmes Orange → Tageslicht-Weiß</li>
+                <li><strong>Räume:</strong> Schlafzimmer-Gruppe auswählen</li>
+            </ul>
+
+            <h4>🔧 Hue-Probleme beheben</h4>
+            <ul>
+                <li><strong>Bridge nicht gefunden?</strong> WLAN prüfen, Bridge neustarten</li>
+                <li><strong>Verbindung verloren?</strong> CF Alarm automatische Wiederverbindung (2 Min)</li>
+                <li><strong>Licht geht nicht an?</strong> Hue-Lampen an regulärem Schalter prüfen</li>
+            </ul>
+        </div>
+
+        <!-- Profi-Tipps -->
+        <div class="content-card">
+            <h3>🏆 Profi-Tipps</h3>
+            
+            <h4>📊 Optimal nutzen</h4>
+            <ul>
+                <li><strong>Backup:</strong> Einstellungen regelmäßig sichern (Export-Funktion)</li>
+                <li><strong>Test-Modus:</strong> Neue Schichtzeiten mit kurzem Test-Alarm prüfen</li>
+                <li><strong>Urlaub:</strong> Auto-Alarm temporär deaktivieren</li>
+                <li><strong>Diensttausch:</strong> Manueller Alarm als Backup</li>
+            </ul>
+
+            <h4>🚨 Notfall-Funktionen</h4>
+            <ul>
+                <li><strong>Skip-Funktion:</strong> Einzelne Alarme überspringen</li>
+                <li><strong>Snooze-Strategie:</strong> Max. 2x Snooze, dann Vollalarm</li>
+                <li><strong>Fallback-Wecker:</strong> Zusätzlicher Handy-Wecker zur Sicherheit</li>
+            </ul>
+
+            <blockquote>
+                <strong>💡 Pro-Tipp:</strong> CF Alarm läuft am zuverlässigsten wenn Sie die Batterieoptimierung deaktivieren und die App regelmäßig (1x pro Woche) kurz öffnen.
+            </blockquote>
+        </div>
+
+        <!-- Support -->
+        <div class="content-card">
+            <h3>🆘 Wenn etwas nicht funktioniert</h3>
+            
+            <h4>🔍 Erste Hilfe</h4>
+            <ul>
+                <li><strong>App neustarten:</strong> CF Alarm komplett schließen und neu öffnen</li>
+                <li><strong>Berechtigungen prüfen:</strong> Android Einstellungen → Apps → CF Alarm</li>
+                <li><strong>Google Account:</strong> In Google Calendar App an-/abmelden</li>
+                <li><strong>TimeOffice:</strong> Google Kalender deaktivieren → aktivieren</li>
+            </ul>
+
+            <h4>📞 Support kontaktieren</h4>
+            <p>Problem nicht gelöst? Kontaktieren Sie uns über:</p>
+            <ul>
+                <li><strong>GitHub Issues:</strong> <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues" rel="external">Detaillierten Fehlerbericht erstellen</a></li>
+                <li><strong>Infos bereithalten:</strong> Android-Version, Handy-Modell, Fehlerbeschreibung</li>
+            </ul>
         </div>
     </main>
 

@@ -69,6 +69,13 @@ object LogTags {
     const val HUE_NETWORK = "CFAlarm.Hue.Network"
     const val BACKGROUND_SYNC = "CFAlarm.Background.Sync"
     
+    // === SMART MAINTENANCE CHAIN ===
+    const val SMART_MAINTENANCE = "CFAlarm.SmartMaintenance"
+    const val MAINTENANCE_L1 = "CFAlarm.Maintenance.L1"
+    const val MAINTENANCE_L2 = "CFAlarm.Maintenance.L2"
+    const val MAINTENANCE_L3 = "CFAlarm.Maintenance.L3"
+    const val MAINTENANCE_L4 = "CFAlarm.Maintenance.L4"
+    
     // === PHASE 2: SECURITY & VALIDATION ===
     const val SECURITY = "CFAlarm.Security"
     const val ROOT_DETECTION = "CFAlarm.Security.Root"

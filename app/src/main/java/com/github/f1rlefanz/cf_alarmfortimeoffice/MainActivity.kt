@@ -28,6 +28,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.observer.CalendarObserverManager
 
 
 // Firebase Crashlytics
@@ -195,6 +196,9 @@ class MainActivity : ComponentActivity() {
         // OPTIMIZATION: Initialize Hue Bridge lifecycle tracking
         bridgeConnectionManager.onAppForeground()
         
+        // ⚡ SMART MAINTENANCE CHAIN Level 3: Start Calendar Observer
+        CalendarObserverManager.startCalendarObserver(this)
+        
         // PHASE 2: Initialize Smart Scheduling on app startup
         Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
     }
@@ -272,17 +276,33 @@ class MainActivity : ComponentActivity() {
         }
     }
     
-    // OPTIMIZATION: App lifecycle events for Hue Bridge efficiency
+    // OPTIMIZATION: App lifecycle events for Hue Bridge efficiency + Calendar Observer
     override fun onResume() {
         super.onResume()
         bridgeConnectionManager.onAppForeground()
-        Logger.d(LogTags.LIFECYCLE, "MainActivity: App resumed - Bridge manager notified")
+        
+        // ⚡ LEVEL 3: Restart Calendar Observer in case it was stopped
+        if (!CalendarObserverManager.isObserverActive()) {
+            CalendarObserverManager.startCalendarObserver(this)
+        }
+        
+        Logger.d(LogTags.LIFECYCLE, "MainActivity: App resumed - Bridge manager + Calendar Observer notified")
     }
     
     override fun onPause() {
         super.onPause()
         bridgeConnectionManager.onAppBackground()
+        // Note: Calendar Observer bleibt aktiv für Background-Updates
         Logger.d(LogTags.LIFECYCLE, "MainActivity: App paused - Bridge manager notified")
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        
+        // ⚡ LEVEL 3: Stop Calendar Observer when activity is destroyed
+        CalendarObserverManager.stopCalendarObserver(this)
+        
+        Logger.d(LogTags.LIFECYCLE, "MainActivity: Activity destroyed - Calendar Observer stopped")
     }
 
 }

@@ -100,15 +100,18 @@
             android:name=".AlarmReceiver"
             android:exported="false" />
             
-        <!-- BootReceiver - Restores alarms after device reboot -->
+        <!-- Enhanced BootReceiver - Complete System Recovery (Level 4) -->
         <receiver
             android:name=".alarm.receiver.BootReceiver"
             android:enabled="true"
             android:exported="true"
             android:directBootAware="true">
-            <intent-filter>
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
             </intent-filter>
         </receiver>
             

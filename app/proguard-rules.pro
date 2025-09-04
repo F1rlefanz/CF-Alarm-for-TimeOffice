@@ -294,6 +294,10 @@
 -keep class com.google.auth.oauth2.** { *; }
 -dontwarn com.google.auth.oauth2.Slf4jUtils**
 
+# Apache Commons Logging specific fixes
+-dontwarn org.apache.commons.logging.**
+-keep class org.apache.commons.logging.** { *; }
+
 # ==============================
 # SUPPRESS WARNINGS
 # ==============================

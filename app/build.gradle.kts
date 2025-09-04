@@ -89,6 +89,9 @@ android {
                 "proguard-rules.pro"
             )
             
+            // R8 specific configuration for compatibility
+            proguardFiles("proguard-r8-compat.pro")
+            
             // SECURITY: Disable debugging in release builds
             isDebuggable = false
             isJniDebuggable = false

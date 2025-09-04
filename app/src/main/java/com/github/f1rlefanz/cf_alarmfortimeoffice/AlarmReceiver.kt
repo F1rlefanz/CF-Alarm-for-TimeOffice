@@ -324,7 +324,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 // Android 14+ (API 34+): Use ActivityOptions for enhanced reliability
                 val activityOptions = ActivityOptions.makeBasic().apply {
-                    pendingIntentCreatorBackgroundActivityStartMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    pendingIntentCreatorBackgroundActivityStartMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_SYSTEM_DEFINED
                 }
                 
                 PendingIntent.getActivity(
@@ -395,7 +395,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 // Android 14+: Enhanced activity start options
                 val activityOptions = ActivityOptions.makeBasic().apply {
                     // These options improve reliability on Android 14+
-                    pendingIntentCreatorBackgroundActivityStartMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    pendingIntentCreatorBackgroundActivityStartMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_SYSTEM_DEFINED
                 }
                 context.startActivity(fullScreenIntent, activityOptions.toBundle())
                 Logger.business(LogTags.ALARM_RECEIVER, "✅ Full-screen alarm activity started with Android 14+ enhancements")

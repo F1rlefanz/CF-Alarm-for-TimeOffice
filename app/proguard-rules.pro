@@ -301,6 +301,7 @@
 # Common warnings that can be safely ignored
 -dontwarn javax.annotation.**
 -dontwarn org.apache.commons.**
+-dontwarn org.apache.commons.logging.impl.Log4JLogger
 -dontwarn org.apache.http.**
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn com.google.j2objc.annotations.**

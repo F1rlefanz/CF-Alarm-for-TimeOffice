@@ -1,3 +1,5 @@
+@file:OptIn(DelicateCoroutinesApi::class) // Opt-in für GlobalScope in legacy compatibility methods
+
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository
 
 import android.content.Context
@@ -8,6 +10,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHue
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.Flow

@@ -56,8 +56,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.0.7"
+        versionCode = 12
+        versionName = "1.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -198,14 +198,6 @@ android {
         
         // Ensure test framework can find our TestSuite
         animationsDisabled = true
-        
-        // JUnit configuration
-        unitTests.all { test ->
-            test.useJUnitPlatform {
-                // Include all tests, including our TestSuite
-                includeTags("junit")
-            }
-        }
     }
 }
 

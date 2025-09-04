@@ -41,10 +41,9 @@
     <!-- Enhanced doze mode exemption -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     
-    <!-- Explicitly remove AD_ID permission added by Firebase -->
-    <!-- We don't use advertising, only Crashlytics for error monitoring -->
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" 
-                     tools:node="remove" />
+    <!-- Required for apps targeting Android 13+ that use advertising ID -->
+    <!-- Even though we don't use ads, Firebase may require this -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
     
     <!-- Foreground Service Permissions (Android 9+ / Android 14+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -70,6 +69,11 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false"
         tools:targetApi="31">
+        
+        <!-- Completely disable Firebase Analytics automatic data collection -->
+        <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
+        <meta-data android:name="firebase_crashlytics_collection_enabled" android:value="true" />
+        <meta-data android:name="google_analytics_adid_collection_enabled" android:value="false" />
         
         <activity
             android:name=".MainActivity"

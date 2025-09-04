@@ -56,7 +56,7 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
+        versionCode = 9
         versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -262,10 +262,14 @@ dependencies {
     // 🚀 PHASE 3: WorkManager für Background-Services
     implementation(libs.androidx.work.runtime.ktx)
 
-    // Firebase (2025 Standards) 
+    // Firebase (2025 Standards) - ONLY Crashlytics
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
-    // Firebase Analytics REMOVED - We don't use advertising/analytics, only Crashlytics
+    // Firebase Analytics EXPLICITLY EXCLUDED to prevent AD_ID permission
+    configurations.all {
+        exclude(group = "com.google.firebase", module = "firebase-analytics")
+        exclude(group = "com.google.firebase", module = "firebase-analytics-ktx")
+    }
 
     // Desugaring for LocalDateTime support
     coreLibraryDesugaring(libs.desugar.jdk.libs)

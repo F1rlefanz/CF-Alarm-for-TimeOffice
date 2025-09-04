@@ -56,8 +56,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.5"
+        versionCode = 8
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -265,7 +265,7 @@ dependencies {
     // Firebase (2025 Standards) 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.analytics) // Required for Crashlytics breadcrumb logs
+    // Firebase Analytics REMOVED - We don't use advertising/analytics, only Crashlytics
 
     // Desugaring for LocalDateTime support
     coreLibraryDesugaring(libs.desugar.jdk.libs)

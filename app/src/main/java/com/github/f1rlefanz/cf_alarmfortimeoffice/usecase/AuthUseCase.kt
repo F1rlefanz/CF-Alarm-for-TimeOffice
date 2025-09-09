@@ -13,23 +13,21 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 
 /**
- * UseCase für alle Authentication-bezogenen Operationen - implementiert IAuthUseCase
+ * UseCase für alle Authentication-bezogenen Operationen - modernisiert 
  * 
- * REFACTORED:
- * ✅ Implementiert IAuthUseCase Interface für bessere Testbarkeit
- * ✅ Verwendet Repository-Interface statt konkrete Implementierung
- * ✅ Kapselt Business Logic von Infrastructure
+ * MIGRATION STATUS:
+ * ✅ Entfernt: Nullable ModernOAuth2TokenManager dependency
+ * ✅ Implementiert: Non-nullable dependency injection
+ * ✅ Verwendet: Repository-Interface pattern
  * ✅ Result-basierte API für konsistente Fehlerbehandlung
- * ✅ Clean Architecture Compliance
- * ✅ MODERN: Integriert ModernOAuth2TokenManager für Calendar-Autorisierung
  * 
- * AUTHENTICATION FLOW 2024/2025:
+ * AUTHENTICATION FLOW 2025:
  * 1. Credential Manager für Benutzer-Authentifizierung (wer bist du?)
  * 2. ModernOAuth2TokenManager für API-Autorisierung (was darfst du?)
  */
 class AuthUseCase(
     private val authDataStoreRepository: IAuthDataStoreRepository,
-    private val modernOAuth2TokenManager: ModernOAuth2TokenManager? = null
+    private val modernOAuth2TokenManager: ModernOAuth2TokenManager
 ) : IAuthUseCase {
     
     override val authData: Flow<AuthData> = authDataStoreRepository.authData
@@ -45,7 +43,7 @@ class AuthUseCase(
     }
     
     /**
-     * MODERN: Requests Calendar API authorization for signed-in user
+     * Requests Calendar API authorization for signed-in user
      * 
      * @param userEmail Optional email address (uses current user if null)
      * @return Result with Boolean (true if authorized) or error
@@ -57,36 +55,31 @@ class AuthUseCase(
                 currentAuth?.email ?: throw Exception("No user email available for Calendar authorization")
             }
             
-            modernOAuth2TokenManager?.let { tokenManager ->
-                Logger.business(LogTags.AUTH, "🔐 MODERN-TOKEN: Requesting Calendar authorization for user: $emailToUse")
-                
-                val calendarAuthResult = tokenManager.authorizeCalendarAccess(emailToUse)
-                when (calendarAuthResult) {
-                    is AuthResult.Success -> {
-                        Logger.business(LogTags.AUTH, "✅ MODERN-TOKEN: Calendar authorization successful - real OAuth2 token obtained", emailToUse)
-                        Logger.d(LogTags.AUTH, "📊 Token details: accessToken=${calendarAuthResult.tokenData.accessToken.take(20)}..., expires=${calendarAuthResult.tokenData.getRemainingLifetimeMinutes()}min")
-                        true
-                    }
-                    is AuthResult.Failure -> {
-                        Logger.e(LogTags.AUTH, "❌ MODERN-TOKEN: Calendar authorization failed: ${calendarAuthResult.error}")
-                        throw Exception("Calendar authorization failed: ${calendarAuthResult.error}")
-                    }
+            Logger.business(LogTags.AUTH, "🔐 MODERN-TOKEN: Requesting Calendar authorization for user: $emailToUse")
+            
+            val calendarAuthResult = modernOAuth2TokenManager.authorizeCalendarAccess(emailToUse)
+            when (calendarAuthResult) {
+                is AuthResult.Success -> {
+                    Logger.business(LogTags.AUTH, "✅ MODERN-TOKEN: Calendar authorization successful - real OAuth2 token obtained", emailToUse)
+                    Logger.d(LogTags.AUTH, "📊 Token details: accessToken=${calendarAuthResult.tokenData.accessToken.take(20)}..., expires=${calendarAuthResult.tokenData.getRemainingLifetimeMinutes()}min")
+                    true
                 }
-            } ?: run {
-                Logger.e(LogTags.AUTH, "❌ CRITICAL: ModernOAuth2TokenManager not available - token system broken!")
-                throw Exception("Calendar authorization system not available - dependency injection issue")
+                is AuthResult.Failure -> {
+                    Logger.e(LogTags.AUTH, "❌ MODERN-TOKEN: Calendar authorization failed: ${calendarAuthResult.error}")
+                    throw Exception("Calendar authorization failed: ${calendarAuthResult.error}")
+                }
             }
         }
     }
     
     /**
-     * MODERN: Checks if Calendar authorization is available
+     * Checks if Calendar authorization is available
      * 
      * @return Result with Boolean (true if calendar access authorized) or error
      */
     override suspend fun hasCalendarAuthorization(): Result<Boolean> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("AuthUseCase.hasCalendarAuthorization") {
-            modernOAuth2TokenManager?.hasCalendarAuthorization() ?: false
+            modernOAuth2TokenManager.hasCalendarAuthorization()
         }
     }
     

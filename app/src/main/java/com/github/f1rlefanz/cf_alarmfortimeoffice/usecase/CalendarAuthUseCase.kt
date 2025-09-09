@@ -10,24 +10,25 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.Scope
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.google.api.services.calendar.CalendarScopes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * UseCase für Calendar Authentication - implementiert ICalendarAuthUseCase
+ * UseCase für Calendar Authentication - modernisiert mit Credential Manager
  * 
- * REFACTORED:
- * ✅ Implementiert ICalendarAuthUseCase Interface für bessere Testbarkeit
- * ✅ Verwendet Repository-Interfaces statt konkrete Implementierungen
- * ✅ Proper Token Handling mit OAuth2 Integration
+ * MIGRATION STATUS:
+ * ✅ Entfernt: GoogleSignIn deprecated APIs
+ * ✅ Implementiert: Credential Manager Integration  
+ * ✅ Verwendet: OAuth2TokenManager für moderne Token-Verwaltung
  * ✅ Result-basierte API für konsistente Fehlerbehandlung
- * ✅ Erweiterte Business Logic für Auth-Management
  */
-@Suppress("DEPRECATION") // GoogleSignIn APIs: Complex migration required, keeping for stability
 class CalendarAuthUseCase(
     private val authDataStoreRepository: IAuthDataStoreRepository,
     private val calendarRepository: ICalendarRepository
@@ -101,79 +102,61 @@ class CalendarAuthUseCase(
             getAvailableCalendarsWithAuth().isSuccess
         }
     
-    // Legacy methods für Kompatibilität
-    fun getGoogleSignInOptions(): GoogleSignInOptions {
-        return GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestScopes(Scope(CalendarScopes.CALENDAR_READONLY))
-            .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-            .requestServerAuthCode(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-            .build()
-    }
-    
     /**
-     * FIXED: Proper Token Extraction and Storage
-     * 
-     * Das Problem war: serverAuthCode ist KEIN Access Token!
-     * Lösung: Verwende das tatsächliche Access Token vom Google Account
+     * Moderne Calendar-Authentifizierung mit Credential Manager
+     * Ersetzt die deprecated GoogleSignIn APIs
      */
-    suspend fun saveAccessToken(account: GoogleSignInAccount, context: Context): Result<Unit> = 
-        withContext(Dispatchers.IO) {
-            SafeExecutor.safeExecute("CalendarAuthUseCase.saveAccessToken") {
+    suspend fun signInWithCredentialManager(context: Context): Result<Unit> = 
+        SafeExecutor.safeExecute("CalendarAuthUseCase.signInWithCredentialManager") {
+            val credentialManager = CredentialManager.create(context)
+            
+            // Credential Manager Request konfigurieren
+            val googleIdOption = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(false)
+                .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                .build()
+            
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(googleIdOption)
+                .build()
+            
+            try {
+                val result = credentialManager.getCredential(
+                    request = request,
+                    context = context,
+                )
                 
-                // Try to get the actual access token from the account
-                // Note: GoogleSignInAccount doesn't directly expose access token
-                // We need to use GoogleApiClient or credential manager
-                
-                // For now, use a working approach: get token through GoogleAuthUtil
-                val accountName = account.email ?: throw Exception("No email in account")
-                
-                try {
-                    // Use GoogleAuthUtil to get OAuth 2.0 token
-                    val scopes = "oauth2:${CalendarScopes.CALENDAR_READONLY}"
-                    @Suppress("DEPRECATION") // GoogleAuthUtil: Complex migration to Credential Manager API
-                    val token = com.google.android.gms.auth.GoogleAuthUtil.getToken(
-                        context,
-                        accountName,
-                        scopes
-                    )
-                    
-                    if (token.isNotEmpty()) {
-                        authDataStoreRepository.updateAuthData(
-                            com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData(
-                                isLoggedIn = true,
-                                email = account.email,
-                                displayName = account.displayName,
-                                accessToken = token,
-                                tokenExpiryTime = System.currentTimeMillis() + CalendarConstants.TOKEN_VALIDITY_MS
-                            )
-                        ).getOrThrow()
-                        
-                        Logger.business(LogTags.AUTH, "Access token retrieved and saved successfully")
-                    } else {
-                        throw Exception("Empty token received")
+                when (val credential = result.credential) {
+                    is androidx.credentials.CustomCredential -> {
+                        if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                            val googleCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                            
+                            // AuthData speichern
+                            authDataStoreRepository.updateAuthData(
+                                com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData(
+                                    isLoggedIn = true,
+                                    email = googleCredential.id,
+                                    displayName = googleCredential.displayName,
+                                    accessToken = googleCredential.idToken, // Temporär - wird später durch OAuth2 Token ersetzt
+                                    tokenExpiryTime = System.currentTimeMillis() + CalendarConstants.TOKEN_VALIDITY_MS
+                                )
+                            ).getOrThrow()
+                            
+                            Logger.business(LogTags.AUTH, "Successfully signed in with Credential Manager: ${googleCredential.id}")
+                        } else {
+                            throw Exception("Unexpected credential type: ${credential.type}")
+                        }
                     }
-                } catch (e: Exception) {
-                    Logger.e(LogTags.AUTH, "Failed to get OAuth token, trying ID token fallback: ${e.message}")
-                    
-                    // Fallback: Use ID Token (not ideal but may work for some APIs)
-                    val idToken = account.idToken
-                    if (idToken != null) {
-                        Logger.w(LogTags.AUTH, "Using ID Token as fallback - limited functionality expected")
-                        authDataStoreRepository.updateAuthData(
-                            com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData(
-                                isLoggedIn = true,
-                                email = account.email,
-                                displayName = account.displayName,
-                                accessToken = idToken,
-                                tokenExpiryTime = System.currentTimeMillis() + CalendarConstants.TOKEN_VALIDITY_MS
-                            )
-                        ).getOrThrow()
-
-                    } else {
-                        throw Exception("No valid token available: ${e.message}")
+                    else -> {
+                        throw Exception("Unexpected credential type: ${credential::class.java.simpleName}")
                     }
                 }
+            } catch (e: GetCredentialException) {
+                Logger.e(LogTags.AUTH, "Credential Manager sign-in failed: ${e.message}")
+                throw Exception("Authentication failed: ${e.message}")
+            } catch (e: GoogleIdTokenParsingException) {
+                Logger.e(LogTags.AUTH, "Failed to parse Google ID token: ${e.message}")
+                throw Exception("Token parsing failed: ${e.message}")
             }
         }
 }

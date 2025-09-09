@@ -226,8 +226,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // Authentication & Credentials
-    implementation(libs.play.services.auth)
+    // ✅ MODERN: Authentication & Credentials (NO DEPRECATED APIs)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.gpsAuth)
     implementation(libs.googleid)

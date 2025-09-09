@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.poc
 import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.CustomCredential
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow
@@ -64,9 +65,31 @@ class GoogleApiMigrationPoC(private val context: Context) {
                     Logger.d(LogTags.AUTH, "✅ PoC: Credential Manager SUCCESS - Email: $email, Name: $displayName")
                     Result.success("✅ SUCCESS: Email=$email, Name=$displayName")
                 }
+                is androidx.credentials.CustomCredential -> {
+                    // Handle CustomCredential - this is the correct way for Google ID
+                    if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                        try {
+                            val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                            val email = googleIdTokenCredential.id
+                            val displayName = googleIdTokenCredential.displayName
+                            Logger.d(LogTags.AUTH, "✅ PoC: Custom Credential SUCCESS - Email: $email, Name: $displayName")
+                            Result.success("✅ SUCCESS (CustomCredential): Email=$email, Name=$displayName")
+                        } catch (e: Exception) {
+                            Logger.e(LogTags.AUTH, "❌ PoC: Failed to parse CustomCredential: ${e.message}")
+                            Result.failure(Exception("Failed to parse CustomCredential: ${e.message}"))
+                        }
+                    } else {
+                        Logger.e(LogTags.AUTH, "❌ PoC: Unknown CustomCredential type: ${credential.type}")
+                        Result.failure(Exception("Unknown CustomCredential type: ${credential.type}"))
+                    }
+                }
                 else -> {
-                    Logger.e(LogTags.AUTH, "❌ PoC: Unexpected credential type: ${credential::class.simpleName}")
-                    Result.failure(Exception("Unexpected credential type"))
+                    val credentialType = credential::class.simpleName
+                    val credentialData = credential.data
+                    Logger.e(LogTags.AUTH, "❌ PoC: Unexpected credential type: $credentialType")
+                    Logger.e(LogTags.AUTH, "❌ PoC: Credential data: $credentialData")
+                    Logger.e(LogTags.AUTH, "❌ PoC: Expected: GoogleIdTokenCredential or CustomCredential")
+                    Result.failure(Exception("Unexpected credential type: $credentialType. Expected: GoogleIdTokenCredential. Data: $credentialData"))
                 }
             }
             

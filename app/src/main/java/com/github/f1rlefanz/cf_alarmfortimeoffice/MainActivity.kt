@@ -30,6 +30,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.observer.CalendarObserverManager
 
+// DEBUG ONLY: HTTP Client Test Import
+import com.github.f1rlefanz.cf_alarmfortimeoffice.poc.SimpleHttpClientTest
+
 
 // Firebase Crashlytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
@@ -201,6 +204,15 @@ class MainActivity : ComponentActivity() {
         
         // PHASE 2: Initialize Smart Scheduling on app startup
         Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
+        
+        // 🧪 DEBUG ONLY: HTTP Client 2.0.0 Test (wird in Produktion entfernt)
+        if (BuildConfig.DEBUG) {
+            lifecycleScope.launch {
+                // Warte kurz, dann führe HTTP Client Test aus
+                kotlinx.coroutines.delay(3000) // 3 Sekunden warten
+                SimpleHttpClientTest.runTest(this@MainActivity)
+            }
+        }
     }
 
     /**

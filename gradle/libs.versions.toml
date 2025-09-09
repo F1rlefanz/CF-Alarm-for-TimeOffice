@@ -30,7 +30,7 @@ retrofit = "3.0.0"
 # Google API Client dependencies 
 googleApiClient = "2.8.1"
 googleApiServicesCalendar = "v3-rev20220715-2.0.0"
-googleHttpClient = "1.47.1"
+googleHttpClient = "2.0.0"
 
 # Android UI dependencies
 appcompat = "1.7.1"

@@ -84,6 +84,10 @@ class MainActivity : ComponentActivity() {
             
             if (isGranted) {
                 Logger.business(LogTags.PERMISSIONS, "Calendar permission granted")
+                
+                // Start Calendar Observer after permission is granted
+                CalendarObserverManager.startCalendarObserver(this)
+                
                 // PERFORMANCE FIX: Only load if not already loaded recently
                 val calendarState = calendarViewModel.uiState.value
                 if (calendarState.availableCalendars.isEmpty() && !calendarState.isLoading) {
@@ -196,8 +200,12 @@ class MainActivity : ComponentActivity() {
         // OPTIMIZATION: Initialize Hue Bridge lifecycle tracking
         bridgeConnectionManager.onAppForeground()
         
-        // ⚡ SMART MAINTENANCE CHAIN Level 3: Start Calendar Observer
-        CalendarObserverManager.startCalendarObserver(this)
+        // ⚡ SMART MAINTENANCE CHAIN Level 3: Start Calendar Observer (only if permission granted)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            CalendarObserverManager.startCalendarObserver(this)
+        } else {
+            Logger.d(LogTags.PERMISSIONS, "Calendar Observer not started - READ_CALENDAR permission required")
+        }
         
         // PHASE 2: Initialize Smart Scheduling on app startup
         Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
@@ -262,6 +270,12 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.READ_CALENDAR
             ) == PackageManager.PERMISSION_GRANTED -> {
                 Logger.business(LogTags.PERMISSIONS, "Calendar permission already granted")
+                
+                // Start Calendar Observer if not already active
+                if (!CalendarObserverManager.isObserverActive()) {
+                    CalendarObserverManager.startCalendarObserver(this)
+                }
+                
                 // PERFORMANCE FIX: Only load if not already loaded and not loading
                 val calendarState = calendarViewModel.uiState.value
                 if (calendarState.availableCalendars.isEmpty() && !calendarState.isLoading) {
@@ -281,9 +295,11 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         bridgeConnectionManager.onAppForeground()
         
-        // ⚡ LEVEL 3: Restart Calendar Observer in case it was stopped
-        if (!CalendarObserverManager.isObserverActive()) {
-            CalendarObserverManager.startCalendarObserver(this)
+        // ⚡ LEVEL 3: Restart Calendar Observer in case it was stopped (only if permission granted)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            if (!CalendarObserverManager.isObserverActive()) {
+                CalendarObserverManager.startCalendarObserver(this)
+            }
         }
         
         Logger.d(LogTags.LIFECYCLE, "MainActivity: App resumed - Bridge manager + Calendar Observer notified")

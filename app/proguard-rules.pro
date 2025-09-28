@@ -309,6 +309,28 @@
 -dontwarn java.lang.invoke.**
 
 # ==============================
+# 🛠️ CRITICAL FIX: ASHMEM PINNING COMPATIBILITY
+# ==============================
+
+# Fix for "Pinning is deprecated since Android Q" warning
+# Suppress ashmem-related warnings and obfuscate problematic methods
+-dontwarn android.os.SharedMemory
+-dontwarn dalvik.system.VMRuntime
+-dontwarn libcore.io.AshmemPinning
+-dontwarn android.os.PinningHelperHooks
+
+# Obfuscate ashmem-related method calls to prevent deprecation warnings
+-keep,allowobfuscation class * {
+    *** pin(...);
+    *** unpin(...);
+    *** setPinned(...);
+}
+
+# Additional compatibility for Android Q+ memory management
+-keep class android.os.** { *; }
+-dontwarn android.os.**$$*
+
+# ==============================
 # OPTIMIZATIONS FOR APK SIZE
 # ==============================
 

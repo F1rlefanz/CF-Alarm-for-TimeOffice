@@ -751,14 +751,25 @@ class CalendarViewModel(
 
     /**
      * 🚨 CRITICAL FIX: Automatically create alarms from loaded events
-     * TIMING FIX: Waits for ShiftConfig to be available before creating alarms
-     * RETRY LOGIC: Attempts multiple times to handle race conditions
+     * CRITICAL FIX: Only create alarms if events actually exist
      */
     private fun createAlarmsFromLoadedEvents(events: List<CalendarEvent>) {
         viewModelScope.launch {
             try {
                 val eventCount = events.size
+                
+                // CRITICAL FIX: Don't create alarms if no events exist
+                if (events.isEmpty()) {
+                    Logger.business(LogTags.ALARM, "✅ NO-EVENTS: No calendar events found - no alarms to create")
+                    return@launch
+                }
+                
                 Logger.business(LogTags.ALARM, "🚨 TIMING-FIX: Starting alarm creation for $eventCount loaded events")
+                
+                // 🔍 DEBUGGING: Log details about the events we found
+                events.forEach { event ->
+                    Logger.business(LogTags.ALARM, "🔍 FOUND-EVENT: '${event.title}' on ${event.startTime.toLocalDate()} at ${event.startTime.toLocalTime()} (Calendar: ${event.calendarId.take(8)}...)")
+                }
                 
                 // TIMING FIX: Wait for ShiftConfig with retry logic
                 var shiftConfig: com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig? = null
@@ -974,28 +985,52 @@ class CalendarViewModel(
     }
     
     /**
-     * PERFORMANCE: Cleanup Resources on ViewModel destruction
-     * MEMORY LEAK PREVENTION: Proper resource cleanup
+     * CRITICAL FIX: Enhanced Cleanup Resources on ViewModel destruction
+     * MEMORY LEAK PREVENTION: Proper resource cleanup to prevent mutex errors
      */
     override fun onCleared() {
         super.onCleared()
         
-        // PERFORMANCE: Cancel pending batch updates to prevent memory leaks
-        batchUpdateJob?.cancel()
-        batchUpdateJob = null
-        pendingStateUpdate = null
+        try {
+            Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Starting cleanup...")
+            
+            // CRITICAL FIX: Cancel ALL pending coroutines immediately
+            batchUpdateJob?.cancel()
+            batchUpdateJob = null
+            pendingStateUpdate = null
+            
+            // CRITICAL FIX: Cancel daysAhead refresh job
+            currentDaysAheadRefreshJob?.cancel()
+            currentDaysAheadRefreshJob = null
+            
+            // CRITICAL FIX: Reset ALL volatile flags to prevent stale operations
+            isCalendarLoadingInProgress = false
+            lastCalendarLoadTime = 0L
+            lastDaysAheadRefresh = 0L
+            
+            // CRITICAL FIX: Clear state to prevent memory leaks
+            _localUiState.value = CalendarUiState()
+            
+            Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Cleanup completed successfully")
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.LIFECYCLE, "Error during CalendarViewModel cleanup", e)
+        }
         
-        // REACTIVITY FIX: Cancel daysAhead refresh job
-        currentDaysAheadRefreshJob?.cancel()
-        currentDaysAheadRefreshJob = null
-        
-        // MEMORY OPTIMIZATION: Reset loading flags to prevent stale references
-        isCalendarLoadingInProgress = false
-        lastCalendarLoadTime = 0L
-        lastDaysAheadRefresh = 0L
-        
-        Logger.d(LogTags.LIFECYCLE, "CalendarViewModel cleared - cleaning up resources")
         // Note: ViewModelScope automatically cancels all coroutines
         // CalendarRepository cleanup wird durch DI Container gehandhabt
+    }
+    
+    /**
+     * PUBLIC API: Manual cleanup for MainActivity destruction
+     * Calls onCleared() safely from external context
+     */
+    fun cleanupResources() {
+        try {
+            Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Manual cleanup requested")
+            onCleared()
+        } catch (e: Exception) {
+            Logger.e(LogTags.LIFECYCLE, "Error during CalendarViewModel manual cleanup", e)
+        }
     }
 }

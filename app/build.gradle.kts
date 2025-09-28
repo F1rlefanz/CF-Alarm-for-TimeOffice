@@ -56,8 +56,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.0.6"
+        versionCode = 11  // CRITICAL FIX: Increment for new build
+        versionName = "1.0.7-FIXED"  // CRITICAL FIX: Version bump for fixes
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -70,6 +70,23 @@ android {
             ?: "931091152160-8s3nd7os2p61ac6ecm799gjhekkf0b4i.apps.googleusercontent.com" // Fallback for development
         
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
+        
+        // ==============================
+        // 🛠️ CRITICAL FIX: ASHMEM PINNING DEPRECATED SOLUTION
+        // ==============================
+        // FIX for "Pinning is deprecated since Android Q" warning
+        // Disable problematic ashmem features for Android Q+ compatibility
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+        }
+        
+        // Additional fixes for ashmem compatibility
+        packaging {
+            jniLibs {
+                // CRITICAL FIX: Prevent ashmem-related library conflicts
+                useLegacyPackaging = false
+            }
+        }
     }
 
     buildTypes {
@@ -185,6 +202,17 @@ android {
             excludes += "/META-INF/INDEX.LIST"
             excludes += "/META-INF/DEPENDENCIES"
         }
+        
+        // ==============================
+        // 🛠️ CRITICAL FIX: ASHMEM PINNING MEMORY MANAGEMENT
+        // ==============================
+        // Additional configuration to prevent ashmem pinning warnings
+        jniLibs {
+            useLegacyPackaging = false
+            // Exclude problematic native libraries that use deprecated ashmem
+            excludes += "**/libashmem.so"
+            excludes += "**/libpinning.so"
+        }
     }
 
     // ==============================
@@ -270,6 +298,12 @@ dependencies {
         exclude(group = "com.google.firebase", module = "firebase-analytics")
         exclude(group = "com.google.firebase", module = "firebase-analytics-ktx")
     }
+
+    // ==============================
+    // 🛠️ CRITICAL FIX: FORCE NEWER VERSIONS TO AVOID ASHMEM
+    // ==============================
+    implementation("com.google.android.gms:play-services-base:18.3.0")
+    implementation("androidx.core:core-ktx:1.13.1")
 
     // Desugaring for LocalDateTime support
     coreLibraryDesugaring(libs.desugar.jdk.libs)

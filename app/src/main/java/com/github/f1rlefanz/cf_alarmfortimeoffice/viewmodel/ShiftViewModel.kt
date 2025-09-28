@@ -244,25 +244,40 @@ class ShiftViewModel(
     }
     
     /**
-     * MEMORY LEAK PREVENTION: Comprehensive resource cleanup
-     * PERFORMANCE OPTIMIZATION: Clear all state references
+     * CRITICAL FIX: Enhanced Memory Leak Prevention - Comprehensive resource cleanup
+     * MUTEX ERROR PREVENTION: Clear all state references that could cause threading issues
      */
     override fun onCleared() {
         super.onCleared()
         
         try {
-            // MEMORY OPTIMIZATION: Clear event state to prevent memory leaks
+            Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Starting cleanup...")
+            
+            // CRITICAL FIX: Clear event state to prevent memory leaks
             _daysAheadChangedEvent.value = 0L
             
-            // MEMORY LEAK FIX: Clear UI state to release object references
+            // CRITICAL FIX: Clear UI state to release object references
             _uiState.value = ShiftUiState()
             
-            Logger.d(LogTags.LIFECYCLE, "ShiftViewModel cleared - cleaning up resources and state references")
+            Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Cleanup completed successfully")
         } catch (e: Exception) {
             Logger.e(LogTags.LIFECYCLE, "Error during ShiftViewModel cleanup", e)
         }
         
         // Note: ViewModelScope automatically cancels all coroutines
         // UseCase cleanup wird durch DI Container gehandhabt
+    }
+    
+    /**
+     * PUBLIC API: Manual cleanup for MainActivity destruction
+     * Calls onCleared() safely from external context
+     */
+    fun cleanupResources() {
+        try {
+            Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Manual cleanup requested")
+            onCleared()
+        } catch (e: Exception) {
+            Logger.e(LogTags.LIFECYCLE, "Error during ShiftViewModel manual cleanup", e)
+        }
     }
 }

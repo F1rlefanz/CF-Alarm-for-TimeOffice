@@ -85,6 +85,12 @@ class AlarmUseCase(
                     return@safeExecute emptyList()
                 }
                 
+                // CRITICAL FIX: Check if events are empty
+                if (events.isEmpty()) {
+                    Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: No calendar events found - no alarms to create")
+                    return@safeExecute emptyList()
+                }
+                
                 Logger.d(LogTags.ALARM, "🔄 BATCH-CREATE: Starting batch alarm creation for ${events.size} events")
                 
                 // PERFORMANCE: Single atomic clear - directly call internal clear to avoid nested SafeExecutor calls
@@ -93,25 +99,38 @@ class AlarmUseCase(
                 // PERFORMANCE: Get shift matches with optimized recognition
                 val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
                 
+                // CRITICAL FIX: Check if we actually found matching shifts
+                if (shiftMatches.isEmpty()) {
+                    Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: No matching shifts found in ${events.size} calendar events - no alarms to create")
+                    return@safeExecute emptyList()
+                }
+                
                 // PERFORMANCE: Batch create alarms
                 val alarmInfos = mutableListOf<AlarmInfo>()
+                val now = LocalDateTime.now()
                 
                 for (shiftMatch in shiftMatches) {
                     try {
+                        // CRITICAL FIX: Skip alarms in the past
+                        if (shiftMatch.calculatedAlarmTime.isBefore(now)) {
+                            Logger.w(LogTags.ALARM, "⏰ BATCH-CREATE: Skipping alarm in the past: ${shiftMatch.shiftDefinition.name} at ${shiftMatch.calculatedAlarmTime}")
+                            continue
+                        }
+                        
                         val alarmInfo = createAlarmFromShiftMatch(shiftMatch)
                         alarmInfos.add(alarmInfo)
                         
                         // Save alarm in repository
                         alarmRepository.saveAlarm(alarmInfo).getOrThrow()
                         
-                        Logger.d(LogTags.ALARM, "✅ BATCH-CREATE: Created alarm for shift: ${shiftMatch.shiftDefinition.name}")
+                        Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: Created alarm for shift: ${shiftMatch.shiftDefinition.name} at ${shiftMatch.calculatedAlarmTime}")
                     } catch (e: Exception) {
                         Logger.e(LogTags.ALARM, "❌ BATCH-CREATE: Error creating alarm for shift: ${shiftMatch.shiftDefinition.name} - ${e.message}")
                         // Continue with other alarms
                     }
                 }
                 
-                Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: Created ${alarmInfos.size} alarms from ${events.size} events")
+                Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: Created ${alarmInfos.size} alarms from ${events.size} events (${shiftMatches.size} matches)")
                 alarmInfos
             }
         } finally {

@@ -26,22 +26,71 @@ class ModernOAuth2TokenManager(
     private val tokenStorage: TokenStorageRepository
 ) {
     
+    // CRITICAL FIX: Add initialization validation
+    private var isInitialized = false
+    private var lastUserEmail: String? = null
+    
     /**
-     * Gets valid access token for Google Calendar API.
-     * This is the main method for API access - automatically handles refresh.
-     * 
-     * MODERNIZED: Supports both legacy tokens and modern GoogleAuthUtil authentication
-     * CRITICAL DIAGNOSTIC: Enhanced logging for token troubleshooting
-     * CRITICAL FIX: Improved token refresh logic for better reliability
+     * CRITICAL FIX: Initialize token manager with proper validation
+     */
+    suspend fun initialize(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            Logger.business(LogTags.TOKEN, "🔧 TOKEN-INIT: Initializing ModernOAuth2TokenManager")
+            
+            // Validate storage availability
+            val storageTest = tokenStorage.getCurrentToken()
+            Logger.d(LogTags.TOKEN, "✅ TOKEN-INIT: Token storage validated successfully")
+            
+            // Cache user email for faster lookups
+            lastUserEmail = getUserEmailFromAccounts()
+            if (lastUserEmail != null) {
+                Logger.business(LogTags.TOKEN, "✅ TOKEN-INIT: User email cached: $lastUserEmail")
+            } else {
+                Logger.w(LogTags.TOKEN, "⚠️ TOKEN-INIT: No user email available - user needs to sign in")
+            }
+            
+            isInitialized = true
+            Logger.business(LogTags.TOKEN, "✅ TOKEN-INIT: ModernOAuth2TokenManager initialized successfully")
+            Result.success(Unit)
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.TOKEN, "❌ TOKEN-INIT: Failed to initialize ModernOAuth2TokenManager", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Enhanced token retrieval with initialization check and retry logic
      */
     suspend fun getValidCalendarToken(): Result<String> = withContext(Dispatchers.IO) {
         try {
+            // CRITICAL FIX: Ensure manager is initialized
+            if (!isInitialized) {
+                Logger.w(LogTags.TOKEN, "⚠️ TOKEN-DIAGNOSTIC: Manager not initialized, initializing now...")
+                val initResult = initialize()
+                if (initResult.isFailure) {
+                    Logger.e(LogTags.TOKEN, "❌ TOKEN-ERROR: Failed to initialize token manager")
+                    return@withContext Result.failure(TokenException.NoTokenAvailable("Token manager initialization failed"))
+                }
+            }
+            
             val currentToken = tokenStorage.getCurrentToken()
             
             when {
                 currentToken == null -> {
                     Logger.w(LogTags.TOKEN, "❌ TOKEN-DIAGNOSTIC: No Calendar token available - authorization required")
                     Logger.d(LogTags.TOKEN, "💡 TOKEN-DIAGNOSTIC: User needs to complete Calendar authorization flow")
+                    
+                    // CRITICAL FIX: Check if user is signed in but token missing
+                    if (lastUserEmail != null) {
+                        Logger.business(LogTags.TOKEN, "🔄 TOKEN-RECOVERY: User signed in but no Calendar token - attempting auto-authorization")
+                        val autoAuthResult = authorizeCalendarAccess(lastUserEmail!!)
+                        if (autoAuthResult is AuthResult.Success) {
+                            Logger.business(LogTags.TOKEN, "✅ TOKEN-RECOVERY: Auto-authorization successful")
+                            return@withContext Result.success(autoAuthResult.tokenData.accessToken)
+                        }
+                    }
+                    
                     Result.failure(TokenException.NoTokenAvailable("No Calendar API authorization - please authorize Calendar access"))
                 }
                 
@@ -98,9 +147,18 @@ class ModernOAuth2TokenManager(
                     googleAccount,
                     "oauth2:${CalendarScopes.CALENDAR_READONLY}"
                 )
+            } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                Logger.w(LogTags.OAUTH, "⚠️ Calendar authorization requires user interaction", e)
+                return@withContext AuthResult.Failure("NEEDS_USER_PERMISSION:${e.intent}")
             } catch (e: Exception) {
                 Logger.e(LogTags.OAUTH, "❌ Failed to get Calendar token", e)
-                return@withContext AuthResult.Failure("Calendar authorization failed: ${e.localizedMessage}")
+                val errorMessage = when {
+                    e.message?.contains("NetworkError") == true -> "Network error during Calendar authorization"
+                    e.message?.contains("Account not found") == true -> "Google account not found on device"
+                    e.message?.contains("ServiceDisabled") == true -> "Calendar API service disabled"
+                    else -> "Calendar authorization failed: ${e.localizedMessage}"
+                }
+                return@withContext AuthResult.Failure(errorMessage)
             }
             
             if (calendarToken.isNullOrEmpty()) {
@@ -213,8 +271,7 @@ class ModernOAuth2TokenManager(
     }
     
     /**
-     * Gets user email from SharedPreferences (where AuthViewModel stores it)
-     * Falls back to Android Accounts if available (requires GET_ACCOUNTS permission)
+     * CRITICAL FIX: Enhanced user email retrieval with better fallback logic
      */
     private fun getUserEmailFromAccounts(): String? {
         return try {
@@ -223,13 +280,14 @@ class ModernOAuth2TokenManager(
             // First try: Read from SharedPreferences where AuthViewModel stores it
             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
             val email = prefs.getString("current_user_email", null)
+            val isSignedIn = prefs.getBoolean("user_signed_in", false)
             
-            if (email != null) {
+            if (email != null && email.contains("@") && isSignedIn) {
                 Logger.business(LogTags.AUTH, "✅ EMAIL-FOUND: User email retrieved from SharedPreferences: $email")
                 return email
             }
             
-            Logger.w(LogTags.AUTH, "⚠️ EMAIL-MISSING: No user email in SharedPreferences, trying Android Accounts")
+            Logger.w(LogTags.AUTH, "⚠️ EMAIL-MISSING: No valid user email in SharedPreferences (email=$email, signedIn=$isSignedIn), trying Android Accounts")
             
             // Fallback: Try Android Accounts (requires GET_ACCOUNTS permission)
             try {
@@ -241,11 +299,13 @@ class ModernOAuth2TokenManager(
                     Logger.business(LogTags.AUTH, "✅ EMAIL-FALLBACK: Found email via Android Accounts: $fallbackEmail")
                     
                     // Save to SharedPreferences for next time
-                    prefs.edit().putString("current_user_email", fallbackEmail).apply()
+                    saveUserEmailToPreferences(fallbackEmail)
                     return fallbackEmail
                 }
             } catch (e: SecurityException) {
                 Logger.w(LogTags.AUTH, "No GET_ACCOUNTS permission, cannot use fallback")
+            } catch (e: Exception) {
+                Logger.w(LogTags.AUTH, "Error accessing Android Accounts", e)
             }
             
             Logger.e(LogTags.AUTH, "❌ EMAIL-ERROR: No user email found - user needs to sign in")
@@ -254,6 +314,19 @@ class ModernOAuth2TokenManager(
         } catch (e: Exception) {
             Logger.e(LogTags.AUTH, "❌ EMAIL-EXCEPTION: Error getting user email", e)
             null
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: Helper method to save user email to SharedPreferences
+     */
+    private fun saveUserEmailToPreferences(email: String) {
+        try {
+            val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
+            prefs.edit().putString("current_user_email", email).apply()
+            Logger.d(LogTags.AUTH, "✅ EMAIL-SAVE: User email saved to SharedPreferences: $email")
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Failed to save user email to SharedPreferences", e)
         }
     }
     

@@ -259,10 +259,11 @@ class AuthViewModel(
                                 putString("current_user_email", initialEmail)
                                 putString("current_user_display_name", displayName)
                                 putLong("auth_timestamp", System.currentTimeMillis())
+                                putBoolean("user_signed_in", true) // CRITICAL FIX: Explicit sign-in flag
                             }
-                            Logger.d(LogTags.AUTH, "✅ Saved user email to SharedPreferences for CalendarRepository access")
+                            Logger.business(LogTags.AUTH, "✅ CRITICAL-FIX: Saved user email '$initialEmail' to SharedPreferences for ModernOAuth2TokenManager")
                         } catch (e: Exception) {
-                            Logger.w(LogTags.AUTH, "Could not save user email to SharedPreferences", e)
+                            Logger.e(LogTags.AUTH, "❌ CRITICAL-ERROR: Could not save user email to SharedPreferences", e)
                         }
                         
                         authDataStoreRepository.updateAuthData(authData)
@@ -518,14 +519,40 @@ class AuthViewModel(
     }
 
     /**
-     * LIFECYCLE MANAGEMENT: Properly cancel all ongoing operations
+     * CRITICAL FIX: Enhanced Lifecycle Management - Properly cancel all ongoing operations
+     * MEMORY LEAK PREVENTION: Clear all callbacks and volatile fields to prevent mutex errors
      */
     override fun onCleared() {
         super.onCleared()
         try {
-            Logger.d(LogTags.LIFECYCLE, "AuthViewModel cleanup completed")
+            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Starting cleanup...")
+            
+            // CRITICAL FIX: Cancel callback to prevent accessing destroyed resources
+            calendarReloadTrigger = null
+            
+            // CRITICAL FIX: Reset volatile fields to prevent stale operations
+            triggerInProgress = false
+            lastCalendarTriggerTime = 0L
+            
+            // CRITICAL FIX: Clear state to prevent memory leaks
+            _authState.value = AuthState.EMPTY
+            
+            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Cleanup completed successfully")
         } catch (e: Exception) {
             Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel cleanup", e)
+        }
+    }
+    
+    /**
+     * PUBLIC API: Manual cleanup for MainActivity destruction
+     * Calls onCleared() safely from external context
+     */
+    fun cleanupResources() {
+        try {
+            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Manual cleanup requested")
+            onCleared()
+        } catch (e: Exception) {
+            Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel manual cleanup", e)
         }
     }
 }

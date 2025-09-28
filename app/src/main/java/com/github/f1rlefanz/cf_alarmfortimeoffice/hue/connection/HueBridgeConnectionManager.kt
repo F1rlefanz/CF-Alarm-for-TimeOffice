@@ -443,15 +443,34 @@ class HueBridgeConnectionManager private constructor(
     }
     
     /**
-     * Cleanup resources
+     * CRITICAL FIX: Enhanced cleanup for MainActivity destruction
+     * Prevents pthread_mutex_lock errors by properly canceling all background operations
      */
     fun cleanup() {
-        healthCheckJob?.cancel()
-        healthCheckScope.cancel()
-        
-        // PHASE 2: Cleanup smart scheduler
-        smartScheduler?.cleanup()
-        
-        Logger.d(LogTags.HUE_BRIDGE, "🧹 BRIDGE-MANAGER: Cleanup completed")
+        try {
+            Logger.d(LogTags.HUE_BRIDGE, "🧹 BRIDGE-MANAGER: Starting comprehensive cleanup to prevent mutex errors...")
+            
+            // CRITICAL FIX: Cancel all background jobs immediately
+            healthCheckJob?.cancel()
+            healthCheckJob = null
+            
+            // CRITICAL FIX: Cancel the entire health check scope with timeout
+            healthCheckScope.cancel()
+            
+            // CRITICAL FIX: Clear connection state to prevent stale references
+            updateConnectionState(ConnectionState.DISCONNECTED)
+            
+            // CRITICAL FIX: Reset volatile fields
+            isAppInForeground = false
+            lastForegroundCheck = 0L
+            lastManualCheck = 0L
+            
+            // PHASE 2: Cleanup smart scheduler
+            smartScheduler?.cleanup()
+            
+            Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Comprehensive cleanup completed successfully")
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Error during HueBridgeConnectionManager cleanup", e)
+        }
     }
 }

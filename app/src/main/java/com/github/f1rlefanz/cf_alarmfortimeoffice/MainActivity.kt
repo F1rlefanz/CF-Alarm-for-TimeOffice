@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
@@ -29,7 +28,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.observer.CalendarObserverManager
-
+import androidx.core.content.edit
 
 // Firebase Crashlytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
@@ -133,15 +132,20 @@ class MainActivity : ComponentActivity() {
         checkNotificationPermission()
         
         // Debug: Test File-Logging (nur im Debug-Build) - MOVED TO BACKGROUND
-        if (BuildConfig.DEBUG) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                try {
-                    // DebugLogInfo.addTestLogEntries() // REMOVED: Test log entries no longer needed
-                    DebugLogInfo.logFileInfo(this@MainActivity)
-                } catch (e: Exception) {
-                    Logger.w("MainActivity", "Debug logging failed", e)
+        try {
+            val isDebugBuild = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+            if (isDebugBuild) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        // DebugLogInfo.addTestLogEntries() // REMOVED: Test log entries no longer needed
+                        DebugLogInfo.logFileInfo(this@MainActivity)
+                    } catch (e: Exception) {
+                        Logger.w("MainActivity", "Debug logging failed", e)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Logger.w("MainActivity", "Debug build check failed", e)
         }
 
         setContent {
@@ -220,17 +224,20 @@ class MainActivity : ComponentActivity() {
             
             // Privacy-compliant User ID: Generate app-specific UUID instead of hardware ID
             // SECURITY FIX: Replaced ANDROID_ID with privacy-compliant solution
-            val sharedPrefs = getSharedPreferences("app_analytics", Context.MODE_PRIVATE)
+            val sharedPrefs = getSharedPreferences("app_analytics", MODE_PRIVATE)
             val userId = sharedPrefs.getString("user_uuid", null) ?: run {
                 val newUuid = java.util.UUID.randomUUID().toString().take(12)
-                sharedPrefs.edit().putString("user_uuid", newUuid).apply()
+                sharedPrefs.edit {
+                    putString("user_uuid", newUuid)
+                }
                 newUuid
             }
             crashlytics.setUserId("user_$userId")
             
             // Custom Keys für App Context
             crashlytics.setCustomKey("app_version", packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown")
-            crashlytics.setCustomKey("build_type", if (BuildConfig.DEBUG) "debug" else "release")
+            val isDebugBuild = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+            crashlytics.setCustomKey("build_type", if (isDebugBuild) "debug" else "release")
             crashlytics.setCustomKey("target_sdk", applicationInfo.targetSdkVersion)
             
             // Breadcrumb-Log
@@ -315,10 +322,56 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         
-        // ⚡ LEVEL 3: Stop Calendar Observer when activity is destroyed
-        CalendarObserverManager.stopCalendarObserver(this)
+        try {
+            Logger.d(LogTags.LIFECYCLE, "MainActivity: Starting comprehensive cleanup to prevent mutex errors...")
+            
+            // ⚡ LEVEL 3: Stop Calendar Observer when activity is destroyed
+            CalendarObserverManager.stopCalendarObserver(this)
+            
+            // CRITICAL FIX: Enhanced cleanup with proper sequencing
+            lifecycleScope.launch {
+                try {
+                    // CRITICAL FIX: Stop Hue Bridge first to cancel all network operations
+                    bridgeConnectionManager.cleanup()
+                    
+                    // Give a moment for network operations to complete
+                    kotlinx.coroutines.delay(50)
+                    
+                    // CRITICAL FIX: Use public cleanup methods instead of protected onCleared()
+                    // Start with high-level coordinators, then data-layer ViewModels
+                    navigationViewModel.cleanupResources()
+                    mainViewModel.cleanupResources()
+                    
+                    // Small delay between batches
+                    kotlinx.coroutines.delay(25)
+                    
+                    // Core business logic ViewModels  
+                    authViewModel.cleanupResources()
+                    shiftViewModel.cleanupResources()
+                    
+                    // Small delay before final cleanup
+                    kotlinx.coroutines.delay(25)
+                    
+                    // Data-heavy ViewModels last
+                    calendarViewModel.cleanupResources()
+                    alarmViewModel.cleanupResources()
+                    
+                    Logger.d(LogTags.LIFECYCLE, "MainActivity: Sequential cleanup completed successfully")
+                } catch (e: Exception) {
+                    Logger.e(LogTags.LIFECYCLE, "Error during MainActivity ViewModel cleanup", e)
+                }
+            }
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.LIFECYCLE, "Error during MainActivity cleanup", e)
+        }
         
-        Logger.d(LogTags.LIFECYCLE, "MainActivity: Activity destroyed - Calendar Observer stopped")
+        // FINAL PROTECTION: Force garbage collection hint after cleanup
+        try {
+            System.gc()
+        } catch (_: Exception) {
+            // Ignore GC errors - using _ to indicate intentionally unused parameter
+        }
     }
 
 }

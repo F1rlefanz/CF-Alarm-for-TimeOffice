@@ -13,6 +13,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 /**
  * ViewModel für Navigation State Management
  * Ersetzt primitive Boolean-Navigation durch typisierte sealed classes
+ * 
+ * MEMORY LEAK FIXED: Added proper cleanup to prevent pthread_mutex_lock errors
  */
 class NavigationViewModel : ViewModel() {
     
@@ -112,6 +114,38 @@ class NavigationViewModel : ViewModel() {
         if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
             navigateToCalendarSelection()
+        }
+    }
+    
+    /**
+     * CRITICAL FIX: NavigationViewModel Cleanup to prevent pthread_mutex_lock errors
+     * MEMORY LEAK PREVENTION: Clear navigation state on destruction
+     */
+    override fun onCleared() {
+        super.onCleared()
+        
+        try {
+            // CRITICAL FIX: Reset navigation state to prevent memory leaks
+            _navigationState.value = NavigationState.MainContent(MainTab.HOME)
+            
+            Logger.d(LogTags.LIFECYCLE, "NavigationViewModel cleared - cleaning up navigation state")
+        } catch (e: Exception) {
+            Logger.e(LogTags.LIFECYCLE, "Error during NavigationViewModel cleanup", e)
+        }
+        
+        // Note: NavigationViewModel has no coroutines to cancel
+    }
+    
+    /**
+     * PUBLIC API: Manual cleanup for MainActivity destruction
+     * Calls onCleared() safely from external context
+     */
+    fun cleanupResources() {
+        try {
+            Logger.d(LogTags.LIFECYCLE, "NavigationViewModel: Manual cleanup requested")
+            onCleared()
+        } catch (e: Exception) {
+            Logger.e(LogTags.LIFECYCLE, "Error during NavigationViewModel manual cleanup", e)
         }
     }
 }

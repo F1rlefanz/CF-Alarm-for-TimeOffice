@@ -300,10 +300,10 @@ dependencies {
     }
 
     // ==============================
-    // 🛠️ CRITICAL FIX: FORCE NEWER VERSIONS TO AVOID ASHMEM
+    // 🛠️ FIXED: Using version catalog instead of hardcoded versions
     // ==============================
-    implementation("com.google.android.gms:play-services-base:18.3.0")
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation(libs.play.services.base)  // ✅ Now using version catalog (18.9.0)
+    // androidx.core:core-ktx already included above via libs.androidx.core.ktx
 
     // Desugaring for LocalDateTime support
     coreLibraryDesugaring(libs.desugar.jdk.libs)

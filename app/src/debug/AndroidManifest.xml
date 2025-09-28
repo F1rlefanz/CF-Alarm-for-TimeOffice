@@ -1,17 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    
-    <!-- DEBUG-ONLY Activities -->
-    <application>
-        <activity
-            android:name=".debug.CrashlyticsTestActivity"
-            android:exported="true"
-            android:label="🧪 Crashlytics Test"
-            android:theme="@style/Theme.CFAlarmForTimeOffice">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
+    <!-- Debug Manifest - No debug activities currently active -->
 </manifest>

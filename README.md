@@ -70,6 +70,14 @@
 - **Hue-Szenarien**: Verschiedene Licht-Profile für unterschiedliche Situationen
 - **Manuelle Alarme**: Falls bei Diensttausch TimeOffice noch nicht aktualisiert wurde oder bei Calendar-API Problemen
 
+## 👨‍💻 Development Setup
+
+Möchtest du zur Entwicklung beitragen? Siehe:
+
+- 📚 [SETUP.md](./SETUP.md) - Entwicklungsumgebung einrichten
+- 🔐 [SECURITY.md](./SECURITY.md) - Sicherheitspraktiken und Credential-Management
+- 📋 [CHANGELOG_SECURITY.md](./CHANGELOG_SECURITY.md) - Aktuelle Sicherheitsverbesserungen
+
 ## 📄 Lizenz
 
 Dieses Projekt steht unter der **MIT License** - siehe [LICENSE](LICENSE) Datei für Details.

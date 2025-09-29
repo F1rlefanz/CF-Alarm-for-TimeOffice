@@ -64,10 +64,26 @@ android {
             useSupportLibrary = true
         }
 
-        // Secure OAuth Client ID loading - supports different environments
-        val googleWebClientId = keystoreProperties["googleWebClientId"] as String? 
-            ?: System.getenv("GOOGLE_WEB_CLIENT_ID") 
-            ?: "931091152160-8s3nd7os2p61ac6ecm799gjhekkf0b4i.apps.googleusercontent.com" // Fallback for development
+        // ==============================
+        // 🔐 SECURE OAUTH CLIENT ID CONFIGURATION
+        // ==============================
+        // SECURITY: OAuth Client ID must be configured in keystore.properties or environment variables
+        // NO hardcoded fallback to prevent accidental credential leakage in version control
+        val googleWebClientId = keystoreProperties["googleWebClientId"] as String?
+            ?: System.getenv("GOOGLE_WEB_CLIENT_ID")
+            ?: throw GradleException(
+                """
+                ⚠️ GOOGLE_WEB_CLIENT_ID not configured!
+                
+                Please add it to 'keystore.properties':
+                    googleWebClientId=your-client-id-here.apps.googleusercontent.com
+                
+                Or set environment variable:
+                    export GOOGLE_WEB_CLIENT_ID=your-client-id-here
+                
+                Get your Client ID from: https://console.cloud.google.com/apis/credentials
+                """.trimIndent()
+            )
         
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
         

@@ -13,7 +13,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.CFAlarmApplication
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.observer.CalendarObserverManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
 import java.time.LocalDateTime
 
@@ -426,31 +425,16 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
 
-    /**
-     * 🔄 Smart Maintenance Chain Reinitialization (L1-L3)
-     */
     private fun performSmartMaintenanceChainReinitialization(context: Context) {
         try {
             Logger.business(
                 LogTags.MAINTENANCE_L4,
-                "🔄 LEVEL 4: Reinitializing Smart Maintenance Chain (L1-L3)"
+                "🔄 LEVEL 4: Reinitializing Smart Maintenance Chain"
             )
 
-            // Level 1: AlarmReceiver - No action needed (automatic with next alarm)
-            Logger.d(LogTags.MAINTENANCE_L4, "✅ LEVEL 1: Opportunistic checks ready (automatic)")
-
-            // Level 2: BackgroundTokenRefreshWorker - Restart
             BackgroundTokenRefreshWorker.cancelTokenRefresh(context)
             BackgroundTokenRefreshWorker.scheduleTokenRefresh(context)
-            Logger.business(LogTags.MAINTENANCE_L4, "✅ LEVEL 2: Background worker restarted")
-
-            // Level 3: Calendar Observer - Restart
-            CalendarObserverManager.stopCalendarObserver(context)
-            val observerStarted = CalendarObserverManager.startCalendarObserver(context)
-            Logger.business(
-                LogTags.MAINTENANCE_L4,
-                "✅ LEVEL 3: Calendar observer ${if (observerStarted) "started" else "failed to start"}"
-            )
+            Logger.business(LogTags.MAINTENANCE_L4, "✅ Background worker restarted")
 
             Logger.business(
                 LogTags.MAINTENANCE_L4,

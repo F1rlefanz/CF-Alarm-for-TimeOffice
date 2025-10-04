@@ -24,8 +24,7 @@ fun MainScreen(
     alarmViewModel: AlarmViewModel,
     mainViewModel: MainViewModel,
     navigationViewModel: NavigationViewModel,
-    viewModelFactory: ViewModelFactory,
-    onRequestCalendarPermission: () -> Unit
+    viewModelFactory: ViewModelFactory
 ) {
     // MEMORY LEAK FIX: Consolidated State Collection
     // Reduziert 6 individuelle collectAsState() auf strukturierte Sammlung
@@ -70,15 +69,6 @@ fun MainScreen(
         if (calendarState.availableCalendars.isEmpty()) {
             Logger.d(LogTags.UI, "Loading calendar data due to empty calendar list")
             calendarViewModel.refreshData()
-            
-            // OPTION 4: FALLBACK CHECK - Falls Primary Check fehlgeschlagen ist
-            // Warte kurz und prüfe ob refreshData() erfolgreich war
-            delay(300)
-            
-            if (calendarState.availableCalendars.isEmpty() && !calendarState.isLoading) {
-                Logger.d(LogTags.UI, "FALLBACK: Calendar data still empty after refresh - requesting permission")
-                onRequestCalendarPermission()
-            }
         }
         
         // 3. NAVIGATION: Handle after data operations complete

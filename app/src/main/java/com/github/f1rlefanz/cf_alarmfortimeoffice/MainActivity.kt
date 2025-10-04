@@ -28,7 +28,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.observer.CalendarObserverManager
+
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.ModernOAuth2TokenManager
 import androidx.core.content.edit
 
@@ -72,34 +72,6 @@ class MainActivity : ComponentActivity() {
         ViewModelProvider(this, viewModelFactory)[NavigationViewModel::class.java]
     }
 
-    // PERFORMANCE FIX: Deduplication für Calendar Permission Requests
-    @Volatile
-    private var isPermissionRequestInProgress = false
-    @Volatile
-    private var lastPermissionCheckTime = 0L
-
-    // Permission Launchers
-    private val requestCalendarPermissionLauncher =
-        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            isPermissionRequestInProgress = false // RESET permission request flag
-            
-            if (isGranted) {
-                Logger.business(LogTags.PERMISSIONS, "Calendar permission granted")
-                
-                // Start Calendar Observer after permission is granted
-                CalendarObserverManager.startCalendarObserver(this)
-                
-                // PERFORMANCE FIX: Only load if not already loaded recently
-                val calendarState = calendarViewModel.uiState.value
-                if (calendarState.availableCalendars.isEmpty() && !calendarState.isLoading) {
-                    calendarViewModel.loadAvailableCalendars()
-                }
-            } else {
-                Toast.makeText(this, "Kalenderberechtigung ist erforderlich!", Toast.LENGTH_LONG).show()
-            }
-        }
-
-    // Launcher für Notification-Berechtigung
     private val requestNotificationPermissionLauncher =
         registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
             Logger.business(LogTags.PERMISSIONS, "Notification permission result", "granted: $isGranted")
@@ -133,11 +105,6 @@ class MainActivity : ComponentActivity() {
         // Prüfe Notification-Berechtigung
         checkNotificationPermission()
         
-        // OPTION 4: Prüfe Calendar-Berechtigung sofort beim Start (Primary Check)
-        // Note: Erfolgt nach setContent, da checkCalendarPermission() calendarViewModel nutzt
-        // checkCalendarPermission() wird am Ende von onCreate() aufgerufen
-        
-        // Debug: Test File-Logging (nur im Debug-Build) - MOVED TO BACKGROUND
         try {
             val isDebugBuild = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
             if (isDebugBuild) {
@@ -186,8 +153,7 @@ class MainActivity : ComponentActivity() {
                                 alarmViewModel = alarmViewModel,
                                 mainViewModel = mainViewModel,
                                 navigationViewModel = navigationViewModel,
-                                viewModelFactory = viewModelFactory,
-                                onRequestCalendarPermission = { checkCalendarPermission() }
+                                viewModelFactory = viewModelFactory
                             )
                         }
                         "login" -> {
@@ -210,19 +176,8 @@ class MainActivity : ComponentActivity() {
         // OPTIMIZATION: Initialize Hue Bridge lifecycle tracking
         bridgeConnectionManager.onAppForeground()
         
-        // ⚡ SMART MAINTENANCE CHAIN Level 3: Start Calendar Observer (only if permission granted)
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
-            CalendarObserverManager.startCalendarObserver(this)
-        } else {
-            Logger.d(LogTags.PERMISSIONS, "Calendar Observer not started - READ_CALENDAR permission required")
-        }
-        
         // PHASE 2: Initialize Smart Scheduling on app startup
         Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
-        
-        // OPTION 4: PRIMARY CHECK - Calendar Permission sofort beim App-Start prüfen
-        // Erfolgt nach setContent, damit calendarViewModel verfügbar ist
-        checkCalendarPermission()
     }
 
     /**
@@ -268,64 +223,17 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
-    fun checkCalendarPermission() {
-        // PERFORMANCE FIX: Deduplication für mehrfache Permission-Checks
-        val currentTime = System.currentTimeMillis()
-        val timeSinceLastCheck = currentTime - lastPermissionCheckTime
-        
-        if (isPermissionRequestInProgress || timeSinceLastCheck < 2000) {
-            Logger.d(LogTags.PERMISSIONS, "Permission check throttled - in progress: $isPermissionRequestInProgress, time since last: ${timeSinceLastCheck}ms")
-            return
-        }
-        
-        lastPermissionCheckTime = currentTime
-        
-        when {
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.READ_CALENDAR
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                Logger.business(LogTags.PERMISSIONS, "Calendar permission already granted")
-                
-                // Start Calendar Observer if not already active
-                if (!CalendarObserverManager.isObserverActive()) {
-                    CalendarObserverManager.startCalendarObserver(this)
-                }
-                
-                // PERFORMANCE FIX: Only load if not already loaded and not loading
-                val calendarState = calendarViewModel.uiState.value
-                if (calendarState.availableCalendars.isEmpty() && !calendarState.isLoading) {
-                    calendarViewModel.loadAvailableCalendars()
-                }
-            }
-            else -> {
-                Logger.d(LogTags.PERMISSIONS, "Requesting calendar permission")
-                isPermissionRequestInProgress = true
-                requestCalendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
-            }
-        }
-    }
     
-    // OPTIMIZATION: App lifecycle events for Hue Bridge efficiency + Calendar Observer
     override fun onResume() {
         super.onResume()
         bridgeConnectionManager.onAppForeground()
         
-        // ⚡ LEVEL 3: Restart Calendar Observer in case it was stopped (only if permission granted)
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
-            if (!CalendarObserverManager.isObserverActive()) {
-                CalendarObserverManager.startCalendarObserver(this)
-            }
-        }
-        
-        Logger.d(LogTags.LIFECYCLE, "MainActivity: App resumed - Bridge manager + Calendar Observer notified")
+        Logger.d(LogTags.LIFECYCLE, "MainActivity: App resumed - Bridge manager notified")
     }
     
     override fun onPause() {
         super.onPause()
         bridgeConnectionManager.onAppBackground()
-        // Note: Calendar Observer bleibt aktiv für Background-Updates
         Logger.d(LogTags.LIFECYCLE, "MainActivity: App paused - Bridge manager notified")
     }
     
@@ -386,10 +294,6 @@ class MainActivity : ComponentActivity() {
         try {
             Logger.d(LogTags.LIFECYCLE, "MainActivity: Starting comprehensive cleanup to prevent mutex errors...")
             
-            // ⚡ LEVEL 3: Stop Calendar Observer when activity is destroyed
-            CalendarObserverManager.stopCalendarObserver(this)
-            
-            // CRITICAL FIX: Enhanced cleanup with proper sequencing
             lifecycleScope.launch {
                 try {
                     // CRITICAL FIX: Stop Hue Bridge first to cancel all network operations

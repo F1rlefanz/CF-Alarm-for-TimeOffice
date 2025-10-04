@@ -27,7 +27,7 @@ fun SettingsTabContent(
     onShowShiftConfig: () -> Unit,
     onShowCalendarSelection: () -> Unit
 ) {
-    LocalContext.current
+    val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
     val shiftState by (shiftViewModel?.uiState?.collectAsState()
         ?: MutableStateFlow(null).collectAsState())
@@ -93,7 +93,11 @@ fun SettingsTabContent(
         if (authState.userAuth.isSignedIn && !authState.calendarOps.hasSelectedCalendars) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { authViewModel.requestCalendarAuthorization() },
+                onClick = { 
+                    // CRITICAL FIX: Pass Activity context for permission dialog
+                    val activity = context as? android.app.Activity
+                    authViewModel.requestCalendarAuthorization(activity)
+                },
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )

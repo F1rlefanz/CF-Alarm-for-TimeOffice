@@ -309,6 +309,23 @@
 -dontwarn java.lang.invoke.**
 
 # ==============================
+# APACHE COMMONS LOGGING FIX
+# ==============================
+
+# Fix for Log4J warnings from Apache Commons Logging
+# The Log4JLogger is an optional implementation that we don't use
+-dontwarn org.apache.commons.logging.impl.Log4JLogger
+-dontwarn org.apache.log4j.**
+
+# Keep Commons Logging interfaces but allow implementation removal
+-keep interface org.apache.commons.logging.Log { *; }
+-keep interface org.apache.commons.logging.LogFactory { *; }
+
+# Safely ignore missing Log4J classes (we use Android logging instead)
+-dontnote org.apache.commons.logging.impl.Log4JLogger
+-dontnote org.apache.log4j.**
+
+# ==============================
 # 🛠️ CRITICAL FIX: ASHMEM PINNING COMPATIBILITY
 # ==============================
 

@@ -282,7 +282,8 @@ class AuthViewModel(
                                 
                                 // Automatically trigger Calendar authorization
                                 Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization")
-                                requestCalendarAuthorization()
+                                val activity = context as? android.app.Activity
+                                requestCalendarAuthorization(activity)
                             }
                             .onFailure { error ->
                                 updateAuthState { currentState ->
@@ -398,9 +399,11 @@ class AuthViewModel(
     
     /**
      * MODERN: Requests Calendar API authorization for current user
-     * CRITICAL FIX: Directly calls AuthUseCase to get real OAuth2 tokens
+     * CRITICAL FIX: Directly calls AuthUseCase to get real OAuth2 tokens with Activity Context
+     * 
+     * @param activity Activity context for launching permission dialog if needed
      */
-    fun requestCalendarAuthorization() {
+    fun requestCalendarAuthorization(activity: android.app.Activity? = null) {
         viewModelScope.launch {
             updateAuthState { currentState ->
                 currentState.copy(
@@ -424,42 +427,85 @@ class AuthViewModel(
                     return@launch
                 }
                 
-                Logger.business(LogTags.AUTH, "MODERN-FLOW: Requesting Calendar authorization for $userEmail")
+                Logger.business(LogTags.AUTH, "🔐 ACTIVITY-CONTEXT-FIX: Requesting Calendar authorization for $userEmail with Activity=${activity != null}")
                 
-                authUseCase?.requestCalendarAuthorization(userEmail)?.fold(
-                    onSuccess = { authorized ->
-                        updateAuthState { currentState ->
-                            currentState.copy(
-                                calendarOps = currentState.calendarOps.copy(
-                                    calendarsLoading = false,
-                                    hasSelectedCalendars = authorized
+                // CRITICAL FIX: Use Activity-based authorization if activity is provided
+                if (activity != null && authUseCase is com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AuthUseCase) {
+                    Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Using Activity-based authorization flow")
+                    
+                    authUseCase.requestCalendarAuthorizationWithActivity(
+                        userEmail = userEmail,
+                        activity = activity,
+                        onResult = { success ->
+                            updateAuthState { currentState ->
+                                currentState.copy(
+                                    calendarOps = currentState.calendarOps.copy(
+                                        calendarsLoading = false,
+                                        hasSelectedCalendars = success
+                                    )
                                 )
-                            )
+                            }
+                            
+                            if (success) {
+                                Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful")
+                                triggerCalendarReloadAfterAuth()
+                            } else {
+                                Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: Calendar authorization failed or denied")
+                            }
                         }
-                        Logger.business(LogTags.AUTH, "✅ MODERN-FLOW: Calendar authorization successful: $authorized")
-                        
-                        // CRITICAL FIX: Auto-trigger calendar loading after successful authorization
-                        if (authorized) {
-                            triggerCalendarReloadAfterAuth()
+                    ).fold(
+                        onSuccess = {
+                            Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Authorization request initiated successfully")
+                        },
+                        onFailure = { error ->
+                            updateAuthState { currentState ->
+                                currentState.copy(
+                                    calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                                    errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
+                                )
+                            }
+                            Logger.e(LogTags.AUTH, "❌ ACTIVITY-CONTEXT-FIX: Calendar authorization failed", error)
                         }
-                    },
-                    onFailure = { error ->
+                    )
+                } else {
+                    // Fallback to old method without Activity context
+                    Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: No Activity context provided, using legacy method")
+                    
+                    authUseCase?.requestCalendarAuthorization(userEmail)?.fold(
+                        onSuccess = { authorized ->
+                            updateAuthState { currentState ->
+                                currentState.copy(
+                                    calendarOps = currentState.calendarOps.copy(
+                                        calendarsLoading = false,
+                                        hasSelectedCalendars = authorized
+                                    )
+                                )
+                            }
+                            Logger.business(LogTags.AUTH, "✅ MODERN-FLOW: Calendar authorization successful: $authorized")
+                            
+                            // CRITICAL FIX: Auto-trigger calendar loading after successful authorization
+                            if (authorized) {
+                                triggerCalendarReloadAfterAuth()
+                            }
+                        },
+                        onFailure = { error ->
+                            updateAuthState { currentState ->
+                                currentState.copy(
+                                    calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                                    errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
+                                )
+                            }
+                            Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: Calendar authorization failed", error)
+                        }
+                    ) ?: run {
                         updateAuthState { currentState ->
                             currentState.copy(
                                 calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                                errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
+                                errors = AppErrorState.authenticationError("Calendar-Autorisierungssystem nicht verfügbar")
                             )
                         }
-                        Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: Calendar authorization failed", error)
+                        Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: AuthUseCase not available for Calendar authorization")
                     }
-                ) ?: run {
-                    updateAuthState { currentState ->
-                        currentState.copy(
-                            calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                            errors = AppErrorState.authenticationError("Calendar-Autorisierungssystem nicht verfügbar")
-                        )
-                    }
-                    Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: AuthUseCase not available for Calendar authorization")
                 }
             } catch (e: Exception) {
                 updateAuthState { currentState ->

@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
@@ -28,6 +29,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.observer.CalendarObserverManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.ModernOAuth2TokenManager
 import androidx.core.content.edit
 
 // Firebase Crashlytics
@@ -131,6 +133,10 @@ class MainActivity : ComponentActivity() {
         // Prüfe Notification-Berechtigung
         checkNotificationPermission()
         
+        // OPTION 4: Prüfe Calendar-Berechtigung sofort beim Start (Primary Check)
+        // Note: Erfolgt nach setContent, da checkCalendarPermission() calendarViewModel nutzt
+        // checkCalendarPermission() wird am Ende von onCreate() aufgerufen
+        
         // Debug: Test File-Logging (nur im Debug-Build) - MOVED TO BACKGROUND
         try {
             val isDebugBuild = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -213,6 +219,10 @@ class MainActivity : ComponentActivity() {
         
         // PHASE 2: Initialize Smart Scheduling on app startup
         Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
+        
+        // OPTION 4: PRIMARY CHECK - Calendar Permission sofort beim App-Start prüfen
+        // Erfolgt nach setContent, damit calendarViewModel verfügbar ist
+        checkCalendarPermission()
     }
 
     /**
@@ -317,6 +327,57 @@ class MainActivity : ComponentActivity() {
         bridgeConnectionManager.onAppBackground()
         // Note: Calendar Observer bleibt aktiv für Background-Updates
         Logger.d(LogTags.LIFECYCLE, "MainActivity: App paused - Bridge manager notified")
+    }
+    
+    /**
+     * CRITICAL FIX: Handle Calendar authorization permission result
+     * 
+     * This method is called when the user responds to the Calendar permission dialog
+     * launched by ModernOAuth2TokenManager. It's essential for the permission flow to work.
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        Logger.d(LogTags.AUTH, "📨 ACTIVITY-RESULT: requestCode=$requestCode, resultCode=$resultCode")
+        
+        // Handle Calendar authorization result
+        if (requestCode == ModernOAuth2TokenManager.REQUEST_CODE_CALENDAR_AUTHORIZATION) {
+            lifecycleScope.launch {
+                try {
+                    val success = appContainer.modernOAuth2TokenManager.handlePermissionResult(
+                        requestCode,
+                        resultCode,
+                        data
+                    )
+                    
+                    if (success) {
+                        Logger.business(LogTags.AUTH, "✅ PERMISSION-FIXED: Calendar permission granted successfully")
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Kalenderzugriff wurde erteilt!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        
+                        // Trigger calendar reload after successful authorization
+                        calendarViewModel.loadAvailableCalendars()
+                    } else {
+                        Logger.w(LogTags.AUTH, "⚠️ PERMISSION-FIXED: Calendar permission denied by user")
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Kalenderzugriff wurde verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } catch (e: Exception) {
+                    Logger.e(LogTags.AUTH, "❌ PERMISSION-FIXED: Error handling permission result", e)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Fehler bei der Kalenderautorisierung: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
     }
     
     override fun onDestroy() {

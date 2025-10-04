@@ -71,10 +71,12 @@ fun MainScreen(
             Logger.d(LogTags.UI, "Loading calendar data due to empty calendar list")
             calendarViewModel.refreshData()
             
-            // 2. PERMISSION: Only request if refresh doesn't start loading process
-            delay(200) // Brief delay to check if loading started
-            if (calendarState.availableCalendars.isEmpty()) {
-                Logger.d(LogTags.UI, "Requesting calendar permission as fallback")
+            // OPTION 4: FALLBACK CHECK - Falls Primary Check fehlgeschlagen ist
+            // Warte kurz und prüfe ob refreshData() erfolgreich war
+            delay(300)
+            
+            if (calendarState.availableCalendars.isEmpty() && !calendarState.isLoading) {
+                Logger.d(LogTags.UI, "FALLBACK: Calendar data still empty after refresh - requesting permission")
                 onRequestCalendarPermission()
             }
         }

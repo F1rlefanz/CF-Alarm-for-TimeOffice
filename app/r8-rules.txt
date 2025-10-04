@@ -1,0 +1,67 @@
+# ==============================
+# R8 SPECIFIC RULES
+# ==============================
+# Additional R8-specific configuration
+# These rules complement proguard-rules.pro
+
+# ==============================
+# APACHE COMMONS LOGGING - R8 FIX
+# ==============================
+
+# Completely ignore Log4J related classes
+-dontwarn org.apache.log4j.**
+-dontwarn org.apache.commons.logging.impl.Log4JLogger
+-dontwarn org.apache.commons.logging.impl.Jdk13LumberjackLogger
+-dontwarn org.apache.commons.logging.impl.AvalonLogger
+
+# Keep Commons Logging core interfaces
+-keep interface org.apache.commons.logging.Log
+-keep interface org.apache.commons.logging.LogFactory
+
+# Allow R8 to remove unused logging implementations
+-assumenosideeffects class org.apache.commons.logging.impl.Log4JLogger {
+    <init>(...);
+    public void trace(...);
+    public void debug(...);
+    public void info(...);
+}
+
+# ==============================
+# UNREACHABLE CODE SUPPRESSION
+# ==============================
+
+# Tell R8 that certain classes may have unreachable code
+# This is expected behavior for optional dependencies
+-dontnote org.apache.commons.logging.impl.**
+-dontnote org.apache.log4j.**
+
+# ==============================
+# GOOGLE API CLIENT OPTIMIZATIONS
+# ==============================
+
+# Google API Client uses reflection, keep necessary classes
+-keep class com.google.api.client.** { *; }
+-keep class com.google.api.services.** { *; }
+
+# But allow R8 to strip unused implementations
+-assumenosideeffects class com.google.api.client.util.LoggingStreamingContent {
+    <init>(...);
+}
+
+# ==============================
+# SLF4J COMPATIBILITY
+# ==============================
+
+# SLF4J is often a transitive dependency, ignore if missing
+-dontwarn org.slf4j.**
+-keep class org.slf4j.** { *; }
+-keep interface org.slf4j.** { *; }
+
+# ==============================
+# ANNOTATION PROCESSORS
+# ==============================
+
+# Keep annotation processor generated classes
+-keep class **_Impl { *; }
+-keep class **_Factory { *; }
+-keep class **_MembersInjector { *; }

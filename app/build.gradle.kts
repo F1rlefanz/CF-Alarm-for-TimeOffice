@@ -25,7 +25,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.github.f1rlefanz.cf_alarmfortimeoffice"
-    compileSdk = 36  // Updated for androidx.core 1.17.0 requirement
+    compileSdk = 36
 
     // ==============================
     // 🔐 SECURE SIGNING CONFIGURATION
@@ -56,8 +56,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.0.10-FIXED"
+        versionCode = 15
+        versionName = "1.0.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -119,7 +119,8 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
+                "r8-rules.txt"  // Additional R8-specific rules
             )
             
             // SECURITY: Disable debugging in release builds

@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
@@ -179,11 +180,225 @@ fun SettingsTabContent(
             }
         }
 
-        // Kalender-Vorausschau-Einstellung
+        // 🔄 HYBRID-LÖSUNG: Kalender-Vorausschau + Automatische Synchronisation
         shiftViewModel?.let { viewModel ->
             shiftState?.currentShiftConfig?.let { config ->
                 var expanded by remember { mutableStateOf(false) }
-                val daysOptions = listOf(3, 7, 14, 30)
+                var showInfoDialog by remember { mutableStateOf(false) }
+                val daysOptions = listOf(7, 14, 21, 30, 60)
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(SpacingConstants.PADDING_CARD),
+                        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+                    ) {
+                        // Header Row mit Info-Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.DateRange,
+                                contentDescription = null,
+                                modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Offline-Puffer (beim App-Start)",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    "Events für die nächsten ${config.daysAhead} Tage vorgeladen",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            
+                            IconButton(onClick = { showInfoDialog = true }) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = "Info",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            ExposedDropdownMenuBox(
+                                expanded = expanded,
+                                onExpandedChange = { expanded = !expanded }
+                            ) {
+                                OutlinedTextField(
+                                    value = "${config.daysAhead} Tage",
+                                    onValueChange = { },
+                                    readOnly = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                    modifier = Modifier
+                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, true)
+                                        .width(120.dp)
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    daysOptions.forEach { days ->
+                                        DropdownMenuItem(
+                                            text = { Text("$days Tage") },
+                                            onClick = {
+                                                viewModel.updateDaysAhead(days)
+                                                expanded = false
+                                            },
+                                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL),
+                            color = MaterialTheme.colorScheme.outlineVariant
+                        )
+                        
+                        // Status-Info für Automatische Synchronisation
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                            Column {
+                                Text(
+                                    "🔄 Automatische Synchronisation",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    "Alle 6 Stunden im Hintergrund",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                // Info-Dialog für Hybrid-Lösung
+                if (showInfoDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showInfoDialog = false },
+                        icon = {
+                            Icon(
+                                Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        title = {
+                            Text("Dreifach abgesicherte Alarme")
+                        },
+                        text = {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
+                            ) {
+                                Text(
+                                    "Deine Alarme sind mehrfach geschützt:",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                
+                                // Layer 1
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+                                ) {
+                                    Text("🔄", style = MaterialTheme.typography.bodyMedium)
+                                    Column {
+                                        Text(
+                                            "Automatische Sync (alle 6h)",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            "Regelmäßige Updates im Hintergrund",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                
+                                // Layer 2
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+                                ) {
+                                    Text("📦", style = MaterialTheme.typography.bodyMedium)
+                                    Column {
+                                        Text(
+                                            "Offline-Puffer (${config.daysAhead} Tage)",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            "Events beim App-Start vorgeladen - perfekt für Offline-Situationen",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                
+                                // Layer 3
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+                                ) {
+                                    Text("👆", style = MaterialTheme.typography.bodyMedium)
+                                    Column {
+                                        Text(
+                                            "Manueller Refresh",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            "Jederzeit über die App aktualisierbar",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                
+                                HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
+                                
+                                Text(
+                                    "💡 Empfehlung: 21-30 Tage für optimale Zuverlässigkeit",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showInfoDialog = false }) {
+                                Text("Verstanden")
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        // 🔄 NEW: Einstellbares Sync-Intervall für WorkManager
+        shiftViewModel?.let { viewModel ->
+            shiftState?.currentShiftConfig?.let { config ->
+                var intervalExpanded by remember { mutableStateOf(false) }
+                val intervalOptions = listOf(1, 3, 6, 12) // Stunden (KEIN 24h wegen Token-Refresh!)
 
                 Card(
                     modifier = Modifier.fillMaxWidth()
@@ -196,47 +411,54 @@ fun SettingsTabContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Default.DateRange,
+                            Icons.Default.Schedule,
                             contentDescription = null,
                             modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.tertiary
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Kalender-Vorausschau",
+                                "Sync-Intervall",
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                "Zeitraum für Kalendereinträge-Suche",
-                                style = MaterialTheme.typography.bodyMedium,
+                                "Wie oft automatisch synchronisieren",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
                         ExposedDropdownMenuBox(
-                            expanded = expanded,
-                            onExpandedChange = { expanded = !expanded }
+                            expanded = intervalExpanded,
+                            onExpandedChange = { intervalExpanded = !intervalExpanded }
                         ) {
                             OutlinedTextField(
-                                value = "${config.daysAhead} Tage",
+                                value = "Alle ${config.syncIntervalHours}h",
                                 onValueChange = { },
                                 readOnly = true,
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = intervalExpanded) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                 modifier = Modifier
                                     .menuAnchor(MenuAnchorType.PrimaryNotEditable, true)
                                     .width(120.dp)
                             )
                             ExposedDropdownMenu(
-                                expanded = expanded,
-                                onDismissRequest = { expanded = false }
+                                expanded = intervalExpanded,
+                                onDismissRequest = { intervalExpanded = false }
                             ) {
-                                daysOptions.forEach { days ->
+                                intervalOptions.forEach { hours ->
                                     DropdownMenuItem(
-                                        text = { Text("$days Tage") },
+                                        text = { Text("Alle ${hours}h") },
                                         onClick = {
-                                            viewModel.updateDaysAhead(days)
-                                            expanded = false
+                                            viewModel.updateSyncInterval(hours)
+                                            
+                                            // Reschedule WorkManager with new interval
+                                            BackgroundTokenRefreshWorker.scheduleTokenRefresh(
+                                                context, 
+                                                hours.toLong()
+                                            )
+                                            
+                                            intervalExpanded = false
                                         },
                                         contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
                                     )

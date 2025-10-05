@@ -9,6 +9,11 @@ import java.time.LocalDateTime
  * PERFORMANCE OPTIMIZATIONS:
  * ✅ @Immutable annotation für Compose-Performance
  * ✅ Strukturelle Gleichheit für effiziente Flow-Operations
+ * 
+ * 🔧 SYNC-FIX: Event-Tracking für intelligente Alarm-Synchronisation
+ * ✅ eventId: Google Calendar Event-ID (erkennt gelöschte Events)
+ * ✅ eventChecksum: Hash des Events (erkennt Änderungen)
+ * ✅ Löst Bug: "Alter Alarm klingelt nach Event-Änderung"
  */
 @Immutable
 data class AlarmInfo(
@@ -17,5 +22,9 @@ data class AlarmInfo(
     val shiftName: String,
     val triggerTime: Long,
     val formattedTime: String,
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    
+    // 🔧 SYNC-FIX: Event-Tracking für intelligente Synchronisation
+    val eventId: String = "",  // Google Calendar Event-ID
+    val eventChecksum: String = ""  // Hash: startTime+endTime+title (erkennt Änderungen)
 )

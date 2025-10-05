@@ -9,7 +9,9 @@ import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.StatusTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent
@@ -41,6 +43,9 @@ fun MainContentScreen(
     val alarmState by alarmViewModel.uiState.collectAsState()
     val skipState by alarmViewModel.skipState.collectAsState()
     val manualAlarmState by alarmViewModel.manualAlarmState.collectAsState() // NEU
+    
+    // Get context for WorkManager operations
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -97,7 +102,14 @@ fun MainContentScreen(
                         alarmState = alarmState,
                         skipState = skipState,
                         manualAlarmState = manualAlarmState, // NEU
-                        onRefresh = { mainViewModel.forceRefreshCalendarEvents() },
+                        onRefresh = { 
+                            // Perform manual refresh
+                            mainViewModel.forceRefreshCalendarEvents()
+                            
+                            // OPTION 1: Trigger WorkManager for urgent refresh
+                            // This ensures background sync is also updated
+                            BackgroundTokenRefreshWorker.scheduleUrgentTokenRefresh(context)
+                        },
                         onSkipNextAlarm = alarmViewModel::skipNextAlarm,
                         onCancelSkip = alarmViewModel::cancelSkip,
                         onSelectManualAlarmDate = alarmViewModel::selectManualAlarmDate, // NEU

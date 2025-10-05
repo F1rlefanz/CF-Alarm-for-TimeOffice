@@ -285,7 +285,12 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     /**
-     * 🔄 Alarm Repository Recovery
+     * 🔄 Alarm Repository Recovery mit Event-Validierung
+     * 
+     * 🔧 SYNC-FIX: Validiert Alarme gegen aktuelle Calendar Events bevor sie restored werden
+     * ✅ Verhindert: "Alter Alarm klingelt für gelöschtes/geändertes Event"
+     * ✅ Löscht: Alarme für nicht-existierende Events
+     * ✅ Updated: Alarme für geänderte Events
      */
     private suspend fun performAlarmRecovery(appContainer: AppContainer): String {
         return try {
@@ -302,13 +307,71 @@ class BootReceiver : BroadcastReceiver() {
             val futureAlarms = storedAlarms.filter { it.triggerTime > System.currentTimeMillis() }
             Logger.d(
                 LogTags.MAINTENANCE_L4,
-                "📅 LEVEL 4: ${futureAlarms.size} future alarms to restore"
+                "📅 LEVEL 4: ${futureAlarms.size} future alarms to validate"
             )
-
-            // 3. Restore system alarms
+            
+            // 🔧 SYNC-FIX: Validate alarms against current calendar events
             var restoredCount = 0
+            var validatedCount = 0
+            var deletedCount = 0
+            
+            // Get current calendar events for validation
+            val selectedCalendars = calendarSelectionRepository.selectedCalendarIds.first()
+            val currentEvents = if (selectedCalendars.isNotEmpty()) {
+                calendarUseCase.getCalendarEventsWithCache(
+                    calendarIds = selectedCalendars,
+                    daysAhead = 21, // 3 weeks lookahead
+                    forceRefresh = false
+                ).getOrNull() ?: emptyList()
+            } else {
+                emptyList()
+            }
+            
+            Logger.d(LogTags.MAINTENANCE_L4, "🔍 LEVEL 4: Found ${currentEvents.size} current calendar events for validation")
+            
+            // Build event ID map for quick lookup
+            val currentEventMap = currentEvents.associateBy { it.id }
+
+            // 3. Validate and restore alarms
             for (alarm in futureAlarms) {
                 try {
+                    // Check if alarm has eventId
+                    if (alarm.eventId.isNotEmpty()) {
+                        val currentEvent = currentEventMap[alarm.eventId]
+                        
+                        if (currentEvent == null) {
+                            // Event was deleted from calendar → delete alarm
+                            Logger.business(
+                                LogTags.MAINTENANCE_L4,
+                                "🗑️ LEVEL 4: Event deleted, removing alarm: ${alarm.shiftName} (eventId: ${alarm.eventId})"
+                            )
+                            alarmUseCase.deleteAlarm(alarm.id)
+                            deletedCount++
+                            continue
+                        }
+                        
+                        // Calculate current event checksum
+                        val currentChecksum = calculateEventChecksum(currentEvent)
+                        
+                        if (alarm.eventChecksum != currentChecksum) {
+                            // Event changed → delete old alarm (will be recreated by WorkManager/manual sync)
+                            Logger.business(
+                                LogTags.MAINTENANCE_L4,
+                                "🔄 LEVEL 4: Event changed, removing outdated alarm: ${alarm.shiftName} (eventId: ${alarm.eventId})"
+                            )
+                            alarmUseCase.deleteAlarm(alarm.id)
+                            deletedCount++
+                            continue
+                        }
+                        
+                        validatedCount++
+                        Logger.d(
+                            LogTags.MAINTENANCE_L4,
+                            "✅ LEVEL 4: Alarm validated against event: ${alarm.shiftName}"
+                        )
+                    }
+                    
+                    // Restore validated alarm
                     alarmUseCase.scheduleSystemAlarm(alarm)
                     restoredCount++
                     Logger.d(
@@ -318,57 +381,61 @@ class BootReceiver : BroadcastReceiver() {
                 } catch (e: Exception) {
                     Logger.e(
                         LogTags.MAINTENANCE_L4,
-                        "❌ LEVEL 4: Failed to restore alarm: ${alarm.shiftName}",
+                        "❌ LEVEL 4: Failed to process alarm: ${alarm.shiftName}",
                         e
                     )
                 }
             }
+            
+            Logger.business(
+                LogTags.MAINTENANCE_L4,
+                "📊 LEVEL 4: Alarm recovery stats - Restored: $restoredCount, Validated: $validatedCount, Deleted: $deletedCount"
+            )
 
             // 4. If few alarms restored, try to create new ones from calendar
-            if (restoredCount < 3) {
+            if (restoredCount < 3 && currentEvents.isNotEmpty()) {
                 Logger.d(
                     LogTags.MAINTENANCE_L4,
                     "🔄 LEVEL 4: Low alarm count, attempting calendar-based recovery"
                 )
 
-                val selectedCalendars = calendarSelectionRepository.selectedCalendarIds.first()
-                if (selectedCalendars.isNotEmpty()) {
-                    val calendarEvents = calendarUseCase.getCalendarEventsWithCache(
-                        calendarIds = selectedCalendars,
-                        daysAhead = 21, // 3 weeks lookahead
-                        forceRefresh = false
-                    ).getOrNull() ?: emptyList()
+                val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
+                if (shiftConfig?.autoAlarmEnabled == true) {
+                    val newAlarmsResult =
+                        alarmUseCase.createAlarmsFromEvents(currentEvents, shiftConfig)
+                    val newAlarms = newAlarmsResult.getOrNull() ?: emptyList()
 
-                    if (calendarEvents.isNotEmpty()) {
-                        val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-                        if (shiftConfig?.autoAlarmEnabled == true) {
-                            val newAlarmsResult =
-                                alarmUseCase.createAlarmsFromEvents(calendarEvents, shiftConfig)
-                            val newAlarms = newAlarmsResult.getOrNull() ?: emptyList()
-
-                            for (newAlarm in newAlarms) {
-                                try {
-                                    alarmUseCase.scheduleSystemAlarm(newAlarm)
-                                    restoredCount++
-                                } catch (e: Exception) {
-                                    Logger.e(
-                                        LogTags.MAINTENANCE_L4,
-                                        "❌ LEVEL 4: Failed to schedule new alarm",
-                                        e
-                                    )
-                                }
-                            }
+                    for (newAlarm in newAlarms) {
+                        try {
+                            alarmUseCase.scheduleSystemAlarm(newAlarm)
+                            restoredCount++
+                        } catch (e: Exception) {
+                            Logger.e(
+                                LogTags.MAINTENANCE_L4,
+                                "❌ LEVEL 4: Failed to schedule new alarm",
+                                e
+                            )
                         }
                     }
                 }
             }
 
-            "Restored $restoredCount system alarms from ${storedAlarms.size} stored alarms"
+            "Restored $restoredCount alarms (Validated: $validatedCount, Deleted: $deletedCount) from ${storedAlarms.size} stored"
 
         } catch (e: Exception) {
             Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Alarm recovery failed", e)
             "Alarm recovery failed: ${e.message}"
         }
+    }
+    
+    /**
+     * 🔧 SYNC-FIX: Calculate event checksum for validation
+     */
+    private fun calculateEventChecksum(event: com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent): String {
+        val data = "${event.startTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
+                   "${event.endTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
+                   "${event.title}"
+        return data.hashCode().toString()
     }
 
     /**

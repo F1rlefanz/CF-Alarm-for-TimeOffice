@@ -174,6 +174,18 @@ class ShiftViewModel(
         // MEMORY LEAK FIX: Trigger Event über StateFlow statt Callback
         _daysAheadChangedEvent.value = System.currentTimeMillis()
     }
+    
+    /**
+     * Updates the sync interval for background WorkManager tasks
+     * @param hours Interval in hours (1, 3, 6, 12)
+     */
+    fun updateSyncInterval(hours: Int) {
+        val currentConfig = _uiState.value.currentShiftConfig ?: return
+        val updatedConfig = currentConfig.copy(syncIntervalHours = hours)
+        updateShiftConfig(updatedConfig)
+        
+        Logger.business(LogTags.BACKGROUND_WORKER, "Sync interval updated to $hours hours")
+    }
 
     fun processCalendarEvents(events: List<CalendarEvent>) {
         viewModelScope.launch {

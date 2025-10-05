@@ -55,15 +55,16 @@ class BackgroundTokenRefreshWorker(
 
         /**
          * Schedules background token refresh with intelligent intervals
+         * @param intervalHours Custom interval in hours (1, 3, 6, 12), defaults to 6h
          */
-        fun scheduleTokenRefresh(context: Context) {
+        fun scheduleTokenRefresh(context: Context, intervalHours: Long = DEFAULT_REFRESH_INTERVAL_HOURS) {
             val workManager = WorkManager.getInstance(context)
 
             // Cancel any existing work
             workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
 
             val refreshRequest = PeriodicWorkRequestBuilder<BackgroundTokenRefreshWorker>(
-                DEFAULT_REFRESH_INTERVAL_HOURS, TimeUnit.HOURS,
+                intervalHours, TimeUnit.HOURS,
                 1, TimeUnit.HOURS // Flex interval for battery optimization
             )
                 .setConstraints(createWorkConstraints())
@@ -83,7 +84,7 @@ class BackgroundTokenRefreshWorker(
             Logger.business(
                 LogTags.TOKEN,
                 "🔄 Enhanced background worker scheduled (Token + Alarm maintenance)",
-                "Interval: ${DEFAULT_REFRESH_INTERVAL_HOURS}h"
+                "Interval: ${intervalHours}h"
             )
         }
 

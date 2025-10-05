@@ -61,7 +61,13 @@ class AlarmUseCase(
             }
     
     /**
-     * PERFORMANCE OPTIMIZATION: Enhanced alarm creation with atomic clearing and batching
+     * PERFORMANCE OPTIMIZATION: Enhanced alarm creation with INTELLIGENT SYNC
+     * 
+     * 🔧 SYNC-FIX: Statt "alles löschen + neu erstellen" → Intelligente Delta-Synchronisation
+     * ✅ Erkennt gelöschte Events → löscht nur diese Alarme
+     * ✅ Erkennt geänderte Events → updated nur diese Alarme  
+     * ✅ Erkennt neue Events → erstellt nur diese Alarme
+     * ✅ Löst Bug: "Alter Alarm klingelt nach Event-Änderung"
      */
     @Volatile
     private var alarmCreationInProgress = false
@@ -72,7 +78,7 @@ class AlarmUseCase(
     ): Result<List<AlarmInfo>> = withContext(Dispatchers.IO) {
         // PERFORMANCE: Prevent concurrent alarm creation
         if (alarmCreationInProgress) {
-            Logger.d(LogTags.ALARM, "🔒 BATCH-CREATE: Alarm creation already in progress, skipping duplicate call")
+            Logger.d(LogTags.ALARM, "🔒 SYNC: Alarm creation already in progress, skipping duplicate call")
             return@withContext Result.success(emptyList())
         }
         
@@ -85,57 +91,124 @@ class AlarmUseCase(
                     return@safeExecute emptyList()
                 }
                 
-                // CRITICAL FIX: Check if events are empty
                 if (events.isEmpty()) {
-                    Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: No calendar events found - no alarms to create")
+                    Logger.business(LogTags.ALARM, "✅ SYNC: No calendar events found - clearing all alarms")
+                    // No events → delete all alarms
+                    clearInternalAlarms()
                     return@safeExecute emptyList()
                 }
                 
-                Logger.d(LogTags.ALARM, "🔄 BATCH-CREATE: Starting batch alarm creation for ${events.size} events")
+                Logger.business(LogTags.ALARM, "🔄 SYNC: Starting intelligent alarm synchronization for ${events.size} events")
                 
-                // PERFORMANCE: Single atomic clear - directly call internal clear to avoid nested SafeExecutor calls
-                clearInternalAlarms()
-                
-                // PERFORMANCE: Get shift matches with optimized recognition
+                // 🔧 SYNC-FIX: INTELLIGENT SYNCHRONIZATION statt blind clearing
+                val existingAlarms = alarmRepository.getAllAlarms().getOrNull() ?: emptyList()
                 val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
                 
-                // CRITICAL FIX: Check if we actually found matching shifts
                 if (shiftMatches.isEmpty()) {
-                    Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: No matching shifts found in ${events.size} calendar events - no alarms to create")
+                    Logger.business(LogTags.ALARM, "✅ SYNC: No matching shifts found - clearing all alarms")
+                    clearInternalAlarms()
                     return@safeExecute emptyList()
                 }
                 
-                // PERFORMANCE: Batch create alarms
-                val alarmInfos = mutableListOf<AlarmInfo>()
+                // Build checksum map for events
+                val eventChecksumMap = events.associate { event ->
+                    event.id to calculateEventChecksum(event)
+                }
+                
+                // Build map of new alarms we want to create
+                val newAlarmsMap = mutableMapOf<String, AlarmInfo>()  // eventId -> AlarmInfo
                 val now = LocalDateTime.now()
                 
                 for (shiftMatch in shiftMatches) {
                     try {
-                        // CRITICAL FIX: Skip alarms in the past
                         if (shiftMatch.calculatedAlarmTime.isBefore(now)) {
-                            Logger.w(LogTags.ALARM, "⏰ BATCH-CREATE: Skipping alarm in the past: ${shiftMatch.shiftDefinition.name} at ${shiftMatch.calculatedAlarmTime}")
+                            Logger.w(LogTags.ALARM, "⏰ SYNC: Skipping alarm in the past: ${shiftMatch.shiftDefinition.name}")
                             continue
                         }
                         
-                        val alarmInfo = createAlarmFromShiftMatch(shiftMatch)
-                        alarmInfos.add(alarmInfo)
-                        
-                        // Save alarm in repository
-                        alarmRepository.saveAlarm(alarmInfo).getOrThrow()
-                        
-                        Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: Created alarm for shift: ${shiftMatch.shiftDefinition.name} at ${shiftMatch.calculatedAlarmTime}")
+                        val eventId = shiftMatch.calendarEvent.id
+                        val checksum = eventChecksumMap[eventId] ?: ""
+                        val alarmInfo = createAlarmFromShiftMatch(shiftMatch, eventId, checksum)
+                        newAlarmsMap[eventId] = alarmInfo
                     } catch (e: Exception) {
-                        Logger.e(LogTags.ALARM, "❌ BATCH-CREATE: Error creating alarm for shift: ${shiftMatch.shiftDefinition.name} - ${e.message}")
-                        // Continue with other alarms
+                        Logger.e(LogTags.ALARM, "❌ SYNC: Error processing shift: ${shiftMatch.shiftDefinition.name}", e)
                     }
                 }
                 
-                Logger.business(LogTags.ALARM, "✅ BATCH-CREATE: Created ${alarmInfos.size} alarms from ${events.size} events (${shiftMatches.size} matches)")
-                alarmInfos
+                // 🔧 SYNC-FIX Step 1: Delete alarms for events that no longer exist
+                var deletedCount = 0
+                for (existingAlarm in existingAlarms) {
+                    if (existingAlarm.eventId.isNotEmpty() && !newAlarmsMap.containsKey(existingAlarm.eventId)) {
+                        // Event was deleted from calendar
+                        Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
+                        alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                        deletedCount++
+                    }
+                }
+                
+                // 🔧 SYNC-FIX Step 2: Update changed alarms & create new ones
+                var updatedCount = 0
+                var createdCount = 0
+                val resultAlarms = mutableListOf<AlarmInfo>()
+                
+                for ((eventId, newAlarm) in newAlarmsMap) {
+                    val existingAlarm = existingAlarms.find { it.eventId == eventId }
+                    
+                    if (existingAlarm != null) {
+                        // Alarm exists - check if event changed
+                        if (existingAlarm.eventChecksum != newAlarm.eventChecksum || 
+                            existingAlarm.triggerTime != newAlarm.triggerTime) {
+                            // Event changed → update alarm
+                            Logger.business(LogTags.ALARM, "🔄 SYNC: Updating changed alarm: ${newAlarm.shiftName} (eventId: $eventId)")
+                            
+                            // Delete old
+                            alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
+                            alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                            
+                            // Create new with updated data
+                            alarmRepository.saveAlarm(newAlarm).getOrThrow()
+                            scheduleSystemAlarm(newAlarm).getOrThrow()
+                            resultAlarms.add(newAlarm)
+                            updatedCount++
+                        } else {
+                            // Unchanged - keep existing
+                            Logger.d(LogTags.ALARM, "✅ SYNC: Alarm unchanged: ${existingAlarm.shiftName}")
+                            resultAlarms.add(existingAlarm)
+                        }
+                    } else {
+                        // New event → create alarm
+                        Logger.business(LogTags.ALARM, "➕ SYNC: Creating alarm for new event: ${newAlarm.shiftName} (eventId: $eventId)")
+                        alarmRepository.saveAlarm(newAlarm).getOrThrow()
+                        scheduleSystemAlarm(newAlarm).getOrThrow()
+                        resultAlarms.add(newAlarm)
+                        createdCount++
+                    }
+                }
+                
+                Logger.business(
+                    LogTags.ALARM, 
+                    "✅ SYNC: Intelligent synchronization complete - " +
+                    "Created: $createdCount, Updated: $updatedCount, Deleted: $deletedCount, " +
+                    "Total: ${resultAlarms.size} alarms"
+                )
+                
+                resultAlarms
             }
         } finally {
             alarmCreationInProgress = false
         }
+    }
+    
+    /**
+     * 🔧 SYNC-FIX: Calculate event checksum for change detection
+     */
+    private fun calculateEventChecksum(event: CalendarEvent): String {
+        // Simple checksum: hash of critical fields
+        val data = "${event.startTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
+                   "${event.endTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
+                   "${event.title}"
+        return data.hashCode().toString()
     }
     
     override suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit> = 
@@ -269,9 +342,9 @@ class AlarmUseCase(
         alarmRepository.getAllAlarms()
     
     /**
-     * Erstellt AlarmInfo aus ShiftMatch
+     * Erstellt AlarmInfo aus ShiftMatch mit Event-Tracking
      */
-    private fun createAlarmFromShiftMatch(shiftMatch: ShiftMatch): AlarmInfo {
+    private fun createAlarmFromShiftMatch(shiftMatch: ShiftMatch, eventId: String, eventChecksum: String): AlarmInfo {
         val alarmTime = shiftMatch.calculatedAlarmTime
             .atZone(ZoneId.systemDefault())
             .toInstant()
@@ -282,7 +355,9 @@ class AlarmUseCase(
             shiftId = shiftMatch.shiftDefinition.id,
             shiftName = shiftMatch.shiftDefinition.name,
             triggerTime = alarmTime,
-            formattedTime = formatAlarmTime(alarmTime)
+            formattedTime = formatAlarmTime(alarmTime),
+            eventId = eventId,
+            eventChecksum = eventChecksum
         )
     }
     

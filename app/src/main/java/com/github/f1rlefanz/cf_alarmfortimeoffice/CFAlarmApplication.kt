@@ -119,6 +119,15 @@ class CFAlarmApplication : Application() {
                 Logger.d(LogTags.AUTH, "Initializing OAuth2 token storage")
                 appContainer.initializeTokenStorage()
                 
+                // ✅ CRITICAL FIX: Initialize WorkManager for automatic alarm synchronization
+                Logger.business(LogTags.TOKEN, "🔄 STARTUP: Initializing background services (WorkManager)")
+                try {
+                    appContainer.backgroundServiceManager.initializeBackgroundServices()
+                    Logger.business(LogTags.TOKEN, "✅ STARTUP: WorkManager activated - automatic alarm sync every 6h")
+                } catch (e: Exception) {
+                    Logger.e(LogTags.TOKEN, "❌ STARTUP: Failed to initialize WorkManager", e)
+                }
+                
                 // Initialize ShiftConfig early to prevent race conditions
                 Logger.d(LogTags.SHIFT_CONFIG, "🔄 STARTUP: Initializing ShiftConfig early to prevent timing issues")
                 launch {
@@ -144,7 +153,7 @@ class CFAlarmApplication : Application() {
                     }
                 }
                 
-                Logger.i(LogTags.APP, "App initialization completed successfully")
+                Logger.i(LogTags.APP, "✅ App initialization completed successfully (with WorkManager)")
             } catch (e: Exception) {
                 Logger.e(LogTags.APP, "Error during app initialization", e)
             }

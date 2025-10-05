@@ -5,11 +5,13 @@ import android.os.Build
 import androidx.work.*
 import androidx.work.CoroutineWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -41,7 +43,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class BackgroundServiceManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val shiftUseCase: IShiftUseCase
 ) {
 
     private val workManager = WorkManager.getInstance(context)
@@ -49,7 +52,7 @@ class BackgroundServiceManager @Inject constructor(
         context.getSharedPreferences("background_services", Context.MODE_PRIVATE)
 
     /**
-     * Initializes background services
+     * Initializes background services with configurable sync interval from ShiftConfig
      */
     fun initializeBackgroundServices() {
         Logger.business(
@@ -58,19 +61,33 @@ class BackgroundServiceManager @Inject constructor(
         )
 
         try {
-            // Start token refresh service
-            BackgroundTokenRefreshWorker.scheduleTokenRefresh(context)
+            // Load sync interval from ShiftConfig
+            val syncIntervalHours = runBlocking {
+                try {
+                    val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
+                    val interval = shiftConfig?.syncIntervalHours ?: 6
+                    Logger.business(LogTags.TOKEN, "📊 Loaded sync interval from config: ${interval}h")
+                    interval.toLong()
+                } catch (e: Exception) {
+                    Logger.w(LogTags.TOKEN, "⚠️ Failed to load sync interval from config, using default 6h", e)
+                    6L // Default to 6 hours
+                }
+            }
+            
+            // Start token refresh service with configured interval
+            BackgroundTokenRefreshWorker.scheduleTokenRefresh(context, syncIntervalHours)
 
             // Mark services as started
             preferences.edit()
                 .putLong("services_started_at", System.currentTimeMillis())
                 .putString("device_info", "${Build.MANUFACTURER} ${Build.MODEL}")
                 .putString("version", "v2.1-memory-leak-fixed")
+                .putLong("sync_interval_hours", syncIntervalHours)
                 .apply()
 
             Logger.business(
                 LogTags.TOKEN,
-                "✅ Background services initialized successfully - Simple, reliable, and memory-safe!"
+                "✅ Background services initialized successfully - Sync interval: ${syncIntervalHours}h"
             )
 
         } catch (e: Exception) {

@@ -3,7 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.di
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.ModernOAuth2TokenManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.SecureTokenStorage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenStorageRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenRefreshUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarRepository
@@ -22,13 +21,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AuthUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.CalendarAuthUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.CalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.ShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarAuthUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
@@ -67,14 +64,7 @@ class AppContainer(private val context: Context) {
     // ==============================
     private val Context.hueDataStore: DataStore<Preferences> by preferencesDataStore(name = "hue_settings")
     private val Context.mainDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
-    
-    // ==============================
-    // TOKEN MANAGEMENT & AUTHENTICATION
-    // ==============================
-    val secureTokenStorage: SecureTokenStorage by lazy {
-        SecureTokenStorage(context)
-    }
-    
+
     val tokenStorageRepository: TokenStorageRepository by lazy {
         TokenStorageRepository(context)
     }
@@ -168,11 +158,7 @@ class AppContainer(private val context: Context) {
             shiftUseCase = shiftUseCase
         )
     }
-    
-    val alarmAudioManager by lazy {
-        com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmAudioManager(context, wakeLockManager)
-    }
-    
+
     val alarmManagerService: AlarmManagerService by lazy {
         AlarmManagerService(
             application = context.applicationContext as android.app.Application,
@@ -199,14 +185,7 @@ class AppContainer(private val context: Context) {
             modernOAuth2TokenManager = modernOAuth2TokenManager
         )
     }
-    
-    val calendarAuthUseCase: ICalendarAuthUseCase by lazy {
-        CalendarAuthUseCase(
-            authDataStoreRepository = authDataStoreRepository,
-            calendarRepository = calendarRepository
-        )
-    }
-    
+
     val calendarUseCase: ICalendarUseCase by lazy {
         CalendarUseCase(
             calendarRepository = calendarRepository,

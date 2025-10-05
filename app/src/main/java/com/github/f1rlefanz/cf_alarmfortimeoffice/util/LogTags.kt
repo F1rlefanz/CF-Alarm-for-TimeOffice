@@ -68,6 +68,7 @@ object LogTags {
     const val NETWORK = "CFAlarm.Network"
     const val HUE_NETWORK = "CFAlarm.Hue.Network"
     const val BACKGROUND_SYNC = "CFAlarm.Background.Sync"
+    const val BACKGROUND_WORKER = "CFAlarm.Background.Worker"
     
     // === SMART MAINTENANCE CHAIN ===
     const val SMART_MAINTENANCE = "CFAlarm.SmartMaintenance"

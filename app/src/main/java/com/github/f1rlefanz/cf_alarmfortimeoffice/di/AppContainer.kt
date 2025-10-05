@@ -161,9 +161,11 @@ class AppContainer(private val context: Context) {
     
     // Background Service Manager - MEMORY LEAK FIXED (v2.1)
     // FIXED: Replaced problematic Singleton pattern with proper DI
+    // UPDATED: Added shiftUseCase dependency for configurable sync interval
     val backgroundServiceManager by lazy {
         com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager(
-            context = context.applicationContext
+            context = context.applicationContext,
+            shiftUseCase = shiftUseCase
         )
     }
     

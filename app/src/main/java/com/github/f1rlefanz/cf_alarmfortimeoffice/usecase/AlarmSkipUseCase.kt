@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmSkipRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
@@ -15,10 +16,15 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Use case implementation for alarm skip functionality.
  * Handles business logic for skipping alarms.
+ * 
+ * CRITICAL FIX: Ensures system alarm is cancelled when alarm is skipped
+ * ✅ Prevents "ghost alarms" that trigger despite being skipped
+ * ✅ Properly cleans up both DataStore state AND Android AlarmManager
  */
 class AlarmSkipUseCase(
     private val alarmSkipRepository: IAlarmSkipRepository,
-    private val alarmRepository: IAlarmRepository
+    private val alarmRepository: IAlarmRepository,
+    private val alarmManagerService: AlarmManagerService
 ) : IAlarmSkipUseCase {
     
     override val skipStatusFlow: Flow<AlarmSkipState> = alarmSkipRepository.skipStatusFlow
@@ -48,12 +54,36 @@ class AlarmSkipUseCase(
             val isSkipped = alarmSkipRepository.isAlarmSkipped(alarmId).getOrThrow()
             
             if (isSkipped) {
-                // Skip-Status nach erfolgreicher Verarbeitung löschen
+                Logger.business(LogTags.ALARM_SKIP, "⏭️ SKIP-FIX: Processing skip for alarm $alarmId")
+                
+                // CRITICAL FIX Step 1: Cancel the system alarm (Android AlarmManager)
+                // This prevents the alarm from triggering again
+                try {
+                    alarmManagerService.cancelSystemAlarm(alarmId)
+                    Logger.business(LogTags.ALARM_SKIP, "✅ SKIP-FIX: System alarm $alarmId cancelled successfully")
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM_SKIP, "❌ SKIP-FIX: Failed to cancel system alarm $alarmId", e)
+                    // Continue anyway - we still want to clear the skip status
+                }
+                
+                // CRITICAL FIX Step 2: Delete the alarm from repository
+                // This removes it from the app's internal alarm list
+                try {
+                    alarmRepository.deleteAlarm(alarmId).getOrThrow()
+                    Logger.business(LogTags.ALARM_SKIP, "✅ SKIP-FIX: Alarm $alarmId deleted from repository")
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM_SKIP, "❌ SKIP-FIX: Failed to delete alarm from repository", e)
+                    // Continue anyway - we still want to clear the skip status
+                }
+                
+                // CRITICAL FIX Step 3: Clear skip status after successful processing
+                // This prevents the skip from affecting other alarms
                 alarmSkipRepository.clearSkipStatus().getOrThrow()
-                Logger.business(LogTags.ALARM_SKIP, "Alarm $alarmId successfully skipped")
+                Logger.business(LogTags.ALARM_SKIP, "✅ SKIP-FIX: Alarm $alarmId successfully skipped and cleaned up")
+                
                 SkipProcessResult.ALARM_SKIPPED
             } else {
-                Logger.business(LogTags.ALARM_SKIP, "Alarm $alarmId executed normally")
+                Logger.business(LogTags.ALARM_SKIP, "▶️ Alarm $alarmId executed normally (not skipped)")
                 SkipProcessResult.ALARM_EXECUTED
             }
         }

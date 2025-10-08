@@ -109,7 +109,7 @@ class AppContainer(private val context: Context) {
     }
     
     val alarmRepository: IAlarmRepository by lazy {
-        AlarmRepository(context)
+        AlarmRepository(context.mainDataStore)
     }
     
     val calendarSelectionRepository: ICalendarSelectionRepository by lazy {
@@ -210,11 +210,12 @@ class AppContainer(private val context: Context) {
         )
     }
     
-    // Skip UseCase
+    // Skip UseCase - CRITICAL FIX: Added AlarmManagerService dependency
     val alarmSkipUseCase: IAlarmSkipUseCase by lazy {
         AlarmSkipUseCase(
             alarmSkipRepository = alarmSkipRepository,
-            alarmRepository = alarmRepository
+            alarmRepository = alarmRepository,
+            alarmManagerService = alarmManagerService
         )
     }
     

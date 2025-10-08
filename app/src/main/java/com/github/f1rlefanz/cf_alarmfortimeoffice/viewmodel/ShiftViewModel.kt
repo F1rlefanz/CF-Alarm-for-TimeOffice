@@ -35,16 +35,6 @@ class ShiftViewModel(
 
     private val _uiState = MutableStateFlow(ShiftUiState())
     val uiState: StateFlow<ShiftUiState> = _uiState.asStateFlow()
-    
-    // MEMORY LEAK FIX: Event-basiertes System statt Callback
-    private val _daysAheadChangedEvent = MutableStateFlow(System.currentTimeMillis())
-    val daysAheadChangedEvent: StateFlow<Long> = _daysAheadChangedEvent.asStateFlow()
-    
-    @Deprecated("MEMORY LEAK: Use daysAheadChangedEvent StateFlow instead", level = DeprecationLevel.ERROR)
-    fun setDaysAheadChangeCallback(callback: () -> Unit) {
-        // ENTFERNT: Memory Leak durch Callback-Referenz
-        // Verwende stattdessen daysAheadChangedEvent StateFlow
-    }
 
     init {
         loadShiftConfig()
@@ -167,12 +157,7 @@ class ShiftViewModel(
     fun updateDaysAhead(daysAhead: Int) {
         val currentConfig = _uiState.value.currentShiftConfig ?: return
         val updatedConfig = currentConfig.copy(daysAhead = daysAhead)
-        
-        // MEMORY LEAK FIX: Event-basiertes System statt Callback
         updateShiftConfig(updatedConfig)
-        
-        // MEMORY LEAK FIX: Trigger Event über StateFlow statt Callback
-        _daysAheadChangedEvent.value = System.currentTimeMillis()
     }
     
     /**
@@ -264,9 +249,6 @@ class ShiftViewModel(
         
         try {
             Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Starting cleanup...")
-            
-            // CRITICAL FIX: Clear event state to prevent memory leaks
-            _daysAheadChangedEvent.value = 0L
             
             // CRITICAL FIX: Clear UI state to release object references
             _uiState.value = ShiftUiState()

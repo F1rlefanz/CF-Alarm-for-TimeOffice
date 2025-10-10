@@ -14,6 +14,8 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.google.android.gms.common.GoogleApiAvailability
+import android.util.Base64
+import org.json.JSONObject
 
 data class SignInResult(
     val success: Boolean,
@@ -23,14 +25,14 @@ data class SignInResult(
 )
 
 /**
- * Modern Credential Authentication Manager
+ * Modern Credential Authentication Manager - OAuth2 Modernized
  * 
- * Uses the successful Hybrid-Flow approach:
- * 1. androidx.credentials for modern One Tap UI
- * 2. GoogleSignInClient.silentSignIn() for reliable email extraction
+ * ✅ MODERNIZED: Uses pure androidx.credentials approach with JWT token decoding
+ * ✅ NO DEPRECATED APIs: Removed GoogleSignInClient.silentSignIn() hybrid flow
+ * ✅ STANDARD APPROACH: Extracts email directly from JWT ID Token payload
  * 
- * This approach solves the OAuth2 BAD_AUTHENTICATION problem by combining
- * modern UI with reliable data extraction methods.
+ * This is the industry-standard method for extracting user information from
+ * Google OAuth2 credentials without requiring deprecated APIs or additional permissions.
  */
 class CredentialAuthManager(private val context: Context) {
 
@@ -117,10 +119,11 @@ class CredentialAuthManager(private val context: Context) {
     }
 
     /**
-     * Extract user information using the successful Hybrid-Flow approach
+     * ✅ MODERNIZED: Extract user information using JWT token decoding
      * 
-     * This method uses GoogleSignInClient.silentSignIn() to reliably extract
-     * the email address after successful Credential Manager authentication.
+     * This is the standard, modern approach used by most Android apps.
+     * The email is extracted directly from the JWT ID Token payload,
+     * eliminating the need for deprecated GoogleSignIn APIs.
      */
     suspend fun extractUserInfo(response: GetCredentialResponse?, activityContext: Context): Triple<String?, String?, String?> {
         val credential = response?.credential
@@ -134,14 +137,14 @@ class CredentialAuthManager(private val context: Context) {
                 
                 Logger.d(LogTags.AUTH, "🔍 EXTRACT-START: Raw userId=$userId, displayName=$displayName")
                 
-                // HYBRID-FLOW: Use Google Sign-In silentSignIn for reliable email extraction
-                val email = getEmailWithHybridFlow(activityContext)
+                // ✅ MODERN JWT-BASED EMAIL EXTRACTION
+                val email = extractEmailFromIdToken(googleIdTokenCredential.idToken)
                 
                 if (!email.isNullOrEmpty()) {
-                    Logger.business(LogTags.AUTH, "✅ HYBRID-SUCCESS: Email extracted successfully: $email")
+                    Logger.business(LogTags.AUTH, "✅ JWT-SUCCESS: Email extracted from ID Token: $email")
                     return Triple(userId, displayName, email)
                 } else {
-                    Logger.e(LogTags.AUTH, "❌ HYBRID-FAILED: Email extraction failed")
+                    Logger.e(LogTags.AUTH, "❌ JWT-FAILED: Email extraction from ID Token failed")
                     return Triple(userId, displayName, null)
                 }
                 
@@ -155,82 +158,62 @@ class CredentialAuthManager(private val context: Context) {
     }
 
     /**
-     * HYBRID-FLOW EMAIL EXTRACTION: The proven solution
+     * ✅ STANDARD MODERN APPROACH: Extract email from JWT ID Token
      * 
-     * Uses Google Sign-In silentSignIn after Credential Manager success.
-     * This approach reliably extracts the email address and solves the 
-     * BAD_AUTHENTICATION problem that plagued the legacy approaches.
+     * This is how most Android apps extract user information from Google OAuth2 credentials.
+     * 
+     * JWT Structure: Header.Payload.Signature
+     * The Payload contains user claims including:
+     * - email: User's email address
+     * - email_verified: Whether email is verified
+     * - name: User's display name
+     * - picture: User's profile picture URL
+     * - sub: User's unique Google ID
+     * 
+     * @param idToken The JWT ID Token from GoogleIdTokenCredential
+     * @return The user's email address, or null if extraction fails
      */
-    @Suppress("DEPRECATION") // GoogleSignIn API: Required for reliable email extraction
-    suspend fun getEmailWithHybridFlow(activityContext: Context): String? {
-        Logger.d(LogTags.AUTH, "🔄 HYBRID-FLOW: Starting silent sign-in for email extraction...")
-        
+    private fun extractEmailFromIdToken(idToken: String): String? {
         return try {
-            // Create GoogleSignInOptions with email request
-            val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
-                com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
+            Logger.d(LogTags.AUTH, "🔍 JWT-DECODE: Starting JWT token decoding for email extraction")
+            
+            // JWT Format: Header.Payload.Signature
+            val segments = idToken.split(".")
+            
+            if (segments.size < 2) {
+                Logger.e(LogTags.AUTH, "❌ JWT-ERROR: Invalid JWT format - not enough segments (${segments.size})")
+                return null
+            }
+            
+            // Decode Payload (second segment) - Base64 URL-safe decoding
+            val payloadBytes = Base64.decode(
+                segments[1], 
+                Base64.URL_SAFE or Base64.NO_PADDING
             )
-                .requestIdToken(googleWebClientId) // Same Web Client ID
-                .requestEmail() // Explicitly request email
-                .requestProfile() // Request profile for display name
-                .build()
+            val payloadJson = JSONObject(String(payloadBytes, Charsets.UTF_8))
             
-            val googleSignInClient = com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(activityContext, gso)
+            // Extract user information from JWT payload
+            val email = payloadJson.optString("email", null)
+            val emailVerified = payloadJson.optBoolean("email_verified", false)
+            val name = payloadJson.optString("name", null)
+            val sub = payloadJson.optString("sub", null)
             
-            Logger.d(LogTags.AUTH, "🔄 HYBRID-FLOW: Performing silent sign-in...")
+            Logger.d(LogTags.AUTH, "📧 JWT-PAYLOAD: email=$email, verified=$emailVerified, name=$name, sub=$sub")
             
-            // Use silentSignIn() - this works after successful Credential Manager flow
-            val silentSignInTask = googleSignInClient.silentSignIn()
-            
-            // Convert to coroutine-friendly approach
-            val account = try {
-                // Check if task is already complete (cached)
-                if (silentSignInTask.isComplete) {
-                    silentSignInTask.result
-                } else {
-                    // Wait for task completion
-                    kotlinx.coroutines.suspendCancellableCoroutine<com.google.android.gms.auth.api.signin.GoogleSignInAccount?> { continuation ->
-                        silentSignInTask.addOnCompleteListener { task ->
-                            if (task.isSuccessful) {
-                                continuation.resume(task.result) { /* cleanup */ }
-                            } else {
-                                continuation.resume(null) { /* cleanup */ }
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Logger.w(LogTags.AUTH, "⚠️ HYBRID-FLOW: Silent sign-in task failed", e)
-                null
+            if (email.isNullOrEmpty()) {
+                Logger.e(LogTags.AUTH, "❌ JWT-ERROR: No email found in JWT payload")
+                return null
             }
             
-            if (account != null) {
-                val email = account.email
-                val displayName = account.displayName
-                val userId = account.id
-                
-                if (!email.isNullOrEmpty()) {
-                    Logger.business(LogTags.AUTH, "✅ HYBRID-FLOW: Successfully extracted email: $email")
-                    Logger.d(LogTags.AUTH, "✅ HYBRID-FLOW: Profile data - userId=$userId, displayName=$displayName")
-                    
-                    // Store email for future use
-                    val authPrefs = activityContext.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-                    authPrefs.edit().putString("user_email", email).apply()
-                    Logger.d(LogTags.AUTH, "💾 HYBRID-FLOW: Email stored to SharedPreferences")
-                    
-                    return email
-                } else {
-                    Logger.w(LogTags.AUTH, "⚠️ HYBRID-FLOW: Silent sign-in succeeded but no email in account")
-                }
-            } else {
-                Logger.w(LogTags.AUTH, "⚠️ HYBRID-FLOW: Silent sign-in returned null account")
+            if (!emailVerified) {
+                Logger.w(LogTags.AUTH, "⚠️ JWT-WARNING: Email is not verified by Google")
             }
             
-            Logger.e(LogTags.AUTH, "❌ HYBRID-FLOW: Failed to extract email via silent sign-in")
-            null
+            Logger.business(LogTags.AUTH, "✅ JWT-SUCCESS: Email extracted from JWT: $email (verified=$emailVerified)")
+            email
             
         } catch (e: Exception) {
-            Logger.e(LogTags.AUTH, "❌ HYBRID-FLOW: Critical error in hybrid flow", e)
+            Logger.e(LogTags.AUTH, "❌ JWT-EXCEPTION: Failed to extract email from ID Token", e)
             null
         }
     }

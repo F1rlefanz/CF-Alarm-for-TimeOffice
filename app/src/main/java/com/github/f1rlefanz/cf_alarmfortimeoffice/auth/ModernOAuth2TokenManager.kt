@@ -14,16 +14,17 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 
 /**
- * FIXED Modern OAuth2TokenManager with proper UserRecoverableAuthException handling
+ * Modern OAuth2TokenManager - OAuth2 Modernized
  * 
- * KEY FIX: Properly handles user permission requests by launching the authorization intent
- * instead of just logging the error.
+ * ✅ MODERNIZED: Removed AccountManager fallback (no longer needs GET_ACCOUNTS permission)
+ * ✅ CLEAN IMPLEMENTATION: Relies solely on SharedPreferences for email storage
  * 
- * CHANGES FROM ORIGINAL:
+ * ENHANCED FEATURES:
  * 1. Added Activity context parameter for launching permission intents
  * 2. Proper UserRecoverableAuthException handling with intent launch
  * 3. Added callback mechanism for permission results
  * 4. Enhanced error messages for better debugging
+ * 5. Removed deprecated AccountManager fallback
  */
 class ModernOAuth2TokenManager(
     private val context: Context,
@@ -283,13 +284,19 @@ class ModernOAuth2TokenManager(
     }
     
     /**
-     * Helper: Get user email from SharedPreferences or AccountManager
+     * ✅ MODERNIZED: Get user email from SharedPreferences only
+     * 
+     * NO FALLBACK TO AccountManager: Since we removed GET_ACCOUNTS permission,
+     * we rely solely on SharedPreferences where AuthViewModel stores the email
+     * after successful OAuth2 sign-in.
+     * 
+     * If email is not in SharedPreferences, user must sign in again.
      */
     private fun getUserEmailFromAccounts(): String? {
         return try {
-            Logger.d(LogTags.AUTH, "🔍 EMAIL-LOOKUP: Retrieving user email...")
+            Logger.d(LogTags.AUTH, "🔍 EMAIL-LOOKUP: Retrieving user email from SharedPreferences")
             
-            // First try: Read from SharedPreferences where AuthViewModel stores it
+            // Read from SharedPreferences where AuthViewModel stores it after OAuth2 sign-in
             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
             val email = prefs.getString("current_user_email", null)
             val isSignedIn = prefs.getBoolean("user_signed_in", false)
@@ -299,32 +306,13 @@ class ModernOAuth2TokenManager(
                 return email
             }
             
-            Logger.w(LogTags.AUTH, "⚠️ EMAIL-MISSING: No valid user email in SharedPreferences (email=$email, signedIn=$isSignedIn), trying Android Accounts")
-            
-            // Fallback: Try Android Accounts (requires GET_ACCOUNTS permission)
-            try {
-                val accountManager = context.getSystemService(Context.ACCOUNT_SERVICE) as android.accounts.AccountManager
-                val accounts = accountManager.getAccountsByType("com.google")
-                
-                if (accounts.isNotEmpty()) {
-                    val fallbackEmail = accounts.first().name
-                    Logger.business(LogTags.AUTH, "✅ EMAIL-FALLBACK: Found email via Android Accounts: $fallbackEmail")
-                    
-                    // Save to SharedPreferences for next time
-                    saveUserEmailToPreferences(fallbackEmail)
-                    return fallbackEmail
-                }
-            } catch (e: SecurityException) {
-                Logger.w(LogTags.AUTH, "No GET_ACCOUNTS permission, cannot use fallback")
-            } catch (e: Exception) {
-                Logger.w(LogTags.AUTH, "Error accessing Android Accounts", e)
-            }
-            
-            Logger.e(LogTags.AUTH, "❌ EMAIL-ERROR: No user email found - user needs to sign in")
+            // ✅ NO FALLBACK: User must sign in again if email not in SharedPreferences
+            Logger.w(LogTags.AUTH, "⚠️ EMAIL-MISSING: No valid user email in SharedPreferences - user needs to sign in")
+            Logger.d(LogTags.AUTH, "💡 EMAIL-INFO: email=$email, signedIn=$isSignedIn")
             null
             
         } catch (e: Exception) {
-            Logger.e(LogTags.AUTH, "❌ EMAIL-EXCEPTION: Error getting user email", e)
+            Logger.e(LogTags.AUTH, "❌ EMAIL-EXCEPTION: Error getting user email from SharedPreferences", e)
             null
         }
     }

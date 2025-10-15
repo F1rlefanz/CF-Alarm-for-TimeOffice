@@ -300,11 +300,16 @@ private fun DebugInfoCard(
                 fontWeight = FontWeight.Bold
             )
             
-            if (calendarState.events.isNotEmpty()) {
-                Text("Events geladen: ${calendarState.events.size}")
-                Text("Schichten erkannt: ${shiftState.recognizedShifts.size}")
-                Text("Nächste Schicht: ${shiftState.upcomingShift?.shiftType?.displayName ?: "Keine"}")
-            }
+            // Logging-Beschreibung
+            Text(
+                "Wie funktioniert das Logging?",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "Die App schreibt Logs kontinuierlich in eine Datei (max. 50 MB). Bei 40 MB wird die alte Datei als Backup gesichert und eine neue Datei angelegt. Beim Versenden werden beide Dateien (aktuelle + Backup) angehängt.",
+                style = MaterialTheme.typography.bodySmall
+            )
             
             // Log-Datei Info
             com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogEmailUtil.getLogFileInfo(context)?.let { info ->
@@ -339,7 +344,7 @@ private fun DebugInfoCard(
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
                 )
                 Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                Text("📧 Logs per E-Mail senden")
+                Text("Logs an Entwickler senden")
             }
             
             // Erfolgs-/Fehlermeldungen

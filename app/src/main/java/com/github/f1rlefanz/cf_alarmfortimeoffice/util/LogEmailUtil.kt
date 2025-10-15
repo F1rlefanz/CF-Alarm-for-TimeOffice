@@ -18,56 +18,76 @@ object LogEmailUtil {
     private const val SUBJECT_PREFIX = "CF-Alarm Debug Logs"
     
     /**
-     * Sendet die Log-Datei per E-Mail über die Standard-E-Mail-App
+     * Sendet die Log-Datei(en) per E-Mail über die Standard-E-Mail-App
+     * Inkl. Backup-Datei falls vorhanden
      * 
      * @param context Android Context
      * @return Result mit Erfolg oder Fehler
      */
     fun sendLogFileViaEmail(context: Context): Result<Unit> {
         return try {
-            // 1. Log-Datei finden
+            // 1. Log-Dateien finden
             val logFile = File(context.getExternalFilesDir(null), "debug_logs.txt")
+            val backupFile = File(context.getExternalFilesDir(null), "debug_logs_backup.txt")
             
-            if (!logFile.exists() || logFile.length() == 0L) {
-                return Result.failure(Exception("Keine Log-Datei gefunden oder Datei ist leer"))
+            val filesToSend = mutableListOf<Uri>()
+            
+            // Aktuelle Log-Datei
+            if (logFile.exists() && logFile.length() > 0L) {
+                try {
+                    val fileUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        logFile
+                    )
+                    filesToSend.add(fileUri)
+                } catch (e: Exception) {
+                    Logger.e(LogTags.APP, "❌ Fehler beim Erstellen der FileProvider URI für Log", e)
+                }
             }
             
-            Logger.i(LogTags.APP, "📧 Bereite E-Mail-Versand vor: ${logFile.absolutePath}, Größe: ${logFile.length()} Bytes")
-            
-            // 2. FileProvider URI erstellen für sicheren Zugriff
-            val fileUri: Uri = try {
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    logFile
-                )
-            } catch (e: Exception) {
-                Logger.e(LogTags.APP, "❌ Fehler beim Erstellen der FileProvider URI", e)
-                return Result.failure(Exception("Fehler beim Zugriff auf Log-Datei: ${e.message}"))
+            // Backup-Datei (falls vorhanden)
+            if (backupFile.exists() && backupFile.length() > 0L) {
+                try {
+                    val backupUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        backupFile
+                    )
+                    filesToSend.add(backupUri)
+                } catch (e: Exception) {
+                    Logger.e(LogTags.APP, "❌ Fehler beim Erstellen der FileProvider URI für Backup", e)
+                }
             }
+            
+            if (filesToSend.isEmpty()) {
+                return Result.failure(Exception("Keine Log-Dateien gefunden oder Dateien sind leer"))
+            }
+            
+            Logger.i(LogTags.APP, "📧 Bereite E-Mail-Versand vor: ${filesToSend.size} Datei(en)")
             
             // 3. E-Mail Intent erstellen
-            val emailIntent = Intent(Intent.ACTION_SEND).apply {
+            val emailIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_EMAIL, arrayOf(TARGET_EMAIL))
                 putExtra(Intent.EXTRA_SUBJECT, createEmailSubject())
-                putExtra(Intent.EXTRA_TEXT, createEmailBody(context, logFile))
-                putExtra(Intent.EXTRA_STREAM, fileUri)
+                putExtra(Intent.EXTRA_TEXT, createEmailBody(logFile))
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(filesToSend))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             
-            // 4. E-Mail-App öffnen
-            val chooserIntent = Intent.createChooser(emailIntent, "Log-Datei per E-Mail senden")
+            // 4. App-Chooser öffnen (inkl. WhatsApp, Telegram, etc.)
+            val chooserIntent = Intent.createChooser(emailIntent, "Logs senden")
             chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             
             context.startActivity(chooserIntent)
             
-            Logger.i(LogTags.APP, "✅ E-Mail-App geöffnet für Log-Versand")
+            Logger.i(LogTags.APP, "✅ Sharing-Dialog geöffnet für Log-Versand")
             Result.success(Unit)
             
         } catch (e: Exception) {
-            Logger.e(LogTags.APP, "❌ Fehler beim E-Mail-Versand", e)
+            Logger.e(LogTags.APP, "❌ Fehler beim Versand", e)
             Result.failure(e)
         }
     }
@@ -84,7 +104,7 @@ object LogEmailUtil {
     /**
      * Erstellt den E-Mail-Body mit System-Informationen
      */
-    private fun createEmailBody(context: Context, logFile: File): String {
+    private fun createEmailBody(logFile: File): String {
         return buildString {
             appendLine("CF-Alarm Debug Logs")
             appendLine("==================")

@@ -98,28 +98,10 @@ fun StatusTabContent(
         )
 
         // Debug-Informationen
-        if (calendarState.events.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
-                    verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-                ) {
-                    Text(
-                        "Debug-Informationen",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text("Events geladen: ${calendarState.events.size}")
-                    Text("Schichten erkannt: ${shiftState.recognizedShifts.size}")
-                    Text("Nächste Schicht: ${shiftState.upcomingShift?.shiftType?.displayName ?: "Keine"}")
-                }
-            }
-        }
+        DebugInfoCard(
+            calendarState = calendarState,
+            shiftState = shiftState
+        )
         
         // Cache-Statistiken und Offline-Status
         CacheStatusCard(calendarViewModel = calendarViewModel)
@@ -287,6 +269,101 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
                     ) {
                         Text("Neu laden")
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebugInfoCard(
+    calendarState: CalendarUiState,
+    shiftState: ShiftUiState
+) {
+    val context = LocalContext.current
+    var showEmailSuccess by remember { mutableStateOf(false) }
+    var showEmailError by remember { mutableStateOf<String?>(null) }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Text(
+                "Debug-Informationen",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            
+            if (calendarState.events.isNotEmpty()) {
+                Text("Events geladen: ${calendarState.events.size}")
+                Text("Schichten erkannt: ${shiftState.recognizedShifts.size}")
+                Text("Nächste Schicht: ${shiftState.upcomingShift?.shiftType?.displayName ?: "Keine"}")
+            }
+            
+            // Log-Datei Info
+            com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogEmailUtil.getLogFileInfo(context)?.let { info ->
+                HorizontalDivider()
+                Text(
+                    "Log-Datei:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    info,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            
+            // Button zum E-Mail-Versand
+            Button(
+                onClick = {
+                    val result = com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogEmailUtil.sendLogFileViaEmail(context)
+                    if (result.isSuccess) {
+                        showEmailSuccess = true
+                    } else {
+                        showEmailError = result.exceptionOrNull()?.message ?: "Unbekannter Fehler"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogEmailUtil.hasLogFile(context)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Storage,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
+                )
+                Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                Text("📧 Logs per E-Mail senden")
+            }
+            
+            // Erfolgs-/Fehlermeldungen
+            if (showEmailSuccess) {
+                Text(
+                    "✅ E-Mail-App geöffnet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(3000)
+                    showEmailSuccess = false
+                }
+            }
+            
+            showEmailError?.let { error ->
+                Text(
+                    "❌ $error",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(5000)
+                    showEmailError = null
                 }
             }
         }

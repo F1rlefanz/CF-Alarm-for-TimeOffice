@@ -59,15 +59,16 @@ class CFAlarmApplication : Application() {
         // Initialize dependency container
         appContainer = AppContainer(this)
         
+        // ✅ WICHTIG: File-Logging IMMER aktivieren (DEBUG + RELEASE)
+        val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
+        Timber.plant(SimpleFileTree(logFile))
+        Logger.i(LogTags.APP, "🗂️ Logs werden gespeichert in: ${logFile.absolutePath}")
+        
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
-            
-            // File-Logging für Debug-Analyse
-            val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
-            Timber.plant(SimpleFileTree(logFile))
-            
             Logger.d(LogTags.APP, "Timber initialized in DEBUG mode with file logging")
-            Logger.i(LogTags.APP, "🗂️ Debug logs will be saved to: ${logFile.absolutePath}")
+        } else {
+            Logger.i(LogTags.APP, "Timber initialized in RELEASE mode with file logging")
         }
         
         // Initialize app components

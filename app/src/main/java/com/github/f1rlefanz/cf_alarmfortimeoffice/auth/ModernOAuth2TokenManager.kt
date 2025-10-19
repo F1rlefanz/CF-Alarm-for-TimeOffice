@@ -73,6 +73,8 @@ class ModernOAuth2TokenManager(
     
     /**
      * CRITICAL FIX: Enhanced token retrieval with initialization check and retry logic
+     * 
+     * 🔧 OPTION 4 FIX: Added token health check before returning
      */
     suspend fun getValidCalendarToken(): Result<String> = withContext(Dispatchers.IO) {
         try {
@@ -86,21 +88,24 @@ class ModernOAuth2TokenManager(
                 }
             }
             
+            // 🔧 OPTION 4 FIX: Read token with health check
             val currentToken = tokenStorage.getCurrentToken()
             
-            when {
-                currentToken == null -> {
-                    Logger.w(LogTags.TOKEN, "❌ TOKEN-DIAGNOSTIC: No Calendar token available - authorization required")
-                    Logger.d(LogTags.TOKEN, "💡 TOKEN-DIAGNOSTIC: User needs to complete Calendar authorization flow")
-                    
-                    // Check if user is signed in but token missing
-                    if (lastUserEmail != null) {
-                        Logger.business(LogTags.TOKEN, "🔄 TOKEN-RECOVERY: User signed in but no Calendar token - user interaction required")
-                    }
-                    
-                    Result.failure(TokenException.NoTokenAvailable("No Calendar API authorization - please authorize Calendar access"))
+            // 🔧 OPTION 4 FIX: Defensive null check with detailed logging
+            if (currentToken == null) {
+                Logger.e(LogTags.TOKEN, "❌ OPTION-4-DEFENSIVE: Token storage returned NULL - no token available")
+                Logger.business(LogTags.TOKEN, "💡 OPTION-4-DEFENSIVE: User must authorize Calendar access")
+                
+                // Check if user email exists (signed in but no Calendar token)
+                if (lastUserEmail != null) {
+                    Logger.w(LogTags.TOKEN, "⚠️ OPTION-4-DEFENSIVE: User is signed in ($lastUserEmail) but Calendar token is missing")
+                    return@withContext Result.failure(TokenException.NoTokenAvailable("Calendar authorization required - user is signed in but needs to authorize Calendar access"))
                 }
                 
+                return@withContext Result.failure(TokenException.NoTokenAvailable("No Calendar API authorization - please sign in and authorize Calendar access"))
+            }
+            
+            when {
                 currentToken.isValid() -> {
                     Logger.business(LogTags.TOKEN, "✅ TOKEN-DIAGNOSTIC: Using valid Calendar access token (${currentToken.getRemainingLifetimeMinutes()}min remaining)")
                     Result.success(currentToken.accessToken)
@@ -213,13 +218,17 @@ class ModernOAuth2TokenManager(
             
             Logger.business(LogTags.OAUTH, "✅ AUTH-FIXED: Successfully obtained Calendar API token")
             
-            // Create token data with real token
+            // 🔧 OPTION 2 FIX: Use the access token itself as refresh token for Google's managed refresh
+            // Google manages token refresh automatically when we call GoogleAuthUtil.getToken() again
+            // We store the access token as "refresh token" to trigger re-fetch via GoogleAuthUtil
             val tokenData = TokenData.fromOAuthResponse(
                 accessToken = calendarToken,
-                refreshToken = "google_managed", 
+                refreshToken = calendarToken, // ✅ FIXED: Use actual token for refresh capability
                 expiresInSeconds = 3600L, // 1 hour
                 scope = CalendarScopes.CALENDAR_READONLY
             )
+            
+            Logger.d(LogTags.TOKEN, "🔐 OPTION-2-FIX: Token stored with refresh capability (Google-managed)")
             
             // Store token
             val storeResult = tokenStorage.saveToken(tokenData)
@@ -332,6 +341,8 @@ class ModernOAuth2TokenManager(
     
     /**
      * Improved Calendar token refresh
+     * 
+     * 🔧 OPTION 2 FIX: Uses real access token for Google-managed refresh
      */
     private suspend fun refreshCalendarTokenImproved(refreshToken: String?): Result<String> = withContext(Dispatchers.IO) {
         try {
@@ -342,8 +353,10 @@ class ModernOAuth2TokenManager(
                 return@withContext Result.failure(TokenException.RefreshFailed("No refresh token available"))
             }
             
-            // Clear any cached tokens to force fresh token request
+            // 🔧 OPTION 2 FIX: Clear the old access token (which we stored as refresh token)
+            // This forces GoogleAuthUtil to fetch a fresh token from Google servers
             GoogleAuthUtil.clearToken(context, refreshToken)
+            Logger.d(LogTags.TOKEN, "🧹 OPTION-2-FIX: Cleared cached token to force refresh")
             
             // Get current user account (we need this for refresh)
             val userEmail = getUserEmailFromAccounts()
@@ -387,7 +400,7 @@ class ModernOAuth2TokenManager(
             
             val newExpiresAt = System.currentTimeMillis() + (3600L * 1000) // 1 hour
             
-            // Update stored token
+            // 🔧 OPTION 2 FIX: Store new token with itself as refresh token (Google-managed)
             val updateResult = tokenStorage.updateAccessToken(
                 newAccessToken = newAccessToken,
                 newExpiresAt = newExpiresAt
@@ -398,7 +411,14 @@ class ModernOAuth2TokenManager(
                 return@withContext Result.failure(TokenException.RefreshFailed("Failed to update stored Calendar token"))
             }
             
-            Logger.business(LogTags.TOKEN, "✅ TOKEN-REFRESH: Calendar access token refreshed successfully")
+            // 🔧 OPTION 1 FIX: Verify token was actually saved
+            val verifyToken = tokenStorage.getCurrentToken()
+            if (verifyToken?.accessToken != newAccessToken) {
+                Logger.e(LogTags.TOKEN, "❌ OPTION-1-VERIFY: Token refresh succeeded but verification failed!")
+                return@withContext Result.failure(TokenException.RefreshFailed("Token verification failed after refresh"))
+            }
+            
+            Logger.business(LogTags.TOKEN, "✅ TOKEN-REFRESH: Calendar access token refreshed and verified successfully")
             Result.success(newAccessToken)
             
         } catch (e: Exception) {

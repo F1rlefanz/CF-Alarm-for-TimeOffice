@@ -40,20 +40,27 @@ class CalendarUseCase(
     /**
      * Lädt verfügbare Kalender für den aktuell authentifizierten User
      * UPDATED: Verwendet neue Token-Management Infrastruktur mit Pagination Support
+     * 
+     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
      */
     override suspend fun getAvailableCalendars(): Result<List<AndroidCalendar>> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("CalendarUseCase.getAvailableCalendars") {
             
-            // Try new token system first, fallback to old system
+            // 🔧 OPTION 4 FIX: Defensive check - ensure token exists before proceeding
             val accessToken = if (tokenRefreshUseCase != null) {
-                Logger.business(LogTags.CALENDAR, "🔐 MODERN-TOKEN: Using OAuth2 token system for calendar access...")
-                tokenRefreshUseCase.ensureValidToken().getOrElse { error ->
-                    Logger.e(LogTags.TOKEN, "❌ CRITICAL-TOKEN-ERROR: OAuth2 token refresh failed - calendar access not possible!", error)
-                    
-                    // CRITICAL FIX: Don't fall back to potentially same expired token!
-                    // Instead, throw the error to force user to re-authenticate
-                    throw Exception("Calendar access requires re-authentication. Please sign out and sign in again. Error: ${error.message}")
+                Logger.business(LogTags.CALENDAR, "🔐 OPTION-4-CHECK: Validating OAuth2 token before calendar access...")
+                
+                val tokenResult = tokenRefreshUseCase.ensureValidToken()
+                if (tokenResult.isFailure) {
+                    val error = tokenResult.exceptionOrNull()
+                    Logger.e(LogTags.TOKEN, "❌ OPTION-4-DEFENSIVE: No valid token available - authorization required!", error)
+                    throw Exception("Calendar access requires authorization. Please sign in and authorize Calendar access. Error: ${error?.message}")
                 }
+                
+                val token = tokenResult.getOrThrow()
+                Logger.business(LogTags.TOKEN, "✅ OPTION-4-DEFENSIVE: Token validated successfully")
+                token
+                
             } else {
                 Logger.w(LogTags.CALENDAR, "⚠️ LEGACY-ONLY: Using legacy auth system (no OAuth2 available)...")
                 
@@ -64,11 +71,11 @@ class CalendarUseCase(
                 val currentTime = System.currentTimeMillis()
                 
                 if (currentTime >= tokenExpiryTime) {
-                    Logger.e(LogTags.TOKEN, "❌ LEGACY-TOKEN-EXPIRED: Legacy token expired at ${java.util.Date(tokenExpiryTime)}, current time: ${java.util.Date(currentTime)}")
+                    Logger.e(LogTags.TOKEN, "❌ OPTION-4-DEFENSIVE: Legacy token expired at ${java.util.Date(tokenExpiryTime)}, current time: ${java.util.Date(currentTime)}")
                     throw Exception("Calendar access token expired. Please sign out and sign in again to refresh authorization.")
                 }
                 
-                Logger.business(LogTags.CALENDAR, "✅ LEGACY-TOKEN-VALID: Using valid legacy token")
+                Logger.business(LogTags.CALENDAR, "✅ OPTION-4-DEFENSIVE: Legacy token validated")
                 legacyToken
             }
             
@@ -124,6 +131,8 @@ class CalendarUseCase(
      * Lädt Events für spezifische Kalender mit Cache-Support und Force-Refresh Option
      * CRITICAL PERFORMANCE FIX: Background Threading mit Main-Thread Schonung
      * PROGRESSIVE LOADING: Verhindert UI-Blockierung durch gestaffelte Verarbeitung
+     * 
+     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
      */
     override suspend fun getCalendarEventsWithCache(
         calendarIds: Set<String>,
@@ -132,14 +141,21 @@ class CalendarUseCase(
     ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsWithCache") {
             
+            // 🔧 OPTION 4 FIX: Defensive check - ensure token exists before proceeding
             val accessToken = if (tokenRefreshUseCase != null) {
-                Logger.business(LogTags.CALENDAR, "🔐 MODERN-TOKEN: Using OAuth2 token system for events...")
-                tokenRefreshUseCase.ensureValidToken().getOrElse { error ->
-                    Logger.e(LogTags.TOKEN, "❌ CRITICAL-TOKEN-ERROR: OAuth2 token refresh failed - calendar events not accessible!", error)
-                    
-                    // CRITICAL FIX: Don't fall back to potentially same expired token!
-                    throw Exception("Calendar access requires re-authentication. Please sign out and sign in again. Error: ${error.message}")
+                Logger.business(LogTags.CALENDAR, "🔐 OPTION-4-CHECK: Validating OAuth2 token before events access...")
+                
+                val tokenResult = tokenRefreshUseCase.ensureValidToken()
+                if (tokenResult.isFailure) {
+                    val error = tokenResult.exceptionOrNull()
+                    Logger.e(LogTags.TOKEN, "❌ OPTION-4-DEFENSIVE: No valid token available - authorization required!", error)
+                    throw Exception("Calendar events require authorization. Please sign in and authorize Calendar access. Error: ${error?.message}")
                 }
+                
+                val token = tokenResult.getOrThrow()
+                Logger.business(LogTags.TOKEN, "✅ OPTION-4-DEFENSIVE: Token validated successfully")
+                token
+                
             } else {
                 Logger.w(LogTags.CALENDAR, "⚠️ LEGACY-ONLY: Using legacy auth system for events...")
                 
@@ -150,11 +166,11 @@ class CalendarUseCase(
                 val currentTime = System.currentTimeMillis()
                 
                 if (currentTime >= tokenExpiryTime) {
-                    Logger.e(LogTags.TOKEN, "❌ LEGACY-TOKEN-EXPIRED: Legacy token expired at ${java.util.Date(tokenExpiryTime)}, current time: ${java.util.Date(currentTime)}")
+                    Logger.e(LogTags.TOKEN, "❌ OPTION-4-DEFENSIVE: Legacy token expired at ${java.util.Date(tokenExpiryTime)}, current time: ${java.util.Date(currentTime)}")
                     throw Exception("Calendar access token expired. Please sign out and sign in again to refresh authorization.")
                 }
                 
-                Logger.business(LogTags.CALENDAR, "✅ LEGACY-TOKEN-VALID: Using valid legacy token")
+                Logger.business(LogTags.CALENDAR, "✅ OPTION-4-DEFENSIVE: Legacy token validated")
                 legacyToken
             }
             
@@ -261,6 +277,8 @@ class CalendarUseCase(
     /**
      * LAZY LOADING: Lädt Events mit erweiterten Optionen für bessere Performance
      * FIXED: Echtes Lazy Loading direkt an der API-Ebene
+     * 
+     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
      */
     override suspend fun getCalendarEventsLazy(
         calendarIds: Set<String>,
@@ -270,14 +288,21 @@ class CalendarUseCase(
     ): Result<EventPage> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsLazy") {
             
+            // 🔧 OPTION 4 FIX: Defensive check - ensure token exists before proceeding
             val accessToken = if (tokenRefreshUseCase != null) {
-                Logger.business(LogTags.CALENDAR, "🔐 MODERN-TOKEN: Using OAuth2 token system for events...")
-                tokenRefreshUseCase.ensureValidToken().getOrElse { error ->
-                    Logger.e(LogTags.TOKEN, "❌ CRITICAL-TOKEN-ERROR: OAuth2 token refresh failed - calendar events not accessible!", error)
-                    
-                    // CRITICAL FIX: Don't fall back to potentially same expired token!
-                    throw Exception("Calendar access requires re-authentication. Please sign out and sign in again. Error: ${error.message}")
+                Logger.business(LogTags.CALENDAR, "🔐 OPTION-4-CHECK: Validating OAuth2 token before lazy events access...")
+                
+                val tokenResult = tokenRefreshUseCase.ensureValidToken()
+                if (tokenResult.isFailure) {
+                    val error = tokenResult.exceptionOrNull()
+                    Logger.e(LogTags.TOKEN, "❌ OPTION-4-DEFENSIVE: No valid token available - authorization required!", error)
+                    throw Exception("Calendar events require authorization. Please sign in and authorize Calendar access. Error: ${error?.message}")
                 }
+                
+                val token = tokenResult.getOrThrow()
+                Logger.business(LogTags.TOKEN, "✅ OPTION-4-DEFENSIVE: Token validated successfully")
+                token
+                
             } else {
                 Logger.w(LogTags.CALENDAR, "⚠️ LEGACY-ONLY: Using legacy auth system for events...")
                 
@@ -288,11 +313,11 @@ class CalendarUseCase(
                 val currentTime = System.currentTimeMillis()
                 
                 if (currentTime >= tokenExpiryTime) {
-                    Logger.e(LogTags.TOKEN, "❌ LEGACY-TOKEN-EXPIRED: Legacy token expired at ${java.util.Date(tokenExpiryTime)}, current time: ${java.util.Date(currentTime)}")
+                    Logger.e(LogTags.TOKEN, "❌ OPTION-4-DEFENSIVE: Legacy token expired at ${java.util.Date(tokenExpiryTime)}, current time: ${java.util.Date(currentTime)}")
                     throw Exception("Calendar access token expired. Please sign out and sign in again to refresh authorization.")
                 }
                 
-                Logger.business(LogTags.CALENDAR, "✅ LEGACY-TOKEN-VALID: Using valid legacy token")
+                Logger.business(LogTags.CALENDAR, "✅ OPTION-4-DEFENSIVE: Legacy token validated")
                 legacyToken
             }
             

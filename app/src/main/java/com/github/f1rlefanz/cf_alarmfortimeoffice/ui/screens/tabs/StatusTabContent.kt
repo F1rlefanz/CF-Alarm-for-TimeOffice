@@ -307,7 +307,7 @@ private fun DebugInfoCard(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "Die App schreibt Logs kontinuierlich in eine Datei (max. 50 MB). Bei 40 MB wird die alte Datei als Backup gesichert und eine neue Datei angelegt. Beim Versenden werden beide Dateien (aktuelle + Backup) angehängt.",
+                "Die App schreibt Logs kontinuierlich in eine Datei (max. 50 MB). Bei 40 MB wird die alte Datei als Backup gesichert und eine neue Datei angelegt. Bei der nächsten Rotation wird das alte Backup gelöscht. Beim Versenden werden beide Dateien (aktuelle + Backup) angehängt.",
                 style = MaterialTheme.typography.bodySmall
             )
             

@@ -35,15 +35,22 @@ class SecureTokenStorage(private val context: Context) {
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
             
-            EncryptedSharedPreferences.create(
+            val encryptedPrefs = EncryptedSharedPreferences.create(
                 context,
                 PREFS_NAME,
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
+            
+            Logger.business(LogTags.TOKEN, "✅ OPTION-1-FIX: EncryptedSharedPreferences initialized successfully")
+            encryptedPrefs
+            
         } catch (e: Exception) {
-            Logger.e(LogTags.TOKEN, "Failed to create encrypted preferences, falling back to regular SharedPreferences", e)
+            Logger.e(LogTags.TOKEN, "❌ OPTION-1-FIX: Failed to create EncryptedSharedPreferences - falling back to regular SharedPreferences", e)
+            Logger.w(LogTags.TOKEN, "⚠️ OPTION-1-FIX: SECURITY WARNING - Tokens will be stored without encryption!")
+            Logger.d(LogTags.TOKEN, "💡 OPTION-1-FIX: Error details: ${e::class.simpleName} - ${e.message}")
+            
             // Fallback to regular SharedPreferences if encryption fails
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         }
@@ -52,6 +59,8 @@ class SecureTokenStorage(private val context: Context) {
     /**
      * Saves token data to storage.
      * Performs operation on IO dispatcher for optimal performance.
+     * 
+     * 🔧 OPTION 1 FIX: Enhanced with post-save verification
      */
     suspend fun saveToken(tokenData: TokenData): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -63,8 +72,16 @@ class SecureTokenStorage(private val context: Context) {
                 .commit()
             
             if (success) {
-                Logger.d(LogTags.TOKEN, "Token saved successfully to storage")
-                Result.success(Unit)
+                // 🔧 OPTION 1 FIX: Verify token was actually saved
+                val verifyJson = prefs.getString(KEY_TOKEN_DATA, null)
+                if (verifyJson == tokenJson) {
+                    Logger.d(LogTags.TOKEN, "✅ OPTION-1-FIX: Token saved and verified successfully")
+                    Result.success(Unit)
+                } else {
+                    val error = "Token save verification failed - data mismatch"
+                    Logger.e(LogTags.TOKEN, "❌ OPTION-1-FIX: $error")
+                    Result.failure(TokenStorageException(error))
+                }
             } else {
                 val error = "Failed to commit token to storage"
                 Logger.e(LogTags.TOKEN, error)

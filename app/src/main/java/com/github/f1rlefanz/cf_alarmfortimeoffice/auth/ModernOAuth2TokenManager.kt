@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.auth
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenStorageRepository
 import com.google.android.gms.auth.GoogleAuthUtil
@@ -50,7 +51,7 @@ class ModernOAuth2TokenManager(
             Logger.business(LogTags.TOKEN, "🔧 TOKEN-INIT: Initializing ModernOAuth2TokenManager")
             
             // Validate storage availability
-            val storageTest = tokenStorage.getCurrentToken()
+            tokenStorage.getCurrentToken()
             Logger.d(LogTags.TOKEN, "✅ TOKEN-INIT: Token storage validated successfully")
             
             // Cache user email for faster lookups
@@ -211,24 +212,23 @@ class ModernOAuth2TokenManager(
                 return@withContext AuthResult.Failure(errorMessage)
             }
             
-            if (calendarToken.isNullOrEmpty()) {
+            if (calendarToken.isEmpty()) {
                 Logger.e(LogTags.OAUTH, "❌ AUTH-FIXED: Empty Calendar API token received")
                 return@withContext AuthResult.Failure("Failed to obtain Calendar API token")
             }
             
             Logger.business(LogTags.OAUTH, "✅ AUTH-FIXED: Successfully obtained Calendar API token")
             
-            // 🔧 OPTION 2 FIX: Use the access token itself as refresh token for Google's managed refresh
-            // Google manages token refresh automatically when we call GoogleAuthUtil.getToken() again
-            // We store the access token as "refresh token" to trigger re-fetch via GoogleAuthUtil
+            // 🔧 OPTION 2 FIX: Store token WITH user email for refresh capability
             val tokenData = TokenData.fromOAuthResponse(
                 accessToken = calendarToken,
                 refreshToken = calendarToken, // ✅ FIXED: Use actual token for refresh capability
                 expiresInSeconds = 3600L, // 1 hour
-                scope = CalendarScopes.CALENDAR_READONLY
+                scope = CalendarScopes.CALENDAR_READONLY,
+                userEmail = userEmail // 🔧 PHASE 1: Store email for reliable refresh
             )
             
-            Logger.d(LogTags.TOKEN, "🔐 OPTION-2-FIX: Token stored with refresh capability (Google-managed)")
+            Logger.d(LogTags.TOKEN, "🔐 PHASE-1-FIX: Token stored with email and refresh capability")
             
             // Store token
             val storeResult = tokenStorage.saveToken(tokenData)
@@ -255,7 +255,7 @@ class ModernOAuth2TokenManager(
      * CRITICAL FIX: Handle permission request result
      * Call this from Activity.onActivityResult()
      */
-    suspend fun handlePermissionResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+    suspend fun handlePermissionResult(requestCode: Int, resultCode: Int): Boolean {
         if (requestCode != REQUEST_CODE_CALENDAR_AUTHORIZATION) {
             return false
         }
@@ -293,35 +293,107 @@ class ModernOAuth2TokenManager(
     }
     
     /**
-     * ✅ MODERNIZED: Get user email from SharedPreferences only
+     * ✅ PHASE 1 FIX: Multi-Source Email Retrieval with JWT Fallback
      * 
-     * NO FALLBACK TO AccountManager: Since we removed GET_ACCOUNTS permission,
-     * we rely solely on SharedPreferences where AuthViewModel stores the email
-     * after successful OAuth2 sign-in.
+     * Retrieval Strategy (in order):
+     * 1. SharedPreferences (fastest)
+     * 2. TokenData userEmail field (stored with token)
+     * 3. JWT Token extraction (from access token)
      * 
-     * If email is not in SharedPreferences, user must sign in again.
+     * This redundancy prevents token refresh failures due to data loss.
      */
-    private fun getUserEmailFromAccounts(): String? {
+    private suspend fun getUserEmailFromAccounts(): String? {
         return try {
-            Logger.d(LogTags.AUTH, "🔍 EMAIL-LOOKUP: Retrieving user email from SharedPreferences")
+            Logger.d(LogTags.AUTH, "🔍 PHASE-1: Multi-source email retrieval started")
             
-            // Read from SharedPreferences where AuthViewModel stores it after OAuth2 sign-in
+            // SOURCE 1: SharedPreferences (fastest)
             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
-            val email = prefs.getString("current_user_email", null)
+            val emailFromPrefs = prefs.getString("current_user_email", null)
             val isSignedIn = prefs.getBoolean("user_signed_in", false)
             
-            if (email != null && email.contains("@") && isSignedIn) {
-                Logger.business(LogTags.AUTH, "✅ EMAIL-FOUND: User email retrieved from SharedPreferences: $email")
-                return email
+            if (!emailFromPrefs.isNullOrBlank() && emailFromPrefs.contains("@") && isSignedIn) {
+                Logger.business(LogTags.AUTH, "✅ PHASE-1: Email from SharedPreferences: $emailFromPrefs")
+                return emailFromPrefs
             }
             
-            // ✅ NO FALLBACK: User must sign in again if email not in SharedPreferences
-            Logger.w(LogTags.AUTH, "⚠️ EMAIL-MISSING: No valid user email in SharedPreferences - user needs to sign in")
-            Logger.d(LogTags.AUTH, "💡 EMAIL-INFO: email=$email, signedIn=$isSignedIn")
+            Logger.d(LogTags.AUTH, "⚠️ PHASE-1: No email in SharedPreferences, trying TokenData")
+            
+            // SOURCE 2: TokenData userEmail field
+            val currentToken = tokenStorage.getCurrentToken()
+            if (currentToken?.userEmail?.isNotBlank() == true) {
+                Logger.business(LogTags.AUTH, "✅ PHASE-1: Email from TokenData: ${currentToken.userEmail}")
+                
+                // Cache back to SharedPreferences for next time
+                saveUserEmailToPreferences(currentToken.userEmail)
+                
+                return currentToken.userEmail
+            }
+            
+            Logger.d(LogTags.AUTH, "⚠️ PHASE-1: No email in TokenData, trying JWT extraction")
+            
+            // SOURCE 3: JWT Token extraction (last resort)
+            if (currentToken?.accessToken?.isNotBlank() == true) {
+                val emailFromJWT = extractEmailFromJWT(currentToken.accessToken)
+                
+                if (!emailFromJWT.isNullOrBlank()) {
+                    Logger.business(LogTags.AUTH, "✅ PHASE-1: Email extracted from JWT: $emailFromJWT")
+                    
+                    // Cache to both SharedPreferences and TokenData for future
+                    saveUserEmailToPreferences(emailFromJWT)
+                    
+                    // Update token with email
+                    val updatedToken = currentToken.copy(userEmail = emailFromJWT)
+                    tokenStorage.saveToken(updatedToken)
+                    
+                    return emailFromJWT
+                }
+            }
+            
+            // All sources failed
+            Logger.w(LogTags.AUTH, "❌ PHASE-1: No user email available from any source - user needs to sign in")
             null
             
         } catch (e: Exception) {
-            Logger.e(LogTags.AUTH, "❌ EMAIL-EXCEPTION: Error getting user email from SharedPreferences", e)
+            Logger.e(LogTags.AUTH, "❌ PHASE-1: Error during multi-source email retrieval", e)
+            null
+        }
+    }
+    
+    /**
+     * PHASE 1 FIX: Extract email from JWT access token
+     * 
+     * JWT Structure: Header.Payload.Signature
+     * Payload contains user claims including email.
+     */
+    private fun extractEmailFromJWT(accessToken: String): String? {
+        return try {
+            Logger.d(LogTags.AUTH, "🔍 JWT-EXTRACT: Starting email extraction from access token")
+            
+            val segments = accessToken.split(".")
+            if (segments.size < 2) {
+                Logger.e(LogTags.AUTH, "❌ JWT-EXTRACT: Invalid JWT format (${segments.size} segments)")
+                return null
+            }
+            
+            // Decode Payload (second segment)
+            val payloadBytes = android.util.Base64.decode(
+                segments[1],
+                android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING
+            )
+            val payloadJson = org.json.JSONObject(String(payloadBytes, Charsets.UTF_8))
+            
+            val email = payloadJson.optString("email", "")
+            
+            if (email.isNotBlank()) {
+                Logger.business(LogTags.AUTH, "✅ JWT-EXTRACT: Email found: $email")
+                return email
+            }
+            
+            Logger.e(LogTags.AUTH, "❌ JWT-EXTRACT: No email in JWT payload")
+            null
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.AUTH, "❌ JWT-EXTRACT: Exception during extraction", e)
             null
         }
     }
@@ -332,7 +404,9 @@ class ModernOAuth2TokenManager(
     private fun saveUserEmailToPreferences(email: String) {
         try {
             val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
-            prefs.edit().putString("current_user_email", email).apply()
+            prefs.edit {
+                putString("current_user_email", email)
+            }
             Logger.d(LogTags.AUTH, "✅ EMAIL-SAVE: User email saved to SharedPreferences: $email")
         } catch (e: Exception) {
             Logger.w(LogTags.AUTH, "Failed to save user email to SharedPreferences", e)
@@ -342,7 +416,7 @@ class ModernOAuth2TokenManager(
     /**
      * Improved Calendar token refresh
      * 
-     * 🔧 OPTION 2 FIX: Uses real access token for Google-managed refresh
+     * 🔧 PHASE 1 FIX: Uses multi-source email retrieval for reliability
      */
     private suspend fun refreshCalendarTokenImproved(refreshToken: String?): Result<String> = withContext(Dispatchers.IO) {
         try {
@@ -358,15 +432,16 @@ class ModernOAuth2TokenManager(
             GoogleAuthUtil.clearToken(context, refreshToken)
             Logger.d(LogTags.TOKEN, "🧹 OPTION-2-FIX: Cleared cached token to force refresh")
             
-            // Get current user account (we need this for refresh)
+            // 🔧 PHASE 1 FIX: Get user email with multi-source fallback
             val userEmail = getUserEmailFromAccounts()
             
             if (userEmail == null) {
-                Logger.e(LogTags.TOKEN, "❌ TOKEN-REFRESH: Cannot refresh Calendar token - no user account found")
-                return@withContext Result.failure(TokenException.RefreshFailed("No user account available for token refresh"))
+                Logger.e(LogTags.TOKEN, "❌ PHASE-1: Cannot refresh - no user email from any source!")
+                Logger.w(LogTags.TOKEN, "💡 PHASE-1: User needs to re-authenticate to restore Calendar access")
+                return@withContext Result.failure(TokenException.RefreshFailed("No user account available - re-authentication required"))
             }
             
-            Logger.d(LogTags.TOKEN, "📧 TOKEN-REFRESH: Using user account: $userEmail")
+            Logger.business(LogTags.TOKEN, "📧 PHASE-1: Using email for refresh: $userEmail")
             
             val googleAccount = android.accounts.Account(userEmail, "com.google")
             
@@ -391,7 +466,7 @@ class ModernOAuth2TokenManager(
                 return@withContext Result.failure(TokenException.RefreshFailed(errorMessage))
             }
             
-            if (newAccessToken.isNullOrEmpty()) {
+            if (newAccessToken.isEmpty()) {
                 Logger.e(LogTags.TOKEN, "❌ TOKEN-REFRESH: Empty token received from GoogleAuthUtil")
                 return@withContext Result.failure(TokenException.RefreshFailed("Empty access token received"))
             }
@@ -485,7 +560,6 @@ sealed class TokenException(message: String) : Exception(message) {
     class NoTokenAvailable(message: String) : TokenException(message)
     class AuthorizationExpired(message: String) : TokenException(message)
     class RefreshFailed(message: String) : TokenException(message)
-    class NetworkError(message: String) : TokenException(message)
 }
 
 /**
@@ -510,12 +584,3 @@ sealed class AuthResult {
     ) : AuthResult()
     data class Pending(val message: String) : AuthResult()
 }
-
-/**
- * User information from authentication
- */
-data class UserInfo(
-    val email: String,
-    val displayName: String,
-    val id: String
-)

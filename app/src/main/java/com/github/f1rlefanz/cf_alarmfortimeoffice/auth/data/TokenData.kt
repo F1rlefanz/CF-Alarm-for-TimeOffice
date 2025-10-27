@@ -19,7 +19,9 @@ data class TokenData(
     val expiresAt: Long, // Unix timestamp in milliseconds
     val scope: String,
     val tokenType: String = "Bearer",
-    val issuedAt: Long = System.currentTimeMillis()
+    val issuedAt: Long = System.currentTimeMillis(),
+    // 🔧 PHASE 1 FIX: Email redundancy for token refresh reliability
+    val userEmail: String? = null
 ) {
     
     /**
@@ -69,7 +71,7 @@ data class TokenData(
     
     /**
      * Creates a copy with new access token (typically after refresh).
-     * Preserves refresh token and updates expiration time.
+     * Preserves refresh token, user email and updates expiration time.
      */
     fun withRefreshedAccessToken(
         newAccessToken: String,
@@ -80,6 +82,7 @@ data class TokenData(
         expiresAt = newExpiresAt,
         scope = newScope ?: scope,
         issuedAt = System.currentTimeMillis()
+        // userEmail is preserved from original token
     )
     
     /**
@@ -107,7 +110,7 @@ data class TokenData(
                 ZoneId.systemDefault()
             )
             dateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"))
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "Invalid timestamp: $timestamp"
         }
     }
@@ -121,13 +124,15 @@ data class TokenData(
          * @param refreshToken The refresh token (optional)
          * @param expiresInSeconds Token lifetime in seconds
          * @param scope Token scope
+         * @param userEmail User email for token refresh (optional but recommended)
          * @return TokenData instance
          */
         fun fromOAuthResponse(
             accessToken: String,
             refreshToken: String?,
             expiresInSeconds: Long,
-            scope: String
+            scope: String,
+            userEmail: String? = null
         ): TokenData {
             val expiresAt = System.currentTimeMillis() + (expiresInSeconds * 1000)
             
@@ -135,7 +140,8 @@ data class TokenData(
                 accessToken = accessToken,
                 refreshToken = refreshToken,
                 expiresAt = expiresAt,
-                scope = scope
+                scope = scope,
+                userEmail = userEmail
             )
         }
         

@@ -145,7 +145,15 @@ fun HomeTabContent(
         // Kalender Events Summary
         Card(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { onShowEventList?.invoke() } // LAZY LOADING: Make card clickable for event list
+            onClick = { onShowEventList?.invoke() }, // LAZY LOADING: Make card clickable for event list
+            colors = CardDefaults.cardColors(
+                // PHASE 2 FIX: Show error color if authorization lost
+                containerColor = if (!calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()) {
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    CardDefaults.cardColors().containerColor
+                }
+            )
         ) {
             Column(
                 modifier = Modifier
@@ -161,7 +169,11 @@ fun HomeTabContent(
                         Icons.Default.CalendarMonth,
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (!calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
                     )
                     Text(
                         "Kalender-Events",
@@ -172,7 +184,26 @@ fun HomeTabContent(
                 
                 HorizontalDivider()
                 
-                if (calendarState.events.isNotEmpty()) {
+                // PHASE 2 FIX: Show authorization error prominently
+                if (!calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()) {
+                    Text(
+                        "⚠️ Kalender-Autorisierung verloren",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        "Bitte melde dich ab und wieder an, um den Kalender-Zugriff wiederherzustellen.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        "Einstellungen → Abmelden → Neu anmelden",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                } else if (calendarState.events.isNotEmpty()) {
                     // LAZY LOADING: Show limited events overview in home tab
                     val displayEventCount = minOf(calendarState.events.size, 5) // Show max 5 events in overview
                     Text("${calendarState.events.size} Events in den nächsten $daysAhead Tagen")

@@ -38,6 +38,9 @@ data class CalendarUiState(
     val events: List<CalendarEvent> = emptyList(),
     val error: String? = null,
     val hasValidToken: Boolean = false,
+    // PHASE 2 FIX: Track actual Calendar API authorization status
+    val calendarAuthorizationValid: Boolean = false,
+    val lastAuthorizationCheck: Long = 0L,
     // PAGINATION SUPPORT: Calendar pagination fields
     val currentPage: Int = 0,
     val hasMoreCalendars: Boolean = false,
@@ -534,7 +537,10 @@ class CalendarViewModel(
                         events = finalSortedEvents,
                         eventOffset = finalSortedEvents.size,
                         totalEvents = if (loadAll) finalSortedEvents.size else totalEventCount,
-                        hasMoreEvents = finalHasMore
+                        hasMoreEvents = finalHasMore,
+                        // PHASE 2 FIX: Mark authorization as valid after successful event load
+                        calendarAuthorizationValid = true,
+                        lastAuthorizationCheck = System.currentTimeMillis()
                     )
                 }
                 
@@ -555,7 +561,10 @@ class CalendarViewModel(
                 updateLocalStateImmediate { 
                     it.copy(
                         isLoading = false,
-                        error = errorHandler.getErrorMessage(e)
+                        error = errorHandler.getErrorMessage(e),
+                        // PHASE 2 FIX: Mark authorization as invalid on error
+                        calendarAuthorizationValid = false,
+                        lastAuthorizationCheck = System.currentTimeMillis()
                     )
                 }
                 Logger.e(LogTags.CALENDAR, "Failed to load calendar events progressively", e)

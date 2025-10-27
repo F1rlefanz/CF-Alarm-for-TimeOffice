@@ -58,11 +58,13 @@ fun StatusTabContent(
         // Kalender Status
         StatusCard(
             title = "Kalender",
-            isOk = calendarState.selectedCalendarIds.isNotEmpty(),
+            isOk = calendarState.selectedCalendarIds.isNotEmpty() && calendarState.calendarAuthorizationValid,
             details = when {
+                !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() -> 
+                    "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
                 calendarState.selectedCalendarIds.isEmpty() -> "Kein Kalender ausgewählt"
                 calendarState.availableCalendars.isEmpty() -> "Keine Kalender verfügbar"
-                else -> "${calendarState.selectedCalendarIds.size} Kalender ausgewählt"
+                else -> "${calendarState.selectedCalendarIds.size} Kalender ausgewählt, API-Zugriff OK"
             }
         )
 
@@ -98,10 +100,7 @@ fun StatusTabContent(
         )
 
         // Debug-Informationen
-        DebugInfoCard(
-            calendarState = calendarState,
-            shiftState = shiftState
-        )
+        DebugInfoCard()
         
         // Cache-Statistiken und Offline-Status
         CacheStatusCard(calendarViewModel = calendarViewModel)
@@ -169,7 +168,7 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
             try {
                 viewModel.getCacheStats()
                 cacheStats = "Cache-Statistiken in Log ausgegeben"
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 cacheStats = "Cache-Statistiken nicht verfügbar"
             }
         } ?: run {
@@ -276,10 +275,7 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
 }
 
 @Composable
-private fun DebugInfoCard(
-    calendarState: CalendarUiState,
-    shiftState: ShiftUiState
-) {
+private fun DebugInfoCard() {
     val context = LocalContext.current
     var showEmailSuccess by remember { mutableStateOf(false) }
     var showEmailError by remember { mutableStateOf<String?>(null) }
@@ -390,6 +386,7 @@ private fun isNetworkAvailable(context: Context): Boolean {
     } else {
         @Suppress("DEPRECATION")
         val activeNetworkInfo = connectivityManager.activeNetworkInfo
-        activeNetworkInfo?.isConnected == true
+        @Suppress("DEPRECATION")
+        activeNetworkInfo?.isConnectedOrConnecting == true
     }
 }

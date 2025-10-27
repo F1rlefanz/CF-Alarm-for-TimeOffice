@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     kotlin("kapt")
-    
+
     // Firebase plugins (2025 Standards)
     alias(libs.plugins.google.services)
     alias(libs.plugins.firebase.crashlytics)
@@ -37,14 +37,14 @@ android {
             storePassword = keystoreProperties["storePassword"] as String? ?: System.getenv("KEYSTORE_PASSWORD")
             keyAlias = keystoreProperties["keyAlias"] as String? ?: "cf-alarm-key"
             keyPassword = keystoreProperties["keyPassword"] as String? ?: System.getenv("KEY_PASSWORD")
-            
+
             // Enhanced security settings
             enableV1Signing = true  // JAR Signature (for older Android versions)
             enableV2Signing = true  // APK Signature Scheme v2 (Android 7.0+)
             enableV3Signing = true  // APK Signature Scheme v3 (Android 9.0+)
             enableV4Signing = true  // APK Signature Scheme v4 (Android 11+)
         }
-        
+
         // Debug signing config (uses default Android debug keystore)
         getByName("debug") {
             // Uses ~/.android/debug.keystore automatically
@@ -56,8 +56,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.1.1"
+        versionCode = 19
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -84,9 +84,9 @@ android {
                 Get your Client ID from: https://console.cloud.google.com/apis/credentials
                 """.trimIndent()
             )
-        
+
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
-        
+
         // ==============================
         // 🛠️ CRITICAL FIX: ASHMEM PINNING DEPRECATED SOLUTION
         // ==============================
@@ -95,7 +95,7 @@ android {
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
         }
-        
+
         // Additional fixes for ashmem compatibility
         packaging {
             jniLibs {
@@ -110,10 +110,10 @@ android {
             // ==============================
             // 🚀 PRODUCTION BUILD CONFIGURATION
             // ==============================
-            
+
             // SIGNING: Use production keystore
             signingConfig = signingConfigs.getByName("release")
-            
+
             // SECURITY: Enable code obfuscation and optimization
             isMinifyEnabled = true
             isShrinkResources = true
@@ -122,36 +122,36 @@ android {
                 "proguard-rules.pro",
                 "r8-rules.txt"  // Additional R8-specific rules
             )
-            
+
             // SECURITY: Disable debugging in release builds
             isDebuggable = false
             isJniDebuggable = false
-            
+
             // SECURITY: Enable dead code elimination
             isPseudoLocalesEnabled = false
-            
+
             // APP IDENTIFICATION: Clear production naming
             // No suffix - this is the production version
         }
-        
+
         debug {
             // ==============================
-            // 🛠️ DEVELOPMENT BUILD CONFIGURATION  
+            // 🛠️ DEVELOPMENT BUILD CONFIGURATION
             // ==============================
-            
+
             // SIGNING: Uses default debug keystore (automatic)
             // signingConfig = signingConfigs.getByName("debug") // Not needed, automatic
-            
+
             // Development settings
             isMinifyEnabled = false
             isShrinkResources = false
             isDebuggable = true
-            
+
             // APP IDENTIFICATION: Clear debug identification
             // applicationIdSuffix = ".debug"  // TEMP: Disabled for Google Services compatibility
             versionNameSuffix = "-DEBUG"
         }
-        
+
         // ==============================
         // 🧪 OPTIONAL: STAGING BUILD TYPE (DISABLED)
         // ==============================
@@ -160,16 +160,16 @@ android {
         create("staging") {
             // Hybrid configuration: Production signing + Limited debugging
             initWith(getByName("release"))
-            
+
             // Override for staging-specific settings
             isDebuggable = true
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-STAGING"
-            
+
             // IMPORTANT: Disable minification for staging to allow proper debugging
             isMinifyEnabled = false
             isShrinkResources = false
-            
+
             // Use production signing for realistic testing
             signingConfig = signingConfigs.getByName("release")
         }
@@ -199,13 +199,13 @@ android {
         abortOnError = true
         warningsAsErrors = false
         checkReleaseBuilds = true
-        
+
         // Use our custom lint configuration
         lintConfig = file("lint.xml")
-        
+
         // Optional: Create baseline for existing issues
         // baseline = file("lint-baseline.xml")
-        
+
         // Enable HTML and XML reports
         htmlReport = true
         xmlReport = true
@@ -219,7 +219,7 @@ android {
             excludes += "/META-INF/INDEX.LIST"
             excludes += "/META-INF/DEPENDENCIES"
         }
-        
+
         // ==============================
         // 🛠️ CRITICAL FIX: ASHMEM PINNING MEMORY MANAGEMENT
         // ==============================
@@ -240,10 +240,10 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
         }
-        
+
         // Ensure test framework can find our TestSuite
         animationsDisabled = true
-        
+
         // JUnit configuration
         unitTests.all { test ->
             test.useJUnitPlatform {
@@ -303,7 +303,7 @@ dependencies {
 
     // Logging
     implementation(libs.timber)
-    
+
     // 🚀 PHASE 3: WorkManager für Background-Services
     implementation(libs.androidx.work.runtime.ktx)
 
@@ -332,6 +332,9 @@ dependencies {
     // Testing dependencies
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.androidx.work.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

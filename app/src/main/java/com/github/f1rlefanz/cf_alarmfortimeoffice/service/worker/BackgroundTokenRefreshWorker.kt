@@ -1,10 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.work.*
 import androidx.work.ListenableWorker.Result as WorkerResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.CFAlarmApplication
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenRefreshUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import kotlinx.coroutines.Dispatchers
@@ -135,11 +137,11 @@ class BackgroundTokenRefreshWorker(
         }
     }
 
-    private val appContainer by lazy {
+    private val appContainer: AppContainer by lazy {
         (applicationContext as CFAlarmApplication).appContainer
     }
 
-    private val tokenRefreshUseCase by lazy {
+    private val tokenRefreshUseCase: TokenRefreshUseCase by lazy {
         TokenRefreshUseCase(
             appContainer.modernOAuth2TokenManager,
             appContainer.tokenStorageRepository
@@ -151,7 +153,7 @@ class BackgroundTokenRefreshWorker(
      */
     private sealed class TokenRefreshResult {
         data class Success(val duration: Long) : TokenRefreshResult()
-        data class Failure(val error: Throwable, val isRetryable: Boolean) : TokenRefreshResult()
+        data class Failure(val error: Throwable, val isRetryable: Boolean, val needsReauth: Boolean = false) : TokenRefreshResult()
     }
 
     /**
@@ -163,6 +165,177 @@ class BackgroundTokenRefreshWorker(
 
         data class Skipped(val reason: String) : AlarmMaintenanceResult()
         data class Failure(val error: Throwable) : AlarmMaintenanceResult()
+    }
+
+    /**
+     * 🔧 PHASE 1 FIX: Proactive Health Check for Token Refresh Prerequisites
+     *
+     * Validates that all required components for token refresh are available:
+     * - User email (from SharedPreferences, TokenData, or JWT)
+     * - Token storage accessibility
+     * - Network connectivity (checked by WorkManager constraints)
+     *
+     * @return Result indicating health status with detailed error message
+     */
+    private fun performTokenHealthCheck(): KotlinResult<String> {
+        return try {
+            Logger.d(LogTags.TOKEN, "🔍 PHASE-1: Starting token health check")
+
+            // Check 1: Verify token storage is accessible
+            try {
+                appContainer.tokenStorageRepository.getCurrentToken()
+            } catch (e: Exception) {
+                Logger.e(LogTags.TOKEN, "❌ PHASE-1: Token storage not accessible", e)
+                return KotlinResult.failure(Exception("Token storage corrupted or inaccessible"))
+            }
+
+            Logger.d(LogTags.TOKEN, "✅ PHASE-1: Token storage accessible")
+
+            // Check 2: Verify user email is available (critical for refresh)
+            val prefs = applicationContext.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
+            val emailFromPrefs = prefs.getString("current_user_email", null)
+            val isSignedIn = prefs.getBoolean("user_signed_in", false)
+
+            // Primary source: SharedPreferences
+            if (!emailFromPrefs.isNullOrBlank() && emailFromPrefs.contains("@") && isSignedIn) {
+                Logger.business(LogTags.TOKEN, "✅ PHASE-1 HEALTH: Email available from SharedPreferences: $emailFromPrefs")
+                return KotlinResult.success("Health check passed")
+            }
+
+            Logger.w(LogTags.TOKEN, "⚠️ PHASE-1 HEALTH: Email not in SharedPreferences, checking fallback sources")
+
+            // Fallback: Check TokenData
+            val currentToken = appContainer.tokenStorageRepository.getCurrentToken()
+            if (currentToken?.userEmail?.isNotBlank() == true) {
+                Logger.business(LogTags.TOKEN, "✅ PHASE-1 HEALTH: Email available from TokenData: ${currentToken.userEmail}")
+                // Cache back to SharedPreferences for future
+                prefs.edit {
+                    putString("current_user_email", currentToken.userEmail)
+                }
+                return KotlinResult.success("Health check passed (recovered from TokenData)")
+            }
+
+            // Last resort: Extract from JWT token
+            if (currentToken?.accessToken?.isNotBlank() == true) {
+                val emailFromJWT = extractEmailFromJWT(currentToken.accessToken)
+                if (!emailFromJWT.isNullOrBlank()) {
+                    Logger.business(LogTags.TOKEN, "✅ PHASE-1 HEALTH: Email extracted from JWT: $emailFromJWT")
+                    // Cache for future
+                    prefs.edit {
+                        putString("current_user_email", emailFromJWT)
+                    }
+                    return KotlinResult.success("Health check passed (recovered from JWT)")
+                }
+            }
+
+            // No email found in any source - critical failure
+            Logger.e(LogTags.TOKEN, "❌ PHASE-1 HEALTH: NO EMAIL AVAILABLE from any source!")
+            Logger.w(LogTags.TOKEN, "💡 PHASE-1 HEALTH: User needs to re-authenticate")
+
+            KotlinResult.failure(Exception("No user email available - re-authentication required"))
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.TOKEN, "❌ PHASE-1 HEALTH: Health check failed", e)
+            KotlinResult.failure(e)
+        }
+    }
+
+    /**
+     * 🔧 PHASE 1 FIX: Extract email from JWT access token
+     */
+    private fun extractEmailFromJWT(accessToken: String): String? {
+        return try {
+            val segments = accessToken.split(".")
+            if (segments.size < 2) return null
+
+            val payloadBytes = android.util.Base64.decode(
+                segments[1],
+                android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING
+            )
+            val payloadJson = org.json.JSONObject(String(payloadBytes, Charsets.UTF_8))
+            payloadJson.optString("email").takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            Logger.e(LogTags.TOKEN, "❌ Failed to extract email from JWT", e)
+            null
+        }
+    }
+
+    /**
+     * 🔧 PHASE 1 FIX: Send User Notification for Re-Authentication
+     *
+     * Notifies the user when token refresh fails due to missing credentials.
+     * Provides clear action: "Sign in again to restore Calendar access"
+     */
+    private fun sendReAuthNotification(reason: String) {
+        try {
+            Logger.business(LogTags.TOKEN, "🔔 PHASE-1: Sending re-authentication notification")
+
+            // Check if we have notification permission (Android 13+)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                if (androidx.core.app.ActivityCompat.checkSelfPermission(
+                        applicationContext,
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    Logger.w(LogTags.TOKEN, "⚠️ PHASE-1: No notification permission - cannot notify user")
+                    return
+                }
+            }
+
+            val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) 
+                as android.app.NotificationManager
+
+            // Create notification channel
+            val channel = android.app.NotificationChannel(
+                "token_reauth",
+                "Calendar Authorization",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications when Calendar access needs to be restored"
+                enableVibration(true)
+                enableLights(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+
+            // Create intent to open app
+            val openAppIntent = applicationContext.packageManager
+                .getLaunchIntentForPackage(applicationContext.packageName)
+                ?.apply {
+                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or 
+                            android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                applicationContext,
+                0,
+                openAppIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or 
+                android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // Build notification
+            val notification = androidx.core.app.NotificationCompat.Builder(
+                applicationContext,
+                "token_reauth"
+            )
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle("Calendar Access Lost")
+                .setContentText("Tap to sign in again and restore alarm scheduling")
+                .setStyle(
+                    androidx.core.app.NotificationCompat.BigTextStyle()
+                        .bigText("Your Calendar authorization has expired. Please open CF Alarm and sign in again to restore automatic alarm scheduling.\n\nReason: $reason")
+                )
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .build()
+
+            notificationManager.notify(1001, notification)
+            Logger.business(LogTags.TOKEN, "✅ PHASE-1: Re-authentication notification sent successfully")
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.TOKEN, "❌ PHASE-1: Failed to send re-authentication notification", e)
+        }
     }
 
     override suspend fun doWork(): WorkerResult = withContext(Dispatchers.IO) {
@@ -469,12 +642,33 @@ class BackgroundTokenRefreshWorker(
     /**
      * Performs the actual token refresh with comprehensive error handling
      * Returns internal TokenRefreshResult for proper type handling
+     * 
+     * 🔧 PHASE 1 ENHANCED: Now includes proactive health check before refresh attempt
      */
     private suspend fun performTokenRefresh(): TokenRefreshResult {
         return try {
             Logger.d(LogTags.TOKEN, "🔍 Starting token validation and refresh")
 
             val refreshStartTime = System.currentTimeMillis()
+
+            // 🔧 PHASE 1: Proactive health check BEFORE attempting refresh
+            val healthCheckResult = performTokenHealthCheck()
+            if (healthCheckResult.isFailure) {
+                val healthError = healthCheckResult.exceptionOrNull() 
+                    ?: Exception("Health check failed")
+                Logger.e(LogTags.TOKEN, "❌ PHASE-1: Token health check failed - cannot refresh", healthError)
+                
+                // Send notification to user about re-auth requirement
+                sendReAuthNotification(healthError.message ?: "Unknown reason")
+                
+                return TokenRefreshResult.Failure(
+                    error = healthError,
+                    isRetryable = false, // No point retrying without email
+                    needsReauth = true
+                )
+            }
+            
+            Logger.business(LogTags.TOKEN, "✅ PHASE-1: Token health check passed - proceeding with refresh")
 
             // Get current token status first
             val tokenStatus = tokenRefreshUseCase.getTokenStatus()

@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnec
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -29,11 +30,10 @@ import kotlinx.coroutines.withContext
  * 
  * Implements Clean Architecture with Interface-based DI and Logger integration
  */
-class HueBridgeRepository(private val context: Context) : IHueBridgeRepository {
+class HueBridgeRepository(context: Context) : IHueBridgeRepository {
     
     companion object {
         private const val APP_NAME = "CFAlarmForTimeOffice"
-        private const val CONNECTION_TIMEOUT_MS = 10000L
     }
     
     // API Client for Hue communication
@@ -127,6 +127,7 @@ class HueBridgeRepository(private val context: Context) : IHueBridgeRepository {
      * DEPRECATED: Legacy methods for backward compatibility
      * These methods now delegate to the robust connection manager
      */
+    @OptIn(DelicateCoroutinesApi::class)
     override fun setUsername(username: String) {
         Logger.w(LogTags.HUE_BRIDGE, "⚠️ DEPRECATED: setUsername() called - use connectToBridge() instead")
         // For backward compatibility, try to update if bridge IP is available
@@ -139,6 +140,7 @@ class HueBridgeRepository(private val context: Context) : IHueBridgeRepository {
         }
     }
     
+    @OptIn(DelicateCoroutinesApi::class)
     override fun setBridgeIp(bridgeIp: String) {
         Logger.w(LogTags.HUE_BRIDGE, "⚠️ DEPRECATED: setBridgeIp() called - use connectToBridge() instead")
         // For backward compatibility, try to update if username is available
@@ -158,7 +160,7 @@ class HueBridgeRepository(private val context: Context) : IHueBridgeRepository {
     override suspend fun validateConnection(): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             // Use the robust connection manager for validation
-            val (bridgeIp, username) = connectionManager.getValidatedConnection()
+            connectionManager.getValidatedConnection()
             Logger.d(LogTags.HUE_BRIDGE, "Connection validation successful via ConnectionManager")
             Result.success(true)
             

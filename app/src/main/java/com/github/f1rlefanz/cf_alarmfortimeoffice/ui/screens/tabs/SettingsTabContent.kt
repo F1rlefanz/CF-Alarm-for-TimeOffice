@@ -239,7 +239,7 @@ fun SettingsTabContent(
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                     modifier = Modifier
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, true)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
                                         .width(120.dp)
                                 )
                                 ExposedDropdownMenu(
@@ -439,7 +439,7 @@ fun SettingsTabContent(
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = intervalExpanded) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                 modifier = Modifier
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true)
+                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
                                     .width(120.dp)
                             )
                             ExposedDropdownMenu(

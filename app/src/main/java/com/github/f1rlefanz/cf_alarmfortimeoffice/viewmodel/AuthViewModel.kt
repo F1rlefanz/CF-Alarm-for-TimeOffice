@@ -240,7 +240,7 @@ class AuthViewModel(
                 
                 if (signInResult.success && signInResult.credentialResponse != null) {
                     // Extract user info from credential
-                    val (_, displayName, initialEmail) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse, context)
+                    val (_, displayName, initialEmail) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse)
                     
                     Logger.business(LogTags.AUTH, "📊 EMAIL-EXTRACTION: initial=$initialEmail, final=$initialEmail")
                     

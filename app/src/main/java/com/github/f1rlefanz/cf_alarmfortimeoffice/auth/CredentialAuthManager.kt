@@ -8,7 +8,6 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
 import androidx.credentials.exceptions.GetCredentialCancellationException
-import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -37,7 +36,23 @@ data class SignInResult(
 class CredentialAuthManager(private val context: Context) {
 
     private val credentialManager = CredentialManager.create(context)
-    private val googleWebClientId = BuildConfig.GOOGLE_WEB_CLIENT_ID
+    @Suppress("DiscouragedApi")
+    private val googleWebClientId: String by lazy {
+        try {
+            // Try to get from generated resources (from google-services.json)
+            val resourceId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+            if (resourceId != 0) {
+                context.getString(resourceId)
+            } else {
+                Logger.w(LogTags.AUTH, "default_web_client_id not found in resources - ensure google-services.json is configured")
+                ""
+            }
+        } catch (e: Exception) {
+            Logger.e(LogTags.AUTH, "Failed to load Web Client ID", e)
+            ""
+        }
+    }
+    private val isDebugBuild = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     suspend fun signIn(activityContext: Context): SignInResult {
         if (googleWebClientId.isBlank()) {
@@ -84,7 +99,7 @@ class CredentialAuthManager(private val context: Context) {
                 crashlytics.log("AUTH CRITICAL: No Google credentials found. User cannot sign in.")
                 
                 // Report as non-fatal error for monitoring
-                if (!BuildConfig.DEBUG) {
+                if (!isDebugBuild) {
                     crashlytics.recordException(e)
                 }
                 
@@ -125,7 +140,7 @@ class CredentialAuthManager(private val context: Context) {
      * The email is extracted directly from the JWT ID Token payload,
      * eliminating the need for deprecated GoogleSignIn APIs.
      */
-    suspend fun extractUserInfo(response: GetCredentialResponse?, activityContext: Context): Triple<String?, String?, String?> {
+    fun extractUserInfo(response: GetCredentialResponse?): Triple<String?, String?, String?> {
         val credential = response?.credential
         
         if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
@@ -193,10 +208,10 @@ class CredentialAuthManager(private val context: Context) {
             val payloadJson = JSONObject(String(payloadBytes, Charsets.UTF_8))
             
             // Extract user information from JWT payload
-            val email = payloadJson.optString("email", null)
+            val email = payloadJson.optString("email", "")
             val emailVerified = payloadJson.optBoolean("email_verified", false)
-            val name = payloadJson.optString("name", null)
-            val sub = payloadJson.optString("sub", null)
+            val name = payloadJson.optString("name", "")
+            val sub = payloadJson.optString("sub", "")
             
             Logger.d(LogTags.AUTH, "📧 JWT-PAYLOAD: email=$email, verified=$emailVerified, name=$name, sub=$sub")
             

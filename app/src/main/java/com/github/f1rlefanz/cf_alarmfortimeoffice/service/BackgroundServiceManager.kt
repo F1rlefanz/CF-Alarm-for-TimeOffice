@@ -2,17 +2,13 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
 import android.content.Context
 import android.os.Build
-import androidx.work.*
-import androidx.work.CoroutineWorker
+import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,11 +39,10 @@ import javax.inject.Singleton
  */
 @Singleton
 class BackgroundServiceManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val shiftUseCase: IShiftUseCase
 ) {
 
-    private val workManager = WorkManager.getInstance(context)
     private val preferences =
         context.getSharedPreferences("background_services", Context.MODE_PRIVATE)
 
@@ -78,12 +73,12 @@ class BackgroundServiceManager @Inject constructor(
             BackgroundTokenRefreshWorker.scheduleTokenRefresh(context, syncIntervalHours)
 
             // Mark services as started
-            preferences.edit()
-                .putLong("services_started_at", System.currentTimeMillis())
-                .putString("device_info", "${Build.MANUFACTURER} ${Build.MODEL}")
-                .putString("version", "v2.1-memory-leak-fixed")
-                .putLong("sync_interval_hours", syncIntervalHours)
-                .apply()
+            preferences.edit {
+                putLong("services_started_at", System.currentTimeMillis())
+                putString("device_info", "${Build.MANUFACTURER} ${Build.MODEL}")
+                putString("version", "v2.1-memory-leak-fixed")
+                putLong("sync_interval_hours", syncIntervalHours)
+            }
 
             Logger.business(
                 LogTags.TOKEN,
@@ -110,6 +105,7 @@ class BackgroundServiceManager @Inject constructor(
     /**
      * Handles alarm failure events
      */
+    @Suppress("unused") // Public API - may be used in future alarm failure handling
     fun onAlarmFailureDetected(alarmId: Int, failureReason: String) {
         Logger.business(
             LogTags.ALARM,
@@ -121,15 +117,16 @@ class BackgroundServiceManager @Inject constructor(
         triggerUrgentTokenRefresh()
 
         // Log failure for tracking
-        preferences.edit()
-            .putLong("last_alarm_failure", System.currentTimeMillis())
-            .putString("last_failure_reason", failureReason)
-            .apply()
+        preferences.edit {
+            putLong("last_alarm_failure", System.currentTimeMillis())
+            putString("last_failure_reason", failureReason)
+        }
     }
 
     /**
      * Stops all background services
      */
+    @Suppress("unused") // Public API - used for cleanup on logout or app reset
     fun stopAllBackgroundServices() {
         try {
             BackgroundTokenRefreshWorker.cancelTokenRefresh(context)

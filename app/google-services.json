@@ -1,20 +1,32 @@
 {
   "project_info": {
-    "project_number": "675666202583",
-    "project_id": "cfalarmfortimeoffice-bae03e14",
-    "storage_bucket": "cfalarmfortimeoffice-bae03e14.firebasestorage.app"
+    "project_number": "931091152160",
+    "project_id": "cf-alarm-for-timeoffice",
+    "storage_bucket": "cf-alarm-for-timeoffice.appspot.com"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:675666202583:android:024834ae6f57ba90864592",
+        "mobilesdk_app_id": "1:931091152160:android:024834ae6f57ba90864592",
         "android_client_info": {
           "package_name": "com.github.f1rlefanz.cf_alarmfortimeoffice"
         }
       },
       "oauth_client": [
         {
-          "client_id": "675666202583-rg1djd2itfes6v61n6bqi9o22bis1l5h.apps.googleusercontent.com",
+          "client_id": "931091152160-381u4di62u41nmmvnral3q1etqrhuklvb.apps.googleusercontent.com",
+          "client_type": 1
+        },
+        {
+          "client_id": "931091152160-n5r50lr8bctmto5vdaffgh97ctehn1hs.apps.googleusercontent.com",
+          "client_type": 1
+        },
+        {
+          "client_id": "931091152160-85lm3obioqr1s38int087jhv1p0e1d5n.apps.googleusercontent.com",
+          "client_type": 1
+        },
+        {
+          "client_id": "931091152160-8s3nd7os2p61ac6ecm799gjhekkf0b4i.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
@@ -27,7 +39,7 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "675666202583-rg1djd2itfes6v61n6bqi9o22bis1l5h.apps.googleusercontent.com",
+              "client_id": "931091152160-8s3nd7os2p61ac6ecm799gjhekkf0b4i.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

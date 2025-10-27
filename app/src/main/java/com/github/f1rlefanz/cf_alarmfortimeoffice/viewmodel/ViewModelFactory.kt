@@ -2,14 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.launch
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 
 /**

@@ -243,6 +243,7 @@ class MainActivity : ComponentActivity() {
      * This method is called when the user responds to the Calendar permission dialog
      * launched by ModernOAuth2TokenManager. It's essential for the permission flow to work.
      */
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
@@ -254,8 +255,7 @@ class MainActivity : ComponentActivity() {
                 try {
                     val success = appContainer.modernOAuth2TokenManager.handlePermissionResult(
                         requestCode,
-                        resultCode,
-                        data
+                        resultCode
                     )
                     
                     if (success) {

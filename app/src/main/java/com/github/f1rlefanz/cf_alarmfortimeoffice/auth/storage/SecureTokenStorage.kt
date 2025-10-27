@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // EncryptedSharedPreferences/MasterKey: No stable alternative available yet
+
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage
 
 import android.content.Context
@@ -7,7 +9,6 @@ import androidx.security.crypto.MasterKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -20,7 +21,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
  * 
  * Single responsibility: Token persistence operations only.
  */
-@Suppress("DEPRECATION") // EncryptedSharedPreferences/MasterKey: No stable alternative available yet
 class SecureTokenStorage(private val context: Context) {
     
     private val json = Json {
@@ -117,28 +117,7 @@ class SecureTokenStorage(private val context: Context) {
         }
     }
     
-    /**
-     * Checks if valid token exists in storage without fully deserializing.
-     * Useful for quick startup checks.
-     */
-    suspend fun hasValidToken(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val tokenJson = prefs.getString(KEY_TOKEN_DATA, null)
-            
-            if (tokenJson.isNullOrBlank()) {
-                return@withContext false
-            }
-            
-            val tokenData = json.decodeFromString<TokenData>(tokenJson)
-            val isValid = tokenData.isValid()
-            
-            Logger.dThrottled(LogTags.TOKEN, "Token validity check: hasToken=true, isValid=$isValid")
-            return@withContext isValid
-        } catch (e: Exception) {
-            Logger.e(LogTags.TOKEN, "Error checking token validity", e)
-            return@withContext false
-        }
-    }
+
     
     /**
      * Clears all token data from storage.

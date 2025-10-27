@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,7 +21,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ViewModelFactory
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 
 /**
  * Hue Regel-Konfiguration Screen - Deutsche Version
@@ -540,7 +538,7 @@ private fun TargetSelectionCard(
             
             var selectedTab by remember { mutableIntStateOf(0) }
             
-            TabRow(selectedTabIndex = selectedTab) {
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },

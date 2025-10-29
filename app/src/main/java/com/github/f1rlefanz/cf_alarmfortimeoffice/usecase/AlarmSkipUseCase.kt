@@ -38,7 +38,25 @@ class AlarmSkipUseCase(
             // 2. Skip-Status setzen
             alarmSkipRepository.setNextAlarmSkipped(nextAlarm.id).getOrThrow()
             
-            // 3. Result erstellen
+            // 3. ✅ UX-FIX: Systemalarm SOFORT löschen für direktes User-Feedback
+            // User erwartet dass der Alarm aus der Statusleiste verschwindet wenn er "überspringen" drückt
+            Logger.business(LogTags.ALARM_SKIP, "⏭️ SKIP-IMMEDIATE: Deleting system alarm ${nextAlarm.id} immediately for better UX")
+            try {
+                alarmManagerService.cancelSystemAlarm(nextAlarm.id)
+                Logger.business(LogTags.ALARM_SKIP, "✅ SKIP-IMMEDIATE: System alarm cancelled - user sees immediate feedback")
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_SKIP, "❌ SKIP-IMMEDIATE: Failed to cancel system alarm", e)
+            }
+            
+            // 4. Alarm aus Repository löschen
+            try {
+                alarmRepository.deleteAlarm(nextAlarm.id).getOrThrow()
+                Logger.business(LogTags.ALARM_SKIP, "✅ SKIP-IMMEDIATE: Alarm deleted from repository")
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_SKIP, "❌ SKIP-IMMEDIATE: Failed to delete alarm from repository", e)
+            }
+            
+            // 5. Result erstellen
             AlarmSkipResult(
                 alarmId = nextAlarm.id,
                 alarmName = nextAlarm.shiftName,

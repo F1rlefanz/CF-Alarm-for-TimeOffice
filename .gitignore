@@ -40,6 +40,10 @@ EMERGENCY_SECURITY_BREACH.md
 .externalNativeBuild
 .cxx
 
+# Android App Bundles (AAB) and APK files
+*.aab
+*.apk
+
 # IDE files
 /.idea/caches
 /.idea/libraries

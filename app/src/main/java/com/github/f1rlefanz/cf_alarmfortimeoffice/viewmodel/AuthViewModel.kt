@@ -151,6 +151,9 @@ class AuthViewModel(
                     // Only collect once for initial state, then return
                     return@collect
                 }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // Normal lifecycle cancellation - not an error
+                Logger.d(LogTags.AUTH, "Auth state check cancelled (app lifecycle)")
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "Error checking initial auth state", e)
             }

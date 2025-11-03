@@ -7,7 +7,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.concurrent.atomic.AtomicReference
@@ -314,31 +313,16 @@ class HueBridgeConnectionManager private constructor(
         } catch (e: TimeoutCancellationException) {
             Logger.w(LogTags.HUE_BRIDGE, "⏰ BRIDGE-MANAGER: Connection recovery timed out")
             
-            // FIREBASE CRASHLYTICS: Critical Hue Bridge timeout reporting
-            try {
-                val crashlytics = FirebaseCrashlytics.getInstance()
-                crashlytics.setCustomKey("hue_issue_type", "connection_timeout")
-                crashlytics.setCustomKey("hue_timeout_duration_s", CRITICAL_RECOVERY_TIMEOUT.inWholeSeconds)
-                crashlytics.setCustomKey("hue_bridge_ip_attempted", bridgeIp)
-                
-                // Calculate hours since last success
-                val lastSuccessTime = prefs.getLong(KEY_LAST_SUCCESS, 0)
-                val hoursAgo = if (lastSuccessTime > 0) {
-                    ((System.currentTimeMillis() - lastSuccessTime) / 1000 / 3600).toInt()
-                } else {
-                    -1 // Never connected
-                }
-                crashlytics.setCustomKey("hue_last_success_hours_ago", hoursAgo)
-                
-                crashlytics.log("HUE TIMEOUT: Bridge did not respond. Last successful connection was ${hoursAgo}h ago.")
-                
-                // Report as non-fatal error for monitoring
-                crashlytics.recordException(e)
-                
-                Logger.d(LogTags.HUE_BRIDGE, "📊 Hue Bridge timeout reported to Firebase Crashlytics")
-            } catch (ex: Exception) {
-                Logger.e(LogTags.HUE_BRIDGE, "Failed to report Hue Bridge timeout to Firebase", ex)
+            // Log timeout details for diagnostics
+            val lastSuccessTime = prefs.getLong(KEY_LAST_SUCCESS, 0)
+            val hoursAgo = if (lastSuccessTime > 0) {
+                ((System.currentTimeMillis() - lastSuccessTime) / 1000 / 3600).toInt()
+            } else {
+                -1 // Never connected
             }
+            
+            Logger.e(LogTags.HUE_BRIDGE, "⚠️ HUE TIMEOUT: Bridge did not respond within ${CRITICAL_RECOVERY_TIMEOUT.inWholeSeconds}s. " +
+                    "Last successful connection was ${hoursAgo}h ago. Bridge IP attempted: $bridgeIp", e)
             
             return@withContext null
         } catch (e: Exception) {

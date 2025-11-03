@@ -159,6 +159,8 @@ class AlarmViewModel(
                             Logger.w(LogTags.ALARM, "Found ${expiredAlarms.size} expired alarms: ${expiredAlarms.map { it.formattedTime }}")
                         }
                     }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                Logger.d(LogTags.ALARM, "Alarm status observation cancelled (app lifecycle)")
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "Error observing alarm status", e)
                 _uiState.value = _uiState.value.copy(
@@ -182,12 +184,15 @@ class AlarmViewModel(
                             isLoading = false
                         )
                     }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                Logger.d(LogTags.ALARM_SKIP, "Skip status observation cancelled (app lifecycle)")
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_SKIP, "Error in skip status observation", e)
             }
         }
     }
 
+    @Suppress("unused") // Public API for manual shift control
     fun setAlarmsForShift(shift: ShiftInfo) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
@@ -235,6 +240,7 @@ class AlarmViewModel(
         }
     }
 
+    @Suppress("unused") // Public API for alarm management
     fun cancelAlarm(alarmId: Int) {
         viewModelScope.launch {
             try {
@@ -257,6 +263,7 @@ class AlarmViewModel(
         }
     }
 
+    @Suppress("unused") // Public API for alarm management
     fun cancelAllAlarms() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
@@ -416,6 +423,8 @@ class AlarmViewModel(
                         
                         Logger.d(LogTags.ALARM, "Manual alarms updated: ${manualAlarms.size}")
                     }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                Logger.d(LogTags.ALARM, "Manual alarms observation cancelled (app lifecycle)")
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "Error observing manual alarms", e)
             }

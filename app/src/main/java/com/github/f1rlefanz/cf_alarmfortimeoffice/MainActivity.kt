@@ -28,12 +28,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
-
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.ModernOAuth2TokenManager
-import androidx.core.content.edit
-
-// Firebase Crashlytics
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 class MainActivity : ComponentActivity() {
 
@@ -82,9 +77,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Firebase Crashlytics Setup
-        setupFirebaseCrashlytics()
 
         // Dependency Container abrufen
         appContainer = (application as CFAlarmApplication).appContainer
@@ -178,41 +170,6 @@ class MainActivity : ComponentActivity() {
         
         // PHASE 2: Initialize Smart Scheduling on app startup
         Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
-    }
-
-    /**
-     * Firebase Crashlytics Setup mit Professional Best Practices
-     */
-    private fun setupFirebaseCrashlytics() {
-        try {
-            val crashlytics = FirebaseCrashlytics.getInstance()
-            
-            // Privacy-compliant User ID: Generate app-specific UUID instead of hardware ID
-            // SECURITY FIX: Replaced ANDROID_ID with privacy-compliant solution
-            val sharedPrefs = getSharedPreferences("app_analytics", MODE_PRIVATE)
-            val userId = sharedPrefs.getString("user_uuid", null) ?: run {
-                val newUuid = java.util.UUID.randomUUID().toString().take(12)
-                sharedPrefs.edit {
-                    putString("user_uuid", newUuid)
-                }
-                newUuid
-            }
-            crashlytics.setUserId("user_$userId")
-            
-            // Custom Keys für App Context
-            crashlytics.setCustomKey("app_version", packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown")
-            val isDebugBuild = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
-            crashlytics.setCustomKey("build_type", if (isDebugBuild) "debug" else "release")
-            crashlytics.setCustomKey("target_sdk", applicationInfo.targetSdkVersion)
-            
-            // Breadcrumb-Log
-            crashlytics.log("MainActivity: Firebase Crashlytics initialized")
-            
-            Logger.business("Crashlytics", "Firebase Crashlytics setup completed with user context")
-            
-        } catch (e: Exception) {
-            Logger.e("Crashlytics", "Failed to setup Crashlytics", e)
-        }
     }
 
     private fun checkNotificationPermission() {

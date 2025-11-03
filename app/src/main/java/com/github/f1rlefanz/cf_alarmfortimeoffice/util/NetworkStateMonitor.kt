@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // Legacy Android support: activeNetworkInfo deprecated but no alternative for API < 23
+
 package com.github.f1rlefanz.cf_alarmfortimeoffice.util
 
 import android.content.Context
@@ -20,7 +22,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * ✅ Intelligente Offline-Erkennung
  * ✅ Battery-efficient monitoring
  */
-class NetworkStateMonitor(private val context: Context) {
+@Suppress("unused", "ConvertSecondaryConstructorToPrimary") // Used for future offline-support features
+class NetworkStateMonitor(context: Context) {
     
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     

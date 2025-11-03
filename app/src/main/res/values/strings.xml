@@ -2,4 +2,13 @@
     <string name="app_name">CF-Alarm for TimeOffice</string>
     <!-- CLEANUP 2025: Removed 27 unused OnePlus-specific strings that were never implemented -->
     <!-- Current OnePlus support: Simple hint dialog in BatteryOptimizationHelper.kt -->
+    
+    <!-- AlarmFullScreenActivity strings -->
+    <string name="alarm_title">⏰ CF-ALARM</string>
+    <string name="alarm_shift_loading">Schicht lädt…</string>
+    <string name="alarm_time_now">Jetzt</string>
+    <string name="alarm_dismiss_button">ALARM STOPPEN</string>
+    <string name="alarm_snooze_button">5 MIN SPÄTER</string>
+    <string name="alarm_time_format">Zeit: %1$s%2$s</string>
+    <string name="alarm_unknown_shift">Unbekannte Schicht</string>
 </resources>

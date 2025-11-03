@@ -23,10 +23,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="com.github.f1rlefanz.cf_alarmfortimeoffice" />
-                  <option name="mobileSdkAppId" value="1:931091152160:android:024834ae6f57ba90864592" />
-                  <option name="projectId" value="cf-alarm-for-timeoffice" />
-                  <option name="projectNumber" value="931091152160" />
+                  <option name="appId" value="PLACEHOLDER" />
+                  <option name="mobileSdkAppId" value="" />
+                  <option name="projectId" value="" />
+                  <option name="projectNumber" value="" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

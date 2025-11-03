@@ -1,31 +1,21 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.error
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.BatteryManager
-import android.os.PowerManager
-import android.os.Build
 import kotlinx.coroutines.CoroutineExceptionHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.google.android.gms.common.ConnectionResult
-import com.google.android.gms.common.GoogleApiAvailability
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 /**
- * ENHANCED Firebase Crashlytics Integration - Central Error Handler
+ * SIMPLIFIED Central Error Handler - Focus on Logging
  * 
- * MAJOR IMPROVEMENTS:
- * ✅ Firebase Crashlytics Non-Fatal Error Reporting
- * ✅ Complete App State Context Collection
+ * CORE FEATURES:
  * ✅ Structured Error Categorization
- * ✅ Maximum Context for Problem Solving
- * ✅ Performance-optimized error processing
+ * ✅ Integration with centralized Logger system
  * ✅ User-friendly German error messages
  * ✅ Security-conscious error reporting
- * ✅ Integration with centralized Logger system
  * ✅ Memory-efficient error handling
+ * 
+ * REMOVED: Firebase Crashlytics integration (not needed for debugging)
  */
 object ErrorHandler {
     
@@ -39,15 +29,14 @@ object ErrorHandler {
     fun initialize(context: Context) {
         appContext = context.applicationContext
         isInitialized = true
-        Logger.i(LogTags.ERROR, "🔧 ErrorHandler initialized with Firebase Crashlytics integration")
+        Logger.i(LogTags.ERROR, "🔧 ErrorHandler initialized")
     }
     
     /**
-     * ENHANCED error handling with Firebase Crashlytics reporting
+     * SIMPLIFIED error handling with structured logging
      * 
      * Uses centralized Logger system for consistent error reporting
      * Provides detailed context while maintaining security
-     * Reports to Firebase Crashlytics in Release builds
      */
     fun handleError(error: Throwable, context: String = ""): AppError {
         val appError = error.toAppError()
@@ -55,9 +44,6 @@ object ErrorHandler {
         // PERFORMANCE: Build error context efficiently
         val contextInfo = if (context.isNotEmpty()) " in $context" else ""
         val errorContext = "Error$contextInfo: ${appError.message}"
-        
-        // FIREBASE CRASHLYTICS: Report to Firebase (Release builds only)
-        reportToFirebase(appError, context)
         
         // STRUCTURED ERROR LOGGING: Use appropriate log levels based on error severity
         when (appError) {
@@ -112,155 +98,6 @@ object ErrorHandler {
         }
         
         return appError
-    }
-    
-    /**
-     * FIREBASE CRASHLYTICS: Report non-fatal errors with maximum context
-     * 
-     * Reports errors to Firebase Crashlytics (always - BuildConfig check removed)
-     * Includes comprehensive app state for effective debugging
-     */
-    private fun reportToFirebase(error: AppError, context: String) {
-        // Always report - BuildConfig check removed for consistency
-        if (!isInitialized) return
-        
-        try {
-            val crashlytics = FirebaseCrashlytics.getInstance()
-            
-            // STRUCTURED ERROR CATEGORIZATION
-            val errorCategory = when (error) {
-                is AppError.AuthenticationError -> "auth"
-                is AppError.CalendarAccessError, is AppError.CalendarNotFoundError -> "calendar"
-                is AppError.NetworkError, is AppError.ApiError -> "network"
-                is AppError.PermissionError -> "permission"
-                is AppError.DataStoreError, is AppError.PreferencesError, is AppError.FileSystemError -> "storage"
-                is AppError.SystemError -> "system"
-                is AppError.ValidationError -> "validation"
-                else -> "unknown"
-            }
-            
-            // SET CUSTOM KEYS FOR FIREBASE DASHBOARD
-            crashlytics.setCustomKey("error_category", errorCategory)
-            crashlytics.setCustomKey("error_type", error::class.java.simpleName)
-            crashlytics.setCustomKey("context_info", context.ifEmpty { "none" })
-            
-            // COMPREHENSIVE APP STATE CONTEXT
-            val appState = getAppState()
-            appState.forEach { (key, value) ->
-                crashlytics.setCustomKey(key, value)
-            }
-            
-            // BREADCRUMB WITH CONTEXT
-            val breadcrumbMessage = "CRASHLYTICS: ${error::class.java.simpleName}" + 
-                if (context.isNotEmpty()) " in $context" else ""
-            crashlytics.log(breadcrumbMessage)
-            
-            // REPORT NON-FATAL ERROR
-            crashlytics.recordException(error.cause ?: error)
-            
-            Logger.d(LogTags.ERROR, "📊 Error reported to Firebase Crashlytics: $errorCategory")
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.ERROR, "Failed to report error to Firebase Crashlytics", e)
-        }
-    }
-    
-    /**
-     * COMPREHENSIVE APP STATE COLLECTION
-     * 
-     * Collects all relevant app state information for Firebase Crashlytics
-     * Enables effective debugging and problem resolution
-     */
-    private fun getAppState(): Map<String, String> {
-        val state = mutableMapOf<String, String>()
-        
-        try {
-            // APP LIFECYCLE STATE
-            state["app_in_foreground"] = isAppInForeground().toString()
-            
-            // NETWORK STATE
-            state["network_available"] = isNetworkAvailable().toString()
-            
-            // POWER STATE
-            state["battery_level"] = getBatteryLevel().toString()
-            state["in_doze_mode"] = isInDozeMode().toString()
-            
-            // GOOGLE PLAY SERVICES
-            state["google_services_available"] = isGooglePlayServicesAvailable().toString()
-            
-            // DEVICE INFORMATION
-            state["device_api_level"] = Build.VERSION.SDK_INT.toString()
-            state["device_manufacturer"] = Build.MANUFACTURER
-            state["device_model"] = Build.MODEL
-            
-        } catch (_: Exception) {
-            state["app_state_error"] = "Error collecting app state"
-        }
-        
-        return state
-    }
-    
-    /**
-     * Check if app is in foreground (simplified version)
-     */
-    private fun isAppInForeground(): Boolean {
-        return try {
-            // Simplified check - assume true for now to avoid ProcessLifecycleOwner dependency issues
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
-    
-    /**
-     * Check if network is available
-     */
-    private fun isNetworkAvailable(): Boolean {
-        return try {
-            val connectivityManager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val network = connectivityManager.activeNetwork ?: return false
-            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        } catch (_: Exception) {
-            false
-        }
-    }
-    
-    /**
-     * Get battery level percentage
-     */
-    private fun getBatteryLevel(): Int {
-        return try {
-            val batteryManager = appContext.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-            batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        } catch (_: Exception) {
-            -1
-        }
-    }
-    
-    /**
-     * Check if device is in doze mode
-     */
-    private fun isInDozeMode(): Boolean {
-        return try {
-            // API 26+ (minSdk) always supports device idle mode check
-            val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-            powerManager.isDeviceIdleMode
-        } catch (_: Exception) {
-            false
-        }
-    }
-    
-    /**
-     * Check if Google Play Services is available
-     */
-    private fun isGooglePlayServicesAvailable(): Boolean {
-        return try {
-            val result = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(appContext)
-            result == ConnectionResult.SUCCESS
-        } catch (_: Exception) {
-            false
-        }
     }
     
     /**

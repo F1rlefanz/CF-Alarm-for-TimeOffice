@@ -12,9 +12,9 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.google.android.gms.common.GoogleApiAvailability
 import android.util.Base64
 import org.json.JSONObject
+import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 
 data class SignInResult(
     val success: Boolean,
@@ -33,26 +33,10 @@ data class SignInResult(
  * This is the industry-standard method for extracting user information from
  * Google OAuth2 credentials without requiring deprecated APIs or additional permissions.
  */
-class CredentialAuthManager(private val context: Context) {
+class CredentialAuthManager(context: Context) {
 
     private val credentialManager = CredentialManager.create(context)
-    @Suppress("DiscouragedApi")
-    private val googleWebClientId: String by lazy {
-        try {
-            // Try to get from generated resources (from google-services.json)
-            val resourceId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            if (resourceId != 0) {
-                context.getString(resourceId)
-            } else {
-                Logger.w(LogTags.AUTH, "default_web_client_id not found in resources - ensure google-services.json is configured")
-                ""
-            }
-        } catch (e: Exception) {
-            Logger.e(LogTags.AUTH, "Failed to load Web Client ID", e)
-            ""
-        }
-    }
-    private val isDebugBuild = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    private val googleWebClientId: String = BuildConfig.GOOGLE_WEB_CLIENT_ID
 
     suspend fun signIn(activityContext: Context): SignInResult {
         if (googleWebClientId.isBlank()) {
@@ -84,29 +68,6 @@ class CredentialAuthManager(private val context: Context) {
             SignInResult(success = false, error = "Anmeldung wurde abgebrochen.", exception = e)
         } catch (e: NoCredentialException) {
             Logger.w(LogTags.AUTH, "No Google accounts found", e)
-            
-            // FIREBASE CRASHLYTICS: Critical auth failure reporting
-            try {
-                val crashlytics = com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
-                crashlytics.setCustomKey("auth_flow_step", "getCredential")
-                crashlytics.setCustomKey("auth_error_type", "no_credential_found")
-                
-                // Check Google Play Services availability
-                val googleServicesAvailable = GoogleApiAvailability.getInstance()
-                    .isGooglePlayServicesAvailable(context) == com.google.android.gms.common.ConnectionResult.SUCCESS
-                crashlytics.setCustomKey("auth_google_services_available", googleServicesAvailable)
-                
-                crashlytics.log("AUTH CRITICAL: No Google credentials found. User cannot sign in.")
-                
-                // Report as non-fatal error for monitoring
-                if (!isDebugBuild) {
-                    crashlytics.recordException(e)
-                }
-                
-                Logger.d(LogTags.AUTH, "📊 NoCredentialException reported to Firebase Crashlytics")
-            } catch (ex: Exception) {
-                Logger.e(LogTags.AUTH, "Failed to report NoCredentialException to Firebase", ex)
-            }
             
             val detailedError = when {
                 e.message?.contains("Developer console") == true -> {

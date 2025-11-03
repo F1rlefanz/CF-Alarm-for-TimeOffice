@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // EncryptedSharedPreferences/MasterKey: No stable alternative available yet
+
 package com.github.f1rlefanz.cf_alarmfortimeoffice.security
 
 import android.content.Context
@@ -31,7 +33,7 @@ import kotlinx.coroutines.withContext
  * @author CF-Alarm Development Team
  * @since Security Phase 2
  */
-@Suppress("DEPRECATION") // EncryptedSharedPreferences/MasterKey: No stable alternative available yet
+@Suppress("DEPRECATION", "unused") // EncryptedSharedPreferences/MasterKey: No stable alternative; Used for security features
 class SecurityManager(private val context: Context) {
     
     /**
@@ -230,6 +232,7 @@ class SecurityManager(private val context: Context) {
             // This is expected for Philips Hue integration
         }
         
+        @Suppress("KotlinConstantConditions") // Network validation placeholder for future security checks
         return NetworkSecurityValidation(
             isSecure = issues.isEmpty(),
             issues = issues,
@@ -471,6 +474,7 @@ enum class EncryptionIssue {
 /**
  * Network security issues
  */
+@Suppress("unused") // Reserved for future network security checks
 enum class NetworkSecurityIssue {
     GLOBAL_CLEARTEXT_ALLOWED,
     INSECURE_NETWORK_CONFIG

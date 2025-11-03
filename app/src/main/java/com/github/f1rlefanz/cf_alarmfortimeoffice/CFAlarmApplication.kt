@@ -14,10 +14,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.SimpleFileTree
 import timber.log.Timber
 import java.io.File
 
-// Firebase Imports
-import com.google.firebase.FirebaseApp
-import com.google.firebase.crashlytics.FirebaseCrashlytics
-
 /**
  * UPDATED Application class with ROBUST Hue Bridge Connection Management
  * 
@@ -50,11 +46,8 @@ class CFAlarmApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         
-        // Initialize ErrorHandler first for Firebase Crashlytics
+        // Initialize ErrorHandler first
         ErrorHandler.initialize(this)
-        
-        // Initialize Firebase first
-        initializeFirebase()
         
         // Initialize dependency container
         appContainer = AppContainer(this)
@@ -75,32 +68,6 @@ class CFAlarmApplication : Application() {
         initializeApp()
         
         Logger.i(LogTags.APP, "✅ CFAlarmApplication initialized - Simple and reliable!")
-    }
-    
-    /**
-     * Firebase Setup mit Professional Best Practices (2025)
-     */
-    private fun initializeFirebase() {
-        try {
-            // Firebase initialisieren 
-            FirebaseApp.initializeApp(this)
-            
-            val crashlytics = FirebaseCrashlytics.getInstance()
-            
-            // App-spezifische Context Keys setzen
-            crashlytics.setCustomKey("app_package", packageName)
-            crashlytics.setCustomKey("build_type", if (BuildConfig.DEBUG) "debug" else "release")
-            crashlytics.setCustomKey("version_code", BuildConfig.VERSION_CODE)
-            crashlytics.setCustomKey("version_name", BuildConfig.VERSION_NAME)
-            
-            // Initial Breadcrumb
-            crashlytics.log("CFAlarmApplication: Firebase initialized successfully")
-            
-            Logger.i(LogTags.APP, "🔥 Firebase Crashlytics initialized with app context")
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.APP, "❌ Failed to initialize Firebase", e)
-        }
     }
     
     private fun initializeApp() {

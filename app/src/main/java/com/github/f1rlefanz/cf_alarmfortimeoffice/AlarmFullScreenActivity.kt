@@ -1,6 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
+import android.app.AlarmManager
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.*
@@ -10,8 +13,11 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.toColorInt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 /**
  * Simplified Full-screen alarm activity - Focus on reliable core functionality.
@@ -227,13 +233,13 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // Create a simple linear layout programmatically
         val rootLayout = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setBackgroundColor(android.graphics.Color.parseColor("#1976D2")) // Blue background
+            setBackgroundColor("#1976D2".toColorInt()) // Blue background
             setPadding(32, 64, 32, 64)
         }
         
         // Main title
         val titleText = TextView(this).apply {
-            text = "⏰ CF-ALARM"
+            text = getString(R.string.alarm_title)
             textSize = 32f
             setTextColor(android.graphics.Color.WHITE)
             gravity = android.view.Gravity.CENTER
@@ -242,7 +248,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         
         // Shift name display
         shiftNameText = TextView(this).apply {
-            text = "Schicht lädt..."
+            text = getString(R.string.alarm_shift_loading)
             textSize = 24f
             setTextColor(android.graphics.Color.WHITE)
             gravity = android.view.Gravity.CENTER
@@ -251,18 +257,18 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         
         // Alarm time display
         alarmTimeText = TextView(this).apply {
-            text = "Jetzt"
+            text = getString(R.string.alarm_time_now)
             textSize = 18f
-            setTextColor(android.graphics.Color.parseColor("#E3F2FD"))
+            setTextColor("#E3F2FD".toColorInt())
             gravity = android.view.Gravity.CENTER
             setPadding(0, 0, 0, 48)
         }
         
         // Dismiss button
         dismissButton = Button(this).apply {
-            text = "ALARM STOPPEN"
+            text = getString(R.string.alarm_dismiss_button)
             textSize = 18f
-            setBackgroundColor(android.graphics.Color.parseColor("#4CAF50"))
+            setBackgroundColor("#4CAF50".toColorInt())
             setTextColor(android.graphics.Color.WHITE)
             setPadding(24, 16, 24, 16)
             setOnClickListener { dismissAlarm() }
@@ -270,9 +276,9 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         
         // Snooze button
         snoozeButton = Button(this).apply {
-            text = "5 MIN SPÄTER"
+            text = getString(R.string.alarm_snooze_button)
             textSize = 16f
-            setBackgroundColor(android.graphics.Color.parseColor("#FF9800"))
+            setBackgroundColor("#FF9800".toColorInt())
             setTextColor(android.graphics.Color.WHITE)
             setPadding(24, 16, 24, 16)
             setOnClickListener { snoozeAlarm() }
@@ -289,12 +295,16 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
     
     private fun handleAlarmIntent() {
-        val shiftName = intent.getStringExtra("shift_name") ?: "Unbekannte Schicht"
-        val alarmTime = intent.getStringExtra("alarm_time") ?: "Jetzt"
+        val shiftName = intent.getStringExtra("shift_name") ?: getString(R.string.alarm_unknown_shift)
+        val alarmTime = intent.getStringExtra("alarm_time") ?: getString(R.string.alarm_time_now)
         val alarmType = intent.getStringExtra("alarm_type")
         
         shiftNameText.text = shiftName
-        alarmTimeText.text = "Zeit: $alarmTime${alarmType?.let { " ($it)" } ?: ""}"
+        alarmTimeText.text = getString(
+            R.string.alarm_time_format,
+            alarmTime,
+            alarmType?.let { " ($it)" } ?: ""
+        )
         
         Logger.i(LogTags.ALARM, "📋 Alarm details: $shiftName at $alarmTime")
     }
@@ -568,8 +578,8 @@ class AlarmFullScreenActivity : AppCompatActivity() {
             // Create intent for AlarmReceiver
             val alarmIntent = Intent(this, AlarmReceiver::class.java).apply {
                 putExtra("shift_name", shiftName)
-                putExtra("alarm_time", java.time.LocalDateTime.now().plusMinutes(5).format(
-                    java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+                putExtra("alarm_time", LocalDateTime.now().plusMinutes(5).format(
+                    DateTimeFormatter.ofPattern("HH:mm")
                 ))
                 putExtra("alarm_type", alarmType)
                 putExtra("is_snoozed", true)
@@ -585,10 +595,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
             )
             
             // Get AlarmManager and set exact alarm
-            val alarmManager = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
+            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
             
             // Use setAlarmClock for maximum reliability (same as main alarms)
-            val alarmClockInfo = android.app.AlarmManager.AlarmClockInfo(
+            val alarmClockInfo = AlarmManager.AlarmClockInfo(
                 snoozeTimeMillis,
                 pendingIntent
             )

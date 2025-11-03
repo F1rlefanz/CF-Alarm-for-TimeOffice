@@ -8,10 +8,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     kotlin("kapt")
-
-    // Firebase plugins (2025 Standards)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
 }
 
 // ==============================
@@ -306,15 +302,6 @@ dependencies {
 
     // 🚀 PHASE 3: WorkManager für Background-Services
     implementation(libs.androidx.work.runtime.ktx)
-
-    // Firebase (2025 Standards) - ONLY Crashlytics
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.crashlytics)
-    // Firebase Analytics EXPLICITLY EXCLUDED to prevent AD_ID permission
-    configurations.all {
-        exclude(group = "com.google.firebase", module = "firebase-analytics")
-        exclude(group = "com.google.firebase", module = "firebase-analytics-ktx")
-    }
 
     // ==============================
     // 🛠️ FIXED: Using version catalog instead of hardcoded versions

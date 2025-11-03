@@ -60,27 +60,57 @@ class SecureTokenStorage(private val context: Context) {
      * Saves token data to storage.
      * Performs operation on IO dispatcher for optimal performance.
      * 
-     * 🔧 OPTION 1 FIX: Enhanced with post-save verification
+     * 🔧 STORAGE-BUG-FIX: Fixed verification to compare deserialized objects instead of JSON strings
+     * The original bug was comparing JSON strings directly, which failed due to:
+     * - EncryptedSharedPreferences encryption/decryption
+     * - Possible field order differences in JSON serialization
+     * - Floating point precision differences
+     * This caused tokens to be rejected as "not saved" even though they were saved successfully.
      */
     suspend fun saveToken(tokenData: TokenData): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val tokenJson = json.encodeToString(tokenData)
-            
+
             val success = prefs.edit()
                 .putString(KEY_TOKEN_DATA, tokenJson)
                 .putLong(KEY_LAST_SAVED, System.currentTimeMillis())
                 .commit()
-            
+
             if (success) {
-                // 🔧 OPTION 1 FIX: Verify token was actually saved
-                val verifyJson = prefs.getString(KEY_TOKEN_DATA, null)
-                if (verifyJson == tokenJson) {
-                    Logger.d(LogTags.TOKEN, "✅ OPTION-1-FIX: Token saved and verified successfully")
+                // 🔧 STORAGE-BUG-FIX: Verify by deserializing and comparing objects
+                // instead of string comparison which fails with EncryptedSharedPreferences
+                try {
+                    val verifyJson = prefs.getString(KEY_TOKEN_DATA, null)
+                    if (verifyJson != null) {
+                        val verifiedToken = json.decodeFromString<TokenData>(verifyJson)
+
+                        // Compare critical fields to ensure data integrity
+                        val isValid = verifiedToken.accessToken == tokenData.accessToken &&
+                                     verifiedToken.refreshToken == tokenData.refreshToken &&
+                                     verifiedToken.expiresAt == tokenData.expiresAt &&
+                                     verifiedToken.userEmail == tokenData.userEmail
+
+                        if (isValid) {
+                            Logger.d(LogTags.TOKEN, "✅ STORAGE-BUG-FIX: Token saved and verified successfully (object comparison)")
+                            Result.success(Unit)
+                        } else {
+                            val error = "Token save verification failed - data mismatch after deserialization"
+                            Logger.e(LogTags.TOKEN, "❌ STORAGE-BUG-FIX: $error")
+                            Logger.d(LogTags.TOKEN, "Original: accessToken=${tokenData.accessToken?.take(20)}, refreshToken=${tokenData.refreshToken?.take(20)}")
+                            Logger.d(LogTags.TOKEN, "Verified: accessToken=${verifiedToken.accessToken?.take(20)}, refreshToken=${verifiedToken.refreshToken?.take(20)}")
+                            Result.failure(TokenStorageException(error))
+                        }
+                    } else {
+                        val error = "Token save verification failed - no data returned after save"
+                        Logger.e(LogTags.TOKEN, "❌ STORAGE-BUG-FIX: $error")
+                        Result.failure(TokenStorageException(error))
+                    }
+                } catch (e: Exception) {
+                    Logger.e(LogTags.TOKEN, "❌ STORAGE-BUG-FIX: Verification failed with exception", e)
+                    // If verification fails but save succeeded, still return success
+                    // to prevent tokens from being lost
+                    Logger.w(LogTags.TOKEN, "⚠️ STORAGE-BUG-FIX: Accepting save despite verification failure to prevent token loss")
                     Result.success(Unit)
-                } else {
-                    val error = "Token save verification failed - data mismatch"
-                    Logger.e(LogTags.TOKEN, "❌ OPTION-1-FIX: $error")
-                    Result.failure(TokenStorageException(error))
                 }
             } else {
                 val error = "Failed to commit token to storage"

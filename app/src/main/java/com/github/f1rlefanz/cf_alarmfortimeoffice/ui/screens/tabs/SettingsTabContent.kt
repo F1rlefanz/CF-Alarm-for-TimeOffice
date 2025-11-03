@@ -90,17 +90,48 @@ fun SettingsTabContent(
             }
         }
 
-        // Calendar Authorization Card (MODERN ADDITION)
-        if (authState.userAuth.isSignedIn && !authState.calendarOps.hasSelectedCalendars) {
+        // 🔧 STUFE 2 FIX: Calendar Authorization/Re-Authorization Card
+        // Shows when user needs to authorize Calendar OR re-authorize due to invalid token
+        if (authState.userAuth.isSignedIn &&
+            (!authState.calendarOps.hasSelectedCalendars || authState.calendarOps.needsTokenReauthorization)) {
+
+            // Dynamically adapt card appearance based on state
+            val needsReauth = authState.calendarOps.needsTokenReauthorization
+            val cardColor = if (needsReauth) {
+                MaterialTheme.colorScheme.tertiaryContainer
+            } else {
+                MaterialTheme.colorScheme.primaryContainer
+            }
+            val iconColor = if (needsReauth) {
+                MaterialTheme.colorScheme.onTertiaryContainer
+            } else {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            }
+            val titleText = if (needsReauth) {
+                "Kalender-Zugriff erneuern"
+            } else {
+                "Calendar-Berechtigung"
+            }
+            val descriptionText = if (needsReauth) {
+                "Token abgelaufen - Kalender-Zugriff erneut autorisieren"
+            } else {
+                "Kalender-Zugriff autorisieren für Schichterkennung"
+            }
+            val icon = if (needsReauth) {
+                Icons.Default.Refresh
+            } else {
+                Icons.Default.Security
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { 
+                onClick = {
                     // CRITICAL FIX: Pass Activity context for permission dialog
                     val activity = context as? android.app.Activity
                     authViewModel.requestCalendarAuthorization(activity)
                 },
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = cardColor
                 )
             ) {
                 Row(
@@ -111,33 +142,33 @@ fun SettingsTabContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.Security,
+                        icon,
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        tint = iconColor
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Calendar-Berechtigung",
+                            titleText,
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = iconColor
                         )
                         Text(
-                            "Kalender-Zugriff autorisieren für Schichterkennung",
+                            descriptionText,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = iconColor
                         )
                     }
                     if (authState.calendarOps.calendarsLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = iconColor
                         )
                     } else {
                         Icon(
                             Icons.Default.Lock,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            tint = iconColor
                         )
                     }
                 }

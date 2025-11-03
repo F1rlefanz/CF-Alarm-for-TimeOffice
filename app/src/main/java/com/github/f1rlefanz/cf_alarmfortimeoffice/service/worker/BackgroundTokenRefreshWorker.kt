@@ -153,7 +153,11 @@ class BackgroundTokenRefreshWorker(
      */
     private sealed class TokenRefreshResult {
         data class Success(val duration: Long) : TokenRefreshResult()
-        data class Failure(val error: Throwable, val isRetryable: Boolean, val needsReauth: Boolean = false) : TokenRefreshResult()
+        data class Failure(
+            val error: Throwable,
+            val isRetryable: Boolean,
+            val needsReauth: Boolean = false // 🔧 STUFE 3: Track if re-authorization is needed
+        ) : TokenRefreshResult()
     }
 
     /**
@@ -429,6 +433,29 @@ class BackgroundTokenRefreshWorker(
                         tokenResult.error
                     )
 
+                    // 🔧 STUFE 3: Handle token revocation specially
+                    if (tokenResult.needsReauth) {
+                        Logger.e(
+                            LogTags.MAINTENANCE_L2,
+                            "🔴 STUFE-3: Token revoked - user re-authorization required, no retry"
+                        )
+
+                        // Don't schedule next refresh - wait for user to re-authorize
+                        Logger.business(LogTags.MAINTENANCE_L2, "⏸️ STUFE-3: Background refresh suspended until re-authorization")
+
+                        return@withContext WorkerResult.failure(
+                            Data.Builder()
+                                .putAll(createCombinedFailureData(
+                                    tokenResult,
+                                    alarmResult,
+                                    sessionDuration
+                                ))
+                                .putBoolean("token_revoked", true)
+                                .putString("action_required", "user_reauth")
+                                .build()
+                        )
+                    }
+
                     // Schedule next refresh with failure handling
                     scheduleNextRefresh(false)
 
@@ -644,6 +671,7 @@ class BackgroundTokenRefreshWorker(
      * Returns internal TokenRefreshResult for proper type handling
      * 
      * 🔧 PHASE 1 ENHANCED: Now includes proactive health check before refresh attempt
+     * 🔧 STUFE 3 ENHANCED: Detects token revocation and triggers UI state update
      */
     private suspend fun performTokenRefresh(): TokenRefreshResult {
         return try {
@@ -661,6 +689,7 @@ class BackgroundTokenRefreshWorker(
                 // Send notification to user about re-auth requirement
                 sendReAuthNotification(healthError.message ?: "Unknown reason")
                 
+                // 🔧 STUFE 3: Mark that re-authorization is needed
                 return TokenRefreshResult.Failure(
                     error = healthError,
                     isRetryable = false, // No point retrying without email
@@ -677,6 +706,10 @@ class BackgroundTokenRefreshWorker(
             val kotlinResult: KotlinResult<String> = when (tokenStatus) {
                 is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenStatus.NoToken -> {
                     Logger.w(LogTags.TOKEN, "❌ No token available - user needs to re-authenticate")
+                    
+                    // 🔧 STUFE 3: Trigger UI state update for no token
+                    markTokenAsInvalid("No token available")
+                    
                     KotlinResult.failure(Exception("No authentication token available"))
                 }
 
@@ -685,6 +718,10 @@ class BackgroundTokenRefreshWorker(
                         LogTags.TOKEN,
                         "❌ Token expired and not refreshable - user re-auth required"
                     )
+                    
+                    // 🔧 STUFE 3: Trigger UI state update for expired token
+                    markTokenAsInvalid("Token expired and not refreshable")
+                    
                     KotlinResult.failure(Exception("Token expired - re-authentication required"))
                 }
 
@@ -711,12 +748,28 @@ class BackgroundTokenRefreshWorker(
                     if (refreshResult.isSuccess) {
                         tokenRefreshUseCase.ensureValidToken()
                     } else {
+                        // 🔧 STUFE 3: Check if refresh failed due to revocation
+                        val refreshError = refreshResult.exceptionOrNull()
+                        if (isTokenRevocationError(refreshError)) {
+                            Logger.e(LogTags.TOKEN, "🔴 STUFE-3: Token refresh failed - token revoked", refreshError)
+                            markTokenAsInvalid("Token was revoked")
+                            sendReAuthNotification("Your Calendar authorization was revoked by Google")
+                        }
+                        
                         refreshResult.map { "Token refreshed successfully" }
                     }
                 }
 
                 is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenStatus.Error -> {
                     Logger.e(LogTags.TOKEN, "❌ Token status error", tokenStatus.exception)
+                    
+                    // 🔧 STUFE 3: Check if error indicates token revocation
+                    if (isTokenRevocationError(tokenStatus.exception)) {
+                        Logger.e(LogTags.TOKEN, "🔴 STUFE-3: Token status error due to revocation")
+                        markTokenAsInvalid("Token error - possibly revoked")
+                        sendReAuthNotification("Calendar access needs to be re-authorized")
+                    }
+                    
                     // Try to get a valid token anyway
                     tokenRefreshUseCase.ensureValidToken()
                 }
@@ -730,14 +783,32 @@ class BackgroundTokenRefreshWorker(
             } else {
                 val error =
                     kotlinResult.exceptionOrNull() ?: Exception("Unknown token refresh error")
-                val isRetryable = shouldRetryError(error)
-                TokenRefreshResult.Failure(error, isRetryable)
+                
+                // 🔧 STUFE 3: Detect if this is a revocation error
+                val needsReauth = isTokenRevocationError(error)
+                
+                if (needsReauth) {
+                    Logger.e(LogTags.TOKEN, "🔴 STUFE-3: Token refresh failed permanently - revocation detected", error)
+                    markTokenAsInvalid("Token refresh failed - revocation")
+                    sendReAuthNotification("Calendar authorization lost - please re-authorize")
+                }
+                
+                val isRetryable = shouldRetryError(error) && !needsReauth
+                TokenRefreshResult.Failure(error, isRetryable, needsReauth)
             }
 
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Error during token refresh", e)
-            val isRetryable = shouldRetryError(e)
-            TokenRefreshResult.Failure(e, isRetryable)
+            
+            // 🔧 STUFE 3: Check for revocation in exception
+            val needsReauth = isTokenRevocationError(e)
+            if (needsReauth) {
+                markTokenAsInvalid("Unexpected error - possible revocation")
+                sendReAuthNotification("Calendar access error - re-authorization needed")
+            }
+            
+            val isRetryable = shouldRetryError(e) && !needsReauth
+            TokenRefreshResult.Failure(e, isRetryable, needsReauth)
         }
     }
 
@@ -762,11 +833,80 @@ class BackgroundTokenRefreshWorker(
     }
 
     /**
+     * 🔧 STUFE 3: Detects if an error indicates token revocation
+     * 
+     * Checks for specific error messages that indicate the token was revoked:
+     * - "invalid_grant" from Google OAuth
+     * - "authorization expired" or "authorization was revoked"
+     * - "Token has been expired or revoked"
+     * 
+     * @return true if error indicates token revocation, false otherwise
+     */
+    private fun isTokenRevocationError(error: Throwable?): Boolean {
+        if (error == null) return false
+        
+        val errorMessage = error.message?.lowercase() ?: return false
+        
+        return errorMessage.contains("invalid_grant") ||
+               errorMessage.contains("authorization expired") ||
+               errorMessage.contains("authorization was revoked") ||
+               errorMessage.contains("token has been expired or revoked") ||
+               errorMessage.contains("token was revoked") ||
+               error is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.TokenException.AuthorizationExpired
+    }
+    
+    /**
+     * 🔧 STUFE 3: Marks token as invalid in UI state by updating AuthDataStore
+     * 
+     * This triggers the UI to show the re-authorization card to the user.
+     * The CalendarOperationState.hasValidToken will be set to false, which
+     * activates the needsTokenReauthorization flag.
+     * 
+     * @param reason Human-readable reason for marking token as invalid
+     */
+    private suspend fun markTokenAsInvalid(reason: String) {
+        try {
+            Logger.business(LogTags.TOKEN, "🔧 STUFE-3: Marking token as invalid in UI state - Reason: $reason")
+            
+            // Clear access token in AuthDataStore to trigger hasValidToken = false
+            val currentAuthData = appContainer.authDataStoreRepository.getCurrentAuthData().getOrNull()
+            
+            if (currentAuthData != null) {
+                val updatedAuthData = currentAuthData.copy(
+                    accessToken = null // Clear token to trigger hasValidToken = false
+                )
+                
+                appContainer.authDataStoreRepository.updateAuthData(updatedAuthData)
+                
+                Logger.business(LogTags.TOKEN, "✅ STUFE-3: UI state updated - hasValidToken=false, user will see re-auth card")
+            } else {
+                Logger.w(LogTags.TOKEN, "⚠️ STUFE-3: No auth data found to update")
+            }
+            
+            // Also update SharedPreferences to be safe
+            val prefs = applicationContext.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
+            prefs.edit {
+                putBoolean("token_valid", false)
+                putString("token_invalid_reason", reason)
+                putLong("token_invalid_timestamp", System.currentTimeMillis())
+            }
+            
+            Logger.business(LogTags.TOKEN, "✅ STUFE-3: Token marked as invalid in both AuthDataStore and SharedPreferences")
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.TOKEN, "❌ STUFE-3: Failed to mark token as invalid", e)
+        }
+    }
+    
+    /**
      * Determines if an error should trigger a retry
      */
     private fun shouldRetryError(error: Throwable?): Boolean {
         return when {
             error == null -> false
+            
+            // 🔧 STUFE 3: Never retry token revocation errors
+            isTokenRevocationError(error) -> false
 
             // Network-related errors should be retried
             error.message?.contains("NetworkError", ignoreCase = true) == true -> true

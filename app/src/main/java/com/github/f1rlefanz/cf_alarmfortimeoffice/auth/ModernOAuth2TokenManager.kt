@@ -161,7 +161,8 @@ class ModernOAuth2TokenManager(
             // Create Google Account for token request
             val googleAccount = android.accounts.Account(userEmail, "com.google")
             
-            // CRITICAL FIX: Request Calendar API access token with proper exception handling
+            // 🔧 STUFE 1 FIX: Request Calendar API access
+            // Google Play Services manages refresh tokens internally - no "offline" scope needed
             val calendarToken = try {
                 GoogleAuthUtil.getToken(
                     context,
@@ -219,16 +220,19 @@ class ModernOAuth2TokenManager(
             
             Logger.business(LogTags.OAUTH, "✅ AUTH-FIXED: Successfully obtained Calendar API token")
             
-            // 🔧 OPTION 2 FIX: Store token WITH user email for refresh capability
+            // 🔧 STUFE 1 FIX: Store token properly for refresh capability
+            // NOTE: GoogleAuthUtil.getToken() returns only access_token (not a separate refresh_token)
+            // With "offline" scope, we can call getToken() again to get a fresh token
+            // So we store the token PLUS user email to enable refresh via re-calling getToken()
             val tokenData = TokenData.fromOAuthResponse(
                 accessToken = calendarToken,
-                refreshToken = calendarToken, // ✅ FIXED: Use actual token for refresh capability
+                refreshToken = "REFRESH_VIA_REAUTH:$userEmail", // 🔧 STUFE 1: Mark that refresh needs re-authentication
                 expiresInSeconds = 3600L, // 1 hour
                 scope = CalendarScopes.CALENDAR_READONLY,
-                userEmail = userEmail // 🔧 PHASE 1: Store email for reliable refresh
+                userEmail = userEmail // 🔧 STUFE 1: Store email for reliable refresh
             )
             
-            Logger.d(LogTags.TOKEN, "🔐 PHASE-1-FIX: Token stored with email and refresh capability")
+            Logger.d(LogTags.TOKEN, "🔐 STUFE-1-FIX: Token stored with email for refresh via GoogleAuthUtil.getToken()")
             
             // Store token
             val storeResult = tokenStorage.saveToken(tokenData)
@@ -427,25 +431,41 @@ class ModernOAuth2TokenManager(
                 return@withContext Result.failure(TokenException.RefreshFailed("No refresh token available"))
             }
             
-            // 🔧 OPTION 2 FIX: Clear the old access token (which we stored as refresh token)
-            // This forces GoogleAuthUtil to fetch a fresh token from Google servers
-            GoogleAuthUtil.clearToken(context, refreshToken)
-            Logger.d(LogTags.TOKEN, "🧹 OPTION-2-FIX: Cleared cached token to force refresh")
+            // 🔧 STUFE 1 FIX: Check if this is our special REFRESH_VIA_REAUTH marker
+            val userEmail = if (refreshToken.startsWith("REFRESH_VIA_REAUTH:")) {
+                // Extract email from marker
+                refreshToken.substring("REFRESH_VIA_REAUTH:".length)
+            } else {
+                // Fallback: Try multi-source email retrieval
+                getUserEmailFromAccounts()
+            }
             
-            // 🔧 PHASE 1 FIX: Get user email with multi-source fallback
-            val userEmail = getUserEmailFromAccounts()
-            
-            if (userEmail == null) {
-                Logger.e(LogTags.TOKEN, "❌ PHASE-1: Cannot refresh - no user email from any source!")
-                Logger.w(LogTags.TOKEN, "💡 PHASE-1: User needs to re-authenticate to restore Calendar access")
+            if (userEmail.isNullOrBlank()) {
+                Logger.e(LogTags.TOKEN, "❌ STUFE-3: Cannot refresh - no user email available!")
+                Logger.w(LogTags.TOKEN, "💡 STUFE-3: Token refresh failed - clearing invalid token")
+                
+                // 🔧 STUFE 3: Clear invalid token and mark for re-auth
+                tokenStorage.clearToken()
+                
                 return@withContext Result.failure(TokenException.RefreshFailed("No user account available - re-authentication required"))
             }
             
-            Logger.business(LogTags.TOKEN, "📧 PHASE-1: Using email for refresh: $userEmail")
+            Logger.business(LogTags.TOKEN, "📧 STUFE-1: Using email for refresh: $userEmail")
+            
+            // 🔧 STUFE 1 FIX: Clear old token to force fresh fetch
+            if (!refreshToken.startsWith("REFRESH_VIA_REAUTH:")) {
+                try {
+                    GoogleAuthUtil.clearToken(context, refreshToken)
+                    Logger.d(LogTags.TOKEN, "🧹 STUFE-1: Cleared cached token to force refresh")
+                } catch (e: Exception) {
+                    Logger.w(LogTags.TOKEN, "⚠️ Could not clear old token", e)
+                }
+            }
             
             val googleAccount = android.accounts.Account(userEmail, "com.google")
             
-            // Get fresh access token with proper error handling
+            // 🔧 STUFE 1 FIX: Get fresh access token
+            // Google Play Services manages refresh tokens internally - no "offline" scope needed
             val newAccessToken = try {
                 GoogleAuthUtil.getToken(
                     context,
@@ -453,36 +473,54 @@ class ModernOAuth2TokenManager(
                     "oauth2:${CalendarScopes.CALENDAR_READONLY}"
                 )
             } catch (e: Exception) {
-                Logger.e(LogTags.TOKEN, "❌ TOKEN-REFRESH: GoogleAuthUtil.getToken failed", e)
+                Logger.e(LogTags.TOKEN, "❌ STUFE-3: GoogleAuthUtil.getToken failed", e)
+                
+                // 🔧 STUFE 3 FIX: Check if token was revoked (invalid_grant)
+                val isInvalidGrant = e.message?.contains("invalid_grant", ignoreCase = true) == true ||
+                                   e.message?.contains("Token has been expired or revoked", ignoreCase = true) == true
+                
+                if (isInvalidGrant) {
+                    Logger.e(LogTags.TOKEN, "🔴 STUFE-3: Token revoked by Google - clearing invalid token")
+                    
+                    // Clear invalid token from storage
+                    tokenStorage.clearToken()
+                    
+                    return@withContext Result.failure(TokenException.AuthorizationExpired("Calendar authorization was revoked - re-authorization required"))
+                }
                 
                 val errorMessage = when {
-                    e.message?.contains("NetworkError") == true -> "Network error during token refresh"
-                    e.message?.contains("ServiceDisabled") == true -> "Google Calendar API service disabled"
-                    e.message?.contains("UserRecoverableAuth") == true -> "User interaction required for token refresh"
-                    e.message?.contains("Account not found") == true -> "Google account not found on device"
-                    else -> "Unknown error during token refresh: ${e.localizedMessage}"
+                    e.message?.contains("NetworkError", ignoreCase = true) == true -> "Network error during token refresh"
+                    e.message?.contains("ServiceDisabled", ignoreCase = true) == true -> "Google Calendar API service disabled"
+                    e.message?.contains("UserRecoverableAuth", ignoreCase = true) == true -> "User interaction required for token refresh"
+                    e.message?.contains("Account not found", ignoreCase = true) == true -> "Google account not found on device"
+                    else -> "Token refresh failed: ${e.localizedMessage}"
                 }
                 
                 return@withContext Result.failure(TokenException.RefreshFailed(errorMessage))
             }
             
             if (newAccessToken.isEmpty()) {
-                Logger.e(LogTags.TOKEN, "❌ TOKEN-REFRESH: Empty token received from GoogleAuthUtil")
+                Logger.e(LogTags.TOKEN, "❌ STUFE-3: Empty token received from GoogleAuthUtil")
                 return@withContext Result.failure(TokenException.RefreshFailed("Empty access token received"))
             }
             
-            Logger.business(LogTags.TOKEN, "✅ TOKEN-REFRESH: New Calendar token obtained (${newAccessToken.take(20)}...)")
+            Logger.business(LogTags.TOKEN, "✅ STUFE-1: New Calendar token obtained successfully")
             
             val newExpiresAt = System.currentTimeMillis() + (3600L * 1000) // 1 hour
             
-            // 🔧 OPTION 2 FIX: Store new token with itself as refresh token (Google-managed)
-            val updateResult = tokenStorage.updateAccessToken(
-                newAccessToken = newAccessToken,
-                newExpiresAt = newExpiresAt
+            // 🔧 STUFE 1 FIX: Store complete token data with proper refresh marker
+            val newTokenData = TokenData.fromOAuthResponse(
+                accessToken = newAccessToken,
+                refreshToken = "REFRESH_VIA_REAUTH:$userEmail", // 🔧 STUFE 1: Use marker for next refresh
+                expiresInSeconds = 3600L,
+                scope = CalendarScopes.CALENDAR_READONLY,
+                userEmail = userEmail
             )
             
-            if (updateResult.isFailure) {
-                Logger.e(LogTags.TOKEN, "❌ TOKEN-REFRESH: Failed to update stored Calendar token", updateResult.exceptionOrNull())
+            val storeResult = tokenStorage.saveToken(newTokenData)
+            
+            if (storeResult.isFailure) {
+                Logger.e(LogTags.TOKEN, "❌ TOKEN-REFRESH: Failed to update stored Calendar token", storeResult.exceptionOrNull())
                 return@withContext Result.failure(TokenException.RefreshFailed("Failed to update stored Calendar token"))
             }
             

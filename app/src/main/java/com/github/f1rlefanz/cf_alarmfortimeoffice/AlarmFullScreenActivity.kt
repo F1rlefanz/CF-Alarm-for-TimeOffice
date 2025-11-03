@@ -556,9 +556,55 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     
     private fun snoozeAlarm() {
         Logger.i(LogTags.ALARM, "😴 User snoozed alarm for 5 minutes")
-        // TODO: Implement snooze functionality
-        // For now, just dismiss
-        dismissAlarm()
+        
+        try {
+            // Calculate snooze time (current time + 5 minutes)
+            val snoozeTimeMillis = System.currentTimeMillis() + (5 * 60 * 1000L)
+            
+            // Get alarm details from intent
+            val shiftName = intent.getStringExtra("shift_name") ?: "Snooze"
+            val alarmType = intent.getStringExtra("alarm_type")
+            
+            // Create intent for AlarmReceiver
+            val alarmIntent = Intent(this, AlarmReceiver::class.java).apply {
+                putExtra("shift_name", shiftName)
+                putExtra("alarm_time", java.time.LocalDateTime.now().plusMinutes(5).format(
+                    java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+                ))
+                putExtra("alarm_type", alarmType)
+                putExtra("is_snoozed", true)
+            }
+            
+            // Create PendingIntent with unique request code
+            val requestCode = (System.currentTimeMillis() % Integer.MAX_VALUE).toInt()
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                requestCode,
+                alarmIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            // Get AlarmManager and set exact alarm
+            val alarmManager = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
+            
+            // Use setAlarmClock for maximum reliability (same as main alarms)
+            val alarmClockInfo = android.app.AlarmManager.AlarmClockInfo(
+                snoozeTimeMillis,
+                pendingIntent
+            )
+            alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+            
+            Logger.business(LogTags.ALARM, "✅ Snooze alarm set for 5 minutes from now")
+            Logger.d(LogTags.ALARM, "🕔 Snooze time: ${java.time.Instant.ofEpochMilli(snoozeTimeMillis)}")
+            
+            // Now dismiss the current alarm
+            dismissAlarm()
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "❌ Failed to set snooze alarm", e)
+            // If snooze fails, just dismiss the alarm
+            dismissAlarm()
+        }
     }
     
     private fun stopAlarmEffects() {

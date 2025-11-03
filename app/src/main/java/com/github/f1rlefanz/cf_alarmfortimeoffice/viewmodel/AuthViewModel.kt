@@ -178,10 +178,57 @@ class AuthViewModel(
                             )
                         )
                     }
+                    
+                    // 🔧 STUFE 2: Check token validity after calendar selection check
+                    checkInitialTokenValidity()
                 } catch (e: Exception) {
                     Logger.e(LogTags.AUTH, "Error checking initial calendar selection", e)
                 }
             }
+        }
+    }
+    
+    /**
+     * 🔧 STUFE 2: Checks initial Calendar API token validity on startup
+     * Ensures hasValidToken flag is correctly set based on actual token status
+     */
+    private fun checkInitialTokenValidity() {
+        authUseCase?.let { useCase ->
+            viewModelScope.launch {
+                try {
+                    Logger.d(LogTags.AUTH, "🔍 STUFE-2: Checking initial Calendar API token validity")
+                    
+                    // Check if we have a valid Calendar token
+                    val tokenValidResult = useCase.hasCalendarAuthorization()
+                    val tokenValid = tokenValidResult.getOrElse { false }
+                    
+                    Logger.business(LogTags.AUTH, "🔍 STUFE-2: Initial token validity check result: $tokenValid")
+                    
+                    updateAuthState { currentState ->
+                        currentState.copy(
+                            calendarOps = currentState.calendarOps.copy(
+                                hasValidToken = tokenValid
+                            )
+                        )
+                    }
+                    
+                    if (!tokenValid && _authState.value.calendarOps.hasSelectedCalendars) {
+                        Logger.w(LogTags.AUTH, "⚠️ STUFE-2: User has selected calendars but token is invalid - re-authorization required")
+                    }
+                } catch (e: Exception) {
+                    Logger.e(LogTags.AUTH, "❌ STUFE-2: Error checking initial token validity", e)
+                    // On error, assume token is invalid to be safe
+                    updateAuthState { currentState ->
+                        currentState.copy(
+                            calendarOps = currentState.calendarOps.copy(
+                                hasValidToken = false
+                            )
+                        )
+                    }
+                }
+            }
+        } ?: run {
+            Logger.w(LogTags.AUTH, "⚠️ STUFE-2: AuthUseCase not injected - cannot check token validity")
         }
     }
 
@@ -441,16 +488,17 @@ class AuthViewModel(
                                 currentState.copy(
                                     calendarOps = currentState.calendarOps.copy(
                                         calendarsLoading = false,
-                                        hasSelectedCalendars = success
+                                        hasSelectedCalendars = success,
+                                        hasValidToken = success // 🔧 STUFE 2: Set token validity based on auth result
                                     )
                                 )
                             }
                             
                             if (success) {
-                                Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful")
+                                Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful, hasValidToken=true")
                                 triggerCalendarReloadAfterAuth()
                             } else {
-                                Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: Calendar authorization failed or denied")
+                                Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: Calendar authorization failed or denied, hasValidToken=false")
                             }
                         }
                     ).fold(
@@ -460,7 +508,10 @@ class AuthViewModel(
                         onFailure = { error ->
                             updateAuthState { currentState ->
                                 currentState.copy(
-                                    calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                                    calendarOps = currentState.calendarOps.copy(
+                                        calendarsLoading = false,
+                                        hasValidToken = false // 🔧 STUFE 2: Mark token as invalid on error
+                                    ),
                                     errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
                                 )
                             }
@@ -477,11 +528,12 @@ class AuthViewModel(
                                 currentState.copy(
                                     calendarOps = currentState.calendarOps.copy(
                                         calendarsLoading = false,
-                                        hasSelectedCalendars = authorized
+                                        hasSelectedCalendars = authorized,
+                                        hasValidToken = authorized // 🔧 STUFE 2: Set token validity based on auth result
                                     )
                                 )
                             }
-                            Logger.business(LogTags.AUTH, "✅ MODERN-FLOW: Calendar authorization successful: $authorized")
+                            Logger.business(LogTags.AUTH, "✅ MODERN-FLOW: Calendar authorization successful: $authorized, hasValidToken=$authorized")
                             
                             // CRITICAL FIX: Auto-trigger calendar loading after successful authorization
                             if (authorized) {
@@ -491,7 +543,10 @@ class AuthViewModel(
                         onFailure = { error ->
                             updateAuthState { currentState ->
                                 currentState.copy(
-                                    calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                                    calendarOps = currentState.calendarOps.copy(
+                                        calendarsLoading = false,
+                                        hasValidToken = false // 🔧 STUFE 2: Mark token as invalid on error
+                                    ),
                                     errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
                                 )
                             }
@@ -500,7 +555,10 @@ class AuthViewModel(
                     ) ?: run {
                         updateAuthState { currentState ->
                             currentState.copy(
-                                calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
+                                calendarOps = currentState.calendarOps.copy(
+                                    calendarsLoading = false,
+                                    hasValidToken = false // 🔧 STUFE 2: Mark token as invalid when use case unavailable
+                                ),
                                 errors = AppErrorState.authenticationError("Calendar-Autorisierungssystem nicht verfügbar")
                             )
                         }

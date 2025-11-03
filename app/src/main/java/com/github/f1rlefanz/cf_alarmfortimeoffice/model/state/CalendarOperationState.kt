@@ -18,19 +18,23 @@ data class CalendarOperationState(
     val autoAlarmEnabled: Boolean = false,
     val nextShiftAlarm: String? = null,
     val hasSelectedCalendars: Boolean = false,
-    val eventsLoading: Boolean = false
+    val eventsLoading: Boolean = false,
+    val hasValidToken: Boolean = false // 🔧 STUFE 2: Track token validity for UI recovery
 ) {
     // Computed properties für Business Logic
     val isOperational: Boolean get() = 
-        !calendarsLoading && autoAlarmEnabled && hasSelectedCalendars
+        !calendarsLoading && autoAlarmEnabled && hasSelectedCalendars && hasValidToken // 🔧 STUFE 2: Include token check
     
     val hasUpcomingAlarm: Boolean get() = nextShiftAlarm != null
     
     val isFullyConfigured: Boolean get() = 
-        hasSelectedCalendars && autoAlarmEnabled
+        hasSelectedCalendars && autoAlarmEnabled && hasValidToken // 🔧 STUFE 2: Include token check
     
     val needsCalendarSelection: Boolean get() = 
         !hasSelectedCalendars && !calendarsLoading
+    
+    val needsTokenReauthorization: Boolean get() = 
+        !hasValidToken && !calendarsLoading // 🔧 STUFE 2: New property for token re-auth check
     
     val isReady: Boolean get() = 
         isFullyConfigured && !calendarsLoading && !eventsLoading
@@ -42,18 +46,21 @@ data class CalendarOperationState(
         
         fun configured(
             autoAlarmEnabled: Boolean = true,
-            hasSelectedCalendars: Boolean = true
+            hasSelectedCalendars: Boolean = true,
+            hasValidToken: Boolean = true // 🔧 STUFE 2: Default to true for backward compatibility
         ) = CalendarOperationState(
             calendarsLoading = false,
             autoAlarmEnabled = autoAlarmEnabled,
-            hasSelectedCalendars = hasSelectedCalendars
+            hasSelectedCalendars = hasSelectedCalendars,
+            hasValidToken = hasValidToken
         )
         
-        fun withAlarm(alarm: String) = CalendarOperationState(
+        fun withAlarm(alarm: String, hasValidToken: Boolean = true) = CalendarOperationState(
             calendarsLoading = false,
             autoAlarmEnabled = true,
             nextShiftAlarm = alarm,
-            hasSelectedCalendars = true
+            hasSelectedCalendars = true,
+            hasValidToken = hasValidToken // 🔧 STUFE 2: Include token status
         )
     }
 }

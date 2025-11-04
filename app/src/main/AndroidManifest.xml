@@ -2,49 +2,42 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Existing permissions -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    
-    <!-- Hue Bridge Discovery permissions -->
+
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    
-    <!-- Alarm & Wake permissions - Enhanced Strategy -->
+
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    
-    <!-- Enhanced Audio permissions -->
+
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
-    
-    <!-- Notification permissions -->
+
+    <uses-permission
+        android:name="android.permission.USE_FULL_SCREEN_INTENT"
+        tools:ignore="GrantedByPlatform" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    
-    <!-- Multi-API Alarm Permissions Strategy -->
-    <!-- For API 31-32 (Android 12-13) -->
-    <uses-permission 
-        android:name="android.permission.SCHEDULE_EXACT_ALARM" 
+
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
         android:maxSdkVersion="32" />
-    
-    <!-- For API 33+ (Android 13+) - The Optimal Way -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    
-    <!-- Boot permission for alarm restoration -->
+
+    <uses-permission
+        android:name="android.permission.USE_EXACT_ALARM"
+        tools:ignore="ExactAlarm" />
+
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    
-    <!-- Enhanced doze mode exemption -->
+
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    
-    <!-- Foreground Service Permissions (Android 9+ / Android 14+) -->
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    
-    <!-- 🚀 ENHANCED Android 14+ Foreground Service Types for Alarm App -->
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    
-    <!-- 🔧 OnePlus-specific: Additional service reliability -->
+
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
 
@@ -60,19 +53,16 @@
         android:theme="@style/Theme.CFAlarmForTimeOffice"
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false"
-        tools:targetApi="31">
-        
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.CFAlarmForTimeOffice">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-        
-        <!-- Enhanced AlarmFullScreenActivity - Shows when alarm goes off -->
+        tools:targetApi="34"> <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:theme="@style/Theme.CFAlarmForTimeOffice">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+
         <activity
             android:name=".AlarmFullScreenActivity"
             android:exported="false"
@@ -84,14 +74,12 @@
             android:turnScreenOn="true"
             android:directBootAware="true"
             android:lockTaskMode="if_whitelisted" />
-        
 
-        <!-- AlarmReceiver - Handles alarm events -->
+
         <receiver
             android:name=".AlarmReceiver"
             android:exported="false" />
-            
-        <!-- Enhanced BootReceiver - Complete System Recovery (Level 4) -->
+
         <receiver
             android:name=".alarm.receiver.BootReceiver"
             android:enabled="true"
@@ -105,10 +93,9 @@
                 <data android:scheme="package" />
             </intent-filter>
         </receiver>
-            
 
 
-        <!-- FileProvider for log file sharing -->
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -118,7 +105,7 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
-        
+
     </application>
 
 </manifest>

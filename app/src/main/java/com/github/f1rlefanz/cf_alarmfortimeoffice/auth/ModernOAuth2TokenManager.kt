@@ -170,23 +170,27 @@ class ModernOAuth2TokenManager(
                     "oauth2:${CalendarScopes.CALENDAR_READONLY}"
                 )
             } catch (e: UserRecoverableAuthException) {
-                // CRITICAL FIX: Launch permission request intent instead of just logging
+                // CRITICAL FIX: Launch permission request intent from Main Thread
                 Logger.w(LogTags.OAUTH, "⚠️ AUTH-FIXED: Calendar authorization requires user permission")
                 
                 if (activity != null) {
-                    Logger.business(LogTags.OAUTH, "🚀 AUTH-FIXED: Launching Calendar permission request")
+                    Logger.business(LogTags.OAUTH, "🚀 AUTH-FIXED: Launching Calendar permission request on Main Thread")
                     
                     // Store callback for result handling
                     pendingAuthCallback = onPermissionResult
                     
-                    // Launch the permission request intent
+                    // CRITICAL FIX: Switch to Main Thread to launch permission dialog
+                    // startActivityForResult MUST be called from UI Thread, not background thread!
                     try {
-                        activity.startActivityForResult(
-                            e.intent,
-                            REQUEST_CODE_CALENDAR_AUTHORIZATION
-                        )
+                        withContext(Dispatchers.Main) {
+                            activity.startActivityForResult(
+                                e.intent,
+                                REQUEST_CODE_CALENDAR_AUTHORIZATION
+                            )
+                        }
                         
                         // Return pending status - result will come through onActivityResult
+                        Logger.business(LogTags.OAUTH, "✅ AUTH-FIXED: Permission dialog launched successfully")
                         return@withContext AuthResult.Pending("Calendar permission request launched - waiting for user response")
                     } catch (launchException: Exception) {
                         Logger.e(LogTags.OAUTH, "❌ AUTH-FIXED: Failed to launch permission intent", launchException)
@@ -271,10 +275,13 @@ class ModernOAuth2TokenManager(
         pendingAuthCallback?.invoke(success)
         pendingAuthCallback = null
         
-        // If permission granted, retry token fetch
+        // If permission granted, retry token fetch IN BACKGROUND (not Main Thread)
         if (success && lastUserEmail != null) {
             Logger.business(LogTags.OAUTH, "🔄 AUTH-FIXED: Permission granted, retrying token fetch")
-            val retryResult = authorizeCalendarAccess(lastUserEmail!!)
+            // Run token fetch in background thread (Dispatchers.IO)
+            val retryResult = withContext(Dispatchers.IO) {
+                authorizeCalendarAccess(lastUserEmail!!)
+            }
             return retryResult is AuthResult.Success
         }
         
@@ -505,8 +512,6 @@ class ModernOAuth2TokenManager(
             }
             
             Logger.business(LogTags.TOKEN, "✅ STUFE-1: New Calendar token obtained successfully")
-            
-            val newExpiresAt = System.currentTimeMillis() + (3600L * 1000) // 1 hour
             
             // 🔧 STUFE 1 FIX: Store complete token data with proper refresh marker
             val newTokenData = TokenData.fromOAuthResponse(

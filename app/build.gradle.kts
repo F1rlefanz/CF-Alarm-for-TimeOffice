@@ -52,13 +52,25 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22
-        versionName = "1.4.0"
+        versionCode = 24
+        versionName = "1.4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+        
+        // ==============================
+        // 🚫 EXPLICIT AD_ID REMOVAL
+        // ==============================
+        // CRITICAL: Remove AD_ID permission added by play-services-auth
+        // This must be done at build time via androidResources
+        androidResources {
+            ignoreAssetsPattern = "!.svn:!.git:.*:!CVS:!thumbs.db:!picasa.ini:!*.scc:*~"
+        }
+        
+        // Additional manifest placeholder (belt and suspenders approach)
+        manifestPlaceholders["excludeAdIdPermission"] = "true"
 
         // ==============================
         // 🔐 SECURE OAUTH CLIENT ID CONFIGURATION

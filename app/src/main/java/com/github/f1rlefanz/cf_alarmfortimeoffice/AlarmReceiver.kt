@@ -130,6 +130,10 @@ class AlarmReceiver : BroadcastReceiver() {
         // 🎨 NEW: HUE INTEGRATION - Execute matching light rules
         executeHueRulesForAlarm(context, shiftName)
 
+        // 🔊 NEW: Start AlarmSoundService BEFORE Activity
+        // This ensures sound starts independently of Activity lifecycle
+        startAlarmSoundService(context, shiftName, alarmId)
+
         // Wake Lock to ensure device wakes up
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = powerManager.newWakeLock(
@@ -653,5 +657,43 @@ class AlarmReceiver : BroadcastReceiver() {
             calendarEvent = syntheticCalendarEvent,
             calculatedAlarmTime = calculatedAlarmTime
         )
+    }
+
+    /**
+     * Starts AlarmSoundService to handle audio playback independently
+     * 
+     * CRITICAL: Service must start BEFORE Activity to ensure sound begins immediately
+     * and survives Activity lifecycle events.
+     * 
+     * @param context Context for starting the service
+     * @param shiftName Name of the shift for notification display
+     * @param alarmId Unique alarm identifier
+     */
+    private fun startAlarmSoundService(context: Context, shiftName: String, alarmId: Int) {
+        try {
+            val serviceIntent = Intent(context, com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService::class.java).apply {
+                action = com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService.ACTION_START_ALARM
+                putExtra(com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
+                putExtra(com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService.EXTRA_ALARM_ID, alarmId)
+            }
+            
+            // Start as foreground service on Android 8+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+                Logger.business(
+                    LogTags.ALARM_RECEIVER,
+                    "✅ AlarmSoundService started as foreground service (API ${Build.VERSION.SDK_INT})"
+                )
+            } else {
+                context.startService(serviceIntent)
+                Logger.business(
+                    LogTags.ALARM_RECEIVER,
+                    "✅ AlarmSoundService started (API ${Build.VERSION.SDK_INT})"
+                )
+            }
+            
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM_RECEIVER, "❌ Failed to start AlarmSoundService", e)
+        }
     }
 }

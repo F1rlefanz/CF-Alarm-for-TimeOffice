@@ -103,7 +103,12 @@
             </intent-filter>
         </receiver>
 
-
+        <service
+            android:name=".service.AlarmSoundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

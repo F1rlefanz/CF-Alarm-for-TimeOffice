@@ -5,8 +5,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.ModernOAuth2TokenManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.AuthResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -16,22 +16,28 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 /**
  * UseCase für alle Authentication-bezogenen Operationen - implementiert IAuthUseCase
  * 
+ * ✅ PHASE 4 MODERNIZED (2025):
+ * - Verwendet OAuth2TokenManager statt deprecated ModernOAuth2TokenManager
+ * - Smart Retry Logic mit TokenRefreshStrategy (via OAuth2TokenManager)
+ * - Token Rotation Support
+ * - Improved Exception Handling mit TokenException hierarchy
+ * 
  * REFACTORED:
  * ✅ Implementiert IAuthUseCase Interface für bessere Testbarkeit
  * ✅ Verwendet Repository-Interface statt konkrete Implementierung
  * ✅ Kapselt Business Logic von Infrastructure
  * ✅ Result-basierte API für konsistente Fehlerbehandlung
  * ✅ Clean Architecture Compliance
- * ✅ MODERN: Integriert ModernOAuth2TokenManager für Calendar-Autorisierung
+ * ✅ MODERN: Integriert OAuth2TokenManager für Calendar-Autorisierung
  * ✅ FIXED: Added Activity-based authorization method for permission flow
  * 
  * AUTHENTICATION FLOW 2024/2025:
  * 1. Credential Manager für Benutzer-Authentifizierung (wer bist du?)
- * 2. ModernOAuth2TokenManager für API-Autorisierung (was darfst du?)
+ * 2. OAuth2TokenManager für API-Autorisierung (was darfst du?)
  */
 class AuthUseCase(
     private val authDataStoreRepository: IAuthDataStoreRepository,
-    private val modernOAuth2TokenManager: ModernOAuth2TokenManager? = null
+    private val oauth2TokenManager: OAuth2TokenManager? = null
 ) : IAuthUseCase {
     
     override val authData: Flow<AuthData> = authDataStoreRepository.authData
@@ -59,29 +65,32 @@ class AuthUseCase(
                 currentAuth?.email ?: throw Exception("No user email available for Calendar authorization")
             }
             
-            modernOAuth2TokenManager?.let { tokenManager ->
+            oauth2TokenManager?.let { tokenManager ->
                 Logger.business(LogTags.AUTH, "🔐 MODERN-TOKEN: Requesting Calendar authorization for user: $emailToUse")
                 
-                val calendarAuthResult = tokenManager.authorizeCalendarAccess(emailToUse)
-                when (calendarAuthResult) {
-                    is AuthResult.Success -> {
-                        Logger.business(LogTags.AUTH, "✅ MODERN-TOKEN: Calendar authorization successful - real OAuth2 token obtained")
-                        Logger.d(LogTags.AUTH, "📊 Token details: accessToken=${calendarAuthResult.tokenData.accessToken.take(20)}..., expires=${calendarAuthResult.tokenData.getRemainingLifetimeMinutes()}min")
-                        true
-                    }
-                    is AuthResult.Pending -> {
-                        Logger.business(LogTags.AUTH, "⏳ MODERN-TOKEN: Calendar authorization pending - ${calendarAuthResult.message}")
-                        // Pending state means permission dialog was launched
-                        // Return false for now - callback will handle success
-                        false
-                    }
-                    is AuthResult.Failure -> {
-                        Logger.e(LogTags.AUTH, "❌ MODERN-TOKEN: Calendar authorization failed: ${calendarAuthResult.error}")
-                        throw Exception("Calendar authorization failed: ${calendarAuthResult.error}")
+                val calendarAuthResult = tokenManager.authorize(emailToUse)
+                if (calendarAuthResult.isSuccess) {
+                    val tokenData = calendarAuthResult.getOrThrow()
+                    Logger.business(LogTags.AUTH, "✅ MODERN-TOKEN: Calendar authorization successful - real OAuth2 token obtained")
+                    Logger.d(LogTags.AUTH, "📊 Token details: accessToken=${tokenData.accessToken.take(20)}..., expires=${tokenData.getRemainingLifetimeMinutes()}min")
+                    true
+                } else {
+                    val error = calendarAuthResult.exceptionOrNull()
+                    when (error) {
+                        is TokenException.PendingAuthorization -> {
+                            Logger.business(LogTags.AUTH, "⏳ MODERN-TOKEN: Calendar authorization pending - ${error.message}")
+                            // Pending state means permission dialog was launched
+                            // Return false for now - callback will handle success
+                            false
+                        }
+                        else -> {
+                            Logger.e(LogTags.AUTH, "❌ MODERN-TOKEN: Calendar authorization failed", error)
+                            throw Exception("Calendar authorization failed: ${error?.message}")
+                        }
                     }
                 }
             } ?: run {
-                Logger.e(LogTags.AUTH, "❌ CRITICAL: ModernOAuth2TokenManager not available - token system broken!")
+                Logger.e(LogTags.AUTH, "❌ CRITICAL: OAuth2TokenManager not available - token system broken!")
                 throw Exception("Calendar authorization system not available - dependency injection issue")
             }
         }
@@ -104,32 +113,34 @@ class AuthUseCase(
         onResult: (Boolean) -> Unit
     ): Result<Unit> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("AuthUseCase.requestCalendarAuthorizationWithActivity") {
-            modernOAuth2TokenManager?.let { tokenManager ->
+            oauth2TokenManager?.let { tokenManager ->
                 Logger.business(LogTags.AUTH, "🔐 FIXED-TOKEN: Requesting Calendar authorization with activity context")
                 
-                val authResult = tokenManager.authorizeCalendarAccess(
+                val authResult = tokenManager.authorize(
                     userEmail,
                     activity,
                     onResult
                 )
                 
-                when (authResult) {
-                    is AuthResult.Success -> {
-                        Logger.business(LogTags.AUTH, "✅ FIXED-TOKEN: Calendar authorization successful")
-                        onResult(true)
-                    }
-                    is AuthResult.Pending -> {
-                        Logger.business(LogTags.AUTH, "⏳ FIXED-TOKEN: Calendar authorization pending user permission")
-                        // Callback will be triggered by onActivityResult
-                    }
-                    is AuthResult.Failure -> {
-                        Logger.e(LogTags.AUTH, "❌ FIXED-TOKEN: Calendar authorization failed: ${authResult.error}")
-                        onResult(false)
-                        throw Exception(authResult.error)
+                if (authResult.isSuccess) {
+                    Logger.business(LogTags.AUTH, "✅ FIXED-TOKEN: Calendar authorization successful")
+                    onResult(true)
+                } else {
+                    val error = authResult.exceptionOrNull()
+                    when (error) {
+                        is TokenException.PendingAuthorization -> {
+                            Logger.business(LogTags.AUTH, "⏳ FIXED-TOKEN: Calendar authorization pending user permission")
+                            // Callback will be triggered by onActivityResult
+                        }
+                        else -> {
+                            Logger.e(LogTags.AUTH, "❌ FIXED-TOKEN: Calendar authorization failed", error)
+                            onResult(false)
+                            throw Exception(error?.message ?: "Authorization failed")
+                        }
                     }
                 }
             } ?: run {
-                Logger.e(LogTags.AUTH, "❌ CRITICAL: ModernOAuth2TokenManager not available")
+                Logger.e(LogTags.AUTH, "❌ CRITICAL: OAuth2TokenManager not available")
                 onResult(false)
                 throw Exception("Calendar authorization system not available")
             }
@@ -143,7 +154,10 @@ class AuthUseCase(
      */
     override suspend fun hasCalendarAuthorization(): Result<Boolean> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("AuthUseCase.hasCalendarAuthorization") {
-            modernOAuth2TokenManager?.hasCalendarAuthorization() ?: false
+            oauth2TokenManager?.let { tokenManager ->
+                val tokenResult = tokenManager.getValidToken()
+                tokenResult.isSuccess
+            } ?: false
         }
     }
     

@@ -307,7 +307,8 @@ dependencies {
     implementation(libs.retrofit.converter.gson)
 
     // Security
-    implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.security.crypto)  // ⚠️ DEPRECATED - wird nach Migration entfernt
+    implementation(libs.tink.android)  // ✅ NEU - Modern Crypto Library
 
     // Logging
     implementation(libs.timber)

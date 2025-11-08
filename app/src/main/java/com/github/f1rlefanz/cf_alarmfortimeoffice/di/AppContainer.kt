@@ -45,6 +45,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.DataStoreTokenRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.strategy.TokenRefreshStrategy
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.migration.TokenDataMigration
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineName
 
 /**
  * Dependency Container für Clean Architecture mit Interface-basierter DI
@@ -60,11 +69,57 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRul
 class AppContainer(private val context: Context) {
     
     // ==============================
+    // APPLICATION-WIDE COROUTINE SCOPE
+    // ==============================
+    private val applicationScope = CoroutineScope(
+        SupervisorJob() + 
+        Dispatchers.Default + 
+        CoroutineName("AppContainer")
+    )
+    
+    // ==============================
     // DATASTORE CONFIGURATION
     // ==============================
     private val Context.hueDataStore: DataStore<Preferences> by preferencesDataStore(name = "hue_settings")
     private val Context.mainDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
+    // ==============================
+    // ✅ NEUE TOKEN-MANAGEMENT KOMPONENTEN (2025 Modernisierung)
+    // ==============================
+    
+    // ✅ NEU: DataStore Token Repository
+    val tokenRepository: TokenRepository by lazy {
+        DataStoreTokenRepository(context)
+    }
+    
+    // ✅ NEU: Simplified OAuth2 Manager
+    val oauth2TokenManager: OAuth2TokenManager by lazy {
+        OAuth2TokenManager(
+            context = context,
+            tokenRepository = tokenRepository
+        )
+    }
+    
+    // ✅ NEU: Token Refresh Strategy
+    val tokenRefreshStrategy: TokenRefreshStrategy by lazy {
+        TokenRefreshStrategy(oauth2TokenManager)
+    }
+    
+    // ✅ NEU: Migration (One-Time)
+    val tokenMigration: TokenDataMigration by lazy {
+        TokenDataMigration(
+            context = context,
+            newRepository = tokenRepository
+        )
+    }
+    
+    // ==============================
+    // ⚠️ DEPRECATED - Phase 2 entfernen nach Testing
+    // ==============================
+    
+    // ⚠️ DEPRECATED: TokenStorageRepository - Use tokenRepository instead
+    // TODO: Remove in Phase 2 after successful migration testing
+    @Deprecated("Use tokenRepository instead", ReplaceWith("tokenRepository"), DeprecationLevel.WARNING)
     val tokenStorageRepository: TokenStorageRepository by lazy {
         TokenStorageRepository(context)
     }
@@ -74,7 +129,9 @@ class AppContainer(private val context: Context) {
         CredentialAuthManager(context)
     }
     
-    // MODERN OAUTH2: ModernOAuth2TokenManager for API authorization
+    // ⚠️ DEPRECATED: ModernOAuth2TokenManager - Use oauth2TokenManager instead
+    // TODO: Remove in Phase 2 after successful migration testing
+    @Deprecated("Use oauth2TokenManager instead", ReplaceWith("oauth2TokenManager"), DeprecationLevel.WARNING)
     val modernOAuth2TokenManager: ModernOAuth2TokenManager by lazy {
         ModernOAuth2TokenManager(
             context = context,
@@ -82,6 +139,9 @@ class AppContainer(private val context: Context) {
         )
     }
     
+    // ⚠️ DEPRECATED: TokenRefreshUseCase - Use tokenRefreshStrategy instead
+    // TODO: Remove in Phase 2 after successful migration testing
+    @Deprecated("Use tokenRefreshStrategy instead", ReplaceWith("tokenRefreshStrategy"), DeprecationLevel.WARNING)
     val tokenRefreshUseCase: TokenRefreshUseCase by lazy {
         TokenRefreshUseCase(
             modernOAuth2TokenManager = modernOAuth2TokenManager,
@@ -182,7 +242,7 @@ class AppContainer(private val context: Context) {
     val authUseCase: IAuthUseCase by lazy {
         AuthUseCase(
             authDataStoreRepository = authDataStoreRepository,
-            modernOAuth2TokenManager = modernOAuth2TokenManager
+            oauth2TokenManager = oauth2TokenManager  // ✅ MIGRATED: Verwendet neuen OAuth2TokenManager
         )
     }
 
@@ -190,7 +250,7 @@ class AppContainer(private val context: Context) {
         CalendarUseCase(
             calendarRepository = calendarRepository,
             authDataStoreRepository = authDataStoreRepository,
-            tokenRefreshUseCase = tokenRefreshUseCase
+            oauth2TokenManager = oauth2TokenManager  // ✅ MIGRATED: Verwendet neuen OAuth2TokenManager
         )
     }
     
@@ -263,29 +323,39 @@ class AppContainer(private val context: Context) {
         val results = mutableListOf<String>()
         
         try {
-            // Check if ModernOAuth2TokenManager is available
-            results.add("✅ ModernOAuth2TokenManager: Available")
+            // Check if OAuth2TokenManager is available
+            results.add("✅ OAuth2TokenManager: Available")
             
-            // Check TokenRefreshUseCase availability
-            results.add("✅ TokenRefreshUseCase: Available")
+            // Check TokenRefreshStrategy availability
+            results.add("✅ TokenRefreshStrategy: Available")
             
             // Check if CalendarUseCase has token refresh capability
             if (calendarUseCase is CalendarUseCase) {
-                results.add("✅ CalendarUseCase: OAuth2 integration enabled")
+                results.add("✅ CalendarUseCase: OAuth2TokenManager integration enabled")
             } else {
-                results.add("❌ CalendarUseCase: OAuth2 integration missing")
+                results.add("❌ CalendarUseCase: OAuth2TokenManager integration missing")
             }
             
             // Check AuthUseCase OAuth2 integration
             if (authUseCase is AuthUseCase) {
-                results.add("✅ AuthUseCase: ModernOAuth2TokenManager integrated")
+                results.add("✅ AuthUseCase: OAuth2TokenManager integrated")
             } else {
-                results.add("❌ AuthUseCase: ModernOAuth2TokenManager missing")
+                results.add("❌ AuthUseCase: OAuth2TokenManager missing")
             }
             
             // Check token storage
-            val authStatus = modernOAuth2TokenManager.getAuthorizationStatus()
-            results.add("📊 Current authorization status: $authStatus")
+            val tokenResult = oauth2TokenManager.getValidToken()
+            if (tokenResult.isSuccess) {
+                val tokenData = tokenResult.getOrThrow()
+                results.add("📊 Token status: Valid (${tokenData.getRemainingLifetimeMinutes()}min remaining)")
+            } else {
+                results.add("⚠️ Token status: Not available or expired")
+            }
+            
+            // Check deprecated components (should be removed later)
+            results.add("⚠️ DEPRECATED: ModernOAuth2TokenManager still present - should be removed in Phase 2")
+            results.add("⚠️ DEPRECATED: TokenRefreshUseCase still present - should be removed in Phase 2")
+            results.add("⚠️ DEPRECATED: TokenStorageRepository still present - should be removed in Phase 2")
             
         } catch (e: Exception) {
             results.add("❌ Diagnostic error: ${e.message}")

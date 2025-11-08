@@ -7,27 +7,43 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 /**
- * Data class representing OAuth2 token information with automatic expiration handling.
- * Follows immutable design pattern for thread safety.
+ * Enhanced Token Data Model with Token Rotation and Provider Support
+ * 
+ * Neue Features (Modernisierung 2025):
+ * - ✅ Explizites googleAccountEmail Feld (kein Workaround mehr)
+ * - ✅ Token Provider Enum (klar dokumentiert)
+ * - ✅ Token Rotation Support (Security)
+ * - ✅ Backward Compatible (Migration von alten Tokens)
  */
 @Serializable
 data class TokenData(
     val accessToken: String,
     val refreshToken: String? = null,
-    val expiresAt: Long, // Unix timestamp in milliseconds
+    val expiresAt: Long,
     val scope: String,
     val tokenType: String = "Bearer",
     val issuedAt: Long = System.currentTimeMillis(),
-    // 🔧 PHASE 1 FIX: Email redundancy for token refresh reliability
+    
+    // ✅ NEU: Explizite Felder statt Workarounds
+    val googleAccountEmail: String? = null,
+    val tokenProvider: TokenProvider = TokenProvider.GOOGLE_PLAY_SERVICES,
+    
+    // ✅ NEU: Token Rotation Support
+    val rotationId: String = UUID.randomUUID().toString(),
+    val previousRotationId: String? = null,
+    val rotationCount: Int = 0,
+    val lastRotationAt: Long = System.currentTimeMillis(),
+    
+    // ⚠️ DEPRECATED: Für Migration von alten Tokens
+    @Deprecated("Use googleAccountEmail instead", ReplaceWith("googleAccountEmail"))
     val userEmail: String? = null
 ) {
     
     /**
      * Checks if token is expired or will expire within buffer time.
-     * @param bufferMinutes Buffer time before actual expiration (default: 15 minutes)
-     * @return true if token should be refreshed
      */
     fun isExpiredOrExpiringSoon(bufferMinutes: Long = TOKEN_REFRESH_BUFFER_MINUTES): Boolean {
         val bufferMs = bufferMinutes * 60 * 1000
@@ -45,24 +61,25 @@ data class TokenData(
     
     /**
      * Checks if token is completely valid and not expiring soon.
-     * @return true if token can be used safely
      */
     fun isValid(): Boolean {
         val hasValidAccessToken = accessToken.isNotBlank()
         val notExpiring = !isExpiredOrExpiringSoon()
-        
         return hasValidAccessToken && notExpiring
     }
     
     /**
-     * Checks if refresh is possible (refresh token exists).
-     * @return true if token can be refreshed
+     * Checks if refresh is possible.
      */
-    fun canRefresh(): Boolean = !refreshToken.isNullOrBlank()
+    fun canRefresh(): Boolean {
+        return when (tokenProvider) {
+            TokenProvider.GOOGLE_PLAY_SERVICES -> !googleAccountEmail.isNullOrBlank()
+            TokenProvider.OAUTH2_STANDARD -> !refreshToken.isNullOrBlank()
+        }
+    }
     
     /**
      * Gets remaining lifetime in minutes.
-     * @return minutes until expiration, or 0 if already expired
      */
     fun getRemainingLifetimeMinutes(): Long {
         val remainingMs = expiresAt - System.currentTimeMillis()
@@ -70,24 +87,39 @@ data class TokenData(
     }
     
     /**
-     * Creates a copy with new access token (typically after refresh).
-     * Preserves refresh token, user email and updates expiration time.
+     * ✅ NEU: Creates rotated token with new access token
      */
+    fun rotate(newAccessToken: String, newExpiresAt: Long = System.currentTimeMillis() + 3600000): TokenData {
+        return copy(
+            accessToken = newAccessToken,
+            expiresAt = newExpiresAt,
+            rotationId = UUID.randomUUID().toString(),
+            previousRotationId = this.rotationId,
+            rotationCount = this.rotationCount + 1,
+            lastRotationAt = System.currentTimeMillis()
+        )
+    }
+    
+    /**
+     * ✅ NEU: Validates rotation chain for security
+     */
+    fun validateRotation(expectedPreviousId: String?): Boolean {
+        return previousRotationId == expectedPreviousId
+    }
+    
+    /**
+     * Creates a copy with new access token (backward compatible).
+     * @deprecated Use rotate() instead for security
+     */
+    @Deprecated("Use rotate() instead", ReplaceWith("rotate(newAccessToken, newExpiresAt)"))
     fun withRefreshedAccessToken(
         newAccessToken: String,
         newExpiresAt: Long,
         newScope: String? = null
-    ): TokenData = copy(
-        accessToken = newAccessToken,
-        expiresAt = newExpiresAt,
-        scope = newScope ?: scope,
-        issuedAt = System.currentTimeMillis()
-        // userEmail is preserved from original token
-    )
+    ): TokenData = rotate(newAccessToken, newExpiresAt).copy(scope = newScope ?: scope)
     
     /**
-     * Creates a sanitized version for logging (access token shortened).
-     * NEVER logs refresh token for security.
+     * Creates a sanitized version for logging.
      */
     fun toLogString(): String {
         val truncatedAccessToken = if (accessToken.length > 10) {
@@ -96,11 +128,13 @@ data class TokenData(
             "***"
         }
         
-        return "TokenData(accessToken=$truncatedAccessToken, " +
+        return "TokenData(" +
+                "accessToken=$truncatedAccessToken, " +
                 "hasRefreshToken=${!refreshToken.isNullOrBlank()}, " +
+                "provider=$tokenProvider, " +
                 "expiresAt=${formatTimestamp(expiresAt)}, " +
-                "scope=$scope, " +
-                "remainingMin=${getRemainingLifetimeMinutes()})"
+                "remainingMin=${getRemainingLifetimeMinutes()}, " +
+                "rotations=$rotationCount)"
     }
     
     private fun formatTimestamp(timestamp: Long): String {
@@ -111,7 +145,7 @@ data class TokenData(
             )
             dateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"))
         } catch (_: Exception) {
-            "Invalid timestamp: $timestamp"
+            "Invalid: $timestamp"
         }
     }
     
@@ -119,20 +153,15 @@ data class TokenData(
         const val TOKEN_REFRESH_BUFFER_MINUTES = 15L
         
         /**
-         * Creates TokenData from OAuth2 response parameters.
-         * @param accessToken The access token
-         * @param refreshToken The refresh token (optional)
-         * @param expiresInSeconds Token lifetime in seconds
-         * @param scope Token scope
-         * @param userEmail User email for token refresh (optional but recommended)
-         * @return TokenData instance
+         * Creates TokenData from OAuth2 response.
          */
         fun fromOAuthResponse(
             accessToken: String,
             refreshToken: String?,
             expiresInSeconds: Long,
             scope: String,
-            userEmail: String? = null
+            googleAccountEmail: String? = null,
+            tokenProvider: TokenProvider = TokenProvider.GOOGLE_PLAY_SERVICES
         ): TokenData {
             val expiresAt = System.currentTimeMillis() + (expiresInSeconds * 1000)
             
@@ -141,12 +170,13 @@ data class TokenData(
                 refreshToken = refreshToken,
                 expiresAt = expiresAt,
                 scope = scope,
-                userEmail = userEmail
+                googleAccountEmail = googleAccountEmail,
+                tokenProvider = tokenProvider
             )
         }
         
         /**
-         * Creates an empty/invalid token for initialization.
+         * Creates an empty/invalid token.
          */
         fun empty(): TokenData = TokenData(
             accessToken = "",
@@ -155,4 +185,27 @@ data class TokenData(
             scope = ""
         )
     }
+}
+
+/**
+ * ✅ NEU: Token Provider Enum
+ * 
+ * Dokumentiert klar welcher OAuth2-Flow verwendet wird
+ */
+@Serializable
+enum class TokenProvider {
+    /**
+     * Google Play Services Flow:
+     * - GoogleAuthUtil.clearToken() + getToken()
+     * - Kein separater Refresh Token
+     * - Benötigt googleAccountEmail
+     */
+    GOOGLE_PLAY_SERVICES,
+    
+    /**
+     * Standard OAuth2 Flow:
+     * - Verwendet Refresh Token
+     * - Standard-konform
+     */
+    OAUTH2_STANDARD
 }

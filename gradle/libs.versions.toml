@@ -27,6 +27,7 @@ materialIconsExtended = "1.7.8"
 kotlinxSerializationJson = "1.9.0"
 desugarJdkLibs = "2.1.5"
 securityCrypto = "1.1.0"
+tinkCrypto = "1.13.0"
 coroutines = "1.10.2"
 okhttp = "5.2.1"
 retrofit = "3.0.0"
@@ -88,6 +89,7 @@ material-icons-extended = { group = "androidx.compose.material", name = "materia
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tinkCrypto" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 # Android UI libraries

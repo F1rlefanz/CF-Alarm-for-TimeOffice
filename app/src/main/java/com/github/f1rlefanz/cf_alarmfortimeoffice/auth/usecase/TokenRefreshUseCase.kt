@@ -10,6 +10,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 /**
  * UseCase for automatic token refresh and validation.
  * 
+ * @Deprecated("Use TokenRefreshStrategy with OAuth2TokenManager instead", 
+ *             ReplaceWith("tokenRefreshStrategy", "com.github.f1rlefanz.cf_alarmfortimeoffice.auth.strategy.TokenRefreshStrategy"))
+ * 
+ * LEGACY: This class is deprecated and will be removed in Phase 2 of the OAuth2 modernization.
+ * Use TokenRefreshStrategy with OAuth2TokenManager for new implementations.
+ * 
  * MODERNIZED + OPTIMIZED: Uses ModernOAuth2TokenManager for 2024/2025 Google APIs approach.
  * - Thread-safe implementation with proper cancellation support
  * - Uses structured concurrency
@@ -18,6 +24,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
  * - Cancellation-aware for lifecycle safety
  * - PERFORMANCE: Smart caching to reduce redundant token validations
  */
+@Deprecated(
+    message = "Use TokenRefreshStrategy with OAuth2TokenManager instead",
+    replaceWith = ReplaceWith("tokenRefreshStrategy", "com.github.f1rlefanz.cf_alarmfortimeoffice.auth.strategy.TokenRefreshStrategy"),
+    level = DeprecationLevel.WARNING
+)
 class TokenRefreshUseCase(
     private val modernOAuth2TokenManager: ModernOAuth2TokenManager,
     private val tokenStorage: TokenStorageRepository

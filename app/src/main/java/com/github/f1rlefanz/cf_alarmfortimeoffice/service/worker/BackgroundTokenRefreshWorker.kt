@@ -5,7 +5,7 @@ import androidx.core.content.edit
 import androidx.work.*
 import androidx.work.ListenableWorker.Result as WorkerResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.CFAlarmApplication
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenRefreshUseCase
+// import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenRefreshUseCase // ✅ PHASE 4: Removed - using TokenRefreshStrategy
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -45,7 +45,6 @@ class BackgroundTokenRefreshWorker(
 
         // Scheduling constants
         private const val DEFAULT_REFRESH_INTERVAL_HOURS = 6L
-        private const val TOKEN_EXPIRY_BUFFER_MINUTES = 30L
 
         // 🔄 Smart Maintenance Chain Level 2 Configuration
         private const val MINIMUM_FUTURE_ALARMS_L2 = 5  // Higher threshold for scheduled checks
@@ -141,11 +140,13 @@ class BackgroundTokenRefreshWorker(
         (applicationContext as CFAlarmApplication).appContainer
     }
 
-    private val tokenRefreshUseCase: TokenRefreshUseCase by lazy {
-        TokenRefreshUseCase(
-            appContainer.modernOAuth2TokenManager,
-            appContainer.tokenStorageRepository
-        )
+    // ✅ PHASE 4: Use new Token Management components
+    private val tokenRefreshStrategy by lazy {
+        appContainer.tokenRefreshStrategy
+    }
+    
+    private val tokenRepository by lazy {
+        appContainer.tokenRepository
     }
 
     /**
@@ -181,13 +182,19 @@ class BackgroundTokenRefreshWorker(
      *
      * @return Result indicating health status with detailed error message
      */
-    private fun performTokenHealthCheck(): KotlinResult<String> {
+    private suspend fun performTokenHealthCheck(): KotlinResult<String> {
         return try {
             Logger.d(LogTags.TOKEN, "🔍 PHASE-1: Starting token health check")
 
             // Check 1: Verify token storage is accessible
             try {
-                appContainer.tokenStorageRepository.getCurrentToken()
+                // ✅ PHASE 4: Use new TokenRepository
+                val currentToken = tokenRepository.get()
+                if (currentToken != null) {
+                    Logger.d(LogTags.TOKEN, "✅ Token storage accessible - found token")
+                } else {
+                    Logger.d(LogTags.TOKEN, "⚠️ Token storage accessible but no token stored")
+                }
             } catch (e: Exception) {
                 Logger.e(LogTags.TOKEN, "❌ PHASE-1: Token storage not accessible", e)
                 return KotlinResult.failure(Exception("Token storage corrupted or inaccessible"))
@@ -209,12 +216,13 @@ class BackgroundTokenRefreshWorker(
             Logger.w(LogTags.TOKEN, "⚠️ PHASE-1 HEALTH: Email not in SharedPreferences, checking fallback sources")
 
             // Fallback: Check TokenData
-            val currentToken = appContainer.tokenStorageRepository.getCurrentToken()
-            if (currentToken?.userEmail?.isNotBlank() == true) {
-                Logger.business(LogTags.TOKEN, "✅ PHASE-1 HEALTH: Email available from TokenData: ${currentToken.userEmail}")
+            // ✅ PHASE 4: Use new TokenRepository
+            val currentToken = tokenRepository.get()
+            if (currentToken?.googleAccountEmail?.isNotBlank() == true) {
+                Logger.business(LogTags.TOKEN, "✅ PHASE-1 HEALTH: Email available from TokenData: ${currentToken.googleAccountEmail}")
                 // Cache back to SharedPreferences for future
                 prefs.edit {
-                    putString("current_user_email", currentToken.userEmail)
+                    putString("current_user_email", currentToken.googleAccountEmail)
                 }
                 return KotlinResult.success("Health check passed (recovered from TokenData)")
             }
@@ -670,12 +678,18 @@ class BackgroundTokenRefreshWorker(
      * Performs the actual token refresh with comprehensive error handling
      * Returns internal TokenRefreshResult for proper type handling
      * 
-     * 🔧 PHASE 1 ENHANCED: Now includes proactive health check before refresh attempt
+     * ✅ PHASE 4 MODERNIZED: Uses new TokenRefreshStrategy with:
+     * - Exponential Backoff + Jitter
+     * - CancellationException propagation
+     * - Token Rotation support
+     * - Improved error handling
+     * 
+     * 🔧 PHASE 1 ENHANCED: Includes proactive health check before refresh attempt
      * 🔧 STUFE 3 ENHANCED: Detects token revocation and triggers UI state update
      */
     private suspend fun performTokenRefresh(): TokenRefreshResult {
         return try {
-            Logger.d(LogTags.TOKEN, "🔍 Starting token validation and refresh")
+            Logger.d(LogTags.TOKEN, "🔍 Starting token validation and refresh (modernized)")
 
             val refreshStartTime = System.currentTimeMillis()
 
@@ -699,90 +713,48 @@ class BackgroundTokenRefreshWorker(
             
             Logger.business(LogTags.TOKEN, "✅ PHASE-1: Token health check passed - proceeding with refresh")
 
-            // Get current token status first
-            val tokenStatus = tokenRefreshUseCase.getTokenStatus()
-            Logger.d(LogTags.TOKEN, "📊 Current token status: $tokenStatus")
-
-            val kotlinResult: KotlinResult<String> = when (tokenStatus) {
-                is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenStatus.NoToken -> {
-                    Logger.w(LogTags.TOKEN, "❌ No token available - user needs to re-authenticate")
-                    
-                    // 🔧 STUFE 3: Trigger UI state update for no token
-                    markTokenAsInvalid("No token available")
-                    
-                    KotlinResult.failure(Exception("No authentication token available"))
-                }
-
-                is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenStatus.ExpiredNotRefreshable -> {
-                    Logger.w(
-                        LogTags.TOKEN,
-                        "❌ Token expired and not refreshable - user re-auth required"
-                    )
-                    
-                    // 🔧 STUFE 3: Trigger UI state update for expired token
-                    markTokenAsInvalid("Token expired and not refreshable")
-                    
-                    KotlinResult.failure(Exception("Token expired - re-authentication required"))
-                }
-
-                is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenStatus.Valid -> {
-                    if (tokenStatus.remainingMinutes < TOKEN_EXPIRY_BUFFER_MINUTES) {
-                        Logger.d(
-                            LogTags.TOKEN,
-                            "⏰ Token expiring soon (${tokenStatus.remainingMinutes}min) - refreshing"
-                        )
-                        tokenRefreshUseCase.forceRefresh()
-                    } else {
-                        Logger.d(
-                            LogTags.TOKEN,
-                            "✅ Token still valid (${tokenStatus.remainingMinutes}min remaining)"
-                        )
-                        tokenRefreshUseCase.ensureValidToken()
-                    }
-                }
-
-                is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenStatus.ExpiredButRefreshable -> {
-                    Logger.d(LogTags.TOKEN, "🔄 Token expired but refreshable - attempting refresh")
-                    val refreshResult =
-                        tokenRefreshUseCase.refreshIfExpiringSoon(0) // Force refresh
-                    if (refreshResult.isSuccess) {
-                        tokenRefreshUseCase.ensureValidToken()
-                    } else {
-                        // 🔧 STUFE 3: Check if refresh failed due to revocation
-                        val refreshError = refreshResult.exceptionOrNull()
-                        if (isTokenRevocationError(refreshError)) {
-                            Logger.e(LogTags.TOKEN, "🔴 STUFE-3: Token refresh failed - token revoked", refreshError)
-                            markTokenAsInvalid("Token was revoked")
-                            sendReAuthNotification("Your Calendar authorization was revoked by Google")
-                        }
-                        
-                        refreshResult.map { "Token refreshed successfully" }
-                    }
-                }
-
-                is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenStatus.Error -> {
-                    Logger.e(LogTags.TOKEN, "❌ Token status error", tokenStatus.exception)
-                    
-                    // 🔧 STUFE 3: Check if error indicates token revocation
-                    if (isTokenRevocationError(tokenStatus.exception)) {
-                        Logger.e(LogTags.TOKEN, "🔴 STUFE-3: Token status error due to revocation")
-                        markTokenAsInvalid("Token error - possibly revoked")
-                        sendReAuthNotification("Calendar access needs to be re-authorized")
-                    }
-                    
-                    // Try to get a valid token anyway
-                    tokenRefreshUseCase.ensureValidToken()
-                }
+            // ✅ PHASE 4: Use new TokenRepository to get current token
+            val currentToken = tokenRepository.get()
+            
+            if (currentToken == null) {
+                Logger.w(LogTags.TOKEN, "❌ No token available - user needs to re-authenticate")
+                markTokenAsInvalid("No token available")
+                return TokenRefreshResult.Failure(
+                    error = Exception("No authentication token available"),
+                    isRetryable = false,
+                    needsReauth = true
+                )
             }
+
+            // Check if token is still valid
+            if (currentToken.isValid()) {
+                Logger.d(LogTags.TOKEN, "✅ Token still valid (${currentToken.getRemainingLifetimeMinutes()}min remaining)")
+                val refreshDuration = System.currentTimeMillis() - refreshStartTime
+                return TokenRefreshResult.Success(refreshDuration)
+            }
+
+            // Check if token can be refreshed
+            if (!currentToken.canRefresh()) {
+                Logger.w(LogTags.TOKEN, "❌ Token expired and not refreshable - user re-auth required")
+                markTokenAsInvalid("Token expired and not refreshable")
+                return TokenRefreshResult.Failure(
+                    error = Exception("Token expired - re-authentication required"),
+                    isRetryable = false,
+                    needsReauth = true
+                )
+            }
+
+            // ✅ PHASE 4: Use new TokenRefreshStrategy with smart retry logic
+            Logger.d(LogTags.TOKEN, "🔄 Token expired but refreshable - attempting refresh with retry strategy")
+            val refreshResult = tokenRefreshStrategy.refreshWithRetry(currentToken)
 
             val refreshDuration = System.currentTimeMillis() - refreshStartTime
 
-            // Convert Kotlin Result to internal TokenRefreshResult
-            if (kotlinResult.isSuccess) {
+            if (refreshResult.isSuccess) {
+                Logger.business(LogTags.TOKEN, "✅ Token refresh successful (${refreshDuration}ms)")
                 TokenRefreshResult.Success(refreshDuration)
             } else {
-                val error =
-                    kotlinResult.exceptionOrNull() ?: Exception("Unknown token refresh error")
+                val error = refreshResult.exceptionOrNull() ?: Exception("Unknown token refresh error")
                 
                 // 🔧 STUFE 3: Detect if this is a revocation error
                 val needsReauth = isTokenRevocationError(error)

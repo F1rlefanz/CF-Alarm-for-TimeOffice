@@ -233,7 +233,7 @@ class ModernOAuth2TokenManager(
                 refreshToken = "REFRESH_VIA_REAUTH:$userEmail", // 🔧 STUFE 1: Mark that refresh needs re-authentication
                 expiresInSeconds = 3600L, // 1 hour
                 scope = CalendarScopes.CALENDAR_READONLY,
-                userEmail = userEmail // 🔧 STUFE 1: Store email for reliable refresh
+                googleAccountEmail = userEmail // ✅ PHASE 4: Use googleAccountEmail instead of deprecated userEmail
             )
             
             Logger.d(LogTags.TOKEN, "🔐 STUFE-1-FIX: Token stored with email for refresh via GoogleAuthUtil.getToken()")
@@ -329,15 +329,17 @@ class ModernOAuth2TokenManager(
             
             Logger.d(LogTags.AUTH, "⚠️ PHASE-1: No email in SharedPreferences, trying TokenData")
             
-            // SOURCE 2: TokenData userEmail field
+            // SOURCE 2: TokenData googleAccountEmail field (or deprecated userEmail fallback)
             val currentToken = tokenStorage.getCurrentToken()
-            if (currentToken?.userEmail?.isNotBlank() == true) {
-                Logger.business(LogTags.AUTH, "✅ PHASE-1: Email from TokenData: ${currentToken.userEmail}")
+            val emailFromToken = currentToken?.googleAccountEmail ?: currentToken?.userEmail
+            
+            if (!emailFromToken.isNullOrBlank()) {
+                Logger.business(LogTags.AUTH, "✅ PHASE-1: Email from TokenData: $emailFromToken")
                 
                 // Cache back to SharedPreferences for next time
-                saveUserEmailToPreferences(currentToken.userEmail)
+                saveUserEmailToPreferences(emailFromToken)
                 
-                return currentToken.userEmail
+                return emailFromToken
             }
             
             Logger.d(LogTags.AUTH, "⚠️ PHASE-1: No email in TokenData, trying JWT extraction")
@@ -352,8 +354,8 @@ class ModernOAuth2TokenManager(
                     // Cache to both SharedPreferences and TokenData for future
                     saveUserEmailToPreferences(emailFromJWT)
                     
-                    // Update token with email
-                    val updatedToken = currentToken.copy(userEmail = emailFromJWT)
+                    // ✅ PHASE 4: Update token with email using googleAccountEmail
+                    val updatedToken = currentToken.copy(googleAccountEmail = emailFromJWT)
                     tokenStorage.saveToken(updatedToken)
                     
                     return emailFromJWT
@@ -519,7 +521,7 @@ class ModernOAuth2TokenManager(
                 refreshToken = "REFRESH_VIA_REAUTH:$userEmail", // 🔧 STUFE 1: Use marker for next refresh
                 expiresInSeconds = 3600L,
                 scope = CalendarScopes.CALENDAR_READONLY,
-                userEmail = userEmail
+                googleAccountEmail = userEmail // ✅ PHASE 4: Use googleAccountEmail instead of deprecated userEmail
             )
             
             val storeResult = tokenStorage.saveToken(newTokenData)

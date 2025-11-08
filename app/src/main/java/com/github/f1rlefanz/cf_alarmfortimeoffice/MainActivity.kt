@@ -28,7 +28,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.ModernOAuth2TokenManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 
 class MainActivity : ComponentActivity() {
 
@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
      * CRITICAL FIX: Handle Calendar authorization permission result
      * 
      * This method is called when the user responds to the Calendar permission dialog
-     * launched by ModernOAuth2TokenManager. It's essential for the permission flow to work.
+     * launched by OAuth2TokenManager. It's essential for the permission flow to work.
      */
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -207,10 +207,10 @@ class MainActivity : ComponentActivity() {
         Logger.d(LogTags.AUTH, "📨 ACTIVITY-RESULT: requestCode=$requestCode, resultCode=$resultCode")
         
         // Handle Calendar authorization result
-        if (requestCode == ModernOAuth2TokenManager.REQUEST_CODE_CALENDAR_AUTHORIZATION) {
+        if (requestCode == OAuth2TokenManager.REQUEST_CODE_CALENDAR_AUTHORIZATION) {
             lifecycleScope.launch {
                 try {
-                    val success = appContainer.modernOAuth2TokenManager.handlePermissionResult(
+                    val success = appContainer.oauth2TokenManager.handlePermissionResult(
                         requestCode,
                         resultCode
                     )

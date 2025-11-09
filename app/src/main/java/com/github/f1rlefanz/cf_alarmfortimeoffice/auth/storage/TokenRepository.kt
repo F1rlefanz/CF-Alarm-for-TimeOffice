@@ -39,10 +39,4 @@ interface TokenRepository {
      * @return Flow der bei Token-Änderungen emitted
      */
     fun observe(): Flow<TokenData?>
-    
-    /**
-     * Optional: Prüft ob Token existiert (schneller als get())
-     * @return true wenn Token vorhanden
-     */
-    suspend fun hasToken(): Boolean = get() != null
 }

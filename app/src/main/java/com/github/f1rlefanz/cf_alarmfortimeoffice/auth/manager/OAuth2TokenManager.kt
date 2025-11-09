@@ -245,7 +245,7 @@ class OAuth2TokenManager(
     /**
      * Refresh via standard OAuth2
      */
-    private suspend fun refreshViaOAuth2Standard(token: TokenData): String {
+    private fun refreshViaOAuth2Standard(token: TokenData): String {
         require(token.tokenProvider == TokenProvider.OAUTH2_STANDARD) {
             "Token provider must be OAUTH2_STANDARD"
         }
@@ -258,32 +258,9 @@ class OAuth2TokenManager(
     }
     
     /**
-     * Widerruft Token
-     */
-    suspend fun revoke(): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            Logger.i(LogTags.TOKEN, "Revoking token...")
-            
-            tokenRepository.clear()
-                .onSuccess {
-                    Logger.i(LogTags.TOKEN, "✅ Token revoked successfully")
-                }
-                .onFailure { e ->
-                    Logger.e(LogTags.TOKEN, "❌ Failed to revoke token", e)
-                }
-            
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Logger.e(LogTags.TOKEN, "Error revoking token", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
      * Handles activity result from permission dialog
      */
-    suspend fun handlePermissionResult(requestCode: Int, resultCode: Int): Boolean {
+    fun handlePermissionResult(requestCode: Int, resultCode: Int): Boolean {
         if (requestCode != REQUEST_CODE_CALENDAR_AUTHORIZATION) {
             return false
         }

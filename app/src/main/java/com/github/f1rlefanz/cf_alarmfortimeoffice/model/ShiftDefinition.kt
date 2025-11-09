@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 import java.time.LocalTime
+import java.util.Locale
 
 /**
  * IMMUTABLE Shift Definition Model
@@ -25,7 +26,7 @@ data class ShiftDefinition(
      * Get alarm time as formatted string for display
      */
     fun getAlarmTimeFormatted(): String {
-        return String.format("%02d:%02d", alarmTime.hour, alarmTime.minute)
+        return String.format(Locale.US, "%02d:%02d", alarmTime.hour, alarmTime.minute)
     }
     
     /**

@@ -124,17 +124,13 @@ class HueSmartScheduler private constructor() {
         val alarmTimes = mutableListOf<LocalDateTime>()
         
         try {
-            // Source 1: Android System Alarms (requires permission)
+            // Source 1: Android System Alarms (actual set alarms - requires permission)
             val systemAlarms = getSystemAlarmTimes()
             alarmTimes.addAll(systemAlarms)
             
-            // Source 2: Shift Pattern Predictions (from ShiftViewModel)
+            // Source 2: Shift-based predictions from ShiftViewModel (fallback)
             val shiftAlarms = getShiftBasedAlarmTimes()
             alarmTimes.addAll(shiftAlarms)
-            
-            // Source 3: Historical Pattern Analysis
-            val patternAlarms = getPatternBasedAlarmTimes()
-            alarmTimes.addAll(patternAlarms)
             
             // Filter and sort
             val now = LocalDateTime.now()
@@ -153,30 +149,26 @@ class HueSmartScheduler private constructor() {
     }
     
     /**
-     * DATA SOURCE: Android system alarms
+     * DATA SOURCE: Android system alarms (CRITICAL: should use actual set alarms)
+     * TODO: Integrate with Android AlarmManager to read actual scheduled alarms
+     * Currently returns empty - using shift-based fallback
      */
     private suspend fun getSystemAlarmTimes(): List<LocalDateTime> = withContext(Dispatchers.IO) {
-        // TODO: Implement Android AlarmManager integration
-        // Requires android.permission.WAKE_LOCK and possibly custom implementation
-        // For now, return empty list
         return@withContext emptyList()
     }
     
     /**
-     * DATA SOURCE: Shift pattern based alarm predictions
+     * DATA SOURCE: Shift-based alarm predictions (FALLBACK: uses hardcoded patterns)
+     * TODO: Integrate with ShiftViewModel to read user's actual shift configuration
+     * Currently uses hardcoded times as fallback
      */
     private suspend fun getShiftBasedAlarmTimes(): List<LocalDateTime> = withContext(Dispatchers.IO) {
         try {
-            // TODO: Integrate with ShiftViewModel to get next shift times
-            // This would read the user's shift configuration and calculate
-            // when the next early shifts are scheduled
-            
+            // Fallback: hardcoded shift patterns (temporary during development)
             val alarms = mutableListOf<LocalDateTime>()
             val now = LocalDateTime.now()
             
             // For now, implement basic shift pattern prediction
-            // This will be enhanced once ShiftViewModel integration is complete
-            
             // Common shift patterns: Early (5:00-6:30), Day (7:00-8:30), Late (14:00-15:30)
             val shiftStartTimes = listOf(
                 5 to 0,   // 5:00 AM
@@ -212,24 +204,6 @@ class HueSmartScheduler private constructor() {
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_BRIDGE, "Failed to get shift-based alarms", e)
-            return@withContext emptyList()
-        }
-    }
-    
-    /**
-     * DATA SOURCE: Historical usage pattern analysis
-     */
-    private suspend fun getPatternBasedAlarmTimes(): List<LocalDateTime> = withContext(Dispatchers.IO) {
-        try {
-            // TODO: Implement historical pattern analysis
-            // This would analyze when the user typically sets alarms
-            // and predict future alarm times based on patterns
-            
-            // For now, return empty list - to be implemented later
-            return@withContext emptyList()
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_BRIDGE, "Failed to get pattern-based alarms", e)
             return@withContext emptyList()
         }
     }

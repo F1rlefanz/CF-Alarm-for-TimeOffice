@@ -243,7 +243,7 @@ class OAuth2TokenManager(
     }
     
     /**
-     * Refresh via standard OAuth2
+     * Refresh via standard OAuth2 (not needed - using Google Play Services)
      */
     private fun refreshViaOAuth2Standard(token: TokenData): String {
         require(token.tokenProvider == TokenProvider.OAUTH2_STANDARD) {
@@ -253,8 +253,8 @@ class OAuth2TokenManager(
             "refreshToken is required for OAuth2 standard refresh"
         }
         
-        // TODO: Implement if needed
-        throw NotImplementedError("OAuth2 standard refresh not yet implemented")
+        // Not implemented - app uses Google Play Services OAuth2
+        throw NotImplementedError("OAuth2 standard refresh not needed - using Google Play Services")
     }
     
     /**

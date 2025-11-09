@@ -28,7 +28,12 @@
     Begründung: Wird ausschließlich für die lokale Kommunikation mit der 
     Philips Hue Bridge verwendet (selbst-signierte Zertifikate).
     Nicht für Internet-Kommunikation genutzt.
-    TODO: Später durch Certificate Pinning ersetzen
+
+    Certificate Pinning: MEHRFACH VERSUCHT, GESCHEITERT
+    Status: Auf unbestimmte Zeit verschoben
+    Grund: Nur lokale WLAN-Kommunikation mit Hue Bridge
+    Risiko: Akzeptabel - kein Internet-Traffic betroffen
+    Hinweis: Falls wieder Zeit investiert wird - vorherige Ansätze siehe Git History
     -->
     <issue id="CustomX509TrustManager">
         <ignore path="**/TrustAllCertificatesManager.kt" />

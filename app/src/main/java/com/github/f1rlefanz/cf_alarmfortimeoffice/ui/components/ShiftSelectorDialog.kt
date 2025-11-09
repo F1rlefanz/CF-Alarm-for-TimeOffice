@@ -25,7 +25,8 @@ fun ShiftSelectorDialog(
     availableShifts: List<ShiftDefinition>,
     selectedShift: ShiftDefinition?,
     onShiftSelected: (ShiftDefinition) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onNavigateToSettings: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -106,11 +107,11 @@ fun ShiftSelectorDialog(
             {
                 TextButton(
                     onClick = { 
-                        // TODO: Navigation zu Shift Configuration Screen
                         onDismiss()
+                        onNavigateToSettings?.invoke()
                     }
                 ) {
-                    Text("Einstellungen")
+                    Text("Zu Einstellungen")
                 }
             }
         } else null

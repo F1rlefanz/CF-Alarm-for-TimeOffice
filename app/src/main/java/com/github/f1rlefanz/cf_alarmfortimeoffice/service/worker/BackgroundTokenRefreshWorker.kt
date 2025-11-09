@@ -5,7 +5,7 @@ import androidx.core.content.edit
 import androidx.work.*
 import androidx.work.ListenableWorker.Result as WorkerResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.CFAlarmApplication
-// import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.usecase.TokenRefreshUseCase // ✅ PHASE 4: Removed - using TokenRefreshStrategy
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -824,7 +824,7 @@ class BackgroundTokenRefreshWorker(
                errorMessage.contains("authorization was revoked") ||
                errorMessage.contains("token has been expired or revoked") ||
                errorMessage.contains("token was revoked") ||
-               error is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.TokenException.AuthorizationExpired
+               error is TokenException.AuthorizationExpired
     }
     
     /**

@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.app.Application
+import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
@@ -82,37 +83,7 @@ class CFAlarmApplication : Application() {
                 } catch (e: Exception) {
                     Logger.e(LogTags.HUE_BRIDGE, "❌ STARTUP: Failed to initialize Hue Bridge connection manager", e)
                 }
-                
-                // ✅ PHASE 4: TOKEN MIGRATION - One-Time Migration from EncryptedSharedPreferences to DataStore
-                Logger.business(LogTags.TOKEN, "🔄 STARTUP: Checking for token migration...")
-                try {
-                    val migrationResult = appContainer.tokenMigration.migrateIfNeeded()
-                    
-                    when (migrationResult) {
-                        is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.migration.MigrationResult.Success -> {
-                            Logger.business(LogTags.TOKEN, "✅ MIGRATION SUCCESS: Token migrated to DataStore")
-                            Logger.i(LogTags.TOKEN, "Token details: ${migrationResult.migratedToken.toLogString()}")
-                        }
-                        is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.migration.MigrationResult.Failed -> {
-                            Logger.e(LogTags.TOKEN, "❌ MIGRATION FAILED: ${migrationResult.reason}")
-                            // Migration failure is non-critical - user can re-authorize
-                        }
-                        is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.migration.MigrationResult.NoDataToMigrate -> {
-                            Logger.d(LogTags.TOKEN, "ℹ️ MIGRATION: No old token data found (fresh install or already migrated)")
-                        }
-                        is com.github.f1rlefanz.cf_alarmfortimeoffice.auth.migration.MigrationResult.AlreadyMigrated -> {
-                            Logger.d(LogTags.TOKEN, "✅ MIGRATION: Already completed previously")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Logger.e(LogTags.TOKEN, "❌ MIGRATION: Unexpected error during migration", e)
-                    // Non-critical - continue with app initialization
-                }
-                
-                // Initialize critical components (legacy - will be removed after migration period)
-                Logger.d(LogTags.AUTH, "Initializing OAuth2 token storage (legacy)")
-                appContainer.initializeTokenStorage()
-                
+
                 // ✅ CRITICAL FIX: Initialize WorkManager for automatic alarm synchronization
                 Logger.business(LogTags.TOKEN, "🔄 STARTUP: Initializing background services (WorkManager)")
                 try {

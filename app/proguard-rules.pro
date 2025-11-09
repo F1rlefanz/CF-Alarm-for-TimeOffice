@@ -229,9 +229,6 @@
     <init>(...);
 }
 
-# Security Crypto
--keep class androidx.security.crypto.** { *; }
-
 # ==============================
 # APPLICATION SPECIFIC RULES
 # ==============================

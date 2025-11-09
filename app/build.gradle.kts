@@ -95,22 +95,7 @@ android {
 
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
 
-        // ==============================
-        // 🛠️ CRITICAL FIX: ASHMEM PINNING DEPRECATED SOLUTION
-        // ==============================
-        // FIX for "Pinning is deprecated since Android Q" warning
-        // Disable problematic ashmem features for Android Q+ compatibility
-        ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
-        }
 
-        // Additional fixes for ashmem compatibility
-        packaging {
-            jniLibs {
-                // CRITICAL FIX: Prevent ashmem-related library conflicts
-                useLegacyPackaging = false
-            }
-        }
     }
 
     buildTypes {
@@ -226,17 +211,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/INDEX.LIST"
             excludes += "/META-INF/DEPENDENCIES"
-        }
-
-        // ==============================
-        // 🛠️ CRITICAL FIX: ASHMEM PINNING MEMORY MANAGEMENT
-        // ==============================
-        // Additional configuration to prevent ashmem pinning warnings
-        jniLibs {
-            useLegacyPackaging = false
-            // Exclude problematic native libraries that use deprecated ashmem
-            excludes += "**/libashmem.so"
-            excludes += "**/libpinning.so"
         }
     }
 

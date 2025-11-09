@@ -37,7 +37,6 @@ data class AuthState(
     // ENHANCED API: Neue computed properties für bessere Business Logic
     val isFullyAuthenticated: Boolean get() = userAuth.isFullyAuthenticated
     val isOperational: Boolean get() = calendarOps.isOperational
-    val hasPermissionIssues: Boolean get() = !permissions.isPermissionGranted
     val canProceedToCalendarSelection: Boolean get() = 
         userAuth.isAuthenticated && permissions.isPermissionGranted
     val isReadyForAlarms: Boolean get() = 

@@ -107,17 +107,7 @@ data class TokenData(
         return previousRotationId == expectedPreviousId
     }
     
-    /**
-     * Creates a copy with new access token (backward compatible).
-     * @deprecated Use rotate() instead for security
-     */
-    @Deprecated("Use rotate() instead", ReplaceWith("rotate(newAccessToken, newExpiresAt)"))
-    fun withRefreshedAccessToken(
-        newAccessToken: String,
-        newExpiresAt: Long,
-        newScope: String? = null
-    ): TokenData = rotate(newAccessToken, newExpiresAt).copy(scope = newScope ?: scope)
-    
+
     /**
      * Creates a sanitized version for logging.
      */

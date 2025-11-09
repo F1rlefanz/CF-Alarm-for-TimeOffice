@@ -172,10 +172,7 @@ fun MainScreen(
                     onShowCalendarSelection = { navigationViewModel.navigateToCalendarSelection(mainContentState.selectedTab) },
                     onShowEventList = { navigationViewModel.navigateToEventList(mainContentState.selectedTab) },
                     onShowHueRuleConfig = { navigationViewModel.navigateToHueRuleConfig() },
-                    onShowHueSettings = { navigationViewModel.navigateToHueSettings() },
-                    onTestHueConnection = { 
-                        // Test wird direkt in HueTabContent gemacht
-                    }
+                    onShowHueSettings = { navigationViewModel.navigateToHueSettings() }
                 )
             }
         }

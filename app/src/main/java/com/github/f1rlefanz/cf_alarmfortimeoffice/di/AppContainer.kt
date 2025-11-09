@@ -57,7 +57,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.strategy.TokenRefreshStra
  * ✓ CredentialAuthManager für moderne Benutzer-Authentifizierung
  * ✓ Clean Architecture mit Interface-basierten Repositories
  * ✓ HUE Integration mit vollständigem Domain Layer
- * ✓ Phase 2 Cleanup abgeschlossen - Alle deprecated Components entfernt
  */
 class AppContainer(private val context: Context) {
 

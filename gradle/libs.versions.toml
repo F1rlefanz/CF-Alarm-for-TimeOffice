@@ -13,7 +13,7 @@ junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.9.4"
 activityCompose = "1.11.0"
-composeBom = "2025.10.01"
+composeBom = "2025.11.00"
 playServicesAuth = "21.4.0"
 playServicesBase = "18.9.0"
 credentials = "1.5.0"
@@ -26,10 +26,9 @@ googleAuthLibraryCredentials = "1.40.0"
 materialIconsExtended = "1.7.8"
 kotlinxSerializationJson = "1.9.0"
 desugarJdkLibs = "2.1.5"
-securityCrypto = "1.1.0"
-tinkCrypto = "1.13.0"
+tinkCrypto = "1.19.0"
 coroutines = "1.10.2"
-okhttp = "5.2.1"
+okhttp = "5.3.0"
 retrofit = "3.0.0"
 # Google API Client dependencies 
 googleApiClient = "2.8.1"
@@ -43,9 +42,6 @@ appcompat = "1.7.1"
 hilt = "2.57.2"
 
 # Firebase dependencies (2025 Standards)
-googleServices = "4.4.4"
-firebaseBom = "34.4.0"
-firebaseCrashlyticsGradle = "3.0.6"
 workTesting = "2.11.0"
 
 
@@ -88,7 +84,6 @@ google-http-client-gson = { group = "com.google.http-client", name = "google-htt
 material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIconsExtended" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
-androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tinkCrypto" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
@@ -108,11 +103,6 @@ hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.r
 # WorkManager für Background Services
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
 
-# Firebase libraries
-firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
-firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics" }
-
-
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -122,7 +112,3 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 
 # Dependency Injection
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
-
-# Firebase plugins
-google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
-firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebaseCrashlyticsGradle" }

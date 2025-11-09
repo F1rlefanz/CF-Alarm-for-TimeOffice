@@ -43,6 +43,7 @@ fun HomeTabContent(
     onCreateManualAlarm: () -> Unit, // NEU
     onDeleteManualAlarm: () -> Unit, // NEU
     onClearManualAlarmError: () -> Unit, // NEU
+    onNavigateToShiftConfig: () -> Unit, // NEU
     onShowEventList: (() -> Unit)? = null // LAZY LOADING: Navigation to event details
 ) {
     val daysAhead = shiftState.currentShiftConfig?.daysAhead ?: CalendarConstants.DEFAULT_DAYS_AHEAD
@@ -139,7 +140,8 @@ fun HomeTabContent(
             onSelectShift = onSelectManualAlarmShift,
             onCreate = onCreateManualAlarm,
             onDelete = onDeleteManualAlarm,
-            onClearError = onClearManualAlarmError
+            onClearError = onClearManualAlarmError,
+            onNavigateToSettings = onNavigateToShiftConfig
         )
 
         // Kalender Events Summary

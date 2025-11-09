@@ -33,7 +33,8 @@ fun ManualAlarmCard(
     onSelectShift: (ShiftDefinition) -> Unit,
     onCreate: () -> Unit,
     onDelete: () -> Unit,
-    onClearError: () -> Unit
+    onClearError: () -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
     var showShiftSelector by remember { mutableStateOf(false) }
@@ -276,8 +277,8 @@ fun ManualAlarmCard(
     if (showDatePicker) {
         DatePickerDialog(
             selectedDate = manualAlarmState.selectedDate,
-            onDateSelected = { date ->
-                onSelectDate(date)
+            onDateSelected = { 
+                onSelectDate(it)
                 showDatePicker = false
             },
             onDismiss = { showDatePicker = false }
@@ -289,11 +290,12 @@ fun ManualAlarmCard(
         ShiftSelectorDialog(
             availableShifts = manualAlarmState.availableShifts,
             selectedShift = manualAlarmState.selectedShift,
-            onShiftSelected = { shift ->
-                onSelectShift(shift)
+            onShiftSelected = { 
+                onSelectShift(it)
                 showShiftSelector = false
             },
-            onDismiss = { showShiftSelector = false }
+            onDismiss = { showShiftSelector = false },
+            onNavigateToSettings = onNavigateToSettings
         )
     }
 }

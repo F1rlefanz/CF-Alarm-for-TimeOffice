@@ -34,8 +34,7 @@ fun MainContentScreen(
     onShowCalendarSelection: () -> Unit,
     onShowEventList: () -> Unit,
     onShowHueRuleConfig: () -> Unit,
-    onShowHueSettings: () -> Unit,
-    onTestHueConnection: () -> Unit
+    onShowHueSettings: () -> Unit
 ) {
     val authState by authViewModel.uiState.collectAsState()
     val calendarState by calendarViewModel.uiState.collectAsState()
@@ -117,6 +116,7 @@ fun MainContentScreen(
                         onCreateManualAlarm = alarmViewModel::createManualAlarm, // NEU
                         onDeleteManualAlarm = alarmViewModel::deleteManualAlarm, // NEU
                         onClearManualAlarmError = alarmViewModel::clearManualAlarmError, // NEU
+                        onNavigateToShiftConfig = onShowShiftConfig, // NEU
                         onShowEventList = onShowEventList
                     )
                 }

@@ -46,14 +46,17 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.DataStoreTokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.strategy.TokenRefreshStrategy
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHelper
 
 /**
  * Dependency Container für Clean Architecture mit Interface-basierter DI
  *
  * MODERNIZED OAuth2 TOKEN MANAGEMENT (2025):
- * ✓ OAuth2TokenManager mit DataStore + Tink Crypto
+ * ✓ OAuth2TokenManager mit Tink-verschlüsseltem DataStore
  * ✓ TokenRefreshStrategy mit strukturiertem Coroutine Management
  * ✓ Token Rotation für erhöhte Sicherheit
+ * ✓ Tink AEAD Encryption (AES-256-GCM)
+ * ✓ Android Keystore-backed Master Key
  * ✓ CredentialAuthManager für moderne Benutzer-Authentifizierung
  * ✓ Clean Architecture mit Interface-basierten Repositories
  * ✓ HUE Integration mit vollständigem Domain Layer
@@ -67,10 +70,15 @@ class AppContainer(private val context: Context) {
     private val Context.mainDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
     // ==============================
-    // TOKEN-MANAGEMENT COMPONENTS
+    // TOKEN-MANAGEMENT COMPONENTS (ENCRYPTED)
     // ==============================
 
-    // DataStore Token Repository
+    // Tink Encryption Helper
+    val tinkEncryptionHelper: TinkEncryptionHelper by lazy {
+        TinkEncryptionHelper.getInstance(context)
+    }
+
+    // Encrypted DataStore Token Repository
     val tokenRepository: TokenRepository by lazy {
         DataStoreTokenRepository(context)
     }
@@ -268,6 +276,8 @@ class AppContainer(private val context: Context) {
             }
 
             results.add("✓ Phase 2 Cleanup: Complete - All deprecated code removed")
+            results.add("✓ Phase 3 Encryption: Tink AES-256-GCM active")
+            results.add(tinkEncryptionHelper.getDiagnostics())
 
         } catch (e: Exception) {
             results.add("✗ Error: ${e.message}")

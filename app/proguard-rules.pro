@@ -354,3 +354,54 @@
 
 # Enable R8 full mode optimizations in gradle
 # android.enableR8.fullMode=true
+
+# ==============================
+# TINK CRYPTO ENCRYPTION (AES-256-GCM)
+# ==============================
+
+# Keep Tink classes and methods
+-keep class com.google.crypto.tink.** { *; }
+-keep interface com.google.crypto.tink.** { *; }
+
+# Keep AEAD primitive
+-keep class * extends com.google.crypto.tink.Aead { *; }
+
+# Keep Tink config and registration
+-keep class * extends com.google.crypto.tink.config.TinkFips { *; }
+-keepclassmembers class com.google.crypto.tink.config.** {
+    public static *** register(...);
+}
+
+# Keep Android integration
+-keep class com.google.crypto.tink.integration.android.** { *; }
+-keep class * extends com.google.crypto.tink.integration.android.** { *; }
+
+# Keep key templates
+-keep class com.google.crypto.tink.KeyTemplate { *; }
+-keep class com.google.crypto.tink.KeyTemplates { *; }
+-keepclassmembers class com.google.crypto.tink.KeyTemplates {
+    public static *** get(...);
+}
+
+# Keep Protobuf classes used by Tink
+-keep class com.google.crypto.tink.proto.** { *; }
+-keep class com.google.protobuf.** { *; }
+-dontwarn com.google.protobuf.**
+
+# Suppress warnings from Tink
+-dontwarn com.google.crypto.tink.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+
+# ==============================
+# TOKEN ENCRYPTION SPECIFIC
+# ==============================
+
+# Keep custom encryption helper
+-keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHelper { *; }
+-keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory { *; }
+-keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionException { *; }
+
+# Keep DataStore serializers
+-keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory$* { *; }
+-keep class * extends androidx.datastore.core.Serializer { *; }

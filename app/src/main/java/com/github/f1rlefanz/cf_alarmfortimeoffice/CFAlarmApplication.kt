@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.app.Application
-import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
@@ -118,7 +117,10 @@ class CFAlarmApplication : Application() {
                     }
                 }
                 
-                Logger.i(LogTags.APP, "✅ App initialization completed successfully (with WorkManager)")
+                // ✅ Token encryption active (no migration needed - never released unencrypted version)
+                Logger.d(LogTags.TOKEN, "🔐 STARTUP: Tink encryption active for OAuth2 tokens")
+                
+                Logger.i(LogTags.APP, "✅ App initialization completed successfully (with WorkManager + Encryption)")
             } catch (e: Exception) {
                 Logger.e(LogTags.APP, "Error during app initialization", e)
             }

@@ -5,8 +5,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 
 /**
- * DataStore-basierte Token-Repository Implementation
+ * DataStore-basierte Token-Repository Implementation mit Tink-Verschlüsselung
  * 
  * Vorteile gegenüber EncryptedSharedPreferences:
  * - ✅ Async by design (keine Race Conditions)
@@ -24,8 +24,14 @@ import kotlinx.serialization.json.Json
  * - ✅ Native Flow-Support
  * - ✅ Bessere Performance
  * - ✅ Keine Verification-Race-Conditions
+ * - ✅ Tink AEAD-Verschlüsselung (AES-256-GCM)
+ * - ✅ Android Keystore-backed Master Key
  * 
- * Migration: TokenDataMigration handled die One-Time-Migration
+ * Security:
+ * - Verschlüsselung: AES-256-GCM via Tink Crypto
+ * - Master Key: Android Keystore (Hardware-backed wenn verfügbar)
+ * - Authentifizierung: GCM authentication tag
+ * - Tampering Detection: Automatisch durch AEAD
  */
 class DataStoreTokenRepository(
     private val context: Context
@@ -40,16 +46,17 @@ class DataStoreTokenRepository(
         encodeDefaults = true
     }
     
-    // DataStore Extension (wird pro Context nur einmal erstellt)
-    private val Context.tokenDataStore: DataStore<Preferences> by preferencesDataStore(
-        name = "token_data_v2"
-        // Note: Tink Encryption wird später via EncryptedPreferencesSerializer hinzugefügt
-        // Für jetzt: Unencrypted DataStore (Migration-Phase)
-    )
+    // ✅ VERSCHLÜSSELTER DataStore mit Tink Crypto (Lazy initialization)
+    private val tokenDataStore: DataStore<Preferences> by lazy {
+        EncryptedDataStoreFactory.create(
+            context = context,
+            name = "token_data_v2_encrypted"
+        )
+    }
     
     override suspend fun get(): TokenData? {
         return try {
-            context.tokenDataStore.data
+            tokenDataStore.data
                 .map { preferences ->
                     preferences[TOKEN_KEY]?.let { tokenJson ->
                         json.decodeFromString<TokenData>(tokenJson)
@@ -64,11 +71,11 @@ class DataStoreTokenRepository(
     
     override suspend fun save(token: TokenData): Result<Unit> {
         return try {
-            context.tokenDataStore.edit { preferences ->
+            tokenDataStore.edit { preferences ->
                 val tokenJson = json.encodeToString(TokenData.serializer(), token)
                 preferences[TOKEN_KEY] = tokenJson
             }
-            Logger.d(LogTags.TOKEN, "✅ Token saved to DataStore: ${token.toLogString()}")
+            Logger.d(LogTags.TOKEN, "🔐 Token encrypted and saved to DataStore: ${token.toLogString()}")
             Result.success(Unit)
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Error saving token to DataStore", e)
@@ -78,7 +85,7 @@ class DataStoreTokenRepository(
     
     override suspend fun clear(): Result<Unit> {
         return try {
-            context.tokenDataStore.edit { preferences ->
+            tokenDataStore.edit { preferences ->
                 preferences.remove(TOKEN_KEY)
             }
             Logger.d(LogTags.TOKEN, "✅ Token cleared from DataStore")
@@ -90,7 +97,7 @@ class DataStoreTokenRepository(
     }
     
     override fun observe(): Flow<TokenData?> {
-        return context.tokenDataStore.data
+        return tokenDataStore.data
             .map { preferences ->
                 preferences[TOKEN_KEY]?.let { tokenJson ->
                     try {

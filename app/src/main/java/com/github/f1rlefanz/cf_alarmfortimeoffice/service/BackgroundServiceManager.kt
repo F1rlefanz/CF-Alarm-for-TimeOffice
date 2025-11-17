@@ -3,12 +3,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 import android.content.Context
 import android.os.Build
 import androidx.core.content.edit
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,66 +36,77 @@ import javax.inject.Singleton
  */
 @Singleton
 class BackgroundServiceManager @Inject constructor(
-    @param:ApplicationContext private val context: Context,
-    private val shiftUseCase: IShiftUseCase
+    @param:ApplicationContext private val context: Context
 ) {
 
     private val preferences =
         context.getSharedPreferences("background_services", Context.MODE_PRIVATE)
 
     /**
-     * Initializes background services with configurable sync interval from ShiftConfig
+     * Initializes background services - PHASE 1 MIGRATION
+     * BackgroundTokenRefreshWorker removed, replaced by AlarmMaintenanceService
      */
     fun initializeBackgroundServices() {
         Logger.business(
             LogTags.TOKEN,
-            "🚀 Initializing background services (Memory Leak Fixed v2.1)"
+            "🚀 Initializing background services (Phase 1 Migration - Worker removed)"
         )
 
         try {
-            // Load sync interval from ShiftConfig
-            val syncIntervalHours = runBlocking {
-                try {
-                    val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-                    val interval = shiftConfig?.syncIntervalHours ?: 6
-                    Logger.business(LogTags.TOKEN, "📊 Loaded sync interval from config: ${interval}h")
-                    interval.toLong()
-                } catch (e: Exception) {
-                    Logger.w(LogTags.TOKEN, "⚠️ Failed to load sync interval from config, using default 6h", e)
-                    6L // Default to 6 hours
-                }
-            }
-            
-            // Start token refresh service with configured interval
-            BackgroundTokenRefreshWorker.scheduleTokenRefresh(context, syncIntervalHours)
-
             // Mark services as started
             preferences.edit {
                 putLong("services_started_at", System.currentTimeMillis())
                 putString("device_info", "${Build.MANUFACTURER} ${Build.MODEL}")
-                putString("version", "v2.1-memory-leak-fixed")
-                putLong("sync_interval_hours", syncIntervalHours)
+                putString("version", "Phase1-ExactAlarm")
             }
 
             Logger.business(
                 LogTags.TOKEN,
-                "✅ Background services initialized successfully - Sync interval: ${syncIntervalHours}h"
+                "✅ Background services initialized (AlarmMaintenanceService via AuthViewModel)"
             )
 
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Failed to initialize background services", e)
         }
     }
-
+    
     /**
-     * Triggers urgent token refresh
+     * Initializes AlarmMaintenanceService with first maintenance run
+     * Called after successful login/authorization
      */
-    fun triggerUrgentTokenRefresh() {
+    fun initializeMaintenanceService() {
+        Logger.business(LogTags.MAINTENANCE, "🚀 Initializing AlarmMaintenanceService")
+        
         try {
-            BackgroundTokenRefreshWorker.scheduleUrgentTokenRefresh(context)
-            Logger.business(LogTags.TOKEN, "⚡ Urgent token refresh triggered")
+            // Start service which will schedule itself
+            AlarmMaintenanceService.start(context)
+            
+            Logger.business(LogTags.MAINTENANCE, "✅ AlarmMaintenanceService initialized")
         } catch (e: Exception) {
-            Logger.e(LogTags.TOKEN, "❌ Failed to trigger urgent token refresh", e)
+            Logger.e(LogTags.MAINTENANCE, "❌ Failed to initialize maintenance service", e)
+        }
+    }
+    
+    /**
+     * PHASE 1 MIGRATION: Schedules initial AlarmMaintenanceService after login
+     * This replaces the old BackgroundTokenRefreshWorker
+     */
+    fun scheduleInitialAlarmMaintenance() {
+        Logger.business(LogTags.MAINTENANCE, "📅 INITIAL ALARM: Scheduling first maintenance run")
+        
+        try {
+            // Schedule the next maintenance run
+            AlarmMaintenanceService.scheduleNext(context)
+            
+            // Store initial scheduling info
+            preferences.edit {
+                putLong("initial_alarm_scheduled", System.currentTimeMillis())
+                putBoolean("alarm_maintenance_enabled", true)
+            }
+            
+            Logger.business(LogTags.MAINTENANCE, "✅ INITIAL ALARM: First maintenance run scheduled")
+        } catch (e: Exception) {
+            Logger.e(LogTags.MAINTENANCE, "❌ INITIAL ALARM: Failed to schedule maintenance", e)
         }
     }
 
@@ -113,9 +121,6 @@ class BackgroundServiceManager @Inject constructor(
             "ID: $alarmId, Reason: $failureReason"
         )
 
-        // Trigger urgent token refresh in case it was an auth issue
-        triggerUrgentTokenRefresh()
-
         // Log failure for tracking
         preferences.edit {
             putLong("last_alarm_failure", System.currentTimeMillis())
@@ -124,14 +129,13 @@ class BackgroundServiceManager @Inject constructor(
     }
 
     /**
-     * Stops all background services
+     * Stops all background services - PHASE 1 MIGRATION
+     * AlarmMaintenanceService stops automatically, no manual cancellation needed
      */
     @Suppress("unused") // Public API - used for cleanup on logout or app reset
     fun stopAllBackgroundServices() {
         try {
-            BackgroundTokenRefreshWorker.cancelTokenRefresh(context)
-
-            Logger.business(LogTags.TOKEN, "🛑 All background services stopped")
+            Logger.business(LogTags.TOKEN, "🛑 Background services cleanup (Phase 1)")
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Error stopping background services", e)
         }

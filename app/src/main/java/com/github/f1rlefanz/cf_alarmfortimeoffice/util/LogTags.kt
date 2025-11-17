@@ -61,6 +61,7 @@ object LogTags {
     const val APP = "CFAlarm.App"
     const val LIFECYCLE = "CFAlarm.Lifecycle"
     const val PERMISSIONS = "CFAlarm.Permissions"
+    const val BATTERY = "CFAlarm.Battery" // Phase 1: Battery optimization
 
     // === PERFORMANCE & DEBUG ===
     const val PERFORMANCE = "CFAlarm.Performance"
@@ -72,6 +73,7 @@ object LogTags {
 
     // === SMART MAINTENANCE CHAIN ===
     const val SMART_MAINTENANCE = "CFAlarm.SmartMaintenance"
+    const val MAINTENANCE = "CFAlarm.Maintenance" // Phase 1: AlarmMaintenanceService
     const val MAINTENANCE_L1 = "CFAlarm.Maintenance.L1"
     const val MAINTENANCE_L2 = "CFAlarm.Maintenance.L2"
     const val MAINTENANCE_L3 = "CFAlarm.Maintenance.L3"

@@ -1,9 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.app.Application
-import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,44 +15,47 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.SimpleFileTree
 import timber.log.Timber
 import java.io.File
+import javax.inject.Inject
 
 /**
- * UPDATED Application class with ROBUST Hue Bridge Connection Management
+ * MODERNIZED Application class with Hilt Dependency Injection
  * 
- * FIXES THE CRITICAL ALARM PROBLEM:
- * ❌ BEFORE: Hue Bridge connection lost during alarm execution
- * ✅ AFTER: Persistent Hue Bridge connection with automatic recovery
+ * ARCHITECTURE UPGRADE:
+ * ✅ Hilt DI for compile-time dependency resolution
+ * ✅ Automatic dependency injection (no manual AppContainer)
+ * ✅ Better testability and maintainability
  * 
- * NEW FEATURES:
+ * FEATURES:
  * 🔄 HueBridgeConnectionManager initialization at app startup
  * 💓 Automatic connection health monitoring and recovery
  * 🚀 Guaranteed Hue Bridge availability for alarm operations
+ * 📱 Background service initialization for alarm maintenance
+ * 🔐 OAuth2 token system with encryption
  * 
- * Core Features (unchanged):
+ * Core Features:
  * - Firebase Crashlytics initialization
- * - Dependency injection container
+ * - Hilt dependency injection
  * - OAuth2 token system initialization
  * - Clean resource management
- * 
- * Philosophy: If the app works (and it does!), keep it simple.
  */
+@HiltAndroidApp
 class CFAlarmApplication : Application() {
     
     // Application scope for long-running operations
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
-    // Dependency container
-    lateinit var appContainer: AppContainer
-        private set
+    // Hilt-injected dependencies
+    @Inject
+    lateinit var backgroundServiceManager: BackgroundServiceManager
+    
+    @Inject
+    lateinit var shiftUseCase: IShiftUseCase
     
     override fun onCreate() {
         super.onCreate()
         
         // Initialize ErrorHandler first
         ErrorHandler.initialize(this)
-        
-        // Initialize dependency container
-        appContainer = AppContainer(this)
         
         // ✅ WICHTIG: File-Logging IMMER aktivieren (DEBUG + RELEASE)
         val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
@@ -67,7 +72,7 @@ class CFAlarmApplication : Application() {
         // Initialize app components
         initializeApp()
         
-        Logger.i(LogTags.APP, "✅ CFAlarmApplication initialized - Simple and reliable!")
+        Logger.i(LogTags.APP, "✅ CFAlarmApplication initialized with Hilt DI - Modern and reliable!")
     }
     
     private fun initializeApp() {
@@ -86,7 +91,7 @@ class CFAlarmApplication : Application() {
                 // ✅ CRITICAL FIX: Initialize WorkManager for automatic alarm synchronization
                 Logger.business(LogTags.TOKEN, "🔄 STARTUP: Initializing background services (WorkManager)")
                 try {
-                    appContainer.backgroundServiceManager.initializeBackgroundServices()
+                    backgroundServiceManager.initializeBackgroundServices()
                     Logger.business(LogTags.TOKEN, "✅ STARTUP: WorkManager activated - automatic alarm sync every 6h")
                 } catch (e: Exception) {
                     Logger.e(LogTags.TOKEN, "❌ STARTUP: Failed to initialize WorkManager", e)
@@ -96,7 +101,6 @@ class CFAlarmApplication : Application() {
                 Logger.d(LogTags.SHIFT_CONFIG, "🔄 STARTUP: Initializing ShiftConfig early to prevent timing issues")
                 launch {
                     try {
-                        val shiftUseCase = appContainer.shiftUseCase
                         val currentConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
                         
                         if (currentConfig != null) {
@@ -120,7 +124,7 @@ class CFAlarmApplication : Application() {
                 // ✅ Token encryption active (no migration needed - never released unencrypted version)
                 Logger.d(LogTags.TOKEN, "🔐 STARTUP: Tink encryption active for OAuth2 tokens")
                 
-                Logger.i(LogTags.APP, "✅ App initialization completed successfully (with WorkManager + Encryption)")
+                Logger.i(LogTags.APP, "✅ App initialization completed successfully (with Hilt DI + WorkManager + Encryption)")
             } catch (e: Exception) {
                 Logger.e(LogTags.APP, "Error during app initialization", e)
             }

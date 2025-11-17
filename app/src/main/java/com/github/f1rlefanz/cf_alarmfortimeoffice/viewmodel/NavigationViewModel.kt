@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.asMainContent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.isMainContent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 
@@ -41,6 +44,17 @@ class NavigationViewModel : ViewModel() {
                 NavigationState.EventList(action.fromTab)
             }
             
+            // PHASE 1 MIGRATION: Battery and OEM navigation
+            is NavigationAction.NavigateToBatteryExemption -> {
+                Logger.d(LogTags.NAVIGATION, "Main -> Battery Exemption (from ${action.fromTab})")
+                NavigationState.BatteryExemption(action.fromTab)
+            }
+            
+            is NavigationAction.NavigateToOEMWarning -> {
+                Logger.d(LogTags.NAVIGATION, "Main -> OEM Warning (${action.oemType}, from ${action.fromTab})")
+                NavigationState.OEMWarning(action.oemType, action.fromTab)
+            }
+            
             is NavigationAction.NavigateToHueRuleConfig -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> Hue Rule Config (from ${action.fromTab}, rule: ${action.ruleId})")
                 NavigationState.HueRuleConfig(action.ruleId, action.fromTab)
@@ -56,6 +70,8 @@ class NavigationViewModel : ViewModel() {
                     is NavigationState.CalendarSelection -> currentState.returnToTab
                     is NavigationState.ShiftConfig -> currentState.returnToTab
                     is NavigationState.EventList -> currentState.returnToTab
+                    is NavigationState.BatteryExemption -> currentState.returnToTab
+                    is NavigationState.OEMWarning -> currentState.returnToTab
                     is NavigationState.HueRuleConfig -> currentState.returnToTab
                     is NavigationState.HueSettings -> currentState.returnToTab
                     else -> MainTab.HOME
@@ -94,6 +110,13 @@ class NavigationViewModel : ViewModel() {
     fun navigateToEventList(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToEventList(fromTab))
     
+    // PHASE 1 MIGRATION: Battery and OEM navigation convenience methods
+    fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 
+        handleNavigationAction(NavigationAction.NavigateToBatteryExemption(fromTab))
+    
+    fun navigateToOEMWarning(oemType: BatteryOptimizationHelper.OEMType, fromTab: MainTab = MainTab.HOME) = 
+        handleNavigationAction(NavigationAction.NavigateToOEMWarning(oemType, fromTab))
+    
     fun navigateToHueRuleConfig(ruleId: String? = null, fromTab: MainTab = MainTab.HUE) = 
         handleNavigationAction(NavigationAction.NavigateToHueRuleConfig(ruleId, fromTab))
     
@@ -110,10 +133,13 @@ class NavigationViewModel : ViewModel() {
         handleNavigationAction(NavigationAction.ChangeTab(tab))
     
     // Auto-navigation logic
-    fun handleAuthenticationSuccess(hasSelectedCalendars: Boolean) {
+    fun handleAuthenticationSuccess(hasSelectedCalendars: Boolean, hasBatteryExemption: Boolean) {
         if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
             navigateToCalendarSelection()
+        } else if (hasSelectedCalendars && !hasBatteryExemption && _navigationState.value.isMainContent()) {
+            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Calendars selected but no battery exemption")
+            navigateToBatteryExemption()
         }
     }
     

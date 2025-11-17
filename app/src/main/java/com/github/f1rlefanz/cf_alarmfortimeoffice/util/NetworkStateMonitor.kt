@@ -1,13 +1,10 @@
-@file:Suppress("DEPRECATION") // Legacy Android support: activeNetworkInfo deprecated but no alternative for API < 23
-
 package com.github.f1rlefanz.cf_alarmfortimeoffice.util
 
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.os.Build
+// PHASE 2 CLEANUP: NetworkRequest import removed (unused)
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -21,8 +18,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * ✅ Automatische Background-Sync bei Netzwerk-Wiederherstellung
  * ✅ Intelligente Offline-Erkennung
  * ✅ Battery-efficient monitoring
+ * 
+ * Note: minSdk is 26, so all modern network APIs are available
  */
-@Suppress("unused", "ConvertSecondaryConstructorToPrimary") // Used for future offline-support features
+@Suppress("unused") // Used for future offline-support features
 class NetworkStateMonitor(context: Context) {
     
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -51,15 +50,8 @@ class NetworkStateMonitor(context: Context) {
             }
         }
         
-        // Register network callback
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            connectivityManager.registerDefaultNetworkCallback(networkCallback)
-        } else {
-            val networkRequest = NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build()
-            connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
-        }
+        // Register network callback - registerDefaultNetworkCallback is available since API 24, we have 26
+        connectivityManager.registerDefaultNetworkCallback(networkCallback)
         
         // Send initial state
         trySend(isCurrentlyConnected())
@@ -71,19 +63,14 @@ class NetworkStateMonitor(context: Context) {
     
     /**
      * Get current network state synchronously
+     * Since minSdk is 26, we can use the modern API directly
      */
     fun isCurrentlyConnected(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val activeNetwork = connectivityManager.activeNetwork ?: return false
-            val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-            
-            networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        } else {
-            @Suppress("DEPRECATION") // Legacy Android support: activeNetworkInfo deprecated but no alternative for API < 23
-            val activeNetworkInfo = connectivityManager.activeNetworkInfo
-            activeNetworkInfo?.isConnected == true
-        }
+        val activeNetwork = connectivityManager.activeNetwork ?: return false
+        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        
+        return networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+               networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
     
     /**
@@ -91,14 +78,9 @@ class NetworkStateMonitor(context: Context) {
      * Useful for deciding whether to perform background sync
      */
     fun isMeteredConnection(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val activeNetwork = connectivityManager.activeNetwork ?: return true
-            val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return true
-            
-            !networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-        } else {
-            @Suppress("DEPRECATION")
-            connectivityManager.isActiveNetworkMetered
-        }
+        val activeNetwork = connectivityManager.activeNetwork ?: return true
+        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return true
+        
+        return !networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 }

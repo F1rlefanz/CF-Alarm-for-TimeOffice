@@ -30,7 +30,7 @@ class ViewModelFactory(
             calendarSelectionRepository = appContainer.calendarSelectionRepository,
             errorHandler = ErrorHandler,
             shiftUseCase = appContainer.shiftUseCase,
-            alarmUseCase = appContainer.alarmUseCase // 🚨 CRITICAL FIX: Add missing AlarmUseCase dependency
+            alarmUseCase = appContainer.alarmUseCase
         ).also { _calendarViewModel = it }
     }
     
@@ -50,8 +50,9 @@ class ViewModelFactory(
                     authDataStoreRepository = appContainer.authDataStoreRepository,
                     credentialAuthManager = appContainer.credentialAuthManager,
                     errorHandler = ErrorHandler,
-                    authUseCase = appContainer.authUseCase, // MODERN: Add AuthUseCase for Calendar authorization
-                    calendarSelectionRepository = appContainer.calendarSelectionRepository // REACTIVE: Add CalendarSelectionRepository for hasSelectedCalendars sync
+                    authUseCase = appContainer.authUseCase, // Add AuthUseCase for Calendar authorization
+                    calendarSelectionRepository = appContainer.calendarSelectionRepository, // REACTIVE: Add CalendarSelectionRepository for hasSelectedCalendars sync
+                    backgroundServiceManager = appContainer.backgroundServiceManager // Add BackgroundServiceManager for maintenance service initialization
                 ) as T
             }
             modelClass.isAssignableFrom(CalendarViewModel::class.java) -> {
@@ -68,8 +69,8 @@ class ViewModelFactory(
             modelClass.isAssignableFrom(AlarmViewModel::class.java) -> {
                 AlarmViewModel(
                     alarmUseCase = appContainer.alarmUseCase, // Interface-Abhängigkeit
-                    alarmSkipUseCase = appContainer.alarmSkipUseCase, // NEU: Skip UseCase
-                    shiftUseCase = appContainer.shiftUseCase, // NEU: Für Manual Alarm Feature
+                    alarmSkipUseCase = appContainer.alarmSkipUseCase, // Skip UseCase
+                    shiftUseCase = appContainer.shiftUseCase, // Für Manual Alarm Feature
                     errorHandler = ErrorHandler
                 ) as T
             }
@@ -78,7 +79,7 @@ class ViewModelFactory(
                     authUseCase = appContainer.authUseCase, // Interface-Abhängigkeit  
                     shiftUseCase = appContainer.shiftUseCase, // Interface-Abhängigkeit
                     alarmUseCase = appContainer.alarmUseCase, // Interface-Abhängigkeit
-                    calendarSelectionRepository = appContainer.calendarSelectionRepository, // FIXED: Calendar Selection Dependency
+                    calendarSelectionRepository = appContainer.calendarSelectionRepository,
                     calendarViewModel = getOrCreateCalendarViewModel() // COORDINATION: Für refreshAll()
                 ) as T
             }

@@ -103,16 +103,14 @@ class MainViewModel(
     }
 
     fun refreshAll(forceRefresh: Boolean = false) {
-        // Lädt Calendar-Events mit aktueller daysAhead-Konfiguration neu
+        // FIXED: daysAhead is now always 14 days as per Briefing 4.0
         viewModelScope.launch {
-            val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-            val daysAhead = shiftConfig?.daysAhead
-            
             if (forceRefresh) {
                 Logger.i(LogTags.UI, "Force refresh requested")
                 calendarViewModel?.refreshData(forceRefresh = true)
             } else {
-                calendarViewModel?.loadEventsForSelectedCalendars(daysAhead)
+                // Always use default 14 days
+                calendarViewModel?.loadEventsForSelectedCalendars()
             }
         }
     }

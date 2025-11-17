@@ -20,7 +20,7 @@
     Der User muss aktiv zustimmen. Dies ist Play Store konform.
     -->
     <issue id="BatteryLife">
-        <ignore path="**/BatteryOptimizationManager.kt" />
+        <!-- PHASE 2 CLEANUP: BatteryOptimizationManager.kt removed (obsoleted by BatteryOptimizationHelper) -->
     </issue>
     
     <!-- 

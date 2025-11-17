@@ -29,11 +29,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    // Dependency Container
-    private lateinit var appContainer: AppContainer
+    // Hilt injected dependencies
+    @Inject lateinit var oauth2TokenManager: OAuth2TokenManager
     
     // OPTIMIZATION: Hue Bridge Connection Manager for lifecycle events
     private val bridgeConnectionManager by lazy { 

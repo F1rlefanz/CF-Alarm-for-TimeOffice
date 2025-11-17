@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -350,7 +351,7 @@ private fun BridgeSelectionCard(
                 )
                 
                 Icon(
-                    imageVector = Icons.Default.ChevronRight,
+                    imageVector = Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = "Select bridge"
                 )
             }

@@ -26,10 +26,12 @@ import java.time.LocalTime
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * UseCase für alle Alarm-bezogenen Operationen - implementiert IAlarmUseCase
- * 
+ *
  * REFACTORED:
  * ✅ Implementiert IAlarmUseCase Interface für bessere Testbarkeit
  * ✅ Verwendet Repository-Interfaces statt konkrete Implementierungen
@@ -37,7 +39,8 @@ import java.time.format.DateTimeFormatter
  * ✅ Result-basierte API für konsistente Fehlerbehandlung
  * ✅ Integration mit ShiftRecognitionEngine für intelligente Alarm-Erstellung
  */
-class AlarmUseCase(
+@Singleton
+class AlarmUseCase @Inject constructor(
     private val alarmRepository: IAlarmRepository,
     private val alarmManagerService: AlarmManagerService,
     private val shiftConfigRepository: IShiftConfigRepository,

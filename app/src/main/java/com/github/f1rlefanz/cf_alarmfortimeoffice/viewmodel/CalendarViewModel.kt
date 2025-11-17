@@ -446,7 +446,7 @@ class CalendarViewModel(
             updateLocalStateImmediate { it.copy(isLoading = true, error = null) }
             
             // BUG FIX: Verwende aktuelle ShiftConfig.daysAhead statt hardcodierte DEFAULT_DAYS_AHEAD
-            val effectiveDaysAhead = daysAhead ?: getCurrentDaysAheadFromShiftConfig()
+            val effectiveDaysAhead = daysAhead ?: getEffectiveDaysAhead()
             
             try {
                 // LAZY LOADING IMPLEMENTATION: Load limited events first
@@ -627,13 +627,11 @@ class CalendarViewModel(
     }
     
     /**
-     * BUG FIX: Helper-Methode um aktuelle daysAhead aus ShiftConfig zu lesen
+     * FIXED: daysAhead is now always 14 days as per Briefing 4.0
+     * No longer read from ShiftConfig
      */
-    private suspend fun getCurrentDaysAheadFromShiftConfig(): Int {
-        return shiftUseCase.getCurrentShiftConfig()
-            .getOrNull()
-            ?.daysAhead
-            ?: CalendarConstants.DEFAULT_DAYS_AHEAD // Fallback auf Default wenn ShiftConfig nicht verfügbar
+    private fun getEffectiveDaysAhead(): Int {
+        return CalendarConstants.DEFAULT_DAYS_AHEAD // Always 14 days
     }
 
     /**
@@ -664,7 +662,7 @@ class CalendarViewModel(
             }
 
             // BUG FIX: Verwende aktuelle ShiftConfig.daysAhead statt hardcodierte DEFAULT_DAYS_AHEAD
-            val effectiveDaysAhead = getCurrentDaysAheadFromShiftConfig()
+            val effectiveDaysAhead = getEffectiveDaysAhead()
             
             calendarUseCase.getCalendarEventsLazy(
                 calendarIds = selectedIds,

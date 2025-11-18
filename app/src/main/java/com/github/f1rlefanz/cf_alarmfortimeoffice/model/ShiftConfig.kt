@@ -7,27 +7,21 @@ import java.time.LocalTime
 /**
  * IMMUTABLE Shift Configuration Model
  * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable annotation für Compose-Performance
- * ✅ Unveränderliche Listen für bessere Performance
- * 
- * 🔄 HYBRID-LÖSUNG:
- * ✅ syncIntervalHours: WorkManager Auto-Sync Intervall (1-12h)
- * ✅ daysAhead: Offline-Puffer beim App-Start (7-60 Tage)
+ * ARCHITECTURE (Briefing 4.0):
+ * ✅ @Immutable annotation for Compose performance
+ * ✅ Immutable lists for better performance
+ * ✅ Removed: daysAhead (fixed 14d in maintenance)
+ * ✅ Removed: syncIntervalHours (fixed 6h via Exact Alarm)
  */
 @Immutable
 @Serializable
 data class ShiftConfig(
     val autoAlarmEnabled: Boolean = true,
-    val definitions: List<ShiftDefinition> = emptyList(),
-    val daysAhead: Int = 7,
-    val syncIntervalHours: Int = 6  // 🔄 Auto-Sync Intervall (Default: 6h)
+    val definitions: List<ShiftDefinition> = emptyList()
 ) {
     companion object {
         fun getDefaultConfig(): ShiftConfig = ShiftConfig(
             autoAlarmEnabled = true,
-            daysAhead = 21,  // 3 Wochen Offline-Puffer
-            syncIntervalHours = 6,  // Alle 6h automatische Sync
             definitions = listOf(
                 ShiftDefinition(
                     id = "early_shift",

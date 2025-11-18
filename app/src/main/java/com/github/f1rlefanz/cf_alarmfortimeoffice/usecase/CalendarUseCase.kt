@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * UseCase für alle Calendar-bezogenen Operationen mit OAuth2 Token Management
@@ -38,7 +40,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
  * ✅ Pagination für große Kalenderlisten
  * ✅ Erweiterte Cache-Management mit Offline-Support
  */
-class CalendarUseCase(
+@Singleton
+class CalendarUseCase @Inject constructor(
     private val calendarRepository: ICalendarRepository,
     private val authDataStoreRepository: IAuthDataStoreRepository,
     private val oauth2TokenManager: OAuth2TokenManager?

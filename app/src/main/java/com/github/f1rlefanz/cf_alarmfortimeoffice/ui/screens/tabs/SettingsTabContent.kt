@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,25 +15,42 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
+import android.content.Intent
+import androidx.core.net.toUri
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+// PHASE 2 CLEANUP: ShiftViewModel import removed (unused parameter)
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsTabContent(
     authViewModel: AuthViewModel,
-    shiftViewModel: ShiftViewModel? = null,
     onShowShiftConfig: () -> Unit,
     onShowCalendarSelection: () -> Unit
 ) {
     val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
-    val shiftState by (shiftViewModel?.uiState?.collectAsState()
-        ?: MutableStateFlow(null).collectAsState())
+
+    // PHASE 1 MIGRATION: Get maintenance time as state
+    var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(Unit) {
+        // Load maintenance time in background
+        lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
+    }
+
+    // Refresh maintenance time periodically
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30000) // Update every 30 seconds
+            lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -84,7 +103,7 @@ fun SettingsTabContent(
                     )
                 }
                 Icon(
-                    Icons.Default.ChevronRight,
+                    Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = null
                 )
             }
@@ -93,7 +112,8 @@ fun SettingsTabContent(
         // 🔧 STUFE 2 FIX: Calendar Authorization/Re-Authorization Card
         // Shows when user needs to authorize Calendar OR re-authorize due to invalid token
         if (authState.userAuth.isSignedIn &&
-            (!authState.calendarOps.hasSelectedCalendars || authState.calendarOps.needsTokenReauthorization)) {
+            (!authState.calendarOps.hasSelectedCalendars || authState.calendarOps.needsTokenReauthorization)
+        ) {
 
             // Dynamically adapt card appearance based on state
             val needsReauth = authState.calendarOps.needsTokenReauthorization
@@ -205,203 +225,188 @@ fun SettingsTabContent(
                     )
                 }
                 Icon(
-                    Icons.Default.ChevronRight,
+                    Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = null
                 )
             }
         }
 
-        // 🔄 OPTIMIERT: Sync-Intervall OBEN (primäre Funktion)
-        shiftViewModel?.let { viewModel ->
-            shiftState?.currentShiftConfig?.let { config ->
-                var intervalExpanded by remember { mutableStateOf(false) }
-                val intervalOptions = listOf(1, 3, 6, 12)
+        // 🔄 Phase 1: Sync-Intervall and Offline-Puffer cards removed
+        // Fixed 6h maintenance interval via AlarmMaintenanceService
+        // Fixed 14-day lookahead with 7-day buffer check
 
-                Card(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(SpacingConstants.PADDING_CARD),
-                        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-                    ) {
-                        // Header Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Schedule,
-                                contentDescription = null,
-                                modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                                tint = MaterialTheme.colorScheme.tertiary
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Sync-Intervall",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "Wie oft automatisch synchronisieren",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+        // ⚠️ Phase 2: Battery Status, Last Sync & OEM Warnings
 
-                            ExposedDropdownMenuBox(
-                                expanded = intervalExpanded,
-                                onExpandedChange = { intervalExpanded = !intervalExpanded }
-                            ) {
-                                OutlinedTextField(
-                                    value = "Alle ${config.syncIntervalHours}h",
-                                    onValueChange = { },
-                                    readOnly = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = intervalExpanded) },
-                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                    modifier = Modifier
-                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
-                                        .width(120.dp)
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = intervalExpanded,
-                                    onDismissRequest = { intervalExpanded = false }
-                                ) {
-                                    intervalOptions.forEach { hours ->
-                                        DropdownMenuItem(
-                                            text = { Text("Alle ${hours}h") },
-                                            onClick = {
-                                                viewModel.updateSyncInterval(hours)
-                                                
-                                                // Reschedule WorkManager with new interval
-                                                BackgroundTokenRefreshWorker.scheduleTokenRefresh(
-                                                    context, 
-                                                    hours.toLong()
-                                                )
-                                                
-                                                intervalExpanded = false
-                                            },
-                                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL),
-                            color = MaterialTheme.colorScheme.outlineVariant
+        // 1. Last Maintenance Status Card
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastMaintenance = if (lastMaintenanceTime > 0) {
+            currentTime - lastMaintenanceTime
+        } else {
+            -1L
+        }
+
+        val lastMaintenanceText = when {
+            lastMaintenanceTime == 0L -> "Noch nie ausgeführt"
+            timeSinceLastMaintenance < 0 -> "Unbekannt"
+            timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(1) -> {
+                val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSinceLastMaintenance)
+                "Vor $minutes Minuten"
+            }
+
+            timeSinceLastMaintenance < TimeUnit.DAYS.toMillis(1) -> {
+                val hours = TimeUnit.MILLISECONDS.toHours(timeSinceLastMaintenance)
+                "Vor $hours Stunden"
+            }
+
+            else -> {
+                val days = TimeUnit.MILLISECONDS.toDays(timeSinceLastMaintenance)
+                "Vor $days Tagen"
+            }
+        }
+
+        val statusColor = when {
+            lastMaintenanceTime == 0L -> MaterialTheme.colorScheme.tertiary
+            timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(12) -> MaterialTheme.colorScheme.primary
+            timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(24) -> MaterialTheme.colorScheme.tertiary
+            else -> MaterialTheme.colorScheme.error
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(SpacingConstants.PADDING_CARD),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.CloudDone,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                    tint = statusColor
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Letzter Sync",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        lastMaintenanceText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = statusColor
+                    )
+                    if (timeSinceLastMaintenance > TimeUnit.HOURS.toMillis(24)) {
+                        Text(
+                            "⚠️ Langer Zeitraum - bitte prüfen",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
                         )
-                        
-                        // Dynamischer Text - passt sich an Dropdown an
-                        Column {
-                            Text(
-                                "Automatische Online-Synchronisation",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                "Bei Internetverbindung alle ${config.syncIntervalHours} Stunden im Hintergrund",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                 }
             }
         }
 
-        // 📦 Offline-Puffer UNTEN (Fallback-Funktion)
-        shiftViewModel?.let { viewModel ->
-            shiftState?.currentShiftConfig?.let { config ->
-                var expanded by remember { mutableStateOf(false) }
-                val daysOptions = listOf(7, 14, 21, 30, 60)
-
-                Card(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(SpacingConstants.PADDING_CARD),
-                        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-                    ) {
-                        // Header Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.DateRange,
-                                contentDescription = null,
-                                modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Offline-Puffer",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "Events für die nächsten ${config.daysAhead} Tage vorgeladen",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            ExposedDropdownMenuBox(
-                                expanded = expanded,
-                                onExpandedChange = { expanded = !expanded }
-                            ) {
-                                OutlinedTextField(
-                                    value = "${config.daysAhead} Tage",
-                                    onValueChange = { },
-                                    readOnly = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                    modifier = Modifier
-                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
-                                        .width(120.dp)
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = expanded,
-                                    onDismissRequest = { expanded = false }
-                                ) {
-                                    daysOptions.forEach { days ->
-                                        DropdownMenuItem(
-                                            text = { Text("$days Tage") },
-                                            onClick = {
-                                                viewModel.updateDaysAhead(days)
-                                                expanded = false
-                                            },
-                                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                        
-                        // Fallback-Info
-                        Column {
-                            Text(
-                                "Offline Backup",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                "Bei fehlender Internetverbindung als Fallback",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+        // 2. Battery Exemption Warning
+        if (!BatteryOptimizationHelper.isExempted(context)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                onClick = {
+                    val activity = context as? android.app.Activity
+                    if (activity != null) {
+                        BatteryOptimizationHelper.requestExemption(activity)
                     }
+                }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(SpacingConstants.PADDING_CARD),
+                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "⚠️ Akku-Optimierung aktiv",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            "App nicht von Akku-Optimierung ausgenommen. Wecker könnten ausfallen.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        }
+
+        // 3. OEM-specific warning card (persistent)
+        val oemType = BatteryOptimizationHelper.getOEMType()
+        if (BatteryOptimizationHelper.shouldShowOEMWarning(oemType)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                ),
+                onClick = {
+                    try {
+                        val helpUrl = BatteryOptimizationHelper.getOEMHelpURL(oemType)
+                        val intent = Intent(Intent.ACTION_VIEW, helpUrl.toUri())
+                        context.startActivity(intent)
+                    } catch (_: Exception) {
+                        // Ignore if URL cannot be opened
+                    }
+                }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(SpacingConstants.PADDING_CARD),
+                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "${BatteryOptimizationHelper.getOEMDisplayName(oemType)}-Geräte erfordern Extra-Schritte",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            "Für maximale Zuverlässigkeit weitere Einstellungen prüfen",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
                 }
             }
         }

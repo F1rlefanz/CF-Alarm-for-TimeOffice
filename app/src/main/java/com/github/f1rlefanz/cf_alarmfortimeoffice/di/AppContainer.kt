@@ -45,7 +45,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.DataStoreTokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.strategy.TokenRefreshStrategy
+// PHASE 2 CLEANUP: TokenRefreshStrategy import removed (obsoleted by AlarmMaintenanceService)
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHelper
 
 /**
@@ -91,10 +91,8 @@ class AppContainer(private val context: Context) {
         )
     }
 
-    // Token Refresh Strategy
-    val tokenRefreshStrategy: TokenRefreshStrategy by lazy {
-        TokenRefreshStrategy(oauth2TokenManager)
-    }
+    // PHASE 2 CLEANUP: TokenRefreshStrategy removed (obsoleted by AlarmMaintenanceService)
+    // Token refresh now handled by AlarmMaintenanceService every 6 hours
 
     // Credential Manager for user authentication
     val credentialAuthManager: CredentialAuthManager by lazy {
@@ -155,21 +153,15 @@ class AppContainer(private val context: Context) {
         com.github.f1rlefanz.cf_alarmfortimeoffice.service.WakeLockManager(context)
     }
 
-    val batteryOptimizationManager by lazy {
-        com.github.f1rlefanz.cf_alarmfortimeoffice.service.BatteryOptimizationManager(context)
-    }
-
     val backgroundServiceManager by lazy {
         com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager(
-            context = context.applicationContext,
-            shiftUseCase = shiftUseCase
+            context = context.applicationContext
         )
     }
 
     val alarmManagerService: AlarmManagerService by lazy {
         AlarmManagerService(
             application = context.applicationContext as android.app.Application,
-            batteryOptimizationManager = batteryOptimizationManager,
             wakeLockManager = wakeLockManager
         )
     }

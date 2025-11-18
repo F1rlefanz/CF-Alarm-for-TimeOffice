@@ -13,7 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.CFAlarmApplication
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.worker.BackgroundTokenRefreshWorker
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import java.time.LocalDateTime
 
 /**
@@ -281,7 +281,7 @@ class BootReceiver : BroadcastReceiver() {
             diagnosticResults.add("❌ Diagnostics Error: ${e.message}")
         }
 
-        return diagnosticResults.joinToString(", ")
+        return diagnosticResults.joinToString(", ")  // Diagnostic results summary
     }
 
     /**
@@ -496,12 +496,12 @@ class BootReceiver : BroadcastReceiver() {
         try {
             Logger.business(
                 LogTags.MAINTENANCE_L4,
-                "🔄 LEVEL 4: Reinitializing Smart Maintenance Chain"
+                "🔄 LEVEL 4: Reinitializing Smart Maintenance Chain (Phase 1 - using AlarmMaintenanceService)"
             )
 
-            BackgroundTokenRefreshWorker.cancelTokenRefresh(context)
-            BackgroundTokenRefreshWorker.scheduleTokenRefresh(context)
-            Logger.business(LogTags.MAINTENANCE_L4, "✅ Background worker restarted")
+            // Schedule next maintenance run
+            AlarmMaintenanceService.scheduleNext(context)
+            Logger.business(LogTags.MAINTENANCE_L4, "✅ AlarmMaintenanceService scheduled")
 
             Logger.business(
                 LogTags.MAINTENANCE_L4,
@@ -518,14 +518,14 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     /**
-     * 🔧 Background Services Restart
+     * 🔧 Background Services Restart - PHASE 1 MIGRATION
      */
     private fun restartBackgroundServices(context: Context) {
         try {
-            Logger.d(LogTags.MAINTENANCE_L4, "🔧 LEVEL 4: Restarting background services")
+            Logger.d(LogTags.MAINTENANCE_L4, "🔧 LEVEL 4: Restarting background services (Phase 1)")
 
-            // Restart BackgroundTokenRefreshWorker (already done in Chain reinitialization, but ensure it's running)
-            BackgroundTokenRefreshWorker.scheduleTokenRefresh(context)
+            // Schedule AlarmMaintenanceService
+            AlarmMaintenanceService.scheduleNext(context)
 
             Logger.d(LogTags.MAINTENANCE_L4, "✅ LEVEL 4: Background services restarted")
 
@@ -564,11 +564,11 @@ class BootReceiver : BroadcastReceiver() {
                 if (futureAlarms.size < 2) {
                     Logger.w(
                         LogTags.MAINTENANCE_L4,
-                        "⚠️ LEVEL 4: Post-recovery check found low alarm count (${futureAlarms.size}), triggering Level 2 maintenance"
+                        "⚠️ LEVEL 4: Post-recovery check found low alarm count (${futureAlarms.size}), triggering immediate maintenance"
                     )
 
-                    // Trigger immediate Level 2 maintenance
-                    BackgroundTokenRefreshWorker.scheduleUrgentTokenRefresh(context)
+                    // Trigger immediate maintenance
+                    AlarmMaintenanceService.start(context)
                 }
 
             } catch (e: Exception) {

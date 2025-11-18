@@ -38,15 +38,15 @@ fun HomeTabContent(
     onRefresh: () -> Unit,
     onSkipNextAlarm: () -> Unit,
     onCancelSkip: () -> Unit,
-    onSelectManualAlarmDate: (LocalDate) -> Unit, // NEU
-    onSelectManualAlarmShift: (ShiftDefinition) -> Unit, // NEU
-    onCreateManualAlarm: () -> Unit, // NEU
-    onDeleteManualAlarm: () -> Unit, // NEU
-    onClearManualAlarmError: () -> Unit, // NEU
-    onNavigateToShiftConfig: () -> Unit, // NEU
-    onShowEventList: (() -> Unit)? = null // LAZY LOADING: Navigation to event details
+    onSelectManualAlarmDate: (LocalDate) -> Unit,
+    onSelectManualAlarmShift: (ShiftDefinition) -> Unit,
+    onCreateManualAlarm: () -> Unit,
+    onDeleteManualAlarm: () -> Unit,
+    onClearManualAlarmError: () -> Unit,
+    onNavigateToShiftConfig: () -> Unit,
+    onShowEventList: (() -> Unit)? = null
 ) {
-    val daysAhead = shiftState.currentShiftConfig?.daysAhead ?: CalendarConstants.DEFAULT_DAYS_AHEAD
+    val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD // FIXED: Always 14 days as per Briefing 4.0
     
     Column(
         modifier = Modifier

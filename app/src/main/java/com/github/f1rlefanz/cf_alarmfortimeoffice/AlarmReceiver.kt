@@ -29,9 +29,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlin.random.Random
 import kotlin.math.abs
+import dagger.hilt.android.AndroidEntryPoint
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
+import javax.inject.Inject
 
 /**
- * Enhanced BroadcastReceiver with Smart Maintenance Chain Level 1 integration.
+ * Enhanced BroadcastReceiver with Smart Maintenance Chain Level 1 integration AND Hilt DI.
  *
  * CORE FEATURES:
  * - Reliable wake lock management
@@ -39,6 +48,7 @@ import kotlin.math.abs
  * - Enhanced notification with high priority
  * - 🎨 HUE INTEGRATION: Automatic light control based on shift patterns
  * - 🔄 SMART MAINTENANCE CHAIN Level 1: Opportunistic alarm checking
+ * - 🏗️ HILT DI: Modern dependency injection
  *
  * NEW: Smart Maintenance Chain Level 1 - Opportunistic Alarm Prüfung
  * Nach jedem Alarm wird intelligent geprüft, ob ausreichend zukünftige Alarme vorhanden sind.
@@ -46,7 +56,16 @@ import kotlin.math.abs
  *
  * Philosophy: If the alarm works (and it does!), keep it simple + add intelligent maintenance.
  */
+@AndroidEntryPoint
 class AlarmReceiver : BroadcastReceiver() {
+
+    @Inject lateinit var skipUseCase: IAlarmSkipUseCase
+    @Inject lateinit var alarmUseCase: IAlarmUseCase
+    @Inject lateinit var calendarUseCase: ICalendarUseCase
+    @Inject lateinit var shiftRecognitionEngine: ShiftRecognitionEngine
+    @Inject lateinit var hueRuleUseCase: IHueRuleUseCase
+    @Inject lateinit var shiftUseCase: IShiftUseCase
+    @Inject lateinit var calendarSelectionRepository: CalendarSelectionRepository
 
     companion object {
         const val EXTRA_SHIFT_NAME = "shift_name"
@@ -75,9 +94,6 @@ class AlarmReceiver : BroadcastReceiver() {
         val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Schicht"
 
         // CRITICAL: Skip-Check VOR Alarm-Trigger
-        val appContainer = (context.applicationContext as CFAlarmApplication).appContainer
-        val skipUseCase = appContainer.alarmSkipUseCase
-
         // Skip-Check durchführen
         try {
             Logger.business(
@@ -203,10 +219,7 @@ class AlarmReceiver : BroadcastReceiver() {
         // Background-Coroutine to avoid blocking the alarm
         maintenanceScope.launch {
             try {
-                val appContainer = (context.applicationContext as CFAlarmApplication).appContainer
-                val alarmUseCase = appContainer.alarmUseCase
-                val calendarUseCase = appContainer.calendarUseCase
-                val shiftRecognitionEngine = appContainer.shiftRecognitionEngine
+                // Hilt injected dependencies - no appContainer needed!
 
                 // 1. Analysiere aktuelle Alarm-Situation
                 val currentAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
@@ -235,7 +248,6 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 // 3. Hole erweiterte Kalenderdaten (21 Tage statt 7)
                 // Bekomme zuerst die ausgewählten Kalender-IDs
-                val calendarSelectionRepository = appContainer.calendarSelectionRepository
                 val selectedCalendarIds = calendarSelectionRepository.selectedCalendarIds.first()
 
                 if (selectedCalendarIds.isEmpty()) {
@@ -296,7 +308,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 }
 
                 // 5. Erstelle neue Alarme
-                val shiftConfig = appContainer.shiftUseCase.getCurrentShiftConfig().getOrNull()
+                val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
                 if (shiftConfig == null || !shiftConfig.autoAlarmEnabled) {
                     Logger.d(
                         TAG_MAINTENANCE,

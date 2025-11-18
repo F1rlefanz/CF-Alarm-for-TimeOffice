@@ -8,8 +8,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.util.business
 // CALENDAR & TIME CONSTANTS
 // ============================
 object CalendarConstants {
-    /** Standard-Vorausschau für Kalender-Events in Tagen */
-    const val DEFAULT_DAYS_AHEAD = 7
+    /** Standard-Vorausschau für Kalender-Events in Tagen - FIXED at 14 days as per Briefing 4.0 */
+    const val DEFAULT_DAYS_AHEAD = 14
     
     /** Maximale Vorausschau für Kalender-Events in Tagen */
     const val MAX_DAYS_AHEAD = 30

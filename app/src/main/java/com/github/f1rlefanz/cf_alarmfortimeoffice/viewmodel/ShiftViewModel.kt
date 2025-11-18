@@ -154,23 +154,8 @@ class ShiftViewModel(
         }
     }
 
-    fun updateDaysAhead(daysAhead: Int) {
-        val currentConfig = _uiState.value.currentShiftConfig ?: return
-        val updatedConfig = currentConfig.copy(daysAhead = daysAhead)
-        updateShiftConfig(updatedConfig)
-    }
-    
-    /**
-     * Updates the sync interval for background WorkManager tasks
-     * @param hours Interval in hours (1, 3, 6, 12)
-     */
-    fun updateSyncInterval(hours: Int) {
-        val currentConfig = _uiState.value.currentShiftConfig ?: return
-        val updatedConfig = currentConfig.copy(syncIntervalHours = hours)
-        updateShiftConfig(updatedConfig)
-        
-        Logger.business(LogTags.BACKGROUND_WORKER, "Sync interval updated to $hours hours")
-    }
+    // REMOVED: updateDaysAhead() - daysAhead is now fixed at 14 days as per Briefing 4.0
+    // REMOVED: updateSyncInterval() - syncIntervalHours is now fixed at 6 hours as per Briefing 4.0
 
     fun processCalendarEvents(events: List<CalendarEvent>) {
         viewModelScope.launch {

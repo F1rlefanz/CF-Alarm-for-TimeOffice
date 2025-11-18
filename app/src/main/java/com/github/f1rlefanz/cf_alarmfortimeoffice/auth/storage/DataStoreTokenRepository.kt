@@ -14,9 +14,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 
+import javax.inject.Inject
+import javax.inject.Singleton
+
 /**
  * DataStore-basierte Token-Repository Implementation mit Tink-Verschlüsselung
- * 
+ *
  * Vorteile gegenüber EncryptedSharedPreferences:
  * - ✅ Async by design (keine Race Conditions)
  * - ✅ Type-safe Preferences API
@@ -26,14 +29,15 @@ import kotlinx.serialization.json.Json
  * - ✅ Keine Verification-Race-Conditions
  * - ✅ Tink AEAD-Verschlüsselung (AES-256-GCM)
  * - ✅ Android Keystore-backed Master Key
- * 
+ *
  * Security:
  * - Verschlüsselung: AES-256-GCM via Tink Crypto
  * - Master Key: Android Keystore (Hardware-backed wenn verfügbar)
  * - Authentifizierung: GCM authentication tag
  * - Tampering Detection: Automatisch durch AEAD
  */
-class DataStoreTokenRepository(
+@Singleton
+class DataStoreTokenRepository @Inject constructor(
     private val context: Context
 ) : TokenRepository {
     

@@ -18,22 +18,27 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import javax.inject.Inject
+import javax.inject.Singleton
 
 // Extension property for Context to create DataStore
 private val Context.authDataStore: DataStore<Preferences> by preferencesDataStore(name = "auth_prefs")
 
 /**
  * AuthDataStoreRepository - implementiert IAuthDataStoreRepository Interface
- * 
+ *
  * REFACTORED:
  * ✅ Implementiert IAuthDataStoreRepository für bessere Testbarkeit
  * ✅ Result-basierte API für konsistente Fehlerbehandlung
  * ✅ Flow-basierte reaktive Datenbeobachtung
  * ✅ Batch-Updates für bessere Performance
- * 
+ *
  * Verwaltet Authentifizierungsdaten mit DataStore Preferences
  */
-class AuthDataStoreRepository(private val context: Context) : IAuthDataStoreRepository {
+@Singleton
+class AuthDataStoreRepository @Inject constructor(
+    private val context: Context
+) : IAuthDataStoreRepository {
 
     private val dataStore = context.authDataStore
 

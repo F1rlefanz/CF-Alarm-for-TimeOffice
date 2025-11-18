@@ -14,6 +14,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 
 /**
  * Enhanced AlarmManager service with maximum reliability and doze mode compatibility.
@@ -30,7 +31,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
  */
 class AlarmManagerService(
     private val application: Application,
-    private val batteryOptimizationManager: BatteryOptimizationManager,
     private val wakeLockManager: WakeLockManager
 ) {
 
@@ -55,7 +55,7 @@ class AlarmManagerService(
      */
     fun checkAlarmPermissions(): AlarmPermissionStatus {
         val canScheduleExact = canScheduleExactAlarms()
-        val batteryExempt = batteryOptimizationManager.isIgnoringBatteryOptimizations()
+        val batteryExempt = BatteryOptimizationHelper.isExempted(application)
 
         val overallStatus = when {
             canScheduleExact && batteryExempt -> AlarmPermissionLevel.OPTIMAL
@@ -313,7 +313,7 @@ class AlarmManagerService(
             systemAlarmSet = systemAlarmSet,
             canScheduleExactAlarms = canScheduleExactAlarms(),
             alarmStatusMessage = message,
-            batteryOptimizationExempt = batteryOptimizationManager.isIgnoringBatteryOptimizations(),
+            batteryOptimizationExempt = BatteryOptimizationHelper.isExempted(application),
             recommendedActions = recommendations
         )
     }
@@ -373,7 +373,6 @@ class AlarmManagerService(
      */
     fun getEnhancedAlarmDebugInfo(): String {
         val permissionStatus = checkAlarmPermissions()
-        val batteryStatus = batteryOptimizationManager.getBasicStatus()
         val nextAlarm = getNextAlarmInfo()
 
         return buildString {
@@ -390,9 +389,6 @@ class AlarmManagerService(
             permissionStatus.recommendations.forEach { recommendation ->
                 appendLine("- $recommendation")
             }
-            appendLine()
-            appendLine("=== BATTERY OPTIMIZATION ===")
-            appendLine(batteryStatus)
             appendLine("==================================")
         }
     }

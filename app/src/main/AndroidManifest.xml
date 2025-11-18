@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Explicitly block AD_ID permission by setting maxSdkVersion to 0 -->
+    <!-- Explicitly block AD_ID permission by setting maxSdkVersion to 0
+         AD_ID is not used for advertising/analytics - CF Alarm is exclusively a shift-based alarm application
+         Blocking this permission prevents unnecessary data collection -->
     <uses-permission 
         android:name="com.google.android.gms.permission.AD_ID" 
         android:maxSdkVersion="0" 
@@ -21,6 +23,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
+    <!-- USE_FULL_SCREEN_INTENT: Required to display full-screen alarm UI over lock screen and during deep sleep
+         Core alarm functionality - users expect to be awakened by highly visible notifications for work shifts
+         AlarmFullScreenActivity displays critical alarms with wake locks to ensure visibility -->
     <uses-permission
         android:name="android.permission.USE_FULL_SCREEN_INTENT"
         tools:ignore="ProtectedPermissions" />
@@ -30,6 +35,10 @@
         android:name="android.permission.SCHEDULE_EXACT_ALARM"
         android:maxSdkVersion="32" />
 
+    <!-- USE_EXACT_ALARM: Required for precise shift-based alarm scheduling
+         Core functionality - alarms must trigger within seconds of configured shift start times
+         Shift workers cannot accept minute-level tolerance for work start notifications
+         App targets nurses, healthcare workers, and other shift professionals -->
     <uses-permission
         android:name="android.permission.USE_EXACT_ALARM"
         tools:ignore="ProtectedPermissions" />
@@ -40,6 +49,10 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+    <!-- FOREGROUND_SERVICE types required by Android 12+ (declared in manifest for Android 14+ compliance)
+         MEDIA_PLAYBACK: AlarmSoundService plays shift notification sounds in foreground during night hours
+         SPECIAL_USE: AlarmMaintenanceService performs periodic 6-hourly calendar sync and alarm recreation
+         Visibility: Service notifications inform user of background alarm maintenance activities -->
     <uses-permission 
         android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
         tools:ignore="ProtectedPermissions" />
@@ -109,6 +122,23 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="false" />
+
+        <!-- Alarm Maintenance Service (6-hourly background maintenance) -->
+        <service
+            android:name=".service.AlarmMaintenanceService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Periodic shift-based alarm synchronization" />
+        </service>
+
+        <!-- Alarm Maintenance Receiver (receives Exact Alarm triggers) -->
+        <receiver
+            android:name=".service.AlarmMaintenanceBroadcastReceiver"
+            android:enabled="true"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

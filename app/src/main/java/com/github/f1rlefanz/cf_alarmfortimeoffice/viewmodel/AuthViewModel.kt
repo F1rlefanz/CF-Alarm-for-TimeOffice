@@ -39,7 +39,8 @@ class AuthViewModel(
     private val credentialAuthManager: CredentialAuthManager,
     private val errorHandler: ErrorHandler,
     private val authUseCase: com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase? = null,
-    private val calendarSelectionRepository: com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository? = null
+    private val calendarSelectionRepository: com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository? = null,
+    private val backgroundServiceManager: com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager? = null
 ) : ViewModel() {
 
     // CONSOLIDATED STATE: Ein einziger State statt AuthState + AuthUiState
@@ -500,6 +501,10 @@ class AuthViewModel(
                             if (success) {
                                 Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful, hasValidToken=true")
                                 triggerCalendarReloadAfterAuth()
+                                
+                                // Initialize maintenance service after successful authorization
+                                backgroundServiceManager?.initializeMaintenanceService()
+                                Logger.business(LogTags.AUTH, "✅ Maintenance service initialized after authorization")
                             } else {
                                 Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: Calendar authorization failed or denied, hasValidToken=false")
                             }
@@ -541,6 +546,10 @@ class AuthViewModel(
                             // CRITICAL FIX: Auto-trigger calendar loading after successful authorization
                             if (authorized) {
                                 triggerCalendarReloadAfterAuth()
+                                
+                                // Initialize maintenance service after successful authorization
+                                backgroundServiceManager?.initializeMaintenanceService()
+                                Logger.business(LogTags.AUTH, "✅ Maintenance service initialized after authorization")
                             }
                         },
                         onFailure = { error ->
@@ -647,6 +656,32 @@ class AuthViewModel(
             Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Cleanup completed successfully")
         } catch (e: Exception) {
             Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel cleanup", e)
+        }
+    }
+    
+    /**
+     * PHASE 1 MIGRATION: Schedules the initial AlarmMaintenanceService run after successful login
+     * Uses Exact Alarm to ensure reliable execution every 6 hours
+     */
+    private fun scheduleInitialMaintenance(authData: AuthData) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Only schedule if we have a valid token
+                if (!authData.isLoggedIn || authData.accessToken == null) {
+                    Logger.w(LogTags.AUTH, "⚠️ INITIAL ALARM: Cannot schedule maintenance without valid authentication")
+                    return@launch
+                }
+                
+                // Use BackgroundServiceManager to schedule the maintenance service
+                backgroundServiceManager?.scheduleInitialAlarmMaintenance()
+                    ?: Logger.w(LogTags.AUTH, "⚠️ INITIAL ALARM: BackgroundServiceManager not available")
+                
+                Logger.business(LogTags.AUTH, "✅ INITIAL ALARM: Initial maintenance scheduling delegated to BackgroundServiceManager")
+                
+            } catch (e: Exception) {
+                Logger.e(LogTags.AUTH, "❌ INITIAL ALARM: Failed to schedule initial maintenance", e)
+                // Non-critical error - app can still function
+            }
         }
     }
     

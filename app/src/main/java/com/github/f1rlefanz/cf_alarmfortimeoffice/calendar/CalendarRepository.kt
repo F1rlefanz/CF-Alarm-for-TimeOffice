@@ -26,8 +26,6 @@ import java.net.UnknownHostException
 import java.time.LocalDateTime
 import java.time.ZoneId
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 
 data class CalendarItem(val id: String, val displayName: String)
 
@@ -123,24 +121,17 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
         forceRefresh: Boolean
     ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("CalendarRepository.getEventsWithCache") {
-            val isOfflineMode = !isNetworkAvailable()
             
-            if (!forceRefresh && eventCache.isCached(calendarId, daysAhead, allowStale = isOfflineMode)) {
-                val cachedEvents = eventCache.get(calendarId, daysAhead, allowStale = isOfflineMode)
+            if (!forceRefresh && eventCache.isCached(calendarId, daysAhead)) {
+                val cachedEvents = eventCache.get(calendarId, daysAhead)
                 if (cachedEvents != null) {
-                    val cacheType = if (isOfflineMode) "OFFLINE" else "CACHED"
-                    Logger.i(LogTags.CALENDAR_CACHE, "Returning ${cachedEvents.size} $cacheType events")
+                    Logger.i(LogTags.CALENDAR_CACHE, "Returning ${cachedEvents.size} cached events")
                     
                     // PERFORMANCE: Background memory optimization during cache hits
                     performBackgroundMemoryOptimization()
                     
                     return@safeExecute cachedEvents
                 }
-            }
-            
-            if (isOfflineMode) {
-                Logger.w(LogTags.CALENDAR_API, "Offline mode: No cached data available for calendar $calendarId")
-                return@safeExecute emptyList()
             }
             
             if (forceRefresh) {
@@ -173,23 +164,11 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
                 // PERFORMANCE: Use optimized event processing
                 val calendarEvents = processEventsWithOptimization(events, calendarId)
                 
-                val priority = when {
-                    daysAhead <= 1 -> CalendarEventCache.CachePriority.HIGH
-                    daysAhead <= 7 -> CalendarEventCache.CachePriority.NORMAL
-                    else -> CalendarEventCache.CachePriority.LOW
-                }
-                
-                eventCache.put(calendarId, daysAhead, calendarEvents, result.etag, priority)
-                Logger.d(LogTags.CALENDAR_CACHE, "${calendarEvents.size} events cached for future requests (Priority: $priority)")
+                eventCache.put(calendarId, daysAhead, calendarEvents, result.etag)
+                Logger.d(LogTags.CALENDAR_CACHE, "${calendarEvents.size} events cached for future requests")
                 
                 calendarEvents
             } catch (e: Exception) {
-                val fallbackEvents = eventCache.get(calendarId, daysAhead, allowStale = true)
-                if (fallbackEvents != null) {
-                    Logger.w(LogTags.CALENDAR_API, "API failed, returning ${fallbackEvents.size} stale cached events", e)
-                    return@safeExecute fallbackEvents
-                }
-                
                 throw mapCalendarException(e)
             }
         }
@@ -349,20 +328,7 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
             else -> AppError.UnknownError("Calendar error: ${e.message}")
         }
     }
-    
-    private fun isNetworkAvailable(): Boolean {
-        return try {
-            context?.let { ctx ->
-                val connectivityManager = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-                val network = connectivityManager.activeNetwork
-                val capabilities = connectivityManager.getNetworkCapabilities(network)
-                capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-            } ?: true
-        } catch (e: Exception) {
-            Logger.w(LogTags.REPOSITORY, "Error checking network availability", e)
-            true
-        }
-    }
+
     
     /**
      * PERFORMANCE: Background Memory-Optimierung bei ausreichend Zeit

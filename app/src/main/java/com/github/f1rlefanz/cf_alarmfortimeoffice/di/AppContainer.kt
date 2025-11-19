@@ -61,6 +61,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHe
  * ✓ Clean Architecture mit Interface-basierten Repositories
  * ✓ HUE Integration mit vollständigem Domain Layer
  */
+@Deprecated("Will be removed after Hilt migration - Phase 5")
 class AppContainer(private val context: Context) {
 
     // ==============================

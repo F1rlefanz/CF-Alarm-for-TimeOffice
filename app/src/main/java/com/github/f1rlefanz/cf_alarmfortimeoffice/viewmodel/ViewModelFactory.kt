@@ -15,6 +15,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
  * ✅ Singleton ViewModels für State-Sharing zwischen Komponenten
  * ✅ Reactive Architecture für lose Kopplung
  */
+@Deprecated("Will be removed after Hilt migration - Phase 5")
 class ViewModelFactory(
     private val appContainer: AppContainer
 ) : ViewModelProvider.Factory {

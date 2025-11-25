@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -136,13 +137,13 @@ class CalendarUseCase @Inject constructor(
     
     /**
      * Lädt Events für spezifische Kalender mit automatischer Token-Verwaltung
+     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
      */
     override suspend fun getCalendarEvents(
-        calendarIds: Set<String>,
-        daysAhead: Int
+        calendarIds: Set<String>
     ): Result<List<CalendarEvent>> {
         // Delegation an Cache-Methode mit Standard-Verhalten (kein Force-Refresh)
-        return getCalendarEventsWithCache(calendarIds, daysAhead, forceRefresh = false)
+        return getCalendarEventsWithCache(calendarIds, forceRefresh = false)
     }
     
     /**
@@ -154,9 +155,10 @@ class CalendarUseCase @Inject constructor(
      */
     override suspend fun getCalendarEventsWithCache(
         calendarIds: Set<String>,
-        daysAhead: Int,
         forceRefresh: Boolean
     ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
+        // PHASE 2 CLEANUP: daysAhead fixed at 14 days per PROJEKT-BRIEFING 4.0
+        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
         SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsWithCache") {
             
             // ✅ PHASE 4: Modern token validation with OAuth2TokenManager
@@ -217,14 +219,11 @@ class CalendarUseCase @Inject constructor(
                 for (calendarId in calendarIds) {
                     try {
                         // BACKGROUND PROCESSING: Ensure we're on IO thread
-                        withContext(Dispatchers.IO) {
                             calendarRepository.getCalendarEventsWithCache(
                                 accessToken = accessToken,
                                 calendarId = calendarId,
-                                daysAhead = daysAhead,
                                 forceRefresh = forceRefresh
-                            )
-                        }.fold(
+                            ).fold(
                             onSuccess = { events ->
                                 allEvents.addAll(events)
                                 processedCount++
@@ -307,10 +306,11 @@ class CalendarUseCase @Inject constructor(
      */
     override suspend fun getCalendarEventsLazy(
         calendarIds: Set<String>,
-        daysAhead: Int,
         maxEvents: Int,
         offset: Int
     ): Result<EventPage> = withContext(Dispatchers.IO) {
+        // PHASE 2 CLEANUP: daysAhead fixed at 14 days per PROJEKT-BRIEFING 4.0
+        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
         SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsLazy") {
             
             // ✅ PHASE 4: Modern token validation with OAuth2TokenManager
@@ -376,7 +376,6 @@ class CalendarUseCase @Inject constructor(
                 val cachedEvents = calendarRepository.getCalendarEventsWithCache(
                     accessToken = accessToken,
                     calendarId = calendarId,
-                    daysAhead = daysAhead,
                     forceRefresh = false
                 ).getOrElse { emptyList() }
                 

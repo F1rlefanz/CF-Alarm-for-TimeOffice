@@ -13,11 +13,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.LocalDateTime
 import java.time.Instant
+import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,13 +63,20 @@ data class ManualAlarmUiState(
 /**
  * MEMORY LEAK FIXED: AlarmViewModel with proper resource cleanup
  * 
+ * MIGRATION STATUS:
+ * ✅ @HiltViewModel annotiert
+ * ✅ Constructor Injection mit @Inject
+ * ✅ Alle Dependencies über Interfaces
+ * ✅ Keine Abhängigkeiten zu anderen ViewModels
+ * 
  * CRITICAL FIXES:
  * ✅ Added onCleared() for proper cleanup
  * ✅ Job tracking for Flow collections
  * ✅ Resource cleanup on destruction
  * ✅ Memory leak prevention
  */
-class AlarmViewModel(
+@HiltViewModel
+class AlarmViewModel @Inject constructor(
     private val alarmUseCase: IAlarmUseCase,
     private val alarmSkipUseCase: IAlarmSkipUseCase,
     private val shiftUseCase: IShiftUseCase,

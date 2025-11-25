@@ -13,29 +13,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.*
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ViewModelFactory
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 
 /**
  * Hue Regel-Konfiguration Screen - Deutsche Version
+ *
+ * HILT MIGRATION: Now receives HueViewModel and ShiftViewModel directly instead of ViewModelFactory
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HueRuleConfigScreen(
     ruleId: String?,
-    viewModelFactory: ViewModelFactory,
+    hueViewModel: HueViewModel,
+    shiftViewModel: ShiftViewModel,
     onNavigateBack: () -> Unit,
     onSaveComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val hueViewModel: HueViewModel = viewModel(factory = viewModelFactory)
-    val shiftViewModel: com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel = viewModel(factory = viewModelFactory)
     val uiState by hueViewModel.uiState.collectAsState()
     val shiftState by shiftViewModel.uiState.collectAsState()
     

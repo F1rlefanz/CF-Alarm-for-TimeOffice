@@ -7,17 +7,16 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
-import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.LoginScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.MainScreen
@@ -32,6 +31,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManage
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+/**
+ * MainActivity - FULLY MIGRATED to Hilt DI
+ * 
+ * MIGRATION COMPLETE:
+ * ✅ @AndroidEntryPoint for Hilt injection
+ * ✅ ViewModels via Hilt's viewModels() delegate
+ * ✅ No more AppContainer or ViewModelFactory
+ * ✅ Clean Architecture with proper DI
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -43,32 +51,17 @@ class MainActivity : ComponentActivity() {
         HueBridgeConnectionManager.getInstance(this)
     }
     
-    // ViewModels werden by lazy initialisiert für bessere Performance
-    private val viewModelFactory by lazy { ViewModelFactory(appContainer) }
-    
-    private val authViewModel by lazy { 
-        ViewModelProvider(this, viewModelFactory)[AuthViewModel::class.java]
-    }
-    
-    private val calendarViewModel by lazy { 
-        ViewModelProvider(this, viewModelFactory)[CalendarViewModel::class.java]
-    }
-    
-    private val shiftViewModel by lazy { 
-        ViewModelProvider(this, viewModelFactory)[ShiftViewModel::class.java]
-    }
-    
-    private val alarmViewModel by lazy { 
-        ViewModelProvider(this, viewModelFactory)[AlarmViewModel::class.java]
-    }
-    
-    private val mainViewModel by lazy { 
-        ViewModelProvider(this, viewModelFactory)[MainViewModel::class.java]
-    }
-    
-    private val navigationViewModel by lazy { 
-        ViewModelProvider(this, viewModelFactory)[NavigationViewModel::class.java]
-    }
+    // HILT MIGRATION: ViewModels via Hilt's viewModels() delegate
+    // ✅ Automatically scoped to Activity lifecycle
+    // ✅ Dependencies injected by Hilt
+    // ✅ No manual ViewModelFactory needed
+    private val authViewModel: AuthViewModel by viewModels()
+    private val calendarViewModel: CalendarViewModel by viewModels()
+    private val shiftViewModel: ShiftViewModel by viewModels()
+    private val alarmViewModel: AlarmViewModel by viewModels()
+    private val mainViewModel: MainViewModel by viewModels()
+    private val navigationViewModel: NavigationViewModel by viewModels()
+    private val hueViewModel: HueViewModel by viewModels()
 
     private val requestNotificationPermissionLauncher =
         registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
@@ -81,21 +74,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Dependency Container abrufen
-        appContainer = (application as CFAlarmApplication).appContainer
-        
-        // CRITICAL DIAGNOSTIC: Check OAuth2 integration after container setup - BACKGROUND
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val diagnosticResults = appContainer.diagnoseOAuth2Integration()
-                Logger.business(LogTags.AUTH, "🔍 OAUTH2-DIAGNOSTIC: System integration check:")
-                diagnosticResults.split("\n").forEach { line ->
-                    Logger.business(LogTags.AUTH, "  $line")
-                }
-            } catch (e: Exception) {
-                Logger.e(LogTags.AUTH, "❌ OAUTH2-DIAGNOSTIC: Failed to run diagnostics", e)
-            }
-        }
+        // HILT MIGRATION: No more AppContainer needed - dependencies injected automatically
+        Logger.d(LogTags.AUTH, "🔍 OAUTH2-DIAGNOSTIC: Hilt DI active - dependencies auto-injected")
 
         // Prüfe Notification-Berechtigung
         checkNotificationPermission()
@@ -148,7 +128,7 @@ class MainActivity : ComponentActivity() {
                                 alarmViewModel = alarmViewModel,
                                 mainViewModel = mainViewModel,
                                 navigationViewModel = navigationViewModel,
-                                viewModelFactory = viewModelFactory
+                                hueViewModel = hueViewModel
                             )
                         }
                         "login" -> {
@@ -213,7 +193,7 @@ class MainActivity : ComponentActivity() {
         if (requestCode == OAuth2TokenManager.REQUEST_CODE_CALENDAR_AUTHORIZATION) {
             lifecycleScope.launch {
                 try {
-                    val success = appContainer.oauth2TokenManager.handlePermissionResult(
+                    val success = oauth2TokenManager.handlePermissionResult(
                         requestCode,
                         resultCode
                     )

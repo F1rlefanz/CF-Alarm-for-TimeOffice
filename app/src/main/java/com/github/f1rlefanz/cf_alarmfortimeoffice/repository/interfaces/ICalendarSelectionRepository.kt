@@ -1,22 +1,31 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces
 
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Interface für Calendar Selection Repository
  * 
  * SINGLE SOURCE OF TRUTH: Zentrale Verwaltung der ausgewählten Kalender
  * - Persistente Speicherung mit DataStore
- * - Reactive Flow-basierte API
+ * - Reactive StateFlow-basierte API mit synchronem .value Zugriff
  * - Atomare State Updates
+ * 
+ * ARCHITECTURE NOTE (HILT MIGRATION):
+ * StateFlow statt Flow verwendet für:
+ * - Synchronen Zugriff via .value in ViewModels
+ * - Konsistenz mit CalendarStateHolder-Pattern
+ * - Bessere Compose-Integration via collectAsStateWithLifecycle()
  */
 interface ICalendarSelectionRepository {
     
     /**
-     * Flow der aktuell ausgewählten Kalender-IDs
+     * StateFlow der aktuell ausgewählten Kalender-IDs
+     * 
      * REACTIVE: Emittiert Updates bei Änderungen
+     * SYNCHRON: .value für sofortigen Zugriff verfügbar
+     * INITIAL: Startet mit emptySet() bis DataStore geladen
      */
-    val selectedCalendarIds: Flow<Set<String>>
+    val selectedCalendarIds: StateFlow<Set<String>>
     
     /**
      * Speichert die ausgewählten Kalender-IDs persistent

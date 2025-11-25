@@ -8,13 +8,16 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import java.time.LocalTime
 import java.util.*
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.math.abs
 
 /**
  * UseCase for Hue Rule operations with shift integration
  * Implements business logic layer with validation and rule engine
  */
-class HueRuleUseCase(
+@Singleton
+class HueRuleUseCase @Inject constructor(
     private val configRepository: IHueConfigRepository,
     private val lightUseCase: IHueLightUseCase
 ) : IHueRuleUseCase {

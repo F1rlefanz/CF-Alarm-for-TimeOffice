@@ -61,16 +61,16 @@ interface ICalendarUseCase {
     
     /**
      * LAZY LOADING: Lädt Events mit erweiterten Optionen
+     * 
+     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
      *
      * @param calendarIds Set der Kalender-IDs
-     * @param daysAhead Anzahl Tage in die Zukunft
      * @param maxEvents Maximale Anzahl Events (für Lazy Loading)
      * @param offset Offset für Pagination von Events
      * @return Result mit paginiertem EventPage oder Fehler
      */
     suspend fun getCalendarEventsLazy(
         calendarIds: Set<String>,
-        daysAhead: Int = CalendarConstants.DEFAULT_DAYS_AHEAD,
         maxEvents: Int = CalendarConstants.MAX_EVENTS_PER_QUERY,
         offset: Int = 0
     ): Result<EventPage>
@@ -78,13 +78,13 @@ interface ICalendarUseCase {
     /**
      * Lädt Events für spezifische Kalender
      * 
+     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     * 
      * @param calendarIds Set der Kalender-IDs für die Events geladen werden sollen
-     * @param daysAhead Anzahl Tage in die Zukunft (Standard: DEFAULT_DAYS_AHEAD)
      * @return Result mit Liste der Calendar Events oder Fehler
      */
     suspend fun getCalendarEvents(
-        calendarIds: Set<String>,
-        daysAhead: Int = CalendarConstants.DEFAULT_DAYS_AHEAD
+        calendarIds: Set<String>
     ): Result<List<CalendarEvent>>
     
     /**
@@ -97,14 +97,14 @@ interface ICalendarUseCase {
     /**
      * Lädt Events für spezifische Kalender mit Cache-Support
      * 
+     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     * 
      * @param calendarIds Set der Kalender-IDs für die Events geladen werden sollen
-     * @param daysAhead Anzahl Tage in die Zukunft
      * @param forceRefresh Bypass Cache und lade Events direkt von API
      * @return Result mit Liste der Calendar Events oder Fehler
      */
     suspend fun getCalendarEventsWithCache(
         calendarIds: Set<String>,
-        daysAhead: Int = CalendarConstants.DEFAULT_DAYS_AHEAD,
         forceRefresh: Boolean = false
     ): Result<List<CalendarEvent>>
     

@@ -12,14 +12,22 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.isMainContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 
 /**
  * ViewModel für Navigation State Management
  * Ersetzt primitive Boolean-Navigation durch typisierte sealed classes
  * 
+ * MIGRATION STATUS:
+ * ✅ @HiltViewModel annotiert
+ * ✅ Constructor mit @Inject
+ * ✅ Keine Dependencies - perfekt für ersten Test
+ * 
  * MEMORY LEAK FIXED: Added proper cleanup to prevent pthread_mutex_lock errors
  */
-class NavigationViewModel : ViewModel() {
+@HiltViewModel
+class NavigationViewModel @Inject constructor() : ViewModel() {
     
     private val _navigationState = MutableStateFlow<NavigationState>(
         NavigationState.MainContent(MainTab.HOME)

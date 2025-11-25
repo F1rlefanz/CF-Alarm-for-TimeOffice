@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -33,7 +34,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
@@ -79,7 +80,7 @@ class AlarmReceiver : BroadcastReceiver() {
 
         // 🔄 SMART MAINTENANCE CHAIN Level 1 Configuration
         private const val MINIMUM_FUTURE_ALARMS = 3
-        private const val EXTENDED_LOOKAHEAD_DAYS = 21L  // 3 Wochen statt 7 Tage
+        // PHASE 2 CLEANUP: Using global constant from CalendarConstants
         private const val OPPORTUNISTIC_CHECK_PROBABILITY = 0.8f  // 80% der Alarme prüfen
 
         // Log Tags für Smart Maintenance
@@ -260,12 +261,11 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 Logger.d(
                     TAG_MAINTENANCE,
-                    "🔍 EXTENDED LOOKAHEAD: Scanning $EXTENDED_LOOKAHEAD_DAYS days ahead for ${selectedCalendarIds.size} calendars"
+                    "🔍 EXTENDED LOOKAHEAD: Scanning ${CalendarConstants.DEFAULT_DAYS_AHEAD} days ahead for ${selectedCalendarIds.size} calendars"
                 )
 
                 val extendedEventsResult = calendarUseCase.getCalendarEventsWithCache(
                     calendarIds = selectedCalendarIds,
-                    daysAhead = EXTENDED_LOOKAHEAD_DAYS.toInt(),
                     forceRefresh = false
                 )
 
@@ -542,14 +542,11 @@ class AlarmReceiver : BroadcastReceiver() {
      *
      * Creates a synthetic ShiftMatch from available alarm data and executes
      * any applicable Hue rules configured for this shift pattern.
+     * 
+     * HILT MIGRATION: Now uses injected dependencies instead of appContainer
      */
     private fun executeHueRulesForAlarm(context: Context, shiftName: String) {
         try {
-            // Get AppContainer for Hue services
-            val appContainer = (context.applicationContext as CFAlarmApplication).appContainer
-            val hueRuleUseCase = appContainer.hueRuleUseCase
-            val shiftUseCase = appContainer.shiftUseCase
-
             Logger.business(
                 LogTags.ALARM_RECEIVER,
                 "🎨 Starting Hue rule execution for shift: $shiftName"
@@ -558,7 +555,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // Execute in background coroutine to avoid blocking the alarm
             runBlocking {
                 try {
-                    // Try to find matching shift definition
+                    // Try to find matching shift definition using injected shiftUseCase
                     val shiftConfigResult = shiftUseCase.getCurrentShiftConfig()
 
                     if (shiftConfigResult.isSuccess) {
@@ -579,7 +576,7 @@ class AlarmReceiver : BroadcastReceiver() {
                                 shiftName = shiftName
                             )
 
-                            // Execute Hue rules for this shift
+                            // Execute Hue rules for this shift using injected hueRuleUseCase
                             val currentTime = LocalTime.now()
                             val executionResult = hueRuleUseCase.executeRulesForAlarm(
                                 shift = syntheticShiftMatch,

@@ -8,12 +8,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHue
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * UPDATED Repository for Hue Bridge operations with ROBUST connection management
@@ -30,7 +33,10 @@ import kotlinx.coroutines.withContext
  * 
  * Implements Clean Architecture with Interface-based DI and Logger integration
  */
-class HueBridgeRepository(context: Context) : IHueBridgeRepository {
+@Singleton
+class HueBridgeRepository @Inject constructor(
+    @ApplicationContext private val context: Context
+) : IHueBridgeRepository {
     
     companion object {
         private const val APP_NAME = "CFAlarmForTimeOffice"

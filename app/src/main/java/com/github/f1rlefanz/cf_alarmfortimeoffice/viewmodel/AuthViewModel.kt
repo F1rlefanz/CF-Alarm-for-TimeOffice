@@ -7,6 +7,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import android.content.Context
@@ -22,10 +25,18 @@ import kotlinx.coroutines.delay
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import androidx.core.content.edit
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 
 /**
  * MODERNIZED: AuthViewModel with CredentialAuthManager
- * 
+ *
+ * MIGRATION STATUS:
+ * ✅ @HiltViewModel annotiert
+ * ✅ Constructor Injection mit @Inject
+ * ✅ Alle Dependencies über Interfaces
+ * ✅ Keine Abhängigkeiten zu anderen ViewModels
+ *
  * PERFORMANCE FIXES:
  * ✅ Uses modern androidx.credentials API
  * ✅ Atomic state updates (no mutex blocking)
@@ -34,13 +45,14 @@ import androidx.core.content.edit
  * ✅ Memory leak prevention
  * ✅ REACTIVE CALENDAR SELECTION: Auto-syncs hasSelectedCalendars flag
  */
-class AuthViewModel(
+@HiltViewModel
+class AuthViewModel @Inject constructor(
     private val authDataStoreRepository: IAuthDataStoreRepository,
     private val credentialAuthManager: CredentialAuthManager,
     private val errorHandler: ErrorHandler,
-    private val authUseCase: com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase? = null,
-    private val calendarSelectionRepository: com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository? = null,
-    private val backgroundServiceManager: com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager? = null
+    private val authUseCase: IAuthUseCase,
+    private val calendarSelectionRepository: ICalendarSelectionRepository,
+    private val backgroundServiceManager: BackgroundServiceManager
 ) : ViewModel() {
 
     // CONSOLIDATED STATE: Ein einziger State statt AuthState + AuthUiState
@@ -503,7 +515,7 @@ class AuthViewModel(
                                 triggerCalendarReloadAfterAuth()
                                 
                                 // Initialize maintenance service after successful authorization
-                                backgroundServiceManager?.initializeMaintenanceService()
+                                backgroundServiceManager.initializeMaintenanceService()
                                 Logger.business(LogTags.AUTH, "✅ Maintenance service initialized after authorization")
                             } else {
                                 Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: Calendar authorization failed or denied, hasValidToken=false")
@@ -530,7 +542,8 @@ class AuthViewModel(
                     // Fallback to old method without Activity context
                     Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: No Activity context provided, using legacy method")
                     
-                    authUseCase?.requestCalendarAuthorization(userEmail)?.fold(
+                    val authResult = authUseCase.requestCalendarAuthorization(userEmail)
+                    authResult?.fold(
                         onSuccess = { authorized ->
                             updateAuthState { currentState ->
                                 currentState.copy(
@@ -548,7 +561,7 @@ class AuthViewModel(
                                 triggerCalendarReloadAfterAuth()
                                 
                                 // Initialize maintenance service after successful authorization
-                                backgroundServiceManager?.initializeMaintenanceService()
+                                backgroundServiceManager.initializeMaintenanceService()
                                 Logger.business(LogTags.AUTH, "✅ Maintenance service initialized after authorization")
                             }
                         },
@@ -673,7 +686,7 @@ class AuthViewModel(
                 }
                 
                 // Use BackgroundServiceManager to schedule the maintenance service
-                backgroundServiceManager?.scheduleInitialAlarmMaintenance()
+                backgroundServiceManager.scheduleInitialAlarmMaintenance()
                     ?: Logger.w(LogTags.AUTH, "⚠️ INITIAL ALARM: BackgroundServiceManager not available")
                 
                 Logger.business(LogTags.AUTH, "✅ INITIAL ALARM: Initial maintenance scheduling delegated to BackgroundServiceManager")

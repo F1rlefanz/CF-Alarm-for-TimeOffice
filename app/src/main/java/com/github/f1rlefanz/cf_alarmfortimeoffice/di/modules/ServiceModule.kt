@@ -1,12 +1,15 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.di.modules
 
+import android.app.Application
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WakeLockManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.IWakeLockManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -19,6 +22,9 @@ import javax.inject.Singleton
  * 
  * Stellt alle Service-bezogenen Komponenten bereit
  * OAuth2TokenManager, AlarmManagerService, etc.
+ * 
+ * NOTE: BackgroundServiceManager is not provided here because it has its own
+ * @Singleton @Inject constructor and is automatically provided by Hilt.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -39,17 +45,26 @@ object ServiceModule {
     
     @Provides
     @Singleton
+    fun provideWakeLockManager(
+        @ApplicationContext context: Context
+    ): WakeLockManager = WakeLockManager(context)
+    
+    @Provides
+    @Singleton
+    fun provideIWakeLockManager(
+        wakeLockManager: WakeLockManager
+    ): IWakeLockManager = wakeLockManager
+    
+    @Provides
+    @Singleton
     fun provideAlarmManagerService(
-        @ApplicationContext context: Context
-    ): AlarmManagerService = AlarmManagerService(context)
+        application: Application,
+        wakeLockManager: WakeLockManager
+    ): AlarmManagerService = AlarmManagerService(application, wakeLockManager)
     
     @Provides
     @Singleton
-    fun provideBackgroundServiceManager(
-        @ApplicationContext context: Context
-    ): BackgroundServiceManager = BackgroundServiceManager(context)
-    
-    @Provides
-    @Singleton
-    fun provideShiftRecognitionEngine(): ShiftRecognitionEngine = ShiftRecognitionEngine()
+    fun provideShiftRecognitionEngine(
+        shiftConfigRepository: IShiftConfigRepository
+    ): ShiftRecognitionEngine = ShiftRecognitionEngine(shiftConfigRepository)
 }

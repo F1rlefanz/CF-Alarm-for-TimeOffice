@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -38,7 +39,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class DataStoreTokenRepository @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) : TokenRepository {
     
     companion object {

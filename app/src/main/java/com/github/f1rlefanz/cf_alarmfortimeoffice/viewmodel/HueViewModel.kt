@@ -10,12 +10,21 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 
 /**
  * ViewModel for Hue Integration following Clean Architecture
  * Manages state for Bridge Setup, Light Control, and Rule Management
+ *
+ * MIGRATION STATUS:
+ * ✅ @HiltViewModel annotiert
+ * ✅ Constructor Injection mit @Inject
+ * ✅ Isolierte Hue-Dependencies
+ * ✅ Keine Abhängigkeiten zu anderen ViewModels
  */
-class HueViewModel(
+@HiltViewModel
+class HueViewModel @Inject constructor(
     private val hueBridgeUseCase: IHueBridgeUseCase,
     private val hueLightUseCase: IHueLightUseCase,
     private val hueRuleUseCase: IHueRuleUseCase

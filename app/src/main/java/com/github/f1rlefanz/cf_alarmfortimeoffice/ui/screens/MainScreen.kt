@@ -26,7 +26,7 @@ fun MainScreen(
     alarmViewModel: AlarmViewModel,
     mainViewModel: MainViewModel,
     navigationViewModel: NavigationViewModel,
-    viewModelFactory: ViewModelFactory
+    hueViewModel: HueViewModel
 ) {
     // PHASE 1 MIGRATION: Get context for battery exemption checks
     val context = LocalContext.current
@@ -266,7 +266,8 @@ fun MainScreen(
                 val hueRuleState = navigationState as NavigationState.HueRuleConfig
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
                     ruleId = hueRuleState.ruleId,
-                    viewModelFactory = viewModelFactory,
+                    hueViewModel = hueViewModel,
+                    shiftViewModel = shiftViewModel,
                     onNavigateBack = { navigationViewModel.navigateBackToMain() },
                     onSaveComplete = { navigationViewModel.navigateBackToMain() }
                 )
@@ -274,7 +275,7 @@ fun MainScreen(
 
             is NavigationState.HueSettings -> {
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueSettingsScreen(
-                    viewModelFactory = viewModelFactory,
+                    hueViewModel = hueViewModel,
                     onNavigateBack = { navigationViewModel.navigateBackToMain() },
                     onEditRule = { ruleId -> navigationViewModel.navigateToHueRuleConfig(ruleId) },
                     onCreateNewRule = { navigationViewModel.navigateToHueRuleConfig() }
@@ -289,7 +290,7 @@ fun MainScreen(
                     shiftViewModel = shiftViewModel,
                     alarmViewModel = alarmViewModel,
                     mainViewModel = mainViewModel,
-                    viewModelFactory = viewModelFactory,
+                    hueViewModel = hueViewModel,
                     selectedTab = mainContentState.selectedTab,
                     onSelectedTabChange = { tab -> navigationViewModel.changeTab(tab) },
                     onShowShiftConfig = { navigationViewModel.navigateToShiftConfig(mainContentState.selectedTab) },

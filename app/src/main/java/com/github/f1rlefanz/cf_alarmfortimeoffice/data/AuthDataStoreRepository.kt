@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,7 +38,7 @@ private val Context.authDataStore: DataStore<Preferences> by preferencesDataStor
  */
 @Singleton
 class AuthDataStoreRepository @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) : IAuthDataStoreRepository {
 
     private val dataStore = context.authDataStore

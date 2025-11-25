@@ -3,12 +3,16 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +25,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import javax.inject.Inject
 
 /**
  * IMMUTABLE UI State für optimale Compose Performance
@@ -56,6 +61,12 @@ data class CalendarUiState(
 /**
  * CalendarViewModel - REFACTORED with Single Source of Truth
  * 
+ * MIGRATION STATUS:
+ * ✅ @HiltViewModel annotiert
+ * ✅ Constructor Injection mit @Inject
+ * ✅ CalendarStateHolder integriert für ViewModel-Entkopplung
+ * ✅ Alle Dependencies über Interfaces
+ * 
  * STATE SYNCHRONISATION FIXES:
  * ✅ Verwendet ICalendarSelectionRepository als Single Source of Truth
  * ✅ Keine temporären States mehr - nur persistente Speicherung
@@ -65,9 +76,11 @@ data class CalendarUiState(
  * ✅ Eliminiert Race Conditions durch atomare Updates
  */
 @OptIn(FlowPreview::class)
-class CalendarViewModel(
+@HiltViewModel
+class CalendarViewModel @Inject constructor(
     private val calendarUseCase: ICalendarUseCase,
     private val calendarSelectionRepository: ICalendarSelectionRepository,
+    private val calendarStateHolder: com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder,
     private val errorHandler: ErrorHandler,
     private val shiftUseCase: com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase,
     private val alarmUseCase: com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -96,7 +109,7 @@ class CalendarViewModel(
         _localUiState.asStateFlow(),
         calendarSelectionRepository.selectedCalendarIds
             .debounce(30) // PERFORMANCE: Reduziert von 50ms auf 30ms für noch bessere Responsiveness
-            .distinctUntilChanged() // EFFICIENCY: Nur bei echten Änderungen
+            // NOTE: distinctUntilChanged() entfernt - StateFlow ist bereits distinct by design
     ) { localState, persistedCalendarIds ->
         // PERFORMANCE: Nur neuen State erstellen wenn sich tatsächlich etwas geändert hat
         if (localState.selectedCalendarIds != persistedCalendarIds) {
@@ -221,8 +234,8 @@ class CalendarViewModel(
      */
     private fun observeCalendarSelection() {
         viewModelScope.launch {
+            // NOTE: distinctUntilChanged() entfernt - StateFlow ist bereits distinct by design
             calendarSelectionRepository.selectedCalendarIds
-                .distinctUntilChanged()
                 .collect { selectedIds ->
                     val calendarCount = selectedIds.size
                     Logger.d(LogTags.CALENDAR, "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars")
@@ -243,6 +256,8 @@ class CalendarViewModel(
                                 hasMoreEvents = false
                             )
                         }
+                        // CRITICAL: Update CalendarStateHolder when clearing events
+                        calendarStateHolder.clearEvents()
                     }
                 }
         }
@@ -419,13 +434,13 @@ class CalendarViewModel(
      * MAIN-THREAD OPTIMIZATION: Komplett asynchrone Event-Loading ohne UI-Blockierung
      * LAZY LOADING: Progressive Event-Darstellung für bessere User Experience
      * 
-     * @param daysAhead Anzahl der Tage für Event-Loading
+     * PHASE 2 CLEANUP: daysAhead parameter removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     *
      * @param forceRefresh Ob Cache umgangen werden soll
      * @param initialPageSize Initiale Anzahl Events (LAZY LOADING)
      * @param loadAll Ob alle Events geladen werden sollen (Default: false für Lazy Loading)
      */
     fun loadEventsForSelectedCalendars(
-        daysAhead: Int? = null,
         forceRefresh: Boolean = false,
         initialPageSize: Int = 10, // LAZY LOADING: Nur 10 Events initial
         loadAll: Boolean = false // LAZY LOADING: Default ist Lazy Loading
@@ -445,9 +460,6 @@ class CalendarViewModel(
             // IMMEDIATE UI FEEDBACK: Show loading state instantly
             updateLocalStateImmediate { it.copy(isLoading = true, error = null) }
             
-            // BUG FIX: Verwende aktuelle ShiftConfig.daysAhead statt hardcodierte DEFAULT_DAYS_AHEAD
-            val effectiveDaysAhead = daysAhead ?: getEffectiveDaysAhead()
-            
             try {
                 // LAZY LOADING IMPLEMENTATION: Load limited events first
                 if (!forceRefresh && !loadAll) {
@@ -459,6 +471,9 @@ class CalendarViewModel(
                             hasMoreEvents = true // Assume more events initially
                         )
                     }
+                    
+                    // CRITICAL: Clear events in CalendarStateHolder when starting lazy loading
+                    calendarStateHolder.clearEvents()
                 }
                 
                 val allEvents = mutableListOf<CalendarEvent>()
@@ -471,14 +486,12 @@ class CalendarViewModel(
                         val singleCalendarResult = if (loadAll) {
                             calendarUseCase.getCalendarEventsWithCache(
                                 calendarIds = setOf(calendarId),
-                                daysAhead = effectiveDaysAhead,
                                 forceRefresh = forceRefresh
                             )
                         } else {
                             // LAZY LOADING: Load only initial page size
                             calendarUseCase.getCalendarEventsLazy(
                                 calendarIds = setOf(calendarId),
-                                daysAhead = effectiveDaysAhead,
                                 maxEvents = initialPageSize,
                                 offset = 0
                             ).map { eventPage ->
@@ -509,6 +522,9 @@ class CalendarViewModel(
                                     eventOffset = sortedEvents.size
                                 )
                             }
+                            
+                            // CRITICAL: Update CalendarStateHolder with progressive events
+                            calendarStateHolder.updateEvents(sortedEvents)
                             
                     Logger.d(LogTags.CALENDAR, "Progressive loading: ${events.size} events loaded, total: $totalEventCount")
                         }.onFailure { error ->
@@ -544,6 +560,9 @@ class CalendarViewModel(
                     )
                 }
                 
+                // CRITICAL: Update CalendarStateHolder with final events
+                calendarStateHolder.updateEvents(finalSortedEvents)
+                
                 // 🚨 CRITICAL FIX: Automatically create alarms from recognized shifts!
                 if (finalSortedEvents.isNotEmpty()) {
                     // DEBUGGING: Log current state before alarm creation
@@ -552,9 +571,9 @@ class CalendarViewModel(
                 }
                 
                 if (forceRefresh) {
-                    Logger.i(LogTags.CALENDAR, "Progressive calendar events force refreshed - ${finalSortedEvents.size} events loaded for $effectiveDaysAhead days${if (!loadAll) " (lazy loaded)" else ""}")
+                    Logger.i(LogTags.CALENDAR, "Progressive calendar events force refreshed - ${finalSortedEvents.size} events loaded for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days${if (!loadAll) " (lazy loaded)" else ""}")
                 } else {
-                    Logger.d(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for $effectiveDaysAhead days${if (!loadAll) " (lazy loaded)" else ""}")
+                    Logger.d(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days${if (!loadAll) " (lazy loaded)" else ""}")
                 }
                 
             } catch (e: Exception) {
@@ -630,13 +649,11 @@ class CalendarViewModel(
      * FIXED: daysAhead is now always 14 days as per Briefing 4.0
      * No longer read from ShiftConfig
      */
-    private fun getEffectiveDaysAhead(): Int {
-        return CalendarConstants.DEFAULT_DAYS_AHEAD // Always 14 days
-    }
+
 
     /**
      * LAZY LOADING: Load more events with pagination
-     * BUG FIX: Verwendet ShiftConfig.daysAhead statt hardcodierte Konstante
+     * FIXED: Always uses DEFAULT_DAYS_AHEAD (14 days) per PROJEKT-BRIEFING 4.0
      * PERFORMANCE FIX: Verbesserte Race Condition Prevention
      */
     fun loadMoreEvents(offset: Int = 0, limit: Int = 50) {
@@ -661,12 +678,10 @@ class CalendarViewModel(
                 return@launch
             }
 
-            // BUG FIX: Verwende aktuelle ShiftConfig.daysAhead statt hardcodierte DEFAULT_DAYS_AHEAD
-            val effectiveDaysAhead = getEffectiveDaysAhead()
+            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
             
             calendarUseCase.getCalendarEventsLazy(
                 calendarIds = selectedIds,
-                daysAhead = effectiveDaysAhead,
                 maxEvents = limit,
                 offset = offset
             ).onSuccess { eventPage ->
@@ -683,7 +698,10 @@ class CalendarViewModel(
                     )
                 }
                 
-                    Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} more events for $effectiveDaysAhead days, total: ${allEvents.size}/${eventPage.totalEvents}")
+                // CRITICAL: Update CalendarStateHolder when loading more events
+                calendarStateHolder.updateEvents(allEvents)
+                
+                    Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} more events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, total: ${allEvents.size}/${eventPage.totalEvents}")
             }.onFailure { error ->
                 updateLocalState { 
                     it.copy(
@@ -968,9 +986,9 @@ class CalendarViewModel(
                     allCalendarIds.chunked(3).forEach { batch ->
                         batch.forEach { calendarId ->
                             // Load events with cache (allows stale) for each calendar
+                            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days
                             calendarUseCase.getCalendarEventsWithCache(
                                 calendarIds = setOf(calendarId),
-                                daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD,
                                 forceRefresh = false
                             ).onSuccess {
                                 Logger.d(LogTags.CALENDAR, "Background sync completed for calendar ${calendarId.take(8)}...")

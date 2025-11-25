@@ -12,6 +12,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcess
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import kotlinx.coroutines.flow.Flow
+import javax.inject.Inject
 
 /**
  * Use case implementation for alarm skip functionality.
@@ -21,7 +22,7 @@ import kotlinx.coroutines.flow.Flow
  * ✅ Prevents "ghost alarms" that trigger despite being skipped
  * ✅ Properly cleans up both DataStore state AND Android AlarmManager
  */
-class AlarmSkipUseCase(
+class AlarmSkipUseCase @Inject constructor(
     private val alarmSkipRepository: IAlarmSkipRepository,
     private val alarmRepository: IAlarmRepository,
     private val alarmManagerService: AlarmManagerService

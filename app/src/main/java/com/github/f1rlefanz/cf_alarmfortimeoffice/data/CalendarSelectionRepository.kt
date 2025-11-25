@@ -9,12 +9,21 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
-import kotlinx.coroutines.flow.Flow
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import javax.inject.Inject
+import javax.inject.Singleton
 
 // Extension property for Context to create DataStore
 private val Context.calendarSelectionDataStore: DataStore<Preferences> by preferencesDataStore(name = "calendar_selection_prefs")
@@ -25,33 +34,79 @@ private val Context.calendarSelectionDataStore: DataStore<Preferences> by prefer
  * SINGLE SOURCE OF TRUTH IMPLEMENTATION:
  * ✅ Zentrale Verwaltung der ausgewählten Kalender-IDs
  * ✅ Persistente Speicherung mit DataStore Preferences
- * ✅ Reactive Flow-basierte API mit distinctUntilChanged()
+ * ✅ StateFlow-basierte API mit synchronem .value Zugriff
  * ✅ Atomare State Updates - keine Race Conditions
  * ✅ Result-basierte Fehlerbehandlung
  * ✅ Comprehensive CRUD Operations
+ * 
+ * ARCHITECTURE (HILT MIGRATION):
+ * - MutableStateFlow für internen State
+ * - Automatische Synchronisation mit DataStore
+ * - .value Zugriff für ViewModels ohne Coroutine-Overhead
  */
-class CalendarSelectionRepository(
-    private val context: Context
+@Singleton
+class CalendarSelectionRepository @Inject constructor(
+    @ApplicationContext private val context: Context
 ) : ICalendarSelectionRepository {
 
     private val dataStore = context.calendarSelectionDataStore
     private val selectedCalendarIdsKey = stringSetPreferencesKey("selected_calendar_ids")
+    
+    /**
+     * Repository-eigener CoroutineScope für DataStore-Synchronisation
+     * SupervisorJob: Fehler in einem Child-Coroutine beeinflussen andere nicht
+     */
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    
+    /**
+     * INTERNAL STATE: MutableStateFlow für synchronen Zugriff
+     * Wird beim Start aus DataStore initialisiert und bei Änderungen aktualisiert
+     */
+    private val _selectedCalendarIds = MutableStateFlow<Set<String>>(emptySet())
 
     /**
-     * REACTIVE STATE: Flow der ausgewählten Kalender-IDs mit distinctUntilChanged()
-     * Verhindert unnötige Recompositions bei identischen Sets
+     * PUBLIC API: StateFlow der ausgewählten Kalender-IDs
+     * 
+     * SYNCHRONER ZUGRIFF: .value liefert aktuellen State sofort
+     * REACTIVE: Kann mit collect() oder collectAsStateWithLifecycle() beobachtet werden
+     * DISTINCT: Nur echte Änderungen werden emittiert
      */
-    override val selectedCalendarIds: Flow<Set<String>> = dataStore.data
-        .map { preferences ->
-            preferences[selectedCalendarIdsKey] ?: emptySet()
+    override val selectedCalendarIds: StateFlow<Set<String>> = _selectedCalendarIds.asStateFlow()
+    
+    init {
+        // Initialisierung: Lade persistierte Daten in StateFlow
+        initializeFromDataStore()
+    }
+    
+    /**
+     * Lädt den initialen State aus DataStore in den StateFlow
+     * Wird einmalig beim Repository-Start ausgeführt
+     */
+    private fun initializeFromDataStore() {
+        repositoryScope.launch {
+            try {
+                dataStore.data
+                    .map { preferences ->
+                        preferences[selectedCalendarIdsKey] ?: emptySet()
+                    }
+                    .distinctUntilChanged()
+                    .collect { ids ->
+                        _selectedCalendarIds.value = ids
+                        Logger.d(LogTags.CALENDAR, "Calendar selection synced from DataStore: ${ids.size} calendars")
+                    }
+            } catch (e: Exception) {
+                Logger.e(LogTags.CALENDAR, "Failed to sync calendar selection from DataStore", e)
+            }
         }
-        .distinctUntilChanged() // PERFORMANCE: Nur bei echten Änderungen emittieren
+    }
 
     /**
      * ATOMIC UPDATE: Kompletter Austausch der ausgewählten Kalender-IDs
+     * Aktualisiert sowohl StateFlow als auch DataStore
      */
     override suspend fun saveSelectedCalendarIds(calendarIds: Set<String>): Result<Unit> = 
         SafeExecutor.safeExecute("CalendarSelectionRepository.saveSelectedCalendarIds") {
+            // StateFlow wird automatisch via DataStore-Collector aktualisiert
             dataStore.edit { preferences ->
                 preferences[selectedCalendarIdsKey] = calendarIds
             }
@@ -60,8 +115,8 @@ class CalendarSelectionRepository(
 
     override suspend fun getCurrentSelectedCalendarIds(): Result<Set<String>> = 
         SafeExecutor.safeExecute("CalendarSelectionRepository.getCurrentSelectedCalendarIds") {
-            val preferences = dataStore.data.first()
-            preferences[selectedCalendarIdsKey] ?: emptySet()
+            // Nutze StateFlow für synchronen Zugriff
+            _selectedCalendarIds.value
         }
 
     /**
@@ -102,7 +157,6 @@ class CalendarSelectionRepository(
 
     override suspend fun hasSelectedCalendars(): Result<Boolean> = 
         SafeExecutor.safeExecute("CalendarSelectionRepository.hasSelectedCalendars") {
-            val currentIds = getCurrentSelectedCalendarIds().getOrElse { emptySet() }
-            currentIds.isNotEmpty()
+            _selectedCalendarIds.value.isNotEmpty()
         }
 }

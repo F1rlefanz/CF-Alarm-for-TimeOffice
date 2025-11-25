@@ -11,12 +11,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import javax.inject.Inject
 
 /**
  * UseCase for Hue Bridge operations
  * Implements business logic layer with validation and error handling
  */
-class HueBridgeUseCase(
+class HueBridgeUseCase @Inject constructor(
     private val bridgeRepository: IHueBridgeRepository,
     private val configRepository: IHueConfigRepository
 ) : IHueBridgeUseCase {

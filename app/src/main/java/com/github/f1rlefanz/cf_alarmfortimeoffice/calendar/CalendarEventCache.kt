@@ -22,18 +22,16 @@ class CalendarEventCache {
     
     private data class CacheKey(
         val calendarId: String,
-        val daysAhead: Int,
         val baseTime: LocalDateTime // Zur nächsten Stunde gerundet für bessere Cache-Hits
     ) {
         companion object {
-            fun create(calendarId: String, daysAhead: Int): CacheKey {
+            fun create(calendarId: String): CacheKey {
                 // Runde auf nächste Stunde für bessere Cache-Wiederverwendung
                 val roundedTime = LocalDateTime.now()
                     .truncatedTo(ChronoUnit.HOURS)
-                
+
                 return CacheKey(
                     calendarId = calendarId,
-                    daysAhead = daysAhead,
                     baseTime = roundedTime
                 )
             }
@@ -57,14 +55,15 @@ class CalendarEventCache {
     private val maxCacheSize = 20 // Prevent memory bloat
     
     /**
-     * Checks if valid cache entry exists for given parameters
+     * Checks if valid cache entry exists for given calendar
+     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
      */
-    suspend fun isCached(calendarId: String, daysAhead: Int): Boolean = cacheMutex.withLock {
-        val key = CacheKey.create(calendarId, daysAhead)
+    suspend fun isCached(calendarId: String): Boolean = cacheMutex.withLock {
+        val key = CacheKey.create(calendarId)
         val entry = cache[key]
         
         if (entry != null && !entry.isExpired()) {
-            Logger.cache(LogTags.CALENDAR_CACHE, "HIT", "calendar ${calendarId.take(8)}..., daysAhead=$daysAhead")
+            Logger.cache(LogTags.CALENDAR_CACHE, "HIT", "calendar ${calendarId.take(8)}...")
             return@withLock true
         }
         
@@ -73,15 +72,16 @@ class CalendarEventCache {
             cache.remove(key)
         }
         
-        Logger.cache(LogTags.CALENDAR_CACHE, "MISS", "calendar ${calendarId.take(8)}..., daysAhead=$daysAhead")
+        Logger.cache(LogTags.CALENDAR_CACHE, "MISS", "calendar ${calendarId.take(8)}...")
         return@withLock false
     }
     
     /**
      * Retrieves events from cache
+     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
      */
-    suspend fun get(calendarId: String, daysAhead: Int): List<CalendarEvent>? = cacheMutex.withLock {
-        val key = CacheKey.create(calendarId, daysAhead)
+    suspend fun get(calendarId: String): List<CalendarEvent>? = cacheMutex.withLock {
+        val key = CacheKey.create(calendarId)
         val entry = cache[key]
         
         return@withLock if (entry != null && !entry.isExpired()) {
@@ -98,10 +98,10 @@ class CalendarEventCache {
     
     /**
      * Stores events in cache
+     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
      */
     suspend fun put(
         calendarId: String, 
-        daysAhead: Int, 
         events: List<CalendarEvent>, 
         etag: String? = null
     ) = cacheMutex.withLock {
@@ -130,7 +130,7 @@ class CalendarEventCache {
                 .build()
         }
         
-        val key = CacheKey.create(calendarId, daysAhead)
+        val key = CacheKey.create(calendarId)
         val entry = CacheEntry(
             events = optimizedEvents,
             timestamp = LocalDateTime.now(),
@@ -145,15 +145,7 @@ class CalendarEventCache {
         }
     }
     
-    /**
-     * Invalidiert spezifischen Cache-Eintrag
-     */
-    suspend fun invalidate(calendarId: String, daysAhead: Int) = cacheMutex.withLock {
-        val key = CacheKey.create(calendarId, daysAhead)
-        cache.remove(key)
-        Logger.d(LogTags.CALENDAR_CACHE, "Invalidated cache for daysAhead=$daysAhead")
-    }
-    
+
     /**
      * Invalidiert alle Cache-Einträge für einen Kalender
      */
@@ -174,9 +166,10 @@ class CalendarEventCache {
     
     /**
      * Holt ETag für Change Detection
+     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
      */
-    suspend fun getETag(calendarId: String, daysAhead: Int): String? = cacheMutex.withLock {
-        val key = CacheKey.create(calendarId, daysAhead)
+    suspend fun getETag(calendarId: String): String? = cacheMutex.withLock {
+        val key = CacheKey.create(calendarId)
         return@withLock cache[key]?.etag
     }
     

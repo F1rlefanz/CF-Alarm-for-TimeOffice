@@ -52,8 +52,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.4.6"
+        versionCode = 29
+        versionName = "1.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -300,6 +300,7 @@ dependencies {
 
     // Dependency Injection
     implementation(libs.hilt.android)
+    implementation(libs.hilt.navigation.compose)
     kapt(libs.hilt.compiler)
 
     // Testing dependencies

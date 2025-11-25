@@ -18,9 +18,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Repository für Alarm-Daten - implementiert IAlarmRepository Interface
@@ -47,8 +50,9 @@ data class AlarmInfoData(
     val eventChecksum: String = ""
 )
 
-class AlarmRepository(
-    private val dataStore: DataStore<Preferences>
+@Singleton
+class AlarmRepository @Inject constructor(
+    @MainDataStore private val dataStore: DataStore<Preferences>
 ) : IAlarmRepository {
 
     companion object {

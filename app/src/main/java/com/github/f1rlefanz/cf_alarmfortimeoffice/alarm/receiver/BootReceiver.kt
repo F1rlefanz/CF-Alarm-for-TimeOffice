@@ -9,12 +9,18 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
-import com.github.f1rlefanz.cf_alarmfortimeoffice.CFAlarmApplication
-import com.github.f1rlefanz.cf_alarmfortimeoffice.di.AppContainer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
+import dagger.hilt.android.AndroidEntryPoint
 import java.time.LocalDateTime
+import javax.inject.Inject
 
 /**
  * 🛡️ SMART MAINTENANCE CHAIN Level 4: Enhanced Boot Receiver
@@ -45,8 +51,17 @@ import java.time.LocalDateTime
  * - Final safety net für alle anderen Smart Maintenance Levels
  * - Ensures system integrity after any critical system events
  * - Maintains consistency with existing architecture patterns
+ * 
+ * HILT MIGRATION: Now uses Hilt dependency injection instead of AppContainer
  */
+@AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
+
+    @Inject lateinit var alarmUseCase: IAlarmUseCase
+    @Inject lateinit var calendarUseCase: ICalendarUseCase
+    @Inject lateinit var shiftUseCase: IShiftUseCase
+    @Inject lateinit var calendarSelectionRepository: CalendarSelectionRepository
+    @Inject lateinit var authDataStoreRepository: IAuthDataStoreRepository
 
     companion object {
         // 🛡️ Level 4 Configuration
@@ -138,35 +153,24 @@ class BootReceiver : BroadcastReceiver() {
                     Logger.d(LogTags.MAINTENANCE_L4, "⏱️ LEVEL 4: Waiting for system stability...")
                     delay(BOOT_RECOVERY_DELAY_MS)
 
-                    // 2. Get App Container
-                    val appContainer = try {
-                        (context.applicationContext as CFAlarmApplication).appContainer
-                    } catch (e: Exception) {
-                        Logger.e(
-                            LogTags.MAINTENANCE_L4,
-                            "❌ LEVEL 4: Failed to get app container",
-                            e
-                        )
-                        throw Exception("App container not available", e)
-                    }
+                    // 2. HILT MIGRATION: Dependencies are now injected, no AppContainer needed
 
                     // 3. Comprehensive Health Diagnostics
-                    val healthStatus = performHealthDiagnostics(appContainer, reason)
+                    val healthStatus = performHealthDiagnostics(reason)
                     Logger.business(
                         LogTags.MAINTENANCE_L4,
                         "🔍 LEVEL 4: Health diagnostics completed - $healthStatus"
                     )
 
                     // 4. Alarm Repository Recovery
-                    val alarmRecoveryResult = performAlarmRecovery(appContainer)
+                    val alarmRecoveryResult = performAlarmRecovery()
                     Logger.business(
                         LogTags.MAINTENANCE_L4,
                         "🔄 LEVEL 4: Alarm recovery completed - $alarmRecoveryResult"
                     )
 
                     // 5. Calendar Integration Restoration
-                    val calendarRestorationResult =
-                        performCalendarIntegrationRestoration(appContainer)
+                    val calendarRestorationResult = performCalendarIntegrationRestoration()
                     Logger.business(
                         LogTags.MAINTENANCE_L4,
                         "📅 LEVEL 4: Calendar restoration completed - $calendarRestorationResult"
@@ -223,32 +227,26 @@ class BootReceiver : BroadcastReceiver() {
 
     /**
      * 🔍 Comprehensive Health Diagnostics
+     * 
+     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
     private suspend fun performHealthDiagnostics(
-        appContainer: AppContainer,
         reason: String
     ): String {
         val diagnosticResults = mutableListOf<String>()
 
         try {
-            // Check App Container Health
-            diagnosticResults.add("App Container: ✅ Available")
-
             // Check UseCase Availability
             diagnosticResults.add("Alarm UseCase: ✅ Available")
             diagnosticResults.add("Calendar UseCase: ✅ Available")
             diagnosticResults.add("Shift UseCase: ✅ Available")
 
             // Check Repository Health
-            diagnosticResults.add("Alarm Repository: ✅ Available")
             diagnosticResults.add("Calendar Selection Repository: ✅ Available")
-
-            // Check Service Health
-            diagnosticResults.add("Alarm Manager Service: ✅ Available")
 
             // Check Authentication Status
             val authStatus = try {
-                appContainer.authDataStoreRepository.isAuthenticated().getOrElse { false }
+                authDataStoreRepository.isAuthenticated().getOrElse { false }
             } catch (e: Exception) {
                 Logger.w(LogTags.MAINTENANCE_L4, "Failed to check auth status", e)
                 false
@@ -257,7 +255,7 @@ class BootReceiver : BroadcastReceiver() {
 
             // Check Calendar Selection
             val selectedCalendars = try {
-                appContainer.calendarSelectionRepository.selectedCalendarIds.first()
+                calendarSelectionRepository.selectedCalendarIds.first()
             } catch (e: Exception) {
                 Logger.w(LogTags.MAINTENANCE_L4, "Failed to check calendar selection", e)
                 emptySet()
@@ -266,7 +264,7 @@ class BootReceiver : BroadcastReceiver() {
 
             // Check Current Alarm Count
             val currentAlarms = try {
-                appContainer.alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
+                alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
             } catch (e: Exception) {
                 Logger.w(LogTags.MAINTENANCE_L4, "Failed to check alarm count", e)
                 emptyList()
@@ -291,14 +289,11 @@ class BootReceiver : BroadcastReceiver() {
      * ✅ Verhindert: "Alter Alarm klingelt für gelöschtes/geändertes Event"
      * ✅ Löscht: Alarme für nicht-existierende Events
      * ✅ Updated: Alarme für geänderte Events
+     * 
+     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
-    private suspend fun performAlarmRecovery(appContainer: AppContainer): String {
+    private suspend fun performAlarmRecovery(): String {
         return try {
-            val alarmUseCase = appContainer.alarmUseCase
-            val calendarUseCase = appContainer.calendarUseCase
-            val calendarSelectionRepository = appContainer.calendarSelectionRepository
-            val shiftUseCase = appContainer.shiftUseCase
-
             // 1. Get all stored alarms
             val storedAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
             Logger.d(LogTags.MAINTENANCE_L4, "🔍 LEVEL 4: Found ${storedAlarms.size} stored alarms")
@@ -316,11 +311,11 @@ class BootReceiver : BroadcastReceiver() {
             var deletedCount = 0
             
             // Get current calendar events for validation
+            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
             val selectedCalendars = calendarSelectionRepository.selectedCalendarIds.first()
             val currentEvents = if (selectedCalendars.isNotEmpty()) {
                 calendarUseCase.getCalendarEventsWithCache(
                     calendarIds = selectedCalendars,
-                    daysAhead = 21, // 3 weeks lookahead
                     forceRefresh = false
                 ).getOrNull() ?: emptyList()
             } else {
@@ -440,12 +435,11 @@ class BootReceiver : BroadcastReceiver() {
 
     /**
      * 📅 Calendar Integration Restoration
+     * 
+     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
-    private suspend fun performCalendarIntegrationRestoration(appContainer: AppContainer): String {
+    private suspend fun performCalendarIntegrationRestoration(): String {
         return try {
-            val calendarUseCase = appContainer.calendarUseCase
-            val authDataStoreRepository = appContainer.authDataStoreRepository
-
             // 1. Check authentication status
             val isAuthenticated = authDataStoreRepository.isAuthenticated().getOrElse { false }
             if (!isAuthenticated) {
@@ -453,13 +447,12 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // 2. Test calendar connection by trying to get calendar events
+            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
             val connectionTest = try {
-                val selectedCalendars =
-                    appContainer.calendarSelectionRepository.selectedCalendarIds.first()
+                val selectedCalendars = calendarSelectionRepository.selectedCalendarIds.first()
                 if (selectedCalendars.isNotEmpty()) {
                     val testEvents = calendarUseCase.getCalendarEventsWithCache(
                         calendarIds = selectedCalendars,
-                        daysAhead = 1, // Just test with 1 day
                         forceRefresh = false
                     )
                     testEvents.isSuccess
@@ -536,6 +529,8 @@ class BootReceiver : BroadcastReceiver() {
 
     /**
      * 🔍 Schedule Post-Recovery Health Check
+     * 
+     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
     private fun schedulePostRecoveryHealthCheck(context: Context, reason: String) {
         recoveryScope.launch {
@@ -547,8 +542,7 @@ class BootReceiver : BroadcastReceiver() {
 
                 delay(POST_BOOT_HEALTH_CHECK_DELAY_MS)
 
-                val appContainer = (context.applicationContext as CFAlarmApplication).appContainer
-                val healthStatus = performHealthDiagnostics(appContainer, "POST_RECOVERY_CHECK")
+                val healthStatus = performHealthDiagnostics("POST_RECOVERY_CHECK")
 
                 Logger.business(
                     LogTags.MAINTENANCE_L4,
@@ -556,8 +550,7 @@ class BootReceiver : BroadcastReceiver() {
                 )
 
                 // Check alarm count and trigger maintenance if needed
-                val currentAlarms =
-                    appContainer.alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
+                val currentAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
                 val futureAlarms =
                     currentAlarms.filter { it.triggerTime > System.currentTimeMillis() }
 

@@ -26,6 +26,9 @@ import java.net.UnknownHostException
 import java.time.LocalDateTime
 import java.time.ZoneId
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 data class CalendarItem(val id: String, val displayName: String)
 
@@ -39,7 +42,10 @@ data class CalendarItem(val id: String, val displayName: String)
  * ✅ Efficient Collections für optimierte Listen/Maps
  * ✅ Background Memory-Cleanup bei High-Pressure
  */
-class CalendarRepository(private var context: Context? = null) : ICalendarRepository {
+@Singleton
+class CalendarRepository @Inject constructor(
+    @ApplicationContext private var context: Context
+) : ICalendarRepository {
     
     private val transport = NetHttpTransport()
     private val jsonFactory = GsonFactory.getDefaultInstance()
@@ -108,22 +114,23 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
 
     override suspend fun getCalendarEventsWithToken(
         accessToken: String,
-        calendarId: String,
-        daysAhead: Int
+        calendarId: String
     ): Result<List<CalendarEvent>> {
-        return getCalendarEventsWithCache(accessToken, calendarId, daysAhead, forceRefresh = false)
+        // PHASE 2 CLEANUP: daysAhead fixed at 14 days
+        return getCalendarEventsWithCache(accessToken, calendarId, forceRefresh = false)
     }
 
     override suspend fun getCalendarEventsWithCache(
         accessToken: String,
         calendarId: String,
-        daysAhead: Int,
         forceRefresh: Boolean
     ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
+        // PHASE 2 CLEANUP: daysAhead fixed at 14 days
+        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
         SafeExecutor.safeExecute("CalendarRepository.getEventsWithCache") {
             
-            if (!forceRefresh && eventCache.isCached(calendarId, daysAhead)) {
-                val cachedEvents = eventCache.get(calendarId, daysAhead)
+            if (!forceRefresh && eventCache.isCached(calendarId)) {
+                val cachedEvents = eventCache.get(calendarId)
                 if (cachedEvents != null) {
                     Logger.i(LogTags.CALENDAR_CACHE, "Returning ${cachedEvents.size} cached events")
                     
@@ -149,14 +156,41 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
                     .toInstant()
                     .toString()
 
-                val result: Events = service.events().list(calendarId)
+                // ETag-Support: Get cached ETag for conditional request
+                val cachedEtag = eventCache.getETag(calendarId)
+
+                val request = service.events().list(calendarId)
                     .setTimeMin(com.google.api.client.util.DateTime(timeMin))
                     .setTimeMax(com.google.api.client.util.DateTime(timeMax))
                     .setOrderBy("startTime")
                     .setSingleEvents(true)
                     .setMaxResults(CalendarConstants.MAX_EVENTS_PER_QUERY)
-                    .setFields("items(id,summary,start,end)")
-                    .execute()
+                    .setFields("items(id,summary,start,end),etag")
+
+                // Add If-None-Match header if we have a cached ETag
+                if (cachedEtag != null) {
+                    request.requestHeaders.set("If-None-Match", cachedEtag)
+                    Logger.d(LogTags.CALENDAR_API, "Using ETag for conditional request: ${cachedEtag.take(20)}...")
+                }
+
+                val result: Events = try {
+                    request.execute()
+                } catch (e: GoogleJsonResponseException) {
+                    // Handle 304 Not Modified response
+                    if (e.statusCode == 304) {
+                        Logger.i(LogTags.CALENDAR_API, "304 Not Modified - using cached data")
+                        val cachedEvents = eventCache.get(calendarId)
+                        if (cachedEvents != null) {
+                            return@safeExecute cachedEvents
+                        }
+                        // Fallback if cache was cleared - re-fetch without ETag
+                        Logger.w(LogTags.CALENDAR_API, "Cache miss despite 304 - refetching without ETag")
+                        request.requestHeaders.remove("If-None-Match")
+                        request.execute()
+                    } else {
+                        throw e
+                    }
+                }
 
                 val events = result.items ?: emptyList()
                 Logger.i(LogTags.CALENDAR_API, "${events.size} events loaded for next $daysAhead days")
@@ -164,8 +198,13 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
                 // PERFORMANCE: Use optimized event processing
                 val calendarEvents = processEventsWithOptimization(events, calendarId)
                 
-                eventCache.put(calendarId, daysAhead, calendarEvents, result.etag)
-                Logger.d(LogTags.CALENDAR_CACHE, "${calendarEvents.size} events cached for future requests")
+                // Store events with ETag for future conditional requests
+                val newEtag = result.etag
+                if (newEtag != null) {
+                    Logger.d(LogTags.CALENDAR_API, "Received new ETag: ${newEtag.take(20)}...")
+                }
+                eventCache.put(calendarId, calendarEvents, newEtag)
+                Logger.d(LogTags.CALENDAR_CACHE, "${calendarEvents.size} events cached with ETag for future requests")
                 
                 calendarEvents
             } catch (e: Exception) {
@@ -177,10 +216,11 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
     override suspend fun getCalendarEventsWithPagination(
         accessToken: String,
         calendarId: String,
-        daysAhead: Int,
         maxResults: Int,
         pageToken: String?
     ): Result<EventsPage> = withContext(Dispatchers.IO) {
+        // PHASE 2 CLEANUP: daysAhead fixed at 14 days
+        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
         SafeExecutor.safeExecute("CalendarRepository.getCalendarEventsWithPagination") {
             Logger.d(LogTags.CALENDAR_API, "Loading events with pagination: pageToken=${pageToken?.take(10)}..., maxResults=$maxResults")
             val service = getCalendarService(accessToken)
@@ -199,13 +239,41 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
                     .setOrderBy("startTime")
                     .setSingleEvents(true)
                     .setMaxResults(maxResults)
-                    .setFields("items(id,summary,start,end),nextPageToken")
+                    .setFields("items(id,summary,start,end),nextPageToken,etag")
 
                 if (pageToken != null) {
                     eventsRequest.pageToken = pageToken
                 }
+                
+                // ETag-Support for pagination requests
+                val cachedEtag = eventCache.getETag(calendarId)
+                if (cachedEtag != null && pageToken == null) { // Only use ETag on first page
+                    eventsRequest.requestHeaders.set("If-None-Match", cachedEtag)
+                    Logger.d(LogTags.CALENDAR_API, "Using ETag for conditional pagination request: ${cachedEtag.take(20)}...")
+                }
 
-                val result = eventsRequest.execute()
+                val result = try {
+                    eventsRequest.execute()
+                } catch (e: GoogleJsonResponseException) {
+                    // Handle 304 Not Modified response
+                    if (e.statusCode == 304) {
+                        Logger.i(LogTags.CALENDAR_API, "304 Not Modified - using cached data for pagination")
+                        val cachedEvents = eventCache.get(calendarId)
+                        if (cachedEvents != null) {
+                            return@safeExecute EventsPage(
+                                events = cachedEvents,
+                                nextPageToken = null,
+                                hasMorePages = false
+                            )
+                        }
+                        // Fallback if cache was cleared - re-fetch without ETag
+                        Logger.w(LogTags.CALENDAR_API, "Cache miss despite 304 - refetching without ETag")
+                        eventsRequest.requestHeaders.remove("If-None-Match")
+                        eventsRequest.execute()
+                    } else {
+                        throw e
+                    }
+                }
                 val events = result.items ?: emptyList()
                 val nextPageToken = result.nextPageToken
 
@@ -213,6 +281,12 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
 
                 // PERFORMANCE: Use optimized event processing
                 val calendarEvents = processEventsWithOptimization(events, calendarId)
+                
+                // Store first page with ETag for future conditional requests
+                if (pageToken == null && result.etag != null) {
+                    Logger.d(LogTags.CALENDAR_API, "Caching first page with ETag: ${result.etag.take(20)}...")
+                    eventCache.put(calendarId, calendarEvents, result.etag)
+                }
                 
                 EventsPage(
                     events = calendarEvents,
@@ -225,12 +299,9 @@ class CalendarRepository(private var context: Context? = null) : ICalendarReposi
         }
     }
     
-    override suspend fun invalidateCalendarCache(calendarId: String, daysAhead: Int?) {
-        if (daysAhead != null) {
-            eventCache.invalidate(calendarId, daysAhead)
-        } else {
-            eventCache.invalidateCalendar(calendarId)
-        }
+    override suspend fun invalidateCalendarCache(calendarId: String) {
+        // PHASE 2 CLEANUP: Always invalidate for fixed 14 days
+        eventCache.invalidateCalendar(calendarId)
     }
     
     override suspend fun clearEventCache() {

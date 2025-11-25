@@ -8,10 +8,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHue
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import android.content.Context
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * UPDATED Repository for Hue Light operations with ROBUST connection management
@@ -28,8 +31,9 @@ import android.content.Context
  * 
  * Implements Clean Architecture with Interface-based DI and Logger integration
  */
-class HueLightRepository(
-    private val context: Context,
+@Singleton
+class HueLightRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val bridgeRepository: IHueBridgeRepository
 ) : IHueLightRepository {
     

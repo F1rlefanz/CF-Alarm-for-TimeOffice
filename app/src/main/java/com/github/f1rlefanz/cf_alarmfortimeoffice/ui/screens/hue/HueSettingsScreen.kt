@@ -13,25 +13,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ViewModelFactory
 
 /**
  * Hue Settings Screen - Bridge and Rules Management
+ *
+ * HILT MIGRATION: Now receives HueViewModel directly instead of ViewModelFactory
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HueSettingsScreen(
-    viewModelFactory: ViewModelFactory,
+    hueViewModel: HueViewModel,
     onNavigateBack: () -> Unit,
     onEditRule: (String) -> Unit,
     onCreateNewRule: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val hueViewModel: HueViewModel = viewModel(factory = viewModelFactory)
     val uiState by hueViewModel.uiState.collectAsState()
     
     LaunchedEffect(Unit) {

@@ -9,16 +9,20 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmSkipRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Repository implementation for alarm skip functionality.
  * Handles persistence of alarm skip state using DataStore.
  */
-class AlarmSkipRepository(
-    private val dataStore: DataStore<Preferences>
+@Singleton
+class AlarmSkipRepository @Inject constructor(
+    @MainDataStore private val dataStore: DataStore<Preferences>
 ) : IAlarmSkipRepository {
     
     override val skipStatusFlow: Flow<AlarmSkipState> = dataStore.data.map { preferences ->

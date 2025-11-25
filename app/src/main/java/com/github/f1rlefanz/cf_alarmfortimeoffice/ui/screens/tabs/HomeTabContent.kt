@@ -208,7 +208,7 @@ fun HomeTabContent(
                 } else if (calendarState.events.isNotEmpty()) {
                     // LAZY LOADING: Show limited events overview in home tab
                     val displayEventCount = minOf(calendarState.events.size, 5) // Show max 5 events in overview
-                    Text("${calendarState.events.size} Events in den nächsten $daysAhead Tagen")
+                    Text("${calendarState.events.size} Events in den nächsten 14 Tagen")
                     Text(
                         "${shiftState.recognizedShifts.size} Schichten erkannt",
                         style = MaterialTheme.typography.bodyMedium,

@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
+import javax.inject.Inject
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -26,7 +27,7 @@ import kotlin.time.Duration.Companion.minutes
  * @author CF-Alarm Development Team
  * @since Hue Integration v2.1
  */
-class HueLightUseCase(
+class HueLightUseCase @Inject constructor(
     private val lightRepository: IHueLightRepository
 ) : IHueLightUseCaseAdvanced {
     

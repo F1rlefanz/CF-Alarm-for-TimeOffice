@@ -13,29 +13,28 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.AnimatedDiscoveryCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ViewModelFactory
 import kotlinx.coroutines.launch
 
 /**
  * Fixed Hue Tab Content with proper scrolling and layout
  * Resolved: UI overflow, scrolling issues, layout problems, missing navigation
+ *
+ * HILT MIGRATION: Now receives HueViewModel directly instead of ViewModelFactory
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HueTabContent(
-    viewModelFactory: ViewModelFactory,
+    hueViewModel: HueViewModel,
     onNavigateToRuleConfig: () -> Unit,
     onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val hueViewModel: HueViewModel = viewModel(factory = viewModelFactory)
     val uiState by hueViewModel.uiState.collectAsState()
     val discoveryStatus by hueViewModel.discoveryStatus.collectAsState()
 

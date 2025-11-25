@@ -14,12 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.*
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ViewModelFactory
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 
 /**
@@ -41,18 +40,20 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
  * - Material Design 3 components
  * - Accessibility-friendly UI
  * 
+ * HILT MIGRATION:
+ * ✅ Now receives HueViewModel via hiltViewModel() instead of ViewModelFactory
+ * 
  * @author CF-Alarm Development Team
  * @since Hue Integration v2
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HueBridgeSetupScreen(
-    viewModelFactory: ViewModelFactory,
     onNavigateBack: () -> Unit,
     onSetupComplete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    hueViewModel: HueViewModel = hiltViewModel()
 ) {
-    val hueViewModel: HueViewModel = viewModel(factory = viewModelFactory)
     val uiState by hueViewModel.uiState.collectAsState()
     val discoveryStatus by hueViewModel.discoveryStatus.collectAsState()
     

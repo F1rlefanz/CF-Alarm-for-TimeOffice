@@ -37,9 +37,11 @@ class BackgroundPrefetcher(
     
     // CONFIGURATION: Prefetch-Einstellungen
     private val maxAccessHistory = 100
-    private val prefetchWindowDays = 14 // Prefetch 2 weeks ahead
     private val minPatternConfidence = 0.7 // 70% confidence threshold
     private val backgroundProcessingInterval = 30000L // 30 seconds
+
+    // PHASE 2 CLEANUP: daysAhead fixed at 14 days per PROJEKT-BRIEFING 4.0
+    private val PREFETCH_DAYS = 14 // Always prefetch 14 days ahead
     
     companion object {
         @Volatile
@@ -60,7 +62,6 @@ class BackgroundPrefetcher(
     
     data class UserAccessPattern(
         val calendarId: String,
-        val daysAhead: Int,
         val timeOfDay: Int, // Hour of day (0-23)
         val dayOfWeek: DayOfWeek,
         val accessCount: Int = 1,
@@ -70,7 +71,6 @@ class BackgroundPrefetcher(
     
     data class AccessEvent(
         val calendarId: String,
-        val daysAhead: Int,
         val timestamp: LocalDateTime,
         val timeOfDay: Int,
         val dayOfWeek: DayOfWeek
@@ -78,7 +78,6 @@ class BackgroundPrefetcher(
     
     data class PrefetchTask(
         val calendarId: String,
-        val daysAhead: Int,
         val priority: Priority,
         val confidence: Double,
         val scheduledTime: LocalDateTime = LocalDateTime.now()
@@ -92,12 +91,12 @@ class BackgroundPrefetcher(
     
     /**
      * LEARNING: Lernt aus User-Zugriffsmustern
+     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
      */
-    suspend fun recordAccess(calendarId: String, daysAhead: Int) {
+    suspend fun recordAccess(calendarId: String) {
         val now = LocalDateTime.now()
         val event = AccessEvent(
             calendarId = calendarId,
-            daysAhead = daysAhead,
             timestamp = now,
             timeOfDay = now.hour,
             dayOfWeek = now.dayOfWeek
@@ -111,7 +110,7 @@ class BackgroundPrefetcher(
             }
             
             // Update or create pattern
-            val patternKey = "${calendarId}_${daysAhead}_${now.hour}_${now.dayOfWeek}"
+            val patternKey = "${calendarId}_${now.hour}_${now.dayOfWeek}"
             val existingPattern = userPatterns[patternKey]
             
             if (existingPattern != null) {
@@ -126,7 +125,6 @@ class BackgroundPrefetcher(
                 // Create new pattern
                 userPatterns[patternKey] = UserAccessPattern(
                     calendarId = calendarId,
-                    daysAhead = daysAhead,
                     timeOfDay = now.hour,
                     dayOfWeek = now.dayOfWeek,
                     confidence = calculateConfidence(1)
@@ -137,7 +135,7 @@ class BackgroundPrefetcher(
         }
         
         // Trigger immediate smart prefetch based on new pattern
-        triggerSmartPrefetch(calendarId, daysAhead)
+        triggerSmartPrefetch(calendarId)
     }
     
     /**
@@ -155,8 +153,9 @@ class BackgroundPrefetcher(
     
     /**
      * SMART PREFETCHING: Intelligente Vorhersage basierend auf Patterns
+     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
      */
-    private suspend fun triggerSmartPrefetch(accessedCalendarId: String, accessedDaysAhead: Int) {
+    private suspend fun triggerSmartPrefetch(accessedCalendarId: String) {
         val prefetchTasks = mutableListOf<PrefetchTask>()
         
         prefetchMutex.withLock {
@@ -169,7 +168,6 @@ class BackgroundPrefetcher(
             relatedCalendars.forEach { relatedId ->
                 prefetchTasks.add(PrefetchTask(
                     calendarId = relatedId,
-                    daysAhead = accessedDaysAhead,
                     priority = Priority.MEDIUM,
                     confidence = 0.6
                 ))
@@ -179,15 +177,7 @@ class BackgroundPrefetcher(
             val temporalPredictions = predictNextAccesses(currentHour, currentDay)
             prefetchTasks.addAll(temporalPredictions)
             
-            // EXTENDED TIMEFRAME: Längere Zeiträume für denselben Kalender
-            if (accessedDaysAhead < 14) {
-                prefetchTasks.add(PrefetchTask(
-                    calendarId = accessedCalendarId,
-                    daysAhead = accessedDaysAhead + 7, // Next week
-                    priority = Priority.LOW,
-                    confidence = 0.4
-                ))
-            }
+            // PHASE 2 CLEANUP: Extended timeframe removed - always 14 days
         }
         
         // Execute prefetch tasks in background
@@ -225,7 +215,6 @@ class BackgroundPrefetcher(
                 if (pattern.confidence >= minPatternConfidence) {
                     predictions.add(PrefetchTask(
                         calendarId = pattern.calendarId,
-                        daysAhead = pattern.daysAhead,
                         priority = Priority.HIGH,
                         confidence = pattern.confidence
                     ))
@@ -237,7 +226,6 @@ class BackgroundPrefetcher(
                 if (pattern.confidence >= 0.5) {
                     predictions.add(PrefetchTask(
                         calendarId = pattern.calendarId,
-                        daysAhead = pattern.daysAhead,
                         priority = Priority.MEDIUM,
                         confidence = pattern.confidence * 0.8 // Reduced confidence
                     ))
@@ -270,7 +258,6 @@ class BackgroundPrefetcher(
                             calendarRepository.getCalendarEventsWithCache(
                                 accessToken = accessToken,
                                 calendarId = task.calendarId,
-                                daysAhead = task.daysAhead,
                                 forceRefresh = false
                             ).onSuccess {
                                 Logger.cache(LogTags.PERFORMANCE, "PREFETCH-SUCCESS", "calendar ${task.calendarId.take(8)}...")

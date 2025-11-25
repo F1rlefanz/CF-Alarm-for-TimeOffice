@@ -18,6 +18,9 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 // Extension property for Context to create DataStore
 private val Context.shiftDataStore: DataStore<Preferences> by preferencesDataStore(name = "shift_prefs")
@@ -34,8 +37,9 @@ private val Context.shiftDataStore: DataStore<Preferences> by preferencesDataSto
  * 
  * Verwaltet Schicht-Konfigurationen mit DataStore Preferences + Performance-Caching
  */
-class ShiftConfigRepository(
-    private val context: Context
+@Singleton
+class ShiftConfigRepository @Inject constructor(
+    @ApplicationContext private val context: Context
 ) : IShiftConfigRepository {
 
     private val dataStore = context.shiftDataStore

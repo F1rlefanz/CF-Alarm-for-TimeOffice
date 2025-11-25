@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import java.time.LocalDateTime
+import javax.inject.Inject
 
 /**
  * UseCase für alle Shift-bezogenen Operationen - implementiert IShiftUseCase
@@ -28,7 +29,7 @@ import java.time.LocalDateTime
  * ✅ Integration mit ShiftRecognitionEngine für intelligente Shift-Erkennung
  * ✅ SINGLETON PATTERN: Cache-Invalidierung für optimale Performance
  */
-class ShiftUseCase(
+class ShiftUseCase @Inject constructor(
     private val shiftConfigRepository: IShiftConfigRepository,
     private val shiftRecognitionEngine: ShiftRecognitionEngine
 ) : IShiftUseCase {

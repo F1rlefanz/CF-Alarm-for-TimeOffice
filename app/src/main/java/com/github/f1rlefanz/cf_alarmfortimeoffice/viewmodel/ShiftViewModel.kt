@@ -2,21 +2,23 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.FlowPreview
+import javax.inject.Inject
 
 data class ShiftUiState(
     val isLoading: Boolean = false,
@@ -26,11 +28,22 @@ data class ShiftUiState(
     val error: String? = null
 )
 
+/**
+ * ShiftViewModel - REFACTORED mit Hilt und CalendarStateHolder
+ *
+ * MIGRATION:
+ * ✅ @HiltViewModel annotiert
+ * ✅ Constructor Injection mit @Inject
+ * ✅ CalendarStateHolder statt CalendarViewModel
+ * ✅ Keine direkte ViewModel-zu-ViewModel Dependency mehr!
+ */
 @OptIn(FlowPreview::class)
-class ShiftViewModel(
+@HiltViewModel
+class ShiftViewModel @Inject constructor(
     private val shiftUseCase: IShiftUseCase,
-    private val errorHandler: ErrorHandler,
-    private val calendarViewModel: CalendarViewModel? = null // Optional für lose Kopplung
+    private val alarmUseCase: IAlarmUseCase,  // NEW: For alarm creation
+    private val calendarStateHolder: CalendarStateHolder,
+    private val errorHandler: ErrorHandler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShiftUiState())
@@ -38,38 +51,35 @@ class ShiftViewModel(
 
     init {
         loadShiftConfig()
-        observeCalendarEvents() // Neue reactive Schichterkennung
+        observeCalendarEvents() // Reactive Schichterkennung via StateHolder
     }
-    
+
     /**
-     * REACTIVE PATTERN: Observiert Calendar Events automatisch
+     * REACTIVE PATTERN: Observiert Calendar Events vom StateHolder
      * PERFORMANCE: Enhanced debouncing strategy für different scenarios
-     * LOOSE COUPLING: Optional dependency für Entkopplung
+     * DECOUPLED: Nutzt CalendarStateHolder statt direkte ViewModel-Referenz
      * MEMORY SAFE: Proper cleanup über viewModelScope
+     * 
+     * NOTE: distinctUntilChanged() removed - StateFlow already provides this behavior
+     * (Operator Fusion - see StateFlow documentation)
      */
     private fun observeCalendarEvents() {
-        calendarViewModel?.let { calendarVM ->
-            viewModelScope.launch {
-                calendarVM.uiState
-                    .map { it.events } // Nur Events extrahieren
-                    .distinctUntilChanged() // Performance: Nur bei echten Änderungen
-                    .debounce(400) // ENHANCED: Längeres Debouncing für teure Shift-Recognition (400ms)
-                    .collect { events: List<CalendarEvent> ->
-                        if (events.isNotEmpty()) {
-                            Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: Calendar events changed, triggering shift recognition for ${events.size} events")
-                            processCalendarEvents(events)
-                        } else {
-                            // Clear recognized shifts wenn keine Events vorhanden
-                            _uiState.value = _uiState.value.copy(
-                                recognizedShifts = emptyList(),
-                                upcomingShift = null
-                            )
-                            Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: No calendar events, clearing recognized shifts")
-                        }
+        viewModelScope.launch {
+            calendarStateHolder.events
+                .debounce(400) // ENHANCED: Längeres Debouncing für teure Shift-Recognition (400ms)
+                .collect { events: List<CalendarEvent> ->
+                    if (events.isNotEmpty()) {
+                        Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: Calendar events changed via StateHolder, triggering shift recognition for ${events.size} events")
+                        processCalendarEvents(events)
+                    } else {
+                        // Clear recognized shifts wenn keine Events vorhanden
+                        _uiState.value = _uiState.value.copy(
+                            recognizedShifts = emptyList(),
+                            upcomingShift = null
+                        )
+                        Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: No calendar events in StateHolder, clearing recognized shifts")
                     }
-            }
-        } ?: run {
-            Logger.w(LogTags.SHIFT_RECOGNITION, "CalendarViewModel not provided - automatic shift recognition disabled")
+                }
         }
     }
 
@@ -130,19 +140,20 @@ class ShiftViewModel(
                     )
                     
                     // REACTIVE FIX: Re-run shift recognition with updated config
-                    calendarViewModel?.uiState?.value?.events?.let { currentEvents ->
-                        if (currentEvents.isNotEmpty()) {
-                            Logger.d(LogTags.SHIFT_RECOGNITION, "Shift config updated, re-processing ${currentEvents.size} calendar events with new definitions")
-                            
-                            // Small delay to ensure config is fully persisted
-                            kotlinx.coroutines.delay(200)
-                            
-                            processCalendarEvents(currentEvents)
-                            
-                            // 🚨 CRITICAL FIX: Trigger automatic alarm creation after shift config update!
-                            Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation after shift config change")
-                            triggerAlarmCreationFromConfigUpdate()
-                        }
+                    // HILT MIGRATION: Now uses CalendarStateHolder instead of direct ViewModel reference
+                    val currentEvents = calendarStateHolder.events.value
+                    if (currentEvents.isNotEmpty()) {
+                        val eventCount = currentEvents.size
+                        Logger.d(LogTags.SHIFT_RECOGNITION, "Shift config updated, re-processing $eventCount calendar events with new definitions")
+
+                        // Small delay to ensure config is fully persisted
+                        kotlinx.coroutines.delay(200)
+
+                        processCalendarEvents(currentEvents)
+
+                        // 🚨 CRITICAL FIX: Trigger automatic alarm creation after shift config update!
+                        Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation after shift config change")
+                        triggerAlarmCreationFromConfigUpdate()
                     }
                 }
                 .onFailure { error ->
@@ -202,22 +213,42 @@ class ShiftViewModel(
     /**
      * 🚨 CRITICAL FIX: Triggers alarm creation after shift config updates
      * This ensures that when new shift definitions are added, alarms are automatically created
+     * 
+     * NOW USES: CalendarStateHolder events instead of direct CalendarViewModel reference
      */
     private fun triggerAlarmCreationFromConfigUpdate() {
-        calendarViewModel?.let { calendarVM ->
+        viewModelScope.launch {
             Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation for newly recognized shifts")
             
-            viewModelScope.launch {
-                // Small delay to ensure shift recognition is complete
-                kotlinx.coroutines.delay(100)
-                
-                // Trigger alarm creation from current events
-                calendarVM.createAlarmsFromCurrentEvents()
-                
-                Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarm creation triggered successfully")
+            // Small delay to ensure shift recognition is complete
+            kotlinx.coroutines.delay(100)
+            
+            // Get current events from CalendarStateHolder
+            val currentEvents = calendarStateHolder.events.value
+            
+            if (currentEvents.isNotEmpty()) {
+                // Trigger alarm creation via AlarmUseCase directly
+                _uiState.value.currentShiftConfig?.let { config ->
+                    // First recognize shifts in events
+                    shiftUseCase.recognizeShiftsInEvents(currentEvents)
+                        .onSuccess { shiftMatches ->
+                            // Then create alarms from recognized shifts
+                            val eventsWithShifts = shiftMatches.map { it.calendarEvent }
+                            alarmUseCase.createAlarmsFromEvents(eventsWithShifts, config)
+                                .onSuccess { alarms ->
+                                    Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Created ${alarms.size} alarms from config update")
+                                }
+                                .onFailure { error ->
+                                    Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Failed to create alarms", error)
+                                }
+                        }
+                        .onFailure { error ->
+                            Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Failed to recognize shifts", error)
+                        }
+                }
+            } else {
+                Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: No events available for alarm creation")
             }
-        } ?: run {
-            Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: CalendarViewModel not available for alarm creation")
         }
     }
     

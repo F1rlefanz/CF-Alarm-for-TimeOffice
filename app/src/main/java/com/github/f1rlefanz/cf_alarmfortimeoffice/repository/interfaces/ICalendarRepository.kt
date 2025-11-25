@@ -43,38 +43,40 @@ interface ICalendarRepository {
     /**
      * Lädt Events für einen spezifischen Kalender
      * 
+     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     *
      * @param accessToken OAuth2 Access Token für Google Calendar API
      * @param calendarId ID des Kalenders, für den Events geladen werden sollen
-     * @param daysAhead Anzahl Tage in die Zukunft (Standard: DEFAULT_DAYS_AHEAD)
      * @return Result mit Liste der Calendar Events oder Fehler
      */
     suspend fun getCalendarEventsWithToken(
         accessToken: String,
-        calendarId: String,
-        daysAhead: Int = CalendarConstants.DEFAULT_DAYS_AHEAD
+        calendarId: String
     ): Result<List<CalendarEvent>>
     
     /**
      * Lädt Events mit Cache-Unterstützung und Force-Refresh Option
      * 
+     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     *
      * @param accessToken OAuth2 Access Token für Google Calendar API
      * @param calendarId ID des Kalenders, für den Events geladen werden sollen
-     * @param daysAhead Anzahl Tage in die Zukunft
      * @param forceRefresh Bypass Cache und lade Events direkt von API
      * @return Result mit Liste der Calendar Events oder Fehler
      */
     suspend fun getCalendarEventsWithCache(
         accessToken: String,
         calendarId: String,
-        daysAhead: Int = CalendarConstants.DEFAULT_DAYS_AHEAD,
         forceRefresh: Boolean = false
     ): Result<List<CalendarEvent>>
     
     /**
      * LAZY LOADING: Lädt Events mit Google Calendar API Pagination
+     * 
+     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     * 
      * @param accessToken OAuth2 Access Token
      * @param calendarId Kalender-ID
-     * @param daysAhead Anzahl Tage in die Zukunft
      * @param maxResults Maximale Anzahl Events pro Seite
      * @param pageToken Optional: Token für nächste Seite
      * @return Result mit Events und nextPageToken
@@ -82,7 +84,6 @@ interface ICalendarRepository {
     suspend fun getCalendarEventsWithPagination(
         accessToken: String,
         calendarId: String,
-        daysAhead: Int = CalendarConstants.DEFAULT_DAYS_AHEAD,
         maxResults: Int = 50,
         pageToken: String? = null
     ): Result<EventsPage>
@@ -90,10 +91,11 @@ interface ICalendarRepository {
     /**
      * Invalidiert Cache für spezifischen Kalender
      * 
+     * PHASE 2 CLEANUP: daysAhead removed - cache invalidation now for fixed 14 days
+     * 
      * @param calendarId ID des Kalenders, dessen Cache invalidiert werden soll
-     * @param daysAhead Optional: Spezifischer Zeitbereich, null für alle
      */
-    suspend fun invalidateCalendarCache(calendarId: String, daysAhead: Int? = null)
+    suspend fun invalidateCalendarCache(calendarId: String)
     
     /**
      * Leert den kompletten Event-Cache

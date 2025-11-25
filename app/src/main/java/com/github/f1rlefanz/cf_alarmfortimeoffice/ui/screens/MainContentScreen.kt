@@ -25,7 +25,7 @@ fun MainContentScreen(
     shiftViewModel: ShiftViewModel,
     alarmViewModel: AlarmViewModel,
     mainViewModel: MainViewModel,
-    viewModelFactory: ViewModelFactory,
+    hueViewModel: HueViewModel,
     selectedTab: MainTab,
     onSelectedTabChange: (MainTab) -> Unit,
     onShowShiftConfig: () -> Unit,
@@ -133,7 +133,7 @@ fun MainContentScreen(
                 }
                 MainTab.HUE -> {
                     HueTabContent(
-                        viewModelFactory = viewModelFactory,
+                        hueViewModel = hueViewModel,
                         onNavigateToRuleConfig = onShowHueRuleConfig,
                         onNavigateToSettings = onShowHueSettings
                     )

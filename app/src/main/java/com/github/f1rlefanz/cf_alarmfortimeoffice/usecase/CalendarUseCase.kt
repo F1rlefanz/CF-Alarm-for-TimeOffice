@@ -15,7 +15,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -157,8 +156,6 @@ class CalendarUseCase @Inject constructor(
         calendarIds: Set<String>,
         forceRefresh: Boolean
     ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
-        // PHASE 2 CLEANUP: daysAhead fixed at 14 days per PROJEKT-BRIEFING 4.0
-        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
         SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsWithCache") {
             
             // ✅ PHASE 4: Modern token validation with OAuth2TokenManager
@@ -309,8 +306,6 @@ class CalendarUseCase @Inject constructor(
         maxEvents: Int,
         offset: Int
     ): Result<EventPage> = withContext(Dispatchers.IO) {
-        // PHASE 2 CLEANUP: daysAhead fixed at 14 days per PROJEKT-BRIEFING 4.0
-        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
         SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsLazy") {
             
             // ✅ PHASE 4: Modern token validation with OAuth2TokenManager

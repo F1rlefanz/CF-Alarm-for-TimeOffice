@@ -21,7 +21,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,7 +71,6 @@ class AlarmMaintenanceService : Service() {
         private const val MAINTENANCE_ALARM_REQUEST_CODE = 9999
         private const val MAINTENANCE_INTERVAL_HOURS = 6L
         private const val MIN_BUFFER_DAYS = 7
-        // PHASE 2 CLEANUP: Using global constant from CalendarConstants
         
         private const val PREFS_NAME = "cf_alarm_prefs"
         private const val KEY_LAST_MAINTENANCE = "last_maintenance_time"
@@ -128,7 +126,7 @@ class AlarmMaintenanceService : Service() {
             
             Logger.business(
                 LogTags.MAINTENANCE,
-                "⏰ Next maintenance scheduled for ${java.util.Date(triggerTime)}"
+                "⏰ Next maintenance scheduled for ${Date(triggerTime)}"
             )
         }
     }
@@ -337,7 +335,7 @@ class AlarmMaintenanceService : Service() {
      */
     private fun scheduleNextAlarm() {
         val context = applicationContext
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
         
         val triggerTime = System.currentTimeMillis() + (6 * 60 * 60 * 1000L) // 6 hours
         

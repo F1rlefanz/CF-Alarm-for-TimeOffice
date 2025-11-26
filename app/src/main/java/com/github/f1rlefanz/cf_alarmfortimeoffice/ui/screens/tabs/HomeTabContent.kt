@@ -19,7 +19,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ManualAlarmUiState
@@ -46,8 +45,6 @@ fun HomeTabContent(
     onNavigateToShiftConfig: () -> Unit,
     onShowEventList: (() -> Unit)? = null
 ) {
-    val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD // FIXED: Always 14 days as per Briefing 4.0
-    
     Column(
         modifier = Modifier
             .fillMaxSize()

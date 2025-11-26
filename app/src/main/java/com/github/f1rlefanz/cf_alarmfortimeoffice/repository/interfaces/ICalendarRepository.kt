@@ -3,7 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarItem
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 
 /**
  * Events Page für echte Google Calendar API Pagination

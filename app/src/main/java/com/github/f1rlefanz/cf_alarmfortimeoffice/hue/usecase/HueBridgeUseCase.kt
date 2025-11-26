@@ -25,7 +25,6 @@ class HueBridgeUseCase @Inject constructor(
     companion object {
         private const val DISCOVERY_TIMEOUT_MS = 45000L
         private const val CONNECTION_TIMEOUT_MS = 30000L
-        private const val MIN_BRIDGES_FOR_SUCCESS = 1
     }
     
     override suspend fun discoverBridges(): Result<List<HueBridge>> {
@@ -51,20 +50,12 @@ class HueBridgeUseCase @Inject constructor(
             val bridges = discoveryResult.getOrNull() ?: emptyList()
             
             // Business logic validation
-            when {
-                bridges.isEmpty() -> {
-                    Logger.i(LogTags.HUE_USECASE, "No bridges found during discovery")
-                    Result.success(bridges) // Not an error, just no bridges found
-                }
-                bridges.size >= MIN_BRIDGES_FOR_SUCCESS -> {
-                    Logger.i(LogTags.HUE_USECASE, "Discovery successful: ${bridges.size} bridges found")
-                    Result.success(bridges)
-                }
-                else -> {
-                    Logger.i(LogTags.HUE_USECASE, "Discovery completed with ${bridges.size} bridges")
-                    Result.success(bridges)
-                }
+            if (bridges.isEmpty()) {
+                Logger.i(LogTags.HUE_USECASE, "No bridges found during discovery")
+            } else {
+                Logger.i(LogTags.HUE_USECASE, "Discovery successful: ${bridges.size} bridges found")
             }
+            Result.success(bridges)
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Bridge discovery failed with exception", e)

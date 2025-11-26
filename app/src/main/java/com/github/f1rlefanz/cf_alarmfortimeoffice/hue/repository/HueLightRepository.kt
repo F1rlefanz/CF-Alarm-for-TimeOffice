@@ -3,7 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueBridgeRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueLightRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -33,8 +32,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class HueLightRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val bridgeRepository: IHueBridgeRepository
+    @param:ApplicationContext private val context: Context
 ) : IHueLightRepository {
     
     private val apiClient = HueApiClient()

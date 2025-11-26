@@ -68,9 +68,6 @@ class AuthViewModel @Inject constructor(
     @Volatile
     private var triggerInProgress = false
     
-    // Callback to trigger calendar reload - will be set by MainViewModel or coordinator
-    private var calendarReloadTrigger: (() -> Unit)? = null
-    
     /**
      * PERFORMANCE OPTIMIZATION: Non-blocking Atomic State Updates
      * Ersetzt Mutex durch atomare Vergleich-und-Tausch Operationen
@@ -86,8 +83,7 @@ class AuthViewModel @Inject constructor(
     }
 
     init {
-        val hasRepository = calendarSelectionRepository != null
-        Logger.d(LogTags.AUTH, "🚀 REACTIVE-CALENDAR: AuthViewModel initialized with CalendarSelectionRepository=$hasRepository")
+        Logger.d(LogTags.AUTH, "🚀 REACTIVE-CALENDAR: AuthViewModel initialized with CalendarSelectionRepository")
         observeAuthState()
         checkInitialAuthState()
         observeCalendarSelection() // REACTIVE CALENDAR: Observer für Calendar-Selection-Änderungen
@@ -121,13 +117,13 @@ class AuthViewModel @Inject constructor(
                                 userEmail = authData.email,
                                 displayName = authData.displayName,
                                 accessToken = authData.accessToken,
-                                hasValidToken = authData.accessToken?.isNotEmpty() ?: false
+                                hasValidToken = !authData.accessToken.isNullOrEmpty()
                             )
                         )
                     }
                     
                     // PERFORMANCE: Background calendar trigger without UI thread switch
-                    if (authData.isLoggedIn && (authData.accessToken?.isNotEmpty() ?: false)) {
+                    if (authData.isLoggedIn && !authData.accessToken.isNullOrEmpty()) {
                         triggerCalendarReloadAfterAuth()
                     }
                 }
@@ -178,28 +174,26 @@ class AuthViewModel @Inject constructor(
      * Ensures hasSelectedCalendars flag is correctly set on app startup
      */
     private fun checkInitialCalendarSelection() {
-        calendarSelectionRepository?.let { repository ->
-            viewModelScope.launch {
-                try {
-                    val selectedIds = repository.getCurrentSelectedCalendarIds().getOrElse { emptySet() }
-                    val hasSelectedCalendars = selectedIds.isNotEmpty()
-                    val calendarCount = selectedIds.size
-                    
-                    Logger.d(LogTags.AUTH, "🔍 INITIAL-CALENDAR: Found $calendarCount selected calendars on startup, hasSelected=$hasSelectedCalendars")
-                    
-                    updateAuthState { currentState ->
-                        currentState.copy(
-                            calendarOps = currentState.calendarOps.copy(
-                                hasSelectedCalendars = hasSelectedCalendars
-                            )
+        viewModelScope.launch {
+            try {
+                val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds().getOrElse { emptySet() }
+                val hasSelectedCalendars = selectedIds.isNotEmpty()
+                val calendarCount = selectedIds.size
+                
+                Logger.d(LogTags.AUTH, "🔍 INITIAL-CALENDAR: Found $calendarCount selected calendars on startup, hasSelected=$hasSelectedCalendars")
+                
+                updateAuthState { currentState ->
+                    currentState.copy(
+                        calendarOps = currentState.calendarOps.copy(
+                            hasSelectedCalendars = hasSelectedCalendars
                         )
-                    }
-                    
-                    // 🔧 STUFE 2: Check token validity after calendar selection check
-                    checkInitialTokenValidity()
-                } catch (e: Exception) {
-                    Logger.e(LogTags.AUTH, "Error checking initial calendar selection", e)
+                    )
                 }
+                
+                // 🔧 STUFE 2: Check token validity after calendar selection check
+                checkInitialTokenValidity()
+            } catch (e: Exception) {
+                Logger.e(LogTags.AUTH, "Error checking initial calendar selection", e)
             }
         }
     }
@@ -209,42 +203,38 @@ class AuthViewModel @Inject constructor(
      * Ensures hasValidToken flag is correctly set based on actual token status
      */
     private fun checkInitialTokenValidity() {
-        authUseCase?.let { useCase ->
-            viewModelScope.launch {
-                try {
-                    Logger.d(LogTags.AUTH, "🔍 STUFE-2: Checking initial Calendar API token validity")
-                    
-                    // Check if we have a valid Calendar token
-                    val tokenValidResult = useCase.hasCalendarAuthorization()
-                    val tokenValid = tokenValidResult.getOrElse { false }
-                    
-                    Logger.business(LogTags.AUTH, "🔍 STUFE-2: Initial token validity check result: $tokenValid")
-                    
-                    updateAuthState { currentState ->
-                        currentState.copy(
-                            calendarOps = currentState.calendarOps.copy(
-                                hasValidToken = tokenValid
-                            )
+        viewModelScope.launch {
+            try {
+                Logger.d(LogTags.AUTH, "🔍 STUFE-2: Checking initial Calendar API token validity")
+                
+                // Check if we have a valid Calendar token
+                val tokenValidResult = authUseCase.hasCalendarAuthorization()
+                val tokenValid = tokenValidResult.getOrElse { false }
+                
+                Logger.business(LogTags.AUTH, "🔍 STUFE-2: Initial token validity check result: $tokenValid")
+                
+                updateAuthState { currentState ->
+                    currentState.copy(
+                        calendarOps = currentState.calendarOps.copy(
+                            hasValidToken = tokenValid
                         )
-                    }
-                    
-                    if (!tokenValid && _authState.value.calendarOps.hasSelectedCalendars) {
-                        Logger.w(LogTags.AUTH, "⚠️ STUFE-2: User has selected calendars but token is invalid - re-authorization required")
-                    }
-                } catch (e: Exception) {
-                    Logger.e(LogTags.AUTH, "❌ STUFE-2: Error checking initial token validity", e)
-                    // On error, assume token is invalid to be safe
-                    updateAuthState { currentState ->
-                        currentState.copy(
-                            calendarOps = currentState.calendarOps.copy(
-                                hasValidToken = false
-                            )
+                    )
+                }
+                
+                if (!tokenValid && _authState.value.calendarOps.hasSelectedCalendars) {
+                    Logger.w(LogTags.AUTH, "⚠️ STUFE-2: User has selected calendars but token is invalid - re-authorization required")
+                }
+            } catch (e: Exception) {
+                Logger.e(LogTags.AUTH, "❌ STUFE-2: Error checking initial token validity", e)
+                // On error, assume token is invalid to be safe
+                updateAuthState { currentState ->
+                    currentState.copy(
+                        calendarOps = currentState.calendarOps.copy(
+                            hasValidToken = false
                         )
-                    }
+                    )
                 }
             }
-        } ?: run {
-            Logger.w(LogTags.AUTH, "⚠️ STUFE-2: AuthUseCase not injected - cannot check token validity")
         }
     }
 
@@ -256,32 +246,28 @@ class AuthViewModel @Inject constructor(
      */
     @OptIn(FlowPreview::class)
     private fun observeCalendarSelection() {
-        calendarSelectionRepository?.let { repository ->
-            viewModelScope.launch(Dispatchers.IO) { // PERFORMANCE: Background thread only
-                repository.selectedCalendarIds
-                    .debounce(150) // PERFORMANCE: Debounce to prevent excessive updates
-                    .distinctUntilChanged { old, new -> 
-                        // PERFORMANCE: Only update if selection actually changed
-                        old.size == new.size && old == new
-                    }
-                    .collect { selectedIds ->
-                        val hasSelectedCalendars = selectedIds.isNotEmpty()
-                        val calendarCount = selectedIds.size
-                        
-                        Logger.d(LogTags.AUTH, "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars selected, hasSelected=$hasSelectedCalendars")
-                        
-                        // UI THREAD OPTIMIZATION: Atomic update without context switching
-                        updateAuthState { currentState ->
-                            currentState.copy(
-                                calendarOps = currentState.calendarOps.copy(
-                                    hasSelectedCalendars = hasSelectedCalendars
-                                )
+        viewModelScope.launch(Dispatchers.IO) { // PERFORMANCE: Background thread only
+            calendarSelectionRepository.selectedCalendarIds
+                .debounce(150) // PERFORMANCE: Debounce to prevent excessive updates
+                .distinctUntilChanged { old, new -> 
+                    // PERFORMANCE: Only update if selection actually changed
+                    old.size == new.size && old == new
+                }
+                .collect { selectedIds ->
+                    val hasSelectedCalendars = selectedIds.isNotEmpty()
+                    val calendarCount = selectedIds.size
+                    
+                    Logger.d(LogTags.AUTH, "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars selected, hasSelected=$hasSelectedCalendars")
+                    
+                    // UI THREAD OPTIMIZATION: Atomic update without context switching
+                    updateAuthState { currentState ->
+                        currentState.copy(
+                            calendarOps = currentState.calendarOps.copy(
+                                hasSelectedCalendars = hasSelectedCalendars
                             )
-                        }
+                        )
                     }
-            }
-        } ?: run {
-            Logger.w(LogTags.AUTH, "⚠️ REACTIVE-CALENDAR: CalendarSelectionRepository not injected - calendar selection sync disabled")
+                }
         }
     }
 
@@ -543,7 +529,7 @@ class AuthViewModel @Inject constructor(
                     Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: No Activity context provided, using legacy method")
                     
                     val authResult = authUseCase.requestCalendarAuthorization(userEmail)
-                    authResult?.fold(
+                    authResult.fold(
                         onSuccess = { authorized ->
                             updateAuthState { currentState ->
                                 currentState.copy(
@@ -577,18 +563,7 @@ class AuthViewModel @Inject constructor(
                             }
                             Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: Calendar authorization failed", error)
                         }
-                    ) ?: run {
-                        updateAuthState { currentState ->
-                            currentState.copy(
-                                calendarOps = currentState.calendarOps.copy(
-                                    calendarsLoading = false,
-                                    hasValidToken = false // 🔧 STUFE 2: Mark token as invalid when use case unavailable
-                                ),
-                                errors = AppErrorState.authenticationError("Calendar-Autorisierungssystem nicht verfügbar")
-                            )
-                        }
-                        Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: AuthUseCase not available for Calendar authorization")
-                    }
+                    )
                 }
             } catch (e: Exception) {
                 updateAuthState { currentState ->
@@ -626,10 +601,8 @@ class AuthViewModel @Inject constructor(
                 // UI THREAD OPTIMIZATION: Reduced delay from 100ms to 50ms
                 delay(50)
                 
-                Logger.business(LogTags.AUTH, "🔄 UI-THREAD-OPT: Initiating calendar reload after successful authentication")
-                
-                // UI THREAD OPTIMIZATION: Direct callback invocation (callback should handle threading)
-                calendarReloadTrigger?.invoke()
+                Logger.business(LogTags.AUTH, "🔄 UI-THREAD-OPT: Calendar reload triggered after successful authentication")
+                // NOTE: Calendar reload now happens automatically via CalendarStateHolder observation
                 
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "❌ UI-THREAD-OPT: Failed to trigger calendar reload", e)
@@ -640,14 +613,6 @@ class AuthViewModel @Inject constructor(
     }
     
     /**
-     * Sets a callback to trigger calendar reload after successful authentication
-     */
-    fun setCalendarReloadTrigger(trigger: () -> Unit) {
-        calendarReloadTrigger = trigger
-        Logger.d(LogTags.AUTH, "Calendar reload trigger registered")
-    }
-
-    /**
      * CRITICAL FIX: Enhanced Lifecycle Management - Properly cancel all ongoing operations
      * MEMORY LEAK PREVENTION: Clear all callbacks and volatile fields to prevent mutex errors
      */
@@ -655,9 +620,6 @@ class AuthViewModel @Inject constructor(
         super.onCleared()
         try {
             Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Starting cleanup...")
-            
-            // CRITICAL FIX: Cancel callback to prevent accessing destroyed resources
-            calendarReloadTrigger = null
             
             // CRITICAL FIX: Reset volatile fields to prevent stale operations
             triggerInProgress = false
@@ -669,32 +631,6 @@ class AuthViewModel @Inject constructor(
             Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Cleanup completed successfully")
         } catch (e: Exception) {
             Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel cleanup", e)
-        }
-    }
-    
-    /**
-     * PHASE 1 MIGRATION: Schedules the initial AlarmMaintenanceService run after successful login
-     * Uses Exact Alarm to ensure reliable execution every 6 hours
-     */
-    private fun scheduleInitialMaintenance(authData: AuthData) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Only schedule if we have a valid token
-                if (!authData.isLoggedIn || authData.accessToken == null) {
-                    Logger.w(LogTags.AUTH, "⚠️ INITIAL ALARM: Cannot schedule maintenance without valid authentication")
-                    return@launch
-                }
-                
-                // Use BackgroundServiceManager to schedule the maintenance service
-                backgroundServiceManager.scheduleInitialAlarmMaintenance()
-                    ?: Logger.w(LogTags.AUTH, "⚠️ INITIAL ALARM: BackgroundServiceManager not available")
-                
-                Logger.business(LogTags.AUTH, "✅ INITIAL ALARM: Initial maintenance scheduling delegated to BackgroundServiceManager")
-                
-            } catch (e: Exception) {
-                Logger.e(LogTags.AUTH, "❌ INITIAL ALARM: Failed to schedule initial maintenance", e)
-                // Non-critical error - app can still function
-            }
         }
     }
     

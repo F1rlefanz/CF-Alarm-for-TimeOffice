@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
@@ -429,7 +428,7 @@ class BootReceiver : BroadcastReceiver() {
     private fun calculateEventChecksum(event: com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent): String {
         val data = "${event.startTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
                    "${event.endTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
-                   "${event.title}"
+                   event.title
         return data.hashCode().toString()
     }
 

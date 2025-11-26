@@ -9,7 +9,6 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
-import com.github.f1rlefanz.cf_alarmfortimeoffice.error.catchWithDefault
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import kotlinx.coroutines.flow.Flow
@@ -38,7 +37,7 @@ private val Context.authDataStore: DataStore<Preferences> by preferencesDataStor
  */
 @Singleton
 class AuthDataStoreRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : IAuthDataStoreRepository {
 
     private val dataStore = context.authDataStore
@@ -53,56 +52,6 @@ class AuthDataStoreRepository @Inject constructor(
         private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
         private val TOKEN_EXPIRY_KEY = longPreferencesKey("token_expiry_long")
     }
-
-    // OPTIMIERUNG: Cached Flows mit Fehlerbehandlung
-    private val loginStatus: Flow<Boolean> = dataStore.data
-        .map { preferences ->
-            preferences[LOGIN_STATUS_KEY] == true
-        }
-        .catchWithDefault(false, "AuthDataStoreRepository.loginStatus")
-        .distinctUntilChanged()
-
-    private val userId: Flow<String> = dataStore.data
-        .map { preferences ->
-            preferences[USER_ID_KEY] ?: ""
-        }
-        .catchWithDefault("", "AuthDataStoreRepository.userId")
-        .distinctUntilChanged()
-
-    private val userEmail: Flow<String> = dataStore.data
-        .map { preferences ->
-            preferences[USER_EMAIL_KEY] ?: ""
-        }
-        .catchWithDefault("", "AuthDataStoreRepository.userEmail")
-        .distinctUntilChanged()
-
-    private val calendarId: Flow<String> = dataStore.data
-        .map { preferences ->
-            preferences[CALENDAR_ID_KEY] ?: ""
-        }
-        .catchWithDefault("", "AuthDataStoreRepository.calendarId")
-        .distinctUntilChanged()
-
-    private val accessToken: Flow<String> = dataStore.data
-        .map { preferences ->
-            preferences[ACCESS_TOKEN_KEY] ?: ""
-        }
-        .catchWithDefault("", "AuthDataStoreRepository.accessToken")
-        .distinctUntilChanged()
-
-    private val refreshToken: Flow<String> = dataStore.data
-        .map { preferences ->
-            preferences[REFRESH_TOKEN_KEY] ?: ""
-        }
-        .catchWithDefault("", "AuthDataStoreRepository.refreshToken")
-        .distinctUntilChanged()
-
-    private val tokenExpiry: Flow<Long> = dataStore.data
-        .map { preferences ->
-            preferences[TOKEN_EXPIRY_KEY] ?: 0L
-        }
-        .catchWithDefault(0L, "AuthDataStoreRepository.tokenExpiry")
-        .distinctUntilChanged()
 
     // Interface Implementation
     override val authData: Flow<AuthData> = dataStore.data.map { preferences ->
@@ -220,56 +169,6 @@ class AuthDataStoreRepository @Inject constructor(
                 if (keysToRemove.isNotEmpty()) {
                     Logger.d(LogTags.DATASTORE, "Cleared ${keysToRemove.size} legacy token_expiry keys")
                 }
-            }
-        }
-
-    // Legacy functions für Kompatibilität
-    suspend fun saveLoginStatus(isLoggedIn: Boolean): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.saveLoginStatus") {
-            dataStore.edit { preferences ->
-                preferences[LOGIN_STATUS_KEY] = isLoggedIn
-            }
-        }
-
-    suspend fun saveUserId(userId: String): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.saveUserId") {
-            dataStore.edit { preferences ->
-                preferences[USER_ID_KEY] = userId
-            }
-        }
-
-    suspend fun saveUserEmail(userEmail: String?): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.saveUserEmail") {
-            dataStore.edit { preferences ->
-                preferences[USER_EMAIL_KEY] = userEmail ?: ""
-            }
-        }
-
-    suspend fun saveCalendarId(calendarId: String): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.saveCalendarId") {
-            dataStore.edit { preferences ->
-                preferences[CALENDAR_ID_KEY] = calendarId
-            }
-        }
-
-    suspend fun saveAccessToken(token: String): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.saveAccessToken") {
-            dataStore.edit { preferences ->
-                preferences[ACCESS_TOKEN_KEY] = token
-            }
-        }
-
-    suspend fun saveRefreshToken(token: String): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.saveRefreshToken") {
-            dataStore.edit { preferences ->
-                preferences[REFRESH_TOKEN_KEY] = token
-            }
-        }
-
-    suspend fun saveTokenExpiry(expiry: Long): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.saveTokenExpiry") {
-            dataStore.edit { preferences ->
-                preferences[TOKEN_EXPIRY_KEY] = expiry
             }
         }
 }

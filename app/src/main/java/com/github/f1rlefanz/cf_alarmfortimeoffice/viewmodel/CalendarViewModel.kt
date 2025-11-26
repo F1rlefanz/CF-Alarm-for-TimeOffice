@@ -80,10 +80,10 @@ data class CalendarUiState(
 class CalendarViewModel @Inject constructor(
     private val calendarUseCase: ICalendarUseCase,
     private val calendarSelectionRepository: ICalendarSelectionRepository,
-    private val calendarStateHolder: com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder,
+    private val calendarStateHolder: CalendarStateHolder,
     private val errorHandler: ErrorHandler,
-    private val shiftUseCase: com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase,
-    private val alarmUseCase: com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+    private val shiftUseCase: IShiftUseCase,
+    private val alarmUseCase: IAlarmUseCase
 ) : ViewModel() {
 
     private val _localUiState = MutableStateFlow(CalendarUiState())
@@ -128,8 +128,6 @@ class CalendarViewModel @Inject constructor(
     init {
         checkTokenValidity()
         observeCalendarSelection()
-        // PERFORMANCE FIX: observeShiftConfigChanges() entfernt - war ein Performance-Killer
-        // ShiftConfig-Änderungen werden jetzt über explizite refreshEventsWithNewDaysAhead() gehandhabt
     }
 
     /**
@@ -713,53 +711,6 @@ class CalendarViewModel @Inject constructor(
         }
     }
     
-    /**
-     * BUG FIX: Optimierte Methode um Events nach ShiftConfig-Änderung neu zu laden
-     * PERFORMANCE: Verhindert redundante Calls durch Debouncing
-     * REACTIVITY LOOP PREVENTION: State-basierte Duplikaterkennung
-     * LAZY LOADING: Verwendet Lazy Loading für bessere Performance
-     */
-    @Volatile
-    private var lastDaysAheadRefresh = 0L
-    @Volatile 
-    private var currentDaysAheadRefreshJob: kotlinx.coroutines.Job? = null
-    
-    fun refreshEventsWithNewDaysAhead(useLazyLoading: Boolean = true) {
-        // PERFORMANCE: Cancel previous refresh job to prevent overlapping calls
-        currentDaysAheadRefreshJob?.cancel()
-        
-        currentDaysAheadRefreshJob = viewModelScope.launch {
-            val currentTime = System.currentTimeMillis()
-            val timeSinceLastRefresh = currentTime - lastDaysAheadRefresh
-            
-            // DEBOUNCING: Prevent rapid successive refreshes (minimum 1 second gap)
-            if (timeSinceLastRefresh < 1000) {
-                Logger.d(LogTags.CALENDAR, "DaysAhead refresh debounced - too frequent ($timeSinceLastRefresh ms)")
-                return@launch
-            }
-            
-            val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds().getOrElse { emptySet() }
-            if (selectedIds.isNotEmpty()) {
-                lastDaysAheadRefresh = currentTime
-                
-                val selectedCalendarCount = selectedIds.size
-                Logger.i(LogTags.CALENDAR, "Refreshing events due to daysAhead settings change${if (useLazyLoading) " (lazy loading)" else ""}")
-                
-                // BATCH OPERATION: Single invalidation + load instead of separate calls
-                calendarUseCase.invalidateCalendarCache(selectedIds)
-                loadEventsForSelectedCalendars(
-                    forceRefresh = true,
-                    loadAll = !useLazyLoading, // LAZY LOADING: Respect lazy loading preference  
-                    initialPageSize = if (useLazyLoading) 10 else 50
-                )
-                
-                Logger.d(LogTags.CALENDAR, "DaysAhead refresh completed for $selectedCalendarCount calendars")
-            } else {
-                Logger.w(LogTags.CALENDAR, "No calendars selected for daysAhead refresh")
-            }
-        }
-    }
-
     fun getCacheStats() {
         viewModelScope.launch {
             val stats = calendarUseCase.getCacheStats()
@@ -922,25 +873,6 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * 🚨 PUBLIC API: Triggers alarm creation from current events
-     * Used by ShiftViewModel when shift config changes
-     */
-    fun createAlarmsFromCurrentEvents() {
-        val currentEvents = _localUiState.value.events
-        if (currentEvents.isNotEmpty()) {
-            val eventCount = currentEvents.size
-            Logger.business(LogTags.ALARM, "🔄 PUBLIC-API: Creating alarms from $eventCount current events")
-            
-            viewModelScope.launch {
-                logCurrentStateForDebugging(currentEvents)
-                createAlarmsFromLoadedEvents(currentEvents)
-            }
-        } else {
-            Logger.w(LogTags.ALARM, "⚠️ PUBLIC-API: No current events available for alarm creation")
-        }
-    }
-
-    /**
      * DEBUGGING: Logs current state to help diagnose timing issues
      */
     private suspend fun logCurrentStateForDebugging(events: List<CalendarEvent>) {
@@ -1024,14 +956,9 @@ class CalendarViewModel @Inject constructor(
             batchUpdateJob = null
             pendingStateUpdate = null
             
-            // CRITICAL FIX: Cancel daysAhead refresh job
-            currentDaysAheadRefreshJob?.cancel()
-            currentDaysAheadRefreshJob = null
-            
             // CRITICAL FIX: Reset ALL volatile flags to prevent stale operations
             isCalendarLoadingInProgress = false
             lastCalendarLoadTime = 0L
-            lastDaysAheadRefresh = 0L
             
             // CRITICAL FIX: Clear state to prevent memory leaks
             _localUiState.value = CalendarUiState()

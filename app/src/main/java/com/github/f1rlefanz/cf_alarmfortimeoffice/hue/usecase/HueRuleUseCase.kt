@@ -10,7 +10,6 @@ import java.time.LocalTime
 import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.abs
 
 /**
  * UseCase for Hue Rule operations with shift integration
@@ -26,8 +25,6 @@ class HueRuleUseCase @Inject constructor(
         private const val MAX_RULES_PER_SHIFT = 10
         private const val MIN_RULE_NAME_LENGTH = 3
         private const val MAX_RULE_NAME_LENGTH = 50
-        private const val MIN_TIME_OFFSET_MINUTES = -60
-        private const val MAX_TIME_OFFSET_MINUTES = 60
     }
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
@@ -99,48 +96,6 @@ class HueRuleUseCase @Inject constructor(
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to create rule", e)
             Result.failure(Exception("Failed to create rule: ${e.message}", e))
-        }
-    }
-    
-    /**
-     * Execute matching rules for a shift - Primary entry point from AlarmReceiver
-     * 
-     * This method is called from AlarmReceiver when an alarm triggers.
-     * It finds applicable rules and executes the corresponding light actions.
-     */
-    suspend fun executeMatchingRules(shift: ShiftMatch): Result<RuleExecutionResult> {
-        Logger.i(LogTags.HUE_USECASE, "🎨 Executing matching rules for shift: ${shift.shiftDefinition.name}")
-        
-        return try {
-            // Get current time for rule matching
-            val currentTime = shift.calculatedAlarmTime.toLocalTime()
-            
-            // Find applicable rules for this shift
-            val applicableRulesResult = findApplicableRules(shift, currentTime)
-            
-            if (applicableRulesResult.isFailure) {
-                Logger.w(LogTags.HUE_USECASE, "Failed to find applicable rules", applicableRulesResult.exceptionOrNull())
-                return applicableRulesResult.fold(
-                    onSuccess = { Result.success(RuleExecutionResult(0, 0, 0, emptyList())) },
-                    onFailure = { Result.failure(it) }
-                )
-            }
-            
-            val applicableRules = applicableRulesResult.getOrNull() ?: emptyList()
-            
-            if (applicableRules.isEmpty()) {
-                Logger.i(LogTags.HUE_USECASE, "No applicable rules found for shift ${shift.shiftDefinition.name}")
-                return Result.success(RuleExecutionResult(0, 0, 0, emptyList()))
-            }
-            
-            Logger.i(LogTags.HUE_USECASE, "Found ${applicableRules.size} applicable rules, executing...")
-            
-            // Execute rules for alarm
-            executeRulesForAlarm(shift, currentTime)
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to execute matching rules", e)
-            Result.failure(Exception("Failed to execute matching rules: ${e.message}", e))
         }
     }
     
@@ -265,7 +220,7 @@ class HueRuleUseCase @Inject constructor(
     /**
      * Converts a HueSchedule rule to executable LightAction list
      */
-    private suspend fun convertRuleToLightActions(rule: HueSchedule): Result<List<LightAction>> {
+    private fun convertRuleToLightActions(rule: HueSchedule): Result<List<LightAction>> {
         return try {
             val actions = mutableListOf<LightAction>()
             

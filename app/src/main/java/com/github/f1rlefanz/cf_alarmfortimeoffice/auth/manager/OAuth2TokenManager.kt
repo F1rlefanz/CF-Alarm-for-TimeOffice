@@ -5,8 +5,8 @@ import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenProvider
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.api.services.calendar.CalendarScopes
@@ -210,8 +210,9 @@ class OAuth2TokenManager(
     
     /**
      * Refresh via Google Play Services
+     * NOTE: GoogleAuthUtil.getToken() is a blocking call, not a suspend function
      */
-    private suspend fun refreshViaGooglePlayServices(token: TokenData): String {
+    private fun refreshViaGooglePlayServices(token: TokenData): String {
         require(token.tokenProvider == TokenProvider.GOOGLE_PLAY_SERVICES) {
             "Token provider must be GOOGLE_PLAY_SERVICES"
         }

@@ -2,9 +2,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.util
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 
 /**
  * HIGH-PERFORMANCE MEMORY OPTIMIZATION UTILITIES
@@ -205,8 +204,8 @@ object MemoryOptimizer {
         fun getMemoryReport(): String {
             return buildString {
                 append("Memory Pool: $poolSize/$maxPoolSize strings, ")
-                append("Hit Rate: ${String.format("%.1f", hitRate)}%, ")
-                append("Avg Usage: ${String.format("%.1f", averageUsageCount)}x")
+                append("Hit Rate: ${String.format(Locale.ROOT, "%.1f", hitRate)}%, ")
+                append("Avg Usage: ${String.format(Locale.ROOT, "%.1f", averageUsageCount)}x")
                 if (topStrings.isNotEmpty()) {
                     append("\nTop Strings: ${topStrings.joinToString(", ")}")
                 }

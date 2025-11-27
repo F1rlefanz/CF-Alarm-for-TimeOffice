@@ -1,29 +1,29 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
-import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import java.time.LocalTime
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
@@ -210,7 +210,7 @@ class AlarmUseCase @Inject constructor(
         // Simple checksum: hash of critical fields
         val data = "${event.startTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
                    "${event.endTime.toEpochSecond(java.time.ZoneOffset.UTC)}" +
-                   "${event.title}"
+                   event.title
         return data.hashCode().toString()
     }
     

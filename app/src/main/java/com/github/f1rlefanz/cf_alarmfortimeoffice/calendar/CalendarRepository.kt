@@ -1,13 +1,17 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.calendar
 
+import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.EventsPage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.CalendarEventPool
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.MemoryOptimizer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.EfficientCollections
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.MemoryOptimizer
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.HttpRequest
 import com.google.api.client.http.HttpRequestInitializer
@@ -16,17 +20,13 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.calendar.Calendar
 import com.google.api.services.calendar.model.CalendarList
 import com.google.api.services.calendar.model.Events
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.EventsPage
 import java.io.IOException
 import java.net.UnknownHostException
 import java.time.LocalDateTime
 import java.time.ZoneId
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,7 +44,7 @@ data class CalendarItem(val id: String, val displayName: String)
  */
 @Singleton
 class CalendarRepository @Inject constructor(
-    @ApplicationContext private var context: Context
+    @param:ApplicationContext private var context: Context
 ) : ICalendarRepository {
     
     private val transport = NetHttpTransport()

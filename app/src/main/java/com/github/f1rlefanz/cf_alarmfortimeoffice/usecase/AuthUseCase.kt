@@ -1,17 +1,17 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import android.app.Activity
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import javax.inject.Inject
 
 /**

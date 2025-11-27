@@ -1,8 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.security
 
 import android.security.NetworkSecurityPolicy
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import java.net.InetAddress
 import java.net.UnknownHostException
 

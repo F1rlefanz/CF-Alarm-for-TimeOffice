@@ -1,9 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.error
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineExceptionHandler
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CoroutineExceptionHandler
 
 /**
  * SIMPLIFIED Central Error Handler - Focus on Logging

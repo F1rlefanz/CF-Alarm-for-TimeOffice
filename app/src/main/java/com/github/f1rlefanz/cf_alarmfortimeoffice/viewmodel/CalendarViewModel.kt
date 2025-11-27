@@ -4,27 +4,27 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import javax.inject.Inject
 
 /**
@@ -839,37 +839,6 @@ class CalendarViewModel @Inject constructor(
             Logger.e(LogTags.ALARM, "❌ FALLBACK: Exception creating default ShiftConfig", e)
             null
         }
-    }
-
-    /**
-     * Creates default shift definitions for common work patterns
-     * NOTE: Not used anymore, using ShiftConfig.getDefaultConfig() instead
-     */
-    @Deprecated("Use ShiftConfig.getDefaultConfig() instead")
-    private fun createDefaultShiftDefinitions(): List<com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition> {
-        return listOf(
-            com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition(
-                id = "early",
-                name = "Frühdienst",
-                keywords = listOf("früh", "early", "morning", "06:00", "07:00", "08:00"),
-                alarmTime = java.time.LocalTime.of(5, 30), // 30 minutes before typical early shift
-                isEnabled = true
-            ),
-            com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition(
-                id = "late", 
-                name = "Spätdienst",
-                keywords = listOf("spät", "late", "evening", "14:00", "15:00", "16:00"),
-                alarmTime = java.time.LocalTime.of(13, 30), // 30 minutes before typical late shift
-                isEnabled = true
-            ),
-            com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition(
-                id = "night",
-                name = "Nachtdienst", 
-                keywords = listOf("nacht", "night", "22:00", "23:00", "00:00"),
-                alarmTime = java.time.LocalTime.of(21, 30), // 30 minutes before typical night shift
-                isEnabled = true
-            )
-        )
     }
 
     /**

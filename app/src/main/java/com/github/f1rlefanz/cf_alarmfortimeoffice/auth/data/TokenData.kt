@@ -1,8 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data
 
-import kotlinx.serialization.Serializable
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -12,11 +12,10 @@ import java.util.UUID
 /**
  * Enhanced Token Data Model with Token Rotation and Provider Support
  * 
- * Neue Features (Modernisierung 2025):
- * - ✅ Explizites googleAccountEmail Feld (kein Workaround mehr)
+ * Features (Modernisierung 2025):
+ * - ✅ Explizites googleAccountEmail Feld
  * - ✅ Token Provider Enum (klar dokumentiert)
  * - ✅ Token Rotation Support (Security)
- * - ✅ Backward Compatible (Migration von alten Tokens)
  */
 @Serializable
 data class TokenData(
@@ -27,19 +26,15 @@ data class TokenData(
     val tokenType: String = "Bearer",
     val issuedAt: Long = System.currentTimeMillis(),
     
-    // ✅ NEU: Explizite Felder statt Workarounds
+    // Google Account Email für Token-Refresh via Play Services
     val googleAccountEmail: String? = null,
     val tokenProvider: TokenProvider = TokenProvider.GOOGLE_PLAY_SERVICES,
     
-    // ✅ NEU: Token Rotation Support
+    // Token Rotation Support
     val rotationId: String = UUID.randomUUID().toString(),
     val previousRotationId: String? = null,
     val rotationCount: Int = 0,
-    val lastRotationAt: Long = System.currentTimeMillis(),
-    
-    // ⚠️ DEPRECATED: Für Migration von alten Tokens
-    @Deprecated("Use googleAccountEmail instead", ReplaceWith("googleAccountEmail"))
-    val userEmail: String? = null
+    val lastRotationAt: Long = System.currentTimeMillis()
 ) {
     
     /**

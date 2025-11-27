@@ -2,10 +2,16 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
 import android.content.Context
 import android.os.PowerManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.*
 
 /**
  * Manages WakeLocks for alarm operations with proper resource management

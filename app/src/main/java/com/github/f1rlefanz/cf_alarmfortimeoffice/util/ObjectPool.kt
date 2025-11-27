@@ -2,8 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.util
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import java.util.Locale
 
 /**
  * HIGH-PERFORMANCE OBJECT POOL
@@ -106,7 +105,7 @@ abstract class ObjectPool<T>(
         val hitRate: Double
     ) {
         fun getEfficiencyReport(): String {
-            return "Pool Efficiency: ${String.format("%.1f", hitRate)}% hit rate, " +
+            return "Pool Efficiency: ${String.format(Locale.ROOT, "%.1f", hitRate)}% hit rate, " +
                    "$poolSize/$maxPoolSize pooled, " +
                    "$totalCreated created, " +
                    "$totalBorrowed borrowed, " +

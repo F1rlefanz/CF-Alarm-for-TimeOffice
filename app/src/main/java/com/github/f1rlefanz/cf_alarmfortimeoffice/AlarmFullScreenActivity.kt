@@ -7,7 +7,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.*
+import android.os.Build
+import android.os.Bundle
+import android.os.IBinder
+import android.os.PowerManager
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -16,8 +19,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.toColorInt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 

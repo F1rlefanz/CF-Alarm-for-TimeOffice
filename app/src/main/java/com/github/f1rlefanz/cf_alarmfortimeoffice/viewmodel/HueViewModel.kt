@@ -3,14 +3,23 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.*
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.*
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryStatus
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**

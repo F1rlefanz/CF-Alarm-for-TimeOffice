@@ -4,12 +4,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.AlarmSkipPreferences
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmSkipRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -22,7 +22,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class AlarmSkipRepository @Inject constructor(
-    @MainDataStore private val dataStore: DataStore<Preferences>
+    @param:MainDataStore private val dataStore: DataStore<Preferences>
 ) : IAlarmSkipRepository {
     
     override val skipStatusFlow: Flow<AlarmSkipState> = dataStore.data.map { preferences ->

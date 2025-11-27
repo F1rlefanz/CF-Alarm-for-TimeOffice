@@ -1,9 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.PermissionState
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.CalendarOperationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.CalendarOperationState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.PermissionState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
 
 /**
  * REFACTORED: Modular AuthState with Sub-States

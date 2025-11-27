@@ -1,22 +1,34 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
+// PHASE 2 CLEANUP: Removed unused ShiftUiState and flowOf imports
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
-import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.timing.UIConstants
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.*
-// PHASE 2 CLEANUP: Removed unused ShiftUiState and flowOf imports
-import kotlinx.coroutines.delay
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.timing.UIConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun MainScreen(

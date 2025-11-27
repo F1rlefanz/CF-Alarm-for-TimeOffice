@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
 import androidx.compose.runtime.Immutable
-import java.time.LocalDateTime
 
 /**
  * IMMUTABLE Alarm Information Model

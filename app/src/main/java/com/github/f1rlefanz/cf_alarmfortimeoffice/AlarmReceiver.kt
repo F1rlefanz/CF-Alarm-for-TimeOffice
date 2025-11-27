@@ -12,33 +12,33 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
-import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.ZoneId
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
-import kotlin.random.Random
-import kotlin.math.abs
-import dagger.hilt.android.AndroidEntryPoint
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
-import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
 import javax.inject.Inject
+import kotlin.math.abs
+import kotlin.random.Random
 
 /**
  * Enhanced BroadcastReceiver with Smart Maintenance Chain Level 1 integration AND Hilt DI.
@@ -145,7 +145,7 @@ class AlarmReceiver : BroadcastReceiver() {
         Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")
 
         // 🎨 NEW: HUE INTEGRATION - Execute matching light rules
-        executeHueRulesForAlarm(context, shiftName)
+        executeHueRulesForAlarm(shiftName)
 
         // 🔊 NEW: Start AlarmSoundService BEFORE Activity
         // This ensures sound starts independently of Activity lifecycle
@@ -178,7 +178,7 @@ class AlarmReceiver : BroadcastReceiver() {
             )
 
             // 🔄 NEW: SMART MAINTENANCE CHAIN Level 1 - Opportunistic Alarm Check
-            performOpportunisticAlarmMaintenance(context, alarmId, shiftName)
+            performOpportunisticAlarmMaintenance(alarmId, shiftName)
 
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM_RECEIVER, "❌ Error handling alarm", e)
@@ -200,9 +200,10 @@ class AlarmReceiver : BroadcastReceiver() {
      * STROMSPAREND: Läuft als Piggyback ohne zusätzlichen Wake-up
      * INTELLIGENT: Probabilistische Prüfung (80% der Alarme)
      * RESILIENT: Fehler brechen den Hauptalarm nicht ab
+     * 
+     * NOTE: context parameter removed - all dependencies injected via Hilt
      */
     private fun performOpportunisticAlarmMaintenance(
-        context: Context,
         alarmId: Int,
         shiftName: String
     ) {
@@ -544,8 +545,9 @@ class AlarmReceiver : BroadcastReceiver() {
      * any applicable Hue rules configured for this shift pattern.
      * 
      * HILT MIGRATION: Now uses injected dependencies instead of appContainer
+     * NOTE: context parameter removed - all dependencies injected via Hilt
      */
-    private fun executeHueRulesForAlarm(context: Context, shiftName: String) {
+    private fun executeHueRulesForAlarm(shiftName: String) {
         try {
             Logger.business(
                 LogTags.ALARM_RECEIVER,

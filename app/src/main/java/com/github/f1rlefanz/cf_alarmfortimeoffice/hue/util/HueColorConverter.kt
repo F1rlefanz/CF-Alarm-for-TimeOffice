@@ -1,9 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueColor
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import kotlin.math.*
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * Color conversion utilities for Philips Hue lights

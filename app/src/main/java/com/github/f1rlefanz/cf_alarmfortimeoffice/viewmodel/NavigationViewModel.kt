@@ -1,18 +1,18 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
-import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationAction
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.asMainContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.isMainContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 
 /**

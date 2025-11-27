@@ -1,11 +1,14 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network
 
 import android.annotation.SuppressLint
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
-import javax.net.ssl.*
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 
 /**
  * ANDROID 14+ COMPLIANT Secure Trust Manager for Philips Hue Bridge Integration
@@ -52,7 +55,7 @@ class SecureHueTrustManager(
             val defaultTrustManagerFactory = TrustManagerFactory.getInstance(
                 TrustManagerFactory.getDefaultAlgorithm()
             )
-            defaultTrustManagerFactory.init(null as? java.security.KeyStore)
+            defaultTrustManagerFactory.init(null as java.security.KeyStore?)
             
             val systemTrustManager = defaultTrustManagerFactory.trustManagers
                 .filterIsInstance<X509TrustManager>()
@@ -95,7 +98,7 @@ class SecureHueTrustManager(
             systemTrustManager.checkClientTrusted(chain, authType)
             Logger.i(LogTags.HUE_NETWORK, "✅ SECURITY: Client certificate validated by system trust store")
             
-        } catch (e: CertificateException) {
+        } catch (_: CertificateException) {
             Logger.d(LogTags.HUE_NETWORK, "⚠️ SECURITY: System validation failed, attempting Hue-specific validation")
             
             // FALLBACK: Hue-specific validation for local bridges
@@ -123,7 +126,7 @@ class SecureHueTrustManager(
             systemTrustManager.checkServerTrusted(chain, authType)
             Logger.i(LogTags.HUE_NETWORK, "✅ SECURITY: Server certificate validated by system trust store")
             
-        } catch (e: CertificateException) {
+        } catch (_: CertificateException) {
             Logger.d(LogTags.HUE_NETWORK, "⚠️ SECURITY: System validation failed, attempting Hue-specific validation for local bridge")
             
             // FALLBACK: Hue-specific validation for local bridges only

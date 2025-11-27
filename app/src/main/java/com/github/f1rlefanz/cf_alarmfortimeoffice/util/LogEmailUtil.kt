@@ -7,7 +7,8 @@ import androidx.core.content.FileProvider
 import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 /**
  * Utility-Klasse für das Versenden von Log-Dateien per E-Mail

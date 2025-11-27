@@ -2,8 +2,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.DurationControlInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 
 /**
  * Interface for Hue Light UseCase operations

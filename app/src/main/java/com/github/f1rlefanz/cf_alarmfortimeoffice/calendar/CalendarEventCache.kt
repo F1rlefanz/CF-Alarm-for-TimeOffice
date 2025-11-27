@@ -1,8 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.calendar
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDateTime

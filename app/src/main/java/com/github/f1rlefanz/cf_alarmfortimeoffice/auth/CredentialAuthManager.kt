@@ -1,20 +1,20 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth
 
 import android.content.Context
+import android.util.Base64
 import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetCredentialResponse
-import androidx.credentials.CustomCredential
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
-import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import android.util.Base64
 import org.json.JSONObject
-import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 
 data class SignInResult(
     val success: Boolean,

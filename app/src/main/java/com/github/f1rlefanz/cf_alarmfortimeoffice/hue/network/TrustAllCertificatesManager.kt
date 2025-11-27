@@ -1,13 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network
 
-import java.security.cert.X509Certificate
-import javax.net.ssl.X509TrustManager
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.SSLSocketFactory
-import javax.net.ssl.HostnameVerifier
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import java.security.cert.X509Certificate
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 /**
  * SECURITY-HARDENED SSL Certificate Manager for Philips Hue Bridge Integration

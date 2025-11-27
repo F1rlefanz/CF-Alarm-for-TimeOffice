@@ -3,24 +3,14 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 
 class ShiftRecognitionEngine(
     private val shiftConfigRepository: IShiftConfigRepository
 ) {
-    
-    suspend fun findNextShiftAlarm(events: List<CalendarEvent>): ShiftMatch? {
-        val now = LocalDateTime.now()
-        
-        val matchingShifts = getAllMatchingShifts(events)
-            .filter { it.calendarEvent.startTime.isAfter(now) }
-            .sortedBy { it.calendarEvent.startTime }
-        
-        return matchingShifts.firstOrNull()
-    }
     
     /**
      * PERFORMANCE OPTIMIZATION: Enhanced recognition with intelligent caching
@@ -178,10 +168,6 @@ class ShiftRecognitionEngine(
         
         Logger.i(LogTags.SHIFT_RECOGNITION, "Recognition complete: Found ${matches.size} shifts")
         return matches.sortedBy { it.calculatedAlarmTime }
-    }
-    
-    suspend fun findAllShiftMatches(events: List<CalendarEvent>): List<ShiftMatch> {
-        return getAllMatchingShifts(events)
     }
     
     private fun calculateAlarmTime(event: CalendarEvent, definition: ShiftDefinition): LocalDateTime {

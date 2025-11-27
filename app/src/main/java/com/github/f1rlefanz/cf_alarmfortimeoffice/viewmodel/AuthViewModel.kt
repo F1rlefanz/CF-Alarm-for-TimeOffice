@@ -1,31 +1,31 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import android.content.Context
+import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
-import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import androidx.core.content.edit
-import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
 /**
@@ -58,16 +58,17 @@ class AuthViewModel @Inject constructor(
     // CONSOLIDATED STATE: Ein einziger State statt AuthState + AuthUiState
     private val _authState = MutableStateFlow(AuthState.EMPTY)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
-    
+
     // BACKWARD COMPATIBILITY: Expose als uiState für bestehenden Code
     val uiState: StateFlow<AuthState> = authState
-    
+
     // CRITICAL FIX: Triggers calendar reload after successful authentication/authorization
     @Volatile
     private var lastCalendarTriggerTime = 0L
+
     @Volatile
     private var triggerInProgress = false
-    
+
     /**
      * PERFORMANCE OPTIMIZATION: Non-blocking Atomic State Updates
      * Ersetzt Mutex durch atomare Vergleich-und-Tausch Operationen
@@ -75,7 +76,7 @@ class AuthViewModel @Inject constructor(
     private fun updateAuthState(updateFunc: (AuthState) -> AuthState) {
         val currentState = _authState.value
         val newState = updateFunc(currentState)
-        
+
         // ATOMIC UPDATE: Thread-safe ohne Mutex-Blocking
         if (currentState != newState) {
             _authState.value = newState
@@ -83,7 +84,10 @@ class AuthViewModel @Inject constructor(
     }
 
     init {
-        Logger.d(LogTags.AUTH, "🚀 REACTIVE-CALENDAR: AuthViewModel initialized with CalendarSelectionRepository")
+        Logger.d(
+            LogTags.AUTH,
+            "🚀 REACTIVE-CALENDAR: AuthViewModel initialized with CalendarSelectionRepository"
+        )
         observeAuthState()
         checkInitialAuthState()
         observeCalendarSelection() // REACTIVE CALENDAR: Observer für Calendar-Selection-Änderungen
@@ -100,15 +104,18 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) { // PERFORMANCE: Background thread only
             authDataStoreRepository.authData
                 .debounce(200) // PERFORMANCE: Reduced from 300ms for better responsiveness
-                .distinctUntilChanged { old, new -> 
+                .distinctUntilChanged { old, new ->
                     // PERFORMANCE: Only update if meaningful changes occurred
                     old.isLoggedIn == new.isLoggedIn &&
-                    old.email == new.email &&
-                    old.accessToken == new.accessToken
+                            old.email == new.email &&
+                            old.accessToken == new.accessToken
                 }
                 .collect { authData ->
-                    Logger.d(LogTags.AUTH, "🔄 UI-THREAD-OPT: Auth data updated - isLoggedIn=${authData.isLoggedIn}")
-                    
+                    Logger.d(
+                        LogTags.AUTH,
+                        "🔄 UI-THREAD-OPT: Auth data updated - isLoggedIn=${authData.isLoggedIn}"
+                    )
+
                     // UI THREAD OPTIMIZATION: Atomic update without context switching
                     updateAuthState { currentState ->
                         currentState.copy(
@@ -121,7 +128,7 @@ class AuthViewModel @Inject constructor(
                             )
                         )
                     }
-                    
+
                     // PERFORMANCE: Background calendar trigger without UI thread switch
                     if (authData.isLoggedIn && !authData.accessToken.isNullOrEmpty()) {
                         triggerCalendarReloadAfterAuth()
@@ -149,20 +156,24 @@ class AuthViewModel @Inject constructor(
                             )
                         )
                     }
-                    
+
                     val isAuthenticated = authData.isLoggedIn
                     val userEmail = authData.email
-                    Logger.d(LogTags.AUTH, "Initial auth state - authenticated=$isAuthenticated, user=$userEmail")
-                    
+                    Logger.d(
+                        LogTags.AUTH,
+                        "Initial auth state - authenticated=$isAuthenticated, user=$userEmail"
+                    )
+
                     // REACTIVE CALENDAR: Check initial calendar selection status
                     checkInitialCalendarSelection()
-                    
+
                     // Only collect once for initial state, then return
                     return@collect
                 }
-            } catch (_: kotlinx.coroutines.CancellationException) {
-                // Normal lifecycle cancellation - not an error
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Normal lifecycle cancellation - rethrow for proper structured concurrency
                 Logger.d(LogTags.AUTH, "Auth state check cancelled (app lifecycle)")
+                throw e
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "Error checking initial auth state", e)
             }
@@ -176,12 +187,16 @@ class AuthViewModel @Inject constructor(
     private fun checkInitialCalendarSelection() {
         viewModelScope.launch {
             try {
-                val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds().getOrElse { emptySet() }
+                val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds()
+                    .getOrElse { emptySet() }
                 val hasSelectedCalendars = selectedIds.isNotEmpty()
                 val calendarCount = selectedIds.size
-                
-                Logger.d(LogTags.AUTH, "🔍 INITIAL-CALENDAR: Found $calendarCount selected calendars on startup, hasSelected=$hasSelectedCalendars")
-                
+
+                Logger.d(
+                    LogTags.AUTH,
+                    "🔍 INITIAL-CALENDAR: Found $calendarCount selected calendars on startup, hasSelected=$hasSelectedCalendars"
+                )
+
                 updateAuthState { currentState ->
                     currentState.copy(
                         calendarOps = currentState.calendarOps.copy(
@@ -189,7 +204,7 @@ class AuthViewModel @Inject constructor(
                         )
                     )
                 }
-                
+
                 // 🔧 STUFE 2: Check token validity after calendar selection check
                 checkInitialTokenValidity()
             } catch (e: Exception) {
@@ -197,7 +212,7 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
-    
+
     /**
      * 🔧 STUFE 2: Checks initial Calendar API token validity on startup
      * Ensures hasValidToken flag is correctly set based on actual token status
@@ -206,13 +221,16 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 Logger.d(LogTags.AUTH, "🔍 STUFE-2: Checking initial Calendar API token validity")
-                
+
                 // Check if we have a valid Calendar token
                 val tokenValidResult = authUseCase.hasCalendarAuthorization()
                 val tokenValid = tokenValidResult.getOrElse { false }
-                
-                Logger.business(LogTags.AUTH, "🔍 STUFE-2: Initial token validity check result: $tokenValid")
-                
+
+                Logger.business(
+                    LogTags.AUTH,
+                    "🔍 STUFE-2: Initial token validity check result: $tokenValid"
+                )
+
                 updateAuthState { currentState ->
                     currentState.copy(
                         calendarOps = currentState.calendarOps.copy(
@@ -220,9 +238,12 @@ class AuthViewModel @Inject constructor(
                         )
                     )
                 }
-                
+
                 if (!tokenValid && _authState.value.calendarOps.hasSelectedCalendars) {
-                    Logger.w(LogTags.AUTH, "⚠️ STUFE-2: User has selected calendars but token is invalid - re-authorization required")
+                    Logger.w(
+                        LogTags.AUTH,
+                        "⚠️ STUFE-2: User has selected calendars but token is invalid - re-authorization required"
+                    )
                 }
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "❌ STUFE-2: Error checking initial token validity", e)
@@ -240,7 +261,7 @@ class AuthViewModel @Inject constructor(
 
     /**
      * REACTIVE CALENDAR SELECTION: Observes calendar selection changes
-     * 
+     *
      * BUG FIX: Automatically synchronizes hasSelectedCalendars flag with CalendarSelectionRepository
      * Solves the issue where Calendar-Berechtigung card appears after restart even when calendars are selected
      */
@@ -249,16 +270,19 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) { // PERFORMANCE: Background thread only
             calendarSelectionRepository.selectedCalendarIds
                 .debounce(150) // PERFORMANCE: Debounce to prevent excessive updates
-                .distinctUntilChanged { old, new -> 
+                .distinctUntilChanged { old, new ->
                     // PERFORMANCE: Only update if selection actually changed
                     old.size == new.size && old == new
                 }
                 .collect { selectedIds ->
                     val hasSelectedCalendars = selectedIds.isNotEmpty()
                     val calendarCount = selectedIds.size
-                    
-                    Logger.d(LogTags.AUTH, "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars selected, hasSelected=$hasSelectedCalendars")
-                    
+
+                    Logger.d(
+                        LogTags.AUTH,
+                        "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars selected, hasSelected=$hasSelectedCalendars"
+                    )
+
                     // UI THREAD OPTIMIZATION: Atomic update without context switching
                     updateAuthState { currentState ->
                         currentState.copy(
@@ -282,17 +306,22 @@ class AuthViewModel @Inject constructor(
                     errors = AppErrorState.EMPTY
                 )
             }
-            
+
             try {
                 Logger.business(LogTags.AUTH, "Starting modern credential sign-in")
                 val signInResult = credentialAuthManager.signIn(context)
-                
+
                 if (signInResult.success && signInResult.credentialResponse != null) {
                     // Extract user info from credential
-                    val (_, displayName, initialEmail) = credentialAuthManager.extractUserInfo(signInResult.credentialResponse)
-                    
-                    Logger.business(LogTags.AUTH, "📊 EMAIL-EXTRACTION: initial=$initialEmail, final=$initialEmail")
-                    
+                    val (_, displayName, initialEmail) = credentialAuthManager.extractUserInfo(
+                        signInResult.credentialResponse
+                    )
+
+                    Logger.business(
+                        LogTags.AUTH,
+                        "📊 EMAIL-EXTRACTION: initial=$initialEmail, final=$initialEmail"
+                    )
+
                     if (!initialEmail.isNullOrEmpty()) {
                         val authData = AuthData(
                             isLoggedIn = true,
@@ -300,21 +329,32 @@ class AuthViewModel @Inject constructor(
                             displayName = displayName,
                             accessToken = null // Real tokens managed by ModernOAuth2TokenManager
                         )
-                        
+
                         // Save email to SharedPreferences for CalendarRepository
                         try {
-                            val prefs = context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
+                            val prefs =
+                                context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
                             prefs.edit {
                                 putString("current_user_email", initialEmail)
                                 putString("current_user_display_name", displayName)
                                 putLong("auth_timestamp", System.currentTimeMillis())
-                                putBoolean("user_signed_in", true) // CRITICAL FIX: Explicit sign-in flag
+                                putBoolean(
+                                    "user_signed_in",
+                                    true
+                                ) // CRITICAL FIX: Explicit sign-in flag
                             }
-                            Logger.business(LogTags.AUTH, "✅ CRITICAL-FIX: Saved user email '$initialEmail' to SharedPreferences for ModernOAuth2TokenManager")
+                            Logger.business(
+                                LogTags.AUTH,
+                                "✅ CRITICAL-FIX: Saved user email '$initialEmail' to SharedPreferences for ModernOAuth2TokenManager"
+                            )
                         } catch (e: Exception) {
-                            Logger.e(LogTags.AUTH, "❌ CRITICAL-ERROR: Could not save user email to SharedPreferences", e)
+                            Logger.e(
+                                LogTags.AUTH,
+                                "❌ CRITICAL-ERROR: Could not save user email to SharedPreferences",
+                                e
+                            )
                         }
-                        
+
                         authDataStoreRepository.updateAuthData(authData)
                             .onSuccess {
                                 updateAuthState { currentState ->
@@ -328,9 +368,12 @@ class AuthViewModel @Inject constructor(
                                     )
                                 }
                                 Logger.business(LogTags.AUTH, "✅ Sign-in successful: $initialEmail")
-                                
+
                                 // Automatically trigger Calendar authorization
-                                Logger.business(LogTags.AUTH, "🔄 AUTO-FLOW: Triggering Calendar authorization")
+                                Logger.business(
+                                    LogTags.AUTH,
+                                    "🔄 AUTO-FLOW: Triggering Calendar authorization"
+                                )
                                 val activity = context as? android.app.Activity
                                 requestCalendarAuthorization(activity)
                             }
@@ -338,14 +381,21 @@ class AuthViewModel @Inject constructor(
                                 updateAuthState { currentState ->
                                     currentState.copy(
                                         calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                                        errors = AppErrorState.authenticationError(errorHandler.getErrorMessage(error))
+                                        errors = AppErrorState.authenticationError(
+                                            errorHandler.getErrorMessage(
+                                                error
+                                            )
+                                        )
                                     )
                                 }
                             }
                     } else {
                         // Hybrid-Flow failed - this should rarely happen with the working implementation
-                        Logger.e(LogTags.AUTH, "❌ HYBRID-FLOW: Email extraction failed - unexpected error")
-                        
+                        Logger.e(
+                            LogTags.AUTH,
+                            "❌ HYBRID-FLOW: Email extraction failed - unexpected error"
+                        )
+
                         updateAuthState { currentState ->
                             currentState.copy(
                                 calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
@@ -363,7 +413,7 @@ class AuthViewModel @Inject constructor(
                     }
                     Logger.e(LogTags.AUTH, "Sign-in failed - $errorMessage")
                 }
-                
+
             } catch (e: Exception) {
                 updateAuthState { currentState ->
                     currentState.copy(
@@ -387,44 +437,54 @@ class AuthViewModel @Inject constructor(
                     errors = AppErrorState.EMPTY
                 )
             }
-            
+
             try {
                 // Local sign-out using CredentialAuthManager
                 credentialAuthManager.signOutLocally()
-                
+
                 // Clear auth data from DataStore
                 authDataStoreRepository.clearAuthData()
                     .onSuccess {
                         updateAuthState { AuthState.EMPTY }
-                        
+
                         // Clear SharedPreferences
                         try {
                             val ctx = context ?: run {
-                                val field = credentialAuthManager::class.java.getDeclaredField("context")
+                                val field =
+                                    credentialAuthManager::class.java.getDeclaredField("context")
                                 field.isAccessible = true
                                 field.get(credentialAuthManager) as? Context
                             }
-                            
+
                             ctx?.let {
-                                val prefs = it.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
+                                val prefs =
+                                    it.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
                                 prefs.edit { clear() }
                                 Logger.d(LogTags.AUTH, "✅ Cleared SharedPreferences on sign-out")
                             }
                         } catch (e: Exception) {
-                            Logger.w(LogTags.AUTH, "Could not clear SharedPreferences on sign-out", e)
+                            Logger.w(
+                                LogTags.AUTH,
+                                "Could not clear SharedPreferences on sign-out",
+                                e
+                            )
                         }
-                        
+
                         Logger.business(LogTags.AUTH, "Sign-out successful")
                     }
                     .onFailure { error ->
                         updateAuthState { currentState ->
                             currentState.copy(
                                 calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
-                                errors = AppErrorState.authenticationError(errorHandler.getErrorMessage(error))
+                                errors = AppErrorState.authenticationError(
+                                    errorHandler.getErrorMessage(
+                                        error
+                                    )
+                                )
                             )
                         }
                     }
-                
+
             } catch (e: Exception) {
                 updateAuthState { currentState ->
                     currentState.copy(
@@ -445,11 +505,11 @@ class AuthViewModel @Inject constructor(
             currentState.copy(errors = AppErrorState.EMPTY)
         }
     }
-    
+
     /**
      * MODERN: Requests Calendar API authorization for current user
      * CRITICAL FIX: Directly calls AuthUseCase to get real OAuth2 tokens with Activity Context
-     * 
+     *
      * @param activity Activity context for launching permission dialog if needed
      */
     fun requestCalendarAuthorization(activity: android.app.Activity? = null) {
@@ -460,12 +520,12 @@ class AuthViewModel @Inject constructor(
                     errors = AppErrorState.EMPTY
                 )
             }
-            
+
             try {
                 // Get current user email for Calendar authorization
                 val currentAuthData = authDataStoreRepository.getCurrentAuthData().getOrNull()
                 val userEmail = currentAuthData?.email
-                
+
                 if (userEmail.isNullOrEmpty()) {
                     updateAuthState { currentState ->
                         currentState.copy(
@@ -475,13 +535,19 @@ class AuthViewModel @Inject constructor(
                     }
                     return@launch
                 }
-                
-                Logger.business(LogTags.AUTH, "🔐 ACTIVITY-CONTEXT-FIX: Requesting Calendar authorization for $userEmail with Activity=${activity != null}")
-                
+
+                Logger.business(
+                    LogTags.AUTH,
+                    "🔐 ACTIVITY-CONTEXT-FIX: Requesting Calendar authorization for $userEmail with Activity=${activity != null}"
+                )
+
                 // CRITICAL FIX: Use Activity-based authorization if activity is provided
                 if (activity != null && authUseCase is com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AuthUseCase) {
-                    Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Using Activity-based authorization flow")
-                    
+                    Logger.business(
+                        LogTags.AUTH,
+                        "✅ ACTIVITY-CONTEXT-FIX: Using Activity-based authorization flow"
+                    )
+
                     authUseCase.requestCalendarAuthorizationWithActivity(
                         userEmail = userEmail,
                         activity = activity,
@@ -495,21 +561,33 @@ class AuthViewModel @Inject constructor(
                                     )
                                 )
                             }
-                            
+
                             if (success) {
-                                Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful, hasValidToken=true")
+                                Logger.business(
+                                    LogTags.AUTH,
+                                    "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful, hasValidToken=true"
+                                )
                                 triggerCalendarReloadAfterAuth()
-                                
+
                                 // Initialize maintenance service after successful authorization
                                 backgroundServiceManager.initializeMaintenanceService()
-                                Logger.business(LogTags.AUTH, "✅ Maintenance service initialized after authorization")
+                                Logger.business(
+                                    LogTags.AUTH,
+                                    "✅ Maintenance service initialized after authorization"
+                                )
                             } else {
-                                Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: Calendar authorization failed or denied, hasValidToken=false")
+                                Logger.w(
+                                    LogTags.AUTH,
+                                    "⚠️ ACTIVITY-CONTEXT-FIX: Calendar authorization failed or denied, hasValidToken=false"
+                                )
                             }
                         }
                     ).fold(
                         onSuccess = {
-                            Logger.business(LogTags.AUTH, "✅ ACTIVITY-CONTEXT-FIX: Authorization request initiated successfully")
+                            Logger.business(
+                                LogTags.AUTH,
+                                "✅ ACTIVITY-CONTEXT-FIX: Authorization request initiated successfully"
+                            )
                         },
                         onFailure = { error ->
                             updateAuthState { currentState ->
@@ -521,13 +599,20 @@ class AuthViewModel @Inject constructor(
                                     errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
                                 )
                             }
-                            Logger.e(LogTags.AUTH, "❌ ACTIVITY-CONTEXT-FIX: Calendar authorization failed", error)
+                            Logger.e(
+                                LogTags.AUTH,
+                                "❌ ACTIVITY-CONTEXT-FIX: Calendar authorization failed",
+                                error
+                            )
                         }
                     )
                 } else {
                     // Fallback to old method without Activity context
-                    Logger.w(LogTags.AUTH, "⚠️ ACTIVITY-CONTEXT-FIX: No Activity context provided, using legacy method")
-                    
+                    Logger.w(
+                        LogTags.AUTH,
+                        "⚠️ ACTIVITY-CONTEXT-FIX: No Activity context provided, using legacy method"
+                    )
+
                     val authResult = authUseCase.requestCalendarAuthorization(userEmail)
                     authResult.fold(
                         onSuccess = { authorized ->
@@ -540,15 +625,21 @@ class AuthViewModel @Inject constructor(
                                     )
                                 )
                             }
-                            Logger.business(LogTags.AUTH, "✅ MODERN-FLOW: Calendar authorization successful: $authorized, hasValidToken=$authorized")
-                            
+                            Logger.business(
+                                LogTags.AUTH,
+                                "✅ MODERN-FLOW: Calendar authorization successful: $authorized, hasValidToken=$authorized"
+                            )
+
                             // CRITICAL FIX: Auto-trigger calendar loading after successful authorization
                             if (authorized) {
                                 triggerCalendarReloadAfterAuth()
-                                
+
                                 // Initialize maintenance service after successful authorization
                                 backgroundServiceManager.initializeMaintenanceService()
-                                Logger.business(LogTags.AUTH, "✅ Maintenance service initialized after authorization")
+                                Logger.business(
+                                    LogTags.AUTH,
+                                    "✅ Maintenance service initialized after authorization"
+                                )
                             }
                         },
                         onFailure = { error ->
@@ -561,7 +652,11 @@ class AuthViewModel @Inject constructor(
                                     errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
                                 )
                             }
-                            Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: Calendar authorization failed", error)
+                            Logger.e(
+                                LogTags.AUTH,
+                                "❌ MODERN-FLOW: Calendar authorization failed",
+                                error
+                            )
                         }
                     )
                 }
@@ -576,34 +671,40 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
-    
+
     private fun triggerCalendarReloadAfterAuth() {
         // PERFORMANCE: Prevent concurrent triggers with atomic check
         if (triggerInProgress) {
             Logger.d(LogTags.AUTH, "🔄 UI-THREAD-OPT: Calendar reload already in progress, skipping")
             return
         }
-        
+
         viewModelScope.launch(Dispatchers.Default) { // UI THREAD OPTIMIZATION: Pure background
             try {
                 val currentTime = System.currentTimeMillis()
                 val timeSinceLastTrigger = currentTime - lastCalendarTriggerTime
-                
+
                 // DEDUPLICATION: Prevent multiple triggers within 2 seconds (optimized)
                 if (timeSinceLastTrigger < 2000) {
-                    Logger.d(LogTags.AUTH, "🔄 UI-THREAD-OPT: Calendar reload trigger debounced ($timeSinceLastTrigger ms since last)")
+                    Logger.d(
+                        LogTags.AUTH,
+                        "🔄 UI-THREAD-OPT: Calendar reload trigger debounced ($timeSinceLastTrigger ms since last)"
+                    )
                     return@launch
                 }
-                
+
                 triggerInProgress = true
                 lastCalendarTriggerTime = currentTime
-                
+
                 // UI THREAD OPTIMIZATION: Reduced delay from 100ms to 50ms
                 delay(50)
-                
-                Logger.business(LogTags.AUTH, "🔄 UI-THREAD-OPT: Calendar reload triggered after successful authentication")
+
+                Logger.business(
+                    LogTags.AUTH,
+                    "🔄 UI-THREAD-OPT: Calendar reload triggered after successful authentication"
+                )
                 // NOTE: Calendar reload now happens automatically via CalendarStateHolder observation
-                
+
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "❌ UI-THREAD-OPT: Failed to trigger calendar reload", e)
             } finally {
@@ -611,7 +712,7 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
-    
+
     /**
      * CRITICAL FIX: Enhanced Lifecycle Management - Properly cancel all ongoing operations
      * MEMORY LEAK PREVENTION: Clear all callbacks and volatile fields to prevent mutex errors
@@ -620,20 +721,20 @@ class AuthViewModel @Inject constructor(
         super.onCleared()
         try {
             Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Starting cleanup...")
-            
+
             // CRITICAL FIX: Reset volatile fields to prevent stale operations
             triggerInProgress = false
             lastCalendarTriggerTime = 0L
-            
+
             // CRITICAL FIX: Clear state to prevent memory leaks
             _authState.value = AuthState.EMPTY
-            
+
             Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Cleanup completed successfully")
         } catch (e: Exception) {
             Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel cleanup", e)
         }
     }
-    
+
     /**
      * PUBLIC API: Manual cleanup for MainActivity destruction
      * Calls onCleared() safely from external context

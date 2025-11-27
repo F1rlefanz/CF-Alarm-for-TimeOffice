@@ -2,31 +2,31 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.LocalDateTime
-import java.time.Instant
-import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import javax.inject.Inject
 
 data class AlarmUiState(
     val isLoading: Boolean = false,
@@ -45,7 +45,7 @@ data class AlarmSkipUiState(
 
 /**
  * MANUAL ALARM UI STATE
- * 
+ *
  * State für manuelle Alarm-Erstellung nach Schichttausch
  */
 data class ManualAlarmUiState(
@@ -62,13 +62,13 @@ data class ManualAlarmUiState(
 
 /**
  * MEMORY LEAK FIXED: AlarmViewModel with proper resource cleanup
- * 
+ *
  * MIGRATION STATUS:
  * ✅ @HiltViewModel annotiert
  * ✅ Constructor Injection mit @Inject
  * ✅ Alle Dependencies über Interfaces
  * ✅ Keine Abhängigkeiten zu anderen ViewModels
- * 
+ *
  * CRITICAL FIXES:
  * ✅ Added onCleared() for proper cleanup
  * ✅ Job tracking for Flow collections
@@ -85,13 +85,13 @@ class AlarmViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(AlarmUiState())
     val uiState: StateFlow<AlarmUiState> = _uiState.asStateFlow()
-    
+
     private val _skipState = MutableStateFlow(AlarmSkipUiState())
     val skipState: StateFlow<AlarmSkipUiState> = _skipState.asStateFlow()
-    
+
     private val _manualAlarmState = MutableStateFlow(ManualAlarmUiState())
     val manualAlarmState: StateFlow<ManualAlarmUiState> = _manualAlarmState.asStateFlow()
-    
+
     // MEMORY LEAK FIX: Track Flow collection job for proper cleanup
     private var alarmObservationJob: Job? = null
 
@@ -103,7 +103,7 @@ class AlarmViewModel @Inject constructor(
         // CLEANUP: Clean expired alarms on startup
         cleanupExpiredAlarmsOnStartup()
     }
-    
+
     /**
      * CLEANUP: Remove expired alarms when ViewModel starts
      */
@@ -111,18 +111,22 @@ class AlarmViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 // Cast to concrete implementation to access cleanup method
-                val repository = alarmUseCase as? com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
+                val repository =
+                    alarmUseCase as? com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
                 if (repository != null) {
                     // For now, trigger cleanup via deleteAll -> rebuild pattern
                     Logger.d(LogTags.ALARM, "Startup cleanup: checking for expired alarms")
-                    
+
                     // Get all alarms and check for expired ones
                     alarmUseCase.getAllAlarms().onSuccess { allAlarms ->
                         val currentTime = System.currentTimeMillis()
                         val expiredAlarms = allAlarms.filter { it.triggerTime <= currentTime }
-                        
+
                         if (expiredAlarms.isNotEmpty()) {
-                            Logger.w(LogTags.ALARM, "Found ${expiredAlarms.size} expired alarms on startup, cleaning up")
+                            Logger.w(
+                                LogTags.ALARM,
+                                "Found ${expiredAlarms.size} expired alarms on startup, cleaning up"
+                            )
                             // Delete each expired alarm
                             expiredAlarms.forEach { alarm ->
                                 alarmUseCase.deleteAlarm(alarm.id)
@@ -143,7 +147,7 @@ class AlarmViewModel @Inject constructor(
      */
     private fun observeAlarmStatus() {
         alarmObservationJob?.cancel() // Cancel any existing observation
-        
+
         alarmObservationJob = viewModelScope.launch {
             try {
                 alarmUseCase.activeAlarms
@@ -153,23 +157,31 @@ class AlarmViewModel @Inject constructor(
                         val currentTime = System.currentTimeMillis()
                         val futureAlarms = alarms.filter { it.triggerTime > currentTime }
                         val nextAlarm = futureAlarms.minByOrNull { it.triggerTime }
-                        
+
                         _uiState.value = _uiState.value.copy(
                             activeAlarms = alarms, // Show all alarms for debugging
                             hasActiveAlarms = alarms.isNotEmpty(),
                             nextAlarmTime = nextAlarm?.formattedTime // Only future alarms
                         )
-                        
-                        Logger.d(LogTags.ALARM, "Active alarms updated: ${alarms.size} total, ${futureAlarms.size} future")
-                        
+
+                        Logger.d(
+                            LogTags.ALARM,
+                            "Active alarms updated: ${alarms.size} total, ${futureAlarms.size} future"
+                        )
+
                         // CLEANUP: Log expired alarms for debugging
                         val expiredAlarms = alarms.filter { it.triggerTime <= currentTime }
                         if (expiredAlarms.isNotEmpty()) {
-                            Logger.w(LogTags.ALARM, "Found ${expiredAlarms.size} expired alarms: ${expiredAlarms.map { it.formattedTime }}")
+                            Logger.w(
+                                LogTags.ALARM,
+                                "Found ${expiredAlarms.size} expired alarms: ${expiredAlarms.map { it.formattedTime }}"
+                            )
                         }
                     }
-            } catch (_: kotlinx.coroutines.CancellationException) {
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Rethrow for proper structured concurrency
                 Logger.d(LogTags.ALARM, "Alarm status observation cancelled (app lifecycle)")
+                throw e
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "Error observing alarm status", e)
                 _uiState.value = _uiState.value.copy(
@@ -193,8 +205,10 @@ class AlarmViewModel @Inject constructor(
                             isLoading = false
                         )
                     }
-            } catch (_: kotlinx.coroutines.CancellationException) {
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Rethrow for proper structured concurrency
                 Logger.d(LogTags.ALARM_SKIP, "Skip status observation cancelled (app lifecycle)")
+                throw e
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_SKIP, "Error in skip status observation", e)
             }
@@ -205,7 +219,7 @@ class AlarmViewModel @Inject constructor(
     fun setAlarmsForShift(shift: ShiftInfo) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
+
             try {
                 // Legacy method - wird durch Interface nicht direkt unterstützt
                 // Workaround: Konvertiere zu createAlarmsFromEvents call
@@ -213,7 +227,7 @@ class AlarmViewModel @Inject constructor(
                     .atZone(ZoneId.systemDefault())
                     .toInstant()
                     .toEpochMilli()
-                
+
                 val alarmInfo = AlarmInfo(
                     id = shift.id.hashCode(), // Convert String to Int
                     shiftId = shift.id,
@@ -221,16 +235,21 @@ class AlarmViewModel @Inject constructor(
                     triggerTime = alarmTime,
                     formattedTime = DateTimeFormatter
                         .ofPattern(DateTimeFormats.STANDARD_DATETIME)
-                        .format(LocalDateTime.ofInstant(
-                            Instant.ofEpochMilli(alarmTime), 
-                            ZoneId.systemDefault()
-                        ))
+                        .format(
+                            LocalDateTime.ofInstant(
+                                Instant.ofEpochMilli(alarmTime),
+                                ZoneId.systemDefault()
+                            )
+                        )
                 )
-                
+
                 alarmUseCase.saveAlarm(alarmInfo)
                     .onSuccess {
                         _uiState.value = _uiState.value.copy(isLoading = false)
-                        Logger.i(LogTags.ALARM, "Alarm set for shift: ${shift.shiftType.displayName}")
+                        Logger.i(
+                            LogTags.ALARM,
+                            "Alarm set for shift: ${shift.shiftType.displayName}"
+                        )
                     }
                     .onFailure { error ->
                         _uiState.value = _uiState.value.copy(
@@ -276,7 +295,7 @@ class AlarmViewModel @Inject constructor(
     fun cancelAllAlarms() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
+
             try {
                 alarmUseCase.deleteAllAlarms()
                     .onSuccess {
@@ -303,20 +322,25 @@ class AlarmViewModel @Inject constructor(
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
-    
+
     fun skipNextAlarm() {
         viewModelScope.launch {
             _skipState.value = _skipState.value.copy(isLoading = true)
-            
+
             alarmSkipUseCase.skipNextAlarm()
                 .onSuccess { result ->
-                    Logger.business(LogTags.ALARM_SKIP, "✅ Next alarm skip activated: ${result.alarmName}")
+                    Logger.business(
+                        LogTags.ALARM_SKIP,
+                        "✅ Next alarm skip activated: ${result.alarmName}"
+                    )
                     // State wird automatisch über skipStatusFlow aktualisiert
                 }
                 .onFailure { error ->
                     _skipState.value = _skipState.value.copy(
                         isLoading = false,
-                        error = AppErrorState.validationError(error.message ?: "Failed to skip alarm")
+                        error = AppErrorState.validationError(
+                            error.message ?: "Failed to skip alarm"
+                        )
                     )
                     Logger.e(LogTags.ALARM_SKIP, "❌ Failed to skip next alarm", error)
                 }
@@ -335,69 +359,88 @@ class AlarmViewModel @Inject constructor(
                 }
         }
     }
-    
+
     // ========================================
     // MANUAL ALARM FUNCTIONALITY
     // ========================================
-    
+
     /**
      * Manual Alarm Constants - simplified approach using existing patterns
      */
     object ManualAlarmConstants {
         const val MANUAL_ALARM_PREFIX = "MANUAL_"
         const val MANUAL_SHIFT_ID_PREFIX = "manual_"
-        
+
         fun createManualAlarmId(date: LocalDate, shiftId: String): Int {
             val dateString = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
             return "$MANUAL_ALARM_PREFIX$dateString$shiftId".hashCode()
         }
-        
+
         fun createManualShiftId(originalShiftId: String, date: LocalDate): String {
             val dateString = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
             return "$MANUAL_SHIFT_ID_PREFIX${originalShiftId}_$dateString"
         }
-        
+
         fun isManualAlarm(alarmInfo: AlarmInfo): Boolean {
             return alarmInfo.shiftId.startsWith(MANUAL_SHIFT_ID_PREFIX)
         }
     }
-    
+
     private fun loadAvailableShifts() {
         viewModelScope.launch {
             try {
                 // 🔍 CRITICAL DEBUG: Überprüfen was getCurrentShiftConfig() wirklich zurückgibt
                 val shiftConfigResult = shiftUseCase.getCurrentShiftConfig()
-                Logger.business(LogTags.ALARM, "🔍 SHIFT CONFIG RESULT: success=${shiftConfigResult.isSuccess}")
-                
+                Logger.business(
+                    LogTags.ALARM,
+                    "🔍 SHIFT CONFIG RESULT: success=${shiftConfigResult.isSuccess}"
+                )
+
                 shiftConfigResult.getOrNull()?.let { shiftConfig ->
                     // 🔍 DEBUG: Loaded shift config validation
-                    Logger.business(LogTags.ALARM, "🔍 CONFIG LOADED: ${shiftConfig.definitions.size} definitions")
-                    
-                    Logger.business(LogTags.ALARM, "🔍 LOADED CONFIG has ${shiftConfig.definitions.size} definitions:")
+                    Logger.business(
+                        LogTags.ALARM,
+                        "🔍 CONFIG LOADED: ${shiftConfig.definitions.size} definitions"
+                    )
+
+                    Logger.business(
+                        LogTags.ALARM,
+                        "🔍 LOADED CONFIG has ${shiftConfig.definitions.size} definitions:"
+                    )
                     shiftConfig.definitions.forEach { def ->
-                        Logger.business(LogTags.ALARM, "   ${def.id}: ${def.name} -> ${def.alarmTime} (${def.getAlarmTimeFormatted()})")
+                        Logger.business(
+                            LogTags.ALARM,
+                            "   ${def.id}: ${def.name} -> ${def.alarmTime} (${def.getAlarmTimeFormatted()})"
+                        )
                     }
-                    
+
                     val availableShifts = shiftConfig.definitions.filter { it.isEnabled }
-                    
+
                     // 🔍 LOG: Available shifts for manual alarm creation
-                    
+
                     _manualAlarmState.value = _manualAlarmState.value.copy(
                         availableShifts = availableShifts,
                         selectedShift = availableShifts.firstOrNull() // Erste verfügbare Schicht
                     )
-                    
+
                     // Update calculated alarm time
                     updateCalculatedAlarmTime()
-                    
-                    Logger.d(LogTags.ALARM, "Loaded ${availableShifts.size} user-configured shift definitions")
+
+                    Logger.d(
+                        LogTags.ALARM,
+                        "Loaded ${availableShifts.size} user-configured shift definitions"
+                    )
                 } ?: run {
                     Logger.e(LogTags.ALARM, "🚨 CRITICAL: getCurrentShiftConfig() returned null!")
-                    
+
                     // FALLBACK: Versuche direkt die Default-Config zu laden
-                    val defaultConfig = com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig.getDefaultConfig()
-                    Logger.w(LogTags.ALARM, "🔄 FALLBACK: Using default config with ${defaultConfig.definitions.size} definitions")
-                    
+                    val defaultConfig =
+                        com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig.getDefaultConfig()
+                    Logger.w(
+                        LogTags.ALARM,
+                        "🔄 FALLBACK: Using default config with ${defaultConfig.definitions.size} definitions"
+                    )
+
                     val availableShifts = defaultConfig.definitions.filter { it.isEnabled }
                     _manualAlarmState.value = _manualAlarmState.value.copy(
                         availableShifts = availableShifts,
@@ -424,16 +467,18 @@ class AlarmViewModel @Inject constructor(
                         // Filter für manuelle Alarme
                         val manualAlarms = alarms.filter { ManualAlarmConstants.isManualAlarm(it) }
                         val activeManualAlarm = manualAlarms.firstOrNull() // Nur einer zur Zeit
-                        
+
                         _manualAlarmState.value = _manualAlarmState.value.copy(
                             hasActiveManualAlarm = activeManualAlarm != null,
                             activeManualAlarm = activeManualAlarm
                         )
-                        
+
                         Logger.d(LogTags.ALARM, "Manual alarms updated: ${manualAlarms.size}")
                     }
-            } catch (_: kotlinx.coroutines.CancellationException) {
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Rethrow for proper structured concurrency
                 Logger.d(LogTags.ALARM, "Manual alarms observation cancelled (app lifecycle)")
+                throw e
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "Error observing manual alarms", e)
             }
@@ -447,7 +492,7 @@ class AlarmViewModel @Inject constructor(
 
     fun selectManualAlarmShift(shift: ShiftDefinition) {
         Logger.d(LogTags.ALARM, "Manual alarm shift selected: ${shift.name}")
-        
+
         _manualAlarmState.value = _manualAlarmState.value.copy(selectedShift = shift)
         updateCalculatedAlarmTime()
     }
@@ -456,23 +501,29 @@ class AlarmViewModel @Inject constructor(
         val state = _manualAlarmState.value
         val selectedShift = state.selectedShift
         val selectedDate = state.selectedDate
-        
+
         if (selectedShift != null) {
             // 🔍 DEBUG: Log die verwendete Schicht-Zeit
-            Logger.business(LogTags.ALARM, "🎯 CALCULATING alarm time for shift: ${selectedShift.name}")
+            Logger.business(
+                LogTags.ALARM,
+                "🎯 CALCULATING alarm time for shift: ${selectedShift.name}"
+            )
             Logger.business(LogTags.ALARM, "   📅 Date: $selectedDate")
             Logger.business(LogTags.ALARM, "   ⏰ Shift alarmTime: ${selectedShift.alarmTime}")
-            Logger.business(LogTags.ALARM, "   📋 Shift formatted: ${selectedShift.getAlarmTimeFormatted()}")
-            
+            Logger.business(
+                LogTags.ALARM,
+                "   📋 Shift formatted: ${selectedShift.getAlarmTimeFormatted()}"
+            )
+
             // ✅ KORRIGIERT: Verwende die User-konfigurierte Zeit OHNE bescheuerten Offset
             val alarmDateTime = selectedDate.atTime(selectedShift.alarmTime)
-            
+
             val formattedTime = alarmDateTime.format(
                 DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
             )
-            
+
             Logger.business(LogTags.ALARM, "   🚨 FINAL calculated alarm: $formattedTime")
-            
+
             _manualAlarmState.value = _manualAlarmState.value.copy(
                 calculatedAlarmTime = formattedTime
             )
@@ -489,16 +540,16 @@ class AlarmViewModel @Inject constructor(
             val state = _manualAlarmState.value
             val selectedShift = state.selectedShift
             val selectedDate = state.selectedDate
-            
+
             if (selectedShift == null) {
                 _manualAlarmState.value = state.copy(
                     error = AppErrorState.validationError("Bitte wählen Sie eine Schicht aus")
                 )
                 return@launch
             }
-            
+
             _manualAlarmState.value = state.copy(isCreating = true, error = null)
-            
+
             try {
                 // Berechne Alarm-Zeit - ✅ OHNE bescheuerten Offset
                 val alarmDateTime = selectedDate.atTime(selectedShift.alarmTime)
@@ -506,7 +557,7 @@ class AlarmViewModel @Inject constructor(
                     .atZone(ZoneId.systemDefault())
                     .toInstant()
                     .toEpochMilli()
-                
+
                 // Prüfe ob in der Zukunft
                 if (alarmTimeMillis <= System.currentTimeMillis()) {
                     _manualAlarmState.value = state.copy(
@@ -515,16 +566,18 @@ class AlarmViewModel @Inject constructor(
                     )
                     return@launch
                 }
-                
+
                 // Lösche vorherigen manuellen Alarm (nur einer zur Zeit)
                 state.activeManualAlarm?.let { existingAlarm ->
                     alarmUseCase.deleteAlarm(existingAlarm.id)
                 }
-                
+
                 // Erstelle AlarmInfo
-                val manualAlarmId = ManualAlarmConstants.createManualAlarmId(selectedDate, selectedShift.id)
-                val manualShiftId = ManualAlarmConstants.createManualShiftId(selectedShift.id, selectedDate)
-                
+                val manualAlarmId =
+                    ManualAlarmConstants.createManualAlarmId(selectedDate, selectedShift.id)
+                val manualShiftId =
+                    ManualAlarmConstants.createManualShiftId(selectedShift.id, selectedDate)
+
                 val alarmInfo = AlarmInfo(
                     id = manualAlarmId,
                     shiftId = manualShiftId,
@@ -534,7 +587,7 @@ class AlarmViewModel @Inject constructor(
                         DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
                     )
                 )
-                
+
                 // Speichere Alarm
                 alarmUseCase.saveAlarm(alarmInfo)
                     .onSuccess {
@@ -544,12 +597,17 @@ class AlarmViewModel @Inject constructor(
                                 _manualAlarmState.value = _manualAlarmState.value.copy(
                                     isCreating = false
                                 )
-                                Logger.business(LogTags.ALARM, "✅ Manual alarm created: ${selectedShift.name} for $selectedDate")
+                                Logger.business(
+                                    LogTags.ALARM,
+                                    "✅ Manual alarm created: ${selectedShift.name} for $selectedDate"
+                                )
                             }
                             .onFailure { error ->
                                 _manualAlarmState.value = _manualAlarmState.value.copy(
                                     isCreating = false,
-                                    error = AppErrorState.networkError(error.message ?: "Fehler beim Schedulen des Alarms")
+                                    error = AppErrorState.networkError(
+                                        error.message ?: "Fehler beim Schedulen des Alarms"
+                                    )
                                 )
                                 Logger.e(LogTags.ALARM, "❌ Failed to schedule manual alarm", error)
                             }
@@ -557,15 +615,19 @@ class AlarmViewModel @Inject constructor(
                     .onFailure { error ->
                         _manualAlarmState.value = _manualAlarmState.value.copy(
                             isCreating = false,
-                            error = AppErrorState.validationError(error.message ?: "Fehler beim Speichern des Alarms")
+                            error = AppErrorState.validationError(
+                                error.message ?: "Fehler beim Speichern des Alarms"
+                            )
                         )
                         Logger.e(LogTags.ALARM, "❌ Failed to save manual alarm", error)
                     }
-                
+
             } catch (e: Exception) {
                 _manualAlarmState.value = _manualAlarmState.value.copy(
                     isCreating = false,
-                    error = AppErrorState.validationError(e.message ?: "Unbekannter Fehler beim Erstellen des Alarms")
+                    error = AppErrorState.validationError(
+                        e.message ?: "Unbekannter Fehler beim Erstellen des Alarms"
+                    )
                 )
                 Logger.e(LogTags.ALARM, "❌ Exception creating manual alarm", e)
             }
@@ -579,26 +641,33 @@ class AlarmViewModel @Inject constructor(
                 Logger.w(LogTags.ALARM, "No active manual alarm to delete")
                 return@launch
             }
-            
+
             _manualAlarmState.value = _manualAlarmState.value.copy(isDeleting = true, error = null)
-            
+
             try {
                 alarmUseCase.deleteAlarm(activeAlarm.id)
                     .onSuccess {
                         _manualAlarmState.value = _manualAlarmState.value.copy(isDeleting = false)
-                        Logger.business(LogTags.ALARM, "✅ Manual alarm deleted: ${activeAlarm.shiftName}")
+                        Logger.business(
+                            LogTags.ALARM,
+                            "✅ Manual alarm deleted: ${activeAlarm.shiftName}"
+                        )
                     }
                     .onFailure { error ->
                         _manualAlarmState.value = _manualAlarmState.value.copy(
                             isDeleting = false,
-                            error = AppErrorState.validationError(error.message ?: "Fehler beim Löschen des Alarms")
+                            error = AppErrorState.validationError(
+                                error.message ?: "Fehler beim Löschen des Alarms"
+                            )
                         )
                         Logger.e(LogTags.ALARM, "❌ Failed to delete manual alarm", error)
                     }
             } catch (e: Exception) {
                 _manualAlarmState.value = _manualAlarmState.value.copy(
                     isDeleting = false,
-                    error = AppErrorState.validationError(e.message ?: "Unbekannter Fehler beim Löschen des Alarms")
+                    error = AppErrorState.validationError(
+                        e.message ?: "Unbekannter Fehler beim Löschen des Alarms"
+                    )
                 )
                 Logger.e(LogTags.ALARM, "❌ Exception deleting manual alarm", e)
             }
@@ -608,32 +677,35 @@ class AlarmViewModel @Inject constructor(
     fun clearManualAlarmError() {
         _manualAlarmState.value = _manualAlarmState.value.copy(error = null)
     }
-    
+
     /**
      * MEMORY LEAK PREVENTION: Comprehensive resource cleanup
      * CRITICAL FIX: This was missing and causing memory leaks!
      */
     override fun onCleared() {
         super.onCleared()
-        
+
         try {
             // MEMORY LEAK FIX: Cancel alarm observation job
             alarmObservationJob?.cancel()
             alarmObservationJob = null
-            
+
             // MEMORY OPTIMIZATION: Clear state to release references
             _uiState.value = AlarmUiState()
             _skipState.value = AlarmSkipUiState()
             _manualAlarmState.value = ManualAlarmUiState()
-            
-            Logger.d(LogTags.LIFECYCLE, "AlarmViewModel cleared - cleaning up alarm observations and resources")
+
+            Logger.d(
+                LogTags.LIFECYCLE,
+                "AlarmViewModel cleared - cleaning up alarm observations and resources"
+            )
         } catch (e: Exception) {
             Logger.e(LogTags.LIFECYCLE, "Error during AlarmViewModel cleanup", e)
         }
-        
+
         // Note: ViewModelScope automatically cancels all remaining coroutines
     }
-    
+
     /**
      * PUBLIC API: Manual cleanup for MainActivity destruction
      * Calls onCleared() safely from external context

@@ -1,16 +1,22 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.*
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.TrustAllCertificatesManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeDiscoveryResponse
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupUpdate
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridgeConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.LightStateUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.SecureHueTrustManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.TrustAllCertificatesManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
@@ -125,7 +131,7 @@ class HueApiClient {
             val response = client.newCall(requestBuilder.build()).execute()
             
             if (response.isSuccessful) {
-                val responseBody = response.body?.string() ?: ""
+                val responseBody = response.body.string()
                 Logger.i(LogTags.HUE_NETWORK, "✅ Secure HTTPS request successful: ${response.code}")
                 Result.success(responseBody)
             } else {
@@ -179,7 +185,7 @@ class HueApiClient {
                 val response = client.newCall(request).execute()
 
                 if (response.isSuccessful) {
-                    val responseBody = response.body?.string() ?: "[]"
+                    val responseBody = response.body.string().ifBlank { "[]" }
                     val type = object : TypeToken<List<BridgeDiscoveryResponse>>() {}.type
                     val bridges = gson.fromJson<List<BridgeDiscoveryResponse>>(responseBody, type)
 

@@ -1,8 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.discovery
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -70,8 +70,8 @@ class HueNUpnpDiscoveryService {
                 throw IOException(errorMessage)
             }
             
-            val responseBody = response.body?.string()
-            if (responseBody.isNullOrBlank()) {
+            val responseBody = response.body.string()
+            if (responseBody.isBlank()) {
                 Logger.w(LogTags.HUE_DISCOVERY, "Empty response from discovery service")
                 return@withContext Result.success(emptyList())
             }

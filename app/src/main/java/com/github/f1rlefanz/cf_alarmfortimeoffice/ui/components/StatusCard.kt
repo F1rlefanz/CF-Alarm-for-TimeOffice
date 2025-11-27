@@ -1,13 +1,29 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 
 @Composable
@@ -22,9 +38,9 @@ fun StatusCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPositive) 
-                MaterialTheme.colorScheme.primaryContainer 
-            else 
+            containerColor = if (isPositive)
+                MaterialTheme.colorScheme.primaryContainer
+            else
                 MaterialTheme.colorScheme.errorContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = SpacingConstants.CARD_ELEVATION / 2)
@@ -39,37 +55,37 @@ fun StatusCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (isPositive) 
-                        MaterialTheme.colorScheme.onPrimaryContainer 
-                    else 
+                    tint = if (isPositive)
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    else
                         MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
                 )
-                
+
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (isPositive) 
-                            MaterialTheme.colorScheme.onPrimaryContainer 
-                        else 
+                        color = if (isPositive)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
                             MaterialTheme.colorScheme.onErrorContainer
                     )
-                    
+
                     subtitle?.let {
                         Text(
                             text = it,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (isPositive) 
-                                MaterialTheme.colorScheme.onPrimaryContainer 
-                            else 
+                            color = if (isPositive)
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            else
                                 MaterialTheme.colorScheme.onErrorContainer
                         )
                     }
                 }
             }
-            
+
             actionButton?.let {
                 Spacer(modifier = Modifier.height(SpacingConstants.SPACING_MEDIUM))
                 it()
@@ -106,7 +122,7 @@ fun InfoCard(
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
                 )
-                
+
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
@@ -114,74 +130,8 @@ fun InfoCard(
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
-            
+
             content()
         }
     }
-}
-
-@Composable
-fun ActionButton(
-    text: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    variant: ButtonVariant = ButtonVariant.Primary
-) {
-    when (variant) {
-        ButtonVariant.Primary -> {
-            Button(
-                onClick = onClick,
-                modifier = modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = SpacingConstants.PADDING_CARD, vertical = SpacingConstants.SPACING_MEDIUM)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL)
-                )
-                Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                Text(text)
-            }
-        }
-        ButtonVariant.Secondary -> {
-            OutlinedButton(
-                onClick = onClick,
-                modifier = modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = SpacingConstants.PADDING_CARD, vertical = SpacingConstants.SPACING_MEDIUM)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL)
-                )
-                Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                Text(text)
-            }
-        }
-        ButtonVariant.Error -> {
-            Button(
-                onClick = onClick,
-                modifier = modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                ),
-                contentPadding = PaddingValues(horizontal = SpacingConstants.PADDING_CARD, vertical = SpacingConstants.SPACING_MEDIUM)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL)
-                )
-                Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                Text(text)
-            }
-        }
-    }
-}
-
-enum class ButtonVariant {
-    Primary,
-    Secondary,
-    Error
 }

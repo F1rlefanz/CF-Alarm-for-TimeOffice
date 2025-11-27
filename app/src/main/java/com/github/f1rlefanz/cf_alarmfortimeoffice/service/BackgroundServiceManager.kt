@@ -3,8 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 import android.content.Context
 import android.os.Build
 import androidx.core.content.edit
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton

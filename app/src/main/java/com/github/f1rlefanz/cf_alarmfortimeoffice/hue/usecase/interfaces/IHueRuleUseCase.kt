@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import java.time.LocalTime
 

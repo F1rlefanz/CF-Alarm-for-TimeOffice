@@ -5,8 +5,8 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -130,7 +130,7 @@ class HueMdnsDiscoveryService(private val context: Context) {
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 // Extract hostname/host for logging (backward compatible)
                 val hostInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    serviceInfo.hostAddresses?.firstOrNull()?.hostName ?: "unknown"
+                    serviceInfo.hostAddresses.firstOrNull()?.hostName ?: "unknown"
                 } else {
                     @Suppress("DEPRECATION")
                     serviceInfo.host?.hostName ?: "unknown"
@@ -158,7 +158,7 @@ class HueMdnsDiscoveryService(private val context: Context) {
             // Modern approach: Use hostAddresses for API 34+, fallback to host for older versions
             val hostAddress = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 // API 34+: Use hostAddresses array (first address)
-                serviceInfo.hostAddresses?.firstOrNull()?.hostAddress
+                serviceInfo.hostAddresses.firstOrNull()?.hostAddress
             } else {
                 // Legacy API: Use deprecated host property for backward compatibility
                 @Suppress("DEPRECATION")

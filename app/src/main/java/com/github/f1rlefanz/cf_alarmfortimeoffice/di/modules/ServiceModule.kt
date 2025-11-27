@@ -5,11 +5,11 @@ import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WakeLockManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.IWakeLockManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.IWakeLockManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WakeLockManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -25,7 +25,10 @@ import javax.inject.Singleton
  * 
  * NOTE: BackgroundServiceManager is not provided here because it has its own
  * @Singleton @Inject constructor and is automatically provided by Hilt.
+ * 
+ * @suppress unused - All @Provides methods are used by Hilt at compile-time via annotation processing
  */
+@Suppress("unused") // Hilt uses these methods via annotation processing
 @Module
 @InstallIn(SingletonComponent::class)
 object ServiceModule {

@@ -107,9 +107,8 @@ android {
             // SIGNING: Use production keystore
             signingConfig = signingConfigs.getByName("release")
 
-            // SECURITY: Enable code obfuscation and optimization
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // TODO: Re-enable after AGP upgrade fixes R8 9.2.14 NPE bug (core:1.19.0 + compileSdk 37)
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

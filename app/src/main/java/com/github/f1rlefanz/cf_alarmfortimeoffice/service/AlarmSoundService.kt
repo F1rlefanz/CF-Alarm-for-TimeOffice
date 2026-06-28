@@ -70,11 +70,15 @@ class AlarmSoundService : Service() {
     // Audio Management
     private var alarmMediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
-    
-    // Shutdown Flag - CRITICAL for preventing race conditions
-    // Set to true when stopping service to prevent async callbacks from starting sound
+
+    // Shutdown Flag - prevents async callbacks from starting sound after stop
     @Volatile
     private var isShuttingDown = false
+
+    // Generation counter - each new MediaPlayer gets a unique ID so stale
+    // OnPreparedListener callbacks from a previous player can never start playback.
+    @Volatile
+    private var playerGeneration = 0
     
     /**
      * Binder class for Activity to connect to this Service
@@ -168,105 +172,101 @@ class AlarmSoundService : Service() {
     }
     
     /**
-     * Starts alarm sound using MediaPlayer
-     * 
-     * CRITICAL: Uses isShuttingDown flag to prevent race conditions
-     * OnPreparedListener checks flag before starting playback
+     * Starts alarm sound using MediaPlayer.
+     *
+     * Releases any pre-existing player first (idempotent), then stamps the new
+     * player with a generation token.  The OnPreparedListener checks both the
+     * shutdown flag AND the token so that a stale async callback from a previous
+     * player can never start playback even if isShuttingDown was reset in the
+     * meantime (e.g. stop → snooze → start race).
      */
     private fun startAlarmSound() {
-        // Early exit if service is shutting down
         if (isShuttingDown) {
             Logger.w(LogTags.ALARM, "🚫 Service shutting down, not starting sound")
             return
         }
-        
+
+        // Release any previous player before creating a new one.
+        // This prevents duplicate playback when START_ALARM is received twice.
+        alarmMediaPlayer?.let { prev ->
+            try { if (prev.isPlaying) prev.stop() } catch (_: Exception) {}
+            try { prev.release() } catch (_: Exception) {}
+        }
+        alarmMediaPlayer = null
+
+        // Capture this player's generation. Any OnPreparedListener from an older
+        // player will see a mismatched generation and release itself instead of starting.
+        val myGeneration = ++playerGeneration
+
         try {
-            // Get alarm sound URI with fallbacks
             val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            
+
             if (alarmUri == null) {
                 Logger.w(LogTags.ALARM, "⚠️ No alarm URIs available for MediaPlayer")
                 return
             }
-            
+
             Logger.d(LogTags.ALARM, "🎵 Starting MediaPlayer with URI: $alarmUri")
-            
-            // Create and configure MediaPlayer
+
             alarmMediaPlayer = MediaPlayer().apply {
                 setDataSource(this@AlarmSoundService, alarmUri)
-                
-                // Configure audio attributes for alarm
+
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
-                
-                // Enable looping
+
                 isLooping = true
-                
-                // CRITICAL: OnPreparedListener with shutdown check
+
                 setOnPreparedListener { player ->
-                    // Check shutdown flag BEFORE starting playback
-                    if (!isShuttingDown) {
+                    // Guard: only start if this is still the active player
+                    if (!isShuttingDown && myGeneration == playerGeneration) {
                         try {
                             player.start()
-                            Logger.business(
-                                LogTags.ALARM,
-                                "✅ MediaPlayer started successfully in service"
-                            )
+                            Logger.business(LogTags.ALARM, "✅ MediaPlayer started successfully in service")
                         } catch (e: Exception) {
                             Logger.e(LogTags.ALARM, "❌ MediaPlayer start failed", e)
                         }
                     } else {
-                        // Service is shutting down - release player immediately
                         Logger.d(
                             LogTags.ALARM,
-                            "🚫 Shutdown flag set, not starting player - releasing"
+                            "🚫 Player gen=$myGeneration superseded (current=$playerGeneration, shutting=$isShuttingDown) — releasing"
                         )
-                        try {
-                            player.release()
-                        } catch (e: Exception) {
-                            Logger.e(LogTags.ALARM, "Error releasing player on shutdown", e)
-                        }
+                        try { player.release() } catch (_: Exception) {}
                     }
                 }
-                
-                // Error handler
+
                 setOnErrorListener { _, what, extra ->
-                    Logger.e(
-                        LogTags.ALARM,
-                        "❌ MediaPlayer error: what=$what, extra=$extra"
-                    )
-                    false // Return false to trigger onCompletion
+                    Logger.e(LogTags.ALARM, "❌ MediaPlayer error: what=$what, extra=$extra")
+                    false
                 }
-                
-                // Start async preparation
+
                 prepareAsync()
                 Logger.d(LogTags.ALARM, "🔄 MediaPlayer preparing asynchronously")
             }
-            
+
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ Failed to start alarm sound in service", e)
         }
     }
-    
+
     /**
-     * Stops alarm sound and releases MediaPlayer
-     * 
-     * CRITICAL: Sets isShuttingDown flag FIRST to prevent race conditions
+     * Stops alarm sound and releases MediaPlayer.
+     *
+     * Sets isShuttingDown first, then increments playerGeneration so that any
+     * still-pending OnPreparedListener callback is invalidated on both guards.
      */
     private fun stopAlarmSound() {
-        // CRITICAL: Set shutdown flag FIRST to prevent async callbacks from starting sound
         isShuttingDown = true
-        
+        playerGeneration++ // invalidate any pending OnPreparedListener callbacks
+
         try {
             alarmMediaPlayer?.let { player ->
                 try {
-                    // Stop playback if playing
                     if (player.isPlaying) {
                         player.stop()
                         Logger.d(LogTags.ALARM, "🔇 MediaPlayer stopped")
@@ -274,19 +274,18 @@ class AlarmSoundService : Service() {
                 } catch (e: Exception) {
                     Logger.w(LogTags.ALARM, "⚠️ Error stopping MediaPlayer", e)
                 }
-                
+
                 try {
-                    // Release resources
                     player.release()
                     Logger.d(LogTags.ALARM, "♻️ MediaPlayer released")
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM, "❌ Error releasing MediaPlayer", e)
                 }
             }
-            
+
             alarmMediaPlayer = null
             Logger.i(LogTags.ALARM, "✅ MediaPlayer stopped and released successfully")
-            
+
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ Critical error stopping MediaPlayer", e)
         }

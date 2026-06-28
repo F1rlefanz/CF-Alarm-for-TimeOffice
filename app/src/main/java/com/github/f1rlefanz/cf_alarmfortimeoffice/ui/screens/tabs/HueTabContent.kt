@@ -31,11 +31,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -67,6 +73,31 @@ fun HueTabContent(
 ) {
     val uiState by hueViewModel.uiState.collectAsState()
     val discoveryStatus by hueViewModel.discoveryStatus.collectAsState()
+    val context = LocalContext.current
+    var pendingHueAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            pendingHueAction?.invoke()
+        } else {
+            hueViewModel.setError("Lokaler Netzwerkzugriff verweigert. Bitte in den Android-Einstellungen erteilen.")
+        }
+        pendingHueAction = null
+    }
+
+    fun requireLocalNetworkPermission(action: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= 37 &&
+            context.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK")
+                != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingHueAction = action
+            localNetworkPermissionLauncher.launch("android.permission.ACCESS_LOCAL_NETWORK")
+        } else {
+            action()
+        }
+    }
 
     // Use LazyColumn for proper scrolling and performance
     LazyColumn(
@@ -173,7 +204,7 @@ fun HueTabContent(
         item {
             BridgeConnectionStatusCard(
                 connectionInfo = uiState.bridgeConnectionInfo,
-                onValidateConnection = { hueViewModel.validateBridgeConnection() }
+                onValidateConnection = { requireLocalNetworkPermission { hueViewModel.validateBridgeConnection() } }
             )
         }
 
@@ -181,9 +212,9 @@ fun HueTabContent(
         item {
             BridgeDiscoveryCard(
                 discoveredBridges = uiState.discoveredBridges,
-                onDiscoverBridges = { hueViewModel.discoverBridges() },
+                onDiscoverBridges = { requireLocalNetworkPermission { hueViewModel.discoverBridges() } },
                 onConnectToBridge = { bridge ->
-                    hueViewModel.setupBridge(bridge)
+                    requireLocalNetworkPermission { hueViewModel.setupBridge(bridge) }
                 },
                 onClearBridges = { hueViewModel.clearDiscoveredBridges() }
             )

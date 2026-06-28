@@ -6,8 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
-    kotlin("kapt")
 }
 
 // ==============================
@@ -21,7 +21,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.github.f1rlefanz.cf_alarmfortimeoffice"
-    compileSdk = 36
+    compileSdk = 37
 
     // ==============================
     // 🔐 SECURE SIGNING CONFIGURATION
@@ -51,7 +51,7 @@ android {
     defaultConfig {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 29
         versionName = "1.5.0"
 
@@ -137,7 +137,6 @@ android {
 
             // Development settings
             isMinifyEnabled = false
-            isShrinkResources = false
             isDebuggable = true
 
             // APP IDENTIFICATION: Clear debug identification
@@ -222,17 +221,13 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
         }
-
-        // Ensure test framework can find our TestSuite
         animationsDisabled = true
+    }
+}
 
-        // JUnit configuration
-        unitTests.all { test ->
-            test.useJUnitPlatform {
-                // Include all tests, including our TestSuite
-                includeTags("junit")
-            }
-        }
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform {
+        includeTags("junit")
     }
 }
 
@@ -301,7 +296,7 @@ dependencies {
     // Dependency Injection
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
-    kapt(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)
 
     // Testing dependencies
     testImplementation(libs.junit)

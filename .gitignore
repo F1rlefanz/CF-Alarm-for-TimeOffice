@@ -88,3 +88,11 @@ remove-files.sh
 validate-*.ps1
 deploy-*.sh
 setup-*.bat
+
+# ================================
+# 📝 LOCAL-ONLY NOTES
+# ================================
+
+# Claude project guidance & Play Store justification — kept local, not version-controlled
+/CLAUDE.md
+/docs/play-store/special-use-fgs-justification.md

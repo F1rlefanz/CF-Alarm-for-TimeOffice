@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnec
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueLightRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -120,29 +121,39 @@ class HueLightRepository @Inject constructor(
         on: Boolean?,
         brightness: Int?,
         hue: Int?,
-        saturation: Int?
+        saturation: Int?,
+        colorTemperature: Int?,
+        transitionTime: Int?
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             // CRITICAL: Use robust connection manager for alarm operations
             val (bridgeIp, username) = getValidatedConnectionInfo()
-            
+
             // Build state change object
             val stateChange = buildMap<String, Any> {
                 on?.let { put("on", it) }
-                brightness?.let { 
+                brightness?.let {
                     if (it in 0..254) put("bri", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid brightness value: $it (must be 0-254)")
                 }
-                hue?.let { 
+                hue?.let {
                     if (it in 0..65535) put("hue", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid hue value: $it (must be 0-65535)")
                 }
-                saturation?.let { 
+                saturation?.let {
                     if (it in 0..254) put("sat", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid saturation value: $it (must be 0-254)")
                 }
+                colorTemperature?.let {
+                    if (it in HueConstants.Lights.MIN_COLOR_TEMPERATURE..HueConstants.Lights.MAX_COLOR_TEMPERATURE) put("ct", it)
+                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid color temperature: $it (must be ${HueConstants.Lights.MIN_COLOR_TEMPERATURE}-${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds)")
+                }
+                transitionTime?.let {
+                    if (it in 0..65535) put("transitiontime", it)
+                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid transition time: $it (must be 0-65535 deciseconds)")
+                }
             }
-            
+
             if (stateChange.isEmpty()) {
                 Logger.w(LogTags.HUE_LIGHTS, "No valid state changes provided for light $lightId")
                 return@withContext Result.success(Unit)
@@ -171,29 +182,39 @@ class HueLightRepository @Inject constructor(
         on: Boolean?,
         brightness: Int?,
         hue: Int?,
-        saturation: Int?
+        saturation: Int?,
+        colorTemperature: Int?,
+        transitionTime: Int?
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             // CRITICAL: Use robust connection manager for alarm operations
             val (bridgeIp, username) = getValidatedConnectionInfo()
-            
+
             // Build action change object
             val actionChange = buildMap<String, Any> {
                 on?.let { put("on", it) }
-                brightness?.let { 
+                brightness?.let {
                     if (it in 0..254) put("bri", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid brightness value: $it (must be 0-254)")
                 }
-                hue?.let { 
+                hue?.let {
                     if (it in 0..65535) put("hue", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid hue value: $it (must be 0-65535)")
                 }
-                saturation?.let { 
+                saturation?.let {
                     if (it in 0..254) put("sat", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid saturation value: $it (must be 0-254)")
                 }
+                colorTemperature?.let {
+                    if (it in HueConstants.Lights.MIN_COLOR_TEMPERATURE..HueConstants.Lights.MAX_COLOR_TEMPERATURE) put("ct", it)
+                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid color temperature: $it (must be ${HueConstants.Lights.MIN_COLOR_TEMPERATURE}-${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds)")
+                }
+                transitionTime?.let {
+                    if (it in 0..65535) put("transitiontime", it)
+                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid transition time: $it (must be 0-65535 deciseconds)")
+                }
             }
-            
+
             if (actionChange.isEmpty()) {
                 Logger.w(LogTags.HUE_LIGHTS, "No valid action changes provided for group $groupId")
                 return@withContext Result.success(Unit)

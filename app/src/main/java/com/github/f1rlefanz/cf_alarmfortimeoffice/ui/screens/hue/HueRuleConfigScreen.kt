@@ -1,17 +1,23 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
@@ -21,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +53,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,8 +64,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.ActionType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TimeReference
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
@@ -83,13 +95,29 @@ fun HueRuleConfigScreen(
     // Form state
     var ruleName by remember { mutableStateOf("") }
     var selectedShiftPattern by remember { mutableStateOf("") }
-    var timeOffsetMinutes by remember { mutableIntStateOf(0) }
     var selectedLightIds by remember { mutableStateOf(setOf<String>()) }
     var selectedGroupIds by remember { mutableStateOf(setOf<String>()) }
     var targetOn by remember { mutableStateOf(true) }
     var targetBrightness by remember { mutableIntStateOf(128) }
     var isEnabled by remember { mutableStateOf(true) }
-    
+
+    // Color state
+    var colorMode by remember { mutableStateOf(ColorMode.NONE) }
+    var colorKelvin by remember { mutableIntStateOf(2700) }
+    var colorPreset by remember { mutableStateOf(HueColorConverter.ColorPreset.RED) }
+
+    // Auto-off state (turn the lights off again after N minutes)
+    var autoOffEnabled by remember { mutableStateOf(false) }
+    var autoOffMinutes by remember { mutableIntStateOf(30) }
+
+    // Sunrise state
+    var sunriseEnabled by remember { mutableStateOf(false) }
+    var sunriseDurationMinutes by remember { mutableIntStateOf(15) }
+    var sunriseStartKelvin by remember { mutableIntStateOf(2000) }
+    var sunriseEndKelvin by remember { mutableIntStateOf(4000) }
+    var sunriseEndBrightness by remember { mutableIntStateOf(254) }
+    var sunriseStartBeforeAlarm by remember { mutableStateOf(true) }
+
     // Validation state
     var showValidationErrors by remember { mutableStateOf(false) }
     
@@ -119,18 +147,35 @@ fun HueRuleConfigScreen(
             // Extract values from first time range and action
             val firstTimeRange = rule.timeRanges.firstOrNull()
             if (firstTimeRange != null) {
-                timeOffsetMinutes = firstTimeRange.offsetMinutes
-                
                 val firstAction = firstTimeRange.actions.firstOrNull()
                 if (firstAction != null) {
                     targetOn = firstAction.on ?: true
                     targetBrightness = firstAction.brightness ?: 128
+
+                    // Restore the color mode from whichever color field was persisted.
+                    when {
+                        firstAction.colorTemperature != null -> {
+                            colorMode = ColorMode.WHITE
+                            colorKelvin = HueColorConverter.hueMiredsToKelvin(firstAction.colorTemperature)
+                        }
+                        firstAction.hue != null -> {
+                            colorMode = ColorMode.COLOR
+                            colorPreset = nearestPreset(firstAction.hue)
+                        }
+                        else -> colorMode = ColorMode.NONE
+                    }
+
+                    // Restore auto-off (duration in minutes)
+                    firstAction.duration?.let { d ->
+                        autoOffEnabled = d > 0
+                        if (d > 0) autoOffMinutes = d
+                    }
                 }
-                
+
                 // Separate lights and groups from actions
                 val lightIds = mutableSetOf<String>()
                 val groupIds = mutableSetOf<String>()
-                
+
                 firstTimeRange.actions.forEach { action ->
                     when (action.targetType) {
                         TargetType.LIGHT -> lightIds.add(action.targetId)
@@ -138,9 +183,19 @@ fun HueRuleConfigScreen(
                         else -> {} // Handle other types if needed
                     }
                 }
-                
+
                 selectedLightIds = lightIds
                 selectedGroupIds = groupIds
+            }
+
+            // Restore sunrise configuration
+            rule.sunrise?.let { sunrise ->
+                sunriseEnabled = sunrise.enabled
+                sunriseDurationMinutes = sunrise.durationMinutes
+                sunriseStartKelvin = sunrise.startKelvin
+                sunriseEndKelvin = sunrise.endKelvin
+                sunriseEndBrightness = sunrise.endBrightness
+                sunriseStartBeforeAlarm = sunrise.startBeforeAlarm
             }
         }
     }
@@ -156,7 +211,66 @@ fun HueRuleConfigScreen(
     val availableShiftPatterns = remember(shiftState.currentShiftConfig) {
         shiftState.currentShiftConfig?.definitions?.filter { it.isEnabled }?.map { it.name } ?: emptyList()
     }
-    
+
+    // Builds the light actions for the current form state. A sunrise rule only needs its
+    // targets (color/brightness come from the SunriseConfig); otherwise the selected color
+    // mode (white temperature or preset color) is baked into each action.
+    fun buildActions(): List<HueLightAction> {
+        val colorTemp: Int? = if (!sunriseEnabled && targetOn && colorMode == ColorMode.WHITE) {
+            HueColorConverter.kelvinToHueMireds(colorKelvin)
+        } else null
+        val presetColor = if (!sunriseEnabled && targetOn && colorMode == ColorMode.COLOR) {
+            HueColorConverter.getPresetColor(colorPreset)
+        } else null
+
+        val actions = mutableListOf<HueLightAction>()
+        fun addAction(id: String, type: TargetType, isGroup: Boolean) {
+            actions.add(
+                HueLightAction(
+                    targetType = type,
+                    targetId = id,
+                    actionType = if (sunriseEnabled || targetOn) ActionType.TURN_ON else ActionType.TURN_OFF,
+                    on = if (sunriseEnabled) true else targetOn,
+                    brightness = if (sunriseEnabled || !targetOn) null else targetBrightness,
+                    hue = presetColor?.hue,
+                    saturation = presetColor?.saturation,
+                    colorTemperature = colorTemp,
+                    duration = if (!sunriseEnabled && targetOn && autoOffEnabled) autoOffMinutes else null,
+                    isGroup = isGroup
+                )
+            )
+        }
+        selectedLightIds.forEach { addAction(it, TargetType.LIGHT, false) }
+        selectedGroupIds.forEach { addAction(it, TargetType.GROUP, true) }
+        return actions
+    }
+
+    fun buildRule(id: String): HueScheduleRule {
+        val timeRange = HueTimeRange(
+            startTime = "00:00",
+            endTime = "23:59",
+            relativeTo = TimeReference.ALARM_TIME,
+            actions = buildActions()
+        )
+        return HueScheduleRule(
+            id = id,
+            name = ruleName,
+            shiftPattern = selectedShiftPattern,
+            enabled = isEnabled,
+            timeRanges = listOf(timeRange),
+            sunrise = if (sunriseEnabled) {
+                SunriseConfig(
+                    enabled = true,
+                    durationMinutes = sunriseDurationMinutes,
+                    startKelvin = sunriseStartKelvin,
+                    endKelvin = sunriseEndKelvin,
+                    endBrightness = sunriseEndBrightness,
+                    startBeforeAlarm = sunriseStartBeforeAlarm
+                )
+            } else null
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -179,49 +293,8 @@ fun HueRuleConfigScreen(
                     TextButton(
                         onClick = {
                             if (validateForm(ruleName, selectedShiftPattern, selectedLightIds, selectedGroupIds)) {
-                                val actions = mutableListOf<HueLightAction>()
-                                
-                                selectedLightIds.forEach { lightId ->
-                                    actions.add(
-                                        HueLightAction(
-                                            targetType = TargetType.LIGHT,
-                                            targetId = lightId,
-                                            actionType = if (targetOn) ActionType.TURN_ON else ActionType.TURN_OFF,
-                                            on = targetOn,
-                                            brightness = if (targetOn) targetBrightness else null
-                                        )
-                                    )
-                                }
-                                
-                                selectedGroupIds.forEach { groupId ->
-                                    actions.add(
-                                        HueLightAction(
-                                            targetType = TargetType.GROUP,
-                                            targetId = groupId,
-                                            actionType = if (targetOn) ActionType.TURN_ON else ActionType.TURN_OFF,
-                                            on = targetOn,
-                                            brightness = if (targetOn) targetBrightness else null,
-                                            isGroup = true
-                                        )
-                                    )
-                                }
-                                
-                                val timeRange = HueTimeRange(
-                                    startTime = "00:00",
-                                    endTime = "23:59",
-                                    relativeTo = TimeReference.ALARM_TIME,
-                                    offsetMinutes = timeOffsetMinutes,
-                                    actions = actions
-                                )
-                                
-                                val rule = HueScheduleRule(
-                                    id = ruleId ?: HueScheduleRule.generateId(),
-                                    name = ruleName,
-                                    shiftPattern = selectedShiftPattern,
-                                    enabled = isEnabled,
-                                    timeRanges = listOf(timeRange)
-                                )
-                                
+                                val rule = buildRule(ruleId ?: HueScheduleRule.generateId())
+
                                 if (ruleId != null) {
                                     hueViewModel.updateRule(rule)
                                 } else {
@@ -272,13 +345,6 @@ fun HueRuleConfigScreen(
             }
             
             item {
-                TimeConfigCard(
-                    timeOffsetMinutes = timeOffsetMinutes,
-                    onTimeOffsetChange = { timeOffsetMinutes = it }
-                )
-            }
-            
-            item {
                 TargetSelectionCard(
                     lightTargets = uiState.lightTargets,
                     selectedLightIds = selectedLightIds,
@@ -292,66 +358,61 @@ fun HueRuleConfigScreen(
             
             item {
                 ActionConfigCard(
+                    enabled = !sunriseEnabled,
                     targetOn = targetOn,
                     targetBrightness = targetBrightness,
+                    colorMode = colorMode,
+                    colorKelvin = colorKelvin,
+                    colorPreset = colorPreset,
+                    autoOffEnabled = autoOffEnabled,
+                    autoOffMinutes = autoOffMinutes,
                     onTargetOnChange = { targetOn = it },
-                    onTargetBrightnessChange = { targetBrightness = it }
+                    onTargetBrightnessChange = { targetBrightness = it },
+                    onColorModeChange = { colorMode = it },
+                    onColorKelvinChange = { colorKelvin = it },
+                    onColorPresetChange = { colorPreset = it },
+                    onAutoOffEnabledChange = { autoOffEnabled = it },
+                    onAutoOffMinutesChange = { autoOffMinutes = it }
                 )
             }
-            
+
+            item {
+                SunriseConfigCard(
+                    enabled = sunriseEnabled,
+                    durationMinutes = sunriseDurationMinutes,
+                    startKelvin = sunriseStartKelvin,
+                    endKelvin = sunriseEndKelvin,
+                    endBrightness = sunriseEndBrightness,
+                    startBeforeAlarm = sunriseStartBeforeAlarm,
+                    onEnabledChange = { sunriseEnabled = it },
+                    onDurationChange = { sunriseDurationMinutes = it },
+                    onStartKelvinChange = { sunriseStartKelvin = it },
+                    onEndKelvinChange = { sunriseEndKelvin = it },
+                    onEndBrightnessChange = { sunriseEndBrightness = it },
+                    onStartBeforeAlarmChange = { sunriseStartBeforeAlarm = it }
+                )
+            }
+
             item {
                 RulePreviewCard(
                     ruleName = ruleName,
                     selectedShiftPattern = selectedShiftPattern,
-                    timeOffsetMinutes = timeOffsetMinutes,
                     selectedLightIds = selectedLightIds,
                     selectedGroupIds = selectedGroupIds,
                     targetOn = targetOn,
                     targetBrightness = targetBrightness,
                     isEnabled = isEnabled,
+                    colorMode = colorMode,
+                    colorKelvin = colorKelvin,
+                    colorPreset = colorPreset,
+                    autoOffEnabled = autoOffEnabled,
+                    autoOffMinutes = autoOffMinutes,
+                    sunriseEnabled = sunriseEnabled,
+                    sunriseDurationMinutes = sunriseDurationMinutes,
+                    sunriseStartBeforeAlarm = sunriseStartBeforeAlarm,
                     onTestRule = {
-                        val actions = mutableListOf<HueLightAction>()
-                        
-                        selectedLightIds.forEach { lightId ->
-                            actions.add(
-                                HueLightAction(
-                                    targetType = TargetType.LIGHT,
-                                    targetId = lightId,
-                                    actionType = if (targetOn) ActionType.TURN_ON else ActionType.TURN_OFF,
-                                    on = targetOn,
-                                    brightness = if (targetOn) targetBrightness else null
-                                )
-                            )
-                        }
-                        
-                        selectedGroupIds.forEach { groupId ->
-                            actions.add(
-                                HueLightAction(
-                                    targetType = TargetType.GROUP,
-                                    targetId = groupId,
-                                    actionType = if (targetOn) ActionType.TURN_ON else ActionType.TURN_OFF,
-                                    on = targetOn,
-                                    brightness = if (targetOn) targetBrightness else null,
-                                    isGroup = true
-                                )
-                            )
-                        }
-                        
-                        val timeRange = HueTimeRange(
-                            startTime = "00:00",
-                            endTime = "23:59",
-                            relativeTo = TimeReference.ALARM_TIME,
-                            offsetMinutes = timeOffsetMinutes,
-                            actions = actions
-                        )
-                        
-                        val testRule = HueScheduleRule(
-                            id = "test_${System.currentTimeMillis()}",
-                            name = ruleName.ifBlank { "Test-Regel" },
-                            shiftPattern = selectedShiftPattern,
-                            enabled = true,
-                            timeRanges = listOf(timeRange)
-                        )
+                        val testRule = buildRule("test_${System.currentTimeMillis()}")
+                            .copy(name = ruleName.ifBlank { "Test-Regel" })
                         hueViewModel.testRuleExecution(testRule)
                     }
                 )
@@ -480,63 +541,6 @@ private fun ShiftPatternCard(
                     "Bitte wählen Sie ein Schichtmuster aus",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TimeConfigCard(
-    timeOffsetMinutes: Int,
-    onTimeOffsetChange: (Int) -> Unit
-) {
-    Card {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text("Zeitkonfiguration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Wann soll diese Regel relativ zu Ihrer Weckzeit ausgeführt werden?",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Zeitversatz: ${if (timeOffsetMinutes >= 0) "+" else ""}$timeOffsetMinutes Minuten",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
-                
-                Slider(
-                    value = timeOffsetMinutes.toFloat(),
-                    onValueChange = { onTimeOffsetChange(it.toInt()) },
-                    valueRange = -60f..60f,
-                    steps = 23,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("60 Min früher", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("60 Min später", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                
-                Text(
-                    when {
-                        timeOffsetMinutes < 0 -> "Ausführung ${-timeOffsetMinutes} Minuten vor Weckzeit"
-                        timeOffsetMinutes > 0 -> "Ausführung $timeOffsetMinutes Minuten nach Weckzeit"
-                        else -> "Ausführung genau zur Weckzeit"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
                 )
             }
         }
@@ -683,12 +687,24 @@ private fun TargetSelectionCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ActionConfigCard(
+    enabled: Boolean,
     targetOn: Boolean,
     targetBrightness: Int,
+    colorMode: ColorMode,
+    colorKelvin: Int,
+    colorPreset: HueColorConverter.ColorPreset,
+    autoOffEnabled: Boolean,
+    autoOffMinutes: Int,
     onTargetOnChange: (Boolean) -> Unit,
-    onTargetBrightnessChange: (Int) -> Unit
+    onTargetBrightnessChange: (Int) -> Unit,
+    onColorModeChange: (ColorMode) -> Unit,
+    onColorKelvinChange: (Int) -> Unit,
+    onColorPresetChange: (HueColorConverter.ColorPreset) -> Unit,
+    onAutoOffEnabledChange: (Boolean) -> Unit,
+    onAutoOffMinutesChange: (Int) -> Unit
 ) {
     Card {
         Column(
@@ -698,12 +714,22 @@ private fun ActionConfigCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Aktionskonfiguration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            if (!enabled) {
+                Text(
+                    "Der Sunrise-Lichtwecker steuert Farbe und Helligkeit dieser Regel. Deaktivieren Sie ihn unten, um hier manuell zu konfigurieren.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                return@Column
+            }
+
             Text(
                 "Konfigurieren Sie, was passieren soll, wenn diese Regel ausgeführt wird:",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -723,7 +749,7 @@ private fun ActionConfigCard(
                 }
                 Switch(checked = targetOn, onCheckedChange = onTargetOnChange)
             }
-            
+
             if (targetOn) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -731,14 +757,14 @@ private fun ActionConfigCard(
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
-                    
+
                     Slider(
                         value = targetBrightness.toFloat(),
                         onValueChange = { onTargetBrightnessChange(it.toInt()) },
                         valueRange = 1f..254f,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -747,6 +773,209 @@ private fun ActionConfigCard(
                         Text("100%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+
+                // Color mode selector
+                Text("Farbe", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = colorMode == ColorMode.NONE,
+                        onClick = { onColorModeChange(ColorMode.NONE) },
+                        label = { Text("Standard") }
+                    )
+                    FilterChip(
+                        selected = colorMode == ColorMode.WHITE,
+                        onClick = { onColorModeChange(ColorMode.WHITE) },
+                        label = { Text("Weißton") }
+                    )
+                    FilterChip(
+                        selected = colorMode == ColorMode.COLOR,
+                        onClick = { onColorModeChange(ColorMode.COLOR) },
+                        label = { Text("Farbe") }
+                    )
+                }
+
+                when (colorMode) {
+                    ColorMode.WHITE -> {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ColorSwatch(previewColorForKelvin(colorKelvin))
+                            Text("Farbtemperatur: $colorKelvin K", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                        Slider(
+                            value = colorKelvin.toFloat(),
+                            onValueChange = { onColorKelvinChange(it.toInt()) },
+                            valueRange = 2000f..6500f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Warm (2000K)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Kühl (6500K)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    ColorMode.COLOR -> {
+                        COLOR_PRESETS.chunked(4).forEach { rowPresets ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowPresets.forEach { preset ->
+                                    FilterChip(
+                                        selected = colorPreset == preset,
+                                        onClick = { onColorPresetChange(preset) },
+                                        leadingIcon = { ColorSwatch(previewColorForPreset(preset), size = 16) },
+                                        label = { Text(presetLabel(preset)) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    ColorMode.NONE -> { /* keep current bulb color */ }
+                }
+
+                // Auto-off after a duration
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.width(240.dp)) {
+                        Text("Automatisch ausschalten", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text(
+                            "Lichter nach einer Weile wieder ausschalten",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = autoOffEnabled, onCheckedChange = onAutoOffEnabledChange)
+                }
+                if (autoOffEnabled) {
+                    Text(
+                        "Ausschalten nach: $autoOffMinutes Minuten",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = autoOffMinutes.toFloat(),
+                        onValueChange = { onAutoOffMinutesChange(it.toInt().coerceIn(1, 120)) },
+                        valueRange = 1f..120f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SunriseConfigCard(
+    enabled: Boolean,
+    durationMinutes: Int,
+    startKelvin: Int,
+    endKelvin: Int,
+    endBrightness: Int,
+    startBeforeAlarm: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    onDurationChange: (Int) -> Unit,
+    onStartKelvinChange: (Int) -> Unit,
+    onEndKelvinChange: (Int) -> Unit,
+    onEndBrightnessChange: (Int) -> Unit,
+    onStartBeforeAlarmChange: (Boolean) -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.width(260.dp)) {
+                    Text("Sunrise-Lichtwecker", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = onEnabledChange)
+            }
+
+            if (enabled) {
+                // Gradient preview from start to end temperature
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(previewColorForKelvin(startKelvin), previewColorForKelvin(endKelvin))
+                            )
+                        )
+                )
+
+                Text("Dauer: $durationMinutes Minuten", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Slider(
+                    value = durationMinutes.toFloat(),
+                    onValueChange = { onDurationChange(it.toInt().coerceIn(1, 90)) },
+                    valueRange = 1f..90f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ColorSwatch(previewColorForKelvin(startKelvin))
+                    Text("Start: $startKelvin K (warm)", style = MaterialTheme.typography.bodyMedium)
+                }
+                Slider(
+                    value = startKelvin.toFloat(),
+                    onValueChange = { onStartKelvinChange(it.toInt()) },
+                    valueRange = 2000f..6500f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ColorSwatch(previewColorForKelvin(endKelvin))
+                    Text("Ziel: $endKelvin K", style = MaterialTheme.typography.bodyMedium)
+                }
+                Slider(
+                    value = endKelvin.toFloat(),
+                    onValueChange = { onEndKelvinChange(it.toInt()) },
+                    valueRange = 2000f..6500f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Ziel-Helligkeit: ${endBrightness * 100 / 254}%", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Slider(
+                    value = endBrightness.toFloat(),
+                    onValueChange = { onEndBrightnessChange(it.toInt()) },
+                    valueRange = 1f..254f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Zeitpunkt", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = startBeforeAlarm,
+                        onClick = { onStartBeforeAlarmChange(true) },
+                        label = { Text("Vor dem Alarm") }
+                    )
+                    FilterChip(
+                        selected = !startBeforeAlarm,
+                        onClick = { onStartBeforeAlarmChange(false) },
+                        label = { Text("Ab Alarmzeit") }
+                    )
+                }
+                Text(
+                    if (startBeforeAlarm) {
+                        "Rampe endet zur Weckzeit (startet $durationMinutes Min früher)"
+                    } else {
+                        "Rampe startet zur Weckzeit"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }
@@ -756,12 +985,19 @@ private fun ActionConfigCard(
 private fun RulePreviewCard(
     ruleName: String,
     selectedShiftPattern: String,
-    timeOffsetMinutes: Int,
     selectedLightIds: Set<String>,
     selectedGroupIds: Set<String>,
     targetOn: Boolean,
     targetBrightness: Int,
     isEnabled: Boolean,
+    colorMode: ColorMode,
+    colorKelvin: Int,
+    colorPreset: HueColorConverter.ColorPreset,
+    autoOffEnabled: Boolean,
+    autoOffMinutes: Int,
+    sunriseEnabled: Boolean,
+    sunriseDurationMinutes: Int,
+    sunriseStartBeforeAlarm: Boolean,
     onTestRule: () -> Unit
 ) {
     val context = LocalContext.current
@@ -810,22 +1046,45 @@ private fun RulePreviewCard(
                 Text("Bei $selectedShiftPattern-Schicht:", style = MaterialTheme.typography.bodyMedium)
             }
             
-            if (timeOffsetMinutes != 0 || selectedShiftPattern.isNotBlank()) {
-                val timeText = when {
-                    timeOffsetMinutes < 0 -> "${-timeOffsetMinutes} Minuten vor Weckzeit"
-                    timeOffsetMinutes > 0 -> "$timeOffsetMinutes Minuten nach Weckzeit"
-                    else -> "genau zur Weckzeit"
-                }
-                Text("Ausführung $timeText", style = MaterialTheme.typography.bodyMedium)
+            if (selectedShiftPattern.isNotBlank()) {
+                Text("Ausführung zur Weckzeit", style = MaterialTheme.typography.bodyMedium)
             }
             
             if (selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty()) {
-                Text(
-                    "${if (targetOn) "Einschalten" else "Ausschalten"} von ${selectedLightIds.size} Lichtern und ${selectedGroupIds.size} Gruppen${if (targetOn) " mit ${(targetBrightness * 100 / 254)}% Helligkeit" else ""}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                if (sunriseEnabled) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "🌅 Sunrise über $sunriseDurationMinutes Min an ${selectedLightIds.size} Lichtern und ${selectedGroupIds.size} Gruppen (${if (sunriseStartBeforeAlarm) "vor dem Alarm" else "ab Alarmzeit"})",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        when (colorMode) {
+                            ColorMode.WHITE -> ColorSwatch(previewColorForKelvin(colorKelvin))
+                            ColorMode.COLOR -> ColorSwatch(previewColorForPreset(colorPreset))
+                            ColorMode.NONE -> {}
+                        }
+                        Text(
+                            buildString {
+                                append(if (targetOn) "Einschalten" else "Ausschalten")
+                                append(" von ${selectedLightIds.size} Lichtern und ${selectedGroupIds.size} Gruppen")
+                                if (targetOn) {
+                                    append(" mit ${(targetBrightness * 100 / 254)}% Helligkeit")
+                                    when (colorMode) {
+                                        ColorMode.WHITE -> append(", $colorKelvin K")
+                                        ColorMode.COLOR -> append(", ${presetLabel(colorPreset)}")
+                                        ColorMode.NONE -> {}
+                                    }
+                                    if (autoOffEnabled) append(" · Auto-Aus nach $autoOffMinutes Min")
+                                }
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
             }
-            
+
             Text(
                 "Status: ${if (isEnabled) "Aktiviert" else "Deaktiviert"}",
                 style = MaterialTheme.typography.bodySmall,
@@ -844,4 +1103,71 @@ private fun validateForm(
     return ruleName.isNotBlank() &&
             selectedShiftPattern.isNotBlank() &&
             (selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty())
+}
+
+/** Color mode for a Hue rule action: keep current color, set a white temperature, or a preset color. */
+private enum class ColorMode { NONE, WHITE, COLOR }
+
+/** Preset colors offered in COLOR mode (the whites live in WHITE/temperature mode). */
+private val COLOR_PRESETS = listOf(
+    HueColorConverter.ColorPreset.RED,
+    HueColorConverter.ColorPreset.ORANGE,
+    HueColorConverter.ColorPreset.YELLOW,
+    HueColorConverter.ColorPreset.GREEN,
+    HueColorConverter.ColorPreset.CYAN,
+    HueColorConverter.ColorPreset.BLUE,
+    HueColorConverter.ColorPreset.PURPLE,
+    HueColorConverter.ColorPreset.PINK
+)
+
+private fun presetLabel(preset: HueColorConverter.ColorPreset): String = when (preset) {
+    HueColorConverter.ColorPreset.WARM_WHITE -> "Warmweiß"
+    HueColorConverter.ColorPreset.COOL_WHITE -> "Kaltweiß"
+    HueColorConverter.ColorPreset.RED -> "Rot"
+    HueColorConverter.ColorPreset.GREEN -> "Grün"
+    HueColorConverter.ColorPreset.BLUE -> "Blau"
+    HueColorConverter.ColorPreset.YELLOW -> "Gelb"
+    HueColorConverter.ColorPreset.PURPLE -> "Lila"
+    HueColorConverter.ColorPreset.ORANGE -> "Orange"
+    HueColorConverter.ColorPreset.PINK -> "Pink"
+    HueColorConverter.ColorPreset.CYAN -> "Türkis"
+}
+
+/**
+ * Recovers the closest preset for a stored hue, so an edited COLOR rule round-trips back to
+ * its chip. Stored COLOR values come from [COLOR_PRESETS], so the match is exact in practice.
+ */
+private fun nearestPreset(hue: Int): HueColorConverter.ColorPreset {
+    return COLOR_PRESETS.minByOrNull { preset ->
+        val presetHue = HueColorConverter.getPresetColor(preset).hue ?: 0
+        val diff = kotlin.math.abs(presetHue - hue)
+        minOf(diff, 65536 - diff) // circular hue distance
+    } ?: HueColorConverter.ColorPreset.RED
+}
+
+/** Display color for a preset, via the Hue→RGB conversion utility. */
+private fun previewColorForPreset(preset: HueColorConverter.ColorPreset): Color {
+    val (r, g, b) = HueColorConverter.hueColorToRgb(HueColorConverter.getPresetColor(preset))
+    return Color(r, g, b)
+}
+
+/** Approximate display color for a white color temperature (warm↔cool interpolation). */
+private fun previewColorForKelvin(kelvin: Int): Color {
+    val t = ((kelvin - 2000).toFloat() / (6500 - 2000)).coerceIn(0f, 1f)
+    val r = (255 + (201 - 255) * t).toInt()
+    val g = (166 + (226 - 166) * t).toInt()
+    val b = (87 + (255 - 87) * t).toInt()
+    return Color(r, g, b)
+}
+
+/** Small round color preview dot. */
+@Composable
+private fun ColorSwatch(color: Color, size: Int = 20) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+    )
 }

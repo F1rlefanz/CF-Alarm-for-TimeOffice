@@ -52,6 +52,29 @@ interface IHueRuleUseCase {
         shift: ShiftMatch,
         alarmTime: LocalTime
     ): Result<RuleExecutionResult>
+
+    /**
+     * Execute ONLY the pre-alarm sunrise ramps for a shift (rules whose sunrise is enabled
+     * and configured to start before the alarm). Called by the pre-alarm worker ahead of
+     * the actual alarm; the at-alarm path then skips these rules.
+     *
+     * Matched by shift name (the value the alarm carries) so the worker doesn't need a
+     * full ShiftMatch.
+     */
+    suspend fun executeSunrisePreAlarm(shiftName: String): Result<RuleExecutionResult>
+
+    /**
+     * Lead time in minutes for pre-alarm sunrise: the longest duration among enabled
+     * "start before alarm" sunrise rules matching [shiftName], or null if none apply.
+     * Used by the scheduler to decide how early to start the ramp.
+     */
+    suspend fun getPreAlarmSunriseLeadMinutes(shiftName: String): Int?
+
+    /**
+     * Auto-off targets for a shift: lights/groups that an enabled rule switches ON with a
+     * configured auto-off duration. Used by the scheduler to turn them off again afterwards.
+     */
+    suspend fun getAutoOffActions(shiftName: String): List<AutoOffTarget>
     
     /**
      * Validate rule configuration
@@ -64,6 +87,12 @@ interface IHueRuleUseCase {
      * Dry-run for rule testing
      */
     suspend fun testRuleExecution(rule: HueSchedule): Result<List<LightAction>>
+
+    /**
+     * Execute a rule immediately for previewing ("Regel testen"): applies the configured
+     * lights/color, or — for a sunrise rule — runs a shortened, observable warm→cool ramp.
+     */
+    suspend fun executeRuleNow(rule: HueSchedule): Result<RuleExecutionResult>
 }
 
 /**
@@ -83,4 +112,13 @@ data class RuleValidationResult(
     val isValid: Boolean,
     val errors: List<String> = emptyList(),
     val warnings: List<String> = emptyList()
+)
+
+/**
+ * A light/group that should be switched off [delayMinutes] after a rule turned it on.
+ */
+data class AutoOffTarget(
+    val targetId: String,
+    val isGroup: Boolean,
+    val delayMinutes: Int
 )

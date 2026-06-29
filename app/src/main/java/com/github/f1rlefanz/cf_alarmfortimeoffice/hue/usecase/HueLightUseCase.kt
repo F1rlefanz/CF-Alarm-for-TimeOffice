@@ -15,6 +15,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.minutes
@@ -44,6 +45,9 @@ class HueLightUseCase @Inject constructor(
         private const val LIGHT_OPERATION_TIMEOUT_MS = 10000L
         private const val BATCH_OPERATION_TIMEOUT_MS = 30000L
         private const val MAX_BATCH_SIZE = 20
+
+        /** Pause between the sunrise's initial state and the long fade, so the bridge applies them separately. */
+        private const val SUNRISE_STEP_DELAY_MS = 250L
     }
     
     override suspend fun getAllLightTargets(): Result<LightTargets> {
@@ -114,7 +118,9 @@ class HueLightUseCase @Inject constructor(
                         on = action.on,
                         brightness = action.brightness,
                         hue = action.hue,
-                        saturation = action.saturation
+                        saturation = action.saturation,
+                        colorTemperature = action.colorTemperature,
+                        transitionTime = action.transitionTime
                     )
                 } else {
                     lightRepository.controlLight(
@@ -122,7 +128,9 @@ class HueLightUseCase @Inject constructor(
                         on = action.on,
                         brightness = action.brightness,
                         hue = action.hue,
-                        saturation = action.saturation
+                        saturation = action.saturation,
+                        colorTemperature = action.colorTemperature,
+                        transitionTime = action.transitionTime
                     )
                 }
             }
@@ -455,6 +463,88 @@ class HueLightUseCase @Inject constructor(
     }
     
     /**
+     * Starts a sunrise ramp on a single light or group.
+     *
+     * Two PUTs drive the bridge's native fade:
+     *  1. Immediately (transition 0): on + minimal brightness + warm color temperature.
+     *  2. A long native transition to the target brightness + cooler color temperature.
+     *
+     * A short delay between the two lets the bridge register the initial state before the
+     * fade begins (otherwise fast back-to-back PUTs can coalesce into one tick).
+     */
+    override suspend fun startSunrise(
+        targetId: String,
+        isGroup: Boolean,
+        startKelvin: Int,
+        endKelvin: Int,
+        endBrightness: Int,
+        durationMinutes: Int
+    ): Result<Unit> {
+        Logger.i(
+            LogTags.HUE_USECASE,
+            "🌅 Starting sunrise on ${if (isGroup) "group" else "light"} $targetId over ${durationMinutes}min"
+        )
+
+        return try {
+            // Convert the user-facing Kelvin values to Hue mireds.
+            val startCt = HueColorConverter.kelvinToHueMireds(startKelvin)
+            val endCt = HueColorConverter.kelvinToHueMireds(endKelvin)
+            val targetBri = HueConstants.Utils.clampBrightness(endBrightness)
+            // Bridge transition time is in deciseconds (1/10 s); cap at the API maximum.
+            val transitionDs = (durationMinutes.coerceAtLeast(0) * 600)
+                .coerceAtMost(HueConstants.Lights.MAX_TRANSITION_TIME)
+
+            // Step 1: jump to dim + warm immediately.
+            val initial = if (isGroup) {
+                lightRepository.controlGroup(
+                    groupId = targetId,
+                    on = true,
+                    brightness = HueConstants.Lights.MIN_BRIGHTNESS,
+                    colorTemperature = startCt,
+                    transitionTime = 0
+                )
+            } else {
+                lightRepository.controlLight(
+                    lightId = targetId,
+                    on = true,
+                    brightness = HueConstants.Lights.MIN_BRIGHTNESS,
+                    colorTemperature = startCt,
+                    transitionTime = 0
+                )
+            }
+
+            if (initial.isFailure) {
+                Logger.w(LogTags.HUE_USECASE, "Sunrise initial state failed for $targetId", initial.exceptionOrNull())
+                return initial
+            }
+
+            // Let the bridge apply the initial state before kicking off the long fade.
+            delay(SUNRISE_STEP_DELAY_MS)
+
+            // Step 2: long native transition to bright + cooler.
+            if (isGroup) {
+                lightRepository.controlGroup(
+                    groupId = targetId,
+                    brightness = targetBri,
+                    colorTemperature = endCt,
+                    transitionTime = transitionDs
+                )
+            } else {
+                lightRepository.controlLight(
+                    lightId = targetId,
+                    brightness = targetBri,
+                    colorTemperature = endCt,
+                    transitionTime = transitionDs
+                )
+            }
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Failed to start sunrise for $targetId", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Manually reverts all lights and groups to their original states
      */
     override suspend fun revertAllLights(): Result<Unit> {
@@ -547,9 +637,29 @@ class HueLightUseCase @Inject constructor(
                     )
                 }
             }
-            
+
+            // Validate color temperature range (mireds)
+            action.colorTemperature?.let { ct ->
+                if (!HueConstants.Validation.isValidColorTemperature(ct)) {
+                    return Result.failure(
+                        IllegalArgumentException("Color temperature must be between ${HueConstants.Lights.MIN_COLOR_TEMPERATURE} and ${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds")
+                    )
+                }
+            }
+
+            // Validate transition time range (deciseconds)
+            action.transitionTime?.let { tt ->
+                if (!HueConstants.Validation.isValidTransitionTime(tt)) {
+                    return Result.failure(
+                        IllegalArgumentException("Transition time must be between ${HueConstants.Lights.MIN_TRANSITION_TIME} and ${HueConstants.Lights.MAX_TRANSITION_TIME} deciseconds")
+                    )
+                }
+            }
+
             // Ensure at least one action is specified
-            if (action.on == null && action.brightness == null && action.hue == null && action.saturation == null) {
+            if (action.on == null && action.brightness == null && action.hue == null &&
+                action.saturation == null && action.colorTemperature == null
+            ) {
                 return Result.failure(
                     IllegalArgumentException("At least one light property must be specified")
                 )

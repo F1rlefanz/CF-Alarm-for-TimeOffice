@@ -116,6 +116,31 @@ interface IHueLightUseCaseAdvanced : IHueLightUseCase {
         colorPreset: HueColorConverter.ColorPreset = HueColorConverter.ColorPreset.BLUE,
         durationMinutes: Int = 5 // HueConstants.Defaults.NOTIFICATION_DURATION
     ): Result<Unit>
+
+    // =============================================================================
+    // SUNRISE WAKE-UP LIGHT
+    // =============================================================================
+
+    /**
+     * Starts a sunrise ramp on a single target: jumps to a dim, warm state immediately,
+     * then performs a long native transition to a brighter, cooler state. The Hue bridge
+     * interpolates brightness and color temperature itself — no app-side stepping.
+     *
+     * @param targetId Light or group ID
+     * @param isGroup Whether [targetId] refers to a group
+     * @param startKelvin Warm start temperature in Kelvin (e.g. 2000)
+     * @param endKelvin Cooler end temperature in Kelvin (e.g. 4000)
+     * @param endBrightness Target brightness at the end of the ramp (1-254)
+     * @param durationMinutes Ramp duration in minutes (capped at the bridge's max transition time)
+     */
+    suspend fun startSunrise(
+        targetId: String,
+        isGroup: Boolean,
+        startKelvin: Int,
+        endKelvin: Int,
+        endBrightness: Int,
+        durationMinutes: Int
+    ): Result<Unit>
     
     /**
      * Manually revert all lights to original states
@@ -151,6 +176,8 @@ data class LightAction(
     val brightness: Int? = null,
     val hue: Int? = null,
     val saturation: Int? = null,
+    val colorTemperature: Int? = null, // White color temperature in mireds (153-500)
+    val transitionTime: Int? = null, // Transition duration in deciseconds (0-65535)
     val actionDescription: String? = null
 )
 

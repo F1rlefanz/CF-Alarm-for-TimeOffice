@@ -1,12 +1,16 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCaseAdvanced
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.AutoOffTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleExecutionResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleValidationResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -22,13 +26,16 @@ import javax.inject.Singleton
 @Singleton
 class HueRuleUseCase @Inject constructor(
     private val configRepository: IHueConfigRepository,
-    private val lightUseCase: IHueLightUseCase
+    private val lightUseCase: IHueLightUseCaseAdvanced
 ) : IHueRuleUseCase {
     
     companion object {
         private const val MAX_RULES_PER_SHIFT = 10
         private const val MIN_RULE_NAME_LENGTH = 3
         private const val MAX_RULE_NAME_LENGTH = 50
+
+        /** Shortened ramp duration used when previewing a sunrise via "Regel testen". */
+        private const val SUNRISE_TEST_DURATION_MINUTES = 1
     }
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
@@ -157,6 +164,25 @@ class HueRuleUseCase @Inject constructor(
             // Execute each rule
             for (rule in applicableRules) {
                 try {
+                    // SUNRISE: a sunrise rule overrides the plain on/off/brightness actions.
+                    val sunrise = rule.sunrise
+                    if (sunrise?.enabled == true) {
+                        val sunriseResult = if (sunrise.startBeforeAlarm) {
+                            // The ramp was started earlier by the pre-alarm worker. Snap to the
+                            // end state now so the alarm ALWAYS lights up, even if that worker
+                            // never ran (device off/offline). Idempotent if the ramp completed.
+                            Logger.d(LogTags.HUE_USECASE, "Rule ${rule.name}: finalizing pre-alarm sunrise at alarm time")
+                            finalizeSunriseForRule(rule, sunrise)
+                        } else {
+                            // Sunrise starts at the alarm: run the full ramp now.
+                            runSunriseForRule(rule, sunrise)
+                        }
+                        totalActions += sunriseResult.attempted
+                        successfulActions += sunriseResult.succeeded
+                        errors.addAll(sunriseResult.errors)
+                        continue
+                    }
+
                     // Convert rule to light actions
                     val actionsResult = convertRuleToLightActions(rule)
                     
@@ -220,7 +246,182 @@ class HueRuleUseCase @Inject constructor(
             Result.failure(e)
         }
     }
-    
+
+    override suspend fun executeSunrisePreAlarm(shiftName: String): Result<RuleExecutionResult> {
+        Logger.i(LogTags.HUE_USECASE, "🌅 Executing PRE-ALARM sunrise ramps for shift: $shiftName")
+
+        return try {
+            val sunriseRules = matchingPreAlarmSunriseRules(shiftName)
+
+            val errors = mutableListOf<String>()
+            var attempted = 0
+            var succeeded = 0
+
+            for (rule in sunriseRules) {
+                val sunrise = rule.sunrise ?: continue
+                val result = runSunriseForRule(rule, sunrise)
+                attempted += result.attempted
+                succeeded += result.succeeded
+                errors.addAll(result.errors)
+            }
+
+            val result = RuleExecutionResult(
+                rulesExecuted = sunriseRules.size,
+                actionsExecuted = attempted,
+                successfulActions = succeeded,
+                errors = errors
+            )
+
+            Logger.i(LogTags.HUE_USECASE, "🌅 Pre-alarm sunrise complete: ${sunriseRules.size} rule(s), $succeeded/$attempted targets")
+            Result.success(result)
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Failed to execute pre-alarm sunrise", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getPreAlarmSunriseLeadMinutes(shiftName: String): Int? {
+        return try {
+            matchingPreAlarmSunriseRules(shiftName)
+                .mapNotNull { it.sunrise?.durationMinutes }
+                .maxOrNull()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Failed to compute pre-alarm sunrise lead minutes", e)
+            null
+        }
+    }
+
+    override suspend fun getAutoOffActions(shiftName: String): List<AutoOffTarget> {
+        return try {
+            val all = getAllRules().getOrElse { error ->
+                Logger.e(LogTags.HUE_USECASE, "Failed to load rules for auto-off", error)
+                return emptyList()
+            }
+            all.asSequence()
+                .filter { rule ->
+                    rule.enabled &&
+                        rule.sunrise?.enabled != true && // sunrise reaches its own end state
+                        (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
+                            rule.shiftPattern.equals("ALL", ignoreCase = true))
+                }
+                .flatMap { rule -> rule.lightActions.asSequence() }
+                .filter { action -> action.on == true && (action.duration ?: 0) > 0 && action.targetId.isNotBlank() }
+                .map { action -> AutoOffTarget(action.targetId, action.isGroup, action.duration!!) }
+                .distinct()
+                .toList()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Failed to compute auto-off actions", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Enabled "start before alarm" sunrise rules whose shift pattern matches [shiftName]
+     * (or the universal "ALL" pattern).
+     */
+    private suspend fun matchingPreAlarmSunriseRules(shiftName: String): List<HueSchedule> {
+        val all = getAllRules().getOrElse { error ->
+            Logger.e(LogTags.HUE_USECASE, "Failed to load rules for pre-alarm sunrise", error)
+            return emptyList()
+        }
+        return all.filter { rule ->
+            val sunrise = rule.sunrise
+            rule.enabled &&
+                sunrise != null &&
+                sunrise.enabled &&
+                sunrise.startBeforeAlarm &&
+                (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
+                    rule.shiftPattern.equals("ALL", ignoreCase = true))
+        }
+    }
+
+    /**
+     * Runs the sunrise ramp on every target of [rule] via the light use case.
+     */
+    private suspend fun runSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
+        val targets = rule.lightActions
+            .map { it.targetId to it.isGroup }
+            .filter { it.first.isNotBlank() }
+            .distinct()
+
+        if (targets.isEmpty()) {
+            Logger.w(LogTags.HUE_USECASE, "🌅 Sunrise rule ${rule.name} has no targets")
+            return SunriseRunResult(0, 0, listOf("Sunrise rule ${rule.name} has no targets"))
+        }
+
+        val errors = mutableListOf<String>()
+        var succeeded = 0
+
+        targets.forEach { (targetId, isGroup) ->
+            val result = lightUseCase.startSunrise(
+                targetId = targetId,
+                isGroup = isGroup,
+                startKelvin = sunrise.startKelvin,
+                endKelvin = sunrise.endKelvin,
+                endBrightness = sunrise.endBrightness,
+                durationMinutes = sunrise.durationMinutes
+            )
+            if (result.isSuccess) {
+                succeeded++
+            } else {
+                errors.add("Sunrise failed for $targetId: ${result.exceptionOrNull()?.message}")
+            }
+        }
+
+        Logger.i(LogTags.HUE_USECASE, "🌅 Sunrise for rule ${rule.name}: $succeeded/${targets.size} targets")
+        return SunriseRunResult(targets.size, succeeded, errors)
+    }
+
+    /**
+     * Snaps a pre-alarm sunrise rule's targets to the END state (full brightness + end color
+     * temperature) with a short transition. Used at alarm time as a safety net so the lights
+     * always reach the wake-up state even if the pre-alarm ramp never ran.
+     */
+    private suspend fun finalizeSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
+        val targets = rule.lightActions
+            .map { it.targetId to it.isGroup }
+            .filter { it.first.isNotBlank() }
+            .distinct()
+
+        if (targets.isEmpty()) {
+            Logger.w(LogTags.HUE_USECASE, "🌅 Sunrise rule ${rule.name} has no targets")
+            return SunriseRunResult(0, 0, listOf("Sunrise rule ${rule.name} has no targets"))
+        }
+
+        val endCt = HueColorConverter.kelvinToHueMireds(sunrise.endKelvin)
+        val actions = targets.map { (targetId, isGroup) ->
+            LightAction(
+                targetId = targetId,
+                isGroup = isGroup,
+                on = true,
+                brightness = sunrise.endBrightness,
+                colorTemperature = endCt,
+                transitionTime = HueConstants.Lights.SLOW_TRANSITION_TIME,
+                actionDescription = "Sunrise finalize: ${rule.name}"
+            )
+        }
+
+        val batch = lightUseCase.executeBatchLightActions(actions)
+        return if (batch.isSuccess) {
+            val result = batch.getOrNull()
+            SunriseRunResult(
+                attempted = actions.size,
+                succeeded = result?.successfulActions ?: 0,
+                errors = result?.failedActions?.mapNotNull { it.error } ?: emptyList()
+            )
+        } else {
+            SunriseRunResult(actions.size, 0, listOf("Sunrise finalize failed for rule ${rule.name}: ${batch.exceptionOrNull()?.message}"))
+        }
+    }
+
+    /** Outcome of running a sunrise ramp across a rule's targets. */
+    private data class SunriseRunResult(
+        val attempted: Int,
+        val succeeded: Int,
+        val errors: List<String>
+    )
+
     /**
      * Converts a HueSchedule rule to executable LightAction list
      */
@@ -230,13 +431,24 @@ class HueRuleUseCase @Inject constructor(
             
             // Convert each light action in the rule
             rule.lightActions.forEach { ruleAction ->
+                // Resolve color: prefer the explicit hue/sat fields, else fall back to
+                // the action's HueColor (so rules built with a color picker still work).
+                val resolvedHue = ruleAction.hue ?: ruleAction.color?.hue
+                val resolvedSaturation = ruleAction.saturation ?: ruleAction.color?.saturation
+
+                // Color-mode exclusivity: the Hue bridge accepts only ONE color mode per
+                // call. When a color temperature is set it wins over hue/saturation.
+                val useColorTemperature = ruleAction.colorTemperature != null
+
                 val lightAction = LightAction(
                     targetId = ruleAction.targetId,
                     isGroup = ruleAction.isGroup,
                     on = ruleAction.on,
                     brightness = ruleAction.brightness,
-                    hue = ruleAction.hue,
-                    saturation = ruleAction.saturation,
+                    hue = if (useColorTemperature) null else resolvedHue,
+                    saturation = if (useColorTemperature) null else resolvedSaturation,
+                    colorTemperature = ruleAction.colorTemperature,
+                    transitionTime = ruleAction.transitionTime,
                     actionDescription = "Rule: ${rule.name} - ${ruleAction.targetId}"
                 )
                 actions.add(lightAction)
@@ -376,6 +588,12 @@ class HueRuleUseCase @Inject constructor(
                     errors.add("Saturation must be between 0 and 255")
                 }
             }
+
+            action.colorTemperature?.let { ct ->
+                if (ct < HueConstants.Lights.MIN_COLOR_TEMPERATURE || ct > HueConstants.Lights.MAX_COLOR_TEMPERATURE) {
+                    errors.add("Color temperature must be between ${HueConstants.Lights.MIN_COLOR_TEMPERATURE} and ${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds")
+                }
+            }
         }
         
         val result = RuleValidationResult(
@@ -411,6 +629,48 @@ class HueRuleUseCase @Inject constructor(
         }
     }
     
+    override suspend fun executeRuleNow(rule: HueSchedule): Result<RuleExecutionResult> {
+        Logger.i(LogTags.HUE_USECASE, "▶️ Executing rule now (preview): ${rule.name}")
+
+        return try {
+            val sunrise = rule.sunrise
+            if (sunrise?.enabled == true) {
+                // Demo the ramp over a short, observable duration instead of the full time.
+                val testSunrise = sunrise.copy(durationMinutes = SUNRISE_TEST_DURATION_MINUTES)
+                val result = runSunriseForRule(rule, testSunrise)
+                Result.success(
+                    RuleExecutionResult(
+                        rulesExecuted = 1,
+                        actionsExecuted = result.attempted,
+                        successfulActions = result.succeeded,
+                        errors = result.errors
+                    )
+                )
+            } else {
+                val actions = convertRuleToLightActions(rule).getOrElse { return Result.failure(it) }
+                if (actions.isEmpty()) {
+                    return Result.success(RuleExecutionResult(0, 0, 0, emptyList()))
+                }
+                lightUseCase.executeBatchLightActions(actions).fold(
+                    onSuccess = { batch ->
+                        Result.success(
+                            RuleExecutionResult(
+                                rulesExecuted = 1,
+                                actionsExecuted = batch.totalActions,
+                                successfulActions = batch.successfulActions,
+                                errors = batch.failedActions.mapNotNull { it.error }
+                            )
+                        )
+                    },
+                    onFailure = { Result.failure(it) }
+                )
+            }
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Failed to execute rule now", e)
+            Result.failure(e)
+        }
+    }
+
     /**
      * Generates a unique rule ID
      */

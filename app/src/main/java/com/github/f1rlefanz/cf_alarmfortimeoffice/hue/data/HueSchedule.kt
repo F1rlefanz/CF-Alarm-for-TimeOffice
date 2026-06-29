@@ -21,7 +21,8 @@ data class HueScheduleRule(
     val enabled: Boolean = true,
     val timeRanges: List<HueTimeRange>,
     val seasonalRules: List<SeasonalRule> = emptyList(),
-    val priority: Int = 0 // Higher priority rules override lower ones
+    val priority: Int = 0, // Higher priority rules override lower ones
+    val sunrise: SunriseConfig? = null // Optional sunrise wake-up light; null = plain on/off rule
 ) {
     companion object {
         fun generateId(): String = "rule_${System.currentTimeMillis()}"
@@ -47,6 +48,32 @@ data class HueTimeRange(
     val offsetMinutes: Int = 0, // Offset from reference time
     val actions: List<HueLightAction>,
     val daysOfWeek: List<Int> = listOf(1, 2, 3, 4, 5, 6, 7) // 1=Monday, 7=Sunday
+)
+
+/**
+ * Sunrise wake-up light configuration.
+ *
+ * Drives a gradual brightness + color-temperature ramp (warm → cool) using the Hue
+ * bridge's native transition time, so the bridge interpolates the fade itself — no
+ * app-side stepping required.
+ *
+ * @param enabled Whether the sunrise ramp is active for the owning rule
+ * @param durationMinutes How long the ramp takes (1-90; capped by the bridge's max transition time)
+ * @param startKelvin Color temperature at the start of the ramp (warm, e.g. 2000K)
+ * @param endKelvin Color temperature at the end of the ramp (cooler, e.g. 4000K)
+ * @param endBrightness Target brightness at the end of the ramp (1-254)
+ * @param startBeforeAlarm true = ramp finishes AT the alarm time (starts durationMinutes earlier);
+ *        false = ramp STARTS at the alarm time
+ */
+@Immutable
+@Serializable
+data class SunriseConfig(
+    val enabled: Boolean = false,
+    val durationMinutes: Int = 15,
+    val startKelvin: Int = 2000,
+    val endKelvin: Int = 4000,
+    val endBrightness: Int = 254,
+    val startBeforeAlarm: Boolean = true
 )
 
 /**

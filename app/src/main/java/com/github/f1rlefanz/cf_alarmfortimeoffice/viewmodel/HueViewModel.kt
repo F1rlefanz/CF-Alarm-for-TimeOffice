@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryStatus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
@@ -15,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,10 +37,24 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class HueViewModel @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     private val hueBridgeUseCase: IHueBridgeUseCase,
     private val hueLightUseCase: IHueLightUseCase,
     private val hueRuleUseCase: IHueRuleUseCase
 ) : ViewModel() {
+
+    /**
+     * Refresh the pre-scheduled Hue jobs (pre-alarm sunrise, auto-off) immediately after a
+     * rule change. The scheduler otherwise only recalculates when the real ALARMS change, so
+     * a rule edit alone wouldn't be picked up until the next alarm sync / daily planning.
+     */
+    private fun recalculateHueSchedule() {
+        try {
+            HueSmartScheduler.getInstance(appContext).recalculateSchedule()
+        } catch (e: Exception) {
+            Logger.w(LogTags.HUE_VIEWMODEL, "Failed to trigger Hue rescheduling after rule change", e)
+        }
+    }
     
     // ==============================
     // STATE MANAGEMENT
@@ -346,6 +363,7 @@ class HueViewModel @Inject constructor(
                 if (result.isSuccess) {
                     _uiState.update { it.copy(isLoading = false) }
                     refreshRules() // Refresh to show new rule
+                    recalculateHueSchedule() // Reflect the new rule in pre-scheduled jobs now
                     Logger.i(LogTags.HUE_VIEWMODEL, "Rule created successfully: ${rule.name}")
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Failed to create rule"
@@ -372,6 +390,7 @@ class HueViewModel @Inject constructor(
                 if (result.isSuccess) {
                     _uiState.update { it.copy(isLoading = false) }
                     refreshRules() // Refresh to show updated rule
+                    recalculateHueSchedule() // Reflect the change in pre-scheduled jobs now
                     Logger.i(LogTags.HUE_VIEWMODEL, "Rule updated successfully: ${rule.id}")
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Failed to update rule"
@@ -398,6 +417,7 @@ class HueViewModel @Inject constructor(
                 if (result.isSuccess) {
                     _uiState.update { it.copy(isLoading = false) }
                     refreshRules() // Refresh to remove deleted rule
+                    recalculateHueSchedule() // Drop any pre-scheduled jobs for the removed rule
                     Logger.i(LogTags.HUE_VIEWMODEL, "Rule deleted successfully: $ruleId")
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Failed to delete rule"
@@ -417,16 +437,15 @@ class HueViewModel @Inject constructor(
         
         viewModelScope.launch {
             try {
-                val result = hueRuleUseCase.testRuleExecution(rule)
-                
+                // Execute the rule immediately so the user sees the real effect (incl. the
+                // shortened sunrise ramp for sunrise rules).
+                val result = hueRuleUseCase.executeRuleNow(rule)
+
                 if (result.isSuccess) {
-                    val actions = result.getOrNull() ?: emptyList()
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule test completed: ${actions.size} actions would be executed")
-                    
-                    // Optionally execute the actions or just show preview
-                    if (actions.isNotEmpty()) {
-                        hueLightUseCase.executeBatchLightActions(actions)
-                        // Handle batch result...
+                    val exec = result.getOrNull()
+                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule test executed: ${exec?.successfulActions ?: 0}/${exec?.actionsExecuted ?: 0} actions")
+                    if (exec != null && exec.errors.isNotEmpty()) {
+                        Logger.w(LogTags.HUE_VIEWMODEL, "Rule test had errors: ${exec.errors}")
                     }
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Rule test failed"

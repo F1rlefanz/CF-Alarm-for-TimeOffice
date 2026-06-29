@@ -12,7 +12,9 @@ import androidx.work.workDataOf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.DailySchedulePlanningWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.GenericHealthCheckWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.PreAlarmHealthCheckWorker
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.AutoOffWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.SunriseStartWorker
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -51,6 +53,7 @@ import java.time.Duration as JavaDuration
 interface HueSmartSchedulerEntryPoint {
     fun alarmUseCase(): IAlarmUseCase
     fun hueRuleUseCase(): IHueRuleUseCase
+    fun hueLightUseCase(): IHueLightUseCase
 }
 
 /**
@@ -85,6 +88,7 @@ class HueSmartScheduler private constructor() {
         // Smart scheduling constants
         private const val PRE_ALARM_HEALTH_CHECK_WORK = "pre_alarm_health_check"
         private const val SUNRISE_START_WORK = "sunrise_start"
+        private const val AUTO_OFF_WORK = "hue_auto_off"
         private const val DAILY_SCHEDULE_WORK = "daily_schedule_planning"
         private val PRE_ALARM_CHECK_WINDOW = 10.minutes
         private const val MAX_LOOKAHEAD_DAYS = 7
@@ -209,12 +213,18 @@ class HueSmartScheduler private constructor() {
         Logger.d(LogTags.HUE_BRIDGE, "🔮 SMART-SCHEDULER: Calculating next alarm times for health check scheduling")
 
         try {
-            // Keep pre-alarm sunrise ramps in sync with the real alarms (isolated so a
-            // sunrise failure never disrupts the critical health-check scheduling below).
+            // Keep pre-alarm sunrise ramps and auto-off jobs in sync with the real alarms
+            // (isolated so a Hue-side failure never disrupts the critical health-check
+            // scheduling below).
             try {
                 scheduleSunriseStarts()
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_BRIDGE, "Failed to schedule sunrise starts", e)
+            }
+            try {
+                scheduleAutoOffs()
+            } catch (e: Exception) {
+                Logger.e(LogTags.HUE_BRIDGE, "Failed to schedule auto-off jobs", e)
             }
 
             // Get next alarm times from the REAL, set alarms
@@ -391,6 +401,72 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
+     * AUTO-OFF: Schedule "turn lights off again" jobs for upcoming alarms.
+     *
+     * For each upcoming alarm whose shift has an enabled rule that switches lights ON with a
+     * configured auto-off duration, an [AutoOffWorker] is scheduled at (alarmTime + duration).
+     * Turning already-off lights off again is a harmless no-op, so a skipped alarm causes no harm.
+     */
+    private suspend fun scheduleAutoOffs() {
+        val ruleUseCase = resolveHueRuleUseCase() ?: return
+        val alarmUseCase = resolveAlarmUseCase() ?: return
+
+        workManager.cancelAllWorkByTag(AUTO_OFF_WORK)
+
+        val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to load alarms for auto-off scheduling", error)
+            return
+        }
+
+        val now = LocalDateTime.now()
+        val maxTime = now.plusDays(MAX_LOOKAHEAD_DAYS.toLong())
+
+        val upcoming = alarms
+            .filter { it.isActive }
+            .map { it.shiftName to it.triggerTime.toLocalDateTime() }
+            .filter { it.second.isAfter(now) && it.second.isBefore(maxTime) }
+            .sortedBy { it.second }
+            .take(10)
+
+        var scheduled = 0
+        upcoming.forEachIndexed { index, (shiftName, alarmTime) ->
+            val targets = ruleUseCase.getAutoOffActions(shiftName)
+            if (targets.isEmpty()) return@forEachIndexed
+
+            // One worker per distinct delay (it switches off all targets sharing that delay).
+            targets.groupBy { it.delayMinutes }.forEach { (delayMinutes, group) ->
+                val offTime = alarmTime.plusMinutes(delayMinutes.toLong())
+                if (offTime.isBefore(now)) return@forEach
+                val delayMillis = JavaDuration.between(now, offTime).toMillis()
+
+                val lightIds = group.filter { !it.isGroup }.map { it.targetId }.distinct().toTypedArray()
+                val groupIds = group.filter { it.isGroup }.map { it.targetId }.distinct().toTypedArray()
+
+                val workRequest = OneTimeWorkRequestBuilder<AutoOffWorker>()
+                    .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
+                    .setInputData(workDataOf("light_ids" to lightIds, "group_ids" to groupIds))
+                    .addTag(AUTO_OFF_WORK)
+                    .setConstraints(Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build())
+                    .build()
+
+                workManager.enqueueUniqueWork(
+                    "${AUTO_OFF_WORK}_${index}_$delayMinutes",
+                    ExistingWorkPolicy.REPLACE,
+                    workRequest
+                )
+                scheduled++
+                Logger.i(LogTags.HUE_BRIDGE, "💡 SMART-SCHEDULER: Scheduled auto-off for $shiftName at $offTime (${lightIds.size} lights, ${groupIds.size} groups, +${delayMinutes}min)")
+            }
+        }
+
+        if (scheduled == 0) {
+            Logger.d(LogTags.HUE_BRIDGE, "💡 SMART-SCHEDULER: No auto-off jobs to schedule")
+        }
+    }
+
+    /**
      * FALLBACK: Generic health checks when no alarms are found
      */
     private fun scheduleGenericHealthChecks() {
@@ -451,6 +527,7 @@ class HueSmartScheduler private constructor() {
         if (::workManager.isInitialized) {
             workManager.cancelUniqueWork(PRE_ALARM_HEALTH_CHECK_WORK)
             workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
+            workManager.cancelAllWorkByTag(AUTO_OFF_WORK)
             workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
             Logger.d(LogTags.HUE_BRIDGE, "🧹 SMART-SCHEDULER: Cleanup completed")
         }

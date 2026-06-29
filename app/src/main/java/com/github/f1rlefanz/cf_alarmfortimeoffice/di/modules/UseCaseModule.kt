@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCaseAdvanced
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
@@ -73,7 +74,12 @@ abstract class UseCaseModule {
     abstract fun bindHueLightUseCase(
         impl: HueLightUseCase
     ): IHueLightUseCase
-    
+
+    @Binds
+    abstract fun bindHueLightUseCaseAdvanced(
+        impl: HueLightUseCase
+    ): IHueLightUseCaseAdvanced
+
     @Binds
     abstract fun bindHueRuleUseCase(
         impl: HueRuleUseCase

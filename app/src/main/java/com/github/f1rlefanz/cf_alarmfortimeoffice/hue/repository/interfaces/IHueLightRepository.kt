@@ -26,15 +26,21 @@ interface IHueLightRepository {
      * @param brightness Brightness level (0-254)
      * @param hue Color hue (0-65535)
      * @param saturation Color saturation (0-254)
+     * @param colorTemperature White color temperature in mireds (153-500). Mutually exclusive
+     *        with hue/saturation on the bridge — callers should send only one color mode.
+     * @param transitionTime Transition duration in deciseconds (1/10 s, 0-65535). Drives the
+     *        bridge's native fade — used e.g. for sunrise ramps.
      */
     suspend fun controlLight(
         lightId: String,
         on: Boolean? = null,
         brightness: Int? = null,
         hue: Int? = null,
-        saturation: Int? = null
+        saturation: Int? = null,
+        colorTemperature: Int? = null,
+        transitionTime: Int? = null
     ): Result<Unit>
-    
+
     /**
      * Control a group of lights
      * @param groupId ID of the group to control
@@ -42,13 +48,19 @@ interface IHueLightRepository {
      * @param brightness Brightness level (0-254)
      * @param hue Color hue (0-65535)
      * @param saturation Color saturation (0-254)
+     * @param colorTemperature White color temperature in mireds (153-500). Mutually exclusive
+     *        with hue/saturation on the bridge — callers should send only one color mode.
+     * @param transitionTime Transition duration in deciseconds (1/10 s, 0-65535). Drives the
+     *        bridge's native fade — used e.g. for sunrise ramps.
      */
     suspend fun controlGroup(
         groupId: String,
         on: Boolean? = null,
         brightness: Int? = null,
         hue: Int? = null,
-        saturation: Int? = null
+        saturation: Int? = null,
+        colorTemperature: Int? = null,
+        transitionTime: Int? = null
     ): Result<Unit>
     
     /**

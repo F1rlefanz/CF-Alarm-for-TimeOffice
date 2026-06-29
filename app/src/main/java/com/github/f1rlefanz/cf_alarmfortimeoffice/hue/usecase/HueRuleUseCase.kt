@@ -122,12 +122,14 @@ class HueRuleUseCase @Inject constructor(
             val shiftPattern = shift.shiftDefinition.keywords.firstOrNull() 
                 ?: shift.shiftDefinition.name
             
-            // Filter rules matching the shift pattern
+            // Filter rules matching the shift pattern (only enabled rules)
             val matchingRules = allRules.filter { rule ->
+                // Skip rules the user has disabled in the rule editor
+                rule.enabled &&
                 // Check if rule matches shift pattern
-                rule.shiftPattern.equals(shiftPattern, ignoreCase = true) ||
+                (rule.shiftPattern.equals(shiftPattern, ignoreCase = true) ||
                 rule.shiftPattern.equals(shift.shiftDefinition.name, ignoreCase = true) ||
-                rule.shiftPattern.equals("ALL", ignoreCase = true) // Universal rules
+                rule.shiftPattern.equals("ALL", ignoreCase = true)) // Universal rules
             }
             
             Logger.i(LogTags.HUE_USECASE, "Found ${matchingRules.size} rules matching shift pattern $shiftPattern")

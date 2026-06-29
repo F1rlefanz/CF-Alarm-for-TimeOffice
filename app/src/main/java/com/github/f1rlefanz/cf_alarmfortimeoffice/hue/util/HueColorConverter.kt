@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueColor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -68,7 +69,7 @@ object HueColorConverter {
             val xy = rgbToXy(r, g, b)
             
             // Create RGB hex string
-            val rgbHex = "#%02X%02X%02X".format(red, green, blue)
+            val rgbHex = "#%02X%02X%02X".format(Locale.ROOT, red, green, blue)
             
             val hueColor = HueColor(
                 hue = hue,

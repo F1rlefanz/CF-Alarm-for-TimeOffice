@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
@@ -50,6 +51,7 @@ fun MainContentScreen(
     onShowHueRuleConfig: () -> Unit,
     onShowHueSettings: () -> Unit
 ) {
+    val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
     val calendarState by calendarViewModel.uiState.collectAsState()
     val shiftState by shiftViewModel.uiState.collectAsState()
@@ -128,7 +130,10 @@ fun MainContentScreen(
                         onDeleteManualAlarm = alarmViewModel::deleteManualAlarm, // NEU
                         onClearManualAlarmError = alarmViewModel::clearManualAlarmError, // NEU
                         onNavigateToShiftConfig = onShowShiftConfig, // NEU
-                        onShowEventList = onShowEventList
+                        onShowEventList = onShowEventList,
+                        onReauthorize = {
+                            authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
+                        }
                     )
                 }
                 MainTab.STATUS -> {

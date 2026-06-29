@@ -4,7 +4,7 @@ import androidx.compose.runtime.Immutable
 
 /**
  * IMMUTABLE Sub-State für Calendar Operations
- * 
+ *
  * PERFORMANCE OPTIMIZATIONS:
  * ✅ @Immutable annotation für Compose-Performance
  * ✅ GRANULAR STATE MODELING: Fokussiert auf Calendar-spezifische Operations
@@ -16,34 +16,37 @@ import androidx.compose.runtime.Immutable
 data class CalendarOperationState(
     val calendarsLoading: Boolean = false,
     val autoAlarmEnabled: Boolean = false,
-    val nextShiftAlarm: String? = null,
     val hasSelectedCalendars: Boolean = false,
     val eventsLoading: Boolean = false,
-    val hasValidToken: Boolean = false // 🔧 STUFE 2: Track token validity for UI recovery
+    val hasValidToken: Boolean = false, // 🔧 STUFE 2: Track token validity for UI recovery
+    val tokenChecked: Boolean = false // GATE: true once the initial token validity check has completed
 ) {
     // Computed properties für Business Logic
-    val isOperational: Boolean get() = 
+    val isOperational: Boolean get() =
         !calendarsLoading && autoAlarmEnabled && hasSelectedCalendars && hasValidToken // 🔧 STUFE 2: Include token check
-    
-    val hasUpcomingAlarm: Boolean get() = nextShiftAlarm != null
-    
-    val isFullyConfigured: Boolean get() = 
+
+    val isFullyConfigured: Boolean get() =
         hasSelectedCalendars && autoAlarmEnabled && hasValidToken // 🔧 STUFE 2: Include token check
-    
-    val needsCalendarSelection: Boolean get() = 
+
+    val needsCalendarSelection: Boolean get() =
         !hasSelectedCalendars && !calendarsLoading
-    
-    val needsTokenReauthorization: Boolean get() = 
+
+    val needsTokenReauthorization: Boolean get() =
         !hasValidToken && !calendarsLoading // 🔧 STUFE 2: New property for token re-auth check
-    
-    val isReady: Boolean get() = 
+
+    // GATE: signed-in users without a valid calendar token must (re-)authorize before the main UI.
+    // Guarded by tokenChecked so we never gate before the initial check has run.
+    val needsCalendarAuthorization: Boolean get() =
+        tokenChecked && !hasValidToken
+
+    val isReady: Boolean get() =
         isFullyConfigured && !calendarsLoading && !eventsLoading
-    
+
     companion object {
         val EMPTY = CalendarOperationState()
-        
+
         fun loading() = CalendarOperationState(calendarsLoading = true)
-        
+
         fun configured(
             autoAlarmEnabled: Boolean = true,
             hasSelectedCalendars: Boolean = true,
@@ -53,14 +56,6 @@ data class CalendarOperationState(
             autoAlarmEnabled = autoAlarmEnabled,
             hasSelectedCalendars = hasSelectedCalendars,
             hasValidToken = hasValidToken
-        )
-        
-        fun withAlarm(alarm: String, hasValidToken: Boolean = true) = CalendarOperationState(
-            calendarsLoading = false,
-            autoAlarmEnabled = true,
-            nextShiftAlarm = alarm,
-            hasSelectedCalendars = true,
-            hasValidToken = hasValidToken // 🔧 STUFE 2: Include token status
         )
     }
 }

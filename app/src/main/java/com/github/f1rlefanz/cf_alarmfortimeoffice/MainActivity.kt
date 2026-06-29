@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.CalendarAuthorizationScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.LoginScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.MainScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CFAlarmForTimeOfficeTheme
@@ -38,6 +39,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * MainActivity - FULLY MIGRATED to Hilt DI
@@ -116,17 +118,33 @@ class MainActivity : ComponentActivity() {
 
                     // PERFORMANCE OPTIMIZATION: Memoized Screen Selection
                     // Verhindert unnötige Recompositions bei State-Changes
-                    val screenContent = remember(authState.isSignedIn, authState.calendarOps.calendarsLoading) {
+                    // ONBOARDING GATE: A signed-in user without a valid Calendar token is routed to
+                    // CalendarAuthorizationScreen instead of the (half-broken) main UI. tokenChecked
+                    // guards against flashing the gate before the initial token check has completed.
+                    val screenContent = remember(
+                        authState.isSignedIn,
+                        authState.calendarOps.calendarsLoading,
+                        authState.calendarOps.tokenChecked,
+                        authState.calendarOps.hasValidToken
+                    ) {
                         when {
                             authState.calendarOps.calendarsLoading && !authState.isSignedIn -> "loading"
-                            authState.isSignedIn -> "main"
-                            else -> "login"
+                            !authState.isSignedIn -> "login"
+                            !authState.calendarOps.tokenChecked -> "loading"
+                            authState.calendarOps.needsCalendarAuthorization -> "calendar_auth"
+                            else -> "main"
                         }
                     }
 
                     when (screenContent) {
                         "loading" -> {
                             LoadingScreen(message = "Lade Anmeldestatus...")
+                        }
+                        "calendar_auth" -> {
+                            CalendarAuthorizationScreen(
+                                authViewModel = authViewModel,
+                                onSignOut = { authViewModel.signOut(this@MainActivity) }
+                            )
                         }
                         "main" -> {
                             MainScreen(
@@ -248,7 +266,7 @@ class MainActivity : ComponentActivity() {
                     bridgeConnectionManager.cleanup()
                     
                     // Give a moment for network operations to complete
-                    kotlinx.coroutines.delay(50)
+                    kotlinx.coroutines.delay(50.milliseconds)
                     
                     // CRITICAL FIX: Use public cleanup methods instead of protected onCleared()
                     // Start with high-level coordinators, then data-layer ViewModels
@@ -256,14 +274,14 @@ class MainActivity : ComponentActivity() {
                     mainViewModel.cleanupResources()
                     
                     // Small delay between batches
-                    kotlinx.coroutines.delay(25)
+                    kotlinx.coroutines.delay(25.milliseconds)
                     
                     // Core business logic ViewModels  
                     authViewModel.cleanupResources()
                     shiftViewModel.cleanupResources()
                     
                     // Small delay before final cleanup
-                    kotlinx.coroutines.delay(25)
+                    kotlinx.coroutines.delay(25.milliseconds)
                     
                     // Data-heavy ViewModels last
                     calendarViewModel.cleanupResources()

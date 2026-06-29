@@ -99,11 +99,31 @@ fun CalendarSelectionScreen(
                         containerColor = MaterialTheme.colorScheme.errorContainer
                     )
                 ) {
-                    Text(
-                        "Keine Kalender verfügbar",
-                        modifier = Modifier.padding(SpacingConstants.SPACING_LARGE),
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(SpacingConstants.SPACING_LARGE),
+                        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
+                    ) {
+                        Text(
+                            "Keine Kalender gefunden",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            calendarState.error
+                                ?: "Dein Google-Konto enthält keine abrufbaren Kalender. Lege zuerst in Google Kalender einen Kalender an, oder versuche es erneut.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        OutlinedButton(
+                            onClick = { calendarViewModel.loadAvailableCalendars(resetPagination = true) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Erneut versuchen")
+                        }
+                    }
                 }
             } else {
                 LazyColumn(

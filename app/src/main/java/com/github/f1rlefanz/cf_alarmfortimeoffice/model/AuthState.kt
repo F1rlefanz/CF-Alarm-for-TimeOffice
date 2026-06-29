@@ -27,11 +27,6 @@ data class AuthState(
     val displayName: String? get() = userAuth.displayName
     val accessToken: String? get() = userAuth.accessToken
     val androidCalendarPermissionGranted: Boolean get() = permissions.androidCalendarPermissionGranted
-    val showAndroidCalendarPermissionRationale: Boolean get() = permissions.showAndroidCalendarPermissionRationale
-    val calendarPermissionDenied: Boolean get() = permissions.calendarPermissionDenied
-    val calendarsLoading: Boolean get() = calendarOps.calendarsLoading
-    val autoAlarmEnabled: Boolean get() = calendarOps.autoAlarmEnabled
-    val nextShiftAlarm: String? get() = calendarOps.nextShiftAlarm
     val error: String? get() = errors.error
     
     // ENHANCED API: Neue computed properties für bessere Business Logic

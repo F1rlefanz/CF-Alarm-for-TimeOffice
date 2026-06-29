@@ -12,63 +12,142 @@ import androidx.work.workDataOf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.DailySchedulePlanningWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.GenericHealthCheckWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.PreAlarmHealthCheckWorker
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.SunriseStartWorker
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.toJavaDuration
 import java.time.Duration as JavaDuration
 
 /**
+ * Hilt EntryPoint that lets the manually-constructed [HueSmartScheduler] singleton
+ * (and its WorkManager workers) reach the Hilt-managed alarm use case.
+ *
+ * The scheduler keeps its getInstance()/Worker shape — instead of becoming a
+ * @HiltWorker — and pulls the REAL, set alarms through this access point.
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface HueSmartSchedulerEntryPoint {
+    fun alarmUseCase(): IAlarmUseCase
+    fun hueRuleUseCase(): IHueRuleUseCase
+}
+
+/**
  * PHASE 2: Smart Scheduler for Hue Bridge Health Checks
- * 
+ *
  * EFFICIENCY GOALS:
  * - Health checks only before actual alarm times
- * - Integration with calendar/shift schedules  
+ * - Driven by the REAL alarms the app has scheduled (single source of truth)
  * - WorkManager for reliable background execution
  * - Further reduction: ~10-20 calls/day → ~5-15 calls/day
- * 
+ *
  * FEATURES:
  * - Pre-alarm health checks (10 minutes before)
- * - Calendar integration for next alarm prediction
- * - Adaptive scheduling based on user patterns
+ * - Backed by IAlarmUseCase (the actually-set alarms), no hardcoded guessing
+ * - Generic periodic fallback when no alarms are set
  * - Battery-optimized background tasks
  */
 class HueSmartScheduler private constructor() {
     companion object {
         @Volatile
         private var INSTANCE: HueSmartScheduler? = null
-        
+
         fun getInstance(context: Context): HueSmartScheduler {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: HueSmartScheduler().also { 
+                INSTANCE ?: HueSmartScheduler().also {
                     INSTANCE = it
                     it.initialize(context.applicationContext)
                 }
             }
         }
-        
+
         // Smart scheduling constants
         private const val PRE_ALARM_HEALTH_CHECK_WORK = "pre_alarm_health_check"
+        private const val SUNRISE_START_WORK = "sunrise_start"
         private const val DAILY_SCHEDULE_WORK = "daily_schedule_planning"
         private val PRE_ALARM_CHECK_WINDOW = 10.minutes
         private const val MAX_LOOKAHEAD_DAYS = 7
+        private val ALARM_CHANGE_DEBOUNCE = 1500.milliseconds
     }
-    
+
     private lateinit var workManager: WorkManager
-    
+
+    /** Application context, retained to resolve Hilt dependencies via the EntryPoint. */
+    private lateinit var appContext: Context
+
+    /**
+     * Dedicated coroutine scope for background scheduling.
+     *
+     * SupervisorJob: a failure in one scheduling job is isolated and does NOT
+     * tear down the whole scope (replaces the previous CoroutineScope(Dispatchers.IO)).
+     * cleanup() only cancels the children, so this process-lifetime singleton
+     * stays reusable after an Activity teardown/restart cycle.
+     */
+    private val schedulerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Collector that reschedules Hue health checks whenever the real alarms change. */
+    private var alarmObserverJob: Job? = null
+
     /**
      * Initialize with application context (called once by getInstance)
      */
     private fun initialize(context: Context) {
+        appContext = context
         workManager = WorkManager.getInstance(context)
     }
-    
+
+    /**
+     * Resolve the Hilt-managed alarm use case via EntryPoint.
+     * Returns null only if the context/Hilt is not ready yet (should not happen post-startup).
+     */
+    private fun resolveAlarmUseCase(): IAlarmUseCase? {
+        if (!::appContext.isInitialized) return null
+        return try {
+            EntryPointAccessors
+                .fromApplication(appContext, HueSmartSchedulerEntryPoint::class.java)
+                .alarmUseCase()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve alarm use case via EntryPoint", e)
+            null
+        }
+    }
+
+    /**
+     * Resolve the Hilt-managed Hue rule use case via EntryPoint (for sunrise scheduling).
+     */
+    private fun resolveHueRuleUseCase(): IHueRuleUseCase? {
+        if (!::appContext.isInitialized) return null
+        return try {
+            EntryPointAccessors
+                .fromApplication(appContext, HueSmartSchedulerEntryPoint::class.java)
+                .hueRuleUseCase()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve Hue rule use case via EntryPoint", e)
+            null
+        }
+    }
+
     /**
      * MAIN API: Initialize smart scheduling system
      */
@@ -77,161 +156,150 @@ class HueSmartScheduler private constructor() {
             Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: WorkManager not initialized, scheduler not ready")
             return
         }
-        
+
         Logger.i(LogTags.HUE_BRIDGE, "🧠 SMART-SCHEDULER: Initializing intelligent health check scheduling")
-        
+
         // Schedule daily planning work
         scheduleDailyPlanning()
-        
+
         // Initial schedule calculation
-        CoroutineScope(Dispatchers.IO).launch {
+        schedulerScope.launch {
             try {
                 calculateAndScheduleNextHealthChecks()
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_BRIDGE, "Failed to initialize smart scheduling", e)
             }
         }
-        
+
+        // Keep the schedule in sync with the REAL alarms as they change
+        observeAlarmChanges()
+
         Logger.i(LogTags.HUE_BRIDGE, "✅ SMART-SCHEDULER: Smart scheduling initialized")
     }
-    
+
+    /**
+     * REACTIVE: Observe the app's real alarms and recalculate the Hue health-check
+     * schedule whenever they change (alarm set, skipped, manual change, cleanup).
+     *
+     * The first (replayed) StateFlow value simply reconfirms the schedule the initial
+     * calculation already applied; debounce coalesces bursts of rapid changes.
+     */
+    @OptIn(FlowPreview::class)
+    private fun observeAlarmChanges() {
+        if (alarmObserverJob?.isActive == true) return
+        val alarmUseCase = resolveAlarmUseCase()
+        if (alarmUseCase == null) {
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: Alarm use case unavailable, cannot observe alarm changes")
+            return
+        }
+        alarmObserverJob = schedulerScope.launch {
+            alarmUseCase.activeAlarms
+                .debounce(ALARM_CHANGE_DEBOUNCE)
+                .collect { alarms ->
+                    Logger.i(LogTags.HUE_BRIDGE, "🔔 SMART-SCHEDULER: Alarms changed (${alarms.size}), recalculating Hue schedule")
+                    calculateAndScheduleNextHealthChecks()
+                }
+        }
+    }
+
     /**
      * OPTIMIZATION: Calculate next alarm times and schedule health checks accordingly
      */
     suspend fun calculateAndScheduleNextHealthChecks() = withContext(Dispatchers.IO) {
         Logger.d(LogTags.HUE_BRIDGE, "🔮 SMART-SCHEDULER: Calculating next alarm times for health check scheduling")
-        
+
         try {
-            // Get next alarm times from various sources
+            // Keep pre-alarm sunrise ramps in sync with the real alarms (isolated so a
+            // sunrise failure never disrupts the critical health-check scheduling below).
+            try {
+                scheduleSunriseStarts()
+            } catch (e: Exception) {
+                Logger.e(LogTags.HUE_BRIDGE, "Failed to schedule sunrise starts", e)
+            }
+
+            // Get next alarm times from the REAL, set alarms
             val nextAlarmTimes = getNextAlarmTimes()
-            
+
             if (nextAlarmTimes.isEmpty()) {
                 Logger.d(LogTags.HUE_BRIDGE, "📅 SMART-SCHEDULER: No upcoming alarms found, using fallback schedule")
                 scheduleGenericHealthChecks()
                 return@withContext
             }
-            
+
             // Cancel existing scheduled health checks
             workManager.cancelUniqueWork(PRE_ALARM_HEALTH_CHECK_WORK)
-            
+
             // Schedule health checks for each upcoming alarm
             nextAlarmTimes.forEachIndexed { index, alarmTime ->
                 schedulePreAlarmHealthCheck(alarmTime, index)
             }
-            
+
             Logger.i(LogTags.HUE_BRIDGE, "✅ SMART-SCHEDULER: Scheduled ${nextAlarmTimes.size} pre-alarm health checks")
-            
+
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_BRIDGE, "❌ SMART-SCHEDULER: Failed to calculate alarm schedule", e)
             scheduleGenericHealthChecks() // Fallback
         }
     }
-    
+
     /**
-     * CORE FEATURE: Get next alarm times from multiple sources
+     * CORE FEATURE: Next health-check times derived from the alarms the app has
+     * ACTUALLY scheduled (single source of truth = IAlarmUseCase).
+     *
+     * No more hardcoded shift-pattern guessing: when there are no real alarms the
+     * caller falls back to a generic periodic health check.
      */
     private suspend fun getNextAlarmTimes(): List<LocalDateTime> = withContext(Dispatchers.IO) {
-        val alarmTimes = mutableListOf<LocalDateTime>()
-        
         try {
-            // Source 1: Android System Alarms (actual set alarms - requires permission)
-            val systemAlarms = getSystemAlarmTimes()
-            alarmTimes.addAll(systemAlarms)
-            
-            // Source 2: Shift-based predictions from ShiftViewModel (fallback)
-            val shiftAlarms = getShiftBasedAlarmTimes()
-            alarmTimes.addAll(shiftAlarms)
-            
-            // Filter and sort
+            val alarmUseCase = resolveAlarmUseCase()
+            if (alarmUseCase == null) {
+                Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: Alarm use case unavailable, no real alarms to schedule for")
+                return@withContext emptyList()
+            }
+
+            val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
+                Logger.e(LogTags.HUE_BRIDGE, "Failed to load real alarms for Hue scheduling", error)
+                return@withContext emptyList()
+            }
+
             val now = LocalDateTime.now()
             val maxTime = now.plusDays(MAX_LOOKAHEAD_DAYS.toLong())
-            
-            return@withContext alarmTimes
+
+            alarms
+                .filter { it.isActive }
+                .map { it.triggerTime.toLocalDateTime() }
                 .filter { it.isAfter(now) && it.isBefore(maxTime) }
                 .distinct()
                 .sorted()
                 .take(10) // Limit to next 10 alarms
-                
+                .also {
+                    Logger.i(LogTags.HUE_BRIDGE, "🎯 SMART-SCHEDULER: ${it.size} real alarm(s) drive Hue health checks")
+                }
+
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_BRIDGE, "Failed to get alarm times", e)
-            return@withContext emptyList()
+            emptyList<LocalDateTime>()
         }
     }
-    
-    /**
-     * DATA SOURCE: Android system alarms (CRITICAL: should use actual set alarms)
-     * TODO: Integrate with Android AlarmManager to read actual scheduled alarms
-     * Currently returns empty - using shift-based fallback
-     */
-    private suspend fun getSystemAlarmTimes(): List<LocalDateTime> = withContext(Dispatchers.IO) {
-        return@withContext emptyList()
-    }
-    
-    /**
-     * DATA SOURCE: Shift-based alarm predictions (FALLBACK: uses hardcoded patterns)
-     * TODO: Integrate with ShiftViewModel to read user's actual shift configuration
-     * Currently uses hardcoded times as fallback
-     */
-    private suspend fun getShiftBasedAlarmTimes(): List<LocalDateTime> = withContext(Dispatchers.IO) {
-        try {
-            // Fallback: hardcoded shift patterns (temporary during development)
-            val alarms = mutableListOf<LocalDateTime>()
-            val now = LocalDateTime.now()
-            
-            // For now, implement basic shift pattern prediction
-            // Common shift patterns: Early (5:00-6:30), Day (7:00-8:30), Late (14:00-15:30)
-            val shiftStartTimes = listOf(
-                5 to 0,   // 5:00 AM
-                5 to 30,  // 5:30 AM  
-                6 to 0,   // 6:00 AM
-                6 to 30,  // 6:30 AM
-                7 to 0,   // 7:00 AM
-                7 to 30   // 7:30 AM
-            )
-            
-            // Generate alarm times for next 7 days
-            for (day in 1..7) {
-                val baseDay = now.plusDays(day.toLong())
-                
-                // Only add early morning shifts (likely to use Hue lights)
-                shiftStartTimes.filter { it.first <= 7 }.forEach { (hour, minute) ->
-                    // Wake up 30-60 minutes before shift start
-                    val wakeUpTime = baseDay
-                        .withHour(hour)
-                        .withMinute(minute)
-                        .withSecond(0)
-                        .withNano(0)
-                        .minusMinutes(45) // 45 minutes before shift start
-                    
-                    if (wakeUpTime.isAfter(now)) {
-                        alarms.add(wakeUpTime)
-                    }
-                }
-            }
-            
-            Logger.d(LogTags.HUE_BRIDGE, "📋 SMART-SCHEDULER: Generated ${alarms.size} shift-based alarm predictions")
-            return@withContext alarms.take(5) // Limit to next 5
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_BRIDGE, "Failed to get shift-based alarms", e)
-            return@withContext emptyList()
-        }
-    }
-    
+
+    /** Convert epoch millis (AlarmInfo.triggerTime) into a local date-time. */
+    private fun Long.toLocalDateTime(): LocalDateTime =
+        Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDateTime()
+
     /**
      * WORKMANAGER: Schedule pre-alarm health check
      */
     private fun schedulePreAlarmHealthCheck(alarmTime: LocalDateTime, index: Int) {
         val checkTime = alarmTime.minus(PRE_ALARM_CHECK_WINDOW.toJavaDuration())
         val now = LocalDateTime.now()
-        
+
         if (checkTime.isBefore(now)) {
             Logger.d(LogTags.HUE_BRIDGE, "⏰ SMART-SCHEDULER: Skipping past alarm time: $alarmTime")
             return
         }
-        
+
         val delayMillis = JavaDuration.between(now, checkTime).toMillis()
-        
+
         val workRequest = OneTimeWorkRequestBuilder<PreAlarmHealthCheckWorker>()
             .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
             .setInputData(workDataOf(
@@ -242,36 +310,106 @@ class HueSmartScheduler private constructor() {
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build())
             .build()
-        
+
         workManager.enqueueUniqueWork(
             "${PRE_ALARM_HEALTH_CHECK_WORK}_$index",
             ExistingWorkPolicy.REPLACE,
             workRequest
         )
-        
+
         Logger.d(LogTags.HUE_BRIDGE, "⏰ SMART-SCHEDULER: Scheduled health check for $checkTime (${delayMillis/1000/60} minutes from now)")
     }
-    
+
+    /**
+     * SUNRISE: Schedule pre-alarm sunrise ramps for upcoming alarms.
+     *
+     * For each upcoming alarm whose shift has an enabled "start before alarm" sunrise rule,
+     * a one-time [SunriseStartWorker] is scheduled at (alarmTime - sunriseDuration) so the
+     * ramp finishes exactly at the alarm. Sunrises configured to start AT the alarm are
+     * handled by the at-alarm path instead.
+     */
+    private suspend fun scheduleSunriseStarts() {
+        val ruleUseCase = resolveHueRuleUseCase()
+        if (ruleUseCase == null) {
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: Rule use case unavailable, cannot schedule sunrise")
+            return
+        }
+        val alarmUseCase = resolveAlarmUseCase() ?: return
+
+        // Clear previously scheduled sunrise starts before recomputing (tag-based, so it
+        // also catches indexed entries from a prior, larger alarm set).
+        workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
+
+        val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to load alarms for sunrise scheduling", error)
+            return
+        }
+
+        val now = LocalDateTime.now()
+        val maxTime = now.plusDays(MAX_LOOKAHEAD_DAYS.toLong())
+
+        val upcoming = alarms
+            .filter { it.isActive }
+            .map { it.shiftName to it.triggerTime.toLocalDateTime() }
+            .filter { it.second.isAfter(now) && it.second.isBefore(maxTime) }
+            .sortedBy { it.second }
+            .take(10)
+
+        var scheduled = 0
+        upcoming.forEachIndexed { index, (shiftName, alarmTime) ->
+            val leadMinutes = ruleUseCase.getPreAlarmSunriseLeadMinutes(shiftName) ?: return@forEachIndexed
+            val sunriseStart = alarmTime.minusMinutes(leadMinutes.toLong())
+
+            if (sunriseStart.isBefore(now)) {
+                Logger.d(LogTags.HUE_BRIDGE, "🌅 SMART-SCHEDULER: Sunrise start for $shiftName already passed, skipping")
+                return@forEachIndexed
+            }
+
+            val delayMillis = JavaDuration.between(now, sunriseStart).toMillis()
+
+            val workRequest = OneTimeWorkRequestBuilder<SunriseStartWorker>()
+                .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
+                .setInputData(workDataOf("shift_name" to shiftName))
+                .addTag(SUNRISE_START_WORK)
+                .setConstraints(Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build())
+                .build()
+
+            workManager.enqueueUniqueWork(
+                "${SUNRISE_START_WORK}_$index",
+                ExistingWorkPolicy.REPLACE,
+                workRequest
+            )
+            scheduled++
+            Logger.i(LogTags.HUE_BRIDGE, "🌅 SMART-SCHEDULER: Scheduled sunrise for $shiftName at $sunriseStart (${delayMillis / 1000 / 60} min from now, lead ${leadMinutes}min)")
+        }
+
+        if (scheduled == 0) {
+            Logger.d(LogTags.HUE_BRIDGE, "🌅 SMART-SCHEDULER: No pre-alarm sunrises to schedule")
+        }
+    }
+
     /**
      * FALLBACK: Generic health checks when no alarms are found
      */
     private fun scheduleGenericHealthChecks() {
         Logger.d(LogTags.HUE_BRIDGE, "🔄 SMART-SCHEDULER: Using fallback generic health check schedule")
-        
+
         // Schedule a health check every 6 hours as fallback
         val workRequest = PeriodicWorkRequestBuilder<GenericHealthCheckWorker>(6, TimeUnit.HOURS)
             .setConstraints(Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build())
             .build()
-        
+
         workManager.enqueueUniquePeriodicWork(
             "generic_health_checks",
             ExistingPeriodicWorkPolicy.REPLACE,
             workRequest
         )
     }
-    
+
     /**
      * DAILY PLANNING: Schedule daily recalculation of health checks
      */
@@ -281,33 +419,38 @@ class HueSmartScheduler private constructor() {
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build())
             .build()
-        
+
         workManager.enqueueUniquePeriodicWork(
             DAILY_SCHEDULE_WORK,
             ExistingPeriodicWorkPolicy.KEEP,
             dailyWork
         )
-        
+
         Logger.d(LogTags.HUE_BRIDGE, "📅 SMART-SCHEDULER: Daily planning work scheduled")
     }
-    
+
     /**
      * PUBLIC API: Manual trigger for schedule recalculation
      */
     fun recalculateSchedule() {
         Logger.i(LogTags.HUE_BRIDGE, "🔄 SMART-SCHEDULER: Manual schedule recalculation triggered")
-        
-        CoroutineScope(Dispatchers.IO).launch {
+
+        schedulerScope.launch {
             calculateAndScheduleNextHealthChecks()
         }
     }
-    
+
     /**
      * CLEANUP: Cancel all scheduled work
      */
     fun cleanup() {
+        // Cancel only in-flight jobs, NOT the scope's SupervisorJob itself,
+        // so the singleton remains reusable after an Activity teardown/restart.
+        schedulerScope.coroutineContext.cancelChildren()
+        alarmObserverJob = null
         if (::workManager.isInitialized) {
             workManager.cancelUniqueWork(PRE_ALARM_HEALTH_CHECK_WORK)
+            workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
             workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
             Logger.d(LogTags.HUE_BRIDGE, "🧹 SMART-SCHEDULER: Cleanup completed")
         }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * UseCase for Hue Bridge operations
@@ -32,7 +33,7 @@ class HueBridgeUseCase @Inject constructor(
         
         return try {
             // Apply timeout to discovery process
-            val discoveryResult = withTimeoutOrNull(DISCOVERY_TIMEOUT_MS) {
+            val discoveryResult = withTimeoutOrNull(DISCOVERY_TIMEOUT_MS.milliseconds) {
                 bridgeRepository.discoverBridges()
             }
             
@@ -80,7 +81,7 @@ class HueBridgeUseCase @Inject constructor(
             
             // 2. Test connectivity first
             Logger.d(LogTags.HUE_USECASE, "Testing bridge connectivity")
-            val connectivityResult = withTimeoutOrNull(CONNECTION_TIMEOUT_MS) {
+            val connectivityResult = withTimeoutOrNull(CONNECTION_TIMEOUT_MS.milliseconds) {
                 bridgeRepository.testBridgeConnection(bridge)
             }
             
@@ -161,12 +162,11 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.success(false)
             }
             
-            // 2. Set repository credentials
-            bridgeRepository.setBridgeIp(config.bridgeIp)
-            bridgeRepository.setUsername(config.username)
+            // 2. Initialize repository connection from saved config
+            bridgeRepository.initializeFromConfig(config.bridgeIp, config.username)
             
             // 3. Test actual connection
-            val validationResult = withTimeoutOrNull(CONNECTION_TIMEOUT_MS) {
+            val validationResult = withTimeoutOrNull(CONNECTION_TIMEOUT_MS.milliseconds) {
                 bridgeRepository.validateConnection()
             }
             
@@ -193,9 +193,8 @@ class HueBridgeUseCase @Inject constructor(
             val config = configRepository.getConfiguration().first()
             
             val connectionInfo = if (config.isConfigured) {
-                // Set repository credentials from saved config before validation
-                bridgeRepository.setBridgeIp(config.bridgeIp)
-                bridgeRepository.setUsername(config.username)
+                // Initialize repository connection from saved config before validation
+                bridgeRepository.initializeFromConfig(config.bridgeIp, config.username)
                 
                 // Test if connection is still valid
                 val isConnected = validateBridgeConnection().getOrNull() ?: false

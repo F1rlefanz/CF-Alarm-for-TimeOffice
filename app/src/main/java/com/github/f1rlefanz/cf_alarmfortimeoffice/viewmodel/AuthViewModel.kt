@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * MODERNIZED: AuthViewModel with CredentialAuthManager
@@ -103,7 +104,7 @@ class AuthViewModel @Inject constructor(
     private fun observeAuthState() {
         viewModelScope.launch(Dispatchers.IO) { // PERFORMANCE: Background thread only
             authDataStoreRepository.authData
-                .debounce(200) // PERFORMANCE: Reduced from 300ms for better responsiveness
+                .debounce(200.milliseconds) // PERFORMANCE: Reduced from 300ms for better responsiveness
                 .distinctUntilChanged { old, new ->
                     // PERFORMANCE: Only update if meaningful changes occurred
                     old.isLoggedIn == new.isLoggedIn &&
@@ -205,10 +206,12 @@ class AuthViewModel @Inject constructor(
                     )
                 }
 
-                // 🔧 STUFE 2: Check token validity after calendar selection check
-                checkInitialTokenValidity()
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "Error checking initial calendar selection", e)
+            } finally {
+                // 🔧 STUFE 2 / GATE: Always run the token check so tokenChecked is set even if the
+                // selection check fails — otherwise the onboarding gate would hang on the loading screen.
+                checkInitialTokenValidity()
             }
         }
     }
@@ -234,7 +237,8 @@ class AuthViewModel @Inject constructor(
                 updateAuthState { currentState ->
                     currentState.copy(
                         calendarOps = currentState.calendarOps.copy(
-                            hasValidToken = tokenValid
+                            hasValidToken = tokenValid,
+                            tokenChecked = true // GATE: initial check complete -> safe to gate on result
                         )
                     )
                 }
@@ -251,7 +255,8 @@ class AuthViewModel @Inject constructor(
                 updateAuthState { currentState ->
                     currentState.copy(
                         calendarOps = currentState.calendarOps.copy(
-                            hasValidToken = false
+                            hasValidToken = false,
+                            tokenChecked = true // GATE: check ran (even on error) -> let the gate handle recovery
                         )
                     )
                 }
@@ -269,7 +274,7 @@ class AuthViewModel @Inject constructor(
     private fun observeCalendarSelection() {
         viewModelScope.launch(Dispatchers.IO) { // PERFORMANCE: Background thread only
             calendarSelectionRepository.selectedCalendarIds
-                .debounce(150) // PERFORMANCE: Debounce to prevent excessive updates
+                .debounce(150.milliseconds) // PERFORMANCE: Debounce to prevent excessive updates
                 .distinctUntilChanged { old, new ->
                     // PERFORMANCE: Only update if selection actually changed
                     old.size == new.size && old == new
@@ -557,7 +562,8 @@ class AuthViewModel @Inject constructor(
                                     calendarOps = currentState.calendarOps.copy(
                                         calendarsLoading = false,
                                         hasSelectedCalendars = success,
-                                        hasValidToken = success // 🔧 STUFE 2: Set token validity based on auth result
+                                        hasValidToken = success, // 🔧 STUFE 2: Set token validity based on auth result
+                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
                                     )
                                 )
                             }
@@ -594,7 +600,8 @@ class AuthViewModel @Inject constructor(
                                 currentState.copy(
                                     calendarOps = currentState.calendarOps.copy(
                                         calendarsLoading = false,
-                                        hasValidToken = false // 🔧 STUFE 2: Mark token as invalid on error
+                                        hasValidToken = false, // 🔧 STUFE 2: Mark token as invalid on error
+                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
                                     ),
                                     errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
                                 )
@@ -621,7 +628,8 @@ class AuthViewModel @Inject constructor(
                                     calendarOps = currentState.calendarOps.copy(
                                         calendarsLoading = false,
                                         hasSelectedCalendars = authorized,
-                                        hasValidToken = authorized // 🔧 STUFE 2: Set token validity based on auth result
+                                        hasValidToken = authorized, // 🔧 STUFE 2: Set token validity based on auth result
+                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
                                     )
                                 )
                             }
@@ -647,7 +655,8 @@ class AuthViewModel @Inject constructor(
                                 currentState.copy(
                                     calendarOps = currentState.calendarOps.copy(
                                         calendarsLoading = false,
-                                        hasValidToken = false // 🔧 STUFE 2: Mark token as invalid on error
+                                        hasValidToken = false, // 🔧 STUFE 2: Mark token as invalid on error
+                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
                                     ),
                                     errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
                                 )
@@ -697,7 +706,7 @@ class AuthViewModel @Inject constructor(
                 lastCalendarTriggerTime = currentTime
 
                 // UI THREAD OPTIMIZATION: Reduced delay from 100ms to 50ms
-                delay(50)
+                delay(50.milliseconds)
 
                 Logger.business(
                     LogTags.AUTH,
@@ -718,7 +727,6 @@ class AuthViewModel @Inject constructor(
      * MEMORY LEAK PREVENTION: Clear all callbacks and volatile fields to prevent mutex errors
      */
     override fun onCleared() {
-        super.onCleared()
         try {
             Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Starting cleanup...")
 

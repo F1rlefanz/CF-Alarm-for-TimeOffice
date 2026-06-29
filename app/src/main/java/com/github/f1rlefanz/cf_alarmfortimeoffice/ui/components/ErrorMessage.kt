@@ -1,11 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,24 +13,20 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 
 /**
@@ -80,7 +73,7 @@ fun ErrorMessage(
     // Auto-dismiss effect
     LaunchedEffect(message, autoDismissAfterMs) {
         if (autoDismissAfterMs != null && autoDismissAfterMs > 0) {
-            delay(autoDismissAfterMs)
+            delay(autoDismissAfterMs.milliseconds)
             onDismiss?.invoke()
         }
     }
@@ -89,7 +82,7 @@ fun ErrorMessage(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                horizontal = SpacingConstants.PADDING_SCREEN_HORIZONTAL, 
+                horizontal = SpacingConstants.PADDING_SCREEN_HORIZONTAL,
                 vertical = SpacingConstants.SPACING_SMALL
             ),
         colors = CardDefaults.cardColors(
@@ -108,9 +101,9 @@ fun ErrorMessage(
                 tint = contentColor,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
             )
-            
+
             Spacer(modifier = Modifier.width(SpacingConstants.SPACING_MEDIUM))
-            
+
             Column(
                 modifier = Modifier.weight(1f)
             ) {
@@ -119,7 +112,7 @@ fun ErrorMessage(
                     color = contentColor,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                
+
                 if (onRetry != null) {
                     Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
                     TextButton(
@@ -132,7 +125,7 @@ fun ErrorMessage(
                     }
                 }
             }
-            
+
             if (onDismiss != null) {
                 IconButton(
                     onClick = onDismiss,
@@ -144,86 +137,6 @@ fun ErrorMessage(
                         tint = contentColor,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
                     )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Snackbar-style error message
- */
-@Composable
-fun ErrorSnackbar(
-    snackbarHostState: SnackbarHostState,
-    modifier: Modifier = Modifier
-) {
-    SnackbarHost(
-        hostState = snackbarHostState,
-        modifier = modifier,
-        snackbar = { data ->
-            Snackbar(
-                snackbarData = data,
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                actionColor = MaterialTheme.colorScheme.error
-            )
-        }
-    )
-}
-
-/**
- * Full-screen error state
- */
-@Composable
-fun ErrorScreen(
-    message: String,
-    modifier: Modifier = Modifier,
-    onRetry: (() -> Unit)? = null
-) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(SpacingConstants.SPACING_XXL)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Error,
-                contentDescription = "Error",
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_XXL)
-            )
-            
-            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
-            
-            Text(
-                text = "Ein Fehler ist aufgetreten",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            
-            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
-            
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            
-            if (onRetry != null) {
-                Spacer(modifier = Modifier.height(SpacingConstants.SPACING_EXTRA_LARGE))
-                
-                Button(
-                    onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Erneut versuchen")
                 }
             }
         }

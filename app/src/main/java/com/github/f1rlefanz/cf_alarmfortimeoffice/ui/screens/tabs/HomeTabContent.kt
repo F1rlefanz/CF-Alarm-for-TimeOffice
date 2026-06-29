@@ -62,7 +62,8 @@ fun HomeTabContent(
     onDeleteManualAlarm: () -> Unit,
     onClearManualAlarmError: () -> Unit,
     onNavigateToShiftConfig: () -> Unit,
-    onShowEventList: (() -> Unit)? = null
+    onShowEventList: (() -> Unit)? = null,
+    onReauthorize: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -211,16 +212,22 @@ fun HomeTabContent(
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
                     Text(
-                        "Bitte melde dich ab und wieder an, um den Kalender-Zugriff wiederherzustellen.",
+                        "Der Zugriff auf deinen Google Kalender ist abgelaufen. Autorisiere ihn erneut, damit weiterhin Schichtalarme erstellt werden.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
-                    Text(
-                        "Einstellungen → Abmelden → Neu anmelden",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    onReauthorize?.let { reauthorize ->
+                        Button(
+                            onClick = reauthorize,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError
+                            )
+                        ) {
+                            Text("Kalender-Zugriff erneuern")
+                        }
+                    }
                 } else if (calendarState.events.isNotEmpty()) {
                     // LAZY LOADING: Show limited events overview in home tab
                     val displayEventCount = minOf(calendarState.events.size, 5) // Show max 5 events in overview

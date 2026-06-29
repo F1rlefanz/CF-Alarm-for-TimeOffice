@@ -29,14 +29,13 @@ interface IHueBridgeRepository {
     suspend fun connectToBridge(bridge: HueBridge): Result<String>
     
     /**
-     * Set the username for authenticated requests
+     * Initialize the repository connection from a persisted configuration.
+     *
+     * Replaces the legacy fire-and-forget setUsername()/setBridgeIp() setters:
+     * sets bridge IP and username atomically and suspends until the connection
+     * is persisted, so callers can rely on the connection being ready afterwards.
      */
-    fun setUsername(username: String)
-    
-    /**
-     * Set the bridge IP for API requests
-     */
-    fun setBridgeIp(bridgeIp: String)
+    suspend fun initializeFromConfig(bridgeIp: String, username: String): Result<Unit>
     
     /**
      * Get current bridge IP address

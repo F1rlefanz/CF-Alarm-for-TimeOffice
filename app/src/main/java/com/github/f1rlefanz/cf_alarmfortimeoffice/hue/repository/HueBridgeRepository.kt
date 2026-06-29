@@ -10,11 +10,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHue
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -131,34 +128,13 @@ class HueBridgeRepository @Inject constructor(
     }
     
     /**
-     * DEPRECATED: Legacy methods for backward compatibility
-     * These methods now delegate to the robust connection manager
+     * Initialize the connection from a persisted configuration.
+     *
+     * Sets bridge IP and username atomically via the robust connection manager
+     * and suspends until persisted — no more fire-and-forget GlobalScope work.
      */
-    @OptIn(DelicateCoroutinesApi::class)
-    override fun setUsername(username: String) {
-        Logger.w(LogTags.HUE_BRIDGE, "⚠️ DEPRECATED: setUsername() called - use connectToBridge() instead")
-        // For backward compatibility, try to update if bridge IP is available
-        val (bridgeIp, _) = connectionManager.getCurrentConnectionInfo()
-        if (bridgeIp != null) {
-            // Note: This is fire-and-forget for backward compatibility
-            GlobalScope.launch {
-                connectionManager.setConnection(bridgeIp, username)
-            }
-        }
-    }
-    
-    @OptIn(DelicateCoroutinesApi::class)
-    override fun setBridgeIp(bridgeIp: String) {
-        Logger.w(LogTags.HUE_BRIDGE, "⚠️ DEPRECATED: setBridgeIp() called - use connectToBridge() instead")
-        // For backward compatibility, try to update if username is available
-        val (_, username) = connectionManager.getCurrentConnectionInfo()
-        if (username != null) {
-            // Note: This is fire-and-forget for backward compatibility
-            GlobalScope.launch {
-                connectionManager.setConnection(bridgeIp, username)
-            }
-        }
-    }
+    override suspend fun initializeFromConfig(bridgeIp: String, username: String): Result<Unit> =
+        connectionManager.setConnection(bridgeIp, username)
     
     override fun getCurrentBridgeIp(): String? = connectionManager.getCurrentConnectionInfo().first
     

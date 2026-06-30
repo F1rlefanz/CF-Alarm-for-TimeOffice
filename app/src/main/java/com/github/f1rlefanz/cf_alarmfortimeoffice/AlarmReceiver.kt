@@ -32,7 +32,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -87,6 +86,9 @@ class AlarmReceiver : BroadcastReceiver() {
         private const val TAG_MAINTENANCE = LogTags.MAINTENANCE_L1
     }
 
+    // Coroutine Scope für die asynchrone onReceive-Verarbeitung (goAsync)
+    private val receiverScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     // Coroutine Scope für Background-Operations
     private val maintenanceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -94,98 +96,111 @@ class AlarmReceiver : BroadcastReceiver() {
         val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
         val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Schicht"
 
-        // CRITICAL: Skip-Check VOR Alarm-Trigger
-        // Skip-Check durchführen
-        try {
-            Logger.business(
-                LogTags.ALARM_RECEIVER,
-                "🔍 SKIP-CHECK: Checking skip status for alarm $alarmId ($shiftName)"
-            )
-
-            val skipResult = runBlocking {
-                skipUseCase.checkAndProcessSkip(alarmId)
-            }
-
-            when (skipResult.getOrNull()) {
-                SkipProcessResult.ALARM_SKIPPED -> {
+        // ANR-SCHUTZ: goAsync() statt runBlocking auf dem Main-Thread.
+        // Die gesamte Verarbeitung (Skip-Check, Alarm-Start, Hue-Regeln) läuft asynchron
+        // auf einem Background-Dispatcher; pendingResult.finish() wird im finally garantiert.
+        val pendingResult = goAsync()
+        receiverScope.launch {
+            try {
+                // CRITICAL: Skip-Check VOR Alarm-Trigger
+                // Skip-Check durchführen
+                try {
                     Logger.business(
                         LogTags.ALARM_RECEIVER,
-                        "⏭️ SKIP-SUCCESS: Alarm $alarmId ($shiftName) SKIPPED by user"
+                        "🔍 SKIP-CHECK: Checking skip status for alarm $alarmId ($shiftName)"
                     )
-                    showSkipNotification(context, shiftName)
-                    return // EARLY RETURN: Alarm nicht ausführen
-                }
 
-                SkipProcessResult.ALARM_EXECUTED -> {
-                    Logger.business(
-                        LogTags.ALARM_RECEIVER,
-                        "✅ SKIP-CHECK: Alarm $alarmId ($shiftName) will execute normally"
-                    )
-                    // Continue with normal alarm logic below
-                }
+                    val skipResult = skipUseCase.checkAndProcessSkip(alarmId)
 
-                null -> {
-                    Logger.w(
+                    when (skipResult.getOrNull()) {
+                        SkipProcessResult.ALARM_SKIPPED -> {
+                            Logger.business(
+                                LogTags.ALARM_RECEIVER,
+                                "⏭️ SKIP-SUCCESS: Alarm $alarmId ($shiftName) SKIPPED by user"
+                            )
+                            showSkipNotification(context, shiftName)
+                            return@launch // EARLY RETURN: Alarm nicht ausführen
+                        }
+
+                        SkipProcessResult.ALARM_EXECUTED -> {
+                            Logger.business(
+                                LogTags.ALARM_RECEIVER,
+                                "✅ SKIP-CHECK: Alarm $alarmId ($shiftName) will execute normally"
+                            )
+                            // Continue with normal alarm logic below
+                        }
+
+                        null -> {
+                            Logger.w(
+                                LogTags.ALARM_RECEIVER,
+                                "⚠️ SKIP-CHECK: Check failed, executing alarm $alarmId normally"
+                            )
+                            // Continue with normal alarm logic
+                        }
+                    }
+                } catch (e: Exception) {
+                    Logger.e(
                         LogTags.ALARM_RECEIVER,
-                        "⚠️ SKIP-CHECK: Check failed, executing alarm $alarmId normally"
+                        "❌ SKIP-CHECK: Error during skip check for alarm $alarmId, executing alarm normally",
+                        e
                     )
                     // Continue with normal alarm logic
                 }
-            }
-        } catch (e: Exception) {
-            Logger.e(
-                LogTags.ALARM_RECEIVER,
-                "❌ SKIP-CHECK: Error during skip check for alarm $alarmId, executing alarm normally",
-                e
-            )
-            // Continue with normal alarm logic
-        }
 
-        // Existing alarm logic continues here...
-        Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")
+                // Existing alarm logic continues here...
+                Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")
 
-        // 🎨 NEW: HUE INTEGRATION - Execute matching light rules
-        executeHueRulesForAlarm(shiftName)
+                // 🔊 Start AlarmSoundService BEFORE Activity
+                // This ensures sound starts independently of Activity lifecycle.
+                // WICHTIG: Sound + Full-Screen-Intent zuerst starten, damit der Alarm
+                // nicht hinter dem evtl. langsamen Hue-Netzwerkaufruf hängt.
+                startAlarmSoundService(context, shiftName, alarmId)
 
-        // 🔊 NEW: Start AlarmSoundService BEFORE Activity
-        // This ensures sound starts independently of Activity lifecycle
-        startAlarmSoundService(context, shiftName, alarmId)
+                // Wake Lock to ensure device wakes up
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                val wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    WAKE_LOCK_TAG
+                ).apply {
+                    acquire(WAKE_LOCK_TIMEOUT)
+                }
 
-        // Wake Lock to ensure device wakes up
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            WAKE_LOCK_TAG
-        ).apply {
-            acquire(WAKE_LOCK_TIMEOUT)
-        }
+                try {
+                    val shiftTime = intent.getStringExtra(EXTRA_SHIFT_TIME) ?: ""
 
-        try {
-            val shiftTime = intent.getStringExtra(EXTRA_SHIFT_TIME) ?: ""
+                    // Create notification channel (only needed once)
+                    createNotificationChannel(context)
 
-            // Create notification channel (only needed once)
-            createNotificationChannel(context)
+                    // Show alarm notification with sound
+                    showAlarmNotification(context, shiftName, shiftTime, alarmId)
 
-            // Show alarm notification with sound
-            showAlarmNotification(context, shiftName, shiftTime, alarmId)
+                    // Start full-screen alarm activity
+                    showFullScreenAlarm(context, shiftName, shiftTime, alarmId)
 
-            // Start full-screen alarm activity
-            showFullScreenAlarm(context, shiftName, shiftTime, alarmId)
+                    Logger.business(
+                        LogTags.ALARM_RECEIVER,
+                        "✅ Alarm $alarmId for $shiftName triggered successfully!"
+                    )
 
-            Logger.business(
-                LogTags.ALARM_RECEIVER,
-                "✅ Alarm $alarmId for $shiftName triggered successfully!"
-            )
+                    // 🎨 HUE INTEGRATION - Execute matching light rules
+                    // Läuft NACH dem Alarm-Start, damit ein langsamer Netzwerkaufruf
+                    // Sound + Full-Screen-Intent nicht verzögert.
+                    executeHueRulesForAlarm(shiftName)
 
-            // 🔄 NEW: SMART MAINTENANCE CHAIN Level 1 - Opportunistic Alarm Check
-            performOpportunisticAlarmMaintenance(alarmId, shiftName)
+                    // 🔄 SMART MAINTENANCE CHAIN Level 1 - Opportunistic Alarm Check
+                    performOpportunisticAlarmMaintenance(alarmId, shiftName)
 
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM_RECEIVER, "❌ Error handling alarm", e)
-        } finally {
-            // Release wake lock
-            if (wakeLock.isHeld) {
-                wakeLock.release()
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM_RECEIVER, "❌ Error handling alarm", e)
+                } finally {
+                    // Release wake lock
+                    if (wakeLock.isHeld) {
+                        wakeLock.release()
+                    }
+                }
+            } finally {
+                // GARANTIERT: BroadcastReceiver-Lebenszyklus beenden
+                pendingResult.finish()
             }
         }
     }
@@ -547,89 +562,87 @@ class AlarmReceiver : BroadcastReceiver() {
      * HILT MIGRATION: Now uses injected dependencies instead of appContainer
      * NOTE: context parameter removed - all dependencies injected via Hilt
      */
-    private fun executeHueRulesForAlarm(shiftName: String) {
+    private suspend fun executeHueRulesForAlarm(shiftName: String) {
         try {
             Logger.business(
                 LogTags.ALARM_RECEIVER,
                 "🎨 Starting Hue rule execution for shift: $shiftName"
             )
 
-            // Execute in background coroutine to avoid blocking the alarm
-            runBlocking {
-                try {
-                    // Try to find matching shift definition using injected shiftUseCase
-                    val shiftConfigResult = shiftUseCase.getCurrentShiftConfig()
+            // Läuft als suspend-Aufruf in der onReceive-Coroutine (kein runBlocking mehr)
+            try {
+                // Try to find matching shift definition using injected shiftUseCase
+                val shiftConfigResult = shiftUseCase.getCurrentShiftConfig()
 
-                    if (shiftConfigResult.isSuccess) {
-                        val shiftConfig = shiftConfigResult.getOrNull()
-                        val matchingShiftDef = shiftConfig?.definitions?.find { shiftDef ->
-                            // Match by name or keywords
-                            shiftDef.name.equals(shiftName, ignoreCase = true) ||
-                                    shiftDef.keywords.any { keyword ->
-                                        shiftName.contains(keyword, ignoreCase = true) ||
-                                                keyword.contains(shiftName, ignoreCase = true)
-                                    }
-                        }
+                if (shiftConfigResult.isSuccess) {
+                    val shiftConfig = shiftConfigResult.getOrNull()
+                    val matchingShiftDef = shiftConfig?.definitions?.find { shiftDef ->
+                        // Match by name or keywords
+                        shiftDef.name.equals(shiftName, ignoreCase = true) ||
+                                shiftDef.keywords.any { keyword ->
+                                    shiftName.contains(keyword, ignoreCase = true) ||
+                                            keyword.contains(shiftName, ignoreCase = true)
+                                }
+                    }
 
-                        if (matchingShiftDef != null) {
-                            // Create synthetic ShiftMatch for Hue rules
-                            val syntheticShiftMatch = createSyntheticShiftMatch(
-                                shiftDefinition = matchingShiftDef,
-                                shiftName = shiftName
-                            )
+                    if (matchingShiftDef != null) {
+                        // Create synthetic ShiftMatch for Hue rules
+                        val syntheticShiftMatch = createSyntheticShiftMatch(
+                            shiftDefinition = matchingShiftDef,
+                            shiftName = shiftName
+                        )
 
-                            // Execute Hue rules for this shift using injected hueRuleUseCase
-                            val currentTime = LocalTime.now()
-                            val executionResult = hueRuleUseCase.executeRulesForAlarm(
-                                shift = syntheticShiftMatch,
-                                alarmTime = currentTime
-                            )
+                        // Execute Hue rules for this shift using injected hueRuleUseCase
+                        val currentTime = LocalTime.now()
+                        val executionResult = hueRuleUseCase.executeRulesForAlarm(
+                            shift = syntheticShiftMatch,
+                            alarmTime = currentTime
+                        )
 
-                            if (executionResult.isSuccess) {
-                                val result = executionResult.getOrNull()
-                                if (result != null && result.rulesExecuted > 0) {
-                                    Logger.business(
+                        if (executionResult.isSuccess) {
+                            val result = executionResult.getOrNull()
+                            if (result != null && result.rulesExecuted > 0) {
+                                Logger.business(
+                                    LogTags.ALARM_RECEIVER,
+                                    "🎨✅ Hue rules executed successfully: ${result.rulesExecuted} rules, " +
+                                            "${result.successfulActions}/${result.actionsExecuted} actions successful"
+                                )
+
+                                if (result.errors.isNotEmpty()) {
+                                    Logger.w(
                                         LogTags.ALARM_RECEIVER,
-                                        "🎨✅ Hue rules executed successfully: ${result.rulesExecuted} rules, " +
-                                                "${result.successfulActions}/${result.actionsExecuted} actions successful"
-                                    )
-
-                                    if (result.errors.isNotEmpty()) {
-                                        Logger.w(
-                                            LogTags.ALARM_RECEIVER,
-                                            "🎨⚠️ Some Hue actions failed: ${result.errors}"
-                                        )
-                                    }
-                                } else {
-                                    Logger.d(
-                                        LogTags.ALARM_RECEIVER,
-                                        "🎨💡 No Hue rules configured for shift: $shiftName"
+                                        "🎨⚠️ Some Hue actions failed: ${result.errors}"
                                     )
                                 }
                             } else {
-                                Logger.w(
+                                Logger.d(
                                     LogTags.ALARM_RECEIVER,
-                                    "🎨❌ Hue rule execution failed",
-                                    executionResult.exceptionOrNull()
+                                    "🎨💡 No Hue rules configured for shift: $shiftName"
                                 )
                             }
                         } else {
-                            Logger.d(
+                            Logger.w(
                                 LogTags.ALARM_RECEIVER,
-                                "🎨💡 No shift definition found for: $shiftName (skipping Hue rules)"
+                                "🎨❌ Hue rule execution failed",
+                                executionResult.exceptionOrNull()
                             )
                         }
                     } else {
-                        Logger.w(
+                        Logger.d(
                             LogTags.ALARM_RECEIVER,
-                            "🎨⚠️ Could not load shift configuration for Hue rules",
-                            shiftConfigResult.exceptionOrNull()
+                            "🎨💡 No shift definition found for: $shiftName (skipping Hue rules)"
                         )
                     }
-
-                } catch (e: Exception) {
-                    Logger.e(LogTags.ALARM_RECEIVER, "🎨❌ Exception during Hue rule execution", e)
+                } else {
+                    Logger.w(
+                        LogTags.ALARM_RECEIVER,
+                        "🎨⚠️ Could not load shift configuration for Hue rules",
+                        shiftConfigResult.exceptionOrNull()
+                    )
                 }
+
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_RECEIVER, "🎨❌ Exception during Hue rule execution", e)
             }
 
         } catch (e: Exception) {

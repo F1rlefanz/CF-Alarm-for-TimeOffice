@@ -12,60 +12,47 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
-import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneId
 import javax.inject.Inject
-import kotlin.math.abs
-import kotlin.random.Random
 
 /**
- * Enhanced BroadcastReceiver with Smart Maintenance Chain Level 1 integration AND Hilt DI.
+ * Enhanced BroadcastReceiver with Hilt DI.
  *
  * CORE FEATURES:
  * - Reliable wake lock management
  * - Android 14+ Full-Screen Intent compatibility
  * - Enhanced notification with high priority
  * - 🎨 HUE INTEGRATION: Automatic light control based on shift patterns
- * - 🔄 SMART MAINTENANCE CHAIN Level 1: Opportunistic alarm checking
  * - 🏗️ HILT DI: Modern dependency injection
  *
- * NEW: Smart Maintenance Chain Level 1 - Opportunistic Alarm Prüfung
- * Nach jedem Alarm wird intelligent geprüft, ob ausreichend zukünftige Alarme vorhanden sind.
- * Falls nicht, werden automatisch neue Alarme geplant - stromsparend als Piggyback-Operation.
+ * Die Alarm-Wartung (genügend zukünftige Alarme vorhalten) übernimmt seit
+ * Briefing 4.0 vollständig der AlarmMaintenanceService (Exact Alarm alle 6h,
+ * zeitbasierter 7-Tage-Puffer); die frühere count-basierte Opportunistic-Variante
+ * im Receiver wurde als redundant entfernt.
  *
- * Philosophy: If the alarm works (and it does!), keep it simple + add intelligent maintenance.
+ * Philosophy: If the alarm works (and it does!), keep it simple.
  */
 @AndroidEntryPoint
 class AlarmReceiver : BroadcastReceiver() {
 
     @Inject lateinit var skipUseCase: IAlarmSkipUseCase
-    @Inject lateinit var alarmUseCase: IAlarmUseCase
-    @Inject lateinit var calendarUseCase: ICalendarUseCase
-    @Inject lateinit var shiftRecognitionEngine: ShiftRecognitionEngine
     @Inject lateinit var hueRuleUseCase: IHueRuleUseCase
     @Inject lateinit var shiftUseCase: IShiftUseCase
-    @Inject lateinit var calendarSelectionRepository: CalendarSelectionRepository
 
     companion object {
         const val EXTRA_SHIFT_NAME = "shift_name"
@@ -76,21 +63,10 @@ class AlarmReceiver : BroadcastReceiver() {
         private const val NOTIFICATION_ID = 2001
         private const val WAKE_LOCK_TAG = "CFAlarm:WakeLock"
         private const val WAKE_LOCK_TIMEOUT = 60000L // 1 Minute
-
-        // 🔄 SMART MAINTENANCE CHAIN Level 1 Configuration
-        private const val MINIMUM_FUTURE_ALARMS = 3
-        // PHASE 2 CLEANUP: Using global constant from CalendarConstants
-        private const val OPPORTUNISTIC_CHECK_PROBABILITY = 0.8f  // 80% der Alarme prüfen
-
-        // Log Tags für Smart Maintenance
-        private const val TAG_MAINTENANCE = LogTags.MAINTENANCE_L1
     }
 
     // Coroutine Scope für die asynchrone onReceive-Verarbeitung (goAsync)
     private val receiverScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    // Coroutine Scope für Background-Operations
-    private val maintenanceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onReceive(context: Context, intent: Intent) {
         val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
@@ -187,9 +163,6 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Sound + Full-Screen-Intent nicht verzögert.
                     executeHueRulesForAlarm(shiftName)
 
-                    // 🔄 SMART MAINTENANCE CHAIN Level 1 - Opportunistic Alarm Check
-                    performOpportunisticAlarmMaintenance(alarmId, shiftName)
-
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM_RECEIVER, "❌ Error handling alarm", e)
                 } finally {
@@ -201,180 +174,6 @@ class AlarmReceiver : BroadcastReceiver() {
             } finally {
                 // GARANTIERT: BroadcastReceiver-Lebenszyklus beenden
                 pendingResult.finish()
-            }
-        }
-    }
-
-    /**
-     * 🔄 SMART MAINTENANCE CHAIN Level 1: Opportunistic Alarm Maintenance
-     *
-     * Wird nach jedem Alarm ausgeführt (als Piggyback-Operation).
-     * Prüft intelligent, ob genügend zukünftige Alarme vorhanden sind.
-     * Falls nicht, plant automatisch neue Alarme mit erweiterter Vorausschau.
-     *
-     * STROMSPAREND: Läuft als Piggyback ohne zusätzlichen Wake-up
-     * INTELLIGENT: Probabilistische Prüfung (80% der Alarme)
-     * RESILIENT: Fehler brechen den Hauptalarm nicht ab
-     * 
-     * NOTE: context parameter removed - all dependencies injected via Hilt
-     */
-    private fun performOpportunisticAlarmMaintenance(
-        alarmId: Int,
-        shiftName: String
-    ) {
-        // Probabilistische Prüfung - nicht bei jedem Alarm (stromsparen)
-        if (Random.nextFloat() > OPPORTUNISTIC_CHECK_PROBABILITY) {
-            Logger.d(TAG_MAINTENANCE, "🎲 Skipping opportunistic check (probabilistic)")
-            return
-        }
-
-        Logger.business(
-            TAG_MAINTENANCE,
-            "🔄 OPPORTUNISTIC: Starting maintenance check after alarm $alarmId ($shiftName)"
-        )
-
-        // Background-Coroutine to avoid blocking the alarm
-        maintenanceScope.launch {
-            try {
-                // Hilt injected dependencies - no appContainer needed!
-
-                // 1. Analysiere aktuelle Alarm-Situation
-                val currentAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
-                val futureAlarms = currentAlarms.filter {
-                    it.triggerTime > System.currentTimeMillis()
-                }
-
-                Logger.business(
-                    TAG_MAINTENANCE,
-                    "📊 OPPORTUNISTIC ANALYSIS for '$shiftName': ${futureAlarms.size} future alarms found"
-                )
-
-                // 2. Prüfe ob neue Alarme benötigt werden
-                if (futureAlarms.size >= MINIMUM_FUTURE_ALARMS) {
-                    Logger.d(
-                        TAG_MAINTENANCE,
-                        "✅ OPPORTUNISTIC: Sufficient alarms (${futureAlarms.size} >= $MINIMUM_FUTURE_ALARMS)"
-                    )
-                    return@launch
-                }
-
-                Logger.business(
-                    TAG_MAINTENANCE,
-                    "🔄 OPPORTUNISTIC: Need more alarms! Found ${futureAlarms.size}, need $MINIMUM_FUTURE_ALARMS"
-                )
-
-                // 3. Hole erweiterte Kalenderdaten (21 Tage statt 7)
-                // Bekomme zuerst die ausgewählten Kalender-IDs
-                val selectedCalendarIds = calendarSelectionRepository.selectedCalendarIds.first()
-
-                if (selectedCalendarIds.isEmpty()) {
-                    Logger.w(
-                        TAG_MAINTENANCE,
-                        "⚠️ OPPORTUNISTIC: No calendars selected, skipping maintenance"
-                    )
-                    return@launch
-                }
-
-                Logger.d(
-                    TAG_MAINTENANCE,
-                    "🔍 EXTENDED LOOKAHEAD: Scanning ${CalendarConstants.DEFAULT_DAYS_AHEAD} days ahead for ${selectedCalendarIds.size} calendars"
-                )
-
-                val extendedEventsResult = calendarUseCase.getCalendarEventsWithCache(
-                    calendarIds = selectedCalendarIds,
-                    forceRefresh = false
-                )
-
-                if (extendedEventsResult.isFailure) {
-                    Logger.w(
-                        TAG_MAINTENANCE,
-                        "❌ OPPORTUNISTIC: Failed to get extended calendar events",
-                        extendedEventsResult.exceptionOrNull()
-                    )
-                    return@launch
-                }
-
-                val extendedEvents = extendedEventsResult.getOrNull() ?: emptyList()
-                Logger.business(
-                    TAG_MAINTENANCE,
-                    "📅 EXTENDED SCAN: Found ${extendedEvents.size} events in extended range"
-                )
-
-                // 4. Erkenne neue Schichten und erstelle Alarme
-                val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(extendedEvents)
-                val newShiftMatches = shiftMatches.filter { shiftMatch ->
-                    // Nur zukünftige Schichten, die noch keinen Alarm haben
-                    val alarmTime =
-                        shiftMatch.calculatedAlarmTime.atZone(ZoneId.systemDefault()).toInstant()
-                            .toEpochMilli()
-                    alarmTime > System.currentTimeMillis() &&
-                            !futureAlarms.any { existingAlarm ->
-                                abs(existingAlarm.triggerTime - alarmTime) < 60 * 1000 // 1 Minute Toleranz
-                            }
-                }
-
-                Logger.business(
-                    TAG_MAINTENANCE,
-                    "🆕 OPPORTUNISTIC: Found ${newShiftMatches.size} new shifts to schedule"
-                )
-
-                if (newShiftMatches.isEmpty()) {
-                    Logger.d(TAG_MAINTENANCE, "💡 OPPORTUNISTIC: No new shifts found to schedule")
-                    return@launch
-                }
-
-                // 5. Erstelle neue Alarme
-                val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-                if (shiftConfig == null || !shiftConfig.autoAlarmEnabled) {
-                    Logger.d(
-                        TAG_MAINTENANCE,
-                        "⚠️ OPPORTUNISTIC: Auto-alarm disabled, skipping alarm creation"
-                    )
-                    return@launch
-                }
-
-                // Erstelle Events-Liste für den AlarmUseCase
-                val newEvents = newShiftMatches.map { it.calendarEvent }
-                val createResult = alarmUseCase.createAlarmsFromEvents(newEvents, shiftConfig)
-
-                if (createResult.isSuccess) {
-                    val createdAlarms = createResult.getOrNull() ?: emptyList()
-                    Logger.business(
-                        TAG_MAINTENANCE,
-                        "✅ OPPORTUNISTIC SUCCESS: Created ${createdAlarms.size} new alarms automatically!"
-                    )
-
-                    // 6. System-Alarme setzen
-                    for (newAlarm in createdAlarms) {
-                        try {
-                            alarmUseCase.scheduleSystemAlarm(newAlarm)
-                            Logger.d(
-                                TAG_MAINTENANCE,
-                                "✅ System alarm scheduled for: ${newAlarm.shiftName}"
-                            )
-                        } catch (e: Exception) {
-                            Logger.e(
-                                TAG_MAINTENANCE,
-                                "❌ Failed to schedule system alarm for: ${newAlarm.shiftName}",
-                                e
-                            )
-                        }
-                    }
-                } else {
-                    Logger.w(
-                        TAG_MAINTENANCE,
-                        "❌ OPPORTUNISTIC: Failed to create alarms",
-                        createResult.exceptionOrNull()
-                    )
-                }
-
-            } catch (e: Exception) {
-                // KRITISCH: Niemals den Hauptalarm crashen lassen wegen Maintenance-Fehlern
-                Logger.e(
-                    TAG_MAINTENANCE,
-                    "❌ OPPORTUNISTIC: Critical error during maintenance (alarm still worked!)",
-                    e
-                )
             }
         }
     }

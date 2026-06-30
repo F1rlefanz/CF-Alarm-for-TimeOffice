@@ -16,10 +16,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -95,6 +98,24 @@ class AlarmViewModel @Inject constructor(
     // MEMORY LEAK FIX: Track Flow collection job for proper cleanup
     private var alarmObservationJob: Job? = null
 
+    /**
+     * SINGLE SOURCE OF TRUTH: Shared upstream for active alarms.
+     *
+     * Zuvor wurde alarmUseCase.activeAlarms zweimal unabhängig collected
+     * (observeAlarmStatus + observeManualAlarms), was den kalten Upstream-Flow
+     * doppelt subscribt hat. Dieser geteilte Flow fan-out an beide Beobachter,
+     * sodass der Upstream nur noch EINMAL aktiv ist. distinctUntilChanged bleibt
+     * hier erhalten – identisch zum vorherigen Verhalten beider Collectoren.
+     */
+    private val sharedActiveAlarms: SharedFlow<List<AlarmInfo>> =
+        alarmUseCase.activeAlarms
+            .distinctUntilChanged()
+            .shareIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                replay = 1
+            )
+
     init {
         observeAlarmStatus()
         observeSkipStatus()
@@ -150,8 +171,7 @@ class AlarmViewModel @Inject constructor(
 
         alarmObservationJob = viewModelScope.launch {
             try {
-                alarmUseCase.activeAlarms
-                    .distinctUntilChanged()
+                sharedActiveAlarms
                     .collect { alarms ->
                         // FIXED: Only consider future alarms for "next alarm" calculation
                         val currentTime = System.currentTimeMillis()
@@ -461,8 +481,7 @@ class AlarmViewModel @Inject constructor(
     private fun observeManualAlarms() {
         viewModelScope.launch {
             try {
-                alarmUseCase.activeAlarms
-                    .distinctUntilChanged()
+                sharedActiveAlarms
                     .collect { alarms ->
                         // Filter für manuelle Alarme
                         val manualAlarms = alarms.filter { ManualAlarmConstants.isManualAlarm(it) }

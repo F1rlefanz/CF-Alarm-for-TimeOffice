@@ -107,8 +107,8 @@
             PHILIPS HUE COMPATIBILITY:
             - Modern bridges with Signify CA: Trusted via system trust store
             - Legacy bridges with self-signed certs: Trusted via user certificates
-            - Bridge ID hostname validation: Handled in application layer
-            - Certificate pinning: Implemented in SecureHueTrustManager
+            - Hostname validation: private-network (RFC 1918) check in HueTrustManager
+            - Bridge-ID pinning: Trust-On-First-Use audit layer in HueTrustManager (advisory only, never blocks)
             
             SECURITY BENEFITS:
             - Official Philips certificates automatically trusted

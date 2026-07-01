@@ -66,7 +66,8 @@ class HueBridgeConnectionManager private constructor(
     // Use WeakReference to prevent memory leaks
     private val contextRef = java.lang.ref.WeakReference(context.applicationContext)
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val apiClient = HueApiClient()
+    // Context enables the bridge-ID pinning audit layer in HueTrustManager
+    private val apiClient = HueApiClient(context)
     
     // PHASE 2: Smart Scheduler integration  
     private val smartScheduler by lazy { 

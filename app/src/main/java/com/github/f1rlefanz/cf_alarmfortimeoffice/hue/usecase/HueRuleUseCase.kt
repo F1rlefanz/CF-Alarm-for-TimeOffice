@@ -319,9 +319,19 @@ class HueRuleUseCase @Inject constructor(
                         (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
                             rule.shiftPattern.equals("ALL", ignoreCase = true))
                 }
-                .flatMap { rule -> rule.lightActions.asSequence() }
-                .filter { action -> action.on == true && (action.duration ?: 0) > 0 && action.targetId.isNotBlank() }
-                .map { action -> AutoOffTarget(action.targetId, action.isGroup, action.duration!!) }
+                .flatMap { rule ->
+                    // UX FIX (D-timing): a sunrise ramp that starts AT the alarm time
+                    // (startBeforeAlarm == false) only reaches full brightness after
+                    // sunrise.durationMinutes. Delay the auto-off by that ramp duration so it
+                    // can never fire mid-ramp. For startBeforeAlarm == true the ramp already
+                    // ends at the alarm time, so no offset is needed (same as a plain on-rule).
+                    val sunriseOffsetMinutes = rule.sunrise
+                        ?.takeIf { it.enabled && !it.startBeforeAlarm }
+                        ?.durationMinutes ?: 0
+                    rule.lightActions.asSequence()
+                        .filter { action -> action.on == true && (action.duration ?: 0) > 0 && action.targetId.isNotBlank() }
+                        .map { action -> AutoOffTarget(action.targetId, action.isGroup, action.duration!! + sunriseOffsetMinutes) }
+                }
                 .distinct()
                 .toList()
         } catch (e: Exception) {

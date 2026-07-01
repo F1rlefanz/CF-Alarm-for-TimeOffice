@@ -224,11 +224,9 @@ android {
     }
 }
 
-tasks.withType<Test>().configureEach {
-    useJUnitPlatform {
-        includeTags("junit")
-    }
-}
+// Unit-Tests laufen über den Standard-JUnit-4-Runner (junit:junit:4.13.2).
+// Kein useJUnitPlatform: es ist bewusst keine JUnit-5-Engine eingebunden,
+// sonst würde der Test-Task 0 Tests ausführen (stiller No-Op).
 
 dependencies {
     // Core Android dependencies

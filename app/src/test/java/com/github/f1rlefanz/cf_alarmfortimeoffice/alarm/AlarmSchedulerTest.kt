@@ -1,236 +1,155 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
-import org.junit.Before
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import java.time.LocalTime
 
 /**
- * Unit Tests für Alarm-Scheduling - Kritische Kernfunktionalität
+ * Echte Unit-Tests für die Wecker-Kernlogik.
+ *
+ * Diese Tests prüfen die PRODUKTIVE Zeitberechnung in [ShiftRecognitionEngine]
+ * (calculateAlarmTime inkl. Mitternachts-/Vortags-Logik) sowie die
+ * Schlüsselwort-Erkennung – über die öffentliche API getAllMatchingShifts,
+ * nicht über einen Mock/Stub. Ein Refactor der echten Logik, der einen dieser
+ * Fälle bricht, wird dadurch sichtbar.
  */
 class AlarmSchedulerTest {
 
-    private lateinit var alarmScheduler: AlarmScheduler
-    
-    @Before
-    fun setup() {
-        alarmScheduler = AlarmScheduler()
+    /** Minimaler Fake statt Mockito – liefert eine feste ShiftConfig. */
+    private class FakeShiftConfigRepository(
+        private val config: ShiftConfig
+    ) : IShiftConfigRepository {
+        override val shiftConfig: Flow<ShiftConfig> = flowOf(config)
+        override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
+        override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = Result.success(config)
+        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
+        override suspend fun hasValidConfig(): Result<Boolean> =
+            Result.success(config.definitions.isNotEmpty())
     }
 
-    @Test
-    fun `calculate alarm time with lead time returns correct time`() {
-        // Given
-        val eventStartTime = LocalDateTime.of(2025, 1, 20, 9, 0)
-        val leadTimeMinutes = 30
-        
-        // When
-        val alarmTime = alarmScheduler.calculateAlarmTime(eventStartTime, leadTimeMinutes)
-        
-        // Then
-        val expectedTime = LocalDateTime.of(2025, 1, 20, 8, 30)
-        assertEquals(expectedTime, alarmTime)
-    }
+    private fun engineWith(vararg definitions: ShiftDefinition): ShiftRecognitionEngine =
+        ShiftRecognitionEngine(FakeShiftConfigRepository(ShiftConfig(definitions = definitions.toList())))
+
+    private fun event(title: String, start: LocalDateTime) = CalendarEvent(
+        id = "$title-$start",
+        title = title,
+        startTime = start,
+        endTime = start.plusHours(8),
+        calendarId = "test"
+    )
+
+    private fun shift(name: String, keywords: List<String>, alarm: LocalTime) = ShiftDefinition(
+        id = name,
+        name = name,
+        keywords = keywords,
+        alarmTime = alarm
+    )
 
     @Test
-    fun `calculate alarm time with zero lead time returns event time`() {
-        // Given
-        val eventStartTime = LocalDateTime.of(2025, 1, 20, 9, 0)
-        val leadTimeMinutes = 0
-        
-        // When
-        val alarmTime = alarmScheduler.calculateAlarmTime(eventStartTime, leadTimeMinutes)
-        
-        // Then
-        assertEquals(eventStartTime, alarmTime)
-    }
+    fun `Alarm liegt am selben Tag wenn Weckzeit vor Schichtbeginn`() = runTest {
+        // Frühschicht: Weckzeit 05:30, Schicht startet 06:00 -> Wecker 05:30 am selben Tag
+        val engine = engineWith(shift("Früh", listOf("F"), LocalTime.of(5, 30)))
 
-    @Test
-    fun `calculate alarm time crossing midnight works correctly`() {
-        // Given - Event at 00:30, with 60 min lead time
-        val eventStartTime = LocalDateTime.of(2025, 1, 20, 0, 30)
-        val leadTimeMinutes = 60
-        
-        // When
-        val alarmTime = alarmScheduler.calculateAlarmTime(eventStartTime, leadTimeMinutes)
-        
-        // Then - Should be previous day at 23:30
-        val expectedTime = LocalDateTime.of(2025, 1, 19, 23, 30)
-        assertEquals(expectedTime, alarmTime)
-    }
-
-    @Test
-    fun `should not schedule alarm for past events`() {
-        // Given
-        val pastEvent = LocalDateTime.now().minusHours(2)
-        val leadTimeMinutes = 30
-        
-        // When
-        val shouldSchedule = alarmScheduler.shouldScheduleAlarm(pastEvent, leadTimeMinutes)
-        
-        // Then
-        assertFalse("Should not schedule alarm for past events", shouldSchedule)
-    }
-
-    @Test
-    fun `should schedule alarm for future events`() {
-        // Given
-        val futureEvent = LocalDateTime.now().plusHours(2)
-        val leadTimeMinutes = 30
-        
-        // When
-        val shouldSchedule = alarmScheduler.shouldScheduleAlarm(futureEvent, leadTimeMinutes)
-        
-        // Then
-        assertTrue("Should schedule alarm for future events", shouldSchedule)
-    }
-
-    @Test
-    fun `convert local time to UTC milliseconds correctly`() {
-        // Given
-        val localTime = LocalDateTime.of(2025, 1, 20, 9, 0)
-        val zoneId = ZoneId.of("Europe/Berlin")
-        
-        // When
-        val milliseconds = alarmScheduler.toMillis(localTime, zoneId)
-        
-        // Then
-        val zonedDateTime = ZonedDateTime.of(localTime, zoneId)
-        val expectedMillis = zonedDateTime.toInstant().toEpochMilli()
-        assertEquals(expectedMillis, milliseconds)
-    }
-
-    @Test
-    fun `handle timezone changes correctly`() {
-        // Given - Time during DST change
-        val localTime = LocalDateTime.of(2025, 3, 30, 2, 30) // DST change in Europe
-        val zoneId = ZoneId.of("Europe/Berlin")
-        
-        // When
-        val milliseconds = alarmScheduler.toMillis(localTime, zoneId)
-        
-        // Then
-        assertTrue("Milliseconds should be positive", milliseconds > 0)
-    }
-
-    @Test
-    fun `filter work events correctly`() {
-        // Given
-        val events = listOf(
-            TestCalendarEvent("Arbeit", LocalDateTime.now().plusDays(1)),
-            TestCalendarEvent("Schicht", LocalDateTime.now().plusDays(2)),
-            TestCalendarEvent("Geburtstag", LocalDateTime.now().plusDays(3)),
-            TestCalendarEvent("Work Meeting", LocalDateTime.now().plusDays(4))
+        val matches = engine.getAllMatchingShifts(
+            listOf(event("F", LocalDateTime.of(2025, 1, 20, 6, 0)))
         )
-        
-        // When
-        val workEvents = alarmScheduler.filterWorkEvents(events)
-        
-        // Then
-        assertEquals(3, workEvents.size)
-        assertTrue(workEvents.any { it.title == "Arbeit" })
-        assertTrue(workEvents.any { it.title == "Schicht" })
-        assertTrue(workEvents.any { it.title == "Work Meeting" })
-        assertFalse(workEvents.any { it.title == "Geburtstag" })
+
+        assertEquals(1, matches.size)
+        assertEquals(LocalDateTime.of(2025, 1, 20, 5, 30), matches[0].calculatedAlarmTime)
     }
 
     @Test
-    fun `handle recurring events correctly`() {
-        // Given
-        val recurringEvent = TestCalendarEvent(
-            title = "Daily Standup",
-            startTime = LocalDateTime.of(2025, 1, 20, 9, 0),
-            isRecurring = true,
-            recurrenceRule = "FREQ=DAILY;COUNT=5"
+    fun `Alarm liegt am Vortag wenn Weckzeit nach Schichtbeginn (Mitternachts-Fall)`() = runTest {
+        // Schicht startet 00:30, Weckzeit 23:30 -> Wecker am VORTAG 23:30
+        val engine = engineWith(shift("Nacht", listOf("N"), LocalTime.of(23, 30)))
+
+        val matches = engine.getAllMatchingShifts(
+            listOf(event("N", LocalDateTime.of(2025, 1, 20, 0, 30)))
         )
-        
-        // When
-        val alarms = alarmScheduler.createAlarmsForRecurringEvent(recurringEvent, 15)
-        
-        // Then
-        assertEquals(5, alarms.size)
-        // Verify first alarm is 15 minutes before first occurrence
-        assertEquals(
-            LocalDateTime.of(2025, 1, 20, 8, 45),
-            alarms[0].time
-        )
+
+        assertEquals(1, matches.size)
+        assertEquals(LocalDateTime.of(2025, 1, 19, 23, 30), matches[0].calculatedAlarmTime)
     }
 
     @Test
-    fun `validate alarm time is not too far in future`() {
-        // Given - Max 30 days in future
-        val farFutureEvent = LocalDateTime.now().plusDays(35)
-        
-        // When
-        val isValid = alarmScheduler.isValidAlarmTime(farFutureEvent)
-        
-        // Then
-        assertFalse("Should not allow alarms more than 30 days in future", isValid)
+    fun `Weckzeit gleich Schichtbeginn ergibt selben Tag`() = runTest {
+        val engine = engineWith(shift("Spät", listOf("S"), LocalTime.of(14, 0)))
+
+        val matches = engine.getAllMatchingShifts(
+            listOf(event("S", LocalDateTime.of(2025, 3, 10, 14, 0)))
+        )
+
+        assertEquals(1, matches.size)
+        // alarmDateTime == shiftStart -> nicht "isAfter" -> selber Tag
+        assertEquals(LocalDateTime.of(2025, 3, 10, 14, 0), matches[0].calculatedAlarmTime)
+    }
+
+    @Test
+    fun `Nur ganze Woerter matchen - kein Teilstring-Treffer`() = runTest {
+        // Keyword "F" darf NICHT in "Fortbildung" matchen (Wortgrenzen-Regex)
+        val engine = engineWith(shift("Früh", listOf("F"), LocalTime.of(5, 30)))
+
+        val matches = engine.getAllMatchingShifts(
+            listOf(event("Fortbildung", LocalDateTime.of(2025, 1, 20, 8, 0)))
+        )
+
+        assertTrue("Teilstring 'F' in 'Fortbildung' darf nicht matchen", matches.isEmpty())
+    }
+
+    @Test
+    fun `Nicht passende Termine erzeugen keinen Wecker`() = runTest {
+        val engine = engineWith(shift("Früh", listOf("F"), LocalTime.of(5, 30)))
+
+        val matches = engine.getAllMatchingShifts(
+            listOf(event("Geburtstag", LocalDateTime.of(2025, 1, 20, 18, 0)))
+        )
+
+        assertTrue(matches.isEmpty())
+    }
+
+    @Test
+    fun `Leere Konfiguration liefert keine Treffer`() = runTest {
+        val engine = ShiftRecognitionEngine(
+            FakeShiftConfigRepository(ShiftConfig(definitions = emptyList()))
+        )
+
+        val matches = engine.getAllMatchingShifts(
+            listOf(event("F", LocalDateTime.of(2025, 1, 20, 6, 0)))
+        )
+
+        assertTrue(matches.isEmpty())
+    }
+
+    @Test
+    fun `Treffer sind nach Weckzeit sortiert`() = runTest {
+        val engine = engineWith(
+            shift("Früh", listOf("F"), LocalTime.of(5, 30)),
+            shift("Spät", listOf("S"), LocalTime.of(12, 30))
+        )
+
+        // Spätschicht-Event zuerst in der Liste, muss aber nach Weckzeit hinter Früh landen
+        val matches = engine.getAllMatchingShifts(
+            listOf(
+                event("S", LocalDateTime.of(2025, 1, 20, 14, 0)),
+                event("F", LocalDateTime.of(2025, 1, 20, 6, 0))
+            )
+        )
+
+        assertEquals(2, matches.size)
+        assertEquals(LocalDateTime.of(2025, 1, 20, 5, 30), matches[0].calculatedAlarmTime)
+        assertTrue(
+            "Erste Weckzeit muss vor der zweiten liegen",
+            matches[0].calculatedAlarmTime.isBefore(matches[1].calculatedAlarmTime)
+        )
     }
 }
-
-/**
- * Mock AlarmScheduler for testing
- * In production, this would be the actual implementation
- */
-class AlarmScheduler {
-    
-    fun calculateAlarmTime(eventTime: LocalDateTime, leadTimeMinutes: Int): LocalDateTime {
-        return eventTime.minusMinutes(leadTimeMinutes.toLong())
-    }
-    
-    fun shouldScheduleAlarm(eventTime: LocalDateTime, leadTimeMinutes: Int): Boolean {
-        val alarmTime = calculateAlarmTime(eventTime, leadTimeMinutes)
-        return alarmTime.isAfter(LocalDateTime.now())
-    }
-    
-    fun toMillis(localTime: LocalDateTime, zoneId: ZoneId): Long {
-        return ZonedDateTime.of(localTime, zoneId).toInstant().toEpochMilli()
-    }
-    
-    fun filterWorkEvents(events: List<TestCalendarEvent>): List<TestCalendarEvent> {
-        val workKeywords = listOf("arbeit", "schicht", "work", "meeting", "office")
-        return events.filter { event ->
-            workKeywords.any { keyword ->
-                event.title.lowercase().contains(keyword)
-            }
-        }
-    }
-    
-    fun createAlarmsForRecurringEvent(
-        event: TestCalendarEvent, 
-        leadTimeMinutes: Int
-    ): List<TestAlarm> {
-        // Simplified implementation for testing
-        val alarms = mutableListOf<TestAlarm>()
-        if (event.isRecurring && event.recurrenceRule?.contains("COUNT=5") == true) {
-            for (i in 0 until 5) {
-                val alarmTime = event.startTime
-                    .plusDays(i.toLong())
-                    .minusMinutes(leadTimeMinutes.toLong())
-                alarms.add(TestAlarm(time = alarmTime, eventTitle = event.title))
-            }
-        }
-        return alarms
-    }
-    
-    fun isValidAlarmTime(alarmTime: LocalDateTime): Boolean {
-        val maxFutureTime = LocalDateTime.now().plusDays(30)
-        return alarmTime.isBefore(maxFutureTime) && alarmTime.isAfter(LocalDateTime.now())
-    }
-}
-
-// Test data classes
-data class TestCalendarEvent(
-    val title: String,
-    val startTime: LocalDateTime,
-    val isRecurring: Boolean = false,
-    val recurrenceRule: String? = null
-)
-
-data class TestAlarm(
-    val time: LocalDateTime,
-    val eventTitle: String
-)

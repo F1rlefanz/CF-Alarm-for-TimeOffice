@@ -40,8 +40,8 @@ class HueBridgeRepository @Inject constructor(
         private const val APP_NAME = "CFAlarmForTimeOffice"
     }
     
-    // API Client for Hue communication
-    private val apiClient = HueApiClient()
+    // API Client for Hue communication (context enables bridge-ID pinning audit layer)
+    private val apiClient = HueApiClient(context)
     
     // Official Discovery Service (replaces primitive IP scanning)
     private val officialDiscoveryService = OfficialHueDiscoveryService(context)

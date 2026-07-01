@@ -11,26 +11,48 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import androidx.core.content.edit
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+
+/**
+ * Hilt EntryPoint that lets [AlarmMaintenanceService.getLastMaintenanceTime] (a static/companion
+ * helper called from Compose UI, e.g. SettingsTabContent, without an AlarmMaintenanceService
+ * instance) reach the Hilt-managed [MainDataStore]. Same pattern as HueSmartSchedulerEntryPoint /
+ * HueBridgeConnectionManagerEntryPoint.
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface AlarmMaintenanceEntryPoint {
+    @MainDataStore
+    fun mainDataStore(): DataStore<Preferences>
+}
 
 /**
  * AlarmMaintenanceService - Short-Lived Foreground Service
@@ -55,43 +77,44 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class AlarmMaintenanceService : Service() {
-    
+
     @Inject lateinit var tokenManager: OAuth2TokenManager
     @Inject lateinit var alarmUseCase: IAlarmUseCase
     @Inject lateinit var calendarUseCase: ICalendarUseCase
     @Inject lateinit var shiftUseCase: IShiftUseCase
     @Inject lateinit var calendarSelectionRepository: CalendarSelectionRepository
     @Inject lateinit var shiftRecognitionEngine: ShiftRecognitionEngine
-    
+    @Inject @MainDataStore lateinit var mainDataStore: DataStore<Preferences>
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    
+
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "alarm_maintenance"
         private const val NOTIFICATION_ID = 1001
         private const val MAINTENANCE_ALARM_REQUEST_CODE = 9999
         private const val MAINTENANCE_INTERVAL_HOURS = 6L
         private const val MIN_BUFFER_DAYS = 7
-        
-        private const val PREFS_NAME = "cf_alarm_prefs"
-        private const val KEY_LAST_MAINTENANCE = "last_maintenance_time"
-        
+
+        // CONSOLIDATION: moved off the standalone "cf_alarm_prefs" SharedPreferences file
+        // and into the existing Hilt @MainDataStore.
+        // NO MIGRATION: only the developer uses the app right now, so the old SharedPreferences
+        // value is intentionally left behind - losing the last-maintenance timestamp once is harmless.
+        private val KEY_LAST_MAINTENANCE = longPreferencesKey("last_maintenance_time")
+
         /**
-         * Gets the timestamp of the last successful maintenance
+         * Gets the timestamp of the last successful maintenance.
+         *
+         * Suspends to read the @MainDataStore (resolved via Hilt EntryPoint, since this is a
+         * static helper called without a Service instance - e.g. from SettingsTabContent's
+         * LaunchedEffect). Callers must invoke this from a coroutine.
          */
-        fun getLastMaintenanceTime(context: Context): Long {
-            return context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .getLong(KEY_LAST_MAINTENANCE, 0L)
+        suspend fun getLastMaintenanceTime(context: Context): Long {
+            val dataStore = EntryPointAccessors
+                .fromApplication(context.applicationContext, AlarmMaintenanceEntryPoint::class.java)
+                .mainDataStore()
+            return dataStore.data.first()[KEY_LAST_MAINTENANCE] ?: 0L
         }
-        
-        /**
-         * Saves the current time as last maintenance timestamp
-         */
-        private fun saveMaintenanceTime(context: Context) {
-            context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit {
-                putLong(KEY_LAST_MAINTENANCE, System.currentTimeMillis())
-            }
-        }
-        
+
         /**
          * Starts the maintenance service
          */
@@ -99,7 +122,7 @@ class AlarmMaintenanceService : Service() {
             val intent = Intent(context, AlarmMaintenanceService::class.java)
             context.startForegroundService(intent)
         }
-        
+
         /**
          * Schedules next maintenance run via AlarmManager
          */
@@ -169,8 +192,19 @@ class AlarmMaintenanceService : Service() {
     }
     
     /**
+     * Saves the current time as last maintenance timestamp in @MainDataStore.
+     * Instance method (not companion) since the service already has the injected
+     * mainDataStore available - no need to re-resolve it via EntryPoint.
+     */
+    private suspend fun saveMaintenanceTime() {
+        mainDataStore.edit { prefs ->
+            prefs[KEY_LAST_MAINTENANCE] = System.currentTimeMillis()
+        }
+    }
+
+    /**
      * Main maintenance logic
-     * 
+     *
      * STEPS:
      * 1. Token Refresh (2-5s)
      * 2. Health Check - Time-based (1s)
@@ -227,7 +261,7 @@ class AlarmMaintenanceService : Service() {
                 LogTags.MAINTENANCE,
                 "✅ Maintenance completed (skipped, buffer sufficient) in ${duration}ms"
             )
-            saveMaintenanceTime(applicationContext)
+            saveMaintenanceTime()
             return
         }
         
@@ -283,7 +317,7 @@ class AlarmMaintenanceService : Service() {
                 LogTags.MAINTENANCE,
                 "✅ Maintenance completed (no new shifts) in ${duration}ms"
             )
-            saveMaintenanceTime(applicationContext)
+            saveMaintenanceTime()
             return
         }
         
@@ -322,7 +356,7 @@ class AlarmMaintenanceService : Service() {
                 LogTags.MAINTENANCE,
                 "✅ Maintenance completed: $successCount alarms scheduled, $failCount failed in ${duration}ms"
             )
-            saveMaintenanceTime(applicationContext)
+            saveMaintenanceTime()
             scheduleNextAlarm()
         } else {
             Logger.e(LogTags.MAINTENANCE, "Alarm creation failed", createResult.exceptionOrNull())

@@ -1,13 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api
 
+import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeDiscoveryResponse
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridgeConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.LightStateUpdate
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.SecureHueTrustManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.TrustAllCertificatesManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.HueTrustManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.google.gson.Gson
@@ -19,28 +19,24 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
 
 /**
- * HTTP client for Hue API communication
+ * HTTP client for Hue API communication.
  *
- * SECURITY-HARDENED VERSION (v2.1)
+ * TLS TRUST MODEL
+ * Uses [HueTrustManager], a permissive local-IoT trust model (system trust store first,
+ * Hue certificate-pattern fallback second, optional bridge-ID pinning as an additive,
+ * non-blocking audit layer). See [HueTrustManager] for the full rationale - this is
+ * NOT full PKI validation, and is NOT a "trust all certificates" bypass either.
  *
- * FIXED CRITICAL SECURITY VULNERABILITIES:
- * ✅ Replaced insecure TrustAllCerts with security-hardened TrustAllCertificatesManager
- * ✅ Implemented proper certificate validation for Hue Bridges
- * ✅ Added hostname verification with private network validation
- * ✅ Comprehensive security logging for audit trails
- *
- * SECURITY LAYERS:
- * - RFC 1918 private network validation
- * - Hue-specific certificate pattern validation
- * - Certificate validity period checks
- * - Security audit logging
- *
- * @author CF-Alarm Development Team
- * @since Security Fix v2.1 (August 2025)
+ * @param context Optional application context. When provided, enables bridge-ID
+ * pinning (Trust-On-First-Use) as an additional audit layer on top of the existing
+ * hybrid certificate validation. Pass null only if a context is genuinely unavailable;
+ * the client still works correctly without it, just without the pinning audit layer.
  */
-class HueApiClient {
+class HueApiClient(context: Context? = null) {
 
     companion object {
         private const val DISCOVERY_URL = "https://discovery.meethue.com"
@@ -51,22 +47,23 @@ class HueApiClient {
     private val client: OkHttpClient
 
     init {
-        // SECURITY-ENHANCED: Android 14+ compliant OkHttpClient with hybrid trust model
-        // Uses SecureHueTrustManager for proper system trust store integration
+        val appContext = context?.applicationContext
+        val trustManager = HueTrustManager.create(appContext)
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf<TrustManager>(trustManager), null)
+        }
+
         client = OkHttpClient.Builder()
             .connectTimeout(TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             .writeTimeout(TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
-            .sslSocketFactory(
-                SecureHueTrustManager.createSecureSSLContext().socketFactory,
-                SecureHueTrustManager.create()
-            )
-            .hostnameVerifier(TrustAllCertificatesManager.createTrustAllHostnameVerifier())
+            .sslSocketFactory(sslContext.socketFactory, trustManager)
+            .hostnameVerifier(HueTrustManager.createHostnameVerifier())
             .build()
 
         Logger.i(
             LogTags.HUE_NETWORK,
-            "🔒 SECURITY: HueApiClient initialized with Android 14+ compliant trust manager"
+            "🔒 HueApiClient initialized (hybrid trust model, bridge-ID pinning=${appContext != null})"
         )
     }
 

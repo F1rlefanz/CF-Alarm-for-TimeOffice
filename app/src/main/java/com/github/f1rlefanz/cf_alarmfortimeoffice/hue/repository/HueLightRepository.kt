@@ -36,7 +36,8 @@ class HueLightRepository @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) : IHueLightRepository {
     
-    private val apiClient = HueApiClient()
+    // Context enables the bridge-ID pinning audit layer in HueTrustManager
+    private val apiClient = HueApiClient(context)
     
     // ROBUST Connection Manager for guaranteed connection availability
     private val connectionManager = HueBridgeConnectionManager.getInstance(context)

@@ -27,7 +27,7 @@ class HueColorConverterTest {
         assertEquals("#FF0000", result.rgb)
         // Reines Rot liegt exakt auf dem Gamut-B-Rotpunkt (0.675, 0.322) -> keine Gamut-Korrektur
         assertEquals(0.675f, result.xy!![0], 0.0001f)
-        assertEquals(0.322f, result.xy!![1], 0.0001f)
+        assertEquals(0.322f, result.xy[1], 0.0001f)
     }
 
     @Test
@@ -38,7 +38,7 @@ class HueColorConverterTest {
         assertEquals(21845, result.hue)
         assertEquals(254, result.saturation)
         assertEquals(0.4091f, result.xy!![0], 0.0001f)
-        assertEquals(0.518f, result.xy!![1], 0.0001f)
+        assertEquals(0.518f, result.xy[1], 0.0001f)
     }
 
     @Test
@@ -49,7 +49,7 @@ class HueColorConverterTest {
         assertEquals(43690, result.hue)
         assertEquals(254, result.saturation)
         assertEquals(0.167f, result.xy!![0], 0.0001f)
-        assertEquals(0.04f, result.xy!![1], 0.0001f)
+        assertEquals(0.04f, result.xy[1], 0.0001f)
     }
 
     @Test
@@ -66,7 +66,7 @@ class HueColorConverterTest {
         assertEquals(0, result.saturation)
         assertEquals("#FFFFFF", result.rgb)
         assertEquals(0.32273f, result.xy!![0], 0.001f)
-        assertEquals(0.32902f, result.xy!![1], 0.001f)
+        assertEquals(0.32902f, result.xy[1], 0.001f)
     }
 
     @Test
@@ -78,7 +78,7 @@ class HueColorConverterTest {
         assertEquals(0, result.hue)
         assertEquals(0, result.saturation)
         assertEquals(0.3127f, result.xy!![0], 0.0001f)
-        assertEquals(0.329f, result.xy!![1], 0.0001f)
+        assertEquals(0.329f, result.xy[1], 0.0001f)
     }
 
     @Test
@@ -94,7 +94,7 @@ class HueColorConverterTest {
         // und wird auf die naeheste Kante (Rot-Gruen) projiziert (von Hand nachgerechnet:
         // Distanz zur RG-Kante 0.00919 ist die kleinste der drei Kanten-Distanzen).
         assertEquals(0.5568f, result.xy!![0], 0.001f)
-        assertEquals(0.4092f, result.xy!![1], 0.001f)
+        assertEquals(0.4092f, result.xy[1], 0.001f)
     }
 
     // ---- hueColorToRgb: RGB-Hex hat Vorrang vor xy/HSV ----

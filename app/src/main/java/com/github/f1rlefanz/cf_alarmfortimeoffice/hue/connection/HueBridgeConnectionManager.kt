@@ -1,12 +1,21 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection
 
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.core.content.edit
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,6 +24,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,6 +32,18 @@ import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Hilt EntryPoint that lets the manually-constructed [HueBridgeConnectionManager] singleton
+ * reach the Hilt-managed [HueDataStore], following the same pattern as
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedulerEntryPoint].
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface HueBridgeConnectionManagerEntryPoint {
+    @HueDataStore
+    fun hueDataStore(): DataStore<Preferences>
+}
 
 /**
  * OPTIMIZED Hue Bridge Connection Manager
@@ -50,11 +72,14 @@ class HueBridgeConnectionManager private constructor(
         }
         
         // Configuration constants
-        private const val PREFS_NAME = "hue_bridge_connection"
-        private const val KEY_BRIDGE_IP = "bridge_ip"
-        private const val KEY_USERNAME = "username"
-        private const val KEY_LAST_SUCCESS = "last_success_timestamp"
-        private const val KEY_CONNECTION_VALIDATED = "connection_validated"
+        // CONSOLIDATION: moved off the standalone "hue_bridge_connection" SharedPreferences
+        // file and into the existing Hilt @HueDataStore (see HueBridgeConnectionManagerEntryPoint).
+        // NO MIGRATION: only the developer uses the app right now, so the old SharedPreferences
+        // values are intentionally left behind - re-pairing the bridge is trivial.
+        private val KEY_BRIDGE_IP = stringPreferencesKey("bridge_ip")
+        private val KEY_USERNAME = stringPreferencesKey("username")
+        private val KEY_LAST_SUCCESS = longPreferencesKey("last_success_timestamp")
+        private val KEY_CONNECTION_VALIDATED = booleanPreferencesKey("connection_validated")
         
         // OPTIMIZED: Event-driven health check intervals
         private val CRITICAL_RECOVERY_TIMEOUT = 10.seconds
@@ -65,16 +90,32 @@ class HueBridgeConnectionManager private constructor(
     
     // Use WeakReference to prevent memory leaks
     private val contextRef = java.lang.ref.WeakReference(context.applicationContext)
-    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val apiClient = HueApiClient()
-    
-    // PHASE 2: Smart Scheduler integration  
-    private val smartScheduler by lazy { 
+
+    // PHASE 2: Smart Scheduler integration
+    private val smartScheduler by lazy {
         contextRef.get()?.let { HueSmartScheduler.getInstance(it) }
     }
-    
+
     // Thread-safe connection state
     private val currentConnectionState = AtomicReference<ConnectionState>(ConnectionState.DISCONNECTED)
+
+    /**
+     * Resolve the Hilt-managed @HueDataStore via EntryPoint (manual singleton, not
+     * Hilt-injected - see HueBridgeConnectionManagerEntryPoint). Null only if the
+     * application context is gone or Hilt is not ready yet.
+     */
+    private fun resolveHueDataStore(): DataStore<Preferences>? {
+        val appContext = contextRef.get() ?: return null
+        return try {
+            EntryPointAccessors
+                .fromApplication(appContext, HueBridgeConnectionManagerEntryPoint::class.java)
+                .hueDataStore()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve HueDataStore via EntryPoint", e)
+            null
+        }
+    }
     
     // Background health monitoring with app lifecycle awareness
     private var healthCheckJob: Job? = null
@@ -108,16 +149,19 @@ class HueBridgeConnectionManager private constructor(
      */
     fun initialize() {
         Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Initializing connection manager")
-        
-        // Restore connection from persistent storage
-        restoreConnectionFromStorage()
-        
+
+        // Restore connection from persistent storage (DataStore read is async - runs on
+        // healthCheckScope, same as every other background operation in this class).
+        healthCheckScope.launch {
+            restoreConnectionFromStorage()
+        }
+
         // Start optimized health monitoring (event-driven)
         startSmartHealthMonitoring()
-        
+
         // PHASE 2: Initialize smart scheduling system
         smartScheduler?.initializeSmartScheduling()
-        
+
         Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection manager initialized")
     }
     
@@ -148,9 +192,7 @@ class HueBridgeConnectionManager private constructor(
                         if (isValid) {
                             val updatedState = currentState.copy(lastValidated = System.currentTimeMillis())
                             updateConnectionState(updatedState)
-                            prefs.edit {
-                                putLong(KEY_LAST_SUCCESS, System.currentTimeMillis())
-                            }
+                            updateLastSuccessTimestamp()
                             Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Background validation successful")
                         } else {
                             Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Background validation failed")
@@ -193,16 +235,23 @@ class HueBridgeConnectionManager private constructor(
             
             // Validate the new connection
             val isValid = validateConnectionCredentials(bridgeIp, username)
-            
+
             if (isValid) {
-                // Store in persistent storage
-                prefs.edit {
-                    putString(KEY_BRIDGE_IP, bridgeIp)
-                    putString(KEY_USERNAME, username)
-                    putLong(KEY_LAST_SUCCESS, System.currentTimeMillis())
-                    putBoolean(KEY_CONNECTION_VALIDATED, true)
+                // Store in persistent storage (@HueDataStore)
+                val dataStore = resolveHueDataStore()
+                if (dataStore == null) {
+                    val errorMessage = "HueDataStore unavailable, cannot persist connection"
+                    Logger.e(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: $errorMessage")
+                    updateConnectionState(ConnectionState.ERROR(errorMessage, null))
+                    return@withContext Result.failure(IllegalStateException(errorMessage))
                 }
-                
+                dataStore.edit { mutablePrefs ->
+                    mutablePrefs[KEY_BRIDGE_IP] = bridgeIp
+                    mutablePrefs[KEY_USERNAME] = username
+                    mutablePrefs[KEY_LAST_SUCCESS] = System.currentTimeMillis()
+                    mutablePrefs[KEY_CONNECTION_VALIDATED] = true
+                }
+
                 val connectionState = ConnectionState.CONNECTED(bridgeIp, username)
                 updateConnectionState(connectionState)
                 
@@ -228,11 +277,20 @@ class HueBridgeConnectionManager private constructor(
     
     /**
      * Get current connection info without validation (for UI display)
+     *
+     * Stays synchronous (public API contract via IHueBridgeRepository.getCurrentBridgeIp()/
+     * getCurrentUsername(), called from Compose UI and WorkManager workers) by reading the
+     * in-memory [currentConnectionState] instead of the (now async) DataStore. That in-memory
+     * state is populated by restoreConnectionFromStorage()/setConnection() and is the same
+     * cache getValidatedConnection() already relies on.
      */
     fun getCurrentConnectionInfo(): Pair<String?, String?> {
-        val bridgeIp = prefs.getString(KEY_BRIDGE_IP, null)
-        val username = prefs.getString(KEY_USERNAME, null)
-        return Pair(bridgeIp, username)
+        val state = currentConnectionState.get()
+        return if (state is ConnectionState.CONNECTED) {
+            Pair(state.bridgeIp, state.username)
+        } else {
+            Pair(null, null)
+        }
     }
     
     /**
@@ -267,18 +325,28 @@ class HueBridgeConnectionManager private constructor(
     }
     
     /**
-     * INTERNAL: Restore connection from persistent storage
+     * INTERNAL: Restore connection from persistent storage (@HueDataStore).
+     * Suspends while reading the DataStore snapshot; falls back to DISCONNECTED
+     * if the DataStore cannot be resolved (e.g. Hilt not ready yet).
      */
-    private fun restoreConnectionFromStorage() {
-        val bridgeIp = prefs.getString(KEY_BRIDGE_IP, null)
-        val username = prefs.getString(KEY_USERNAME, null)
-        val lastSuccess = prefs.getLong(KEY_LAST_SUCCESS, 0)
-        val wasValidated = prefs.getBoolean(KEY_CONNECTION_VALIDATED, false)
-        
+    private suspend fun restoreConnectionFromStorage() {
+        val dataStore = resolveHueDataStore()
+        if (dataStore == null) {
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: HueDataStore unavailable, cannot restore connection")
+            updateConnectionState(ConnectionState.DISCONNECTED)
+            return
+        }
+
+        val prefs = dataStore.data.first()
+        val bridgeIp = prefs[KEY_BRIDGE_IP]
+        val username = prefs[KEY_USERNAME]
+        val lastSuccess = prefs[KEY_LAST_SUCCESS] ?: 0L
+        val wasValidated = prefs[KEY_CONNECTION_VALIDATED] ?: false
+
         if (bridgeIp != null && username != null && wasValidated) {
             val connectionState = ConnectionState.CONNECTED(bridgeIp, username, lastSuccess)
             updateConnectionState(connectionState)
-            
+
             Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Restored connection from storage")
         } else {
             Logger.d(LogTags.HUE_BRIDGE, "ℹ️ BRIDGE-MANAGER: No valid stored connection found")
@@ -308,12 +376,10 @@ class HueBridgeConnectionManager private constructor(
             if (isValid) {
                 val connectionState = ConnectionState.CONNECTED(bridgeIp, username)
                 updateConnectionState(connectionState)
-                
+
                 // Update last success timestamp
-                prefs.edit {
-                    putLong(KEY_LAST_SUCCESS, System.currentTimeMillis())
-                }
-                
+                updateLastSuccessTimestamp()
+
                 Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection recovery successful")
                 return@withContext Pair(bridgeIp, username)
             } else {
@@ -322,9 +388,9 @@ class HueBridgeConnectionManager private constructor(
             }
         } catch (e: TimeoutCancellationException) {
             Logger.w(LogTags.HUE_BRIDGE, "⏰ BRIDGE-MANAGER: Connection recovery timed out")
-            
+
             // Log timeout details for diagnostics
-            val lastSuccessTime = prefs.getLong(KEY_LAST_SUCCESS, 0)
+            val lastSuccessTime = getLastSuccessTimestamp()
             val hoursAgo = if (lastSuccessTime > 0) {
                 ((System.currentTimeMillis() - lastSuccessTime) / 1000 / 3600).toInt()
             } else {
@@ -419,23 +485,44 @@ class HueBridgeConnectionManager private constructor(
             // Update last validated timestamp
             val updatedState = currentState.copy(lastValidated = System.currentTimeMillis())
             updateConnectionState(updatedState)
-            prefs.edit {
-                putLong(KEY_LAST_SUCCESS, System.currentTimeMillis())
-            }
+            updateLastSuccessTimestamp()
             return true
         }
     }
-    
+
+    /**
+     * INTERNAL: Persist "now" as the last-success timestamp in @HueDataStore.
+     * No-op (logged) if the DataStore cannot be resolved.
+     */
+    private suspend fun updateLastSuccessTimestamp() {
+        val dataStore = resolveHueDataStore()
+        if (dataStore == null) {
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: HueDataStore unavailable, cannot update last-success timestamp")
+            return
+        }
+        dataStore.edit { mutablePrefs ->
+            mutablePrefs[KEY_LAST_SUCCESS] = System.currentTimeMillis()
+        }
+    }
+
+    /**
+     * INTERNAL: Read the persisted last-success timestamp from @HueDataStore (0 if unset/unavailable).
+     */
+    private suspend fun getLastSuccessTimestamp(): Long {
+        val dataStore = resolveHueDataStore() ?: return 0L
+        return dataStore.data.first()[KEY_LAST_SUCCESS] ?: 0L
+    }
+
     /**
      * INTERNAL: Update connection state thread-safely
      */
     private fun updateConnectionState(newState: ConnectionState) {
         currentConnectionState.set(newState)
         _connectionStatus.value = newState
-        
+
         Logger.d(LogTags.HUE_BRIDGE, "📊 BRIDGE-MANAGER: Connection state updated to: ${newState.javaClass.simpleName}")
     }
-    
+
     /**
      * CRITICAL FIX: Enhanced cleanup for MainActivity destruction
      * Prevents pthread_mutex_lock errors by properly canceling all background operations

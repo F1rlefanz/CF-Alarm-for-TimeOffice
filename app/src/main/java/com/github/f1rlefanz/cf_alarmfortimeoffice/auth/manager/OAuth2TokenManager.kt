@@ -87,7 +87,7 @@ class OAuth2TokenManager(
         onResult: ((Boolean) -> Unit)? = null
     ): Result<TokenData> = withContext(Dispatchers.IO) {
         try {
-            Logger.i(LogTags.TOKEN, "🔐 Starting Calendar authorization for: $userEmail")
+            Logger.d(LogTags.TOKEN, "🔐 Starting Calendar authorization for: $userEmail")
             
             val account = android.accounts.Account(userEmail, "com.google")
             val scope = "oauth2:${CalendarScopes.CALENDAR_READONLY}"

@@ -117,7 +117,7 @@ class CredentialAuthManager(context: Context) {
                 val email = extractEmailFromIdToken(googleIdTokenCredential.idToken)
                 
                 if (!email.isNullOrEmpty()) {
-                    Logger.business(LogTags.AUTH, "✅ JWT-SUCCESS: Email extracted from ID Token: $email")
+                    Logger.d(LogTags.AUTH, "✅ JWT-SUCCESS: Email extracted from ID Token")
                     return Triple(userId, displayName, email)
                 } else {
                     Logger.e(LogTags.AUTH, "❌ JWT-FAILED: Email extraction from ID Token failed")
@@ -185,7 +185,7 @@ class CredentialAuthManager(context: Context) {
                 Logger.w(LogTags.AUTH, "⚠️ JWT-WARNING: Email is not verified by Google")
             }
             
-            Logger.business(LogTags.AUTH, "✅ JWT-SUCCESS: Email extracted from JWT: $email (verified=$emailVerified)")
+            Logger.d(LogTags.AUTH, "✅ JWT-SUCCESS: Email extracted from JWT (verified=$emailVerified)")
             email
             
         } catch (e: Exception) {

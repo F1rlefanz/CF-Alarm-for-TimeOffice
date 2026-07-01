@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 // PHASE 2 CLEANUP: ShiftViewModel import removed (unused parameter)
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Card
@@ -47,6 +49,7 @@ import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogExporter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import java.util.concurrent.TimeUnit
@@ -438,6 +441,64 @@ fun SettingsTabContent(
 
         HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
 
+
+        // Diagnose & Support (Alpha-Test)
+        Text(
+            "Diagnose",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        // Logs teilen / Problem melden
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                val shareIntent = LogExporter.createShareIntent(context)
+                if (shareIntent != null) {
+                    context.startActivity(
+                        Intent.createChooser(shareIntent, "Logs senden")
+                    )
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Noch keine Logs vorhanden",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(SpacingConstants.PADDING_CARD),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Logs senden / Problem melden",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "Diagnose-Protokoll an den Entwickler senden",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.AutoMirrored.Default.KeyboardArrowRight,
+                    contentDescription = null
+                )
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
 
         // Account-Bereich
         Text(

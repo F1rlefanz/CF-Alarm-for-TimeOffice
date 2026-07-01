@@ -34,7 +34,7 @@ import javax.inject.Inject
  * 🔐 OAuth2 token system with encryption
  * 
  * Core Features:
- * - Firebase Crashlytics initialization
+ * - Lokaler Crash-Handler (schreibt letzten Absturz in last_crash.txt)
  * - Hilt dependency injection
  * - OAuth2 token system initialization
  * - Clean resource management
@@ -57,6 +57,9 @@ class CFAlarmApplication : Application() {
         
         // Initialize ErrorHandler first
         ErrorHandler.initialize(this)
+
+        // Lokaler Crash-Handler: schreibt Abstürze in last_crash.txt (Alpha-Test-Diagnose)
+        installCrashHandler()
         
         // ✅ WICHTIG: File-Logging IMMER aktivieren (DEBUG + RELEASE)
         val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
@@ -131,6 +134,37 @@ class CFAlarmApplication : Application() {
             }
         }
     }
+    /**
+     * Installiert einen einfachen Uncaught-Exception-Handler, der den letzten
+     * Absturz (Stacktrace + Zeit + App-Version) in last_crash.txt schreibt.
+     * Ermöglicht Alpha-Testern, Abstürze per "Logs senden" zu melden – ohne Cloud-SDK.
+     */
+    private fun installCrashHandler() {
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val crashFile = File(getExternalFilesDir(null), "last_crash.txt")
+                val timestamp = java.text.SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()
+                ).format(java.util.Date())
+                val stackTrace = java.io.StringWriter().also { sw ->
+                    throwable.printStackTrace(java.io.PrintWriter(sw))
+                }.toString()
+                crashFile.writeText(
+                    "CF Alarm – letzter Absturz\n" +
+                        "Zeit: $timestamp\n" +
+                        "Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n" +
+                        "Thread: ${thread.name}\n\n" +
+                        stackTrace
+                )
+            } catch (_: Throwable) {
+                // Crash-Logging darf den Absturz nicht verschlimmern
+            }
+            // An den vorherigen Handler delegieren (System-Default beendet die App sauber)
+            previousHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
     // onTerminate() removed - it only runs in emulator and causes pthread_mutex crashes
     // Android handles all cleanup automatically when the app terminates
 }

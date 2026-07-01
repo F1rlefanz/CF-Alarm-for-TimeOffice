@@ -311,7 +311,7 @@ class CalendarRepository @Inject constructor(
     
     private fun getCalendarService(accessToken: String): Calendar {
         if (cachedService == null || cachedToken != accessToken) {
-            Logger.business(LogTags.CALENDAR_API, "🔗 API-SERVICE: Creating Calendar service with token: ${accessToken.take(20)}...")
+            Logger.d(LogTags.CALENDAR_API, "🔗 API-SERVICE: Creating Calendar service")
             Logger.d(LogTags.CALENDAR_API, "📊 TOKEN-INFO: Token length=${accessToken.length}")
             
             // DIAGNOSTIC: Check if this looks like a real OAuth2 token

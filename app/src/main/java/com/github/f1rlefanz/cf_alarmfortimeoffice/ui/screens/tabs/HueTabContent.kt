@@ -33,9 +33,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -75,6 +77,12 @@ fun HueTabContent(
     val discoveryStatus by hueViewModel.discoveryStatus.collectAsState()
     val context = LocalContext.current
     var pendingHueAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    LaunchedEffect(hueViewModel) {
+        hueViewModel.userMessages.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -137,7 +145,7 @@ fun HueTabContent(
                             lightsCount = uiState.lightTargets.lights.size,
                             onNavigateToRuleConfig = onNavigateToRuleConfig,
                             onNavigateToSettings = onNavigateToSettings,
-                            onTestConnection = { hueViewModel.refreshLightTargets() }
+                            onTestConnection = { hueViewModel.runLightTest() }
                         )
                     }
                 } else {
@@ -175,8 +183,9 @@ fun HueTabContent(
                                 onNavigateToRuleConfig = onNavigateToRuleConfig,
                                 onNavigateToSettings = onNavigateToSettings,
                                 onTestConnection = {
-                                    // Test connection using HueViewModel
-                                    hueViewModel.refreshLightTargets()
+                                    // Meaningful test: flashes the lights + shows a Toast,
+                                    // instead of a silent light-list refresh.
+                                    hueViewModel.runLightTest()
                                 }
                             )
                         }

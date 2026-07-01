@@ -12,12 +12,18 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueDurationController
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -40,7 +46,14 @@ class HueLightUseCase @Inject constructor(
      * Duration controller for automatic light revert functionality
      */
     private val durationController = HueDurationController(lightRepository)
-    
+
+    /**
+     * Scope for the auto-revert timer in [executeActionsWithAutoRevert]. Deliberately separate
+     * from any caller's (e.g. ViewModel) scope so the scheduled OFF still fires even if the
+     * screen that triggered the preview is left before the timer elapses.
+     */
+    private val autoRevertScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     companion object {
         private const val LIGHT_OPERATION_TIMEOUT_MS = 10000L
         private const val BATCH_OPERATION_TIMEOUT_MS = 30000L
@@ -237,7 +250,67 @@ class HueLightUseCase @Inject constructor(
             Result.failure(Exception("Batch operation failed: ${e.message}", e))
         }
     }
-    
+
+    override suspend fun executeActionsWithAutoRevert(
+        actions: List<LightAction>,
+        revertAfter: Duration
+    ): Result<BatchActionResult> {
+        Logger.i(
+            LogTags.HUE_USECASE,
+            "Executing ${actions.size} action(s) with auto-off after ${revertAfter.inWholeSeconds}s"
+        )
+
+        return try {
+            val applyResult = executeBatchLightActions(actions)
+
+            // Only targets that were actually switched ON have something to turn back off.
+            val autoOffTargets = actions
+                .filter { it.on == true && it.targetId.isNotBlank() }
+                .map { it.targetId to it.isGroup }
+                .distinct()
+
+            if (autoOffTargets.isNotEmpty()) {
+                scheduleAutoOff(autoOffTargets, revertAfter)
+            } else {
+                Logger.d(LogTags.HUE_USECASE, "No targets require auto-off (no action turned a light ON)")
+            }
+
+            applyResult
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Failed to execute actions with auto-revert", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Fires an OFF action at every (targetId, isGroup) pair after [revertAfter], on a scope
+     * independent from the caller so the caller returning early doesn't cancel it.
+     */
+    private fun scheduleAutoOff(targets: List<Pair<String, Boolean>>, revertAfter: Duration) {
+        autoRevertScope.launch {
+            try {
+                delay(revertAfter.inWholeMilliseconds)
+
+                val offActions = targets.map { (targetId, isGroup) ->
+                    LightAction(targetId = targetId, isGroup = isGroup, on = false)
+                }
+                val result = executeBatchLightActions(offActions)
+
+                if (result.isSuccess) {
+                    val batch = result.getOrNull()
+                    Logger.i(
+                        LogTags.HUE_USECASE,
+                        "⏰ Auto-off preview complete: ${batch?.successfulActions ?: 0}/${batch?.totalActions ?: 0} targets switched off"
+                    )
+                } else {
+                    Logger.w(LogTags.HUE_USECASE, "Auto-off preview failed", result.exceptionOrNull())
+                }
+            } catch (e: Exception) {
+                Logger.e(LogTags.HUE_USECASE, "Error during auto-off preview", e)
+            }
+        }
+    }
+
     override suspend fun testLightConnection(targetId: String, isGroup: Boolean): Result<Boolean> {
         Logger.d(LogTags.HUE_USECASE, "Testing connection for ${if (isGroup) "group" else "light"} $targetId")
         
@@ -264,7 +337,39 @@ class HueLightUseCase @Inject constructor(
             Result.success(false)
         }
     }
-    
+
+    override suspend fun flashLight(targetId: String, isGroup: Boolean): Result<Unit> {
+        Logger.d(LogTags.HUE_USECASE, "Flashing ${if (isGroup) "group" else "light"} $targetId for test feedback")
+
+        return try {
+            val result = withTimeoutOrNull(LIGHT_OPERATION_TIMEOUT_MS) {
+                if (isGroup) {
+                    lightRepository.controlGroup(groupId = targetId, alert = HueConstants.Lights.ALERT_SELECT)
+                } else {
+                    lightRepository.controlLight(lightId = targetId, alert = HueConstants.Lights.ALERT_SELECT)
+                }
+            }
+
+            when {
+                result == null -> {
+                    Logger.w(LogTags.HUE_USECASE, "Flash request timed out for $targetId")
+                    Result.failure(Exception("Flash request timed out"))
+                }
+                result.isSuccess -> {
+                    Logger.i(LogTags.HUE_USECASE, "Flash sent successfully to $targetId")
+                    Result.success(Unit)
+                }
+                else -> {
+                    Logger.w(LogTags.HUE_USECASE, "Flash failed for $targetId", result.exceptionOrNull())
+                    Result.failure(result.exceptionOrNull() ?: Exception("Flash failed"))
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Flash failed for $targetId", e)
+            Result.failure(e)
+        }
+    }
+
     override suspend fun refreshLightStates(): Result<LightTargets> {
         Logger.d(LogTags.HUE_USECASE, "Refreshing all light states")
         
@@ -599,6 +704,7 @@ class HueLightUseCase @Inject constructor(
     fun cleanup() {
         Logger.d(LogTags.HUE_USECASE, "Cleaning up HueLightUseCase")
         durationController.cleanup()
+        autoRevertScope.cancel()
     }
     
     /**

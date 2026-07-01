@@ -30,6 +30,8 @@ interface IHueLightRepository {
      *        with hue/saturation on the bridge — callers should send only one color mode.
      * @param transitionTime Transition duration in deciseconds (1/10 s, 0-65535). Drives the
      *        bridge's native fade — used e.g. for sunrise ramps.
+     * @param alert Bridge alert effect: "none", "select" (one flash) or "lselect" (repeated
+     *        flash for ~15s). Used e.g. to give visible proof-of-life feedback for a "Test" action.
      */
     suspend fun controlLight(
         lightId: String,
@@ -38,7 +40,8 @@ interface IHueLightRepository {
         hue: Int? = null,
         saturation: Int? = null,
         colorTemperature: Int? = null,
-        transitionTime: Int? = null
+        transitionTime: Int? = null,
+        alert: String? = null
     ): Result<Unit>
 
     /**
@@ -52,6 +55,8 @@ interface IHueLightRepository {
      *        with hue/saturation on the bridge — callers should send only one color mode.
      * @param transitionTime Transition duration in deciseconds (1/10 s, 0-65535). Drives the
      *        bridge's native fade — used e.g. for sunrise ramps.
+     * @param alert Bridge alert effect: "none", "select" (one flash) or "lselect" (repeated
+     *        flash for ~15s). Used e.g. to give visible proof-of-life feedback for a "Test" action.
      */
     suspend fun controlGroup(
         groupId: String,
@@ -60,7 +65,8 @@ interface IHueLightRepository {
         hue: Int? = null,
         saturation: Int? = null,
         colorTemperature: Int? = null,
-        transitionTime: Int? = null
+        transitionTime: Int? = null,
+        alert: String? = null
     ): Result<Unit>
     
     /**

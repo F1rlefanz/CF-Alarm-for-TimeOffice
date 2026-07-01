@@ -97,12 +97,17 @@ interface IHueRuleUseCase {
 
 /**
  * Result of rule execution for alarm
+ *
+ * @param autoOffTestNote Set only by the "Regel testen" preview path when the rule has an
+ * auto-off configured: a user-facing hint that the preview shortened the auto-off delay
+ * (the real alarm still uses the configured duration). Null for the real alarm path.
  */
 data class RuleExecutionResult(
     val rulesExecuted: Int,
     val actionsExecuted: Int,
     val successfulActions: Int,
-    val errors: List<String>
+    val errors: List<String>,
+    val autoOffTestNote: String? = null
 )
 
 /**

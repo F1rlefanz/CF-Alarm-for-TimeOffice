@@ -18,8 +18,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -65,7 +69,25 @@ class HueViewModel @Inject constructor(
     
     private val _discoveryStatus = MutableStateFlow<DiscoveryStatus?>(null)
     val discoveryStatus: StateFlow<DiscoveryStatus?> = _discoveryStatus.asStateFlow()
-    
+
+    /**
+     * One-shot user-facing messages (e.g. "Verbindung OK", "Test gesendet – ...") meant to be
+     * shown as a Toast. Separate from [uiState].error, which is a persistent, dismissible
+     * state used for actual error conditions rendered inline via [ErrorMessage]-style cards.
+     * A SharedFlow with a small replay-free buffer means a message emitted just before the UI
+     * subscribes (e.g. during a quick recomposition) is not silently lost, while still being
+     * consumed exactly once by whichever screen collects it via LaunchedEffect.
+     */
+    private val _userMessages = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val userMessages: SharedFlow<String> = _userMessages.asSharedFlow()
+
+    private fun emitUserMessage(message: String) {
+        _userMessages.tryEmit(message)
+    }
+
     // ==============================
     // INITIALIZATION
     // ==============================
@@ -183,12 +205,12 @@ class HueViewModel @Inject constructor(
     
     fun validateBridgeConnection() {
         Logger.d(LogTags.HUE_VIEWMODEL, "Validating bridge connection")
-        
+
         viewModelScope.launch {
             try {
                 val result = hueBridgeUseCase.validateBridgeConnection()
                 val isValid = result.getOrNull() ?: false
-                
+
                 _uiState.update { currentState ->
                     currentState.copy(
                         bridgeConnectionInfo = currentState.bridgeConnectionInfo?.copy(
@@ -197,9 +219,10 @@ class HueViewModel @Inject constructor(
                         )
                     )
                 }
-                
+
                 Logger.d(LogTags.HUE_VIEWMODEL, "Bridge connection validation result: $isValid")
-                
+                emitUserMessage(if (isValid) "Verbindung OK" else "Verbindung nicht erreichbar")
+
                 // If validation successful, refresh lights and rules
                 if (isValid) {
                     refreshLightTargets()
@@ -207,6 +230,7 @@ class HueViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_VIEWMODEL, "Bridge validation exception", e)
+                emitUserMessage("Verbindung nicht erreichbar")
             }
         }
     }
@@ -270,23 +294,77 @@ class HueViewModel @Inject constructor(
     
     fun testLightConnection(targetId: String, isGroup: Boolean) {
         Logger.d(LogTags.HUE_VIEWMODEL, "Testing connection for ${if (isGroup) "group" else "light"} $targetId")
-        
+
         viewModelScope.launch {
             try {
                 val result = hueLightUseCase.testLightConnection(targetId, isGroup)
                 val isConnected = result.getOrNull() ?: false
-                
+
                 val message = if (isConnected) {
                     "${if (isGroup) "Group" else "Light"} $targetId is reachable"
                 } else {
                     "${if (isGroup) "Group" else "Light"} $targetId is not reachable"
                 }
-                
+
                 // You could show this in a snackbar or similar UI element
                 Logger.i(LogTags.HUE_VIEWMODEL, "Connection test result: $message")
-                
+
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_VIEWMODEL, "Connection test exception", e)
+            }
+        }
+    }
+
+    /**
+     * Meaningful "Test" action for the generic (no single target selected) test buttons in
+     * [HueTabContent]/[HueSettingsScreen]: flashes every currently known light/group once
+     * ("select" alert) so the user gets visible proof the app can actually reach the bridge,
+     * instead of a silent light-list refresh. Falls back to a reachability check via
+     * [IHueLightUseCase.testLightConnection] when no lights/groups are loaded yet (e.g. right
+     * after connecting, before the first refresh completed).
+     */
+    fun runLightTest() {
+        Logger.i(LogTags.HUE_VIEWMODEL, "Running visible light test")
+
+        viewModelScope.launch {
+            try {
+                val targets = uiState.value.lightTargets
+                val flashTargets: List<Pair<String, Boolean>> =
+                    targets.groups.map { it.id to true } + targets.lights.map { it.id to false }
+
+                if (flashTargets.isEmpty()) {
+                    // No known lights/groups yet: fall back to a plain reachability probe.
+                    refreshLightTargets()
+                    val refreshedTargets = uiState.value.lightTargets
+                    val fallbackTarget = refreshedTargets.groups.firstOrNull()?.let { it.id to true }
+                        ?: refreshedTargets.lights.firstOrNull()?.let { it.id to false }
+
+                    if (fallbackTarget == null) {
+                        emitUserMessage("Keine Lampen gefunden")
+                        return@launch
+                    }
+
+                    val (targetId, isGroup) = fallbackTarget
+                    val reachable = hueLightUseCase.testLightConnection(targetId, isGroup).getOrNull() ?: false
+                    emitUserMessage(if (reachable) "Lampen erreichbar (1)" else "Lampen nicht erreichbar")
+                    return@launch
+                }
+
+                val results = flashTargets.map { (targetId, isGroup) ->
+                    hueLightUseCase.flashLight(targetId, isGroup)
+                }
+                val successCount = results.count { it.isSuccess }
+
+                if (successCount > 0) {
+                    Logger.i(LogTags.HUE_VIEWMODEL, "Light test flash sent to $successCount/${flashTargets.size} targets")
+                    emitUserMessage("Test gesendet – die Lampen blinken kurz")
+                } else {
+                    Logger.w(LogTags.HUE_VIEWMODEL, "Light test flash failed for all ${flashTargets.size} targets")
+                    emitUserMessage("Lampen nicht erreichbar")
+                }
+            } catch (e: Exception) {
+                Logger.e(LogTags.HUE_VIEWMODEL, "Light test exception", e)
+                emitUserMessage("Lampen nicht erreichbar")
             }
         }
     }
@@ -447,6 +525,7 @@ class HueViewModel @Inject constructor(
                     if (exec != null && exec.errors.isNotEmpty()) {
                         Logger.w(LogTags.HUE_VIEWMODEL, "Rule test had errors: ${exec.errors}")
                     }
+                    exec?.autoOffTestNote?.let { note -> emitUserMessage(note) }
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Rule test failed"
                     _uiState.update { it.copy(error = error) }

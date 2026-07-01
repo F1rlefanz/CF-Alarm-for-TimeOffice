@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -44,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
@@ -65,10 +67,17 @@ fun HueSettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by hueViewModel.uiState.collectAsState()
-    
+    val context = LocalContext.current
+
     LaunchedEffect(Unit) {
         hueViewModel.refreshRules()
         hueViewModel.refreshLightTargets()
+    }
+
+    LaunchedEffect(hueViewModel) {
+        hueViewModel.userMessages.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     Scaffold(
@@ -108,7 +117,7 @@ fun HueSettingsScreen(
                 BridgeStatusCard(
                     connectionInfo = uiState.bridgeConnectionInfo,
                     onValidate = { hueViewModel.validateBridgeConnection() },
-                    onTest = { hueViewModel.refreshLightTargets() }
+                    onTest = { hueViewModel.runLightTest() }
                 )
             }
             

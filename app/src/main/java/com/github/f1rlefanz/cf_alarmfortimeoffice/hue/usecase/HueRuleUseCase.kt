@@ -18,6 +18,7 @@ import java.time.LocalTime
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * UseCase for Hue Rule operations with shift integration
@@ -36,6 +37,13 @@ class HueRuleUseCase @Inject constructor(
 
         /** Shortened ramp duration used when previewing a sunrise via "Regel testen". */
         private const val SUNRISE_TEST_DURATION_MINUTES = 1
+
+        /**
+         * Shortened auto-off delay used when previewing a rule's auto-off via "Regel testen".
+         * Kept short ("zügig") so the tester sees lights go on and back off within the preview,
+         * instead of waiting for the real configured duration (which can be many minutes).
+         */
+        private const val AUTO_OFF_TEST_DURATION_SECONDS = 20
     }
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
@@ -653,19 +661,46 @@ class HueRuleUseCase @Inject constructor(
                 if (actions.isEmpty()) {
                     return Result.success(RuleExecutionResult(0, 0, 0, emptyList()))
                 }
-                lightUseCase.executeBatchLightActions(actions).fold(
-                    onSuccess = { batch ->
-                        Result.success(
-                            RuleExecutionResult(
-                                rulesExecuted = 1,
-                                actionsExecuted = batch.totalActions,
-                                successfulActions = batch.successfulActions,
-                                errors = batch.failedActions.mapNotNull { it.error }
+
+                // If the rule configures an auto-off, demo it too: lights on now, OFF again
+                // after a short, observable delay (the real alarm still uses the configured
+                // duration - only the preview is shortened).
+                val hasAutoOff = rule.lightActions.any { it.on == true && (it.duration ?: 0) > 0 }
+
+                if (hasAutoOff) {
+                    lightUseCase.executeActionsWithAutoRevert(
+                        actions = actions,
+                        revertAfter = AUTO_OFF_TEST_DURATION_SECONDS.seconds
+                    ).fold(
+                        onSuccess = { batch ->
+                            Result.success(
+                                RuleExecutionResult(
+                                    rulesExecuted = 1,
+                                    actionsExecuted = batch.totalActions,
+                                    successfulActions = batch.successfulActions,
+                                    errors = batch.failedActions.mapNotNull { it.error },
+                                    autoOffTestNote = "Test: Auto-Aus verkürzt auf ~${AUTO_OFF_TEST_DURATION_SECONDS} s " +
+                                        "(die echte Regel nutzt die konfigurierte Zeit)"
+                                )
                             )
-                        )
-                    },
-                    onFailure = { Result.failure(it) }
-                )
+                        },
+                        onFailure = { Result.failure(it) }
+                    )
+                } else {
+                    lightUseCase.executeBatchLightActions(actions).fold(
+                        onSuccess = { batch ->
+                            Result.success(
+                                RuleExecutionResult(
+                                    rulesExecuted = 1,
+                                    actionsExecuted = batch.totalActions,
+                                    successfulActions = batch.successfulActions,
+                                    errors = batch.failedActions.mapNotNull { it.error }
+                                )
+                            )
+                        },
+                        onFailure = { Result.failure(it) }
+                    )
+                }
             }
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to execute rule now", e)

@@ -47,7 +47,8 @@ class HueDurationControllerTest {
             hue: Int?,
             saturation: Int?,
             colorTemperature: Int?,
-            transitionTime: Int?
+            transitionTime: Int?,
+            alert: String?
         ): Result<Unit> {
             controlLightCalls.add(LightState(on = on ?: false, bri = brightness ?: 254, hue = hue, sat = saturation))
             return controlLightResult
@@ -60,7 +61,8 @@ class HueDurationControllerTest {
             hue: Int?,
             saturation: Int?,
             colorTemperature: Int?,
-            transitionTime: Int?
+            transitionTime: Int?,
+            alert: String?
         ): Result<Unit> {
             controlGroupCalls.add(GroupAction(on = on ?: false, bri = brightness, hue = hue, sat = saturation))
             return controlGroupResult

@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.DurationControlInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import kotlin.time.Duration
 
 /**
  * Interface for Hue Light UseCase operations
@@ -36,6 +37,13 @@ interface IHueLightUseCase {
      * Test light/group connectivity
      */
     suspend fun testLightConnection(targetId: String, isGroup: Boolean): Result<Boolean>
+
+    /**
+     * Triggers the bridge's native "select" alert (a single visible flash) on a light or group,
+     * without changing its on/off state or other properties. Used to give the user visible
+     * proof that the "Test" action actually reached the lights, instead of a silent API call.
+     */
+    suspend fun flashLight(targetId: String, isGroup: Boolean): Result<Unit>
     
     /**
      * Get current state of all lights for UI updates
@@ -142,6 +150,23 @@ interface IHueLightUseCaseAdvanced : IHueLightUseCase {
         durationMinutes: Int
     ): Result<Unit>
     
+    /**
+     * Applies [actions] immediately, then switches every target OFF after [revertAfter] —
+     * regardless of the state they were in before. This mirrors what [AutoOffWorker] does for
+     * the real alarm (switch off, not "restore previous state"), so previewing a rule's
+     * auto-off via "Regel testen" demonstrates the same end result on a shortened timer.
+     *
+     * Targets are deduplicated by (targetId, isGroup); only actions with `on == true` schedule
+     * an auto-off (an action that only dims/recolors an already-on light has nothing to revert).
+     *
+     * @param actions The rule's light actions to apply as-is.
+     * @param revertAfter Delay before the auto-off (OFF) is sent to each target.
+     */
+    suspend fun executeActionsWithAutoRevert(
+        actions: List<LightAction>,
+        revertAfter: Duration
+    ): Result<BatchActionResult>
+
     /**
      * Manually revert all lights to original states
      */

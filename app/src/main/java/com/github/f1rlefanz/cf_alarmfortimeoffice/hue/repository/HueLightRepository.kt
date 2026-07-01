@@ -124,7 +124,8 @@ class HueLightRepository @Inject constructor(
         hue: Int?,
         saturation: Int?,
         colorTemperature: Int?,
-        transitionTime: Int?
+        transitionTime: Int?,
+        alert: String?
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             // CRITICAL: Use robust connection manager for alarm operations
@@ -153,6 +154,7 @@ class HueLightRepository @Inject constructor(
                     if (it in 0..65535) put("transitiontime", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid transition time: $it (must be 0-65535 deciseconds)")
                 }
+                alert?.let { put("alert", it) }
             }
 
             if (stateChange.isEmpty()) {
@@ -185,7 +187,8 @@ class HueLightRepository @Inject constructor(
         hue: Int?,
         saturation: Int?,
         colorTemperature: Int?,
-        transitionTime: Int?
+        transitionTime: Int?,
+        alert: String?
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             // CRITICAL: Use robust connection manager for alarm operations
@@ -214,6 +217,7 @@ class HueLightRepository @Inject constructor(
                     if (it in 0..65535) put("transitiontime", it)
                     else Logger.w(LogTags.HUE_LIGHTS, "Invalid transition time: $it (must be 0-65535 deciseconds)")
                 }
+                alert?.let { put("alert", it) }
             }
 
             if (actionChange.isEmpty()) {

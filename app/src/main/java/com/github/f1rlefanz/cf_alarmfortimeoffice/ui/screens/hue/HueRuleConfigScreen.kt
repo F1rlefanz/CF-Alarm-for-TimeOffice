@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -91,7 +92,16 @@ fun HueRuleConfigScreen(
 ) {
     val uiState by hueViewModel.uiState.collectAsState()
     val shiftState by shiftViewModel.uiState.collectAsState()
-    
+    val toastContext = LocalContext.current
+
+    // Surfaces one-shot messages from the ViewModel (e.g. the "Auto-Aus verkürzt" hint after
+    // "Regel testen") as a Toast.
+    LaunchedEffect(hueViewModel) {
+        hueViewModel.userMessages.collect { message ->
+            Toast.makeText(toastContext, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Form state
     var ruleName by remember { mutableStateOf("") }
     var selectedShiftPattern by remember { mutableStateOf("") }

@@ -98,9 +98,10 @@ interface IHueRuleUseCase {
 /**
  * Result of rule execution for alarm
  *
- * @param autoOffTestNote Set only by the "Regel testen" preview path when the rule has an
- * auto-off configured: a user-facing hint that the preview shortened the auto-off delay
- * (the real alarm still uses the configured duration). Null for the real alarm path.
+ * @param autoOffTestNote Set only by the "Regel testen" preview path when the preview was
+ * shortened compared to the real alarm execution: either an auto-off delay (rule has an
+ * auto-off configured) or a sunrise ramp duration (sunrise rule). User-facing hint that the
+ * real alarm still uses the full configured duration. Null for the real alarm path.
  */
 data class RuleExecutionResult(
     val rulesExecuted: Int,

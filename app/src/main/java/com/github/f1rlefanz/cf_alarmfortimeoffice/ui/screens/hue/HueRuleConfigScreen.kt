@@ -225,6 +225,11 @@ fun HueRuleConfigScreen(
     // Builds the light actions for the current form state. A sunrise rule only needs its
     // targets (color/brightness come from the SunriseConfig); otherwise the selected color
     // mode (white temperature or preset color) is baked into each action.
+    //
+    // UX FIX (D): auto-off is now independent of sunriseEnabled - a sunrise rule always ends
+    // up "on" (its ramp reaches the configured end brightness/temperature), so it can equally
+    // be auto-switched-off again afterwards. Only color/brightness stay sunrise-exclusive
+    // (the SunriseConfig owns those), the `duration` field does not.
     fun buildActions(): List<HueLightAction> {
         val colorTemp: Int? = if (!sunriseEnabled && targetOn && colorMode == ColorMode.WHITE) {
             HueColorConverter.kelvinToHueMireds(colorKelvin)
@@ -232,6 +237,8 @@ fun HueRuleConfigScreen(
         val presetColor = if (!sunriseEnabled && targetOn && colorMode == ColorMode.COLOR) {
             HueColorConverter.getPresetColor(colorPreset)
         } else null
+        val effectiveOn = sunriseEnabled || targetOn
+        val autoOffDuration = if (effectiveOn && autoOffEnabled) autoOffMinutes else null
 
         val actions = mutableListOf<HueLightAction>()
         fun addAction(id: String, type: TargetType, isGroup: Boolean) {
@@ -239,13 +246,13 @@ fun HueRuleConfigScreen(
                 HueLightAction(
                     targetType = type,
                     targetId = id,
-                    actionType = if (sunriseEnabled || targetOn) ActionType.TURN_ON else ActionType.TURN_OFF,
+                    actionType = if (effectiveOn) ActionType.TURN_ON else ActionType.TURN_OFF,
                     on = if (sunriseEnabled) true else targetOn,
                     brightness = if (sunriseEnabled || !targetOn) null else targetBrightness,
                     hue = presetColor?.hue,
                     saturation = presetColor?.saturation,
                     colorTemperature = colorTemp,
-                    duration = if (!sunriseEnabled && targetOn && autoOffEnabled) autoOffMinutes else null,
+                    duration = autoOffDuration,
                     isGroup = isGroup
                 )
             )
@@ -368,7 +375,7 @@ fun HueRuleConfigScreen(
             
             item {
                 ActionConfigCard(
-                    enabled = !sunriseEnabled,
+                    colorConfigEnabled = !sunriseEnabled,
                     targetOn = targetOn,
                     targetBrightness = targetBrightness,
                     colorMode = colorMode,
@@ -700,7 +707,10 @@ private fun TargetSelectionCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ActionConfigCard(
-    enabled: Boolean,
+    // UX FIX (D): renamed from "enabled" for clarity - this only gates the manual
+    // color/brightness/on-off config, which the Sunrise ramp takes over when active. Auto-off
+    // is now independent of this flag (see AutoOffSection below), so it's offered either way.
+    colorConfigEnabled: Boolean,
     targetOn: Boolean,
     targetBrightness: Int,
     colorMode: ColorMode,
@@ -725,11 +735,19 @@ private fun ActionConfigCard(
         ) {
             Text("Aktionskonfiguration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-            if (!enabled) {
+            if (!colorConfigEnabled) {
                 Text(
                     "Der Sunrise-Lichtwecker steuert Farbe und Helligkeit dieser Regel. Deaktivieren Sie ihn unten, um hier manuell zu konfigurieren.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // UX FIX (D): auto-off still applies to a sunrise rule (it turns the lights
+                // back off some minutes after the ramp finishes), so it's offered here too.
+                AutoOffSection(
+                    autoOffEnabled = autoOffEnabled,
+                    autoOffMinutes = autoOffMinutes,
+                    onAutoOffEnabledChange = onAutoOffEnabledChange,
+                    onAutoOffMinutesChange = onAutoOffMinutesChange
                 )
                 return@Column
             }
@@ -838,37 +856,58 @@ private fun ActionConfigCard(
                     ColorMode.NONE -> { /* keep current bulb color */ }
                 }
 
-                // Auto-off after a duration
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.width(240.dp)) {
-                        Text("Automatisch ausschalten", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                        Text(
-                            "Lichter nach einer Weile wieder ausschalten",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = autoOffEnabled, onCheckedChange = onAutoOffEnabledChange)
-                }
-                if (autoOffEnabled) {
-                    Text(
-                        "Ausschalten nach: $autoOffMinutes Minuten",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Slider(
-                        value = autoOffMinutes.toFloat(),
-                        onValueChange = { onAutoOffMinutesChange(it.toInt().coerceIn(1, 120)) },
-                        valueRange = 1f..120f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                AutoOffSection(
+                    autoOffEnabled = autoOffEnabled,
+                    autoOffMinutes = autoOffMinutes,
+                    onAutoOffEnabledChange = onAutoOffEnabledChange,
+                    onAutoOffMinutesChange = onAutoOffMinutesChange
+                )
             }
         }
+    }
+}
+
+/**
+ * "Automatisch ausschalten" (auto-off) toggle + duration slider.
+ *
+ * UX FIX (D): extracted out of [ActionConfigCard]'s manual-config branch so it can also be
+ * shown when a Sunrise ramp is active (a sunrise rule ends up "on" too, at its configured end
+ * brightness/temperature, so switching it back off after N minutes is equally meaningful).
+ */
+@Composable
+private fun AutoOffSection(
+    autoOffEnabled: Boolean,
+    autoOffMinutes: Int,
+    onAutoOffEnabledChange: (Boolean) -> Unit,
+    onAutoOffMinutesChange: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.width(240.dp)) {
+            Text("Automatisch ausschalten", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(
+                "Lichter nach einer Weile wieder ausschalten",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = autoOffEnabled, onCheckedChange = onAutoOffEnabledChange)
+    }
+    if (autoOffEnabled) {
+        Text(
+            "Ausschalten nach: $autoOffMinutes Minuten",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium
+        )
+        Slider(
+            value = autoOffMinutes.toFloat(),
+            onValueChange = { onAutoOffMinutesChange(it.toInt().coerceIn(1, 120)) },
+            valueRange = 1f..120f,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -1064,7 +1103,12 @@ private fun RulePreviewCard(
                 if (sunriseEnabled) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "🌅 Sunrise über $sunriseDurationMinutes Min an ${selectedLightIds.size} Lichtern und ${selectedGroupIds.size} Gruppen (${if (sunriseStartBeforeAlarm) "vor dem Alarm" else "ab Alarmzeit"})",
+                            buildString {
+                                append("🌅 Sunrise über $sunriseDurationMinutes Min an ${selectedLightIds.size} Lichtern und ${selectedGroupIds.size} Gruppen")
+                                append(" (${if (sunriseStartBeforeAlarm) "vor dem Alarm" else "ab Alarmzeit"})")
+                                // UX FIX (D): auto-off now also applies to sunrise rules.
+                                if (autoOffEnabled) append(" · Auto-Aus nach $autoOffMinutes Min")
+                            },
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }

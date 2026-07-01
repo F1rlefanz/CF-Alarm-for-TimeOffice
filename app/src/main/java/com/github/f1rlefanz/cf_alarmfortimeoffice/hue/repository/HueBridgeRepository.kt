@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnec
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryStatus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.discovery.OfficialHueDiscoveryService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.HueBridgePinningStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueBridgeRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -48,6 +49,9 @@ class HueBridgeRepository @Inject constructor(
     
     // ROBUST Connection Manager (replaces in-memory variables)
     private val connectionManager = HueBridgeConnectionManager.getInstance(context)
+
+    // TOFU trust pin store (UX FEATURE B: cleared together with the connection on "forget bridge")
+    private val pinningStore = HueBridgePinningStore(context)
     
     init {
         // Initialize connection manager on repository creation
@@ -146,10 +150,23 @@ class HueBridgeRepository @Inject constructor(
             connectionManager.getValidatedConnection()
             Logger.d(LogTags.HUE_BRIDGE, "Connection validation successful via ConnectionManager")
             Result.success(true)
-            
+
         } catch (e: Exception) {
             Logger.w(LogTags.HUE_BRIDGE, "Connection validation failed", e)
             Result.success(false)
         }
+    }
+
+    override suspend fun forgetConnection(): Result<Unit> {
+        Logger.i(LogTags.HUE_BRIDGE, "🔌 BRIDGE-REPOSITORY: Forgetting bridge connection")
+        val result = connectionManager.forgetConnection()
+        // Also drop the TLS trust pin - a new/replacement bridge shouldn't be compared
+        // against the old bridge's identity. Best-effort: never blocks the disconnect.
+        try {
+            pinningStore.clearPin()
+        } catch (e: Exception) {
+            Logger.w(LogTags.HUE_BRIDGE, "Failed to clear bridge trust pin during forget", e)
+        }
+        return result
     }
 }

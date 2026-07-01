@@ -48,6 +48,14 @@ interface IHueConfigRepository {
      * Clear all configuration (for reset/logout)
      */
     suspend fun clearConfiguration(): Result<Unit>
+
+    /**
+     * Clear ONLY the persisted bridge IP/username (used by "Verbindung trennen / Bridge
+     * vergessen" - UX FEATURE B). Unlike [clearConfiguration], this intentionally keeps the
+     * saved schedule rules so re-pairing the same (or a replacement) bridge doesn't force the
+     * user to recreate them.
+     */
+    suspend fun clearBridgeConfig(): Result<Unit>
 }
 
 /**

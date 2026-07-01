@@ -310,8 +310,12 @@ class HueRuleUseCase @Inject constructor(
             }
             all.asSequence()
                 .filter { rule ->
+                    // UX FIX (D): sunrise rules can ALSO configure auto-off now (they reach
+                    // their own bright end state via the ramp, then this schedules the
+                    // separate "turn back off after N minutes" job on top of that end state).
+                    // Only the light actions' explicit `duration` field decides whether
+                    // auto-off applies - no need to special-case sunrise here anymore.
                     rule.enabled &&
-                        rule.sunrise?.enabled != true && // sunrise reaches its own end state
                         (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
                             rule.shiftPattern.equals("ALL", ignoreCase = true))
                 }
@@ -648,12 +652,42 @@ class HueRuleUseCase @Inject constructor(
                 // Demo the ramp over a short, observable duration instead of the full time.
                 val testSunrise = sunrise.copy(durationMinutes = SUNRISE_TEST_DURATION_MINUTES)
                 val result = runSunriseForRule(rule, testSunrise)
+
+                // UX FIX (D): a sunrise rule can ALSO configure auto-off now. Demo that too,
+                // without re-sending brightness/color (which would fight the ramp's own native
+                // bridge-side transition) - just a plain delayed OFF on the same targets.
+                val hasAutoOff = rule.lightActions.any { it.on == true && (it.duration ?: 0) > 0 }
+                if (hasAutoOff) {
+                    val onlyOnActions = rule.lightActions
+                        .map { it.targetId to it.isGroup }
+                        .filter { it.first.isNotBlank() }
+                        .distinct()
+                        .map { (targetId, isGroup) -> LightAction(targetId = targetId, isGroup = isGroup, on = true) }
+                    if (onlyOnActions.isNotEmpty()) {
+                        lightUseCase.executeActionsWithAutoRevert(
+                            actions = onlyOnActions,
+                            revertAfter = AUTO_OFF_TEST_DURATION_SECONDS.seconds
+                        )
+                    }
+                }
+
                 Result.success(
                     RuleExecutionResult(
                         rulesExecuted = 1,
                         actionsExecuted = result.attempted,
                         successfulActions = result.succeeded,
-                        errors = result.errors
+                        errors = result.errors,
+                        // UX FIX (C): mirrors the auto-off preview note below so the user
+                        // understands the ramp they just saw was compressed for the test,
+                        // not the real (much longer) configured duration.
+                        autoOffTestNote = if (hasAutoOff) {
+                            "Test: Sonnenaufgang verkürzt auf $SUNRISE_TEST_DURATION_MINUTES Min, " +
+                                "Auto-Aus verkürzt auf ~${AUTO_OFF_TEST_DURATION_SECONDS} s " +
+                                "(die echte Regel nutzt die konfigurierten Zeiten)"
+                        } else {
+                            "Test: Sonnenaufgang verkürzt auf $SUNRISE_TEST_DURATION_MINUTES Min " +
+                                "(die echte Regel nutzt die konfigurierte Dauer von ${sunrise.durationMinutes} Min)"
+                        }
                     )
                 )
             } else {

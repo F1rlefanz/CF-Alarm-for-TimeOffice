@@ -55,7 +55,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnec
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorSeverity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.AnimatedDiscoveryCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueConnectionHealth
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import kotlinx.coroutines.launch
 
@@ -128,6 +130,21 @@ fun HueTabContent(
                 ErrorMessage(
                     message = error,
                     onDismiss = { hueViewModel.clearError() }
+                )
+            }
+        }
+
+        // UX FIX (E): reactive warning banner when a previously-paired bridge becomes
+        // unreachable (DISCONNECTED/ERROR from HueBridgeConnectionManager.connectionStatus).
+        // Only shown once a bridge was actually configured (bridgeIp != null) so this doesn't
+        // fire during first-time onboarding, before any pairing happened.
+        if (uiState.bridgeConnectionInfo?.bridgeIp != null &&
+            (uiState.connectionHealth == HueConnectionHealth.DISCONNECTED || uiState.connectionHealth == HueConnectionHealth.ERROR)
+        ) {
+            item {
+                ErrorMessage(
+                    message = "⚠️ Verbindung zur Hue-Bridge verloren – Lichtaktionen für Alarme könnten ausfallen",
+                    severity = ErrorSeverity.WARNING
                 )
             }
         }

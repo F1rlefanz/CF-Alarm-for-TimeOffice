@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryStatus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
@@ -102,7 +103,19 @@ class HueViewModel @Inject constructor(
                 Logger.d(LogTags.HUE_VIEWMODEL, "Discovery status updated: ${status.stage}")
             }
         }
-        
+
+        // UX FIX (E): reactively surface bridge connection health (DISCONNECTED/ERROR) in the
+        // UI instead of only reflecting it at screen-composition time. HueBridgeConnectionManager
+        // is a manually-constructed singleton (not Hilt-injected), matching how it's already
+        // obtained elsewhere in the Hue UI (e.g. HueTabContent's HueBridgeConnectionManager.getInstance(context)).
+        viewModelScope.launch {
+            HueBridgeConnectionManager.getInstance(appContext).connectionStatus.collect { state ->
+                val health = state.toConnectionHealth()
+                _uiState.update { it.copy(connectionHealth = health) }
+                Logger.d(LogTags.HUE_VIEWMODEL, "Connection health updated: $health")
+            }
+        }
+
         // Load initial state - but only if not connecting
         loadInitialState()
     }
@@ -175,9 +188,14 @@ class HueViewModel @Inject constructor(
                 val result = hueBridgeUseCase.setupBridge(bridge)
                 
                 if (result.isSuccess) {
-                    _uiState.update { 
+                    _uiState.update {
                         it.copy(
                             isLoading = false,
+                            // BUGFIX (F): clear any stale pairing error (e.g. a previous
+                            // "Link button not pressed" attempt) now that the connection
+                            // actually succeeded - otherwise the success card and the error
+                            // banner were shown at the same time.
+                            error = null,
                             bridgeConnectionInfo = BridgeConnectionInfo(
                                 isConnected = true,
                                 bridgeIp = bridge.internalipaddress,
@@ -187,7 +205,7 @@ class HueViewModel @Inject constructor(
                             )
                         )
                     }
-                    
+
                     // DON'T call refreshLightTargets immediately - let UI show success first
                     Logger.i(LogTags.HUE_VIEWMODEL, "Bridge setup completed successfully")
                 } else {
@@ -213,6 +231,10 @@ class HueViewModel @Inject constructor(
 
                 _uiState.update { currentState ->
                     currentState.copy(
+                        // BUGFIX (F): a successful (re-)validation means the bridge is reachable
+                        // again, so any stale error banner (e.g. from a previous failed pairing
+                        // attempt or a transient disconnect) no longer applies.
+                        error = if (isValid) null else currentState.error,
                         bridgeConnectionInfo = currentState.bridgeConnectionInfo?.copy(
                             isConnected = isValid,
                             lastValidated = System.currentTimeMillis()
@@ -236,7 +258,47 @@ class HueViewModel @Inject constructor(
     }
     
     // REMOVED: refreshBridgeConnectionInfo() - replaced by loadInitialState() and direct setup
-    
+
+    /**
+     * UX FEATURE (B): "Verbindung trennen / Bridge vergessen". Clears the persisted bridge
+     * connection (and TLS trust pin) and resets [HueUiState.bridgeConnectionInfo] to
+     * disconnected, sending the UI back to the discovery/onboarding flow (HueTabContent
+     * renders the discovery cards whenever bridgeConnectionInfo?.isConnected != true).
+     * Schedule rules are intentionally kept so re-pairing doesn't require recreating them.
+     */
+    fun forgetBridge() {
+        Logger.i(LogTags.HUE_VIEWMODEL, "Forgetting bridge connection (user requested)")
+
+        _uiState.update { it.copy(isLoading = true, error = null) }
+
+        viewModelScope.launch {
+            try {
+                val result = hueBridgeUseCase.forgetBridge()
+
+                if (result.isSuccess) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            bridgeConnectionInfo = BridgeConnectionInfo(isConnected = false),
+                            discoveredBridges = emptyList(),
+                            lightTargets = LightTargets()
+                        )
+                    }
+                    Logger.i(LogTags.HUE_VIEWMODEL, "Bridge connection forgotten successfully")
+                    emitUserMessage("Bridge-Verbindung getrennt")
+                } else {
+                    val error = result.exceptionOrNull()?.message ?: "Trennen fehlgeschlagen"
+                    _uiState.update { it.copy(isLoading = false, error = error) }
+                    Logger.w(LogTags.HUE_VIEWMODEL, "Failed to forget bridge: $error")
+                }
+            } catch (e: Exception) {
+                val error = "Trennen fehlgeschlagen: ${e.message}"
+                _uiState.update { it.copy(isLoading = false, error = error) }
+                Logger.e(LogTags.HUE_VIEWMODEL, "Forget bridge exception", e)
+            }
+        }
+    }
+
     // ==============================
     // LIGHT OPERATIONS
     // ==============================
@@ -563,15 +625,41 @@ class HueViewModel @Inject constructor(
 data class HueUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
-    
+
     // Bridge Management
     val bridgeConnectionInfo: BridgeConnectionInfo? = null,
     val discoveredBridges: List<HueBridge> = emptyList(),
-    
+
+    // UX FIX (E): reactive bridge connection health, driven by
+    // HueBridgeConnectionManager.connectionStatus (independent from bridgeConnectionInfo,
+    // which only reflects the state as of the last explicit setup/validate call).
+    val connectionHealth: HueConnectionHealth = HueConnectionHealth.UNKNOWN,
+
     // Light Management
     val lightTargets: LightTargets = LightTargets(),
-    
+
     // Rule Management
     val scheduleRules: List<HueSchedule> = emptyList(),
     val editingRule: HueSchedule? = null
 )
+
+/**
+ * Simplified, UI-facing view of [HueBridgeConnectionManager.ConnectionState] (UX FIX E).
+ * Collapses CONNECTING into UNKNOWN (no banner shown while a connection attempt is in
+ * flight) and keeps DISCONNECTED/ERROR as the two "show a warning banner" states.
+ */
+enum class HueConnectionHealth {
+    UNKNOWN,
+    CONNECTED,
+    DISCONNECTED,
+    ERROR
+}
+
+/** Maps the connection manager's internal state to the simplified UI-facing health enum. */
+private fun HueBridgeConnectionManager.ConnectionState.toConnectionHealth(): HueConnectionHealth =
+    when (this) {
+        is HueBridgeConnectionManager.ConnectionState.CONNECTED -> HueConnectionHealth.CONNECTED
+        is HueBridgeConnectionManager.ConnectionState.DISCONNECTED -> HueConnectionHealth.DISCONNECTED
+        is HueBridgeConnectionManager.ConnectionState.ERROR -> HueConnectionHealth.ERROR
+        is HueBridgeConnectionManager.ConnectionState.CONNECTING -> HueConnectionHealth.UNKNOWN
+    }

@@ -24,6 +24,8 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -127,8 +129,17 @@ class HueBridgeConnectionManager private constructor(
     private var lastForegroundCheck = 0L
     private var lastManualCheck = 0L
     
-    // Connection state flow for reactive UI updates (currently not exposed but kept for future use)
+    // Connection state flow for reactive UI updates (UX FIX E: now exposed via
+    // [connectionStatus] so HueViewModel can surface disconnects/errors in the UI instead of
+    // only updating this in-memory value).
     private val _connectionStatus = MutableStateFlow<ConnectionState>(ConnectionState.DISCONNECTED)
+
+    /**
+     * Reactive connection state (UX FIX E). Collected by [HueViewModel] to show a warning
+     * banner when the bridge connection is lost (DISCONNECTED/ERROR), instead of only ever
+     * reflecting the connection status at the moment a screen was composed.
+     */
+    val connectionStatus: StateFlow<ConnectionState> = _connectionStatus.asStateFlow()
     
     /**
      * Connection state with comprehensive status information
@@ -275,7 +286,43 @@ class HueBridgeConnectionManager private constructor(
             Result.failure(e)
         }
     }
-    
+
+    /**
+     * UX FEATURE (B): "Verbindung trennen / Bridge vergessen". Clears the persisted bridge
+     * IP/username/validation flag from @HueDataStore and resets the in-memory state to
+     * DISCONNECTED, so the app returns to the discovery/onboarding UI. Does NOT touch the
+     * saved schedule rules (@HueConfigRepository) - they stay intact so re-pairing the same
+     * bridge later doesn't require recreating them.
+     */
+    suspend fun forgetConnection(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            Logger.i(LogTags.HUE_BRIDGE, "🔌 BRIDGE-MANAGER: Forgetting bridge connection")
+
+            val dataStore = resolveHueDataStore()
+            if (dataStore != null) {
+                dataStore.edit { mutablePrefs ->
+                    mutablePrefs.remove(KEY_BRIDGE_IP)
+                    mutablePrefs.remove(KEY_USERNAME)
+                    mutablePrefs.remove(KEY_LAST_SUCCESS)
+                    mutablePrefs.remove(KEY_CONNECTION_VALIDATED)
+                }
+            } else {
+                Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: HueDataStore unavailable, cannot persist disconnect")
+            }
+
+            updateConnectionState(ConnectionState.DISCONNECTED)
+
+            // Stop any scheduled sunrise/auto-off/health-check jobs tied to the old bridge.
+            smartScheduler?.cleanup()
+
+            Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Bridge connection forgotten")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Failed to forget bridge connection", e)
+            Result.failure(e)
+        }
+    }
+
     /**
      * Get current connection info without validation (for UI display)
      *

@@ -234,4 +234,28 @@ class HueBridgeUseCase @Inject constructor(
             Result.success(defaultInfo)
         }
     }
+
+    override suspend fun forgetBridge(): Result<Unit> {
+        Logger.i(LogTags.HUE_USECASE, "Forgetting bridge connection (user requested disconnect)")
+
+        return try {
+            val repoResult = bridgeRepository.forgetConnection()
+            if (repoResult.isFailure) {
+                Logger.w(LogTags.HUE_USECASE, "Failed to forget bridge connection at repository level", repoResult.exceptionOrNull())
+                return repoResult
+            }
+
+            val configResult = configRepository.clearBridgeConfig()
+            if (configResult.isFailure) {
+                Logger.w(LogTags.HUE_USECASE, "Failed to clear persisted bridge config", configResult.exceptionOrNull())
+                return configResult
+            }
+
+            Logger.i(LogTags.HUE_USECASE, "Bridge connection forgotten successfully")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_USECASE, "Failed to forget bridge connection", e)
+            Result.failure(Exception("Failed to forget bridge: ${e.message}", e))
+        }
+    }
 }

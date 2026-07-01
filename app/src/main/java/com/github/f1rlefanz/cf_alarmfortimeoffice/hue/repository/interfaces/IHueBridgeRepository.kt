@@ -56,4 +56,10 @@ interface IHueBridgeRepository {
      * Test connection to specific bridge
      */
     suspend fun testBridgeConnection(bridge: HueBridge): Result<Boolean>
+
+    /**
+     * "Verbindung trennen / Bridge vergessen" (UX FEATURE B): clears the persisted connection
+     * (IP/username) and TLS trust pin, resetting the repository to the disconnected state.
+     */
+    suspend fun forgetConnection(): Result<Unit>
 }

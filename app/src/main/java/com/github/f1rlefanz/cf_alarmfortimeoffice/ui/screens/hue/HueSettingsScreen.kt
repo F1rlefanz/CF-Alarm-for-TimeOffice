@@ -22,11 +22,14 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,11 +40,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorSeverity
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueConnectionHealth
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 
 /**
@@ -112,12 +121,25 @@ fun HueSettingsScreen(
                     )
                 }
             }
-            
+
+            // UX FIX (E): same reactive "connection lost" banner as HueTabContent.
+            if (uiState.bridgeConnectionInfo?.bridgeIp != null &&
+                (uiState.connectionHealth == HueConnectionHealth.DISCONNECTED || uiState.connectionHealth == HueConnectionHealth.ERROR)
+            ) {
+                item {
+                    ErrorMessage(
+                        message = "⚠️ Verbindung zur Hue-Bridge verloren – Lichtaktionen für Alarme könnten ausfallen",
+                        severity = ErrorSeverity.WARNING
+                    )
+                }
+            }
+
             item {
                 BridgeStatusCard(
                     connectionInfo = uiState.bridgeConnectionInfo,
                     onValidate = { hueViewModel.validateBridgeConnection() },
-                    onTest = { hueViewModel.runLightTest() }
+                    onTest = { hueViewModel.runLightTest() },
+                    onForgetBridge = { hueViewModel.forgetBridge() }
                 )
             }
             
@@ -161,11 +183,15 @@ fun HueSettingsScreen(
 private fun BridgeStatusCard(
     connectionInfo: com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo?,
     onValidate: () -> Unit,
-    onTest: () -> Unit
+    onTest: () -> Unit,
+    onForgetBridge: () -> Unit
 ) {
+    // UX FEATURE (B): confirmation dialog before actually disconnecting/forgetting the bridge.
+    var showForgetDialog by remember { mutableStateOf(false) }
+
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (connectionInfo?.isConnected == true) 
+            containerColor = if (connectionInfo?.isConnected == true)
                 MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
         )
     ) {
@@ -191,7 +217,7 @@ private fun BridgeStatusCard(
                     )
                 }
             }
-            
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onValidate, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
@@ -204,7 +230,52 @@ private fun BridgeStatusCard(
                     Text("Test")
                 }
             }
+
+            // UX FEATURE (B): "Verbindung trennen / Bridge vergessen". Only offered once a
+            // bridge was actually paired (bridgeIp present) - nothing to forget otherwise.
+            if (connectionInfo?.bridgeIp != null) {
+                OutlinedButton(
+                    onClick = { showForgetDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(Icons.Default.LinkOff, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Verbindung trennen / Bridge vergessen")
+                }
+            }
         }
+    }
+
+    if (showForgetDialog) {
+        AlertDialog(
+            onDismissRequest = { showForgetDialog = false },
+            title = { Text("Bridge vergessen?") },
+            text = {
+                Text(
+                    "Die Verbindung zur Hue-Bridge wird getrennt. Um die App wieder mit der " +
+                        "Bridge zu nutzen, muss sie erneut gekoppelt werden (Link-Taste drücken). " +
+                        "Ihre gespeicherten Regeln bleiben erhalten."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showForgetDialog = false
+                        onForgetBridge()
+                    }
+                ) {
+                    Text("Trennen", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showForgetDialog = false }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
     }
 }
 

@@ -38,4 +38,11 @@ interface IHueBridgeUseCase {
      * Get current bridge connection status
      */
     suspend fun getBridgeConnectionInfo(): Result<BridgeConnectionInfo>
+
+    /**
+     * "Verbindung trennen / Bridge vergessen" (UX FEATURE B): clears the persisted bridge
+     * IP/username, the in-memory connection state, and the TLS trust pin, returning the app
+     * to the discovery/onboarding state. Saved schedule rules are intentionally kept.
+     */
+    suspend fun forgetBridge(): Result<Unit>
 }

@@ -64,7 +64,11 @@ import javax.net.ssl.X509TrustManager
  * @suppress TrustAllX509TrustManager: False positive - this does not trust all
  * certificates; it validates against certificate patterns, validity, and identity pinning.
  */
-class HueTrustManager private constructor(
+// Constructor is `internal` (not `private`) purely so unit tests in the same module can
+// inject a fake system [X509TrustManager] and thereby exercise the Hue-specific fallback
+// path deterministically. Production code must still go through [create] / the companion
+// factories; do not call this constructor from production.
+class HueTrustManager internal constructor(
     private val systemTrustManager: X509TrustManager,
     private val pinningStore: HueBridgePinningStore?
 ) : X509TrustManager {

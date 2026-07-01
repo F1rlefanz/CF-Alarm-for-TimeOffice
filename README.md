@@ -23,7 +23,7 @@ Was das bedeutet:
 - Die App wird von **einer Einzelperson** in der Freizeit entwickelt, nicht von einem Unternehmen.
 - Es gibt (noch) keinen offiziellen Support-Kanal – Rückmeldungen bitte direkt an den Entwickler.
 
-> 💡 **Problem melden:** In der App unter **Einstellungen → Diagnose → „Logs senden / Problem melden"** kannst du das Diagnose-Protokoll direkt an den Entwickler schicken. Das hilft enorm bei der Fehlersuche.
+> 💡 **Problem melden:** In der App unter **Einstellungen → Diagnose → „Logs senden / Problem melden"** kannst du das Diagnose-Protokoll direkt an den Entwickler schicken (per E-Mail an **cfischer@csj.de**). Das hilft enorm bei der Fehlersuche.
 
 ## 🚀 Was die App macht
 
@@ -53,7 +53,7 @@ CF Alarm liest Schichttermine aus einem Google-Kalender (z. B. dem Dienstplan-Ka
 
 ## ✅ So nimmst du am Alpha-Test teil
 
-1. **Kurze Nachricht an den Entwickler** ([@F1rlefanz](https://github.com/F1rlefanz)) mit der Bitte um Zugang zum internen Test.
+1. **Kurze Nachricht an den Entwickler** – per E-Mail an **cfischer@csj.de** oder via GitHub ([@F1rlefanz](https://github.com/F1rlefanz)) – mit der Bitte um Zugang zum internen Test.
 2. Du erhältst einen **Installationslink** (Play-Store-Track für eingeladene Tester oder direkte APK).
 3. **App installieren** und öffnen.
 4. **Google-Konto verbinden**, um Kalenderzugriff zu erlauben.

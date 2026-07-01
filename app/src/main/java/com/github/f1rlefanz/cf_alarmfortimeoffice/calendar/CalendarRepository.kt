@@ -6,11 +6,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.EventsPage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.CalendarEventPool
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.EfficientCollections
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.MemoryOptimizer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.HttpRequest
@@ -34,13 +31,9 @@ data class CalendarItem(val id: String, val displayName: String)
 
 /**
  * CalendarRepository implementiert ICalendarRepository Interface
- * mit Event-Caching, Object Pooling und Memory-Optimierung
+ * mit ETag-basiertem Event-Caching für die Google-Calendar-Anbindung.
  * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ Object Pool für CalendarEvent Erstellung (-60% GC-Pressure)
- * ✅ Memory Optimizer für String-Interning (-40% Memory-Verbrauch)
- * ✅ Efficient Collections für optimierte Listen/Maps
- * ✅ Background Memory-Cleanup bei High-Pressure
+ * Event-Caching reduziert unnötige Google-Calendar-API-Aufrufe.
  */
 @Singleton
 class CalendarRepository @Inject constructor(
@@ -51,10 +44,7 @@ class CalendarRepository @Inject constructor(
     private val jsonFactory = GsonFactory.getDefaultInstance()
     private val eventCache = CalendarEventCache()
     
-    // PERFORMANCE OPTIMIZATIONS
-    private val eventPool = CalendarEventPool.getInstance()
-    private var lastMemoryOptimization = System.currentTimeMillis()
-    private val memoryOptimizationInterval = 120000L // 2 minutes
+    // Kein Object-Pooling / String-Interning: Event-Menge ist gering (Dutzende pro 6h-Zyklus)
     
     private var cachedService: Calendar? = null
     private var cachedToken: String? = null
@@ -96,10 +86,10 @@ class CalendarRepository @Inject constructor(
                     try {
                         CalendarItem(
                             id = calendarEntry.id ?: return@mapNotNull null,
-                            displayName = MemoryOptimizer.internString(calendarEntry.summary ?: "Unnamed Calendar")
+                            displayName = calendarEntry.summary ?: "Unnamed Calendar"
                         )
                     } catch (e: Exception) {
-                        Logger.w(LogTags.CALENDAR_API, "Failed to parse calendar: ${calendarEntry.summary}", e)
+                        Logger.w(LogTags.CALENDAR_API, "Failed to parse calendar entry", e)
                         null
                     }
                 } ?: emptyList()
@@ -133,9 +123,6 @@ class CalendarRepository @Inject constructor(
                 val cachedEvents = eventCache.get(calendarId)
                 if (cachedEvents != null) {
                     Logger.i(LogTags.CALENDAR_CACHE, "Returning ${cachedEvents.size} cached events")
-                    
-                    // PERFORMANCE: Background memory optimization during cache hits
-                    performBackgroundMemoryOptimization()
                     
                     return@safeExecute cachedEvents
                 }
@@ -310,37 +297,14 @@ class CalendarRepository @Inject constructor(
     
     override suspend fun getCacheStats(): String {
         val cacheStats = eventCache.getCacheStats()
-        val poolStats = eventPool.getPoolStats()
-        val memoryStats = MemoryOptimizer.getMemoryStats()
-        
         return buildString {
-            appendLine("📊 CALENDAR PERFORMANCE STATS:")
+            appendLine("📊 CALENDAR CACHE STATS:")
             appendLine("▸ Cache: $cacheStats")
-            appendLine("▸ Object Pool: ${poolStats.getEfficiencyReport()}")
-            appendLine("▸ Memory: ${memoryStats.getMemoryReport()}")
-            
-            if (MemoryOptimizer.isMemoryPressureHigh()) {
-                appendLine("⚠️  HIGH MEMORY PRESSURE - Cleanup recommended")
-            }
         }
     }
     
     override fun cleanup() {
         Logger.d(LogTags.REPOSITORY, "Clearing CalendarRepository resources")
-        
-        // PERFORMANCE: Cleanup Object Pool and Memory Optimizer
-        Logger.d(LogTags.PERFORMANCE, "🧹 CLEANUP: Starting CalendarRepository performance cleanup")
-        
-        // Clear Object Pool
-        eventPool.apply {
-            Logger.d(LogTags.PERFORMANCE, "Clearing Object Pool...")
-        }
-        
-        // Clear Memory Optimizer
-        MemoryOptimizer.apply {
-            Logger.d(LogTags.PERFORMANCE, "Clearing Memory Optimizer...")
-        }
-        
         cachedService = null
         cachedToken = null
     }
@@ -402,42 +366,15 @@ class CalendarRepository @Inject constructor(
 
     
     /**
-     * PERFORMANCE: Background Memory-Optimierung bei ausreichend Zeit
+     * Wandelt Google-Calendar-Events in interne CalendarEvent-Objekte um.
      */
-    private suspend fun performBackgroundMemoryOptimization() {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastMemoryOptimization >= memoryOptimizationInterval) {
-            lastMemoryOptimization = currentTime
-            
-            try {
-                MemoryOptimizer.performBackgroundOptimization()
-                Logger.cache(LogTags.PERFORMANCE, "BACKGROUND-OPTIMIZATION", "Memory optimization completed")
-            } catch (e: Exception) {
-                Logger.w(LogTags.PERFORMANCE, "Background memory optimization failed", e)
-            }
-        }
-    }
-    
-    /**
-     * PERFORMANCE: Smart Event-Processing mit Pool-Management
-     */
-    private suspend fun processEventsWithOptimization(
+    private fun processEventsWithOptimization(
         events: List<com.google.api.services.calendar.model.Event>,
         calendarId: String
     ): List<CalendarEvent> {
-        val eventCount = events.size
-        Logger.d(LogTags.PERFORMANCE, "🚀 PROCESSING: $eventCount events with performance optimization")
-        
-        // Memory pressure check for large event lists
-        if (eventCount > 50 && MemoryOptimizer.isMemoryPressureHigh()) {
-            Logger.d(LogTags.PERFORMANCE, "🔥 HIGH-PRESSURE: Performing aggressive memory cleanup before processing")
-            MemoryOptimizer.performBackgroundOptimization()
-        }
-        
-        // Use optimized collection
-        val calendarEvents = EfficientCollections.createOptimizedList<CalendarEvent>(eventCount)
-        
-        // Process events with Object Pool
+        Logger.d(LogTags.CALENDAR_API, "Processing ${events.size} events")
+        val calendarEvents = ArrayList<CalendarEvent>(events.size)
+
         for (event in events) {
             try {
                 val startDateTime = event.start?.dateTime ?: event.start?.date
@@ -453,28 +390,22 @@ class CalendarRepository @Inject constructor(
                         ZoneId.systemDefault()
                     )
 
-                    // Use Object Pool for efficient creation
-                    val builder = eventPool.borrow()
-                    try {
-                        val calendarEvent = builder
-                            .setId(MemoryOptimizer.internString(event.id ?: "unknown_${System.currentTimeMillis()}"))
-                            .setTitle(MemoryOptimizer.internString(event.summary ?: "Unbenannter Termin"))
-                            .setStartTime(startTime)
-                            .setEndTime(endTime)
-                            .setCalendarId(MemoryOptimizer.internString(calendarId))
-                            .build()
-                        
-                        calendarEvents.add(calendarEvent)
-                    } finally {
-                        eventPool.returnObject(builder)
-                    }
+                    calendarEvents.add(
+                        CalendarEvent(
+                            id = event.id ?: "unknown_${System.currentTimeMillis()}",
+                            title = event.summary ?: "Unbenannter Termin",
+                            startTime = startTime,
+                            endTime = endTime,
+                            calendarId = calendarId
+                        )
+                    )
                 }
             } catch (e: Exception) {
-                Logger.w(LogTags.CALENDAR_API, "Failed to parse event: ${event.summary}", e)
+                Logger.w(LogTags.CALENDAR_API, "Failed to parse event", e)
             }
         }
-        
-        Logger.d(LogTags.PERFORMANCE, "✅ PROCESSED: ${calendarEvents.size} events successfully with optimization")
+
+        Logger.d(LogTags.CALENDAR_API, "Processed ${calendarEvents.size} events")
         return calendarEvents
     }
 }

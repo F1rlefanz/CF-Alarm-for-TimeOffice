@@ -90,10 +90,10 @@ class CFAlarmApplication : Application() {
                 }
 
                 // ✅ CRITICAL FIX: Initialize WorkManager for automatic alarm synchronization
-                Logger.business(LogTags.TOKEN, "🔄 STARTUP: Initializing background services (WorkManager)")
+                Logger.business(LogTags.TOKEN, "🔄 STARTUP: Initializing background services")
                 try {
                     backgroundServiceManager.initializeBackgroundServices()
-                    Logger.business(LogTags.TOKEN, "✅ STARTUP: WorkManager activated - automatic alarm sync every 6h")
+                    Logger.business(LogTags.TOKEN, "✅ STARTUP: Background-Services aktiv – Wartung/Alarm-Sync via Exact Alarm (6h)")
                 } catch (e: Exception) {
                     Logger.e(LogTags.TOKEN, "❌ STARTUP: Failed to initialize WorkManager", e)
                 }

@@ -118,31 +118,15 @@ class CalendarEventCache {
             Logger.d(LogTags.CALENDAR_CACHE, "Removed ${entriesToRemove.size} cache entries to make space")
         }
         
-        // Memory-optimized event storage with string interning
-        val optimizedEvents = events.map { event ->
-            val optimizedBuilder = com.github.f1rlefanz.cf_alarmfortimeoffice.util.MemoryOptimizedCalendarEventBuilder()
-            optimizedBuilder
-                .setId(event.id)
-                .setTitle(event.title)
-                .setCalendarId(event.calendarId)
-                .setStartTime(event.startTime)
-                .setEndTime(event.endTime)
-                .build()
-        }
-        
         val key = CacheKey.create(calendarId)
         val entry = CacheEntry(
-            events = optimizedEvents,
+            events = events,
             timestamp = LocalDateTime.now(),
             etag = etag
         )
-        
+
         cache[key] = entry
         Logger.cache(LogTags.CALENDAR_CACHE, "STORED", "${events.size} events (TTL: 6h)")
-        
-        if (events.isNotEmpty()) {
-            Logger.d(LogTags.PERFORMANCE, "💾 Cache STRING-INTERNED: \"${calendarId.take(20)}...\" (usage: ${events.size})")
-        }
     }
     
 

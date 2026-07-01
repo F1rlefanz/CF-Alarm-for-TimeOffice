@@ -12,6 +12,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +30,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun MainScreen(
@@ -42,6 +44,8 @@ fun MainScreen(
 ) {
     // PHASE 1 MIGRATION: Get context for battery exemption checks
     val context = LocalContext.current
+    // Scope für den (jetzt suspend) OEM-Warndialog, dessen "shown"-Flag im DataStore liegt
+    val coroutineScope = rememberCoroutineScope()
 
     // MEMORY LEAK FIX: Consolidated State Collection
     // Reduziert individuelle collectAsState() auf strukturierte Sammlung
@@ -190,11 +194,13 @@ fun MainScreen(
                                 "Battery exempted -> OEM Warning for $oemType"
                             )
 
-                            // Show OEM warning dialog
-                            com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.showOEMWarningDialog(
-                                context,
-                                oemType
-                            )
+                            // Show OEM warning dialog (DataStore-Lesevorgang -> Coroutine)
+                            coroutineScope.launch {
+                                com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.showOEMWarningDialog(
+                                    context,
+                                    oemType
+                                )
+                            }
                             navigationViewModel.navigateToMainWithTab(MainTab.HOME)
                         } else {
                             Logger.business(LogTags.NAVIGATION, "Battery exempted -> Main")

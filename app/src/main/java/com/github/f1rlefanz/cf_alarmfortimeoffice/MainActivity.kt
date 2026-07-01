@@ -171,8 +171,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         
-        // OnePlus-Hinweis beim ersten Start zeigen
-        BatteryOptimizationHelper.checkAndShowHintIfNeeded(this)
+        // OnePlus-Hinweis beim ersten Start zeigen (DataStore-Lesevorgang -> Coroutine)
+        lifecycleScope.launch {
+            BatteryOptimizationHelper.checkAndShowHintIfNeeded(this@MainActivity)
+        }
         
         // OPTIMIZATION: Initialize Hue Bridge lifecycle tracking
         bridgeConnectionManager.onAppForeground()

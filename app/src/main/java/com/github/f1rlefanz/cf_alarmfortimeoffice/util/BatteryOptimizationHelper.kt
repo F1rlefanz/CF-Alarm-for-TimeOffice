@@ -7,12 +7,36 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import androidx.core.content.edit
 import androidx.core.net.toUri
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+
+/**
+ * Hilt EntryPoint that lets the plain [BatteryOptimizationHelper] object reach the
+ * Hilt-managed @MainDataStore instance (mirrors the pattern in HueSmartScheduler /
+ * HueBridgeConnectionManager — a getInstance()/object-style singleton that pulls its
+ * Hilt dependencies through an access point instead of being @Inject-constructed).
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface BatteryOptimizationHelperEntryPoint {
+    @MainDataStore
+    fun mainDataStore(): DataStore<Preferences>
+}
 
 /**
  * Battery Optimization Helper with OEM-specific detection
- * 
+ *
  * FEATURES:
  * - Battery exemption check and request
  * - OEM-specific detection (Xiaomi, OnePlus, Samsung, etc.)
@@ -20,13 +44,33 @@ import androidx.core.net.toUri
  * - Direct links to dontkillmyapp.com guides
  */
 object BatteryOptimizationHelper {
-    
-    private const val PREFS_NAME = "cf_alarm_prefs"
-    private const val KEY_ONEPLUS_HINT_SHOWN = "oneplus_hint_shown"
-    private const val KEY_OEM_HINT_SHOWN = "oem_hint_shown"
-    
+
+    // MIGRATION (Juli 2026): Die beiden "hint shown"-Flags liegen jetzt im @MainDataStore
+    // ("settings") statt in den alten "cf_alarm_prefs" SharedPreferences. Damit ist die
+    // dritte "cf_alarm_prefs"-Insel vollständig aufgelöst (last_maintenance_time zog bereits
+    // in den @MainDataStore um, siehe AlarmMaintenanceService).
+    // BEWUSST kein Migrationscode für die Altwerte – aktuell nutzt nur der Entwickler die
+    // App (Projekt-Konvention). Im schlimmsten Fall erscheint ein Hinweis einmalig erneut.
+    private val KEY_ONEPLUS_HINT_SHOWN = booleanPreferencesKey("oneplus_hint_shown")
+    private const val KEY_OEM_HINT_SHOWN_PREFIX = "oem_hint_shown"
+
     // Request code for battery exemption activity result
     const val REQUEST_CODE_BATTERY_EXEMPTION = 1001
+
+    /**
+     * Resolves the Hilt-managed @MainDataStore via [BatteryOptimizationHelperEntryPoint].
+     */
+    private fun mainDataStore(context: Context): DataStore<Preferences> =
+        EntryPointAccessors
+            .fromApplication(
+                context.applicationContext,
+                BatteryOptimizationHelperEntryPoint::class.java
+            )
+            .mainDataStore()
+
+    /** Per-OEM key so each manufacturer's warning is shown only once. */
+    private fun oemHintKey(oemType: OEMType) =
+        booleanPreferencesKey("${KEY_OEM_HINT_SHOWN_PREFIX}_${oemType.name}")
     
     /**
      * OEM manufacturer types
@@ -62,12 +106,9 @@ object BatteryOptimizationHelper {
      * @param onResult Callback with result after user action
      */
     fun requestExemption(activity: Activity, onResult: ((Boolean) -> Unit)? = null) {
-        // Store callback for later use in activity result
-        activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("pending_exemption_check", true)
-            .apply()
-        
+        // Das tatsächliche Ergebnis wird unten per postDelayed + isExempted() geprüft und
+        // via onResult zurückgegeben; ein persistiertes "pending"-Flag war write-only (nie
+        // gelesen) und entfiel mit der cf_alarm_prefs-Auflösung.
         try {
             @Suppress("BatteryLife")
             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
@@ -180,17 +221,21 @@ object BatteryOptimizationHelper {
     }
     
     /**
-     * Prüft ob es ein OnePlus-Gerät ist und zeigt einmalig einen Hinweis
+     * Prüft ob es ein OnePlus-Gerät ist und zeigt einmalig einen Hinweis.
+     *
+     * Das "shown"-Flag wird jetzt asynchron aus dem @MainDataStore gelesen/geschrieben,
+     * daher suspend. Aufrufer starten dies aus einem Coroutine-Kontext (z.B.
+     * lifecycleScope in der MainActivity). Der Dialog wird auf dem Main-Thread gezeigt.
      */
-    fun checkAndShowHintIfNeeded(context: Context) {
+    suspend fun checkAndShowHintIfNeeded(context: Context) {
         if (!isOnePlus()) return
-        
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val hintShown = prefs.getBoolean(KEY_ONEPLUS_HINT_SHOWN, false)
-        
+
+        val dataStore = mainDataStore(context)
+        val hintShown = dataStore.data.first()[KEY_ONEPLUS_HINT_SHOWN] ?: false
+
         if (!hintShown) {
-            showOnePlusHint(context)
-            prefs.edit { putBoolean(KEY_ONEPLUS_HINT_SHOWN, true) }
+            withContext(Dispatchers.Main) { showOnePlusHint(context) }
+            dataStore.edit { it[KEY_ONEPLUS_HINT_SHOWN] = true }
         }
     }
     
@@ -231,41 +276,47 @@ object BatteryOptimizationHelper {
     }
     
     /**
-     * Shows OEM-specific warning dialog
+     * Shows OEM-specific warning dialog (einmalig pro OEM-Typ).
+     *
+     * Wie [checkAndShowHintIfNeeded] liegt das "shown"-Flag jetzt im @MainDataStore,
+     * daher suspend. Das Flag wird direkt nach dem Anzeigen gesetzt (statt wie früher
+     * im OnDismiss-Listener), damit der Schreibvorgang im Coroutine-Kontext bleibt –
+     * "gezeigt" heißt hier "dem Nutzer eingeblendet".
      */
-    fun showOEMWarningDialog(context: Context, oemType: OEMType) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val hintKey = "${KEY_OEM_HINT_SHOWN}_${oemType.name}"
-        val hintShown = prefs.getBoolean(hintKey, false)
-        
+    suspend fun showOEMWarningDialog(context: Context, oemType: OEMType) {
+        val dataStore = mainDataStore(context)
+        val hintKey = oemHintKey(oemType)
+        val hintShown = dataStore.data.first()[hintKey] ?: false
+
         if (hintShown) return
-        
+
         val oemName = getOEMDisplayName(oemType)
         val helpUrl = getOEMHelpURL(oemType)
-        
-        AlertDialog.Builder(context)
-            .setTitle("⚠️ $oemName-Gerät")
-            .setMessage(
-                "${getOEMAggressivenessDescription(oemType)}\n\n" +
-                "Für zuverlässige Hintergrund-Alarme befolgen Sie bitte die herstellerspezifischen " +
-                "Schritte in unserer detaillierten Anleitung.\n\n" +
-                "Die App-Berechtigung alleine reicht möglicherweise nicht aus."
-            )
-            .setPositiveButton("Anleitung öffnen") { dialog, _ ->
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, helpUrl.toUri())
-                    context.startActivity(intent)
-                } catch (e: Exception) {
-                    Logger.e(LogTags.BATTERY, "Failed to open OEM help URL", e)
+
+        withContext(Dispatchers.Main) {
+            AlertDialog.Builder(context)
+                .setTitle("⚠️ $oemName-Gerät")
+                .setMessage(
+                    "${getOEMAggressivenessDescription(oemType)}\n\n" +
+                    "Für zuverlässige Hintergrund-Alarme befolgen Sie bitte die herstellerspezifischen " +
+                    "Schritte in unserer detaillierten Anleitung.\n\n" +
+                    "Die App-Berechtigung alleine reicht möglicherweise nicht aus."
+                )
+                .setPositiveButton("Anleitung öffnen") { dialog, _ ->
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, helpUrl.toUri())
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Logger.e(LogTags.BATTERY, "Failed to open OEM help URL", e)
+                    }
+                    dialog.dismiss()
                 }
-                dialog.dismiss()
-            }
-            .setNegativeButton("Später") { dialog, _ ->
-                dialog.dismiss()
-            }
-            .setOnDismissListener {
-                prefs.edit { putBoolean(hintKey, true) }
-            }
-            .show()
+                .setNegativeButton("Später") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .show()
+        }
+
+        dataStore.edit { it[hintKey] = true }
     }
 }

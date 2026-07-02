@@ -772,18 +772,12 @@ class CalendarViewModel @Inject constructor(
                 if (shiftConfig?.autoAlarmEnabled == true) {
                     Logger.business(LogTags.ALARM, "✅ TIMING-FIX: ShiftConfig available with autoAlarm enabled, creating alarms...")
                     
-                    // CRITICAL: Clear existing alarms first to prevent duplicates
-                    alarmUseCase.deleteAllAlarms()
-                        .onSuccess {
-                            Logger.business(LogTags.ALARM, "🧹 AUTO-ALARM: Cleared existing alarms")
-                        }
-                        .onFailure { error ->
-                            Logger.w(LogTags.ALARM, "⚠️ AUTO-ALARM: Failed to clear existing alarms", error)
-                        }
-                    
-                    // Small delay to ensure alarm cleanup is complete
-                    kotlinx.coroutines.delay(100)
-                    
+                    // Kein Vorab-deleteAllAlarms() mehr: createAlarmsFromEvents fuehrt einen
+                    // eventId-basierten Delta-Sync durch, der bestehende UND manuelle Alarme
+                    // (eventId leer) schont und nur wirklich entfernte Events loescht. Das
+                    // fruehere Loeschen oeffnete ein Verlustfenster (Prozess-Tod = 0 Wecker)
+                    // und vernichtete manuell angelegte Alarme.
+
                     // Create alarms from events using AlarmUseCase
                     alarmUseCase.createAlarmsFromEvents(events, shiftConfig)
                         .onSuccess { createdAlarms ->

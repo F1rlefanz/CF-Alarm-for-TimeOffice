@@ -121,10 +121,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         super.onStop()
         Logger.e(LogTags.ALARM, "⏹️ AlarmFullScreenActivity STOPPED")
         
-        // CRITICAL: Stop service in onStop() for immediate cleanup
-        // This is called before onDestroy() and provides faster response
-        stopAlarmSoundService()
-        
+        // Wecker hier NICHT stoppen: onStop feuert auch bei Bildschirm-Aus (Power-Taste im
+        // Halbschlaf), eingehendem Anruf, App-Wechsel oder Rotation. Der Ton laeuft im
+        // Foreground-Service weiter und wird ausschliesslich durch bewusstes Dismiss/Snooze beendet.
+
         // Unbind from service
         if (soundServiceBound) {
             try {
@@ -152,9 +152,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         
-        // Defensive cleanup - service should already be stopped in onStop()
-        stopAlarmSoundService()
-        
+        // Kein Service-Stop hier: Der Wecker soll weiterklingeln, wenn die Activity ohne bewusstes
+        // Dismiss/Snooze zerstoert wird (Rotation, Prozess-Tod, Task-Swipe). Dismiss/Snooze stoppen
+        // den Ton bereits explizit vor finish().
+
         // Ensure unbind (defensive)
         if (soundServiceBound) {
             try {

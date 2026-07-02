@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -163,14 +164,11 @@ class AlarmSoundService : Service() {
         stopVibration()
     }
     
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        Logger.w(LogTags.ALARM, "⚠️ Task removed - stopping AlarmSoundService")
-        
-        // Handle task killer apps by stopping service
-        stopSelf()
-    }
-    
+    // onTaskRemoved() bewusst NICHT ueberschrieben: stopWithTask="false" (Manifest) haelt den
+    // Foreground-Service beim Wegwischen des Tasks aus den Recents am Leben - der Wecker soll
+    // weiterklingeln, bis der Nutzer ihn bewusst per Dismiss/Snooze beendet. Ein frueheres
+    // stopSelf() an dieser Stelle hebelte genau diese Garantie aus.
+
     /**
      * Starts alarm sound using MediaPlayer.
      *
@@ -380,6 +378,17 @@ class AlarmSoundService : Service() {
      * Creates foreground notification for service
      */
     private fun createForegroundNotification(shiftName: String): android.app.Notification {
+        // IMMER erreichbarer Stop-Weg: Der Action-Button beendet den Weckton direkt ueber den
+        // Service (ACTION_STOP_ALARM -> stopAlarmSound + stopForeground + stopSelf). Wichtig, weil
+        // die separate Alarm-Notification (2001) nach 5 Minuten via setTimeoutAfter verfaellt und
+        // die Full-Screen-Activity zerstoert werden kann (Anruf, Speicherdruck, OEM). Ohne diesen
+        // Button gaebe es danach keinen UI-Weg mehr, den laufenden Wecker zu stoppen.
+        val stopIntent = PendingIntent.getService(
+            this,
+            0,
+            Intent(this, AlarmSoundService::class.java).apply { action = ACTION_STOP_ALARM },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Alarm aktiv")
             .setContentText("$shiftName läuft")
@@ -388,6 +397,7 @@ class AlarmSoundService : Service() {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(true) // Cannot be dismissed by user
             .setShowWhen(true)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Wecker aus", stopIntent)
             .build()
     }
 }

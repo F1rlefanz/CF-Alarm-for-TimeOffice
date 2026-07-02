@@ -68,7 +68,10 @@ class CFAlarmApplication : Application() {
         // Direct-Boot-Alarm-Restore im BootReceiver nie.
         try {
             val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
-            Timber.plant(SimpleFileTree(logFile))
+            // PII-Schutz: In Release nur WARN+ ins Datei-Log (INFO/business enthalten E-Mail/
+            // Kalendertitel); in Debug weiterhin alles fuer die Entwicklung.
+            val fileLogMinPriority = if (BuildConfig.DEBUG) android.util.Log.VERBOSE else android.util.Log.WARN
+            Timber.plant(SimpleFileTree(logFile, minPriority = fileLogMinPriority))
             Logger.i(LogTags.APP, "🗂️ Logs werden gespeichert in: ${logFile.absolutePath}")
 
             if (BuildConfig.DEBUG) {

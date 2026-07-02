@@ -2,11 +2,11 @@
 
 **Datum:** 2026-07-02 · **Version im Audit:** 1.7.0 (versionCode 32) · **Branch:** `main`
 **Auftrag:** Schonungslose Release-Reife-Prüfung vor dem öffentlichen Test (siehe `AUDIT-PROMPT-Fable5.md`)
-**Status:** Phase 2 — Umsetzung läuft. Branch `fix/audit-gate0-alarm-reliability` (lokaler Build ausstehend; Gradle läuft nicht in der Autorenumgebung).
+**Status:** **Gate 0 abgeschlossen und als v1.8.0 (versionCode 33) auf `main` integriert.** Build grün, läuft im Emulator. Direct-Boot-*Firing* im gesperrten Zustand ist OEM-abhängig → in der Nutzer-Testphase zu bestätigen. Nächste Etappe: Gate 1 (offener Test).
 
-> **Lebendes Dokument.** Erledigte Findings sind zu abgehakten Einzeilern mit Commit-Ref kollabiert; der Detailtext liegt in der Git-Historie. Legende: ✅ behoben (im Build zu verifizieren) · 🔧 teilweise/in Arbeit · ⬜ offen.
+> **Lebendes Dokument.** Erledigte Findings sind zu abgehakten Einzeilern mit Commit-Ref kollabiert; der Detailtext liegt in der Git-Historie. Legende: ✅ behoben · 🔧 teilweise/in Arbeit · ⬜ offen.
 >
-> **Fortschritt Gate 0:** **alle 5 P0 behoben** (Batch 1: P0-1/P0-3/P0-4 · Batch 2: P0-2 Direct Boot + P0-5 prozess-tod-sichere Recovery) — **lokaler Build + Hardware-Test ausstehend.**
+> **Fortschritt Gate 0 — abgeschlossen:** **alle 5 P0 behoben** (Batch 1: P0-1/P0-3/P0-4 · Batch 2: P0-2 Direct Boot + P0-5 prozess-tod-sichere Recovery), auf `main` als v1.8.0 integriert.
 > Kritische P1 behoben: ✅ Weckton-onStop (+ Stop-Button), ✅ manuelle-Alarme/deleteAll, ✅ Boot-Recovery-Fetch-Fehler, ✅ ungenutzte Permissions.
 > Beide Batches durch adversariale Worker-Review geprüft (Batch 1: 1 Regressionsrisiko gefunden+behoben; Batch 2: 1 onCreate-Direct-Boot-Crashrisiko gefunden+behoben). Direct-Boot-Firing ist OEM-abhängig → Hardware-Test zwingend.
 

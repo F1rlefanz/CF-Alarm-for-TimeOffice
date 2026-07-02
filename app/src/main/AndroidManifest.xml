@@ -63,8 +63,11 @@
         android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
         tools:ignore="ProtectedPermissions" />
 
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <!-- SYSTEM_ALERT_WINDOW und DISABLE_KEYGUARD bewusst entfernt: im Code ungenutzt.
+         Der Full-Screen-Alarm laeuft ueber USE_FULL_SCREEN_INTENT + showWhenLocked/turnScreenOn.
+         SYSTEM_ALERT_WINDOW ist zudem Play-Review-sensibel, DISABLE_KEYGUARD seit API 26 wirkungslos.
+         NICHT wieder hinzufuegen, ohne echte Code-Nutzung. -->
+
 
     <application
         android:name=".CFAlarmApplication"
@@ -110,12 +113,13 @@
             android:enabled="true"
             android:exported="true"
             android:directBootAware="true">
+            <!-- WICHTIG: BOOT_COMPLETED, LOCKED_BOOT_COMPLETED und MY_PACKAGE_REPLACED werden
+                 OHNE Daten-URI gesendet. Ein <data>-Element im Filter wuerde sie komplett
+                 aussperren (der Data-Test schlaegt fehl) und den Receiver de facto totlegen. -->
             <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.PACKAGE_REPLACED" />
-                <data android:scheme="package" />
             </intent-filter>
         </receiver>
 

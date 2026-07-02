@@ -6,9 +6,9 @@
 
 > **Lebendes Dokument.** Erledigte Findings sind zu abgehakten Einzeilern mit Commit-Ref kollabiert; der Detailtext liegt in der Git-Historie. Legende: ✅ behoben (im Build zu verifizieren) · 🔧 teilweise/in Arbeit · ⬜ offen.
 >
-> **Fortschritt Gate 0:** P0 **3/5 behoben** — ✅ P0-1, P0-3, P0-4 · ⬜ P0-2 (Direct Boot) + P0-5 (Recovery→WorkManager) folgen als Batch 2.
+> **Fortschritt Gate 0:** **alle 5 P0 behoben** (Batch 1: P0-1/P0-3/P0-4 · Batch 2: P0-2 Direct Boot + P0-5 prozess-tod-sichere Recovery) — **lokaler Build + Hardware-Test ausstehend.**
 > Kritische P1 behoben: ✅ Weckton-onStop (+ Stop-Button), ✅ manuelle-Alarme/deleteAll, ✅ Boot-Recovery-Fetch-Fehler, ✅ ungenutzte Permissions.
-> Alle Fixes durch adversariale Worker-Review geprüft — 1 Regressionsrisiko gefunden und im selben Batch behoben (Stop-Button).
+> Beide Batches durch adversariale Worker-Review geprüft (Batch 1: 1 Regressionsrisiko gefunden+behoben; Batch 2: 1 onCreate-Direct-Boot-Crashrisiko gefunden+behoben). Direct-Boot-Firing ist OEM-abhängig → Hardware-Test zwingend.
 
 ---
 
@@ -36,8 +36,8 @@
 
 | Bereich | Ampel | Kernaussage |
 |---|---|---|
-| Alarm-Verlässlichkeit | 🟡 | ✅ P0-1/P0-3/P0-4 + Weckton-P1 behoben; ⬜ Direct Boot (P0-2) + Recovery-Scope (P0-5) offen (Batch 2) |
-| Nebenläufigkeit/Prozess-Tod | 🟡 | ✅ Maintenance-/deleteAll-Destruktion + Boot-Fetch-Fehler behoben; ⬜ RMW-Races, Doppelkette, Direct Boot offen |
+| Alarm-Verlässlichkeit | 🟢¹ | ✅ Alle 5 P0 + Weckton-P1 behoben (¹ Hardware-Test des Direct-Boot-Firings ausstehend) |
+| Nebenläufigkeit/Prozess-Tod | 🟡 | ✅ Maintenance-/deleteAll-Destruktion, Boot-Fetch-Fehler, Direct Boot, prozess-tod-sichere Recovery behoben; ⬜ RMW-Races + Doppelkette (P1) offen |
 | Sicherheit/Datenschutz | 🟡 | Krypto-Kern vorbildlich; PII-Klartext-Logging in Release + ungenutzte Permissions |
 | Architektur | 🟢 | Fundament (Schichten, DI, Interfaces) trägt; Krankheit sitzt in der Koordinationsschicht |
 | UI/UX/Onboarding | 🟡 | Breite, solide Substanz; 3 harte Schwächen im kritischen Pfad; Zwangs-Gate im Onboarding |
@@ -86,11 +86,8 @@
 ### ✅ P0-1 · BootReceiver-Filter repariert — `<data>` + `PACKAGE_REPLACED` entfernt
 Behoben in `93583c5`. Review OK. **Verifikation im Build:** echter Reboot + Logcat („LEVEL 4: Boot event received").
 
-### ⬜ P0-2 · Direct Boot faktisch nicht unterstützt — `LOCKED_BOOT_COMPLETED` wird ignoriert  *(offen — Batch 2)*
-**`alarm/receiver/BootReceiver.kt:117` · Effort L**
-Der Receiver ist `directBootAware=true` und für `LOCKED_BOOT_COMPLETED` registriert, aber der `when`-Block hat **keinen** Zweig dafür → `else` „Ignoring unhandled action“. Zudem liegen alle Alarm-Daten im credential-encrypted `@MainDataStore`, der vor der ersten Entsperrung **nicht lesbar** ist; `AlarmReceiver`/`AlarmSoundService` sind nicht `directBootAware`. `BOOT_COMPLETED` kommt bei File-Based-Encryption erst **nach** dem ersten Entsperren.
-**Szenario (bleibt auch nach P0-1-Fix bestehen):** Reboot nachts, Nutzer entsperrt nicht vor der Weckzeit → keine Wiederherstellung möglich → verschlafen.
-**Fix:** Nächste Alarm-Triggerzeiten zusätzlich in einen **Device-Protected-Storage-DataStore** spiegeln (`createDeviceProtectedStorageContext()`); bei `LOCKED_BOOT_COMPLETED` daraus die System-Alarme rein per `setAlarmClock` neu setzen (kein Kalender/Token nötig). `AlarmReceiver` + `AlarmSoundService` + Notification-Channel-Code `directBootAware` machen. Volle Kalender-Validierung erst bei `BOOT_COMPLETED`.
+### ✅ P0-2 · Direct Boot unterstützt — Alarme werden auch vor dem Entsperren wiederhergestellt
+Behoben in `972bc01` (`DirectBootAlarmStore` als Device-Protected-Spiegel, `LOCKED_BOOT_COMPLETED`-Restore, `AlarmReceiver`/`AlarmSoundService` directBootAware, `isUserUnlocked`-Guard). **⚠️ Hardware-Test zwingend:** Reboot ohne Entsperren vor der Weckzeit → klingelt der Wecker im gesperrten Zustand? (FGS-Start/Klingeln vor Entsperrung ist OEM-abhängig.)
 
 ### ✅ P0-3 · Maintenance übergibt vollständige Event-Liste an den Delta-Sync
 Behoben in `0fb21f9`. Review OK (14-Tage-Fenster ≥ Alarm-Puffer via `MIN_BUFFER_DAYS=7` → keine Fehllöschung).
@@ -98,12 +95,10 @@ Behoben in `0fb21f9`. Review OK (14-Tage-Fenster ≥ Alarm-Puffer via `MIN_BUFFE
 ### ✅ P0-4 · Boot-Recovery fail-safe — löscht nicht mehr bei fehlgeschlagenem Event-Load
 Behoben in `4ef4840` (`validationPossible`-Gate: löschen nur bei erfolgreichem, nicht-leerem Abruf). Volle Zuverlässigkeit erst mit P0-5 (killbarer Recovery-Scope).
 
-### ⬜ P0-5 · Boot-Recovery läuft im ungeschützten Prozess-Scope (kein goAsync/Foreground/WorkManager)  *(offen — Batch 2)*
-**`alarm/receiver/BootReceiver.kt:139` · Effort M**
-`onReceive` kehrt sofort zurück; die gesamte Recovery (5 s Delay, bis zu 3 Retries à 10 s, Netz-Calls, 30 s Health-Check) läuft in einem selbst erstellten Scope. Nach Rückkehr ist der Prozess ein leerer Cached-Prozess — direkt nach dem Boot (hoher Memory-Druck) bevorzugter Kill-Kandidat. Wird er vorher gekillt: Alarme kommen nicht in den AlarmManager zurück **und** die 6h-Kette wird nicht neu geplant → Totalausfall bis zum manuellen App-Start. Derselbe fragile Pfad läuft bei jedem App-Update.
-**Fix:** Recovery in einen expedited `OneTimeWorkRequest` (WorkManager, `setExpedited`) oder kurzlebigen Foreground-Service verlagern; im Receiver nur enqueuen. Minimal: `goAsync()` + sofortiges Re-Scheduling aus dem Repository (ohne Delays/Netz), Validierung später.
+### ✅ P0-5 · Boot-Recovery prozess-tod-sicher — Alarme stehen sofort, vor der langsamen Validierung
+Behoben in `972bc01`: der schnelle Restore aus dem Device-Protected-Spiegel läuft unter `goAsync()` und setzt die System-Alarme, bevor der Prozess killbar wird. Die anschließende CE-Validierung ist danach nur noch Best-Effort-Verfeinerung (nicht mehr kritisch für „der Wecker steht“).
 
-> **Bündelungs-Hinweis:** P0-2 bis P0-5 sowie mehrere Alarm-P1 lösen sich größtenteils mit **Refactoring-Ziel #1** (ein transaktionaler, fail-safe Alarm-Sync-/Recovery-Pfad). Das ist der Hebel mit dem höchsten Ertrag.
+> **Status P0:** Alle 5 P0 sind mit Minimal-Fixes behoben (Batch 1 + 2), review-geprüft — **lokaler Build + Hardware-Test ausstehend**. Die spätere Konsolidierung zu **einem** transaktionalen Alarm-Sync-/Recovery-Orchestrator (Refactoring-Ziel #1) bleibt ein Gate-2-Qualitätsschritt: sie ersetzt die Minimal-Fixes, ist aber kein Blocker mehr.
 
 ---
 
@@ -115,7 +110,7 @@ Behoben in `4ef4840` (`validationPossible`-Gate: löschen nur bei erfolgreichem,
 - ✅ **P1 · Power-Taste/Anruf/Wegwischen beendet den klingelnden Alarm dauerhaft** — behoben in `a9e50e7`: Stop aus `onStop`/`onDestroy`/`onTaskRemoved` entfernt; die FGS-Notification erhielt einen „Wecker aus"-Action-Button als immer erreichbaren Stop-Weg (schließt die von der Review gefundene Sackgasse).
 - ✅ **P1 · Manuell erstellte Alarme werden bei jedem Kalender-Load kommentarlos gelöscht** — behoben in `a35ae88` (`deleteAllAlarms()`+`delay(100)` vor dem Delta-Sync entfernt).
 - ✅ **P1 · Boot-Recovery löscht bei fehlgeschlagenem Fetch alle Alarme** — behoben in `4ef4840` (`validationPossible`-Gate; gleiche Wurzel wie P0-4).
-- ⬜ **P1 · `LOCKED_BOOT_COMPLETED` registriert, aber ignoriert** — offen, Duplikat-Blickwinkel zu P0-2 (Batch 2). *(`BootReceiver.kt:117`, Effort L)*
+- ✅ **P1 · `LOCKED_BOOT_COMPLETED` registriert, aber ignoriert** — behoben in `972bc01` (Direct-Boot-Restore, gleiche Wurzel wie P0-2).
 
 ### 4b. Nebenläufigkeit / Prozess-Tod des Alarm-Bestands
 - ⚪ **P1 · AlarmRepository: async Init-Load + ungeschützte Read-Modify-Write** — leerer StateFlow-Cache beim Kaltstart; `saveAlarm`/`deleteAlarm` sind unsynchronisierte RMW-Zyklen → paralleler Write kann den ganzen DataStore-Key mit einer 1-Element-Liste überschreiben (**Datenverlust**). *(`AlarmRepository.kt:82`, Effort M)* → **Fix:** Load-Gate (`CompletableDeferred`/`first()`) + Mutex bzw. `update{}`/`edit` als einzige Quelle.
@@ -276,9 +271,9 @@ Damit das Bild fair bleibt — die App hat ein **belastbares Fundament**:
 
 **Gate 0 — Release-Blocker (zwingend vor JEDEM weiteren Test):**
 - ✅ **Batch 1 (Branch `fix/audit-gate0-alarm-reliability`):** P0-1, P0-3, P0-4 + P1 (Weckton-onStop, manuelle-Alarme, Boot-Fetch-Fehler, ungenutzte Permissions). Minimal-Fixes, review-geprüft. **Lokaler Build + Hardware-Test ausstehend.**
-- ⬜ **Batch 2:** P0-2 (Direct-Boot-Spiegelung in Device-Protected-Storage, L) + P0-5 (Recovery in WorkManager, M) — der einzige noch offene „Wecker-fällt-aus"-Kern.
-- ⬜ **Gate 2 (später):** Refactoring-Ziel #1 (Alarm-Sync-Orchestrator) konsolidiert die Minimal-Fixes zu einer atomaren `syncAlarms()`-Operation.
-- **Verifikation auf echter Hardware (nach jedem Batch):** Reboot vor Weckzeit, App-Update über Nacht, Power-Druck/Anruf während Klingeln, Task-Swipe, Zonenwechsel.
+- ✅ **Batch 2 (`972bc01`, `17fdc60`):** P0-2 (Direct-Boot-Spiegel in Device-Protected-Storage + `LOCKED_BOOT_COMPLETED`-Restore) + P0-5 (goAsync-geschützter Restore, prozess-tod-sicher). Review-geprüft; onCreate-Direct-Boot-Crashrisiko im selben Batch gehärtet.
+- ⬜ **Gate 2 (später):** Refactoring-Ziel #1 (Alarm-Sync-Orchestrator) konsolidiert die Minimal-Fixes zu einer atomaren `syncAlarms()`-Operation. Bekannte Rest-Lücke (akzeptiert): Snooze-Alarme laufen am Repository vorbei → nicht im Direct-Boot-Spiegel; ein Reboot im 5-Min-Snooze-Fenster verliert den Snooze.
+- **Verifikation auf echter Hardware (nach jedem Batch):** Reboot vor Weckzeit **und ohne Entsperren** (Direct Boot!), App-Update über Nacht, Power-Druck/Anruf während Klingeln, Task-Swipe, Zonenwechsel.
 
 **Parallel & sofort (lange Vorlaufzeit, blockiert den offenen Test):**
 - **OAuth-Verification einreichen** (Wochen Bearbeitungszeit).

@@ -331,8 +331,11 @@ class AlarmMaintenanceService : Service() {
             return
         }
         
-        val newEvents = newShifts.map { it.calendarEvent }
-        val createResult = alarmUseCase.createAlarmsFromEvents(newEvents, shiftConfig)
+        // Delta-Sync erwartet den VOLLSTAENDIGEN Soll-Zustand. Nur die neu erkannten Schichten
+        // zu uebergeben wuerde alle bereits geplanten Wecker loeschen, deren Event nicht in der
+        // Teilliste steht (createAlarmsFromEvents entfernt Alarme ohne passendes Event). Die
+        // newShifts-Pruefung oben dient nur der Entscheidung, OB ueberhaupt synchronisiert wird.
+        val createResult = alarmUseCase.createAlarmsFromEvents(events, shiftConfig)
         
         if (createResult.isSuccess) {
             val newAlarms = createResult.getOrThrow()

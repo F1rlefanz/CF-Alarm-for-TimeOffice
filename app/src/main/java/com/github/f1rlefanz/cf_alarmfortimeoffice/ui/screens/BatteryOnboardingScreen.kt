@@ -58,7 +58,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 @Composable
 fun BatteryOnboardingScreen(
     onComplete: () -> Unit,
-    onRequestExemption: () -> Unit
+    onRequestExemption: () -> Unit,
+    onSkip: () -> Unit
 ) {
     var currentStep by remember { mutableIntStateOf(0) }
     var showOEMWarning by remember { mutableStateOf(false) }
@@ -227,6 +228,13 @@ fun BatteryOnboardingScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Warum ist das nötig?")
+            }
+
+            TextButton(
+                onClick = onSkip,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Später")
             }
         }
     }

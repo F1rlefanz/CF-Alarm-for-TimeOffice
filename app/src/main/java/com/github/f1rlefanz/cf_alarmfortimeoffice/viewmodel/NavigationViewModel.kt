@@ -140,12 +140,25 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun changeTab(tab: MainTab) = 
         handleNavigationAction(NavigationAction.ChangeTab(tab))
     
+    // Battery-Prompt: Der Nutzer kann den Akku-Ausnahme-Screen mit "Spaeter" ueberspringen.
+    // Ohne dieses Flag wuerde handleAuthenticationSuccess ihn sofort wieder dorthin zwingen
+    // (Onboarding-Sackgasse - ein Tester, der ablehnt, kaeme nie in die App). Session-scoped;
+    // das persistente Sicherheitsnetz ist die Warn-Card im SettingsTab. (Persistenz ueber
+    // App-Neustarts hinweg: Follow-up via DataStore.)
+    private var batteryPromptDismissed = false
+
+    fun dismissBatteryPrompt() {
+        batteryPromptDismissed = true
+        Logger.business(LogTags.NAVIGATION, "Battery-Prompt vom Nutzer uebersprungen (Spaeter) -> Home")
+        navigateToMainWithTab(MainTab.HOME)
+    }
+
     // Auto-navigation logic
     fun handleAuthenticationSuccess(hasSelectedCalendars: Boolean, hasBatteryExemption: Boolean) {
         if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
             navigateToCalendarSelection()
-        } else if (hasSelectedCalendars && !hasBatteryExemption && _navigationState.value.isMainContent()) {
+        } else if (hasSelectedCalendars && !hasBatteryExemption && !batteryPromptDismissed && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: Calendars selected but no battery exemption")
             navigateToBatteryExemption()
         }

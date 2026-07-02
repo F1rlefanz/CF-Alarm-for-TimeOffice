@@ -226,6 +226,9 @@ fun MainScreen(
                     onComplete = {
                         showEducationalDialog = true
                     },
+                    onSkip = {
+                        navigationViewModel.dismissBatteryPrompt()
+                    },
                     onRequestExemption = {
                         // Launch battery exemption request
                         try {

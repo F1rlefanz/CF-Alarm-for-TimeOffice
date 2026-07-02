@@ -120,7 +120,7 @@ Behoben in `972bc01`: der schnelle Restore aus dem Device-Protected-Spiegel läu
 - ⚪ **P1 · Nebenläufigkeitsschutz per `@Volatile`-Boolean (check-then-act) statt Mutex** — zwei parallele Aufrufer lesen beide `false`; oder der zweite bekommt `Result.success(emptyList())`, was der Maintenance-Service als „nichts zu tun“ fehldeutet. *(`AlarmUseCase.kt:83`, Effort S)* → **Fix:** `Mutex.withLock`; Skip-mit-Leerergebnis entfernen.
 
 ### 4c. Sicherheit / Datenschutz
-- ✅ **P1 · Persistentes File-Logging schreibt in RELEASE PII im Klartext** — `SimpleFileTree` wird in `CFAlarmApplication.onCreate()` **immer** geplantet (Debug **und** Release) und schreibt Google-Konto-E-Mail und Kalender-Event-Titel nach `getExternalFilesDir()/debug_logs.txt` (bis 50 MB, unbegrenzte Aufbewahrung). Auf Android 8–10 (minSdk 26!) mit `READ_EXTERNAL_STORAGE` durch Fremd-Apps lesbar. Widerspricht `privacy.html` und dem Data-Safety-Formular. *(`CFAlarmApplication.kt:66`, Effort M)* → **Fix:** In Release nur `Log.WARN`+ aufwärts, PII maskieren; Rotationsgröße/Retention begrenzen; Event-Titel nie auf `business`-Level.
+- ✅ **P1 · File-Logging schrieb in RELEASE PII (E-Mail, Kalendertitel) im Klartext** — behoben in `3054191` (`SimpleFileTree`-`minPriority`-Gate; in Release nur WARN+ ins Datei-Log, Diagnose bleibt). Angleich von `privacy.html` steht noch aus (siehe P2).
 - ✅ **P1 · `SYSTEM_ALERT_WINDOW` (+ `DISABLE_KEYGUARD`) deklariert, aber ungenutzt** — behoben in `93583c5` (beide aus dem Manifest entfernt; Full-Screen-Alarm läuft über die Activity-Attribute weiter).
 
 ### 4d. UI/UX (kritischer Pfad)
@@ -130,7 +130,7 @@ Behoben in `972bc01`: der schnelle Restore aus dem Device-Protected-Spiegel läu
 
 ### 4e. Infrastruktur / Release (Prozess-Hürden mit langer Vorlaufzeit)
 - ⚪ **P1 · Google-OAuth-Verification für `calendar.readonly` (sensitive scope) nirgends vorbereitet** — ohne verifizierten Consent-Screen: **max. 100 Test-Nutzer über die Projekt-Lebenszeit** + „nicht überprüft“-Warnbildschirm beim Login. Verification dauert erfahrungsgemäß **Wochen**. **→ Sofort starten, unabhängig von allem anderen — das ist die längste Vorlaufzeit im ganzen Projekt.** *(`OAuth2TokenManager.kt:93`, Effort M + Wartezeit)*
-- ⚪ **P1 · Keine CI-Pipeline** — kein `.github/`; die (guten) Unit-Tests und das strikte Lint laufen nur, wenn lokal daran gedacht wird. Besonders kritisch, weil delegierte Änderungen sonst keinerlei automatische Verifikation haben. Build ist dank ENV-Fallback CI-ready (keine Code-Änderung nötig). *(Effort M — fertige YAML in §6.)*
+- ✅ **P1 · Keine CI-Pipeline** — behoben in `d379dc0` (`.github/workflows/ci.yml`: Unit-Tests + Lint + Debug-Build, Caching, Artefakte). **Nutzer-Aktion offen:** Repo-Secret `GOOGLE_WEB_CLIENT_ID` setzen + Branch-Protection auf `main` (Status-Check `build-test-lint`).
 
 ---
 
@@ -280,10 +280,11 @@ Damit das Bild fair bleibt — die App hat ein **belastbares Fundament**:
 - Ungenutzte Permissions streichen; Play-Console-Deklarationen (mediaPlayback, FULL_SCREEN_INTENT) vorbereiten.
 
 **Gate 1 — Vor öffentlichem Test:**
-- Release-PII-Logging entschärfen; Privacy Policy an Code angleichen.
-- Globale Fehler-Sichtbarkeit (SnackbarHost); Battery-Gate „Später“; `POST_NOTIFICATIONS` in Kontext.
-- CI-Pipeline (§6.2) + Branch-Protection; Zombie-`MainActivityTest` entfernen/ersetzen.
-- Tests #1–#3 (`IAlarmManagerService` einziehen).
+- ✅ **CI-Pipeline** (`d379dc0`) — Secret + Branch-Protection noch durch Nutzer. ✅ **Zombie-`MainActivityTest`** entfernt (`30cf346`). ✅ **Release-PII-Logging** entschärft (`3054191`).
+- ⬜ Privacy Policy an Code angleichen (P2); Play-Console-Deklarationen (mediaPlayback, FULL_SCREEN_INTENT) vorbereiten.
+- ⬜ Globale Fehler-Sichtbarkeit (SnackbarHost); Battery-Gate „Später“; `POST_NOTIFICATIONS` in Kontext.
+- ⬜ Tests #1–#3 (`IAlarmManagerService` einziehen).
+- ⬜ **Nutzer-Aktion, zeitkritisch:** OAuth-Verification einreichen (siehe oben).
 
 **Gate 2 — Härtung/Qualität (nach dem ersten offenen Test iterierbar):**
 - Refactoring-Ziele #2–#5 (toter Code, Hilt-Vereinheitlichung, Lifecycle-State, Konventionen).

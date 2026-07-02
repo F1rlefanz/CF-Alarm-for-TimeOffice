@@ -62,15 +62,26 @@ class CFAlarmApplication : Application() {
         installCrashHandler()
         
         // ✅ WICHTIG: File-Logging IMMER aktivieren (DEBUG + RELEASE)
-        val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
-        Timber.plant(SimpleFileTree(logFile))
-        Logger.i(LogTags.APP, "🗂️ Logs werden gespeichert in: ${logFile.absolutePath}")
-        
-        if (BuildConfig.DEBUG) {
-            Timber.plant(Timber.DebugTree())
-            Logger.d(LogTags.APP, "Timber initialized in DEBUG mode with file logging")
-        } else {
-            Logger.i(LogTags.APP, "Timber initialized in RELEASE mode with file logging")
+        // ROBUST gegen Direct Boot: Wird der Prozess durch LOCKED_BOOT_COMPLETED (vor der ersten
+        // Entsperrung) gestartet, ist External Storage ggf. nicht gemountet (getExternalFilesDir
+        // == null / Schreibfehler). Ein Fehler hier darf onCreate NICHT crashen - sonst liefe der
+        // Direct-Boot-Alarm-Restore im BootReceiver nie.
+        try {
+            val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
+            Timber.plant(SimpleFileTree(logFile))
+            Logger.i(LogTags.APP, "🗂️ Logs werden gespeichert in: ${logFile.absolutePath}")
+
+            if (BuildConfig.DEBUG) {
+                Timber.plant(Timber.DebugTree())
+                Logger.d(LogTags.APP, "Timber initialized in DEBUG mode with file logging")
+            } else {
+                Logger.i(LogTags.APP, "Timber initialized in RELEASE mode with file logging")
+            }
+        } catch (e: Exception) {
+            // Direct Boot / fehlender External Storage: File-Logging ueberspringen, nicht crashen.
+            if (BuildConfig.DEBUG) {
+                try { Timber.plant(Timber.DebugTree()) } catch (_: Exception) { /* ignore */ }
+            }
         }
         
         // Initialize app components

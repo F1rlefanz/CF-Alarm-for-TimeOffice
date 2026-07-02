@@ -345,7 +345,7 @@ Format: `[Effort] Titel — Datei:Zeile`. Kurzfassung nach Bereich in §5.
 
 **Infrastruktur (6)**
 - [M] Kern-Alarm-Kette (Delta-Sync, Skip-Logik, Persistenz) komplett ungetestet — blockiert durch fehlendes Interface für `AlarmManagerService` — `usecase/AlarmUseCase.kt:45`
-- [S] `MainActivityTest` testet eine UI, die nicht mehr existiert — würde bei Ausführung fehlschlagen — `androidTest/…/MainActivityTest.kt:38`
+- ✅ [S] `MainActivityTest` (Zombie gegen entfernte UI) — entfernt in `30cf346` (löste zugleich die `createAndroidComposeRule`-Deprecation-Warnung im AndroidTest-Compile).
 - [S] Privacy Policy behauptet AES-256-GCM-Speicherung der Kalenderdaten — tatsächlich nur unverschlüsselt im RAM-Cache — `docs/privacy.html:66`
 - [M] Für den offenen Test fehlen 3 von 4 Play-Console-Deklarationen — nur specialUse-FGS vorbereitet — `AndroidManifest.xml:59`
 - [M] `proguard-rules.pro` enthält `-dontshrink/-dontoptimize` + Pauschal-Keeps + tote Firebase-Regeln — Minify-Reaktivierung wirkungslos/fehleranfällig — `app/proguard-rules.pro:352`

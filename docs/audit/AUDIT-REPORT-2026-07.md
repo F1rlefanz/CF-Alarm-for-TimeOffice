@@ -125,7 +125,7 @@ Behoben in `972bc01`: der schnelle Restore aus dem Device-Protected-Spiegel läu
 
 ### 4d. UI/UX (kritischer Pfad)
 - ✅ **P1 · Ladefehler der Kern-Pipeline werden nicht kommuniziert** — `calendarState.error` wird im `EventListScreen` explizit **nicht** angezeigt (auskommentierter Snackbar-Block, „For now, just log and clear“); `shiftState.error`/`alarmState.error` werden in **keinem** Screen gerendert; `MainContentScreen`-Scaffold hat keinen `SnackbarHost`. → Home-Tab zeigt kommentarlos „Keine Schicht/kein Alarm“, Nutzer hält das für die Wahrheit. *(`EventListScreen.kt:253`, Effort M)* → **Fix:** `SnackbarHost` + vorhandene `ErrorMessage`-Komponente mit Retry.
-- ⚪ **P1 · Battery-Exemption ist ein Zwangs-Gate ohne „Später“** — verweigert der Nutzer die Akku-Freigabe, kommt er **nie** in die App (Endlosschleife Screen ↔ Dialog); bei jedem Neustart erneut erzwungen. Play-Review-heikel; das persistente Warn-Card-Sicherheitsnetz im SettingsTab existiert bereits. *(`BatteryOnboardingScreen.kt:216`, Effort S)* → **Fix:** „Später“-Button → Home + Dismissed-Flag; Re-Prompt max. einmal.
+- ✅ **P1 · Battery-Exemption ist ein Zwangs-Gate ohne „Später“** — behoben in `a2fe5d5` („Später“-Button → Home; session-scoped Dismiss-Flag verhindert die erneute Zwangs-Navigation). Rest: Persistenz über App-Neustarts via DataStore (Follow-up).
 - *(Die `onStop`-Ausprägung aus UX-Sicht ist mit 4a identisch.)*
 
 ### 4e. Infrastruktur / Release (Prozess-Hürden mit langer Vorlaufzeit)
@@ -282,7 +282,7 @@ Damit das Bild fair bleibt — die App hat ein **belastbares Fundament**:
 **Gate 1 — Vor öffentlichem Test:**
 - ✅ **CI-Pipeline** (`d379dc0`) — Secret + Branch-Protection noch durch Nutzer. ✅ **Zombie-`MainActivityTest`** entfernt (`30cf346`). ✅ **Release-PII-Logging** entschärft (`3054191`).
 - ⬜ Privacy Policy an Code angleichen (P2); Play-Console-Deklarationen (mediaPlayback, FULL_SCREEN_INTENT) vorbereiten.
-- ⬜ Globale Fehler-Sichtbarkeit (SnackbarHost); Battery-Gate „Später“; `POST_NOTIFICATIONS` in Kontext.
+- ✅ **Battery-Gate „Später“** (`a2fe5d5`). ⬜ Globale Fehler-Sichtbarkeit (SnackbarHost); `POST_NOTIFICATIONS` in Kontext.
 - ⬜ Tests #1–#3 (`IAlarmManagerService` einziehen).
 - ⬜ **Nutzer-Aktion, zeitkritisch:** OAuth-Verification einreichen (siehe oben).
 

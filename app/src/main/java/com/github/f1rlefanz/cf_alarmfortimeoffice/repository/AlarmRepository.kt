@@ -6,6 +6,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmEntry
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
@@ -51,7 +53,8 @@ data class AlarmInfoData(
 
 @Singleton
 class AlarmRepository @Inject constructor(
-    @param:MainDataStore private val dataStore: DataStore<Preferences>
+    @param:MainDataStore private val dataStore: DataStore<Preferences>,
+    private val directBootAlarmStore: DirectBootAlarmStore
 ) : IAlarmRepository {
 
     companion object {
@@ -127,7 +130,13 @@ class AlarmRepository @Inject constructor(
                 preferences[ALARMS_KEY] = alarmsJson
             }
 
-            Logger.d(LogTags.ALARM, "💾 PERSISTENCE: Saved ${alarms.size} alarms to DataStore")
+            // Device-Protected-Spiegel synchron mitschreiben, damit die Alarme nach einem Reboot
+            // schon VOR der ersten Entsperrung wiederhergestellt werden koennen (Direct Boot).
+            directBootAlarmStore.saveAll(
+                alarmsData.map { DirectBootAlarmEntry(it.id, it.shiftName, it.triggerTime, it.formattedTime) }
+            )
+
+            Logger.d(LogTags.ALARM, "💾 PERSISTENCE: Saved ${alarms.size} alarms to DataStore (+ Direct-Boot-Spiegel)")
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Error saving alarms to DataStore", e)
         }

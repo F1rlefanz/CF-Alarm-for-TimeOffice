@@ -266,7 +266,7 @@ class AlarmManagerService(
             putExtra("shift_end_time", shiftMatch.calendarEvent.endTime.toString())
             putExtra("alarm_type", "setAlarmClock") // Track which API was used
             setPackage(application.packageName)
-            action = "com.github.f1rlefanz.cf_alarmfortimeoffice.ENHANCED_ALARM_$alarmId"
+            action = enhancedAlarmAction(alarmId)
         }
     }
 
@@ -330,7 +330,7 @@ class AlarmManagerService(
 
             val alarmIntent = Intent(application, AlarmReceiver::class.java).apply {
                 setPackage(application.packageName)
-                action = "com.github.f1rlefanz.cf_alarmfortimeoffice.ENHANCED_ALARM_$alarmId"
+                action = enhancedAlarmAction(alarmId)
             }
 
             val pendingIntent = PendingIntent.getBroadcast(
@@ -395,6 +395,67 @@ class AlarmManagerService(
 
     companion object {
         private const val ALARM_REQUEST_CODE = 1001
+
+        /**
+         * Action-String des Alarm-PendingIntents. MUSS an allen Stellen identisch sein
+         * (Setzen, Abbrechen, Direct-Boot-Restore), sonst adressieren sie verschiedene
+         * Alarm-Slots und es entstehen Doppel-Alarme.
+         */
+        fun enhancedAlarmAction(alarmId: Int): String =
+            "com.github.f1rlefanz.cf_alarmfortimeoffice.ENHANCED_ALARM_$alarmId"
+
+        /**
+         * DE-SICHERES Neusetzen eines Alarms aus dem Direct-Boot-Spiegel.
+         *
+         * Baut exakt denselben PendingIntent wie der regulaere Pfad (gleiche requestCode=id und
+         * action), sodass ein spaeteres regulaeres Rescheduling nach Entsperrung den Alarm via
+         * FLAG_UPDATE_CURRENT aktualisiert statt zu duplizieren. Braucht KEIN Hilt/CE/Kalender:
+         * setAlarmClock() ist von der Exact-Alarm-Berechtigung ausgenommen und darf im Direct-Boot
+         * laufen. Nur fuer Alarme in der Zukunft.
+         */
+        fun rescheduleFromDirectBoot(
+            context: Context,
+            id: Int,
+            triggerTime: Long,
+            shiftName: String,
+            alarmTimeFormatted: String
+        ) {
+            if (triggerTime <= System.currentTimeMillis()) return
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+            val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
+                putExtra("alarm_id", id)
+                putExtra("shift_name", shiftName)
+                putExtra("alarm_time", alarmTimeFormatted)
+                putExtra("alarm_type", "directBootRestore")
+                setPackage(context.packageName)
+                action = enhancedAlarmAction(id)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, id, alarmIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val showIntent = Intent(context, MainActivity::class.java).apply {
+                putExtra("alarm_id", id)
+                putExtra("shift_name", shiftName)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                setPackage(context.packageName)
+            }
+            val showPendingIntent = PendingIntent.getActivity(
+                context, id + 10000, showIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent),
+                pendingIntent
+            )
+            Logger.business(
+                LogTags.ALARM_MANAGER,
+                "🔐 DIRECT-BOOT: Alarm neu gesetzt - id=$id, $shiftName @ $alarmTimeFormatted"
+            )
+        }
     }
 }
 

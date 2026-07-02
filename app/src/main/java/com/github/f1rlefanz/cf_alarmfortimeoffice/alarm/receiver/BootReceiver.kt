@@ -3,8 +3,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
@@ -61,6 +63,7 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var shiftUseCase: IShiftUseCase
     @Inject lateinit var calendarSelectionRepository: CalendarSelectionRepository
     @Inject lateinit var authDataStoreRepository: IAuthDataStoreRepository
+    @Inject lateinit var directBootAlarmStore: DirectBootAlarmStore
 
     companion object {
         // 🛡️ Level 4 Configuration
@@ -72,6 +75,7 @@ class BootReceiver : BroadcastReceiver() {
 
         // Boot Actions
         private const val ACTION_BOOT_COMPLETED = Intent.ACTION_BOOT_COMPLETED
+        private const val ACTION_LOCKED_BOOT_COMPLETED = Intent.ACTION_LOCKED_BOOT_COMPLETED
         private const val ACTION_MY_PACKAGE_REPLACED = Intent.ACTION_MY_PACKAGE_REPLACED
         private const val ACTION_PACKAGE_REPLACED = Intent.ACTION_PACKAGE_REPLACED
     }
@@ -88,11 +92,25 @@ class BootReceiver : BroadcastReceiver() {
         )
 
         when (action) {
+            ACTION_LOCKED_BOOT_COMPLETED -> {
+                // DIRECT BOOT: nur der schnelle, CE-freie Restore aus dem Device-Protected-Spiegel.
+                // Kalender/Token/CE-Storage sind vor der ersten Entsperrung nicht lesbar - die
+                // volle Recovery folgt spaeter bei BOOT_COMPLETED (nach dem Entsperren).
+                Logger.business(
+                    LogTags.MAINTENANCE_L4,
+                    "🔐 LEVEL 4: Locked boot - Direct-Boot-Wiederherstellung der Alarme"
+                )
+                restoreAlarmsFromDirectBootStore(context, "LOCKED_BOOT_COMPLETED")
+            }
+
             ACTION_BOOT_COMPLETED -> {
                 Logger.business(
                     LogTags.MAINTENANCE_L4,
                     "📱 LEVEL 4: Device booted - initiating complete system recovery"
                 )
+                // Zuerst der schnelle, prozess-tod-sichere Restore (Alarme stehen sofort wieder),
+                // dann die vollstaendige CE-basierte Validierung/Recovery.
+                restoreAlarmsFromDirectBootStore(context, "BOOT_COMPLETED")
                 performCompleteSystemRecovery(context, "BOOT_COMPLETED")
             }
 
@@ -101,6 +119,7 @@ class BootReceiver : BroadcastReceiver() {
                     LogTags.MAINTENANCE_L4,
                     "📦 LEVEL 4: App updated - performing post-update recovery"
                 )
+                restoreAlarmsFromDirectBootStore(context, "APP_UPDATED")
                 performCompleteSystemRecovery(context, "APP_UPDATED")
             }
 
@@ -110,12 +129,49 @@ class BootReceiver : BroadcastReceiver() {
                         LogTags.MAINTENANCE_L4,
                         "📦 LEVEL 4: Our package replaced - performing recovery"
                     )
+                    restoreAlarmsFromDirectBootStore(context, "PACKAGE_REPLACED")
                     performCompleteSystemRecovery(context, "PACKAGE_REPLACED")
                 }
             }
 
             else -> {
                 Logger.d(LogTags.MAINTENANCE_L4, "🛡️ LEVEL 4: Ignoring unhandled action: $action")
+            }
+        }
+    }
+
+    /**
+     * DIRECT-BOOT RESTORE: Schnelles, CE-freies Neusetzen der Alarme aus dem Device-Protected-
+     * Spiegel. Laeuft unter goAsync() (prozess-tod-sicher waehrend der kurzen Restore-Phase) und
+     * braucht weder Kalender, Token noch entsperrten Storage - daher schon vor der ersten
+     * Entsperrung (LOCKED_BOOT_COMPLETED) einsetzbar. Setzt dieselben PendingIntents wie der
+     * regulaere Pfad, sodass die spaetere CE-Recovery per FLAG_UPDATE_CURRENT nur aktualisiert.
+     */
+    private fun restoreAlarmsFromDirectBootStore(context: Context, reason: String) {
+        val pendingResult = goAsync()
+        recoveryScope.launch {
+            try {
+                val entries = directBootAlarmStore.getFutureEntries()
+                Logger.business(
+                    LogTags.MAINTENANCE_L4,
+                    "🔐 LEVEL 4: Direct-Boot-Restore ($reason) - ${entries.size} Alarme aus Spiegel"
+                )
+                entries.forEach { entry ->
+                    try {
+                        AlarmManagerService.rescheduleFromDirectBoot(
+                            context, entry.id, entry.triggerTime, entry.shiftName, entry.alarmTimeFormatted
+                        )
+                    } catch (e: Exception) {
+                        Logger.e(
+                            LogTags.MAINTENANCE_L4,
+                            "❌ LEVEL 4: Direct-Boot-Restore fuer id=${entry.id} fehlgeschlagen", e
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Direct-Boot-Restore-Lauf fehlgeschlagen", e)
+            } finally {
+                pendingResult.finish()
             }
         }
     }

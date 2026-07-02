@@ -1,0 +1,81 @@
+package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
+
+import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * Minimaler Alarm-Spiegel im DEVICE-PROTECTED STORAGE.
+ *
+ * Warum: Die eigentliche Alarm-Persistenz (AlarmRepository / @MainDataStore) liegt im
+ * CREDENTIAL-ENCRYPTED Storage und ist vor der ersten Entsperrung nach einem Reboot NICHT
+ * lesbar. Nach einem naechtlichen Reboot (OTA, Absturz, leerer Akku am Ladegeraet) kann die
+ * App ihre Wecker daher nicht wiederherstellen, solange der Nutzer nicht entsperrt.
+ *
+ * Dieser Spiegel haelt die minimalen Trigger-Daten aller geplanten Alarme in einer
+ * SharedPreferences-Datei auf dem Device-Protected-Context. Diese ist bereits im Direct-Boot-
+ * Modus (vor Entsperrung) les- und schreibbar. BootReceiver nutzt sie, um bei
+ * LOCKED_BOOT_COMPLETED / BOOT_COMPLETED die System-Alarme sofort und lokal (ohne Kalender,
+ * Token oder CE-Storage) neu zu setzen.
+ *
+ * Bewusst SharedPreferences statt DataStore: synchron, ohne Coroutine-Infrastruktur, im engen
+ * Boot-Zeitfenster robust - der etablierte Android-Weg fuer Direct-Boot-Daten. Beruehrt die drei
+ * App-DataStores (Main/Hue/Token) NICHT.
+ *
+ * Geschrieben wird der Spiegel zentral in AlarmRepository.persistToDataStore(), also bei jeder
+ * Aenderung des Alarm-Bestands - er bleibt damit automatisch synchron zur CE-Persistenz.
+ */
+@Serializable
+data class DirectBootAlarmEntry(
+    val id: Int,
+    val shiftName: String,
+    val triggerTime: Long,
+    val alarmTimeFormatted: String = ""
+)
+
+@Singleton
+class DirectBootAlarmStore @Inject constructor(
+    @param:ApplicationContext appContext: Context
+) {
+    // WICHTIG: Device-Protected-Context -> im Direct-Boot lesbar. NICHT der normale Context.
+    private val prefs = appContext.createDeviceProtectedStorageContext()
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    /** Ersetzt den gespiegelten Bestand (idempotent, synchron). */
+    fun saveAll(entries: List<DirectBootAlarmEntry>) {
+        try {
+            prefs.edit().putString(KEY_ENTRIES, json.encodeToString(entries)).apply()
+            Logger.d(LogTags.ALARM, "🔐 DIRECT-BOOT: ${entries.size} Alarme in Device-Protected-Spiegel geschrieben")
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "❌ DIRECT-BOOT: Schreiben des Alarm-Spiegels fehlgeschlagen", e)
+        }
+    }
+
+    /** Liefert alle gespiegelten Alarme, deren Weckzeit noch in der Zukunft liegt. */
+    fun getFutureEntries(now: Long = System.currentTimeMillis()): List<DirectBootAlarmEntry> {
+        return try {
+            val raw = prefs.getString(KEY_ENTRIES, null) ?: return emptyList()
+            json.decodeFromString<List<DirectBootAlarmEntry>>(raw).filter { it.triggerTime > now }
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "❌ DIRECT-BOOT: Lesen des Alarm-Spiegels fehlgeschlagen", e)
+            emptyList()
+        }
+    }
+
+    companion object {
+        private const val PREFS_NAME = "direct_boot_alarms"
+        private const val KEY_ENTRIES = "entries"
+    }
+}

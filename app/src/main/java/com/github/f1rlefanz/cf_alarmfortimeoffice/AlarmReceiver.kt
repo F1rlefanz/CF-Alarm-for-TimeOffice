@@ -78,49 +78,63 @@ class AlarmReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         receiverScope.launch {
             try {
-                // CRITICAL: Skip-Check VOR Alarm-Trigger
-                // Skip-Check durchführen
-                try {
+                // DIRECT BOOT: Vor der ersten Entsperrung ist der Skip-Status (CE-DataStore) nicht
+                // lesbar - dann NICHT blockieren, sondern klingeln (lieber wecken als still skippen).
+                val userUnlocked = try {
+                    (context.getSystemService(Context.USER_SERVICE) as android.os.UserManager).isUserUnlocked
+                } catch (e: Exception) {
+                    true // im Zweifel wecken
+                }
+
+                // CRITICAL: Skip-Check VOR Alarm-Trigger (nur bei entsperrtem Storage)
+                if (userUnlocked) {
+                    try {
+                        Logger.business(
+                            LogTags.ALARM_RECEIVER,
+                            "🔍 SKIP-CHECK: Checking skip status for alarm $alarmId ($shiftName)"
+                        )
+
+                        val skipResult = skipUseCase.checkAndProcessSkip(alarmId)
+
+                        when (skipResult.getOrNull()) {
+                            SkipProcessResult.ALARM_SKIPPED -> {
+                                Logger.business(
+                                    LogTags.ALARM_RECEIVER,
+                                    "⏭️ SKIP-SUCCESS: Alarm $alarmId ($shiftName) SKIPPED by user"
+                                )
+                                showSkipNotification(context, shiftName)
+                                return@launch // EARLY RETURN: Alarm nicht ausführen
+                            }
+
+                            SkipProcessResult.ALARM_EXECUTED -> {
+                                Logger.business(
+                                    LogTags.ALARM_RECEIVER,
+                                    "✅ SKIP-CHECK: Alarm $alarmId ($shiftName) will execute normally"
+                                )
+                                // Continue with normal alarm logic below
+                            }
+
+                            null -> {
+                                Logger.w(
+                                    LogTags.ALARM_RECEIVER,
+                                    "⚠️ SKIP-CHECK: Check failed, executing alarm $alarmId normally"
+                                )
+                                // Continue with normal alarm logic
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Logger.e(
+                            LogTags.ALARM_RECEIVER,
+                            "❌ SKIP-CHECK: Error during skip check for alarm $alarmId, executing alarm normally",
+                            e
+                        )
+                        // Continue with normal alarm logic
+                    }
+                } else {
                     Logger.business(
                         LogTags.ALARM_RECEIVER,
-                        "🔍 SKIP-CHECK: Checking skip status for alarm $alarmId ($shiftName)"
+                        "🔐 DIRECT BOOT: Nutzer noch nicht entsperrt - Skip-Check uebersprungen, Alarm $alarmId klingelt"
                     )
-
-                    val skipResult = skipUseCase.checkAndProcessSkip(alarmId)
-
-                    when (skipResult.getOrNull()) {
-                        SkipProcessResult.ALARM_SKIPPED -> {
-                            Logger.business(
-                                LogTags.ALARM_RECEIVER,
-                                "⏭️ SKIP-SUCCESS: Alarm $alarmId ($shiftName) SKIPPED by user"
-                            )
-                            showSkipNotification(context, shiftName)
-                            return@launch // EARLY RETURN: Alarm nicht ausführen
-                        }
-
-                        SkipProcessResult.ALARM_EXECUTED -> {
-                            Logger.business(
-                                LogTags.ALARM_RECEIVER,
-                                "✅ SKIP-CHECK: Alarm $alarmId ($shiftName) will execute normally"
-                            )
-                            // Continue with normal alarm logic below
-                        }
-
-                        null -> {
-                            Logger.w(
-                                LogTags.ALARM_RECEIVER,
-                                "⚠️ SKIP-CHECK: Check failed, executing alarm $alarmId normally"
-                            )
-                            // Continue with normal alarm logic
-                        }
-                    }
-                } catch (e: Exception) {
-                    Logger.e(
-                        LogTags.ALARM_RECEIVER,
-                        "❌ SKIP-CHECK: Error during skip check for alarm $alarmId, executing alarm normally",
-                        e
-                    )
-                    // Continue with normal alarm logic
                 }
 
                 // Existing alarm logic continues here...
@@ -161,7 +175,10 @@ class AlarmReceiver : BroadcastReceiver() {
                     // 🎨 HUE INTEGRATION - Execute matching light rules
                     // Läuft NACH dem Alarm-Start, damit ein langsamer Netzwerkaufruf
                     // Sound + Full-Screen-Intent nicht verzögert.
-                    executeHueRulesForAlarm(shiftName)
+                    // Direct Boot: Hue braucht Netz + CE/Hue-Storage - vor Entsperrung ueberspringen.
+                    if (userUnlocked) {
+                        executeHueRulesForAlarm(shiftName)
+                    }
 
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM_RECEIVER, "❌ Error handling alarm", e)

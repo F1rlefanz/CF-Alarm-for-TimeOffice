@@ -106,7 +106,8 @@
 
         <receiver
             android:name=".AlarmReceiver"
-            android:exported="false" />
+            android:exported="false"
+            android:directBootAware="true" />
 
         <receiver
             android:name=".alarm.receiver.BootReceiver"
@@ -128,6 +129,7 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"
+            android:directBootAware="true"
             android:stopWithTask="false" />
 
         <!-- Alarm Maintenance Service (6-hourly background maintenance) -->

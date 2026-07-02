@@ -312,25 +312,36 @@ class BootReceiver : BroadcastReceiver() {
             // Get current calendar events for validation
             // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
             val selectedCalendars = calendarSelectionRepository.selectedCalendarIds.first()
-            val currentEvents = if (selectedCalendars.isNotEmpty()) {
+            // 🛡️ FAIL-SAFE: Validierung (inkl. Loeschen verwaister Alarme) NUR bei nachweislich
+            // erfolgreichem UND nicht-leerem Kalender-Abruf. Direkt nach dem Boot ist "kein Netz /
+            // Token noch nicht bereit / StateFlow noch nicht geladen" der Normalfall - dann duerfen
+            // gespeicherte Alarme NIEMALS geloescht, sondern muessen unveraendert wiederhergestellt
+            // werden (lieber ein veralteter Wecker als gar keiner).
+            val eventsResult = if (selectedCalendars.isNotEmpty()) {
                 calendarUseCase.getCalendarEventsWithCache(
                     calendarIds = selectedCalendars,
                     forceRefresh = false
-                ).getOrNull() ?: emptyList()
+                )
             } else {
-                emptyList()
+                null
             }
-            
-            Logger.d(LogTags.MAINTENANCE_L4, "🔍 LEVEL 4: Found ${currentEvents.size} current calendar events for validation")
-            
+            val currentEvents = eventsResult?.getOrNull() ?: emptyList()
+            val validationPossible = eventsResult?.isSuccess == true && currentEvents.isNotEmpty()
+
+            Logger.d(
+                LogTags.MAINTENANCE_L4,
+                "🔍 LEVEL 4: ${currentEvents.size} Kalender-Events geladen - Validierung ${if (validationPossible) "aktiv" else "uebersprungen (fail-safe Wiederherstellung)"}"
+            )
+
             // Build event ID map for quick lookup
             val currentEventMap = currentEvents.associateBy { it.id }
 
             // 3. Validate and restore alarms
             for (alarm in futureAlarms) {
                 try {
-                    // Check if alarm has eventId
-                    if (alarm.eventId.isNotEmpty()) {
+                    // Validierung (mit moeglicher Loeschung) nur bei erfolgreichem Kalender-Abruf.
+                    // Ohne Validierung faellt der Alarm unten direkt in scheduleSystemAlarm (Restore).
+                    if (validationPossible && alarm.eventId.isNotEmpty()) {
                         val currentEvent = currentEventMap[alarm.eventId]
                         
                         if (currentEvent == null) {

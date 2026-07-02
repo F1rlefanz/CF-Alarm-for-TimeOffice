@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Laeuft immer nur der neueste Commit pro Ref; aeltere Laeufe werden abgebrochen.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # PFLICHT: app/build.gradle.kts wirft eine GradleException ohne diesen Wert
+      # (keystore.properties existiert in CI nicht; der ENV-Fallback ist im Build implementiert).
+      # Einmalig als Repo-Secret anlegen: Settings -> Secrets and variables -> Actions.
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Repo wird unter Windows gepflegt -> Executable-Bit des Wrappers sicherstellen.
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (Caching + Wrapper-Validierung)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+          # Cache nur auf main schreiben, PRs lesen nur -> kein Cache-Thrashing.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Unit-Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Lint (abortOnError=true wirkt als Merge-Gate)
+        run: ./gradlew lintDebug --stacktrace
+
+      - name: Debug-Build
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Debug-APK als Artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      - name: Test-/Lint-Reports bei Fehler
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 14

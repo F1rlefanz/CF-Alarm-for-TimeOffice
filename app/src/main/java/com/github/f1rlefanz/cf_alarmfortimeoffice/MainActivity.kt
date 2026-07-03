@@ -11,6 +11,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -77,7 +78,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
             Logger.business(LogTags.PERMISSIONS, "Notification permission result", "granted: $isGranted")
             if (!isGranted) {
-                Toast.makeText(this, "Benachrichtigungsberechtigung ist für Alarme erforderlich!", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Ohne Benachrichtigungen erscheinen keine Wecker-Hinweise. Du kannst sie jederzeit in den System-Einstellungen aktivieren.", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -87,9 +88,10 @@ class MainActivity : ComponentActivity() {
         // HILT MIGRATION: No more AppContainer needed - dependencies injected automatically
         Logger.d(LogTags.AUTH, "🔍 OAUTH2-DIAGNOSTIC: Hilt DI active - dependencies auto-injected")
 
-        // Prüfe Notification-Berechtigung
-        checkNotificationPermission()
-        
+        // POST_NOTIFICATIONS wird NICHT mehr hier (vor dem Login, kontextlos) abgefragt, sondern
+        // erst wenn der Nutzer den Hauptbereich erreicht (LaunchedEffect im "main"-Screen unten) -
+        // dort ist der Bezug zum Wecker gegeben. Verhindert die Dialog-Kaskade beim Erststart.
+
         try {
             val isDebugBuild = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
             if (isDebugBuild) {
@@ -147,6 +149,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         "main" -> {
+                            // Kontextuelle Notification-Abfrage: erst im Hauptbereich (nach Login/Setup),
+                            // nicht mehr kontextlos vor dem Login. Feuert einmalig beim Erreichen von "main".
+                            LaunchedEffect(Unit) { checkNotificationPermission() }
                             MainScreen(
                                 authViewModel = authViewModel,
                                 calendarViewModel = calendarViewModel,

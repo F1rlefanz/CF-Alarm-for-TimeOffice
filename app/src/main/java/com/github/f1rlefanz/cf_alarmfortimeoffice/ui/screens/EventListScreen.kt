@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -274,8 +275,9 @@ private fun EventSummaryCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
@@ -288,7 +290,7 @@ private fun EventSummaryCard(
                 Icons.Default.CalendarMonth,
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                tint = MaterialTheme.colorScheme.primary
             )
 
             Column(modifier = Modifier.weight(1f)) {
@@ -334,11 +336,9 @@ private fun EventCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isWorkShift)
-                MaterialTheme.colorScheme.secondaryContainer
-            else
-                MaterialTheme.colorScheme.surface
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
@@ -347,15 +347,15 @@ private fun EventCard(
             horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM),
             verticalAlignment = Alignment.Top
         ) {
-            // Event Type Icon
+            // Event Type Icon — Arbeitsschichten hervorgehoben durch Markenrot
             Icon(
                 imageVector = if (isWorkShift) Icons.Default.Work else Icons.Default.CalendarMonth,
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (isWorkShift)
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                else
                     MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Column(

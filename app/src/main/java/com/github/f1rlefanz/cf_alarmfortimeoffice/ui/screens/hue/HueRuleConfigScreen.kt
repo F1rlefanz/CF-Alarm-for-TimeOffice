@@ -1054,7 +1054,8 @@ private fun RulePreviewCard(
     val bridgeManager = remember { HueBridgeConnectionManager.getInstance(context) }
     
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier

@@ -41,7 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
@@ -141,11 +143,9 @@ private fun StatusCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isOk) 
-                MaterialTheme.colorScheme.secondaryContainer
-            else 
-                MaterialTheme.colorScheme.errorContainer
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
@@ -159,9 +159,9 @@ private fun StatusCard(
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (isOk)
-                    MaterialTheme.colorScheme.onSecondaryContainer
+                    MaterialTheme.colorScheme.success
                 else
-                    MaterialTheme.colorScheme.onErrorContainer
+                    MaterialTheme.colorScheme.error
             )
             
             Column(modifier = Modifier.weight(1f)) {
@@ -204,11 +204,9 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isOffline) 
-                MaterialTheme.colorScheme.errorContainer
-            else 
-                MaterialTheme.colorScheme.tertiaryContainer
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
@@ -223,9 +221,9 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                     tint = if (isOffline)
-                        MaterialTheme.colorScheme.onErrorContainer
+                        MaterialTheme.colorScheme.error
                     else
-                        MaterialTheme.colorScheme.onTertiaryContainer
+                        MaterialTheme.colorScheme.success
                 )
                 
                 Column(modifier = Modifier.weight(1f)) {
@@ -308,8 +306,9 @@ private fun DebugInfoCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier.padding(SpacingConstants.PADDING_CARD),

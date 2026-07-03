@@ -51,7 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -192,8 +192,9 @@ private fun BridgeStatusCard(
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (connectionInfo?.isConnected == true)
-                MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
-        )
+                MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.errorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
@@ -205,7 +206,7 @@ private fun BridgeStatusCard(
                 Icon(
                     if (connectionInfo?.isConnected == true) Icons.Default.CheckCircle else Icons.Default.Error,
                     contentDescription = null,
-                    tint = if (connectionInfo?.isConnected == true) Color.Green else MaterialTheme.colorScheme.error,
+                    tint = if (connectionInfo?.isConnected == true) MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(32.dp)
                 )
                 Spacer(Modifier.width(12.dp))
@@ -321,7 +322,7 @@ private fun StatItem(
 
 @Composable
 private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

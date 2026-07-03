@@ -1,27 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- 🚀 FIXED: Main app theme now uses AppCompat to support AppCompatActivity -->
-    <!-- Changed from android:Theme.Material.Light.NoActionBar to Theme.AppCompat.Light.NoActionBar -->
+    <!-- Parent bleibt Theme.AppCompat.* (AppCompatActivity-Kompatibilität).
+         Corporate Design: generische holo-Farben durch Markenrot ersetzt. -->
     <style name="Theme.CFAlarmForTimeOffice" parent="Theme.AppCompat.Light.NoActionBar">
-        <!-- Add any custom styling here -->
-        <item name="colorPrimary">@android:color/holo_blue_bright</item>
-        <item name="colorPrimaryDark">@android:color/holo_blue_dark</item>
-        <item name="colorAccent">@android:color/holo_orange_light</item>
+        <item name="colorPrimary">@color/brand_red</item>
+        <item name="colorPrimaryDark">@color/brand_red_dark</item>
+        <item name="colorAccent">@color/brand_red</item>
     </style>
-    
-    <!-- CLEANUP 2025: Removed unused OnePlusSetup theme - OnePlus support is now handled by simple dialog -->
-    
-    <!-- 🔥 NEW: Specific theme for AlarmFullScreenActivity with enhanced wake-up properties -->
+
+    <!-- Alarm-Vollbildschirm: kräftiges Markenrot statt generischem Blau —
+         zugleich dringlich (Alarm) und wiedererkennbar (Corporate Design). -->
     <style name="Theme.CFAlarmForTimeOffice.AlarmFullScreen" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="colorPrimary">@android:color/holo_blue_bright</item>
-        <item name="colorPrimaryDark">@android:color/holo_blue_dark</item>
-        <item name="colorAccent">@android:color/holo_red_light</item>
-        <item name="android:windowBackground">@android:color/holo_blue_bright</item>
-        <!-- Enhanced full-screen properties for alarm -->
+        <item name="colorPrimary">@color/brand_red</item>
+        <item name="colorPrimaryDark">@color/brand_red_dark</item>
+        <item name="colorAccent">@color/off_white</item>
+        <item name="android:windowBackground">@color/brand_red</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowShowWallpaper">false</item>
     </style>
-    
+
 </resources>

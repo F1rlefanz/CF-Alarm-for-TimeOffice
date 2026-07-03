@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Keep these minimal colors for Material 3 theme compatibility -->
+    <!-- Corporate Design — genutzt von themes.xml (AppCompat-Theme + Alarm-Vollbild-Theme) -->
+    <color name="brand_red">#E2001A</color>
+    <color name="brand_red_dark">#8E0F30</color>
+    <color name="brand_red_light">#FBE1E4</color>
+    <color name="charcoal">#2D2A28</color>
+    <color name="off_white">#F0EDEA</color>
 </resources>

@@ -13,12 +13,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,8 +64,41 @@ fun MainContentScreen(
     val alarmState by alarmViewModel.uiState.collectAsState()
     val skipState by alarmViewModel.skipState.collectAsState()
     val manualAlarmState by alarmViewModel.manualAlarmState.collectAsState() // NEU
-    
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // FEHLER-SICHTBARKEIT: Lade-/Sync-Fehler der Kern-Pipeline nicht mehr still verschlucken -
+    // in einer Wecker-App darf der Nutzer einen Leerzustand nicht faelschlich fuer die Wahrheit
+    // halten. Fehler werden als Snackbar gezeigt und danach geleert (sonst blieben sie in State
+    // haengen und die Snackbar liesse sich nicht erneut ausloesen).
+    LaunchedEffect(calendarState.error) {
+        calendarState.error?.let { msg ->
+            val result = snackbarHostState.showSnackbar(
+                message = msg,
+                actionLabel = "Wiederholen",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                mainViewModel.forceRefreshCalendarEvents()
+            }
+            calendarViewModel.clearError()
+        }
+    }
+    LaunchedEffect(shiftState.error) {
+        shiftState.error?.let { msg ->
+            snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
+            shiftViewModel.clearError()
+        }
+    }
+    LaunchedEffect(alarmState.error) {
+        alarmState.error?.let { msg ->
+            snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
+            alarmViewModel.clearError()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {

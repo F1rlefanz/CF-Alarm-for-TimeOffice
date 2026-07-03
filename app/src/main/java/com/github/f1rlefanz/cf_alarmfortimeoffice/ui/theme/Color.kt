@@ -33,3 +33,21 @@ val DarkContainer = Color(0xFF6B0B22)
 // Fehlerzustände optisch nicht mit der (roten) Markenfarbe verschmelzen ----
 val ErrorRed = Color(0xFFBA1A1A)
 val ErrorRedDark = Color(0xFFFFB4AB)
+val ErrorContainerLight = Color(0xFFFFDAD6)   // weiche rote Fehler-/Abmelden-Karten
+val OnErrorContainerLight = Color(0xFF410002)
+val ErrorContainerDark = Color(0xFF93000A)
+val OnErrorContainerDark = Color(0xFFFFDAD6)
+
+// ---- Neutrale Surface-Container-Rampe (weiße Karten statt Material-Default-Flieder) ----
+val SurfaceContainerLight = Color(0xFFF7F4F1)     // z. B. NavigationBar-Hintergrund
+val TertiaryContainerLight = Color(0xFFF0EAE3)    // warm-neutral statt Lila
+val DarkSurfaceContainerLowest = Color(0xFF161514)
+val DarkSurfaceContainer = Color(0xFF272625)
+val DarkSurfaceContainerHigh = Color(0xFF323130)
+
+// ---- Semantische Status-Farben (Ampel-Logik: Grün=OK, Bernstein=Hinweis) ----
+// Bewusst getrennt von der Markenfarbe; transportieren Bedeutung, nicht Branding.
+val SuccessGreen = Color(0xFF2E7D32)       // OK (Light)
+val SuccessGreenDark = Color(0xFF7FD98A)   // OK (Dark)
+val WarningAmber = Color(0xFFB26A00)       // Hinweis/Warnung (Light)
+val WarningAmberDark = Color(0xFFF5BD6B)   // Hinweis/Warnung (Dark)

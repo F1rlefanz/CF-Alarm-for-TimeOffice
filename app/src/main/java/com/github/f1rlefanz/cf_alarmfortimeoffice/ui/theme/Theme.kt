@@ -1,11 +1,23 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+
+/**
+ * Semantische Status-Farben (Ampel-Logik), die Material3 nicht als Rolle kennt.
+ * Bewusst getrennt vom Markenrot: Grün = OK, Bernstein = Hinweis/Warnung.
+ * Nutzung: MaterialTheme.colorScheme.success / .warning
+ */
+val ColorScheme.success: Color
+    @Composable get() = if (isSystemInDarkTheme()) SuccessGreenDark else SuccessGreen
+
+val ColorScheme.warning: Color
+    @Composable get() = if (isSystemInDarkTheme()) WarningAmberDark else WarningAmber
 
 /**
  * Corporate-Design Farbschemata.
@@ -37,11 +49,28 @@ private val LightColorScheme = lightColorScheme(
     surfaceVariant = OffWhite,
     onSurfaceVariant = WarmGrey,
 
+    // Neutrale Surface-Container-Rampe: Karten (surfaceContainerHighest) sind weiß,
+    // NavigationBar (surfaceContainer) ist ein dezentes Warmgrau. Ohne diese
+    // Overrides würden die Material3-Default-Werte (lila/flieder) durchschlagen.
+    surfaceContainerLowest = SurfaceWhite,
+    surfaceContainerLow = SurfaceWhite,
+    surfaceContainer = SurfaceContainerLight,
+    surfaceContainerHigh = SurfaceWhite,
+    surfaceContainerHighest = SurfaceWhite,
+
+    tertiaryContainer = TertiaryContainerLight,
+    onTertiaryContainer = Charcoal,
+
     outline = Outline,
     outlineVariant = Outline,
 
+    // surfaceTint = Oberfläche => keine rote Tönung auf erhöhten weißen Karten.
+    surfaceTint = SurfaceWhite,
+
     error = ErrorRed,
-    onError = SurfaceWhite
+    onError = SurfaceWhite,
+    errorContainer = ErrorContainerLight,
+    onErrorContainer = OnErrorContainerLight
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -66,11 +95,24 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkOnSurfaceVariant,
 
+    surfaceContainerLowest = DarkSurfaceContainerLowest,
+    surfaceContainerLow = DarkSurface,
+    surfaceContainer = DarkSurfaceContainer,
+    surfaceContainerHigh = DarkSurfaceContainerHigh,
+    surfaceContainerHighest = DarkSurfaceVariant,
+
+    tertiaryContainer = DarkSurfaceVariant,
+    onTertiaryContainer = DarkOnSurfaceVariant,
+
     outline = DarkOutline,
     outlineVariant = DarkOutline,
 
+    surfaceTint = DarkSurface,
+
     error = ErrorRedDark,
-    onError = Color(0xFF690005)
+    onError = Color(0xFF690005),
+    errorContainer = ErrorContainerDark,
+    onErrorContainer = OnErrorContainerDark
 )
 
 @Composable

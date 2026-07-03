@@ -276,14 +276,14 @@ Damit das Bild fair bleibt — die App hat ein **belastbares Fundament**:
 - **Verifikation auf echter Hardware (nach jedem Batch):** Reboot vor Weckzeit **und ohne Entsperren** (Direct Boot!), App-Update über Nacht, Power-Druck/Anruf während Klingeln, Task-Swipe, Zonenwechsel.
 
 **Parallel & sofort (lange Vorlaufzeit, blockiert den offenen Test):**
-- **OAuth-Verification einreichen** (Wochen Bearbeitungszeit).
-- Ungenutzte Permissions streichen; Play-Console-Deklarationen (mediaPlayback, FULL_SCREEN_INTENT) vorbereiten.
+- ⬜ **OAuth-Verification einreichen** (Wochen Bearbeitungszeit) — paste-ready Scope-Justification + Checkliste liegt in `docs/play-store/oauth-verification.md`.
+- ✅ Ungenutzte Permissions gestrichen (Gate 0). ✅ Play-Console-Deklarationen paste-ready: `docs/play-store/mediaplayback-fgs-justification.md` + `full-screen-intent-declaration.md` (Einreichung durch Nutzer).
 
 **Gate 1 — Vor öffentlichem Test:**
 - ✅ **CI-Pipeline** (`d379dc0`) — Secret + Branch-Protection noch durch Nutzer. ✅ **Zombie-`MainActivityTest`** entfernt (`30cf346`). ✅ **Release-PII-Logging** entschärft (`3054191`).
-- ⬜ Privacy Policy an Code angleichen (P2); Play-Console-Deklarationen (mediaPlayback, FULL_SCREEN_INTENT) vorbereiten.
+- ✅ **Play-Console-Deklarationen paste-ready** (mediaPlayback + FULL_SCREEN_INTENT + OAuth, `docs/play-store/`).
 - ✅ **Battery-Gate „Später“** (`a2fe5d5`). ✅ **Globale Fehler-Sichtbarkeit** (SnackbarHost, `d3f95e9`). ✅ **`POST_NOTIFICATIONS` in Kontext** (`5238c57`). ✅ **Privacy-Policy an Code angeglichen** (`da340a5`).
-- ⬜ Tests #1–#3 (`IAlarmManagerService` einziehen).
+- ⬜ Tests #1–#3 (`IAlarmManagerService` einziehen) — **einziger substanzieller Code-Rest in Gate 1.**
 - ⬜ **Nutzer-Aktion, zeitkritisch:** OAuth-Verification einreichen (siehe oben).
 
 **Gate 2 — Härtung/Qualität (nach dem ersten offenen Test iterierbar):**

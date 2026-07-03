@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogExporter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -145,16 +146,9 @@ fun SettingsTabContent(
 
             // Dynamically adapt card appearance based on state
             val needsReauth = authState.calendarOps.needsTokenReauthorization
-            val cardColor = if (needsReauth) {
-                MaterialTheme.colorScheme.tertiaryContainer
-            } else {
-                MaterialTheme.colorScheme.primaryContainer
-            }
-            val iconColor = if (needsReauth) {
-                MaterialTheme.colorScheme.onTertiaryContainer
-            } else {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            }
+            // CTA-Karte: weiße Fläche mit rotem Akzent (statt getöntem Container).
+            val cardColor = MaterialTheme.colorScheme.surface
+            val iconColor = MaterialTheme.colorScheme.primary
             val titleText = if (needsReauth) {
                 "Kalender-Zugriff erneuern"
             } else {
@@ -199,12 +193,12 @@ fun SettingsTabContent(
                         Text(
                             titleText,
                             style = MaterialTheme.typography.titleMedium,
-                            color = iconColor
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             descriptionText,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = iconColor
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     if (authState.calendarOps.calendarsLoading) {
@@ -302,8 +296,9 @@ fun SettingsTabContent(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -393,8 +388,9 @@ fun SettingsTabContent(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    containerColor = MaterialTheme.colorScheme.surface
                 ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 onClick = {
                     try {
                         val helpUrl = BatteryOptimizationHelper.getOEMHelpURL(oemType)
@@ -416,24 +412,24 @@ fun SettingsTabContent(
                         Icons.Default.Warning,
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                        tint = MaterialTheme.colorScheme.warning
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "${BatteryOptimizationHelper.getOEMDisplayName(oemType)}-Geräte erfordern Extra-Schritte",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             "Für maximale Zuverlässigkeit weitere Einstellungen prüfen",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Icon(
                         Icons.AutoMirrored.Filled.OpenInNew,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                        tint = MaterialTheme.colorScheme.warning
                     )
                 }
             }

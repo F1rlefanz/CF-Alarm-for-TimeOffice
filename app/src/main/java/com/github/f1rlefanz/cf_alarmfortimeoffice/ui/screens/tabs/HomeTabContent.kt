@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
@@ -97,8 +99,9 @@ fun HomeTabContent(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -111,7 +114,7 @@ fun HomeTabContent(
                     Icons.Default.Work,
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    tint = MaterialTheme.colorScheme.primary
                 )
                 
                 Column(modifier = Modifier.weight(1f)) {
@@ -317,12 +320,9 @@ private fun EnhancedAlarmStatusCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = when {
-                skipState.isNextAlarmSkipped -> MaterialTheme.colorScheme.tertiaryContainer // Orange
-                alarmState.hasActiveAlarms -> MaterialTheme.colorScheme.secondaryContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
@@ -339,8 +339,8 @@ private fun EnhancedAlarmStatusCard(
                     Icons.Default.AccessAlarm,
                     modifier = Modifier.size(32.dp),
                     tint = when {
-                        skipState.isNextAlarmSkipped -> MaterialTheme.colorScheme.onTertiaryContainer
-                        alarmState.hasActiveAlarms -> MaterialTheme.colorScheme.onSecondaryContainer
+                        skipState.isNextAlarmSkipped -> MaterialTheme.colorScheme.warning
+                        alarmState.hasActiveAlarms -> MaterialTheme.colorScheme.success
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     contentDescription = null
@@ -385,7 +385,7 @@ private fun EnhancedAlarmStatusCard(
                         ) {
                             Icon(
                                 Icons.Default.SkipNext,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                tint = MaterialTheme.colorScheme.warning,
                                 modifier = Modifier.size(20.dp),
                                 contentDescription = null
                             )
@@ -393,7 +393,7 @@ private fun EnhancedAlarmStatusCard(
                                 "Nächster Alarm wird übersprungen",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         
@@ -401,7 +401,7 @@ private fun EnhancedAlarmStatusCard(
                             onClick = onCancelSkip,
                             enabled = !skipState.isLoading,
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                contentColor = MaterialTheme.colorScheme.primary
                             )
                         ) {
                             if (skipState.isLoading) {

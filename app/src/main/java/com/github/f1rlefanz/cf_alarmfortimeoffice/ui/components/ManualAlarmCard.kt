@@ -64,11 +64,9 @@ fun ManualAlarmCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = when {
-                manualAlarmState.hasActiveManualAlarm -> MaterialTheme.colorScheme.primaryContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
@@ -82,13 +80,10 @@ fun ManualAlarmCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    if (manualAlarmState.hasActiveManualAlarm) Icons.Default.CheckCircle 
+                    if (manualAlarmState.hasActiveManualAlarm) Icons.Default.CheckCircle
                     else Icons.Default.AlarmAdd,
                     modifier = Modifier.size(32.dp),
-                    tint = when {
-                        manualAlarmState.hasActiveManualAlarm -> MaterialTheme.colorScheme.onPrimaryContainer
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    tint = MaterialTheme.colorScheme.primary,
                     contentDescription = null
                 )
                 
@@ -124,11 +119,12 @@ fun ManualAlarmCard(
                             )
                         }
                         
-                        OutlinedButton(
+                        Button(
                             onClick = onDelete,
                             enabled = !manualAlarmState.isDeleting,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         ) {
                             if (manualAlarmState.isDeleting) {

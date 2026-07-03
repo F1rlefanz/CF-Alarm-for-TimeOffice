@@ -2,7 +2,7 @@
 
 **Datum:** 2026-07-02 · **Version im Audit:** 1.7.0 (versionCode 32) · **Branch:** `main`
 **Auftrag:** Schonungslose Release-Reife-Prüfung vor dem öffentlichen Test (siehe `AUDIT-PROMPT-Fable5.md`)
-**Status:** **Gate 0 abgeschlossen und als v1.8.0 (versionCode 33) auf `main` integriert.** Build grün, läuft im Emulator. Direct-Boot-*Firing* im gesperrten Zustand ist OEM-abhängig → in der Nutzer-Testphase zu bestätigen. Nächste Etappe: Gate 1 (offener Test).
+**Status:** **Gate 0 komplett (v1.8.0) + Gate-1-Batch 1 (v1.9.1) auf `main`.** Dazwischen extern: CSJR Corporate Design (v1.9.0). Direct-Boot-System **live auf dem Emulator verifiziert** (Logcat: `LOCKED_BOOT_COMPLETED`-Restore + fail-safe Recovery „Restored 3, Deleted 0", DE-Spiegel geschrieben). Gate-1 offen: `POST_NOTIFICATIONS`-Kontext, Privacy-Policy-Angleich, Play-Console-Deklarationen, erste Alarm-Kette-Tests + **OAuth-Verification (Nutzer, zeitkritisch)**.
 
 > **Lebendes Dokument.** Erledigte Findings sind zu abgehakten Einzeilern mit Commit-Ref kollabiert; der Detailtext liegt in der Git-Historie. Legende: ✅ behoben · 🔧 teilweise/in Arbeit · ⬜ offen.
 >

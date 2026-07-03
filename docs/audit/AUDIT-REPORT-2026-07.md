@@ -282,7 +282,7 @@ Damit das Bild fair bleibt — die App hat ein **belastbares Fundament**:
 **Gate 1 — Vor öffentlichem Test:**
 - ✅ **CI-Pipeline** (`d379dc0`) — Secret + Branch-Protection noch durch Nutzer. ✅ **Zombie-`MainActivityTest`** entfernt (`30cf346`). ✅ **Release-PII-Logging** entschärft (`3054191`).
 - ⬜ Privacy Policy an Code angleichen (P2); Play-Console-Deklarationen (mediaPlayback, FULL_SCREEN_INTENT) vorbereiten.
-- ✅ **Battery-Gate „Später“** (`a2fe5d5`). ✅ **Globale Fehler-Sichtbarkeit** (SnackbarHost, `d3f95e9`). ⬜ `POST_NOTIFICATIONS` in Kontext.
+- ✅ **Battery-Gate „Später“** (`a2fe5d5`). ✅ **Globale Fehler-Sichtbarkeit** (SnackbarHost, `d3f95e9`). ✅ **`POST_NOTIFICATIONS` in Kontext** (`5238c57`). ✅ **Privacy-Policy an Code angeglichen** (`da340a5`).
 - ⬜ Tests #1–#3 (`IAlarmManagerService` einziehen).
 - ⬜ **Nutzer-Aktion, zeitkritisch:** OAuth-Verification einreichen (siehe oben).
 
@@ -317,7 +317,7 @@ Format: `[Effort] Titel — Datei:Zeile`. Kurzfassung nach Bereich in §5.
 
 **Sicherheit (4)**
 - [S] Keyset-/Dateikorruption → dauerhafter Auth-Soft-Lock ohne Recovery-Pfad — `auth/security/EncryptedDataStoreFactory.kt:111`
-- [S] Datenschutzerklärung widerspricht dem Code-Verhalten in drei Punkten — `docs/privacy.html:84`
+- ✅ [S] Datenschutzerklärung widerspricht dem Code-Verhalten — behoben in `da340a5` (Kalenderdaten-Speicherung korrigiert, Diagnose-Log offengelegt, Versionen vereinheitlicht).
 - [S] Vier deklarierte Permissions ohne Code-Nutzung (`DISABLE_KEYGUARD`, `CHANGE_WIFI_MULTICAST_STATE`, `MODIFY_AUDIO_SETTINGS`, `ACCESS_NOTIFICATION_POLICY`) — `AndroidManifest.xml:67`
 - [S] „Logs senden“ verschickt PII-haltige Logs an eine Trashmail-Adresse ohne Einwilligungshinweis — `util/LogEmailUtil.kt:18`
 
@@ -336,13 +336,13 @@ Format: `[Effort] Titel — Datei:Zeile`. Kurzfassung nach Bereich in §5.
 - [M] Alarm-Screen: Stoppen/Snooze kleben ohne Abstand aneinander, Padding in Pixeln statt dp, kein fehlbediensicheres Pattern — `AlarmFullScreenActivity.kt:276`
 - [S] Dark Mode unvollständig: XML-Theme ist Light-only (kein DayNight/values-night) — weißer Start-Blitz, helle System-Dialoge — `res/values/themes.xml:6`
 - [S] Abmelden, Schichttyp-/Hue-Regel-Löschen und Config-Reset ohne Bestätigung — `ui/screens/ShiftConfigScreen.kt:267`
-- [S] `POST_NOTIFICATIONS` wird beim allerersten Start vor dem Login ohne Begründung abgefragt; Ablehnung endet in Sackgassen-Toast — `MainActivity.kt:91`
+- ✅ [S] `POST_NOTIFICATIONS` vor dem Login kontextlos abgefragt — behoben in `5238c57` (jetzt kontextuell im Hauptbereich via LaunchedEffect; Ablehnungs-Hinweis verweist auf Einstellungen).
 - [S] Home-Tab zeigt keinen Countdown zum nächsten Alarm; fertige `CountdownTimer`-/`NoAlarmCard`-Komponenten sind toter Code — `ui/components/CountdownTimer.kt:65`
 
 **Infrastruktur (6)**
 - [M] Kern-Alarm-Kette (Delta-Sync, Skip-Logik, Persistenz) komplett ungetestet — blockiert durch fehlendes Interface für `AlarmManagerService` — `usecase/AlarmUseCase.kt:45`
 - ✅ [S] `MainActivityTest` (Zombie gegen entfernte UI) — entfernt in `30cf346` (löste zugleich die `createAndroidComposeRule`-Deprecation-Warnung im AndroidTest-Compile).
-- [S] Privacy Policy behauptet AES-256-GCM-Speicherung der Kalenderdaten — tatsächlich nur unverschlüsselt im RAM-Cache — `docs/privacy.html:66`
+- ✅ [S] Privacy Policy behauptet AES-256-GCM-Speicherung der Kalenderdaten — behoben in `da340a5` (jetzt korrekt: nur kurzlebiger RAM-Cache, dauerhaft nur abgeleitete Weckzeiten).
 - [M] Für den offenen Test fehlen 3 von 4 Play-Console-Deklarationen — nur specialUse-FGS vorbereitet — `AndroidManifest.xml:59`
 - [M] `proguard-rules.pro` enthält `-dontshrink/-dontoptimize` + Pauschal-Keeps + tote Firebase-Regeln — Minify-Reaktivierung wirkungslos/fehleranfällig — `app/proguard-rules.pro:352`
 - [S] Crash-Diagnose skaliert nicht über Solo-Betrieb hinaus: `last_crash.txt` wird geschrieben, aber nie proaktiv angeboten — `CFAlarmApplication.kt:142`

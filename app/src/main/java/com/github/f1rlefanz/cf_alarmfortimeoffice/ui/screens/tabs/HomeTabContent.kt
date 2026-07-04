@@ -61,7 +61,10 @@ fun HomeTabContent(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
+            .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL)
+            // Zusaetzlicher Freiraum unten, damit der Manueller-Alarm-FAB nicht ueber der letzten
+            // Karte schwebt (der FAB liegt ausserhalb des Scaffold-innerPadding).
+            .padding(bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
         // Header mit Refresh-Button

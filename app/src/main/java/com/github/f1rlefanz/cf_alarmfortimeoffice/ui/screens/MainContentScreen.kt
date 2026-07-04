@@ -129,25 +129,25 @@ fun MainContentScreen(
             NavigationBar {
                 NavigationBarItem(
                     icon = { Icon(Icons.Filled.Home, contentDescription = "Home") },
-                    label = { Text("Home") },
+                    label = { Text("Home", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     selected = selectedTab == MainTab.HOME,
                     onClick = { onSelectedTabChange(MainTab.HOME) }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Filled.Info, contentDescription = "Status") },
-                    label = { Text("Status") },
+                    label = { Text("Status", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     selected = selectedTab == MainTab.STATUS,
                     onClick = { onSelectedTabChange(MainTab.STATUS) }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen") },
-                    label = { Text("Einstellungen") },
+                    label = { Text("Einstellungen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     selected = selectedTab == MainTab.SETTINGS,
                     onClick = { onSelectedTabChange(MainTab.SETTINGS) }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Filled.Lightbulb, contentDescription = "Hue") },
-                    label = { Text("Hue") },
+                    label = { Text("Hue", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     selected = selectedTab == MainTab.HUE,
                     onClick = { onSelectedTabChange(MainTab.HUE) }
                 )

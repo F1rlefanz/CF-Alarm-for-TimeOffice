@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -52,7 +51,6 @@ class MainViewModel @Inject constructor(
     data class MainUiState(
         val isAuthenticated: Boolean = false,
         val hasSelectedCalendars: Boolean = false,
-        val hasAvailableCalendars: Boolean = false,
         val hasShiftConfig: Boolean = false,
         val isProcessingShifts: Boolean = false,
         val hasUpcomingShift: Boolean = false,
@@ -76,24 +74,19 @@ class MainViewModel @Inject constructor(
                     .distinctUntilChanged(),
                 calendarSelectionRepository.selectedCalendarIds
                     .debounce(150)
-                    .distinctUntilChanged(),
-                calendarStateHolder.availableCalendars
-                    .map { it.isNotEmpty() }
-                    .debounce(100)
                     .distinctUntilChanged()
-            ) { authData, activeAlarms, selectedCalendarIds, hasAvailableCalendars ->
+            ) { authData, activeAlarms, selectedCalendarIds ->
                 MainUiState(
                     isAuthenticated = authData.isLoggedIn,
                     hasSelectedCalendars = selectedCalendarIds.isNotEmpty(),
-                    hasAvailableCalendars = hasAvailableCalendars,
                     hasActiveAlarms = activeAlarms.isNotEmpty()
                 )
             }.distinctUntilChanged()
             .debounce(75)
             .collect { state ->
                 _uiState.value = state
-                
-                Logger.d(LogTags.NAVIGATION, "🔄 UI-DEBOUNCE: Main state updated - authenticated=${state.isAuthenticated}, hasCalendars=${state.hasAvailableCalendars}, hasSelected=${state.hasSelectedCalendars}")
+
+                Logger.d(LogTags.NAVIGATION, "🔄 UI-DEBOUNCE: Main state updated - authenticated=${state.isAuthenticated}, hasSelected=${state.hasSelectedCalendars}")
             }
         }
     }

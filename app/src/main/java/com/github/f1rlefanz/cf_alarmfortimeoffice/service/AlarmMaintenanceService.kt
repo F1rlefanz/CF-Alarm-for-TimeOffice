@@ -333,36 +333,23 @@ class AlarmMaintenanceService : Service() {
         
         // Delta-Sync erwartet den VOLLSTAENDIGEN Soll-Zustand. Nur die neu erkannten Schichten
         // zu uebergeben wuerde alle bereits geplanten Wecker loeschen, deren Event nicht in der
-        // Teilliste steht (createAlarmsFromEvents entfernt Alarme ohne passendes Event). Die
+        // Teilliste steht (syncAlarms entfernt Alarme ohne passendes Event). Die
         // newShifts-Pruefung oben dient nur der Entscheidung, OB ueberhaupt synchronisiert wird.
-        val createResult = alarmUseCase.createAlarmsFromEvents(events, shiftConfig)
-        
-        if (createResult.isSuccess) {
-            val newAlarms = createResult.getOrThrow()
-            
-            var successCount = 0
-            var failCount = 0
-            
-            newAlarms.forEach { alarm ->
-                try {
-                    alarmUseCase.scheduleSystemAlarm(alarm)
-                    successCount++
-                    Logger.d(LogTags.MAINTENANCE, "✅ Alarm scheduled: ${alarm.shiftName}")
-                } catch (e: Exception) {
-                    failCount++
-                    Logger.e(LogTags.MAINTENANCE, "Failed to schedule: ${alarm.shiftName}", e)
-                }
-            }
-            
+        // Orchestrator: syncAlarms setzt die System-Alarme INTERN (Delta-Sync + idempotentes
+        // Re-Arming). Kein separates scheduleSystemAlarm mehr noetig (frueher: Doppel-Scheduling).
+        val syncResult = alarmUseCase.syncAlarms(events, shiftConfig)
+
+        if (syncResult.isSuccess) {
+            val syncedAlarms = syncResult.getOrThrow()
             val duration = System.currentTimeMillis() - startTime
             Logger.business(
                 LogTags.MAINTENANCE,
-                "✅ Maintenance completed: $successCount alarms scheduled, $failCount failed in ${duration}ms"
+                "✅ Maintenance completed: ${syncedAlarms.size} alarms in sync in ${duration}ms"
             )
             saveMaintenanceTime()
             scheduleNextAlarm()
         } else {
-            Logger.e(LogTags.MAINTENANCE, "Alarm creation failed", createResult.exceptionOrNull())
+            Logger.e(LogTags.MAINTENANCE, "Alarm sync failed", syncResult.exceptionOrNull())
             scheduleNextAlarm()
         }
     }

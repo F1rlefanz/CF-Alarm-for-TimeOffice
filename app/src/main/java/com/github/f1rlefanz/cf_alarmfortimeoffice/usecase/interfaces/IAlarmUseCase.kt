@@ -23,13 +23,24 @@ interface IAlarmUseCase {
     val activeAlarms: Flow<List<AlarmInfo>>
     
     /**
-     * Erstellt Alarme basierend auf Kalender-Events und Schicht-Konfiguration
-     * 
-     * @param events Liste der Kalender-Events
+     * Synchronisiert den Alarm-Bestand mit den übergebenen Kalender-Events (Soll-Zustand).
+     *
+     * EINZIGER Einstiegspunkt für die Event→Alarm-Pipeline (Orchestrator). Führt eine
+     * mutex-serialisierte, idempotente Delta-Synchronisation durch:
+     * - Event entfernt   → zugehöriger Alarm wird gelöscht (Repository + System-Alarm)
+     * - Event geändert   → Alarm wird aktualisiert und neu gesetzt
+     * - Event neu        → Alarm wird erstellt und gesetzt
+     * - Event unverändert → System-Alarm wird idempotent re-armed
+     * Manuell erstellte Alarme (leere eventId) bleiben unangetastet.
+     *
+     * Der System-Alarm wird für JEDEN Alarm des Soll-Zustands intern gesetzt — Aufrufer
+     * dürfen (und sollen) danach NICHT mehr selbst schedulen.
+     *
+     * @param events Vollständige Liste der Kalender-Events (der Soll-Zustand)
      * @param shiftConfig Aktuelle Schicht-Konfiguration
-     * @return Result mit Liste der erstellten Alarme oder Fehler
+     * @return Result mit dem resultierenden Alarm-Bestand oder Fehler
      */
-    suspend fun createAlarmsFromEvents(
+    suspend fun syncAlarms(
         events: List<CalendarEvent>,
         shiftConfig: ShiftConfig
     ): Result<List<AlarmInfo>>

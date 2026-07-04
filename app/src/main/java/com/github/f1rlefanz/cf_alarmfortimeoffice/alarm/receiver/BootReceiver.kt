@@ -462,8 +462,11 @@ class BootReceiver : BroadcastReceiver() {
 
                 val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
                 if (shiftConfig?.autoAlarmEnabled == true) {
+                    // syncAlarms setzt die System-Alarme bereits intern; das folgende
+                    // scheduleSystemAlarm ist idempotentes Re-Arming und dient hier zusaetzlich
+                    // dem Zaehlen der wiederhergestellten Alarme im Boot-Recovery-Pfad.
                     val newAlarmsResult =
-                        alarmUseCase.createAlarmsFromEvents(currentEvents, shiftConfig)
+                        alarmUseCase.syncAlarms(currentEvents, shiftConfig)
                     val newAlarms = newAlarmsResult.getOrNull() ?: emptyList()
 
                     for (newAlarm in newAlarms) {

@@ -772,31 +772,17 @@ class CalendarViewModel @Inject constructor(
                 if (shiftConfig?.autoAlarmEnabled == true) {
                     Logger.business(LogTags.ALARM, "✅ TIMING-FIX: ShiftConfig available with autoAlarm enabled, creating alarms...")
                     
-                    // Kein Vorab-deleteAllAlarms() mehr: createAlarmsFromEvents fuehrt einen
-                    // eventId-basierten Delta-Sync durch, der bestehende UND manuelle Alarme
-                    // (eventId leer) schont und nur wirklich entfernte Events loescht. Das
-                    // fruehere Loeschen oeffnete ein Verlustfenster (Prozess-Tod = 0 Wecker)
-                    // und vernichtete manuell angelegte Alarme.
-
-                    // Create alarms from events using AlarmUseCase
-                    alarmUseCase.createAlarmsFromEvents(events, shiftConfig)
-                        .onSuccess { createdAlarms ->
-                            val alarmCount = createdAlarms.size
-                            Logger.business(LogTags.ALARM, "✅ AUTO-ALARM: Successfully created $alarmCount alarms")
-                            
-                            // Schedule system alarms for each created alarm
-                            createdAlarms.forEach { alarmInfo ->
-                                alarmUseCase.scheduleSystemAlarm(alarmInfo)
-                                    .onSuccess {
-                                        Logger.business(LogTags.ALARM, "✅ SYSTEM-ALARM: Scheduled alarm for ${alarmInfo.shiftName} at ${alarmInfo.formattedTime}")
-                                    }
-                                    .onFailure { error ->
-                                        Logger.e(LogTags.ALARM, "❌ SYSTEM-ALARM: Failed to schedule alarm for ${alarmInfo.shiftName}", error)
-                                    }
-                            }
+                    // Orchestrator: syncAlarms fuehrt einen eventId-basierten Delta-Sync durch,
+                    // der bestehende UND manuelle Alarme (eventId leer) schont, nur wirklich
+                    // entfernte Events loescht und die System-Alarme INTERN setzt (inkl.
+                    // idempotentem Re-Arming). Kein Vorab-deleteAllAlarms und kein separates
+                    // scheduleSystemAlarm mehr im ViewModel (frueher: Verlustfenster + Doppel-Scheduling).
+                    alarmUseCase.syncAlarms(events, shiftConfig)
+                        .onSuccess { syncedAlarms ->
+                            Logger.business(LogTags.ALARM, "✅ AUTO-ALARM: Alarm-Sync erfolgreich - ${syncedAlarms.size} Alarme aktiv")
                         }
                         .onFailure { error ->
-                            Logger.e(LogTags.ALARM, "❌ AUTO-ALARM: Failed to create alarms from events", error)
+                            Logger.e(LogTags.ALARM, "❌ AUTO-ALARM: Alarm-Sync fehlgeschlagen", error)
                         }
                 } else {
                     val configStatus = shiftConfig?.let { "autoAlarmEnabled=${it.autoAlarmEnabled}" } ?: "ShiftConfig is null"

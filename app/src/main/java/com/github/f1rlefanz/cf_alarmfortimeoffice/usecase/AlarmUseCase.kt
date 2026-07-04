@@ -5,7 +5,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
@@ -21,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -64,31 +65,28 @@ class AlarmUseCase @Inject constructor(
             }
     
     /**
-     * PERFORMANCE OPTIMIZATION: Enhanced alarm creation with INTELLIGENT SYNC
-     * 
-     * 🔧 SYNC-FIX: Statt "alles löschen + neu erstellen" → Intelligente Delta-Synchronisation
+     * ORCHESTRATOR: Einziger Einstiegspunkt der Event→Alarm-Pipeline.
+     *
+     * Delta-Synchronisation statt "alles löschen + neu erstellen":
      * ✅ Erkennt gelöschte Events → löscht nur diese Alarme
-     * ✅ Erkennt geänderte Events → updated nur diese Alarme  
+     * ✅ Erkennt geänderte Events → aktualisiert nur diese Alarme
      * ✅ Erkennt neue Events → erstellt nur diese Alarme
-     * ✅ Löst Bug: "Alter Alarm klingelt nach Event-Änderung"
+     * ✅ Unveränderte Events → System-Alarm wird idempotent re-armed (Aufrufer schedulen nicht mehr selbst)
+     *
+     * Nebenläufigkeit: Ein einziger [alarmSyncMutex] serialisiert ALLE mutierenden
+     * Set-Operationen (Sync, deleteAll, deleteAlarm). Ersetzt den früheren
+     * check-then-act-`@Volatile`-Boolean (P1) samt "Skip → leere Liste", das der
+     * Maintenance-Service als "nichts zu tun" fehldeutete.
      */
-    @Volatile
-    private var alarmCreationInProgress = false
-    
-    override suspend fun createAlarmsFromEvents(
+    private val alarmSyncMutex = Mutex()
+
+    override suspend fun syncAlarms(
         events: List<CalendarEvent>,
         shiftConfig: ShiftConfig
     ): Result<List<AlarmInfo>> = withContext(Dispatchers.IO) {
-        // PERFORMANCE: Prevent concurrent alarm creation
-        if (alarmCreationInProgress) {
-            Logger.d(LogTags.ALARM, "🔒 SYNC: Alarm creation already in progress, skipping duplicate call")
-            return@withContext Result.success(emptyList())
-        }
-        
-        alarmCreationInProgress = true
-        
-        try {
-            SafeExecutor.safeExecute("AlarmUseCase.createAlarmsFromEvents") {
+        // Serialisiert konkurrierende Aufrufer, statt den zweiten mit leerer Liste abzuweisen.
+        alarmSyncMutex.withLock {
+            SafeExecutor.safeExecute("AlarmUseCase.syncAlarms") {
                 if (!shiftConfig.autoAlarmEnabled) {
                     Logger.d(LogTags.ALARM, "Auto-alarm disabled, not creating alarms")
                     return@safeExecute emptyList()
@@ -175,8 +173,10 @@ class AlarmUseCase @Inject constructor(
                             resultAlarms.add(newAlarm)
                             updatedCount++
                         } else {
-                            // Unchanged - keep existing
-                            Logger.d(LogTags.ALARM, "✅ SYNC: Alarm unchanged: ${existingAlarm.shiftName}")
+                            // Unchanged - keep existing, aber System-Alarm idempotent re-armen,
+                            // damit der Aufrufer nicht mehr selbst schedulen muss (kein Doppel-Scheduling).
+                            Logger.d(LogTags.ALARM, "✅ SYNC: Alarm unchanged, re-arming system alarm: ${existingAlarm.shiftName}")
+                            scheduleSystemAlarm(existingAlarm).getOrThrow()
                             resultAlarms.add(existingAlarm)
                         }
                     } else {
@@ -198,11 +198,9 @@ class AlarmUseCase @Inject constructor(
                 
                 resultAlarms
             }
-        } finally {
-            alarmCreationInProgress = false
         }
     }
-    
+
     /**
      * 🔧 SYNC-FIX: Calculate event checksum for change detection
      */
@@ -219,82 +217,43 @@ class AlarmUseCase @Inject constructor(
     
     
     /**
-     * PERFORMANCE: Internal clearing method to avoid nested SafeExecutor calls and duplicate clearing
-     * Used internally to prevent the redundant clearing operations seen in the log
+     * Internes Clearing (System-Alarme + Repository). Kein eigener Guard: läuft immer
+     * unter [alarmSyncMutex] (aufgerufen aus [syncAlarms], [deleteAllAlarms], Legacy-Pfad).
      */
     private suspend fun clearInternalAlarms() {
-        if (clearingInProgress) {
-            Logger.d(LogTags.ALARM, "🔒 INTERNAL-CLEAR: Clearing already in progress, using optimized internal path")
-            return
+        Logger.d(LogTags.ALARM, "🧹 INTERNAL-CLEAR: Fast internal clearing (system + repository)")
+
+        // Step 1: Cancel system alarms
+        val activeAlarmsList = alarmRepository.activeAlarms.first()
+        for (alarm in activeAlarmsList) {
+            alarmManagerService.cancelSystemAlarm(alarm.id)
         }
-        
-        clearingInProgress = true
-        
-        try {
-            Logger.d(LogTags.ALARM, "🧹 INTERNAL-CLEAR: Fast internal clearing (system + repository)")
-            
-            // Step 1: Cancel system alarms
-            // For now, we need to get active alarms from flow
-            val activeAlarmsList = alarmRepository.activeAlarms.first()
-            for (alarm in activeAlarmsList) {
-                alarmManagerService.cancelSystemAlarm(alarm.id)
-            }
-            
-            // Step 2: Clear repository
-            alarmRepository.deleteAllAlarms().getOrThrow()
-            
-            Logger.d(LogTags.ALARM, "✅ INTERNAL-CLEAR: Fast clearing completed")
-        } finally {
-            clearingInProgress = false
-        }
+
+        // Step 2: Clear repository
+        alarmRepository.deleteAllAlarms().getOrThrow()
+
+        Logger.d(LogTags.ALARM, "✅ INTERNAL-CLEAR: Fast clearing completed")
     }
-    
-    override suspend fun deleteAlarm(alarmId: Int): Result<Unit> = 
+
+    override suspend fun deleteAlarm(alarmId: Int): Result<Unit> =
         SafeExecutor.safeExecute("AlarmUseCase.deleteAlarm") {
-            Logger.d(LogTags.ALARM, "🧹 ATOMIC-SINGLE: Deleting single alarm ID=$alarmId")
-            
-            // ATOMIC SINGLE: Cancel system alarm first, then repository
-            cancelSystemAlarm(alarmId).getOrThrow()
-            alarmRepository.deleteAlarm(alarmId).getOrThrow()
-            
-            Logger.d(LogTags.ALARM, "✅ ATOMIC-SINGLE: Alarm $alarmId deleted successfully")
-        }
-    
-    /**
-     * ATOMIC OPERATION: Single-point alarm clearing to prevent redundant operations
-     * Coordinates both system alarm cancellation and repository clearing
-     */
-    @Volatile
-    private var clearingInProgress = false
-    
-    override suspend fun deleteAllAlarms(): Result<Unit> = 
-        SafeExecutor.safeExecute("AlarmUseCase.deleteAllAlarms") {
-            // ATOMIC CLEARING: Prevent concurrent clearing operations
-            if (clearingInProgress) {
-                Logger.d(LogTags.ALARM, "🔒 ATOMIC-CLEAR: Clearing already in progress, skipping duplicate call")
-                return@safeExecute
+            // Serialisiert gegen syncAlarms/deleteAllAlarms über denselben Mutex.
+            alarmSyncMutex.withLock {
+                Logger.d(LogTags.ALARM, "🧹 ATOMIC-SINGLE: Deleting single alarm ID=$alarmId")
+
+                // Cancel system alarm first, then repository
+                cancelSystemAlarm(alarmId).getOrThrow()
+                alarmRepository.deleteAlarm(alarmId).getOrThrow()
+
+                Logger.d(LogTags.ALARM, "✅ ATOMIC-SINGLE: Alarm $alarmId deleted successfully")
             }
-            
-            clearingInProgress = true
-            
-            try {
-                Logger.d(LogTags.ALARM, "🧹 ATOMIC-CLEAR: Starting atomic alarm clearing operation")
-                
-                // ATOMIC STEP 1: Cancel system alarms first (prevents ghost alarms)
-                Logger.d(LogTags.ALARM, "🧹 ATOMIC-CLEAR: Cancelling system alarms...")
-                // Get all active alarms and cancel them individually
-                val activeAlarmsList = alarmRepository.activeAlarms.first()
-                for (alarm in activeAlarmsList) {
-                    alarmManagerService.cancelSystemAlarm(alarm.id)
-                }
-                
-                // ATOMIC STEP 2: Clear repository (local storage)
-                Logger.d(LogTags.ALARM, "🧹 ATOMIC-CLEAR: Clearing alarm repository...")
-                alarmRepository.deleteAllAlarms().getOrThrow()
-                
-                Logger.business(LogTags.ALARM, "✅ ATOMIC-CLEAR: All alarms cleared successfully (system + repository)")
-            } finally {
-                clearingInProgress = false
+        }
+
+    override suspend fun deleteAllAlarms(): Result<Unit> =
+        SafeExecutor.safeExecute("AlarmUseCase.deleteAllAlarms") {
+            // Serialisiert gegen syncAlarms/deleteAlarm über denselben Mutex.
+            alarmSyncMutex.withLock {
+                clearInternalAlarms()
             }
         }
     
@@ -373,49 +332,4 @@ class AlarmUseCase @Inject constructor(
         return DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME).format(localDateTime)
     }
     
-    // Legacy methods für Kompatibilität mit bestehendem Code
-    suspend fun setAlarmsForShift(shift: ShiftInfo): Result<Unit> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("AlarmUseCase.setAlarmsForShift") {
-            val config = shiftConfigRepository.getCurrentShiftConfig().getOrThrow()
-            if (!config.autoAlarmEnabled) {
-                Logger.d(LogTags.ALARM, "Auto-alarm disabled, not setting alarm")
-                return@safeExecute
-            }
-            
-            // PERFORMANCE: Use internal clearing to avoid redundant SafeExecutor wrapping
-            Logger.d(LogTags.ALARM, "🔄 LEGACY-SHIFT: Using optimized clearing for single shift")
-            clearInternalAlarms()
-            
-            // Create alarm info from shift
-            val alarmTime = shift.alarmTime
-                .atZone(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-            
-            val alarmInfo = AlarmInfo(
-                id = shift.id.hashCode(), // Convert String to Int
-                shiftId = shift.id,
-                shiftName = shift.shiftType.displayName,
-                triggerTime = alarmTime,
-                formattedTime = formatAlarmTime(alarmTime)
-            )
-            
-            // Save and schedule alarm
-            saveAlarm(alarmInfo).getOrThrow()
-            scheduleSystemAlarm(alarmInfo).getOrThrow()
-            
-            Logger.business(LogTags.ALARM, "Alarm set for ${shift.shiftType.displayName} at ${alarmInfo.formattedTime}")
-        }
-    }
-    
-    suspend fun cancelAlarm(alarmId: Int): Result<Unit> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("AlarmUseCase.cancelAlarm") {
-            deleteAlarm(alarmId).getOrThrow()
-            Logger.business(LogTags.ALARM, "✅ LEGACY-CANCEL: Alarm $alarmId cancelled")
-        }
-    }
-    
-    suspend fun cancelAllAlarms(): Result<Unit> = deleteAllAlarms() // ATOMIC: Direct delegation to atomic method
-    
-    fun getActiveAlarmsFlow(): Flow<List<AlarmInfo>> = activeAlarms
 }

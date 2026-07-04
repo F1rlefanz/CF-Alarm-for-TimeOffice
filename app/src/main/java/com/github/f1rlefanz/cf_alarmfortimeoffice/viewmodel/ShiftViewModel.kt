@@ -218,36 +218,27 @@ class ShiftViewModel @Inject constructor(
      */
     private fun triggerAlarmCreationFromConfigUpdate() {
         viewModelScope.launch {
-            Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation for newly recognized shifts")
-            
-            // Small delay to ensure shift recognition is complete
-            kotlinx.coroutines.delay(100)
-            
-            // Get current events from CalendarStateHolder
+            Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm sync for updated shift config")
+
+            // Get current events from CalendarStateHolder (vollstaendiger Soll-Zustand fuer den Delta-Sync)
             val currentEvents = calendarStateHolder.events.value
-            
-            if (currentEvents.isNotEmpty()) {
-                // Trigger alarm creation via AlarmUseCase directly
-                _uiState.value.currentShiftConfig?.let { config ->
-                    // First recognize shifts in events
-                    shiftUseCase.recognizeShiftsInEvents(currentEvents)
-                        .onSuccess { shiftMatches ->
-                            // Then create alarms from recognized shifts
-                            val eventsWithShifts = shiftMatches.map { it.calendarEvent }
-                            alarmUseCase.createAlarmsFromEvents(eventsWithShifts, config)
-                                .onSuccess { alarms ->
-                                    Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Created ${alarms.size} alarms from config update")
-                                }
-                                .onFailure { error ->
-                                    Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Failed to create alarms", error)
-                                }
-                        }
-                        .onFailure { error ->
-                            Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Failed to recognize shifts", error)
-                        }
-                }
-            } else {
-                Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: No events available for alarm creation")
+
+            if (currentEvents.isEmpty()) {
+                Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: No events available for alarm sync")
+                return@launch
+            }
+
+            // Orchestrator: syncAlarms erkennt die Schichten selbst (frische Engine dank
+            // Cache-Invalidierung in saveShiftConfig) und setzt die System-Alarme intern.
+            // Kein Vor-Recognize und kein delay()-Hack mehr noetig.
+            _uiState.value.currentShiftConfig?.let { config ->
+                alarmUseCase.syncAlarms(currentEvents, config)
+                    .onSuccess { alarms ->
+                        Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarm-Sync erfolgreich - ${alarms.size} Alarme aktiv")
+                    }
+                    .onFailure { error ->
+                        Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Alarm-Sync fehlgeschlagen", error)
+                    }
             }
         }
     }

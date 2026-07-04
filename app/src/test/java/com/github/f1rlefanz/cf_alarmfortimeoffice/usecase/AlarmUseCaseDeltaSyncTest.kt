@@ -27,7 +27,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /**
- * Unit-Tests fuer den Delta-Sync in [AlarmUseCase.createAlarmsFromEvents].
+ * Unit-Tests fuer den Delta-Sync in [AlarmUseCase.syncAlarms].
  *
  * Genau hier lebten historisch die schwerwiegendsten Bugs der App: "alter Alarm klingelt
  * nach Event-Aenderung" und "bestehende Wecker verschwinden, sobald ein neues Event
@@ -131,7 +131,7 @@ class AlarmUseCaseDeltaSyncTest {
         val config = ShiftConfig(autoAlarmEnabled = false, definitions = listOf(earlyShift))
 
         val result = useCase(repo, manager, config)
-            .createAlarmsFromEvents(listOf(futureEvent("evB", "F", 1)), config)
+            .syncAlarms(listOf(futureEvent("evB", "F", 1)), config)
 
         assertTrue(result.isSuccess)
         assertEquals(emptyList<AlarmInfo>(), result.getOrNull())
@@ -150,7 +150,7 @@ class AlarmUseCaseDeltaSyncTest {
 
         // evB bleibt im Kalender, evC kommt neu hinzu (beide matchen Keyword "F").
         val result = useCase(repo, manager, config)
-            .createAlarmsFromEvents(listOf(evB, futureEvent("evC", "F", 2)), config)
+            .syncAlarms(listOf(evB, futureEvent("evC", "F", 2)), config)
 
         assertTrue(result.isSuccess)
         assertNotNull("Alarm fuer weiterhin vorhandenes evB darf NICHT geloescht werden",
@@ -174,7 +174,7 @@ class AlarmUseCaseDeltaSyncTest {
         val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
 
         // Nur evA wird uebergeben -> evB gilt als aus dem Kalender entfernt.
-        val result = useCase(repo, manager, config).createAlarmsFromEvents(listOf(evA), config)
+        val result = useCase(repo, manager, config).syncAlarms(listOf(evA), config)
 
         assertTrue(result.isSuccess)
         assertNull("Alarm fuer entferntes evB muss aus dem Repository verschwinden",

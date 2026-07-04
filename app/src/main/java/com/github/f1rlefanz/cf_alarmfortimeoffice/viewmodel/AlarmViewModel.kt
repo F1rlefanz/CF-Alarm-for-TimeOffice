@@ -241,8 +241,8 @@ class AlarmViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                // Legacy method - wird durch Interface nicht direkt unterstützt
-                // Workaround: Konvertiere zu createAlarmsFromEvents call
+                // Manueller Einzel-Alarm aus einer Schicht: baut die AlarmInfo direkt und
+                // speichert sie ueber saveAlarm (kein Event-basierter Delta-Sync noetig).
                 val alarmTime = shift.alarmTime
                     .atZone(ZoneId.systemDefault())
                     .toInstant()

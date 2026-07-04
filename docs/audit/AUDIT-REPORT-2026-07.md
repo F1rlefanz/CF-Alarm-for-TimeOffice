@@ -2,7 +2,7 @@
 
 **Datum:** 2026-07-02 · **Version im Audit:** 1.7.0 (versionCode 32) · **Branch:** `main`
 **Auftrag:** Schonungslose Release-Reife-Prüfung vor dem öffentlichen Test (siehe `AUDIT-PROMPT-Fable5.md`)
-**Status:** **Gate 0 komplett (v1.8.0) + Gate-1-Batch 1 (v1.9.1) auf `main`.** Dazwischen extern: CSJR Corporate Design (v1.9.0). Direct-Boot-System **live auf dem Emulator verifiziert** (Logcat: `LOCKED_BOOT_COMPLETED`-Restore + fail-safe Recovery „Restored 3, Deleted 0", DE-Spiegel geschrieben). Gate-1 offen: `POST_NOTIFICATIONS`-Kontext, Privacy-Policy-Angleich, Play-Console-Deklarationen, erste Alarm-Kette-Tests + **OAuth-Verification (Nutzer, zeitkritisch)**.
+**Status:** **Gate 0 komplett + Gate 1 code-seitig komplett — Stand `main` = v1.9.2 (versionCode 36) + Delta-Sync-Test.** Release-Kette: 1.8.0 (Gate-0-Alarm-Blocker) → 1.9.0 (CSJR Corporate Design, extern) → 1.9.1 (Fehler-Sichtbarkeit/CI/PII/Battery-Gate) → 1.9.2 (Notification-Timing + Privacy). Direct-Boot **live auf Emulator verifiziert**; Delta-Sync-Test **grün** (`testDebugUnitTest`). **Einziges offenes Gate-1-Item: OAuth-Verification einreichen (Nutzer-Aktion, zeitkritisch — Doku in `docs/play-store/oauth-verification.md`).** Danach nur noch Gate-2-Qualitätsarbeit (§8).
 
 > **Lebendes Dokument.** Erledigte Findings sind zu abgehakten Einzeilern mit Commit-Ref kollabiert; der Detailtext liegt in der Git-Historie. Legende: ✅ behoben · 🔧 teilweise/in Arbeit · ⬜ offen.
 >
@@ -283,7 +283,7 @@ Damit das Bild fair bleibt — die App hat ein **belastbares Fundament**:
 - ✅ **CI-Pipeline** (`d379dc0`) — Secret + Branch-Protection noch durch Nutzer. ✅ **Zombie-`MainActivityTest`** entfernt (`30cf346`). ✅ **Release-PII-Logging** entschärft (`3054191`).
 - ✅ **Play-Console-Deklarationen paste-ready** (mediaPlayback + FULL_SCREEN_INTENT + OAuth, `docs/play-store/`).
 - ✅ **Battery-Gate „Später“** (`a2fe5d5`). ✅ **Globale Fehler-Sichtbarkeit** (SnackbarHost, `d3f95e9`). ✅ **`POST_NOTIFICATIONS` in Kontext** (`5238c57`). ✅ **Privacy-Policy an Code angeglichen** (`da340a5`).
-- ⬜ Tests #1–#3 (`IAlarmManagerService` einziehen) — **einziger substanzieller Code-Rest in Gate 1.**
+- ✅ **Test #1: AlarmUseCase-Delta-Sync** (`62693e5`, `testDebugUnitTest` grün) — ohne `IAlarmManagerService`-Refactor gelöst (Mockito 5 mockt die finale Klasse direkt). Tests #2 (AlarmSkipUseCase) / #3 (AlarmRepository) offen für Gate 2.
 - ⬜ **Nutzer-Aktion, zeitkritisch:** OAuth-Verification einreichen (siehe oben).
 
 **Gate 2 — Härtung/Qualität (nach dem ersten offenen Test iterierbar):**

@@ -46,7 +46,25 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.9.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.9.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Stabilitäts- und Wartungs-Release: die Wecker-Synchronisation läuft jetzt über einen einzigen, gegen gleichzeitige Zugriffe abgesicherten Pfad. Dazu ein großer interner Aufräumschritt und mehr automatische Tests. Keine sichtbaren Funktionsänderungen.</em></p>
+
+            <h4>🐛 Verbessert</h4>
+            <ul>
+                <li><strong>Zuverlässigere Wecker-Synchronisation:</strong> Kalender-Aktualisierung, Hintergrund-Wartung und Schicht-Änderungen laufen jetzt durch ein und denselben, gegen gleichzeitige Zugriffe abgesicherten Sync-Vorgang. Das beseitigt Wettlauf-Situationen und doppeltes Setzen von Alarmen und macht das Erstellen, Aktualisieren und Löschen von Weckern robuster.</li>
+            </ul>
+
+            <h4>🧰 Intern</h4>
+            <ul>
+                <li>Großer Aufräumschritt: nicht erreichbarer Code entfernt (u. a. ein totes Lifecycle-Cleanup, ein ungenutzter Anmelde-Datenkanal, ein komplettes ungenutztes Hue-Lichtdauer-Modul und toter Kalender-Zwischenzustand).</li>
+                <li>Technik vereinheitlicht: zentrale Hue-Komponenten werden nun einheitlich über die Dependency-Injection bezogen.</li>
+                <li>Neue automatische Tests für die Wecker-Überspringen-Logik und die Wecker-Speicherung.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.9.2 <small>(interne Alpha)</small></h3>
             <p><strong>Stand:</strong> Juli 2026</p>
 
             <h4>🐛 Verbessert</h4>

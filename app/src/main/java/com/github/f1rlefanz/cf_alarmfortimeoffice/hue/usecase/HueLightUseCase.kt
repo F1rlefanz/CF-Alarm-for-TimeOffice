@@ -6,10 +6,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightActionResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.DurationControlInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueDurationController
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.CoroutineScope
@@ -17,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -32,7 +29,7 @@ import kotlin.time.Duration.Companion.minutes
  * Implements business logic layer with:
  * - Validation and batch operations
  * - Color conversion utilities integration
- * - Duration-based control with automatic revert
+ * - Sunrise wake-up ramp and rule-preview auto-off (executeActionsWithAutoRevert)
  * - Advanced error handling and resilience
  * 
  * @author CF-Alarm Development Team
@@ -42,11 +39,6 @@ class HueLightUseCase @Inject constructor(
     private val lightRepository: IHueLightRepository
 ) : IHueLightUseCaseAdvanced {
     
-    /**
-     * Duration controller for automatic light revert functionality
-     */
-    private val durationController = HueDurationController(lightRepository)
-
     /**
      * Scope for the auto-revert timer in [executeActionsWithAutoRevert]. Deliberately separate
      * from any caller's (e.g. ViewModel) scope so the scheduled OFF still fires even if the
@@ -477,97 +469,6 @@ class HueLightUseCase @Inject constructor(
     }
     
     /**
-     * Sets a light with automatic revert after specified duration
-     * 
-     * @param lightId ID of the light
-     * @param colorPreset Color to set temporarily
-     * @param brightness Brightness level (1-254)
-     * @param durationMinutes How long to maintain the state before reverting
-     * @return Result indicating success or failure
-     */
-    override suspend fun setLightWithDuration(
-        lightId: String,
-        colorPreset: HueColorConverter.ColorPreset,
-        brightness: Int,
-        durationMinutes: Int
-    ): Result<Unit> {
-        Logger.i(LogTags.HUE_USECASE, "Setting light $lightId with ${durationMinutes}min duration")
-        
-        return try {
-            // Create temporary light state
-            val temporaryState = HueDurationController.createAlarmLightState(
-                brightness = HueConstants.Utils.clampBrightness(brightness),
-                colorPreset = colorPreset
-            )
-            
-            // Apply with duration control
-            durationController.setLightWithDuration(
-                lightId = lightId,
-                temporaryState = temporaryState,
-                duration = durationMinutes.minutes
-            )
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to set light with duration", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Sets a group with automatic revert after specified duration
-     */
-    override suspend fun setGroupWithDuration(
-        groupId: String,
-        colorPreset: HueColorConverter.ColorPreset,
-        brightness: Int,
-        durationMinutes: Int
-    ): Result<Unit> {
-        Logger.i(LogTags.HUE_USECASE, "Setting group $groupId with ${durationMinutes}min duration")
-        
-        return try {
-            val temporaryAction = HueDurationController.createAlarmGroupAction(
-                brightness = HueConstants.Utils.clampBrightness(brightness),
-                colorPreset = colorPreset
-            )
-            
-            durationController.setGroupWithDuration(
-                groupId = groupId,
-                temporaryAction = temporaryAction,
-                duration = durationMinutes.minutes
-            )
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to set group with duration", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Creates a pulsing notification light effect
-     */
-    override suspend fun createNotificationEffect(
-        lightId: String,
-        colorPreset: HueColorConverter.ColorPreset,
-        durationMinutes: Int
-    ): Result<Unit> {
-        Logger.i(LogTags.HUE_USECASE, "Creating notification effect for light $lightId")
-        
-        return try {
-            val pulsingState = HueDurationController.createPulsingLightState(colorPreset)
-            
-            durationController.setLightWithDuration(
-                lightId = lightId,
-                temporaryState = pulsingState,
-                duration = durationMinutes.minutes
-            )
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to create notification effect", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
      * Starts a sunrise ramp on a single light or group.
      *
      * Two PUTs drive the bridge's native fade:
@@ -649,64 +550,6 @@ class HueLightUseCase @Inject constructor(
         }
     }
 
-    /**
-     * Manually reverts all lights and groups to their original states
-     */
-    override suspend fun revertAllLights(): Result<Unit> {
-        Logger.i(LogTags.HUE_USECASE, "Reverting all lights to original states")
-        
-        return try {
-            val activeControls = durationController.getActiveControls()
-            
-            // Revert all active lights
-            activeControls.activeLights.forEach { lightId ->
-                val revertResult = durationController.revertLight(lightId)
-                if (revertResult.isFailure) {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to revert light $lightId", revertResult.exceptionOrNull())
-                }
-            }
-            
-            // Revert all active groups
-            activeControls.activeGroups.forEach { groupId ->
-                val revertResult = durationController.revertGroup(groupId)
-                if (revertResult.isFailure) {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to revert group $groupId", revertResult.exceptionOrNull())
-                }
-            }
-            
-            Logger.i(LogTags.HUE_USECASE, "Reverted ${activeControls.activeLights.size} lights and ${activeControls.activeGroups.size} groups")
-            Result.success(Unit)
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to revert all lights", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Gets information about active duration controls
-     */
-    override fun getActiveDurationControls(): DurationControlInfo {
-        return durationController.getActiveControls()
-    }
-    
-    /**
-     * Cancels all pending automatic reverts
-     */
-    override fun cancelAllDurationControls() {
-        Logger.i(LogTags.HUE_USECASE, "Cancelling all duration controls")
-        durationController.cancelAllReverts()
-    }
-    
-    /**
-     * Cleanup method to be called when UseCase is no longer needed
-     */
-    fun cleanup() {
-        Logger.d(LogTags.HUE_USECASE, "Cleaning up HueLightUseCase")
-        durationController.cleanup()
-        autoRevertScope.cancel()
-    }
-    
     /**
      * Validates a light action for business logic compliance
      */

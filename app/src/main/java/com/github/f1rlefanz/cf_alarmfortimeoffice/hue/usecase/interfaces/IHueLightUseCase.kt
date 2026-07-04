@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.DurationControlInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import kotlin.time.Duration
 
@@ -93,39 +92,6 @@ interface IHueLightUseCaseAdvanced : IHueLightUseCase {
     ): Result<Unit>
     
     // =============================================================================
-    // DURATION-BASED CONTROL
-    // =============================================================================
-    
-    /**
-     * Set light with automatic revert after duration
-     */
-    suspend fun setLightWithDuration(
-        lightId: String,
-        colorPreset: HueColorConverter.ColorPreset = HueColorConverter.ColorPreset.WARM_WHITE,
-        brightness: Int = 150, // HueConstants.Defaults.ALARM_BRIGHTNESS
-        durationMinutes: Int = 15 // HueConstants.Defaults.ALARM_DURATION
-    ): Result<Unit>
-    
-    /**
-     * Set group with automatic revert after duration
-     */
-    suspend fun setGroupWithDuration(
-        groupId: String,
-        colorPreset: HueColorConverter.ColorPreset = HueColorConverter.ColorPreset.WARM_WHITE,
-        brightness: Int = 150, // HueConstants.Defaults.ALARM_BRIGHTNESS
-        durationMinutes: Int = 15 // HueConstants.Defaults.ALARM_DURATION
-    ): Result<Unit>
-    
-    /**
-     * Create notification effect with pulsing
-     */
-    suspend fun createNotificationEffect(
-        lightId: String,
-        colorPreset: HueColorConverter.ColorPreset = HueColorConverter.ColorPreset.BLUE,
-        durationMinutes: Int = 5 // HueConstants.Defaults.NOTIFICATION_DURATION
-    ): Result<Unit>
-
-    // =============================================================================
     // SUNRISE WAKE-UP LIGHT
     // =============================================================================
 
@@ -166,21 +132,6 @@ interface IHueLightUseCaseAdvanced : IHueLightUseCase {
         actions: List<LightAction>,
         revertAfter: Duration
     ): Result<BatchActionResult>
-
-    /**
-     * Manually revert all lights to original states
-     */
-    suspend fun revertAllLights(): Result<Unit>
-    
-    /**
-     * Get information about active duration controls
-     */
-    fun getActiveDurationControls(): DurationControlInfo
-    
-    /**
-     * Cancel all pending automatic reverts
-     */
-    fun cancelAllDurationControls()
 }
 
 /**

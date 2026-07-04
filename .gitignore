@@ -9,21 +9,20 @@ keystore.properties
 release.properties
 signing.properties
 
-# 🚨 SENSITIVE CONFIGURATION 
+# 🚨 SENSITIVE CONFIGURATION
 google-services.json.backup
 firebase-debug.json
 local.properties
 
-# 🚨 INTERNAL DOCUMENTATION - KEEP PRIVATE!
+# 🚨 INTERNAL DOCUMENTATION - KEEP PRIVATE
+# Defensiv: greift automatisch, falls eine dieser sensiblen Notizen (wieder) angelegt wird.
 KEYSTORE_SECURITY_GUIDE.md
 DEPLOYMENT_SETUP.md
 DEBUG_LOGGING_GUIDE.md
-validate-signing.ps1
 EMERGENCY_SECURITY_BREACH.md
 
 # 🚨 BUSINESS DOCUMENTS
 *Store*Listing*
-🎯*.docx
 *.docx
 /..Projektdateien
 
@@ -34,7 +33,6 @@ EMERGENCY_SECURITY_BREACH.md
 # Generated files
 *.iml
 .gradle
-/local.properties
 .DS_Store
 /build
 /captures
@@ -63,28 +61,19 @@ EMERGENCY_SECURITY_BREACH.md
 # Debug and log files
 *.log
 *.tmp
-debug_logs.txt
-dependencies.txt
 
-# Backup and temp directories
+# Backup and temp directories (lokaler Krempel, nie committen)
 /Logcatexporte/
 /Project*Problems*/
 /_backup/
 /.temp_files/
 /deleted/
-
-# Cleanup scripts and artifacts
-generate-icons.ps1
-.gitignore-cleanup
-.gitignore-SECURE
-remove-files.sh
 .kotlin/
 
 # ================================
-# 🔐 SECURITY VALIDATION
+# 🔐 SECURITY VALIDATION SCRIPTS
 # ================================
-
-# Sensitive scripts that could expose credentials
+# Skripte, die Credentials offenlegen koennten
 validate-*.ps1
 deploy-*.sh
 setup-*.bat
@@ -92,7 +81,6 @@ setup-*.bat
 # ================================
 # 📝 LOCAL-ONLY NOTES
 # ================================
-
-# Claude project guidance & Play Store justification — kept local, not version-controlled
+# Claude-Projektanweisungen: bewusst lokal, nicht ins Repo.
+# (Die Play-Store-Justifications unter docs/play-store/ sind hingegen bewusst versioniert.)
 /CLAUDE.md
-/docs/play-store/special-use-fgs-justification.md

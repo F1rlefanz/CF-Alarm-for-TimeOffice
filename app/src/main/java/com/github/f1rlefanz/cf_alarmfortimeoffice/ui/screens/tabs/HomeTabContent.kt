@@ -34,8 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
@@ -43,7 +41,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ManualAlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -54,16 +51,9 @@ fun HomeTabContent(
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
-    manualAlarmState: ManualAlarmUiState, // NEU
     onRefresh: () -> Unit,
     onSkipNextAlarm: () -> Unit,
     onCancelSkip: () -> Unit,
-    onSelectManualAlarmDate: (LocalDate) -> Unit,
-    onSelectManualAlarmShift: (ShiftDefinition) -> Unit,
-    onCreateManualAlarm: () -> Unit,
-    onDeleteManualAlarm: () -> Unit,
-    onClearManualAlarmError: () -> Unit,
-    onNavigateToShiftConfig: () -> Unit,
     onShowEventList: (() -> Unit)? = null,
     onReauthorize: (() -> Unit)? = null
 ) {
@@ -153,16 +143,6 @@ fun HomeTabContent(
             onCancelSkip = onCancelSkip
         )
 
-        // NEU: Manual Alarm Card
-        ManualAlarmCard(
-            manualAlarmState = manualAlarmState,
-            onSelectDate = onSelectManualAlarmDate,
-            onSelectShift = onSelectManualAlarmShift,
-            onCreate = onCreateManualAlarm,
-            onDelete = onDeleteManualAlarm,
-            onClearError = onClearManualAlarmError,
-            onNavigateToSettings = onNavigateToShiftConfig
-        )
 
         // Kalender Events Summary
         Card(

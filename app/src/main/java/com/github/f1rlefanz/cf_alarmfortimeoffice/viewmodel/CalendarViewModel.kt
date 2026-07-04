@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -15,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -78,6 +81,7 @@ data class CalendarUiState(
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class CalendarViewModel @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     private val calendarUseCase: ICalendarUseCase,
     private val calendarSelectionRepository: ICalendarSelectionRepository,
     private val calendarStateHolder: CalendarStateHolder,
@@ -780,6 +784,9 @@ class CalendarViewModel @Inject constructor(
                     alarmUseCase.syncAlarms(events, shiftConfig)
                         .onSuccess { syncedAlarms ->
                             Logger.business(LogTags.ALARM, "✅ AUTO-ALARM: Alarm-Sync erfolgreich - ${syncedAlarms.size} Alarme aktiv")
+                            // "Letzter Sync"-Zeitstempel auch im Vordergrund setzen, damit die
+                            // Status-Anzeige den tatsaechlich letzten Sync widerspiegelt (nicht nur die 6h-Wartung).
+                            AlarmMaintenanceService.recordSyncTime(appContext)
                         }
                         .onFailure { error ->
                             Logger.e(LogTags.ALARM, "❌ AUTO-ALARM: Alarm-Sync fehlgeschlagen", error)

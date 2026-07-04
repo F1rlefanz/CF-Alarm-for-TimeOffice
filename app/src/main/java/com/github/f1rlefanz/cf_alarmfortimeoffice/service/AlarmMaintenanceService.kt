@@ -116,6 +116,21 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
+         * Stamps "now" as the last sync time.
+         *
+         * Wird zusätzlich aus dem VORDERGRUND-Sync (CalendarViewModel → syncAlarms) aufgerufen,
+         * damit "Letzter Sync" den tatsächlich letzten Sync widerspiegelt und nicht nur den
+         * 6h-Hintergrundlauf. Ein alter Wert bleibt damit das ehrliche Signal "seit X nichts
+         * synchronisiert" (weder Vordergrund noch Hintergrund).
+         */
+        suspend fun recordSyncTime(context: Context) {
+            val dataStore = EntryPointAccessors
+                .fromApplication(context.applicationContext, AlarmMaintenanceEntryPoint::class.java)
+                .mainDataStore()
+            dataStore.edit { it[KEY_LAST_MAINTENANCE] = System.currentTimeMillis() }
+        }
+
+        /**
          * Starts the maintenance service
          */
         fun start(context: Context) {

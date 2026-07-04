@@ -3,13 +3,16 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -20,15 +23,19 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HueTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent
@@ -66,6 +73,10 @@ fun MainContentScreen(
     val manualAlarmState by alarmViewModel.manualAlarmState.collectAsState() // NEU
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Manueller Alarm ist die Ausnahme, nicht der Normalfall -> aus der Home-Hauptflaeche in ein
+    // per FAB geoeffnetes Bottom-Sheet ausgelagert (Home bleibt auf die Uebersicht fokussiert).
+    var showManualAlarmSheet by remember { mutableStateOf(false) }
 
     // FEHLER-SICHTBARKEIT: Lade-/Sync-Fehler der Kern-Pipeline nicht mehr still verschlucken -
     // in einer Wecker-App darf der Nutzer einen Leerzustand nicht faelschlich fuer die Wahrheit
@@ -141,6 +152,16 @@ fun MainContentScreen(
                     onClick = { onSelectedTabChange(MainTab.HUE) }
                 )
             }
+        },
+        floatingActionButton = {
+            // Nur im Home-Tab: manuellen Alarm als Sekundaer-Aktion anbieten.
+            if (selectedTab == MainTab.HOME) {
+                ExtendedFloatingActionButton(
+                    onClick = { showManualAlarmSheet = true },
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("Manueller Alarm") }
+                )
+            }
         }
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
@@ -152,8 +173,7 @@ fun MainContentScreen(
                         shiftState = shiftState,
                         alarmState = alarmState,
                         skipState = skipState,
-                        manualAlarmState = manualAlarmState, // NEU
-                        onRefresh = { 
+                        onRefresh = {
                             // Perform manual refresh
                             mainViewModel.forceRefreshCalendarEvents()
                             
@@ -163,12 +183,6 @@ fun MainContentScreen(
                         },
                         onSkipNextAlarm = alarmViewModel::skipNextAlarm,
                         onCancelSkip = alarmViewModel::cancelSkip,
-                        onSelectManualAlarmDate = alarmViewModel::selectManualAlarmDate, // NEU
-                        onSelectManualAlarmShift = alarmViewModel::selectManualAlarmShift, // NEU
-                        onCreateManualAlarm = alarmViewModel::createManualAlarm, // NEU
-                        onDeleteManualAlarm = alarmViewModel::deleteManualAlarm, // NEU
-                        onClearManualAlarmError = alarmViewModel::clearManualAlarmError, // NEU
-                        onNavigateToShiftConfig = onShowShiftConfig, // NEU
                         onShowEventList = onShowEventList,
                         onReauthorize = {
                             authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
@@ -199,6 +213,27 @@ fun MainContentScreen(
                     )
                 }
             }
+        }
+    }
+
+    // Bottom-Sheet fuer den manuellen Alarm (per FAB im Home-Tab geoeffnet).
+    if (showManualAlarmSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showManualAlarmSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            ManualAlarmCard(
+                manualAlarmState = manualAlarmState,
+                onSelectDate = alarmViewModel::selectManualAlarmDate,
+                onSelectShift = alarmViewModel::selectManualAlarmShift,
+                onCreate = alarmViewModel::createManualAlarm,
+                onDelete = alarmViewModel::deleteManualAlarm,
+                onClearError = alarmViewModel::clearManualAlarmError,
+                onNavigateToSettings = {
+                    showManualAlarmSheet = false
+                    onShowShiftConfig()
+                }
+            )
         }
     }
 }

@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.di.modules
 
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,4 +27,15 @@ object HueModule {
     fun provideHueBridgeConnectionManager(
         @ApplicationContext context: Context
     ): HueBridgeConnectionManager = HueBridgeConnectionManager.getInstance(context)
+
+    /**
+     * Brueckt den manuell konstruierten [HueSmartScheduler]-Singleton in den Hilt-Graphen
+     * (dieselbe getInstance()-Instanz). So koennen ViewModels ihn injizieren, statt ihn per
+     * getInstance() an Hilt vorbeizuziehen. Der Scheduler behaelt sein getInstance()/Worker-Muster.
+     */
+    @Provides
+    @Singleton
+    fun provideHueSmartScheduler(
+        @ApplicationContext context: Context
+    ): HueSmartScheduler = HueSmartScheduler.getInstance(context)
 }

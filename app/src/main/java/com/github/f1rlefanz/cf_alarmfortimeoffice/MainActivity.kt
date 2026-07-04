@@ -55,12 +55,11 @@ class MainActivity : ComponentActivity() {
 
     // Hilt injected dependencies
     @Inject lateinit var oauth2TokenManager: OAuth2TokenManager
-    
-    // OPTIMIZATION: Hue Bridge Connection Manager for lifecycle events
-    private val bridgeConnectionManager by lazy { 
-        HueBridgeConnectionManager.getInstance(this)
-    }
-    
+
+    // Hue Bridge Connection Manager for lifecycle events — via Hilt (HueModule brueckt den
+    // getInstance()-Singleton), statt ihn direkt per getInstance() an Hilt vorbeizuziehen.
+    @Inject lateinit var bridgeConnectionManager: HueBridgeConnectionManager
+
     // HILT MIGRATION: ViewModels via Hilt's viewModels() delegate
     // ✅ Automatically scoped to Activity lifecycle
     // ✅ Dependencies injected by Hilt

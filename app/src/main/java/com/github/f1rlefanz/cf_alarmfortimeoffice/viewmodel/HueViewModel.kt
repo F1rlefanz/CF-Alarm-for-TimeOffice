@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
-import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,7 +17,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,10 +40,11 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class HueViewModel @Inject constructor(
-    @param:ApplicationContext private val appContext: Context,
     private val hueBridgeUseCase: IHueBridgeUseCase,
     private val hueLightUseCase: IHueLightUseCase,
-    private val hueRuleUseCase: IHueRuleUseCase
+    private val hueRuleUseCase: IHueRuleUseCase,
+    private val hueBridgeConnectionManager: HueBridgeConnectionManager,
+    private val hueSmartScheduler: HueSmartScheduler
 ) : ViewModel() {
 
     /**
@@ -55,7 +54,7 @@ class HueViewModel @Inject constructor(
      */
     private fun recalculateHueSchedule() {
         try {
-            HueSmartScheduler.getInstance(appContext).recalculateSchedule()
+            hueSmartScheduler.recalculateSchedule()
         } catch (e: Exception) {
             Logger.w(LogTags.HUE_VIEWMODEL, "Failed to trigger Hue rescheduling after rule change", e)
         }
@@ -105,11 +104,11 @@ class HueViewModel @Inject constructor(
         }
 
         // UX FIX (E): reactively surface bridge connection health (DISCONNECTED/ERROR) in the
-        // UI instead of only reflecting it at screen-composition time. HueBridgeConnectionManager
-        // is a manually-constructed singleton (not Hilt-injected), matching how it's already
-        // obtained elsewhere in the Hue UI (e.g. HueTabContent's HueBridgeConnectionManager.getInstance(context)).
+        // UI instead of only reflecting it at screen-composition time. Der ConnectionManager wird
+        // jetzt via Hilt injiziert (HueModule brueckt den getInstance()-Singleton) — dieselbe
+        // Instanz, aber ueber den Object-Graph statt daran vorbei.
         viewModelScope.launch {
-            HueBridgeConnectionManager.getInstance(appContext).connectionStatus.collect { state ->
+            hueBridgeConnectionManager.connectionStatus.collect { state ->
                 val health = state.toConnectionHealth()
                 _uiState.update { it.copy(connectionHealth = health) }
                 Logger.d(LogTags.HUE_VIEWMODEL, "Connection health updated: $health")

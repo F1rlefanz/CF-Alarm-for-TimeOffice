@@ -183,16 +183,4 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         // Note: NavigationViewModel has no coroutines to cancel
     }
     
-    /**
-     * PUBLIC API: Manual cleanup for MainActivity destruction
-     * Calls onCleared() safely from external context
-     */
-    fun cleanupResources() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "NavigationViewModel: Manual cleanup requested")
-            onCleared()
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during NavigationViewModel manual cleanup", e)
-        }
-    }
 }

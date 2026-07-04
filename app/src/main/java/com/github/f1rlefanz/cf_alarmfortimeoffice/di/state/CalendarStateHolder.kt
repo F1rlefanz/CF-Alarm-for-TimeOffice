@@ -33,12 +33,10 @@ class CalendarStateHolder @Inject constructor() {
     private val _selectedCalendarIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedCalendarIds: StateFlow<Set<String>> = _selectedCalendarIds.asStateFlow()
     
-    // Loading States
+    // Loading State (nur Events; ein isLoadingCalendars-Flag existierte, wurde aber nie
+    // gelesen oder gesetzt -> als toter Code entfernt, Audit).
     private val _isLoadingEvents = MutableStateFlow(false)
     val isLoadingEvents: StateFlow<Boolean> = _isLoadingEvents.asStateFlow()
-    
-    private val _isLoadingCalendars = MutableStateFlow(false)
-    val isLoadingCalendars: StateFlow<Boolean> = _isLoadingCalendars.asStateFlow()
 
     // Update Functions
     fun updateEvents(events: List<CalendarEvent>) {
@@ -48,41 +46,19 @@ class CalendarStateHolder @Inject constructor() {
     fun updateSelectedCalendarIds(ids: Set<String>) {
         _selectedCalendarIds.value = ids
     }
-    
+
     fun updateAvailableCalendars(calendars: List<AndroidCalendar>) {
         _availableCalendars.value = calendars
     }
-    
+
     fun setLoadingEvents(isLoading: Boolean) {
         _isLoadingEvents.value = isLoading
     }
-    
-    fun setLoadingCalendars(isLoading: Boolean) {
-        _isLoadingCalendars.value = isLoading
-    }
-    
+
     // Utility Functions
     fun clearEvents() {
         _events.value = emptyList()
     }
-    
-    fun clearCalendarSelection() {
-        _selectedCalendarIds.value = emptySet()
-    }
-    
+
     fun hasSelectedCalendars(): Boolean = _selectedCalendarIds.value.isNotEmpty()
-    
-    fun isCalendarSelected(calendarId: String): Boolean = 
-        _selectedCalendarIds.value.contains(calendarId)
-    
-    /**
-     * Reset entire state (useful for logout/cleanup)
-     */
-    fun resetState() {
-        clearEvents()
-        _availableCalendars.value = emptyList()
-        clearCalendarSelection()
-        _isLoadingCalendars.value = false
-        _isLoadingEvents.value = false
-    }
 }

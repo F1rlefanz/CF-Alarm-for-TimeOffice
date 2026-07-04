@@ -181,16 +181,4 @@ class MainViewModel @Inject constructor(
         }
     }
     
-    /**
-     * PUBLIC API: Manual cleanup for MainActivity destruction
-     * Calls onCleared() safely from external context
-     */
-    fun cleanupResources() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "MainViewModel: Manual cleanup requested")
-            onCleared()
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during MainViewModel manual cleanup", e)
-        }
-    }
 }

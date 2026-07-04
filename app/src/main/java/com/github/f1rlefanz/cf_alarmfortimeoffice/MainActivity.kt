@@ -40,7 +40,6 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * MainActivity - FULLY MIGRATED to Hilt DI
@@ -261,55 +260,9 @@ class MainActivity : ComponentActivity() {
         }
     }
     
-    override fun onDestroy() {
-        super.onDestroy()
-        
-        try {
-            Logger.d(LogTags.LIFECYCLE, "MainActivity: Starting comprehensive cleanup to prevent mutex errors...")
-            
-            lifecycleScope.launch {
-                try {
-                    // CRITICAL FIX: Stop Hue Bridge first to cancel all network operations
-                    bridgeConnectionManager.cleanup()
-                    
-                    // Give a moment for network operations to complete
-                    kotlinx.coroutines.delay(50.milliseconds)
-                    
-                    // CRITICAL FIX: Use public cleanup methods instead of protected onCleared()
-                    // Start with high-level coordinators, then data-layer ViewModels
-                    navigationViewModel.cleanupResources()
-                    mainViewModel.cleanupResources()
-                    
-                    // Small delay between batches
-                    kotlinx.coroutines.delay(25.milliseconds)
-                    
-                    // Core business logic ViewModels  
-                    authViewModel.cleanupResources()
-                    shiftViewModel.cleanupResources()
-                    
-                    // Small delay before final cleanup
-                    kotlinx.coroutines.delay(25.milliseconds)
-                    
-                    // Data-heavy ViewModels last
-                    calendarViewModel.cleanupResources()
-                    alarmViewModel.cleanupResources()
-                    
-                    Logger.d(LogTags.LIFECYCLE, "MainActivity: Sequential cleanup completed successfully")
-                } catch (e: Exception) {
-                    Logger.e(LogTags.LIFECYCLE, "Error during MainActivity ViewModel cleanup", e)
-                }
-            }
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during MainActivity cleanup", e)
-        }
-        
-        // FINAL PROTECTION: Force garbage collection hint after cleanup
-        try {
-            System.gc()
-        } catch (_: Exception) {
-            // Ignore GC errors - using _ to indicate intentionally unused parameter
-        }
-    }
+    // Kein onDestroy-Cleanup mehr: der fruehere Block lief auf dem bereits gecancelten
+    // lifecycleScope (also faktisch nie) und haette, wuerde er laufen, Prozess-Singletons
+    // (bridgeConnectionManager, ViewModels) bei jeder Rotation lahmgelegt. ViewModel-Aufraeumung
+    // uebernimmt das Framework via onCleared(); Hue-Lifecycle haengt an onResume/onPause. (Audit)
 
 }

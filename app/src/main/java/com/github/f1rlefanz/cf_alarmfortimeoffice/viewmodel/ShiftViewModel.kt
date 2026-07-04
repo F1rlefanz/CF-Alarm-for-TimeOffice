@@ -269,16 +269,4 @@ class ShiftViewModel @Inject constructor(
         // UseCase cleanup wird durch DI Container gehandhabt
     }
     
-    /**
-     * PUBLIC API: Manual cleanup for MainActivity destruction
-     * Calls onCleared() safely from external context
-     */
-    fun cleanupResources() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Manual cleanup requested")
-            onCleared()
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during ShiftViewModel manual cleanup", e)
-        }
-    }
 }

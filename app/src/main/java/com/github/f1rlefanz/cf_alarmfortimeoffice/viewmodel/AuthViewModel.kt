@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
-import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
@@ -335,31 +334,9 @@ class AuthViewModel @Inject constructor(
                             accessToken = null // Real tokens managed by ModernOAuth2TokenManager
                         )
 
-                        // Save email to SharedPreferences for CalendarRepository
-                        try {
-                            val prefs =
-                                context.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
-                            prefs.edit {
-                                putString("current_user_email", initialEmail)
-                                putString("current_user_display_name", displayName)
-                                putLong("auth_timestamp", System.currentTimeMillis())
-                                putBoolean(
-                                    "user_signed_in",
-                                    true
-                                ) // CRITICAL FIX: Explicit sign-in flag
-                            }
-                            Logger.business(
-                                LogTags.AUTH,
-                                "✅ CRITICAL-FIX: Saved user email '$initialEmail' to SharedPreferences for ModernOAuth2TokenManager"
-                            )
-                        } catch (e: Exception) {
-                            Logger.e(
-                                LogTags.AUTH,
-                                "❌ CRITICAL-ERROR: Could not save user email to SharedPreferences",
-                                e
-                            )
-                        }
-
+                        // Auth-Zustand liegt ausschliesslich in authDataStoreRepository (DataStore).
+                        // Der frueher hier geschriebene "cf_alarm_auth"-SharedPrefs-Kanal wurde
+                        // nirgends gelesen (toter Code, Audit) und ist entfernt.
                         authDataStoreRepository.updateAuthData(authData)
                             .onSuccess {
                                 updateAuthState { currentState ->
@@ -452,29 +429,9 @@ class AuthViewModel @Inject constructor(
                     .onSuccess {
                         updateAuthState { AuthState.EMPTY }
 
-                        // Clear SharedPreferences
-                        try {
-                            val ctx = context ?: run {
-                                val field =
-                                    credentialAuthManager::class.java.getDeclaredField("context")
-                                field.isAccessible = true
-                                field.get(credentialAuthManager) as? Context
-                            }
-
-                            ctx?.let {
-                                val prefs =
-                                    it.getSharedPreferences("cf_alarm_auth", Context.MODE_PRIVATE)
-                                prefs.edit { clear() }
-                                Logger.d(LogTags.AUTH, "✅ Cleared SharedPreferences on sign-out")
-                            }
-                        } catch (e: Exception) {
-                            Logger.w(
-                                LogTags.AUTH,
-                                "Could not clear SharedPreferences on sign-out",
-                                e
-                            )
-                        }
-
+                        // Der frueher hier per Reflection geleerte "cf_alarm_auth"-SharedPrefs-Kanal
+                        // existiert nicht mehr (toter Code, Audit); der Auth-Zustand wird ueber
+                        // authDataStoreRepository.clearAuthData() oben zurueckgesetzt.
                         Logger.business(LogTags.AUTH, "Sign-out successful")
                     }
                     .onFailure { error ->
@@ -743,16 +700,4 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    /**
-     * PUBLIC API: Manual cleanup for MainActivity destruction
-     * Calls onCleared() safely from external context
-     */
-    fun cleanupResources() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Manual cleanup requested")
-            onCleared()
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel manual cleanup", e)
-        }
-    }
 }

@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 // PHASE 2 CLEANUP: ShiftViewModel import removed (unused parameter)
 import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,12 +16,10 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Card
@@ -34,26 +31,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogExporter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
-import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,22 +54,6 @@ fun SettingsTabContent(
 ) {
     val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
-
-    // PHASE 1 MIGRATION: Get maintenance time as state
-    var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(Unit) {
-        // Load maintenance time in background
-        lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
-    }
-
-    // Refresh maintenance time periodically
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(30000) // Update every 30 seconds
-            lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -257,84 +231,9 @@ fun SettingsTabContent(
         // Fixed 6h maintenance interval via AlarmMaintenanceService
         // Fixed 14-day lookahead with 7-day buffer check
 
-        // ⚠️ Phase 2: Battery Status, Last Sync & OEM Warnings
+        // Akku-Status & OEM-Warnungen (die "Letzter Sync"-Anzeige liegt jetzt im Status-Tab)
 
-        // 1. Last Maintenance Status Card
-        val currentTime = System.currentTimeMillis()
-        val timeSinceLastMaintenance = if (lastMaintenanceTime > 0) {
-            currentTime - lastMaintenanceTime
-        } else {
-            -1L
-        }
-
-        val lastMaintenanceText = when {
-            lastMaintenanceTime == 0L -> "Noch nie ausgeführt"
-            timeSinceLastMaintenance < 0 -> "Unbekannt"
-            timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(1) -> {
-                val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSinceLastMaintenance)
-                "Vor $minutes Minuten"
-            }
-
-            timeSinceLastMaintenance < TimeUnit.DAYS.toMillis(1) -> {
-                val hours = TimeUnit.MILLISECONDS.toHours(timeSinceLastMaintenance)
-                "Vor $hours Stunden"
-            }
-
-            else -> {
-                val days = TimeUnit.MILLISECONDS.toDays(timeSinceLastMaintenance)
-                "Vor $days Tagen"
-            }
-        }
-
-        val statusColor = when {
-            lastMaintenanceTime == 0L -> MaterialTheme.colorScheme.tertiary
-            timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(12) -> MaterialTheme.colorScheme.primary
-            timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(24) -> MaterialTheme.colorScheme.tertiary
-            else -> MaterialTheme.colorScheme.error
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.CloudDone,
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    tint = statusColor
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Letzter Sync",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        lastMaintenanceText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = statusColor
-                    )
-                    if (timeSinceLastMaintenance > TimeUnit.HOURS.toMillis(24)) {
-                        Text(
-                            "⚠️ Langer Zeitraum - bitte prüfen",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-        }
-
-        // 2. Battery Exemption Warning
+        // 1. Battery Exemption Warning
         if (!BatteryOptimizationHelper.isExempted(context)) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -432,65 +331,6 @@ fun SettingsTabContent(
                         tint = MaterialTheme.colorScheme.warning
                     )
                 }
-            }
-        }
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
-
-
-        // Diagnose & Support (Alpha-Test)
-        Text(
-            "Diagnose",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
-
-        // Logs teilen / Problem melden
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                val shareIntent = LogExporter.createShareIntent(context)
-                if (shareIntent != null) {
-                    context.startActivity(
-                        Intent.createChooser(shareIntent, "Logs senden")
-                    )
-                } else {
-                    Toast.makeText(
-                        context,
-                        "Noch keine Logs vorhanden",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Share,
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Logs senden / Problem melden",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Diagnose-Protokoll an den Entwickler senden",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    Icons.AutoMirrored.Default.KeyboardArrowRight,
-                    contentDescription = null
-                )
             }
         }
 

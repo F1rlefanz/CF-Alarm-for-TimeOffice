@@ -15,7 +15,7 @@ import java.util.Locale
  */
 object LogEmailUtil {
     
-    private const val TARGET_EMAIL = "trashmail126@yahoo.de"
+    private const val TARGET_EMAIL = "cfischer@csj.de"
     private const val SUBJECT_PREFIX = "CF-Alarm Debug Logs"
     
     /**

@@ -43,12 +43,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun StatusTabContent(
@@ -125,6 +127,9 @@ fun StatusTabContent(
                 else -> "${alarmState.activeAlarms.size} Alarme gesetzt"
             }
         )
+
+        // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
+        LastSyncCard()
 
         // Debug-Informationen
         DebugInfoCard()
@@ -298,6 +303,86 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
 }
 
 @Composable
+private fun LastSyncCard() {
+    val context = LocalContext.current
+    var lastMaintenanceTime by remember { mutableStateOf(0L) }
+
+    // Wartungszeit laden und alle 30s aktualisieren
+    LaunchedEffect(Unit) {
+        lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
+        }
+    }
+
+    val timeSinceLastMaintenance = if (lastMaintenanceTime > 0) {
+        System.currentTimeMillis() - lastMaintenanceTime
+    } else {
+        -1L
+    }
+
+    val lastMaintenanceText = when {
+        lastMaintenanceTime == 0L -> "Noch nie ausgeführt"
+        timeSinceLastMaintenance < 0 -> "Unbekannt"
+        timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(1) ->
+            "Vor ${TimeUnit.MILLISECONDS.toMinutes(timeSinceLastMaintenance)} Minuten"
+        timeSinceLastMaintenance < TimeUnit.DAYS.toMillis(1) ->
+            "Vor ${TimeUnit.MILLISECONDS.toHours(timeSinceLastMaintenance)} Stunden"
+        else ->
+            "Vor ${TimeUnit.MILLISECONDS.toDays(timeSinceLastMaintenance)} Tagen"
+    }
+
+    val statusColor = when {
+        lastMaintenanceTime == 0L -> MaterialTheme.colorScheme.tertiary
+        timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(12) -> MaterialTheme.colorScheme.primary
+        timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(24) -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.error
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                tint = statusColor
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Letzter Sync",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    lastMaintenanceText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = statusColor
+                )
+                if (timeSinceLastMaintenance > TimeUnit.HOURS.toMillis(24)) {
+                    Text(
+                        "⚠️ Langer Zeitraum - bitte prüfen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DebugInfoCard() {
     val context = LocalContext.current
     var showEmailSuccess by remember { mutableStateOf(false) }
@@ -329,6 +414,11 @@ private fun DebugInfoCard() {
             Text(
                 "Die App schreibt Logs kontinuierlich in eine Datei (max. 50 MB). Bei 40 MB wird die alte Datei als Backup gesichert und eine neue Datei angelegt. Bei der nächsten Rotation wird das alte Backup gelöscht. Beim Versenden werden beide Dateien (aktuelle + Backup) angehängt.",
                 style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                "Hinweis: Die Logs enthalten Diagnosedaten (Gerätemodell, App-Version, Zeitstempel, App-Ereignisse). Beim Senden öffnet sich der Teilen-Dialog – vorausgefüllt als E-Mail an cfischer@csj.de, oder du wählst eine andere App.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             
             // Log-Datei Info

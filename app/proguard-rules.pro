@@ -28,11 +28,9 @@
 # CRASH REPORTING & DEBUGGING
 # ==============================
 
-# Firebase Crashlytics
+# Lesbare Stacktraces fuers app-eigene Crash-Logging (last_crash.txt)
 -keepattributes SourceFile,LineNumberTable
 -keep public class * extends java.lang.Exception
--keep class com.google.firebase.crashlytics.** { *; }
--dontwarn com.google.firebase.crashlytics.**
 
 # Keep error and warning logs for production debugging
 -assumenosideeffects class timber.log.Timber {
@@ -136,10 +134,6 @@
 # Credentials API
 -keep class androidx.credentials.** { *; }
 -keep class com.google.android.libraries.identity.googleid.** { *; }
-
-# Firebase
--keep class com.google.firebase.** { *; }
--dontwarn com.google.firebase.**
 
 # ==============================
 # GOOGLE CALENDAR API

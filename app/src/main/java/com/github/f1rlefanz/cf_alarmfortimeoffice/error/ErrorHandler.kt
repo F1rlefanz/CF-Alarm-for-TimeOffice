@@ -14,8 +14,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
  * ✅ User-friendly German error messages
  * ✅ Security-conscious error reporting
  * ✅ Memory-efficient error handling
- * 
- * REMOVED: Firebase Crashlytics integration (not needed for debugging)
  */
 object ErrorHandler {
     

@@ -67,12 +67,14 @@ class CFAlarmApplication : Application() {
         // == null / Schreibfehler). Ein Fehler hier darf onCreate NICHT crashen - sonst liefe der
         // Direct-Boot-Alarm-Restore im BootReceiver nie.
         try {
-            val logFile = File(getExternalFilesDir(null), "debug_logs.txt")
+            val logDir = getExternalFilesDir(null)
             // PII-Schutz: In Release nur WARN+ ins Datei-Log (INFO/business enthalten E-Mail/
             // Kalendertitel); in Debug weiterhin alles fuer die Entwicklung.
             val fileLogMinPriority = if (BuildConfig.DEBUG) android.util.Log.VERBOSE else android.util.Log.WARN
-            Timber.plant(SimpleFileTree(logFile, minPriority = fileLogMinPriority))
-            Logger.i(LogTags.APP, "🗂️ Logs werden gespeichert in: ${logFile.absolutePath}")
+            if (logDir != null) {
+                Timber.plant(SimpleFileTree(logDir, minPriority = fileLogMinPriority))
+                Logger.i(LogTags.APP, "🗂️ Logs werden (8 Tage) gespeichert in: ${logDir.absolutePath}")
+            }
 
             if (BuildConfig.DEBUG) {
                 Timber.plant(Timber.DebugTree())

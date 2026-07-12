@@ -27,37 +27,26 @@ object LogEmailUtil {
      */
     fun sendLogFileViaEmail(context: Context): Result<Unit> {
         return try {
-            // 1. Log-Dateien finden
-            val logFile = File(context.getExternalFilesDir(null), "debug_logs.txt")
-            val backupFile = File(context.getExternalFilesDir(null), "debug_logs_backup.txt")
-            
+            val logDir = context.getExternalFilesDir(null)
             val filesToSend = mutableListOf<Uri>()
             
-            // Aktuelle Log-Datei
-            if (logFile.exists() && logFile.length() > 0L) {
-                try {
-                    val fileUri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        logFile
-                    )
-                    filesToSend.add(fileUri)
-                } catch (e: Exception) {
-                    Logger.e(LogTags.APP, "❌ Fehler beim Erstellen der FileProvider URI für Log", e)
-                }
-            }
-            
-            // Backup-Datei (falls vorhanden)
-            if (backupFile.exists() && backupFile.length() > 0L) {
-                try {
-                    val backupUri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        backupFile
-                    )
-                    filesToSend.add(backupUri)
-                } catch (e: Exception) {
-                    Logger.e(LogTags.APP, "❌ Fehler beim Erstellen der FileProvider URI für Backup", e)
+            if (logDir != null) {
+                val logFiles = logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+                    ?.sortedByDescending { it.lastModified() } ?: emptyList()
+                    
+                for (file in logFiles) {
+                    if (file.exists() && file.length() > 0L) {
+                        try {
+                            val fileUri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                file
+                            )
+                            filesToSend.add(fileUri)
+                        } catch (e: Exception) {
+                            Logger.e(LogTags.APP, "❌ Fehler beim Erstellen der FileProvider URI für Log", e)
+                        }
+                    }
                 }
             }
             
@@ -72,7 +61,7 @@ object LogEmailUtil {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_EMAIL, arrayOf(TARGET_EMAIL))
                 putExtra(Intent.EXTRA_SUBJECT, createEmailSubject())
-                putExtra(Intent.EXTRA_TEXT, createEmailBody(logFile))
+                putExtra(Intent.EXTRA_TEXT, createEmailBody(filesToSend.size))
                 putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(filesToSend))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -105,7 +94,7 @@ object LogEmailUtil {
     /**
      * Erstellt den E-Mail-Body mit System-Informationen
      */
-    private fun createEmailBody(logFile: File): String {
+    private fun createEmailBody(fileCount: Int): String {
         return buildString {
             appendLine("CF-Alarm Debug Logs")
             appendLine("==================")
@@ -115,11 +104,10 @@ object LogEmailUtil {
             appendLine("Android-Version: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
             appendLine("Gerät: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
             appendLine()
-            appendLine("Log-Datei: ${logFile.name}")
-            appendLine("Größe: ${formatFileSize(logFile.length())}")
+            appendLine("Anzahl der Log-Dateien: $fileCount (letzte 8 Tage)")
             appendLine("Zeitstempel: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.GERMAN).format(Date())}")
             appendLine()
-            appendLine("Die Log-Datei ist als Anhang beigefügt.")
+            appendLine("Die Log-Dateien sind als Anhang beigefügt.")
         }
     }
     
@@ -138,21 +126,25 @@ object LogEmailUtil {
      * Prüft ob eine Log-Datei existiert und Daten enthält
      */
     fun hasLogFile(context: Context): Boolean {
-        val logFile = File(context.getExternalFilesDir(null), "debug_logs.txt")
-        return logFile.exists() && logFile.length() > 0
+        val logDir = context.getExternalFilesDir(null) ?: return false
+        val logFiles = logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+        return logFiles != null && logFiles.any { it.length() > 0 }
     }
     
     /**
      * Gibt Informationen über die Log-Datei zurück
      */
     fun getLogFileInfo(context: Context): String? {
-        val logFile = File(context.getExternalFilesDir(null), "debug_logs.txt")
-        return if (logFile.exists()) {
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.GERMAN)
-            val lastModified = dateFormat.format(Date(logFile.lastModified()))
-            "Größe: ${formatFileSize(logFile.length())}, Aktualisiert: $lastModified"
-        } else {
-            null
-        }
+        val logDir = context.getExternalFilesDir(null) ?: return null
+        val logFiles = logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+            ?.sortedByDescending { it.lastModified() }
+            
+        if (logFiles.isNullOrEmpty()) return null
+        
+        val totalSize = logFiles.sumOf { it.length() }
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.GERMAN)
+        val lastModified = dateFormat.format(Date(logFiles.first().lastModified()))
+        
+        return "${logFiles.size} Dateien (max 8 Tage), Gesamt: ${formatFileSize(totalSize)}, Aktualisiert: $lastModified"
     }
 }

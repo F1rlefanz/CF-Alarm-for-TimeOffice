@@ -412,7 +412,7 @@ private fun DebugInfoCard() {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "Die App schreibt Logs kontinuierlich in eine Datei (max. 50 MB). Bei 40 MB wird die alte Datei als Backup gesichert und eine neue Datei angelegt. Bei der nächsten Rotation wird das alte Backup gelöscht. Beim Versenden werden beide Dateien (aktuelle + Backup) angehängt.",
+                "Die App schreibt Logs nun täglich in separate Dateien (z.B. debug_logs_2026-07-12.txt) und behält diese für genau 8 Tage, um eine vollständige Woche abbilden zu können. Ältere Dateien werden automatisch bereinigt. Beim Versenden werden alle vorhandenen Dateien angehängt.",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(

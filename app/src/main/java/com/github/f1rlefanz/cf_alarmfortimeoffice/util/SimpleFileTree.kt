@@ -17,35 +17,34 @@ import java.util.Locale
  *   NICHT im Klartext auf External Storage landen (widersprach sonst der Datenschutzerklaerung).
  */
 class SimpleFileTree(
-    private val logFile: File,
+    private val logDir: File,
     private val minPriority: Int = Log.VERBOSE
 ) : Timber.Tree() {
 
-    companion object {
-        private const val MAX_LOG_SIZE = 50 * 1024 * 1024 // 50MB max size
-        private const val LOG_ROTATION_SIZE = 40 * 1024 * 1024 // Rotate at 40MB
-    }
-    
+    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault())
+
     init {
         // Ensure parent directory exists
-        logFile.parentFile?.mkdirs()
+        logDir.mkdirs()
         
-        // Rotate log file if it's getting too large
-        if (logFile.exists() && logFile.length() > LOG_ROTATION_SIZE) {
-            rotateLogFile()
-        }
+        // Clean up old logs on initialization
+        cleanupOldLogs()
     }
     
     override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
         // PII-Schutz: In Release nur WARN+ ins Datei-Log (siehe minPriority).
         if (priority < minPriority) return
         try {
-            // Skip logging if file is too large (safety check)
-            if (logFile.exists() && logFile.length() > MAX_LOG_SIZE) {
+            val today = dateFormat.format(Date())
+            val logFile = File(logDir, "debug_logs_$today.txt")
+            
+            // Skip logging if file is too large (safety check, 20MB per day is plenty)
+            if (logFile.exists() && logFile.length() > 20 * 1024 * 1024) {
                 return
             }
             
-            val timestamp = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            val timestamp = timeFormat.format(Date())
             val priorityChar = when (priority) {
                 Log.VERBOSE -> "V"
                 Log.DEBUG -> "D"
@@ -73,30 +72,21 @@ class SimpleFileTree(
             
         } catch (e: Exception) {
             // Ignore logging errors to prevent infinite loops
-            // In a real app, you might want to report this to a crash reporter
         }
     }
     
-    private fun rotateLogFile() {
+    private fun cleanupOldLogs() {
         try {
-            val backupFile = File(logFile.parent, "${logFile.nameWithoutExtension}_backup.${logFile.extension}")
-            
-            // Remove old backup if it exists
-            if (backupFile.exists()) {
-                backupFile.delete()
+            // Calculate timestamp for 8 days ago
+            val eightDaysAgo = System.currentTimeMillis() - 8 * 24 * 60 * 60 * 1000L
+            val files = logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+            files?.forEach { file ->
+                if (file.lastModified() < eightDaysAgo) {
+                    file.delete()
+                }
             }
-            
-            // Move current log to backup
-            logFile.renameTo(backupFile)
-            
-            // Create new log file
-            logFile.createNewFile()
-            
-            // Add rotation marker
-            logFile.appendText("=== Log rotated at ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())} ===\n")
-            
         } catch (e: Exception) {
-            // If rotation fails, just continue with the current file
+            // ignore cleanup errors
         }
     }
 }

@@ -21,20 +21,20 @@ jobs:
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Repo wird unter Windows gepflegt -> Executable-Bit des Wrappers sicherstellen.
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle (Caching + Wrapper-Validierung)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           validate-wrappers: true
           # Cache nur auf main schreiben, PRs lesen nur -> kein Cache-Thrashing.
@@ -50,7 +50,7 @@ jobs:
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Debug-APK als Artefakt
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
@@ -58,7 +58,7 @@ jobs:
 
       - name: Test-/Lint-Reports bei Fehler
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports
           path: |

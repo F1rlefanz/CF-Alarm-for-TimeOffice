@@ -35,7 +35,13 @@ class OAuth2TokenManager(
         const val REQUEST_CODE_CALENDAR_AUTHORIZATION = 1001
     }
     
+    @Volatile
     private var pendingAuthCallback: ((Boolean) -> Unit)? = null
+
+    // Email der schwebenden Autorisierung: nötig, um nach erteilter Zustimmung den Token
+    // per erneutem getToken()-Aufruf tatsächlich abzuholen (siehe handlePermissionResult).
+    @Volatile
+    private var pendingAuthEmail: String? = null
     
     /**
      * Lädt gültiges Token, refresht automatisch wenn nötig
@@ -99,7 +105,8 @@ class OAuth2TokenManager(
                 if (activity != null) {
                     Logger.i(LogTags.TOKEN, "🚀 Launching permission dialog...")
                     pendingAuthCallback = onResult
-                    
+                    pendingAuthEmail = userEmail
+
                     withContext(Dispatchers.Main) {
                         activity.startActivityForResult(
                             e.intent,
@@ -259,19 +266,51 @@ class OAuth2TokenManager(
     }
     
     /**
-     * Handles activity result from permission dialog
+     * Handles activity result from permission dialog.
+     *
+     * KRITISCH: Eine erteilte Zustimmung (RESULT_OK) liefert noch KEINEN Token. Der erste
+     * GoogleAuthUtil.getToken()-Aufruf warf UserRecoverableAuthException nur, um den Consent-Screen
+     * auszulösen – der Token entsteht erst, wenn getToken() JETZT (mit vorliegender Zustimmung)
+     * erneut aufgerufen wird. Deshalb starten wir authorize() hier noch einmal (activity = null,
+     * damit kein weiterer Dialog aufpoppen kann) und melden Erfolg erst, wenn der Token wirklich
+     * abgeholt und gespeichert wurde. Ohne diesen zweiten Aufruf bliebe der Token-Store leer und
+     * jeder folgende getValidToken() scheiterte mit "No token available".
      */
-    fun handlePermissionResult(requestCode: Int, resultCode: Int): Boolean {
+    suspend fun handlePermissionResult(requestCode: Int, resultCode: Int): Boolean {
         if (requestCode != REQUEST_CODE_CALENDAR_AUTHORIZATION) {
             return false
         }
-        
-        val success = resultCode == Activity.RESULT_OK
-        Logger.i(LogTags.TOKEN, "Permission result: ${if (success) "GRANTED" else "DENIED"}")
-        
-        pendingAuthCallback?.invoke(success)
+
+        val callback = pendingAuthCallback
+        val email = pendingAuthEmail
         pendingAuthCallback = null
-        
+        pendingAuthEmail = null
+
+        if (resultCode != Activity.RESULT_OK) {
+            Logger.i(LogTags.TOKEN, "Permission result: DENIED")
+            callback?.invoke(false)
+            return false
+        }
+
+        if (email.isNullOrBlank()) {
+            Logger.e(LogTags.TOKEN, "❌ Permission granted, aber keine pending-Email gecached – Token kann nicht abgeholt werden")
+            callback?.invoke(false)
+            return false
+        }
+
+        Logger.i(LogTags.TOKEN, "Permission result: GRANTED – Token wird mit erteilter Zustimmung abgeholt")
+
+        // Zustimmung liegt jetzt vor → dieser Aufruf erreicht den Save-Pfad statt erneut zu werfen.
+        val tokenResult = authorize(userEmail = email, activity = null, onResult = null)
+        val success = tokenResult.isSuccess
+
+        if (success) {
+            Logger.i(LogTags.TOKEN, "✅ Token nach Zustimmung erhalten und gespeichert")
+        } else {
+            Logger.e(LogTags.TOKEN, "❌ Token-Abruf nach erteilter Zustimmung fehlgeschlagen", tokenResult.exceptionOrNull())
+        }
+
+        callback?.invoke(success)
         return success
     }
 }

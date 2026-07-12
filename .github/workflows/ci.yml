@@ -21,7 +21,7 @@ jobs:
       GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Repo wird unter Windows gepflegt -> Executable-Bit des Wrappers sicherstellen.
       - name: Make gradlew executable

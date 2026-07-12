@@ -60,7 +60,7 @@
     TrustAllX509TrustManager: Apache Commons Logging optional Log4J dependency
     Begründung: Log4JLogger ist eine optionale Implementierung, die nicht 
     verwendet wird. Die Warnung über "unreachable code" kann ignoriert werden,
-    da wir Android's native Logging verwenden.
+    da wir Androids native Logging verwenden.
     -->
     <issue id="TrustAllX509TrustManager" severity="informational">
         <ignore regexp=".*org\.apache\.commons\.logging\.impl\.Log4JLogger.*" />
@@ -104,7 +104,7 @@
     
     <!-- 
     HardcodedText: Ähnlich wie SetTextI18n
-    Nur in Debug-Builds relevant
+    nur in Debug-Builds relevant
     -->
     <issue id="HardcodedText" severity="informational" />
     

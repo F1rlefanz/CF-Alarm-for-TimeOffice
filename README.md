@@ -9,7 +9,7 @@
 
 **Automatische Wecker aus dem Google-Dienstplan-Kalender – mit optionaler Philips-Hue-Sonnenaufgangssimulation**
 
-[📖 Dokumentation & Support](https://F1rlefanz.github.io/CF-Alarm-for-TimeOffice) • [📲 Play Store (interner Test)](https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice)
+[📖 Dokumentation & Support](https://cf-alarm.duckdns.org) • [📲 Play Store (interner Test)](https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice)
 
 </div>
 

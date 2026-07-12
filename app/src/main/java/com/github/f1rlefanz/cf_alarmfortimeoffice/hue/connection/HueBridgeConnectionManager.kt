@@ -459,6 +459,16 @@ class HueBridgeConnectionManager private constructor(
      * INTERNAL: Validate connection credentials against bridge
      */
     private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean {
+        val context = contextRef.get()
+        if (context != null) {
+            val networkMonitor = com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor(context)
+            // Skip connection attempt if we're not on Wi-Fi/Ethernet and the IP is a local network IP
+            if (!networkMonitor.isWifiConnected() && (bridgeIp.startsWith("192.168.") || bridgeIp.startsWith("10.") || bridgeIp.startsWith("172."))) {
+                Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Not on Wi-Fi, skipping local bridge connection to $bridgeIp")
+                return false
+            }
+        }
+        
         return try {
             apiClient.getBridgeConfig(bridgeIp, username)
             Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")

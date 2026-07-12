@@ -237,6 +237,10 @@ class AlarmMaintenanceService : Service() {
         
         if (tokenResult.isFailure) {
             Logger.e(LogTags.MAINTENANCE, "Token refresh failed, aborting maintenance")
+            showActionRequiredNotification(
+                title = "Anmeldung erforderlich",
+                message = "Dein Kalender kann nicht synchronisiert werden. Bitte öffne die App und melde dich an."
+            )
             return
         }
         
@@ -288,6 +292,10 @@ class AlarmMaintenanceService : Service() {
         
         if (selectedCalendars.isEmpty()) {
             Logger.w(LogTags.MAINTENANCE, "No calendars selected, skipping")
+            showActionRequiredNotification(
+                title = "Keine Kalender ausgewählt",
+                message = "Es wurden keine Kalender für die Synchronisation ausgewählt. Bitte öffne die App und wähle die gewünschten Kalender aus."
+            )
             return
         }
         
@@ -436,5 +444,45 @@ class AlarmMaintenanceService : Service() {
             .setSound(null)
             .setVibrate(null)
             .build()
+    }
+    
+    /**
+     * Shows a user-facing notification indicating action is required (e.g. login or calendar selection)
+     */
+    private fun showActionRequiredNotification(title: String, message: String) {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        
+        val channelId = "alarm_maintenance_alerts"
+        val channel = NotificationChannel(
+            channelId,
+            "Wartungshinweise",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "Wichtige Hinweise zur Wecker-Synchronisation"
+            setShowBadge(true)
+        }
+        notificationManager.createNotificationChannel(channel)
+        
+        val launchIntent = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)
+        val pendingIntent = launchIntent?.let {
+            PendingIntent.getActivity(
+                applicationContext,
+                0,
+                it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+        
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .apply { pendingIntent?.let { setContentIntent(it) } }
+            .build()
+            
+        notificationManager.notify(1002, notification)
     }
 }

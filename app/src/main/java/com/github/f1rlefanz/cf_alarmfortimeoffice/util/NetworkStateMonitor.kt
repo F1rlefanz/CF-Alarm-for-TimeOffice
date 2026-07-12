@@ -83,4 +83,16 @@ class NetworkStateMonitor(context: Context) {
         
         return !networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
+    
+    /**
+     * Check if we're connected to Wi-Fi (or Ethernet/Local Network)
+     * Useful for smart home communication (like Philips Hue Bridge)
+     */
+    fun isWifiConnected(): Boolean {
+        val activeNetwork = connectivityManager.activeNetwork ?: return false
+        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        
+        return networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || 
+               networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
 }

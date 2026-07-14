@@ -142,6 +142,11 @@ fun MainScreen(
             is NavigationState.CalendarSelection -> {
                 CalendarSelectionScreen(
                     calendarViewModel = calendarViewModel,
+                    onRequestAuthorization = {
+                        // Der einzige Weg aus "Token verworfen": Zustimmungsdialog anstossen.
+                        // Braucht die Activity, sonst kann Google keinen Dialog zeigen.
+                        authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
+                    },
                     onSave = {
                         // PHASE 1 MIGRATION: After calendar selection, navigate to battery exemption
                         if (!com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.isExempted(

@@ -46,7 +46,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 fun CalendarSelectionScreen(
     calendarViewModel: CalendarViewModel,
     onSave: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    /**
+     * Startet den Google-Zustimmungsdialog. Noetig, weil "Erneut versuchen" ohne gueltiges
+     * Token in einer Sackgasse endet: der Abruf braucht ein Token, das die App bei einem
+     * 401/403 gerade korrekt verworfen hat. Nur dieser Weg holt ein neues.
+     */
+    onRequestAuthorization: () -> Unit
 ) {
     val calendarState by calendarViewModel.uiState.collectAsState()
 
@@ -105,23 +111,40 @@ fun CalendarSelectionScreen(
                             .padding(SpacingConstants.SPACING_LARGE),
                         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
                     ) {
+                        // Ohne gueltiges Token ist "keine Kalender gefunden" die falsche
+                        // Diagnose - es fehlt schlicht die Freigabe. Und "Erneut versuchen"
+                        // waere dann eine Sackgasse: der Abruf braucht genau das Token, das
+                        // bei einem 401/403 gerade verworfen wurde. Nur der Zustimmungsdialog
+                        // holt ein neues.
+                        val needsAuthorization = !calendarState.hasValidToken
+
                         Text(
-                            "Keine Kalender gefunden",
+                            if (needsAuthorization) "Kalender-Zugriff nicht freigegeben" else "Keine Kalender gefunden",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Text(
                             calendarState.error
-                                ?: "Dein Google-Konto enthält keine abrufbaren Kalender. Lege zuerst in Google Kalender einen Kalender an, oder versuche es erneut.",
+                                ?: if (needsAuthorization) {
+                                    "Die App braucht deine Erlaubnis, den Google-Kalender zu lesen."
+                                } else {
+                                    "Dein Google-Konto enthält keine abrufbaren Kalender. Lege zuerst in Google Kalender einen Kalender an, oder versuche es erneut."
+                                },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         OutlinedButton(
-                            onClick = { calendarViewModel.loadAvailableCalendars(resetPagination = true) },
+                            onClick = {
+                                if (needsAuthorization) {
+                                    onRequestAuthorization()
+                                } else {
+                                    calendarViewModel.loadAvailableCalendars(resetPagination = true)
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Erneut versuchen")
+                            Text(if (needsAuthorization) "Kalender-Zugriff erlauben" else "Erneut versuchen")
                         }
                     }
                 }

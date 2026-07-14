@@ -91,6 +91,14 @@ class HueSmartScheduler private constructor() {
         private const val SUNRISE_START_WORK = "sunrise_start"
         private const val AUTO_OFF_WORK = "hue_auto_off"
         private const val DAILY_SCHEDULE_WORK = "daily_schedule_planning"
+
+        /**
+         * Der 6h-Fallback-Healthcheck fuer den Fall, dass gar keine Alarme gesetzt sind.
+         * Frueher stand dieser Name nur inline im enqueue-Aufruf und wurde nirgends
+         * abgebrochen - der Job lief dadurch fuer immer alle 6h weiter, auch wenn laengst
+         * wieder echte Alarme da waren (im Log vom 13.07. um 10:24 und 18:22 zu sehen).
+         */
+        private const val GENERIC_HEALTH_CHECK_WORK = "generic_health_checks"
         private val PRE_ALARM_CHECK_WINDOW = 10.minutes
         private const val MAX_LOOKAHEAD_DAYS = 7
         private val ALARM_CHANGE_DEBOUNCE = 1500.milliseconds
@@ -240,8 +248,15 @@ class HueSmartScheduler private constructor() {
                 return@withContext
             }
 
-            // Cancel existing scheduled health checks
-            workManager.cancelUniqueWork(PRE_ALARM_HEALTH_CHECK_WORK)
+            // Es gibt echte Alarme -> der 6h-Fallback ist ueberfluessig. Ohne dieses Cancel
+            // lief er als PeriodicWork fuer immer weiter, weil ihn niemand je abbrach.
+            workManager.cancelUniqueWork(GENERIC_HEALTH_CHECK_WORK)
+
+            // Bestehende Pre-Alarm-Checks abraeumen. Per TAG, nicht per Name: die Jobs heissen
+            // "pre_alarm_health_check_0/_1/...", ein cancelUniqueWork(PRE_ALARM_HEALTH_CHECK_WORK)
+            // adressierte also einen Namen, den es gar nicht gab, und traf nichts. Schrumpfte
+            // die Alarmliste, blieben die ueberzaehligen Checks stehen.
+            workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
 
             // Schedule health checks for each upcoming alarm
             nextAlarmTimes.forEachIndexed { index, alarmTime ->
@@ -320,6 +335,9 @@ class HueSmartScheduler private constructor() {
                 "alarm_time" to alarmTime.toString(),
                 "check_index" to index
             ))
+            // Tag, damit calculateAndScheduleNextHealthChecks() sie gesammelt abraeumen kann -
+            // ueber den Unique-Namen ginge das nicht, der traegt den Index.
+            .addTag(PRE_ALARM_HEALTH_CHECK_WORK)
             .setConstraints(Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build())
@@ -516,9 +534,12 @@ class HueSmartScheduler private constructor() {
                 .build())
             .build()
 
+        // KEEP statt REPLACE: laeuft der Fallback schon, soll er in seinem Rhythmus bleiben.
+        // REPLACE setzte bei jedem Aufruf den 6h-Zaehler zurueck - und die Methode wird bei
+        // jeder Alarm-Aenderung erneut gerufen.
         workManager.enqueueUniquePeriodicWork(
-            "generic_health_checks",
-            ExistingPeriodicWorkPolicy.REPLACE,
+            GENERIC_HEALTH_CHECK_WORK,
+            ExistingPeriodicWorkPolicy.KEEP,
             workRequest
         )
     }
@@ -562,9 +583,11 @@ class HueSmartScheduler private constructor() {
         schedulerScope.coroutineContext.cancelChildren()
         alarmObserverJob = null
         if (::workManager.isInitialized) {
-            workManager.cancelUniqueWork(PRE_ALARM_HEALTH_CHECK_WORK)
+            // Per Tag, nicht per Name: die Pre-Alarm-Checks tragen den Index im Unique-Namen.
+            workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
             workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
             workManager.cancelAllWorkByTag(AUTO_OFF_WORK)
+            workManager.cancelUniqueWork(GENERIC_HEALTH_CHECK_WORK)
             workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
             Logger.d(LogTags.HUE_BRIDGE, "🧹 SMART-SCHEDULER: Cleanup completed")
         }

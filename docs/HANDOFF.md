@@ -5,8 +5,8 @@ Die Historie steht im Git-Log, nicht hier.
 
 **Stand:** 14.07.2026 · `main` = **v1.10.5 / versionCode 48** · alles gemerged und gepusht.
 
-> **Ungeprüft in v1.10.5:** der überarbeitete Akku-Onboarding-Screen (Text/Layout) und die
-> Regel-Validierung. Alles davor ist am Gerät bzw. im Log bestätigt.
+> **Ungeprüft:** nur noch die Regel-Validierung (v1.10.4) — sie greift erst, wenn man eine Regel
+> speichert. Alles andere ist am Gerät bzw. im Log bestätigt.
 
 ---
 
@@ -47,25 +47,31 @@ die ganze Fehlerklasse „Handy nicht im Heim-WLAN" für den Auto-Off.
 Nicht bewusst hinter den Donnerstag-Test zurückgestellt — kann davor angegangen werden, wenn
 sonst nichts drängt.
 
-### 3. Health-Check läuft, obwohl gar keine Bridge gekoppelt ist
+### 3. Kleinkram aus den Logs (alles verifiziert, nichts davon kaputt)
 
-Ohne gespeicherte Verbindung (`ℹ️ BRIDGE-MANAGER: No valid stored connection found`) plant der
-`HueSmartScheduler` trotzdem einen Fallback-Health-Check, der sofort scheitert:
+Kein Korrektheitsproblem — Lärm und Verschwendung. Lohnt sich als Block, nicht einzeln.
 
-```
-🔄 SMART-SCHEDULER: Using fallback generic health check schedule
-🔄 GENERIC-WORKER: Starting fallback health check
-⚠️ GENERIC-WORKER: Fallback health check failed
-```
+- **Health-Check ohne Bridge.** Ohne gespeicherte Verbindung (`No valid stored connection
+  found`) plant der `HueSmartScheduler` trotzdem einen Fallback-Health-Check, der sofort
+  scheitert: `⚠️ GENERIC-WORKER: Fallback health check failed`. Ein **WARN** bei jedem Start,
+  das damit auch in Release-Logs echte Warnungen verdeckt. Naheliegend: gar nicht planen,
+  solange `bridgeIp == null` — dasselbe Kriterium wie beim Verbindungs-Banner.
+- **Wartung läuft vor der Kalender-Auswahl.** `initializeMaintenanceService()` hängt am
+  Auth-Callback, die Kalender-Auswahl kommt im Onboarding aber erst danach. Der erste
+  Wartungslauf endet deshalb immer mit `W No calendars selected, skipping`. Erwartbar, aber
+  ebenfalls ein WARN für einen Normalfall.
+- **2×N Regel-Ladevorgänge pro Hue-Neuberechnung.** `HueSmartScheduler:392`
+  (`getPreAlarmSunriseLeadMinutes`) und `:478` (`getAutoOffActions`) stehen je in einer Schleife
+  über die Alarme, und beide UseCase-Methoden rufen intern `getAllRules()` — also ein
+  vollständiger DataStore-Read pro Alarm und Durchgang. Im Log: 8 × `Retrieved 0 schedule rules`
+  bei 4 Alarmen. Fix wäre, die Regeln einmal im Scheduler zu laden und durchzureichen — ändert
+  aber zwei UseCase-Signaturen, deshalb nicht nebenbei gemacht.
 
-Kein Schaden, aber sinnlose Arbeit bei jedem Start — und ein **WARN**, das damit auch in
-Release-Logs steht und dort echte Warnungen verdeckt. Dieselbe Klasse wie das frühere rote
-„Nicht verbunden": Bridge-Arbeit, bevor es eine Bridge gibt. Naheliegend: gar nicht erst planen,
-solange keine Bridge gekoppelt ist (Kriterium wie anderswo: `bridgeIp != null`). Klein.
+### 4. Startup-Ruckler — ungeklärt
 
-**Startup-Ruckler (unabhängig davon, ungeklärt):** `Skipped 41 frames` / `Davey! ~800ms` beim
-Start. Steht auch nach dem Beheben der doppelten Bridge-Init noch im Log — die war es also
-nicht. Ursache offen; nicht mit halben Vermutungen „reparieren".
+`Skipped 41–48 frames` / `Davey! ~800–890ms` bei jedem Start. **Wichtig:** steht auch nach dem
+Beheben der doppelten Bridge-Init noch im Log — die naheliegende Ursache war es also **nicht**.
+Ursache offen. Nicht mit halben Vermutungen „reparieren"; erst messen (Profiler / Trace).
 
 ---
 

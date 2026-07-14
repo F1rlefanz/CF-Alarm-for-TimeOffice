@@ -244,7 +244,9 @@ fun MainScreen(
                 }
 
                 BatteryOnboardingScreen(
-                    onComplete = {
+                    // Hiess frueher onComplete - der Name log: der Knopf "Warum ist das noetig?"
+                    // schliesst nichts ab, er erklaert.
+                    onExplain = {
                         showEducationalDialog = true
                     },
                     onSkip = {

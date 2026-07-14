@@ -84,3 +84,4 @@ setup-*.bat
 # Claude-Projektanweisungen: bewusst lokal, nicht ins Repo.
 # (Die Play-Store-Justifications unter docs/play-store/ sind hingegen bewusst versioniert.)
 /CLAUDE.md
+/..Projektdateien

@@ -70,6 +70,7 @@ class CalendarUseCase @Inject constructor(
                         is TokenException.NoTokenAvailable -> "Calendar access requires authorization. Please sign in."
                         is TokenException.AuthorizationExpired -> "Your Calendar authorization has expired. Please re-authorize."
                         is TokenException.RefreshFailed -> "Failed to refresh Calendar access. Please re-authorize."
+                        is TokenException.ConsentRequired -> "Der Zugriff auf deinen Kalender wurde entzogen. Bitte melde dich erneut an."
                         else -> "Calendar access error: ${error?.message}"
                     }
                     throw Exception(errorMessage)
@@ -171,6 +172,7 @@ class CalendarUseCase @Inject constructor(
                         is TokenException.NoTokenAvailable -> "Calendar events require authorization. Please sign in."
                         is TokenException.AuthorizationExpired -> "Your Calendar authorization has expired. Please re-authorize."
                         is TokenException.RefreshFailed -> "Failed to refresh Calendar access. Please re-authorize."
+                        is TokenException.ConsentRequired -> "Der Zugriff auf deinen Kalender wurde entzogen. Bitte melde dich erneut an."
                         else -> "Calendar access error: ${error?.message}"
                     }
                     throw Exception(errorMessage)
@@ -321,6 +323,7 @@ class CalendarUseCase @Inject constructor(
                         is TokenException.NoTokenAvailable -> "Calendar events require authorization. Please sign in."
                         is TokenException.AuthorizationExpired -> "Your Calendar authorization has expired. Please re-authorize."
                         is TokenException.RefreshFailed -> "Failed to refresh Calendar access. Please re-authorize."
+                        is TokenException.ConsentRequired -> "Der Zugriff auf deinen Kalender wurde entzogen. Bitte melde dich erneut an."
                         else -> "Calendar access error: ${error?.message}"
                     }
                     throw Exception(errorMessage)

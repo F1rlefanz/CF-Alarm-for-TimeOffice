@@ -11,7 +11,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
-import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
@@ -27,30 +26,41 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * AlarmSoundService - Dedicated Foreground Service for Alarm Audio Management
- * 
- * ARCHITECTURE:
- * - Manages MediaPlayer lifecycle independent of Activity lifecycle
- * - Handles vibration patterns for alarm notifications
- * - Provides foreground notification while alarm is active
- * - Guarantees cleanup on service destruction
- * 
+ * AlarmSoundService - alleiniger Besitzer des Weckers.
+ *
+ * VERANTWORTUNG (alles an EINER Stelle, bewusst):
+ * - MediaPlayer (Ton), unabhaengig vom Activity-Lebenszyklus
+ * - Vibration
+ * - Audio-Fokus, damit fremde Medien pausieren statt weiterzulaufen
+ * - Die EINZIGE Alarm-Notification der App, inkl. Full-Screen-Intent
+ *
+ * WARUM ZENTRAL: Vorher postete der AlarmReceiver eine zweite Notification auf einem Channel
+ * MIT eigenem Klingelton, waehrend dieser Service parallel denselben Ton per MediaPlayer
+ * abspielte. Ergebnis: zwei Wecker, zwei Eintraege in der Leiste, zwei Stopp-Wege, die nichts
+ * voneinander wussten. Genau eine Instanz besitzt den Wecker - das ist die Invariante.
+ *
+ * SICHTBARKEIT: Die Notification traegt den Full-Screen-Intent. Der vom System gesendete
+ * PendingIntent ist auf Android 10+ der einzige erlaubte Weg, aus dem Hintergrund eine Activity
+ * zu starten; AlarmManager-Broadcasts stehen NICHT auf der Ausnahmeliste. Der Stop-Button der
+ * Notification ist zugleich der Notausgang fuer restriktive Geraete, auf denen die
+ * Full-Screen-Activity gar nicht erst hochkommt.
+ *
  * LIFECYCLE:
  * - START_STICKY: Auto-restart if killed by system (Android behavior)
  * - Foreground: No background execution limits, reliable alarm execution
  * - onDestroy: Guaranteed cleanup hook for all resources
- * - onTaskRemoved: Handles task killer apps gracefully
- * 
+ * - onTaskRemoved bewusst NICHT ueberschrieben (siehe Kommentar unten)
+ *
  * CRITICAL FEATURES:
  * - isShuttingDown flag prevents MediaPlayer race conditions
  * - OnPreparedListener checks shutdown state before starting playback
  * - Defensive cleanup in multiple lifecycle hooks
  * - Foreground service ensures Android doesn't kill during alarm
- * 
+ *
  * FIXES SNOOZE BUG:
  * Previous issue: MediaPlayer.prepareAsync() completed AFTER Activity.finish()
  * Solution: Service-managed MediaPlayer with shutdown flag guards
- * 
+ *
  * @author CF-Alarm Development Team
  * @since 1.4.4 - Snooze Bug Fix Release
  */
@@ -83,9 +93,6 @@ class AlarmSoundService : Service() {
         val alarmActive: StateFlow<Boolean> = _alarmActive.asStateFlow()
     }
     
-    // Service Binding
-    private val binder = AlarmSoundBinder()
-    
     // Audio Management
     private var alarmMediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
@@ -104,22 +111,15 @@ class AlarmSoundService : Service() {
     private var playerGeneration = 0
     
     /**
-     * Binder class for Activity to connect to this Service
+     * Reiner Started-Service, kein Binding.
+     *
+     * Die Activity hing frueher per Binder am Service, hat die Referenz aber nie benutzt - der
+     * Bind war Zeremonie. Den Zustand "Wecker laeuft" liefert jetzt [alarmActive]; das ueberlebt
+     * im Gegensatz zu einer Bindung auch das Zerstoeren der Activity.
      */
-    inner class AlarmSoundBinder : Binder() {
-        fun getService(): AlarmSoundService = this@AlarmSoundService
-    }
-    
-    override fun onBind(intent: Intent?): IBinder {
-        Logger.d(LogTags.ALARM, "📎 AlarmSoundService bound")
-        return binder
-    }
-    
-    override fun onUnbind(intent: Intent?): Boolean {
-        Logger.d(LogTags.ALARM, "📎 AlarmSoundService unbound")
-        return super.onUnbind(intent)
-    }
-    
+    override fun onBind(intent: Intent?): IBinder? = null
+
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_ALARM -> {
@@ -135,6 +135,13 @@ class AlarmSoundService : Service() {
 
                 // Reset shutdown flag for new alarm
                 isShuttingDown = false
+
+                // MUSS vor startForeground() stehen: die Notification traegt den
+                // Full-Screen-Intent, das System kann die Activity also unmittelbar nach
+                // startForeground() starten. Stuende alarmActive dann noch auf false, wuerde
+                // die Activity das als "Wecker bereits beendet" lesen und sich sofort wieder
+                // schliessen.
+                _alarmActive.value = true
 
                 // Create notification channel (idempotent, safe to call multiple times)
                 createNotificationChannel()
@@ -152,8 +159,6 @@ class AlarmSoundService : Service() {
                 requestAudioFocus()
                 startAlarmSound()
                 startVibration()
-
-                _alarmActive.value = true
             }
 
             ACTION_STOP_ALARM, ACTION_SNOOZE_ALARM -> {

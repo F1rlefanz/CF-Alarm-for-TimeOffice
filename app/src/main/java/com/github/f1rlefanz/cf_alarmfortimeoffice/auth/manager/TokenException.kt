@@ -29,6 +29,21 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
      * Token Refresh fehlgeschlagen
      */
     class RefreshFailed(message: String) : TokenException(message)
+
+    /**
+     * Der Nutzer muss der App erneut zustimmen (GoogleAuthUtil: "NeedRemoteConsent").
+     *
+     * Tritt auf, wenn der Zugriff im Google-Konto entzogen wurde. Wichtig: der GoogleAuthUtil-
+     * Token-Cache liegt in den Play Services, NICHT im App-Speicher - "Speicher loeschen"
+     * raeumt ihn also nicht mit weg, und die App versucht danach weiter, mit einem toten
+     * Token zu refreshen.
+     *
+     * [intent] ist der von [UserRecoverableAuthException] mitgelieferte Recovery-Intent. Er
+     * fuehrt zum Zustimmungsdialog und ist der einzige Weg zurueck in einen gueltigen Zustand.
+     * Frueher wurde diese Exception als generisches RefreshFailed weitergeworfen und der Intent
+     * verworfen - die App landete in einer Sackgasse ohne Ausweg.
+     */
+    class ConsentRequired(message: String, val intent: Intent? = null) : TokenException(message)
     
     /**
      * Storage Operation fehlgeschlagen

@@ -47,7 +47,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CFAlarmForTimeOfficeTheme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
@@ -150,23 +149,30 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     /**
-     * Schließt das Vollbild, sobald der Service den Wecker beendet meldet.
+     * Schließt das Vollbild, sobald kein Wecker mehr läuft.
      *
-     * drop(1) überspringt den aktuellen Replay-Wert des StateFlow: der ist beim Öffnen
-     * kurzzeitig noch false, wenn die Activity dem START_ALARM zuvorkommt — ohne drop
-     * würde sich der Screen sofort wieder schließen.
+     * Bewusst OHNE drop(1) auf dem Replay-Wert des StateFlow: "kein Wecker aktiv" ist immer ein
+     * Grund zu schließen, egal ob der Zustand gerade eintritt oder schon galt. Das deckt drei
+     * Fälle mit derselben Regel ab:
+     *  - "Wecker aus" in der Notification, während das Vollbild sichtbar ist
+     *  - "Wecker aus", während das Vollbild im Hintergrund liegt (repeatOnLifecycle sammelt
+     *    beim Zurückkommen erneut und sieht den bereits gefallenen Zustand)
+     *  - Prozesstod: das System stellt die Activity wieder her, obwohl kein Service mehr läuft
+     *
+     * Voraussetzung dafür ist, dass AlarmSoundService alarmActive VOR startForeground() setzt —
+     * sonst könnte die vom Full-Screen-Intent gestartete Activity ein noch false lesen und sich
+     * sofort wieder schließen.
      */
     private fun observeAlarmState() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 AlarmSoundService.alarmActive
-                    .drop(1)
                     .filter { active -> !active }
                     .collect {
                         if (!userHandledAlarm) {
-                            Logger.i(LogTags.ALARM, "🔕 Wecker extern gestoppt — Vollbild schließt sich")
-                            finish()
+                            Logger.i(LogTags.ALARM, "🔕 Kein Wecker mehr aktiv — Vollbild schließt sich")
                         }
+                        finish()
                     }
             }
         }

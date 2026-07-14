@@ -29,10 +29,17 @@ import javax.inject.Inject
 /**
  * Enhanced BroadcastReceiver with Hilt DI.
  *
+ * ROLLE: Entscheiden, ob geweckt wird - nicht, WIE geweckt wird.
+ *
+ * Der Receiver prueft den Skip-Status, startet den [AlarmSoundService] und stoesst die
+ * Hue-Regeln an. Ton, Vibration, Audio-Fokus, Notification und Full-Screen-Intent gehoeren
+ * vollstaendig dem Service. Der Receiver postet bewusst KEINE eigene Notification (das war die
+ * Quelle des zweiten Klingeltons) und startet die Activity NICHT direkt (das ist seit
+ * Android 10 kein erlaubter Background-Activity-Start und wird stillschweigend verworfen).
+ *
  * CORE FEATURES:
  * - Reliable wake lock management
- * - Android 14+ Full-Screen Intent compatibility
- * - Enhanced notification with high priority
+ * - Skip-Check vor dem Wecken, Direct-Boot-fest
  * - 🎨 HUE INTEGRATION: Automatic light control based on shift patterns
  * - 🏗️ HILT DI: Modern dependency injection
  *

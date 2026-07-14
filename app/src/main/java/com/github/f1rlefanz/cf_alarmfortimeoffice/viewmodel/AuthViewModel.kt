@@ -84,6 +84,22 @@ class AuthViewModel @Inject constructor(
     private val _reauthRequired = Channel<Unit>(Channel.CONFLATED)
     val reauthRequired: Flow<Unit> = _reauthRequired.receiveAsFlow()
 
+    /**
+     * Beim Abmelden verwirft die App das Kalender-Token absichtlich selbst.
+     *
+     * WARUM DAS EIN FLAG BRAUCHT: [observeTokenLoss] deutet ein verschwundenes Token als "Google
+     * hat den Zugriff entzogen" und stößt den Zustimmungsdialog an. Beim Abmelden wäre das genau
+     * verkehrt — der Nutzer wollte gerade hinaus und bekäme stattdessen einen Dialog vorgesetzt,
+     * der ihn wieder hineinbittet.
+     *
+     * WARUM NICHT EINFACH isSignedIn PRÜFEN: Die DataStore-Emission trifft asynchron ein und kann
+     * das ViewModel erreichen, bevor der State auf EMPTY steht (observeAuthState ist zusätzlich
+     * um 200ms entprellt). Das Flag wird deshalb VOR dem Verwerfen gesetzt und erst bei der
+     * nächsten Anmeldung zurückgenommen — ein Zurücksetzen am Ende von signOut() käme zu früh.
+     */
+    @Volatile
+    private var signOutInProgress = false
+
     // CRITICAL FIX: Triggers calendar reload after successful authentication/authorization
     @Volatile
     private var lastCalendarTriggerTime = 0L
@@ -145,8 +161,19 @@ class AuthViewModel @Inject constructor(
                 .collect { hasToken ->
                     if (hasToken) return@collect
 
-                    // Beim Abmelden ist das Verschwinden gewollt - niemanden in einen
-                    // Zustimmungsdialog zwingen, den er gerade verlassen wollte.
+                    // Beim Abmelden verwirft die App das Token selbst - das ist kein
+                    // Zugriffsverlust. Siehe [signOutInProgress], warum isSignedIn allein hier
+                    // nicht reicht.
+                    if (signOutInProgress) {
+                        Logger.d(
+                            LogTags.AUTH,
+                            "🔑 AUTO-RE-AUTH: Token beim Abmelden verworfen - keine Re-Autorisierung"
+                        )
+                        return@collect
+                    }
+
+                    // Zweiter Wächter für alle übrigen Wege, auf denen das Token ohne aktive
+                    // Anmeldung verschwinden kann.
                     if (!_authState.value.isSignedIn) {
                         Logger.d(
                             LogTags.AUTH,
@@ -386,6 +413,11 @@ class AuthViewModel @Inject constructor(
      */
     fun signIn(context: Context) {
         viewModelScope.launch {
+            // Hier - und nur hier - wird die Abmelde-Sperre wieder gelöst: ab jetzt ist ein
+            // verschwindendes Token wieder ein echter Zugriffsverlust und darf die
+            // Re-Autorisierung anstoßen. Siehe [signOutInProgress].
+            signOutInProgress = false
+
             updateAuthState { currentState ->
                 currentState.copy(
                     calendarOps = currentState.calendarOps.copy(calendarsLoading = true),
@@ -491,10 +523,14 @@ class AuthViewModel @Inject constructor(
     }
 
     /**
-     * Signs out user and clears all authentication data.
+     * Meldet den Nutzer ab und verwirft alle Anmeldedaten - inklusive Kalender-Token.
      */
     fun signOut(context: Context? = null) {
         viewModelScope.launch {
+            // VOR dem Verwerfen setzen, nicht danach: die DataStore-Emission trifft asynchron
+            // ein und darf observeTokenLoss() nicht als Zugriffsverlust erreichen.
+            signOutInProgress = true
+
             updateAuthState { currentState ->
                 currentState.copy(
                     calendarOps = currentState.calendarOps.copy(calendarsLoading = true),
@@ -506,17 +542,24 @@ class AuthViewModel @Inject constructor(
                 // Local sign-out using CredentialAuthManager
                 credentialAuthManager.signOutLocally()
 
-                // Clear auth data from DataStore
-                authDataStoreRepository.clearAuthData()
+                // Über die UseCase statt direkt aufs Repository: nur dort wird auch das
+                // Kalender-Token verworfen. Der frühere Direktzugriff auf
+                // authDataStoreRepository.clearAuthData() ging daran vorbei - das Token
+                // überlebte die Abmeldung.
+                authUseCase.signOut()
                     .onSuccess {
                         updateAuthState { AuthState.EMPTY }
 
                         // Der frueher hier per Reflection geleerte "cf_alarm_auth"-SharedPrefs-Kanal
-                        // existiert nicht mehr (toter Code, Audit); der Auth-Zustand wird ueber
-                        // authDataStoreRepository.clearAuthData() oben zurueckgesetzt.
+                        // existiert nicht mehr (toter Code, Audit); der Auth-Zustand wird von
+                        // authUseCase.signOut() oben zurueckgesetzt.
                         Logger.business(LogTags.AUTH, "Sign-out successful")
                     }
                     .onFailure { error ->
+                        // Abmelden misslungen -> der Nutzer bleibt angemeldet. Die Sperre muss
+                        // wieder weg, sonst bliebe die Re-Autorisierung dauerhaft stumm, falls
+                        // das Token spaeter tatsaechlich entzogen wird.
+                        signOutInProgress = false
                         updateAuthState { currentState ->
                             currentState.copy(
                                 calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
@@ -530,6 +573,7 @@ class AuthViewModel @Inject constructor(
                     }
 
             } catch (e: Exception) {
+                signOutInProgress = false
                 updateAuthState { currentState ->
                     currentState.copy(
                         calendarOps = currentState.calendarOps.copy(calendarsLoading = false),

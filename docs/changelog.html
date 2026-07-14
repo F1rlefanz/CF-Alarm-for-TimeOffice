@@ -46,7 +46,27 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.10.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.10.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Aufgeräumte Hue-Oberfläche: keine zerrissenen Wörter und keine Schalter mehr am Kartenrand. Und „Abmelden“ meldet jetzt wirklich ab.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>„Abmelden“ ließ den Kalender-Zugriff zurück:</strong> Beim Abmelden wurden zwar die Anmeldedaten gelöscht, die Kalender-Freigabe selbst blieb aber bestehen. Die App konnte dadurch im Hintergrund weiter den Kalender des abgemeldeten Kontos lesen – und wer sich danach mit einem <em>anderen</em> Google-Konto anmeldete, wurde kurzzeitig noch mit den Daten des alten Kontos bedient. Abmelden räumt jetzt beides ab.</li>
+                <li><strong>Schalter klebten am Text und verschwanden hinter dem Kartenrand:</strong> Betraf mehrere Stellen in den Hue-Regeln (u. a. „Regel aktivieren“, „Einschalten“, „Automatisch ausschalten“, „Sunrise-Lichtwecker“). Die Beschreibungstexte beanspruchten die gesamte Breite und drängten den Schalter aus dem Bild.</li>
+                <li><strong>Zerrissene Beschriftungen:</strong> „Bearbeiten“ wurde zu „Bea/rbei/ten“, „Einstellungen“ zu „Einstell/ungen“, „Farbe“ zu „Farb/e“, und „Erste Hue-Regel erstellen“ sowie „Regel testen“ brachen unnötig um. Die Knöpfe hatten schlicht zu wenig Platz für ihre eigene Schrift.</li>
+                <li><strong>Farbauswahl lief über den Rand:</strong> Die Farbfelder waren fest auf vier pro Zeile eingestellt – zu viele für die verfügbare Breite. Sie ordnen sich jetzt nach dem tatsächlich vorhandenen Platz und passen sich auch großer Systemschrift an.</li>
+            </ul>
+
+            <h4>✨ Neu &amp; Verbessert</h4>
+            <ul>
+                <li><strong>Kein Fehler-Rot mehr vor der Ersteinrichtung:</strong> Der Hue-Tab meldete „Nicht verbunden“ mit rotem Fehlersymbol, bevor man überhaupt die Gelegenheit hatte, eine Bridge einzurichten. Jetzt steht dort neutral, dass noch keine Bridge eingerichtet ist – samt Hinweis, was als Nächstes zu tun ist. Rot bleibt echten Problemen vorbehalten.</li>
+                <li><strong>Klarere Bridge-Suche:</strong> Vor der Suche gibt es genau eine Schaltfläche. Ist eine Bridge gefunden, steht sie im Mittelpunkt und die Suche rückt als „Erneut suchen“ in den Hintergrund. Der frühere „Löschen“-Knopf ist entfallen – er warf nur die Trefferliste weg, was eine neue Suche ohnehin tut, klang aber, als würde er die Bridge oder die Regeln entfernen.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.10.0 <small>(interne Alpha)</small></h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Verliert die App den Kalender-Zugriff, meldet sie sich von selbst zurück – statt still darauf zu warten, dass du es merkst.</em></p>
 

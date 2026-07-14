@@ -32,7 +32,14 @@ class HueRuleUseCase @Inject constructor(
     
     companion object {
         private const val MAX_RULES_PER_SHIFT = 10
-        private const val MIN_RULE_NAME_LENGTH = 3
+
+        // War 3 - eine willkuerliche Schwelle, die nie greifen konnte, weil der Validierungs-
+        // Check kaputt war (siehe requireValidRule). Mit der Reparatur wuerde sie ploetzlich
+        // scharf: Die UI verlangt seit jeher nur isNotBlank(), und eine Regel namens "FS" fuer
+        // die Fruehschicht ist voellig legitim - sie existiert real. Bei 3 waere sie ab sofort
+        // nicht mehr speicher- UND nicht mehr bearbeitbar gewesen (updateRule validiert auch).
+        // 1 bringt UI und UseCase auf dieselbe Regel: der Name darf nicht leer sein.
+        private const val MIN_RULE_NAME_LENGTH = 1
         private const val MAX_RULE_NAME_LENGTH = 50
 
         /** Shortened ramp duration used when previewing a sunrise via "Regel testen". */
@@ -72,12 +79,8 @@ class HueRuleUseCase @Inject constructor(
         
         return try {
             // Validate rule
-            val validationResult = validateRule(rule)
-            if (validationResult.isFailure) {
-                Logger.w(LogTags.HUE_USECASE, "Rule validation failed for ${rule.name}")
-                return Result.failure(validationResult.exceptionOrNull() ?: Exception("Validation failed"))
-            }
-            
+            requireValidRule(rule).onFailure { return Result.failure(it) }
+
             // Check for duplicate IDs
             val existingRules = configRepository.getScheduleRules().getOrNull() ?: emptyList()
             if (existingRules.any { it.id == rule.id }) {
@@ -492,11 +495,8 @@ class HueRuleUseCase @Inject constructor(
         
         return try {
             // Validate rule
-            val validationResult = validateRule(rule)
-            if (validationResult.isFailure) {
-                return Result.failure(validationResult.exceptionOrNull() ?: Exception("Validation failed"))
-            }
-            
+            requireValidRule(rule).onFailure { return Result.failure(it) }
+
             // Update rule
             val updateResult = configRepository.updateScheduleRule(rule)
             
@@ -564,6 +564,37 @@ class HueRuleUseCase @Inject constructor(
         }
     }
     
+    /**
+     * Lehnt eine Regel ab, die die Validierung nicht besteht.
+     *
+     * WARUM ES DAS BRAUCHT: An beiden Aufrufstellen stand `if (validateRule(rule).isFailure)`.
+     * Das prüft die falsche Ebene. [validateRule] liefert `Result<RuleValidationResult>` und gibt
+     * IMMER `Result.success` zurück, sobald die Prüfung durchgelaufen ist — ob die Regel gültig
+     * ist, steht eine Ebene tiefer in `isValid`. Eine ungültige Regel war also ein *erfolgreiches*
+     * Result: die Abfrage konnte gar nicht greifen, und die Regel wurde gespeichert, obwohl das
+     * Log daneben "INVALID (1 errors)" meldete (Gerätelog 14.07., 14:56:03).
+     *
+     * `isFailure` bleibt hier trotzdem sinnvoll — aber nur für den Fall, dass die Prüfung selbst
+     * scheitert. Beides ist jetzt sauber getrennt.
+     *
+     * Die konkreten Fehler wandern in die Meldung: "Validation failed" hätte niemandem geholfen,
+     * die Ursache steht in [RuleValidationResult.errors].
+     */
+    private suspend fun requireValidRule(rule: HueSchedule): Result<Unit> {
+        val validation = validateRule(rule).getOrElse { error ->
+            Logger.w(LogTags.HUE_USECASE, "Rule validation could not run for ${rule.name}", error)
+            return Result.failure(error)
+        }
+
+        if (!validation.isValid) {
+            val reason = validation.errors.joinToString("; ")
+            Logger.w(LogTags.HUE_USECASE, "Rule rejected: ${rule.name} - $reason")
+            return Result.failure(IllegalArgumentException(reason))
+        }
+
+        return Result.success(Unit)
+    }
+
     override suspend fun validateRule(rule: HueSchedule): Result<RuleValidationResult> {
         Logger.d(LogTags.HUE_USECASE, "Validating rule: ${rule.id}")
         

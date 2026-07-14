@@ -3,12 +3,10 @@
 **Lebendes Dokument.** Erledigtes wird gestrichen, nicht abgehakt — was hier steht, ist offen.
 Die Historie steht im Git-Log, nicht hier.
 
-**Stand:** 14.07.2026 · `main` = **v1.10.4 / versionCode 47** · alles gemerged und gepusht.
+**Stand:** 14.07.2026 · `main` = **v1.10.5 / versionCode 48** · alles gemerged und gepusht.
 
-> **Ungeprüft in v1.10.3/1.10.4:** der doppelte Auth-Callback (braucht ein Abmelden/Anmelden
-> im Log: „Calendar authorization successful" muss **einmal** statt zweimal stehen, keine
-> `JobCancellationException`), die einmalige Bridge-Init (beim Start nur **ein**
-> „BRIDGE-MANAGER: Initializing", keine Job-ID-Kaskade) und die Regel-Validierung.
+> **Ungeprüft in v1.10.5:** der überarbeitete Akku-Onboarding-Screen (Text/Layout) und die
+> Regel-Validierung. Alles davor ist am Gerät bzw. im Log bestätigt.
 
 ---
 
@@ -48,6 +46,26 @@ die ganze Fehlerklasse „Handy nicht im Heim-WLAN" für den Auto-Off.
 
 Nicht bewusst hinter den Donnerstag-Test zurückgestellt — kann davor angegangen werden, wenn
 sonst nichts drängt.
+
+### 3. Health-Check läuft, obwohl gar keine Bridge gekoppelt ist
+
+Ohne gespeicherte Verbindung (`ℹ️ BRIDGE-MANAGER: No valid stored connection found`) plant der
+`HueSmartScheduler` trotzdem einen Fallback-Health-Check, der sofort scheitert:
+
+```
+🔄 SMART-SCHEDULER: Using fallback generic health check schedule
+🔄 GENERIC-WORKER: Starting fallback health check
+⚠️ GENERIC-WORKER: Fallback health check failed
+```
+
+Kein Schaden, aber sinnlose Arbeit bei jedem Start — und ein **WARN**, das damit auch in
+Release-Logs steht und dort echte Warnungen verdeckt. Dieselbe Klasse wie das frühere rote
+„Nicht verbunden": Bridge-Arbeit, bevor es eine Bridge gibt. Naheliegend: gar nicht erst planen,
+solange keine Bridge gekoppelt ist (Kriterium wie anderswo: `bridgeIp != null`). Klein.
+
+**Startup-Ruckler (unabhängig davon, ungeklärt):** `Skipped 41 frames` / `Davey! ~800ms` beim
+Start. Steht auch nach dem Beheben der doppelten Bridge-Init noch im Log — die war es also
+nicht. Ursache offen; nicht mit halben Vermutungen „reparieren".
 
 ---
 
@@ -129,6 +147,17 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Endlosschleifen-Bremse in `MainScreen`** (~Zeile 101): automatisches Nachladen nur bei
   `error == null`. Sonst: Laden scheitert → `isLoading` false → Effect erneut → Liste leer →
   laden … im Sekundentakt gegen die Google-API (real passiert bei 401). Nicht entfernen.
+
+### UI-Texte
+
+- **Der Akku-Onboarding-Screen darf keine Einstellungen versprechen.** `MainScreen` feuert
+  `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` mit `package:`-Data — das ist Androids
+  **Systemdialog** („Zulassen, dass die App immer im Hintergrund läuft?"), ein Tipp, keine Liste.
+  Der Screen beschrieb jahrelang eine vierstufige Anleitung, die niemand je zu sehen bekam. Wer
+  den Ablauf ändert, muss den Text mitändern — und umgekehrt.
+- **Kernpunkt einmal, konkret, mit dem echten Einsatz.** Für eine Wecker-App heißt das nicht
+  „Background-Jobs werden gestoppt", sondern „der Wecker bleibt still". Tiefere Erklärung gehört
+  hinter „Warum ist das nötig?", nicht ein zweites Mal auf den Screen.
 
 ### Compose-Layout
 

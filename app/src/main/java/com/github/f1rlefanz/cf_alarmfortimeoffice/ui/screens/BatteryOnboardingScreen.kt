@@ -1,13 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 import android.content.Intent
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,11 +10,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -28,19 +22,16 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,21 +40,33 @@ import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 
 /**
- * Battery Onboarding Screen - Phase 1
+ * Battery Onboarding Screen
  *
- * Visual guide for battery exemption with animation
- * Shows steps to enable "Unrestricted" battery mode
- * Includes OEM-specific warnings for problematic manufacturers
+ * Bittet um die Akku-Freigabe, ohne die Android die App im Hintergrund einfrieren darf.
+ *
+ * WAS HIER FRÜHER STAND — UND WARUM ES WEG IST: Der Screen zeigte eine animierte Vier-Schritt-
+ * Anleitung ("Einstellungen öffnen sich" → "CF Alarm in Liste finden" → "App antippen" →
+ * "Uneingeschränkt wählen") und darunter "Die App öffnet gleich die Android-Einstellungen".
+ * Nichts davon passiert. [MainScreen] feuert `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` mit
+ * `package:`-Data — das ist Androids **Systemdialog** ("Zulassen, dass die App immer im
+ * Hintergrund läuft?"), ein einziger Tipp, keine Einstellungen, keine Liste. Der Screen
+ * beschrieb also einen Ablauf, den der Nutzer nie zu sehen bekommt, und der Knopf hiess
+ * "Zu Einstellungen", obwohl er nirgendwohin führt.
+ *
+ * (Nur der Fallback in [MainScreen] — wenn der Dialog-Intent wirft — landet tatsächlich in den
+ * Einstellungen. Ein Ausnahmefall, für den man den Regelfall nicht falsch beschriften sollte.)
+ *
+ * TONALITÄT: Der Kernpunkt steht genau EINMAL und konkret — bei einer Wecker-App ist der Einsatz
+ * nicht "Background-Jobs werden gestoppt", sondern "der Wecker bleibt still". Wer mehr wissen
+ * will, tippt auf "Warum ist das nötig?"; das ist gestaffelte Auskunft, keine dritte Wiederholung.
  */
 @Composable
 fun BatteryOnboardingScreen(
-    onComplete: () -> Unit,
+    onExplain: () -> Unit,
     onRequestExemption: () -> Unit,
     onSkip: () -> Unit
 ) {
-    var currentStep by remember { mutableIntStateOf(0) }
     var showOEMWarning by remember { mutableStateOf(false) }
-    LocalContext.current
     val oemType = remember { BatteryOptimizationHelper.getOEMType() }
 
     // Check if OEM warning should be shown
@@ -72,145 +75,76 @@ fun BatteryOnboardingScreen(
             showOEMWarning = true
         }
     }
-    val steps = listOf(
-        "Einstellungen öffnen sich",
-        "CF Alarm in Liste finden",
-        "App antippen",
-        "\"Uneingeschränkt\" wählen"
-    )
-
-    // Animation for step indicator
-    val infiniteTransition = rememberInfiniteTransition(label = "step")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-
-    LaunchedEffect(Unit) {
-        // Auto-advance steps for demonstration
-        while (currentStep < steps.size - 1) {
-            kotlinx.coroutines.delay(2000)
-            currentStep = (currentStep + 1) % steps.size
-        }
-    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.Center
     ) {
-        // Header
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(top = 32.dp)
-        ) {
-            Icon(
-                Icons.Default.BatteryChargingFull,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+        Icon(
+            Icons.Default.BatteryChargingFull,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
 
-            Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                "Zuverlässige Hintergrund-Wecker",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
+        Text(
+            "Damit der Wecker klingelt",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
 
-            Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                "Damit CF Alarm auch nach Tagen ohne App-Öffnen noch Wecker erstellt",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        // Der Kernpunkt - einmal, konkret, mit dem echten Einsatz.
+        Text(
+            "Android darf Apps im Hintergrund einfrieren. Trifft es CF Alarm, holt die App keine " +
+                "neuen Schichten mehr ab — und der Wecker bleibt still.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
-        // Animated steps visualization
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Was gleich WIRKLICH passiert.
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(vertical = 24.dp),
+            modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            Column(
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                steps.forEachIndexed { index, step ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp)
-                            .alpha(if (index == currentStep) alpha else 0.5f),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Step number
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = if (index == currentStep)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Text(
-                                    text = "${index + 1}",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (index == currentStep)
-                                        MaterialTheme.colorScheme.onPrimary
-                                    else
-                                        MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        // Step text
-                        Text(
-                            text = step,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = if (index == currentStep) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                }
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "Android fragt dich gleich, ob die App immer im Hintergrund laufen darf. " +
+                        "Tippe auf „Zulassen“.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
-        // Info text
-        Text(
-            "Die App öffnet gleich die Android-Einstellungen.\nWähle dort \"Uneingeschränkt\".",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Spacer(modifier = Modifier.height(32.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Buttons
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -219,13 +153,11 @@ fun BatteryOnboardingScreen(
                 onClick = onRequestExemption,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Settings, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Zu Einstellungen")
+                Text("Akku-Freigabe erteilen")
             }
 
             TextButton(
-                onClick = onComplete,
+                onClick = onExplain,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Warum ist das nötig?")
@@ -244,10 +176,11 @@ fun BatteryOnboardingScreen(
     if (showOEMWarning) {
         OEMWarningDialog(
             oemType = oemType,
-            onDismiss = {
-                showOEMWarning = false
-                onComplete()
-            }
+            // NUR schliessen. Hier stand zusaetzlich onComplete() - und weil das den
+            // Aufklaerungs-Dialog oeffnet, bekam man auf OEM-Geraeten direkt den naechsten
+            // Dialog vorgesetzt, kaum dass man den ersten weggetippt hatte. Der OEM-Hinweis
+            // sagt bereits, was zu tun ist; wer mehr will, tippt auf "Warum ist das noetig?".
+            onDismiss = { showOEMWarning = false }
         )
     }
 }

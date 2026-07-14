@@ -46,7 +46,20 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.10.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.10.4 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Zwei stille Fehler aus dem Geräte-Log: doppelte Arbeit beim App-Start, und eine Regel-Prüfung, die nie etwas geprüft hat.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Hue-Verwaltung startete doppelt:</strong> Beim App-Start richtete sich die Bridge-Verwaltung zweimal ein und verwarf dabei die gerade angelegten Hintergrund-Aufträge, um sie sofort neu anzulegen – vier Licht-Prüfungen wurden binnen zwei Sekunden dreimal umgeplant. Kein sichtbarer Schaden, aber unnötige Arbeit und unnötiger Akkuverbrauch bei jedem Start. Jetzt richtet sie sich genau einmal ein.</li>
+                <li><strong>Regel-Prüfung ließ ungültige Regeln durch:</strong> Beim Speichern einer Hue-Regel meldete die Prüfung intern „ungültig“, die Regel wurde aber trotzdem gespeichert – die Abfrage sah an der falschen Stelle nach. Die Prüfung greift jetzt wirklich, und wenn sie ablehnt, steht auch der Grund dabei statt eines nichtssagenden „Validation failed“.</li>
+                <li><strong>Kurze Regelnamen sind ausdrücklich erlaubt:</strong> Intern galt eine Mindestlänge von drei Zeichen, die nie wirksam war. Mit der reparierten Prüfung hätte sie schlagartig gegriffen – und bestehende Regeln mit kurzen Namen wie „FS“ wären weder speicher- noch bearbeitbar gewesen. Die Bedingung lautet jetzt schlicht: Der Name darf nicht leer sein.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.10.3 <small>(interne Alpha)</small></h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Die Hintergrund-Wartung startete nach dem Anmelden doppelt und kam sich dabei selbst in die Quere.</em></p>
 

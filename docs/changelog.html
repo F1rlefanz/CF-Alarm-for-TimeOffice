@@ -46,7 +46,18 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.10.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.10.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Die Hintergrund-Wartung startete nach dem Anmelden doppelt und kam sich dabei selbst in die Quere.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Wartung lief nach dem Anmelden doppelt:</strong> Die Rückmeldung der Kalender-Freigabe wurde zweimal ausgelöst, wodurch der Wartungsdienst zweimal startete. Zwei Durchläufe liefen dann gleichzeitig – und der erste, der fertig wurde, beendete den Dienst und brach den anderen mitten in der Arbeit ab. Diesmal folgenlos, weil gerade nichts zu tun war; hätte der abgebrochene Durchlauf gerade Alarme gesetzt, wären sie verloren gewesen. Die Rückmeldung kommt jetzt genau einmal, und der Dienst räumt sich erst ab, wenn wirklich alle Durchläufe fertig sind.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.10.2 <small>(interne Alpha)</small></h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>„Wiederholen“ und „Aktualisieren“ tun jetzt wirklich etwas Sichtbares.</em></p>
 

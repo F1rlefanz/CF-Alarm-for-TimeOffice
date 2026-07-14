@@ -31,6 +31,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -100,6 +101,9 @@ class HueBridgeConnectionManager private constructor(
         contextRef.get()?.let { HueSmartScheduler.getInstance(it) }
     }
 
+    // Genau eine Initialisierung pro Prozess - siehe initialize().
+    private val initialized = AtomicBoolean(false)
+
     // Thread-safe connection state
     private val currentConnectionState = AtomicReference<ConnectionState>(ConnectionState.DISCONNECTED)
 
@@ -158,8 +162,31 @@ class HueBridgeConnectionManager private constructor(
     /**
      * CRITICAL: Initialize connection manager and restore persistent connection
      * This should be called during app startup to ensure bridge connectivity
+     *
+     * IDEMPOTENT — und das muss es sein: Es gibt zwei Aufrufer, deren Reihenfolge NICHT
+     * feststeht.
+     *   1. CFAlarmApplication.initializeApp() beim Start — laeuft asynchron im applicationScope
+     *   2. HueBridgeRepository.init — laeuft, sobald Hilt das Repository erzeugt (Hauptthread,
+     *      beim Anlegen des HueViewModel)
+     *
+     * Ohne Waechter lief die komplette Initialisierung zweimal. Sichtbar im Log vom 14.07.
+     * (22:21:57.185 auf einem Hintergrund-Thread, 22:21:58.287 auf dem Hauptthread): der
+     * SmartScheduler verwarf beim zweiten Durchlauf die gerade angelegten WorkManager-Jobs und
+     * legte sie neu an — Job-IDs 6 bis 18 in 1,5 Sekunden fuer vier Health-Checks — und die
+     * DataStore-Wiederherstellung lief doppelt.
+     *
+     * Waechter statt Reihenfolge-Annahme: Wer zuerst kommt, initialisiert; der Zweite ist ein
+     * No-op. Damit ist egal, ob der Application-Start oder Hilt frueher dran ist.
+     *
+     * (startSmartHealthMonitoring() war schon vorher sicher — es canceled seinen alten Job.
+     * Zwei parallele Monitoring-Schleifen gab es also nie.)
      */
     fun initialize() {
+        if (!initialized.compareAndSet(false, true)) {
+            Logger.d(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Bereits initialisiert - doppelter Aufruf ignoriert")
+            return
+        }
+
         Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Initializing connection manager")
 
         // Restore connection from persistent storage (DataStore read is async - runs on

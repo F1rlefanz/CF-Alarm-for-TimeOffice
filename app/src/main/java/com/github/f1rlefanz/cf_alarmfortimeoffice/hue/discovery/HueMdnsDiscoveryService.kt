@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.coroutines.resume
 
 /**
@@ -37,10 +38,12 @@ class HueMdnsDiscoveryService(private val context: Context) {
      */
     suspend fun discoverBridges(): Result<List<HueBridge>> = withContext(Dispatchers.IO) {
         Logger.d(LogTags.HUE_DISCOVERY, "Starting mDNS discovery for Hue bridges")
-        
+
         try {
-            val discoveredBridges = mutableListOf<HueBridge>()
-            
+            // CopyOnWriteArrayList statt mutableListOf: befuellt wird aus den
+            // NsdManager-Callback-Threads, gelesen aus dieser Coroutine.
+            val discoveredBridges = CopyOnWriteArrayList<HueBridge>()
+
             val discoveryResult = withTimeoutOrNull(DISCOVERY_TIMEOUT_MS) {
                 suspendCancellableCoroutine { continuation ->
                     
@@ -109,10 +112,28 @@ class HueMdnsDiscoveryService(private val context: Context) {
                 }
             }
             
-            val bridges = discoveryResult ?: emptyList()
+            // KERN-FIX: Bei Timeout liefert withTimeoutOrNull null. Frueher wurde daraus
+            // emptyList() - und JEDER gefundene Bridge war verworfen.
+            //
+            // Warum das immer zuschlug: Die Continuation wurde nur von onDiscoveryStopped mit
+            // den Funden beendet. onDiscoveryStopped feuert aber erst nach
+            // stopServiceDiscovery(), und das rief ausschliesslich invokeOnCancellation - also
+            // erst, NACHDEM der Timeout die Coroutine bereits abgebrochen hatte. Das
+            // resume() lief damit garantiert ins Leere (continuation.isActive == false), und
+            // withTimeoutOrNull hatte laengst null geliefert. mDNS-Discovery konnte auf
+            // diesem Weg nie eine Bridge zurueckgeben; sie funktionierte nur, solange die
+            // N-UPnP-Cloud-Suche (discovery.meethue.com) erreichbar war.
+            //
+            // Log vom 14.07. (Debug-Build), exakt dieser Ablauf:
+            //   11:23:55.170  Hue bridge discovered: 192.168.178.24   <- Fund landet in der Liste
+            //   11:24:05.009  mDNS discovery completed: 0 bridges     <- Timeout -> null
+            //   11:24:05.020  mDNS discovery stopped                  <- 11ms zu spaet
+            //
+            // Deshalb: nach dem Timeout schlicht lesen, was tatsaechlich gefunden wurde.
+            val bridges = discoveryResult ?: discoveredBridges.toList()
             Logger.i(LogTags.HUE_DISCOVERY, "mDNS discovery completed: ${bridges.size} bridges found")
             Result.success(bridges)
-            
+
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_DISCOVERY, "mDNS discovery failed", e)
             Result.failure(e)

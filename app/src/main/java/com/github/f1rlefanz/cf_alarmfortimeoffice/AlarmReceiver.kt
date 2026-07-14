@@ -1,18 +1,14 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
-import android.app.ActivityOptions
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
@@ -33,10 +29,17 @@ import javax.inject.Inject
 /**
  * Enhanced BroadcastReceiver with Hilt DI.
  *
+ * ROLLE: Entscheiden, ob geweckt wird - nicht, WIE geweckt wird.
+ *
+ * Der Receiver prueft den Skip-Status, startet den [AlarmSoundService] und stoesst die
+ * Hue-Regeln an. Ton, Vibration, Audio-Fokus, Notification und Full-Screen-Intent gehoeren
+ * vollstaendig dem Service. Der Receiver postet bewusst KEINE eigene Notification (das war die
+ * Quelle des zweiten Klingeltons) und startet die Activity NICHT direkt (das ist seit
+ * Android 10 kein erlaubter Background-Activity-Start und wird stillschweigend verworfen).
+ *
  * CORE FEATURES:
  * - Reliable wake lock management
- * - Android 14+ Full-Screen Intent compatibility
- * - Enhanced notification with high priority
+ * - Skip-Check vor dem Wecken, Direct-Boot-fest
  * - 🎨 HUE INTEGRATION: Automatic light control based on shift patterns
  * - 🏗️ HILT DI: Modern dependency injection
  *
@@ -56,11 +59,17 @@ class AlarmReceiver : BroadcastReceiver() {
 
     companion object {
         const val EXTRA_SHIFT_NAME = "shift_name"
-        const val EXTRA_SHIFT_TIME = "shift_time"
+
+        /**
+         * MUSS "alarm_time" heissen. AlarmManagerService.createEnhancedAlarmIntent() und
+         * rescheduleFromDirectBoot() schreiben die Uhrzeit unter genau diesem Schluessel.
+         * Frueher stand hier "shift_time" - ein Schluessel, den NIEMAND je gesetzt hat. Die
+         * Uhrzeit war dadurch immer leer und die Notification zeigte "Deine Schicht beginnt um ".
+         */
+        const val EXTRA_ALARM_TIME = "alarm_time"
         const val EXTRA_ALARM_ID = "alarm_id"
 
-        private const val CHANNEL_ID = "shift_alarm_channel"
-        private const val NOTIFICATION_ID = 2001
+        private const val SKIP_CHANNEL_ID = "skip_channel"
         private const val WAKE_LOCK_TAG = "CFAlarm:WakeLock"
         private const val WAKE_LOCK_TIMEOUT = 60000L // 1 Minute
     }
@@ -140,12 +149,6 @@ class AlarmReceiver : BroadcastReceiver() {
                 // Existing alarm logic continues here...
                 Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")
 
-                // 🔊 Start AlarmSoundService BEFORE Activity
-                // This ensures sound starts independently of Activity lifecycle.
-                // WICHTIG: Sound + Full-Screen-Intent zuerst starten, damit der Alarm
-                // nicht hinter dem evtl. langsamen Hue-Netzwerkaufruf hängt.
-                startAlarmSoundService(context, shiftName, alarmId)
-
                 // Wake Lock to ensure device wakes up
                 val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
                 val wakeLock = powerManager.newWakeLock(
@@ -156,16 +159,19 @@ class AlarmReceiver : BroadcastReceiver() {
                 }
 
                 try {
-                    val shiftTime = intent.getStringExtra(EXTRA_SHIFT_TIME) ?: ""
+                    val alarmTime = intent.getStringExtra(EXTRA_ALARM_TIME).orEmpty()
 
-                    // Create notification channel (only needed once)
-                    createNotificationChannel(context)
-
-                    // Show alarm notification with sound
-                    showAlarmNotification(context, shiftName, shiftTime, alarmId)
-
-                    // Start full-screen alarm activity
-                    showFullScreenAlarm(context, shiftName, shiftTime, alarmId)
+                    // 🔊 EINZIGER Einstiegspunkt fuer Ton UND Sichtbarkeit.
+                    // Der Service startet den MediaPlayer, holt den Audio-Fokus und postet die
+                    // Notification mit dem Full-Screen-Intent. Der Receiver postet bewusst KEINE
+                    // eigene Notification mehr und startet die Activity NICHT mehr direkt:
+                    // - Die fruehere zweite Notification (2001) brachte ueber ihren Channel einen
+                    //   zweiten Klingelton mit.
+                    // - Ein direktes startActivity() aus einem Receiver ist seit Android 10 kein
+                    //   erlaubter Background-Activity-Start (AlarmManager-Broadcasts stehen NICHT
+                    //   auf der Ausnahmeliste) und wird stillschweigend verworfen. Der einzige
+                    //   sanktionierte Weg ist der vom System gesendete Full-Screen-PendingIntent.
+                    startAlarmSoundService(context, shiftName, alarmTime, alarmId)
 
                     Logger.business(
                         LogTags.ALARM_RECEIVER,
@@ -195,165 +201,26 @@ class AlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun createNotificationChannel(context: Context) {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Schicht-Wecker",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Benachrichtigungen für Schicht-Alarme"
-            setSound(
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            enableVibration(true)
-            vibrationPattern = longArrayOf(0, 1000, 500, 1000, 500, 1000)
-            setBypassDnd(true) // Bypass "Do Not Disturb" mode
-        }
-
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
-        Logger.d(LogTags.ALARM_RECEIVER, "✅ Notification channel created")
-    }
-
-    private fun showAlarmNotification(
-        context: Context,
-        shiftName: String,
-        shiftTime: String,
-        alarmId: Int
-    ) {
-        try {
-            val notificationManager =
-                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            // Intent to open the full-screen activity
-            val fullScreenIntent = Intent(context, AlarmFullScreenActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra("shift_name", shiftName)
-                putExtra("alarm_time", shiftTime)
-                putExtra("alarm_id", alarmId)
-                putExtra("triggered_via", "full_screen_notification")
-            }
-
-            // Android 14+ ENHANCEMENT: Modern Full-Screen Intent with ActivityOptions
-            // Note: MODE_BACKGROUND_ACTIVITY_START_ALLOWED is deprecated but still necessary
-            // for alarm apps until Android provides official replacement for this use case
-            @Suppress("DEPRECATION")
-            val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Android 14+ (API 34+): Use ActivityOptions for enhanced reliability
-                val activityOptions = ActivityOptions.makeBasic().apply {
-                    pendingIntentCreatorBackgroundActivityStartMode =
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                }
-
-                PendingIntent.getActivity(
-                    context,
-                    alarmId,
-                    fullScreenIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                    activityOptions.toBundle()
-                )
-            } else {
-                // Pre-Android 14: Traditional approach
-                PendingIntent.getActivity(
-                    context,
-                    alarmId,
-                    fullScreenIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            }
-
-            // Enhanced alarm sound configuration
-            val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-
-            // Enhanced notification: Maximum priority and visibility for alarm reliability
-            // Note: USE_FULL_SCREEN_INTENT permission is auto-granted for alarm apps on Android 14+
-            // Permission is declared in AndroidManifest.xml and is appropriate for alarm functionality
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle("⏰ Zeit für $shiftName!")
-                .setContentText("Deine Schicht beginnt um $shiftTime")
-                .setPriority(NotificationCompat.PRIORITY_MAX) // Highest priority
-                .setCategory(NotificationCompat.CATEGORY_ALARM) // Alarm category for system recognition
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent)
-                .setSound(alarmSound)
-                .setVibrate(longArrayOf(0, 1000, 500, 1000, 500, 1000))
-                .setFullScreenIntent(pendingIntent, true) // Critical: Full-screen notification
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Show on lock screen
-                .setOngoing(true) // Can't be dismissed by swiping
-                .setDefaults(NotificationCompat.DEFAULT_ALL) // Use all system defaults
-                .setTimeoutAfter(5 * 60 * 1000) // Auto-dismiss after 5 minutes
-                .build()
-
-            notificationManager.notify(NOTIFICATION_ID, notification)
-            Logger.business(
-                LogTags.ALARM_RECEIVER,
-                "✅ Enhanced alarm notification displayed with Android ${Build.VERSION.SDK_INT} compatibility"
-            )
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM_RECEIVER, "❌ Error showing notification", e)
-            // Fallback: Try to start activity directly if notification fails
-            showFullScreenAlarm(context, shiftName, shiftTime, alarmId)
-        }
-    }
-
-    private fun showFullScreenAlarm(
-        context: Context,
-        shiftName: String,
-        shiftTime: String,
-        alarmId: Int
-    ) {
-        try {
-            val fullScreenIntent = Intent(context, AlarmFullScreenActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS // Exclude from recent apps
-                putExtra("shift_name", shiftName)
-                putExtra("alarm_time", shiftTime)
-                putExtra("alarm_id", alarmId)
-                putExtra("triggered_via", "direct_activity_start")
-                setPackage(context.packageName)
-            }
-
-            // Enhanced: Try to start activity with modern approach
-            // Note: MODE_BACKGROUND_ACTIVITY_START_ALLOWED is deprecated but necessary for alarm reliability
-            @Suppress("DEPRECATION")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Android 14+: Enhanced activity start options
-                val activityOptions = ActivityOptions.makeBasic().apply {
-                    // These options improve reliability on Android 14+
-                    pendingIntentCreatorBackgroundActivityStartMode =
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                }
-                context.startActivity(fullScreenIntent, activityOptions.toBundle())
-                Logger.business(
-                    LogTags.ALARM_RECEIVER,
-                    "✅ Full-screen alarm activity started with Android 14+ enhancements"
-                )
-            } else {
-                context.startActivity(fullScreenIntent)
-                Logger.business(LogTags.ALARM_RECEIVER, "✅ Full-screen alarm activity started")
-            }
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM_RECEIVER, "❌ Error starting full-screen activity", e)
-        }
-    }
-
     private fun showSkipNotification(context: Context, shiftName: String) {
         try {
             val notificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-            val notification = NotificationCompat.Builder(context, "skip_channel")
+            // Channel MUSS vor dem Posten existieren: seit Android 8 verwirft der
+            // NotificationManager stillschweigend jede Notification auf einem unbekannten
+            // Channel. Frueher wurde hier auf "skip_channel" gepostet, ohne ihn je anzulegen -
+            // die Skip-Bestaetigung war damit unsichtbar.
+            notificationManager.createNotificationChannel(
+                android.app.NotificationChannel(
+                    SKIP_CHANNEL_ID,
+                    "Übersprungene Alarme",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Bestätigung, dass ein Alarm wie gewünscht übersprungen wurde"
+                }
+            )
+
+            val notification = NotificationCompat.Builder(context, SKIP_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_menu_close_clear_cancel)
                 .setContentTitle("Alarm übersprungen")
                 .setContentText("$shiftName-Alarm wurde wie gewünscht übersprungen")
@@ -504,34 +371,33 @@ class AlarmReceiver : BroadcastReceiver() {
      * 
      * CRITICAL: Service must start BEFORE Activity to ensure sound begins immediately
      * and survives Activity lifecycle events.
-     * 
+     *
      * @param context Context for starting the service
      * @param shiftName Name of the shift for notification display
+     * @param alarmTime Formatierte Startzeit der Schicht (Notification-Text)
      * @param alarmId Unique alarm identifier
      */
-    private fun startAlarmSoundService(context: Context, shiftName: String, alarmId: Int) {
+    private fun startAlarmSoundService(
+        context: Context,
+        shiftName: String,
+        alarmTime: String,
+        alarmId: Int
+    ) {
         try {
-            val serviceIntent = Intent(context, com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService::class.java).apply {
-                action = com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService.ACTION_START_ALARM
-                putExtra(com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
-                putExtra(com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService.EXTRA_ALARM_ID, alarmId)
+            val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
+                action = AlarmSoundService.ACTION_START_ALARM
+                putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
+                putExtra(AlarmSoundService.EXTRA_ALARM_TIME, alarmTime)
+                putExtra(AlarmSoundService.EXTRA_ALARM_ID, alarmId)
             }
-            
-            // Start as foreground service on Android 8+
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-                Logger.business(
-                    LogTags.ALARM_RECEIVER,
-                    "✅ AlarmSoundService started as foreground service (API ${Build.VERSION.SDK_INT})"
-                )
-            } else {
-                context.startService(serviceIntent)
-                Logger.business(
-                    LogTags.ALARM_RECEIVER,
-                    "✅ AlarmSoundService started (API ${Build.VERSION.SDK_INT})"
-                )
-            }
-            
+
+            // minSdk = 26, startForegroundService ist immer verfuegbar.
+            context.startForegroundService(serviceIntent)
+            Logger.business(
+                LogTags.ALARM_RECEIVER,
+                "✅ AlarmSoundService started as foreground service (API ${Build.VERSION.SDK_INT})"
+            )
+
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM_RECEIVER, "❌ Failed to start AlarmSoundService", e)
         }

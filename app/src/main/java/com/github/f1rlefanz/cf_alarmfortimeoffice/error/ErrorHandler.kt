@@ -131,6 +131,11 @@ object ErrorHandler {
             "android.permission.READ_CALENDAR" -> "Kalenderzugriff verweigert. Bitte erlauben Sie den Zugriff in den App-Einstellungen."
             "android.permission.POST_NOTIFICATIONS" -> "Benachrichtigungen sind deaktiviert. Bitte aktivieren Sie diese für Alarme."
             "android.permission.SCHEDULE_EXACT_ALARM" -> "Exakte Alarme sind nicht erlaubt. Bitte aktivieren Sie diese in den Einstellungen."
+            // permission == null: kein Android-Runtime-Permission-Fall, sondern eine
+            // serverseitige Ablehnung (z.B. Kalender nicht freigegeben). Dann traegt
+            // message den verstaendlichen Text - frueher stand hier stattdessen
+            // "Berechtigung 'null' verweigert".
+            null -> error.message
             else -> "Berechtigung '${error.permission}' verweigert. Bitte überprüfen Sie die App-Einstellungen."
         }
         

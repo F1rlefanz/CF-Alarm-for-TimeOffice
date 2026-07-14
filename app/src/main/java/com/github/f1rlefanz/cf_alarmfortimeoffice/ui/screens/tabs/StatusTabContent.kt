@@ -1,15 +1,20 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,7 +35,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -42,9 +49,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
@@ -128,6 +141,9 @@ fun StatusTabContent(
             }
         )
 
+        // Vollbild-Berechtigung: ohne sie kommt der Weck-Screen nie hoch
+        FullScreenIntentCard()
+
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
         LastSyncCard()
 
@@ -136,6 +152,114 @@ fun StatusTabContent(
         
         // Cache-Statistiken und Offline-Status
         CacheStatusCard(calendarViewModel = calendarViewModel)
+    }
+}
+
+/**
+ * Meldet, ob die App eine Vollbild-Benachrichtigung zeigen darf — und fuehrt bei Bedarf direkt
+ * in die zustaendige Systemeinstellung.
+ *
+ * Warum eine eigene Karte statt einer Zeile in den Empfehlungen: Seit Android 14 entzieht der
+ * Play Store USE_FULL_SCREEN_INTENT nach der Installation allen Apps, die er nicht als Wecker-
+ * oder Telefonie-App einstuft. Ohne die Berechtigung degradiert Android den Full-Screen-Intent
+ * still zu einem Banner — der Wecker klingelt, aber der Weck-Screen kommt nie hoch, und nichts
+ * weist darauf hin. Ein reiner Hinweistext ohne Absprung waere hier wertlos.
+ *
+ * Der Zustand wird bei jedem Aufruf frisch gelesen (kein remember), damit die Karte nach der
+ * Rueckkehr aus den Einstellungen sofort umspringt.
+ */
+@Composable
+private fun FullScreenIntentCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Bei jedem ON_RESUME neu pruefen: der Nutzer kann die Berechtigung ausserhalb der App
+    // aendern, und danach muss die Karte stimmen.
+    var canUseFsi by remember { mutableStateOf(checkFullScreenIntentAllowed(context)) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                canUseFsi = checkFullScreenIntentAllowed(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (canUseFsi) Icons.Default.CheckCircle else Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = if (canUseFsi)
+                    MaterialTheme.colorScheme.success
+                else
+                    MaterialTheme.colorScheme.error
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Vollbild-Wecker",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (canUseFsi) {
+                        "Der Weck-Bildschirm darf angezeigt werden"
+                    } else {
+                        "⚠️ Nicht erlaubt — der Wecker erscheint nur als Banner, " +
+                            "der Weck-Bildschirm kommt nicht von selbst hoch"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (!canUseFsi) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    TextButton(
+                        onClick = { openFullScreenIntentSettings(context) },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Einstellung öffnen")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun checkFullScreenIntentAllowed(context: android.content.Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+    } else {
+        // < API 34: Die Berechtigung wird mit der Installation gewaehrt und nicht entzogen.
+        true
+    }
+
+private fun openFullScreenIntentSettings(context: android.content.Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+    try {
+        context.startActivity(
+            Intent(
+                Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                "package:${context.packageName}".toUri()
+            )
+        )
+    } catch (e: Exception) {
+        Logger.e(LogTags.UI, "❌ Einstellung für Vollbild-Benachrichtigungen nicht erreichbar", e)
     }
 }
 

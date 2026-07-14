@@ -52,8 +52,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 37
-        versionCode = 41
-        versionName = "1.9.7"
+        versionCode = 42
+        versionName = "1.9.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -246,6 +246,9 @@ dependencies {
     // Lifecycle and ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // Liefert LocalLifecycleOwner (androidx.lifecycle.compose) - die Variante aus
+    // androidx.compose.ui.platform ist seit Compose 1.7 deprecated.
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
     // Authentication & Credentials
     implementation(libs.play.services.auth)

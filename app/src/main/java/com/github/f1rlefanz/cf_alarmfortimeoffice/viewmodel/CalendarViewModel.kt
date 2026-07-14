@@ -481,6 +481,12 @@ class CalendarViewModel @Inject constructor(
                 val allEvents = mutableListOf<CalendarEvent>()
                 var processedCalendars = 0
                 var totalEventCount = 0
+
+                // Fehler der einzelnen Kalender mitzaehlen, statt sie nur wegzuloggen.
+                // Ohne das galt der Ladevorgang selbst dann als geglueckt, wenn JEDER
+                // Kalender an einem toten Token gescheitert war - siehe unten.
+                var firstFailure: Throwable? = null
+                var failedCalendars = 0
                 
                 // PERFORMANCE OPTIMIZATION: Process calendars sequentially but with proper async handling
                 selectedIds.forEach { calendarId ->
@@ -531,11 +537,15 @@ class CalendarViewModel @Inject constructor(
                     Logger.d(LogTags.CALENDAR, "Progressive loading: ${events.size} events loaded, total: $totalEventCount")
                         }.onFailure { error ->
                             Logger.e(LogTags.CALENDAR, "Failed to load events for calendar ${calendarId.take(8)}...", error)
+                            if (firstFailure == null) firstFailure = error
+                            failedCalendars++
                             processedCalendars++
                         }
-                        
+
                     } catch (e: Exception) {
                         Logger.e(LogTags.CALENDAR, "Exception loading calendar ${calendarId.take(8)}...", e)
+                        if (firstFailure == null) firstFailure = e
+                        failedCalendars++
                         processedCalendars++
                     }
                 }
@@ -549,16 +559,57 @@ class CalendarViewModel @Inject constructor(
                     finalSortedEvents.size >= (initialPageSize * selectedIds.size) || totalEventCount > finalSortedEvents.size
                 }
                 
-                updateLocalStateImmediate { 
-                    it.copy(
+                // Sind ALLE Kalender gescheitert, war das kein erfolgreicher Ladevorgang -
+                // egal, was der bisherige Code behauptete.
+                val everythingFailed = failedCalendars > 0 && failedCalendars == selectedIds.size
+                val failure = firstFailure
+
+                // calendarAuthorizationValid DARF NICHT MEHR BEDINGUNGSLOS true SEIN.
+                //
+                // Frueher stand hier hart `calendarAuthorizationValid = true`, waehrend die
+                // Fehler der einzelnen Kalender oben nur weggeloggt wurden. Scheiterten also
+                // alle Kalender an einem toten Token, war der Zustand danach:
+                // events=leer, error=null, calendarAuthorizationValid=TRUE.
+                //
+                // Fatal, weil HomeTabContent genau daran den Warnhinweis UND den Knopf
+                // "Kalender-Zugriff erneuern" aufhaengt (!calendarAuthorizationValid &&
+                // selectedCalendarIds.isNotEmpty()). Der einzige Weg zurueck war damit
+                // ausgerechnet im Fehlerfall unsichtbar - und weil der Default false ist,
+                // schaltete ein fehlgeschlagener Ladevorgang eine bereits korrekt
+                // angezeigte Warnung sogar wieder AUS.
+                //
+                // Fuer eine Wecker-App ist das die gefaehrlichste Variante: eine leere
+                // Schichtliste ohne Hinweis ist von "du hast frei" nicht zu unterscheiden.
+                // Mindestens ein Kalender geladen => der Zugriff funktioniert grundsaetzlich.
+                // Nur wenn ALLE scheitern, ist die Autorisierung als kaputt zu melden. Ein
+                // einzelner fehlschlagender Kalender (geloescht, nicht mehr freigegeben) darf
+                // nicht die ganze Anmeldung in Frage stellen.
+                val authStillValid = !everythingFailed
+
+                // Fehler sichtbar machen, statt eine leere Liste als Wahrheit zu verkaufen.
+                val failureMessage = if (everythingFailed && failure != null) {
+                    errorHandler.getErrorMessage(failure)
+                } else {
+                    null
+                }
+
+                if (everythingFailed) {
+                    Logger.e(
+                        LogTags.CALENDAR,
+                        "❌ Alle $failedCalendars Kalender fehlgeschlagen - Autorisierung wird als ungueltig gemeldet"
+                    )
+                }
+
+                updateLocalStateImmediate { state ->
+                    state.copy(
                         isLoading = false,
                         events = finalSortedEvents,
                         eventOffset = finalSortedEvents.size,
                         totalEvents = if (loadAll) finalSortedEvents.size else totalEventCount,
                         hasMoreEvents = finalHasMore,
-                        // PHASE 2 FIX: Mark authorization as valid after successful event load
-                        calendarAuthorizationValid = true,
-                        lastAuthorizationCheck = System.currentTimeMillis()
+                        calendarAuthorizationValid = authStillValid,
+                        lastAuthorizationCheck = System.currentTimeMillis(),
+                        error = failureMessage ?: state.error
                     )
                 }
                 

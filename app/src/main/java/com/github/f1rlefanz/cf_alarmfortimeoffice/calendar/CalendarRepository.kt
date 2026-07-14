@@ -351,10 +351,40 @@ class CalendarRepository @Inject constructor(
         Logger.e(LogTags.CALENDAR_API, "Calendar API error", e)
         return when (e) {
             is GoogleJsonResponseException -> {
-                when (e.statusCode) {
-                    401 -> AppError.AuthenticationError("Google Calendar authentication failed")
-                    403 -> AppError.PermissionError("Insufficient permissions for Google Calendar")
-                    404 -> AppError.NetworkError("Calendar not found")
+                when {
+                    e.statusCode == 401 -> AppError.AuthenticationError("Google Calendar authentication failed")
+
+                    // Hinter 403 stecken ZWEI grundverschiedene Faelle - frueher wurden beide
+                    // pauschal zu PermissionError, und der Scope-Fall blieb dadurch ohne
+                    // Rettung liegen (Log 14.07., 14:14:45: ACCESS_TOKEN_SCOPE_INSUFFICIENT).
+                    e.statusCode == 403 && isInsufficientScope(e) ->
+                        // Das Token ist gueltig, traegt aber den Kalender-Scope nicht. Kein
+                        // Problem des Nutzers mit einem Kalender, sondern ein unbrauchbares
+                        // Token - die Rettung ist exakt dieselbe wie bei 401: verwerfen und
+                        // die Zustimmung neu einholen. Deshalb AuthenticationError, damit
+                        // CalendarUseCase.invalidateTokenIfRejectedByGoogle() greift.
+                        AppError.AuthenticationError("Dem Token fehlt die Kalender-Berechtigung")
+
+                    e.statusCode == 403 ->
+                        // Echtes Berechtigungsproblem (z.B. Kalender nicht freigegeben).
+                        // Hier wuerde eine Neuanmeldung nichts bringen.
+                        //
+                        // message= NAMENTLICH setzen: der erste Parameter von PermissionError
+                        // heisst `permission` (erwartet einen android.permission.*-Namen).
+                        // Positional gebunden landete der Text dort, und ErrorHandler baute
+                        // daraus "Berechtigung 'Insufficient permissions for Google Calendar'
+                        // verweigert" - genau der Kauderwelsch aus dem Log vom 14.07.
+                        AppError.PermissionError(
+                            message = "Kein Zugriff auf diesen Google-Kalender"
+                        )
+
+                    // 404 ist KEIN Netzwerkfehler: die Calendar-API liefert das haeufig fuer
+                    // Kalender, die geloescht oder nicht mehr freigegeben sind. Als
+                    // NetworkError gemappt behauptete die App "Keine Internetverbindung",
+                    // waehrend das Netz einwandfrei lief.
+                    e.statusCode == 404 -> AppError.PermissionError(
+                        message = "Kalender nicht gefunden oder nicht mehr freigegeben"
+                    )
                     else -> AppError.NetworkError("Google Calendar API error: ${e.statusMessage}")
                 }
             }
@@ -362,6 +392,22 @@ class CalendarRepository @Inject constructor(
             is IOException -> AppError.NetworkError("Network error: ${e.message}")
             else -> AppError.UnknownError("Calendar error: ${e.message}")
         }
+    }
+
+    /**
+     * Erkennt "das Token traegt den noetigen Scope nicht" hinter einem 403.
+     *
+     * Google liefert das an zwei Stellen der Antwort - beide werden geprueft, weil sich das
+     * Format zwischen API-Versionen schon geaendert hat:
+     *   "errors": [{ "reason": "insufficientPermissions", ... }]
+     *   "details": [{ "@type": "...ErrorInfo", "reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }]
+     * Der details-Block ist ueber die Java-Client-API nicht typisiert erreichbar, daher der
+     * zusaetzliche Blick in den Rohtext.
+     */
+    private fun isInsufficientScope(e: GoogleJsonResponseException): Boolean {
+        val reasons = e.details?.errors?.mapNotNull { it.reason }.orEmpty()
+        return reasons.any { it.equals("insufficientPermissions", ignoreCase = true) } ||
+            e.message?.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT", ignoreCase = true) == true
     }
 
     

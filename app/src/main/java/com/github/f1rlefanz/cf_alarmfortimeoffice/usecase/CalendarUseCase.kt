@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -70,6 +71,7 @@ class CalendarUseCase @Inject constructor(
                         is TokenException.NoTokenAvailable -> "Calendar access requires authorization. Please sign in."
                         is TokenException.AuthorizationExpired -> "Your Calendar authorization has expired. Please re-authorize."
                         is TokenException.RefreshFailed -> "Failed to refresh Calendar access. Please re-authorize."
+                        is TokenException.ConsentRequired -> "Der Zugriff auf deinen Kalender wurde entzogen. Bitte melde dich erneut an."
                         else -> "Calendar access error: ${error?.message}"
                     }
                     throw Exception(errorMessage)
@@ -128,10 +130,38 @@ class CalendarUseCase @Inject constructor(
                     },
                     onFailure = { error ->
                         Logger.e(LogTags.CALENDAR, "Failed to load calendars", error)
+                        invalidateTokenIfRejectedByGoogle(error)
                         throw error
                     }
                 )
         }
+    }
+
+    /**
+     * Verwirft das Token, wenn Google es mit 401 abgelehnt hat.
+     *
+     * Ein 401 heisst: das Token ist serverseitig tot - egal, was unsere eigene Ablaufzeit sagt.
+     * Und genau da lag die Falle: getValidToken() prueft nur die LOKAL gespeicherte
+     * Ablaufzeit ("noch 59 Min gueltig") und laesst das Token deshalb durch, ohne je den
+     * Refresh-Pfad (und damit GoogleAuthUtil.clearToken) anzustossen. Das tote Token blieb
+     * liegen, jeder Versuch lief erneut in denselben 401, und die UI lud endlos nach.
+     *
+     * Typischer Ausloeser: Zugriff im Google-Konto entzogen. Der GoogleAuthUtil-Cache in den
+     * Play Services ueberlebt sogar eine App-Neuinstallation und liefert das tote Token
+     * weiter aus - ohne Zustimmungsdialog, weil es fuer GMS gueltig aussieht.
+     *
+     * Nach dem Verwerfen meldet getValidToken() sauber NoTokenAvailable; die App faellt in den
+     * regulaeren Sign-in-Pfad, GoogleAuthUtil hat keinen Cache mehr und fordert die Zustimmung
+     * neu an.
+     */
+    private suspend fun invalidateTokenIfRejectedByGoogle(error: Throwable) {
+        if (error !is AppError.AuthenticationError) return
+        val manager = oauth2TokenManager ?: return
+        Logger.w(
+            LogTags.TOKEN,
+            "🔐 Google lehnt das Token ab (401) - verwerfe es samt Play-Services-Cache"
+        )
+        manager.invalidate()
     }
     
     /**
@@ -171,6 +201,7 @@ class CalendarUseCase @Inject constructor(
                         is TokenException.NoTokenAvailable -> "Calendar events require authorization. Please sign in."
                         is TokenException.AuthorizationExpired -> "Your Calendar authorization has expired. Please re-authorize."
                         is TokenException.RefreshFailed -> "Failed to refresh Calendar access. Please re-authorize."
+                        is TokenException.ConsentRequired -> "Der Zugriff auf deinen Kalender wurde entzogen. Bitte melde dich erneut an."
                         else -> "Calendar access error: ${error?.message}"
                     }
                     throw Exception(errorMessage)
@@ -233,6 +264,10 @@ class CalendarUseCase @Inject constructor(
                             },
                             onFailure = { error ->
                                 Logger.e(LogTags.CALENDAR_API, "Failed to load events for calendar ${calendarId.take(8)}...", error)
+                                // Auch hier: ein 401 bedeutet totes Token. Ohne Verwerfen liefen
+                                // die restlichen Kalender in denselben Fehler und der naechste
+                                // Sync gleich mit.
+                                invalidateTokenIfRejectedByGoogle(error)
                                 hasErrors = true
                                 processedCount++
                                 // Continue with other calendars instead of failing completely
@@ -321,6 +356,7 @@ class CalendarUseCase @Inject constructor(
                         is TokenException.NoTokenAvailable -> "Calendar events require authorization. Please sign in."
                         is TokenException.AuthorizationExpired -> "Your Calendar authorization has expired. Please re-authorize."
                         is TokenException.RefreshFailed -> "Failed to refresh Calendar access. Please re-authorize."
+                        is TokenException.ConsentRequired -> "Der Zugriff auf deinen Kalender wurde entzogen. Bitte melde dich erneut an."
                         else -> "Calendar access error: ${error?.message}"
                     }
                     throw Exception(errorMessage)
@@ -368,17 +404,37 @@ class CalendarUseCase @Inject constructor(
             // Process calendars and collect events until we have enough or reach end
             for (calendarId in calendarIds) {
                 // Check cache first for total count estimation
-                val cachedEvents = calendarRepository.getCalendarEventsWithCache(
+                val eventsResult = calendarRepository.getCalendarEventsWithCache(
                     accessToken = accessToken,
                     calendarId = calendarId,
                     forceRefresh = false
-                ).getOrElse { emptyList() }
-                
+                )
+
+                // KEIN getOrElse { emptyList() } mehr!
+                //
+                // Das verschluckte JEDEN Fehler - auch 401 (totes Token) und 403
+                // (ACCESS_TOKEN_SCOPE_INSUFFICIENT) - und machte daraus stillschweigend
+                // "0 Events, kein Fehler". Ausgerechnet DIESER Pfad ist der Normalfall:
+                // CalendarViewModel.observeCalendarSelection ruft
+                // loadEventsForSelectedCalendars(loadAll = false) bei jedem App-Start mit
+                // ausgewaehlten Kalendern, und das landet hier. Die Aufraeumlogik in
+                // getAvailableCalendars/getCalendarEventsWithCache lief damit am
+                // meistbenutzten Pfad vorbei: das tote Token blieb liegen, der Nutzer sah
+                // eine leere Schichtliste ohne jeden Hinweis - und bekam keine Wecker.
+                //
+                // Fuer eine Wecker-App ist "leer" die gefaehrlichste Luege: sie ist von
+                // "du hast frei" nicht zu unterscheiden.
+                val cachedEvents = eventsResult.getOrElse { error ->
+                    Logger.e(LogTags.CALENDAR_API, "Lazy load failed for calendar ${calendarId.take(8)}...", error)
+                    invalidateTokenIfRejectedByGoogle(error)
+                    throw error
+                }
+
                 totalEventsAcrossCalendars += cachedEvents.size
-                
+
                 // Add to our collection (we'll do offset/limit at the end for now)
                 allEvents.addAll(cachedEvents)
-                
+
                 Logger.d(LogTags.CALENDAR_API, "Added ${cachedEvents.size} events from calendar ${calendarId.take(8)}...")
             }
             

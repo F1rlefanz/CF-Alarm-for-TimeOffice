@@ -7,11 +7,13 @@ import android.os.Build
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.coroutines.resume
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Official mDNS-based Hue Bridge Discovery Service
@@ -24,7 +26,18 @@ class HueMdnsDiscoveryService(private val context: Context) {
     
     companion object {
         private const val HUE_SERVICE_TYPE = "_hue._tcp"
-        private const val DISCOVERY_TIMEOUT_MS = 10000L // 10 seconds
+
+        /** Obergrenze, wenn gar nichts antwortet (Multicast geblockt, keine Bridge im Netz). */
+        private const val DISCOVERY_TIMEOUT_MS = 10000L
+
+        /**
+         * Nachlauffrist nach dem ERSTEN Fund, um weitere Bridges einzusammeln.
+         *
+         * Ohne sie wuerde die Suche beim ersten Treffer abbrechen und in Haushalten mit
+         * mehreren Bridges nur eine liefern. Mit ihr dauert die Suche im Normalfall
+         * ~1,2s statt der vollen 10s Timeout - die Bridge antwortet real in ~170ms.
+         */
+        private const val GRACE_PERIOD_MS = 1000L
     }
     
     private val nsdManager: NsdManager by lazy {
@@ -32,90 +45,105 @@ class HueMdnsDiscoveryService(private val context: Context) {
     }
     
     /**
-     * Discovers Hue bridges using mDNS (Multicast DNS)
-     * This is the modern, recommended method by Philips
+     * Sucht Hue-Bridges per mDNS (Multicast DNS) - der offizielle, lokale Weg.
+     *
+     * ABLAUF: Discovery starten, auf den ersten Fund warten (oder auf den Timeout, falls
+     * nichts antwortet), dann eine kurze Nachlauffrist fuer weitere Bridges. Im Normalfall
+     * ist die Suche damit nach ~1,2s durch statt nach 10s - die Bridge antwortet real in
+     * ~170ms.
+     *
+     * WARUM KEIN suspendCancellableCoroutine MEHR: Die fruehere Konstruktion beendete die
+     * Continuation ausschliesslich in onDiscoveryStopped. Das feuert aber erst nach
+     * stopServiceDiscovery(), das wiederum nur aus invokeOnCancellation kam - also erst,
+     * NACHDEM der Timeout die Coroutine abgebrochen hatte. Das resume() lief damit garantiert
+     * ins Leere und withTimeoutOrNull lieferte null: mDNS konnte NIE eine Bridge zurueckgeben.
+     * Ein CompletableDeferred als Signal macht das Warten explizit und den Fehler unmoeglich.
      */
     suspend fun discoverBridges(): Result<List<HueBridge>> = withContext(Dispatchers.IO) {
         Logger.d(LogTags.HUE_DISCOVERY, "Starting mDNS discovery for Hue bridges")
-        
-        try {
-            val discoveredBridges = mutableListOf<HueBridge>()
-            
-            val discoveryResult = withTimeoutOrNull(DISCOVERY_TIMEOUT_MS) {
-                suspendCancellableCoroutine { continuation ->
-                    
-                    val discoveryListener = object : NsdManager.DiscoveryListener {
-                        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                            Logger.e(LogTags.HUE_DISCOVERY, "mDNS discovery start failed: $errorCode")
-                            if (continuation.isActive) {
-                                continuation.resume(emptyList())
+
+        // Befuellt aus den NsdManager-Callback-Threads, gelesen aus dieser Coroutine.
+        val discoveredBridges = CopyOnWriteArrayList<HueBridge>()
+
+        // Signal: "es gibt ein Ergebnis" - entweder erste Bridge gefunden ODER Start gescheitert.
+        val firstResult = CompletableDeferred<Unit>()
+
+        var startedListener: NsdManager.DiscoveryListener? = null
+
+        return@withContext try {
+            val discoveryListener = object : NsdManager.DiscoveryListener {
+                override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    Logger.e(LogTags.HUE_DISCOVERY, "mDNS discovery start failed: $errorCode")
+                    // Nicht 10s ins Leere warten, wenn die Suche gar nicht erst startet.
+                    firstResult.complete(Unit)
+                }
+
+                override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    Logger.w(LogTags.HUE_DISCOVERY, "mDNS discovery stop failed: $errorCode")
+                }
+
+                override fun onDiscoveryStarted(serviceType: String) {
+                    Logger.d(LogTags.HUE_DISCOVERY, "mDNS discovery started for: $serviceType")
+                }
+
+                override fun onDiscoveryStopped(serviceType: String) {
+                    Logger.d(LogTags.HUE_DISCOVERY, "mDNS discovery stopped")
+                }
+
+                override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                    Logger.d(LogTags.HUE_DISCOVERY, "mDNS service found: ${serviceInfo.serviceName}")
+
+                    resolveService(serviceInfo) { resolvedService ->
+                        val bridge = resolvedService?.let { createHueBridgeFromService(it) }
+                        if (bridge != null) {
+                            // Dieselbe Bridge kann ueber mehrere Interfaces annonciert werden.
+                            if (discoveredBridges.none { it.ipAddress == bridge.ipAddress }) {
+                                discoveredBridges.add(bridge)
+                                Logger.i(LogTags.HUE_DISCOVERY, "Hue bridge discovered: ${bridge.ipAddress}")
                             }
-                        }
-                        
-                        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                            Logger.w(LogTags.HUE_DISCOVERY, "mDNS discovery stop failed: $errorCode")
-                        }
-                        
-                        override fun onDiscoveryStarted(serviceType: String) {
-                            Logger.d(LogTags.HUE_DISCOVERY, "mDNS discovery started for: $serviceType")
-                        }
-                        
-                        override fun onDiscoveryStopped(serviceType: String) {
-                            Logger.d(LogTags.HUE_DISCOVERY, "mDNS discovery stopped")
-                            if (continuation.isActive) {
-                                continuation.resume(discoveredBridges.toList())
-                            }
-                        }
-                        
-                        override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                            Logger.d(LogTags.HUE_DISCOVERY, "mDNS service found: ${serviceInfo.serviceName}")
-                            
-                            // Resolve the service to get IP address
-                            resolveService(serviceInfo) { resolvedService ->
-                                resolvedService?.let { service ->
-                                    val bridge = createHueBridgeFromService(service)
-                                    bridge?.let {
-                                        discoveredBridges.add(it)
-                                        Logger.i(LogTags.HUE_DISCOVERY, "Hue bridge discovered: ${it.ipAddress}")
-                                    }
-                                }
-                            }
-                        }
-                        
-                        override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                            Logger.d(LogTags.HUE_DISCOVERY, "mDNS service lost: ${serviceInfo.serviceName}")
-                        }
-                    }
-                    
-                    // Start discovery
-                    try {
-                        nsdManager.discoverServices(HUE_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-                    } catch (e: Exception) {
-                        Logger.e(LogTags.HUE_DISCOVERY, "Failed to start mDNS discovery", e)
-                        if (continuation.isActive) {
-                            continuation.resume(emptyList())
-                        }
-                        return@suspendCancellableCoroutine
-                    }
-                    
-                    // Set up cancellation
-                    continuation.invokeOnCancellation {
-                        try {
-                            nsdManager.stopServiceDiscovery(discoveryListener)
-                        } catch (e: Exception) {
-                            Logger.w(LogTags.HUE_DISCOVERY, "Failed to stop mDNS discovery", e)
+                            firstResult.complete(Unit)
                         }
                     }
                 }
+
+                override fun onServiceLost(serviceInfo: NsdServiceInfo) {
+                    Logger.d(LogTags.HUE_DISCOVERY, "mDNS service lost: ${serviceInfo.serviceName}")
+                }
             }
-            
-            val bridges = discoveryResult ?: emptyList()
+
+            nsdManager.discoverServices(HUE_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            startedListener = discoveryListener
+
+            // Auf den ersten Fund warten - oder abbrechen, wenn nichts antwortet.
+            withTimeoutOrNull(DISCOVERY_TIMEOUT_MS) { firstResult.await() }
+
+            // Nur wenn etwas gefunden wurde, kurz auf weitere Bridges nachwarten.
+            if (discoveredBridges.isNotEmpty()) {
+                delay(GRACE_PERIOD_MS)
+            }
+
+            val bridges = discoveredBridges.toList()
             Logger.i(LogTags.HUE_DISCOVERY, "mDNS discovery completed: ${bridges.size} bridges found")
             Result.success(bridges)
-            
+
+        } catch (e: CancellationException) {
+            // Bricht der Aufrufer die Suche ab (Nutzer verlaesst den Screen), darf das nicht
+            // als "Discovery fehlgeschlagen" verpackt werden - CancellationException gehoert
+            // weitergereicht. Das finally unten stoppt die Discovery trotzdem.
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_DISCOVERY, "mDNS discovery failed", e)
             Result.failure(e)
+        } finally {
+            // Immer stoppen - frueher passierte das nur bei Cancellation, ein normal beendeter
+            // Lauf liess die Discovery weiterlaufen.
+            startedListener?.let { listener ->
+                try {
+                    nsdManager.stopServiceDiscovery(listener)
+                } catch (e: Exception) {
+                    Logger.w(LogTags.HUE_DISCOVERY, "Failed to stop mDNS discovery", e)
+                }
+            }
         }
     }
     

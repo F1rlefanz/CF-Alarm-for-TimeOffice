@@ -5,10 +5,16 @@
     
     <!-- AlarmFullScreenActivity strings -->
     <string name="alarm_title">⏰ CF-ALARM</string>
-    <string name="alarm_shift_loading">Schicht lädt…</string>
-    <string name="alarm_time_now">Jetzt</string>
     <string name="alarm_dismiss_button">ALARM STOPPEN</string>
     <string name="alarm_snooze_button">5 MIN SPÄTER</string>
-    <string name="alarm_time_format">Zeit: %1$s%2$s</string>
+    <string name="alarm_shift_start">Beginn: %1$s</string>
     <string name="alarm_unknown_shift">Unbekannte Schicht</string>
+
+    <!-- AlarmSoundService: Notification -->
+    <string name="alarm_notification_title">⏰ Zeit für %1$s!</string>
+    <string name="alarm_notification_text">Deine Schicht beginnt um %1$s</string>
+    <string name="alarm_notification_text_no_time">Zeit aufzustehen</string>
+    <string name="alarm_notification_stop">Wecker aus</string>
+    <string name="alarm_channel_name">Schicht-Wecker</string>
+    <string name="alarm_channel_description">Der Wecker für deine Schicht</string>
 </resources>

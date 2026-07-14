@@ -46,7 +46,37 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.9.7 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.9.8 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Großer Aufräumer beim Wecken: nur noch ein Weckton statt zwei, ein einziger Stopp-Weg, laufende Medien pausieren, und die Lampen gehen endlich wieder aus.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Nur noch ein Wecker statt zwei:</strong> Der Alarm klingelte doppelt und belegte zwei Einträge in der Benachrichtigungsleiste. Grund: Zwei unabhängige Tonquellen liefen parallel. Es gibt jetzt genau eine Benachrichtigung und einen Ton.</li>
+                <li><strong>„Deine Schicht beginnt um …“ ist wieder vollständig:</strong> Die Uhrzeit fehlte in der Benachrichtigung komplett, weil sie unter einem anderen Namen abgelegt als abgeholt wurde.</li>
+                <li><strong>Wecker nur noch einmal stoppen:</strong> Bisher musste man ihn zweimal ausschalten – einmal in der Benachrichtigung, danach noch einmal im Weck-Bildschirm. Der Weck-Bildschirm schließt sich jetzt von selbst, sobald der Wecker aus ist.</li>
+                <li><strong>Podcast und Musik pausieren während des Weckers:</strong> Laufende Medien redeten bisher einfach über den Wecker hinweg. Sie werden jetzt pausiert und laufen nach dem Ausschalten oder Schlummern automatisch weiter.</li>
+                <li><strong>Lampen gehen nach dem Wecken wieder aus:</strong> Bisher blieben sie an – teils den ganzen Tag. Zwei Ursachen: Der Ausschalt-Auftrag galt schon nach einem einzigen Versuch als erledigt (auch wenn die Bridge gar nicht erreichbar war, etwa unterwegs), und er wurde außerdem versehentlich gelöscht, sobald der Wecker geklingelt hatte. Beides behoben; bei unerreichbarer Bridge wird jetzt rund 2,5 Stunden lang erneut versucht.</li>
+                <li><strong>Erneute Anmeldung funktioniert wieder:</strong> Wer der App im Google-Konto den Zugriff entzogen hatte, kam nicht mehr zurück – die App verlangte eine Neuanmeldung, bot aber keinen Weg dorthin. Half nur noch eine Neuinstallation. Jetzt führt die App sauber in den Anmelde-Vorgang zurück.</li>
+                <li><strong>Kalender-Zugriff erholt sich selbst:</strong> Lehnte Google den Zugriff ab (abgelaufene Freigabe oder fehlende Kalender-Berechtigung), blieb die App daran hängen und lud endlos nach. Sie erkennt beide Fälle jetzt, verwirft die alte Freigabe und fragt sauber neu nach. Hintergrund: Ein Teil der Anmeldedaten liegt in den Google-Play-Diensten und überlebt sogar eine Neuinstallation der App – deshalb half selbst das Neuinstallieren nicht.</li>
+                <li><strong>Falsche Meldung „Kein Google-Konto gefunden“:</strong> Beim ersten Anmeldeversuch nach einer Neuinstallation behauptete die App, es sei kein Google-Konto vorhanden – ein zweiter Tipp fand es dann sofort. Der erste Versuch wird jetzt automatisch wiederholt.</li>
+                <li><strong>Bestätigung für übersprungene Alarme erscheint wieder:</strong> Sie wurde bisher stillschweigend verworfen und war nie zu sehen.</li>
+                <li><strong>Schlummern ist zuverlässiger:</strong> Ein geschlummerter Wecker konnte im Hintergrund abgeräumt werden, ohne je wieder zu klingeln.</li>
+                <li><strong>Hue-Bridge wird jetzt zuverlässig gefunden:</strong> Die App fand die Bridge im eigenen WLAN oft nicht, obwohl sie erreichbar war – ein interner Fehler bei der lokalen Suche warf jeden Fund weg. Betroffen war insbesondere, wer den Online-Suchdienst von Philips nicht erreichen konnte (z. B. durch Netzwerk-/DNS-Einstellungen).</li>
+                <li><strong>Veraltete Hintergrund-Aufträge werden jetzt korrekt aufgeräumt:</strong> Nach Änderungen an den Alarmen blieben teils überzählige Hue-Prüfaufträge im Hintergrund aktiv, statt gelöscht zu werden.</li>
+            </ul>
+
+            <h4>✨ Neu &amp; Verbessert</h4>
+            <ul>
+                <li><strong>Hue-Bridge-Suche deutlich schneller:</strong> Von bis zu 20 Sekunden auf rund 1–2 Sekunden, indem zuerst im eigenen Netzwerk gesucht wird statt zuerst online.</li>
+                <li><strong>Weck-Bildschirm im Corporate Design:</strong> Er war als einziger Bildschirm der App noch im alten Standard-Blau. Jetzt passt er zum Rest.</li>
+                <li><strong>Warnung „Vollbild-Wecker nicht erlaubt“:</strong> Neue Status-Karte, die meldet, wenn Android der App die Vollbild-Anzeige entzogen hat – dann erscheint der Wecker nämlich nur als Banner und der Weck-Bildschirm kommt nicht von selbst hoch. Ein Knopf führt direkt in die passende Systemeinstellung. <em>Hinweis: Solange das Handy entsperrt und in Benutzung ist, zeigt Android absichtlich nur ein Banner – das ist normal. Der Vollbild-Wecker ist für das gesperrte Gerät gedacht.</em></li>
+                <li><strong>Weck-Bildschirm zeigt die Systemleisten korrekt aus:</strong> Ein interner Fehler verhinderte das bisher bei jedem Alarm.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.9.7 <small>(interne Alpha)</small></h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Zuverlässigerer Kalender-Login und ein frisches App-Logo.</em></p>
 

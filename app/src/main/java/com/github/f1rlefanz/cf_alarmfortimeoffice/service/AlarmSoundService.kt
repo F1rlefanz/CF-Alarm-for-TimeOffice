@@ -7,43 +7,60 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
-import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
+import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * AlarmSoundService - Dedicated Foreground Service for Alarm Audio Management
- * 
- * ARCHITECTURE:
- * - Manages MediaPlayer lifecycle independent of Activity lifecycle
- * - Handles vibration patterns for alarm notifications
- * - Provides foreground notification while alarm is active
- * - Guarantees cleanup on service destruction
- * 
+ * AlarmSoundService - alleiniger Besitzer des Weckers.
+ *
+ * VERANTWORTUNG (alles an EINER Stelle, bewusst):
+ * - MediaPlayer (Ton), unabhaengig vom Activity-Lebenszyklus
+ * - Vibration
+ * - Audio-Fokus, damit fremde Medien pausieren statt weiterzulaufen
+ * - Die EINZIGE Alarm-Notification der App, inkl. Full-Screen-Intent
+ *
+ * WARUM ZENTRAL: Vorher postete der AlarmReceiver eine zweite Notification auf einem Channel
+ * MIT eigenem Klingelton, waehrend dieser Service parallel denselben Ton per MediaPlayer
+ * abspielte. Ergebnis: zwei Wecker, zwei Eintraege in der Leiste, zwei Stopp-Wege, die nichts
+ * voneinander wussten. Genau eine Instanz besitzt den Wecker - das ist die Invariante.
+ *
+ * SICHTBARKEIT: Die Notification traegt den Full-Screen-Intent. Der vom System gesendete
+ * PendingIntent ist auf Android 10+ der einzige erlaubte Weg, aus dem Hintergrund eine Activity
+ * zu starten; AlarmManager-Broadcasts stehen NICHT auf der Ausnahmeliste. Der Stop-Button der
+ * Notification ist zugleich der Notausgang fuer restriktive Geraete, auf denen die
+ * Full-Screen-Activity gar nicht erst hochkommt.
+ *
  * LIFECYCLE:
  * - START_STICKY: Auto-restart if killed by system (Android behavior)
  * - Foreground: No background execution limits, reliable alarm execution
  * - onDestroy: Guaranteed cleanup hook for all resources
- * - onTaskRemoved: Handles task killer apps gracefully
- * 
+ * - onTaskRemoved bewusst NICHT ueberschrieben (siehe Kommentar unten)
+ *
  * CRITICAL FEATURES:
  * - isShuttingDown flag prevents MediaPlayer race conditions
  * - OnPreparedListener checks shutdown state before starting playback
  * - Defensive cleanup in multiple lifecycle hooks
  * - Foreground service ensures Android doesn't kill during alarm
- * 
+ *
  * FIXES SNOOZE BUG:
  * Previous issue: MediaPlayer.prepareAsync() completed AFTER Activity.finish()
  * Solution: Service-managed MediaPlayer with shutdown flag guards
- * 
+ *
  * @author CF-Alarm Development Team
  * @since 1.4.4 - Snooze Bug Fix Release
  */
@@ -54,23 +71,35 @@ class AlarmSoundService : Service() {
         const val ACTION_START_ALARM = "com.github.f1rlefanz.cf_alarmfortimeoffice.START_ALARM"
         const val ACTION_STOP_ALARM = "com.github.f1rlefanz.cf_alarmfortimeoffice.STOP_ALARM"
         const val ACTION_SNOOZE_ALARM = "com.github.f1rlefanz.cf_alarmfortimeoffice.SNOOZE_ALARM"
-        
+
         // Intent Extras
         const val EXTRA_SHIFT_NAME = "shift_name"
         const val EXTRA_ALARM_ID = "alarm_id"
-        
+        const val EXTRA_ALARM_TIME = "alarm_time"
+
         // Notification Configuration
-        private const val NOTIFICATION_ID = 2002
+        // EINZIGE Alarm-Notification der App. Der AlarmReceiver postete frueher eine zweite
+        // (ID 2001) mit eigenem Channel-Sound - das ergab zwei Klingeltoene und zwei Eintraege
+        // in der Leiste. Ton + Sichtbarkeit haengen jetzt an genau diesem Service.
+        const val NOTIFICATION_ID = 2002
         private const val CHANNEL_ID = "alarm_sound_service"
-        private const val CHANNEL_NAME = "Alarm Sound Service"
+
+        /**
+         * Laeuft gerade ein Wecker? Die [AlarmFullScreenActivity] beobachtet das und schliesst
+         * sich selbst, sobald der Ton ueber den Notification-Button beendet wurde - sonst muesste
+         * der Nutzer den Wecker zweimal stoppen (einmal in der Leiste, einmal im Vollbild).
+         */
+        private val _alarmActive = MutableStateFlow(false)
+        val alarmActive: StateFlow<Boolean> = _alarmActive.asStateFlow()
     }
-    
-    // Service Binding
-    private val binder = AlarmSoundBinder()
     
     // Audio Management
     private var alarmMediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+
+    // Audio-Fokus: ohne ihn laufen fremde Player (Podcast, Musik) einfach ueber den Wecker
+    // weiter, weil sie gar nicht erfahren, dass sie pausieren sollen.
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     // Shutdown Flag - prevents async callbacks from starting sound after stop
     @Volatile
@@ -82,65 +111,72 @@ class AlarmSoundService : Service() {
     private var playerGeneration = 0
     
     /**
-     * Binder class for Activity to connect to this Service
+     * Reiner Started-Service, kein Binding.
+     *
+     * Die Activity hing frueher per Binder am Service, hat die Referenz aber nie benutzt - der
+     * Bind war Zeremonie. Den Zustand "Wecker laeuft" liefert jetzt [alarmActive]; das ueberlebt
+     * im Gegensatz zu einer Bindung auch das Zerstoeren der Activity.
      */
-    inner class AlarmSoundBinder : Binder() {
-        fun getService(): AlarmSoundService = this@AlarmSoundService
-    }
-    
-    override fun onBind(intent: Intent?): IBinder {
-        Logger.d(LogTags.ALARM, "📎 AlarmSoundService bound")
-        return binder
-    }
-    
-    override fun onUnbind(intent: Intent?): Boolean {
-        Logger.d(LogTags.ALARM, "📎 AlarmSoundService unbound")
-        return super.onUnbind(intent)
-    }
-    
+    override fun onBind(intent: Intent?): IBinder? = null
+
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_ALARM -> {
                 val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Alarm"
                 val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
-                
+                val alarmTime = intent.getStringExtra(EXTRA_ALARM_TIME).orEmpty()
+
                 Logger.business(
                     LogTags.ALARM,
                     "🔊 AlarmSoundService START_ALARM",
-                    "Shift: $shiftName, ID: $alarmId"
+                    "Shift: $shiftName, ID: $alarmId, Time: $alarmTime"
                 )
-                
+
                 // Reset shutdown flag for new alarm
                 isShuttingDown = false
-                
+
+                // MUSS vor startForeground() stehen: die Notification traegt den
+                // Full-Screen-Intent, das System kann die Activity also unmittelbar nach
+                // startForeground() starten. Stuende alarmActive dann noch auf false, wuerde
+                // die Activity das als "Wecker bereits beendet" lesen und sich sofort wieder
+                // schliessen.
+                _alarmActive.value = true
+
                 // Create notification channel (idempotent, safe to call multiple times)
                 createNotificationChannel()
-                
-                // Start as foreground service (Android 8+ requirement)
-                val notification = createForegroundNotification(shiftName)
+
+                // Start as foreground service (Android 8+ requirement).
+                // Diese Notification traegt auch den Full-Screen-Intent: der vom SYSTEM gesendete
+                // PendingIntent ist auf Android 10+ der einzige erlaubte Weg, aus dem Hintergrund
+                // eine Activity zu starten (ein direktes startActivity() aus dem Receiver wird
+                // verworfen und ist deshalb kein tragfaehiger Fallback mehr).
+                val notification = createAlarmNotification(shiftName, alarmTime, alarmId)
                 startForeground(NOTIFICATION_ID, notification)
-                Logger.d(LogTags.ALARM, "✅ Foreground service started with notification")
-                
+                Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
+
                 // Start alarm sound and vibration
+                requestAudioFocus()
                 startAlarmSound()
                 startVibration()
             }
-            
+
             ACTION_STOP_ALARM, ACTION_SNOOZE_ALARM -> {
                 Logger.i(LogTags.ALARM, "🛑 AlarmSoundService STOP/SNOOZE_ALARM")
-                
+
+                // Signalisiert der Full-Screen-Activity, dass sie sich schliessen soll.
+                // Ohne das bliebe nach "Wecker aus" in der Leiste das Vollbild stehen und der
+                // Nutzer muesste ein zweites Mal stoppen.
+                _alarmActive.value = false
+
                 // Stop all alarm effects immediately
                 stopAlarmSound()
                 stopVibration()
-                
+                abandonAudioFocus() // laesst pausierte Medien (Podcast/Musik) wieder anlaufen
+
                 // Stop foreground and remove notification
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
-                
+                stopForeground(STOP_FOREGROUND_REMOVE)
+
                 // Stop the service
                 stopSelf()
                 Logger.d(LogTags.ALARM, "✅ AlarmSoundService stopped and cleaned up")
@@ -158,10 +194,66 @@ class AlarmSoundService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Logger.i(LogTags.ALARM, "🛑 AlarmSoundService destroying - guaranteed cleanup")
-        
+
         // Guaranteed cleanup on service destruction
+        _alarmActive.value = false
         stopAlarmSound()
         stopVibration()
+        abandonAudioFocus()
+    }
+
+    /**
+     * Fordert den Audio-Fokus an, damit fremde Player (Podcast, Musik) fuer die Dauer des
+     * Weckers PAUSIEREN statt weiterzulaufen.
+     *
+     * AUDIOFOCUS_GAIN_TRANSIENT (nicht ..._MAY_DUCK): der andere Player erhaelt
+     * AUDIOFOCUS_LOSS_TRANSIENT und pausiert. Nach [abandonAudioFocus] bekommt er
+     * AUDIOFOCUS_GAIN und laeuft von selbst weiter - genau das erwartete Verhalten,
+     * wenn der Nutzer den Wecker per Snooze wegdrueckt.
+     *
+     * Kein Fokus-Listener: der Wecker gibt den Fokus bewusst NIE freiwillig ab. Ein Anruf
+     * unterbricht ihn ohnehin auf Systemebene, und alles andere darf einen Wecker nicht
+     * leiser machen.
+     */
+    private fun requestAudioFocus() {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val attributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(attributes)
+                .build()
+
+            audioFocusRequest = request
+            val result = audioManager.requestAudioFocus(request)
+
+            if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                Logger.business(LogTags.ALARM, "🔇 Audio-Fokus erhalten - fremde Medien pausieren")
+            } else {
+                // Kein Abbruch: der Wecker klingelt trotzdem, nur eben ueber laufende Medien.
+                Logger.w(LogTags.ALARM, "⚠️ Audio-Fokus verweigert (result=$result) - Wecker klingelt trotzdem")
+            }
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "❌ Audio-Fokus konnte nicht angefordert werden", e)
+        }
+    }
+
+    /**
+     * Gibt den Audio-Fokus frei. Pausierte Medien laufen dadurch automatisch weiter.
+     */
+    private fun abandonAudioFocus() {
+        try {
+            val request = audioFocusRequest ?: return
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.abandonAudioFocusRequest(request)
+            audioFocusRequest = null
+            Logger.d(LogTags.ALARM, "🔊 Audio-Fokus freigegeben - pausierte Medien laufen weiter")
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "❌ Fehler beim Freigeben des Audio-Fokus", e)
+        }
     }
     
     // onTaskRemoved() bewusst NICHT ueberschrieben: stopWithTask="false" (Manifest) haelt den
@@ -357,47 +449,87 @@ class AlarmSoundService : Service() {
      * This is idempotent - safe to call multiple times
      */
     private fun createNotificationChannel() {
+        // IMPORTANCE_HIGH ist Pflicht: Ein Full-Screen-Intent wird vom System ignoriert, wenn der
+        // Channel darunter liegt. Der Channel bleibt aber bewusst STUMM und vibrationsfrei -
+        // Ton und Vibration kommen ausschliesslich vom MediaPlayer bzw. startVibration().
+        // Frueher setzte der AlarmReceiver auf seinem eigenen Channel zusaetzlich einen
+        // Klingelton: das ergab zwei gleichzeitig laufende Weckertoene.
         val channel = NotificationChannel(
             CHANNEL_ID,
-            CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_LOW // Low importance, we handle the alarm sound
+            getString(R.string.alarm_channel_name),
+            NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Shows when alarm is actively playing"
-            // Silent channel - sound is handled by MediaPlayer
+            description = getString(R.string.alarm_channel_description)
             setSound(null, null)
-            enableVibration(false) // Vibration handled separately
+            enableVibration(false)
+            setBypassDnd(true) // Wecker muss auch bei "Nicht stören" durchkommen
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
-        
+
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(channel)
-        
+
         Logger.d(LogTags.ALARM, "📢 Notification channel created: $CHANNEL_ID")
     }
-    
+
     /**
-     * Creates foreground notification for service
+     * Baut die EINZIGE Alarm-Notification: Full-Screen-Intent, Stop- und Snooze-Button.
+     *
+     * Der Stop-Button ist der immer erreichbare Notausgang: er beendet den Weckton direkt ueber
+     * den Service, auch wenn die Full-Screen-Activity gar nicht erst hochkam (restriktive OEMs)
+     * oder zerstoert wurde (Anruf, Speicherdruck).
      */
-    private fun createForegroundNotification(shiftName: String): android.app.Notification {
-        // IMMER erreichbarer Stop-Weg: Der Action-Button beendet den Weckton direkt ueber den
-        // Service (ACTION_STOP_ALARM -> stopAlarmSound + stopForeground + stopSelf). Wichtig, weil
-        // die separate Alarm-Notification (2001) nach 5 Minuten via setTimeoutAfter verfaellt und
-        // die Full-Screen-Activity zerstoert werden kann (Anruf, Speicherdruck, OEM). Ohne diesen
-        // Button gaebe es danach keinen UI-Weg mehr, den laufenden Wecker zu stoppen.
+    private fun createAlarmNotification(
+        shiftName: String,
+        alarmTime: String,
+        alarmId: Int
+    ): android.app.Notification {
         val stopIntent = PendingIntent.getService(
             this,
             0,
             Intent(this, AlarmSoundService::class.java).apply { action = ACTION_STOP_ALARM },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+
+        val fullScreenIntent = PendingIntent.getActivity(
+            this,
+            alarmId,
+            Intent(this, AlarmFullScreenActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_SHIFT_NAME, shiftName)
+                putExtra(EXTRA_ALARM_TIME, alarmTime)
+                putExtra(EXTRA_ALARM_ID, alarmId)
+                setPackage(packageName)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Leere Uhrzeit sauber abfangen statt "Deine Schicht beginnt um " anzuzeigen.
+        val contentText = if (alarmTime.isBlank()) {
+            getString(R.string.alarm_notification_text_no_time)
+        } else {
+            getString(R.string.alarm_notification_text, alarmTime)
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Alarm aktiv")
-            .setContentText("$shiftName läuft")
+            .setContentTitle(getString(R.string.alarm_notification_title, shiftName))
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setOngoing(true) // Cannot be dismissed by user
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
             .setShowWhen(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Wecker aus", stopIntent)
+            .setContentIntent(fullScreenIntent)
+            .setFullScreenIntent(fullScreenIntent, true)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                getString(R.string.alarm_notification_stop),
+                stopIntent
+            )
             .build()
+        // Bewusst KEIN setTimeoutAfter(): die Notification gehoert zu einem Foreground-Service
+        // und darf nicht verfallen, solange der Ton laeuft - sonst verlaere der Nutzer den
+        // Stop-Button unter den Fingern.
     }
 }

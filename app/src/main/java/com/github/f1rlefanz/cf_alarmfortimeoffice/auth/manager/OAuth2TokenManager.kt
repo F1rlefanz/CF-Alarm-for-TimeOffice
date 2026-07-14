@@ -166,6 +166,45 @@ class OAuth2TokenManager(
     }
     
     /**
+     * Verwirft das Token ENDGUELTIG - lokal UND im GoogleAuthUtil-Cache der Play Services.
+     *
+     * WARUM BEIDES: Der GoogleAuthUtil-Cache liegt in den Play Services, nicht im App-Speicher.
+     * Er wird ohne Server-Rueckfrage bedient. Wurde der Zugriff serverseitig entzogen, merkt
+     * GMS davon nichts und gibt weiter munter das tote Token heraus - ohne
+     * Zustimmungsdialog, weil es fuer GMS ja gueltig aussieht. Nur clearToken() raeumt diesen
+     * Cache ab. Danach liefert der naechste getToken() NEED_REMOTE_CONSENT, der Dialog kommt,
+     * und der Nutzer landet wieder in einem funktionierenden Zustand.
+     *
+     * Ohne diesen Aufruf dreht sich die App im Kreis: 401 -> neu laden -> dasselbe tote Token
+     * aus dem Cache -> 401 -> ...
+     *
+     * Fehler beim Leeren werden nur geloggt: das lokale Token MUSS trotzdem weg, sonst
+     * benutzt die App weiter ein Token, von dem wir sicher wissen, dass es tot ist.
+     */
+    suspend fun invalidate(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val current = tokenRepository.get()
+            if (current != null && current.accessToken.isNotBlank()) {
+                try {
+                    GoogleAuthUtil.clearToken(context, current.accessToken)
+                    Logger.i(LogTags.TOKEN, "🧹 GoogleAuthUtil-Cache geleert (Play Services)")
+                } catch (e: Exception) {
+                    // z.B. kein Netz: der lokale Teil muss trotzdem laufen.
+                    Logger.w(LogTags.TOKEN, "⚠️ GoogleAuthUtil-Cache konnte nicht geleert werden", e)
+                }
+            }
+            tokenRepository.clear()
+            Logger.i(LogTags.TOKEN, "🧹 Gespeichertes Token verworfen - Neuanmeldung erforderlich")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e(LogTags.TOKEN, "❌ Token konnte nicht verworfen werden", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Refresht Token mit Rotation-Support
      */
     suspend fun refresh(currentToken: TokenData): Result<TokenData> = withContext(Dispatchers.IO) {
@@ -204,11 +243,23 @@ class OAuth2TokenManager(
             }
             
             Logger.i(LogTags.TOKEN, "✅ Token refreshed and rotated (rotation #${rotatedToken.rotationCount})")
-            
+
             Result.success(rotatedToken)
-            
+
         } catch (e: CancellationException) {
             throw e  // ✅ KRITISCH: Propagieren!
+        } catch (e: TokenException.ConsentRequired) {
+            // Das gespeicherte Token ist endgueltig tot - Google akzeptiert es nicht mehr und
+            // wird es auch beim naechsten Versuch nicht akzeptieren. Es MUSS weg, sonst laeuft
+            // jeder weitere getValidToken() erneut in canRefresh() -> refresh() -> dieselbe
+            // Exception: eine Endlosschleife ohne Ausweg.
+            //
+            // Nach dem Loeschen meldet getValidToken() sauber NoTokenAvailable, und die App
+            // faellt in denselben regulaeren Sign-in-Pfad, der bei einer Neuinstallation
+            // funktioniert (dort gibt es schlicht kein Token, das im Weg steht).
+            Logger.w(LogTags.TOKEN, "🔐 Zustimmung entzogen - verwerfe totes Token und verlange Neuanmeldung")
+            invalidate()
+            Result.failure(e)
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Token refresh failed", e)
             Result.failure(TokenException.RefreshFailed(e.message ?: "Unknown error"))
@@ -226,24 +277,35 @@ class OAuth2TokenManager(
         require(!token.googleAccountEmail.isNullOrBlank()) {
             "googleAccountEmail is required for Google Play Services refresh"
         }
-        
+
         try {
             // Clear old token
             GoogleAuthUtil.clearToken(context, token.accessToken)
             Logger.d(LogTags.TOKEN, "Old token cleared")
-            
+
             // Get fresh token
             val account = android.accounts.Account(token.googleAccountEmail, "com.google")
             val scope = "oauth2:${CalendarScopes.CALENDAR_READONLY}"
-            
+
             val newToken = GoogleAuthUtil.getToken(context, account, scope)
-            
+
             if (newToken.isBlank()) {
                 throw TokenException.RefreshFailed("Empty token received")
             }
-            
+
             return newToken
-            
+
+        } catch (e: UserRecoverableAuthException) {
+            // "Recoverable" ist woertlich zu nehmen: die Exception traegt einen Intent, der zum
+            // Zustimmungsdialog fuehrt. Frueher fing der generische catch-Block unten sie mit ab
+            // und warf sie als RefreshFailed weiter - der Intent ging verloren und die App hatte
+            // keinen Weg zurueck. Typischer Ausloeser: Zugriff im Google-Konto entzogen
+            // ("NeedRemoteConsent").
+            Logger.w(LogTags.TOKEN, "🔐 Google verlangt erneute Zustimmung: ${e.message}")
+            throw TokenException.ConsentRequired(
+                "Erneute Zustimmung erforderlich: ${e.message}",
+                e.intent
+            )
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "Google Play Services refresh failed", e)
             throw TokenException.RefreshFailed("Google refresh failed: ${e.message}")

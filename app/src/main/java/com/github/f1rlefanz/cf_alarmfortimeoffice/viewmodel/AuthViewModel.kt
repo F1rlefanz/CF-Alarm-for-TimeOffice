@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
@@ -18,12 +19,17 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
@@ -52,7 +58,8 @@ class AuthViewModel @Inject constructor(
     private val errorHandler: ErrorHandler,
     private val authUseCase: IAuthUseCase,
     private val calendarSelectionRepository: ICalendarSelectionRepository,
-    private val backgroundServiceManager: BackgroundServiceManager
+    private val backgroundServiceManager: BackgroundServiceManager,
+    private val tokenRepository: TokenRepository
 ) : ViewModel() {
 
     // CONSOLIDATED STATE: Ein einziger State statt AuthState + AuthUiState
@@ -61,6 +68,21 @@ class AuthViewModel @Inject constructor(
 
     // BACKWARD COMPATIBILITY: Expose als uiState für bestehenden Code
     val uiState: StateFlow<AuthState> = authState
+
+    /**
+     * Einmal-Signal: "Das Token ist zur Laufzeit weggefallen, hol die Zustimmung neu ein."
+     *
+     * WARUM EIN EVENT UND KEIN STATE-FLAG: Den Zustimmungsdialog kann nur eine Activity starten
+     * (GoogleAuthUtil liefert einen Intent, kein Ergebnis) - hier unten gibt es keine. Ein
+     * State-Flag würde bei jeder Recomposition erneut ausgelöst; das Event wird genau einmal
+     * konsumiert.
+     *
+     * CONFLATED: Stirbt das Token, während die App im Hintergrund ist, wartet das Signal im
+     * Channel, bis MainActivity wieder RESUMED ist. Ein Activity-Start aus dem Hintergrund würde
+     * von Android verworfen - das Signal wäre verbraucht und der Dialog käme nie.
+     */
+    private val _reauthRequired = Channel<Unit>(Channel.CONFLATED)
+    val reauthRequired: Flow<Unit> = _reauthRequired.receiveAsFlow()
 
     // CRITICAL FIX: Triggers calendar reload after successful authentication/authorization
     @Volatile
@@ -91,6 +113,66 @@ class AuthViewModel @Inject constructor(
         observeAuthState()
         checkInitialAuthState()
         observeCalendarSelection() // REACTIVE CALENDAR: Observer für Calendar-Selection-Änderungen
+        observeTokenLoss() // AUTO-RE-AUTH: Token-Verlust zur Laufzeit erkennen
+    }
+
+    /**
+     * Schließt den reaktiven Token-Pfad an: fällt das gespeicherte Token weg, erfährt die UI davon.
+     *
+     * DAS PROBLEM: OAuth2TokenManager.invalidate() verwirft das Token bei 401/403 still. Ohne
+     * diesen Observer blieb calendarOps.hasValidToken auf dem Wert vom App-Start stehen ("stale
+     * true") - das Gate in MainActivity feuerte nie und der Nutzer saß in einer Haupt-UI, deren
+     * Kalender-Zugriff längst tot war.
+     *
+     * WARUM NUR DAS NEGATIVE SIGNAL: hasValidToken bedeutet "getValidToken() klappt gerade",
+     * inklusive Refresh eines abgelaufenen Tokens (AuthUseCase.hasCalendarAuthorization).
+     * "Liegt im Store" ist schwächer - ein totes, aber noch nicht verworfenes Token würde das Gate
+     * fälschlich aufmachen. Das FEHLEN eines Tokens ist dagegen eindeutig. Die positiven Übergänge
+     * bleiben deshalb bei den bestehenden Schreibern: checkInitialTokenValidity() beim Start und
+     * dem Ergebnis von requestCalendarAuthorization().
+     *
+     * WARUM drop(1): Die erste Emission ist der Ist-Zustand beim Start, kein Verlust. Ohne drop
+     * würde jeder Kaltstart ohne Token (frische Installation, abgemeldet) als "Token verloren"
+     * gelten und einen Dialog auslösen - beim frischen Sign-in zusätzlich zu dem, den signIn()
+     * ohnehin schon anstößt.
+     */
+    private fun observeTokenLoss() {
+        viewModelScope.launch(Dispatchers.IO) {
+            tokenRepository.observe()
+                .map { it != null }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { hasToken ->
+                    if (hasToken) return@collect
+
+                    // Beim Abmelden ist das Verschwinden gewollt - niemanden in einen
+                    // Zustimmungsdialog zwingen, den er gerade verlassen wollte.
+                    if (!_authState.value.isSignedIn) {
+                        Logger.d(
+                            LogTags.AUTH,
+                            "🔑 AUTO-RE-AUTH: Token weg, aber nicht angemeldet - keine Re-Autorisierung"
+                        )
+                        return@collect
+                    }
+
+                    Logger.business(
+                        LogTags.AUTH,
+                        "🔑 AUTO-RE-AUTH: Token zur Laufzeit verworfen - fordere Zustimmung neu an"
+                    )
+
+                    updateAuthState { currentState ->
+                        currentState.copy(
+                            calendarOps = currentState.calendarOps.copy(
+                                hasValidToken = false,
+                                tokenChecked = true // Ergebnis steht fest -> Gate darf entscheiden
+                            )
+                        )
+                    }
+
+                    // Nur die Activity kann den Dialog starten - MainActivity konsumiert das Event.
+                    _reauthRequired.trySend(Unit)
+                }
+        }
     }
 
     /**

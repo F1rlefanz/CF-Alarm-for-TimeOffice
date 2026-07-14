@@ -303,7 +303,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                         .format(DateTimeFormatter.ofPattern("HH:mm"))
                 )
                 setPackage(packageName)
-                action = AlarmManagerService.enhancedAlarmAction(alarmId)
+                // EIGENE Snooze-Action, NICHT enhancedAlarmAction: sonst teilte sich der Snooze
+                // den PendingIntent-Slot mit seinem Ursprungsalarm und der Maintenance-Sync
+                // wuerde ihn beim Aufraeumen des gefeuerten Alarms mit abbrechen.
+                action = AlarmManagerService.snoozeAlarmAction(alarmId)
             }
 
             // requestCode = alarmId (statt einer Zufallszahl aus currentTimeMillis): so ersetzt

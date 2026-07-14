@@ -457,6 +457,23 @@ class AlarmManagerService(
             "com.github.f1rlefanz.cf_alarmfortimeoffice.ENHANCED_ALARM_$alarmId"
 
         /**
+         * Action-String des SNOOZE-PendingIntents - bewusst verschieden von
+         * [enhancedAlarmAction].
+         *
+         * Ein Snooze darf NICHT denselben PendingIntent-Slot belegen wie sein Ursprungsalarm:
+         * PendingIntents matchen ueber requestCode + Action. Waeren beide gleich, wuerde
+         * [cancelSystemAlarm] den schwebenden Snooze mit abraeumen - und genau das passiert
+         * regelmaessig, weil der Maintenance-Sync gefeuerte (= in der Vergangenheit liegende)
+         * Alarme loescht und dabei cancelSystemAlarm aufruft. Der Nutzer haette gedrueckt
+         * "5 Minuten schlummern" und waere nie wieder geweckt worden.
+         *
+         * Die Action bleibt pro alarmId stabil, damit ein zweiter Snooze denselben Slot
+         * ersetzt statt einen weiteren Wecker zu stapeln.
+         */
+        fun snoozeAlarmAction(alarmId: Int): String =
+            "com.github.f1rlefanz.cf_alarmfortimeoffice.SNOOZE_ALARM_$alarmId"
+
+        /**
          * DE-SICHERES Neusetzen eines Alarms aus dem Direct-Boot-Spiegel.
          *
          * Baut exakt denselben PendingIntent wie der regulaere Pfad (gleiche requestCode=id und

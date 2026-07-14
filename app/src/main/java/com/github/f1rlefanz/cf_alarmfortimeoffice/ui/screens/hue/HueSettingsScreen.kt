@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorSeverity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueConnectionHealth
@@ -220,16 +221,18 @@ private fun BridgeStatusCard(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onValidate, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Prüfen")
-                }
-                OutlinedButton(onClick = onTest, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.FlashOn, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Test")
-                }
+                CompactOutlinedButton(
+                    onClick = onValidate,
+                    text = "Prüfen",
+                    icon = Icons.Default.Refresh,
+                    modifier = Modifier.weight(1f)
+                )
+                CompactOutlinedButton(
+                    onClick = onTest,
+                    text = "Test",
+                    icon = Icons.Default.FlashOn,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             // UX FEATURE (B): "Verbindung trennen / Bridge vergessen". Only offered once a
@@ -382,17 +385,25 @@ private fun RuleCard(
                 Switch(checked = rule.enabled, onCheckedChange = { onToggle() })
             }
             
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Bearbeiten")
-                }
-                OutlinedButton(onClick = onTest, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.PlayArrow, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Test")
-                }
+            // Hier war "Bearbeiten" zu "Bea/rbei/ten" zerfallen: zwei weight(1f)-Buttons plus
+            // IconButton lassen je ~116dp, davon gehen 48dp allein für den Material3-Innenabstand
+            // ab. CompactOutlinedButton nimmt den zurück und lässt nur eine Zeile zu.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactOutlinedButton(
+                    onClick = onEdit,
+                    text = "Bearbeiten",
+                    icon = Icons.Default.Edit,
+                    modifier = Modifier.weight(1f)
+                )
+                CompactOutlinedButton(
+                    onClick = onTest,
+                    text = "Test",
+                    icon = Icons.Default.PlayArrow,
+                    modifier = Modifier.weight(1f)
+                )
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, "Löschen", tint = MaterialTheme.colorScheme.error)
                 }

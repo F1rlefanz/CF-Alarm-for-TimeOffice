@@ -44,7 +44,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,7 +53,6 @@ fun MainContentScreen(
     calendarViewModel: CalendarViewModel,
     shiftViewModel: ShiftViewModel,
     alarmViewModel: AlarmViewModel,
-    mainViewModel: MainViewModel,
     hueViewModel: HueViewModel,
     selectedTab: MainTab,
     onSelectedTabChange: (MainTab) -> Unit,
@@ -90,7 +88,15 @@ fun MainContentScreen(
                 duration = SnackbarDuration.Long
             )
             if (result == SnackbarResult.ActionPerformed) {
-                mainViewModel.forceRefreshCalendarEvents()
+                // MUSS ueber calendarViewModel laufen: Der Fehler kommt aus dessen
+                // CalendarUiState, und nur dieses rendert Home. Der frueher hier gerufene
+                // mainViewModel.forceRefreshCalendarEvents() schrieb ausschliesslich in den
+                // CalendarStateHolder - eine Einbahnstrasse zum ShiftViewModel, aus der die
+                // CalendarUiState nie liest. Der Retry lud also brav nach, ohne dass Home je
+                // etwas davon sah, und ein erneutes Scheitern wurde dort nur geloggt statt
+                // gemeldet: "Wiederholen" fuehrte zurueck in denselben stummen Zustand.
+                // refreshData() aktualisiert beides - UiState UND StateHolder.
+                calendarViewModel.refreshData(forceRefresh = true)
             }
             calendarViewModel.clearError()
         }
@@ -174,12 +180,17 @@ fun MainContentScreen(
                         alarmState = alarmState,
                         skipState = skipState,
                         onRefresh = {
-                            // Perform manual refresh
-                            mainViewModel.forceRefreshCalendarEvents()
-                            
+                            // Gleicher Grund wie beim Snackbar-Retry oben: der frueher hier
+                            // gerufene mainViewModel.forceRefreshCalendarEvents() schrieb nur in
+                            // den CalendarStateHolder. Der "Aktualisieren"-Knopf lud damit zwar
+                            // Events (die Schichterkennung bekam sie ueber den StateHolder), aber
+                            // Home zeigte weder Ladeanzeige noch die neue Liste noch einen
+                            // Fehler - er wirkte wie ein toter Knopf.
+                            //
                             // Phase 1: BackgroundTokenRefreshWorker removed
                             // Manual refresh now only triggers calendar data reload
                             // Token refresh handled by AlarmMaintenanceService
+                            calendarViewModel.refreshData(forceRefresh = true)
                         },
                         onSkipNextAlarm = alarmViewModel::skipNextAlarm,
                         onCancelSkip = alarmViewModel::cancelSkip,

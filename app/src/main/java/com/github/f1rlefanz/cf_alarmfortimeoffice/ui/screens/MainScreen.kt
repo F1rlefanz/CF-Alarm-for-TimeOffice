@@ -331,7 +331,6 @@ fun MainScreen(
                     calendarViewModel = calendarViewModel,
                     shiftViewModel = shiftViewModel,
                     alarmViewModel = alarmViewModel,
-                    mainViewModel = mainViewModel,
                     hueViewModel = hueViewModel,
                     selectedTab = mainContentState.selectedTab,
                     onSelectedTabChange = { tab -> navigationViewModel.changeTab(tab) },

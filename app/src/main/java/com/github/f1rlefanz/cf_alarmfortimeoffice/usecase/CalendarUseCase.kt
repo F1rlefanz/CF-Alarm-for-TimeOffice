@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -129,10 +130,38 @@ class CalendarUseCase @Inject constructor(
                     },
                     onFailure = { error ->
                         Logger.e(LogTags.CALENDAR, "Failed to load calendars", error)
+                        invalidateTokenIfRejectedByGoogle(error)
                         throw error
                     }
                 )
         }
+    }
+
+    /**
+     * Verwirft das Token, wenn Google es mit 401 abgelehnt hat.
+     *
+     * Ein 401 heisst: das Token ist serverseitig tot - egal, was unsere eigene Ablaufzeit sagt.
+     * Und genau da lag die Falle: getValidToken() prueft nur die LOKAL gespeicherte
+     * Ablaufzeit ("noch 59 Min gueltig") und laesst das Token deshalb durch, ohne je den
+     * Refresh-Pfad (und damit GoogleAuthUtil.clearToken) anzustossen. Das tote Token blieb
+     * liegen, jeder Versuch lief erneut in denselben 401, und die UI lud endlos nach.
+     *
+     * Typischer Ausloeser: Zugriff im Google-Konto entzogen. Der GoogleAuthUtil-Cache in den
+     * Play Services ueberlebt sogar eine App-Neuinstallation und liefert das tote Token
+     * weiter aus - ohne Zustimmungsdialog, weil es fuer GMS gueltig aussieht.
+     *
+     * Nach dem Verwerfen meldet getValidToken() sauber NoTokenAvailable; die App faellt in den
+     * regulaeren Sign-in-Pfad, GoogleAuthUtil hat keinen Cache mehr und fordert die Zustimmung
+     * neu an.
+     */
+    private suspend fun invalidateTokenIfRejectedByGoogle(error: Throwable) {
+        if (error !is AppError.AuthenticationError) return
+        val manager = oauth2TokenManager ?: return
+        Logger.w(
+            LogTags.TOKEN,
+            "🔐 Google lehnt das Token ab (401) - verwerfe es samt Play-Services-Cache"
+        )
+        manager.invalidate()
     }
     
     /**
@@ -235,6 +264,10 @@ class CalendarUseCase @Inject constructor(
                             },
                             onFailure = { error ->
                                 Logger.e(LogTags.CALENDAR_API, "Failed to load events for calendar ${calendarId.take(8)}...", error)
+                                // Auch hier: ein 401 bedeutet totes Token. Ohne Verwerfen liefen
+                                // die restlichen Kalender in denselben Fehler und der naechste
+                                // Sync gleich mit.
+                                invalidateTokenIfRejectedByGoogle(error)
                                 hasErrors = true
                                 processedCount++
                                 // Continue with other calendars instead of failing completely

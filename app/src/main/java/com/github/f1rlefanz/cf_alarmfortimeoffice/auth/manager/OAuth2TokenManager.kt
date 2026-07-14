@@ -166,6 +166,45 @@ class OAuth2TokenManager(
     }
     
     /**
+     * Verwirft das Token ENDGUELTIG - lokal UND im GoogleAuthUtil-Cache der Play Services.
+     *
+     * WARUM BEIDES: Der GoogleAuthUtil-Cache liegt in den Play Services, nicht im App-Speicher.
+     * Er wird ohne Server-Rueckfrage bedient. Wurde der Zugriff serverseitig entzogen, merkt
+     * GMS davon nichts und gibt weiter munter das tote Token heraus - ohne
+     * Zustimmungsdialog, weil es fuer GMS ja gueltig aussieht. Nur clearToken() raeumt diesen
+     * Cache ab. Danach liefert der naechste getToken() NEED_REMOTE_CONSENT, der Dialog kommt,
+     * und der Nutzer landet wieder in einem funktionierenden Zustand.
+     *
+     * Ohne diesen Aufruf dreht sich die App im Kreis: 401 -> neu laden -> dasselbe tote Token
+     * aus dem Cache -> 401 -> ...
+     *
+     * Fehler beim Leeren werden nur geloggt: das lokale Token MUSS trotzdem weg, sonst
+     * benutzt die App weiter ein Token, von dem wir sicher wissen, dass es tot ist.
+     */
+    suspend fun invalidate(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val current = tokenRepository.get()
+            if (current != null && current.accessToken.isNotBlank()) {
+                try {
+                    GoogleAuthUtil.clearToken(context, current.accessToken)
+                    Logger.i(LogTags.TOKEN, "🧹 GoogleAuthUtil-Cache geleert (Play Services)")
+                } catch (e: Exception) {
+                    // z.B. kein Netz: der lokale Teil muss trotzdem laufen.
+                    Logger.w(LogTags.TOKEN, "⚠️ GoogleAuthUtil-Cache konnte nicht geleert werden", e)
+                }
+            }
+            tokenRepository.clear()
+            Logger.i(LogTags.TOKEN, "🧹 Gespeichertes Token verworfen - Neuanmeldung erforderlich")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e(LogTags.TOKEN, "❌ Token konnte nicht verworfen werden", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Refresht Token mit Rotation-Support
      */
     suspend fun refresh(currentToken: TokenData): Result<TokenData> = withContext(Dispatchers.IO) {
@@ -219,7 +258,7 @@ class OAuth2TokenManager(
             // faellt in denselben regulaeren Sign-in-Pfad, der bei einer Neuinstallation
             // funktioniert (dort gibt es schlicht kein Token, das im Weg steht).
             Logger.w(LogTags.TOKEN, "🔐 Zustimmung entzogen - verwerfe totes Token und verlange Neuanmeldung")
-            tokenRepository.clear()
+            invalidate()
             Result.failure(e)
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Token refresh failed", e)

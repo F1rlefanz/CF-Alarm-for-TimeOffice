@@ -87,9 +87,25 @@ fun MainScreen(
         }
 
         // 1. CALENDAR DATA: Load only if really needed
-        if (calendarState.availableCalendars.isEmpty()) {
+        //
+        // WICHTIG: NICHT nachladen, wenn der letzte Versuch mit einem Fehler endete.
+        // Dieser Effect haengt an calendarState.isLoading. Schlaegt das Laden fehl, springt
+        // isLoading zurueck auf false -> Effect laeuft erneut -> Liste immer noch leer ->
+        // refreshData() -> isLoading true -> ... Eine Endlosschleife, die bei jedem Durchlauf
+        // erneut die Google-API anfragt. Genau das passierte bei einem 401 (totes Token):
+        // Log vom 14.07. zeigt "Loading calendar data due to empty calendar list" im
+        // Sekundentakt.
+        //
+        // Der Fehler steht bereits in der UI; der Nutzer loest den naechsten Versuch bewusst
+        // aus (Pull-to-Refresh / Neuanmeldung).
+        if (calendarState.availableCalendars.isEmpty() && calendarState.error == null) {
             Logger.d(LogTags.UI, "Loading calendar data due to empty calendar list")
             calendarViewModel.refreshData()
+        } else if (calendarState.error != null) {
+            Logger.d(
+                LogTags.UI,
+                "Skipping calendar reload - last attempt failed: ${calendarState.error}"
+            )
         }
 
         // 3. NAVIGATION: Handle after data operations complete

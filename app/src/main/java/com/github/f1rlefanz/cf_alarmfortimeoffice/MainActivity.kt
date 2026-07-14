@@ -17,7 +17,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
@@ -115,6 +117,30 @@ class MainActivity : ComponentActivity() {
                     // MEMORY LEAK FIX: Consolidated State Collection für MainActivity
                     // Reduziert excessive Recompositions durch weniger collectAsState() calls
                     val authState by authViewModel.uiState.collectAsState()
+
+                    // AUTO-RE-AUTH: Verliert die App das Token zur Laufzeit (401/403 -> invalidate),
+                    // meldet das AuthViewModel das hier - denn den Zustimmungsdialog kann nur eine
+                    // Activity starten (GoogleAuthUtil liefert einen Intent). Ohne diesen Weg musste
+                    // der Nutzer die Rückkehr selbst antippen.
+                    //
+                    // RESUMED, nicht STARTED: Einen Activity-Start aus dem Hintergrund verwirft
+                    // Android stillschweigend. Das Signal ist gepuffert (CONFLATED) und wird erst
+                    // zugestellt, wenn die App wieder vorne ist - dann greift der Start auch.
+                    //
+                    // Keine Schleifengefahr: Bricht der Nutzer den Dialog ab, wird kein Token
+                    // geschrieben, also entsteht auch kein neuer Verlust-Übergang. Er landet auf dem
+                    // CalendarAuthorizationScreen und entscheidet per Knopf selbst.
+                    LaunchedEffect(Unit) {
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                            authViewModel.reauthRequired.collect {
+                                Logger.business(
+                                    LogTags.AUTH,
+                                    "🔐 AUTO-RE-AUTH: Token verloren - starte Zustimmungsdialog automatisch"
+                                )
+                                authViewModel.requestCalendarAuthorization(this@MainActivity)
+                            }
+                        }
+                    }
 
                     // PERFORMANCE OPTIMIZATION: Memoized Screen Selection
                     // Verhindert unnötige Recompositions bei State-Changes

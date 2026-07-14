@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorSeverity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.AnimatedDiscoveryCard
@@ -242,8 +244,7 @@ fun HueTabContent(
                 onDiscoverBridges = { requireLocalNetworkPermission { hueViewModel.discoverBridges() } },
                 onConnectToBridge = { bridge ->
                     requireLocalNetworkPermission { hueViewModel.setupBridge(bridge) }
-                },
-                onClearBridges = { hueViewModel.clearDiscoveredBridges() }
+                }
             )
         }
 
@@ -347,31 +348,19 @@ private fun ConnectedManagementCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(
+                    CompactOutlinedButton(
                         onClick = onNavigateToRuleConfig,
+                        text = "Neue Regel",
+                        icon = Icons.Default.Add,
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Neue Regel")
-                    }
+                    )
 
-                    OutlinedButton(
+                    CompactOutlinedButton(
                         onClick = onTestConnection,
+                        text = "Test",
+                        icon = Icons.Default.FlashOn,
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FlashOn,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Test")
-                    }
+                    )
                 }
             }
         }
@@ -417,6 +406,15 @@ private fun BridgeConnectionStatusCard(
     val scope = rememberCoroutineScope()
     val bridgeManager = remember { HueBridgeConnectionManager.getInstance(context) }
 
+    val isConnected = connectionInfo?.isConnected == true
+
+    // TONALITÄT: Vor der Ersteinrichtung ist "nicht verbunden" kein Fehler, sondern der normale
+    // Ausgangspunkt - der Nutzer hatte noch gar keine Gelegenheit, eine Bridge zu koppeln. Rotes
+    // Fehler-Icon dafür liest sich, als hätte er etwas falsch gemacht. Erst wenn schon einmal eine
+    // Bridge gekoppelt war (bridgeIp gesetzt), ist "nicht verbunden" wirklich ein Problem.
+    // Dieselbe Unterscheidung trifft schon das Warn-Banner oben in HueTabContent.
+    val neverConfigured = connectionInfo?.bridgeIp == null
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -436,20 +434,37 @@ private fun BridgeConnectionStatusCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Icon(
-                    imageVector = if (connectionInfo?.isConnected == true)
-                        Icons.Default.CheckCircle else Icons.Default.Error,
+                    imageVector = when {
+                        isConnected -> Icons.Default.CheckCircle
+                        neverConfigured -> Icons.Default.Lightbulb
+                        else -> Icons.Default.Error
+                    },
                     contentDescription = null,
-                    tint = if (connectionInfo?.isConnected == true)
-                        MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error,
+                    tint = when {
+                        isConnected -> MaterialTheme.colorScheme.success
+                        neverConfigured -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.error
+                    },
                     modifier = Modifier.size(32.dp)
                 )
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (connectionInfo?.isConnected == true) "Verbunden" else "Nicht verbunden",
+                        text = when {
+                            isConnected -> "Verbunden"
+                            neverConfigured -> "Noch keine Bridge eingerichtet"
+                            else -> "Nicht verbunden"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
+                    if (neverConfigured) {
+                        Text(
+                            text = "Suche unten nach deiner Hue-Bridge, um Lichtregeln für deine Alarme anzulegen.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     connectionInfo?.bridgeIp?.let { ip ->
                         Text(
                             text = ip,
@@ -487,8 +502,7 @@ private fun BridgeConnectionStatusCard(
 private fun BridgeDiscoveryCard(
     discoveredBridges: List<HueBridge>,
     onDiscoverBridges: () -> Unit,
-    onConnectToBridge: (HueBridge) -> Unit,
-    onClearBridges: () -> Unit
+    onConnectToBridge: (HueBridge) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -506,14 +520,18 @@ private fun BridgeDiscoveryCard(
                 fontWeight = FontWeight.Bold
             )
 
-            // Discovery Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            // ZUSTANDSLOGIK: Vor der Suche ist "Bridges suchen" die eine, ganzbreite Aktion -
+            // damit bricht die Beschriftung auch nicht mehr um ("Bridges / suchen"), was vorher
+            // passierte, weil sich der Knopf die Zeile mit "Löschen" teilte.
+            //
+            // Nach einem Treffer ist die gefundene Bridge der Star: Die Suche wird zur leisen
+            // Nebenaktion "Erneut suchen" unter der Liste. Der frühere "Löschen"-Knopf ist weg -
+            // er warf nur die Trefferliste weg, was eine neue Suche ohnehin tut, und "Löschen"
+            // ohne Bezugswort las sich, als würde er die Bridge oder die Regeln entfernen.
+            if (discoveredBridges.isEmpty()) {
                 Button(
                     onClick = onDiscoverBridges,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -523,18 +541,7 @@ private fun BridgeDiscoveryCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Bridges suchen")
                 }
-
-                if (discoveredBridges.isNotEmpty()) {
-                    OutlinedButton(
-                        onClick = onClearBridges
-                    ) {
-                        Text("Löschen")
-                    }
-                }
-            }
-
-            // Discovered Bridges List
-            if (discoveredBridges.isNotEmpty()) {
+            } else {
                 Text(
                     text = "${discoveredBridges.size} Bridge${if (discoveredBridges.size != 1) "s" else ""} gefunden:",
                     style = MaterialTheme.typography.titleMedium,
@@ -546,6 +553,19 @@ private fun BridgeDiscoveryCard(
                         bridge = bridge,
                         onConnect = { onConnectToBridge(bridge) }
                     )
+                }
+
+                TextButton(
+                    onClick = onDiscoverBridges,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Erneut suchen")
                 }
             }
         }
@@ -690,10 +710,11 @@ private fun ConnectedFeaturesCard(
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "Erste Hue-Regel erstellen",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    // Ohne style-Override: titleMedium (16sp) machte die Beschriftung breiter als
+                    // den Knopf und trieb sie in die zweite Zeile. Die Standard-Button-Typografie
+                    // passt in eine Zeile - und der Knopf ist als einziger ganzbreiter Primär-
+                    // Knopf ohnehin schon deutlich genug hervorgehoben.
+                    Text("Erste Hue-Regel erstellen")
                 }
 
                 // Secondary Actions
@@ -701,20 +722,14 @@ private fun ConnectedFeaturesCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedButton(
+                    CompactOutlinedButton(
                         onClick = onNavigateToSettings,
+                        text = "Einstellungen",
+                        icon = Icons.Default.Settings,
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Einstellungen")
-                    }
+                    )
 
-                    OutlinedButton(
+                    CompactOutlinedButton(
                         onClick = {
                             // OPTIMIZATION: Manual health check + refresh lights
                             scope.launch {
@@ -722,16 +737,10 @@ private fun ConnectedFeaturesCard(
                             }
                             onTestConnection()
                         },
+                        text = "Test",
+                        icon = Icons.Default.Lightbulb,
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lightbulb,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Test")
-                    }
+                    )
                 }
             }
 

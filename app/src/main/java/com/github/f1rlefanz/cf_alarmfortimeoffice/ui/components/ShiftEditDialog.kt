@@ -220,9 +220,13 @@ fun ShiftEditDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // weight(1f): ohne das nimmt sich der Text bei großer Systemschrift die
+                            // ganze (ohnehin schmale) Dialogbreite und schiebt den Schalter aus dem
+                            // Bild - dieselbe Falle wie zuvor in den Hue-Karten.
                             Text(
                                 text = "Schichtdefinition aktiviert",
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
                             )
                             Switch(
                                 checked = isEnabled,

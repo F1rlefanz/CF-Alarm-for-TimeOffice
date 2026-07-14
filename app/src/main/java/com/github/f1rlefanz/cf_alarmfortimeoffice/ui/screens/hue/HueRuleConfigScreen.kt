@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -69,6 +69,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TimeReference
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
@@ -473,22 +474,56 @@ private fun RuleBasicInfoCard(
                 }
             )
             
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Regel aktivieren", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                    Text(
-                        "Regel wird automatisch ausgeführt, wenn Bedingungen erfüllt sind",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = isEnabled, onCheckedChange = onEnabledChange)
-            }
+            SwitchRow(
+                title = "Regel aktivieren",
+                description = "Regel wird automatisch ausgeführt, wenn Bedingungen erfüllt sind",
+                checked = isEnabled,
+                onCheckedChange = onEnabledChange
+            )
         }
+    }
+}
+
+/**
+ * Beschriftete Zeile mit Schalter rechts.
+ *
+ * WARUM ZENTRAL: Vorher stand an jeder dieser Stellen `Row(SpaceBetween) { Column { ... }; Switch }`
+ * — und der Column fehlte `weight(1f)`. Eine Row misst gewichtslose Kinder der Reihe nach mit dem
+ * verbleibenden Platz: der lange Beschreibungstext nahm sich die volle Kartenbreite, für den
+ * Schalter blieb nichts, und er wurde außerhalb der Karte abgesetzt — er klebte am Text und
+ * verschwand hinter dem Rand. Zwei Stellen hatten das mit `Modifier.width(240.dp)` bzw.
+ * `width(260.dp)` überdeckt; bei ~296dp Karteninnenbreite ragte besonders die 260er samt Schalter
+ * wieder heraus, und auf schmaleren Geräten oder bei großer Schrift bricht jede feste Breite.
+ *
+ * `weight(1f)` dreht die Reihenfolge um: der Schalter bekommt zuerst seine natürliche Breite, der
+ * Text den Rest. Das hält bei jeder Displaybreite und jeder Schriftgröße.
+ */
+@Composable
+private fun SwitchRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    titleStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge,
+    titleFontWeight: FontWeight = FontWeight.Medium
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        // spacedBy statt SpaceBetween: mit weight(1f) bleibt kein freier Platz mehr, den
+        // SpaceBetween verteilen könnte - der Abstand muss explizit her, sonst klebt der
+        // Schalter am Text.
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = titleStyle, fontWeight = titleFontWeight)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -758,25 +793,12 @@ private fun ActionConfigCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        if (targetOn) "Einschalten" else "Ausschalten",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        "Lichter ${if (targetOn) "einschalten" else "ausschalten"} bei Regelausführung",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = targetOn, onCheckedChange = onTargetOnChange)
-            }
+            SwitchRow(
+                title = if (targetOn) "Einschalten" else "Ausschalten",
+                description = "Lichter ${if (targetOn) "einschalten" else "ausschalten"} bei Regelausführung",
+                checked = targetOn,
+                onCheckedChange = onTargetOnChange
+            )
 
             if (targetOn) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -804,7 +826,11 @@ private fun ActionConfigCard(
 
                 // Color mode selector
                 Text("Farbe", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // FlowRow statt Row: in einer Row quetscht sich der letzte Chip in den Rest der
+                // Zeile, und passt sein Wort nicht hinein, wird es zerlegt ("Farb/e"). FlowRow
+                // schiebt ihn stattdessen in die nächste Zeile. Bei Standardschrift passen alle
+                // drei nebeneinander - es ändert sich also nur, was bei großer Schrift passiert.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = colorMode == ColorMode.NONE,
                         onClick = { onColorModeChange(ColorMode.NONE) },
@@ -840,16 +866,21 @@ private fun ActionConfigCard(
                         }
                     }
                     ColorMode.COLOR -> {
-                        COLOR_PRESETS.chunked(4).forEach { rowPresets ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                rowPresets.forEach { preset ->
-                                    FilterChip(
-                                        selected = colorPreset == preset,
-                                        onClick = { onColorPresetChange(preset) },
-                                        leadingIcon = { ColorSwatch(previewColorForPreset(preset), size = 16) },
-                                        label = { Text(presetLabel(preset)) }
-                                    )
-                                }
+                        // chunked(4) unterstellte, dass vier Farbchips nebeneinander passen. Bei
+                        // ~296dp Karteninnenbreite und Chips aus Farbpunkt + Wort ("Orange",
+                        // "Türkis") tun sie das nicht - die vierte Spalte lief über den Rand.
+                        // FlowRow bricht nach tatsächlichem Platz um statt nach fester Anzahl.
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            COLOR_PRESETS.forEach { preset ->
+                                FilterChip(
+                                    selected = colorPreset == preset,
+                                    onClick = { onColorPresetChange(preset) },
+                                    leadingIcon = { ColorSwatch(previewColorForPreset(preset), size = 16) },
+                                    label = { Text(presetLabel(preset)) }
+                                )
                             }
                         }
                     }
@@ -881,21 +912,12 @@ private fun AutoOffSection(
     onAutoOffEnabledChange: (Boolean) -> Unit,
     onAutoOffMinutesChange: (Int) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.width(240.dp)) {
-            Text("Automatisch ausschalten", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Text(
-                "Lichter nach einer Weile wieder ausschalten",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Switch(checked = autoOffEnabled, onCheckedChange = onAutoOffEnabledChange)
-    }
+    SwitchRow(
+        title = "Automatisch ausschalten",
+        description = "Lichter nach einer Weile wieder ausschalten",
+        checked = autoOffEnabled,
+        onCheckedChange = onAutoOffEnabledChange
+    )
     if (autoOffEnabled) {
         Text(
             "Ausschalten nach: $autoOffMinutes Minuten",
@@ -934,21 +956,16 @@ private fun SunriseConfigCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.width(260.dp)) {
-                    Text("Sunrise-Lichtwecker", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = enabled, onCheckedChange = onEnabledChange)
-            }
+            SwitchRow(
+                title = "Sunrise-Lichtwecker",
+                description = "Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.",
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+                // Diese Zeile ist zugleich die Überschrift ihrer Karte - deshalb kräftiger als
+                // die Schalter-Zeilen innerhalb einer Karte.
+                titleStyle = MaterialTheme.typography.titleMedium,
+                titleFontWeight = FontWeight.Bold
+            )
 
             if (enabled) {
                 // Gradient preview from start to end temperature
@@ -1003,7 +1020,7 @@ private fun SunriseConfigCard(
                 )
 
                 Text("Zeitpunkt", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = startBeforeAlarm,
                         onClick = { onStartBeforeAlarmChange(true) },
@@ -1065,12 +1082,20 @@ private fun RulePreviewCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Regel-Vorschau", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                
-                Button(
+                // weight(1f) auf die Überschrift, NICHT auf den Button: eine Row misst gewichtslose
+                // Kinder zuerst, der Button bekommt damit seine natürliche Breite und muss "Regel
+                // testen" nicht mehr umbrechen. Die Überschrift nimmt, was übrig bleibt.
+                Text(
+                    "Regel-Vorschau",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+
+                CompactButton(
                     onClick = {
                         // OPTIMIZATION: Manual health check before rule test
                         scope.launch {
@@ -1078,14 +1103,12 @@ private fun RulePreviewCard(
                         }
                         onTestRule()
                     },
-                    enabled = ruleName.isNotBlank() && 
-                            selectedShiftPattern.isNotBlank() && 
+                    text = "Regel testen",
+                    icon = Icons.Default.PlayArrow,
+                    enabled = ruleName.isNotBlank() &&
+                            selectedShiftPattern.isNotBlank() &&
                             (selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty())
-                ) {
-                    Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Regel testen")
-                }
+                )
             }
             
             if (ruleName.isNotBlank()) {

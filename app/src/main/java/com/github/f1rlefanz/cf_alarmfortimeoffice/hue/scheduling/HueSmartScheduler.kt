@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -93,6 +94,9 @@ class HueSmartScheduler private constructor() {
         private val PRE_ALARM_CHECK_WINDOW = 10.minutes
         private const val MAX_LOOKAHEAD_DAYS = 7
         private val ALARM_CHANGE_DEBOUNCE = 1500.milliseconds
+
+        /** Start-Backoff des Auto-Off-Retries; verdoppelt sich pro Fehlversuch. */
+        private const val AUTO_OFF_BACKOFF_MINUTES = 5L
     }
 
     private lateinit var workManager: WorkManager
@@ -406,12 +410,30 @@ class HueSmartScheduler private constructor() {
      * For each upcoming alarm whose shift has an enabled rule that switches lights ON with a
      * configured auto-off duration, an [AutoOffWorker] is scheduled at (alarmTime + duration).
      * Turning already-off lights off again is a harmless no-op, so a skipped alarm causes no harm.
+     *
+     * KEIN pauschales cancelAllWorkByTag(AUTO_OFF_WORK) mehr!
+     *
+     * Der frühere Ablauf loeschte ALLE Auto-Off-Jobs und legte danach nur fuer Alarme in der
+     * ZUKUNFT neue an. Ein Alarm, der gerade geklingelt hatte, lag damit in der Vergangenheit -
+     * sein noch ausstehender Auto-Off-Job wurde geloescht und nie wieder angelegt. Und genau
+     * DANN laeuft die Methode: der Maintenance-Sync raeumt den vergangenen Alarm weg,
+     * activeAlarms feuert, der Observer ruft hier rein. Folge: die Lampen gingen an und blieben
+     * fuer immer an - unabhaengig davon, ob die Bridge erreichbar war.
+     *
+     * Stattdessen: jeder Alarm bekommt einen stabilen, aus seiner ID abgeleiteten Work-Namen.
+     * ExistingWorkPolicy.REPLACE haelt ihn aktuell, solange der Alarm existiert; ein bereits
+     * gefeuerter Alarm wird schlicht nicht mehr angefasst und sein Auto-Off laeuft in Ruhe zu
+     * Ende.
+     *
+     * Verwaiste Jobs (Schicht nachtraeglich aus dem Kalender geloescht) werden bewusst NICHT
+     * abgeraeumt: sie feuern einmal, schalten bereits ausgeschaltete Lampen aus - ein
+     * harmloser No-op - und sind danach weg. Das ist deutlich billiger als eine
+     * Aufraeum-Buchhaltung, die einen Prozesstod ueberleben muesste, und kann im Gegensatz zu
+     * ihr keinen noch benoetigten Job erwischen.
      */
     private suspend fun scheduleAutoOffs() {
         val ruleUseCase = resolveHueRuleUseCase() ?: return
         val alarmUseCase = resolveAlarmUseCase() ?: return
-
-        workManager.cancelAllWorkByTag(AUTO_OFF_WORK)
 
         val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
             Logger.e(LogTags.HUE_BRIDGE, "Failed to load alarms for auto-off scheduling", error)
@@ -423,15 +445,20 @@ class HueSmartScheduler private constructor() {
 
         val upcoming = alarms
             .filter { it.isActive }
-            .map { it.shiftName to it.triggerTime.toLocalDateTime() }
-            .filter { it.second.isAfter(now) && it.second.isBefore(maxTime) }
-            .sortedBy { it.second }
+            .filter {
+                val t = it.triggerTime.toLocalDateTime()
+                t.isAfter(now) && t.isBefore(maxTime)
+            }
+            .sortedBy { it.triggerTime }
             .take(10)
 
         var scheduled = 0
-        upcoming.forEachIndexed { index, (shiftName, alarmTime) ->
+
+        upcoming.forEach { alarm ->
+            val shiftName = alarm.shiftName
+            val alarmTime = alarm.triggerTime.toLocalDateTime()
             val targets = ruleUseCase.getAutoOffActions(shiftName)
-            if (targets.isEmpty()) return@forEachIndexed
+            if (targets.isEmpty()) return@forEach
 
             // One worker per distinct delay (it switches off all targets sharing that delay).
             targets.groupBy { it.delayMinutes }.forEach { (delayMinutes, group) ->
@@ -442,17 +469,27 @@ class HueSmartScheduler private constructor() {
                 val lightIds = group.filter { !it.isGroup }.map { it.targetId }.distinct().toTypedArray()
                 val groupIds = group.filter { it.isGroup }.map { it.targetId }.distinct().toTypedArray()
 
+                // Stabiler Name aus der Alarm-ID (nicht aus dem Listen-Index!): ein Index
+                // verschiebt sich, sobald ein frueherer Alarm wegfaellt, und wuerde denselben
+                // Job unter neuem Namen ein zweites Mal anlegen.
+                val workName = "${AUTO_OFF_WORK}_${alarm.id}_$delayMinutes"
+
                 val workRequest = OneTimeWorkRequestBuilder<AutoOffWorker>()
                     .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
                     .setInputData(workDataOf("light_ids" to lightIds, "group_ids" to groupIds))
                     .addTag(AUTO_OFF_WORK)
+                    .setBackoffCriteria(
+                        BackoffPolicy.EXPONENTIAL,
+                        AUTO_OFF_BACKOFF_MINUTES,
+                        TimeUnit.MINUTES
+                    )
                     .setConstraints(Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build())
                     .build()
 
                 workManager.enqueueUniqueWork(
-                    "${AUTO_OFF_WORK}_${index}_$delayMinutes",
+                    workName,
                     ExistingWorkPolicy.REPLACE,
                     workRequest
                 )

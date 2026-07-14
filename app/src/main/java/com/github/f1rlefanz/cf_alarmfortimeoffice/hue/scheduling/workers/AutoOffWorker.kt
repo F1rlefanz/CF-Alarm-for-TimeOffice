@@ -37,9 +37,21 @@ class AutoOffWorker(
 
     companion object {
         /**
-         * Nach ~2 Stunden Rueckversuchen aufgeben. Ein Auto-Off, das einen halben Tag zu spaet
-         * kommt, ist keine Hilfe mehr, sondern eine Ueberraschung (Licht geht abends von selbst
-         * aus, waehrend jemand im Raum sitzt).
+         * Maximal 6 Versuche. Mit dem exponentiellen Backoff des Schedulers (Start 5min) liegen
+         * die Versuche bei 0, +5, +15, +35, +75, +155 Minuten - das Fenster ist also gut 2,5
+         * Stunden breit.
+         *
+         * Bewusst begrenzt: Ein Auto-Off, das einen halben Tag zu spaet kommt, ist keine Hilfe
+         * mehr, sondern eine Ueberraschung - das Licht ginge abends von selbst aus, waehrend
+         * jemand im Raum sitzt. 2,5 Stunden decken den realistischen Fall ab ("nach dem Wecken
+         * kurz weg, mittags zurueck") und vermeiden genau diesen Effekt.
+         *
+         * Warum die Netzwerk-Constraint das nicht loest: NetworkType.CONNECTED ist auch im
+         * Mobilfunk erfuellt, und selbst eine WLAN-Pruefung hilft nur bedingt - im Log vom
+         * 13.07. hing das Handy auf 10.0.9.10, also durchaus in EINEM WLAN, nur nicht im
+         * heimischen (Bridge: 192.168.178.24). "Bin ich im richtigen Netz?" laesst sich als
+         * WorkManager-Constraint nicht ausdruecken; nur der tatsaechliche Verbindungsversuch
+         * beantwortet das. Deshalb der Retry.
          */
         private const val MAX_ATTEMPTS = 6
     }

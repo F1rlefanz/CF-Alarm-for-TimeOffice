@@ -192,7 +192,16 @@ class AlarmMaintenanceService : Service() {
             } finally {
                 // Always schedule next run and stop service
                 scheduleNext(applicationContext)
-                stopSelf()
+
+                // stopSelf(startId) statt stopSelf(): Android stoppt damit nur, wenn seit diesem
+                // Start kein weiterer kam. Wird der Service zweimal gestartet (z.B. der 6h-Alarm
+                // faellt mit einem Start nach der Autorisierung zusammen), laufen zwei Zyklen auf
+                // demselben serviceScope. Das blanke stopSelf() des ERSTEN, der fertig wurde,
+                // loeste onDestroy() -> serviceScope.cancel() aus und riss den zweiten mitten in
+                // der Arbeit ab (JobCancellationException, Log 14.07. 22:07:30). Fuer eine
+                // Wecker-App ist das gefaehrlich: der abgeschnittene Zyklus koennte gerade
+                // Alarme angelegt haben. Mit startId raeumt erst der letzte Zyklus den Service ab.
+                stopSelf(startId)
             }
         }
         

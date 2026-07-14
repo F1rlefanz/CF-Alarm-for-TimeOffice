@@ -111,15 +111,27 @@ class AuthUseCase @Inject constructor(
         SafeExecutor.safeExecute("AuthUseCase.requestCalendarAuthorizationWithActivity") {
             Logger.business(LogTags.AUTH, "🔐 FIXED-TOKEN: Requesting Calendar authorization with activity context")
             
+            // onResult wird HIER NICHT gerufen - authorize() besitzt den Callback und feuert ihn
+            // auf jedem seiner Wege genau einmal:
+            //   Erfolg sofort        -> authorize() ruft onResult(true)
+            //   Zustimmungsdialog    -> handlePermissionResult() ruft ihn nach dem Ergebnis
+            //   Fehler               -> authorize()s catch ruft onResult(false)
+            //
+            // Vorher stand hier ein zweites onResult(true)/onResult(false). Der Callback lief
+            // dadurch bei sofortigem Erfolg DOPPELT, und mit ihm alles, was daran haengt: der
+            // AlarmMaintenanceService wurde zweimal gestartet, zwei Wartungszyklen teilten sich
+            // einen CoroutineScope, und der erste, der fertig wurde, riss ueber stopSelf() ->
+            // onDestroy() -> scope.cancel() den anderen mitten in der Arbeit ab
+            // (JobCancellationException, Log vom 14.07. 22:07:30). Fuer eine Wecker-App ist das
+            // gefaehrlich: ein so abgeschnittener Zyklus koennte gerade Alarme anlegen.
             val authResult = oauth2TokenManager.authorize(
                 userEmail,
                 activity,
                 onResult
             )
-            
+
             if (authResult.isSuccess) {
                 Logger.business(LogTags.AUTH, "✅ FIXED-TOKEN: Calendar authorization successful")
-                onResult(true)
             } else {
                 val error = authResult.exceptionOrNull()
                 when (error) {
@@ -129,7 +141,8 @@ class AuthUseCase @Inject constructor(
                     }
                     else -> {
                         Logger.e(LogTags.AUTH, "❌ FIXED-TOKEN: Calendar authorization failed", error)
-                        onResult(false)
+                        // Der Wurf treibt das Result-Failure, das AuthViewModel in seinem
+                        // fold(onFailure) auswertet und als Fehlermeldung zeigt.
                         throw Exception(error?.message ?: "Authorization failed")
                     }
                 }

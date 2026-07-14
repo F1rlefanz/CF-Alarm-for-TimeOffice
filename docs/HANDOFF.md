@@ -3,7 +3,12 @@
 **Lebendes Dokument.** Erledigtes wird gestrichen, nicht abgehakt — was hier steht, ist offen.
 Die Historie steht im Git-Log, nicht hier.
 
-**Stand:** 14.07.2026 · `main` = **v1.10.3 / versionCode 46** · alles gemerged und gepusht.
+**Stand:** 14.07.2026 · `main` = **v1.10.4 / versionCode 47** · alles gemerged und gepusht.
+
+> **Ungeprüft in v1.10.3/1.10.4:** der doppelte Auth-Callback (braucht ein Abmelden/Anmelden
+> im Log: „Calendar authorization successful" muss **einmal** statt zweimal stehen, keine
+> `JobCancellationException`), die einmalige Bridge-Init (beim Start nur **ein**
+> „BRIDGE-MANAGER: Initializing", keine Job-ID-Kaskade) und die Regel-Validierung.
 
 ---
 
@@ -44,18 +49,17 @@ die ganze Fehlerklasse „Handy nicht im Heim-WLAN" für den Auto-Off.
 Nicht bewusst hinter den Donnerstag-Test zurückgestellt — kann davor angegangen werden, wenn
 sonst nichts drängt.
 
-### 3. Hue-Regel wird trotz `INVALID` gespeichert
-
-Die Validierung meldet `INVALID (1 errors)`, die Regel landet trotzdem im Speicher (Log 14.07.,
-14:56:03). Ort: `HueRuleUseCase` / `HueViewModel`. Ungeklärt, ob die Validierung oder das
-Speichern das Problem ist — erst nachsehen, dann urteilen.
-
 ---
 
 ## Bekannt und so gewollt
 
 - **`Logger.business()` loggt auf INFO** → PII (E-Mail, Kalendertitel) landet in Debug-Builds im
   Datei-Log (`Logger.kt:116`). Bewusst: Release-Logs enthalten nur WARN+.
+- **Regel speichern navigiert sofort weg** (`HueRuleConfigScreen`: `createRule()` ist
+  fire-and-forget, `onSaveComplete()` folgt unmittelbar). Ein Fehler landet dadurch erst auf dem
+  `HueSettingsScreen` statt im Formular. Seit v1.10.4 kann die Validierung tatsächlich ablehnen —
+  bisher nur theoretisch, weil die UI-Validierung dieselben Bedingungen vorher abfängt. Wird das
+  je unangenehm: auf das Result warten, bevor navigiert wird.
 
 ---
 
@@ -79,6 +83,19 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **`AlarmMaintenanceService`: `stopSelf(startId)`, niemals blankes `stopSelf()`.** Zwei
   überlappende Starts teilen sich `serviceScope`; der Erste, der fertig wird, löst sonst
   `onDestroy()` → `scope.cancel()` aus und reißt den anderen mitten in der Arbeit ab.
+
+### Hue
+
+- **`HueBridgeConnectionManager.initialize()` muss idempotent bleiben.** Zwei Aufrufer ohne
+  feststehende Reihenfolge: `CFAlarmApplication.initializeApp()` (asynchron im applicationScope)
+  und `HueBridgeRepository.init` (Hauptthread, sobald Hilt das HueViewModel baut). Ohne Wächter
+  lief alles doppelt und der SmartScheduler verwarf seine gerade angelegten WorkManager-Jobs.
+- **`Result<RuleValidationResult>` hat zwei Ebenen.** `isFailure` heißt „die Prüfung ist
+  gescheitert", **nicht** „die Regel ist ungültig" — das steht innen in `isValid`. Beides
+  verwechselt hieß: ungültige Regeln wurden gespeichert. Siehe `requireValidRule`.
+- **`MIN_RULE_NAME_LENGTH = 1`, nicht mehr.** Die UI verlangt nur `isNotBlank()`; eine reale Regel
+  heißt „FS". Eine höhere Schwelle macht bestehende Regeln unbearbeitbar (`updateRule` validiert
+  ebenfalls).
 
 ### Auth
 

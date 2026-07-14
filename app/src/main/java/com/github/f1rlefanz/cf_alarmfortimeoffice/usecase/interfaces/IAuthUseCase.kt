@@ -32,11 +32,15 @@ interface IAuthUseCase {
     suspend fun updateAuthData(authData: AuthData): Result<Unit>
     
     /**
-     * Löscht alle Authentifizierungsdaten (Logout)
-     * 
+     * Meldet den Nutzer ab: verwirft die Auth-Daten UND das Kalender-Token.
+     *
+     * HIESS FRÜHER clearAuthData() und räumte nur die Auth-Daten ab — das Kalender-Token
+     * überlebte die Abmeldung. Der Name ist jetzt der Wahrheit angepasst: Abmelden heißt, dass
+     * nichts zurückbleibt, womit die App weiter auf den Kalender zugreifen könnte.
+     *
      * @return Result mit Erfolgs- oder Fehlerinformation
      */
-    suspend fun clearAuthData(): Result<Unit>
+    suspend fun signOut(): Result<Unit>
     
     /**
      * Prüft ob gültige Authentifizierungsdaten vorhanden sind

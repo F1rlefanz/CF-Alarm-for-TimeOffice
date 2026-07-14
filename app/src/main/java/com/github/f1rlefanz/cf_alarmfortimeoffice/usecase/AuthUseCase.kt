@@ -149,10 +149,33 @@ class AuthUseCase @Inject constructor(
         }
     }
     
-    override suspend fun clearAuthData(): Result<Unit> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("AuthUseCase.clearAuthData") {
+    /**
+     * Meldet ab und lässt nichts zurück, womit die App weiter auf den Kalender käme.
+     *
+     * WAS VORHER FEHLTE: Diese Methode (damals clearAuthData) räumte nur den
+     * authDataStoreRepository ab, und CredentialAuthManager.signOutLocally() ist eine reine
+     * Log-Zeile. Das OAuth-Token überlebte die Abmeldung also im verschlüsselten Token-DataStore
+     * — und im GMS-Cache, der ohnehin außerhalb des App-Speichers liegt. Zwei Folgen:
+     * der Maintenance-Service konnte weiter den Kalender des abgemeldeten Kontos lesen, und wer
+     * sich anschließend mit einem ANDEREN Google-Konto anmeldete, wurde von getValidToken() bis
+     * zur ersten Autorisierung noch aus dem Token des alten Kontos bedient.
+     *
+     * REIHENFOLGE: invalidate() zuerst — es braucht den noch gespeicherten Access-Token, um
+     * damit GoogleAuthUtil.clearToken() zu rufen. Nach clearAuthData() wäre der Token zwar noch
+     * in seinem eigenen Store, aber die Reihenfolge so herum ist die, die auch dann hält, wenn
+     * jemand die Stores später zusammenlegt.
+     *
+     * Scheitert das Verwerfen (z.B. kein Netz für den GMS-Teil), wird das nur geloggt: die
+     * Abmeldung MUSS trotzdem durchlaufen. Ein Nutzer, der auf "Abmelden" tippt, darf nicht
+     * angemeldet bleiben, weil ein Cache-Aufruf schiefging.
+     */
+    override suspend fun signOut(): Result<Unit> = withContext(Dispatchers.IO) {
+        SafeExecutor.safeExecute("AuthUseCase.signOut") {
+            oauth2TokenManager.invalidate().onFailure { error ->
+                Logger.w(LogTags.AUTH, "⚠️ Kalender-Token beim Abmelden nicht sauber verworfen", error)
+            }
             authDataStoreRepository.clearAuthData().getOrThrow()
-            Logger.business(LogTags.AUTH, "Auth data cleared (logout)")
+            Logger.business(LogTags.AUTH, "Abgemeldet - Auth-Daten und Kalender-Token verworfen")
         }
     }
     

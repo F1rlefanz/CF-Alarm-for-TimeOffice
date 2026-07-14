@@ -368,9 +368,23 @@ class CalendarRepository @Inject constructor(
                     e.statusCode == 403 ->
                         // Echtes Berechtigungsproblem (z.B. Kalender nicht freigegeben).
                         // Hier wuerde eine Neuanmeldung nichts bringen.
-                        AppError.PermissionError("Insufficient permissions for Google Calendar")
+                        //
+                        // message= NAMENTLICH setzen: der erste Parameter von PermissionError
+                        // heisst `permission` (erwartet einen android.permission.*-Namen).
+                        // Positional gebunden landete der Text dort, und ErrorHandler baute
+                        // daraus "Berechtigung 'Insufficient permissions for Google Calendar'
+                        // verweigert" - genau der Kauderwelsch aus dem Log vom 14.07.
+                        AppError.PermissionError(
+                            message = "Kein Zugriff auf diesen Google-Kalender"
+                        )
 
-                    e.statusCode == 404 -> AppError.NetworkError("Calendar not found")
+                    // 404 ist KEIN Netzwerkfehler: die Calendar-API liefert das haeufig fuer
+                    // Kalender, die geloescht oder nicht mehr freigegeben sind. Als
+                    // NetworkError gemappt behauptete die App "Keine Internetverbindung",
+                    // waehrend das Netz einwandfrei lief.
+                    e.statusCode == 404 -> AppError.PermissionError(
+                        message = "Kalender nicht gefunden oder nicht mehr freigegeben"
+                    )
                     else -> AppError.NetworkError("Google Calendar API error: ${e.statusMessage}")
                 }
             }

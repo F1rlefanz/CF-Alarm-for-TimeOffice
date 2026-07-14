@@ -404,17 +404,37 @@ class CalendarUseCase @Inject constructor(
             // Process calendars and collect events until we have enough or reach end
             for (calendarId in calendarIds) {
                 // Check cache first for total count estimation
-                val cachedEvents = calendarRepository.getCalendarEventsWithCache(
+                val eventsResult = calendarRepository.getCalendarEventsWithCache(
                     accessToken = accessToken,
                     calendarId = calendarId,
                     forceRefresh = false
-                ).getOrElse { emptyList() }
-                
+                )
+
+                // KEIN getOrElse { emptyList() } mehr!
+                //
+                // Das verschluckte JEDEN Fehler - auch 401 (totes Token) und 403
+                // (ACCESS_TOKEN_SCOPE_INSUFFICIENT) - und machte daraus stillschweigend
+                // "0 Events, kein Fehler". Ausgerechnet DIESER Pfad ist der Normalfall:
+                // CalendarViewModel.observeCalendarSelection ruft
+                // loadEventsForSelectedCalendars(loadAll = false) bei jedem App-Start mit
+                // ausgewaehlten Kalendern, und das landet hier. Die Aufraeumlogik in
+                // getAvailableCalendars/getCalendarEventsWithCache lief damit am
+                // meistbenutzten Pfad vorbei: das tote Token blieb liegen, der Nutzer sah
+                // eine leere Schichtliste ohne jeden Hinweis - und bekam keine Wecker.
+                //
+                // Fuer eine Wecker-App ist "leer" die gefaehrlichste Luege: sie ist von
+                // "du hast frei" nicht zu unterscheiden.
+                val cachedEvents = eventsResult.getOrElse { error ->
+                    Logger.e(LogTags.CALENDAR_API, "Lazy load failed for calendar ${calendarId.take(8)}...", error)
+                    invalidateTokenIfRejectedByGoogle(error)
+                    throw error
+                }
+
                 totalEventsAcrossCalendars += cachedEvents.size
-                
+
                 // Add to our collection (we'll do offset/limit at the end for now)
                 allEvents.addAll(cachedEvents)
-                
+
                 Logger.d(LogTags.CALENDAR_API, "Added ${cachedEvents.size} events from calendar ${calendarId.take(8)}...")
             }
             

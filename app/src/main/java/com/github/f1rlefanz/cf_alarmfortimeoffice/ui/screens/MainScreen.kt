@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 // PHASE 2 CLEANUP: Removed unused ShiftUiState and flowOf imports
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
@@ -126,6 +127,48 @@ fun MainScreen(
     // Removed daysAhead configuration effect as per PROJEKT-BRIEFING 4.0
     // Events are now loaded with fixed 14 days lookahead
     // This simplifies the architecture and prevents reactivity loops
+
+    // Onboarding-Abschluss an genau einer Stelle: Wartungskette anstossen, dann Home. Sowohl
+    // "Verstanden" als auch der Zurueck-Weg muessen das tun - wer hier nur navigiert, laesst
+    // einen Nutzer ohne 6h-Wartung zurueck und damit ohne neu angelegte Wecker.
+    // scheduleNext() ist idempotent (ein Request-Code, ein PendingIntent), ein zweiter Aufruf
+    // ersetzt den bestehenden Alarm also nur.
+    val finishOnboarding: () -> Unit = {
+        Logger.business(LogTags.NAVIGATION, "OEM Warning acknowledged -> Main")
+        com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService.scheduleNext(
+            context
+        )
+        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+    }
+
+    // ANDROID-ZURUECK: Die App navigiert ueber einen eigenen NavigationState, nicht ueber
+    // Navigation-Compose - es gibt also keinen Backstack, der Zurueck von allein eine Ebene
+    // hoch fuehren wuerde. Ohne BackHandler landet jeder Druck beim Default der Activity und
+    // beendet die App: aus "Kalender-Events" sprang der Nutzer direkt auf den Android-Home-
+    // screen. Wer einen neuen NavigationState ergaenzt, muss ihn hier mitbedenken; der
+    // else-Zweig faengt jeden Unterscreen ab, die Sonderfaelle stehen davor.
+    //
+    // Auf dem Home-Tab bleibt der Handler bewusst AUS: dort ist Zurueck tatsaechlich "App
+    // verlassen", und das erledigt der Systemdefault inkl. Predictive-Back-Animation besser
+    // als jeder Nachbau.
+    val onHomeTab = (navigationState as? NavigationState.MainContent)?.selectedTab == MainTab.HOME
+    BackHandler(enabled = !onHomeTab) {
+        when (navigationState) {
+            // Ein Nicht-Home-Tab ist eine Ebene tiefer: Zurueck fuehrt auf Home, nicht aus der
+            // App (Android-Konvention fuer Bottom-Navigation).
+            is NavigationState.MainContent -> navigationViewModel.changeTab(MainTab.HOME)
+
+            // Zurueck heisst hier dasselbe wie "Spaeter": ein blosses navigateBackToMain()
+            // wuerde handleAuthenticationSuccess() sofort wieder hierher schicken - Zurueck
+            // saehe aus, als passiere nichts.
+            is NavigationState.BatteryExemption -> navigationViewModel.dismissBatteryPrompt()
+
+            // Wie "Verstanden" - siehe finishOnboarding.
+            is NavigationState.OEMWarning -> finishOnboarding()
+
+            else -> navigationViewModel.navigateBackToMain()
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -288,14 +331,7 @@ fun MainScreen(
 
                 OEMWarningScreen(
                     oemType = oemWarningState.oemType,
-                    onComplete = {
-                        Logger.business(LogTags.NAVIGATION, "OEM Warning acknowledged -> Main")
-                        // Initialize maintenance service after successful onboarding
-                        com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService.scheduleNext(
-                            context
-                        )
-                        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-                    }
+                    onComplete = finishOnboarding
                 )
             }
 

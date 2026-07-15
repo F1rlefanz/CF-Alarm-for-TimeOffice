@@ -369,6 +369,23 @@ class HueBridgeConnectionManager private constructor(
     }
     
     /**
+     * Ist ueberhaupt eine Bridge eingerichtet — unabhaengig davon, ob sie GERADE erreichbar ist?
+     *
+     * Liest den PERSISTIERTEN Wert, NICHT [currentConnectionState]: Der In-Memory-Zustand faellt
+     * bei einem fehlgeschlagenen Health-Check auf ERROR, und [getCurrentConnectionInfo] liefert
+     * dann (null, null). Eine eingerichtete, nur gerade nicht erreichbare Bridge waere davon
+     * nicht zu unterscheiden — und genau dann muessen die Pre-Alarm-Health-Checks weiterlaufen,
+     * denn sie sind der Weg zurueck. "Eingerichtet" und "verbunden" sind zwei Fragen.
+     *
+     * Genutzt vom [HueSmartScheduler], um gar nicht erst zu planen, was ohne Bridge nur
+     * scheitern kann.
+     */
+    suspend fun hasStoredBridge(): Boolean {
+        val dataStore = resolveHueDataStore() ?: return false
+        return dataStore.data.first()[KEY_BRIDGE_IP] != null
+    }
+
+    /**
      * OPTIMIZATION: App lifecycle awareness
      */
     fun onAppForeground() {

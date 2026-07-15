@@ -67,14 +67,22 @@ interface IHueRuleUseCase {
      * Lead time in minutes for pre-alarm sunrise: the longest duration among enabled
      * "start before alarm" sunrise rules matching [shiftName], or null if none apply.
      * Used by the scheduler to decide how early to start the ramp.
+     *
+     * Nimmt die Regeln als Parameter und liest NICHT selbst: Der Aufrufer steht in einer
+     * Schleife ueber die Alarme, ein Read pro Alarm waere ein vollstaendiger DataStore-Read
+     * je Durchgang (real: 8 × "Retrieved 0 schedule rules" bei 4 Alarmen). Einmal laden,
+     * durchreichen — siehe [getAllRules].
      */
-    suspend fun getPreAlarmSunriseLeadMinutes(shiftName: String): Int?
+    fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int?
 
     /**
      * Auto-off targets for a shift: lights/groups that an enabled rule switches ON with a
      * configured auto-off duration. Used by the scheduler to turn them off again afterwards.
+     *
+     * Regeln als Parameter, nicht selbst geladen — Begruendung siehe
+     * [getPreAlarmSunriseLeadMinutes].
      */
-    suspend fun getAutoOffActions(shiftName: String): List<AutoOffTarget>
+    fun getAutoOffActions(rules: List<HueSchedule>, shiftName: String): List<AutoOffTarget>
     
     /**
      * Validate rule configuration

@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.DailySchedulePlanningWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.GenericHealthCheckWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.PreAlarmHealthCheckWorker
@@ -150,6 +151,25 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
+     * Ist eine Bridge eingerichtet? Ohne sie plant [calculateAndScheduleNextHealthChecks]
+     * gar nichts erst — Begruendung dort.
+     *
+     * Der Umweg ueber getInstance() statt einer Konstruktor-Abhaengigkeit ist Absicht: Der
+     * [HueBridgeConnectionManager] haelt seinerseits diesen Scheduler (lazy). Der Aufruf hier
+     * passiert ausschliesslich asynchron, lange nachdem beide Singletons stehen — dieselbe
+     * Zugriffsart, die auch die Worker schon nutzen.
+     */
+    private suspend fun isBridgeConfigured(): Boolean {
+        if (!::appContext.isInitialized) return false
+        return try {
+            HueBridgeConnectionManager.getInstance(appContext).hasStoredBridge()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to check for a stored bridge", e)
+            false
+        }
+    }
+
+    /**
      * Resolve the Hilt-managed Hue rule use case via EntryPoint (for sunrise scheduling).
      */
     private fun resolveHueRuleUseCase(): IHueRuleUseCase? {
@@ -223,6 +243,26 @@ class HueSmartScheduler private constructor() {
      */
     suspend fun calculateAndScheduleNextHealthChecks() = withContext(Dispatchers.IO) {
         Logger.d(LogTags.HUE_BRIDGE, "🔮 SMART-SCHEDULER: Calculating next alarm times for health check scheduling")
+
+        // Ohne eingerichtete Bridge ist JEDER Job hier sinnlos: Health-Checks, Sonnenaufgang und
+        // Auto-Off sprechen alle die Bridge an. Frueher lief das trotzdem los und der
+        // Fallback-Health-Check meldete bei jedem Start "⚠️ GENERIC-WORKER: Fallback health check
+        // failed" — ein WARN fuer einen Normalzustand, das in Release-Logs (nur WARN+) echte
+        // Warnungen zudeckt. Ursache: forceHealthCheck() gibt fuer "keine Bridge eingerichtet" und
+        // "Bridge nicht erreichbar" dasselbe false zurueck.
+        //
+        // hasStoredBridge() statt getCurrentConnectionInfo(): siehe dort — "eingerichtet" darf
+        // nicht an einem gescheiterten Health-Check haengen.
+        if (!isBridgeConfigured()) {
+            // Nicht nur "nichts neu planen", sondern auch abraeumen: WorkManager-Jobs ueberleben
+            // das App-Update. Ein Fallback-Check, den eine fruehere Version ohne diesen Waechter
+            // angelegt hat, liefe sonst ewig alle 6h weiter ins Leere - der Log-Laerm waere trotz
+            // Fix noch da.
+            workManager.cancelUniqueWork(GENERIC_HEALTH_CHECK_WORK)
+            workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
+            Logger.d(LogTags.HUE_BRIDGE, "🌉 SMART-SCHEDULER: Keine Bridge eingerichtet - nichts zu planen")
+            return@withContext
+        }
 
         try {
             // Keep pre-alarm sunrise ramps and auto-off jobs in sync with the real alarms
@@ -372,6 +412,18 @@ class HueSmartScheduler private constructor() {
         // also catches indexed entries from a prior, larger alarm set).
         workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
 
+        // Regeln EINMAL laden. Frueher las getPreAlarmSunriseLeadMinutes() selbst und stand in
+        // der Schleife unten -> ein vollstaendiger DataStore-Read PRO ALARM. Zusammen mit
+        // scheduleAutoOffs() waren das 2×N Reads pro Durchgang (Log: 8 × "Retrieved 0 schedule
+        // rules" bei 4 Alarmen).
+        //
+        // NACH dem cancel: Scheitert das Laden, bleibt es beim alten Verhalten (abgeraeumt, nichts
+        // neu geplant) statt verwaiste Jobs stehenzulassen.
+        val rules = ruleUseCase.getAllRules().getOrElse { error ->
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to load Hue rules for sunrise scheduling", error)
+            return
+        }
+
         val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
             Logger.e(LogTags.HUE_BRIDGE, "Failed to load alarms for sunrise scheduling", error)
             return
@@ -389,7 +441,7 @@ class HueSmartScheduler private constructor() {
 
         var scheduled = 0
         upcoming.forEachIndexed { index, (shiftName, alarmTime) ->
-            val leadMinutes = ruleUseCase.getPreAlarmSunriseLeadMinutes(shiftName) ?: return@forEachIndexed
+            val leadMinutes = ruleUseCase.getPreAlarmSunriseLeadMinutes(rules, shiftName) ?: return@forEachIndexed
             val sunriseStart = alarmTime.minusMinutes(leadMinutes.toLong())
 
             if (sunriseStart.isBefore(now)) {
@@ -453,6 +505,12 @@ class HueSmartScheduler private constructor() {
         val ruleUseCase = resolveHueRuleUseCase() ?: return
         val alarmUseCase = resolveAlarmUseCase() ?: return
 
+        // Regeln EINMAL laden statt einmal pro Alarm - Begruendung siehe scheduleSunriseStarts().
+        val rules = ruleUseCase.getAllRules().getOrElse { error ->
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to load Hue rules for auto-off scheduling", error)
+            return
+        }
+
         val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
             Logger.e(LogTags.HUE_BRIDGE, "Failed to load alarms for auto-off scheduling", error)
             return
@@ -475,7 +533,7 @@ class HueSmartScheduler private constructor() {
         upcoming.forEach { alarm ->
             val shiftName = alarm.shiftName
             val alarmTime = alarm.triggerTime.toLocalDateTime()
-            val targets = ruleUseCase.getAutoOffActions(shiftName)
+            val targets = ruleUseCase.getAutoOffActions(rules, shiftName)
             if (targets.isEmpty()) return@forEach
 
             // One worker per distinct delay (it switches off all targets sharing that delay).

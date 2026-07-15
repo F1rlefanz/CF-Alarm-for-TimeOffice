@@ -264,7 +264,11 @@ class HueRuleUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "🌅 Executing PRE-ALARM sunrise ramps for shift: $shiftName")
 
         return try {
-            val sunriseRules = matchingPreAlarmSunriseRules(shiftName)
+            val rules = getAllRules().getOrElse { error ->
+                Logger.e(LogTags.HUE_USECASE, "Failed to load rules for pre-alarm sunrise", error)
+                return Result.failure(error)
+            }
+            val sunriseRules = matchingPreAlarmSunriseRules(rules, shiftName)
 
             val errors = mutableListOf<String>()
             var attempted = 0
@@ -294,9 +298,9 @@ class HueRuleUseCase @Inject constructor(
         }
     }
 
-    override suspend fun getPreAlarmSunriseLeadMinutes(shiftName: String): Int? {
+    override fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int? {
         return try {
-            matchingPreAlarmSunriseRules(shiftName)
+            matchingPreAlarmSunriseRules(rules, shiftName)
                 .mapNotNull { it.sunrise?.durationMinutes }
                 .maxOrNull()
         } catch (e: Exception) {
@@ -305,13 +309,9 @@ class HueRuleUseCase @Inject constructor(
         }
     }
 
-    override suspend fun getAutoOffActions(shiftName: String): List<AutoOffTarget> {
+    override fun getAutoOffActions(rules: List<HueSchedule>, shiftName: String): List<AutoOffTarget> {
         return try {
-            val all = getAllRules().getOrElse { error ->
-                Logger.e(LogTags.HUE_USECASE, "Failed to load rules for auto-off", error)
-                return emptyList()
-            }
-            all.asSequence()
+            rules.asSequence()
                 .filter { rule ->
                     // UX FIX (D): sunrise rules can ALSO configure auto-off now (they reach
                     // their own bright end state via the ramp, then this schedules the
@@ -347,12 +347,8 @@ class HueRuleUseCase @Inject constructor(
      * Enabled "start before alarm" sunrise rules whose shift pattern matches [shiftName]
      * (or the universal "ALL" pattern).
      */
-    private suspend fun matchingPreAlarmSunriseRules(shiftName: String): List<HueSchedule> {
-        val all = getAllRules().getOrElse { error ->
-            Logger.e(LogTags.HUE_USECASE, "Failed to load rules for pre-alarm sunrise", error)
-            return emptyList()
-        }
-        return all.filter { rule ->
+    private fun matchingPreAlarmSunriseRules(rules: List<HueSchedule>, shiftName: String): List<HueSchedule> {
+        return rules.filter { rule ->
             val sunrise = rule.sunrise
             rule.enabled &&
                 sunrise != null &&

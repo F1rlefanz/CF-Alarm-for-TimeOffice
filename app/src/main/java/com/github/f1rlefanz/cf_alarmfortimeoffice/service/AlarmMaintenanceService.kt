@@ -91,7 +91,14 @@ class AlarmMaintenanceService : Service() {
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "alarm_maintenance"
         private const val NOTIFICATION_ID = 1001
-        private const val MAINTENANCE_ALARM_REQUEST_CODE = 9999
+
+        /**
+         * Request-Code der 6h-Wartungskette. EINE Kette, EIN Slot — siehe [scheduleNext].
+         *
+         * 0 ist der Wert, den BootReceiver, BackgroundServiceManager und MainScreen schon immer
+         * benutzt haben; die zweite Kette lief auf 9999 und ist weg.
+         */
+        private const val MAINTENANCE_ALARM_REQUEST_CODE = 0
         private const val MAINTENANCE_INTERVAL_HOURS = 6L
         private const val MIN_BUFFER_DAYS = 7
 
@@ -139,29 +146,62 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Schedules next maintenance run via AlarmManager
+         * Stellt den naechsten Wartungslauf (+6h) — der EINZIGE Planer der Kette.
+         *
+         * Frueher gab es einen zweiten: die Instanzmethode scheduleNextAlarm() stellte denselben
+         * Alarm noch einmal, nur mit Request-Code 9999 statt 0. Verschiedene Request-Codes heissen
+         * verschiedene PendingIntents, also ZWEI unabhaengige AlarmManager-Eintraege. Da der
+         * finally-Block von [onStartCommand] ohnehin immer hier landet, plante jeder erfolgreiche
+         * Lauf beide — Ergebnis: dauerhaft zwei Wartungszyklen alle 6h, im Abstand von
+         * Millisekunden. Doppelte Google-Kalender-Abfragen, doppelte Arbeit, und genau die zwei
+         * ueberlappenden Starts, gegen die stopSelf(startId) haerten musste.
+         *
+         * Die Pruefung auf canScheduleExactAlarms() stammt aus der geloeschten Methode und bleibt:
+         * setExactAndAllowWhileIdle() wirft eine SecurityException, wenn die Berechtigung fehlt.
+         * Ab API 33 traegt die App USE_EXACT_ALARM (bei Installation erteilt, nicht entziehbar),
+         * auf 31/32 greift nur SCHEDULE_EXACT_ALARM — und das darf der Nutzer abschalten. Vorher
+         * stand hier ein ungeprueftes setExactAndAllowWhileIdle().
          */
         fun scheduleNext(context: Context) {
             val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
-            
-            val triggerTime = System.currentTimeMillis() + 
+
+            val triggerTime = System.currentTimeMillis() +
                 TimeUnit.HOURS.toMillis(MAINTENANCE_INTERVAL_HOURS)
-            
+
             val intent = Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
-                0,
+                MAINTENANCE_ALARM_REQUEST_CODE,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            
-            // Use setExactAndAllowWhileIdle for guaranteed execution
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerTime,
-                pendingIntent
-            )
-            
+
+            // Explizite SDK_INT-Verzweigung (nicht als ||-Kurzschluss): minSdk ist 26,
+            // canScheduleExactAlarms() gibt es erst ab 31 - diese Form versteht der Lint sicher.
+            val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                alarmManager.canScheduleExactAlarms()
+            } else {
+                true
+            }
+
+            if (canBeExact) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            } else {
+                Logger.w(
+                    LogTags.MAINTENANCE,
+                    "Keine Berechtigung fuer exakte Alarme - Wartung laeuft ungenau (setAndAllowWhileIdle)"
+                )
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            }
+
             Logger.business(
                 LogTags.MAINTENANCE,
                 "⏰ Next maintenance scheduled for ${Date(triggerTime)}"
@@ -316,7 +356,6 @@ class AlarmMaintenanceService : Service() {
         
         if (eventsResult.isFailure) {
             Logger.e(LogTags.MAINTENANCE, "Event loading failed", eventsResult.exceptionOrNull())
-            scheduleNextAlarm()
             return
         }
         
@@ -379,53 +418,9 @@ class AlarmMaintenanceService : Service() {
                 "✅ Maintenance completed: ${syncedAlarms.size} alarms in sync in ${duration}ms"
             )
             saveMaintenanceTime()
-            scheduleNextAlarm()
         } else {
             Logger.e(LogTags.MAINTENANCE, "Alarm sync failed", syncResult.exceptionOrNull())
-            scheduleNextAlarm()
         }
-    }
-    
-    /**
-     * Schedules the next maintenance run in 6 hours
-     */
-    private fun scheduleNextAlarm() {
-        val context = applicationContext
-        val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
-        
-        val triggerTime = System.currentTimeMillis() + (6 * 60 * 60 * 1000L) // 6 hours
-        
-        val intent = Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            MAINTENANCE_ALARM_REQUEST_CODE,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
-            }
-        } else {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerTime,
-                pendingIntent
-            )
-        }
-        
-        Logger.d(LogTags.MAINTENANCE, "Next maintenance scheduled for ${Date(triggerTime)}")
     }
     
     /**

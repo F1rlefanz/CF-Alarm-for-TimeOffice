@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Enhanced UseCase for Hue Light operations
@@ -41,11 +42,16 @@ class HueLightUseCase @Inject constructor(
 ) : IHueLightUseCaseAdvanced {
     
     /**
-     * Scope for the auto-revert timer in [executeActionsWithAutoRevert]. Deliberately separate
-     * from any caller's (e.g. ViewModel) scope so the scheduled OFF still fires even if the
-     * screen that triggered the preview is left before the timer elapses.
+     * Scope fuer die nachgelagerten Schritte, die von selbst passieren muessen: das Auto-Aus
+     * der Vorschau ([executeActionsWithAutoRevert]) und das Beenden des Blinkens
+     * ([scheduleFlashStop]).
+     *
+     * Bewusst getrennt vom Scope des Aufrufers (z.B. ViewModel): Beide Timer muessen auch dann
+     * noch feuern, wenn der Nutzer den Bildschirm laengst verlassen hat, der sie ausgeloest
+     * hat. Ein viewModelScope waere dann gecancelt - und das Licht bliebe an bzw. die Lampe
+     * bliebe am Blinken.
      */
-    private val autoRevertScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val followUpScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
         private const val LIGHT_OPERATION_TIMEOUT_MS = 10000L
@@ -54,6 +60,13 @@ class HueLightUseCase @Inject constructor(
 
         /** Pause between the sunrise's initial state and the long fade, so the bridge applies them separately. */
         private const val SUNRISE_STEP_DELAY_MS = 250L
+
+        /**
+         * Wie lange der Lampentest blinkt. lselect blinkt von sich aus 15 Sekunden - als
+         * Rueckmeldung, auf die jemand wartet, viel zu lang (vom Tester gemeldet). Ein paar
+         * Blinker reichen als Beweis; danach bricht [scheduleFlashStop] aktiv ab.
+         */
+        private val FLASH_DURATION = 4.seconds
     }
     
     override suspend fun getAllLightTargets(): Result<LightTargets> {
@@ -358,7 +371,7 @@ class HueLightUseCase @Inject constructor(
      * independent from the caller so the caller returning early doesn't cancel it.
      */
     private fun scheduleAutoOff(targets: List<Pair<String, Boolean>>, revertAfter: Duration) {
-        autoRevertScope.launch {
+        followUpScope.launch {
             try {
                 delay(revertAfter.inWholeMilliseconds)
 
@@ -382,62 +395,55 @@ class HueLightUseCase @Inject constructor(
         }
     }
 
-    override suspend fun testLightConnection(targetId: String, isGroup: Boolean): Result<Boolean> {
-        Logger.d(LogTags.HUE_USECASE, "Testing connection for ${if (isGroup) "group" else "light"} $targetId")
-        
-        return try {
-            val result = withTimeoutOrNull(LIGHT_OPERATION_TIMEOUT_MS) {
-                if (isGroup) {
-                    lightRepository.getGroupState(targetId)
-                } else {
-                    lightRepository.getLightState(targetId)
-                }
-            }
-            
-            if (result == null) {
-                Logger.w(LogTags.HUE_USECASE, "Connection test timed out for $targetId")
-                Result.success(false)
-            } else {
-                val isConnected = result.isSuccess
-                Logger.d(LogTags.HUE_USECASE, "Connection test result for $targetId: $isConnected")
-                Result.success(isConnected)
-            }
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Connection test failed for $targetId", e)
-            Result.success(false)
-        }
-    }
-
-    override suspend fun flashLight(targetId: String, isGroup: Boolean): Result<Unit> {
-        Logger.d(LogTags.HUE_USECASE, "Flashing ${if (isGroup) "group" else "light"} $targetId for test feedback")
+    override suspend fun flashLight(lightId: String): Result<Unit> {
+        Logger.d(LogTags.HUE_USECASE, "Flashing light $lightId for test feedback")
 
         return try {
             val result = withTimeoutOrNull(LIGHT_OPERATION_TIMEOUT_MS) {
-                if (isGroup) {
-                    lightRepository.controlGroup(groupId = targetId, alert = HueConstants.Lights.ALERT_LSELECT)
-                } else {
-                    lightRepository.controlLight(lightId = targetId, alert = HueConstants.Lights.ALERT_LSELECT)
-                }
+                lightRepository.controlLight(lightId = lightId, alert = HueConstants.Lights.ALERT_LSELECT)
             }
 
             when {
                 result == null -> {
-                    Logger.w(LogTags.HUE_USECASE, "Flash request timed out for $targetId")
+                    Logger.w(LogTags.HUE_USECASE, "Flash request timed out for $lightId")
                     Result.failure(Exception("Flash request timed out"))
                 }
                 result.isSuccess -> {
-                    Logger.i(LogTags.HUE_USECASE, "Flash sent successfully to $targetId")
+                    Logger.i(LogTags.HUE_USECASE, "Flash sent successfully to $lightId")
+                    scheduleFlashStop(lightId)
                     Result.success(Unit)
                 }
                 else -> {
-                    Logger.w(LogTags.HUE_USECASE, "Flash failed for $targetId", result.exceptionOrNull())
+                    Logger.w(LogTags.HUE_USECASE, "Flash failed for $lightId", result.exceptionOrNull())
                     Result.failure(result.exceptionOrNull() ?: Exception("Flash failed"))
                 }
             }
         } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Flash failed for $targetId", e)
+            Logger.e(LogTags.HUE_USECASE, "Flash failed for $lightId", e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Beendet das Blinken nach [FLASH_DURATION], statt lselect seine vollen 15 Sekunden laufen
+     * zu lassen — die sind als Rueckmeldung, auf die jemand wartet, schlicht zu lang.
+     *
+     * Gegen die echte Bridge verifiziert (BSB002, 15.07.2026): `alert:"none"` bricht ein
+     * laufendes lselect ab (`state.alert` faellt von "lselect" auf "none" zurueck), und die
+     * Lampe kehrt in ihren vorherigen An/Aus-Zustand zurueck — der Test hinterlaesst nichts.
+     *
+     * Best-effort: Klappt der Abbruch nicht, blinkt die Lampe die vollen 15s zu Ende. Unschoen,
+     * aber harmlos — kein Grund, den Test als gescheitert zu melden.
+     */
+    private fun scheduleFlashStop(lightId: String) {
+        followUpScope.launch {
+            try {
+                delay(FLASH_DURATION)
+                lightRepository.controlLight(lightId = lightId, alert = HueConstants.Lights.ALERT_NONE)
+                    .onFailure { Logger.w(LogTags.HUE_USECASE, "Blinken bei $lightId nicht abgebrochen: ${it.message}") }
+            } catch (e: Exception) {
+                Logger.w(LogTags.HUE_USECASE, "Blinken bei $lightId nicht abgebrochen", e)
+            }
         }
     }
 

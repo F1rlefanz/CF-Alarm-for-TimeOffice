@@ -54,20 +54,21 @@ interface IHueLightUseCase {
     ): Result<Int>
 
     /**
-     * Test light/group connectivity
-     */
-    suspend fun testLightConnection(targetId: String, isGroup: Boolean): Result<Boolean>
-
-    /**
-     * Triggers the bridge's native "lselect" alert (blinking for ~15s) on a light or group,
-     * without changing its on/off state or other properties. Used to give the user visible
-     * proof that the "Test" action actually reached the lights, instead of a silent API call.
+     * Laesst EINE Lampe ein paar Sekunden blinken, ohne ihren An/Aus-Zustand oder sonst etwas
+     * dauerhaft zu veraendern. Sichtbarer Beweis, dass der "Test"-Knopf die Bridge wirklich
+     * erreicht - statt eines stillen API-Aufrufs.
+     *
+     * NIMMT BEWUSST NUR EINE LAMPE, KEIN GRUPPEN-FLAG: Gruppen ueberschneiden sich beliebig
+     * (eine Lampe liegt real in drei Gruppen gleichzeitig), ueber Gruppen zu blinken heisst
+     * also mehrere Alerts auf derselben Lampe. Die Lampen-Ebene ist die einzige, auf der "jede
+     * Lampe genau einmal" strukturell gilt. Siehe HueViewModel.runLightTest.
      *
      * Bewusst "lselect" und nicht "select": Ein einzelner Blitz ist als Beweis zu leise - er
      * geht im Zweifel unter, und dann wirkt der Test-Knopf tot. Das anhaltende Blinken ist im
-     * Hue-Umfeld ausserdem das gelernte "diese Lampe meine ich".
+     * Hue-Umfeld ausserdem das gelernte "diese Lampe meine ich". Die Implementierung bricht
+     * es nach ein paar Sekunden aktiv ab, statt die vollen 15s von lselect stehenzulassen.
      */
-    suspend fun flashLight(targetId: String, isGroup: Boolean): Result<Unit>
+    suspend fun flashLight(lightId: String): Result<Unit>
 }
 
 /**

@@ -81,9 +81,7 @@ class RulePreviewCleanupTest {
             Result.success(LightActionResult(true, action.targetId))
         override suspend fun scheduleBridgeAutoOff(targets: List<AutoOffTarget>, shiftName: String): Result<Int> =
             Result.success(0)
-        override suspend fun testLightConnection(targetId: String, isGroup: Boolean): Result<Boolean> =
-            Result.success(true)
-        override suspend fun flashLight(targetId: String, isGroup: Boolean): Result<Unit> = Result.success(Unit)
+        override suspend fun flashLight(lightId: String): Result<Unit> = Result.success(Unit)
     }
 
     private class FakeConfigRepository : IHueConfigRepository {

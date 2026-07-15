@@ -24,8 +24,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
  * full rationale on why this can never lock the user out of their own bridge.
  *
  * Deliberately uses its own small SharedPreferences namespace, separate from the
- * three DataStore instances (@MainDataStore/@HueDataStore/@TokenDataStore) used
- * elsewhere in the app - this is a lightweight, non-sensitive cache, not user config.
+ * DataStore instances (@MainDataStore/@HueDataStore) used elsewhere in the app -
+ * this is a lightweight, non-sensitive cache, not user config.
  */
 class HueBridgePinningStore(context: Context) {
 

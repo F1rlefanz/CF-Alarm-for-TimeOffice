@@ -40,11 +40,6 @@ interface IHueConfigRepository {
     suspend fun updateScheduleRule(rule: HueSchedule): Result<Unit>
     
     /**
-     * Get schedule rules for specific shift pattern
-     */
-    suspend fun getScheduleRulesForShift(shiftPattern: String): Result<List<HueSchedule>>
-    
-    /**
      * Clear all configuration (for reset/logout)
      */
     suspend fun clearConfiguration(): Result<Unit>

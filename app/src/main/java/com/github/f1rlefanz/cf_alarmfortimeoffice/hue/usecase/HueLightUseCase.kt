@@ -23,15 +23,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.minutes
 
 /**
  * Enhanced UseCase for Hue Light operations
  * 
  * Implements business logic layer with:
  * - Validation and batch operations
- * - Color conversion utilities integration
  * - Sunrise wake-up ramp and rule-preview auto-off (executeActionsWithAutoRevert)
+ * - Bridge-seitiges Auto-Aus zur Weckzeit (scheduleBridgeAutoOff)
  * - Advanced error handling and resilience
  * 
  * @author CF-Alarm Development Team
@@ -442,112 +441,6 @@ class HueLightUseCase @Inject constructor(
         }
     }
 
-    override suspend fun refreshLightStates(): Result<LightTargets> {
-        Logger.d(LogTags.HUE_USECASE, "Refreshing all light states")
-        
-        // This is the same as getAllLightTargets, but semantically different
-        // Could be extended to include caching logic in the future
-        return getAllLightTargets()
-    }
-    
-    // =============================================================================
-    // ENHANCED FEATURES: COLOR CONVERSION & DURATION CONTROL
-    // =============================================================================
-    
-    /**
-     * Sets a light to a specific RGB color
-     * 
-     * @param lightId ID of the light
-     * @param red Red component (0-255)
-     * @param green Green component (0-255)
-     * @param blue Blue component (0-255)
-     * @param brightness Optional brightness override (1-254)
-     * @return Result indicating success or failure
-     */
-    override suspend fun setLightRgbColor(
-        lightId: String,
-        red: Int,
-        green: Int,
-        blue: Int,
-        brightness: Int?
-    ): Result<Unit> {
-        Logger.d(LogTags.HUE_USECASE, "Setting light $lightId to RGB($red, $green, $blue)")
-        
-        return try {
-            // Convert RGB to Hue color space
-            val hueColor = HueColorConverter.rgbToHueColor(red, green, blue)
-            
-            // Execute light control with converted values
-            lightRepository.controlLight(
-                lightId = lightId,
-                on = true,
-                brightness = brightness ?: HueConstants.Lights.DEFAULT_BRIGHTNESS,
-                hue = hueColor.hue,
-                saturation = hueColor.saturation
-            )
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to set RGB color for light $lightId", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Sets a group to a specific RGB color
-     */
-    override suspend fun setGroupRgbColor(
-        groupId: String,
-        red: Int,
-        green: Int,
-        blue: Int,
-        brightness: Int?
-    ): Result<Unit> {
-        Logger.d(LogTags.HUE_USECASE, "Setting group $groupId to RGB($red, $green, $blue)")
-        
-        return try {
-            val hueColor = HueColorConverter.rgbToHueColor(red, green, blue)
-            
-            lightRepository.controlGroup(
-                groupId = groupId,
-                on = true,
-                brightness = brightness ?: HueConstants.Lights.DEFAULT_BRIGHTNESS,
-                hue = hueColor.hue,
-                saturation = hueColor.saturation
-            )
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to set RGB color for group $groupId", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Sets a light to a color preset
-     */
-    override suspend fun setLightColorPreset(
-        lightId: String,
-        colorPreset: HueColorConverter.ColorPreset,
-        brightness: Int?
-    ): Result<Unit> {
-        Logger.d(LogTags.HUE_USECASE, "Setting light $lightId to color preset $colorPreset")
-        
-        return try {
-            val hueColor = HueColorConverter.getPresetColor(colorPreset)
-            
-            lightRepository.controlLight(
-                lightId = lightId,
-                on = true,
-                brightness = brightness ?: HueConstants.Lights.DEFAULT_BRIGHTNESS,
-                hue = hueColor.hue,
-                saturation = hueColor.saturation
-            )
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to set color preset for light $lightId", e)
-            Result.failure(e)
-        }
-    }
-    
     /**
      * Starts a sunrise ramp on a single light or group.
      *

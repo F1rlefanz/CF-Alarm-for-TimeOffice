@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import kotlin.time.Duration
 
 /**
@@ -65,54 +64,14 @@ interface IHueLightUseCase {
      * proof that the "Test" action actually reached the lights, instead of a silent API call.
      */
     suspend fun flashLight(targetId: String, isGroup: Boolean): Result<Unit>
-    
-    /**
-     * Get current state of all lights for UI updates
-     */
-    suspend fun refreshLightStates(): Result<LightTargets>
 }
 
 /**
  * Enhanced interface for advanced Hue Light operations
- * Extends core functionality with color conversion and duration control
+ * Extends core functionality with the sunrise ramp and the rule-preview auto-revert.
  */
 interface IHueLightUseCaseAdvanced : IHueLightUseCase {
-    
-    // =============================================================================
-    // COLOR CONVERSION OPERATIONS
-    // =============================================================================
-    
-    /**
-     * Set light to specific RGB color
-     */
-    suspend fun setLightRgbColor(
-        lightId: String,
-        red: Int,
-        green: Int,
-        blue: Int,
-        brightness: Int? = null
-    ): Result<Unit>
-    
-    /**
-     * Set group to specific RGB color
-     */
-    suspend fun setGroupRgbColor(
-        groupId: String,
-        red: Int,
-        green: Int,
-        blue: Int,
-        brightness: Int? = null
-    ): Result<Unit>
-    
-    /**
-     * Set light to color preset
-     */
-    suspend fun setLightColorPreset(
-        lightId: String,
-        colorPreset: HueColorConverter.ColorPreset,
-        brightness: Int? = null
-    ): Result<Unit>
-    
+
     // =============================================================================
     // SUNRISE WAKE-UP LIGHT
     // =============================================================================

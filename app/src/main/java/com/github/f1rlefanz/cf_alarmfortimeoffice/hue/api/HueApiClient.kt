@@ -44,27 +44,35 @@ class HueApiClient(context: Context? = null) {
     }
 
     private val gson = Gson()
-    private val client: OkHttpClient
 
-    init {
-        val appContext = context?.applicationContext
+    // Application context captured for the (lazy) TLS trust layer.
+    private val appContext = context?.applicationContext
+
+    /**
+     * PERF (startup jank): building the TLS stack — SSLContext.getInstance("TLS").init(...) plus the
+     * OkHttp client — costs ~250-330ms cold. It used to run in the constructor, which executes INSIDE
+     * HueBridgeConnectionManager.getInstance()'s `synchronized` block. At every cold start the main
+     * thread (MainActivity's eager `@Inject bridgeConnectionManager`) parked on that lock for the full
+     * build (~270ms measured, reproducible on emulator). Every real caller is suspend/Dispatchers.IO,
+     * so the client is built lazily on first network use — off the main thread, out of the startup path.
+     */
+    private val client: OkHttpClient by lazy {
         val trustManager = HueTrustManager.create(appContext)
         val sslContext = SSLContext.getInstance("TLS").apply {
             init(null, arrayOf<TrustManager>(trustManager), null)
         }
-
-        client = OkHttpClient.Builder()
+        val built = OkHttpClient.Builder()
             .connectTimeout(TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             .writeTimeout(TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             .sslSocketFactory(sslContext.socketFactory, trustManager)
             .hostnameVerifier(HueTrustManager.createHostnameVerifier())
             .build()
-
         Logger.i(
             LogTags.HUE_NETWORK,
-            "🔒 HueApiClient initialized (hybrid trust model, bridge-ID pinning=${appContext != null})"
+            "🔒 HueApiClient TLS stack built lazily (hybrid trust model, bridge-ID pinning=${appContext != null})"
         )
+        built
     }
 
     /**

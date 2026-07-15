@@ -1,13 +1,13 @@
 # Handoff — CF-Alarm for TimeOffice
 
-**Lebendes Dokument.** Erledigtes wird gestrichen, nicht abgehakt — was hier steht, ist offen.
+**Lebendes Dokument.** Erledigtes wird gelöscht, nicht abgehakt oder durchgestrichen — was hier steht, ist offen.
 Die Historie steht im Git-Log, nicht hier.
 
-**Stand:** 15.07.2026 · `main` = **v1.10.6 / versionCode 49** · alles gemerged und gepusht.
+**Stand:** 15.07.2026 · `main` = **v1.10.7 / versionCode 50** · alles gemerged und gepusht.
 
-> **Ungeprüft:** die Regel-Validierung (v1.10.4) — sie greift erst, wenn man eine Regel speichert
-> — und der Log-Kleinkram aus v1.10.6 (nur inspiziert, noch kein Build gelaufen). Alles andere ist
-> am Gerät bzw. im Log bestätigt.
+> **Ungeprüft:** die Regel-Validierung (v1.10.4, greift erst beim Speichern einer Regel) und der
+> Log-Kleinkram aus v1.10.6 (inspiziert, nicht am Gerät bestätigt). Der Startup-Fix (v1.10.7,
+> HueApiClient-TLS lazy) ist am Emulator gemessen; alles Übrige am Gerät bzw. im Log bestätigt.
 
 ---
 
@@ -44,33 +44,3 @@ die ganze Fehlerklasse „Handy nicht im Heim-WLAN" für den Auto-Off.
 - Der WorkManager-Retry wird damit vom Haupt- zum Fallback-Mechanismus.
 - **Einschränkung:** Das JSON-Format muss gegen die echte Bridge verifiziert werden.
 - Zum Testen steht ein **Emulator als Zweitgerät** bereit.
-
-### 3. Startup-Ruckler — ungeklärt
-
-`Skipped 41–48 frames` / `Davey! ~800–890ms` bei jedem Start. **Wichtig:** steht auch nach dem
-Beheben der doppelten Bridge-Init noch im Log — die naheliegende Ursache war es also **nicht**.
-Nicht mit halben Vermutungen „reparieren"; erst messen.
-
-**Durch Inspektion eingegrenzt (15.07.) — gemessen ist davon nichts:**
-
-- **Abgehakt: Tink ist es nicht.** `TinkEncryptionHelper.aead` ist `by lazy` und wird erst beim
-  ersten Token-Zugriff angefasst; der läuft in einer Coroutine. Der Android-Keystore — der teure
-  Teil — liegt damit gar nicht im Startpfad.
-- **Kandidat 1: WorkManager initialisiert sich selbst, noch vor `Application.onCreate()`.** Es
-  gibt weder einen `Configuration.Provider` noch einen Manifest-Eintrag, der den
-  `androidx.startup.InitializationProvider` entfernt → der Default-Initializer läuft als
-  ContentProvider und zieht dabei seine Room-DB auf dem Hauptthread hoch. Das liegt mitten im
-  gemessenen Fenster. Gegenmittel wäre On-Demand-Initialisierung.
-- **Kandidat 2: `HueApiClient` wird zweimal gebaut**, jedes Mal mit eigenem OkHttp/Retrofit samt
-  TrustManager/SSLContext. Einmal im Konstruktor von `HueBridgeConnectionManager` — ob auf dem
-  Hauptthread, ist ein Rennen: entweder `CFAlarmApplication.initializeApp()` (IO-Coroutine) oder
-  Hilts Feld-Injection in `MainActivity.onCreate()` (Hauptthread) ist zuerst da. Und einmal in
-  `HueBridgeRepository`, das zusätzlich `OfficialHueDiscoveryService` und `HueBridgePinningStore`
-  baut — dieser Weg läuft sicher auf dem Hauptthread (Hilt erzeugt es beim HueViewModel).
-- **Kandidat 3: `HueBridgeConnectionManager.initialize()` läuft auf dem Hauptthread**
-  (aus `HueBridgeRepository.init`) und ruft dort synchron `startSmartHealthMonitoring()` und
-  `initializeSmartScheduling()` → `WorkManager.getInstance()` + `enqueueUniquePeriodicWork`.
-
-**Messrezept:** Debug-Build, Android Studio Profiler → *System Trace*, App **kalt** starten
-(`adb shell am force-stop …` davor). Interessant ist der Hauptthread zwischen Prozessstart und
-erstem Frame. `Davey!` nennt nur die Dauer — der Trace nennt den Verursacher.

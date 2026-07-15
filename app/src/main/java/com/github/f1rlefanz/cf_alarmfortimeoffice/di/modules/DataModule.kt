@@ -7,7 +7,6 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
-import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.TokenDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import dagger.Module
 import dagger.Provides
@@ -18,15 +17,19 @@ import javax.inject.Singleton
 
 /**
  * Hilt Module für DataStore und Core Data Dependencies
- * 
+ *
  * WICHTIG: Nur Preferences DataStore (KEIN Proto DataStore!)
  * TinkEncryptionHelper bleibt als getInstance() Singleton
+ *
+ * HIER LIEGEN NUR DIE UNVERSCHLÜSSELTEN STORES. Der Token-Store gehört bewusst NICHT dazu:
+ * `DataStoreTokenRepository` baut ihn sich selbst über `EncryptedDataStoreFactory`
+ * (`token_data_v2_encrypted`, Tink-verschlüsselt) und injiziert von hier nur den Context.
+ * Wer Tokens sucht, sucht dort — nicht in diesem Modul.
  */
 
 // DataStore Extensions - NICHT Proto!
 private val Context.mainDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 private val Context.hueDataStore: DataStore<Preferences> by preferencesDataStore(name = "hue_settings")
-private val Context.tokenDataStore: DataStore<Preferences> by preferencesDataStore(name = "oauth_tokens")
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -45,13 +48,6 @@ object DataModule {
     fun provideHueDataStore(
         @ApplicationContext context: Context
     ): DataStore<Preferences> = context.hueDataStore
-    
-    @Provides
-    @Singleton
-    @TokenDataStore
-    fun provideTokenDataStore(
-        @ApplicationContext context: Context
-    ): DataStore<Preferences> = context.tokenDataStore
     
     // KRITISCH: TinkEncryptionHelper MUSS als Singleton bleiben!
     // Security-kritische Komponente mit getInstance() Pattern

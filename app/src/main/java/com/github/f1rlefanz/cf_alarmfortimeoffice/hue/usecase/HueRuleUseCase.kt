@@ -33,6 +33,12 @@ class HueRuleUseCase @Inject constructor(
     companion object {
         private const val MAX_RULES_PER_SHIFT = 10
 
+        /**
+         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt. Wird von der Regel-UI derzeit
+         * nicht angeboten (sie listet nur die Definitionsnamen), im UseCase aber ausgewertet.
+         */
+        private const val UNIVERSAL_SHIFT_PATTERN = "ALL"
+
         // War 3 - eine willkuerliche Schwelle, die nie greifen konnte, weil der Validierungs-
         // Check kaputt war (siehe requireValidRule). Mit der Reparatur wuerde sie ploetzlich
         // scharf: Die UI verlangt seit jeher nur isNotBlank(), und eine Regel namens "FS" fuer
@@ -135,22 +141,23 @@ class HueRuleUseCase @Inject constructor(
             }
             
             val allRules = allRulesResult.getOrNull() ?: emptyList()
-            
-            // Extract shift pattern from definition (use name or first keyword)
-            val shiftPattern = shift.shiftDefinition.keywords.firstOrNull() 
-                ?: shift.shiftDefinition.name
-            
-            // Filter rules matching the shift pattern (only enabled rules)
+
+            // `rule.shiftPattern` ist IMMER ein Definitionsname: die Regel-UI bietet nichts
+            // anderes an (HueRuleConfigScreen: definitions.map { it.name }). Ein Vergleich
+            // gegen das erste KEYWORD der Definition stand hier mal daneben - er konnte nie
+            // etwas Richtiges treffen, aber sehr wohl etwas Falsches: eine Regel mit dem
+            // Muster "S" haette auf die Spaetschicht gepasst. Dieselbe Fehlerfamilie wie in
+            // ShiftConfig.findDefinitionFor() - einbuchstabige Keywords passen auf zu vieles.
+            val shiftName = shift.shiftDefinition.name
+
             val matchingRules = allRules.filter { rule ->
-                // Skip rules the user has disabled in the rule editor
+                // Vom Nutzer deaktivierte Regeln bleiben aussen vor.
                 rule.enabled &&
-                // Check if rule matches shift pattern
-                (rule.shiftPattern.equals(shiftPattern, ignoreCase = true) ||
-                rule.shiftPattern.equals(shift.shiftDefinition.name, ignoreCase = true) ||
-                rule.shiftPattern.equals("ALL", ignoreCase = true)) // Universal rules
+                    (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
+                        rule.shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true))
             }
-            
-            Logger.i(LogTags.HUE_USECASE, "Found ${matchingRules.size} rules matching shift pattern $shiftPattern")
+
+            Logger.i(LogTags.HUE_USECASE, "Found ${matchingRules.size} rules matching shift '$shiftName'")
             Result.success(matchingRules)
             
         } catch (e: Exception) {
@@ -373,7 +380,10 @@ class HueRuleUseCase @Inject constructor(
 
     /**
      * Enabled "start before alarm" sunrise rules whose shift pattern matches [shiftName]
-     * (or the universal "ALL" pattern).
+     * (or the universal [UNIVERSAL_SHIFT_PATTERN]).
+     *
+     * [shiftName] ist hier der Definitionsname, den der Alarm traegt - derselbe Massstab wie in
+     * [findApplicableRules]. Kein Keyword-Vergleich, keine Teiltreffer.
      */
     private fun matchingPreAlarmSunriseRules(rules: List<HueSchedule>, shiftName: String): List<HueSchedule> {
         return rules.filter { rule ->
@@ -383,7 +393,7 @@ class HueRuleUseCase @Inject constructor(
                 sunrise.enabled &&
                 sunrise.startBeforeAlarm &&
                 (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
-                    rule.shiftPattern.equals("ALL", ignoreCase = true))
+                    rule.shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true))
         }
     }
 

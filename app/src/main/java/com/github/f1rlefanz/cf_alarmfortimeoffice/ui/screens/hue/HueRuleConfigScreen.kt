@@ -13,11 +13,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -53,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -75,6 +79,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import kotlinx.coroutines.launch
+
+/**
+ * Materials Mindestgroesse fuer ein Bedienelement.
+ *
+ * Wird hier explizit gesetzt, weil RadioButton/Checkbox mit `onClick = null` (Zeile ist
+ * klickbar, nicht der Knopf) ihre eingebaute Mindestgroesse NICHT mehr mitbringen.
+ */
+private val MIN_TOUCH_TARGET = 48.dp
 
 /**
  * Hue Regel-Konfiguration Screen - Deutsche Version
@@ -573,13 +585,34 @@ private fun ShiftPatternCard(
             } else {
                 Column(modifier = Modifier.selectableGroup()) {
                     availableShiftPatterns.forEach { pattern ->
+                        // Die GANZE Zeile ist das Ziel, nicht nur der Knopf: `selectable` am Row
+                        // + `onClick = null` am RadioButton ist das Compose-Standardmuster
+                        // dafuer. Vorher traf nur der Knopf selbst (~48dp am linken Rand) - auf
+                        // dem Handy fummelig, und ein Tipp auf den Namen tat schlicht nichts.
+                        // Nebeneffekt: selectable fasst die Zeile semantisch zu EINEM Element
+                        // zusammen, TalkBack liest also "S2, Optionsfeld" statt eines
+                        // unbeschrifteten Knopfs neben losem Text.
+                        //
+                        // heightIn(48dp) ist dabei PFLICHT und kein Schoenheitsfehler: ein
+                        // RadioButton mit onClick = null ist nicht mehr klickbar und bringt
+                        // daher auch seine eigene 48dp-Mindestgroesse nicht mehr mit. Ohne die
+                        // Zeile hier schrumpfte die Reihe auf ~32dp (am Emulator gemessen) -
+                        // die Zeile waere breiter, aber flacher als Materials Minimum.
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = MIN_TOUCH_TARGET)
+                                .selectable(
+                                    selected = selectedShiftPattern == pattern,
+                                    onClick = { onShiftPatternChange(pattern) },
+                                    role = Role.RadioButton
+                                )
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = selectedShiftPattern == pattern,
-                                onClick = { onShiftPatternChange(pattern) }
+                                onClick = null
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(pattern, style = MaterialTheme.typography.bodyLarge)
@@ -658,17 +691,26 @@ private fun TargetSelectionCard(
                         )
                     } else {
                         lightTargets.groups.forEach { group ->
+                            // Ganze Zeile als Ziel - Begruendung siehe Schichtmuster-Auswahl oben.
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = MIN_TOUCH_TARGET)
+                                    .toggleable(
+                                        value = selectedGroupIds.contains(group.id),
+                                        onValueChange = { isChecked ->
+                                            onGroupSelectionChange(
+                                                if (isChecked) selectedGroupIds + group.id else selectedGroupIds - group.id
+                                            )
+                                        },
+                                        role = Role.Checkbox
+                                    )
+                                    .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
                                     checked = selectedGroupIds.contains(group.id),
-                                    onCheckedChange = { isChecked ->
-                                        onGroupSelectionChange(
-                                            if (isChecked) selectedGroupIds + group.id else selectedGroupIds - group.id
-                                        )
-                                    }
+                                    onCheckedChange = null
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Column {
@@ -692,17 +734,26 @@ private fun TargetSelectionCard(
                         )
                     } else {
                         lightTargets.lights.forEach { light ->
+                            // Ganze Zeile als Ziel - Begruendung siehe Schichtmuster-Auswahl oben.
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = MIN_TOUCH_TARGET)
+                                    .toggleable(
+                                        value = selectedLightIds.contains(light.id),
+                                        onValueChange = { isChecked ->
+                                            onLightSelectionChange(
+                                                if (isChecked) selectedLightIds + light.id else selectedLightIds - light.id
+                                            )
+                                        },
+                                        role = Role.Checkbox
+                                    )
+                                    .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
                                     checked = selectedLightIds.contains(light.id),
-                                    onCheckedChange = { isChecked ->
-                                        onLightSelectionChange(
-                                            if (isChecked) selectedLightIds + light.id else selectedLightIds - light.id
-                                        )
-                                    }
+                                    onCheckedChange = null
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Column {

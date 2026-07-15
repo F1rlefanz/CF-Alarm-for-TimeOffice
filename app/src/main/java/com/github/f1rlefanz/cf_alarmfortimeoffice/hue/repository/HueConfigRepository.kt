@@ -156,28 +156,6 @@ class HueConfigRepository @Inject constructor(
         return saveScheduleRule(rule)
     }
     
-    override suspend fun getScheduleRulesForShift(shiftPattern: String): Result<List<HueSchedule>> {
-        return try {
-            val allRulesResult = getScheduleRules()
-            
-            if (allRulesResult.isFailure) {
-                return allRulesResult
-            }
-            
-            val allRules = allRulesResult.getOrNull() ?: emptyList()
-            val filteredRules = allRules.filter { rule ->
-                rule.shiftPattern.equals(shiftPattern, ignoreCase = true)
-            }
-            
-            Logger.d(LogTags.HUE_CONFIG, "Found ${filteredRules.size} rules for shift pattern: $shiftPattern")
-            Result.success(filteredRules)
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_CONFIG, "Failed to get schedule rules for shift: $shiftPattern", e)
-            Result.failure(e)
-        }
-    }
-    
     override suspend fun clearConfiguration(): Result<Unit> {
         return try {
             dataStore.edit { preferences ->

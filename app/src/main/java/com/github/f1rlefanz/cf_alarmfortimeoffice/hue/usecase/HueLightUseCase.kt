@@ -415,9 +415,9 @@ class HueLightUseCase @Inject constructor(
         return try {
             val result = withTimeoutOrNull(LIGHT_OPERATION_TIMEOUT_MS) {
                 if (isGroup) {
-                    lightRepository.controlGroup(groupId = targetId, alert = HueConstants.Lights.ALERT_SELECT)
+                    lightRepository.controlGroup(groupId = targetId, alert = HueConstants.Lights.ALERT_LSELECT)
                 } else {
-                    lightRepository.controlLight(lightId = targetId, alert = HueConstants.Lights.ALERT_SELECT)
+                    lightRepository.controlLight(lightId = targetId, alert = HueConstants.Lights.ALERT_LSELECT)
                 }
             }
 

@@ -378,11 +378,11 @@ class HueViewModel @Inject constructor(
 
     /**
      * Meaningful "Test" action for the generic (no single target selected) test buttons in
-     * [HueTabContent]/[HueSettingsScreen]: flashes every currently known light/group once
-     * ("select" alert) so the user gets visible proof the app can actually reach the bridge,
-     * instead of a silent light-list refresh. Falls back to a reachability check via
-     * [IHueLightUseCase.testLightConnection] when no lights/groups are loaded yet (e.g. right
-     * after connecting, before the first refresh completed).
+     * [HueTabContent]/[HueSettingsScreen]: makes every currently known light blink so the user
+     * gets visible proof the app can actually reach the bridge, instead of a silent light-list
+     * refresh. Falls back to a reachability check via [IHueLightUseCase.testLightConnection]
+     * when no lights/groups are loaded yet (e.g. right after connecting, before the first
+     * refresh completed).
      */
     fun runLightTest() {
         Logger.i(LogTags.HUE_VIEWMODEL, "Running visible light test")
@@ -390,8 +390,20 @@ class HueViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val targets = uiState.value.lightTargets
+
+                // Gruppen und Lampen UEBERSCHNEIDEN sich: eine Gruppe IST ihre Lampen. Wer
+                // beides anfunkt, schickt derselben Lampe zwei Alerts nacheinander - und weil
+                // jedes Ziel ein eigener HTTP-PUT ist, kamen die nicht gleichzeitig an: erst
+                // blitzte die Gruppe kurz auf, dann kam eine Pause (Roundtrip pro Ziel), dann
+                // blinkten die Lampen einzeln noch einmal hinterher. Das sah aus wie ein
+                // kaputter Test und war nur doppelte Ansteuerung.
+                //
+                // Deshalb: Gruppen ansteuern (ein PUT erreicht alle ihre Lampen gleichzeitig)
+                // und einzeln nur noch die Lampen, die in keiner Gruppe stecken.
+                val groupedLightIds = targets.groups.flatMap { it.lights }.toSet()
                 val flashTargets: List<Pair<String, Boolean>> =
-                    targets.groups.map { it.id to true } + targets.lights.map { it.id to false }
+                    targets.groups.map { it.id to true } +
+                        targets.lights.filter { it.id !in groupedLightIds }.map { it.id to false }
 
                 if (flashTargets.isEmpty()) {
                     // No known lights/groups yet: fall back to a plain reachability probe.
@@ -418,7 +430,7 @@ class HueViewModel @Inject constructor(
 
                 if (successCount > 0) {
                     Logger.i(LogTags.HUE_VIEWMODEL, "Light test flash sent to $successCount/${flashTargets.size} targets")
-                    emitUserMessage("Test gesendet – die Lampen blinken kurz")
+                    emitUserMessage("Test gesendet – die Lampen blinken einige Sekunden")
                 } else {
                     Logger.w(LogTags.HUE_VIEWMODEL, "Light test flash failed for all ${flashTargets.size} targets")
                     emitUserMessage("Lampen nicht erreichbar")

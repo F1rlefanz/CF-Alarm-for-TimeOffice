@@ -230,11 +230,27 @@ fun HueTabContent(
         }
 
         // Connection Status Section (only when not connected)
-        item {
-            BridgeConnectionStatusCard(
-                connectionInfo = uiState.bridgeConnectionInfo,
-                onValidateConnection = { requireLocalNetworkPermission { hueViewModel.validateBridgeConnection() } }
-            )
+        //
+        // Die Karte beantwortet genau eine Frage: "Habe ich schon eine Bridge?". Als Einstieg
+        // ist das richtig - aber sobald die Suche laeuft oder Treffer da sind, beantwortet der
+        // Rest des Screens sie besser, und "Noch keine Bridge eingerichtet" steht nur noch als
+        // Wiederholung ueber dem eigentlichen Geschehen ("Suche unten nach deiner Bridge",
+        // waehrend genau das laengst passiert).
+        //
+        // War dagegen schon einmal eine Bridge gekoppelt (bridgeIp gesetzt), bleibt die Karte
+        // immer sichtbar: dann ist "nicht verbunden" ein echtes Problem samt "Pruefen"-Knopf,
+        // kein Ausgangszustand. Dieselbe Unterscheidung trifft das Warn-Banner oben.
+        val neverConfigured = uiState.bridgeConnectionInfo?.bridgeIp == null
+        val discoveryStarted =
+            discoveryStatus?.isComplete == false || uiState.discoveredBridges.isNotEmpty()
+
+        if (!neverConfigured || !discoveryStarted) {
+            item {
+                BridgeConnectionStatusCard(
+                    connectionInfo = uiState.bridgeConnectionInfo,
+                    onValidateConnection = { requireLocalNetworkPermission { hueViewModel.validateBridgeConnection() } }
+                )
+            }
         }
 
         // Bridge Discovery & Connection Section (only when not connected)

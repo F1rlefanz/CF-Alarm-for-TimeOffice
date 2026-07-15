@@ -59,9 +59,13 @@ interface IHueLightUseCase {
     suspend fun testLightConnection(targetId: String, isGroup: Boolean): Result<Boolean>
 
     /**
-     * Triggers the bridge's native "select" alert (a single visible flash) on a light or group,
+     * Triggers the bridge's native "lselect" alert (blinking for ~15s) on a light or group,
      * without changing its on/off state or other properties. Used to give the user visible
      * proof that the "Test" action actually reached the lights, instead of a silent API call.
+     *
+     * Bewusst "lselect" und nicht "select": Ein einzelner Blitz ist als Beweis zu leise - er
+     * geht im Zweifel unter, und dann wirkt der Test-Knopf tot. Das anhaltende Blinken ist im
+     * Hue-Umfeld ausserdem das gelernte "diese Lampe meine ich".
      */
     suspend fun flashLight(targetId: String, isGroup: Boolean): Result<Unit>
 }

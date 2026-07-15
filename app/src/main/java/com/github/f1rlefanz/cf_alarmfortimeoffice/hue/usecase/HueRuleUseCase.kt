@@ -242,7 +242,30 @@ class HueRuleUseCase @Inject constructor(
                     errors.add(error)
                 }
             }
-            
+
+            // AUTO-AUS: jetzt, im selben Atemzug, auf der BRIDGE hinterlegen.
+            //
+            // Genau hier sind die Lampen gerade angegangen - die Bridge ist also nachweislich
+            // erreichbar. Damit schaltet sie selbst wieder aus, unabhaengig davon, wo das Handy
+            // spaeter ist. (Frueher fuhr ein WorkManager-Job das Auto-Aus; der erreichte die
+            // Bridge nur aus dem Heim-WLAN und liess die Lampen an, sobald jemand nach dem
+            // Wecken das Haus verliess.)
+            //
+            // autoOffTargetsOf() besitzt die Verzoegerungsrechnung inkl. Sonnenaufgangs-Versatz
+            // als einzige Stelle. Ein zweiter Rechenweg waere eine zweite Wahrheit.
+            //
+            // Best-effort: ein Fehler darf den Weckvorgang NIEMALS kippen. Er landet in
+            // `errors` (und im Log), aber die Regelausfuehrung selbst gilt als erfolgt - das
+            // Licht ist ja an.
+            try {
+                val autoOffTargets = autoOffTargetsOf(applicableRules)
+                lightUseCase.scheduleBridgeAutoOff(autoOffTargets, shift.shiftDefinition.name)
+                    .onFailure { errors.add("Bridge-Zeitplan fuer Auto-Aus fehlgeschlagen: ${it.message}") }
+            } catch (e: Exception) {
+                Logger.e(LogTags.HUE_USECASE, "Failed to schedule bridge-side auto-off", e)
+                errors.add("Bridge-Zeitplan fuer Auto-Aus fehlgeschlagen: ${e.message}")
+            }
+
             val result = RuleExecutionResult(
                 rulesExecuted = applicableRules.size,
                 actionsExecuted = totalActions,
@@ -309,19 +332,24 @@ class HueRuleUseCase @Inject constructor(
         }
     }
 
-    override fun getAutoOffActions(rules: List<HueSchedule>, shiftName: String): List<AutoOffTarget> {
+    /**
+     * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln.
+     *
+     * Bewusst OHNE eigenen Schicht-Filter: der Aufrufer hat die Regeln schon passend gewaehlt
+     * ([findApplicableRules] matcht auch ueber die KEYWORDS einer Schicht). Ein zweiter Filter
+     * gegen den Schichtnamen wuerde genau die Regeln wieder wegwerfen, die ueber ein Keyword
+     * getroffen haben - eine Regel mit shiftPattern "Frueh" faellt gegen "Fruehschicht" durch
+     * und verloere ihr Auto-Aus. Diese Funktion besitzt nur den Rechenweg (welche Ziele, welche
+     * Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
+     */
+    private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {
             rules.asSequence()
-                .filter { rule ->
-                    // UX FIX (D): sunrise rules can ALSO configure auto-off now (they reach
-                    // their own bright end state via the ramp, then this schedules the
-                    // separate "turn back off after N minutes" job on top of that end state).
-                    // Only the light actions' explicit `duration` field decides whether
-                    // auto-off applies - no need to special-case sunrise here anymore.
-                    rule.enabled &&
-                        (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
-                            rule.shiftPattern.equals("ALL", ignoreCase = true))
-                }
+                // UX FIX (D): sunrise rules can ALSO configure auto-off now (they reach
+                // their own bright end state via the ramp, then this schedules the
+                // separate "turn back off after N minutes" job on top of that end state).
+                // Only the light actions' explicit `duration` field decides whether
+                // auto-off applies - no need to special-case sunrise here anymore.
                 .flatMap { rule ->
                     // UX FIX (D-timing): a sunrise ramp that starts AT the alarm time
                     // (startBeforeAlarm == false) only reaches full brightness after

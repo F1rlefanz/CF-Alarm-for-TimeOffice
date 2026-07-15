@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 
@@ -78,4 +79,30 @@ interface IHueLightRepository {
      * Get current state of a group
      */
     suspend fun getGroupState(groupId: String): Result<HueGroup>
+
+    /**
+     * Legt einen Zeitplan auf der Bridge an, den die Bridge selbst ausführt.
+     *
+     * @param resourcePath Ziel-Resource OHNE Username, z.B. `/groups/2/action`. Den Username
+     *        setzt die Implementierung davor — sie besitzt die Verbindungsdaten, der Aufrufer
+     *        soll sie nicht kennen müssen.
+     * @param localtime Zeitmuster der Bridge, z.B. `PT00:30:00` für "in 30 Minuten".
+     * @param autodelete Zeitplan nach dem Auslösen selbst entfernen.
+     * @return die von der Bridge vergebene Zeitplan-ID.
+     */
+    suspend fun createBridgeSchedule(
+        name: String,
+        description: String,
+        resourcePath: String,
+        method: String,
+        body: Map<String, Any>,
+        localtime: String,
+        autodelete: Boolean = true
+    ): Result<String>
+
+    /** Alle Zeitpläne der Bridge, nach Zeitplan-ID. */
+    suspend fun getBridgeSchedules(): Result<Map<String, BridgeSchedule>>
+
+    /** Löscht einen Zeitplan auf der Bridge. */
+    suspend fun deleteBridgeSchedule(scheduleId: String): Result<Unit>
 }

@@ -2,12 +2,15 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api
 
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeDiscoveryResponse
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeScheduleCreate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridgeConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.LightStateUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.HueTrustManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.google.gson.Gson
@@ -469,4 +472,102 @@ class HueApiClient(context: Context? = null) {
         }
     }
 
+    // =========================================================================
+    // BRIDGE-SEITIGE ZEITPLÄNE (/schedules)
+    // =========================================================================
+
+    /**
+     * Wertet die Antwort-Hülle der V1-API aus.
+     *
+     * ACHTUNG, die zentrale Falle dieser API: Sie antwortet **auch bei Ablehnung mit HTTP 200**.
+     * Das Urteil steht ausschliesslich im Body — `[{"success":{…}}]` oder
+     * `[{"error":{"type":7,"description":"…"}}]`. [makeSecureHueRequest] kennt nur den
+     * HTTP-Status; wer sich darauf verlaesst, haelt einen abgelehnten Zeitplan fuer angelegt und
+     * schaltet das Licht nie wieder aus. [createUser] parst aus demselben Grund den Body.
+     *
+     * @return den Wert unter "success" oder ein Failure mit der Fehlerbeschreibung der Bridge.
+     */
+    private fun parseV1Envelope(responseBody: String): Result<Map<*, *>> {
+        return try {
+            val type = object : TypeToken<List<Map<String, Any>>>() {}.type
+            val entries: List<Map<String, Any>> = gson.fromJson(responseBody, type)
+                ?: return Result.failure(IOException("Bridge returned an unparseable response"))
+
+            val first = entries.firstOrNull()
+                ?: return Result.failure(IOException("Bridge returned an empty response"))
+
+            (first["error"] as? Map<*, *>)?.let { error ->
+                val description = error["description"] ?: "unknown error"
+                val errorType = (error["type"] as? Double)?.toInt()
+                return Result.failure(IOException("Bridge rejected the request (type $errorType): $description"))
+            }
+
+            (first["success"] as? Map<*, *>)?.let { return Result.success(it) }
+
+            Result.failure(IOException("Bridge response contained neither success nor error: $responseBody"))
+        } catch (e: Exception) {
+            Result.failure(IOException("Failed to parse bridge response: $responseBody", e))
+        }
+    }
+
+    /**
+     * Legt einen Zeitplan auf der Bridge an.
+     *
+     * @return die von der Bridge vergebene Zeitplan-ID.
+     */
+    suspend fun createSchedule(
+        bridgeIp: String,
+        username: String,
+        schedule: BridgeScheduleCreate
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val json = gson.toJson(schedule)
+        val result = makeSecureHueRequest(
+            bridgeIp,
+            "/api/$username${HueConstants.Bridge.SCHEDULES_ENDPOINT}",
+            "POST",
+            json
+        )
+        val responseBody = result.getOrElse { return@withContext Result.failure(it) }
+
+        parseV1Envelope(responseBody).mapCatching { success ->
+            success["id"] as? String
+                ?: throw IOException("Bridge accepted the schedule but returned no id: $responseBody")
+        }
+    }
+
+    /** Alle Zeitpläne der Bridge, nach Zeitplan-ID. */
+    suspend fun getSchedules(
+        bridgeIp: String,
+        username: String
+    ): Result<Map<String, BridgeSchedule>> = withContext(Dispatchers.IO) {
+        val result = makeSecureHueRequest(
+            bridgeIp,
+            "/api/$username${HueConstants.Bridge.SCHEDULES_ENDPOINT}",
+            "GET"
+        )
+        val responseBody = result.getOrElse { return@withContext Result.failure(it) }
+
+        try {
+            val type = object : TypeToken<Map<String, BridgeSchedule>>() {}.type
+            Result.success(gson.fromJson(responseBody, type) ?: emptyMap())
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to parse schedules response: $responseBody", e)
+            Result.failure(IOException("Failed to parse schedules: ${e.message}", e))
+        }
+    }
+
+    /** Löscht einen Zeitplan auf der Bridge. */
+    suspend fun deleteSchedule(
+        bridgeIp: String,
+        username: String,
+        scheduleId: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val result = makeSecureHueRequest(
+            bridgeIp,
+            "/api/$username${HueConstants.Bridge.SCHEDULES_ENDPOINT}/$scheduleId",
+            "DELETE"
+        )
+        val responseBody = result.getOrElse { return@withContext Result.failure(it) }
+        parseV1Envelope(responseBody).map { }
+    }
 }

@@ -76,15 +76,6 @@ interface IHueRuleUseCase {
     fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int?
 
     /**
-     * Auto-off targets for a shift: lights/groups that an enabled rule switches ON with a
-     * configured auto-off duration. Used by the scheduler to turn them off again afterwards.
-     *
-     * Regeln als Parameter, nicht selbst geladen — Begruendung siehe
-     * [getPreAlarmSunriseLeadMinutes].
-     */
-    fun getAutoOffActions(rules: List<HueSchedule>, shiftName: String): List<AutoOffTarget>
-    
-    /**
      * Validate rule configuration
      * Business logic validation for rule creation/update
      */
@@ -126,13 +117,4 @@ data class RuleValidationResult(
     val isValid: Boolean,
     val errors: List<String> = emptyList(),
     val warnings: List<String> = emptyList()
-)
-
-/**
- * A light/group that should be switched off [delayMinutes] after a rule turned it on.
- */
-data class AutoOffTarget(
-    val targetId: String,
-    val isGroup: Boolean,
-    val delayMinutes: Int
 )

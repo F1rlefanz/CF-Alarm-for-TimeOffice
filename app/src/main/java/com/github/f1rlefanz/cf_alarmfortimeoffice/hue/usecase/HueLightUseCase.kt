@@ -1,6 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeTimer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueLightRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.AutoOffTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.BatchActionResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCaseAdvanced
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
@@ -241,6 +243,84 @@ class HueLightUseCase @Inject constructor(
             Logger.e(LogTags.HUE_USECASE, "Batch operation failed", e)
             Result.failure(Exception("Batch operation failed: ${e.message}", e))
         }
+    }
+
+    override suspend fun scheduleBridgeAutoOff(
+        targets: List<AutoOffTarget>,
+        shiftName: String
+    ): Result<Int> {
+        if (targets.isEmpty()) {
+            Logger.d(LogTags.HUE_BRIDGE, "🌉⏱️ Kein Auto-Aus konfiguriert, kein Bridge-Zeitplan noetig")
+            return Result.success(0)
+        }
+
+        return try {
+            clearOwnBridgeSchedules()
+
+            // Ein Zeitplan traegt GENAU EIN Command, also einen Zielpfad. Mehrere Ziele heissen
+            // deshalb mehrere Zeitpläne. Unkritisch: die Bridge fasst 100 (real gemessen: 98
+            // frei), und autodelete raeumt jeden nach dem Ausloesen selbst wieder ab.
+            var created = 0
+            targets.forEach { target ->
+                val result = lightRepository.createBridgeSchedule(
+                    name = BridgeTimer.scheduleName(target.targetId, target.isGroup),
+                    description = BridgeTimer.scheduleDescription(shiftName, target.delayMinutes),
+                    resourcePath = BridgeTimer.resourcePath(target.targetId, target.isGroup),
+                    method = "PUT",
+                    body = mapOf("on" to false),
+                    localtime = BridgeTimer.timerPattern(target.delayMinutes),
+                    autodelete = true
+                )
+                if (result.isSuccess) created++
+            }
+
+            if (created < targets.size) {
+                // WARN, nicht DEBUG: Seit dem Wegfall des WorkManager-Fallbacks ist dieser
+                // Zeitplan der EINZIGE Weg, wie die Lampen wieder ausgehen. Ein stiller
+                // Fehlschlag hier heisst: Licht bleibt an, und niemand erfaehrt warum.
+                // Release-Logs enthalten nur WARN+.
+                Logger.w(
+                    LogTags.HUE_BRIDGE,
+                    "🌉⚠️ Nur $created/${targets.size} Auto-Aus-Zeitplaene auf der Bridge angelegt - " +
+                        "die uebrigen Lampen bleiben an"
+                )
+            } else {
+                Logger.i(LogTags.HUE_BRIDGE, "🌉✅ $created Auto-Aus-Zeitplan(e) auf der Bridge angelegt ($shiftName)")
+            }
+
+            Result.success(created)
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to schedule bridge-side auto-off", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Entfernt Auto-Aus-Zeitpläne aus einem frueheren Lauf.
+     *
+     * Ohne das legt jeder Snooze einen weiteren Timer an - und der aelteste, laengst laufende
+     * schaltet mitten im naechsten Weckvorgang aus. Angefasst wird ausschliesslich, was unser
+     * Praefix traegt: auf der Bridge liegen auch Zeitpläne der Hue-App und der Dimmer-Schalter.
+     *
+     * Fehlschlaege sind hier bewusst nicht fatal - ein nicht abgeraeumter Alt-Timer ist
+     * unschoen, aber kein Grund, den neuen gar nicht erst anzulegen.
+     */
+    private suspend fun clearOwnBridgeSchedules() {
+        lightRepository.getBridgeSchedules().fold(
+            onSuccess = { schedules ->
+                schedules
+                    .filter { (_, schedule) -> BridgeTimer.isOwnSchedule(schedule) }
+                    .forEach { (id, schedule) ->
+                        lightRepository.deleteBridgeSchedule(id)
+                            .onSuccess { Logger.d(LogTags.HUE_BRIDGE, "🌉🧹 Alt-Zeitplan '${schedule.name}' (id=$id) entfernt") }
+                            .onFailure { Logger.w(LogTags.HUE_BRIDGE, "🌉⚠️ Alt-Zeitplan id=$id nicht entfernt: ${it.message}") }
+                    }
+            },
+            onFailure = {
+                Logger.w(LogTags.HUE_BRIDGE, "🌉⚠️ Bestehende Bridge-Zeitpläne nicht lesbar, raeume nicht auf: ${it.message}")
+            }
+        )
     }
 
     override suspend fun executeActionsWithAutoRevert(

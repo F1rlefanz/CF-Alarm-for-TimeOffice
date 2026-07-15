@@ -353,86 +353,53 @@ class HueViewModel @Inject constructor(
         }
     }
     
-    fun testLightConnection(targetId: String, isGroup: Boolean) {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Testing connection for ${if (isGroup) "group" else "light"} $targetId")
-
-        viewModelScope.launch {
-            try {
-                val result = hueLightUseCase.testLightConnection(targetId, isGroup)
-                val isConnected = result.getOrNull() ?: false
-
-                val message = if (isConnected) {
-                    "${if (isGroup) "Group" else "Light"} $targetId is reachable"
-                } else {
-                    "${if (isGroup) "Group" else "Light"} $targetId is not reachable"
-                }
-
-                // You could show this in a snackbar or similar UI element
-                Logger.i(LogTags.HUE_VIEWMODEL, "Connection test result: $message")
-
-            } catch (e: Exception) {
-                Logger.e(LogTags.HUE_VIEWMODEL, "Connection test exception", e)
-            }
-        }
-    }
-
     /**
-     * Meaningful "Test" action for the generic (no single target selected) test buttons in
-     * [HueTabContent]/[HueSettingsScreen]: makes every currently known light blink so the user
-     * gets visible proof the app can actually reach the bridge, instead of a silent light-list
-     * refresh. Falls back to a reachability check via [IHueLightUseCase.testLightConnection]
-     * when no lights/groups are loaded yet (e.g. right after connecting, before the first
-     * refresh completed).
+     * "Test"-Knopf in [HueTabContent]/[HueSettingsScreen]: laesst jede bekannte Lampe blinken,
+     * damit der Nutzer SIEHT, dass die App die Bridge wirklich erreicht.
+     *
+     * NUR LAMPEN, NIE GRUPPEN - auch wenn eine Gruppe pro PUT mehrere Lampen erreicht und
+     * damit sparsamer waere. Gruppen ueberschneiden sich beliebig, untereinander UND mit den
+     * Lampen: real (Bridge des Entwicklers, 15.07.2026) steckt Lampe 4 in "Wohnzimmer", in
+     * "Deckenlampe" UND in "Zuhause". Jede Gruppe anzufunken hiesse also drei Alerts auf
+     * derselben Lampe - und weil jedes Ziel ein eigener HTTP-PUT ist, kaemen die zeitversetzt
+     * an: Aufleuchten, Pause, Blinken. Genau das war der gemeldete Fehler. Ueber die Lampen zu
+     * gehen ist die einzige Ebene, auf der "jede Lampe genau einmal" strukturell stimmt, egal
+     * wie die Gruppen geschnitten sind.
      */
     fun runLightTest() {
         Logger.i(LogTags.HUE_VIEWMODEL, "Running visible light test")
 
         viewModelScope.launch {
             try {
-                val targets = uiState.value.lightTargets
-
-                // Gruppen und Lampen UEBERSCHNEIDEN sich: eine Gruppe IST ihre Lampen. Wer
-                // beides anfunkt, schickt derselben Lampe zwei Alerts nacheinander - und weil
-                // jedes Ziel ein eigener HTTP-PUT ist, kamen die nicht gleichzeitig an: erst
-                // blitzte die Gruppe kurz auf, dann kam eine Pause (Roundtrip pro Ziel), dann
-                // blinkten die Lampen einzeln noch einmal hinterher. Das sah aus wie ein
-                // kaputter Test und war nur doppelte Ansteuerung.
+                // Die Lampenliste notfalls JETZT laden und DARAUF WARTEN.
                 //
-                // Deshalb: Gruppen ansteuern (ein PUT erreicht alle ihre Lampen gleichzeitig)
-                // und einzeln nur noch die Lampen, die in keiner Gruppe stecken.
-                val groupedLightIds = targets.groups.flatMap { it.lights }.toSet()
-                val flashTargets: List<Pair<String, Boolean>> =
-                    targets.groups.map { it.id to true } +
-                        targets.lights.filter { it.id !in groupedLightIds }.map { it.id to false }
+                // Hier stand mal refreshLightTargets() - das ist fire-and-forget (startet nur
+                // eine Coroutine), der uiState direkt danach war deshalb immer noch leer. Genau
+                // das war "der erste Klick tut nichts, der zweite blinkt": Direkt nach dem
+                // Koppeln ist die Liste leer, der erste Klick stiess den Refresh an, las die
+                // noch leere Liste, meldete "Keine Lampen gefunden" und blitzte nichts. Dass
+                // der zweite Klick ging, war reiner Zufall des inzwischen fertigen Refreshs.
+                val known = uiState.value.lightTargets
+                val lights = known.lights.ifEmpty {
+                    hueLightUseCase.getAllLightTargets().getOrNull()
+                        ?.also { loaded -> _uiState.update { it.copy(lightTargets = loaded) } }
+                        ?.lights
+                        .orEmpty()
+                }
 
-                if (flashTargets.isEmpty()) {
-                    // No known lights/groups yet: fall back to a plain reachability probe.
-                    refreshLightTargets()
-                    val refreshedTargets = uiState.value.lightTargets
-                    val fallbackTarget = refreshedTargets.groups.firstOrNull()?.let { it.id to true }
-                        ?: refreshedTargets.lights.firstOrNull()?.let { it.id to false }
-
-                    if (fallbackTarget == null) {
-                        emitUserMessage("Keine Lampen gefunden")
-                        return@launch
-                    }
-
-                    val (targetId, isGroup) = fallbackTarget
-                    val reachable = hueLightUseCase.testLightConnection(targetId, isGroup).getOrNull() ?: false
-                    emitUserMessage(if (reachable) "Lampen erreichbar (1)" else "Lampen nicht erreichbar")
+                if (lights.isEmpty()) {
+                    emitUserMessage("Keine Lampen gefunden")
                     return@launch
                 }
 
-                val results = flashTargets.map { (targetId, isGroup) ->
-                    hueLightUseCase.flashLight(targetId, isGroup)
-                }
+                val results = lights.map { light -> hueLightUseCase.flashLight(light.id) }
                 val successCount = results.count { it.isSuccess }
 
                 if (successCount > 0) {
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Light test flash sent to $successCount/${flashTargets.size} targets")
-                    emitUserMessage("Test gesendet – die Lampen blinken einige Sekunden")
+                    Logger.i(LogTags.HUE_VIEWMODEL, "Light test flash sent to $successCount/${lights.size} lights")
+                    emitUserMessage("Test gesendet – die Lampen blinken kurz")
                 } else {
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Light test flash failed for all ${flashTargets.size} targets")
+                    Logger.w(LogTags.HUE_VIEWMODEL, "Light test flash failed for all ${lights.size} lights")
                     emitUserMessage("Lampen nicht erreichbar")
                 }
             } catch (e: Exception) {

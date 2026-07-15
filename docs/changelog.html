@@ -46,7 +46,20 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.11.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.11.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Der Lampentest reagiert jetzt sofort – und blinkt kurz statt eine gefühlte Ewigkeit.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Der erste Klick auf „Test“ tat nichts:</strong> Direkt nach dem Verbinden mit der Bridge passierte beim ersten Antippen des Test-Knopfes gar nichts – erst der zweite Klick ließ die Lampen blinken. Grund: Die App stieß das Laden der Lampenliste an, wartete aber nicht darauf und schaute sofort in die noch leere Liste. Der erste Klick lud also nur nach, ohne etwas zu tun. Jetzt wartet der Test auf die Liste und blinkt schon beim ersten Antippen.</li>
+                <li><strong>Der Lampentest blinkt jetzt kurz statt 15 Sekunden:</strong> Das Blinksignal der Bridge läuft von sich aus eine Viertelminute – deutlich zu lang für eine Rückmeldung, auf die man wartet. Der Test beendet es jetzt nach etwa vier Sekunden von selbst.</li>
+                <li><strong>Wirklich nur ein Blinken pro Lampe:</strong> In 1.11.1 war der doppelte Blitz nur halb behoben. Lampen können gleichzeitig in mehreren Gruppen liegen (eine Deckenlampe etwa in „Wohnzimmer“, „Deckenlampe“ und „Zuhause“) – über die Gruppen zu blinken traf dieselbe Lampe daher mehrfach. Der Test spricht jetzt direkt die Lampen an, wodurch jede genau ein Signal bekommt, egal wie die Gruppen geschnitten sind.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.11.1 <small>(interne Alpha)</small></h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Die Zurück-Taste tut endlich das, was sie überall sonst tut – und drei Merkwürdigkeiten im Hue-Bereich sind weg.</em></p>
 

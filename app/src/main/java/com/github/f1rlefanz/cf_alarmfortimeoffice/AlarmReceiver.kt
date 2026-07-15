@@ -259,14 +259,10 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 if (shiftConfigResult.isSuccess) {
                     val shiftConfig = shiftConfigResult.getOrNull()
-                    val matchingShiftDef = shiftConfig?.definitions?.find { shiftDef ->
-                        // Match by name or keywords
-                        shiftDef.name.equals(shiftName, ignoreCase = true) ||
-                                shiftDef.keywords.any { keyword ->
-                                    shiftName.contains(keyword, ignoreCase = true) ||
-                                            keyword.contains(shiftName, ignoreCase = true)
-                                }
-                    }
+                    // Gestaffelt nach Genauigkeit - siehe ShiftConfig.findDefinitionFor().
+                    // Ein unscharfes find{} stand mal hier und hat die Regeln fast jeder
+                    // Schicht auf "Spaetschicht" umgebogen.
+                    val matchingShiftDef = shiftConfig?.findDefinitionFor(shiftName)
 
                     if (matchingShiftDef != null) {
                         // Create synthetic ShiftMatch for Hue rules

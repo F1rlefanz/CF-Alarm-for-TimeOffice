@@ -46,7 +46,22 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.11.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.11.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Die Zurück-Taste tut endlich das, was sie überall sonst tut – und drei Merkwürdigkeiten im Hue-Bereich sind weg.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Die Zurück-Taste führt zurück, statt die App zu schließen:</strong> Wer in den Kalender-Events, der Kalender-Auswahl oder der Schicht-Konfiguration die Zurück-Taste drückte, landete unvermittelt auf dem Android-Startbildschirm – die App war zu. Der Pfeil oben links war der einzige Weg zurück. Jetzt führt Zurück eine Ebene höher: aus einem Unterbildschirm zurück in den Bereich, aus dem du gekommen bist, und aus Status, Einstellungen oder Hue zurück auf Home. Nur auf Home schließt Zurück weiterhin die App – so wie man es erwartet.</li>
+                <li><strong>Der Lampentest blinkt jetzt in einem Stück:</strong> Der Test ließ die Lampen kurz aufleuchten, dann kam eine Pause, und ein, zwei Sekunden später fing das Blinken an. Der Grund: Die App sprach jede Lampe doppelt an – einmal über ihre Gruppe und dann noch einmal einzeln. Da jeder Befehl einzeln zur Bridge geht, kamen die Signale zeitversetzt an. Jetzt wird jede Lampe genau einmal angesprochen, und sie blinken gemeinsam für ein paar Sekunden.</li>
+                <li><strong>Die Regel-Vorschau lässt das Licht nicht mehr an:</strong> Der „Regel testen“-Knopf schaltete das Licht ein – und ließ es an, wenn die Regel kein automatisches Ausschalten eingestellt hatte (bei einer neuen Regel ist das der Normalfall). Ausschalten ging dann nur noch über die Hue-App. Die Vorschau räumt jetzt immer hinter sich auf: Licht an, kurz hinschauen, Licht wieder aus. Der Hinweis auf dem Bildschirm sagt dazu, ob das Ausschalten zur Regel gehört oder nur zum Test – deine echte Regel bleibt unverändert.</li>
+                <li><strong>Sonnenaufgang in der Vorschau wird nicht mehr abgewürgt:</strong> Beim Testen einer Sonnenaufgangs-Regel ging das Licht mitten im Aufblenden wieder aus, statt die Rampe zu Ende laufen zu lassen.</li>
+                <li><strong>Weniger Wiederholung bei der Bridge-Suche:</strong> Über der laufenden Bridge-Suche stand weiterhin „Noch keine Bridge eingerichtet – suche unten nach deiner Hue-Bridge“, obwohl genau das gerade passierte. Die Karte verschwindet jetzt, sobald die Suche losgeht, und die gefundene Bridge steht im Mittelpunkt. War schon einmal eine Bridge verbunden, bleibt der Status sichtbar – dann ist „nicht verbunden“ eine echte Information.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.11.0 <small>(interne Alpha)</small></h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Das Auto-Aus fürs Licht liegt jetzt auf der Hue Bridge – es funktioniert damit auch dann, wenn du längst aus dem Haus bist.</em></p>
 

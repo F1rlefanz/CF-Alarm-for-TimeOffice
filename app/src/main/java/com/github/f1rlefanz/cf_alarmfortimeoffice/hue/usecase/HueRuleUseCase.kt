@@ -18,6 +18,7 @@ import java.time.LocalTime
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -718,6 +719,19 @@ class HueRuleUseCase @Inject constructor(
         }
     }
     
+    /**
+     * Fuehrt [rule] sofort aus, damit der Nutzer im Formular sieht, was sie tut.
+     *
+     * DIE VORSCHAU RAEUMT IMMER HINTER SICH AUF - unabhaengig davon, ob die Regel ein Auto-Aus
+     * konfiguriert hat. Vorher haing das am Auto-Aus der Regel, und das steht bei einer neuen
+     * Regel auf "aus": Der Vorschau-Knopf schaltete das Licht an und liess es an, ohne Weg
+     * zurueck ausser der Hue-App. Eine Vorschau, die den Zustand der Wohnung dauerhaft
+     * veraendert, ist keine Vorschau - der Nutzer probiert hier eine Regel aus, er schaltet
+     * nicht sein Licht ein. Wer das wieder ans Auto-Aus koppelt, baut genau das zurueck.
+     *
+     * Die verkuerzten Zeiten gelten NUR hier; die echte Regel nutzt die konfigurierten Werte
+     * (bzw. bridge-seitige Zeitplaene, siehe executeRulesForAlarm).
+     */
     override suspend fun executeRuleNow(rule: HueSchedule): Result<RuleExecutionResult> {
         Logger.i(LogTags.HUE_USECASE, "▶️ Executing rule now (preview): ${rule.name}")
 
@@ -728,22 +742,24 @@ class HueRuleUseCase @Inject constructor(
                 val testSunrise = sunrise.copy(durationMinutes = SUNRISE_TEST_DURATION_MINUTES)
                 val result = runSunriseForRule(rule, testSunrise)
 
-                // UX FIX (D): a sunrise rule can ALSO configure auto-off now. Demo that too,
-                // without re-sending brightness/color (which would fight the ramp's own native
-                // bridge-side transition) - just a plain delayed OFF on the same targets.
-                val hasAutoOff = rule.lightActions.any { it.on == true && (it.duration ?: 0) > 0 }
-                if (hasAutoOff) {
-                    val onlyOnActions = rule.lightActions
-                        .map { it.targetId to it.isGroup }
-                        .filter { it.first.isNotBlank() }
-                        .distinct()
-                        .map { (targetId, isGroup) -> LightAction(targetId = targetId, isGroup = isGroup, on = true) }
-                    if (onlyOnActions.isNotEmpty()) {
-                        lightUseCase.executeActionsWithAutoRevert(
-                            actions = onlyOnActions,
-                            revertAfter = AUTO_OFF_TEST_DURATION_SECONDS.seconds
-                        )
-                    }
+                // Das Aus kommt NACH der (verkuerzten) Rampe, nicht mittendrin: Die Rampe
+                // laeuft als native Bridge-Transition ueber SUNRISE_TEST_DURATION_MINUTES -
+                // ein Aus nach AUTO_OFF_TEST_DURATION_SECONDS wuerde sie mitten im Aufblenden
+                // abwuergen. Derselbe Gedanke wie der sunriseOffset in autoOffTargetsOf(): das
+                // Auto-Aus haengt hinten an, es faellt nicht in die Rampe hinein.
+                //
+                // Nur ein blankes on=true (kein Helligkeit/Farbe): alles andere wuerde gegen
+                // die laufende Transition der Bridge arbeiten.
+                val onlyOnActions = rule.lightActions
+                    .map { it.targetId to it.isGroup }
+                    .filter { it.first.isNotBlank() }
+                    .distinct()
+                    .map { (targetId, isGroup) -> LightAction(targetId = targetId, isGroup = isGroup, on = true) }
+                if (onlyOnActions.isNotEmpty()) {
+                    lightUseCase.executeActionsWithAutoRevert(
+                        actions = onlyOnActions,
+                        revertAfter = SUNRISE_TEST_DURATION_MINUTES.minutes + AUTO_OFF_TEST_DURATION_SECONDS.seconds
+                    )
                 }
 
                 Result.success(
@@ -752,17 +768,11 @@ class HueRuleUseCase @Inject constructor(
                         actionsExecuted = result.attempted,
                         successfulActions = result.succeeded,
                         errors = result.errors,
-                        // UX FIX (C): mirrors the auto-off preview note below so the user
-                        // understands the ramp they just saw was compressed for the test,
-                        // not the real (much longer) configured duration.
-                        autoOffTestNote = if (hasAutoOff) {
-                            "Test: Sonnenaufgang verkürzt auf $SUNRISE_TEST_DURATION_MINUTES Min, " +
-                                "Auto-Aus verkürzt auf ~${AUTO_OFF_TEST_DURATION_SECONDS} s " +
-                                "(die echte Regel nutzt die konfigurierten Zeiten)"
-                        } else {
-                            "Test: Sonnenaufgang verkürzt auf $SUNRISE_TEST_DURATION_MINUTES Min " +
-                                "(die echte Regel nutzt die konfigurierte Dauer von ${sunrise.durationMinutes} Min)"
-                        }
+                        // Sagt, was der Nutzer gleich sieht - und dass es nicht die echten
+                        // Zeiten sind (sonst wirkt die 1-Minuten-Rampe wie ein Fehler).
+                        autoOffTestNote = "Test: Sonnenaufgang verkürzt auf $SUNRISE_TEST_DURATION_MINUTES Min, " +
+                            "danach gehen die Lichter wieder aus " +
+                            "(die echte Regel nutzt die konfigurierte Dauer von ${sunrise.durationMinutes} Min)"
                     )
                 )
             } else {
@@ -771,45 +781,44 @@ class HueRuleUseCase @Inject constructor(
                     return Result.success(RuleExecutionResult(0, 0, 0, emptyList()))
                 }
 
-                // If the rule configures an auto-off, demo it too: lights on now, OFF again
-                // after a short, observable delay (the real alarm still uses the configured
-                // duration - only the preview is shortened).
+                // Licht an, und nach einer kurzen, beobachtbaren Weile wieder aus. Schaltet die
+                // Regel nur AUS, hat executeActionsWithAutoRevert nichts nachzuraeumen - es
+                // filtert selbst auf on == true.
                 val hasAutoOff = rule.lightActions.any { it.on == true && (it.duration ?: 0) > 0 }
+                // ... und dann darf auch die Meldung kein Aus versprechen: eine reine
+                // Ausschalt-Regel laesst nichts an, was zurueckzunehmen waere.
+                val turnsAnythingOn = actions.any { it.on == true }
 
-                if (hasAutoOff) {
-                    lightUseCase.executeActionsWithAutoRevert(
-                        actions = actions,
-                        revertAfter = AUTO_OFF_TEST_DURATION_SECONDS.seconds
-                    ).fold(
-                        onSuccess = { batch ->
-                            Result.success(
-                                RuleExecutionResult(
-                                    rulesExecuted = 1,
-                                    actionsExecuted = batch.totalActions,
-                                    successfulActions = batch.successfulActions,
-                                    errors = batch.failedActions.mapNotNull { it.error },
-                                    autoOffTestNote = "Test: Auto-Aus verkürzt auf ~${AUTO_OFF_TEST_DURATION_SECONDS} s " +
-                                        "(die echte Regel nutzt die konfigurierte Zeit)"
-                                )
+                lightUseCase.executeActionsWithAutoRevert(
+                    actions = actions,
+                    revertAfter = AUTO_OFF_TEST_DURATION_SECONDS.seconds
+                ).fold(
+                    onSuccess = { batch ->
+                        Result.success(
+                            RuleExecutionResult(
+                                rulesExecuted = 1,
+                                actionsExecuted = batch.totalActions,
+                                successfulActions = batch.successfulActions,
+                                errors = batch.failedActions.mapNotNull { it.error },
+                                // Der Unterschied ist wichtig: Bei einer Regel MIT Auto-Aus ist
+                                // das Ausgehen echtes Verhalten, nur schneller. Bei einer Regel
+                                // OHNE ist es reines Aufraeumen der Vorschau - dort wuerde das
+                                // Licht sonst anbleiben, und das muss dabeistehen, sonst haelt
+                                // der Nutzer das Aus faelschlich fuer die Regel.
+                                autoOffTestNote = when {
+                                    !turnsAnythingOn -> null
+                                    hasAutoOff ->
+                                        "Test: Auto-Aus verkürzt auf ~${AUTO_OFF_TEST_DURATION_SECONDS} s " +
+                                            "(die echte Regel nutzt die konfigurierte Zeit)"
+                                    else ->
+                                        "Test: Lichter gehen nach ~${AUTO_OFF_TEST_DURATION_SECONDS} s wieder aus " +
+                                            "(nur im Test – die echte Regel lässt sie an)"
+                                }
                             )
-                        },
-                        onFailure = { Result.failure(it) }
-                    )
-                } else {
-                    lightUseCase.executeBatchLightActions(actions).fold(
-                        onSuccess = { batch ->
-                            Result.success(
-                                RuleExecutionResult(
-                                    rulesExecuted = 1,
-                                    actionsExecuted = batch.totalActions,
-                                    successfulActions = batch.successfulActions,
-                                    errors = batch.failedActions.mapNotNull { it.error }
-                                )
-                            )
-                        },
-                        onFailure = { Result.failure(it) }
-                    )
-                }
+                        )
+                    },
+                    onFailure = { Result.failure(it) }
+                )
             }
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to execute rule now", e)

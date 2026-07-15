@@ -3,6 +3,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeScheduleCommand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeScheduleCreate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueLightRepository
@@ -294,9 +297,65 @@ class HueLightRepository @Inject constructor(
             
             Logger.d(LogTags.HUE_LIGHTS, "Successfully retrieved state for group $groupId")
             Result.success(group)
-            
+
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Failed to get group state for $groupId", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun createBridgeSchedule(
+        name: String,
+        description: String,
+        resourcePath: String,
+        method: String,
+        body: Map<String, Any>,
+        localtime: String,
+        autodelete: Boolean
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val (bridgeIp, username) = getValidatedConnectionInfo()
+
+            // Die Bridge fuehrt das Command spaeter SELBST aus und braucht dafuer eine
+            // vollstaendige, autorisierte Adresse - inklusive Username.
+            val create = BridgeScheduleCreate(
+                name = name,
+                description = description,
+                command = BridgeScheduleCommand(
+                    address = "${HueConstants.Bridge.API_BASE_PATH}/$username$resourcePath",
+                    method = method,
+                    body = body
+                ),
+                localtime = localtime,
+                autodelete = autodelete
+            )
+
+            apiClient.createSchedule(bridgeIp, username, create)
+                .onSuccess { Logger.i(LogTags.HUE_BRIDGE, "🌉⏱️ Bridge-Zeitplan '$name' angelegt (id=$it, $localtime)") }
+                .onFailure { Logger.w(LogTags.HUE_BRIDGE, "🌉⚠️ Bridge-Zeitplan '$name' abgelehnt: ${it.message}") }
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to create bridge schedule '$name'", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getBridgeSchedules(): Result<Map<String, BridgeSchedule>> = withContext(Dispatchers.IO) {
+        try {
+            val (bridgeIp, username) = getValidatedConnectionInfo()
+            apiClient.getSchedules(bridgeIp, username)
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to load bridge schedules", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteBridgeSchedule(scheduleId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val (bridgeIp, username) = getValidatedConnectionInfo()
+            apiClient.deleteSchedule(bridgeIp, username, scheduleId)
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to delete bridge schedule $scheduleId", e)
             Result.failure(e)
         }
     }

@@ -33,6 +33,28 @@ interface IHueLightUseCase {
     suspend fun executeBatchLightActions(actions: List<LightAction>): Result<BatchActionResult>
     
     /**
+     * Legt das Auto-Aus als Zeitplan AUF DER BRIDGE ab: pro Ziel ein Timer
+     * ("in +N Minuten ausschalten"), den die Bridge selbst ausführt.
+     *
+     * WARUM NICHT DAS HANDY: Ein Auto-Aus per WorkManager erreicht die Bridge nur aus dem
+     * Heim-WLAN. Wer nach dem Wecken aus dem Haus geht, nimmt das Handy mit — und die Lampen
+     * blieben an. Die Bridge steht dagegen immer im richtigen Netz.
+     *
+     * WARUM DAS SICHER IST: Der Aufruf gehört an die Stelle, an der die Regeln die Lampen gerade
+     * eingeschaltet haben. Ging das Licht an, war die Bridge erreichbar — dann klappt auch der
+     * Zeitplan. War sie nicht erreichbar, ging kein Licht an, und es gibt nichts auszuschalten.
+     *
+     * Räumt eigene Timer aus einem früheren Lauf vorher ab (Snooze, erneut gefeuerter Alarm),
+     * damit nicht ein alter Timer zu früh auslöst.
+     *
+     * @return Anzahl der tatsächlich angelegten Timer.
+     */
+    suspend fun scheduleBridgeAutoOff(
+        targets: List<AutoOffTarget>,
+        shiftName: String
+    ): Result<Int>
+
+    /**
      * Test light/group connectivity
      */
     suspend fun testLightConnection(targetId: String, isGroup: Boolean): Result<Boolean>
@@ -118,9 +140,12 @@ interface IHueLightUseCaseAdvanced : IHueLightUseCase {
     
     /**
      * Applies [actions] immediately, then switches every target OFF after [revertAfter] —
-     * regardless of the state they were in before. This mirrors what [AutoOffWorker] does for
-     * the real alarm (switch off, not "restore previous state"), so previewing a rule's
+     * regardless of the state they were in before. This mirrors what [scheduleBridgeAutoOff]
+     * does for the real alarm (switch off, not "restore previous state"), so previewing a rule's
      * auto-off via "Regel testen" demonstrates the same end result on a shortened timer.
+     *
+     * Bewusst app-seitig und NICHT über einen Bridge-Timer: die Vorschau dauert Sekunden, der
+     * Nutzer sieht dabei zu, und ein Bridge-Zeitplan wäre hier nur Ballast auf fremdem Gerät.
      *
      * Targets are deduplicated by (targetId, isGroup); only actions with `on == true` schedule
      * an auto-off (an action that only dims/recolors an already-on light has nothing to revert).
@@ -133,6 +158,18 @@ interface IHueLightUseCaseAdvanced : IHueLightUseCase {
         revertAfter: Duration
     ): Result<BatchActionResult>
 }
+
+/**
+ * A light/group that should be switched off [delayMinutes] after a rule turned it on.
+ *
+ * Die Verzoegerung rechnet HueRuleUseCase aus (Regel-Dauer plus ggf. Sonnenaufgangs-Versatz);
+ * hier steht nur noch das Ergebnis.
+ */
+data class AutoOffTarget(
+    val targetId: String,
+    val isGroup: Boolean,
+    val delayMinutes: Int
+)
 
 /**
  * Combined light targets for UI

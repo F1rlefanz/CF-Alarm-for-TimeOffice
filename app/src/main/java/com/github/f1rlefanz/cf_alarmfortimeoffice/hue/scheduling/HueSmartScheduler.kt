@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling
 
 import android.content.Context
-import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -14,9 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnec
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.DailySchedulePlanningWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.GenericHealthCheckWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.PreAlarmHealthCheckWorker
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.AutoOffWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.SunriseStartWorker
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -55,7 +52,6 @@ import java.time.Duration as JavaDuration
 interface HueSmartSchedulerEntryPoint {
     fun alarmUseCase(): IAlarmUseCase
     fun hueRuleUseCase(): IHueRuleUseCase
-    fun hueLightUseCase(): IHueLightUseCase
 }
 
 /**
@@ -90,8 +86,18 @@ class HueSmartScheduler private constructor() {
         // Smart scheduling constants
         private const val PRE_ALARM_HEALTH_CHECK_WORK = "pre_alarm_health_check"
         private const val SUNRISE_START_WORK = "sunrise_start"
-        private const val AUTO_OFF_WORK = "hue_auto_off"
         private const val DAILY_SCHEDULE_WORK = "daily_schedule_planning"
+
+        /**
+         * Tag der fruheren Auto-Off-Jobs. Der Mechanismus ist weg - das Auto-Aus liegt seit
+         * v1.11.0 als Zeitplan auf der BRIDGE (siehe IHueLightUseCase.scheduleBridgeAutoOff).
+         *
+         * Der Tag lebt hier nur noch, um Altlasten abzuraeumen: WorkManager-Jobs ueberleben das
+         * App-Update. Ein vor dem Update eingeplanter Auto-Off-Job wuerde nach dem Update eine
+         * Worker-Klasse suchen, die es nicht mehr gibt, und bei jedem Weckvorgang scheitern.
+         * Kann entfallen, sobald jedes Geraet einmal auf v1.11.0+ gelaufen ist.
+         */
+        private const val LEGACY_AUTO_OFF_WORK = "hue_auto_off"
 
         /**
          * Der 6h-Fallback-Healthcheck fuer den Fall, dass gar keine Alarme gesetzt sind.
@@ -103,9 +109,6 @@ class HueSmartScheduler private constructor() {
         private val PRE_ALARM_CHECK_WINDOW = 10.minutes
         private const val MAX_LOOKAHEAD_DAYS = 7
         private val ALARM_CHANGE_DEBOUNCE = 1500.milliseconds
-
-        /** Start-Backoff des Auto-Off-Retries; verdoppelt sich pro Fehlversuch. */
-        private const val AUTO_OFF_BACKOFF_MINUTES = 5L
     }
 
     private lateinit var workManager: WorkManager
@@ -195,6 +198,10 @@ class HueSmartScheduler private constructor() {
 
         Logger.i(LogTags.HUE_BRIDGE, "🧠 SMART-SCHEDULER: Initializing intelligent health check scheduling")
 
+        // Altlast abraeumen: Auto-Off-Jobs, die eine Version vor v1.11.0 eingeplant hat. Ihre
+        // Worker-Klasse existiert nicht mehr - siehe LEGACY_AUTO_OFF_WORK. Idempotent.
+        workManager.cancelAllWorkByTag(LEGACY_AUTO_OFF_WORK)
+
         // Schedule daily planning work
         scheduleDailyPlanning()
 
@@ -265,18 +272,12 @@ class HueSmartScheduler private constructor() {
         }
 
         try {
-            // Keep pre-alarm sunrise ramps and auto-off jobs in sync with the real alarms
-            // (isolated so a Hue-side failure never disrupts the critical health-check
-            // scheduling below).
+            // Keep pre-alarm sunrise ramps in sync with the real alarms (isolated so a
+            // Hue-side failure never disrupts the critical health-check scheduling below).
             try {
                 scheduleSunriseStarts()
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_BRIDGE, "Failed to schedule sunrise starts", e)
-            }
-            try {
-                scheduleAutoOffs()
-            } catch (e: Exception) {
-                Logger.e(LogTags.HUE_BRIDGE, "Failed to schedule auto-off jobs", e)
             }
 
             // Get next alarm times from the REAL, set alarms
@@ -413,9 +414,9 @@ class HueSmartScheduler private constructor() {
         workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
 
         // Regeln EINMAL laden. Frueher las getPreAlarmSunriseLeadMinutes() selbst und stand in
-        // der Schleife unten -> ein vollstaendiger DataStore-Read PRO ALARM. Zusammen mit
-        // scheduleAutoOffs() waren das 2×N Reads pro Durchgang (Log: 8 × "Retrieved 0 schedule
-        // rules" bei 4 Alarmen).
+        // der Schleife unten -> ein vollstaendiger DataStore-Read PRO ALARM (Log: 8 ×
+        // "Retrieved 0 schedule rules" bei 4 Alarmen, damals noch zusammen mit dem
+        // inzwischen entfallenen Auto-Off-Planer).
         //
         // NACH dem cancel: Scheitert das Laden, bleibt es beim alten Verhalten (abgeraeumt, nichts
         // neu geplant) statt verwaiste Jobs stehenzulassen.
@@ -471,111 +472,6 @@ class HueSmartScheduler private constructor() {
 
         if (scheduled == 0) {
             Logger.d(LogTags.HUE_BRIDGE, "🌅 SMART-SCHEDULER: No pre-alarm sunrises to schedule")
-        }
-    }
-
-    /**
-     * AUTO-OFF: Schedule "turn lights off again" jobs for upcoming alarms.
-     *
-     * For each upcoming alarm whose shift has an enabled rule that switches lights ON with a
-     * configured auto-off duration, an [AutoOffWorker] is scheduled at (alarmTime + duration).
-     * Turning already-off lights off again is a harmless no-op, so a skipped alarm causes no harm.
-     *
-     * KEIN pauschales cancelAllWorkByTag(AUTO_OFF_WORK) mehr!
-     *
-     * Der frühere Ablauf loeschte ALLE Auto-Off-Jobs und legte danach nur fuer Alarme in der
-     * ZUKUNFT neue an. Ein Alarm, der gerade geklingelt hatte, lag damit in der Vergangenheit -
-     * sein noch ausstehender Auto-Off-Job wurde geloescht und nie wieder angelegt. Und genau
-     * DANN laeuft die Methode: der Maintenance-Sync raeumt den vergangenen Alarm weg,
-     * activeAlarms feuert, der Observer ruft hier rein. Folge: die Lampen gingen an und blieben
-     * fuer immer an - unabhaengig davon, ob die Bridge erreichbar war.
-     *
-     * Stattdessen: jeder Alarm bekommt einen stabilen, aus seiner ID abgeleiteten Work-Namen.
-     * ExistingWorkPolicy.REPLACE haelt ihn aktuell, solange der Alarm existiert; ein bereits
-     * gefeuerter Alarm wird schlicht nicht mehr angefasst und sein Auto-Off laeuft in Ruhe zu
-     * Ende.
-     *
-     * Verwaiste Jobs (Schicht nachtraeglich aus dem Kalender geloescht) werden bewusst NICHT
-     * abgeraeumt: sie feuern einmal, schalten bereits ausgeschaltete Lampen aus - ein
-     * harmloser No-op - und sind danach weg. Das ist deutlich billiger als eine
-     * Aufraeum-Buchhaltung, die einen Prozesstod ueberleben muesste, und kann im Gegensatz zu
-     * ihr keinen noch benoetigten Job erwischen.
-     */
-    private suspend fun scheduleAutoOffs() {
-        val ruleUseCase = resolveHueRuleUseCase() ?: return
-        val alarmUseCase = resolveAlarmUseCase() ?: return
-
-        // Regeln EINMAL laden statt einmal pro Alarm - Begruendung siehe scheduleSunriseStarts().
-        val rules = ruleUseCase.getAllRules().getOrElse { error ->
-            Logger.e(LogTags.HUE_BRIDGE, "Failed to load Hue rules for auto-off scheduling", error)
-            return
-        }
-
-        val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
-            Logger.e(LogTags.HUE_BRIDGE, "Failed to load alarms for auto-off scheduling", error)
-            return
-        }
-
-        val now = LocalDateTime.now()
-        val maxTime = now.plusDays(MAX_LOOKAHEAD_DAYS.toLong())
-
-        val upcoming = alarms
-            .filter { it.isActive }
-            .filter {
-                val t = it.triggerTime.toLocalDateTime()
-                t.isAfter(now) && t.isBefore(maxTime)
-            }
-            .sortedBy { it.triggerTime }
-            .take(10)
-
-        var scheduled = 0
-
-        upcoming.forEach { alarm ->
-            val shiftName = alarm.shiftName
-            val alarmTime = alarm.triggerTime.toLocalDateTime()
-            val targets = ruleUseCase.getAutoOffActions(rules, shiftName)
-            if (targets.isEmpty()) return@forEach
-
-            // One worker per distinct delay (it switches off all targets sharing that delay).
-            targets.groupBy { it.delayMinutes }.forEach { (delayMinutes, group) ->
-                val offTime = alarmTime.plusMinutes(delayMinutes.toLong())
-                if (offTime.isBefore(now)) return@forEach
-                val delayMillis = JavaDuration.between(now, offTime).toMillis()
-
-                val lightIds = group.filter { !it.isGroup }.map { it.targetId }.distinct().toTypedArray()
-                val groupIds = group.filter { it.isGroup }.map { it.targetId }.distinct().toTypedArray()
-
-                // Stabiler Name aus der Alarm-ID (nicht aus dem Listen-Index!): ein Index
-                // verschiebt sich, sobald ein frueherer Alarm wegfaellt, und wuerde denselben
-                // Job unter neuem Namen ein zweites Mal anlegen.
-                val workName = "${AUTO_OFF_WORK}_${alarm.id}_$delayMinutes"
-
-                val workRequest = OneTimeWorkRequestBuilder<AutoOffWorker>()
-                    .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
-                    .setInputData(workDataOf("light_ids" to lightIds, "group_ids" to groupIds))
-                    .addTag(AUTO_OFF_WORK)
-                    .setBackoffCriteria(
-                        BackoffPolicy.EXPONENTIAL,
-                        AUTO_OFF_BACKOFF_MINUTES,
-                        TimeUnit.MINUTES
-                    )
-                    .setConstraints(Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build())
-                    .build()
-
-                workManager.enqueueUniqueWork(
-                    workName,
-                    ExistingWorkPolicy.REPLACE,
-                    workRequest
-                )
-                scheduled++
-                Logger.i(LogTags.HUE_BRIDGE, "💡 SMART-SCHEDULER: Scheduled auto-off for $shiftName at $offTime (${lightIds.size} lights, ${groupIds.size} groups, +${delayMinutes}min)")
-            }
-        }
-
-        if (scheduled == 0) {
-            Logger.d(LogTags.HUE_BRIDGE, "💡 SMART-SCHEDULER: No auto-off jobs to schedule")
         }
     }
 
@@ -644,7 +540,6 @@ class HueSmartScheduler private constructor() {
             // Per Tag, nicht per Name: die Pre-Alarm-Checks tragen den Index im Unique-Namen.
             workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
             workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
-            workManager.cancelAllWorkByTag(AUTO_OFF_WORK)
             workManager.cancelUniqueWork(GENERIC_HEALTH_CHECK_WORK)
             workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
             Logger.d(LogTags.HUE_BRIDGE, "🧹 SMART-SCHEDULER: Cleanup completed")

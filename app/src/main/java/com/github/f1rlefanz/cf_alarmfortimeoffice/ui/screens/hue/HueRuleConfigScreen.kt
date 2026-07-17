@@ -394,15 +394,11 @@ fun HueRuleConfigScreen(
                     colorMode = colorMode,
                     colorKelvin = colorKelvin,
                     colorPreset = colorPreset,
-                    autoOffEnabled = autoOffEnabled,
-                    autoOffMinutes = autoOffMinutes,
                     onTargetOnChange = { targetOn = it },
                     onTargetBrightnessChange = { targetBrightness = it },
                     onColorModeChange = { colorMode = it },
                     onColorKelvinChange = { colorKelvin = it },
-                    onColorPresetChange = { colorPreset = it },
-                    onAutoOffEnabledChange = { autoOffEnabled = it },
-                    onAutoOffMinutesChange = { autoOffMinutes = it }
+                    onColorPresetChange = { colorPreset = it }
                 )
             }
 
@@ -421,6 +417,24 @@ fun HueRuleConfigScreen(
                     onEndBrightnessChange = { sunriseEndBrightness = it },
                     onStartBeforeAlarmChange = { sunriseStartBeforeAlarm = it }
                 )
+            }
+
+            // Auto-Aus ist ein querschnittliches Verhalten: es betrifft, was auch immer die
+            // Lichter angeschaltet hat - die manuelle Aktion ODER den Sunrise. Deshalb eine
+            // eigene Karte hinter beiden, nicht in "Aktionskonfiguration" eingebettet (das las
+            // sich, als gehoerte es nur zum manuellen Einschalten). Nur sichtbar, wenn die Regel
+            // die Lichter ueberhaupt anschaltet - dieselbe Bedingung wie `effectiveOn` in
+            // buildActions(); bei einer reinen Ausschalt-Regel gibt es nichts nachzuschalten.
+            if (sunriseEnabled || targetOn) {
+                item {
+                    AutoOffCard(
+                        autoOffEnabled = autoOffEnabled,
+                        autoOffMinutes = autoOffMinutes,
+                        sunriseActive = sunriseEnabled,
+                        onAutoOffEnabledChange = { autoOffEnabled = it },
+                        onAutoOffMinutesChange = { autoOffMinutes = it }
+                    )
+                }
             }
 
             item {
@@ -795,22 +809,19 @@ private fun TargetSelectionCard(
 private fun ActionConfigCard(
     // UX FIX (D): renamed from "enabled" for clarity - this only gates the manual
     // color/brightness/on-off config, which the Sunrise ramp takes over when active. Auto-off
-    // is now independent of this flag (see AutoOffSection below), so it's offered either way.
+    // lives in its own [AutoOffCard] (it applies to manual AND sunrise rules alike), so it is
+    // no longer part of this card.
     colorConfigEnabled: Boolean,
     targetOn: Boolean,
     targetBrightness: Int,
     colorMode: ColorMode,
     colorKelvin: Int,
     colorPreset: HueColorConverter.ColorPreset,
-    autoOffEnabled: Boolean,
-    autoOffMinutes: Int,
     onTargetOnChange: (Boolean) -> Unit,
     onTargetBrightnessChange: (Int) -> Unit,
     onColorModeChange: (ColorMode) -> Unit,
     onColorKelvinChange: (Int) -> Unit,
-    onColorPresetChange: (HueColorConverter.ColorPreset) -> Unit,
-    onAutoOffEnabledChange: (Boolean) -> Unit,
-    onAutoOffMinutesChange: (Int) -> Unit
+    onColorPresetChange: (HueColorConverter.ColorPreset) -> Unit
 ) {
     Card {
         Column(
@@ -826,14 +837,6 @@ private fun ActionConfigCard(
                     "Der Sunrise-Lichtwecker steuert Farbe und Helligkeit dieser Regel. Deaktivieren Sie ihn unten, um hier manuell zu konfigurieren.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                // UX FIX (D): auto-off still applies to a sunrise rule (it turns the lights
-                // back off some minutes after the ramp finishes), so it's offered here too.
-                AutoOffSection(
-                    autoOffEnabled = autoOffEnabled,
-                    autoOffMinutes = autoOffMinutes,
-                    onAutoOffEnabledChange = onAutoOffEnabledChange,
-                    onAutoOffMinutesChange = onAutoOffMinutesChange
                 )
                 return@Column
             }
@@ -937,50 +940,75 @@ private fun ActionConfigCard(
                     }
                     ColorMode.NONE -> { /* keep current bulb color */ }
                 }
-
-                AutoOffSection(
-                    autoOffEnabled = autoOffEnabled,
-                    autoOffMinutes = autoOffMinutes,
-                    onAutoOffEnabledChange = onAutoOffEnabledChange,
-                    onAutoOffMinutesChange = onAutoOffMinutesChange
-                )
             }
         }
     }
 }
 
 /**
- * "Automatisch ausschalten" (auto-off) toggle + duration slider.
+ * Eigene Karte "Automatisch ausschalten" (auto-off) - Schalter als Kartenueberschrift, plus
+ * Dauer-Slider.
  *
- * UX FIX (D): extracted out of [ActionConfigCard]'s manual-config branch so it can also be
- * shown when a Sunrise ramp is active (a sunrise rule ends up "on" too, at its configured end
- * brightness/temperature, so switching it back off after N minutes is equally meaningful).
+ * WARUM EIGENE KARTE: Auto-Aus ist querschnittlich - es schaltet aus, was auch immer die Regel
+ * angeschaltet hat, egal ob die manuelle Aktion oder der Sunrise-Lichtwecker. Frueher (UX FIX D)
+ * sass es in [ActionConfigCard] und wurde bei aktivem Sunrise dort mit hineingezogen; das las
+ * sich, als gehoerte es nur zum manuellen Einschalten. Als eigene Karte hinter Aktions- und
+ * Sunrise-Karte gehoert es sichtbar keinem der beiden Wege allein.
+ *
+ * Der Aufrufer zeigt die Karte nur, wenn die Regel die Lichter ueberhaupt anschaltet
+ * (`sunriseEnabled || targetOn`) - bei einer reinen Ausschalt-Regel gibt es nichts nachzuschalten.
+ *
+ * @param sunriseActive nur fuer den Hinweistext: bei Sunrise haengt das Aus hinter der Rampe
+ *        (siehe SUNRISE_TEST_DURATION-Logik), nicht ab der Regelausfuehrung.
  */
 @Composable
-private fun AutoOffSection(
+private fun AutoOffCard(
     autoOffEnabled: Boolean,
     autoOffMinutes: Int,
+    sunriseActive: Boolean,
     onAutoOffEnabledChange: (Boolean) -> Unit,
     onAutoOffMinutesChange: (Int) -> Unit
 ) {
-    SwitchRow(
-        title = "Automatisch ausschalten",
-        description = "Lichter nach einer Weile wieder ausschalten",
-        checked = autoOffEnabled,
-        onCheckedChange = onAutoOffEnabledChange
-    )
-    if (autoOffEnabled) {
-        Text(
-            "Ausschalten nach: $autoOffMinutes Minuten",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
-        )
-        Slider(
-            value = autoOffMinutes.toFloat(),
-            onValueChange = { onAutoOffMinutesChange(it.toInt().coerceIn(1, 120)) },
-            valueRange = 1f..120f,
-            modifier = Modifier.fillMaxWidth()
-        )
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SwitchRow(
+                title = "Automatisch ausschalten",
+                description = "Schaltet die Lichter wieder aus, nachdem die Regel sie eingeschaltet hat.",
+                checked = autoOffEnabled,
+                onCheckedChange = onAutoOffEnabledChange,
+                // Diese Zeile ist zugleich die Ueberschrift ihrer Karte - deshalb kraeftiger als
+                // die Schalter-Zeilen innerhalb einer Karte (analog zur Sunrise-Karte).
+                titleStyle = MaterialTheme.typography.titleMedium,
+                titleFontWeight = FontWeight.Bold
+            )
+            if (autoOffEnabled) {
+                Text(
+                    "Ausschalten nach: $autoOffMinutes Minuten",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Slider(
+                    value = autoOffMinutes.toFloat(),
+                    onValueChange = { onAutoOffMinutesChange(it.toInt().coerceIn(1, 120)) },
+                    valueRange = 1f..120f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    if (sunriseActive) {
+                        "Gemessen ab dem Ende des Sonnenaufgangs."
+                    } else {
+                        "Gemessen ab der Regelausführung (Weckzeit)."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 

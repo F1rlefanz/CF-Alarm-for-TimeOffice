@@ -1,9 +1,9 @@
 [versions]
-agp = "9.2.1"
+agp = "9.3.0"
 ksp = "2.3.2"
 googleAuthLibraryOauth2Http = "1.49.0"
 gson = "2.14.0"
-kotlin = "2.4.0"
+kotlin = "2.4.10"
 # Core Android dependencies (STABLE RELEASES)
 coreKtx = "1.19.0"
 mockitoCore = "5.23.0"

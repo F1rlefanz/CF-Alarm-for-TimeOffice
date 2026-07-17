@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -143,6 +144,11 @@ fun StatusTabContent(
 
         // Vollbild-Berechtigung: ohne sie kommt der Weck-Screen nie hoch
         FullScreenIntentCard()
+
+        // Akku-Ausnahme: ohne sie darf Android die 6h-Wartung und die exakten Wecker-Alarme
+        // im Doze/Standby einfrieren — die zweite OS-Berechtigung, an der die Hintergrund-
+        // Zuverlaessigkeit haengt, direkt neben dem Vollbild-Wecker.
+        BatteryOptimizationCard()
 
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
         LastSyncCard()
@@ -234,6 +240,96 @@ private fun FullScreenIntentCard() {
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text("Einstellung öffnen")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Meldet, ob die App von der Akku-Optimierung ausgenommen ist — die Grundvoraussetzung dafuer,
+ * dass die 6h-Wartung UND die exakten Wecker-Alarme im Hintergrund ueberhaupt feuern duerfen.
+ *
+ * Warum eine eigene Statuskarte: Ist die App NICHT ausgenommen, darf Android sie im Doze/Standby
+ * einfrieren — dann werden keine neuen Schichten mehr abgeholt und der Wecker bleibt still, ohne
+ * dass etwas darauf hinweist. Der Settings-Tab hat zwar eine Warnkarte, aber die verschwindet,
+ * sobald man ausgenommen ist; hier ist der Zustand DAUERHAFT ablesbar (gruen = ok), genau wie
+ * beim Vollbild-Wecker daneben.
+ *
+ * Wie [FullScreenIntentCard] wird der Zustand bei jedem ON_RESUME frisch gelesen (kein remember
+ * ueber den Lebenszyklus hinweg), damit die Karte nach der Rueckkehr aus dem System-Dialog sofort
+ * auf gruen springt. Der Knopf loest Androids System-Dialog aus ("Zulassen, dass die App immer im
+ * Hintergrund laeuft?") — kein Einstellungs-Menue, deshalb verspricht der Text auch keinen Ablauf.
+ */
+@Composable
+private fun BatteryOptimizationCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isExempt by remember { mutableStateOf(BatteryOptimizationHelper.isExempted(context)) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isExempt = BatteryOptimizationHelper.isExempted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (isExempt) Icons.Default.CheckCircle else Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = if (isExempt)
+                    MaterialTheme.colorScheme.success
+                else
+                    MaterialTheme.colorScheme.error
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Akku-Ausnahme",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (isExempt) {
+                        "Der Wecker darf jederzeit im Hintergrund laufen"
+                    } else {
+                        "⚠️ Android darf die App einfrieren — dann werden keine Schichten mehr " +
+                            "abgeholt und der Wecker bleibt still"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (!isExempt) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    TextButton(
+                        onClick = {
+                            (context as? android.app.Activity)?.let {
+                                BatteryOptimizationHelper.requestExemption(it)
+                            }
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Ausnahme erlauben")
                     }
                 }
             }

@@ -127,6 +127,17 @@ fun HomeTabContent(
                                 .format(shiftState.upcomingShift.startTime),
                             style = MaterialTheme.typography.bodyMedium
                         )
+                    } else if (calendarState.isLoading || shiftState.isLoading) {
+                        // Beim (ersten) Oeffnen synchronisiert die App den Kalender neu; bis die
+                        // Events da sind, ist noch keine Schicht erkannt. Das ist ein LADEzustand,
+                        // kein Fehler - frueher stand hier sofort "Keine Schicht erkannt" (bzw. ein
+                        // Warnsymbol), was beim Aufschlagen fuer einen Sekundenbruchteil aussah, als
+                        // sei etwas kaputt. Neutraler Hinweis, solange geladen wird.
+                        Text(
+                            "Wird geladen …",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     } else {
                         Text(
                             "Keine Schicht erkannt",
@@ -341,6 +352,13 @@ private fun EnhancedAlarmStatusCard(
                         alarmState.nextAlarmTime?.let {
                             Text("Nächster Alarm: $it")
                         }
+                    } else if (alarmState.isLoading) {
+                        // Analog zur "Nächste Schicht"-Karte: waehrend des Ladens neutral, damit
+                        // der leere Zwischenstand beim Oeffnen nicht wie "keine Wecker aktiv" wirkt.
+                        Text(
+                            "Wird geladen …",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     } else {
                         Text(
                             "Keine aktiven Alarme",

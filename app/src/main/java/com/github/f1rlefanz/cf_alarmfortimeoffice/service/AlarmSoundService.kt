@@ -161,27 +161,26 @@ class AlarmSoundService : Service() {
                 startVibration()
             }
 
-            ACTION_STOP_ALARM, ACTION_SNOOZE_ALARM -> {
-                Logger.i(LogTags.ALARM, "🛑 AlarmSoundService STOP/SNOOZE_ALARM")
+            ACTION_SNOOZE_ALARM -> {
+                // Snooze-Button der Sperrbildschirm-Benachrichtigung. Wichtiger Notausgang: kommt
+                // das Vollbild auf restriktiven Geraeten gar nicht erst sichtbar hoch, ist das
+                // hier der EINZIGE Weg zu schlummern (der Vollbild-Button waere unerreichbar).
+                val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Alarm"
+                val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
+                Logger.i(LogTags.ALARM, "😴 AlarmSoundService SNOOZE_ALARM (Notification): $shiftName, id=$alarmId")
 
-                // Signalisiert der Full-Screen-Activity, dass sie sich schliessen soll.
-                // Ohne das bliebe nach "Wecker aus" in der Leiste das Vollbild stehen und der
-                // Nutzer muesste ein zweites Mal stoppen.
-                _alarmActive.value = false
-
-                // Stop all alarm effects immediately
-                stopAlarmSound()
-                stopVibration()
-                abandonAudioFocus() // laesst pausierte Medien (Podcast/Musik) wieder anlaufen
-
-                // Stop foreground and remove notification
-                stopForeground(STOP_FOREGROUND_REMOVE)
-
-                // Stop the service
-                stopSelf()
-                Logger.d(LogTags.ALARM, "✅ AlarmSoundService stopped and cleaned up")
+                // ZUERST den neuen Wecker planen (setAlarmClock ist synchron + schnell), DANN den Ton
+                // stoppen - so steht der Snooze sicher, selbst wenn stopSelf() gleich greift. Exakt
+                // derselbe Weg wie "5 Min spaeter" im Vollbild: AlarmManagerService.scheduleSnooze.
+                AlarmManagerService.scheduleSnooze(applicationContext, alarmId, shiftName)
+                stopAlarmAndService()
             }
-            
+
+            ACTION_STOP_ALARM -> {
+                Logger.i(LogTags.ALARM, "🛑 AlarmSoundService STOP_ALARM")
+                stopAlarmAndService()
+            }
+
             else -> {
                 Logger.w(LogTags.ALARM, "⚠️ AlarmSoundService received unknown action: ${intent?.action}")
             }
@@ -191,6 +190,24 @@ class AlarmSoundService : Service() {
         return START_STICKY
     }
     
+    /**
+     * Beendet den Wecker vollstaendig: Ton, Vibration, Audio-Fokus, Foreground-Notification und den
+     * Service selbst. Gemeinsamer Endpunkt von STOP und SNOOZE (der Snooze plant vorher zusaetzlich
+     * den naechsten Wecker).
+     *
+     * `_alarmActive = false` signalisiert der [AlarmFullScreenActivity], sich zu schliessen, falls sie
+     * laeuft - sonst muesste der Nutzer zweimal stoppen (Leiste UND Vollbild).
+     */
+    private fun stopAlarmAndService() {
+        _alarmActive.value = false
+        stopAlarmSound()
+        stopVibration()
+        abandonAudioFocus() // laesst pausierte Medien (Podcast/Musik) wieder anlaufen
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        Logger.d(LogTags.ALARM, "✅ AlarmSoundService stopped and cleaned up")
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Logger.i(LogTags.ALARM, "🛑 AlarmSoundService destroying - guaranteed cleanup")
@@ -491,6 +508,20 @@ class AlarmSoundService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // Snooze-Button: der Notausgang zum Schlummern, wenn das Vollbild nicht sichtbar hochkommt.
+        // Traegt Schicht + alarmId als Extras, weil die Service-Instanz, die den Snooze verarbeitet,
+        // sie sonst nicht mehr kennt. Eigener requestCode (1) neben dem Stop-Slot (0).
+        val snoozeIntent = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, AlarmSoundService::class.java).apply {
+                action = ACTION_SNOOZE_ALARM
+                putExtra(EXTRA_SHIFT_NAME, shiftName)
+                putExtra(EXTRA_ALARM_ID, alarmId)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val fullScreenIntent = PendingIntent.getActivity(
             this,
             alarmId,
@@ -522,6 +553,11 @@ class AlarmSoundService : Service() {
             .setShowWhen(true)
             .setContentIntent(fullScreenIntent)
             .setFullScreenIntent(fullScreenIntent, true)
+            .addAction(
+                android.R.drawable.ic_menu_recent_history,
+                getString(R.string.alarm_notification_snooze),
+                snoozeIntent
+            )
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 getString(R.string.alarm_notification_stop),

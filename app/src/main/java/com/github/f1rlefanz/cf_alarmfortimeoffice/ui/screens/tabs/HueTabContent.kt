@@ -254,14 +254,25 @@ fun HueTabContent(
         }
 
         // Bridge Discovery & Connection Section (only when not connected)
-        item {
-            BridgeDiscoveryCard(
-                discoveredBridges = uiState.discoveredBridges,
-                onDiscoverBridges = { requireLocalNetworkPermission { hueViewModel.discoverBridges() } },
-                onConnectToBridge = { bridge ->
-                    requireLocalNetworkPermission { hueViewModel.setupBridge(bridge) }
-                }
-            )
+        //
+        // Waehrend ein Scan LAEUFT, sagt die animierte "Netzwerk-Scan"-Karte oben bereits, dass
+        // gesucht wird - die "Bridge-Suche"-Karte mit dem "Bridges suchen"-Knopf daneben ist dann
+        // nur Doppelung (und einen zweiten Scan anzustossen, waehrend einer laeuft, ergibt keinen
+        // Sinn). Deshalb blenden wir sie aus, SOLANGE gescannt wird UND noch nichts gefunden ist.
+        // Sobald der Scan fertig ist, kommt sie zurueck: leer -> "Bridges suchen" fuer einen neuen
+        // Versuch, Treffer -> die Bridge-Liste. Trudeln waehrend des Scans schon Bridges ein, zeigen
+        // wir sie sofort. Die Bedingung ist das Spiegelbild der AnimatedDiscoveryCard oben.
+        val discoveryRunning = discoveryStatus?.isComplete == false
+        if (!discoveryRunning || uiState.discoveredBridges.isNotEmpty()) {
+            item {
+                BridgeDiscoveryCard(
+                    discoveredBridges = uiState.discoveredBridges,
+                    onDiscoverBridges = { requireLocalNetworkPermission { hueViewModel.discoverBridges() } },
+                    onConnectToBridge = { bridge ->
+                        requireLocalNetworkPermission { hueViewModel.setupBridge(bridge) }
+                    }
+                )
+            }
         }
 
         // Add some bottom padding for better UX

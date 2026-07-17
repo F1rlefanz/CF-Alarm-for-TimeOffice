@@ -386,20 +386,26 @@ fun HueRuleConfigScreen(
                 )
             }
             
-            item {
-                ActionConfigCard(
-                    colorConfigEnabled = !sunriseEnabled,
-                    targetOn = targetOn,
-                    targetBrightness = targetBrightness,
-                    colorMode = colorMode,
-                    colorKelvin = colorKelvin,
-                    colorPreset = colorPreset,
-                    onTargetOnChange = { targetOn = it },
-                    onTargetBrightnessChange = { targetBrightness = it },
-                    onColorModeChange = { colorMode = it },
-                    onColorKelvinChange = { colorKelvin = it },
-                    onColorPresetChange = { colorPreset = it }
-                )
+            // Manuelle Einschalt-Config und Sunrise-Lichtwecker sind zwei gleichrangige, sich
+            // gegenseitig ausschliessende Wege, wie die Regel das Licht ansteuert - je eine eigene
+            // Karte, kein Oberbegriff darueber. Ist Sunrise an, ueberschreibt er Farbe/Helligkeit
+            // ohnehin; dann blenden wir die manuelle Karte ganz aus, statt sie zu einer blossen
+            // Hinweiskarte zu entkernen.
+            if (!sunriseEnabled) {
+                item {
+                    ActionConfigCard(
+                        targetOn = targetOn,
+                        targetBrightness = targetBrightness,
+                        colorMode = colorMode,
+                        colorKelvin = colorKelvin,
+                        colorPreset = colorPreset,
+                        onTargetOnChange = { targetOn = it },
+                        onTargetBrightnessChange = { targetBrightness = it },
+                        onColorModeChange = { colorMode = it },
+                        onColorKelvinChange = { colorKelvin = it },
+                        onColorPresetChange = { colorPreset = it }
+                    )
+                }
             }
 
             item {
@@ -807,11 +813,6 @@ private fun TargetSelectionCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ActionConfigCard(
-    // UX FIX (D): renamed from "enabled" for clarity - this only gates the manual
-    // color/brightness/on-off config, which the Sunrise ramp takes over when active. Auto-off
-    // lives in its own [AutoOffCard] (it applies to manual AND sunrise rules alike), so it is
-    // no longer part of this card.
-    colorConfigEnabled: Boolean,
     targetOn: Boolean,
     targetBrightness: Int,
     colorMode: ColorMode,
@@ -830,28 +831,17 @@ private fun ActionConfigCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Aktionskonfiguration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
-            if (!colorConfigEnabled) {
-                Text(
-                    "Der Sunrise-Lichtwecker steuert Farbe und Helligkeit dieser Regel. Deaktivieren Sie ihn unten, um hier manuell zu konfigurieren.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                return@Column
-            }
-
-            Text(
-                "Konfigurieren Sie, was passieren soll, wenn diese Regel ausgeführt wird:",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
+            // Der Ein/Aus-Schalter IST die Ueberschrift dieser Karte (kraeftiger gesetzt, analog
+            // zur Sunrise-Karte). Kein eigener "Aktionskonfiguration"-Titel mehr: der las sich wie
+            // ein Oberbegriff fuer beides, obwohl der Sunrise-Lichtwecker eine eigene, gleichrangige
+            // Karte ist. Ist Sunrise an, wird diese Karte gar nicht erst gezeigt (siehe Aufrufer).
             SwitchRow(
                 title = if (targetOn) "Einschalten" else "Ausschalten",
                 description = "Lichter ${if (targetOn) "einschalten" else "ausschalten"} bei Regelausführung",
                 checked = targetOn,
-                onCheckedChange = onTargetOnChange
+                onCheckedChange = onTargetOnChange,
+                titleStyle = MaterialTheme.typography.titleMedium,
+                titleFontWeight = FontWeight.Bold
             )
 
             if (targetOn) {

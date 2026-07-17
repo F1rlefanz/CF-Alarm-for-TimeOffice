@@ -1,8 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
-import android.app.AlarmManager
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -49,8 +47,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 /**
  * Vollbild-Wecker über dem Sperrbildschirm.
@@ -74,7 +70,6 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     companion object {
         private const val WAKE_LOCK_TAG = "CFAlarm:FullScreenActivity"
         private const val WAKE_LOCK_TIMEOUT = 10 * 60 * 1000L // 10 minutes
-        private const val SNOOZE_MINUTES = 5L
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -275,54 +270,23 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     /**
-     * Snoozed den Wecker: stoppt den Ton und legt einen neuen Alarm in [SNOOZE_MINUTES].
+     * Snoozed den Wecker: stoppt den Ton und legt ueber den gemeinsamen
+     * [AlarmManagerService.scheduleSnooze] einen neuen Alarm an - denselben Weg nutzt der
+     * Snooze-Button der Benachrichtigung. Die Planungslogik (snoozeAlarmAction, requestCode,
+     * setAlarmClock) liegt bewusst nur dort, damit es EINE Wahrheit bleibt.
      */
     private fun snoozeAlarm() {
-        Logger.i(LogTags.ALARM, "😴 User snoozed alarm for $SNOOZE_MINUTES minutes")
+        Logger.i(LogTags.ALARM, "😴 User snoozed alarm for ${AlarmManagerService.SNOOZE_MINUTES} minutes")
 
         try {
-            // CRITICAL: Stop sound service BEFORE scheduling snooze
-            // This prevents race conditions with MediaPlayer
+            // Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races).
             userHandledAlarm = true
             stopAlarmSoundService()
-
-            val snoozeTimeMillis = System.currentTimeMillis() + (SNOOZE_MINUTES * 60 * 1000L)
 
             val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME) ?: "Snooze"
             val alarmId = intent.getIntExtra(AlarmSoundService.EXTRA_ALARM_ID, -1)
 
-            val alarmIntent = Intent(this, AlarmReceiver::class.java).apply {
-                // Schlüssel MÜSSEN zu AlarmReceiver.EXTRA_* passen. Vorher schrieb der Snooze
-                // "alarm_time", während der Receiver "shift_time" las, und die alarm_id fehlte
-                // ganz — der Snooze-Alarm lief dadurch mit ID -1 und ohne Uhrzeit.
-                putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
-                putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
-                putExtra(
-                    AlarmReceiver.EXTRA_ALARM_TIME,
-                    LocalDateTime.now().plusMinutes(SNOOZE_MINUTES)
-                        .format(DateTimeFormatter.ofPattern("HH:mm"))
-                )
-                setPackage(packageName)
-                // EIGENE Snooze-Action, NICHT enhancedAlarmAction: sonst teilte sich der Snooze
-                // den PendingIntent-Slot mit seinem Ursprungsalarm und der Maintenance-Sync
-                // wuerde ihn beim Aufraeumen des gefeuerten Alarms mit abbrechen.
-                action = AlarmManagerService.snoozeAlarmAction(alarmId)
-            }
-
-            // requestCode = alarmId (statt einer Zufallszahl aus currentTimeMillis): so ersetzt
-            // ein zweiter Snooze denselben PendingIntent, statt einen weiteren Wecker zu stapeln.
-            val pendingIntent = PendingIntent.getBroadcast(
-                this,
-                alarmId,
-                alarmIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-            val alarmClockInfo = AlarmManager.AlarmClockInfo(snoozeTimeMillis, pendingIntent)
-            alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
-
-            Logger.business(LogTags.ALARM, "✅ Snooze alarm scheduled for $SNOOZE_MINUTES minutes")
+            AlarmManagerService.scheduleSnooze(this, alarmId, shiftName)
 
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(AlarmSoundService.NOTIFICATION_ID)
@@ -338,8 +302,13 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 /**
  * Der Wecker-Screen im Corporate Design.
  *
- * Nutzt bewusst die Theme-Rollen (primary/onPrimary/…) statt hartkodierter Farben — der
- * Screen hing vorher als einziger Screen der App noch auf Material-Default-Blau (#1976D2).
+ * Nutzt bewusst die Theme-Rollen statt hartkodierter Farben — der Screen hing frueher auf
+ * Material-Default-Blau (#1976D2).
+ *
+ * FARBGEBUNG: heller Hintergrund (`surface`) mit roten Akzenten (`primary`), NICHT
+ * vollflaechiges Rot. Ein rot geflutetes Vollbild las sich beim Wecken wie "die Welt geht
+ * unter"; rot-auf-hell ist genauso eindeutig als Wecker erkennbar, aber ruhiger. Die grosse
+ * Aktion "Alarm stoppen" bleibt als gefuellter roter Knopf klar die Haupt-Handlung.
  */
 @Composable
 private fun AlarmScreen(
@@ -350,7 +319,7 @@ private fun AlarmScreen(
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.primary
+        color = MaterialTheme.colorScheme.surface
     ) {
         Box(
             modifier = Modifier
@@ -366,7 +335,7 @@ private fun AlarmScreen(
                 Icon(
                     imageVector = Icons.Filled.Alarm,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(72.dp)
                 )
 
@@ -375,7 +344,7 @@ private fun AlarmScreen(
                 Text(
                     text = stringResource(R.string.alarm_title),
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center
                 )
 
@@ -384,7 +353,7 @@ private fun AlarmScreen(
                 Text(
                     text = shiftName,
                     style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center
                 )
 
@@ -393,7 +362,7 @@ private fun AlarmScreen(
                     Text(
                         text = stringResource(R.string.alarm_shift_start, alarmTime),
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -408,8 +377,8 @@ private fun AlarmScreen(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.onPrimary,
-                        contentColor = MaterialTheme.colorScheme.primary
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     Text(
@@ -425,7 +394,7 @@ private fun AlarmScreen(
                     onClick = onSnooze,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        contentColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
                     Text(

@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -472,6 +473,58 @@ class AlarmManagerService(
          */
         fun snoozeAlarmAction(alarmId: Int): String =
             "com.github.f1rlefanz.cf_alarmfortimeoffice.SNOOZE_ALARM_$alarmId"
+
+        /** Snooze-Dauer in Minuten - EINE Quelle fuer Vollbild-Button UND Notification-Button. */
+        const val SNOOZE_MINUTES = 5L
+
+        /**
+         * Plant einen Snooze-Alarm in [minutes] Minuten. Der EINE Weg fuer beide Snooze-Ausloeser:
+         * "5 Min spaeter" im Vollbild UND der Snooze-Button der Sperrbildschirm-Benachrichtigung
+         * (letzterer ist der Notausgang, wenn das Vollbild gar nicht erst sichtbar wird).
+         *
+         * Nutzt bewusst [snoozeAlarmAction], NICHT [enhancedAlarmAction]: teilte sich der Snooze
+         * den PendingIntent-Slot mit seinem Ursprungsalarm, raeumte ihn der Maintenance-Sync beim
+         * Loeschen des gefeuerten Alarms mit ab - der Nutzer haette "schlummern" gedrueckt und waere
+         * nie wieder geweckt worden. requestCode = alarmId, damit ein zweiter Snooze denselben Slot
+         * ersetzt statt zu stapeln. setAlarmClock() ist von der Exact-Alarm-Berechtigung ausgenommen
+         * und doze-fest.
+         */
+        fun scheduleSnooze(
+            context: Context,
+            alarmId: Int,
+            shiftName: String,
+            minutes: Long = SNOOZE_MINUTES
+        ) {
+            val triggerTime = System.currentTimeMillis() + minutes * 60 * 1000L
+
+            val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
+                putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
+                putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
+                putExtra(
+                    AlarmReceiver.EXTRA_ALARM_TIME,
+                    LocalDateTime.now().plusMinutes(minutes)
+                        .format(DateTimeFormatter.ofPattern("HH:mm"))
+                )
+                setPackage(context.packageName)
+                action = snoozeAlarmAction(alarmId)
+            }
+
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, alarmId, alarmIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(triggerTime, pendingIntent),
+                pendingIntent
+            )
+
+            Logger.business(
+                LogTags.ALARM_MANAGER,
+                "😴 Snooze-Alarm gesetzt: $shiftName in $minutes Min (id=$alarmId)"
+            )
+        }
 
         /**
          * DE-SICHERES Neusetzen eines Alarms aus dem Direct-Boot-Spiegel.

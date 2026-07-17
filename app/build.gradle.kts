@@ -197,11 +197,8 @@ android {
         // Optional: Create baseline for existing issues
         // baseline = file("lint-baseline.xml")
 
-        // Enable HTML and XML reports
-        htmlReport = true
-        xmlReport = true
-        htmlOutput = file("${layout.buildDirectory.get()}/reports/lint/lint-report.html")
-        xmlOutput = file("${layout.buildDirectory.get()}/reports/lint/lint-report.xml")
+        // HTML/XML reports werden seit AGP 9 immer erzeugt (Standardpfad
+        // build/reports/lint-results-<variant>.*) - kein Opt-in mehr noetig.
     }
 
     packaging {

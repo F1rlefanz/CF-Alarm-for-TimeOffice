@@ -213,14 +213,28 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     private fun acquireWakeLock() {
         try {
             val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            // SCREEN_BRIGHT statt PARTIAL: Ein PARTIAL_WAKE_LOCK haelt nur die CPU wach, NICHT den
+            // Bildschirm. setTurnScreenOn() weckt den Screen zwar initial an - aber ohne einen
+            // screen-haltenden Wakelock dozte er auf einem echten Geraet ~0,5s spaeter zurueck, die
+            // Activity bekam onStop, und das Vollbild war wieder weg (am Fairphone/Android 16 im Log
+            // belegt: start 05:30:00.698 -> STOPPED 05:30:01.175, waehrend der Wecker weiterlief).
+            // SCREEN_BRIGHT_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP haelt den Bildschirm bis zum Release
+            // bzw. bis zum 10-Min-Timeout hell und weckt ihn beim Erwerb.
+            //
+            // Deprecated seit API 17 zugunsten von FLAG_KEEP_SCREEN_ON/setTurnScreenOn - die haben
+            // wir bereits (setupLockScreenFlags), sie reichen auf echten Geraeten aber nachweislich
+            // NICHT. Deshalb bewusst der alte, weiterhin funktionierende Weg. Kein Keyguard-Dismiss:
+            // setShowWhenLocked macht Stop/Snooze schon ohne Entsperren nutzbar, requestDismissKeyguard
+            // wuerde auf sicherem Sperrbildschirm nur unnoetig eine PIN-Abfrage zur Weckzeit erzwingen.
+            @Suppress("DEPRECATION")
             wakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                 WAKE_LOCK_TAG
             ).apply {
                 setReferenceCounted(false)
                 acquire(WAKE_LOCK_TIMEOUT)
             }
-            Logger.business(LogTags.ALARM, "✅ Wake lock acquired for full-screen activity")
+            Logger.business(LogTags.ALARM, "✅ Screen wake lock acquired for full-screen activity")
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ Failed to acquire wake lock", e)
         }

@@ -58,8 +58,6 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorSeverity
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueConnectionHealth
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 
 /**
@@ -123,17 +121,8 @@ fun HueSettingsScreen(
                 }
             }
 
-            // UX FIX (E): same reactive "connection lost" banner as HueTabContent.
-            if (uiState.bridgeConnectionInfo?.bridgeIp != null &&
-                (uiState.connectionHealth == HueConnectionHealth.DISCONNECTED || uiState.connectionHealth == HueConnectionHealth.ERROR)
-            ) {
-                item {
-                    ErrorMessage(
-                        message = "⚠️ Verbindung zur Hue-Bridge verloren – Lichtaktionen für Alarme könnten ausfallen",
-                        severity = ErrorSeverity.WARNING
-                    )
-                }
-            }
+            // Banner entfernt - siehe HueTabContent: die BridgeStatusCard direkt darunter sagt
+            // dasselbe (rote Karte, Fehler-Icon, "Nicht verbunden"). Die Folge steht jetzt dort.
 
             item {
                 BridgeStatusCard(
@@ -217,6 +206,12 @@ private fun BridgeStatusCard(
                         if (connectionInfo?.isConnected == true) "Verbunden mit ${connectionInfo.bridgeIp}" else "Nicht verbunden",
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    if (connectionInfo?.isConnected != true) {
+                        Text(
+                            "Lichtaktionen für Alarme könnten ausfallen.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
 

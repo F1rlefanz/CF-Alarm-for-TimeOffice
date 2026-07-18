@@ -107,10 +107,31 @@ class HueViewModel @Inject constructor(
         // UI instead of only reflecting it at screen-composition time. Der ConnectionManager wird
         // jetzt via Hilt injiziert (HueModule brueckt den getInstance()-Singleton) — dieselbe
         // Instanz, aber ueber den Object-Graph statt daran vorbei.
+        // Der Health-Strom ist die EINZIGE reaktive Quelle: bridgeConnectionInfo wird sonst nur
+        // bei Lade-/Setup-/Validate-Ereignissen gesetzt. Faellt die Bridge weg, waehrend der
+        // Screen offen ist (WLAN verlassen), aendert sich ohne das hier nichts an der Anzeige.
+        // Frueher haing daran ein separates Warn-Banner - das doppelte die Statuskarte Wort fuer
+        // Wort. Jetzt zieht der Health-Strom die Karte selbst nach; genau ein Ort sagt es.
         viewModelScope.launch {
             hueBridgeConnectionManager.connectionStatus.collect { state ->
                 val health = state.toConnectionHealth()
-                _uiState.update { it.copy(connectionHealth = health) }
+                _uiState.update { current ->
+                    // CONNECTING (-> UNKNOWN) laesst den Zustand bewusst stehen: mitten im
+                    // Verbinden auf "nicht verbunden" zu springen waere ein Flackern, keine Info.
+                    // Und ohne gekoppelte Bridge (bridgeIp == null) gibt es nichts nachzuziehen -
+                    // das ist der Onboarding-Fall, nicht "Verbindung verloren".
+                    val info = current.bridgeConnectionInfo
+                    if (health == HueConnectionHealth.UNKNOWN || info?.bridgeIp == null) {
+                        current.copy(connectionHealth = health)
+                    } else {
+                        current.copy(
+                            connectionHealth = health,
+                            bridgeConnectionInfo = info.copy(
+                                isConnected = health == HueConnectionHealth.CONNECTED
+                            )
+                        )
+                    }
+                }
                 Logger.d(LogTags.HUE_VIEWMODEL, "Connection health updated: $health")
             }
         }

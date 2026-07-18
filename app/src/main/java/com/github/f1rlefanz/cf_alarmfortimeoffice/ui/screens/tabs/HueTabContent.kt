@@ -56,10 +56,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorSeverity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.AnimatedDiscoveryCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueConnectionHealth
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import kotlinx.coroutines.launch
 
@@ -136,20 +134,12 @@ fun HueTabContent(
             }
         }
 
-        // UX FIX (E): reactive warning banner when a previously-paired bridge becomes
-        // unreachable (DISCONNECTED/ERROR from HueBridgeConnectionManager.connectionStatus).
-        // Only shown once a bridge was actually configured (bridgeIp != null) so this doesn't
-        // fire during first-time onboarding, before any pairing happened.
-        if (uiState.bridgeConnectionInfo?.bridgeIp != null &&
-            (uiState.connectionHealth == HueConnectionHealth.DISCONNECTED || uiState.connectionHealth == HueConnectionHealth.ERROR)
-        ) {
-            item {
-                ErrorMessage(
-                    message = "⚠️ Verbindung zur Hue-Bridge verloren – Lichtaktionen für Alarme könnten ausfallen",
-                    severity = ErrorSeverity.WARNING
-                )
-            }
-        }
+        // Kein separates "Verbindung verloren"-Banner mehr: Es feuerte bei bridgeIp != null und
+        // DISCONNECTED/ERROR - und genau dann steht direkt darunter die Statuskarte mit
+        // "Nicht verbunden" samt rotem Fehler-Icon. Die Banner-Bedingung ist eine Teilmenge der
+        // Karten-Bedingung, das war also IMMER eine Doppelung (gemeldet 18.07.2026, drei
+        // Warnsymbole fuer eine Aussage). Der einzige echte Mehrwert des Banners - die Folge
+        // ("Lichtaktionen koennten ausfallen") - steht jetzt in der Karte selbst.
 
         // Connected Features & Next Steps (show first when connected)
         uiState.bridgeConnectionInfo?.let { connectionInfo ->
@@ -485,9 +475,16 @@ private fun BridgeConnectionStatusCard(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    if (neverConfigured) {
-                        Text(
+                    when {
+                        neverConfigured -> Text(
                             text = "Suche unten nach deiner Hue-Bridge, um Lichtregeln für deine Alarme anzulegen.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        // Die Folge, nicht nur der Zustand: Das ist der Satz, der frueher als
+                        // eigenes Banner darueber stand.
+                        !isConnected -> Text(
+                            text = "Lichtaktionen für Alarme könnten ausfallen.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -501,7 +498,11 @@ private fun BridgeConnectionStatusCard(
                     }
                 }
 
-                if (connectionInfo?.isConnected == true) {
+                // "Pruefen" gehoert an JEDE gekoppelte Bridge, nicht nur an eine verbundene:
+                // Bei "Nicht verbunden" ist ein erneuter Versuch der einzige sinnvolle Schritt -
+                // dort fehlte der Knopf, waehrend er bei "Verbunden" (wo nichts zu reparieren ist)
+                // stand. Der Kommentar oben in HueTabContent versprach ihn schon.
+                if (!neverConfigured) {
                     OutlinedButton(
                         onClick = {
                             // OPTIMIZATION: Manual health check via bridge manager

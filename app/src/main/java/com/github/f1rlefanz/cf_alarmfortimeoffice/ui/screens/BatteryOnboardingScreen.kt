@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +14,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -25,19 +23,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 
 /**
  * Battery Onboarding Screen
@@ -66,16 +56,6 @@ fun BatteryOnboardingScreen(
     onRequestExemption: () -> Unit,
     onSkip: () -> Unit
 ) {
-    var showOEMWarning by remember { mutableStateOf(false) }
-    val oemType = remember { BatteryOptimizationHelper.getOEMType() }
-
-    // Check if OEM warning should be shown
-    LaunchedEffect(Unit) {
-        if (BatteryOptimizationHelper.shouldShowOEMWarning(oemType)) {
-            showOEMWarning = true
-        }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -171,80 +151,6 @@ fun BatteryOnboardingScreen(
             }
         }
     }
-
-    // Show OEM-specific warning if needed
-    if (showOEMWarning) {
-        OEMWarningDialog(
-            oemType = oemType,
-            // NUR schliessen. Hier stand zusaetzlich onComplete() - und weil das den
-            // Aufklaerungs-Dialog oeffnet, bekam man auf OEM-Geraeten direkt den naechsten
-            // Dialog vorgesetzt, kaum dass man den ersten weggetippt hatte. Der OEM-Hinweis
-            // sagt bereits, was zu tun ist; wer mehr will, tippt auf "Warum ist das noetig?".
-            onDismiss = { showOEMWarning = false }
-        )
-    }
-}
-
-/**
- * Shows OEM-specific warning dialog
- */
-@Composable
-fun OEMWarningDialog(
-    oemType: BatteryOptimizationHelper.OEMType,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(Icons.Default.Warning, contentDescription = null)
-        },
-        title = {
-            Text("⚠️ ${oemType.name}-Gerät erkannt")
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "${oemType.name}-Geräte blockieren oft Apps im Hintergrund.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Bitte stelle zusätzlich sicher:",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    "• CF Alarm ist in 'Auto-Start' erlaubt",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    "• Akku-Sparmodus: Keine Einschränkungen",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    "• App ist vom Task-Killer ausgenommen",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                // Open dontkillmyapp.com for detailed instructions
-                val url = BatteryOptimizationHelper.getOEMHelpURL(oemType)
-                val intent = Intent(Intent.ACTION_VIEW, url.toUri())
-                context.startActivity(intent)
-                onDismiss()
-            }) {
-                Text("Detaillierte Anleitung")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Verstanden")
-            }
-        }
-    )
 }
 
 /**

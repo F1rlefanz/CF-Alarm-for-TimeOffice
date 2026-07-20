@@ -82,6 +82,21 @@ class AlarmSchedulerTest {
     }
 
     @Test
+    fun `Weckzeit knapp nach Schichtbeginn bleibt am selben Tag (keine Vortag-Falle)`() = runTest {
+        // Schicht startet 06:00, Weckzeit 06:05 (5min danach) -> KEIN Tagesabzug. Die
+        // Vorlaufzeit nach einem hypothetischen Abzug waere ~23h55m, weit ueber
+        // MAX_NIGHT_SHIFT_LEAD_TIME (12h) - eindeutig kein Nachtschicht-Fall.
+        val engine = engineWith(shift("Früh", listOf("F"), LocalTime.of(6, 5)))
+
+        val matches = engine.getAllMatchingShifts(
+            listOf(event("F", LocalDateTime.of(2025, 1, 20, 6, 0)))
+        )
+
+        assertEquals(1, matches.size)
+        assertEquals(LocalDateTime.of(2025, 1, 20, 6, 5), matches[0].calculatedAlarmTime)
+    }
+
+    @Test
     fun `Weckzeit gleich Schichtbeginn ergibt selben Tag`() = runTest {
         val engine = engineWith(shift("Spät", listOf("S"), LocalTime.of(14, 0)))
 

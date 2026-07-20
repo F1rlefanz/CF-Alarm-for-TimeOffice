@@ -40,25 +40,23 @@ import kotlinx.coroutines.launch
 
 /**
  * Gemeinsamer Abschluss, sobald Akku-Ausnahme UND Unused-App-Restrictions erledigt oder
- * uebersprungen sind: OEM-Warndialog zeigen (falls das Geraet betroffen ist) oder direkt die
- * Wartungskette anstossen. Wird von zwei Rueckkehr-Punkten aufgerufen (Battery-Settings-Result,
- * Unused-App-Restrictions-Settings-Result) - beides Moment, in denen der Nutzer gerade aus einem
- * System-Flow zurueckkommt, daher hier bewusst der leichtgewichtige Dialog statt eines weiteren
- * vollflaechigen Screens (letzterer bleibt dem frischen Onboarding-Pfad ueber
- * [NavigationState.OEMWarning] vorbehalten, siehe CalendarSelectionScreen.onSave weiter unten).
+ * uebersprungen sind: zum vollflaechigen OEM-Warnscreen navigieren (falls das Geraet betroffen
+ * UND der Screen fuer diesen Herstellertyp noch nie gezeigt wurde) oder direkt die Wartungskette
+ * anstossen. Einziger verbliebener OEM-Hinweis-Weg nach der Konsolidierung (Juli 2026) - frueher
+ * gab es hier zusaetzlich einen separaten, ungegateten Dialog; die richtigen, herstellerspezifischen
+ * Schritte gibt es nur im Screen (siehe [OEMWarningScreen]), daher konvergiert alles hierher.
+ * Aufgerufen von jeder Stelle, die "von einem Gate zurueckgekehrt" ist: Battery-Settings-Result,
+ * Unused-App-Restrictions-Settings-Result, und CalendarSelectionScreen.onSave.
  */
-private fun proceedPastGates(
+private suspend fun proceedPastGates(
     context: Context,
-    coroutineScope: CoroutineScope,
     navigationViewModel: NavigationViewModel
 ) {
     val oemType = BatteryOptimizationHelper.getOEMType()
-    if (BatteryOptimizationHelper.shouldShowOEMWarning(oemType)) {
-        Logger.business(LogTags.NAVIGATION, "Gates resolved -> OEM Warning dialog for $oemType")
-        coroutineScope.launch {
-            BatteryOptimizationHelper.showOEMWarningDialog(context, oemType)
-        }
-        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+    if (BatteryOptimizationHelper.shouldNavigateToOemWarningScreen(context, oemType)) {
+        Logger.business(LogTags.NAVIGATION, "Gates resolved -> OEM Warning screen for $oemType")
+        BatteryOptimizationHelper.markOemWarningScreenShown(context, oemType)
+        navigationViewModel.navigateToOEMWarning(oemType)
     } else {
         Logger.business(LogTags.NAVIGATION, "Onboarding complete -> Main")
         AlarmMaintenanceService.scheduleNext(context)
@@ -146,6 +144,7 @@ fun MainScreen(
         if (calendarState.availableCalendars.isNotEmpty()) {
             delay(100) // Minimal delay for UI stability
             val hasBatteryExemption = BatteryOptimizationHelper.isExempted(context)
+            val batteryPromptDismissed = BatteryOptimizationHelper.isBatteryPromptDismissed(context)
             // Kurzschluss: solange die Akku-Ausnahme noch aussteht, ist der Unused-App-Check
             // ohnehin irrelevant (Battery-Gate kommt zuerst) - erspart den unnoetigen Async-Call.
             val needsUnusedAppRestrictionsPrompt = hasBatteryExemption &&
@@ -154,6 +153,7 @@ fun MainScreen(
             navigationViewModel.handleAuthenticationSuccess(
                 mainState.hasSelectedCalendars,
                 hasBatteryExemption,
+                batteryPromptDismissed,
                 needsUnusedAppRestrictionsPrompt
             )
         }
@@ -197,7 +197,10 @@ fun MainScreen(
             // Zurueck heisst hier dasselbe wie "Spaeter": ein blosses navigateBackToMain()
             // wuerde handleAuthenticationSuccess() sofort wieder hierher schicken - Zurueck
             // saehe aus, als passiere nichts.
-            is NavigationState.BatteryExemption -> navigationViewModel.dismissBatteryPrompt()
+            is NavigationState.BatteryExemption -> {
+                coroutineScope.launch { BatteryOptimizationHelper.setBatteryPromptDismissed(context) }
+                navigationViewModel.dismissBatteryPrompt()
+            }
 
             // Gleiche Semantik wie Battery, NICHT wie OEM: der Nutzer hat hier ggf. nichts
             // geaendert (reiner Settings-Screen, kein Bestaetigungs-Dialog), Zurueck muss also
@@ -255,20 +258,7 @@ fun MainScreen(
                                     )
                                     navigationViewModel.navigateToUnusedAppRestrictions()
                                 } else {
-                                    // Check for OEM warning
-                                    val oemType = BatteryOptimizationHelper.getOEMType()
-                                    if (BatteryOptimizationHelper.shouldShowOEMWarning(oemType)) {
-                                        Logger.business(
-                                            LogTags.NAVIGATION,
-                                            "Battery exempted -> OEM Warning for $oemType"
-                                        )
-                                        navigationViewModel.navigateToOEMWarning(oemType)
-                                    } else {
-                                        Logger.business(LogTags.NAVIGATION, "Onboarding complete -> Main")
-                                        // Initialize maintenance service after successful onboarding
-                                        AlarmMaintenanceService.scheduleNext(context)
-                                        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-                                    }
+                                    proceedPastGates(context, navigationViewModel)
                                 }
                             }
                         }
@@ -302,7 +292,7 @@ fun MainScreen(
                                 )
                                 navigationViewModel.navigateToUnusedAppRestrictions()
                             } else {
-                                proceedPastGates(context, coroutineScope, navigationViewModel)
+                                proceedPastGates(context, navigationViewModel)
                             }
                         }
                     } else {
@@ -324,6 +314,7 @@ fun MainScreen(
                         showEducationalDialog = true
                     },
                     onSkip = {
+                        coroutineScope.launch { BatteryOptimizationHelper.setBatteryPromptDismissed(context) }
                         navigationViewModel.dismissBatteryPrompt()
                     },
                     onRequestExemption = {
@@ -361,8 +352,8 @@ fun MainScreen(
                     contract = ActivityResultContracts.StartActivityForResult()
                 ) { _ ->
                     // Kein strukturiertes Ergebnis (reiner Settings-Screen) - immer neu pruefen,
-                    // was als naechstes kommt (OEM-Dialog oder fertig).
-                    proceedPastGates(context, coroutineScope, navigationViewModel)
+                    // was als naechstes kommt (OEM-Screen oder fertig).
+                    coroutineScope.launch { proceedPastGates(context, navigationViewModel) }
                 }
 
                 UnusedAppRestrictionsOnboardingScreen(

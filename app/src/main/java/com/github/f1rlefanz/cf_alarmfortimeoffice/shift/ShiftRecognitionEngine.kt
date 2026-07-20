@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftCo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.delay
+import java.time.Duration
 import java.time.LocalDateTime
 
 class ShiftRecognitionEngine(
@@ -34,6 +35,7 @@ class ShiftRecognitionEngine(
         const val ADAPTIVE_CACHE_MIN_MS = 2000L   // Minimum 2 seconds
         const val ADAPTIVE_CACHE_MAX_MS = 30000L  // Maximum 30 seconds
         const val MAX_CONCURRENT_WAIT_MS = 200L   // Max wait for concurrent operations
+        val MAX_NIGHT_SHIFT_LEAD_TIME: Duration = Duration.ofHours(12)
     }
     
     /**
@@ -173,18 +175,28 @@ class ShiftRecognitionEngine(
     private fun calculateAlarmTime(event: CalendarEvent, definition: ShiftDefinition): LocalDateTime {
         val shiftStartTime = event.startTime
         val alarmTime = definition.getAlarmLocalTime()
-        
+
         // Calculate alarm time on the same date as the shift
         val alarmDateTime = LocalDateTime.of(
             shiftStartTime.toLocalDate(),
             alarmTime
         )
-        
-        // If alarm time is after shift start time, assume it's for the previous day
-        return if (alarmDateTime.isAfter(shiftStartTime)) {
-            alarmDateTime.minusDays(1)
-        } else {
-            alarmDateTime
+
+        // Liegt die Weckzeit nach Schichtbeginn, koennte es eine Nachtschicht sein (Weckzeit
+        // kurz vor Mitternacht, Schicht beginnt kurz nach Mitternacht) - dann einen Tag
+        // zurueckrechnen. Die Vorlaufzeit NACH diesem Abzug muss aber plausibel bleiben (<=
+        // MAX_NIGHT_SHIFT_LEAD_TIME), sonst wuerde z.B. eine Weckzeit nur 5min nach
+        // Schichtbeginn (Konfigurationsfehler oder knapp getakteter Fall) faelschlich einen
+        // Tag zu frueh wecken. Wichtig: die Grenze gilt fuer die Vorlaufzeit NACH dem
+        // Tagesabzug, nicht fuer die rohe Differenz am selben Kalendertag - beim echten
+        // Mitternachts-Fall (Schicht 00:30, Weckzeit 23:30 Vortag) betraegt die rohe Differenz
+        // ~23h, die tatsaechliche Vorlaufzeit nach Abzug aber nur 1h.
+        if (alarmDateTime.isAfter(shiftStartTime)) {
+            val previousDayAlarm = alarmDateTime.minusDays(1)
+            if (Duration.between(previousDayAlarm, shiftStartTime) <= MAX_NIGHT_SHIFT_LEAD_TIME) {
+                return previousDayAlarm
+            }
         }
+        return alarmDateTime
     }
 }

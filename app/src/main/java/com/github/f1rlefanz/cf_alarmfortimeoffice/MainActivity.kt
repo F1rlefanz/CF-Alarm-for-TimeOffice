@@ -27,8 +27,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.CalendarAuthorizati
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.LoginScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.MainScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CFAlarmForTimeOfficeTheme
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DebugLogInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
@@ -39,7 +37,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -91,22 +88,6 @@ class MainActivity : ComponentActivity() {
         // POST_NOTIFICATIONS wird NICHT mehr hier (vor dem Login, kontextlos) abgefragt, sondern
         // erst wenn der Nutzer den Hauptbereich erreicht (LaunchedEffect im "main"-Screen unten) -
         // dort ist der Bezug zum Wecker gegeben. Verhindert die Dialog-Kaskade beim Erststart.
-
-        try {
-            val isDebugBuild = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
-            if (isDebugBuild) {
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        // DebugLogInfo.addTestLogEntries() // REMOVED: Test log entries no longer needed
-                        DebugLogInfo.logFileInfo(this@MainActivity)
-                    } catch (e: Exception) {
-                        Logger.w("MainActivity", "Debug logging failed", e)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Logger.w("MainActivity", "Debug build check failed", e)
-        }
 
         setContent {
             CFAlarmForTimeOfficeTheme {
@@ -198,11 +179,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
-        
-        // OnePlus-Hinweis beim ersten Start zeigen (DataStore-Lesevorgang -> Coroutine)
-        lifecycleScope.launch {
-            BatteryOptimizationHelper.checkAndShowHintIfNeeded(this@MainActivity)
         }
         
         // OPTIMIZATION: Initialize Hue Bridge lifecycle tracking

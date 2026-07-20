@@ -46,7 +46,28 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.14.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.15.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Zeitzonen-Fix, ein einheitlicher Herstellerhinweis und ein Aufräumen-Button für Debug-Logs.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Alarme überleben jetzt einen Zeitzonen-Wechsel:</strong> Bisher wurde die Weckzeit beim Stellen fest in der damals aktiven Zeitzone verankert – nach einem Zeitzonenwechsel (z. B. auf Reisen) klingelte der Wecker zur falschen Uhrzeit. Die App erkennt den Wechsel jetzt und berechnet die Alarme automatisch neu.</li>
+                <li><strong>„Alte Logs löschen"-Button im Status-Tab:</strong> löscht auf Wunsch alle Debug-Log-Dateien außer der von heute – die noch aktive, heutige Datei bleibt dabei immer erhalten.</li>
+                <li><strong>App-Version steht jetzt direkt im Log:</strong> jede neue Tagesdatei beginnt mit einer Kopfzeile, die App-Version und -Code festhält – auch wenn man die Datei ohne den „Senden"-Weg abruft.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>„Später" bei der Akku-Freigabe hielt nicht über einen Neustart:</strong> Nach jedem App-Neustart kam derselbe Hinweis erneut, obwohl man ihn schon einmal übersprungen hatte.</li>
+                <li><strong>Herstellerhinweis (Xiaomi/OnePlus/Huawei/…) kam an bis zu vier verschiedenen Stellen</strong>, teils wiederholt, teils mit unterschiedlichem (mal generischem, mal konkretem) Text. Jetzt gibt es genau einen Hinweis, mit den echten, herstellerspezifischen Schritten, einmalig pro Gerätetyp.</li>
+                <li><strong>Eine Weckzeit knapp nach Schichtbeginn</strong> konnte fälschlich einen Tag zu früh wecken (die Logik für Nachtschichten kannte keine Obergrenze). Betraf in der Praxis nur ungewöhnlich knapp konfigurierte Schichten.</li>
+                <li>Aufräumen der Debug-Logs lief bisher nur beim App-Kaltstart – bei durchgehend laufender App griff das kaum. Läuft jetzt zusätzlich alle 6 Stunden mit.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.14.0</h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Neuer Onboarding-Schritt gegen einen Android-Mechanismus, der Wecker lautlos löschen kann.</em></p>
 

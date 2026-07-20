@@ -58,6 +58,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.BatteryExemption(action.fromTab)
             }
             
+            is NavigationAction.NavigateToUnusedAppRestrictions -> {
+                Logger.d(LogTags.NAVIGATION, "Main -> Unused App Restrictions (from ${action.fromTab})")
+                NavigationState.UnusedAppRestrictions(action.fromTab)
+            }
+
             is NavigationAction.NavigateToOEMWarning -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> OEM Warning (${action.oemType}, from ${action.fromTab})")
                 NavigationState.OEMWarning(action.oemType, action.fromTab)
@@ -79,6 +84,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                     is NavigationState.ShiftConfig -> currentState.returnToTab
                     is NavigationState.EventList -> currentState.returnToTab
                     is NavigationState.BatteryExemption -> currentState.returnToTab
+                    is NavigationState.UnusedAppRestrictions -> currentState.returnToTab
                     is NavigationState.OEMWarning -> currentState.returnToTab
                     is NavigationState.HueRuleConfig -> currentState.returnToTab
                     is NavigationState.HueSettings -> currentState.returnToTab
@@ -122,8 +128,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToBatteryExemption(fromTab))
     
-    fun navigateToOEMWarning(oemType: BatteryOptimizationHelper.OEMType, fromTab: MainTab = MainTab.HOME) = 
+    fun navigateToOEMWarning(oemType: BatteryOptimizationHelper.OEMType, fromTab: MainTab = MainTab.HOME) =
         handleNavigationAction(NavigationAction.NavigateToOEMWarning(oemType, fromTab))
+
+    fun navigateToUnusedAppRestrictions(fromTab: MainTab = MainTab.HOME) =
+        handleNavigationAction(NavigationAction.NavigateToUnusedAppRestrictions(fromTab))
     
     fun navigateToHueRuleConfig(ruleId: String? = null, fromTab: MainTab = MainTab.HUE) = 
         handleNavigationAction(NavigationAction.NavigateToHueRuleConfig(ruleId, fromTab))
@@ -154,13 +163,20 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     }
 
     // Auto-navigation logic
-    fun handleAuthenticationSuccess(hasSelectedCalendars: Boolean, hasBatteryExemption: Boolean) {
+    fun handleAuthenticationSuccess(
+        hasSelectedCalendars: Boolean,
+        hasBatteryExemption: Boolean,
+        needsUnusedAppRestrictionsPrompt: Boolean
+    ) {
         if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
             navigateToCalendarSelection()
         } else if (hasSelectedCalendars && !hasBatteryExemption && !batteryPromptDismissed && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: Calendars selected but no battery exemption")
             navigateToBatteryExemption()
+        } else if (hasSelectedCalendars && hasBatteryExemption && needsUnusedAppRestrictionsPrompt && _navigationState.value.isMainContent()) {
+            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery exempted but unused-app restrictions still active")
+            navigateToUnusedAppRestrictions()
         }
     }
     

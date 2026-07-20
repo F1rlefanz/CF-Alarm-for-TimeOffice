@@ -59,6 +59,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
@@ -149,6 +150,11 @@ fun StatusTabContent(
         // im Doze/Standby einfrieren — die zweite OS-Berechtigung, an der die Hintergrund-
         // Zuverlaessigkeit haengt, direkt neben dem Vollbild-Wecker.
         BatteryOptimizationCard()
+
+        // "App bei Nichtnutzung pausieren": am 20.07.2026 live nachgewiesen, dass dieser
+        // Schalter die App per Force-Stop killt und dabei alle gesetzten Wecker-Alarme
+        // loescht — unabhaengig von der Akku-Ausnahme oben (separater Mechanismus).
+        UnusedAppRestrictionsCard()
 
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
         LastSyncCard()
@@ -330,6 +336,105 @@ private fun BatteryOptimizationCard() {
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text("Ausnahme erlauben")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Meldet, ob Android "App bei Nichtnutzung pausieren" fuer diese App aktiv haelt — ein
+ * eigenstaendiger Mechanismus, unabhaengig von der Akku-Ausnahme oben (die schuetzt nur vor
+ * Doze/Standby, nicht vor diesem Force-Stop-Pfad). Live am 20.07.2026 als Ursache eines
+ * ausgebliebenen Weckers nachgewiesen: aktiv geht die App per Force-Stop unter, alle gesetzten
+ * Alarme werden dabei lautlos geloescht.
+ *
+ * Der Check ist async (ListenableFuture, kein synchroner Getter wie bei Battery) - deshalb hier
+ * ueber [LaunchedEffect] statt eines synchronen `remember`-Initializers, per [refreshTrigger]
+ * bei jedem ON_RESUME neu angestossen.
+ */
+@Composable
+private fun UnusedAppRestrictionsCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isOk by remember { mutableStateOf(true) }
+    var refreshTrigger by remember { mutableStateOf(0) }
+
+    LaunchedEffect(refreshTrigger) {
+        isOk = !UnusedAppRestrictionsHelper.isRestricted(context)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshTrigger++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = if (isOk)
+                    MaterialTheme.colorScheme.success
+                else
+                    MaterialTheme.colorScheme.error
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Nicht verwendete Apps",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (isOk) {
+                        "\"Bei Nichtnutzung pausieren\" ist aus - der Wecker bleibt aktiv"
+                    } else {
+                        "⚠️ Android darf die App pausieren — dabei gehen alle gesetzten " +
+                            "Wecker-Alarme verloren"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (!isOk) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    TextButton(
+                        onClick = {
+                            try {
+                                context.startActivity(
+                                    UnusedAppRestrictionsHelper.createSettingsIntent(context)
+                                )
+                            } catch (e: Exception) {
+                                Logger.e(
+                                    LogTags.UNUSED_APP_RESTRICTIONS,
+                                    "Failed to open unused-app-restrictions settings",
+                                    e
+                                )
+                            }
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Einstellung öffnen")
                     }
                 }
             }

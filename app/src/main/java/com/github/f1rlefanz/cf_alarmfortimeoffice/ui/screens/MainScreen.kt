@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 // PHASE 2 CLEANUP: Removed unused ShiftUiState and flowOf imports
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,8 +21,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.timing.UIConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
@@ -30,8 +34,37 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/**
+ * Gemeinsamer Abschluss, sobald Akku-Ausnahme UND Unused-App-Restrictions erledigt oder
+ * uebersprungen sind: OEM-Warndialog zeigen (falls das Geraet betroffen ist) oder direkt die
+ * Wartungskette anstossen. Wird von zwei Rueckkehr-Punkten aufgerufen (Battery-Settings-Result,
+ * Unused-App-Restrictions-Settings-Result) - beides Moment, in denen der Nutzer gerade aus einem
+ * System-Flow zurueckkommt, daher hier bewusst der leichtgewichtige Dialog statt eines weiteren
+ * vollflaechigen Screens (letzterer bleibt dem frischen Onboarding-Pfad ueber
+ * [NavigationState.OEMWarning] vorbehalten, siehe CalendarSelectionScreen.onSave weiter unten).
+ */
+private fun proceedPastGates(
+    context: Context,
+    coroutineScope: CoroutineScope,
+    navigationViewModel: NavigationViewModel
+) {
+    val oemType = BatteryOptimizationHelper.getOEMType()
+    if (BatteryOptimizationHelper.shouldShowOEMWarning(oemType)) {
+        Logger.business(LogTags.NAVIGATION, "Gates resolved -> OEM Warning dialog for $oemType")
+        coroutineScope.launch {
+            BatteryOptimizationHelper.showOEMWarningDialog(context, oemType)
+        }
+        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+    } else {
+        Logger.business(LogTags.NAVIGATION, "Onboarding complete -> Main")
+        AlarmMaintenanceService.scheduleNext(context)
+        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+    }
+}
 
 @Composable
 fun MainScreen(
@@ -112,13 +145,16 @@ fun MainScreen(
         // 3. NAVIGATION: Handle after data operations complete
         if (calendarState.availableCalendars.isNotEmpty()) {
             delay(100) // Minimal delay for UI stability
-            val hasBatteryExemption =
-                com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.isExempted(
-                    context
-                )
+            val hasBatteryExemption = BatteryOptimizationHelper.isExempted(context)
+            // Kurzschluss: solange die Akku-Ausnahme noch aussteht, ist der Unused-App-Check
+            // ohnehin irrelevant (Battery-Gate kommt zuerst) - erspart den unnoetigen Async-Call.
+            val needsUnusedAppRestrictionsPrompt = hasBatteryExemption &&
+                UnusedAppRestrictionsHelper.isRestricted(context) &&
+                !UnusedAppRestrictionsHelper.isDismissed(context)
             navigationViewModel.handleAuthenticationSuccess(
                 mainState.hasSelectedCalendars,
-                hasBatteryExemption
+                hasBatteryExemption,
+                needsUnusedAppRestrictionsPrompt
             )
         }
     }
@@ -163,6 +199,14 @@ fun MainScreen(
             // saehe aus, als passiere nichts.
             is NavigationState.BatteryExemption -> navigationViewModel.dismissBatteryPrompt()
 
+            // Gleiche Semantik wie Battery, NICHT wie OEM: der Nutzer hat hier ggf. nichts
+            // geaendert (reiner Settings-Screen, kein Bestaetigungs-Dialog), Zurueck muss also
+            // wie "Spaeter" wirken, nicht wie "Verstanden".
+            is NavigationState.UnusedAppRestrictions -> {
+                coroutineScope.launch { UnusedAppRestrictionsHelper.setDismissed(context) }
+                navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+            }
+
             // Wie "Verstanden" - siehe finishOnboarding.
             is NavigationState.OEMWarning -> finishOnboarding()
 
@@ -192,35 +236,40 @@ fun MainScreen(
                     },
                     onSave = {
                         // PHASE 1 MIGRATION: After calendar selection, navigate to battery exemption
-                        if (!com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.isExempted(
-                                context
-                            )
-                        ) {
+                        if (!BatteryOptimizationHelper.isExempted(context)) {
                             Logger.business(
                                 LogTags.NAVIGATION,
                                 "Calendar saved -> Battery Exemption needed"
                             )
                             navigationViewModel.navigateToBatteryExemption()
                         } else {
-                            // Check for OEM warning
-                            val oemType =
-                                com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.getOEMType()
-                            if (com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.shouldShowOEMWarning(
-                                    oemType
-                                )
-                            ) {
-                                Logger.business(
-                                    LogTags.NAVIGATION,
-                                    "Battery exempted -> OEM Warning for $oemType"
-                                )
-                                navigationViewModel.navigateToOEMWarning(oemType)
-                            } else {
-                                Logger.business(LogTags.NAVIGATION, "Onboarding complete -> Main")
-                                // Initialize maintenance service after successful onboarding
-                                com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService.scheduleNext(
-                                    context
-                                )
-                                navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+                            // Unused-App-Restrictions-Check ist async (ListenableFuture) -
+                            // deshalb ab hier in eine Coroutine.
+                            coroutineScope.launch {
+                                if (UnusedAppRestrictionsHelper.isRestricted(context) &&
+                                    !UnusedAppRestrictionsHelper.isDismissed(context)
+                                ) {
+                                    Logger.business(
+                                        LogTags.NAVIGATION,
+                                        "Battery exempted -> Unused App Restrictions needed"
+                                    )
+                                    navigationViewModel.navigateToUnusedAppRestrictions()
+                                } else {
+                                    // Check for OEM warning
+                                    val oemType = BatteryOptimizationHelper.getOEMType()
+                                    if (BatteryOptimizationHelper.shouldShowOEMWarning(oemType)) {
+                                        Logger.business(
+                                            LogTags.NAVIGATION,
+                                            "Battery exempted -> OEM Warning for $oemType"
+                                        )
+                                        navigationViewModel.navigateToOEMWarning(oemType)
+                                    } else {
+                                        Logger.business(LogTags.NAVIGATION, "Onboarding complete -> Main")
+                                        // Initialize maintenance service after successful onboarding
+                                        AlarmMaintenanceService.scheduleNext(context)
+                                        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+                                    }
+                                }
                             }
                         }
                     },
@@ -239,40 +288,22 @@ fun MainScreen(
                     contract = ActivityResultContracts.StartActivityForResult()
                 ) { _ ->
                     // After returning from settings, check if exemption was granted
-                    val isExempted =
-                        com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.isExempted(
-                            context
-                        )
+                    val isExempted = BatteryOptimizationHelper.isExempted(context)
                     Logger.d(LogTags.BATTERY, "Battery exemption result: $isExempted")
 
                     if (isExempted) {
-                        // Check for OEM warning
-                        val oemType =
-                            com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.getOEMType()
-                        if (com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.shouldShowOEMWarning(
-                                oemType
-                            )
-                        ) {
-                            Logger.business(
-                                LogTags.NAVIGATION,
-                                "Battery exempted -> OEM Warning for $oemType"
-                            )
-
-                            // Show OEM warning dialog (DataStore-Lesevorgang -> Coroutine)
-                            coroutineScope.launch {
-                                com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper.showOEMWarningDialog(
-                                    context,
-                                    oemType
+                        coroutineScope.launch {
+                            if (UnusedAppRestrictionsHelper.isRestricted(context) &&
+                                !UnusedAppRestrictionsHelper.isDismissed(context)
+                            ) {
+                                Logger.business(
+                                    LogTags.NAVIGATION,
+                                    "Battery exempted -> Unused App Restrictions needed"
                                 )
+                                navigationViewModel.navigateToUnusedAppRestrictions()
+                            } else {
+                                proceedPastGates(context, coroutineScope, navigationViewModel)
                             }
-                            navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-                        } else {
-                            Logger.business(LogTags.NAVIGATION, "Battery exempted -> Main")
-                            // Initialize maintenance service after successful onboarding
-                            com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService.scheduleNext(
-                                context
-                            )
-                            navigationViewModel.navigateToMainWithTab(MainTab.HOME)
                         }
                     } else {
                         // User didn't grant exemption, show educational dialog
@@ -321,6 +352,46 @@ fun MainScreen(
                                 Logger.e(LogTags.BATTERY, "Failed to open battery settings", e2)
                             }
                         }
+                    }
+                )
+            }
+
+            is NavigationState.UnusedAppRestrictions -> {
+                val unusedAppRestrictionsLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) { _ ->
+                    // Kein strukturiertes Ergebnis (reiner Settings-Screen) - immer neu pruefen,
+                    // was als naechstes kommt (OEM-Dialog oder fertig).
+                    proceedPastGates(context, coroutineScope, navigationViewModel)
+                }
+
+                UnusedAppRestrictionsOnboardingScreen(
+                    onOpenSettings = {
+                        try {
+                            unusedAppRestrictionsLauncher.launch(
+                                UnusedAppRestrictionsHelper.createSettingsIntent(context)
+                            )
+                            Logger.d(
+                                LogTags.UNUSED_APP_RESTRICTIONS,
+                                "Unused-app-restrictions settings opened"
+                            )
+                        } catch (e: Exception) {
+                            Logger.e(
+                                LogTags.UNUSED_APP_RESTRICTIONS,
+                                "Failed to open unused-app-restrictions settings",
+                                e
+                            )
+                        }
+                    },
+                    onSkip = {
+                        coroutineScope.launch {
+                            UnusedAppRestrictionsHelper.setDismissed(context)
+                        }
+                        Logger.business(
+                            LogTags.NAVIGATION,
+                            "Unused-App-Restrictions prompt skipped (Spaeter) -> Home"
+                        )
+                        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
                     }
                 )
             }

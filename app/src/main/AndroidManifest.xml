@@ -124,6 +124,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- Kein directBootAware: Zeitzonen-Events setzen ein entsperrtes, laufendes System
+             voraus, anders als Boot. TIMEZONE_CHANGED steht wie BOOT_COMPLETED auf Androids
+             Ausnahmeliste der impliziten-Broadcast-Einschraenkungen seit API 26 - Manifest-
+             Registrierung funktioniert ohne Laufzeit-Registrierung. -->
+        <receiver
+            android:name=".alarm.receiver.TimezoneChangeReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".service.AlarmSoundService"
             android:enabled="true"

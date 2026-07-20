@@ -25,6 +25,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.SimpleFileTree
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
@@ -279,7 +280,16 @@ class AlarmMaintenanceService : Service() {
     private suspend fun performMaintenance() {
         val startTime = System.currentTimeMillis()
         Logger.business(LogTags.MAINTENANCE, "🔧 Starting maintenance cycle")
-        
+
+        // STEP 0: LOG RETENTION - Kaltstart allein ist nicht zuverlaessig genug fuer einen
+        // lange laufenden Prozess (SimpleFileTree.init{} feuert dann nie erneut). Eigener
+        // try/catch, damit ein Fehler hier niemals die eigentliche Wartung abbricht.
+        try {
+            applicationContext.getExternalFilesDir(null)?.let { SimpleFileTree.cleanupOldLogs(it) }
+        } catch (e: Exception) {
+            Logger.w(LogTags.FILE_SYSTEM, "Log-Bereinigung uebersprungen", e)
+        }
+
         // STEP 1: TOKEN REFRESH
         Logger.d(LogTags.MAINTENANCE, "Step 1: Token refresh")
         val tokenResult = tokenManager.getValidToken()

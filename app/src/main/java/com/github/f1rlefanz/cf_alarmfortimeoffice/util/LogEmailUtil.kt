@@ -132,6 +132,28 @@ object LogEmailUtil {
     }
     
     /**
+     * Löscht alle debug_logs_*.txt-Dateien AUSSER der von heute. Bewusst NICHT an
+     * [sendLogFileViaEmail] gekoppelt - die heutige Datei wird oft mehrfach am selben Tag neu
+     * verschickt, waehrend eine laufende Untersuchung fortschreitet; ein "loeschen nach dem
+     * Teilen" wuerde genau diese Datei zwischen zwei Sendungen wegreissen. "Ausser heute" ist
+     * die einzige Regel, die unabhaengig von der Tageszeit beim Antippen garantiert nichts noch
+     * Gebrauchtes loescht - kein Zeitfenster, kein Uhrzeit-Grenzfall.
+     *
+     * @return Anzahl der geloeschten Dateien
+     */
+    fun deleteOldLogs(context: Context): Int {
+        val logDir = context.getExternalFilesDir(null) ?: return 0
+        val todayFileName = "debug_logs_${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.txt"
+
+        val deleted = logDir.listFiles { _, name ->
+            name.startsWith("debug_logs_") && name.endsWith(".txt") && name != todayFileName
+        }?.count { it.delete() } ?: 0
+
+        Logger.i(LogTags.FILE_SYSTEM, "🗑️ Manuelle Log-Bereinigung: $deleted Datei(en) gelöscht (heutige Datei behalten)")
+        return deleted
+    }
+
+    /**
      * Gibt Informationen über die Log-Datei zurück
      */
     fun getLogFileInfo(context: Context): String? {

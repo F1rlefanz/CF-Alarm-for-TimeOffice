@@ -23,9 +23,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -712,7 +714,9 @@ private fun DebugInfoCard() {
     val context = LocalContext.current
     var showEmailSuccess by remember { mutableStateOf(false) }
     var showEmailError by remember { mutableStateOf<String?>(null) }
-    
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var deleteResultMessage by remember { mutableStateOf<String?>(null) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -794,7 +798,7 @@ private fun DebugInfoCard() {
                     showEmailSuccess = false
                 }
             }
-            
+
             showEmailError?.let { error ->
                 Text(
                     "❌ $error",
@@ -806,7 +810,59 @@ private fun DebugInfoCard() {
                     showEmailError = null
                 }
             }
+
+            // Button zum manuellen Aufraeumen - bewusst NICHT an den Versand oben gekoppelt
+            // (siehe LogEmailUtil.deleteOldLogs-Doku): die heutige Datei bleibt garantiert
+            // erhalten, unabhaengig davon, wann am Tag getippt wird.
+            OutlinedButton(
+                onClick = { showDeleteConfirm = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteSweep,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
+                )
+                Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                Text("Alte Logs löschen")
+            }
+
+            deleteResultMessage?.let { message ->
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(3000)
+                    deleteResultMessage = null
+                }
+            }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Alte Logs löschen?") },
+            text = {
+                Text("Löscht alle Log-Dateien außer der von heute. Die heutige, noch aktive Datei bleibt erhalten.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val deleted = com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogEmailUtil.deleteOldLogs(context)
+                    deleteResultMessage = "🗑️ $deleted Datei(en) gelöscht"
+                    showDeleteConfirm = false
+                }) {
+                    Text("Löschen")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
     }
 }
 

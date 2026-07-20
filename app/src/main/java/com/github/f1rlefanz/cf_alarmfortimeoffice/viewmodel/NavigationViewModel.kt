@@ -150,14 +150,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         handleNavigationAction(NavigationAction.ChangeTab(tab))
     
     // Battery-Prompt: Der Nutzer kann den Akku-Ausnahme-Screen mit "Spaeter" ueberspringen.
-    // Ohne dieses Flag wuerde handleAuthenticationSuccess ihn sofort wieder dorthin zwingen
-    // (Onboarding-Sackgasse - ein Tester, der ablehnt, kaeme nie in die App). Session-scoped;
-    // das persistente Sicherheitsnetz ist die Warn-Card im SettingsTab. (Persistenz ueber
-    // App-Neustarts hinweg: Follow-up via DataStore.)
-    private var batteryPromptDismissed = false
-
+    // Das Dismiss-Flag ist DataStore-persistiert (BatteryOptimizationHelper.isDismissed/
+    // setDismissed) - Aufrufer (MainScreen) reichen den aktuellen Wert an
+    // handleAuthenticationSuccess durch, damit dieses ViewModel Android-frei bleibt (bestehende
+    // Konvention: kein ViewModel im Projekt injiziert Context/DataStore direkt).
     fun dismissBatteryPrompt() {
-        batteryPromptDismissed = true
         Logger.business(LogTags.NAVIGATION, "Battery-Prompt vom Nutzer uebersprungen (Spaeter) -> Home")
         navigateToMainWithTab(MainTab.HOME)
     }
@@ -166,6 +163,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun handleAuthenticationSuccess(
         hasSelectedCalendars: Boolean,
         hasBatteryExemption: Boolean,
+        batteryPromptDismissed: Boolean,
         needsUnusedAppRestrictionsPrompt: Boolean
     ) {
         if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {

@@ -178,20 +178,54 @@ fun DimmerTabContent(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // Wellness / Wind-down (global)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = stringResource(R.string.dimmer_enable),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.dimmer_wellness),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.dimmer_wellness_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Switch(
-                            checked = state.featureEnabled,
-                            onCheckedChange = { viewModel.setEnabled(it) }
+                            checked = state.wellnessEnabled,
+                            onCheckedChange = { viewModel.setWellnessEnabled(it) }
                         )
                     }
+
+                    // Schicht-Regeln
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.dimmer_rules),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.dimmer_rules_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = state.rulesEnabled,
+                            onCheckedChange = { viewModel.setRulesEnabled(it) }
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.dimmer_rules_editor_todo),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
                     // Verdunkelung
                     Text(

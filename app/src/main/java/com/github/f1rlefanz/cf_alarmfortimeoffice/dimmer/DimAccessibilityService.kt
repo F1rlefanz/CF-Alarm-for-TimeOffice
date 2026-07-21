@@ -32,7 +32,7 @@ import javax.inject.Inject
 /**
  * Traegt die Dimm-Schicht fuer den Schicht-Dimmer. Portiert aus der eigenstaendigen
  * NachtDimmer-App (flickerfrei), hier aber DataStore-reaktiv statt SharedPreferences:
- * der Dienst beobachtet [DimOverlayPrefs.state] und rendert das Overlay entsprechend.
+ * der Dienst beobachtet [DimOverlayPrefs.renderState] und rendert das Overlay entsprechend.
  * Ein-/Aus geschaltet wird ausschliesslich ueber [DimOverlayPrefs.setOverlayOn] (durch
  * [DimScheduleUseCase]) – dieser Dienst enthaelt KEINE Zeitplan-Logik.
  *
@@ -92,7 +92,7 @@ class DimAccessibilityService : AccessibilityService() {
         instance = this
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         scope.launch {
-            prefs.state
+            prefs.renderState
                 .distinctUntilChanged { a, b -> a.overlayOn == b.overlayOn && a.color == b.color }
                 .collect { render(it.overlayOn, it.color) }
         }

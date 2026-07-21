@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -56,5 +57,16 @@ class DimmerViewModel @Inject constructor(
     /** Beim Anzeigen des Tabs den Zeitplan mit dem aktuellen Alarm-Bestand synchronisieren. */
     fun syncSchedule() = viewModelScope.launch {
         if (prefs.snapshot().featureEnabled) dimSchedule.enable()
+    }
+
+    /**
+     * Zeigt das Overlay kurz mit den aktuellen Werten – zum Ausprobieren OHNE Schicht/Alarm.
+     * Der Bedienungshilfen-Dienst muss aktiv sein, sonst ist nichts zu sehen. Danach wird der
+     * regulaere Zustand wiederhergestellt.
+     */
+    fun previewDim(seconds: Int = 5) = viewModelScope.launch {
+        prefs.setOverlayOn(true)
+        delay(seconds * 1000L)
+        dimSchedule.applyCurrentState()
     }
 }

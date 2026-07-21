@@ -32,7 +32,10 @@
     <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
     <string name="dimmer_winddown_label">Beginn: %1$d Min vor der Weckzeit</string>
     <string name="dimmer_status_active">Bedienungshilfen-Dienst: aktiv (%1$s)</string>
+    <string name="dimmer_status_active_plain">Bedienungshilfen-Dienst: aktiv</string>
     <string name="dimmer_status_inactive">Bedienungshilfen-Dienst: nicht aktiv</string>
+    <string name="dimmer_preview">Vorschau (5 s dimmen)</string>
+    <string name="dimmer_preview_hint">Zeigt das Dimmen kurz mit den aktuellen Werten – auch ohne Schicht/Alarm.</string>
     <string name="dimmer_open_accessibility">Bedienungshilfen-Dienst aktivieren</string>
     <string name="dimmer_need_accessibility">Bitte den „CF-Alarm Schicht-Dimmer" unter Einstellungen → Bedienungshilfen aktivieren.</string>
     <string name="dimmer_disclosure_title">Was dieser Dienst tut</string>

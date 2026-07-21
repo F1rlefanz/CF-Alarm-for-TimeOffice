@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -96,17 +97,19 @@ fun DimmerTabContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text(
-                text = stringResource(R.string.dimmer_header),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.dimmer_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column {
+                Text(
+                    text = stringResource(R.string.dimmer_header),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.dimmer_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         // Bedienungshilfen-Status
@@ -126,11 +129,13 @@ fun DimmerTabContent(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val diag = DimAccessibilityService.diagnostics()
                     Text(
-                        text = if (accessibilityActive)
-                            stringResource(R.string.dimmer_status_active, DimAccessibilityService.diagnostics())
-                        else
-                            stringResource(R.string.dimmer_status_inactive),
+                        text = when {
+                            !accessibilityActive -> stringResource(R.string.dimmer_status_inactive)
+                            diag.isBlank() -> stringResource(R.string.dimmer_status_active_plain)
+                            else -> stringResource(R.string.dimmer_status_active, diag)
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -145,6 +150,19 @@ fun DimmerTabContent(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(stringResource(R.string.dimmer_open_accessibility))
+                        }
+                    } else {
+                        // Overlay einmal kurz zeigen – testbar ohne Schicht/Alarm.
+                        Text(
+                            text = stringResource(R.string.dimmer_preview_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = { viewModel.previewDim() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.dimmer_preview))
                         }
                     }
                 }

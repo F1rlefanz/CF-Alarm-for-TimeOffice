@@ -64,6 +64,7 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var calendarSelectionRepository: CalendarSelectionRepository
     @Inject lateinit var authDataStoreRepository: IAuthDataStoreRepository
     @Inject lateinit var directBootAlarmStore: DirectBootAlarmStore
+    @Inject lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 
     companion object {
         // 🛡️ Level 4 Configuration
@@ -239,6 +240,15 @@ class BootReceiver : BroadcastReceiver() {
 
                     // 8. Schedule Post-Recovery Health Check
                     schedulePostRecoveryHealthCheck(context, reason)
+
+                    // 9. Schicht-Dimmer: rollenden Dimm-Tick nach dem Boot neu setzen.
+                    //    Best-effort und eigenes try/catch – darf die Wecker-Recovery NIE stoeren.
+                    try {
+                        dimSchedule.applyCurrentState()
+                        dimSchedule.scheduleNextTransition()
+                    } catch (e: Exception) {
+                        Logger.w(LogTags.DIMMER, "Boot: Dimm-Reschedule fehlgeschlagen", e)
+                    }
 
                     recoverySuccessful = true
                     Logger.business(

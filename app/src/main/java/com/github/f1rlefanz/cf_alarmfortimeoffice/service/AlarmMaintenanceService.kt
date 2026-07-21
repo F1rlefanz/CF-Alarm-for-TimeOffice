@@ -87,6 +87,9 @@ class AlarmMaintenanceService : Service() {
     @Inject lateinit var shiftRecognitionEngine: ShiftRecognitionEngine
     @Inject @MainDataStore lateinit var mainDataStore: DataStore<Preferences>
 
+    @Inject
+    lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -428,6 +431,15 @@ class AlarmMaintenanceService : Service() {
                 "✅ Maintenance completed: ${syncedAlarms.size} alarms in sync in ${duration}ms"
             )
             saveMaintenanceTime()
+
+            // Schicht-Dimmer: neu erkannte Schichten in den Dimm-Zeitplan uebernehmen.
+            // Eigenes try/catch – ein Dimm-Fehler darf die Wartung nie beeintraechtigen.
+            try {
+                dimSchedule.applyCurrentState()
+                dimSchedule.scheduleNextTransition()
+            } catch (e: Exception) {
+                Logger.w(LogTags.DIMMER, "Wartung: Dimm-Reschedule fehlgeschlagen", e)
+            }
         } else {
             Logger.e(LogTags.MAINTENANCE, "Alarm sync failed", syncResult.exceptionOrNull())
         }

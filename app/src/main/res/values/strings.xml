@@ -18,4 +18,24 @@
     <string name="alarm_notification_snooze">5 Min später</string>
     <string name="alarm_channel_name">Schicht-Wecker</string>
     <string name="alarm_channel_description">Der Wecker für deine Schicht</string>
+
+    <!-- Schicht-Dimmer (AccessibilityService) -->
+    <string name="dim_accessibility_label">CF-Alarm Schicht-Dimmer</string>
+    <string name="dim_accessibility_desc">Legt eine abdunkelnde Schicht über den Bildschirm, um dich vor Schichtbeginn zum Herunterfahren zu bringen. Der Dienst liest keine Bildschirminhalte und wertet keine Eingaben aus – er dient ausschließlich der Verdunkelung.</string>
+
+    <!-- Dimmer-Tab -->
+    <string name="dimmer_tab">Dimmen</string>
+    <string name="dimmer_header">Schicht-Dimmer</string>
+    <string name="dimmer_intro">Dunkelt den Bildschirm vor deiner nächsten Schicht automatisch ab und blendet ihn zur Weckzeit wieder auf – damit du leichter herunterfährst.</string>
+    <string name="dimmer_enable">Schicht-Dimmer aktiv</string>
+    <string name="dimmer_strength_label">Verdunkelung: %1$d %%</string>
+    <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
+    <string name="dimmer_winddown_label">Beginn: %1$d Min vor der Weckzeit</string>
+    <string name="dimmer_status_active">Bedienungshilfen-Dienst: aktiv (%1$s)</string>
+    <string name="dimmer_status_inactive">Bedienungshilfen-Dienst: nicht aktiv</string>
+    <string name="dimmer_open_accessibility">Bedienungshilfen-Dienst aktivieren</string>
+    <string name="dimmer_need_accessibility">Bitte den „CF-Alarm Schicht-Dimmer" unter Einstellungen → Bedienungshilfen aktivieren.</string>
+    <string name="dimmer_disclosure_title">Was dieser Dienst tut</string>
+    <string name="dimmer_disclosure_body">Der Schicht-Dimmer nutzt einen Android-Bedienungshilfen-Dienst ausschließlich, um eine abdunkelnde Schicht über den Bildschirm zu legen. Er liest keine Bildschirminhalte, erfasst keine Eingaben und sendet keine Daten. Du kannst ihn jederzeit in den Android-Einstellungen wieder abschalten.</string>
+    <string name="dimmer_disclosure_understood">Verstanden</string>
 </resources>

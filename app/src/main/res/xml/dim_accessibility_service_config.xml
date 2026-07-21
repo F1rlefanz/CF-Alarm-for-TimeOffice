@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Schicht-Dimmer: legt eine abdunkelnde Schicht ueber den Bildschirm.
+     Liest KEINE Bildschirminhalte (canRetrieveWindowContent=false) und wertet keine
+     Eingaben aus. isAccessibilityTool=true: dient dem Dimmen unter die System-
+     Mindesthelligkeit (Lichtempfindlichkeit/Augenermuedung, analog zu "Extra Dim"). -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="0"
+    android:canRetrieveWindowContent="false"
+    android:isAccessibilityTool="true"
+    android:description="@string/dim_accessibility_desc" />

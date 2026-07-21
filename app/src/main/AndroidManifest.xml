@@ -162,6 +162,28 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- Schicht-Dimmer: Bedienungshilfen-Dienst, der die Dimm-Schicht traegt.
+             Liest keine Bildschirminhalte (siehe dim_accessibility_service_config).
+             Bis zur manuellen Aktivierung durch den Nutzer inaktiv. -->
+        <service
+            android:name=".dimmer.DimAccessibilityService"
+            android:exported="false"
+            android:label="@string/dim_accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/dim_accessibility_service_config" />
+        </service>
+
+        <!-- Schicht-Dimmer: rollender Zeitplan-Tick (Dimm-Fenster an/aus). -->
+        <receiver
+            android:name=".dimmer.DimScheduleReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -30,7 +30,7 @@ sealed class NavigationState {
 }
 
 enum class MainTab {
-    HOME, STATUS, SETTINGS, HUE
+    HOME, STATUS, SETTINGS, HUE, DIMMER
 }
 
 // Extension functions for NavigationState

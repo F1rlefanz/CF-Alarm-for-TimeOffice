@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
@@ -36,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.DimmerTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HueTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent
@@ -157,6 +159,12 @@ fun MainContentScreen(
                     selected = selectedTab == MainTab.HUE,
                     onClick = { onSelectedTabChange(MainTab.HUE) }
                 )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Filled.DarkMode, contentDescription = "Dimmen") },
+                    label = { Text("Dimmen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    selected = selectedTab == MainTab.DIMMER,
+                    onClick = { onSelectedTabChange(MainTab.DIMMER) }
+                )
             }
         },
         floatingActionButton = {
@@ -222,6 +230,9 @@ fun MainContentScreen(
                         onNavigateToRuleConfig = onShowHueRuleConfig,
                         onNavigateToSettings = onShowHueSettings
                     )
+                }
+                MainTab.DIMMER -> {
+                    DimmerTabContent()
                 }
             }
         }

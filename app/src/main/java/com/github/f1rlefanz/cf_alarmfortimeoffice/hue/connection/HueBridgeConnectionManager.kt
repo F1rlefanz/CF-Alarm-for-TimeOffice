@@ -75,6 +75,7 @@ class HueBridgeConnectionManager private constructor(
                 INSTANCE ?: HueBridgeConnectionManager(
                     context.applicationContext,
                     com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor(context.applicationContext),
+                    // Context enables the bridge-ID pinning audit layer in HueTrustManager
                     HueApiClient(context.applicationContext)
                 ).also { INSTANCE = it }
             }

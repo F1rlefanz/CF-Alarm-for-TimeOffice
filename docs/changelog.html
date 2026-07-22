@@ -46,7 +46,19 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.15.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.15.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Der WLAN-Check vor dem Hue-Bridge-Zugriff erkennt jetzt auch ein falsches WLAN.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Verbindungsversuch zur Hue-Bridge trotz falschem WLAN:</strong> Der bestehende Schutz (v1.9.5) prüfte nur, ob überhaupt ein WLAN aktiv ist – in einem fremden WLAN (Arbeit, Hotspot, Gäste-Netz) galt das fälschlich als „erreichbar", und die App versuchte trotzdem, die Bridge zu kontaktieren und wartete den vollen 10-Sekunden-Timeout aus. Der Check vergleicht jetzt die tatsächliche Subnetzzugehörigkeit statt nur den Verbindungstyp.</li>
+                <li><strong>Derselbe blinde Fleck bestand auch beim Wecker selbst:</strong> Bei einer bereits zwischengespeicherten Bridge-Verbindung (der Normalfall dank 30-Minuten-Cache) griff der WLAN-Check bisher gar nicht – jetzt wird auch dort vorab geprüft, bevor ein echter Netzwerkzugriff versucht wird.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.15.0</h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Zeitzonen-Fix, ein einheitlicher Herstellerhinweis und ein Aufräumen-Button für Debug-Logs.</em></p>
 

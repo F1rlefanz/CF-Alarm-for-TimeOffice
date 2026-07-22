@@ -62,18 +62,35 @@ interface HueBridgeConnectionManagerEntryPoint {
  * MEMORY LEAK FIX: Uses WeakReference to Context to prevent memory leaks
  */
 class HueBridgeConnectionManager private constructor(
-    context: Context
+    context: Context,
+    private val networkMonitor: com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor,
+    private val apiClient: HueApiClient
 ) {
     companion object {
         @Volatile
         private var INSTANCE: HueBridgeConnectionManager? = null
-        
+
         fun getInstance(context: Context): HueBridgeConnectionManager {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: HueBridgeConnectionManager(context.applicationContext).also { INSTANCE = it }
+                INSTANCE ?: HueBridgeConnectionManager(
+                    context.applicationContext,
+                    com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor(context.applicationContext),
+                    // Context enables the bridge-ID pinning audit layer in HueTrustManager
+                    HueApiClient(context.applicationContext)
+                ).also { INSTANCE = it }
             }
         }
-        
+
+        /**
+         * Visible for testing: lets a unit test construct the manager with fakes for
+         * networkMonitor/apiClient without touching the production getInstance() singleton.
+         */
+        internal fun createForTesting(
+            context: Context,
+            networkMonitor: com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor,
+            apiClient: HueApiClient
+        ): HueBridgeConnectionManager = HueBridgeConnectionManager(context, networkMonitor, apiClient)
+
         // Configuration constants
         // CONSOLIDATION: moved off the standalone "hue_bridge_connection" SharedPreferences
         // file and into the existing Hilt @HueDataStore (see HueBridgeConnectionManagerEntryPoint).
@@ -93,8 +110,6 @@ class HueBridgeConnectionManager private constructor(
     
     // Use WeakReference to prevent memory leaks
     private val contextRef = java.lang.ref.WeakReference(context.applicationContext)
-    // Context enables the bridge-ID pinning audit layer in HueTrustManager
-    private val apiClient = HueApiClient(context)
 
     // PHASE 2: Smart Scheduler integration
     private val smartScheduler by lazy {
@@ -216,9 +231,22 @@ class HueBridgeConnectionManager private constructor(
         
         when (currentState) {
             is ConnectionState.CONNECTED -> {
+                // Synchronous pre-flight: skip the real HTTP attempt entirely when we're
+                // demonstrably not on the bridge's local network (off Wi-Fi, or on a
+                // different Wi-Fi/subnet - e.g. public/work Wi-Fi, mobile hotspot). Deliberately
+                // NOT downgrading currentConnectionState to ERROR: this is a transient
+                // "wrong network right now" condition, not a bridge/credential failure - the
+                // 30-min cache should survive the trip so no needless reconnect/health-check
+                // cycle fires the moment Wi-Fi is back, and the UI doesn't flash a misleading
+                // persistent error banner while just out of range.
+                if (!isBridgeReachableNow(currentState.bridgeIp)) {
+                    Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Cached bridge ${currentState.bridgeIp} not reachable from current network, skipping live connection attempt")
+                    throw IllegalStateException("Bridge unreachable: not on the bridge's local network (${currentState.bridgeIp})")
+                }
+
                 // OPTIMIZATION: Extended cache validity - trust connection longer
                 val isRecent = (System.currentTimeMillis() - currentState.lastValidated) < CONNECTION_CACHE_VALIDITY.inWholeMilliseconds
-                
+
                 if (isRecent) {
                     Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Using cached valid connection (${CONNECTION_CACHE_VALIDITY.inWholeMinutes}min cache)")
                     return@withContext Pair(currentState.bridgeIp, currentState.username)
@@ -500,19 +528,26 @@ class HueBridgeConnectionManager private constructor(
     }
     
     /**
+     * INTERNAL: Cheap, synchronous pre-flight - is [bridgeIp] reachable from the CURRENT
+     * network? Only meaningful for local/private bridge IPs; a non-local IP (shouldn't
+     * happen for Hue, but defensive) is always considered reachable since the subnet check
+     * doesn't apply to it.
+     */
+    private fun isBridgeReachableNow(bridgeIp: String): Boolean {
+        val isPrivateIp = bridgeIp.startsWith("192.168.") || bridgeIp.startsWith("10.") || bridgeIp.startsWith("172.")
+        if (!isPrivateIp) return true
+        return networkMonitor.isReachableSubnet(bridgeIp)
+    }
+
+    /**
      * INTERNAL: Validate connection credentials against bridge
      */
     private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean {
-        val context = contextRef.get()
-        if (context != null) {
-            val networkMonitor = com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor(context)
-            // Skip connection attempt if we're not on Wi-Fi/Ethernet and the IP is a local network IP
-            if (!networkMonitor.isWifiConnected() && (bridgeIp.startsWith("192.168.") || bridgeIp.startsWith("10.") || bridgeIp.startsWith("172."))) {
-                Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Not on Wi-Fi, skipping local bridge connection to $bridgeIp")
-                return false
-            }
+        if (!isBridgeReachableNow(bridgeIp)) {
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: $bridgeIp not reachable from current network (off home Wi-Fi or wrong subnet), skipping bridge connection")
+            return false
         }
-        
+
         return try {
             apiClient.getBridgeConfig(bridgeIp, username)
             Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")

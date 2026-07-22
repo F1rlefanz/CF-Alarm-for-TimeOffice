@@ -62,9 +62,6 @@ class DimmerViewModel @Inject constructor(
         dimSchedule.enable() // Wellness-Fenster verschieben sich -> neu planen
     }
 
-    /** Beim Anzeigen des Tabs den Zeitplan mit dem aktuellen Stand synchronisieren. */
-    fun syncSchedule() = viewModelScope.launch { dimSchedule.enable() }
-
     /**
      * Zeigt das Overlay kurz mit den aktuellen Werten – zum Ausprobieren OHNE Schicht/Alarm.
      * Der Bedienungshilfen-Dienst muss aktiv sein. Danach regulären Zustand wiederherstellen.

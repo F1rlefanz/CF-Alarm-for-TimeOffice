@@ -24,7 +24,6 @@
     <string name="dim_accessibility_desc">Legt eine abdunkelnde Schicht über den Bildschirm, um dich vor Schichtbeginn zum Herunterfahren zu bringen. Der Dienst liest keine Bildschirminhalte und wertet keine Eingaben aus – er dient ausschließlich der Verdunkelung.</string>
 
     <!-- Dimmer-Tab -->
-    <string name="dimmer_tab">Dimmen</string>
     <string name="dimmer_header">Schicht-Dimmer</string>
     <string name="dimmer_intro">Dunkelt den Bildschirm vor deiner nächsten Schicht automatisch ab und blendet ihn zur Weckzeit wieder auf – damit du leichter herunterfährst.</string>
     <string name="dimmer_wellness">Wellness (Wind-down)</string>

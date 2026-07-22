@@ -33,6 +33,8 @@
     <string name="dimmer_rules">Schicht-Regeln</string>
     <string name="dimmer_rules_hint">Dimmt nach frei definierbaren Regeln, gekoppelt an deine erkannten Schichten (z. B. nachts, aber nicht an Nachtdienst-Nächten).</string>
     <string name="dimmer_rules_editor_todo">Regeln anlegen und bearbeiten kommt als nächster Schritt.</string>
+    <string name="dimmer_appearance">Darstellung</string>
+    <string name="dimmer_appearance_hint">Verdunkelung und Wärme gelten für Wellness und Regeln.</string>
     <string name="dimmer_strength_label">Verdunkelung: %1$d %%</string>
     <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
     <string name="dimmer_winddown_label">Beginn: %1$d Min vor der Weckzeit</string>

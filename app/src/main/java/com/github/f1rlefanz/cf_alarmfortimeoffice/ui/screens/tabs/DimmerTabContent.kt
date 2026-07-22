@@ -36,7 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
@@ -169,7 +169,7 @@ fun DimmerTabContent(
             }
         }
 
-        // Master-Schalter
+        // Wellness (Wind-down) – eigener Bereich mit seinem Wind-down-Regler
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -178,7 +178,6 @@ fun DimmerTabContent(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Wellness / Wind-down (global)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -199,8 +198,28 @@ fun DimmerTabContent(
                             onCheckedChange = { viewModel.setWellnessEnabled(it) }
                         )
                     }
+                    Text(
+                        text = stringResource(R.string.dimmer_winddown_label, state.windDownMinutes),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Slider(
+                        value = state.windDownMinutes.toFloat(),
+                        onValueChange = { viewModel.setWindDownMinutes((it / 15).toInt() * 15) },
+                        valueRange = DimOverlayPrefs.WINDDOWN_MIN_LIMIT.toFloat()..DimOverlayPrefs.WINDDOWN_MAX_LIMIT.toFloat()
+                    )
+                }
+            }
+        }
 
-                    // Schicht-Regeln
+        // Schicht-Regeln – eigener Bereich
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -226,8 +245,28 @@ fun DimmerTabContent(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
 
-                    // Verdunkelung
+        // Darstellung – Verdunkelung/Wärme gelten für beide Modi
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.dimmer_appearance),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.dimmer_appearance_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Text(
                         text = stringResource(R.string.dimmer_strength_label, state.strength),
                         style = MaterialTheme.typography.bodyMedium
@@ -237,8 +276,6 @@ fun DimmerTabContent(
                         onValueChange = { viewModel.setStrength(it.toInt()) },
                         valueRange = 0f..DimOverlayPrefs.STRENGTH_MAX.toFloat()
                     )
-
-                    // Waerme
                     Text(
                         text = stringResource(R.string.dimmer_warmth_label, state.warmth),
                         style = MaterialTheme.typography.bodyMedium
@@ -247,17 +284,6 @@ fun DimmerTabContent(
                         value = state.warmth.toFloat(),
                         onValueChange = { viewModel.setWarmth(it.toInt()) },
                         valueRange = 0f..DimOverlayPrefs.WARMTH_MAX.toFloat()
-                    )
-
-                    // Wind-down-Dauer
-                    Text(
-                        text = stringResource(R.string.dimmer_winddown_label, state.windDownMinutes),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(
-                        value = state.windDownMinutes.toFloat(),
-                        onValueChange = { viewModel.setWindDownMinutes((it / 15).toInt() * 15) },
-                        valueRange = DimOverlayPrefs.WINDDOWN_MIN_LIMIT.toFloat()..DimOverlayPrefs.WINDDOWN_MAX_LIMIT.toFloat()
                     )
                 }
             }

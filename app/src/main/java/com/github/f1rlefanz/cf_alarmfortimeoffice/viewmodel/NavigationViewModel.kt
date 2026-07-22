@@ -77,7 +77,17 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 Logger.d(LogTags.NAVIGATION, "Main -> Hue Settings (from ${action.fromTab})")
                 NavigationState.HueSettings(action.fromTab)
             }
-            
+
+            is NavigationAction.NavigateToDimmerSettings -> {
+                Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Settings (from ${action.fromTab})")
+                NavigationState.DimmerSettings(action.fromTab)
+            }
+
+            is NavigationAction.NavigateToDimmerRuleConfig -> {
+                Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Rule Config (from ${action.fromTab}, rule: ${action.ruleId})")
+                NavigationState.DimmerRuleConfig(action.ruleId, action.fromTab)
+            }
+
             is NavigationAction.NavigateBackToMain -> {
                 val returnTab = when (currentState) {
                     is NavigationState.CalendarSelection -> currentState.returnToTab
@@ -88,6 +98,8 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                     is NavigationState.OEMWarning -> currentState.returnToTab
                     is NavigationState.HueRuleConfig -> currentState.returnToTab
                     is NavigationState.HueSettings -> currentState.returnToTab
+                    is NavigationState.DimmerSettings -> currentState.returnToTab
+                    is NavigationState.DimmerRuleConfig -> currentState.returnToTab
                     else -> MainTab.HOME
                 }
                 Logger.d(LogTags.NAVIGATION, "-> Main ($returnTab tab)")
@@ -137,10 +149,16 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToHueRuleConfig(ruleId: String? = null, fromTab: MainTab = MainTab.HUE) = 
         handleNavigationAction(NavigationAction.NavigateToHueRuleConfig(ruleId, fromTab))
     
-    fun navigateToHueSettings(fromTab: MainTab = MainTab.HUE) = 
+    fun navigateToHueSettings(fromTab: MainTab = MainTab.HUE) =
         handleNavigationAction(NavigationAction.NavigateToHueSettings(fromTab))
-    
-    fun navigateBackToMain() = 
+
+    fun navigateToDimmerSettings(fromTab: MainTab = MainTab.DIMMER) =
+        handleNavigationAction(NavigationAction.NavigateToDimmerSettings(fromTab))
+
+    fun navigateToDimmerRuleConfig(ruleId: String? = null, fromTab: MainTab = MainTab.DIMMER) =
+        handleNavigationAction(NavigationAction.NavigateToDimmerRuleConfig(ruleId, fromTab))
+
+    fun navigateBackToMain() =
         handleNavigationAction(NavigationAction.NavigateBackToMain)
     
     fun navigateToMainWithTab(tab: MainTab) = 

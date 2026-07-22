@@ -62,7 +62,8 @@ fun MainContentScreen(
     onShowCalendarSelection: () -> Unit,
     onShowEventList: () -> Unit,
     onShowHueRuleConfig: () -> Unit,
-    onShowHueSettings: () -> Unit
+    onShowHueSettings: () -> Unit,
+    onShowDimmerSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
@@ -232,7 +233,7 @@ fun MainContentScreen(
                     )
                 }
                 MainTab.DIMMER -> {
-                    DimmerTabContent()
+                    DimmerTabContent(onNavigateToRules = onShowDimmerSettings)
                 }
             }
         }

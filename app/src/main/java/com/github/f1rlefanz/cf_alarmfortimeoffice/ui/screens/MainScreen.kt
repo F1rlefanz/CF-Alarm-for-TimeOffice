@@ -424,6 +424,23 @@ fun MainScreen(
                 )
             }
 
+            is NavigationState.DimmerSettings -> {
+                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerSettingsScreen(
+                    onNavigateBack = { navigationViewModel.navigateBackToMain() },
+                    onEditRule = { ruleId -> navigationViewModel.navigateToDimmerRuleConfig(ruleId) },
+                    onCreateRule = { navigationViewModel.navigateToDimmerRuleConfig() }
+                )
+            }
+
+            is NavigationState.DimmerRuleConfig -> {
+                val dimRuleState = navigationState as NavigationState.DimmerRuleConfig
+                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerRuleConfigScreen(
+                    ruleId = dimRuleState.ruleId,
+                    onNavigateBack = { navigationViewModel.navigateBackToMain() },
+                    onSaveComplete = { navigationViewModel.navigateBackToMain() }
+                )
+            }
+
             is NavigationState.MainContent -> {
                 val mainContentState = navigationState as NavigationState.MainContent
                 MainContentScreen(
@@ -442,7 +459,8 @@ fun MainScreen(
                     },
                     onShowEventList = { navigationViewModel.navigateToEventList(mainContentState.selectedTab) },
                     onShowHueRuleConfig = { navigationViewModel.navigateToHueRuleConfig() },
-                    onShowHueSettings = { navigationViewModel.navigateToHueSettings() }
+                    onShowHueSettings = { navigationViewModel.navigateToHueSettings() },
+                    onShowDimmerSettings = { navigationViewModel.navigateToDimmerSettings() }
                 )
             }
         }

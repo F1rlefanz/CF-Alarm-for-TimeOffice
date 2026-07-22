@@ -27,6 +27,10 @@ sealed class NavigationState {
     // Hue-Screens
     data class HueRuleConfig(val ruleId: String? = null, val returnToTab: MainTab = MainTab.HUE) : NavigationState()
     data class HueSettings(val returnToTab: MainTab = MainTab.HUE) : NavigationState()
+
+    // Dimmer-Screens
+    data class DimmerSettings(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
+    data class DimmerRuleConfig(val ruleId: String? = null, val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
 }
 
 enum class MainTab {
@@ -57,6 +61,10 @@ sealed class NavigationAction {
     // Hue Navigation Actions
     data class NavigateToHueRuleConfig(val ruleId: String? = null, val fromTab: MainTab = MainTab.HUE) : NavigationAction()
     data class NavigateToHueSettings(val fromTab: MainTab = MainTab.HUE) : NavigationAction()
+
+    // Dimmer Navigation Actions
+    data class NavigateToDimmerSettings(val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
+    data class NavigateToDimmerRuleConfig(val ruleId: String? = null, val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
     
     object NavigateBackToMain : NavigationAction()
     data class NavigateToMainWithTab(val tab: MainTab) : NavigationAction()

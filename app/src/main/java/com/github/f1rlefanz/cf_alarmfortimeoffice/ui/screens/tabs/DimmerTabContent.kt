@@ -49,6 +49,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerViewModel
  */
 @Composable
 fun DimmerTabContent(
+    onNavigateToRules: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: DimmerViewModel = hiltViewModel()
 ) {
@@ -240,11 +241,12 @@ fun DimmerTabContent(
                             onCheckedChange = { viewModel.setRulesEnabled(it) }
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.dimmer_rules_editor_todo),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Button(
+                        onClick = onNavigateToRules,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.dimmer_manage_rules))
+                    }
                 }
             }
         }

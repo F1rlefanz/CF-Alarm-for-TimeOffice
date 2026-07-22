@@ -46,7 +46,18 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.15.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.15.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Ein irreführender Log-Eintrag beim Verlassen des Status-Tabs ist verschwunden.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Falscher Fehler-Log beim „Nicht verwendete Apps"-Check:</strong> Verließ man den Status-Tab, während im Hintergrund geprüft wurde, ob die Android-Einschränkung aktiv ist, wurde der dabei normale Abbruch der Prüfung fälschlich als Fehler geloggt (samt zweier Compose-interner Stacktraces). Funktional ohne Auswirkung – die App verhielt sich schon vorher korrekt –, aber im Log sah es nach einem echten Problem aus. Jetzt wird ein Abbruch als das erkannt, was er ist.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.15.1</h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Der WLAN-Check vor dem Hue-Bridge-Zugriff erkennt jetzt auch ein falsches WLAN.</em></p>
 

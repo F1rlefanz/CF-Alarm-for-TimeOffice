@@ -80,7 +80,7 @@ setup-*.bat
 # ================================
 # 📝 LOCAL-ONLY NOTES
 # ================================
-# Claude-Projektanweisungen: bewusst lokal, nicht ins Repo.
-# (Die Play-Store-Justifications unter docs/play-store/ sind hingegen bewusst versioniert.)
-/CLAUDE.md
+# CLAUDE.md wird BEWUSST versioniert (der vorgesehene Weg): so sehen auch Cloud-/Remote-
+# Claude-Sessions die Projektanweisungen. NICHT hier ignorieren.
+# Rein interne Arbeitsnotizen (Handoff, Play-Justifications, Session-Krempel) bleiben lokal:
 /..Projektdateien

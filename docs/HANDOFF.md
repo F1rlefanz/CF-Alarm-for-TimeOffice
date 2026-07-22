@@ -3,12 +3,13 @@
 **Lebendes Dokument.** Erledigtes wird gelöscht, nicht abgehakt oder durchgestrichen — was hier steht, ist offen.
 Die Historie steht im Git-Log, nicht hier.
 
-**Stand:** 22.07.2026 · `main` = **v1.15.1 / versionCode 64** · alles gemerged und gepusht.
+**Stand:** 22.07.2026 · `main` = **v1.15.2 / versionCode 65** · alles gemerged und gepusht.
 
 > **Ungeprüft:** der WLAN-Subnetz-Fix (v1.15.1) ist per Unit-Test gegen die realen Log-Fälle
 > (192.168.44.x, 10.0.9.x, CGNAT-Adresse) abgesichert und CI-grün, aber **nicht** am Gerät in
-> einem echten fremden WLAN bestätigt. Alles Übrige aus v1.15.0/v1.15.1 ist bereits am Gerät
-> bzw. im Log verifiziert.
+> einem echten fremden WLAN bestätigt. Der Log-Rauschen-Fix (v1.15.2) ist ein reiner
+> Cancellation-Rethrow nach etabliertem Codebase-Muster, unkritisch. Alles Übrige aus
+> v1.15.0/v1.15.1 ist bereits am Gerät bzw. im Log verifiziert.
 
 ---
 
@@ -30,15 +31,3 @@ WLAN oder auf Mobilfunk umschalten, während die Verbindung noch als „verbunde
    „Fehler"-Banner), bis man wirklich wieder im Heim-WLAN ist?
 3. Funktioniert die Lichtsteuerung wieder sofort, sobald man zurück im Heim-WLAN ist (kein
    unnötiger Reconnect-Zyklus)?
-
-### 2. Log-Rauschen bei „Nicht verwendete Apps"-Check
-
-Beim Prüfen der drei Logs aus Punkt 1 aufgefallen, aber bewusst nicht mit angefasst: Wenn man
-den Status-Tab verlässt, während `UnusedAppRestrictionsHelper.isRestricted()` noch läuft,
-wird die dabei entstehende `CancellationException` als `E/CFAlarm.UnusedAppRestrictions:
-Failed to check unused-app-restrictions status` samt zwei
-`LeftCompositionCancellationException`-Stacktraces geloggt. Funktional harmlos (fail-open,
-liefert dann `false`), aber irreführend fürs Log-Lesen. Ursache:
-`UnusedAppRestrictionsHelper.kt:73-78`, `catch (e: Exception)` fängt auch die normale
-Coroutine-Cancellation ab. Fix wäre, `CancellationException` separat durchzureichen statt zu
-loggen.

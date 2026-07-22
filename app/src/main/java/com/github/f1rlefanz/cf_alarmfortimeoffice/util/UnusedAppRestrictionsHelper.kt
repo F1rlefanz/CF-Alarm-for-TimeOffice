@@ -72,6 +72,12 @@ object UnusedAppRestrictionsHelper {
      */
     suspend fun isRestricted(context: Context): Boolean = try {
         needsPrompt(getUnusedAppRestrictionsStatusSuspend(context))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        // Rethrow for proper structured concurrency - callers run this in a Compose-tied
+        // scope (LaunchedEffect/rememberCoroutineScope) that cancels it whenever the user
+        // leaves the screen mid-check. That's normal lifecycle behavior, not a real error.
+        Logger.d(LogTags.UNUSED_APP_RESTRICTIONS, "Unused-app-restrictions check cancelled (left composition)")
+        throw e
     } catch (e: Exception) {
         Logger.e(LogTags.UNUSED_APP_RESTRICTIONS, "Failed to check unused-app-restrictions status", e)
         false

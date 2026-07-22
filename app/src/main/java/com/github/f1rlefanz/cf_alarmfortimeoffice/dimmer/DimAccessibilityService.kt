@@ -70,21 +70,14 @@ class DimAccessibilityService : AccessibilityService() {
     private var lastOverlayOn = false
 
     companion object {
-        private const val API_DISPLAY_OVERLAY = 34 // Android 14
         private const val FADE_MS = 320L
         private const val FADE_FRAME_MS = 16L
 
         @Volatile
         private var instance: DimAccessibilityService? = null
 
-        @Volatile
-        private var lastMode: String = ""
-
         /** Ist der Bedienungshilfen-Dienst gerade verbunden/aktiv? */
         fun isRunning(): Boolean = instance != null
-
-        /** Diagnose fuer die UI (aktiver Overlay-Modus + laufende API). */
-        fun diagnostics(): String = if (instance == null) "" else lastMode
     }
 
     override fun onServiceConnected() {
@@ -145,12 +138,9 @@ class DimAccessibilityService : AccessibilityService() {
                 .setVisibility(sc, true)
                 .apply()
             attachAccessibilityOverlayToDisplay(Display.DEFAULT_DISPLAY, sc)
-
-            lastMode = "Display-Overlay · Android-API ${Build.VERSION.SDK_INT}"
             true
         } catch (t: Throwable) {
             removeDisplayOverlay()
-            lastMode = "Fenster-Overlay (Fallback) · Android-API ${Build.VERSION.SDK_INT}"
             Logger.w(LogTags.DIMMER, "Display-Overlay fehlgeschlagen: ${t.javaClass.simpleName}")
             false
         }
@@ -188,9 +178,6 @@ class DimAccessibilityService : AccessibilityService() {
             v.alpha = currentAlpha // VOR addView, damit der erste Frame nicht aufblitzt
             runCatching { wm.addView(v, buildWmLayoutParams()) }
                 .onSuccess { wmView = v }
-            if (Build.VERSION.SDK_INT < API_DISPLAY_OVERLAY) {
-                lastMode = "Fenster-Overlay (Status-/Navileiste) · Android-API ${Build.VERSION.SDK_INT}"
-            }
         } else {
             existing.setBackgroundColor(color)
         }

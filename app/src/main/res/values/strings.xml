@@ -27,12 +27,10 @@
     <string name="dimmer_tab">Dimmen</string>
     <string name="dimmer_header">Schicht-Dimmer</string>
     <string name="dimmer_intro">Dunkelt den Bildschirm vor deiner nächsten Schicht automatisch ab und blendet ihn zur Weckzeit wieder auf – damit du leichter herunterfährst.</string>
-    <string name="dimmer_enable">Schicht-Dimmer aktiv</string>
     <string name="dimmer_wellness">Wellness (Wind-down)</string>
     <string name="dimmer_wellness_hint">Dunkelt eine Weile vor jeder Weckzeit ab – unabhängig von Regeln, wie ein sanfter Übergang.</string>
     <string name="dimmer_rules">Schicht-Regeln</string>
     <string name="dimmer_rules_hint">Dimmt nach frei definierbaren Regeln, gekoppelt an deine erkannten Schichten (z. B. nachts, aber nicht an Nachtdienst-Nächten).</string>
-    <string name="dimmer_rules_editor_todo">Regeln anlegen und bearbeiten kommt als nächster Schritt.</string>
     <string name="dimmer_manage_rules">Regeln verwalten</string>
 
     <!-- Dimm-Regeln: Liste + Editor -->
@@ -63,13 +61,9 @@
     <string name="dimmer_strength_label">Verdunkelung: %1$d %%</string>
     <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
     <string name="dimmer_winddown_label">Beginn: %1$d Min vor der Weckzeit</string>
-    <string name="dimmer_status_active">Bedienungshilfen-Dienst: aktiv (%1$s)</string>
-    <string name="dimmer_status_active_plain">Bedienungshilfen-Dienst: aktiv</string>
-    <string name="dimmer_status_inactive">Bedienungshilfen-Dienst: nicht aktiv</string>
     <string name="dimmer_preview">Vorschau (5 s dimmen)</string>
     <string name="dimmer_preview_hint">Zeigt das Dimmen kurz mit den aktuellen Werten – auch ohne Schicht/Alarm.</string>
     <string name="dimmer_open_accessibility">Bedienungshilfen-Dienst aktivieren</string>
-    <string name="dimmer_need_accessibility">Bitte den „CF-Alarm Schicht-Dimmer" unter Einstellungen → Bedienungshilfen aktivieren.</string>
     <string name="dimmer_disclosure_title">Was dieser Dienst tut</string>
     <string name="dimmer_disclosure_body">Der Schicht-Dimmer nutzt einen Android-Bedienungshilfen-Dienst ausschließlich, um eine abdunkelnde Schicht über den Bildschirm zu legen. Er liest keine Bildschirminhalte, erfasst keine Eingaben und sendet keine Daten. Du kannst ihn jederzeit in den Android-Einstellungen wieder abschalten.</string>
     <string name="dimmer_disclosure_understood">Verstanden</string>

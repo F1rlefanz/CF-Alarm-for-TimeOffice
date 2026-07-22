@@ -143,6 +143,18 @@ fun MainContentScreen(
                     onClick = { onSelectedTabChange(MainTab.HOME) }
                 )
                 NavigationBarItem(
+                    icon = { Icon(Icons.Filled.DarkMode, contentDescription = "Dimmen") },
+                    label = { Text("Dimmen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    selected = selectedTab == MainTab.DIMMER,
+                    onClick = { onSelectedTabChange(MainTab.DIMMER) }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Filled.Lightbulb, contentDescription = "Hue") },
+                    label = { Text("Hue", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    selected = selectedTab == MainTab.HUE,
+                    onClick = { onSelectedTabChange(MainTab.HUE) }
+                )
+                NavigationBarItem(
                     icon = { Icon(Icons.Filled.Info, contentDescription = "Status") },
                     label = { Text("Status", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     selected = selectedTab == MainTab.STATUS,
@@ -153,18 +165,6 @@ fun MainContentScreen(
                     label = { Text("Einstellungen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     selected = selectedTab == MainTab.SETTINGS,
                     onClick = { onSelectedTabChange(MainTab.SETTINGS) }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Lightbulb, contentDescription = "Hue") },
-                    label = { Text("Hue", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.HUE,
-                    onClick = { onSelectedTabChange(MainTab.HUE) }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.DarkMode, contentDescription = "Dimmen") },
-                    label = { Text("Dimmen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.DIMMER,
-                    onClick = { onSelectedTabChange(MainTab.DIMMER) }
                 )
             }
         },

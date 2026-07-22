@@ -49,12 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
@@ -157,6 +160,11 @@ fun StatusTabContent(
         // Schalter die App per Force-Stop killt und dabei alle gesetzten Wecker-Alarme
         // loescht — unabhaengig von der Akku-Ausnahme oben (separater Mechanismus).
         UnusedAppRestrictionsCard()
+
+        // Schicht-Dimmer: laeuft der Bedienungshilfen-Dienst? Nur dann kann das Dimm-Overlay
+        // ueberhaupt erscheinen. Der Status stand frueher im Dimmer-Tab; hier neben den anderen
+        // OS-Berechtigungen ist er dauerhaft ablesbar und der Dienst von einer Stelle aus aktivierbar.
+        DimmerAccessibilityCard()
 
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
         LastSyncCard()
@@ -441,6 +449,114 @@ private fun UnusedAppRestrictionsCard() {
                 }
             }
         }
+    }
+}
+
+/**
+ * Meldet, ob der Bedienungshilfen-Dienst des Schicht-Dimmers laeuft — nur dann kann das
+ * Dimm-Overlay ueberhaupt erscheinen. Anders als die Wecker-Karten ist das ein OPTIONALES
+ * Feature; die Karte steht hier, damit der Dienst-Status an einer Stelle ablesbar ist und der
+ * Nutzer den Dienst (nach der Play-Pflicht-Offenlegung) direkt aktivieren kann.
+ *
+ * Wie die Nachbarkarten wird der Zustand bei jedem ON_RESUME frisch gelesen — nach der Rueckkehr
+ * aus den Bedienungshilfen-Einstellungen springt die Karte so sofort auf gruen. Android startet
+ * den Dienst nicht automatisch neu, wenn der Nutzer ihn dort abschaltet.
+ */
+@Composable
+private fun DimmerAccessibilityCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isActive by remember { mutableStateOf(DimAccessibilityService.isRunning()) }
+    var showDisclosure by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isActive = DimAccessibilityService.isRunning()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (showDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showDisclosure = false },
+            title = { Text(stringResource(R.string.dimmer_disclosure_title)) },
+            text = { Text(stringResource(R.string.dimmer_disclosure_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDisclosure = false
+                    openAccessibilitySettings(context)
+                }) { Text(stringResource(R.string.dimmer_open_accessibility)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisclosure = false }) {
+                    Text(stringResource(R.string.dimmer_disclosure_understood))
+                }
+            }
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (isActive) Icons.Default.CheckCircle else Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = if (isActive)
+                    MaterialTheme.colorScheme.success
+                else
+                    MaterialTheme.colorScheme.error
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Schicht-Dimmer",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (isActive) {
+                        "Bedienungshilfen-Dienst aktiv — das Dimm-Overlay kann erscheinen"
+                    } else {
+                        "Bedienungshilfen-Dienst nicht aktiv — das Dimmen wirkt erst nach dem Aktivieren"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (!isActive) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    TextButton(
+                        onClick = { showDisclosure = true },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(stringResource(R.string.dimmer_open_accessibility))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun openAccessibilitySettings(context: android.content.Context) {
+    try {
+        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    } catch (e: Exception) {
+        Logger.e(LogTags.UI, "❌ Bedienungshilfen-Einstellungen nicht erreichbar", e)
     }
 }
 

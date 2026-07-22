@@ -59,34 +59,45 @@ class HueBridgeConnectionManagerTest {
         ref.set(connectedState)
     }
 
-    @Test
-    fun `off-subnet cached connection throws without ever calling the real API client`() = runBlocking {
-        val (manager, _, apiClient) = buildManager(isReachable = false)
+    // NOTE: block bodies (not `= runBlocking { ... }` expression bodies) are deliberate here -
+    // JUnit4 requires @Test methods to return void, and an expression body whose last statement
+    // is a `verify(mock).suspendFun(...)` call would otherwise infer a non-Unit return type
+    // (the suspend function's return type), which JUnit4 rejects with InvalidTestClassError.
 
-        assertThrows(IllegalStateException::class.java) {
-            runBlocking { manager.getValidatedConnection() }
+    @Test
+    fun `off-subnet cached connection throws without ever calling the real API client`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManager(isReachable = false)
+
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking { manager.getValidatedConnection() }
+            }
+
+            verify(apiClient, never()).getBridgeConfig(any(), any())
         }
-
-        verify(apiClient, never()).getBridgeConfig(any(), any())
     }
 
     @Test
-    fun `off-subnet cached connection does not downgrade connection state to ERROR`() = runBlocking {
-        val (manager, _, _) = buildManager(isReachable = false)
+    fun `off-subnet cached connection does not downgrade connection state to ERROR`() {
+        runBlocking {
+            val (manager, _, _) = buildManager(isReachable = false)
 
-        runCatching { manager.getValidatedConnection() }
+            runCatching { manager.getValidatedConnection() }
 
-        assertTrue(manager.connectionStatus.value is HueBridgeConnectionManager.ConnectionState.CONNECTED)
+            assertTrue(manager.connectionStatus.value is HueBridgeConnectionManager.ConnectionState.CONNECTED)
+        }
     }
 
     @Test
-    fun `on-subnet cached connection returns cached credentials without calling the API`() = runBlocking {
-        val (manager, _, apiClient) = buildManager(isReachable = true)
+    fun `on-subnet cached connection returns cached credentials without calling the API`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManager(isReachable = true)
 
-        val (returnedIp, returnedUser) = manager.getValidatedConnection()
+            val (returnedIp, returnedUser) = manager.getValidatedConnection()
 
-        assertTrue(returnedIp == bridgeIp && returnedUser == username)
-        // Fresh cache (just seeded) - still within CONNECTION_CACHE_VALIDITY, so no API call needed.
-        verify(apiClient, never()).getBridgeConfig(any(), any())
+            assertTrue(returnedIp == bridgeIp && returnedUser == username)
+            // Fresh cache (just seeded) - still within CONNECTION_CACHE_VALIDITY, so no API call needed.
+            verify(apiClient, never()).getBridgeConfig(any(), any())
+        }
     }
 }

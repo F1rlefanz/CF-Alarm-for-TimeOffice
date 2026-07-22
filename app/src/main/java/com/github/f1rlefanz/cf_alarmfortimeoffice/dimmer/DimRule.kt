@@ -39,7 +39,12 @@ enum class DimAnchor {
     CLOCK,
 
     /** Relativ zur Weckzeit der Schicht (Offset in Minuten, negativ = davor). */
-    ALARM
+    ALARM,
+
+    /** Relativ zum SchichtENDE (Kalender-Event-Ende) + Offset – z. B. ND-Tagschlaf „ab Schichtende
+     * +60 Min". Braucht ein bekanntes Schichtende ([com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo.shiftEndTime]
+     * ≠ 0); an manuellen Alarmen ohne Schicht nicht auflösbar. Nutzt dieselben Offset-Felder wie [ALARM]. */
+    SHIFT_END
 }
 
 /**

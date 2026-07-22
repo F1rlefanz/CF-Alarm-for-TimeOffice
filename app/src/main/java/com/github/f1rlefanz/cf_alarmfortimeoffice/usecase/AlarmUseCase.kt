@@ -319,7 +319,11 @@ class AlarmUseCase @Inject constructor(
             triggerTime = alarmTime,
             formattedTime = formatAlarmTime(alarmTime),
             eventId = eventId,
-            eventChecksum = eventChecksum
+            eventChecksum = eventChecksum,
+            shiftEndTime = shiftMatch.calendarEvent.endTime
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
         )
     }
     

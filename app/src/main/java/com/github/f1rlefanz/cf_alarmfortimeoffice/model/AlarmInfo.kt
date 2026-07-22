@@ -25,5 +25,9 @@ data class AlarmInfo(
     
     // 🔧 SYNC-FIX: Event-Tracking für intelligente Synchronisation
     val eventId: String = "",  // Google Calendar Event-ID
-    val eventChecksum: String = ""  // Hash: startTime+endTime+title (erkennt Änderungen)
+    val eventChecksum: String = "",  // Hash: startTime+endTime+title (erkennt Änderungen)
+
+    // Schichtende (Ende des Kalender-Events) als Epoch-Millis – Basis für SHIFT_END-Dimmfenster
+    // (ND-Tagschlaf). 0 = unbekannt (z. B. manuell angelegte Alarme ohne Schicht).
+    val shiftEndTime: Long = 0
 )

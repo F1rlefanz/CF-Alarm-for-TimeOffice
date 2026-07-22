@@ -48,7 +48,8 @@ data class AlarmInfoData(
     val triggerTime: Long,
     val formattedTime: String,
     val eventId: String = "",
-    val eventChecksum: String = ""
+    val eventChecksum: String = "",
+    val shiftEndTime: Long = 0  // Schichtende (Epoch-Millis) für SHIFT_END-Dimmfenster; 0 = unbekannt
 )
 
 @Singleton
@@ -299,7 +300,8 @@ class AlarmRepository @Inject constructor(
         triggerTime = triggerTime,
         formattedTime = formattedTime,
         eventId = eventId,
-        eventChecksum = eventChecksum
+        eventChecksum = eventChecksum,
+        shiftEndTime = shiftEndTime
     )
 
     private fun AlarmInfoData.toAlarmInfo() = AlarmInfo(
@@ -309,6 +311,7 @@ class AlarmRepository @Inject constructor(
         triggerTime = triggerTime,
         formattedTime = formattedTime,
         eventId = eventId,
-        eventChecksum = eventChecksum
+        eventChecksum = eventChecksum,
+        shiftEndTime = shiftEndTime
     )
 }

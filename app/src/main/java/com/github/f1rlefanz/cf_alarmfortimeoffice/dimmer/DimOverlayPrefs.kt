@@ -35,6 +35,12 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_WARMTH = intPreferencesKey("dim_warmth")
         private val KEY_WINDDOWN_MIN = intPreferencesKey("dim_winddown_min")
 
+        // Farbe, die der Service gerade rendert (Intensität des AKTIVEN Fensters). Getrennt von
+        // KEY_STRENGTH/KEY_WARMTH (= globale Nutzer-Slider), damit der Scheduler-Schreibzugriff und
+        // die „Darstellung"-Slider sich nicht überschreiben. Fällt zurück auf die globalen Werte.
+        private val KEY_RENDER_STRENGTH = intPreferencesKey("dim_render_strength")
+        private val KEY_RENDER_WARMTH = intPreferencesKey("dim_render_warmth")
+
         const val STRENGTH_MAX = 85
         const val WARMTH_MAX = 100
         const val DEFAULT_STRENGTH = 55
@@ -62,8 +68,8 @@ class DimOverlayPrefs @Inject constructor(
     val renderState: Flow<RenderState> = dataStore.data.map { p ->
         RenderState(
             overlayOn = p[KEY_OVERLAY_ON] ?: false,
-            strength = (p[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX),
-            warmth = (p[KEY_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
+            strength = (p[KEY_RENDER_STRENGTH] ?: p[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX),
+            warmth = (p[KEY_RENDER_WARMTH] ?: p[KEY_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
         )
     }
 
@@ -82,10 +88,22 @@ class DimOverlayPrefs @Inject constructor(
 
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun windDownMinutesNow(): Int = windDownMinutes.first()
+    suspend fun strengthNow(): Int = strength.first()
+    suspend fun warmthNow(): Int = warmth.first()
 
     suspend fun setWellnessEnabled(v: Boolean) = dataStore.edit { it[KEY_WELLNESS] = v }
     suspend fun setRulesEnabled(v: Boolean) = dataStore.edit { it[KEY_RULES_ON] = v }
-    suspend fun setOverlayOn(v: Boolean) = dataStore.edit { it[KEY_OVERLAY_ON] = v }
+
+    /**
+     * Setzt An/Aus UND die Render-Farbe (Intensität/Wärme des gerade aktiven Fensters). Der Scheduler
+     * ruft das mit den Werten der aktiven Spanne; die globalen [strength]/[warmth] bleiben unberührt
+     * (sie sind Wellness- + Editor-Default). Für Vorschau: mit den globalen Werten aufrufen.
+     */
+    suspend fun setActiveOverlay(on: Boolean, strength: Int, warmth: Int) = dataStore.edit {
+        it[KEY_OVERLAY_ON] = on
+        it[KEY_RENDER_STRENGTH] = strength.coerceIn(0, STRENGTH_MAX)
+        it[KEY_RENDER_WARMTH] = warmth.coerceIn(0, WARMTH_MAX)
+    }
     suspend fun setStrength(v: Int) = dataStore.edit { it[KEY_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
     suspend fun setWarmth(v: Int) = dataStore.edit { it[KEY_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
     suspend fun setWindDownMinutes(v: Int) =

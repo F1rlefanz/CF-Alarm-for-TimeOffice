@@ -39,7 +39,6 @@ class DimScheduleUseCase @Inject constructor(
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
         private const val REQ_TICK = 7710
         private const val FREE_DAY_HORIZON_DAYS = 14
-        private const val DAY_MS = 24L * 60 * 60 * 1000
         private const val MIN_MS = 60_000L
     }
 
@@ -53,7 +52,13 @@ class DimScheduleUseCase @Inject constructor(
 
     suspend fun applyCurrentState() {
         val now = System.currentTimeMillis()
-        prefs.setOverlayOn(windows().any { now in it })
+        // Aktive Spanne (überlappen mehrere, gewinnt die dunkelste – Logik in DimWindowResolver).
+        val active = DimWindowResolver.activeSpan(windows(), now)
+        if (active != null) {
+            prefs.setActiveOverlay(true, active.strength, active.warmth)
+        } else {
+            prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
+        }
     }
 
     suspend fun scheduleNextTransition() {
@@ -77,9 +82,9 @@ class DimScheduleUseCase @Inject constructor(
         Logger.d(LogTags.DIMMER, "Naechster Dimm-Wechsel geplant: ${java.util.Date(next)}")
     }
 
-    // --- Fenster-Berechnung ---
+    // --- Fenster-Berechnung (reine Zeitmathematik in DimWindowResolver) ---
 
-    private suspend fun windows(): List<LongRange> {
+    private suspend fun windows(): List<DimWindowResolver.DimSpan> {
         val toggles = prefs.togglesNow()
         if (!toggles.wellnessEnabled && !toggles.rulesEnabled) return emptyList()
 
@@ -88,15 +93,19 @@ class DimScheduleUseCase @Inject constructor(
             return emptyList()
         }.filter { it.isActive }
 
-        val out = mutableListOf<LongRange>()
+        val out = mutableListOf<DimWindowResolver.DimSpan>()
 
-        // 1. Wellness (global): Wind-down vor jeder Weckzeit.
+        // 1. Wellness (global): Wind-down vor jeder Weckzeit – mit der globalen Intensität.
         if (toggles.wellnessEnabled) {
             val windDownMs = prefs.windDownMinutesNow() * MIN_MS
-            alarms.forEach { out += (it.triggerTime - windDownMs)..it.triggerTime }
+            val gStrength = prefs.strengthNow()
+            val gWarmth = prefs.warmthNow()
+            alarms.forEach {
+                out += DimWindowResolver.DimSpan((it.triggerTime - windDownMs)..it.triggerTime, gStrength, gWarmth)
+            }
         }
 
-        // 2. Regeln: pro Schicht-Tag die passende Regel, plus FREI-Regel für freie Tage.
+        // 2. Regeln: pro Schicht-Tag die passende Regel (mit IHRER Intensität), plus FREI-Regel für freie Tage.
         if (toggles.rulesEnabled) {
             val rules = dimRuleUseCase.getAllRules()
             if (rules.any { it.enabled }) {
@@ -104,7 +113,11 @@ class DimScheduleUseCase @Inject constructor(
                 alarms.forEach { alarm ->
                     shiftDates += Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate()
                     val rule = dimRuleUseCase.findRuleForShift(alarm.shiftName, rules) ?: return@forEach
-                    rule.windows.forEach { w -> resolveShiftWindow(w, alarm.triggerTime)?.let { out += it } }
+                    rule.windows.forEach { w ->
+                        DimWindowResolver.resolveShiftWindow(w, alarm.triggerTime, alarm.shiftEndTime, zone)?.let {
+                            out += DimWindowResolver.DimSpan(it, rule.strength, rule.warmth)
+                        }
+                    }
                 }
                 val freeRule = dimRuleUseCase.findRuleForFreeDay(rules)
                 if (freeRule != null && freeRule.windows.isNotEmpty()) {
@@ -112,7 +125,11 @@ class DimScheduleUseCase @Inject constructor(
                     for (d in 0 until FREE_DAY_HORIZON_DAYS) {
                         val date = today.plusDays(d.toLong())
                         if (date in shiftDates) continue
-                        freeRule.windows.forEach { w -> resolveFreeWindow(w, date)?.let { out += it } }
+                        freeRule.windows.forEach { w ->
+                            DimWindowResolver.resolveFreeWindow(w, date, zone)?.let {
+                                out += DimWindowResolver.DimSpan(it, freeRule.strength, freeRule.warmth)
+                            }
+                        }
                     }
                 }
             }
@@ -122,48 +139,9 @@ class DimScheduleUseCase @Inject constructor(
 
     private suspend fun computeNextTransition(now: Long): Long? =
         windows()
-            .flatMap { listOf(it.first, it.last) }
+            .flatMap { listOf(it.range.first, it.range.last) }
             .filter { it > now }
             .minOrNull()
-
-    /** Fenster eines Schicht-Tags (mit Weckzeit [alarmEpoch]). */
-    private fun resolveShiftWindow(w: DimWindow, alarmEpoch: Long): LongRange? {
-        val start = when (w.startAnchor) {
-            DimAnchor.ALARM -> alarmEpoch + w.startOffsetMinutes * MIN_MS
-            DimAnchor.CLOCK -> clockAtOrBefore(alarmEpoch, w.startClockMinutes)
-        }
-        val end = when (w.endAnchor) {
-            DimAnchor.ALARM -> alarmEpoch + w.endOffsetMinutes * MIN_MS
-            DimAnchor.CLOCK -> {
-                var e = clockOnDateOf(alarmEpoch, w.endClockMinutes)
-                while (e <= start) e += DAY_MS
-                e
-            }
-        }
-        return if (end > start) start..end else null
-    }
-
-    /** Fenster eines freien Tags – nur CLOCK-Anker sinnvoll (kein Wecker). */
-    private fun resolveFreeWindow(w: DimWindow, date: LocalDate): LongRange? {
-        if (w.startAnchor != DimAnchor.CLOCK || w.endAnchor != DimAnchor.CLOCK) return null
-        val base = date.atStartOfDay(zone).toInstant().toEpochMilli()
-        val start = base + w.startClockMinutes * MIN_MS
-        var end = base + w.endClockMinutes * MIN_MS
-        if (end <= start) end += DAY_MS // über Mitternacht
-        return start..end
-    }
-
-    /** Die Uhrzeit [clockMinutes] auf dem Kalendertag von [referenceEpoch], aber nicht nach der Referenz. */
-    private fun clockAtOrBefore(referenceEpoch: Long, clockMinutes: Int): Long {
-        var t = clockOnDateOf(referenceEpoch, clockMinutes)
-        if (t > referenceEpoch) t -= DAY_MS
-        return t
-    }
-
-    private fun clockOnDateOf(referenceEpoch: Long, clockMinutes: Int): Long {
-        val date = Instant.ofEpochMilli(referenceEpoch).atZone(zone).toLocalDate()
-        return date.atStartOfDay(zone).toInstant().toEpochMilli() + clockMinutes * MIN_MS
-    }
 
     private fun alarmManager() = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 

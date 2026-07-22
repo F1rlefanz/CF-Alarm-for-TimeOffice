@@ -114,6 +114,32 @@ class AlarmRepositoryTest {
     }
 
     @Test
+    fun `init laedt das persistierte Schichtende mit`() = runTest {
+        val shiftEnd = now + 8 * 60 * 60 * 1000L
+        val store = storeWith(alarmData(id = 7, offsetMs = 60 * 60 * 1000L).copy(shiftEndTime = shiftEnd))
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+
+        val loaded = repo.activeAlarms.first { list -> list.any { it.id == 7 } }
+
+        assertEquals(shiftEnd, loaded.first { it.id == 7 }.shiftEndTime)
+    }
+
+    @Test
+    fun `altes JSON ohne Schichtende defaultet auf 0 (Migration)`() = runTest {
+        // Simuliert einen vor Einfuehrung des Feldes gespeicherten Alarm: kein shiftEndTime im JSON.
+        val legacyJson =
+            """[{"id":9,"shiftId":"s","shiftName":"F","triggerTime":${now + 60 * 60 * 1000L},"formattedTime":"t"}]"""
+        val store = FakePreferencesDataStore(
+            mutablePreferencesOf().apply { this[alarmsKey] = legacyJson }
+        )
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+
+        val loaded = repo.activeAlarms.first { list -> list.any { it.id == 9 } }
+
+        assertEquals(0L, loaded.first { it.id == 9 }.shiftEndTime)
+    }
+
+    @Test
     fun `deleteAlarm entfernt aus dem Cache und schreibt den Direct-Boot-Spiegel nach`() = runTest {
         val directBoot = mock<DirectBootAlarmStore>()
         val store = storeWith(

@@ -47,12 +47,16 @@
     <string name="dimmer_rule_windows">Zeitfenster</string>
     <string name="dimmer_rule_add_window">+ Fenster</string>
     <string name="dimmer_rule_no_windows_hint">Ohne Fenster wird an passenden Tagen NICHT gedimmt – so nimmst du z. B. Nachtdienst-Nächte von einer Universal-Regel aus.</string>
-    <string name="dimmer_window_start">Start (feste Uhrzeit, Vorabend)</string>
+    <string name="dimmer_window_start">Start</string>
     <string name="dimmer_window_end">Ende</string>
     <string name="dimmer_end_clock">Feste Uhrzeit</string>
     <string name="dimmer_end_alarm">Zur Weckzeit</string>
+    <string name="dimmer_anchor_shiftend">Schichtende</string>
     <string name="dimmer_end_offset">Minuten nach Wecker</string>
+    <string name="dimmer_shiftend_offset">Minuten nach Schichtende</string>
     <string name="dimmer_window_remove">Fenster entfernen</string>
+    <string name="dimmer_rule_intensity">Intensität dieser Regel</string>
+    <string name="dimmer_rule_intensity_hint">Gilt für die Fenster dieser Regel. Wellness nutzt die globale Darstellung.</string>
     <string name="dimmer_rule_save">Speichern</string>
     <string name="dimmer_rule_delete">Regel löschen</string>
     <string name="dimmer_appearance">Darstellung</string>

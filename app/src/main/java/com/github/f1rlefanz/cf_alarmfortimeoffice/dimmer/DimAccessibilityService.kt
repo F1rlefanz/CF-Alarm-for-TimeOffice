@@ -33,7 +33,7 @@ import javax.inject.Inject
  * Traegt die Dimm-Schicht fuer den Schicht-Dimmer. Portiert aus der eigenstaendigen
  * NachtDimmer-App (flickerfrei), hier aber DataStore-reaktiv statt SharedPreferences:
  * der Dienst beobachtet [DimOverlayPrefs.renderState] und rendert das Overlay entsprechend.
- * Ein-/Aus geschaltet wird ausschliesslich ueber [DimOverlayPrefs.setOverlayOn] (durch
+ * Ein-/Aus (und die Render-Farbe) wird ausschliesslich ueber [DimOverlayPrefs.setActiveOverlay] (durch
  * [DimScheduleUseCase]) – dieser Dienst enthaelt KEINE Zeitplan-Logik.
  *
  * Zwei Wege:

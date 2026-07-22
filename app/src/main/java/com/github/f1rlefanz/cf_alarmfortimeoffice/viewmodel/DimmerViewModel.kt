@@ -67,7 +67,8 @@ class DimmerViewModel @Inject constructor(
      * Der Bedienungshilfen-Dienst muss aktiv sein. Danach regulären Zustand wiederherstellen.
      */
     fun previewDim(seconds: Int = 5) = viewModelScope.launch {
-        prefs.setOverlayOn(true)
+        // Vorschau zeigt die GLOBALEN Darstellungswerte (die Slider, die der Nutzer gerade sieht).
+        prefs.setActiveOverlay(true, prefs.strengthNow(), prefs.warmthNow())
         delay(seconds * 1000L)
         dimSchedule.applyCurrentState()
     }

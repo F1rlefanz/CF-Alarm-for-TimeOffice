@@ -47,16 +47,22 @@ class HueBridgeConnectionManagerTest {
         return Triple(manager, networkMonitor, apiClient)
     }
 
-    /** Seeds the private `currentConnectionState` field directly - there is no public setter,
-     * and driving it through [HueBridgeConnectionManager.setConnection] would require a real
-     * Hilt-provided DataStore, which isn't available in a plain unit test. */
+    /** Seeds a CONNECTED state via the private `updateConnectionState` method - there is no
+     * public setter, and driving it through [HueBridgeConnectionManager.setConnection] would
+     * require a real Hilt-provided DataStore, which isn't available in a plain unit test.
+     * Goes through `updateConnectionState` rather than poking the `currentConnectionState`
+     * field directly, since that method is also the only thing that keeps the separate
+     * `_connectionStatus` StateFlow (what [HueBridgeConnectionManager.connectionStatus] reads)
+     * in sync - setting just the field would leave `connectionStatus.value` stuck at its
+     * initial DISCONNECTED. */
     private fun seedConnectedState(manager: HueBridgeConnectionManager) {
         val connectedState = HueBridgeConnectionManager.ConnectionState.CONNECTED(bridgeIp, username)
-        val field = HueBridgeConnectionManager::class.java.getDeclaredField("currentConnectionState")
-        field.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val ref = field.get(manager) as java.util.concurrent.atomic.AtomicReference<HueBridgeConnectionManager.ConnectionState>
-        ref.set(connectedState)
+        val method = HueBridgeConnectionManager::class.java.getDeclaredMethod(
+            "updateConnectionState",
+            HueBridgeConnectionManager.ConnectionState::class.java,
+        )
+        method.isAccessible = true
+        method.invoke(manager, connectedState)
     }
 
     // NOTE: block bodies (not `= runBlocking { ... }` expression bodies) are deliberate here -

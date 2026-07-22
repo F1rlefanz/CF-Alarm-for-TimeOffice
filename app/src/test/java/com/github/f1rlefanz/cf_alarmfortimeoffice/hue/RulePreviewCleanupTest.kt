@@ -105,8 +105,6 @@ class RulePreviewCleanupTest {
         shiftPattern = "Frühschicht",
         timeRanges = listOf(
             HueTimeRange(
-                startTime = "05:30",
-                endTime = "06:30",
                 actions = listOf(
                     HueLightAction(
                         targetType = TargetType.GROUP,

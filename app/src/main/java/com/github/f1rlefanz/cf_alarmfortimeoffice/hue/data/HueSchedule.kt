@@ -20,7 +20,6 @@ data class HueScheduleRule(
     val shiftPattern: String, // e.g., "Frühdienst", "Spätdienst", "Nachtdienst"
     val enabled: Boolean = true,
     val timeRanges: List<HueTimeRange>,
-    val seasonalRules: List<SeasonalRule> = emptyList(),
     val priority: Int = 0, // Higher priority rules override lower ones
     val sunrise: SunriseConfig? = null // Optional sunrise wake-up light; null = plain on/off rule
 ) {
@@ -37,17 +36,18 @@ data class HueScheduleRule(
 }
 
 /**
- * Time range with associated actions
+ * Container for the light actions of a rule.
+ *
+ * Historisch modellierte diese Klasse ein Zeitfenster (Start/Ende/relativeTo/Offset/Wochentage),
+ * doch die Ausfuehrung ([com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase])
+ * hat davon NIE etwas aufgeloest — Hue-Regeln feuern ihre Actions schlicht zur Weckzeit. Die
+ * ungenutzten Timing-Felder sind entfernt; geblieben ist die reine Actions-Huelle. Auto-Aus danach
+ * kommt aus [HueLightAction.duration] + dem Bridge-Timer, nicht aus einem Fenster.
  */
 @Immutable
 @Serializable
 data class HueTimeRange(
-    val startTime: String, // HH:mm format
-    val endTime: String, // HH:mm format
-    val relativeTo: TimeReference = TimeReference.SHIFT_START,
-    val offsetMinutes: Int = 0, // Offset from reference time
-    val actions: List<HueLightAction>,
-    val daysOfWeek: List<Int> = listOf(1, 2, 3, 4, 5, 6, 7) // 1=Monday, 7=Sunday
+    val actions: List<HueLightAction>
 )
 
 /**
@@ -74,18 +74,6 @@ data class SunriseConfig(
     val endKelvin: Int = 4000,
     val endBrightness: Int = 254,
     val startBeforeAlarm: Boolean = true
-)
-
-/**
- * Seasonal rule for different times of year
- */
-@Immutable
-@Serializable
-data class SeasonalRule(
-    val startMonth: Int, // 1-12
-    val endMonth: Int, // 1-12
-    val adjustBrightness: Float = 1.0f, // Multiplier for brightness
-    val preferredColorTemperature: Int? = null // Override color temperature
 )
 
 /**
@@ -123,17 +111,6 @@ data class HueColor(
     val xy: List<Float>? = null, // CIE color space
     val rgb: String? = null // For UI display #RRGGBB
 )
-
-/**
- * Reference point for time calculations
- */
-@Serializable
-enum class TimeReference {
-    SHIFT_START,
-    SHIFT_END,
-    ALARM_TIME,
-    ABSOLUTE // Use actual time specified
-}
 
 /**
  * Target type for actions

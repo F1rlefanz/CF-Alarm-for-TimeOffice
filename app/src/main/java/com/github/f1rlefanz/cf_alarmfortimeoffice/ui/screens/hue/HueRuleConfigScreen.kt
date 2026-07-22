@@ -71,7 +71,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueTimeRange
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TimeReference
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
@@ -276,12 +275,7 @@ fun HueRuleConfigScreen(
     }
 
     fun buildRule(id: String): HueScheduleRule {
-        val timeRange = HueTimeRange(
-            startTime = "00:00",
-            endTime = "23:59",
-            relativeTo = TimeReference.ALARM_TIME,
-            actions = buildActions()
-        )
+        val timeRange = HueTimeRange(actions = buildActions())
         return HueScheduleRule(
             id = id,
             name = ruleName,

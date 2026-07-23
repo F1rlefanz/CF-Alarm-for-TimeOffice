@@ -59,8 +59,7 @@
     <string name="dimmer_rule_intensity_hint">Gilt für die Fenster dieser Regel. Wellness nutzt die globale Darstellung.</string>
     <string name="dimmer_rule_save">Speichern</string>
     <string name="dimmer_rule_delete">Regel löschen</string>
-    <string name="dimmer_appearance">Darstellung</string>
-    <string name="dimmer_appearance_hint">Verdunkelung und Wärme gelten für Wellness und Regeln.</string>
+    <string name="dimmer_appearance_hint">Verdunkelung und Wärme dieser Wellness-Abdunkelung. Schicht-Regeln haben je eigene Werte (im Regel-Editor).</string>
     <string name="dimmer_strength_label">Verdunkelung: %1$d %%</string>
     <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
     <string name="dimmer_winddown_label">Beginn: %1$d Min vor der Weckzeit</string>

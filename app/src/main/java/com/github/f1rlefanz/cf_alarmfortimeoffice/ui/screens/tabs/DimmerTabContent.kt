@@ -103,6 +103,43 @@ fun DimmerTabContent(
                         onValueChange = { viewModel.setWindDownMinutes((it / 15).toInt() * 15) },
                         valueRange = DimOverlayPrefs.WINDDOWN_MIN_LIMIT.toFloat()..DimOverlayPrefs.WINDDOWN_MAX_LIMIT.toFloat()
                     )
+
+                    // Darstellung der Wellness-Abdunkelung (Schicht-Regeln bringen eigene Werte mit)
+                    Text(
+                        text = stringResource(R.string.dimmer_appearance_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.dimmer_strength_label, state.strength),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Slider(
+                        value = state.strength.toFloat(),
+                        onValueChange = { viewModel.setStrength(it.toInt()) },
+                        valueRange = 0f..DimOverlayPrefs.STRENGTH_MAX.toFloat()
+                    )
+                    Text(
+                        text = stringResource(R.string.dimmer_warmth_label, state.warmth),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Slider(
+                        value = state.warmth.toFloat(),
+                        onValueChange = { viewModel.setWarmth(it.toInt()) },
+                        valueRange = 0f..DimOverlayPrefs.WARMTH_MAX.toFloat()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.dimmer_preview_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = { viewModel.previewDim() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.dimmer_preview))
+                    }
                 }
             }
         }
@@ -141,59 +178,6 @@ fun DimmerTabContent(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(stringResource(R.string.dimmer_manage_rules))
-                    }
-                }
-            }
-        }
-
-        // Darstellung – Verdunkelung/Wärme gelten für beide Modi; unten die Vorschau zum Ausprobieren
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.dimmer_appearance),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.dimmer_appearance_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = stringResource(R.string.dimmer_strength_label, state.strength),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(
-                        value = state.strength.toFloat(),
-                        onValueChange = { viewModel.setStrength(it.toInt()) },
-                        valueRange = 0f..DimOverlayPrefs.STRENGTH_MAX.toFloat()
-                    )
-                    Text(
-                        text = stringResource(R.string.dimmer_warmth_label, state.warmth),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(
-                        value = state.warmth.toFloat(),
-                        onValueChange = { viewModel.setWarmth(it.toInt()) },
-                        valueRange = 0f..DimOverlayPrefs.WARMTH_MAX.toFloat()
-                    )
-
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.dimmer_preview_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedButton(
-                        onClick = { viewModel.previewDim() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.dimmer_preview))
                     }
                 }
             }

@@ -21,7 +21,8 @@ data class DimRule(
     val shiftPattern: String,
     val enabled: Boolean = true,
     val windows: List<DimWindow> = emptyList(),
-    // Reserviert fuer spaetere Pro-Regel-Intensitaet; der Scheduler nutzt aktuell die globale.
+    // Pro-Regel-Intensitaet: der Scheduler traegt diese Werte in die DimSpan der Regel-Fenster
+    // (Wellness nutzt weiter die globale Darstellung; bei Ueberlappung gewinnt die dunkelste Spanne).
     val strength: Int = 55,
     val warmth: Int = 40
 ) {

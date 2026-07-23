@@ -65,6 +65,58 @@ object DimWindowResolver {
     fun activeSpan(spans: List<DimSpan>, now: Long): DimSpan? =
         spans.filter { now in it.range }.maxWithOrNull(compareBy({ it.strength }, { it.warmth }))
 
+    /** Minimal-Info eines Alarms für die Fenster-Berechnung (entkoppelt von AlarmInfo/Android). */
+    data class AlarmSlot(val triggerTime: Long, val shiftName: String, val shiftEndTime: Long)
+
+    /**
+     * Baut die Regel-Spannen über [horizonDays] Kalendertage ab [today]. Pro Tag wird die passende
+     * Regel gewählt (Schicht-Tag → [ruleForShift]; freier Tag → [ruleForFreeDay]); eine gefundene
+     * Regel mit LEERER Fensterliste = Unterdrückung (kein Dimmen an diesem Tag → Nachtdienst-Ausnahme).
+     *
+     * Fenster-Auflösung hängt am Anker (siehe [resolveWindowForDate]):
+     * - **CLOCK↔CLOCK** = fester Nacht-Zeitplan → „die Nacht DIESES Kalendertags" (lückenlos jede Nacht,
+     *   unabhängig von Schicht/frei). Genau das ermöglicht „immer 22–7 dimmen, außer an Nachtdienst-
+     *   Nächten": UNIVERSAL trägt das 22–7-Fenster jede Nacht, die leere Nachtdienst-Regel nimmt die
+     *   Arbeitsnächte heraus.
+     * - **ALARM/SHIFT_END** = schicht-relativ (Wind-down / ND-Tagschlaf) → braucht einen Alarm an
+     *   diesem Datum, sonst übersprungen.
+     */
+    fun buildRuleSpans(
+        alarms: List<AlarmSlot>,
+        horizonDays: Int,
+        today: LocalDate,
+        zone: ZoneId,
+        ruleForShift: (String) -> DimRule?,
+        ruleForFreeDay: () -> DimRule?,
+    ): List<DimSpan> {
+        val alarmByDate = HashMap<LocalDate, AlarmSlot>()
+        for (a in alarms) {
+            val d = Instant.ofEpochMilli(a.triggerTime).atZone(zone).toLocalDate()
+            if (!alarmByDate.containsKey(d)) alarmByDate[d] = a
+        }
+        val out = mutableListOf<DimSpan>()
+        for (i in 0 until horizonDays) {
+            val date = today.plusDays(i.toLong())
+            val alarm = alarmByDate[date]
+            val rule = if (alarm != null) ruleForShift(alarm.shiftName) else ruleForFreeDay()
+            rule ?: continue
+            for (w in rule.windows) {
+                resolveWindowForDate(w, date, alarm, zone)?.let { out += DimSpan(it, rule.strength, rule.warmth) }
+            }
+        }
+        return out
+    }
+
+    /** CLOCK↔CLOCK = jede Nacht des Datums; sonst schicht-relativ (nur mit Alarm auflösbar). */
+    private fun resolveWindowForDate(w: DimWindow, date: LocalDate, alarm: AlarmSlot?, zone: ZoneId): LongRange? =
+        if (w.startAnchor == DimAnchor.CLOCK && w.endAnchor == DimAnchor.CLOCK) {
+            resolveFreeWindow(w, date, zone)
+        } else if (alarm != null) {
+            resolveShiftWindow(w, alarm.triggerTime, alarm.shiftEndTime, zone)
+        } else {
+            null
+        }
+
     /** Die Uhrzeit [clockMinutes] auf dem Kalendertag von [referenceEpoch], aber nicht nach der Referenz. */
     private fun clockAtOrBefore(referenceEpoch: Long, clockMinutes: Int, zone: ZoneId): Long {
         var t = clockOnDateOf(referenceEpoch, clockMinutes, zone)

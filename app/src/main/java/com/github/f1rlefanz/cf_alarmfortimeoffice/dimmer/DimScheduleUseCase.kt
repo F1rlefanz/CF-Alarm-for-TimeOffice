@@ -9,7 +9,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
@@ -38,7 +37,7 @@ class DimScheduleUseCase @Inject constructor(
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
         private const val REQ_TICK = 7710
-        private const val FREE_DAY_HORIZON_DAYS = 14
+        private const val HORIZON_DAYS = 14
         private const val MIN_MS = 60_000L
     }
 
@@ -105,33 +104,23 @@ class DimScheduleUseCase @Inject constructor(
             }
         }
 
-        // 2. Regeln: pro Schicht-Tag die passende Regel (mit IHRER Intensität), plus FREI-Regel für freie Tage.
+        // 2. Regeln: pro Kalendertag die passende Regel (Anker-Semantik in
+        //    DimWindowResolver.buildRuleSpans). CLOCK↔CLOCK = jede Nacht (lückenlos, ermöglicht
+        //    „immer 22–7 außer ND"), ALARM/SHIFT_END = schicht-relativ, leere Fensterliste = ND-Ausnahme.
         if (toggles.rulesEnabled) {
             val rules = dimRuleUseCase.getAllRules()
             if (rules.any { it.enabled }) {
-                val shiftDates = HashSet<LocalDate>()
-                alarms.forEach { alarm ->
-                    shiftDates += Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate()
-                    val rule = dimRuleUseCase.findRuleForShift(alarm.shiftName, rules) ?: return@forEach
-                    rule.windows.forEach { w ->
-                        DimWindowResolver.resolveShiftWindow(w, alarm.triggerTime, alarm.shiftEndTime, zone)?.let {
-                            out += DimWindowResolver.DimSpan(it, rule.strength, rule.warmth)
-                        }
-                    }
+                val slots = alarms.map {
+                    DimWindowResolver.AlarmSlot(it.triggerTime, it.shiftName, it.shiftEndTime)
                 }
-                val freeRule = dimRuleUseCase.findRuleForFreeDay(rules)
-                if (freeRule != null && freeRule.windows.isNotEmpty()) {
-                    val today = LocalDate.now(zone)
-                    for (d in 0 until FREE_DAY_HORIZON_DAYS) {
-                        val date = today.plusDays(d.toLong())
-                        if (date in shiftDates) continue
-                        freeRule.windows.forEach { w ->
-                            DimWindowResolver.resolveFreeWindow(w, date, zone)?.let {
-                                out += DimWindowResolver.DimSpan(it, freeRule.strength, freeRule.warmth)
-                            }
-                        }
-                    }
-                }
+                out += DimWindowResolver.buildRuleSpans(
+                    alarms = slots,
+                    horizonDays = HORIZON_DAYS,
+                    today = LocalDate.now(zone),
+                    zone = zone,
+                    ruleForShift = { name -> dimRuleUseCase.findRuleForShift(name, rules) },
+                    ruleForFreeDay = { dimRuleUseCase.findRuleForFreeDay(rules) },
+                )
             }
         }
         return out

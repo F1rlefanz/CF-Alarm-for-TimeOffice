@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver.DimSpan
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -129,5 +130,54 @@ class DimWindowResolverTest {
     fun `Keine Spanne enthaelt now - kein aktives Fenster`() {
         val s = DimSpan(0L..100L, strength = 50, warmth = 20)
         assertNull(DimWindowResolver.activeSpan(listOf(s), now = 200L))
+    }
+
+    // --- buildRuleSpans: "immer 22-7 dimmen, außer an Nachtdienst-Nächten" ---
+
+    @Test
+    fun `Universal 22-7 dimmt LUECKENLOS jede Nacht, nur die Nachtschicht-Nacht ausgenommen`() {
+        val universal = DimRule(
+            id = "u", name = "Nacht", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
+            windows = listOf(
+                DimWindow(
+                    startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60,
+                    endAnchor = DimAnchor.CLOCK, endClockMinutes = 7 * 60
+                )
+            )
+        )
+        // Nachtschicht-Regel mit LEERER Fensterliste = Unterdrückung.
+        val nd = DimRule(id = "n", name = "ND frei", shiftPattern = "Nachtschicht", enabled = true, windows = emptyList())
+        val rules = listOf(universal, nd)
+        val forShift = { name: String ->
+            val en = rules.filter { it.enabled }
+            en.firstOrNull { it.shiftPattern.equals(name, ignoreCase = true) }
+                ?: en.firstOrNull { it.shiftPattern == DimRule.SHIFT_UNIVERSAL }
+        }
+        val forFree = {
+            val en = rules.filter { it.enabled }
+            en.firstOrNull { it.shiftPattern == DimRule.SHIFT_FREE }
+                ?: en.firstOrNull { it.shiftPattern == DimRule.SHIFT_UNIVERSAL }
+        }
+
+        // Mo 12.01. Start; Di=Frühschicht, Mi=Nachtschicht (21:00–06:00), Do/Fr frei.
+        val today = LocalDate.of(2026, 1, 12)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 30), "Frühschicht", 0),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 14, 20, 15), "Nachtschicht", ep(2026, 1, 15, 6, 0))
+        )
+
+        val spans = DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = 5, today = today, zone = zone,
+            ruleForShift = forShift, ruleForFreeDay = forFree
+        )
+
+        // 4 Nächte gedimmt (Mo, Di, Do, Fr) – die Nachtschicht-Arbeitsnacht (Mi) NICHT.
+        assertEquals(4, spans.size)
+        // Di-Nacht (nach der Frühschicht) IST gedimmt – genau hier hatte das alte Modell eine Lücke.
+        assertTrue(spans.any { ep(2026, 1, 13, 23, 0) in it.range })
+        // Mi→Do (Arbeitsnacht der Nachtschicht) NICHT gedimmt.
+        assertTrue(spans.none { ep(2026, 1, 14, 23, 0) in it.range })
+        // Do-Nacht (frei) wieder gedimmt.
+        assertTrue(spans.any { ep(2026, 1, 15, 23, 0) in it.range })
     }
 }

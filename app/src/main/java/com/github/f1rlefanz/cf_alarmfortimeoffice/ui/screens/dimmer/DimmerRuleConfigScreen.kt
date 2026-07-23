@@ -303,11 +303,11 @@ private fun WindowEditor(
                     label = stringResource(R.string.dimmer_shiftend_offset)
                 ) { onChange(window.copy(startOffsetMinutes = it)) }
 
-                else -> OutlinedButton(onClick = {
+                else -> ClockField(minutes = window.startClockMinutes) {
                     onPickTime(window.startClockMinutes) {
                         onChange(window.copy(startAnchor = DimAnchor.CLOCK, startClockMinutes = it))
                     }
-                }) { Text(fmtClock(window.startClockMinutes)) }
+                }
             }
 
             // Ende – feste Uhrzeit, zur Weckzeit ODER relativ zum Schichtende
@@ -327,9 +327,9 @@ private fun WindowEditor(
                 ) { onChange(window.copy(endAnchor = DimAnchor.SHIFT_END)) }
             }
             when (window.endAnchor) {
-                DimAnchor.CLOCK -> OutlinedButton(onClick = {
+                DimAnchor.CLOCK -> ClockField(minutes = window.endClockMinutes) {
                     onPickTime(window.endClockMinutes) { onChange(window.copy(endClockMinutes = it)) }
-                }) { Text(fmtClock(window.endClockMinutes)) }
+                }
 
                 DimAnchor.ALARM -> OffsetField(
                     value = window.endOffsetMinutes,
@@ -355,6 +355,26 @@ private fun AnchorButton(selected: Boolean, label: String, onClick: () -> Unit) 
         Button(onClick = onClick) { Text(label) }
     } else {
         OutlinedButton(onClick = onClick) { Text(label) }
+    }
+}
+
+/**
+ * Beschrifteter Zeit-Picker für „Feste Uhrzeit". Das Label bindet den Wert sichtbar an die Auswahl
+ * (analog zum [OffsetField] der anderen Anker) — sonst wirkte der nackte Uhrzeit-Button auf schmalen
+ * Displays losgelöst und schien zum darüberliegenden Anker-Knopf zu gehören.
+ */
+@Composable
+private fun ClockField(minutes: Int, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.dimmer_clock_time),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(onClick = onClick) { Text(fmtClock(minutes)) }
     }
 }
 

@@ -39,7 +39,7 @@
     <string name="dimmer_rule_subtitle">%1$s · %2$d Fenster</string>
     <string name="dimmer_rule_off">aus</string>
     <string name="dimmer_pattern_free">Freie Tage (keine Schicht)</string>
-    <string name="dimmer_pattern_universal">Alle Schichten (Universal)</string>
+    <string name="dimmer_pattern_universal">Alle Tage (Universal)</string>
     <string name="dimmer_rule_editor_title">Regel bearbeiten</string>
     <string name="dimmer_rule_name">Name</string>
     <string name="dimmer_rule_shift">Gilt für</string>
@@ -49,6 +49,7 @@
     <string name="dimmer_rule_no_windows_hint">Ohne Fenster wird an passenden Tagen NICHT gedimmt – so nimmst du z. B. Nachtdienst-Nächte von einer Universal-Regel aus.</string>
     <string name="dimmer_window_start">Start</string>
     <string name="dimmer_window_end">Ende</string>
+    <string name="dimmer_clock_time">Uhrzeit</string>
     <string name="dimmer_end_clock">Feste Uhrzeit</string>
     <string name="dimmer_end_alarm">Zur Weckzeit</string>
     <string name="dimmer_anchor_shiftend">Schichtende</string>

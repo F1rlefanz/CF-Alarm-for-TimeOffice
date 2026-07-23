@@ -20,9 +20,10 @@ import javax.inject.Singleton
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService]):
  *
  *  1. Wellness (global): `[Weckzeit − Wind-down, Weckzeit]` je aktivem Alarm.
- *  2. Regeln: pro Schicht-Tag die passende [DimRule] (siehe [DimRuleUseCase]) und deren
- *     [DimWindow]s, aufgelöst relativ zur Weckzeit bzw. auf feste Uhrzeit. Freie Tage (kein
- *     Alarm) über die FREI-Regel.
+ *  2. Regeln: pro Kalendertag die passende [DimRule] (Schicht-Tag → Schicht/UNIVERSAL, freier Tag
+ *     → FREI/UNIVERSAL; siehe [DimRuleUseCase]). CLOCK↔CLOCK-Fenster = lückenlos jede Nacht,
+ *     ALARM/SHIFT_END schicht-relativ, leere Fensterliste = Unterdrückung. Details in
+ *     [DimWindowResolver.buildRuleSpans].
  *
  * Overlay ist an, wenn `now` in irgendeinem Fenster liegt (Vereinigung). Fail-open: lässt sich
  * der Alarm-Bestand nicht lesen, wird NICHT gedimmt.

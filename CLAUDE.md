@@ -278,6 +278,24 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   vorn zieht oder die Längengrenze senkt, baut den Fehler neu — `ShiftDefinitionMatchingTest`
   hält alle fünf Standard-Schichten fest.
 
+### Schicht-Dimmer (Regel-Auflösung)
+
+- **Pro Kalendertag GENAU eine Regel** (`DimWindowResolver.buildRuleSpans`): Schicht-Tag →
+  `findRuleForShift` (exakter Schichtname → sonst UNIVERSAL), freier Tag → `findRuleForFreeDay`
+  (FREI → sonst UNIVERSAL). Eine spezifische Regel **überschreibt** UNIVERSAL für dieses Datum
+  komplett — nicht additiv. Deshalb ist UNIVERSAL „alle **Tage**" (Schicht + frei + Urlaub), nicht
+  „alle Schichten" — das UI-Label heißt entsprechend „Alle Tage (Universal)".
+- **`findRuleForShift` nimmt den ERSTEN Treffer.** Zwei aktivierte Regeln auf denselben
+  `shiftPattern` → die zweite ist tot. „ND-Nacht unterdrücken UND Tagschlaf dimmen" ist darum EINE
+  Nachtschicht-Regel mit nur dem Tag-Fenster (unterdrückt die Nacht, weil sie UNIVERSAL überschreibt
+  und selbst kein Nacht-Fenster hat), nicht zwei. Wer hier ein „find-all" draus macht, ändert die
+  Semantik still.
+- **Leere Fensterliste = Unterdrückung dieser Nacht** (die Nachtdienst-Ausnahme), NICHT „keine
+  Regel". `windows.isEmpty()` ist bewusst bedeutungstragend — nicht wegoptimieren.
+- **CLOCK↔CLOCK = lückenlos jede Kalendernacht** (unabhängig von Schicht/frei); ALARM/SHIFT_END sind
+  schicht-relativ und brauchen einen Alarm an dem Datum. Wer CLOCK↔CLOCK wieder schicht-relativ
+  macht, reißt „immer 22–7 außer ND" wieder auf. `DimWindowResolverTest` hält das Kern-Szenario fest.
+
 ### Auth
 
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.** Für eine Wecker-App ist

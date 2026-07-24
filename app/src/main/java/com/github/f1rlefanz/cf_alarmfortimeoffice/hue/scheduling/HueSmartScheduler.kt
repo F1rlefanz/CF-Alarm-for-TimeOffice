@@ -71,6 +71,8 @@ interface HueSmartSchedulerEntryPoint {
  */
 class HueSmartScheduler private constructor() {
     companion object {
+        // Safe: getInstance() erzwingt applicationContext (siehe initialize()), nicht Activity-Context.
+        // Gleiches Muster wie TinkEncryptionHelper.getInstance().
         @Volatile
         private var INSTANCE: HueSmartScheduler? = null
 

@@ -1,5 +1,5 @@
 [versions]
-agp = "9.3.0"
+agp = "9.3.1"
 ksp = "2.3.2"
 googleAuthLibraryOauth2Http = "1.49.0"
 gson = "2.14.0"

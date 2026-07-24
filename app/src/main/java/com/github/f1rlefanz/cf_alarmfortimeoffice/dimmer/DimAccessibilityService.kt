@@ -74,15 +74,15 @@ class DimAccessibilityService : AccessibilityService() {
         private const val FADE_FRAME_MS = 16L
 
         @Volatile
-        private var instance: DimAccessibilityService? = null
+        private var running = false
 
         /** Ist der Bedienungshilfen-Dienst gerade verbunden/aktiv? */
-        fun isRunning(): Boolean = instance != null
+        fun isRunning(): Boolean = running
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        instance = this
+        running = true
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         scope.launch {
             prefs.renderState
@@ -268,7 +268,7 @@ class DimAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         scope.cancel()
         removeAllOverlays()
-        instance = null
+        running = false
         super.onDestroy()
     }
 }

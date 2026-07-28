@@ -112,12 +112,6 @@ class DndScheduleUseCase @Inject constructor(
         Logger.d(LogTags.DND, "Naechster DND-Wechsel geplant: ${java.util.Date(next)}")
     }
 
-    /** Vorschau fuer die UI - identische Berechnung wie der echte Scheduler, ohne Seiteneffekt. */
-    suspend fun previewActiveNow(): Boolean {
-        val now = System.currentTimeMillis()
-        return windows().any { now in it }
-    }
-
     // --- Fenster-Berechnung ---
 
     private suspend fun windows(): List<LongRange> {

@@ -346,11 +346,18 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **`ensureZenRule()` prüft `Build.VERSION.SDK_INT` direkt**, nicht nur über `isSupported()` –
   Lint verfolgt die Absicherung für `@RequiresApi`-Aufrufe (`buildAutomaticZenRule()`) nur bei
   einem lokalen, direkten SDK_INT-Vergleich zuverlässig durch mehrere Funktionsebenen.
-- **Nicht real auf einem Gerät verifiziert** (Stand Implementierung): ob eine rule-scoped
-  `ZenPolicy` sich mit der globalen, manuell gesetzten DND-Policy des Nutzers wie erwartet
-  verträgt (additiv statt überschreibend), ist nur aus der Doku hergeleitet, nicht am Fairphone
-  getestet. Vor Release: `addAutomaticZenRule()` + `setAutomaticZenRuleState()` mit
-  `PRIORITY_CATEGORY_REPEAT_CALLERS` am echten Gerät prüfen (wiederholter Testanruf kommt durch?).
+- **Am Fairphone 6 (Android 16) verifiziert (28.07.2026):** Die Zen-Regel registriert sich echt,
+  erscheint unter Einstellungen → Ton → Nicht stören → Zeitpläne mit funktionierendem
+  `configurationActivity`-Link, `setAutomaticZenRuleState()` wird korrekt aufgerufen und der
+  Zustand korrekt berechnet (`ZEN_MODE change value` je nach aktivem Fenster). **Noch offen:** ein
+  echter wiederholter Testanruf, der die Anrufer-Ausnahme (`allowRepeatCallers`) tatsächlich prüft,
+  und der Modus „Während der Dienstzeit" mit real synchronisierten Alarmen (bestehende Alarme vor
+  diesem Feature haben `shiftStartTime = 0`, siehe unten).
+- **Logcat-Fallstrick beim Debuggen, kein Bug:** `W/System.err` mit `java.lang.Exception: Stack
+  trace` + `Thread.dumpStack()` rund um `setAutomaticZenRuleState()` ist Androids eigenes internes
+  Aufruf-Tracing für Zen-Änderungen — sieht wie ein Crash aus, ist keiner. Der direkt folgende
+  `V/Settings: ZEN_MODE change value to X` sowie der eigene Erfolgs-Log bestätigen den echten
+  Aufrufausgang.
 
 ### Auth
 

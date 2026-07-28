@@ -146,8 +146,8 @@ class DimScheduleUseCase @Inject constructor(
                 zone = zone,
                 startClockMinutes = prefs.nightDefaultStartMinutesNow(),
                 freeDayEndClockMinutes = prefs.nightDefaultFreeEndMinutesNow(),
-                strength = gStrength,
-                warmth = gWarmth,
+                strength = prefs.nightDefaultStrengthNow(),
+                warmth = prefs.nightDefaultWarmthNow(),
                 isExcluded = { shiftName ->
                     if (shiftName != null) {
                         shiftName in excludedShifts || (rulesActive && dimRuleUseCase.findRuleForShift(shiftName, rules) != null)

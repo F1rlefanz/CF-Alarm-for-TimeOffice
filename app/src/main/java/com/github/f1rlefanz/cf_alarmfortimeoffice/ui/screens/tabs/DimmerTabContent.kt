@@ -215,6 +215,29 @@ fun DimmerTabContent(
                             Text(fmtClock(state.nightDefaultFreeEndMinutes))
                         }
                     }
+                    Text(
+                        text = stringResource(R.string.dimmer_night_default_intensity_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.dimmer_strength_label, state.nightDefaultStrength),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Slider(
+                        value = state.nightDefaultStrength.toFloat(),
+                        onValueChange = { viewModel.setNightDefaultStrength(it.toInt()) },
+                        valueRange = 0f..DimOverlayPrefs.STRENGTH_MAX.toFloat()
+                    )
+                    Text(
+                        text = stringResource(R.string.dimmer_warmth_label, state.nightDefaultWarmth),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Slider(
+                        value = state.nightDefaultWarmth.toFloat(),
+                        onValueChange = { viewModel.setNightDefaultWarmth(it.toInt()) },
+                        valueRange = 0f..DimOverlayPrefs.WARMTH_MAX.toFloat()
+                    )
                     if (shiftNames.isNotEmpty()) {
                         Text(
                             text = stringResource(R.string.dimmer_night_default_exceptions),

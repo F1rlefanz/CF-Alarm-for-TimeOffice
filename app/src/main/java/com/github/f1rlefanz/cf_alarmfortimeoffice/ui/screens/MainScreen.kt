@@ -461,12 +461,19 @@ fun MainScreen(
                     onShowHueRuleConfig = { navigationViewModel.navigateToHueRuleConfig() },
                     onShowHueSettings = { navigationViewModel.navigateToHueSettings() },
                     onShowDimmerSettings = { navigationViewModel.navigateToDimmerSettings() },
-                    onShowDimmerPreview = { navigationViewModel.navigateToDimmerPreview() }
+                    onShowDimmerPreview = { navigationViewModel.navigateToDimmerPreview() },
+                    onShowDndSettings = { navigationViewModel.navigateToDndSettings() }
                 )
             }
 
             is NavigationState.DimmerPreview -> {
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerPreviewScreen(
+                    onNavigateBack = { navigationViewModel.navigateBackToMain() }
+                )
+            }
+
+            is NavigationState.DndSettings -> {
+                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dnd.DndSettingsScreen(
                     onNavigateBack = { navigationViewModel.navigateBackToMain() }
                 )
             }

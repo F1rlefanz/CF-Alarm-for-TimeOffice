@@ -29,5 +29,10 @@ data class AlarmInfo(
 
     // Schichtende (Ende des Kalender-Events) als Epoch-Millis – Basis für SHIFT_END-Dimmfenster
     // (ND-Tagschlaf). 0 = unbekannt (z. B. manuell angelegte Alarme ohne Schicht).
-    val shiftEndTime: Long = 0
+    val shiftEndTime: Long = 0,
+
+    // Schichtbeginn (Start des Kalender-Events) als Epoch-Millis – anders als triggerTime (das ist
+    // die Weckzeit, i.d.R. vor Schichtbeginn wegen Anfahrtszeit). Basis fuer DND-"Dienstzeit"-Fenster
+    // (dnd/DndShiftSpanResolver). 0 = unbekannt (z. B. manuell angelegte Alarme ohne Schicht).
+    val shiftStartTime: Long = 0
 )

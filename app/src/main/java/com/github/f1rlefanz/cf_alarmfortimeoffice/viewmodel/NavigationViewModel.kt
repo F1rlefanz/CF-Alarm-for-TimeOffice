@@ -93,6 +93,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.DimmerPreview(action.fromTab)
             }
 
+            is NavigationAction.NavigateToDndSettings -> {
+                Logger.d(LogTags.NAVIGATION, "Main -> DND Settings (from ${action.fromTab})")
+                NavigationState.DndSettings(action.fromTab)
+            }
+
             is NavigationAction.NavigateBackToMain -> {
                 val returnTab = when (currentState) {
                     is NavigationState.CalendarSelection -> currentState.returnToTab
@@ -106,6 +111,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                     is NavigationState.DimmerSettings -> currentState.returnToTab
                     is NavigationState.DimmerRuleConfig -> currentState.returnToTab
                     is NavigationState.DimmerPreview -> currentState.returnToTab
+                    is NavigationState.DndSettings -> currentState.returnToTab
                     else -> MainTab.HOME
                 }
                 Logger.d(LogTags.NAVIGATION, "-> Main ($returnTab tab)")
@@ -166,6 +172,9 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
 
     fun navigateToDimmerPreview(fromTab: MainTab = MainTab.DIMMER) =
         handleNavigationAction(NavigationAction.NavigateToDimmerPreview(fromTab))
+
+    fun navigateToDndSettings(fromTab: MainTab = MainTab.SETTINGS) =
+        handleNavigationAction(NavigationAction.NavigateToDndSettings(fromTab))
 
     fun navigateBackToMain() =
         handleNavigationAction(NavigationAction.NavigateBackToMain)

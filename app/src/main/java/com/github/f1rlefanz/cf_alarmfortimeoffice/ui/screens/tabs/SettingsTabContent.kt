@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
@@ -50,7 +51,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 fun SettingsTabContent(
     authViewModel: AuthViewModel,
     onShowShiftConfig: () -> Unit,
-    onShowCalendarSelection: () -> Unit
+    onShowCalendarSelection: () -> Unit,
+    onShowDndSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
@@ -216,6 +218,42 @@ fun SettingsTabContent(
                     )
                     Text(
                         "Definiere Schichttypen und Erkennungsmuster",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.AutoMirrored.Default.KeyboardArrowRight,
+                    contentDescription = null
+                )
+            }
+        }
+
+        // Nicht stören (DND) - eigener, getrennter Bereich (nicht im Dimmer-Tab)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onShowDndSettings
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(SpacingConstants.PADDING_CARD),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.DoNotDisturbOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Nicht stören",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "Schaltet Nicht-stören automatisch nach Schicht",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

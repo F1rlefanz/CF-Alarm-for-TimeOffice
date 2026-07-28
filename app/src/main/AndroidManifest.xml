@@ -184,6 +184,12 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- DND-Steuerung: rollender Zeitplan-Tick (Nicht-stoeren-Regel an/aus). -->
+        <receiver
+            android:name=".dnd.DndScheduleReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

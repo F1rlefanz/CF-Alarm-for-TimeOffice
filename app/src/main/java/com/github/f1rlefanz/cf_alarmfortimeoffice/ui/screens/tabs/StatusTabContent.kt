@@ -62,6 +62,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
@@ -165,6 +166,10 @@ fun StatusTabContent(
         // ueberhaupt erscheinen. Der Status stand frueher im Dimmer-Tab; hier neben den anderen
         // OS-Berechtigungen ist er dauerhaft ablesbar und der Dienst von einer Stelle aus aktivierbar.
         DimmerAccessibilityCard()
+
+        // DND-Steuerung: Freigabe-Status fuer ACCESS_NOTIFICATION_POLICY, analog zur
+        // Bedienungshilfen-Karte des Dimmers.
+        DndPermissionCard()
 
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
         LastSyncCard()
@@ -545,6 +550,78 @@ private fun DimmerAccessibilityCard() {
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(stringResource(R.string.dimmer_open_accessibility))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Freigabe-Status fuer die DND-Steuerung (ACCESS_NOTIFICATION_POLICY). Nur ab API 30 - siehe
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase.isSupported]. Refresh bei
+ * ON_RESUME, analog zu [DimmerAccessibilityCard] (Rueckkehr aus den Einstellungen aktualisiert
+ * sofort, kein reines `remember`-Caching).
+ */
+@Composable
+private fun DndPermissionCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val isSupported = remember { DndPermissionHelper.isFeatureSupported() }
+
+    var isGranted by remember {
+        mutableStateOf(isSupported && DndPermissionHelper.isGranted(context))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && isSupported) {
+                isGranted = DndPermissionHelper.isGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (!isSupported || isGranted) Icons.Default.CheckCircle else Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = if (!isSupported || isGranted) MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.dnd_status_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    when {
+                        !isSupported -> stringResource(R.string.dnd_unsupported)
+                        isGranted -> stringResource(R.string.dnd_status_ok)
+                        else -> stringResource(R.string.dnd_status_missing)
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (isSupported && !isGranted) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    TextButton(
+                        onClick = { DndPermissionHelper.requestAccess(context) },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(stringResource(R.string.dnd_permission_grant))
                     }
                 }
             }

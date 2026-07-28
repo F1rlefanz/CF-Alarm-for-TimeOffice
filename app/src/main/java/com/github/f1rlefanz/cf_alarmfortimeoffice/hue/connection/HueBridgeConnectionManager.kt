@@ -213,6 +213,10 @@ class HueBridgeConnectionManager private constructor(
         // Start optimized health monitoring (event-driven)
         startSmartHealthMonitoring()
 
+        // Autonome Wiederverbindung, wenn das Netzwerk zurueckkommt (z.B. Heimkehr ins Heim-WLAN) -
+        // siehe attemptRecoveryIfDisconnected().
+        startNetworkRecoveryMonitoring()
+
         // PHASE 2: Initialize smart scheduling system
         smartScheduler?.initializeSmartScheduling()
 
@@ -419,12 +423,19 @@ class HueBridgeConnectionManager private constructor(
     fun onAppForeground() {
         isAppInForeground = true
         Logger.d(LogTags.HUE_BRIDGE, "📱 BRIDGE-MANAGER: App entered foreground")
-        
-        // Immediate health check if enough time passed since last check
+
+        // Immediate health check if enough time passed since last check. performHealthCheck()
+        // only RE-validates an already-CONNECTED state (see its own guard) - ohne die Abzweigung
+        // hier wuerde ein Wiederoeffnen der App nach DISCONNECTED/ERROR nie selbst reconnecten,
+        // sondern still gar nichts tun (genau der Bug, den ein Nutzer per manuellem Retry umgehen musste).
         healthCheckScope.launch {
             val timeSinceLastCheck = System.currentTimeMillis() - lastForegroundCheck
             if (timeSinceLastCheck > FOREGROUND_HEALTH_CHECK_INTERVAL.inWholeMilliseconds) {
-                performHealthCheck()
+                if (currentConnectionState.get() is ConnectionState.CONNECTED) {
+                    performHealthCheck()
+                } else {
+                    attemptRecoveryIfDisconnected()
+                }
                 lastForegroundCheck = System.currentTimeMillis()
             }
         }
@@ -603,6 +614,40 @@ class HueBridgeConnectionManager private constructor(
         Logger.d(LogTags.HUE_BRIDGE, "🧠 BRIDGE-MANAGER: Smart health monitoring started (event-driven)")
     }
     
+    /**
+     * Autonome Wiederverbindung: beobachtet [NetworkStateMonitor.isNetworkAvailable] dauerhaft
+     * (bereits vorhanden, bislang ungenutzt) und stoesst bei jeder Netzwerk-Wiederherstellung
+     * [attemptRecoveryIfDisconnected] an - z.B. Heimkehr ins Heim-WLAN nach unterwegs. Laeuft im
+     * selben [healthCheckScope] wie die uebrige Ueberwachung, wird also von [cleanup] mit
+     * abgebrochen (healthCheckScope.cancel() faengt alle Kinder-Jobs). Nur einmal pro Prozess
+     * gestartet (aufgerufen aus [initialize], das selbst idempotent ist).
+     */
+    private fun startNetworkRecoveryMonitoring() {
+        healthCheckScope.launch {
+            networkMonitor.isNetworkAvailable.collect { available ->
+                if (available) {
+                    attemptRecoveryIfDisconnected()
+                }
+            }
+        }
+        Logger.d(LogTags.HUE_BRIDGE, "🌐 BRIDGE-MANAGER: Netzwerk-Wiederverbindung wird beobachtet")
+    }
+
+    /**
+     * Versucht eine Wiederverbindung, wenn der Zustand NICHT bereits CONNECTED ist - dieselbe
+     * Sequenz, die [getValidatedConnection] schon fuer ihren Recovery-Zweig nutzt
+     * ([restoreConnectionFromStorage] setzt den persistierten Stand optimistisch, [recoverConnection]
+     * validiert ihn live gegen die Bridge). No-op, wenn schon verbunden (der periodische
+     * Health-Check deckt das ab) oder wenn ueberhaupt keine Bridge eingerichtet ist.
+     */
+    private suspend fun attemptRecoveryIfDisconnected() {
+        if (currentConnectionState.get() is ConnectionState.CONNECTED) return
+        if (!hasStoredBridge()) return
+        Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Netzwerk verfuegbar, versuche automatische Wiederverbindung")
+        restoreConnectionFromStorage()
+        recoverConnection()
+    }
+
     /**
      * INTERNAL: Perform actual health check (extracted for reusability)
      */

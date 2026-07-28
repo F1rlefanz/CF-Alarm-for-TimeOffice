@@ -37,16 +37,23 @@ class DimmerViewModel @Inject constructor(
         val windDownMinutes: Int = DimOverlayPrefs.DEFAULT_WINDDOWN_MIN,
         val nightDefaultStartMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN,
         val nightDefaultFreeEndMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN,
-        val nightDefaultExcludedShifts: Set<String> = emptySet()
+        val nightDefaultExcludedShifts: Set<String> = emptySet(),
+        val nightDefaultStrength: Int = DimOverlayPrefs.DEFAULT_STRENGTH,
+        val nightDefaultWarmth: Int = DimOverlayPrefs.DEFAULT_WARMTH
     )
 
     val uiState: StateFlow<DimmerUiState> =
         combine(
             combine(prefs.toggles, prefs.strength, prefs.warmth, prefs.windDownMinutes, ::PrefsCore),
-            prefs.nightDefaultStartMinutes,
-            prefs.nightDefaultFreeEndMinutes,
-            prefs.nightDefaultExcludedShifts
-        ) { core, nightStart, nightFreeEnd, excludedShifts ->
+            combine(
+                prefs.nightDefaultStartMinutes,
+                prefs.nightDefaultFreeEndMinutes,
+                prefs.nightDefaultExcludedShifts,
+                prefs.nightDefaultStrength,
+                prefs.nightDefaultWarmth,
+                ::NightDefaultExtra
+            )
+        ) { core, night ->
             DimmerUiState(
                 wellnessEnabled = core.toggles.wellnessEnabled,
                 rulesEnabled = core.toggles.rulesEnabled,
@@ -54,9 +61,11 @@ class DimmerViewModel @Inject constructor(
                 strength = core.strength,
                 warmth = core.warmth,
                 windDownMinutes = core.windDownMinutes,
-                nightDefaultStartMinutes = nightStart,
-                nightDefaultFreeEndMinutes = nightFreeEnd,
-                nightDefaultExcludedShifts = excludedShifts
+                nightDefaultStartMinutes = night.startMinutes,
+                nightDefaultFreeEndMinutes = night.freeEndMinutes,
+                nightDefaultExcludedShifts = night.excludedShifts,
+                nightDefaultStrength = night.strength,
+                nightDefaultWarmth = night.warmth
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DimmerUiState())
 
@@ -65,6 +74,14 @@ class DimmerViewModel @Inject constructor(
         val strength: Int,
         val warmth: Int,
         val windDownMinutes: Int
+    )
+
+    private data class NightDefaultExtra(
+        val startMinutes: Int,
+        val freeEndMinutes: Int,
+        val excludedShifts: Set<String>,
+        val strength: Int,
+        val warmth: Int
     )
 
     private val _shiftNames = MutableStateFlow<List<String>>(emptyList())
@@ -115,6 +132,8 @@ class DimmerViewModel @Inject constructor(
     // Verdunkelung/Wärme ändern keine Fenster – der Service färbt reaktiv neu, kein Reschedule.
     fun setStrength(value: Int) = viewModelScope.launch { prefs.setStrength(value) }
     fun setWarmth(value: Int) = viewModelScope.launch { prefs.setWarmth(value) }
+    fun setNightDefaultStrength(value: Int) = viewModelScope.launch { prefs.setNightDefaultStrength(value) }
+    fun setNightDefaultWarmth(value: Int) = viewModelScope.launch { prefs.setNightDefaultWarmth(value) }
 
     fun setWindDownMinutes(value: Int) = viewModelScope.launch {
         prefs.setWindDownMinutes(value)

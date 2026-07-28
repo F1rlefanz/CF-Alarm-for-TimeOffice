@@ -39,6 +39,8 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_NIGHT_DEFAULT_START_MIN = intPreferencesKey("dim_night_default_start_min")
         private val KEY_NIGHT_DEFAULT_FREE_END_MIN = intPreferencesKey("dim_night_default_free_end_min")
         private val KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS = stringSetPreferencesKey("dim_night_default_excluded_shifts")
+        private val KEY_NIGHT_DEFAULT_STRENGTH = intPreferencesKey("dim_night_default_strength")
+        private val KEY_NIGHT_DEFAULT_WARMTH = intPreferencesKey("dim_night_default_warmth")
 
         // Farbe, die der Service gerade rendert (Intensität des AKTIVEN Fensters). Getrennt von
         // KEY_STRENGTH/KEY_WARMTH (= globale Nutzer-Slider), damit der Scheduler-Schreibzugriff und
@@ -103,6 +105,13 @@ class DimOverlayPrefs @Inject constructor(
     val nightDefaultExcludedShifts: Flow<Set<String>> = dataStore.data.map {
         it[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] ?: emptySet()
     }
+    /** Eigene Verdunkelung/Wärme des Nacht-Standards - unabhängig von der globalen Wellness-Darstellung. */
+    val nightDefaultStrength: Flow<Int> = dataStore.data.map {
+        (it[KEY_NIGHT_DEFAULT_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX)
+    }
+    val nightDefaultWarmth: Flow<Int> = dataStore.data.map {
+        (it[KEY_NIGHT_DEFAULT_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
+    }
 
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun windDownMinutesNow(): Int = windDownMinutes.first()
@@ -111,6 +120,8 @@ class DimOverlayPrefs @Inject constructor(
     suspend fun nightDefaultStartMinutesNow(): Int = nightDefaultStartMinutes.first()
     suspend fun nightDefaultFreeEndMinutesNow(): Int = nightDefaultFreeEndMinutes.first()
     suspend fun nightDefaultExcludedShiftsNow(): Set<String> = nightDefaultExcludedShifts.first()
+    suspend fun nightDefaultStrengthNow(): Int = nightDefaultStrength.first()
+    suspend fun nightDefaultWarmthNow(): Int = nightDefaultWarmth.first()
 
     suspend fun setWellnessEnabled(v: Boolean) = dataStore.edit { it[KEY_WELLNESS] = v }
     suspend fun setRulesEnabled(v: Boolean) = dataStore.edit { it[KEY_RULES_ON] = v }
@@ -121,6 +132,10 @@ class DimOverlayPrefs @Inject constructor(
         dataStore.edit { it[KEY_NIGHT_DEFAULT_FREE_END_MIN] = v.coerceIn(0, 24 * 60 - 1) }
     suspend fun setNightDefaultExcludedShifts(v: Set<String>) =
         dataStore.edit { it[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = v }
+    suspend fun setNightDefaultStrength(v: Int) =
+        dataStore.edit { it[KEY_NIGHT_DEFAULT_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
+    suspend fun setNightDefaultWarmth(v: Int) =
+        dataStore.edit { it[KEY_NIGHT_DEFAULT_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
 
     /**
      * Setzt An/Aus UND die Render-Farbe (Intensität/Wärme des gerade aktiven Fensters). Der Scheduler

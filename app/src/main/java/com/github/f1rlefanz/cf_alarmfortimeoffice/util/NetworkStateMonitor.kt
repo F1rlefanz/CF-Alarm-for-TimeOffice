@@ -22,8 +22,13 @@ import java.net.InetAddress
  * ✅ Battery-efficient monitoring
  *
  * Note: minSdk is 26, so all modern network APIs are available
+ *
+ * [isNetworkAvailable] wird seit v1.17.0 von [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager]
+ * fuer die autonome Wiederverbindung genutzt (Netzwerk kommt zurueck -> Bridge-Reconnect-Versuch).
+ * [isMeteredConnection]/[isCurrentlyConnected] bleiben ungenutzte, fertige API fuer spaetere
+ * Offline-Support-Features - daher weiterhin unterdrueckt statt entfernt.
  */
-@Suppress("unused") // Used for future offline-support features
+@Suppress("unused")
 class NetworkStateMonitor(private val connectivityManager: ConnectivityManager) {
 
     constructor(context: Context) : this(

@@ -193,7 +193,7 @@ class DimWindowResolverTest {
             alarms = alarms, horizonDays = 3, today = today, zone = zone,
             startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
             strength = 60, warmth = 40,
-            ruleForShift = { null }, ruleForFreeDay = { null }
+            isExcluded = { false }
         )
 
         val night = spans.first { ep(2026, 1, 12, 23, 0) in it.range }
@@ -209,7 +209,7 @@ class DimWindowResolverTest {
             alarms = emptyList(), horizonDays = 1, today = today, zone = zone,
             startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
             strength = 60, warmth = 40,
-            ruleForShift = { null }, ruleForFreeDay = { null }
+            isExcluded = { false }
         )
 
         assertEquals(1, spans.size)
@@ -226,8 +226,7 @@ class DimWindowResolverTest {
             alarms = alarms, horizonDays = 1, today = today, zone = zone,
             startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
             strength = 60, warmth = 40,
-            ruleForShift = { name -> if (name == "Nachtdienst") DimRule(name = "ND", shiftPattern = "Nachtdienst") else null },
-            ruleForFreeDay = { null }
+            isExcluded = { name -> name == "Nachtdienst" }
         )
 
         assertTrue(spans.isEmpty())

@@ -110,11 +110,11 @@ object DimWindowResolver {
     /**
      * Eingebauter Nacht-Standard (seit v1.17.0): dimmt ab [startClockMinutes] bis zum naechsten
      * Wecker (Tage mit Alarm, ueber [DimAnchor.ALARM]) bzw. bis [freeDayEndClockMinutes] (Tage
-     * ohne Alarm, ueber [DimAnchor.CLOCK]) - jeweils nur an Kalendertagen, fuer die [ruleForShift]/
-     * [ruleForFreeDay] KEINE Regel liefern. Eine vorhandene Regel (spezifisch, UNIVERSAL oder FREI)
-     * ersetzt diesen Standard fuer ihren Tag komplett, exakt dieselbe Ausschliesslichkeit wie in
-     * [buildRuleSpans] - so bleibt z.B. die Nachtdienst-Ausnahme (leere Fensterliste) wirksam, auch
-     * wenn der Nacht-Standard aktiv ist.
+     * ohne Alarm, ueber [DimAnchor.CLOCK]) - jeweils nur an Kalendertagen, fuer die [isExcluded]
+     * false liefert. [isExcluded] buendelt ZWEI unabhaengige Ausschluss-Wege: eine explizit vom
+     * Nutzer ausgeschlossene Schicht (Toggle direkt an der Nacht-Standard-Karte) ODER eine
+     * vorhandene [DimRule] (spezifisch, UNIVERSAL oder FREI), die diesen Tag ohnehin schon
+     * abdeckt - exakt dieselbe Ausschliesslichkeit wie in [buildRuleSpans].
      *
      * Ein Tag OHNE eigenen Alarm erzeugt bewusst KEINEN Fallback-Abschnitt, wenn der FOLGETAG einen
      * Alarm hat - dessen eigene Iteration deckt die Nacht bereits an (CLOCK reicht ueber "vor der
@@ -132,8 +132,7 @@ object DimWindowResolver {
         freeDayEndClockMinutes: Int,
         strength: Int,
         warmth: Int,
-        ruleForShift: (String) -> DimRule?,
-        ruleForFreeDay: () -> DimRule?,
+        isExcluded: (shiftName: String?) -> Boolean,
     ): List<DimSpan> {
         val alarmByDate = HashMap<LocalDate, AlarmSlot>()
         for (a in alarms) {
@@ -144,8 +143,7 @@ object DimWindowResolver {
         for (i in 0 until horizonDays) {
             val date = today.plusDays(i.toLong())
             val alarm = alarmByDate[date]
-            val overridden = if (alarm != null) ruleForShift(alarm.shiftName) != null else ruleForFreeDay() != null
-            if (overridden) continue
+            if (isExcluded(alarm?.shiftName)) continue
             if (alarm == null && alarmByDate.containsKey(date.plusDays(1))) {
                 // Morgen hat einen Wecker: dessen eigene Iteration deckt diese Nacht bereits ab
                 // (CLOCK reicht ueber "vor der Weckzeit" zurueck bis in den heutigen Abend). Hier

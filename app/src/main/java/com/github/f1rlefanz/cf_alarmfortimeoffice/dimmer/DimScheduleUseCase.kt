@@ -26,8 +26,9 @@ import javax.inject.Singleton
  *     [DimWindowResolver.buildRuleSpans].
  *  3. Nacht-Standard (seit v1.17.0, [DimOverlayPrefs.Toggles.nightDefaultEnabled]): ab einer festen
  *     Uhrzeit bis zum naechsten Wecker (bzw. bis zu einer zweiten festen Uhrzeit an Tagen ohne
- *     Alarm) - OHNE dass dafuer eine Regel angelegt werden muss. Eine vorhandene Regel (Punkt 2)
- *     ersetzt diesen Standard fuer ihren Tag komplett. Details in
+ *     Alarm) - OHNE dass dafuer eine Regel angelegt werden muss. Ausgeschlossen sind explizit
+ *     markierte Schichten ([DimOverlayPrefs.nightDefaultExcludedShifts]) UND jeder Tag, den eine
+ *     vorhandene Regel (Punkt 2) ohnehin schon abdeckt. Details in
  *     [DimWindowResolver.buildDefaultNightSpans].
  *
  * Overlay ist an, wenn `now` in irgendeinem Fenster liegt (Vereinigung). Fail-open: lässt sich
@@ -133,10 +134,11 @@ class DimScheduleUseCase @Inject constructor(
         }
 
         // 3. Nacht-Standard: ab fester Uhrzeit bis zum naechsten Wecker, ohne dass dafuer eine
-        //    Regel angelegt werden muss. Nur an Tagen wirksam, die KEINE Regel aus Punkt 2 haben
-        //    (rulesActive steuert dieselbe Ausschliesslichkeit wie dort - ist "Regeln" aus, gibt es
-        //    keine Ausnahmen und der Standard gilt lückenlos jede Nacht).
+        //    Regel angelegt werden muss. Ausgeschlossen sind: explizit vom Nutzer markierte
+        //    Schichten (Toggle an der Karte) UND - falls "Regeln" aktiv ist - jeder Tag, den Punkt 2
+        //    ohnehin schon abdeckt (rulesActive steuert dieselbe Ausschliesslichkeit wie dort).
         if (toggles.nightDefaultEnabled) {
+            val excludedShifts = prefs.nightDefaultExcludedShiftsNow()
             out += DimWindowResolver.buildDefaultNightSpans(
                 alarms = slots,
                 horizonDays = HORIZON_DAYS,
@@ -146,8 +148,13 @@ class DimScheduleUseCase @Inject constructor(
                 freeDayEndClockMinutes = prefs.nightDefaultFreeEndMinutesNow(),
                 strength = gStrength,
                 warmth = gWarmth,
-                ruleForShift = { name -> if (rulesActive) dimRuleUseCase.findRuleForShift(name, rules) else null },
-                ruleForFreeDay = { if (rulesActive) dimRuleUseCase.findRuleForFreeDay(rules) else null },
+                isExcluded = { shiftName ->
+                    if (shiftName != null) {
+                        shiftName in excludedShifts || (rulesActive && dimRuleUseCase.findRuleForShift(shiftName, rules) != null)
+                    } else {
+                        rulesActive && dimRuleUseCase.findRuleForFreeDay(rules) != null
+                    }
+                },
             )
         }
         return out

@@ -4,24 +4,28 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel des Dimmer-Tabs. Zwei unabhängige Modi (Wellness/Wind-down und Schicht-Regeln),
- * gemeinsame Verdunkelung/Wärme. Jede Änderung stößt [DimScheduleUseCase.enable] an (das den
- * rollenden Alarm self-cleaning neu plant bzw. abbestellt).
+ * ViewModel des Dimmer-Tabs. Drei unabhängige Modi (Wellness/Wind-down, eingebauter Nacht-Standard
+ * und Schicht-Regeln), gemeinsame Verdunkelung/Wärme. Jede Änderung stößt [DimScheduleUseCase.enable]
+ * an (das den rollenden Alarm self-cleaning neu plant bzw. abbestellt).
  */
 @HiltViewModel
 class DimmerViewModel @Inject constructor(
     private val prefs: DimOverlayPrefs,
-    private val dimSchedule: DimScheduleUseCase
+    private val dimSchedule: DimScheduleUseCase,
+    private val shiftUseCase: IShiftUseCase
 ) : ViewModel() {
 
     data class DimmerUiState(
@@ -32,15 +36,17 @@ class DimmerViewModel @Inject constructor(
         val warmth: Int = DimOverlayPrefs.DEFAULT_WARMTH,
         val windDownMinutes: Int = DimOverlayPrefs.DEFAULT_WINDDOWN_MIN,
         val nightDefaultStartMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN,
-        val nightDefaultFreeEndMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN
+        val nightDefaultFreeEndMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN,
+        val nightDefaultExcludedShifts: Set<String> = emptySet()
     )
 
     val uiState: StateFlow<DimmerUiState> =
         combine(
             combine(prefs.toggles, prefs.strength, prefs.warmth, prefs.windDownMinutes, ::PrefsCore),
             prefs.nightDefaultStartMinutes,
-            prefs.nightDefaultFreeEndMinutes
-        ) { core, nightStart, nightFreeEnd ->
+            prefs.nightDefaultFreeEndMinutes,
+            prefs.nightDefaultExcludedShifts
+        ) { core, nightStart, nightFreeEnd, excludedShifts ->
             DimmerUiState(
                 wellnessEnabled = core.toggles.wellnessEnabled,
                 rulesEnabled = core.toggles.rulesEnabled,
@@ -49,7 +55,8 @@ class DimmerViewModel @Inject constructor(
                 warmth = core.warmth,
                 windDownMinutes = core.windDownMinutes,
                 nightDefaultStartMinutes = nightStart,
-                nightDefaultFreeEndMinutes = nightFreeEnd
+                nightDefaultFreeEndMinutes = nightFreeEnd,
+                nightDefaultExcludedShifts = excludedShifts
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DimmerUiState())
 
@@ -59,6 +66,26 @@ class DimmerViewModel @Inject constructor(
         val warmth: Int,
         val windDownMinutes: Int
     )
+
+    private val _shiftNames = MutableStateFlow<List<String>>(emptyList())
+    /** Namen der erkannten Schicht-Definitionen, fuer die Ausnahme-Chips an der Nacht-Standard-Karte. */
+    val shiftNames: StateFlow<List<String>> = _shiftNames.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _shiftNames.value = shiftUseCase.getCurrentShiftConfig().getOrNull()
+                ?.definitions?.map { it.name } ?: emptyList()
+        }
+    }
+
+    /** Schaltet eine Schicht als Ausnahme vom Nacht-Standard ein/aus - keine DimRule dafuer noetig. */
+    fun toggleNightDefaultExcludedShift(shiftName: String) = viewModelScope.launch {
+        val current = prefs.nightDefaultExcludedShiftsNow()
+        prefs.setNightDefaultExcludedShifts(
+            if (shiftName in current) current - shiftName else current + shiftName
+        )
+        dimSchedule.enable()
+    }
 
     fun setWellnessEnabled(enabled: Boolean) = viewModelScope.launch {
         prefs.setWellnessEnabled(enabled)

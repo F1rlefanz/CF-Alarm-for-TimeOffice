@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -37,6 +38,7 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_WINDDOWN_MIN = intPreferencesKey("dim_winddown_min")
         private val KEY_NIGHT_DEFAULT_START_MIN = intPreferencesKey("dim_night_default_start_min")
         private val KEY_NIGHT_DEFAULT_FREE_END_MIN = intPreferencesKey("dim_night_default_free_end_min")
+        private val KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS = stringSetPreferencesKey("dim_night_default_excluded_shifts")
 
         // Farbe, die der Service gerade rendert (Intensität des AKTIVEN Fensters). Getrennt von
         // KEY_STRENGTH/KEY_WARMTH (= globale Nutzer-Slider), damit der Scheduler-Schreibzugriff und
@@ -97,6 +99,10 @@ class DimOverlayPrefs @Inject constructor(
     val nightDefaultFreeEndMinutes: Flow<Int> = dataStore.data.map {
         (it[KEY_NIGHT_DEFAULT_FREE_END_MIN] ?: DEFAULT_NIGHT_DEFAULT_FREE_END_MIN).coerceIn(0, 24 * 60 - 1)
     }
+    /** Schichtnamen, deren Nacht der Nacht-Standard NICHT dimmt (z. B. Nachtdienst). */
+    val nightDefaultExcludedShifts: Flow<Set<String>> = dataStore.data.map {
+        it[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] ?: emptySet()
+    }
 
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun windDownMinutesNow(): Int = windDownMinutes.first()
@@ -104,6 +110,7 @@ class DimOverlayPrefs @Inject constructor(
     suspend fun warmthNow(): Int = warmth.first()
     suspend fun nightDefaultStartMinutesNow(): Int = nightDefaultStartMinutes.first()
     suspend fun nightDefaultFreeEndMinutesNow(): Int = nightDefaultFreeEndMinutes.first()
+    suspend fun nightDefaultExcludedShiftsNow(): Set<String> = nightDefaultExcludedShifts.first()
 
     suspend fun setWellnessEnabled(v: Boolean) = dataStore.edit { it[KEY_WELLNESS] = v }
     suspend fun setRulesEnabled(v: Boolean) = dataStore.edit { it[KEY_RULES_ON] = v }
@@ -112,6 +119,8 @@ class DimOverlayPrefs @Inject constructor(
         dataStore.edit { it[KEY_NIGHT_DEFAULT_START_MIN] = v.coerceIn(0, 24 * 60 - 1) }
     suspend fun setNightDefaultFreeEndMinutes(v: Int) =
         dataStore.edit { it[KEY_NIGHT_DEFAULT_FREE_END_MIN] = v.coerceIn(0, 24 * 60 - 1) }
+    suspend fun setNightDefaultExcludedShifts(v: Set<String>) =
+        dataStore.edit { it[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = v }
 
     /**
      * Setzt An/Aus UND die Render-Farbe (Intensität/Wärme des gerade aktiven Fensters). Der Scheduler

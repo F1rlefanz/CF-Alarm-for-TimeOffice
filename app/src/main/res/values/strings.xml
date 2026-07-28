@@ -35,7 +35,8 @@
 
     <!-- Nacht-Standard (seit v1.17.0): eingebaute Standard-Nachtdimmung ohne eigene Regel -->
     <string name="dimmer_night_default">Nacht-Standard</string>
-    <string name="dimmer_night_default_hint">Dimmt ab einer festen Uhrzeit bis zum nächsten Wecker – ohne dass du dafür eine Regel anlegen musst. Schicht-Regeln (oben) überschreiben das für ihren Tag komplett, z. B. die Nachtdienst-Ausnahme.</string>
+    <string name="dimmer_night_default_hint">Dimmt ab einer festen Uhrzeit bis zum nächsten CF-Alarm-Wecker (nicht System-/Fremd-Wecker) – ohne dass du dafür eine Regel anlegen musst. Ausgenommene Schichten dimmen ihre Nacht gar nicht. Schicht-Regeln (unten) sind für zusätzliche Zeitfenster tagsüber, z. B. Vorschlaf/Tagschlaf.</string>
+    <string name="dimmer_night_default_exceptions">Ausnahmen (keine Nacht-Dimmung)</string>
     <string name="dimmer_night_default_start">Beginn</string>
     <string name="dimmer_night_default_free_end">Ende an freien Tagen (ohne Wecker)</string>
 

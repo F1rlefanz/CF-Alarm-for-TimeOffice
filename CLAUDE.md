@@ -7,7 +7,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Folgt dem globalen Default aus `~/.claude/CLAUDE.md` (Branch pro Änderung, proaktiv committen/mergen/pushen, nur bei irreversiblen Operationen nachfragen). Projekt-spezifische Abweichungen davon:
 
 - Branch-Präfixe: `feature/<kebab-case>`, `fix/<kebab-case>`, `chore/<kebab-case>`.
-- Commit-Trailer für dieses Projekt: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` (weicht vom Session-Default ab, bewusst so beibehalten).
 - **Mehrere Claude-Sessions arbeiten parallel an diesem Repo** (lokal am PC **und** Cloud-Sessions auf `claude/*`-Branches, die eigenständig nach `origin/main` mergen). Deshalb: **immer `git fetch` + Divergenz prüfen, bevor** auf `main` gebumpt/committet/gepusht wird; bei Divergenz mergen/rebasen statt force-push. `versionCode` muss höher als der **höchste je vergebene** sein (nicht nur höher als der eigene Basisstand).
 - **Handoff-Notizen gehören AUSSCHLIESSLICH in `..Projektdateien/claudes mds/HANDOFF.md`** (lokal, gitignored) — dort liegen auch die Play-Deklarations-Texte. **Keine getrackte Handoff-Datei anlegen** (kein `docs/HANDOFF.md` o. Ä.): der `docs/`-Ordner ist GitHub Pages (öffentlich), und eine zweite Datei erzeugt Doppelungen. Cloud-/Remote-Sessions, die den gitignoreten Ordner nicht sehen, arbeiten aus dieser `CLAUDE.md` + der Git-Historie, statt eine Zweitdatei zu erzeugen.
 
@@ -295,6 +294,20 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **CLOCK↔CLOCK = lückenlos jede Kalendernacht** (unabhängig von Schicht/frei); ALARM/SHIFT_END sind
   schicht-relativ und brauchen einen Alarm an dem Datum. Wer CLOCK↔CLOCK wieder schicht-relativ
   macht, reißt „immer 22–7 außer ND" wieder auf. `DimWindowResolverTest` hält das Kern-Szenario fest.
+- **Nacht-Standard (`DimWindowResolver.buildDefaultNightSpans`, seit v1.17.0) ist eine DRITTE,
+  eigenständige Fenster-Quelle** neben Regeln — dimmt ab fester Uhrzeit bis zum nächsten Wecker,
+  ganz ohne dass dafür eine `DimRule` existieren muss. Wirkt NUR an Tagen, die `isExcluded` nicht
+  ausschließt — dieses Prädikat bündelt zwei unabhängige Wege: eine explizit vom Nutzer markierte
+  Schicht (`DimOverlayPrefs.nightDefaultExcludedShifts`, Toggle direkt an der Karte) ODER eine
+  vorhandene `DimRule`, die den Tag ohnehin schon abdeckt (dieselbe Ausschließlichkeit wie oben).
+  **Ein Tag OHNE eigenen Alarm erzeugt bewusst KEINEN festen Fallback, wenn der FOLGETAG einen Alarm
+  hat** — dessen eigene Iteration deckt die Nacht bereits dynamisch bis zum echten Wecker ab (CLOCK
+  reicht über „vor der Weckzeit" zurück). Ohne diese Ausnahme entstehen zwei überlappende Spannen
+  mit unterschiedlichem Ende, und der fixe Fallback verlängert die Nacht über den echten Wecker
+  hinaus — genau der Fehler, den dieser Standard vermeiden soll (beim ersten Bau selbst
+  hineingelaufen, jetzt von `DimWindowResolverTest` festgehalten). **Eigene Verdunkelung/Wärme**
+  (`nightDefaultStrength`/`nightDefaultWarmth`, seit v1.17.1) — NICHT die globalen Wellness-Werte
+  mitverwenden, das war der erste Wurf und wurde vom Nutzer explizit zurückgewiesen.
 
 ### Auth
 

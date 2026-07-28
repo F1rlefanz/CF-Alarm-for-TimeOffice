@@ -17,9 +17,12 @@ import javax.inject.Singleton
 /**
  * Einstellungen und Render-Zustand des Schicht-Dimmers (im bestehenden [MainDataStore]).
  *
- * Zwei unabhängige Fenster-Quellen (siehe [DimScheduleUseCase]):
- * - [wellnessEnabled]: globaler „Wind-down" um den Wecker (nutzt Verdunkelung/Wärme/Wind-down).
- * - [rulesEnabled]: das schicht-gekoppelte Regelsystem ([DimRule]).
+ * Drei unabhängige Fenster-Quellen (siehe [DimScheduleUseCase], [Toggles]):
+ * - `wellnessEnabled`: globaler „Wind-down" um den Wecker (nutzt Verdunkelung/Wärme/Wind-down).
+ * - `rulesEnabled`: das schicht-gekoppelte Regelsystem ([DimRule]).
+ * - `nightDefaultEnabled` (seit v1.17.0): eingebauter Nacht-Standard ohne eigene Regel, mit
+ *   eigener Verdunkelung/Wärme ([nightDefaultStrength]/[nightDefaultWarmth]) und expliziten
+ *   Schicht-Ausnahmen ([nightDefaultExcludedShifts]) statt einer leeren [DimRule].
  *
  * [overlayOn] wird vom Scheduler gesetzt; der [DimAccessibilityService] beobachtet nur
  * [renderState] (an/aus + Farbe).

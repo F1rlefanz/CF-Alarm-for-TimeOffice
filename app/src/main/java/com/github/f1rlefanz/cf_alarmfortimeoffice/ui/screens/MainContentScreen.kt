@@ -64,7 +64,8 @@ fun MainContentScreen(
     onShowHueRuleConfig: () -> Unit,
     onShowHueSettings: () -> Unit,
     onShowDimmerSettings: () -> Unit,
-    onShowDimmerPreview: () -> Unit
+    onShowDimmerPreview: () -> Unit,
+    onShowDndSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
@@ -223,7 +224,8 @@ fun MainContentScreen(
                     SettingsTabContent(
                         authViewModel = authViewModel,
                         onShowShiftConfig = onShowShiftConfig,
-                        onShowCalendarSelection = onShowCalendarSelection
+                        onShowCalendarSelection = onShowCalendarSelection,
+                        onShowDndSettings = onShowDndSettings
                     )
                 }
                 MainTab.HUE -> {

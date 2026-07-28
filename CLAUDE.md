@@ -309,6 +309,49 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   (`nightDefaultStrength`/`nightDefaultWarmth`, seit v1.17.1) — NICHT die globalen Wellness-Werte
   mitverwenden, das war der erste Wurf und wurde vom Nutzer explizit zurückgewiesen.
 
+### DND-Steuerung (Nicht stören)
+
+- **Zwei Trigger, kein Regel-Editor.** `dnd/DndScheduleUseCase` kennt genau zwei unabhängig
+  schaltbare Quellen (`DndPrefs.Toggles`): „Schlaf-Fenster folgt dem Dimmer" und „Während der
+  Dienstzeit". Kein `DndRule`-Modell — ein früherer, adversarial geprüfter Entwurf mit vollem
+  Regel-Editor wurde zugunsten dieser einfacheren, tatsächlich angefragten Lösung verworfen.
+- **Modus 1 dupliziert KEINE Fenster-Logik.** Er ruft `DimScheduleUseCase.previewTimeline()`
+  direkt auf (bereits öffentlich, seiteneffektfrei) statt eine eigene Kopie der
+  Dimmer-Fensterberechnung zu pflegen. Einbahnstraße wie `CalendarStateHolder`: `dnd/` liest von
+  `dimmer/`, nie umgekehrt — der Dimmer bleibt unverändert und unwissend von DND. Wer hier eine
+  eigene, „ähnliche" Fensterberechnung für DND einbaut, öffnet genau das Drift-Risiko (zwei
+  Quellen der Wahrheit für „ist gerade Nacht"), vor dem die adversariale Kritikrunde gewarnt hat.
+- **Modus 2 braucht `AlarmInfo.shiftStartTime`**, nicht `triggerTime` (Weckzeit, meist vor
+  Schichtbeginn wegen Anfahrt) und nicht nur `shiftEndTime`. Gesetzt in
+  `AlarmUseCase.createAlarmFromShiftMatch` aus `shiftMatch.calendarEvent.startTime` — exakt
+  daneben, wo `shiftEndTime` aus `calendarEvent.endTime` gesetzt wird.
+- **`AutomaticZenRule`, nicht rohes `NotificationManager.setInterruptionFilter()`.** Der
+  rohe Filter überschreibt kommentarlos das manuelle DND des Nutzers und jede fremde
+  Automatisierung (Bixby/Tasker/System-Zeitplan) — kein Owner-Konzept, letzter Schreiber gewinnt.
+  Die selbst registrierte Zen-Regel (eigene, rule-scoped `ZenPolicy`) erscheint stattdessen
+  sichtbar unter Einstellungen → Ton → Nicht stören → Zeitpläne und koexistiert sauber.
+- **Nur ab API 30 (Android 11).** Der 7-arg-`AutomaticZenRule`-Konstruktor mit
+  `configurationActivity`-Ownership (kein `ConditionProviderService` nötig) existiert erst ab
+  API 30; darunter bietet `DndPermissionHelper.isFeatureSupported()`/`DndScheduleUseCase.isSupported()`
+  das Feature bewusst gar nicht an, statt einen zweiten Ownership-Pfad zu pflegen.
+- **Policy: Priorität + Anrufer-Ausnahme, nicht totale Stummschaltung.** `buildAutomaticZenRule()`
+  setzt `allowRepeatCallers(true)` bei sonst überall `false`/`NONE` — wiederholte Anrufer (Notfall)
+  kommen durch. Bewusste Nutzer-Entscheidung, keine Vereinfachung leichtfertig rückgängig machen.
+  Der Wecker selbst ist davon unabhängig: `AlarmSoundService.setBypassDnd(true)` umgeht JEDE
+  DND-Konfiguration, auch die eigene.
+- **Eigener Request-Code `REQ_DND_TICK = 7712`**, eigene rollierende Exact-Alarm-Kette
+  (`DndScheduleReceiver`) — bewusst NICHT mit dem Dimmer-Tick (`REQ_TICK = 7710`,
+  `DimScheduleUseCase`) oder der 6h-Wartung (Code 0) zusammengelegt. Zwei fachlich unabhängige
+  Features, unabhängig deaktivierbar; ein Bug in einem darf nicht das andere mitreißen.
+- **`ensureZenRule()` prüft `Build.VERSION.SDK_INT` direkt**, nicht nur über `isSupported()` –
+  Lint verfolgt die Absicherung für `@RequiresApi`-Aufrufe (`buildAutomaticZenRule()`) nur bei
+  einem lokalen, direkten SDK_INT-Vergleich zuverlässig durch mehrere Funktionsebenen.
+- **Nicht real auf einem Gerät verifiziert** (Stand Implementierung): ob eine rule-scoped
+  `ZenPolicy` sich mit der globalen, manuell gesetzten DND-Policy des Nutzers wie erwartet
+  verträgt (additiv statt überschreibend), ist nur aus der Doku hergeleitet, nicht am Fairphone
+  getestet. Vor Release: `addAutomaticZenRule()` + `setAutomaticZenRuleState()` mit
+  `PRIORITY_CATEGORY_REPEAT_CALLERS` am echten Gerät prüfen (wiederholter Testanruf kommt durch?).
+
 ### Auth
 
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.** Für eine Wecker-App ist

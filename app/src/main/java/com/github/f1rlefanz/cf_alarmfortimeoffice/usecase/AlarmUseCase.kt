@@ -323,6 +323,10 @@ class AlarmUseCase @Inject constructor(
             shiftEndTime = shiftMatch.calendarEvent.endTime
                 .atZone(ZoneId.systemDefault())
                 .toInstant()
+                .toEpochMilli(),
+            shiftStartTime = shiftMatch.calendarEvent.startTime
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
                 .toEpochMilli()
         )
     }

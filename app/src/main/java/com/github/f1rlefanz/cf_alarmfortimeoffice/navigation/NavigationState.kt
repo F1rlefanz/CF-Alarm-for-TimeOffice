@@ -32,6 +32,9 @@ sealed class NavigationState {
     data class DimmerSettings(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
     data class DimmerRuleConfig(val ruleId: String? = null, val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
     data class DimmerPreview(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
+
+    // DND-Screen (kein eigener Bottom-Tab, erreichbar ueber Settings)
+    data class DndSettings(val returnToTab: MainTab = MainTab.SETTINGS) : NavigationState()
 }
 
 enum class MainTab {
@@ -67,7 +70,10 @@ sealed class NavigationAction {
     data class NavigateToDimmerSettings(val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
     data class NavigateToDimmerRuleConfig(val ruleId: String? = null, val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
     data class NavigateToDimmerPreview(val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
-    
+
+    // DND Navigation Action
+    data class NavigateToDndSettings(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
+
     object NavigateBackToMain : NavigationAction()
     data class NavigateToMainWithTab(val tab: MainTab) : NavigationAction()
     data class ChangeTab(val tab: MainTab) : NavigationAction()

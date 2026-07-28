@@ -65,6 +65,7 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var authDataStoreRepository: IAuthDataStoreRepository
     @Inject lateinit var directBootAlarmStore: DirectBootAlarmStore
     @Inject lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+    @Inject lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 
     companion object {
         // 🛡️ Level 4 Configuration
@@ -248,6 +249,16 @@ class BootReceiver : BroadcastReceiver() {
                         dimSchedule.scheduleNextTransition()
                     } catch (e: Exception) {
                         Logger.w(LogTags.DIMMER, "Boot: Dimm-Reschedule fehlgeschlagen", e)
+                    }
+
+                    // 10. DND-Steuerung: rollenden Tick nach dem Boot neu setzen. Gleiches
+                    //     Muster/gleicher try/catch-Gedanke wie beim Dimmer – Best-effort, darf
+                    //     die Wecker-Recovery NIE stoeren.
+                    try {
+                        dndSchedule.applyCurrentState()
+                        dndSchedule.scheduleNextTransition()
+                    } catch (e: Exception) {
+                        Logger.w(LogTags.DND, "Boot: DND-Reschedule fehlgeschlagen", e)
                     }
 
                     recoverySuccessful = true

@@ -410,8 +410,8 @@ fun MainScreen(
                     ruleId = hueRuleState.ruleId,
                     hueViewModel = hueViewModel,
                     shiftViewModel = shiftViewModel,
-                    onNavigateBack = { navigationViewModel.navigateBackToMain() },
-                    onSaveComplete = { navigationViewModel.navigateBackToMain() }
+                    onNavigateBack = { navigationViewModel.navigateToHueSettings(hueRuleState.returnToTab) },
+                    onSaveComplete = { navigationViewModel.navigateToHueSettings(hueRuleState.returnToTab) }
                 )
             }
 

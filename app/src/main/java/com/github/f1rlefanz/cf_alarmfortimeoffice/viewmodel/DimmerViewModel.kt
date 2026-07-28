@@ -27,21 +27,38 @@ class DimmerViewModel @Inject constructor(
     data class DimmerUiState(
         val wellnessEnabled: Boolean = false,
         val rulesEnabled: Boolean = false,
+        val nightDefaultEnabled: Boolean = false,
         val strength: Int = DimOverlayPrefs.DEFAULT_STRENGTH,
         val warmth: Int = DimOverlayPrefs.DEFAULT_WARMTH,
-        val windDownMinutes: Int = DimOverlayPrefs.DEFAULT_WINDDOWN_MIN
+        val windDownMinutes: Int = DimOverlayPrefs.DEFAULT_WINDDOWN_MIN,
+        val nightDefaultStartMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN,
+        val nightDefaultFreeEndMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN
     )
 
     val uiState: StateFlow<DimmerUiState> =
-        combine(prefs.toggles, prefs.strength, prefs.warmth, prefs.windDownMinutes) { t, s, w, wd ->
+        combine(
+            combine(prefs.toggles, prefs.strength, prefs.warmth, prefs.windDownMinutes, ::PrefsCore),
+            prefs.nightDefaultStartMinutes,
+            prefs.nightDefaultFreeEndMinutes
+        ) { core, nightStart, nightFreeEnd ->
             DimmerUiState(
-                wellnessEnabled = t.wellnessEnabled,
-                rulesEnabled = t.rulesEnabled,
-                strength = s,
-                warmth = w,
-                windDownMinutes = wd
+                wellnessEnabled = core.toggles.wellnessEnabled,
+                rulesEnabled = core.toggles.rulesEnabled,
+                nightDefaultEnabled = core.toggles.nightDefaultEnabled,
+                strength = core.strength,
+                warmth = core.warmth,
+                windDownMinutes = core.windDownMinutes,
+                nightDefaultStartMinutes = nightStart,
+                nightDefaultFreeEndMinutes = nightFreeEnd
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DimmerUiState())
+
+    private data class PrefsCore(
+        val toggles: DimOverlayPrefs.Toggles,
+        val strength: Int,
+        val warmth: Int,
+        val windDownMinutes: Int
+    )
 
     fun setWellnessEnabled(enabled: Boolean) = viewModelScope.launch {
         prefs.setWellnessEnabled(enabled)
@@ -50,6 +67,21 @@ class DimmerViewModel @Inject constructor(
 
     fun setRulesEnabled(enabled: Boolean) = viewModelScope.launch {
         prefs.setRulesEnabled(enabled)
+        dimSchedule.enable()
+    }
+
+    fun setNightDefaultEnabled(enabled: Boolean) = viewModelScope.launch {
+        prefs.setNightDefaultEnabled(enabled)
+        dimSchedule.enable()
+    }
+
+    fun setNightDefaultStartMinutes(value: Int) = viewModelScope.launch {
+        prefs.setNightDefaultStartMinutes(value)
+        dimSchedule.enable()
+    }
+
+    fun setNightDefaultFreeEndMinutes(value: Int) = viewModelScope.launch {
+        prefs.setNightDefaultFreeEndMinutes(value)
         dimSchedule.enable()
     }
 

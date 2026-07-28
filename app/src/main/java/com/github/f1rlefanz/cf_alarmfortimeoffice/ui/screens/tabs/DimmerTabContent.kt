@@ -22,27 +22,32 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fmtClock
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerViewModel
 
 /**
- * Dimmer-Tab: Wellness-Wind-down und schicht-gekoppelte Regeln ein-/ausschalten sowie
- * Intensitaet/Waerme einstellen. Der Status des Bedienungshilfen-Dienstes samt Pflicht-
- * Offenlegung liegt im Status-Tab (DimmerAccessibilityCard) — hier gibt es nur die
+ * Dimmer-Tab: Wellness-Wind-down, eingebauter Nacht-Standard und schicht-gekoppelte Regeln
+ * ein-/ausschalten sowie Intensitaet/Waerme einstellen. Der Status des Bedienungshilfen-Dienstes
+ * samt Pflicht-Offenlegung liegt im Status-Tab (DimmerAccessibilityCard) — hier gibt es nur die
  * Feature-Bedienung plus einen Vorschau-Knopf zum Ausprobieren.
  */
 @Composable
 fun DimmerTabContent(
     onNavigateToRules: () -> Unit,
+    onNavigateToPreview: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: DimmerViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -62,6 +67,10 @@ fun DimmerTabContent(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onNavigateToPreview, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.dimmer_preview_timeline))
+                }
             }
         }
 
@@ -139,6 +148,69 @@ fun DimmerTabContent(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(stringResource(R.string.dimmer_preview))
+                    }
+                }
+            }
+        }
+
+        // Nacht-Standard – eingebaute Standard-Nachtdimmung ohne eigene Regel (seit v1.17.0)
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.dimmer_night_default),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.dimmer_night_default_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = state.nightDefaultEnabled,
+                            onCheckedChange = { viewModel.setNightDefaultEnabled(it) }
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.dimmer_night_default_start),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(onClick = {
+                            pickTime(context, state.nightDefaultStartMinutes) { viewModel.setNightDefaultStartMinutes(it) }
+                        }) {
+                            Text(fmtClock(state.nightDefaultStartMinutes))
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.dimmer_night_default_free_end),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(onClick = {
+                            pickTime(context, state.nightDefaultFreeEndMinutes) { viewModel.setNightDefaultFreeEndMinutes(it) }
+                        }) {
+                            Text(fmtClock(state.nightDefaultFreeEndMinutes))
+                        }
                     }
                 }
             }

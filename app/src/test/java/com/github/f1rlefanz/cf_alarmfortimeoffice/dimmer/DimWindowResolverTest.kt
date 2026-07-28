@@ -180,4 +180,85 @@ class DimWindowResolverTest {
         // Do-Nacht (frei) wieder gedimmt.
         assertTrue(spans.any { ep(2026, 1, 15, 23, 0) in it.range })
     }
+
+    // --- buildDefaultNightSpans: eingebauter Nacht-Standard (v1.17.0) ---
+
+    @Test
+    fun `Nacht-Standard endet an Tagen mit Alarm dynamisch beim tatsaechlichen Wecker`() {
+        // Spaetdienst-Nacht (12.01.), Folgetag 13.01. ist Fruehdienst mit 5-Uhr-Wecker.
+        val today = LocalDate.of(2026, 1, 12)
+        val alarms = listOf(DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0))
+
+        val spans = DimWindowResolver.buildDefaultNightSpans(
+            alarms = alarms, horizonDays = 3, today = today, zone = zone,
+            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
+            strength = 60, warmth = 40,
+            ruleForShift = { null }, ruleForFreeDay = { null }
+        )
+
+        val night = spans.first { ep(2026, 1, 12, 23, 0) in it.range }
+        assertEquals(ep(2026, 1, 12, 22, 0), night.range.first)
+        assertEquals(ep(2026, 1, 13, 5, 0), night.range.last) // endet beim ECHTEN Wecker, nicht fix 07:00
+    }
+
+    @Test
+    fun `Nacht-Standard nutzt an alarmlosen Tagen die feste Ende-Uhrzeit`() {
+        val today = LocalDate.of(2026, 1, 12)
+
+        val spans = DimWindowResolver.buildDefaultNightSpans(
+            alarms = emptyList(), horizonDays = 1, today = today, zone = zone,
+            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
+            strength = 60, warmth = 40,
+            ruleForShift = { null }, ruleForFreeDay = { null }
+        )
+
+        assertEquals(1, spans.size)
+        assertEquals(ep(2026, 1, 12, 22, 0), spans[0].range.first)
+        assertEquals(ep(2026, 1, 13, 7, 0), spans[0].range.last)
+    }
+
+    @Test
+    fun `Eine vorhandene Regel ersetzt den Nacht-Standard fuer ihren Tag komplett`() {
+        val today = LocalDate.of(2026, 1, 12)
+        val alarms = listOf(DimWindowResolver.AlarmSlot(ep(2026, 1, 12, 20, 0), "Nachtdienst", 0))
+
+        val spans = DimWindowResolver.buildDefaultNightSpans(
+            alarms = alarms, horizonDays = 1, today = today, zone = zone,
+            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
+            strength = 60, warmth = 40,
+            ruleForShift = { name -> if (name == "Nachtdienst") DimRule(name = "ND", shiftPattern = "Nachtdienst") else null },
+            ruleForFreeDay = { null }
+        )
+
+        assertTrue(spans.isEmpty())
+    }
+
+    // --- mergeToTimeline: Vorschau-Zeitleiste ---
+
+    @Test
+    fun `mergeToTimeline fasst ueberlappende Spannen zur dunkelsten zusammen`() {
+        val mild = DimSpan(0L..200L, strength = 40, warmth = 30)
+        val dark = DimSpan(100L..200L, strength = 70, warmth = 10)
+
+        val timeline = DimWindowResolver.mergeToTimeline(listOf(mild, dark))
+
+        assertEquals(2, timeline.size)
+        assertTrue(timeline.any { it.range == 0L..100L && it.strength == 40 })
+        assertTrue(timeline.any { it.range == 100L..200L && it.strength == 70 })
+    }
+
+    @Test
+    fun `mergeToTimeline haelt getrennte Spannen als getrennte Abschnitte`() {
+        val a = DimSpan(0L..100L, strength = 50, warmth = 20)
+        val b = DimSpan(200L..300L, strength = 50, warmth = 20)
+
+        val timeline = DimWindowResolver.mergeToTimeline(listOf(a, b))
+
+        assertEquals(2, timeline.size)
+    }
+
+    @Test
+    fun `mergeToTimeline ist leer ohne Spannen`() {
+        assertTrue(DimWindowResolver.mergeToTimeline(emptyList()).isEmpty())
+    }
 }

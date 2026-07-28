@@ -30,10 +30,13 @@ class DimOverlayPrefs @Inject constructor(
     companion object {
         private val KEY_WELLNESS = booleanPreferencesKey("dim_wellness_enabled")
         private val KEY_RULES_ON = booleanPreferencesKey("dim_rules_enabled")
+        private val KEY_NIGHT_DEFAULT_ON = booleanPreferencesKey("dim_night_default_enabled")
         private val KEY_OVERLAY_ON = booleanPreferencesKey("dim_overlay_on")
         private val KEY_STRENGTH = intPreferencesKey("dim_strength")
         private val KEY_WARMTH = intPreferencesKey("dim_warmth")
         private val KEY_WINDDOWN_MIN = intPreferencesKey("dim_winddown_min")
+        private val KEY_NIGHT_DEFAULT_START_MIN = intPreferencesKey("dim_night_default_start_min")
+        private val KEY_NIGHT_DEFAULT_FREE_END_MIN = intPreferencesKey("dim_night_default_free_end_min")
 
         // Farbe, die der Service gerade rendert (Intensität des AKTIVEN Fensters). Getrennt von
         // KEY_STRENGTH/KEY_WARMTH (= globale Nutzer-Slider), damit der Scheduler-Schreibzugriff und
@@ -48,6 +51,8 @@ class DimOverlayPrefs @Inject constructor(
         const val DEFAULT_WINDDOWN_MIN = 120
         const val WINDDOWN_MIN_LIMIT = 15
         const val WINDDOWN_MAX_LIMIT = 8 * 60
+        const val DEFAULT_NIGHT_DEFAULT_START_MIN = 22 * 60
+        const val DEFAULT_NIGHT_DEFAULT_FREE_END_MIN = 7 * 60
 
         fun overlayColor(strength: Int, warmth: Int): Int {
             val alpha = Math.round(strength / 100.0 * 255.0).toInt()
@@ -62,8 +67,8 @@ class DimOverlayPrefs @Inject constructor(
         val color: Int get() = overlayColor(strength, warmth)
     }
 
-    /** Die beiden Fenster-Quellen-Schalter. */
-    data class Toggles(val wellnessEnabled: Boolean, val rulesEnabled: Boolean)
+    /** Die drei Fenster-Quellen-Schalter. */
+    data class Toggles(val wellnessEnabled: Boolean, val rulesEnabled: Boolean, val nightDefaultEnabled: Boolean)
 
     val renderState: Flow<RenderState> = dataStore.data.map { p ->
         RenderState(
@@ -76,7 +81,8 @@ class DimOverlayPrefs @Inject constructor(
     val toggles: Flow<Toggles> = dataStore.data.map { p ->
         Toggles(
             wellnessEnabled = p[KEY_WELLNESS] ?: false,
-            rulesEnabled = p[KEY_RULES_ON] ?: false
+            rulesEnabled = p[KEY_RULES_ON] ?: false,
+            nightDefaultEnabled = p[KEY_NIGHT_DEFAULT_ON] ?: false
         )
     }
 
@@ -85,14 +91,27 @@ class DimOverlayPrefs @Inject constructor(
     val windDownMinutes: Flow<Int> = dataStore.data.map {
         (it[KEY_WINDDOWN_MIN] ?: DEFAULT_WINDDOWN_MIN).coerceIn(WINDDOWN_MIN_LIMIT, WINDDOWN_MAX_LIMIT)
     }
+    val nightDefaultStartMinutes: Flow<Int> = dataStore.data.map {
+        (it[KEY_NIGHT_DEFAULT_START_MIN] ?: DEFAULT_NIGHT_DEFAULT_START_MIN).coerceIn(0, 24 * 60 - 1)
+    }
+    val nightDefaultFreeEndMinutes: Flow<Int> = dataStore.data.map {
+        (it[KEY_NIGHT_DEFAULT_FREE_END_MIN] ?: DEFAULT_NIGHT_DEFAULT_FREE_END_MIN).coerceIn(0, 24 * 60 - 1)
+    }
 
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun windDownMinutesNow(): Int = windDownMinutes.first()
     suspend fun strengthNow(): Int = strength.first()
     suspend fun warmthNow(): Int = warmth.first()
+    suspend fun nightDefaultStartMinutesNow(): Int = nightDefaultStartMinutes.first()
+    suspend fun nightDefaultFreeEndMinutesNow(): Int = nightDefaultFreeEndMinutes.first()
 
     suspend fun setWellnessEnabled(v: Boolean) = dataStore.edit { it[KEY_WELLNESS] = v }
     suspend fun setRulesEnabled(v: Boolean) = dataStore.edit { it[KEY_RULES_ON] = v }
+    suspend fun setNightDefaultEnabled(v: Boolean) = dataStore.edit { it[KEY_NIGHT_DEFAULT_ON] = v }
+    suspend fun setNightDefaultStartMinutes(v: Int) =
+        dataStore.edit { it[KEY_NIGHT_DEFAULT_START_MIN] = v.coerceIn(0, 24 * 60 - 1) }
+    suspend fun setNightDefaultFreeEndMinutes(v: Int) =
+        dataStore.edit { it[KEY_NIGHT_DEFAULT_FREE_END_MIN] = v.coerceIn(0, 24 * 60 - 1) }
 
     /**
      * Setzt An/Aus UND die Render-Farbe (Intensität/Wärme des gerade aktiven Fensters). Der Scheduler

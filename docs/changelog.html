@@ -46,7 +46,26 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.16.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.17.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Juli 2026</p>
+            <p><em>Nacht-Dimmen ohne eigene Regel, eine Vorschau-Zeitleiste für den Schicht-Dimmer und eine Hue-Bridge, die sich nach Netzwerkverlust von selbst wieder verbindet.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Nacht-Standard (Schicht-Dimmer):</strong> Dimmt ab einer festen Uhrzeit bis zum nächsten Wecker – ganz ohne dass dafür eine Schicht-Regel angelegt werden muss. Einzelne Schichten lassen sich per Antippen direkt an dieser Karte von der Nacht-Dimmung ausnehmen (z. B. Nachtdienst), ohne Umweg über eine leere Regel.</li>
+                <li><strong>Dimm-Vorschau:</strong> Ein neuer Vorschau-Bildschirm zeigt für die nächsten Tage konkret, wann tatsächlich gedimmt wird – berechnet aus der echten Konfiguration, keine Simulation im Kopf mehr nötig.</li>
+                <li><strong>Vorschau-Knopf im Regel-Editor:</strong> zeigt Stärke/Wärme einer Regel kurz an, auch bevor sie gespeichert ist.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Hue-Bridge verband sich nach Netzwerkverlust nicht von selbst wieder:</strong> War die Bridge unterwegs nicht erreichbar, zeigte die App das korrekt an – aber auch nach der Rückkehr ins Heim-WLAN blieb die Meldung stehen, bis manuell „Erneut versuchen" gedrückt wurde. Die App erkennt eine Netzwerk-Wiederherstellung jetzt selbst und verbindet sich automatisch neu.</li>
+                <li><strong>Zurück-Pfeil im Dimmer- und im Hue-Regel-Editor</strong> führte zum jeweiligen Haupt-Tab statt zurück zur Regel-Liste.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.16.2</h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Neu: der Schicht-Dimmer – dunkelt den Bildschirm rund um deine Schichten automatisch ab, damit du leichter herunterfährst.</em></p>
 

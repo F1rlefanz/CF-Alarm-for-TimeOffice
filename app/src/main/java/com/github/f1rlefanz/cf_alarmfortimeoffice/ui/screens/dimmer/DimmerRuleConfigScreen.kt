@@ -1,7 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer
 
-import android.app.TimePickerDialog
-import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -405,15 +403,3 @@ private fun OffsetField(value: Int, label: String, onChange: (Int) -> Unit) {
     )
 }
 
-private fun fmtClock(minutes: Int): String =
-    "%02d:%02d".format(minutes / 60, minutes % 60)
-
-private fun pickTime(context: Context, currentMinutes: Int, onPicked: (Int) -> Unit) {
-    TimePickerDialog(
-        context,
-        { _, h, m -> onPicked(h * 60 + m) },
-        currentMinutes / 60,
-        currentMinutes % 60,
-        true
-    ).show()
-}

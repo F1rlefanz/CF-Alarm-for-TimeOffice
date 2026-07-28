@@ -460,7 +460,14 @@ fun MainScreen(
                     onShowEventList = { navigationViewModel.navigateToEventList(mainContentState.selectedTab) },
                     onShowHueRuleConfig = { navigationViewModel.navigateToHueRuleConfig() },
                     onShowHueSettings = { navigationViewModel.navigateToHueSettings() },
-                    onShowDimmerSettings = { navigationViewModel.navigateToDimmerSettings() }
+                    onShowDimmerSettings = { navigationViewModel.navigateToDimmerSettings() },
+                    onShowDimmerPreview = { navigationViewModel.navigateToDimmerPreview() }
+                )
+            }
+
+            is NavigationState.DimmerPreview -> {
+                com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerPreviewScreen(
+                    onNavigateBack = { navigationViewModel.navigateBackToMain() }
                 )
             }
         }

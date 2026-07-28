@@ -107,6 +107,90 @@ object DimWindowResolver {
         return out
     }
 
+    /**
+     * Eingebauter Nacht-Standard (seit v1.17.0): dimmt ab [startClockMinutes] bis zum naechsten
+     * Wecker (Tage mit Alarm, ueber [DimAnchor.ALARM]) bzw. bis [freeDayEndClockMinutes] (Tage
+     * ohne Alarm, ueber [DimAnchor.CLOCK]) - jeweils nur an Kalendertagen, fuer die [isExcluded]
+     * false liefert. [isExcluded] buendelt ZWEI unabhaengige Ausschluss-Wege: eine explizit vom
+     * Nutzer ausgeschlossene Schicht (Toggle direkt an der Nacht-Standard-Karte) ODER eine
+     * vorhandene [DimRule] (spezifisch, UNIVERSAL oder FREI), die diesen Tag ohnehin schon
+     * abdeckt - exakt dieselbe Ausschliesslichkeit wie in [buildRuleSpans].
+     *
+     * Ein Tag OHNE eigenen Alarm erzeugt bewusst KEINEN Fallback-Abschnitt, wenn der FOLGETAG einen
+     * Alarm hat - dessen eigene Iteration deckt die Nacht bereits an (CLOCK reicht ueber "vor der
+     * Weckzeit" zurueck). Ohne diese Ausnahme wuerden zwei Spannen mit unterschiedlichem Ende
+     * ueberlappen (heutiger fixer Fallback bis [freeDayEndClockMinutes] UND morgiges Fenster bis
+     * zum echten Wecker) - der fixe Fallback wuerde die Nacht ueber den echten Wecker hinaus verlaengern
+     * und genau den Zweck dieses Standards (dynamisch bis zum tatsaechlichen Wecker) aushebeln.
+     */
+    fun buildDefaultNightSpans(
+        alarms: List<AlarmSlot>,
+        horizonDays: Int,
+        today: LocalDate,
+        zone: ZoneId,
+        startClockMinutes: Int,
+        freeDayEndClockMinutes: Int,
+        strength: Int,
+        warmth: Int,
+        isExcluded: (shiftName: String?) -> Boolean,
+    ): List<DimSpan> {
+        val alarmByDate = HashMap<LocalDate, AlarmSlot>()
+        for (a in alarms) {
+            val d = Instant.ofEpochMilli(a.triggerTime).atZone(zone).toLocalDate()
+            if (!alarmByDate.containsKey(d)) alarmByDate[d] = a
+        }
+        val out = mutableListOf<DimSpan>()
+        for (i in 0 until horizonDays) {
+            val date = today.plusDays(i.toLong())
+            val alarm = alarmByDate[date]
+            if (isExcluded(alarm?.shiftName)) continue
+            if (alarm == null && alarmByDate.containsKey(date.plusDays(1))) {
+                // Morgen hat einen Wecker: dessen eigene Iteration deckt diese Nacht bereits ab
+                // (CLOCK reicht ueber "vor der Weckzeit" zurueck bis in den heutigen Abend). Hier
+                // KEINEN zusaetzlichen festen Fallback erzeugen, sonst ueberlappen sich zwei
+                // Spannen mit unterschiedlichem Ende, und die fixe (spaetere) gewinnt die Nacht
+                // ueber den echten Wecker hinaus - genau der Fehler, den dieser Standard vermeiden soll.
+                continue
+            }
+            val window = if (alarm != null) {
+                DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0)
+            } else {
+                DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.CLOCK, endClockMinutes = freeDayEndClockMinutes)
+            }
+            resolveWindowForDate(window, date, alarm, zone)?.let { out += DimSpan(it, strength, warmth) }
+        }
+        return out
+    }
+
+    /** Ein zusammenhaengender, nicht ueberlappender Abschnitt der resultierenden Dimm-Vorschau. */
+    data class ResolvedInterval(val range: LongRange, val strength: Int, val warmth: Int)
+
+    /**
+     * Fasst (moeglicherweise ueberlappende) Spannen aus allen Quellen (Wellness/Regeln/Nacht-
+     * Standard) zu einer chronologischen, nicht ueberlappenden Zeitleiste zusammen - bei
+     * Ueberlappung gewinnt an jeder Stelle dieselbe "dunkelste zuerst"-Regel wie [activeSpan], nur
+     * ueber die Zeit hinweg statt fuer einen einzelnen Zeitpunkt. Reine Vorschau-Funktion, ohne
+     * Seiteneffekt auf den echten Scheduler.
+     */
+    fun mergeToTimeline(spans: List<DimSpan>): List<ResolvedInterval> {
+        if (spans.isEmpty()) return emptyList()
+        val boundaries = spans.flatMap { listOf(it.range.first, it.range.last) }.distinct().sorted()
+        val out = mutableListOf<ResolvedInterval>()
+        for (i in 0 until boundaries.size - 1) {
+            val segStart = boundaries[i]
+            val segEnd = boundaries[i + 1]
+            if (segStart >= segEnd) continue
+            val active = activeSpan(spans, segStart + (segEnd - segStart) / 2) ?: continue
+            val last = out.lastOrNull()
+            if (last != null && last.strength == active.strength && last.warmth == active.warmth && last.range.last == segStart) {
+                out[out.lastIndex] = ResolvedInterval(last.range.first..segEnd, active.strength, active.warmth)
+            } else {
+                out += ResolvedInterval(segStart..segEnd, active.strength, active.warmth)
+            }
+        }
+        return out
+    }
+
     /** CLOCK↔CLOCK = jede Nacht des Datums; sonst schicht-relativ (nur mit Alarm auflösbar). */
     private fun resolveWindowForDate(w: DimWindow, date: LocalDate, alarm: AlarmSlot?, zone: ZoneId): LongRange? =
         if (w.startAnchor == DimAnchor.CLOCK && w.endAnchor == DimAnchor.CLOCK) {

@@ -15,7 +15,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Berechnet die Dimm-Zeitfenster aus ZWEI unabhängigen Quellen und steuert EINEN rollenden,
+ * Berechnet die Dimm-Zeitfenster aus DREI unabhängigen Quellen und steuert EINEN rollenden,
  * exakten Alarm auf den nächsten Fenster-Rand (Muster wie NachtDimmer-ScheduleManager /
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService]):
  *
@@ -24,6 +24,12 @@ import javax.inject.Singleton
  *     → FREI/UNIVERSAL; siehe [DimRuleUseCase]). CLOCK↔CLOCK-Fenster = lückenlos jede Nacht,
  *     ALARM/SHIFT_END schicht-relativ, leere Fensterliste = Unterdrückung. Details in
  *     [DimWindowResolver.buildRuleSpans].
+ *  3. Nacht-Standard (seit v1.17.0, [DimOverlayPrefs.Toggles.nightDefaultEnabled]): ab einer festen
+ *     Uhrzeit bis zum naechsten Wecker (bzw. bis zu einer zweiten festen Uhrzeit an Tagen ohne
+ *     Alarm) - OHNE dass dafuer eine Regel angelegt werden muss. Ausgeschlossen sind explizit
+ *     markierte Schichten ([DimOverlayPrefs.nightDefaultExcludedShifts]) UND jeder Tag, den eine
+ *     vorhandene Regel (Punkt 2) ohnehin schon abdeckt. Details in
+ *     [DimWindowResolver.buildDefaultNightSpans].
  *
  * Overlay ist an, wenn `now` in irgendeinem Fenster liegt (Vereinigung). Fail-open: lässt sich
  * der Alarm-Bestand nicht lesen, wird NICHT gedimmt.
@@ -84,9 +90,14 @@ class DimScheduleUseCase @Inject constructor(
 
     // --- Fenster-Berechnung (reine Zeitmathematik in DimWindowResolver) ---
 
+    /** Vorschau fuer die UI (siehe [DimWindowResolver.mergeToTimeline]) - identische Berechnung wie
+     * der echte Scheduler, aber ohne jeden Seiteneffekt. */
+    suspend fun previewTimeline(): List<DimWindowResolver.ResolvedInterval> =
+        DimWindowResolver.mergeToTimeline(windows())
+
     private suspend fun windows(): List<DimWindowResolver.DimSpan> {
         val toggles = prefs.togglesNow()
-        if (!toggles.wellnessEnabled && !toggles.rulesEnabled) return emptyList()
+        if (!toggles.wellnessEnabled && !toggles.rulesEnabled && !toggles.nightDefaultEnabled) return emptyList()
 
         val alarms = alarmUseCase.getAllAlarms().getOrElse {
             Logger.w(LogTags.DIMMER, "Alarm-Bestand nicht lesbar - kein Dimming (fail-open)")
@@ -94,12 +105,12 @@ class DimScheduleUseCase @Inject constructor(
         }.filter { it.isActive }
 
         val out = mutableListOf<DimWindowResolver.DimSpan>()
+        val gStrength = prefs.strengthNow()
+        val gWarmth = prefs.warmthNow()
 
         // 1. Wellness (global): Wind-down vor jeder Weckzeit – mit der globalen Intensität.
         if (toggles.wellnessEnabled) {
             val windDownMs = prefs.windDownMinutesNow() * MIN_MS
-            val gStrength = prefs.strengthNow()
-            val gWarmth = prefs.warmthNow()
             alarms.forEach {
                 out += DimWindowResolver.DimSpan((it.triggerTime - windDownMs)..it.triggerTime, gStrength, gWarmth)
             }
@@ -108,21 +119,43 @@ class DimScheduleUseCase @Inject constructor(
         // 2. Regeln: pro Kalendertag die passende Regel (Anker-Semantik in
         //    DimWindowResolver.buildRuleSpans). CLOCK↔CLOCK = jede Nacht (lückenlos, ermöglicht
         //    „immer 22–7 außer ND"), ALARM/SHIFT_END = schicht-relativ, leere Fensterliste = ND-Ausnahme.
-        if (toggles.rulesEnabled) {
-            val rules = dimRuleUseCase.getAllRules()
-            if (rules.any { it.enabled }) {
-                val slots = alarms.map {
-                    DimWindowResolver.AlarmSlot(it.triggerTime, it.shiftName, it.shiftEndTime)
-                }
-                out += DimWindowResolver.buildRuleSpans(
-                    alarms = slots,
-                    horizonDays = HORIZON_DAYS,
-                    today = LocalDate.now(zone),
-                    zone = zone,
-                    ruleForShift = { name -> dimRuleUseCase.findRuleForShift(name, rules) },
-                    ruleForFreeDay = { dimRuleUseCase.findRuleForFreeDay(rules) },
-                )
-            }
+        val rules = if (toggles.rulesEnabled) dimRuleUseCase.getAllRules() else emptyList()
+        val rulesActive = toggles.rulesEnabled && rules.any { it.enabled }
+        val slots = alarms.map { DimWindowResolver.AlarmSlot(it.triggerTime, it.shiftName, it.shiftEndTime) }
+        if (rulesActive) {
+            out += DimWindowResolver.buildRuleSpans(
+                alarms = slots,
+                horizonDays = HORIZON_DAYS,
+                today = LocalDate.now(zone),
+                zone = zone,
+                ruleForShift = { name -> dimRuleUseCase.findRuleForShift(name, rules) },
+                ruleForFreeDay = { dimRuleUseCase.findRuleForFreeDay(rules) },
+            )
+        }
+
+        // 3. Nacht-Standard: ab fester Uhrzeit bis zum naechsten Wecker, ohne dass dafuer eine
+        //    Regel angelegt werden muss. Ausgeschlossen sind: explizit vom Nutzer markierte
+        //    Schichten (Toggle an der Karte) UND - falls "Regeln" aktiv ist - jeder Tag, den Punkt 2
+        //    ohnehin schon abdeckt (rulesActive steuert dieselbe Ausschliesslichkeit wie dort).
+        if (toggles.nightDefaultEnabled) {
+            val excludedShifts = prefs.nightDefaultExcludedShiftsNow()
+            out += DimWindowResolver.buildDefaultNightSpans(
+                alarms = slots,
+                horizonDays = HORIZON_DAYS,
+                today = LocalDate.now(zone),
+                zone = zone,
+                startClockMinutes = prefs.nightDefaultStartMinutesNow(),
+                freeDayEndClockMinutes = prefs.nightDefaultFreeEndMinutesNow(),
+                strength = gStrength,
+                warmth = gWarmth,
+                isExcluded = { shiftName ->
+                    if (shiftName != null) {
+                        shiftName in excludedShifts || (rulesActive && dimRuleUseCase.findRuleForShift(shiftName, rules) != null)
+                    } else {
+                        rulesActive && dimRuleUseCase.findRuleForFreeDay(rules) != null
+                    }
+                },
+            )
         }
         return out
     }

@@ -60,7 +60,7 @@
     <string name="dimmer_rule_enabled">Aktiv</string>
     <string name="dimmer_rule_windows">Zeitfenster</string>
     <string name="dimmer_rule_add_window">+ Fenster</string>
-    <string name="dimmer_rule_no_windows_hint">Ohne Fenster wird an passenden Tagen NICHT gedimmt – so nimmst du z. B. Nachtdienst-Nächte von einer Universal-Regel aus.</string>
+    <string name="dimmer_rule_no_windows_hint">Ohne Fenster wird an passenden Tagen NICHT gedimmt – so nimmst du z. B. Nachtdienst-Nächte von einer Universal-Regel aus. Willst du nur den Nacht-Standard für eine Schicht ausschalten, geht das einfacher direkt über die Ausnahme-Chips an dessen Karte, ganz ohne eigene Regel.</string>
     <string name="dimmer_window_start">Start</string>
     <string name="dimmer_window_end">Ende</string>
     <string name="dimmer_clock_time">Uhrzeit</string>

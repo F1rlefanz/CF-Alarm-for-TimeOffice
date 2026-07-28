@@ -154,6 +154,17 @@ fun DimmerRuleConfigScreen(
                         onValueChange = { warmth = it.toInt() },
                         valueRange = 0f..DimOverlayPrefs.WARMTH_MAX.toFloat()
                     )
+                    Text(
+                        text = stringResource(R.string.dimmer_preview_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = { viewModel.previewRule(strength, warmth) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.dimmer_preview))
+                    }
                 }
             }
 

@@ -2,11 +2,13 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +26,8 @@ import javax.inject.Inject
 class DimmerRulesViewModel @Inject constructor(
     private val dimRuleUseCase: DimRuleUseCase,
     private val shiftUseCase: IShiftUseCase,
-    private val dimSchedule: DimScheduleUseCase
+    private val dimSchedule: DimScheduleUseCase,
+    private val prefs: DimOverlayPrefs
 ) : ViewModel() {
 
     val rules: StateFlow<List<DimRule>> = dimRuleUseCase.rules
@@ -51,5 +54,16 @@ class DimmerRulesViewModel @Inject constructor(
     fun deleteRule(id: String) = viewModelScope.launch {
         dimRuleUseCase.deleteRule(id)
         dimSchedule.enable()
+    }
+
+    /**
+     * Zeigt das Overlay kurz mit den Werten AUS DEM FORMULAR (auch ungespeichert) – analog zu
+     * [DimmerViewModel.previewDim], aber mit den Regel-eigenen statt den globalen Wellness-Werten.
+     * Der Bedienungshilfen-Dienst muss aktiv sein. Danach den regulären Zustand wiederherstellen.
+     */
+    fun previewRule(strength: Int, warmth: Int, seconds: Int = 5) = viewModelScope.launch {
+        prefs.setActiveOverlay(true, strength, warmth)
+        delay(seconds * 1000L)
+        dimSchedule.applyCurrentState()
     }
 }

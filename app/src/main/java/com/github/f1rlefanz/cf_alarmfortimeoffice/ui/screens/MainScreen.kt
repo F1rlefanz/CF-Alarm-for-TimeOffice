@@ -436,8 +436,8 @@ fun MainScreen(
                 val dimRuleState = navigationState as NavigationState.DimmerRuleConfig
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerRuleConfigScreen(
                     ruleId = dimRuleState.ruleId,
-                    onNavigateBack = { navigationViewModel.navigateBackToMain() },
-                    onSaveComplete = { navigationViewModel.navigateBackToMain() }
+                    onNavigateBack = { navigationViewModel.navigateToDimmerSettings(dimRuleState.returnToTab) },
+                    onSaveComplete = { navigationViewModel.navigateToDimmerSettings(dimRuleState.returnToTab) }
                 )
             }
 

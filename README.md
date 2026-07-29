@@ -40,6 +40,17 @@ CF Alarm liest Schichttermine aus einem Google-Kalender (z. B. dem Dienstplan-Ka
 - **Automatische Bridge-Erkennung** im lokalen Netzwerk
 - Verschiedene Licht-Profile je nach Schichtart
 
+### 🌙 Schicht-Dimmer (optional)
+- Dunkelt den Bildschirm automatisch vor der Schicht bzw. zur Schlafenszeit ab
+- Wellness-Wind-down und schicht-gekoppelte Regeln, unabhängig voneinander zuschaltbar
+- Eingebauter Nacht-Standard ganz ohne eigenen Regel-Editor
+
+### 🔕 Nicht stören automatisch (optional, ab Android 11)
+- Schaltet Android's "Nicht stören" automatisch nach Schicht – zwei Auslöser: folgt dem
+  Schicht-Dimmer oder läuft während der Dienstzeit
+- Frei einstellbar, was genau stummgeschaltet wird (Anrufe, Nachrichten, Medien, Wecker anderer
+  Apps, …) – der eigene Wecker klingelt dabei immer
+
 ### 🔒 Sicherheit & Datenhaltung
 - Tokens werden lokal mit **AES-256-GCM** (Google Tink) verschlüsselt gespeichert
 - Keine eigene Cloud-Anbindung – Daten bleiben auf dem Gerät bzw. bei Google/Hue direkt

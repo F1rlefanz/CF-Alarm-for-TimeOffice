@@ -357,10 +357,16 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   Anrufe/Klingelton hörbar (der andere Modus erlaubte sie, das gewann), aber Medien wurden stumm
   (nur unsere Regel hatte dazu überhaupt eine Meinung). Nicht durch eigenen Code behebbar — unsere
   Regel kann eine Kategorie nicht zuverlässiger blockieren, als es die am wenigsten strenge
-  gleichzeitig aktive fremde Regel erlaubt. Wer eine "Koppeln mit Schlafenszeit"-Option baut: Apps
-  können laut Android-API nur EIGENE `AutomaticZenRule`s lesen/steuern (`getAutomaticZenRules()`
-  ist auf das aufrufende Package beschränkt) — ein fremder/System-Modus kann weder ausgelesen noch
-  direkt geschaltet werden, nur bestenfalls per Deep-Link zu dessen Einstellungsseite verweisen.
+  gleichzeitig aktive fremde Regel erlaubt. **"Koppeln mit Schlafenszeit" bewusst NICHT gebaut
+  (29.07.2026, AOSP-Quellcode-verifiziert, geräteunabhängig):** Apps können laut Android-API nur
+  EIGENE `AutomaticZenRule`s lesen/steuern (`getAutomaticZenRules()` ist auf das aufrufende Package
+  beschränkt) — ein fremder/System-Modus kann weder ausgelesen noch direkt geschaltet werden. Auch
+  ein systemweiter Theme-Wechsel (das eigentlich interessante an Schlafenszeit, da Dimmen bereits
+  über den Schicht-Dimmer gelöst ist) ist unerreichbar: `UiModeManager.setNightMode()` verlangt
+  `android.permission.MODIFY_DAY_NIGHT_MODE` (`protectionLevel="signature|privileged|role"`, dazu
+  `@hide` — nicht mal Teil des öffentlichen SDK, siehe `core/res/AndroidManifest.xml` im
+  AOSP-Quellcode). `setApplicationNightMode()` (die einzige App-erreichbare Variante) wirkt
+  nachweislich nur auf die eigene App. Nicht erneut aufrollen ohne neuen Anlass.
 - **Eigener Request-Code `REQ_DND_TICK = 7712`**, eigene rollierende Exact-Alarm-Kette
   (`DndScheduleReceiver`) — bewusst NICHT mit dem Dimmer-Tick (`REQ_TICK = 7710`,
   `DimScheduleUseCase`) oder der 6h-Wartung (Code 0) zusammengelegt. Zwei fachlich unabhängige
@@ -371,10 +377,14 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Am Fairphone 6 (Android 16) verifiziert (28.07.2026):** Die Zen-Regel registriert sich echt,
   erscheint unter Einstellungen → Ton → Nicht stören → Zeitpläne mit funktionierendem
   `configurationActivity`-Link, `setAutomaticZenRuleState()` wird korrekt aufgerufen und der
-  Zustand korrekt berechnet (`ZEN_MODE change value` je nach aktivem Fenster). **Noch offen:** ein
-  echter wiederholter Testanruf, der die Anrufer-Ausnahme (`allowRepeatCallers`) tatsächlich prüft,
-  und der Modus „Während der Dienstzeit" mit real synchronisierten Alarmen (bestehende Alarme vor
-  diesem Feature haben `shiftStartTime = 0`, siehe unten).
+  Zustand korrekt berechnet (`ZEN_MODE change value` je nach aktivem Fenster). **Zweiter Lauf
+  (29.07.2026) nach dem Policy-Fix:** `adb shell dumpsys notification --noredact` zeigt die
+  tatsächlich registrierte Regel mit `alarms=allow, media=allow, calls=disallow, messages=disallow,
+  repeatCallers=allow` — exakt die neuen Defaults, `updateAutomaticZenRule()` nachweislich beim
+  Tick aufgerufen. **Noch offen:** ein echter wiederholter Testanruf, der die Anrufer-Ausnahme
+  (`allowRepeatCallers`) tatsächlich prüft, und der Modus „Während der Dienstzeit" mit real
+  synchronisierten Alarmen (bestehende Alarme vor diesem Feature haben `shiftStartTime = 0`, siehe
+  unten).
 - **Logcat-Fallstrick beim Debuggen, kein Bug:** `W/System.err` mit `java.lang.Exception: Stack
   trace` + `Thread.dumpStack()` rund um `setAutomaticZenRuleState()` ist Androids eigenes internes
   Aufruf-Tracing für Zen-Änderungen — sieht wie ein Crash aus, ist keiner. Der direkt folgende

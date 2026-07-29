@@ -100,4 +100,21 @@
     <string name="dnd_status_title">Nicht-stören-Steuerung</string>
     <string name="dnd_status_ok">Freigabe erteilt – die App kann Nicht-stören steuern</string>
     <string name="dnd_status_missing">Keine Freigabe – Nicht-stören-Regeln bleiben wirkungslos</string>
+
+    <!-- DND: konfigurierbare Policy (was genau stummgeschaltet wird) -->
+    <string name="dnd_policy_title">Was wird stummgeschaltet?</string>
+    <string name="dnd_policy_hint">Gilt für beide Auslöser oben. Dein eigener Wecker klingelt immer, unabhängig von diesen Einstellungen.</string>
+    <string name="dnd_policy_calls">Anrufe</string>
+    <string name="dnd_policy_repeat_callers">Wiederholte Anrufer durchlassen</string>
+    <string name="dnd_policy_repeat_callers_hint">Ein zweiter Anruf derselben Person kurz nacheinander gilt als dringend und klingelt trotzdem – für Erreichbarkeit im Notfall.</string>
+    <string name="dnd_policy_messages">Nachrichten</string>
+    <string name="dnd_policy_conversations">Gespräche</string>
+    <string name="dnd_policy_conversations_hint">Priorisierte Chat-Unterhaltungen, z. B. hervorgehobene Kontakte in Messenger-Apps.</string>
+    <string name="dnd_policy_reminders">Erinnerungen</string>
+    <string name="dnd_policy_events">Termine</string>
+    <string name="dnd_policy_system">System-Töne</string>
+    <string name="dnd_policy_media">Medien (Musik, Podcasts, Videos)</string>
+    <string name="dnd_policy_media_hint">Aus lässt laufende Wiedergabe unangetastet.</string>
+    <string name="dnd_policy_alarms">Wecker anderer Apps</string>
+    <string name="dnd_policy_alarms_hint">Betrifft nur fremde Wecker-/Alarm-Apps – der Wecker dieser App klingelt immer, unabhängig davon.</string>
 </resources>

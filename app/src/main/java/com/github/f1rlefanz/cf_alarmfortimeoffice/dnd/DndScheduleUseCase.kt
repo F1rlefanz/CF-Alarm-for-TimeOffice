@@ -42,6 +42,15 @@ import javax.inject.Singleton
  * manuell gesetzten Policy zu ueberschreiben - koexistiert so mit dem manuellen DND des Nutzers und
  * fremden Automatisierungen (Bixby/Tasker), statt sie zu ueberschreiben. Nur ab API 30 verfuegbar
  * (configurationActivity-Ownership ohne ConditionProviderService), siehe [isSupported].
+ *
+ * Was konkret stummgeschaltet wird, ist NICHT hart codiert, sondern kommt aus [DndPrefs.Policy] -
+ * siehe deren Klassenkommentar fuer den Vorfall (Medien/Wecker per Default blockiert), der zu
+ * dieser Entscheidung fuehrte. Beobachtung vom 28.07.2026: ist gleichzeitig ein ANDERER,
+ * permissiverer Systemmodus aktiv (z. B. Android/Herstellers eigene "Schlafenszeit"), gewinnt fuer
+ * eine Kategorie offenbar die freizuegigere Einstellung ueber alle aktiven Regeln hinweg - unsere
+ * Regel kann eine Kategorie also nicht zuverlaessig strenger machen, als es die am wenigsten
+ * strenge gleichzeitig aktive Regel erlaubt. Kein Bug in diesem Code, sondern wie Android mehrere
+ * gleichzeitig aktive Zen-Regeln konsolidiert - nicht durch eigenen Code umgehbar.
  */
 @Singleton
 class DndScheduleUseCase @Inject constructor(
@@ -150,43 +159,52 @@ class DndScheduleUseCase @Inject constructor(
      * Liefert die registrierte Regel-ID; registriert bei Bedarf neu (Erstregistrierung ODER falls
      * der Nutzer die Regel extern - z. B. in den System-Einstellungen - geloescht hat:
      * [NotificationManager.getAutomaticZenRule] liefert dann null fuer eine gespeicherte, aber nicht
-     * mehr existierende ID).
+     * mehr existierende ID) und aktualisiert eine bereits bestehende Regel IMMER mit der aktuellen
+     * [DndPrefs.Policy] - sonst wirkt eine Options-Aenderung des Nutzers erst nach einer
+     * Neuinstallation, weil die einmal registrierte Regel ihre alte Policy sonst dauerhaft behaelt.
      */
     private suspend fun ensureZenRule(nm: NotificationManager): String? {
         // Direkter SDK_INT-Check (nicht nur ueber isSupported()) noetig, damit Lint den Aufruf
         // von buildAutomaticZenRule() (@RequiresApi R) hier als abgesichert erkennt.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         val storedId = prefs.zenRuleIdNow()
-        if (storedId.isNotBlank() && nm.getAutomaticZenRule(storedId) != null) {
-            return storedId
-        }
+        val rule = buildAutomaticZenRule()
         return try {
-            val newId = nm.addAutomaticZenRule(buildAutomaticZenRule())
-            prefs.setZenRuleId(newId)
-            newId
+            if (storedId.isNotBlank() && nm.getAutomaticZenRule(storedId) != null) {
+                nm.updateAutomaticZenRule(storedId, rule)
+                storedId
+            } else {
+                val newId = nm.addAutomaticZenRule(rule)
+                prefs.setZenRuleId(newId)
+                newId
+            }
         } catch (e: SecurityException) {
-            Logger.e(LogTags.DND, "addAutomaticZenRule ohne Freigabe aufgerufen", e)
+            Logger.e(LogTags.DND, "Zen-Regel-Verwaltung ohne Freigabe aufgerufen", e)
             null
         }
     }
 
+    /**
+     * Baut die Zen-Regel aus der Nutzer-Policy ([DndPrefs.Policy]) - bewusst NICHTS hart codiert,
+     * siehe Klassenkommentar von [DndPrefs.Policy]. Der Wecker selbst ist von `blockAlarms`
+     * unabhaengig: `AlarmSoundService.setBypassDnd(true)` umgeht JEDE DND-Konfiguration, auch diese
+     * hier - `blockAlarms` betrifft nur FREMDE Wecker/Alarm-Apps, die der Nutzer bewusst zulassen
+     * oder stummschalten kann.
+     */
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun buildAutomaticZenRule(): AutomaticZenRule {
+    private suspend fun buildAutomaticZenRule(): AutomaticZenRule {
         val component = ComponentName(context, MainActivity::class.java)
-        // Prioritaet + Anrufer-Ausnahme: wiederholte Anrufer (zweiter Anruf kurz nacheinander)
-        // duerfen durch, alles andere ist stumm - Erreichbarkeit im Notfall bleibt gewahrt. Der
-        // Wecker selbst ist davon unabhaengig (AlarmSoundService.setBypassDnd(true) umgeht JEDE
-        // DND-Konfiguration, auch diese hier).
+        val p = prefs.policyNow()
         val policy = ZenPolicy.Builder()
-            .allowRepeatCallers(true)
-            .allowCalls(ZenPolicy.PEOPLE_TYPE_NONE)
-            .allowMessages(ZenPolicy.PEOPLE_TYPE_NONE)
-            .allowConversations(ZenPolicy.CONVERSATION_SENDERS_NONE)
-            .allowReminders(false)
-            .allowEvents(false)
-            .allowAlarms(false)
-            .allowMedia(false)
-            .allowSystem(false)
+            .allowRepeatCallers(p.allowRepeatCallers)
+            .allowCalls(if (p.blockCalls) ZenPolicy.PEOPLE_TYPE_NONE else ZenPolicy.PEOPLE_TYPE_ANYONE)
+            .allowMessages(if (p.blockMessages) ZenPolicy.PEOPLE_TYPE_NONE else ZenPolicy.PEOPLE_TYPE_ANYONE)
+            .allowConversations(if (p.blockConversations) ZenPolicy.CONVERSATION_SENDERS_NONE else ZenPolicy.CONVERSATION_SENDERS_ANYONE)
+            .allowReminders(!p.blockReminders)
+            .allowEvents(!p.blockEvents)
+            .allowAlarms(!p.blockAlarms)
+            .allowMedia(!p.blockMedia)
+            .allowSystem(!p.blockSystem)
             .build()
         return AutomaticZenRule(
             RULE_NAME,

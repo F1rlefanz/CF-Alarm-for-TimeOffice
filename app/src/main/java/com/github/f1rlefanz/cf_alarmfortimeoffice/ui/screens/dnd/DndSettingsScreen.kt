@@ -218,7 +218,117 @@ fun DndSettingsScreen(
                 }
             }
 
+            item {
+                val policy = state.policy
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.dnd_policy_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.dnd_policy_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_calls),
+                            checked = policy.blockCalls,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockCalls(it) }
+                        )
+                        if (policy.blockCalls) {
+                            PolicyRow(
+                                label = stringResource(R.string.dnd_policy_repeat_callers),
+                                hint = stringResource(R.string.dnd_policy_repeat_callers_hint),
+                                checked = policy.allowRepeatCallers,
+                                enabled = isSupported && isGranted,
+                                onCheckedChange = { viewModel.setAllowRepeatCallers(it) }
+                            )
+                        }
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_messages),
+                            checked = policy.blockMessages,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockMessages(it) }
+                        )
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_conversations),
+                            hint = stringResource(R.string.dnd_policy_conversations_hint),
+                            checked = policy.blockConversations,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockConversations(it) }
+                        )
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_reminders),
+                            checked = policy.blockReminders,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockReminders(it) }
+                        )
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_events),
+                            checked = policy.blockEvents,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockEvents(it) }
+                        )
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_system),
+                            checked = policy.blockSystem,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockSystem(it) }
+                        )
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_media),
+                            hint = stringResource(R.string.dnd_policy_media_hint),
+                            checked = policy.blockMedia,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockMedia(it) }
+                        )
+                        PolicyRow(
+                            label = stringResource(R.string.dnd_policy_alarms),
+                            hint = stringResource(R.string.dnd_policy_alarms_hint),
+                            checked = policy.blockAlarms,
+                            enabled = isSupported && isGranted,
+                            onCheckedChange = { viewModel.setBlockAlarms(it) }
+                        )
+                    }
+                }
+            }
+
             item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+}
+
+/** Eine stummschaltbare Kategorie: Label + optionaler Hinweistext + Schalter. */
+@Composable
+private fun PolicyRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    hint: String? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyMedium)
+            if (hint != null) {
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
     }
 }

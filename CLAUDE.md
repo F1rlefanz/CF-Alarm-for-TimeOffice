@@ -334,11 +334,33 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `configurationActivity`-Ownership (kein `ConditionProviderService` nötig) existiert erst ab
   API 30; darunter bietet `DndPermissionHelper.isFeatureSupported()`/`DndScheduleUseCase.isSupported()`
   das Feature bewusst gar nicht an, statt einen zweiten Ownership-Pfad zu pflegen.
-- **Policy: Priorität + Anrufer-Ausnahme, nicht totale Stummschaltung.** `buildAutomaticZenRule()`
-  setzt `allowRepeatCallers(true)` bei sonst überall `false`/`NONE` — wiederholte Anrufer (Notfall)
-  kommen durch. Bewusste Nutzer-Entscheidung, keine Vereinfachung leichtfertig rückgängig machen.
-  Der Wecker selbst ist davon unabhängig: `AlarmSoundService.setBypassDnd(true)` umgeht JEDE
-  DND-Konfiguration, auch die eigene.
+- **Policy ist vollständig Nutzer-konfigurierbar (`DndPrefs.Policy`), NICHTS hart codiert.**
+  `buildAutomaticZenRule()` liest `prefs.policyNow()` und baut die `ZenPolicy` daraus — keine
+  Kategorie ist im Code fest verdrahtet. **Vorfall, der zu dieser Entscheidung führte (28.07.2026):**
+  ein erster Entwurf setzte `allowMedia(false)` und `allowAlarms(false)` hart, "um konsequent zu
+  sein" — das schaltete live einen laufenden Podcast stumm und ließ sich vom Nutzer nicht mal mehr
+  manuell zurückregeln (`allowMedia` wirkt auf die Medien-Audiospur, nicht nur auf Töne). Seither:
+  Defaults `blockCalls`/`blockMessages`/`blockConversations`/`blockReminders`/`blockEvents` = `true`
+  (das ist der eigentliche Zweck von „Nicht stören"), `blockSystem`/`blockMedia`/`blockAlarms` =
+  `false` (unberührt, bis der Nutzer es explizit anschaltet). `allowRepeatCallers` bleibt eigene
+  Nutzer-Option (Default an) — wiederholte Anrufer (Notfall) kommen durch, wenn `blockCalls` aktiv
+  ist. Der Wecker selbst ist von `blockAlarms` unabhängig: `AlarmSoundService.setBypassDnd(true)`
+  umgeht JEDE DND-Konfiguration, auch die eigene — `blockAlarms` betrifft nur FREMDE Wecker-Apps.
+- **`ensureZenRule()` aktualisiert eine bereits registrierte Regel bei JEDEM Tick mit
+  `updateAutomaticZenRule()`**, nicht nur bei der Erstregistrierung. Sonst wirkt eine
+  Policy-Änderung des Nutzers erst nach einer Neuinstallation, weil die einmal registrierte Regel
+  ihre alte `ZenPolicy` sonst dauerhaft behält — exakt der Fehler, der beim ersten Bau übersehen
+  wurde (siehe Vorfall oben: die Regel hätte den Fix sonst erst nach Deinstallation bekommen).
+- **Mehrere gleichzeitig aktive Zen-Regeln kombinieren sich vermutlich „freizügigste gewinnt" pro
+  Kategorie** — beobachtet am 28.07.2026: während unsere Regel UND ein bereits vorhandener,
+  fremder System-/Hersteller-Modus ("Schlafenszeit", 22–6 Uhr) gleichzeitig aktiv waren, blieben
+  Anrufe/Klingelton hörbar (der andere Modus erlaubte sie, das gewann), aber Medien wurden stumm
+  (nur unsere Regel hatte dazu überhaupt eine Meinung). Nicht durch eigenen Code behebbar — unsere
+  Regel kann eine Kategorie nicht zuverlässiger blockieren, als es die am wenigsten strenge
+  gleichzeitig aktive fremde Regel erlaubt. Wer eine "Koppeln mit Schlafenszeit"-Option baut: Apps
+  können laut Android-API nur EIGENE `AutomaticZenRule`s lesen/steuern (`getAutomaticZenRules()`
+  ist auf das aufrufende Package beschränkt) — ein fremder/System-Modus kann weder ausgelesen noch
+  direkt geschaltet werden, nur bestenfalls per Deep-Link zu dessen Einstellungsseite verweisen.
 - **Eigener Request-Code `REQ_DND_TICK = 7712`**, eigene rollierende Exact-Alarm-Kette
   (`DndScheduleReceiver`) — bewusst NICHT mit dem Dimmer-Tick (`REQ_TICK = 7710`,
   `DimScheduleUseCase`) oder der 6h-Wartung (Code 0) zusammengelegt. Zwei fachlich unabhängige

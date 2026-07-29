@@ -16,10 +16,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel der DND-Einstellungen. Zwei unabhaengige Schalter (siehe [DndScheduleUseCase]), keine
- * Intensitaet (DND ist binaer). Die Freigabe-Pruefung (ACCESS_NOTIFICATION_POLICY) braucht Context
- * und lebt bewusst in der UI-Schicht ([com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper]),
- * nicht hier (Projekt-Konvention: ViewModels injizieren keinen Context).
+ * ViewModel der DND-Einstellungen. Zwei unabhaengige Fenster-Schalter (siehe [DndScheduleUseCase])
+ * plus [DndPrefs.Policy] - was genau stummgeschaltet wird, ist Nutzer-Entscheidung, nicht hart
+ * codiert (siehe [DndPrefs.Policy]-Klassenkommentar). Die Freigabe-Pruefung
+ * (ACCESS_NOTIFICATION_POLICY) braucht Context und lebt bewusst in der UI-Schicht
+ * ([com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper]), nicht hier
+ * (Projekt-Konvention: ViewModels injizieren keinen Context).
  */
 @HiltViewModel
 class DndViewModel @Inject constructor(
@@ -31,15 +33,21 @@ class DndViewModel @Inject constructor(
     data class DndUiState(
         val followDimmerEnabled: Boolean = false,
         val duringShiftEnabled: Boolean = false,
-        val shiftExcludedShifts: Set<String> = emptySet()
+        val shiftExcludedShifts: Set<String> = emptySet(),
+        val policy: DndPrefs.Policy = DndPrefs.Policy()
     )
 
     val uiState: StateFlow<DndUiState> =
-        combine(prefs.toggles, prefs.shiftExcludedShifts) { toggles, excluded ->
+        combine(
+            prefs.toggles,
+            prefs.shiftExcludedShifts,
+            prefs.policy
+        ) { toggles, excluded, policy ->
             DndUiState(
                 followDimmerEnabled = toggles.followDimmerEnabled,
                 duringShiftEnabled = toggles.duringShiftEnabled,
-                shiftExcludedShifts = excluded
+                shiftExcludedShifts = excluded,
+                policy = policy
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DndUiState())
 
@@ -71,5 +79,36 @@ class DndViewModel @Inject constructor(
             if (shiftName in current) current - shiftName else current + shiftName
         )
         dndSchedule.enable()
+    }
+
+    // Policy-Aenderungen wirken auf die registrierte Zen-Regel, nicht auf die Fenster-Berechnung -
+    // applyCurrentState() reicht (aktualisiert die Regel sofort), kein Reschedule noetig. Analog zu
+    // DimmerViewModel.setStrength/setWarmth (Darstellung aendert keine Fenster).
+    fun setBlockCalls(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockCalls(v); dndSchedule.applyCurrentState()
+    }
+    fun setAllowRepeatCallers(v: Boolean) = viewModelScope.launch {
+        prefs.setAllowRepeatCallers(v); dndSchedule.applyCurrentState()
+    }
+    fun setBlockMessages(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockMessages(v); dndSchedule.applyCurrentState()
+    }
+    fun setBlockConversations(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockConversations(v); dndSchedule.applyCurrentState()
+    }
+    fun setBlockReminders(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockReminders(v); dndSchedule.applyCurrentState()
+    }
+    fun setBlockEvents(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockEvents(v); dndSchedule.applyCurrentState()
+    }
+    fun setBlockSystem(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockSystem(v); dndSchedule.applyCurrentState()
+    }
+    fun setBlockMedia(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockMedia(v); dndSchedule.applyCurrentState()
+    }
+    fun setBlockAlarms(v: Boolean) = viewModelScope.launch {
+        prefs.setBlockAlarms(v); dndSchedule.applyCurrentState()
     }
 }

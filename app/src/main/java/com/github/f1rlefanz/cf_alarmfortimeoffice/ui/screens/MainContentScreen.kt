@@ -217,7 +217,10 @@ fun MainContentScreen(
                         calendarState = calendarState,
                         shiftState = shiftState,
                         alarmState = alarmState,
-                        calendarViewModel = calendarViewModel
+                        calendarViewModel = calendarViewModel,
+                        authViewModel = authViewModel,
+                        onShowCalendarSelection = onShowCalendarSelection,
+                        onShowShiftConfig = onShowShiftConfig
                     )
                 }
                 MainTab.SETTINGS -> {

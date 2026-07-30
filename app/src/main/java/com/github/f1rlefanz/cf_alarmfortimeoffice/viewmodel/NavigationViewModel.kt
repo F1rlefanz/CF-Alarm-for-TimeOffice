@@ -63,6 +63,11 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.UnusedAppRestrictions(action.fromTab)
             }
 
+            is NavigationAction.NavigateToTimeOfficeHealthCheck -> {
+                Logger.d(LogTags.NAVIGATION, "Main -> TimeOffice Health Check (from ${action.fromTab})")
+                NavigationState.TimeOfficeHealthCheck(action.fromTab)
+            }
+
             is NavigationAction.NavigateToOEMWarning -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> OEM Warning (${action.oemType}, from ${action.fromTab})")
                 NavigationState.OEMWarning(action.oemType, action.fromTab)
@@ -105,6 +110,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                     is NavigationState.EventList -> currentState.returnToTab
                     is NavigationState.BatteryExemption -> currentState.returnToTab
                     is NavigationState.UnusedAppRestrictions -> currentState.returnToTab
+                    is NavigationState.TimeOfficeHealthCheck -> currentState.returnToTab
                     is NavigationState.OEMWarning -> currentState.returnToTab
                     is NavigationState.HueRuleConfig -> currentState.returnToTab
                     is NavigationState.HueSettings -> currentState.returnToTab
@@ -157,7 +163,10 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
 
     fun navigateToUnusedAppRestrictions(fromTab: MainTab = MainTab.HOME) =
         handleNavigationAction(NavigationAction.NavigateToUnusedAppRestrictions(fromTab))
-    
+
+    fun navigateToTimeOfficeHealthCheck(fromTab: MainTab = MainTab.HOME) =
+        handleNavigationAction(NavigationAction.NavigateToTimeOfficeHealthCheck(fromTab))
+
     fun navigateToHueRuleConfig(ruleId: String? = null, fromTab: MainTab = MainTab.HUE) = 
         handleNavigationAction(NavigationAction.NavigateToHueRuleConfig(ruleId, fromTab))
     

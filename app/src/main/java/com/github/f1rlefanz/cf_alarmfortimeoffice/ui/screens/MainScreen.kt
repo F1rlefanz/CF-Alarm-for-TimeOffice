@@ -25,6 +25,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceServic
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.TimeOfficeHealthHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.timing.UIConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
@@ -52,6 +53,18 @@ private suspend fun proceedPastGates(
     context: Context,
     navigationViewModel: NavigationViewModel
 ) {
+    // TimeOffice-Gate: CFAlarms Alarme haengen an einem Kalender, den TimeOffice lokal befuellt
+    // (siehe TimeOfficeHealthHelper). Nur pruefbar (Akku-Ausnahme fuer ein fremdes Package), wenn
+    // TimeOffice ueberhaupt installiert ist - sonst irrelevant fuer diesen Nutzer.
+    if (TimeOfficeHealthHelper.isInstalled(context) &&
+        !TimeOfficeHealthHelper.isBatteryExempted(context) &&
+        !TimeOfficeHealthHelper.isPromptDismissed(context)
+    ) {
+        Logger.business(LogTags.NAVIGATION, "Gates resolved -> TimeOffice Health Check")
+        navigationViewModel.navigateToTimeOfficeHealthCheck()
+        return
+    }
+
     val oemType = BatteryOptimizationHelper.getOEMType()
     if (BatteryOptimizationHelper.shouldNavigateToOemWarningScreen(context, oemType)) {
         Logger.business(LogTags.NAVIGATION, "Gates resolved -> OEM Warning screen for $oemType")
@@ -207,6 +220,12 @@ fun MainScreen(
             // wie "Spaeter" wirken, nicht wie "Verstanden".
             is NavigationState.UnusedAppRestrictions -> {
                 coroutineScope.launch { UnusedAppRestrictionsHelper.setDismissed(context) }
+                navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+            }
+
+            // Gleiche Semantik wie die beiden Gates oben.
+            is NavigationState.TimeOfficeHealthCheck -> {
+                coroutineScope.launch { TimeOfficeHealthHelper.setPromptDismissed(context) }
                 navigationViewModel.navigateToMainWithTab(MainTab.HOME)
             }
 
@@ -381,6 +400,46 @@ fun MainScreen(
                         Logger.business(
                             LogTags.NAVIGATION,
                             "Unused-App-Restrictions prompt skipped (Spaeter) -> Home"
+                        )
+                        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+                    }
+                )
+            }
+
+            is NavigationState.TimeOfficeHealthCheck -> {
+                val timeOfficeSettingsLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) { _ ->
+                    // Kein strukturiertes Ergebnis (reiner Settings-Screen einer fremden App) -
+                    // immer neu pruefen, was als naechstes kommt (OEM-Screen oder fertig).
+                    coroutineScope.launch { proceedPastGates(context, navigationViewModel) }
+                }
+
+                TimeOfficeHealthOnboardingScreen(
+                    onOpenSettings = {
+                        try {
+                            timeOfficeSettingsLauncher.launch(
+                                TimeOfficeHealthHelper.createAppInfoIntent(context)
+                            )
+                            Logger.d(
+                                LogTags.TIMEOFFICE_HEALTH,
+                                "TimeOffice app-info settings opened"
+                            )
+                        } catch (e: Exception) {
+                            Logger.e(
+                                LogTags.TIMEOFFICE_HEALTH,
+                                "Failed to open TimeOffice app-info settings",
+                                e
+                            )
+                        }
+                    },
+                    onSkip = {
+                        coroutineScope.launch {
+                            TimeOfficeHealthHelper.setPromptDismissed(context)
+                        }
+                        Logger.business(
+                            LogTags.NAVIGATION,
+                            "TimeOffice-Health prompt skipped (Spaeter) -> Home"
                         )
                         navigationViewModel.navigateToMainWithTab(MainTab.HOME)
                     }

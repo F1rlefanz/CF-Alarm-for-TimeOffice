@@ -84,15 +84,18 @@ object BatteryOptimizationHelper {
     }
     
     /**
-     * Checks if app is exempted from battery optimization
+     * Checks if the given package is exempted from battery optimization. Defaults to this app's
+     * own package; [TimeOfficeHealthHelper] reuses this with a foreign package name —
+     * `PowerManager.isIgnoringBatteryOptimizations()` accepts any installed package, not just
+     * the caller's own.
      */
-    fun isExempted(context: Context): Boolean {
+    fun isExempted(context: Context, packageName: String = context.packageName): Boolean {
         // minSdk is 26, no need to check for M (23)
         return try {
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-            powerManager.isIgnoringBatteryOptimizations(context.packageName)
+            powerManager.isIgnoringBatteryOptimizations(packageName)
         } catch (e: Exception) {
-            Logger.e(LogTags.BATTERY, "Failed to check battery exemption", e)
+            Logger.e(LogTags.BATTERY, "Failed to check battery exemption for $packageName", e)
             false
         }
     }

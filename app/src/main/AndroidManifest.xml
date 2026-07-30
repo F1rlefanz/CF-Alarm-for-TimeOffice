@@ -68,6 +68,13 @@
          SYSTEM_ALERT_WINDOW ist zudem Play-Review-sensibel, DISABLE_KEYGUARD seit API 26 wirkungslos.
          NICHT wieder hinzufuegen, ohne echte Code-Nutzung. -->
 
+    <!-- Package-Sichtbarkeit fuer TimeOffice (Android 11+): CFAlarms Alarme haengen an einem
+         Kalender, den die TimeOffice-App lokal befuellt (siehe TimeOfficeHealthHelper) - ohne
+         diese Deklaration liefert getPackageInfo() fuer das fremde Package immer
+         NameNotFoundException, egal ob TimeOffice installiert ist. -->
+    <queries>
+        <package android:name="de.pradtke.timeoffice" />
+    </queries>
 
     <application
         android:name=".CFAlarmApplication"

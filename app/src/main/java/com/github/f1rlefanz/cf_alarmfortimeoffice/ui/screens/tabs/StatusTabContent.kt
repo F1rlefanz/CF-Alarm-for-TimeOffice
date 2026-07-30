@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -65,6 +66,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.TimeOfficeHealthHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
@@ -161,6 +163,12 @@ fun StatusTabContent(
         // Schalter die App per Force-Stop killt und dabei alle gesetzten Wecker-Alarme
         // loescht — unabhaengig von der Akku-Ausnahme oben (separater Mechanismus).
         UnusedAppRestrictionsCard()
+
+        // TimeOffice-Zuverlaessigkeit: CFAlarms Alarme haengen an einem Kalender, den TimeOffice
+        // (de.pradtke.timeoffice) lokal befuellt. Live am 30.07.2026 nachgewiesen: dieselben zwei
+        // OS-Einschraenkungen wie oben, aber auf TimeOffice selbst, legten den Dienstplan-Sync
+        // tagelang lahm. Rendert nichts, wenn TimeOffice nicht installiert ist.
+        TimeOfficeHealthCard()
 
         // Schicht-Dimmer: laeuft der Bedienungshilfen-Dienst? Nur dann kann das Dimm-Overlay
         // ueberhaupt erscheinen. Der Status stand frueher im Dimmer-Tab; hier neben den anderen
@@ -452,6 +460,123 @@ private fun UnusedAppRestrictionsCard() {
                         Text("Einstellung öffnen")
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * TimeOffice ist keine eigene CFAlarm-Funktion, sondern die vorgelagerte Datenquelle: TimeOffice
+ * (de.pradtke.timeoffice) schreibt den Dienstplan lokal in einen Google-Kalender, aus dem CFAlarm
+ * seine Alarme baut. Live am 30.07.2026 nachgewiesen: TimeOffice selbst war von "App bei
+ * Nichtnutzung pausieren" (aktiv) UND Akku-Optimierung "Optimiert" betroffen — der Sync blieb
+ * tagelang stehen, ohne dass CFAlarm selbst etwas davon gemerkt haette (die eigenen Alarme
+ * funktionierten ja weiter, nur die Datenquelle war veraltet).
+ *
+ * ANDERS ALS [BatteryOptimizationCard]/[UnusedAppRestrictionsCard]: nur die Akku-Ausnahme ist fuer
+ * ein fremdes Package pruefbar (siehe [TimeOfficeHealthHelper]) — fuer "Nicht verwendete Apps"
+ * gibt es keine oeffentliche API, um den Status einer anderen App abzufragen. Diese Zeile zeigt
+ * deshalb bewusst KEIN Gruen/Rot, nur einen Hinweis + denselben Aktions-Button.
+ *
+ * Rendert nichts, wenn TimeOffice nicht installiert ist (einmaliger Check per `remember` — der
+ * Installationsstatus aendert sich nicht waehrend die App laeuft).
+ */
+@Composable
+private fun TimeOfficeHealthCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val isInstalled = remember { TimeOfficeHealthHelper.isInstalled(context) }
+    if (!isInstalled) return
+
+    var isBatteryExempt by remember { mutableStateOf(TimeOfficeHealthHelper.isBatteryExempted(context)) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isBatteryExempt = TimeOfficeHealthHelper.isBatteryExempted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(SpacingConstants.PADDING_CARD)) {
+            Text(
+                "TimeOffice-Zuverlässigkeit",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (isBatteryExempt) Icons.Default.CheckCircle else Icons.Default.Error,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                    tint = if (isBatteryExempt)
+                        MaterialTheme.colorScheme.success
+                    else
+                        MaterialTheme.colorScheme.error
+                )
+                Text(
+                    if (isBatteryExempt) {
+                        "Akku-Optimierung: ausgenommen"
+                    } else {
+                        "⚠️ Akku-Optimierung: eingeschränkt — der Dienstplan-Sync kann ausbleiben"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "\"Nicht verwendete Apps\": von hier nicht prüfbar — bleiben Schichten oder " +
+                        "Krankschreibungen mehrere Tage aus, hier nachsehen",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+            TextButton(
+                onClick = {
+                    try {
+                        context.startActivity(TimeOfficeHealthHelper.createAppInfoIntent(context))
+                    } catch (e: Exception) {
+                        Logger.e(
+                            LogTags.TIMEOFFICE_HEALTH,
+                            "Failed to open TimeOffice app-info settings",
+                            e
+                        )
+                    }
+                },
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text("TimeOffice-Einstellungen öffnen")
             }
         }
     }

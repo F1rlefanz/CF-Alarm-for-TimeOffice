@@ -63,6 +63,7 @@ object LogTags {
     const val PERMISSIONS = "CFAlarm.Permissions"
     const val BATTERY = "CFAlarm.Battery" // Phase 1: Battery optimization
     const val UNUSED_APP_RESTRICTIONS = "CFAlarm.UnusedAppRestrictions"
+    const val TIMEOFFICE_HEALTH = "CFAlarm.TimeOfficeHealth"
 
     // === PERFORMANCE & DEBUG ===
     const val PERFORMANCE = "CFAlarm.Performance"

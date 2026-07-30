@@ -19,6 +19,7 @@ sealed class NavigationState {
     // Onboarding-Screens (PHASE 1 MIGRATION)
     data class BatteryExemption(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
     data class UnusedAppRestrictions(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
+    data class TimeOfficeHealthCheck(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
     data class OEMWarning(
         val oemType: BatteryOptimizationHelper.OEMType,
         val returnToTab: MainTab = MainTab.HOME
@@ -57,6 +58,7 @@ sealed class NavigationAction {
     // Onboarding Navigation Actions (PHASE 1 MIGRATION)
     data class NavigateToBatteryExemption(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToUnusedAppRestrictions(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
+    data class NavigateToTimeOfficeHealthCheck(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToOEMWarning(
         val oemType: BatteryOptimizationHelper.OEMType,
         val fromTab: MainTab = MainTab.HOME

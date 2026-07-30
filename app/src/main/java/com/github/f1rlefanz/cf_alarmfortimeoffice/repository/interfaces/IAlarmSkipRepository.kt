@@ -8,7 +8,11 @@ import kotlinx.coroutines.flow.Flow
  * Defines the contract for managing alarm skip state persistence.
  */
 interface IAlarmSkipRepository {
-    suspend fun setNextAlarmSkipped(alarmId: Int, reason: String = "Manuell übersprungen"): Result<Unit>
+    suspend fun setNextAlarmSkipped(
+        alarmId: Int,
+        triggerTime: Long,
+        reason: String = "Manuell übersprungen"
+    ): Result<Unit>
     suspend fun clearSkipStatus(): Result<Unit>
     suspend fun isAlarmSkipped(alarmId: Int): Result<Boolean>
     suspend fun getSkipStatus(): Result<AlarmSkipState>

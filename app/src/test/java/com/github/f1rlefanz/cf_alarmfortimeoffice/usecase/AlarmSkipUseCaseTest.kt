@@ -78,18 +78,28 @@ class AlarmSkipUseCaseTest {
 
     /** Fake-Skip-Repository mit konfigurierbarem "ist uebersprungen"-Zustand und Aufruf-Tracking. */
     private class FakeSkipRepository(
-        private val skippedAlarmId: Int? = null
+        private val skippedAlarmId: Int? = null,
+        private var state: AlarmSkipState = AlarmSkipState()
     ) : IAlarmSkipRepository {
         var setSkippedFor: Int? = null
+        var setSkippedTriggerTime: Long? = null
         var clearCalled = false
 
-        override suspend fun setNextAlarmSkipped(alarmId: Int, reason: String): Result<Unit> {
+        override suspend fun setNextAlarmSkipped(alarmId: Int, triggerTime: Long, reason: String): Result<Unit> {
             setSkippedFor = alarmId
+            setSkippedTriggerTime = triggerTime
+            state = state.copy(
+                isNextAlarmSkipped = true,
+                skippedAlarmId = alarmId,
+                skippedAlarmTriggerTime = triggerTime,
+                skipReason = reason
+            )
             return Result.success(Unit)
         }
 
         override suspend fun clearSkipStatus(): Result<Unit> {
             clearCalled = true
+            state = AlarmSkipState()
             return Result.success(Unit)
         }
 
@@ -97,9 +107,9 @@ class AlarmSkipUseCaseTest {
             Result.success(skippedAlarmId != null && skippedAlarmId == alarmId)
 
         override suspend fun getSkipStatus(): Result<AlarmSkipState> =
-            Result.success(AlarmSkipState())
+            Result.success(state)
 
-        override val skipStatusFlow: Flow<AlarmSkipState> = flowOf(AlarmSkipState())
+        override val skipStatusFlow: Flow<AlarmSkipState> = flowOf(state)
     }
 
     private fun mockManager(): AlarmManagerService {
@@ -177,5 +187,102 @@ class AlarmSkipUseCaseTest {
         verify(manager, never()).cancelSystemAlarm(any())
         assertNotNull("Ein normal laufender Alarm bleibt im Repo", repo.current.find { it.id == 7 })
         assertFalse("Ohne Skip darf der Skip-Status nicht geleert werden", skipRepo.clearCalled)
+    }
+
+    @Test
+    fun `skipNextAlarm - persistiert die triggerTime des uebersprungenen Alarms`() = runTest {
+        val alarm = futureAlarm(id = 3, offsetMs = 60 * 60 * 1000L)
+        val repo = FakeAlarmRepository(listOf(alarm))
+        val skipRepo = FakeSkipRepository()
+        val manager = mockManager()
+
+        AlarmSkipUseCase(skipRepo, repo, manager).skipNextAlarm()
+
+        assertEquals(
+            "Die urspruengliche triggerTime muss fuer clearExpiredSkip gespeichert werden",
+            alarm.triggerTime,
+            skipRepo.setSkippedTriggerTime
+        )
+    }
+
+    @Test
+    fun `clearExpiredSkip - loescht ein Flag dessen Ziel-Alarmzeit laengst verstrichen ist`() = runTest {
+        // Regression: skipNextAlarm() cancelt+loescht den System-Alarm SOFORT (SKIP-IMMEDIATE),
+        // wodurch der einzige urspruenglich vorgesehene Rueckmeldepfad (checkAndProcessSkip via
+        // AlarmReceiver) fuer genau diesen Alarm nie erreicht wird - das Flag blieb dadurch bisher
+        // dauerhaft haengen (real beobachtet: 26.07.-30.07., ~4 Tage). clearExpiredSkip() ist der
+        // Ersatzmechanismus, der ueber syncAlarms() (Vordergrund + 6h-Wartung) periodisch greift.
+        val pastTriggerTime = now - 60_000L
+        val skipRepo = FakeSkipRepository(
+            state = AlarmSkipState(
+                isNextAlarmSkipped = true,
+                skippedAlarmId = 42,
+                skippedAlarmTriggerTime = pastTriggerTime
+            )
+        )
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, manager).clearExpiredSkip()
+
+        assertTrue(result.isSuccess)
+        assertTrue("Ein abgelaufener Skip muss als geloescht gemeldet werden", result.getOrNull() == true)
+        assertTrue("clearSkipStatus muss aufgerufen werden", skipRepo.clearCalled)
+    }
+
+    @Test
+    fun `clearExpiredSkip - laesst ein noch aktuelles Flag unangetastet`() = runTest {
+        val futureTriggerTime = now + 60 * 60 * 1000L
+        val skipRepo = FakeSkipRepository(
+            state = AlarmSkipState(
+                isNextAlarmSkipped = true,
+                skippedAlarmId = 42,
+                skippedAlarmTriggerTime = futureTriggerTime
+            )
+        )
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, manager).clearExpiredSkip()
+
+        assertTrue(result.isSuccess)
+        assertFalse("Ein noch nicht faelliges Flag darf nicht geloescht werden", result.getOrNull() == true)
+        assertFalse("clearSkipStatus darf nicht aufgerufen werden", skipRepo.clearCalled)
+    }
+
+    @Test
+    fun `clearExpiredSkip - kein Flag aktiv, nichts zu tun`() = runTest {
+        val skipRepo = FakeSkipRepository(state = AlarmSkipState())
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, manager).clearExpiredSkip()
+
+        assertTrue(result.isSuccess)
+        assertFalse(result.getOrNull() == true)
+        assertFalse(skipRepo.clearCalled)
+    }
+
+    @Test
+    fun `checkAndProcessSkip - Fehltreffer (andere Alarm-ID) laesst ein bestehendes Flag stehen`() = runTest {
+        // Dokumentiert bewusst die Luecke, die den urspruenglichen Bug ausgemacht hat: feuert ein
+        // ANDERER Alarm als der uebersprungene, raeumt checkAndProcessSkip nichts auf (ALARM_EXECUTED
+        // -> kein clearSkipStatus). Real beobachtet am 30.07. 05:30:01 (Alarm 629498222 "not skipped",
+        // Flag blieb trotzdem auf true). Das ist erwuenscht fuer den ID-Treffer-Fall, macht aber
+        // clearExpiredSkip() in syncAlarms() zum einzig verlaesslichen Rueckfangnetz fuer ein
+        // veraltetes Flag.
+        val alarm = futureAlarm(id = 7, offsetMs = 60 * 60 * 1000L)
+        val repo = FakeAlarmRepository(listOf(alarm))
+        val skipRepo = FakeSkipRepository(
+            skippedAlarmId = 999, // uebersprungener Alarm ist NICHT der hier feuernde (7)
+            state = AlarmSkipState(isNextAlarmSkipped = true, skippedAlarmId = 999)
+        )
+        val manager = mockManager()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, manager).checkAndProcessSkip(7)
+
+        assertTrue(result.isSuccess)
+        assertEquals(SkipProcessResult.ALARM_EXECUTED, result.getOrNull())
+        assertFalse("Bei ID-Mismatch bleibt das Flag stehen - genau die Luecke, die clearExpiredSkip schliesst", skipRepo.clearCalled)
     }
 }

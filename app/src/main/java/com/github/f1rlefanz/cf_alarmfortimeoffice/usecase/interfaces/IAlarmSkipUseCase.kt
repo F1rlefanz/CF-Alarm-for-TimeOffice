@@ -23,5 +23,15 @@ interface IAlarmSkipUseCase {
     suspend fun cancelSkip(): Result<Unit>
     suspend fun checkAndProcessSkip(alarmId: Int): Result<SkipProcessResult>
     suspend fun getSkipStatus(): Result<AlarmSkipState>
+
+    /**
+     * Loescht ein abgelaufenes Skip-Flag: der urspruenglich uebersprungene Alarm-Zeitpunkt liegt
+     * in der Vergangenheit, der Skip hat seinen Zweck also erfuellt. Faengt den Fall ab, dass der
+     * eigentliche Rueckmeldepfad (checkAndProcessSkip via AlarmReceiver) nie erreicht wird, weil
+     * der System-Alarm beim Ueberspringen sofort geloescht wurde und darum nie mehr feuert.
+     * Gibt true zurueck, wenn ein abgelaufener Skip tatsaechlich zurueckgesetzt wurde.
+     */
+    suspend fun clearExpiredSkip(): Result<Boolean>
+
     val skipStatusFlow: Flow<AlarmSkipState>
 }

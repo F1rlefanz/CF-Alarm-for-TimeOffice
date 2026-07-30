@@ -37,7 +37,7 @@ class AlarmSkipUseCase @Inject constructor(
                 ?: throw IllegalStateException("Kein aktiver Alarm gefunden")
             
             // 2. Skip-Status setzen
-            alarmSkipRepository.setNextAlarmSkipped(nextAlarm.id).getOrThrow()
+            alarmSkipRepository.setNextAlarmSkipped(nextAlarm.id, nextAlarm.triggerTime).getOrThrow()
             
             // 3. ✅ UX-FIX: Systemalarm SOFORT löschen für direktes User-Feedback
             // User erwartet dass der Alarm aus der Statusleiste verschwindet wenn er "überspringen" drückt
@@ -107,9 +107,27 @@ class AlarmSkipUseCase @Inject constructor(
             }
         }
     
-    override suspend fun getSkipStatus(): Result<AlarmSkipState> = 
+    override suspend fun getSkipStatus(): Result<AlarmSkipState> =
         alarmSkipRepository.getSkipStatus()
-    
+
+    override suspend fun clearExpiredSkip(): Result<Boolean> =
+        SafeExecutor.safeExecute("AlarmSkipUseCase.clearExpiredSkip") {
+            val skipState = alarmSkipRepository.getSkipStatus().getOrThrow()
+            val isExpired = skipState.isNextAlarmSkipped &&
+                skipState.skippedAlarmTriggerTime > 0 &&
+                System.currentTimeMillis() > skipState.skippedAlarmTriggerTime
+
+            if (isExpired) {
+                alarmSkipRepository.clearSkipStatus().getOrThrow()
+                Logger.business(
+                    LogTags.ALARM_SKIP,
+                    "⏰ Skip abgelaufen (Ziel-Alarm ${skipState.skippedAlarmId} längst verstrichen) – automatisch zurückgesetzt"
+                )
+            }
+
+            isExpired
+        }
+
     private suspend fun findNextAlarm(): AlarmInfo? {
         val currentTime = System.currentTimeMillis()
         return alarmRepository.getAllAlarms()

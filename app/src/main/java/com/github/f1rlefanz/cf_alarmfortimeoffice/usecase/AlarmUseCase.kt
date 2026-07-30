@@ -10,6 +10,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftCo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -45,7 +46,8 @@ class AlarmUseCase @Inject constructor(
     private val alarmRepository: IAlarmRepository,
     private val alarmManagerService: AlarmManagerService,
     private val shiftConfigRepository: IShiftConfigRepository,
-    private val shiftRecognitionEngine: ShiftRecognitionEngine
+    private val shiftRecognitionEngine: ShiftRecognitionEngine,
+    private val alarmSkipUseCase: IAlarmSkipUseCase
 ) : IAlarmUseCase {
     
     /**
@@ -86,6 +88,14 @@ class AlarmUseCase @Inject constructor(
     ): Result<List<AlarmInfo>> = withContext(Dispatchers.IO) {
         // Serialisiert konkurrierende Aufrufer, statt den zweiten mit leerer Liste abzuweisen.
         alarmSyncMutex.withLock {
+            // Selbstheilung fuer das "Naechsten Alarm ueberspringen"-Flag: der eigentlich
+            // vorgesehene Rueckmeldepfad (AlarmReceiver -> checkAndProcessSkip) ist fuer den
+            // uebersprungenen Alarm strukturell unerreichbar, da dessen System-Alarm beim
+            // Ueberspringen sofort geloescht wird und darum nie feuert. syncAlarms() ist der
+            // einzige Einstiegspunkt der Event-Alarm-Pipeline (Vordergrund-Sync + 6h-Wartung) und
+            // damit der richtige Ort, ein laengst verstrichenes Flag automatisch zu loeschen.
+            alarmSkipUseCase.clearExpiredSkip()
+
             SafeExecutor.safeExecute("AlarmUseCase.syncAlarms") {
                 if (!shiftConfig.autoAlarmEnabled) {
                     Logger.d(LogTags.ALARM, "Auto-alarm disabled, not creating alarms")

@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -8,6 +9,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -78,6 +82,28 @@ class AlarmUseCaseDeltaSyncTest {
             Result.success(state.value.any { it.id == alarmId })
     }
 
+    /** Fake-Skip-UseCase; zaehlt lediglich, wie oft clearExpiredSkip() aufgerufen wurde. */
+    private class FakeSkipUseCase : IAlarmSkipUseCase {
+        var clearExpiredSkipCallCount = 0
+
+        override suspend fun skipNextAlarm(): Result<AlarmSkipResult> =
+            Result.failure(UnsupportedOperationException("not used in these tests"))
+
+        override suspend fun cancelSkip(): Result<Unit> = Result.success(Unit)
+
+        override suspend fun checkAndProcessSkip(alarmId: Int): Result<SkipProcessResult> =
+            Result.success(SkipProcessResult.ALARM_EXECUTED)
+
+        override suspend fun getSkipStatus(): Result<AlarmSkipState> = Result.success(AlarmSkipState())
+
+        override suspend fun clearExpiredSkip(): Result<Boolean> {
+            clearExpiredSkipCallCount++
+            return Result.success(false)
+        }
+
+        override val skipStatusFlow: Flow<AlarmSkipState> = flowOf(AlarmSkipState())
+    }
+
     // --- Fixtures ---
 
     private val earlyShift = ShiftDefinition(
@@ -106,8 +132,19 @@ class AlarmUseCaseDeltaSyncTest {
         eventChecksum = "old"
     )
 
-    private fun useCase(repo: FakeAlarmRepository, manager: AlarmManagerService, config: ShiftConfig): AlarmUseCase =
-        AlarmUseCase(repo, manager, FakeShiftConfigRepository(config), ShiftRecognitionEngine(FakeShiftConfigRepository(config)))
+    private fun useCase(
+        repo: FakeAlarmRepository,
+        manager: AlarmManagerService,
+        config: ShiftConfig,
+        skipUseCase: IAlarmSkipUseCase = FakeSkipUseCase()
+    ): AlarmUseCase =
+        AlarmUseCase(
+            repo,
+            manager,
+            FakeShiftConfigRepository(config),
+            ShiftRecognitionEngine(FakeShiftConfigRepository(config)),
+            skipUseCase
+        )
 
     private fun mockManager(): AlarmManagerService {
         val m = mock<AlarmManagerService>()
@@ -182,5 +219,21 @@ class AlarmUseCaseDeltaSyncTest {
         verify(manager).cancelSystemAlarm(bAlarmId)
         assertNotNull("Alarm fuer weiterhin vorhandenes evA muss bleiben",
             repo.current.find { it.eventId == "evA" })
+    }
+
+    @Test
+    fun `syncAlarms - stoesst bei jedem Durchlauf die Skip-Ablauf-Pruefung an`() = runTest {
+        // syncAlarms ist der einzige Einstiegspunkt der Event-Alarm-Pipeline (Vordergrund-Sync +
+        // 6h-Wartung) - genau deshalb der richtige Ort fuer die Selbstheilung eines haengen
+        // gebliebenen "Naechsten Alarm ueberspringen"-Flags. Siehe AlarmSkipUseCaseTest fuer die
+        // eigentliche clearExpiredSkip-Logik.
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val skipUseCase = FakeSkipUseCase()
+
+        useCase(repo, manager, config, skipUseCase).syncAlarms(listOf(futureEvent("evD", "F", 3)), config)
+
+        assertEquals(1, skipUseCase.clearExpiredSkipCallCount)
     }
 }

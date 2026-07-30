@@ -167,6 +167,20 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `onStartCommand` ohnehin immer `scheduleNext()` ruft, liefen dauerhaft zwei Wartungszyklen alle
   6h im Millisekunden-Abstand. Wer einen Lauf „sicherheitshalber" selbst nachplant, baut das
   wieder ein — der `finally`-Block deckt jeden Pfad ab.
+- **Das "Nächsten Alarm überspringen"-Flag läuft zeitbasiert ab, nicht per ID-Match.**
+  `AlarmSkipUseCase.skipNextAlarm()` löscht den System-Alarm SOFORT (SKIP-IMMEDIATE-UX) — damit
+  feuert er nie wieder, und der eigentlich vorgesehene Rücksetz-Pfad
+  (`checkAndProcessSkip()` via `AlarmReceiver.onReceive()`) ist für genau diesen Alarm für immer
+  unerreichbar. Real beobachtet (26.07.–30.07.2026, ~4 Tage): das Flag blieb hängen, die Karte
+  zeigte dauerhaft "Aufheben"/bräunliches Icon, bis der Nutzer manuell aufhob — obwohl der
+  eigentliche Wecker in der Zwischenzeit korrekt (normal) geklingelt hatte. Auch ein
+  ID-Mismatch in `checkAndProcessSkip()` (ein *anderer* Alarm feuert) räumt das Flag nicht auf
+  (`ALARM_EXECUTED`-Zweig ruft bewusst kein `clearSkipStatus()`). Fix seit v1.18.2:
+  `AlarmSkipState.skippedAlarmTriggerTime` speichert die ursprüngliche Weckzeit;
+  `AlarmSkipUseCase.clearExpiredSkip()` setzt das Flag automatisch zurück, sobald diese Zeit
+  verstrichen ist. Aufgehängt an `AlarmUseCase.syncAlarms()` — dem einzigen Einstiegspunkt der
+  Event→Alarm-Pipeline (Vordergrund-Sync beim App-Öffnen UND 6h-Wartung) — bewusst kein neuer
+  Scheduler. Wer den Ablauf wieder auf reines ID-Matching zurückbaut, holt sich den Bug zurück.
 
 ### Hue
 

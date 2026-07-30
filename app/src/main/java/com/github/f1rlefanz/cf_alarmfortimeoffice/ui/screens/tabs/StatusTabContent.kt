@@ -70,6 +70,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.TimeOfficeHealthHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
@@ -81,8 +82,13 @@ fun StatusTabContent(
     calendarState: CalendarUiState,
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
-    calendarViewModel: CalendarViewModel?
+    calendarViewModel: CalendarViewModel?,
+    authViewModel: AuthViewModel,
+    onShowCalendarSelection: () -> Unit,
+    onShowShiftConfig: () -> Unit
 ) {
+    val context = LocalContext.current
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -96,7 +102,11 @@ fun StatusTabContent(
             fontWeight = FontWeight.Bold
         )
 
-        // Auth Status
+        // Auth Status. Bewusst OHNE Aktions-Button: "Nicht angemeldet" ist hier ein
+        // architektonisch unerreichbarer Zustand - MainActivity zeigt bei !isSignedIn bereits
+        // root-seitig den Login-Screen statt MainScreen/MainContentScreen (Teil davon ist dieser
+        // Status-Tab). Ein Button fuer einen Zustand, der nie sichtbar wird, waere irrefuehrender
+        // toter Code.
         StatusCard(
             title = "Authentifizierung",
             isOk = authState.isSignedIn,
@@ -107,23 +117,49 @@ fun StatusTabContent(
             }
         )
 
-        // Kalender Status
+        // Kalender Status: zwei echte, unterscheidbare Fehlerzustaende - je einer bekommt seine
+        // eigene Aktion (nicht gleichzeitig moeglich, siehe Bedingungen unten). "Keine Kalender
+        // verfuegbar" (leeres Google-Konto) bleibt ohne Button - nichts, wohin man von hier aus
+        // springen koennte.
+        val calendarActionLabel: String?
+        val onCalendarAction: (() -> Unit)?
+        when {
+            !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() -> {
+                calendarActionLabel = "Neu anmelden"
+                onCalendarAction = {
+                    authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
+                }
+            }
+            calendarState.selectedCalendarIds.isEmpty() -> {
+                calendarActionLabel = "Kalender wählen"
+                onCalendarAction = onShowCalendarSelection
+            }
+            else -> {
+                calendarActionLabel = null
+                onCalendarAction = null
+            }
+        }
         StatusCard(
             title = "Kalender",
             isOk = calendarState.selectedCalendarIds.isNotEmpty() && calendarState.calendarAuthorizationValid,
             details = when {
-                !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() -> 
+                !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() ->
                     "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
                 calendarState.selectedCalendarIds.isEmpty() -> "Kein Kalender ausgewählt"
                 calendarState.availableCalendars.isEmpty() -> "Keine Kalender verfügbar"
                 else -> "${calendarState.selectedCalendarIds.size} Kalender ausgewählt, API-Zugriff OK"
-            }
+            },
+            actionLabel = calendarActionLabel,
+            onAction = onCalendarAction
         )
 
-        // Schicht-Konfiguration Status
+        // Schicht-Konfiguration Status: null ist ein echter (wenn auch meist kurzer) Zustand
+        // waehrend des initialen Ladens, siehe ShiftViewModel.uiState-Default - kein Deadcode.
         StatusCard(
             title = "Schicht-Konfiguration",
             isOk = shiftState.currentShiftConfig != null,
+            actionLabel = if (shiftState.currentShiftConfig == null) "Konfigurieren" else null,
+            onAction = if (shiftState.currentShiftConfig == null) onShowShiftConfig else null,
             details = if (shiftState.currentShiftConfig != null) {
                 "${shiftState.currentShiftConfig.definitions.size} Schichttypen definiert"
             } else {
@@ -180,7 +216,7 @@ fun StatusTabContent(
         DndPermissionCard()
 
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
-        LastSyncCard()
+        LastSyncCard(calendarViewModel = calendarViewModel)
 
         // Debug-Informationen
         DebugInfoCard()
@@ -788,7 +824,9 @@ private fun openFullScreenIntentSettings(context: android.content.Context) {
 private fun StatusCard(
     title: String,
     isOk: Boolean,
-    details: String
+    details: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -813,7 +851,7 @@ private fun StatusCard(
                 else
                     MaterialTheme.colorScheme.error
             )
-            
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     title,
@@ -824,6 +862,16 @@ private fun StatusCard(
                     details,
                     style = MaterialTheme.typography.bodyMedium
                 )
+
+                if (!isOk && actionLabel != null && onAction != null) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    TextButton(
+                        onClick = onAction,
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(actionLabel)
+                    }
+                }
             }
         }
     }
@@ -948,7 +996,7 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
 }
 
 @Composable
-private fun LastSyncCard() {
+private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
     val context = LocalContext.current
     var lastMaintenanceTime by remember { mutableStateOf(0L) }
 
@@ -1021,6 +1069,15 @@ private fun LastSyncCard() {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                    if (calendarViewModel != null) {
+                        Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                        TextButton(
+                            onClick = { calendarViewModel.refreshData(forceRefresh = true) },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Jetzt synchronisieren")
+                        }
+                    }
                 }
             }
         }

@@ -70,7 +70,7 @@ class DimScheduleUseCase @Inject constructor(
         // Aktive Spanne (überlappen mehrere, gewinnt die dunkelste – Logik in DimWindowResolver).
         val active = DimWindowResolver.activeSpan(windows(), now)
         val override = prefs.overrideNow()
-        val stale = DimWindowResolver.isOverrideStale(active?.range?.last, override.windowEnd)
+        val stale = DimWindowResolver.isOverrideStale(active?.range?.last, active?.strength, override.windowEnd, override.windowStrength)
         if (stale && (override.strengthDelta != 0 || override.paused || override.windowEnd != 0L)) {
             prefs.clearOverride()
         }

@@ -164,16 +164,24 @@ object DimWindowResolver {
 
     /**
      * Gilt ein Dimmer-Korrektur-Override (Feature C) noch? Er ist an [DimOverlayPrefs.Override.windowEnd]
-     * gebunden (= `range.last` der aktiven Spanne beim Setzen) - rein DATENBASIERTE Reset-Erkennung,
-     * KEIN eigener Timer/Alarm noetig: der ohnehin rollende Tick ([DimScheduleUseCase] `REQ_TICK`)
-     * ruft `applyCurrentState()` an jeder Fenstergrenze ohnehin neu auf, wodurch ein Override fuer
-     * ein inzwischen beendetes/gewechseltes Fenster automatisch stale wird.
+     * + [DimOverlayPrefs.Override.windowStrength] gebunden (= `range.last`/`strength` der aktiven
+     * Spanne beim Setzen) - rein DATENBASIERTE Reset-Erkennung, KEIN eigener Timer/Alarm noetig: der
+     * ohnehin rollende Tick ([DimScheduleUseCase] `REQ_TICK`) ruft `applyCurrentState()` an jeder
+     * Fenstergrenze ohnehin neu auf, wodurch ein Override fuer ein inzwischen beendetes/gewechseltes
+     * Fenster automatisch stale wird.
+     *
+     * `windowEnd` ALLEIN reicht nicht: [DimScheduleUseCase.windows] liefert DREI unabhaengige,
+     * ueberlappende Quellen (Wellness/Regeln/Nacht-Standard), die sehr haeufig denselben Anker teilen
+     * (typischerweise ALARM-Offset 0 = die Weckzeit). Wechselt "darkest wins" ([activeSpan]) wegen
+     * einer neu ueberlappenden, staerkeren Quelle die aktive Spanne, bleibt `range.last` dabei oft
+     * IDENTISCH - nur die Staerke aendert sich. Deshalb zaehlt zusaetzlich [activeStrength] zur
+     * Identitaet des Fensters.
      *
      * Kein aktives Fenster ([activeWindowEnd] `null`, z. B. Dimmer gerade aus) ODER ein anderer
-     * `windowEnd` als beim Setzen (naechstes Fenster hat begonnen) = stale.
+     * `windowEnd`/`strength` als beim Setzen (naechstes oder ein anderes Fenster ist aktiv) = stale.
      */
-    fun isOverrideStale(activeWindowEnd: Long?, overrideWindowEnd: Long): Boolean =
-        activeWindowEnd == null || activeWindowEnd != overrideWindowEnd
+    fun isOverrideStale(activeWindowEnd: Long?, activeStrength: Int?, overrideWindowEnd: Long, overrideStrength: Int): Boolean =
+        activeWindowEnd == null || activeWindowEnd != overrideWindowEnd || activeStrength != overrideStrength
 
     /** Wendet das Heller/Dunkler-Delta der Korrektur-Notification an - wirkt NUR auf strength, geklemmt auf [0, max]. */
     fun applyStrengthDelta(base: Int, delta: Int, max: Int): Int = (base + delta).coerceIn(0, max)

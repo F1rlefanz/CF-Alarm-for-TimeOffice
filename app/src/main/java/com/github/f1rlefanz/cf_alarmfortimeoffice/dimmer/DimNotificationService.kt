@@ -80,13 +80,14 @@ class DimNotificationService : Service() {
         }
 
         val windowEnd = active.range.last
+        val windowStrength = active.strength
 
         // Read-Modify-Write als Ganzes sperren (siehe overrideMutex) - sonst lesen zwei rasch
         // aufeinanderfolgende Aktionen (Doppel-Tap) denselben Ausgangsstand und eine der beiden
         // Aenderungen wird beim Zurueckschreiben stillschweigend ueberschrieben.
         overrideMutex.withLock {
             val current = prefs.overrideNow()
-            val stale = DimWindowResolver.isOverrideStale(windowEnd, current.windowEnd)
+            val stale = DimWindowResolver.isOverrideStale(windowEnd, windowStrength, current.windowEnd, current.windowStrength)
             val delta = if (stale) 0 else current.strengthDelta
             val paused = if (stale) false else current.paused
 
@@ -109,7 +110,7 @@ class DimNotificationService : Service() {
             // Atomar zurückschreiben (siehe DimOverlayPrefs.setOverride) - sonst würde z.B. ein
             // reines Pause-Toggle einen bereits stale gewordenen Delta-Wert unter dem neuen
             // windowEnd unbeabsichtigt wiederbeleben.
-            prefs.setOverride(newDelta, newPaused, windowEnd)
+            prefs.setOverride(newDelta, newPaused, windowEnd, windowStrength)
         }
         dimSchedule.applyCurrentState()
     }

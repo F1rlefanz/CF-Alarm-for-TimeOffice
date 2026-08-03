@@ -52,6 +52,7 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_OVERRIDE_STRENGTH_DELTA = intPreferencesKey("dim_override_strength_delta")
         private val KEY_OVERRIDE_PAUSED = booleanPreferencesKey("dim_override_paused")
         private val KEY_OVERRIDE_WINDOW_END = longPreferencesKey("dim_override_window_end")
+        private val KEY_OVERRIDE_WINDOW_STRENGTH = intPreferencesKey("dim_override_window_strength")
         private val KEY_CORRECTION_NOTIFICATION_ENABLED = booleanPreferencesKey("dim_correction_notification_enabled")
 
         /** Schrittweite von Heller/Dunkler in der Korrektur-Notification. Wirkt NUR auf strength. */
@@ -93,11 +94,12 @@ class DimOverlayPrefs @Inject constructor(
      * Temporärer Nutzer-Override für die Dimmer-Korrektur-Notification (Feature C). Persistiert im
      * DataStore, nicht in-memory - übersteht damit einen Prozess-Neustart von
      * [DimAccessibilityService]/[DimScheduleReceiver], die beide keine garantierte Lebensdauer
-     * haben. [windowEnd] (= `range.last` der aktiven Spanne) ist der Gültigkeits-Schlüssel: gilt
-     * nur für dieselbe aktive Fenster-Spanne wie beim Setzen, siehe
-     * [DimWindowResolver.isOverrideStale].
+     * haben. [windowEnd] + [windowStrength] (= `range.last`/`strength` der aktiven Spanne) sind der
+     * Gültigkeits-Schlüssel: gilt nur für dieselbe aktive Fenster-Spanne wie beim Setzen - `windowEnd`
+     * allein reicht nicht, weil Wellness/Regeln/Nacht-Standard sich denselben Anker (oft die Weckzeit)
+     * teilen können, siehe [DimWindowResolver.isOverrideStale].
      */
-    data class Override(val strengthDelta: Int, val paused: Boolean, val windowEnd: Long)
+    data class Override(val strengthDelta: Int, val paused: Boolean, val windowEnd: Long, val windowStrength: Int)
 
     val renderState: Flow<RenderState> = dataStore.data.map { p ->
         RenderState(
@@ -142,7 +144,8 @@ class DimOverlayPrefs @Inject constructor(
         Override(
             strengthDelta = p[KEY_OVERRIDE_STRENGTH_DELTA] ?: 0,
             paused = p[KEY_OVERRIDE_PAUSED] ?: false,
-            windowEnd = p[KEY_OVERRIDE_WINDOW_END] ?: 0L
+            windowEnd = p[KEY_OVERRIDE_WINDOW_END] ?: 0L,
+            windowStrength = p[KEY_OVERRIDE_WINDOW_STRENGTH] ?: 0
         )
     }
 
@@ -200,16 +203,18 @@ class DimOverlayPrefs @Inject constructor(
      * liest daher vorher IMMER den effektiven (nicht-stale) Zustand und schreibt ihn hier komplett
      * zurück.
      */
-    suspend fun setOverride(strengthDelta: Int, paused: Boolean, windowEnd: Long) = dataStore.edit {
+    suspend fun setOverride(strengthDelta: Int, paused: Boolean, windowEnd: Long, windowStrength: Int) = dataStore.edit {
         it[KEY_OVERRIDE_STRENGTH_DELTA] = strengthDelta
         it[KEY_OVERRIDE_PAUSED] = paused
         it[KEY_OVERRIDE_WINDOW_END] = windowEnd
+        it[KEY_OVERRIDE_WINDOW_STRENGTH] = windowStrength
     }
 
     suspend fun clearOverride() = dataStore.edit {
         it.remove(KEY_OVERRIDE_STRENGTH_DELTA)
         it.remove(KEY_OVERRIDE_PAUSED)
         it.remove(KEY_OVERRIDE_WINDOW_END)
+        it.remove(KEY_OVERRIDE_WINDOW_STRENGTH)
     }
 
     suspend fun setCorrectionNotificationEnabled(v: Boolean) =

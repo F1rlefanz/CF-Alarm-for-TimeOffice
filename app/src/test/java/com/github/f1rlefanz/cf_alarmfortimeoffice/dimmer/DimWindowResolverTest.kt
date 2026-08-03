@@ -265,18 +265,27 @@ class DimWindowResolverTest {
 
     @Test
     fun `Override ist stale wenn kein Fenster aktiv ist`() {
-        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = null, overrideWindowEnd = 500L))
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = null, activeStrength = null, overrideWindowEnd = 500L, overrideStrength = 40))
     }
 
     @Test
-    fun `Override gilt weiter solange windowEnd zur aktiven Spanne passt`() {
-        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 500L, overrideWindowEnd = 500L).not())
+    fun `Override gilt weiter solange windowEnd und strength zur aktiven Spanne passen`() {
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 500L, activeStrength = 40, overrideWindowEnd = 500L, overrideStrength = 40).not())
     }
 
     @Test
     fun `Override ist stale wenn sich das aktive Fenster geaendert hat`() {
         // naechste Fenstergrenze ist bereits erreicht (naechster Tick hat neu berechnet)
-        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 600L, overrideWindowEnd = 500L))
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 600L, activeStrength = 40, overrideWindowEnd = 500L, overrideStrength = 40))
+    }
+
+    @Test
+    fun `Override ist stale wenn eine andere, gleich endende Quelle uebernimmt`() {
+        // Regression: Wellness-Fenster und Nacht-Standard-/Regel-Fenster teilen sich oft denselben
+        // windowEnd (beide ALARM-Offset 0 = Weckzeit) - "darkest wins" wechselt hier auf eine
+        // Quelle mit anderer Staerke, obwohl range.last identisch bleibt. windowEnd allein wuerde
+        // das faelschlich als "gleiches Fenster" durchgehen lassen.
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 500L, activeStrength = 70, overrideWindowEnd = 500L, overrideStrength = 40))
     }
 
     @Test

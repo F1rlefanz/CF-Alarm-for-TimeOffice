@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -42,6 +43,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fmtClock
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DndViewModel
 
@@ -211,6 +214,56 @@ fun DndSettingsScreen(
                                         onClick = { viewModel.toggleShiftExcludedShift(name) },
                                         label = { Text(name) }
                                     )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (shiftNames.isNotEmpty()) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Rufbereitschaft",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "An Tagen mit einer dieser Schichten endet Nicht stören schon vor der regulären Zeit – du bist ab dem Cutoff erreichbar.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                shiftNames.forEach { name ->
+                                    FilterChip(
+                                        selected = name in state.onCallShifts,
+                                        onClick = { viewModel.toggleOnCallShift(name) },
+                                        label = { Text(name) }
+                                    )
+                                }
+                            }
+                            if (state.onCallShifts.isNotEmpty()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Cutoff:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    OutlinedButton(
+                                        onClick = {
+                                            pickTime(context, state.onCallCutoffMinutes) {
+                                                viewModel.setOnCallCutoffMinutes(it)
+                                            }
+                                        }
+                                    ) {
+                                        Text(fmtClock(state.onCallCutoffMinutes))
+                                    }
                                 }
                             }
                         }

@@ -34,6 +34,8 @@ class DndViewModel @Inject constructor(
         val followDimmerEnabled: Boolean = false,
         val duringShiftEnabled: Boolean = false,
         val shiftExcludedShifts: Set<String> = emptySet(),
+        val onCallShifts: Set<String> = emptySet(),
+        val onCallCutoffMinutes: Int = DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN,
         val policy: DndPrefs.Policy = DndPrefs.Policy()
     )
 
@@ -41,12 +43,16 @@ class DndViewModel @Inject constructor(
         combine(
             prefs.toggles,
             prefs.shiftExcludedShifts,
+            prefs.onCallShifts,
+            prefs.onCallCutoffMinutes,
             prefs.policy
-        ) { toggles, excluded, policy ->
+        ) { toggles, excluded, onCallShifts, onCallCutoffMinutes, policy ->
             DndUiState(
                 followDimmerEnabled = toggles.followDimmerEnabled,
                 duringShiftEnabled = toggles.duringShiftEnabled,
                 shiftExcludedShifts = excluded,
+                onCallShifts = onCallShifts,
+                onCallCutoffMinutes = onCallCutoffMinutes,
                 policy = policy
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DndUiState())
@@ -78,6 +84,21 @@ class DndViewModel @Inject constructor(
         prefs.setShiftExcludedShifts(
             if (shiftName in current) current - shiftName else current + shiftName
         )
+        dndSchedule.enable()
+    }
+
+    /** Schaltet eine Schicht als Rufbereitschaft (On-Call-Cutoff) ein/aus. */
+    fun toggleOnCallShift(shiftName: String) = viewModelScope.launch {
+        val current = prefs.onCallShiftsNow()
+        prefs.setOnCallShifts(
+            if (shiftName in current) current - shiftName else current + shiftName
+        )
+        dndSchedule.enable()
+    }
+
+    /** Setzt den Cutoff (Minuten seit Mitternacht) fuer Rufbereitschafts-Tage. */
+    fun setOnCallCutoffMinutes(minutes: Int) = viewModelScope.launch {
+        prefs.setOnCallCutoffMinutes(minutes)
         dndSchedule.enable()
     }
 

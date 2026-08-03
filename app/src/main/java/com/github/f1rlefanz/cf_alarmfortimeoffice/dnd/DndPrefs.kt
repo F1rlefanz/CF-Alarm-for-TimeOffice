@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
@@ -20,6 +21,10 @@ import javax.inject.Singleton
  *   keine eigene Fenster-Definition - Einbahnstrasse, der Dimmer bleibt unveraendert/unwissend).
  * - `duringShiftEnabled`: DND an von Schichtbeginn bis Schichtende (Kalender-Event-Spanne, siehe
  *   [DndShiftSpanResolver]), mit expliziten Schicht-Ausnahmen ([shiftExcludedShifts]).
+ *
+ * Eine DRITTE, unabhaengige Einstellung [onCallShifts]/[onCallCutoffMinutes] ist KEINE dritte
+ * Fenster-Quelle, sondern kappt die beiden obigen auf einen festen Cutoff an Rufbereitschafts-Tagen
+ * (siehe [DndOnCallCutoffResolver]) - dieselbe [Policy] gilt bis zum Cutoff unveraendert weiter.
  *
  * [Policy] entscheidet, WAS die eine gemeinsame [android.app.AutomaticZenRule] stummschaltet -
  * gilt fuer beide Fenster-Quellen gleich (es gibt nur eine registrierte Regel, siehe
@@ -40,7 +45,12 @@ class DndPrefs @Inject constructor(
         private val KEY_FOLLOW_DIMMER = booleanPreferencesKey("dnd_follow_dimmer_enabled")
         private val KEY_DURING_SHIFT = booleanPreferencesKey("dnd_during_shift_enabled")
         private val KEY_SHIFT_EXCLUDED_SHIFTS = stringSetPreferencesKey("dnd_shift_excluded_shifts")
+        private val KEY_ONCALL_SHIFTS = stringSetPreferencesKey("dnd_oncall_shifts")
+        private val KEY_ONCALL_CUTOFF_MIN = intPreferencesKey("dnd_oncall_cutoff_min")
         private val KEY_ZEN_RULE_ID = stringPreferencesKey("dnd_zen_rule_id")
+
+        /** Default-Cutoff 05:00 - siehe Plan-Kontext (Rufbereitschaft, frueh erreichbar). */
+        const val DEFAULT_ONCALL_CUTOFF_MIN = 5 * 60
 
         private val KEY_BLOCK_CALLS = booleanPreferencesKey("dnd_policy_block_calls")
         private val KEY_ALLOW_REPEAT_CALLERS = booleanPreferencesKey("dnd_policy_allow_repeat_callers")
@@ -95,18 +105,30 @@ class DndPrefs @Inject constructor(
         it[KEY_SHIFT_EXCLUDED_SHIFTS] ?: emptySet()
     }
 
+    /** Schichtnamen, die als Rufbereitschaft gelten (z. B. "AD1") - siehe [DndOnCallCutoffResolver]. */
+    val onCallShifts: Flow<Set<String>> = dataStore.data.map { it[KEY_ONCALL_SHIFTS] ?: emptySet() }
+
+    /** Cutoff-Uhrzeit an Rufbereitschafts-Tagen, in Minuten seit Mitternacht. Default 05:00. */
+    val onCallCutoffMinutes: Flow<Int> = dataStore.data.map {
+        it[KEY_ONCALL_CUTOFF_MIN] ?: DEFAULT_ONCALL_CUTOFF_MIN
+    }
+
     /** Die einmal registrierte [android.app.AutomaticZenRule]-ID; leer = noch nicht registriert. */
     val zenRuleId: Flow<String> = dataStore.data.map { it[KEY_ZEN_RULE_ID] ?: "" }
 
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun policyNow(): Policy = policy.first()
     suspend fun shiftExcludedShiftsNow(): Set<String> = shiftExcludedShifts.first()
+    suspend fun onCallShiftsNow(): Set<String> = onCallShifts.first()
+    suspend fun onCallCutoffMinutesNow(): Int = onCallCutoffMinutes.first()
     suspend fun zenRuleIdNow(): String = zenRuleId.first()
 
     suspend fun setFollowDimmerEnabled(v: Boolean) = dataStore.edit { it[KEY_FOLLOW_DIMMER] = v }
     suspend fun setDuringShiftEnabled(v: Boolean) = dataStore.edit { it[KEY_DURING_SHIFT] = v }
     suspend fun setShiftExcludedShifts(v: Set<String>) =
         dataStore.edit { it[KEY_SHIFT_EXCLUDED_SHIFTS] = v }
+    suspend fun setOnCallShifts(v: Set<String>) = dataStore.edit { it[KEY_ONCALL_SHIFTS] = v }
+    suspend fun setOnCallCutoffMinutes(v: Int) = dataStore.edit { it[KEY_ONCALL_CUTOFF_MIN] = v }
     suspend fun setZenRuleId(v: String) = dataStore.edit { it[KEY_ZEN_RULE_ID] = v }
 
     suspend fun setBlockCalls(v: Boolean) = dataStore.edit { it[KEY_BLOCK_CALLS] = v }

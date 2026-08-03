@@ -191,6 +191,14 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- Schicht-Dimmer: bedient die Aktions-Buttons der Korrektur-Notification (Feature C).
+             Leichtgewichtig, bewusst KEIN Foreground-Service - jeder Aufruf ist eine kurze
+             DataStore-Operation plus ein Tick-Nachvollzug, kein Prozess-Am-Leben-Halten noetig. -->
+        <service
+            android:name=".dimmer.DimNotificationService"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- DND-Steuerung: rollender Zeitplan-Tick (Nicht-stoeren-Regel an/aus). -->
         <receiver
             android:name=".dnd.DndScheduleReceiver"

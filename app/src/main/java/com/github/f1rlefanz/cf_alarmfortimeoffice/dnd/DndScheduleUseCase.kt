@@ -20,6 +20,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,6 +36,11 @@ import javax.inject.Singleton
  *
  * DND ist binaer (an/aus) - anders als beim Dimmer gibt es kein "dunkelste gewinnt", die Vereinigung
  * beider Quellen reicht (irgendeine aktive Quelle => an).
+ *
+ * Rufbereitschaft ([DndPrefs.onCallShifts]/[DndPrefs.onCallCutoffMinutes]) ist KEINE dritte
+ * Fenster-Quelle mit eigener Policy, sondern klippt beide obigen Quellen als letzten Schritt auf
+ * einen festen Cutoff am On-Call-Tag ([DndOnCallCutoffResolver.clip]) - dieselbe Zen-Regel gilt bis
+ * dahin unveraendert weiter.
  *
  * Nutzt bewusst eine selbst registrierte [AutomaticZenRule] statt rohem
  * `NotificationManager.setInterruptionFilter()`: die Regel ist fuer den Nutzer sichtbar unter
@@ -125,7 +131,10 @@ class DndScheduleUseCase @Inject constructor(
 
     private suspend fun windows(): List<LongRange> {
         val toggles = prefs.togglesNow()
-        if (!toggles.followDimmerEnabled && !toggles.duringShiftEnabled) return emptyList()
+        val onCallShifts = prefs.onCallShiftsNow()
+        if (!toggles.followDimmerEnabled && !toggles.duringShiftEnabled && onCallShifts.isEmpty()) {
+            return emptyList()
+        }
 
         val out = mutableListOf<LongRange>()
 
@@ -133,16 +142,34 @@ class DndScheduleUseCase @Inject constructor(
             out += dimSchedule.previewTimeline().map { it.range }
         }
 
-        if (toggles.duringShiftEnabled) {
-            val alarms = alarmUseCase.getAllAlarms().getOrElse {
-                Logger.w(LogTags.DND, "Alarm-Bestand nicht lesbar - keine Dienstzeit-Fenster (fail-open)")
+        // Alarme werden auch NUR fuer den On-Call-Cutoff geholt (unabhaengig von
+        // duringShiftEnabled) - der Cutoff klippt auch das "Folgt dem Dimmer"-Fenster.
+        val alarms = if (toggles.duringShiftEnabled || onCallShifts.isNotEmpty()) {
+            alarmUseCase.getAllAlarms().getOrElse {
+                Logger.w(LogTags.DND, "Alarm-Bestand nicht lesbar - keine Dienstzeit-/On-Call-Fenster (fail-open)")
                 emptyList()
             }.filter { it.isActive }
+        } else {
+            emptyList()
+        }
+
+        if (toggles.duringShiftEnabled) {
             val excluded = prefs.shiftExcludedShiftsNow()
             val slots = alarms.map {
                 DndShiftSpanResolver.AlarmSlot(it.shiftName, it.shiftStartTime, it.shiftEndTime)
             }
             out += DndShiftSpanResolver.buildShiftSpans(slots, excluded)
+        }
+
+        if (onCallShifts.isNotEmpty() && out.isNotEmpty()) {
+            val cutoffMinutes = prefs.onCallCutoffMinutesNow()
+            val cutoffSlots = alarms.map {
+                DndOnCallCutoffResolver.AlarmSlot(it.shiftName, it.shiftStartTime)
+            }
+            val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
+                cutoffSlots, onCallShifts, cutoffMinutes, ZoneId.systemDefault()
+            )
+            return DndOnCallCutoffResolver.clip(out, cutoffs)
         }
         return out
     }

@@ -90,6 +90,9 @@ class AlarmMaintenanceService : Service() {
     @Inject
     lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 
+    @Inject
+    lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -439,6 +442,14 @@ class AlarmMaintenanceService : Service() {
                 dimSchedule.scheduleNextTransition()
             } catch (e: Exception) {
                 Logger.w(LogTags.DIMMER, "Wartung: Dimm-Reschedule fehlgeschlagen", e)
+            }
+
+            // Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) neu planen. Eigenes
+            // try/catch – ein Fehler hier darf die Wartung nie beeintraechtigen.
+            try {
+                calendarPreAlarmRefreshScheduler.reschedule()
+            } catch (e: Exception) {
+                Logger.w(LogTags.BACKGROUND_WORKER, "Wartung: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
             }
         } else {
             Logger.e(LogTags.MAINTENANCE, "Alarm sync failed", syncResult.exceptionOrNull())

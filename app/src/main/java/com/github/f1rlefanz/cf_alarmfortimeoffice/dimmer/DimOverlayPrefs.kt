@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import kotlinx.coroutines.flow.Flow
@@ -45,6 +46,18 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_NIGHT_DEFAULT_STRENGTH = intPreferencesKey("dim_night_default_strength")
         private val KEY_NIGHT_DEFAULT_WARMTH = intPreferencesKey("dim_night_default_warmth")
 
+        // Dimmer-Korrektur-Notification (Feature C) - Override-Zustand + Settings-Toggle. Der
+        // Toggle-Key ist bereits hier angelegt, aber noch NICHT an einen Settings-Screen
+        // angebunden (Default AUS deckt das ab - siehe CLAUDE.md "Dimmer-Korrektur-Notification").
+        private val KEY_OVERRIDE_STRENGTH_DELTA = intPreferencesKey("dim_override_strength_delta")
+        private val KEY_OVERRIDE_PAUSED = booleanPreferencesKey("dim_override_paused")
+        private val KEY_OVERRIDE_WINDOW_END = longPreferencesKey("dim_override_window_end")
+        private val KEY_OVERRIDE_WINDOW_STRENGTH = intPreferencesKey("dim_override_window_strength")
+        private val KEY_CORRECTION_NOTIFICATION_ENABLED = booleanPreferencesKey("dim_correction_notification_enabled")
+
+        /** Schrittweite von Heller/Dunkler in der Korrektur-Notification. Wirkt NUR auf strength. */
+        const val OVERRIDE_STEP = 10
+
         // Farbe, die der Service gerade rendert (Intensität des AKTIVEN Fensters). Getrennt von
         // KEY_STRENGTH/KEY_WARMTH (= globale Nutzer-Slider), damit der Scheduler-Schreibzugriff und
         // die „Darstellung"-Slider sich nicht überschreiben. Fällt zurück auf die globalen Werte.
@@ -76,6 +89,17 @@ class DimOverlayPrefs @Inject constructor(
 
     /** Die drei Fenster-Quellen-Schalter. */
     data class Toggles(val wellnessEnabled: Boolean, val rulesEnabled: Boolean, val nightDefaultEnabled: Boolean)
+
+    /**
+     * Temporärer Nutzer-Override für die Dimmer-Korrektur-Notification (Feature C). Persistiert im
+     * DataStore, nicht in-memory - übersteht damit einen Prozess-Neustart von
+     * [DimAccessibilityService]/[DimScheduleReceiver], die beide keine garantierte Lebensdauer
+     * haben. [windowEnd] + [windowStrength] (= `range.last`/`strength` der aktiven Spanne) sind der
+     * Gültigkeits-Schlüssel: gilt nur für dieselbe aktive Fenster-Spanne wie beim Setzen - `windowEnd`
+     * allein reicht nicht, weil Wellness/Regeln/Nacht-Standard sich denselben Anker (oft die Weckzeit)
+     * teilen können, siehe [DimWindowResolver.isOverrideStale].
+     */
+    data class Override(val strengthDelta: Int, val paused: Boolean, val windowEnd: Long, val windowStrength: Int)
 
     val renderState: Flow<RenderState> = dataStore.data.map { p ->
         RenderState(
@@ -116,6 +140,21 @@ class DimOverlayPrefs @Inject constructor(
         (it[KEY_NIGHT_DEFAULT_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
     }
 
+    val override: Flow<Override> = dataStore.data.map { p ->
+        Override(
+            strengthDelta = p[KEY_OVERRIDE_STRENGTH_DELTA] ?: 0,
+            paused = p[KEY_OVERRIDE_PAUSED] ?: false,
+            windowEnd = p[KEY_OVERRIDE_WINDOW_END] ?: 0L,
+            windowStrength = p[KEY_OVERRIDE_WINDOW_STRENGTH] ?: 0
+        )
+    }
+
+    /** Settings-Toggle fuer die Dimmer-Korrektur-Notification. Default AUS - noch nicht an einen
+     * Settings-Screen angebunden, siehe Klassen-/Feld-Kommentar oben. */
+    val correctionNotificationEnabled: Flow<Boolean> = dataStore.data.map {
+        it[KEY_CORRECTION_NOTIFICATION_ENABLED] ?: false
+    }
+
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun windDownMinutesNow(): Int = windDownMinutes.first()
     suspend fun strengthNow(): Int = strength.first()
@@ -125,6 +164,8 @@ class DimOverlayPrefs @Inject constructor(
     suspend fun nightDefaultExcludedShiftsNow(): Set<String> = nightDefaultExcludedShifts.first()
     suspend fun nightDefaultStrengthNow(): Int = nightDefaultStrength.first()
     suspend fun nightDefaultWarmthNow(): Int = nightDefaultWarmth.first()
+    suspend fun overrideNow(): Override = override.first()
+    suspend fun correctionNotificationEnabledNow(): Boolean = correctionNotificationEnabled.first()
 
     suspend fun setWellnessEnabled(v: Boolean) = dataStore.edit { it[KEY_WELLNESS] = v }
     suspend fun setRulesEnabled(v: Boolean) = dataStore.edit { it[KEY_RULES_ON] = v }
@@ -154,4 +195,28 @@ class DimOverlayPrefs @Inject constructor(
     suspend fun setWarmth(v: Int) = dataStore.edit { it[KEY_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
     suspend fun setWindDownMinutes(v: Int) =
         dataStore.edit { it[KEY_WINDDOWN_MIN] = v.coerceIn(WINDDOWN_MIN_LIMIT, WINDDOWN_MAX_LIMIT) }
+
+    /**
+     * Schreibt Delta/Pause/Fenster-Schlüssel ATOMAR zusammen. Ein Teil-Update (z. B. nur `paused`
+     * ändern) würde sonst einen alten, eigentlich schon veralteten `strengthDelta`-Wert unter einem
+     * neuen [windowEnd] unbeabsichtigt "wiederbeleben" - der Aufrufer ([DimNotificationService])
+     * liest daher vorher IMMER den effektiven (nicht-stale) Zustand und schreibt ihn hier komplett
+     * zurück.
+     */
+    suspend fun setOverride(strengthDelta: Int, paused: Boolean, windowEnd: Long, windowStrength: Int) = dataStore.edit {
+        it[KEY_OVERRIDE_STRENGTH_DELTA] = strengthDelta
+        it[KEY_OVERRIDE_PAUSED] = paused
+        it[KEY_OVERRIDE_WINDOW_END] = windowEnd
+        it[KEY_OVERRIDE_WINDOW_STRENGTH] = windowStrength
+    }
+
+    suspend fun clearOverride() = dataStore.edit {
+        it.remove(KEY_OVERRIDE_STRENGTH_DELTA)
+        it.remove(KEY_OVERRIDE_PAUSED)
+        it.remove(KEY_OVERRIDE_WINDOW_END)
+        it.remove(KEY_OVERRIDE_WINDOW_STRENGTH)
+    }
+
+    suspend fun setCorrectionNotificationEnabled(v: Boolean) =
+        dataStore.edit { it[KEY_CORRECTION_NOTIFICATION_ENABLED] = v }
 }

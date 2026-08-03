@@ -17,7 +17,11 @@ object DndShiftSpanResolver {
      * Kalender-Zeiten bekannt sind ([AlarmSlot.shiftStartTime] > 0 UND [AlarmSlot.shiftEndTime] > 0 -
      * 0 bedeutet "unbekannt", z. B. bei manuell angelegten Alarmen ohne Schicht) UND die Endzeit
      * tatsaechlich nach der Startzeit liegt UND die Schicht nicht in [excludedShifts] steht (z. B.
-     * Rufbereitschaft, wo Erreichbarkeit gerade der Zweck des Diensts ist).
+     * Rufbereitschaft, wo Erreichbarkeit gerade der Zweck des Diensts ist - dieser reine Ausschluss
+     * ist NICHT dasselbe wie [DndOnCallCutoffResolver]s On-Call-Cutoff: hier wird die Schicht komplett
+     * von der "Waehrend der Dienstzeit"-Spanne ausgenommen, dort wird eine bestehende Spanne aus einer
+     * ANDEREN Quelle nur auf eine feste Uhrzeit gekappt. Beide Konzepte koennen unabhaengig voneinander
+     * fuer dieselbe Schicht aktiv sein).
      */
     fun buildShiftSpans(alarms: List<AlarmSlot>, excludedShifts: Set<String>): List<LongRange> =
         alarms.mapNotNull { alarm ->

@@ -260,4 +260,47 @@ class DimWindowResolverTest {
     fun `mergeToTimeline ist leer ohne Spannen`() {
         assertTrue(DimWindowResolver.mergeToTimeline(emptyList()).isEmpty())
     }
+
+    // --- isOverrideStale / applyStrengthDelta: Dimmer-Korrektur-Override (Feature C) ---
+
+    @Test
+    fun `Override ist stale wenn kein Fenster aktiv ist`() {
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = null, activeStrength = null, overrideWindowEnd = 500L, overrideStrength = 40))
+    }
+
+    @Test
+    fun `Override gilt weiter solange windowEnd und strength zur aktiven Spanne passen`() {
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 500L, activeStrength = 40, overrideWindowEnd = 500L, overrideStrength = 40).not())
+    }
+
+    @Test
+    fun `Override ist stale wenn sich das aktive Fenster geaendert hat`() {
+        // naechste Fenstergrenze ist bereits erreicht (naechster Tick hat neu berechnet)
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 600L, activeStrength = 40, overrideWindowEnd = 500L, overrideStrength = 40))
+    }
+
+    @Test
+    fun `Override ist stale wenn eine andere, gleich endende Quelle uebernimmt`() {
+        // Regression: Wellness-Fenster und Nacht-Standard-/Regel-Fenster teilen sich oft denselben
+        // windowEnd (beide ALARM-Offset 0 = Weckzeit) - "darkest wins" wechselt hier auf eine
+        // Quelle mit anderer Staerke, obwohl range.last identisch bleibt. windowEnd allein wuerde
+        // das faelschlich als "gleiches Fenster" durchgehen lassen.
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 500L, activeStrength = 70, overrideWindowEnd = 500L, overrideStrength = 40))
+    }
+
+    @Test
+    fun `applyStrengthDelta addiert das Delta innerhalb der Grenzen`() {
+        assertEquals(60, DimWindowResolver.applyStrengthDelta(base = 50, delta = 10, max = 85))
+        assertEquals(40, DimWindowResolver.applyStrengthDelta(base = 50, delta = -10, max = 85))
+    }
+
+    @Test
+    fun `applyStrengthDelta klemmt auf 0 nach unten`() {
+        assertEquals(0, DimWindowResolver.applyStrengthDelta(base = 5, delta = -20, max = 85))
+    }
+
+    @Test
+    fun `applyStrengthDelta klemmt auf max nach oben`() {
+        assertEquals(85, DimWindowResolver.applyStrengthDelta(base = 80, delta = 20, max = 85))
+    }
 }

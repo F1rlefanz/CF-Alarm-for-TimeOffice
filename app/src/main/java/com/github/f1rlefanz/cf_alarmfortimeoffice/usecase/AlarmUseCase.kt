@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -47,7 +48,10 @@ class AlarmUseCase @Inject constructor(
     private val alarmManagerService: AlarmManagerService,
     private val shiftConfigRepository: IShiftConfigRepository,
     private val shiftRecognitionEngine: ShiftRecognitionEngine,
-    private val alarmSkipUseCase: IAlarmSkipUseCase
+    private val alarmSkipUseCase: IAlarmSkipUseCase,
+    // Feature B: Schicht-Aenderungs-Notification. Bewusst auf der Implementierung, nicht auf
+    // IAlarmUseCase - vermeidet Aenderungen an allen 4 Call-Sites des Interfaces.
+    private val shiftChangeNotifier: ShiftChangeNotifier
 ) : IAlarmUseCase {
     
     /**
@@ -113,6 +117,10 @@ class AlarmUseCase @Inject constructor(
                 
                 // 🔧 SYNC-FIX: INTELLIGENT SYNCHRONIZATION statt blind clearing
                 val existingAlarms = alarmRepository.getAllAlarms().getOrNull() ?: emptyList()
+                // Feature B: die allererste Befuellung (z.B. nach Neuinstallation/komplettem
+                // Zuruecksetzen) soll nicht fuer jeden neuen Alarm eine "Neue Schicht erkannt"-Flut
+                // ausloesen - siehe notifyCreated-Aufruf unten.
+                val isFirstSync = existingAlarms.isEmpty()
                 val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
                 
                 if (shiftMatches.isEmpty()) {
@@ -155,6 +163,13 @@ class AlarmUseCase @Inject constructor(
                         alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
                         alarmManagerService.cancelSystemAlarm(existingAlarm.id)
                         deletedCount++
+                        // Feature B: eigenes try/catch - eine fehlgeschlagene Notification darf die
+                        // eigentlich kritische Alarm-Loeschung nie mit rueckgaengig machen.
+                        try {
+                            shiftChangeNotifier.notifyDeleted(existingAlarm)
+                        } catch (e: Exception) {
+                            Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Delete) fehlgeschlagen", e)
+                        }
                     }
                 }
                 
@@ -182,6 +197,15 @@ class AlarmUseCase @Inject constructor(
                             scheduleSystemAlarm(newAlarm).getOrThrow()
                             resultAlarms.add(newAlarm)
                             updatedCount++
+                            // Feature B: eigenes try/catch - eine fehlgeschlagene Notification darf
+                            // die eigentlich kritische Alarm-Aktualisierung nie beeintraechtigen.
+                            // Die Schwelle (>=10min Delta ODER Namensaenderung) entscheidet
+                            // ShiftChangeNotifier.notifyUpdated selbst (siehe exceedsThreshold).
+                            try {
+                                shiftChangeNotifier.notifyUpdated(existingAlarm, newAlarm)
+                            } catch (e: Exception) {
+                                Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Update) fehlgeschlagen", e)
+                            }
                         } else {
                             // Unchanged - keep existing, aber System-Alarm idempotent re-armen,
                             // damit der Aufrufer nicht mehr selbst schedulen muss (kein Doppel-Scheduling).
@@ -196,6 +220,16 @@ class AlarmUseCase @Inject constructor(
                         scheduleSystemAlarm(newAlarm).getOrThrow()
                         resultAlarms.add(newAlarm)
                         createdCount++
+                        // Feature B: erster Sync ueberhaupt (existingAlarms war leer) flutet nicht -
+                        // eigenes try/catch, eine fehlgeschlagene Notification darf die eigentlich
+                        // kritische Alarm-Erstellung nie beeintraechtigen.
+                        if (!isFirstSync) {
+                            try {
+                                shiftChangeNotifier.notifyCreated(newAlarm)
+                            } catch (e: Exception) {
+                                Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Create) fehlgeschlagen", e)
+                            }
+                        }
                     }
                 }
                 
@@ -337,7 +371,8 @@ class AlarmUseCase @Inject constructor(
             shiftStartTime = shiftMatch.calendarEvent.startTime
                 .atZone(ZoneId.systemDefault())
                 .toInstant()
-                .toEpochMilli()
+                .toEpochMilli(),
+            isSilent = shiftMatch.shiftDefinition.isSilent
         )
     }
     

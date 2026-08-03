@@ -21,7 +21,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -61,6 +60,7 @@ fun ShiftEditDialog(
             ?: String.format(Locale.ROOT, "%02d:%02d", AlarmConstants.DEFAULT_ALARM_HOUR, AlarmConstants.DEFAULT_ALARM_MINUTE)) 
     }
     var isEnabled by remember { mutableStateOf(shift?.isEnabled ?: true) }
+    var isSilent by remember { mutableStateOf(shift?.isSilent ?: false) }
     
     // Time formatter
     val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -213,7 +213,33 @@ fun ShiftEditDialog(
                             )
                         }
                     }
-                    
+
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // weight(1f): siehe Kommentar bei "Schichtdefinition aktiviert" -
+                            // ohne das schiebt der Text bei großer Systemschrift den Schalter raus.
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Stille Schicht",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Text(
+                                    text = "Kein Ton/Vibration/Vollbild-Wecker - die Zeit bleibt als Anker fuer Dimmer/DND erhalten",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = isSilent,
+                                onCheckedChange = { isSilent = it }
+                            )
+                        }
+                    }
+
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -243,12 +269,11 @@ fun ShiftEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
-                    OutlinedButton(
+                    CompactOutlinedButton(
                         onClick = onDismiss,
+                        text = "Abbrechen",
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Abbrechen")
-                    }
+                    )
                     
                     Button(
                         onClick = {
@@ -266,7 +291,8 @@ fun ShiftEditDialog(
                                         name = name.trim(),
                                         keywords = validKeywords,
                                         alarmTime = parsedAlarmTime,
-                                        isEnabled = isEnabled
+                                        isEnabled = isEnabled,
+                                        isSilent = isSilent
                                     )
                                 )
                                 onDismiss()

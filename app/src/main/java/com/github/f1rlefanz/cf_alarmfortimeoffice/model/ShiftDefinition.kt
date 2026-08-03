@@ -20,7 +20,11 @@ data class ShiftDefinition(
     val keywords: List<String>,
     @Serializable(with = LocalTimeSerializer::class)
     val alarmTime: LocalTime,
-    val isEnabled: Boolean = true
+    val isEnabled: Boolean = true,
+    // "Stille Schicht" (z.B. Rufbereitschaft AD1): alarmTime bleibt Pflicht-Anker fuer
+    // DND/Dimmer/Hue, aber Ton/Vibration/Vollbild-Wecker werden beim Feuern unterdrueckt.
+    // Bewusst KEIN Ersatz fuer eine optionale alarmTime - siehe CLAUDE.md "Stille Schicht".
+    val isSilent: Boolean = false
 ) {
     /**
      * Get alarm time as formatted string for display

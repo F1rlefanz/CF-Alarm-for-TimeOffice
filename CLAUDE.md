@@ -181,6 +181,19 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   verstrichen ist. Aufgehängt an `AlarmUseCase.syncAlarms()` — dem einzigen Einstiegspunkt der
   Event→Alarm-Pipeline (Vordergrund-Sync beim App-Öffnen UND 6h-Wartung) — bewusst kein neuer
   Scheduler. Wer den Ablauf wieder auf reines ID-Matching zurückbaut, holt sich den Bug zurück.
+- **Stille Schicht (`ShiftDefinition.isSilent`/`AlarmInfo.isSilent`, seit v1.20.0) ist KEIN Ersatz
+  für eine optionale `alarmTime`.** `alarmTime` bleibt bewusst ein nicht-nullables Pflichtfeld — sie
+  ist der Zeit-Anker, den DND/Dimmer/Feature A (Rufbereitschaft-Cutoff) weiterhin brauchen. Eine
+  echte Nullable-`alarmTime` hätte `ShiftRecognitionEngine`/`AlarmUseCase`/`AlarmManagerService`/
+  `ShiftMatch` durchzogen UND Feature A die Datengrundlage entzogen (kein Alarm = kein Eintrag in
+  `getAllAlarms()` = kein Cutoff-Anker). Das Flag gated stattdessen NUR die Wecker-AUSLÖSUNG:
+  `AlarmReceiver.isSilentAlarm()` (reine, testbare Funktion) prüft `alarmInfo?.isSilent == true` und
+  überspringt bei Treffer per frühem `return@launch` — noch VOR dem Wake-Lock — sowohl
+  `AlarmSoundService`-Start (Ton/Vibration/Vollbild) als auch `executeHueRulesForAlarm()`. Der
+  Broadcast selbst feuert normal weiter, die `AlarmInfo` bleibt normal in `getAllAlarms()` — DND/
+  Dimmer/Feature A sind davon unberührt. **Fail-safe wie der Skip-Check daneben:** schlägt der
+  `AlarmInfo`-Lookup fehl (z. B. Direct Boot vor Entsperrung), gilt der Alarm NICHT als still — im
+  Zweifel wecken statt versehentlich stumm bleiben.
 
 ### Hue
 
@@ -322,13 +335,52 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   hineingelaufen, jetzt von `DimWindowResolverTest` festgehalten). **Eigene Verdunkelung/Wärme**
   (`nightDefaultStrength`/`nightDefaultWarmth`, seit v1.17.1) — NICHT die globalen Wellness-Werte
   mitverwenden, das war der erste Wurf und wurde vom Nutzer explizit zurückgewiesen.
+- **Dimmer-Korrektur-Override (Feature C, seit v1.20.0) lebt im DataStore, nicht in-memory** —
+  `DimAccessibilityService`/`DimScheduleReceiver` haben keine garantierte Lebensdauer, ein
+  In-Memory-State ginge bei Prozess-Neustart verloren. `DimOverlayPrefs.Override` speichert
+  `strengthDelta`/`paused` PLUS `windowEnd` UND `windowStrength` (nicht nur `windowEnd`!) als
+  Fenster-Identität. **Reine `windowEnd`-Identität reicht nicht:** `DimScheduleUseCase.windows()`
+  liefert drei unabhängige, überlappende Quellen (Wellness/Regeln/Nacht-Standard), die sehr häufig
+  denselben Anker teilen (typischerweise ALARM-Offset 0 = die Weckzeit) — wechselt „darkest wins"
+  (`activeSpan`) wegen einer neu überlappenden, stärkeren Quelle die aktive Spanne, bleibt
+  `range.last` dabei oft identisch, nur die Stärke ändert sich. Ohne den Stärke-Vergleich in
+  `DimWindowResolver.isOverrideStale()` bliebe ein Override fälschlich für die falsche Quelle aktiv
+  (adversarial beim ersten Bau gefunden, jetzt in `DimWindowResolverTest` festgehalten). **Kein
+  neuer Timer/Alarm** für den Reset — der ohnehin rollende Tick (`REQ_TICK`/`DimScheduleReceiver`)
+  macht den Override beim nächsten `applyCurrentState()`-Aufruf automatisch stale.
+- **`DimNotificationService` klemmt den `strengthDelta` selbst, nicht nur den abgeleiteten
+  `effectiveStrength`.** Sonst wächst der gespeicherte Delta bei wiederholtem Dunkler ungebremst
+  über den sichtbaren Bereich hinaus, und ein einzelnes Heller danach zeigt keine Wirkung, weil
+  `effectiveStrength` trotzdem noch gedeckelt bleibt (adversarial gefunden/gefixt: Klemmbereich ist
+  `-active.strength..(STRENGTH_MAX - active.strength)`, nicht `[0, STRENGTH_MAX]` auf den Delta
+  selbst). Das Read-Modify-Write auf die Override-Prefs läuft außerdem hinter einem `Mutex`
+  (`overrideMutex`) — ohne ihn verlieren zwei rasch aufeinanderfolgende Button-Taps (Doppel-Tap)
+  eine der beiden Änderungen beim Zurückschreiben.
 
 ### DND-Steuerung (Nicht stören)
 
-- **Zwei Trigger, kein Regel-Editor.** `dnd/DndScheduleUseCase` kennt genau zwei unabhängig
-  schaltbare Quellen (`DndPrefs.Toggles`): „Schlaf-Fenster folgt dem Dimmer" und „Während der
-  Dienstzeit". Kein `DndRule`-Modell — ein früherer, adversarial geprüfter Entwurf mit vollem
-  Regel-Editor wurde zugunsten dieser einfacheren, tatsächlich angefragten Lösung verworfen.
+- **Zwei Fenster-Trigger plus ein Klipp-Modifikator, kein Regel-Editor.** `dnd/DndScheduleUseCase`
+  kennt zwei unabhängig schaltbare Fenster-Quellen (`DndPrefs.Toggles`): „Schlaf-Fenster folgt dem
+  Dimmer" und „Während der Dienstzeit". Kein `DndRule`-Modell — ein früherer, adversarial geprüfter
+  Entwurf mit vollem Regel-Editor wurde zugunsten dieser einfacheren, tatsächlich angefragten Lösung
+  verworfen. Der On-Call-Cutoff (siehe eigener Punkt unten) ist bewusst KEINE dritte Fenster-Quelle,
+  sondern ein Klipp-Schritt, der auf das Ergebnis der beiden Quellen angewendet wird.
+- **Rufbereitschaft-Cutoff (`DndOnCallCutoffResolver`, seit v1.20.0) klippt statt eine eigene
+  Fensterlogik/Policy zu duplizieren.** Der Nutzer markiert bestimmte Schichten (`DndPrefs.
+  onCallShifts`, z. B. „AD1") als On-Call; an einem so erkannten Tag wird JEDES aus den beiden
+  bestehenden Quellen berechnete Fenster auf eine feste, konfigurierbare Uhrzeit
+  (`DndPrefs.onCallCutoffMinutes`, Default 05:00) gekappt — unabhängig davon, welche Quelle das
+  Fenster erzeugt hat. **Keine separate Policy für On-Call-Nächte:** dieselbe `AutomaticZenRule`
+  gilt bis zum Cutoff unverändert (z. B. bleiben Anrufe geblockt, falls das die normale Policy so
+  vorsieht — bewusste Nutzer-Entscheidung, kein Versehen). Zwei beim ersten Bau selbst adversarial
+  gefundene und gefixte Fallen: (1) Der Cutoff-Tag darf NICHT unconditional der Kalendertag von
+  `shiftStartTime` sein — bei abends beginnenden On-Call-Schichten (z. B. 21:00) läge die
+  Cutoff-Uhrzeit (z. B. 05:00) sonst VOR Schichtbeginn und klippt die falsche, unbeteiligte Vornacht
+  statt der eigentlichen On-Call-Nacht; der Tag muss auf den Folgetag rollen, sobald die Schicht
+  ab/nach der Cutoff-Uhrzeit desselben Tages beginnt. (2) Der Cutoff-Zeitpunkt muss über
+  `LocalTime.atZone()` als echte Wanduhrzeit aufgelöst werden, NICHT als Mitternacht-Instant plus
+  fixer Minuten-Millis-Offset — sonst landet er an einem DST-Vorspringen-Tag eine Stunde zu spät.
+  `DndOnCallCutoffResolverTest` hält beide Fälle fest.
 - **Modus 1 dupliziert KEINE Fenster-Logik.** Er ruft `DimScheduleUseCase.previewTimeline()`
   direkt auf (bereits öffentlich, seiteneffektfrei) statt eine eigene Kopie der
   Dimmer-Fensterberechnung zu pflegen. Einbahnstraße wie `CalendarStateHolder`: `dnd/` liest von
@@ -472,6 +524,34 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Endlosschleifen-Bremse in `MainScreen`** (~Zeile 101): automatisches Nachladen nur bei
   `error == null`. Sonst: Laden scheitert → `isLoading` false → Effect erneut → Liste leer →
   laden … im Sekundentakt gegen die Google-API (real passiert bei 401). Nicht entfernen.
+
+### Schicht-Änderungs-Notification & Pre-Alarm-Refresh (seit v1.20.0)
+
+- **Kein echtes Push möglich, bewusst nicht versucht.** Google Calendar Push (`events.watch`)
+  braucht eine öffentlich erreichbare, domain-verifizierte HTTPS-Callback-URL — ein Android-Gerät im
+  Hintergrund hat keine. Stattdessen: `CalendarPreAlarmRefreshScheduler` plant pro anstehendem Alarm
+  (max. 14 Tage Lookahead, max. 10 Jobs — Vorbild `HueSmartScheduler`) einen WorkManager-
+  `OneTimeWorkRequest` 3h vor der jeweiligen Weckzeit (`CalendarPreAlarmRefreshWorker`, `NetworkType.
+  CONNECTED`), der `syncAlarms()` mit frischen Events anstößt. WorkManager statt Exact-Alarm, weil
+  ein paar Minuten Verzug hier tolerierbar sind (Vorbild:
+  `hue/scheduling/workers/PreAlarmHealthCheckWorker`, gleiches Muster). Reduziert die Lücke, schließt
+  sie aber NICHT — eine Änderung, die erst innerhalb der letzten 3h vor dem Alarm eintrifft (wie der
+  Rufbereitschafts-Abruf vom 03.08.2026, der den Sync nur zufällig rechtzeitig erreichte), bleibt
+  weiterhin auf die nächste 6h-Wartung angewiesen. `reschedule()` läuft an denselben zwei Stellen wie
+  der bestehende Dimmer-Reschedule (`AlarmMaintenanceService`, `BootReceiver`), jeweils best-effort
+  im eigenen try/catch.
+- **Die Notification-Entscheidung lebt INNERHALB von `AlarmUseCase.syncAlarms()`, nicht bei dessen
+  vier Aufrufern.** `ShiftChangeNotifier` wird auf der Implementierung injiziert, NICHT auf
+  `IAlarmUseCase` — das Interface bleibt unverändert. Wer einen fünften Aufrufer von `syncAlarms()`
+  hinzufügt, bekommt die Notification automatisch, ohne selbst etwas zu tun. Alle drei
+  Notifier-Aufrufe (Create/Update/Delete-Zweig) stehen in einem eigenen `try/catch` — eine
+  fehlgeschlagene Notification darf die eigentlich kritische Alarm-Synchronisation niemals
+  beeinträchtigen oder rückgängig machen.
+- **Der allererste Sync (z. B. nach Neuinstallation) flutet nicht.** `isFirstSync =
+  existingAlarms.isEmpty()` unterdrückt `notifyCreated()` gezielt nur für diesen einen Fall — jede
+  danach neu erkannte Schicht (z. B. Rufbereitschaft → aktivierte Schicht) benachrichtigt normal.
+  `notifyUpdated()` hat eine eigene Schwelle (Zeit-Delta ≥10min ODER Schichtname geändert), damit
+  Rundungsrauschen nicht flutet.
 
 ### UI-Texte
 

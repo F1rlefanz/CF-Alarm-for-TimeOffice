@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -30,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -40,11 +42,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NotificationSettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +60,8 @@ fun SettingsTabContent(
 ) {
     val context = LocalContext.current
     val authState by authViewModel.uiState.collectAsState()
+    val notificationSettingsViewModel: NotificationSettingsViewModel = hiltViewModel()
+    val notificationState by notificationSettingsViewModel.uiState.collectAsState()
 
     Column(
         modifier = Modifier
@@ -262,6 +268,78 @@ fun SettingsTabContent(
                     Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = null
                 )
+            }
+        }
+
+        // Benachrichtigungen (Schicht-Aenderung + Dimmer-Korrektur)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(SpacingConstants.PADDING_CARD),
+                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.NotificationsActive,
+                        contentDescription = null,
+                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Benachrichtigungen",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                HorizontalDivider()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Schicht-Änderung",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Benachrichtigt, wenn TimeOffice eine Schicht ändert/hinzufügt/entfernt",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = notificationState.shiftChangeNotificationEnabled,
+                        onCheckedChange = { notificationSettingsViewModel.setShiftChangeNotificationEnabled(it) }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Dimmer-Korrektur",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Zeigt Heller/Dunkler/Pause, solange der Schicht-Dimmer aktiv ist",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = notificationState.dimCorrectionNotificationEnabled,
+                        onCheckedChange = { notificationSettingsViewModel.setDimCorrectionNotificationEnabled(it) }
+                    )
+                }
             }
         }
 

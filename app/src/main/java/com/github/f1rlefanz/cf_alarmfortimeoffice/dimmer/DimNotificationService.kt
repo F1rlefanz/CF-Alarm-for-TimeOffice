@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 /**
@@ -46,6 +48,12 @@ class DimNotificationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    // Serialisiert das Read-Modify-Write auf DimOverlayPrefs: zwei rasch aufeinanderfolgende
+    // onStartCommand-Aufrufe (z.B. Doppel-Tap auf "Heller") laufen sonst als zwei unabhaengige
+    // Coroutines nebeneinander, lesen beide denselben alten overrideNow()-Stand und einer der
+    // beiden Deltas geht beim Zurueckschreiben verloren.
+    private val overrideMutex = Mutex()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -72,26 +80,37 @@ class DimNotificationService : Service() {
         }
 
         val windowEnd = active.range.last
-        val current = prefs.overrideNow()
-        val stale = DimWindowResolver.isOverrideStale(windowEnd, current.windowEnd)
-        val delta = if (stale) 0 else current.strengthDelta
-        val paused = if (stale) false else current.paused
 
-        val (newDelta, newPaused) = when (action) {
-            ACTION_BRIGHTER -> (delta - DimOverlayPrefs.OVERRIDE_STEP) to paused
-            ACTION_DARKER -> (delta + DimOverlayPrefs.OVERRIDE_STEP) to paused
-            ACTION_PAUSE -> delta to true
-            ACTION_RESUME -> delta to false
-            else -> {
-                Logger.w(LogTags.DIMMER, "Unbekannte Dimmer-Korrektur-Aktion: $action")
-                return
+        // Read-Modify-Write als Ganzes sperren (siehe overrideMutex) - sonst lesen zwei rasch
+        // aufeinanderfolgende Aktionen (Doppel-Tap) denselben Ausgangsstand und eine der beiden
+        // Aenderungen wird beim Zurueckschreiben stillschweigend ueberschrieben.
+        overrideMutex.withLock {
+            val current = prefs.overrideNow()
+            val stale = DimWindowResolver.isOverrideStale(windowEnd, current.windowEnd)
+            val delta = if (stale) 0 else current.strengthDelta
+            val paused = if (stale) false else current.paused
+
+            // Delta selbst klemmen (nicht nur das daraus abgeleitete effectiveStrength in
+            // DimScheduleUseCase.applyStrengthDelta) - sonst waechst das Delta bei wiederholtem
+            // Dunkler ungebremst ueber den sichtbaren Bereich hinaus, und ein einzelnes Heller
+            // danach zeigt keine Wirkung, weil effectiveStrength trotzdem noch gedeckelt bleibt.
+            val deltaRange = -active.strength..(DimOverlayPrefs.STRENGTH_MAX - active.strength)
+            val (newDelta, newPaused) = when (action) {
+                ACTION_BRIGHTER -> (delta - DimOverlayPrefs.OVERRIDE_STEP).coerceIn(deltaRange) to paused
+                ACTION_DARKER -> (delta + DimOverlayPrefs.OVERRIDE_STEP).coerceIn(deltaRange) to paused
+                ACTION_PAUSE -> delta to true
+                ACTION_RESUME -> delta to false
+                else -> {
+                    Logger.w(LogTags.DIMMER, "Unbekannte Dimmer-Korrektur-Aktion: $action")
+                    return
+                }
             }
-        }
 
-        // Atomar zurückschreiben (siehe DimOverlayPrefs.setOverride) - sonst würde z.B. ein reines
-        // Pause-Toggle einen bereits stale gewordenen Delta-Wert unter dem neuen windowEnd
-        // unbeabsichtigt wiederbeleben.
-        prefs.setOverride(newDelta, newPaused, windowEnd)
+            // Atomar zurückschreiben (siehe DimOverlayPrefs.setOverride) - sonst würde z.B. ein
+            // reines Pause-Toggle einen bereits stale gewordenen Delta-Wert unter dem neuen
+            // windowEnd unbeabsichtigt wiederbeleben.
+            prefs.setOverride(newDelta, newPaused, windowEnd)
+        }
         dimSchedule.applyCurrentState()
     }
 

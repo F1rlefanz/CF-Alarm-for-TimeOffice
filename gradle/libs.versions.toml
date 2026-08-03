@@ -1,7 +1,7 @@
 [versions]
 agp = "9.3.1"
 ksp = "2.3.2"
-googleAuthLibraryOauth2Http = "1.49.0"
+googleAuthLibraryOauth2Http = "1.50.0"
 gson = "2.14.0"
 kotlin = "2.4.10"
 # Core Android dependencies (STABLE RELEASES)
@@ -23,7 +23,7 @@ lifecycleVersion = "2.11.0"
 timber = "5.0.1"
 googleid = "1.2.0"
 datastore = "1.2.1"
-googleAuthLibraryCredentials = "1.49.0"
+googleAuthLibraryCredentials = "1.50.0"
 materialIconsExtended = "1.7.8"
 kotlinxSerializationJson = "1.11.0"
 desugarJdkLibs = "2.1.5"

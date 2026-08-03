@@ -9,10 +9,12 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -56,9 +58,23 @@ class AlarmReceiver : BroadcastReceiver() {
     @Inject lateinit var skipUseCase: IAlarmSkipUseCase
     @Inject lateinit var hueRuleUseCase: IHueRuleUseCase
     @Inject lateinit var shiftUseCase: IShiftUseCase
+    @Inject lateinit var alarmUseCase: IAlarmUseCase
 
     companion object {
         const val EXTRA_SHIFT_NAME = "shift_name"
+
+        /**
+         * STILLE SCHICHT: true, wenn dieser Alarm keinen Ton/Vibration/Vollbild/Hue ausloesen
+         * darf (ShiftDefinition.isSilent, uebernommen in AlarmInfo.isSilent). Reine Funktion,
+         * damit die eigentliche Gate-Entscheidung ohne Android-Kontext testbar ist - der
+         * umgebende onReceive-Fluss bleibt wegen goAsync()/Hilt Android-gebunden und ungetestet
+         * (gleiche Konvention wie AlarmSoundService).
+         *
+         * Fail-safe wie der Skip-Check daneben: fehlt die AlarmInfo (Lookup fehlgeschlagen,
+         * Direct Boot vor Entsperrung, o.ae.), gilt der Alarm NICHT als still - im Zweifel
+         * wecken statt versehentlich stumm bleiben.
+         */
+        fun isSilentAlarm(alarmInfo: AlarmInfo?): Boolean = alarmInfo?.isSilent == true
 
         /**
          * MUSS "alarm_time" heissen. AlarmManagerService.createEnhancedAlarmIntent() und
@@ -148,6 +164,32 @@ class AlarmReceiver : BroadcastReceiver() {
 
                 // Existing alarm logic continues here...
                 Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")
+
+                // STILLE SCHICHT: Ton/Vibration/Vollbild-Wecker UND Hue bleiben aus, wenn diese
+                // Schicht als still markiert ist. Der Zeit-Anker selbst (dieser Broadcast) feuert
+                // trotzdem normal weiter - DND/Dimmer/Feature A und die AlarmInfo in
+                // getAllAlarms() sind davon unberuehrt, nur die Wecker-Instanz
+                // (AlarmSoundService) und executeHueRulesForAlarm() werden nicht angestossen.
+                if (userUnlocked) {
+                    val alarmInfo = try {
+                        alarmUseCase.getAllAlarms().getOrNull()?.find { it.id == alarmId }
+                    } catch (e: Exception) {
+                        Logger.w(
+                            LogTags.ALARM_RECEIVER,
+                            "⚠️ SILENT-CHECK: Konnte AlarmInfo fuer $alarmId nicht laden, wecke sicherheitshalber normal",
+                            e
+                        )
+                        null
+                    }
+
+                    if (isSilentAlarm(alarmInfo)) {
+                        Logger.business(
+                            LogTags.ALARM_RECEIVER,
+                            "🔕 STILLE SCHICHT: Alarm $alarmId ($shiftName) ist als still markiert - kein Ton/Vibration/Vollbild/Hue"
+                        )
+                        return@launch
+                    }
+                }
 
                 // Wake Lock to ensure device wakes up
                 val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager

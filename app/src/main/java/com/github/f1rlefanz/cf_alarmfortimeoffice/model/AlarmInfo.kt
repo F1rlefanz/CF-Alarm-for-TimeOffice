@@ -34,5 +34,11 @@ data class AlarmInfo(
     // Schichtbeginn (Start des Kalender-Events) als Epoch-Millis – anders als triggerTime (das ist
     // die Weckzeit, i.d.R. vor Schichtbeginn wegen Anfahrtszeit). Basis fuer DND-"Dienstzeit"-Fenster
     // (dnd/DndShiftSpanResolver). 0 = unbekannt (z. B. manuell angelegte Alarme ohne Schicht).
-    val shiftStartTime: Long = 0
+    val shiftStartTime: Long = 0,
+
+    // "Stille Schicht" (ShiftDefinition.isSilent), uebernommen beim Erstellen aus dem ShiftMatch.
+    // true = beim Feuern kein AlarmSoundService-Start, kein Vollbild, keine Hue-Regeln - nur der
+    // Zeit-Anker fuer DND/Dimmer bleibt. Siehe AlarmReceiver.isSilentAlarm() und CLAUDE.md
+    // "Stille Schicht".
+    val isSilent: Boolean = false
 )

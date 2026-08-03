@@ -163,4 +163,21 @@ class ShiftDefinitionTest {
         )
         assertFalse(def.isEnabled)
     }
+
+    // ---- isSilent ("Stille Schicht", Feature D - Default-Wert fuer Bestandskompatibilitaet) ----
+
+    @Test
+    fun `isSilent ist standardmaessig false`() {
+        val def = ShiftDefinition(id = "x", name = "X", keywords = listOf("X"), alarmTime = LocalTime.of(6, 0))
+        assertFalse(def.isSilent)
+    }
+
+    @Test
+    fun `isSilent kann explizit auf true gesetzt werden`() {
+        val def = ShiftDefinition(
+            id = "oncall", name = "AD1", keywords = listOf("AD1"),
+            alarmTime = LocalTime.of(5, 0), isSilent = true
+        )
+        assertTrue(def.isSilent)
+    }
 }

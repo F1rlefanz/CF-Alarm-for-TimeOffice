@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -58,7 +60,13 @@ fun ShiftConfigScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Schicht-Konfiguration") },
+                title = {
+                    Text(
+                        "Schicht-Konfiguration",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -259,11 +267,22 @@ private fun ShiftDefinitionCard(
                     "Muster: ${definition.keywords.joinToString(", ")}",
                     style = MaterialTheme.typography.bodySmall
                 )
-                Text(
-                    "Alarm: ${definition.getAlarmTimeFormatted()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Alarm: ${definition.getAlarmTimeFormatted()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (definition.isSilent) {
+                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                        Icon(
+                            Icons.Default.NotificationsOff,
+                            contentDescription = "Stille Schicht - kein Ton/Vibration/Vollbild",
+                            modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
             
             IconButton(onClick = onDelete) {

@@ -140,6 +140,50 @@ class AlarmRepositoryTest {
     }
 
     @Test
+    fun `init laedt das persistierte isSilent-Flag mit`() = runTest {
+        val store = storeWith(alarmData(id = 8, offsetMs = 60 * 60 * 1000L).copy(isSilent = true))
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+
+        val loaded = repo.activeAlarms.first { list -> list.any { it.id == 8 } }
+
+        assertTrue("isSilent muss aus dem DataStore geladen werden", loaded.first { it.id == 8 }.isSilent)
+    }
+
+    @Test
+    fun `altes JSON ohne isSilent defaultet auf false (Migration)`() = runTest {
+        // Simuliert einen vor Feature D gespeicherten Alarm: kein isSilent im JSON.
+        val legacyJson =
+            """[{"id":11,"shiftId":"s","shiftName":"F","triggerTime":${now + 60 * 60 * 1000L},"formattedTime":"t"}]"""
+        val store = FakePreferencesDataStore(
+            mutablePreferencesOf().apply { this[alarmsKey] = legacyJson }
+        )
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+
+        val loaded = repo.activeAlarms.first { list -> list.any { it.id == 11 } }
+
+        assertTrue("Fehlendes isSilent im Alt-JSON muss auf false defaulten",
+            loaded.first { it.id == 11 }.isSilent == false)
+    }
+
+    @Test
+    fun `saveAlarm persistiert isSilent = true und ueberlebt einen Reload`() = runTest {
+        val directBoot = mock<DirectBootAlarmStore>()
+        val store = storeWith()
+        val repo = AlarmRepository(store, directBoot)
+        repo.activeAlarms.first() // Init-Load abwarten (leerer Bestand)
+
+        val silentAlarm = futureAlarmInfo(id = 99, offsetMs = 60 * 60 * 1000L).copy(isSilent = true)
+        repo.saveAlarm(silentAlarm)
+
+        // Aus einem frischen Repository (derselbe DataStore) geladen - beweist, dass isSilent
+        // tatsaechlich im persistierten JSON steht und nicht nur im In-Memory-Cache.
+        val reloaded = AlarmRepository(store, directBoot)
+        val loaded = reloaded.activeAlarms.first { list -> list.any { it.id == 99 } }
+
+        assertTrue("isSilent muss den Persist/Reload-Zyklus ueberleben", loaded.first { it.id == 99 }.isSilent)
+    }
+
+    @Test
     fun `deleteAlarm entfernt aus dem Cache und schreibt den Direct-Boot-Spiegel nach`() = runTest {
         val directBoot = mock<DirectBootAlarmStore>()
         val store = storeWith(

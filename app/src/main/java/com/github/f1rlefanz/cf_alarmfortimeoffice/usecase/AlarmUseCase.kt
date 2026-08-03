@@ -337,7 +337,8 @@ class AlarmUseCase @Inject constructor(
             shiftStartTime = shiftMatch.calendarEvent.startTime
                 .atZone(ZoneId.systemDefault())
                 .toInstant()
-                .toEpochMilli()
+                .toEpochMilli(),
+            isSilent = shiftMatch.shiftDefinition.isSilent
         )
     }
     

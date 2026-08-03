@@ -50,7 +50,8 @@ data class AlarmInfoData(
     val eventId: String = "",
     val eventChecksum: String = "",
     val shiftEndTime: Long = 0,  // Schichtende (Epoch-Millis) für SHIFT_END-Dimmfenster; 0 = unbekannt
-    val shiftStartTime: Long = 0  // Schichtbeginn (Epoch-Millis) für DND-"Dienstzeit"-Fenster; 0 = unbekannt
+    val shiftStartTime: Long = 0,  // Schichtbeginn (Epoch-Millis) für DND-"Dienstzeit"-Fenster; 0 = unbekannt
+    val isSilent: Boolean = false  // "Stille Schicht" - siehe AlarmInfo.isSilent
 )
 
 @Singleton
@@ -303,7 +304,8 @@ class AlarmRepository @Inject constructor(
         eventId = eventId,
         eventChecksum = eventChecksum,
         shiftEndTime = shiftEndTime,
-        shiftStartTime = shiftStartTime
+        shiftStartTime = shiftStartTime,
+        isSilent = isSilent
     )
 
     private fun AlarmInfoData.toAlarmInfo() = AlarmInfo(
@@ -315,6 +317,7 @@ class AlarmRepository @Inject constructor(
         eventId = eventId,
         eventChecksum = eventChecksum,
         shiftEndTime = shiftEndTime,
-        shiftStartTime = shiftStartTime
+        shiftStartTime = shiftStartTime,
+        isSilent = isSilent
     )
 }

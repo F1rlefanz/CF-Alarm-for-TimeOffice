@@ -113,6 +113,15 @@ class AlarmUseCaseDeltaSyncTest {
         alarmTime = LocalTime.of(5, 30)
     )
 
+    /** Rufbereitschaft (AD1): still, aber die Zeit bleibt Pflicht-Anker fuer DND/Dimmer/Hue. */
+    private val silentShift = ShiftDefinition(
+        id = "oncall",
+        name = "AD1",
+        keywords = listOf("AD1"),
+        alarmTime = LocalTime.of(5, 0),
+        isSilent = true
+    )
+
     /** Weit in der Zukunft, damit die berechnete Weckzeit garantiert > now ist. */
     private fun futureEvent(id: String, title: String, day: Int) = CalendarEvent(
         id = id,
@@ -235,5 +244,43 @@ class AlarmUseCaseDeltaSyncTest {
         useCase(repo, manager, config, skipUseCase).syncAlarms(listOf(futureEvent("evD", "F", 3)), config)
 
         assertEquals(1, skipUseCase.clearExpiredSkipCallCount)
+    }
+
+    @Test
+    fun `Stille Schicht - isSilent wird aus der ShiftDefinition uebernommen und bleibt in getAllAlarms sichtbar`() = runTest {
+        // Feature D: ShiftDefinition.isSilent -> AlarmInfo.isSilent (createAlarmFromShiftMatch).
+        // Der Alarm muss trotzdem ganz normal im Bestand erscheinen - Voraussetzung fuer Feature A
+        // (On-Call-DND liest AlarmInfo.shiftStartTime ueber genau denselben Weg).
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift, silentShift))
+        val useCase = useCase(repo, manager, config)
+
+        val result = useCase.syncAlarms(listOf(futureEvent("evOnCall", "AD1", 5)), config)
+
+        assertTrue(result.isSuccess)
+        val created = result.getOrNull()?.find { it.eventId == "evOnCall" }
+        assertNotNull("Alarm fuer die stille Schicht muss erstellt werden", created)
+        assertTrue("AlarmInfo.isSilent muss aus ShiftDefinition.isSilent uebernommen werden",
+            created!!.isSilent)
+
+        // Auch ueber den regulaeren Lesepfad (getAllAlarms) weiterhin sichtbar und als still markiert.
+        val allAlarms = useCase.getAllAlarms().getOrThrow()
+        val fromGetAll = allAlarms.find { it.eventId == "evOnCall" }
+        assertNotNull("Stille Schicht darf nicht aus getAllAlarms() verschwinden", fromGetAll)
+        assertTrue(fromGetAll!!.isSilent)
+    }
+
+    @Test
+    fun `Normale Schicht bleibt isSilent = false`() = runTest {
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(repo, manager, config).syncAlarms(listOf(futureEvent("evNormal", "F", 6)), config)
+
+        val created = result.getOrNull()?.find { it.eventId == "evNormal" }
+        assertNotNull(created)
+        assertTrue("Regulaere Schicht darf nicht als still markiert werden", created!!.isSilent == false)
     }
 }

@@ -66,6 +66,7 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var directBootAlarmStore: DirectBootAlarmStore
     @Inject lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
     @Inject lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+    @Inject lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 
     companion object {
         // 🛡️ Level 4 Configuration
@@ -259,6 +260,15 @@ class BootReceiver : BroadcastReceiver() {
                         dndSchedule.scheduleNextTransition()
                     } catch (e: Exception) {
                         Logger.w(LogTags.DND, "Boot: DND-Reschedule fehlgeschlagen", e)
+                    }
+
+                    // 11. Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) nach dem Boot neu
+                    //     planen. Gleiches Muster/gleicher try/catch-Gedanke wie Dimmer/DND –
+                    //     Best-effort, darf die Wecker-Recovery NIE stoeren.
+                    try {
+                        calendarPreAlarmRefreshScheduler.reschedule()
+                    } catch (e: Exception) {
+                        Logger.w(LogTags.BACKGROUND_WORKER, "Boot: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
                     }
 
                     recoverySuccessful = true

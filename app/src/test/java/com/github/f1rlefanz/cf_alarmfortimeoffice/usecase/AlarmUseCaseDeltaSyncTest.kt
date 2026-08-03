@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -104,6 +106,30 @@ class AlarmUseCaseDeltaSyncTest {
         override val skipStatusFlow: Flow<AlarmSkipState> = flowOf(AlarmSkipState())
     }
 
+    /**
+     * Fake-Notifier: zaehlt nur Aufrufe, dupliziert KEINE Schwellenwert-Logik (die lebt als reine
+     * Funktion in [ShiftChangeNotifier.exceedsThreshold] und wird unten direkt getestet). Der
+     * Context/die Prefs im Super-Konstruktor werden nie tatsaechlich benutzt, da alle drei
+     * Notify-Methoden ueberschrieben sind und den Super-Aufruf nie erreichen.
+     */
+    private class FakeShiftChangeNotifier : ShiftChangeNotifier(mock(), mock()) {
+        var createdCount = 0
+        var updatedCount = 0
+        var deletedCount = 0
+
+        override suspend fun notifyCreated(new: AlarmInfo) {
+            createdCount++
+        }
+
+        override suspend fun notifyUpdated(old: AlarmInfo, new: AlarmInfo) {
+            updatedCount++
+        }
+
+        override suspend fun notifyDeleted(old: AlarmInfo) {
+            deletedCount++
+        }
+    }
+
     // --- Fixtures ---
 
     private val earlyShift = ShiftDefinition(
@@ -145,14 +171,16 @@ class AlarmUseCaseDeltaSyncTest {
         repo: FakeAlarmRepository,
         manager: AlarmManagerService,
         config: ShiftConfig,
-        skipUseCase: IAlarmSkipUseCase = FakeSkipUseCase()
+        skipUseCase: IAlarmSkipUseCase = FakeSkipUseCase(),
+        notifier: FakeShiftChangeNotifier = FakeShiftChangeNotifier()
     ): AlarmUseCase =
         AlarmUseCase(
             repo,
             manager,
             FakeShiftConfigRepository(config),
             ShiftRecognitionEngine(FakeShiftConfigRepository(config)),
-            skipUseCase
+            skipUseCase,
+            notifier
         )
 
     private fun mockManager(): AlarmManagerService {
@@ -282,5 +310,104 @@ class AlarmUseCaseDeltaSyncTest {
         val created = result.getOrNull()?.find { it.eventId == "evNormal" }
         assertNotNull(created)
         assertTrue("Regulaere Schicht darf nicht als still markiert werden", created!!.isSilent == false)
+    }
+
+    // --- Feature B: Schicht-Aenderungs-Notification (Wiring in AlarmUseCase.syncAlarms) ---
+
+    @Test
+    fun `Notifier - erster Sync ueberhaupt erstellt Alarme aber meldet keine 'Neue Schicht erkannt'`() = runTest {
+        // Sonst wuerde jede Neuinstallation/jedes Zuruecksetzen sofort eine Notification-Flut
+        // ausloesen - siehe ShiftChangeNotifier-Klassenkommentar.
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val notifier = FakeShiftChangeNotifier()
+
+        useCase(repo, manager, config, notifier = notifier)
+            .syncAlarms(listOf(futureEvent("evFirst", "F", 7)), config)
+
+        assertEquals(0, notifier.createdCount)
+        assertEquals(0, notifier.updatedCount)
+        assertEquals(0, notifier.deletedCount)
+    }
+
+    @Test
+    fun `Notifier - neues Event NACH dem ersten Sync wird als erstellt gemeldet`() = runTest {
+        val evB = futureEvent("evB", "F", 1)
+        val repo = FakeAlarmRepository(listOf(existingAlarm(id = evB.id.hashCode(), eventId = "evB")))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val notifier = FakeShiftChangeNotifier()
+
+        // evB bleibt (Dummy-Fixture weicht vom real berechneten Alarm ab -> Update-Zweig),
+        // evC kommt neu hinzu -> Create-Zweig.
+        useCase(repo, manager, config, notifier = notifier)
+            .syncAlarms(listOf(evB, futureEvent("evC", "F", 2)), config)
+
+        assertEquals("Nur das tatsaechlich neue Event darf gemeldet werden", 1, notifier.createdCount)
+        assertEquals(1, notifier.updatedCount)
+        assertEquals(0, notifier.deletedCount)
+    }
+
+    @Test
+    fun `Notifier - entferntes Event wird als geloescht gemeldet`() = runTest {
+        val evA = futureEvent("evA", "F", 1)
+        val repo = FakeAlarmRepository(
+            listOf(
+                existingAlarm(id = evA.id.hashCode(), eventId = "evA"),
+                existingAlarm(id = 4242, eventId = "evB")
+            )
+        )
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val notifier = FakeShiftChangeNotifier()
+
+        // Nur evA wird uebergeben -> evB gilt als aus dem Kalender entfernt.
+        useCase(repo, manager, config, notifier = notifier).syncAlarms(listOf(evA), config)
+
+        assertEquals(1, notifier.deletedCount)
+        assertEquals(0, notifier.createdCount)
+    }
+
+    @Test
+    fun `Notifier - autoAlarm deaktiviert - keine Notifier-Aufrufe`() = runTest {
+        val existing = existingAlarm(id = 1, eventId = "evB")
+        val repo = FakeAlarmRepository(listOf(existing))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = false, definitions = listOf(earlyShift))
+        val notifier = FakeShiftChangeNotifier()
+
+        useCase(repo, manager, config, notifier = notifier)
+            .syncAlarms(listOf(futureEvent("evB", "F", 1)), config)
+
+        assertEquals(0, notifier.createdCount)
+        assertEquals(0, notifier.updatedCount)
+        assertEquals(0, notifier.deletedCount)
+    }
+
+    // --- ShiftChangeNotifier.exceedsThreshold: reine Funktion, unabhaengig von Context/Prefs ---
+
+    @Test
+    fun `exceedsThreshold - Zeitverschiebung unter 10 Minuten ohne Namensaenderung ist Rundungsrauschen`() {
+        val old = existingAlarm(id = 1, eventId = "e").copy(shiftName = "Frueh", triggerTime = 1_000_000L)
+        val new = old.copy(triggerTime = old.triggerTime + 5 * 60_000L)
+
+        assertFalse(ShiftChangeNotifier.exceedsThreshold(old, new))
+    }
+
+    @Test
+    fun `exceedsThreshold - Zeitverschiebung ab 10 Minuten ist meldenswert`() {
+        val old = existingAlarm(id = 1, eventId = "e").copy(shiftName = "Frueh", triggerTime = 1_000_000L)
+        val new = old.copy(triggerTime = old.triggerTime + ShiftChangeNotifier.CHANGE_THRESHOLD_MINUTES * 60_000L)
+
+        assertTrue(ShiftChangeNotifier.exceedsThreshold(old, new))
+    }
+
+    @Test
+    fun `exceedsThreshold - Namensaenderung ist immer meldenswert, auch ohne Zeitverschiebung`() {
+        val old = existingAlarm(id = 1, eventId = "e").copy(shiftName = "Frueh", triggerTime = 1_000_000L)
+        val new = old.copy(shiftName = "AD1")
+
+        assertTrue(ShiftChangeNotifier.exceedsThreshold(old, new))
     }
 }

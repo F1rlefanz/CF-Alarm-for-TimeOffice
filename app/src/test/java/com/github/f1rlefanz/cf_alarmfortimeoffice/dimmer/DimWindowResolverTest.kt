@@ -260,4 +260,38 @@ class DimWindowResolverTest {
     fun `mergeToTimeline ist leer ohne Spannen`() {
         assertTrue(DimWindowResolver.mergeToTimeline(emptyList()).isEmpty())
     }
+
+    // --- isOverrideStale / applyStrengthDelta: Dimmer-Korrektur-Override (Feature C) ---
+
+    @Test
+    fun `Override ist stale wenn kein Fenster aktiv ist`() {
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = null, overrideWindowEnd = 500L))
+    }
+
+    @Test
+    fun `Override gilt weiter solange windowEnd zur aktiven Spanne passt`() {
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 500L, overrideWindowEnd = 500L).not())
+    }
+
+    @Test
+    fun `Override ist stale wenn sich das aktive Fenster geaendert hat`() {
+        // naechste Fenstergrenze ist bereits erreicht (naechster Tick hat neu berechnet)
+        assertTrue(DimWindowResolver.isOverrideStale(activeWindowEnd = 600L, overrideWindowEnd = 500L))
+    }
+
+    @Test
+    fun `applyStrengthDelta addiert das Delta innerhalb der Grenzen`() {
+        assertEquals(60, DimWindowResolver.applyStrengthDelta(base = 50, delta = 10, max = 85))
+        assertEquals(40, DimWindowResolver.applyStrengthDelta(base = 50, delta = -10, max = 85))
+    }
+
+    @Test
+    fun `applyStrengthDelta klemmt auf 0 nach unten`() {
+        assertEquals(0, DimWindowResolver.applyStrengthDelta(base = 5, delta = -20, max = 85))
+    }
+
+    @Test
+    fun `applyStrengthDelta klemmt auf max nach oben`() {
+        assertEquals(85, DimWindowResolver.applyStrengthDelta(base = 80, delta = 20, max = 85))
+    }
 }

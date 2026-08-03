@@ -39,7 +39,8 @@ class DimScheduleUseCase @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val alarmUseCase: IAlarmUseCase,
     private val dimRuleUseCase: DimRuleUseCase,
-    private val prefs: DimOverlayPrefs
+    private val prefs: DimOverlayPrefs,
+    private val correctionNotifier: DimCorrectionNotifier
 ) {
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
@@ -56,16 +57,55 @@ class DimScheduleUseCase @Inject constructor(
         scheduleNextTransition()
     }
 
+    /**
+     * Wendet den Ist-Zustand an UND die Dimmer-Korrektur-Notification (Feature C), falls per
+     * [DimOverlayPrefs.correctionNotificationEnabled] aktiviert. Ein evtl. gesetzter
+     * [DimOverlayPrefs.Override] (Heller/Dunkler/Pause) wird nur angewendet, solange er noch zur
+     * gerade aktiven Fenster-Spanne gehört ([DimWindowResolver.isOverrideStale]) - ein stale
+     * gewordener Override wird hier automatisch weggeräumt, kein zusätzlicher Timer nötig (der
+     * ohnehin rollende Tick ruft diese Funktion an jeder Fenstergrenze neu auf).
+     */
     suspend fun applyCurrentState() {
         val now = System.currentTimeMillis()
         // Aktive Spanne (überlappen mehrere, gewinnt die dunkelste – Logik in DimWindowResolver).
         val active = DimWindowResolver.activeSpan(windows(), now)
-        if (active != null) {
-            prefs.setActiveOverlay(true, active.strength, active.warmth)
-        } else {
+        val override = prefs.overrideNow()
+        val stale = DimWindowResolver.isOverrideStale(active?.range?.last, override.windowEnd)
+        if (stale && (override.strengthDelta != 0 || override.paused || override.windowEnd != 0L)) {
+            prefs.clearOverride()
+        }
+
+        if (active == null) {
             prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
+            correctionNotifier.cancel()
+            return
+        }
+
+        val effectiveDelta = if (stale) 0 else override.strengthDelta
+        val isPaused = !stale && override.paused
+        val effectiveStrength = DimWindowResolver.applyStrengthDelta(active.strength, effectiveDelta, DimOverlayPrefs.STRENGTH_MAX)
+
+        if (isPaused) {
+            // paused=true => gar kein Overlay berechnen (nicht nur strength=0 - der Nutzer hat
+            // das Dimmen bewusst ausgesetzt).
+            prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
+        } else {
+            prefs.setActiveOverlay(true, effectiveStrength, active.warmth)
+        }
+
+        if (prefs.correctionNotificationEnabledNow()) {
+            correctionNotifier.show(effectiveStrength, active.warmth, isPaused)
+        } else {
+            correctionNotifier.cancel()
         }
     }
+
+    /**
+     * Aktive Spanne JETZT, ohne Seiteneffekt - fuer [DimNotificationService], damit der den
+     * korrekten `windowEnd`-Schluessel fuer einen Override kennt, ohne die Fensterlogik zu
+     * duplizieren.
+     */
+    suspend fun activeSpanNow(): DimWindowResolver.DimSpan? = DimWindowResolver.activeSpan(windows(), System.currentTimeMillis())
 
     suspend fun scheduleNextTransition() {
         val am = alarmManager()

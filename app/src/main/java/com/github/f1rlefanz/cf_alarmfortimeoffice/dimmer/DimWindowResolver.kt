@@ -162,6 +162,22 @@ object DimWindowResolver {
         return out
     }
 
+    /**
+     * Gilt ein Dimmer-Korrektur-Override (Feature C) noch? Er ist an [DimOverlayPrefs.Override.windowEnd]
+     * gebunden (= `range.last` der aktiven Spanne beim Setzen) - rein DATENBASIERTE Reset-Erkennung,
+     * KEIN eigener Timer/Alarm noetig: der ohnehin rollende Tick ([DimScheduleUseCase] `REQ_TICK`)
+     * ruft `applyCurrentState()` an jeder Fenstergrenze ohnehin neu auf, wodurch ein Override fuer
+     * ein inzwischen beendetes/gewechseltes Fenster automatisch stale wird.
+     *
+     * Kein aktives Fenster ([activeWindowEnd] `null`, z. B. Dimmer gerade aus) ODER ein anderer
+     * `windowEnd` als beim Setzen (naechstes Fenster hat begonnen) = stale.
+     */
+    fun isOverrideStale(activeWindowEnd: Long?, overrideWindowEnd: Long): Boolean =
+        activeWindowEnd == null || activeWindowEnd != overrideWindowEnd
+
+    /** Wendet das Heller/Dunkler-Delta der Korrektur-Notification an - wirkt NUR auf strength, geklemmt auf [0, max]. */
+    fun applyStrengthDelta(base: Int, delta: Int, max: Int): Int = (base + delta).coerceIn(0, max)
+
     /** Ein zusammenhaengender, nicht ueberlappender Abschnitt der resultierenden Dimm-Vorschau. */
     data class ResolvedInterval(val range: LongRange, val strength: Int, val warmth: Int)
 

@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dnd
 
 import java.time.Instant
+import java.time.LocalTime
 import java.time.ZoneId
 
 /**
@@ -22,14 +23,18 @@ object DndOnCallCutoffResolver {
     /** Minimal-Info eines Alarms fuer die Cutoff-Berechnung (entkoppelt von AlarmInfo/Android). */
     data class AlarmSlot(val shiftName: String, val shiftStartTime: Long)
 
-    private const val MIN_MS = 60_000L
-
     /**
      * Ein Cutoff-Zeitpunkt (Epoch-Millis) pro erkanntem On-Call-Tag: fuer jeden Alarm, dessen
      * [AlarmSlot.shiftName] in [onCallShifts] steht UND dessen [AlarmSlot.shiftStartTime] bekannt
      * ist (> 0 - 0 bedeutet "unbekannt", z. B. manuell angelegte Alarme ohne Schicht), liegt der
-     * Cutoff auf demselben Kalendertag wie [AlarmSlot.shiftStartTime], zur Uhrzeit [cutoffMinutes]
-     * (Minuten seit Mitternacht).
+     * Cutoff zur Uhrzeit [cutoffMinutes] (Minuten seit Mitternacht) - und zwar an dem Kalendertag,
+     * an dem diese Uhrzeit tatsaechlich in der on-call-Nacht liegt: Startet die Schicht bereits
+     * NACH dieser Uhrzeit desselben Kalendertags (z. B. 00:30 oder 03:00 bei Cutoff 05:00), ist es
+     * derselbe Tag wie [AlarmSlot.shiftStartTime]. Startet die Schicht dagegen VOR dieser Uhrzeit,
+     * typischerweise abends (z. B. 21:00 bei Cutoff 05:00), liegt die Uhrzeit erst am naechsten
+     * Kalendertag in der Zukunft - der Cutoff wandert entsprechend auf den Folgetag. Ohne diese
+     * Fallunterscheidung landete der Cutoff einer abends beginnenden On-Call-Schicht vor deren
+     * eigenem Beginn und klippte stattdessen die voellig unbeteiligte Vornacht.
      */
     fun cutoffInstants(
         alarms: List<AlarmSlot>,
@@ -40,8 +45,20 @@ object DndOnCallCutoffResolver {
         .asSequence()
         .filter { it.shiftName in onCallShifts && it.shiftStartTime > 0L }
         .map { alarm ->
-            val date = Instant.ofEpochMilli(alarm.shiftStartTime).atZone(zone).toLocalDate()
-            date.atStartOfDay(zone).toInstant().toEpochMilli() + cutoffMinutes * MIN_MS
+            val startZoned = Instant.ofEpochMilli(alarm.shiftStartTime).atZone(zone)
+            val startMinutesOfDay = startZoned.hour * 60 + startZoned.minute
+            val date = if (startMinutesOfDay >= cutoffMinutes) {
+                startZoned.toLocalDate().plusDays(1)
+            } else {
+                startZoned.toLocalDate()
+            }
+            // Wall-clock Uhrzeit direkt aufloesen (nicht Mitternacht + Millis-Offset addieren) -
+            // sonst landet der Cutoff an einem DST-Vorspringen-Tag eine Stunde zu spaet, weil die
+            // uebersprungene Stunde in der reinen Millis-Rechnung nie fehlt.
+            date.atTime(LocalTime.ofSecondOfDay(cutoffMinutes * 60L))
+                .atZone(zone)
+                .toInstant()
+                .toEpochMilli()
         }
         .distinct()
         .toList()

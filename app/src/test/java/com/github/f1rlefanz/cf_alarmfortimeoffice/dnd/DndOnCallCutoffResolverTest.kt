@@ -54,6 +54,20 @@ class DndOnCallCutoffResolverTest {
     }
 
     @Test
+    fun `On-Call-Schicht die abends beginnt liefert Cutoff am naechsten Kalendertag`() {
+        // Schicht beginnt 21:00 - der Cutoff (05:00) liegt erst am naechsten Morgen, nicht mehr
+        // am selben Kalendertag wie der Schichtbeginn.
+        val slot = AlarmSlot(shiftName = "AD1", shiftStartTime = ep(2026, 1, 15, 21, 0))
+
+        val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
+            listOf(slot), onCallShifts = setOf("AD1"), cutoffMinutes = 5 * 60, zone = zone
+        )
+
+        assertEquals(1, cutoffs.size)
+        assertEquals(ep(2026, 1, 16, 5, 0), cutoffs[0])
+    }
+
+    @Test
     fun `Mehrere On-Call-Tage liefern mehrere unabhaengige Cutoffs`() {
         val a = AlarmSlot("AD1", ep(2026, 1, 15, 0, 30))
         val b = AlarmSlot("AD1", ep(2026, 1, 20, 3, 0))

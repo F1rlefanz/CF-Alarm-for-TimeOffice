@@ -194,6 +194,24 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   Dimmer/Feature A sind davon unberührt. **Fail-safe wie der Skip-Check daneben:** schlägt der
   `AlarmInfo`-Lookup fehl (z. B. Direct Boot vor Entsperrung), gilt der Alarm NICHT als still — im
   Zweifel wecken statt versehentlich stumm bleiben.
+- **„Deine Schicht beginnt um" (Notification + Vollbild) muss `AlarmInfo.shiftStartTime` zeigen,
+  NICHT `triggerTime`/die Weckzeit** (Fix v1.20.1, Extra dafür heißt seither
+  `AlarmReceiver.EXTRA_SHIFT_START_TIME`, Schlüssel `"shift_start_time_formatted"`). Real
+  beobachtet: bei S2 (Weckzeit 14:30, Kalender-Schichtbeginn z. B. 14:48) zeigte die Anzeige die
+  Weckzeit. Die eigentliche Falle lag NICHT in der Erstplanung (`AlarmManagerService.
+  createEnhancedAlarmIntent()`, liest korrekt `ShiftMatch.calendarEvent.startTime`), sondern im
+  weit häufiger durchlaufenen Re-Arming-Pfad `AlarmUseCase.scheduleSystemAlarm(alarmInfo)` — jeder
+  der drei `syncAlarms()`-Zweige (neu/geändert/unverändert-re-armen) läuft darüber, also praktisch
+  jeder App-Start, jede 6h-Wartung, jeder Boot. Diese Funktion baute bis dahin eine SYNTHETISCHE
+  `CalendarEvent.startTime` direkt aus `alarmInfo.triggerTime` (der Weckzeit) — obwohl `AlarmInfo.
+  shiftStartTime` (Epoch-Millis des echten Schichtbeginns, seit dem Rufbereitschaft-Cutoff-Feature
+  vorhanden) bereits verfügbar war. Nur ein Live-Test am Emulator (Alarm über `cmd alarm set-time`
+  wirklich feuern lassen, nicht nur Code-Review) hat das aufgedeckt — der ansonsten korrekt
+  aussehende Fix an `createEnhancedAlarmIntent()` allein hätte den Bug NICHT behoben, weil dieser
+  Pfad in der Praxis kaum greift. Snooze und Direct-Boot-Restore reichen denselben Wert unverändert
+  durch (Schichtbeginn ändert sich durchs Schlummern nicht). Fallback bei `shiftStartTime <= 0`
+  (z. B. manueller Test-Alarm ohne echte Schicht) bleibt bewusst die Weckzeit — unveränderte
+  UX für den Fall, der nicht Teil dieses Bugs war.
 
 ### Hue
 

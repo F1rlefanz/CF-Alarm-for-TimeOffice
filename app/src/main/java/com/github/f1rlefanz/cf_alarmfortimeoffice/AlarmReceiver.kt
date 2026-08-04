@@ -87,7 +87,10 @@ class AlarmReceiver : BroadcastReceiver() {
          * ShiftMatch.calculatedAlarmTime (der Weckzeit) - die Notification/das Vollbild
          * zeigten "Deine Schicht beginnt um" dann faelschlich die Weckzeit (bei S2 z.B. die
          * Default-Weckzeit 14:30 statt des echten Schichtbeginns). Wer hier wieder die
-         * Weckzeit eintraegt, holt sich den Fehler zurueck.
+         * Weckzeit eintraegt, holt sich den Fehler zurueck. Der eigentlich dominante Bugherd war
+         * NICHT die Erstplanung (AlarmManagerService.createEnhancedAlarmIntent), sondern das weit
+         * haeufigere Re-Arming ueber AlarmUseCase.scheduleSystemAlarm() (jeder syncAlarms()-Zweig,
+         * also praktisch jeder App-Start/jede 6h-Wartung) - siehe CLAUDE.md "Wecker".
          */
         const val EXTRA_SHIFT_START_TIME = "shift_start_time_formatted"
         const val EXTRA_ALARM_ID = "alarm_id"

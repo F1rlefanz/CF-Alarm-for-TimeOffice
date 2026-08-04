@@ -312,8 +312,6 @@ class AlarmManagerService(
             putExtra("shift_name", shiftMatch.shiftDefinition.name)
             putExtra("shift_start_time_formatted", formatAlarmTime(shiftMatch.calendarEvent.startTime))
             putExtra("shift_pattern", shiftMatch.shiftDefinition.id)
-            putExtra("shift_start_time", shiftMatch.calendarEvent.startTime.toString())
-            putExtra("shift_end_time", shiftMatch.calendarEvent.endTime.toString())
             putExtra("alarm_type", "setAlarmClock") // Track which API was used
             setPackage(application.packageName)
             action = enhancedAlarmAction(alarmId)

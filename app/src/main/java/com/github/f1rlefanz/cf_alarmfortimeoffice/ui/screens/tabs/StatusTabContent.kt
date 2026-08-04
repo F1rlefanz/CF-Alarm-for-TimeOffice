@@ -9,7 +9,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +60,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
@@ -273,12 +273,10 @@ private fun FullScreenIntentCard() {
 
                 if (!canUseFsi) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    TextButton(
+                    SettingsLinkButton(
                         onClick = { openFullScreenIntentSettings(context) },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("Einstellung öffnen")
-                    }
+                        text = "Einstellung öffnen"
+                    )
                 }
             }
         }
@@ -359,16 +357,14 @@ private fun BatteryOptimizationCard() {
 
                 if (!isExempt) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    TextButton(
+                    SettingsLinkButton(
                         onClick = {
                             (context as? android.app.Activity)?.let {
                                 BatteryOptimizationHelper.requestExemption(it)
                             }
                         },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("Ausnahme erlauben")
-                    }
+                        text = "Ausnahme erlauben"
+                    )
                 }
             }
         }
@@ -450,7 +446,7 @@ private fun UnusedAppRestrictionsCard() {
 
                 if (!isOk) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    TextButton(
+                    SettingsLinkButton(
                         onClick = {
                             try {
                                 context.startActivity(
@@ -464,10 +460,8 @@ private fun UnusedAppRestrictionsCard() {
                                 )
                             }
                         },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("Einstellung öffnen")
-                    }
+                        text = "Einstellung öffnen"
+                    )
                 }
             }
         }
@@ -571,7 +565,7 @@ private fun TimeOfficeHealthCard() {
             }
 
             Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-            TextButton(
+            SettingsLinkButton(
                 onClick = {
                     try {
                         context.startActivity(TimeOfficeHealthHelper.createAppInfoIntent(context))
@@ -583,10 +577,8 @@ private fun TimeOfficeHealthCard() {
                         )
                     }
                 },
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text("TimeOffice-Einstellungen öffnen")
-            }
+                text = "TimeOffice-Einstellungen öffnen"
+            )
         }
     }
 }
@@ -679,12 +671,10 @@ private fun DimmerAccessibilityCard() {
 
                 if (!isActive) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    TextButton(
+                    SettingsLinkButton(
                         onClick = { showDisclosure = true },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(stringResource(R.string.dimmer_open_accessibility))
-                    }
+                        text = stringResource(R.string.dimmer_open_accessibility)
+                    )
                 }
             }
         }
@@ -751,12 +741,10 @@ private fun DndPermissionCard() {
                 )
                 if (isSupported && !isGranted) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    TextButton(
+                    SettingsLinkButton(
                         onClick = { DndPermissionHelper.requestAccess(context) },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(stringResource(R.string.dnd_permission_grant))
-                    }
+                        text = stringResource(R.string.dnd_permission_grant)
+                    )
                 }
             }
         }
@@ -838,12 +826,7 @@ private fun StatusCard(
 
                 if (!isOk && actionLabel != null && onAction != null) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    TextButton(
-                        onClick = onAction,
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(actionLabel)
-                    }
+                    SettingsLinkButton(onClick = onAction, text = actionLabel)
                 }
             }
         }
@@ -1044,12 +1027,10 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
                     )
                     if (calendarViewModel != null) {
                         Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                        TextButton(
+                        SettingsLinkButton(
                             onClick = { calendarViewModel.refreshData(forceRefresh = true) },
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("Jetzt synchronisieren")
-                        }
+                            text = "Jetzt synchronisieren"
+                        )
                     }
                 }
             }

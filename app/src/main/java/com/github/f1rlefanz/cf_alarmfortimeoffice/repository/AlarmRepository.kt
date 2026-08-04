@@ -273,35 +273,6 @@ class AlarmRepository @Inject constructor(
         }
     }
 
-    /**
-     * PUBLIC API: Manual cleanup for startup or manual triggers
-     *
-     * This function is intentionally public for use by external components
-     * such as AlarmViewModel or BootReceiver for manual cleanup operations.
-     *
-     * @return Result with count of expired alarms that were removed
-     */
-    @Suppress("unused") // Public API - may be used by ViewModel or other components
-    suspend fun cleanupExpiredAlarmsManually(): Result<Int> {
-        return try {
-            val currentTime = System.currentTimeMillis()
-            val originalCount = _activeAlarms.value.size
-            val validAlarms = _activeAlarms.value.filter { it.triggerTime > currentTime }
-            val expiredCount = originalCount - validAlarms.size
-
-            if (expiredCount > 0) {
-                _activeAlarms.value = validAlarms
-                persistToDataStore(validAlarms)
-                Logger.w(LogTags.ALARM, "Manual cleanup: removed $expiredCount expired alarms")
-            }
-
-            Result.success(expiredCount)
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "Error during manual alarm cleanup", e)
-            Result.failure(e)
-        }
-    }
-
     /** shiftStartTime (Epoch-Millis, 0 = unbekannt) -> "dd.MM.yyyy HH:mm", leer bei unbekannt. */
     private fun formatShiftStartTime(shiftStartTime: Long): String {
         if (shiftStartTime <= 0) return ""

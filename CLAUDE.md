@@ -409,14 +409,21 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   ausschließt — dieses Prädikat bündelt zwei unabhängige Wege: eine explizit vom Nutzer markierte
   Schicht (`DimOverlayPrefs.nightDefaultExcludedShifts`, Toggle direkt an der Karte) ODER eine
   vorhandene `DimRule`, die den Tag ohnehin schon abdeckt (dieselbe Ausschließlichkeit wie oben).
-  **Ein Tag OHNE eigenen Alarm erzeugt bewusst KEINEN festen Fallback, wenn der FOLGETAG einen Alarm
-  hat** — dessen eigene Iteration deckt die Nacht bereits dynamisch bis zum echten Wecker ab (CLOCK
-  reicht über „vor der Weckzeit" zurück). Ohne diese Ausnahme entstehen zwei überlappende Spannen
-  mit unterschiedlichem Ende, und der fixe Fallback verlängert die Nacht über den echten Wecker
-  hinaus — genau der Fehler, den dieser Standard vermeiden soll (beim ersten Bau selbst
-  hineingelaufen, jetzt von `DimWindowResolverTest` festgehalten). **Eigene Verdunkelung/Wärme**
-  (`nightDefaultStrength`/`nightDefaultWarmth`, seit v1.17.1) — NICHT die globalen Wellness-Werte
-  mitverwenden, das war der erste Wurf und wurde vom Nutzer explizit zurückgewiesen.
+  **Pro Tag laufen ZWEI unabhängige Fenster-Prüfungen, nicht eine exklusive** (Fix v1.21.1): ein
+  Rückwärts-Fenster (nur falls der Tag selbst einen Wecker hat — die Nacht VOR diesem Wecker,
+  endend am Wecker) UND ein Vorwärts-Fenster (immer, AUSSER der FOLGETAG hat selbst einen Wecker —
+  dann deckt dessen eigenes Rückwärts-Fenster den heutigen Abend automatisch ab). Bis v1.21.0
+  waren beide exklusiv an „Tag hat keinen Wecker" gebunden — das ließ die Nacht NACH einem
+  Wecker, der nicht der frühe Morgen ist (z. B. eine Nachmittagsschicht mit Wecker 14:30),
+  komplett durchfallen, sobald der Folgetag ebenfalls keinen Wecker hatte: der Skip für den
+  Folgetag nahm fälschlich an, ein Wecker am ÜBERnächsten Tag decke die Nacht schon ab — dessen
+  Rückwärts-Fenster reicht aber nur exakt einen Tag zurück. Real reproduziert am 03./04./05.08.2026
+  (S2-Wecker 14:30 → Tag ganz ohne Kalendertermin → Frühschicht 05:30): die Nacht vom 3. auf den
+  4.8. blieb dadurch komplett ungedimmt UND ohne DND (DND-Modus 1 nutzt dieselbe Fensterberechnung
+  über `previewTimeline()`). `DimWindowResolverTest` hält sowohl das alte Kern-Szenario als auch
+  diesen Regressionsfall fest. **Eigene Verdunkelung/Wärme** (`nightDefaultStrength`/
+  `nightDefaultWarmth`, seit v1.17.1) — NICHT die globalen Wellness-Werte mitverwenden, das war
+  der erste Wurf und wurde vom Nutzer explizit zurückgewiesen.
 - **Dimmer-Korrektur-Override (Feature C, seit v1.20.0) lebt im DataStore, nicht in-memory** —
   `DimAccessibilityService`/`DimScheduleReceiver` haben keine garantierte Lebensdauer, ein
   In-Memory-State ginge bei Prozess-Neustart verloren. `DimOverlayPrefs.Override` speichert

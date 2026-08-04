@@ -232,6 +232,40 @@ class DimWindowResolverTest {
         assertTrue(spans.isEmpty())
     }
 
+    @Test
+    fun `Regression - Nachmittagswecker gefolgt von wecker-losem Tag verliert nicht die eigene Nacht`() {
+        // Realer Vorfall 03.-05.08.2026: S2-Wecker (14:30, kein Morgen-Wecker) am 12.01., 13.01.
+        // ganz ohne Termin/Wecker, 14.01. Fruehschicht (05:30). Das alte Modell erzeugte fuer den
+        // 12.01. nur ein RUECKWAERTS-Fenster bis 14:30 (endet am eigenen Wecker) und ueberspringt
+        // den 13.01. komplett, weil der 14.01. einen Wecker hat - dessen Fenster reicht aber nur
+        // bis 22:00 Uhr des 13.01. zurueck, NICHT bis 22:00 Uhr des 12.01. Die Nacht vom 12.01. auf
+        // den 13.01. blieb dadurch komplett ungedimmt.
+        val today = LocalDate.of(2026, 1, 12)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 12, 14, 30), "S2", 0),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 14, 5, 30), "Fruehdienst", 0),
+        )
+
+        val spans = DimWindowResolver.buildDefaultNightSpans(
+            alarms = alarms, horizonDays = 3, today = today, zone = zone,
+            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
+            strength = 60, warmth = 40,
+            isExcluded = { false }
+        )
+
+        // Die Nacht vom 12.01. auf den 13.01. muss abgedeckt sein - 23:00 Uhr des 12.01. faellt in
+        // irgendeine Spanne, UND deren Ende liegt VOR 22:00 Uhr des 13.01. (sonst waere es die
+        // rueckwaerts-Spanne des 14.01., die faelschlich bis in den 12.01. zurueckreichen wuerde).
+        val night = spans.firstOrNull { ep(2026, 1, 12, 23, 0) in it.range }
+        assertTrue("Nacht 12.01.->13.01. hat keine Spanne - die alte Luecke ist zurueck", night != null)
+        assertTrue(night!!.range.last < ep(2026, 1, 13, 22, 0))
+
+        // Die Nacht vom 13.01. auf den 14.01. bleibt weiterhin bis zum echten Wecker dynamisch.
+        val secondNight = spans.first { ep(2026, 1, 13, 23, 0) in it.range }
+        assertEquals(ep(2026, 1, 13, 22, 0), secondNight.range.first)
+        assertEquals(ep(2026, 1, 14, 5, 30), secondNight.range.last)
+    }
+
     // --- mergeToTimeline: Vorschau-Zeitleiste ---
 
     @Test

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
@@ -102,20 +103,10 @@ fun EventListScreen(
 
         if (calendarState.isLoading && calendarState.events.isEmpty()) {
             // Initial Loading
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
-                ) {
-                    CircularProgressIndicator()
-                    Text("Events werden geladen...")
-                }
-            }
+            LoadingScreen(
+                modifier = Modifier.padding(paddingValues),
+                message = "Events werden geladen..."
+            )
         } else if (calendarState.events.isEmpty()) {
             // Empty State
             Box(

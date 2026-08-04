@@ -17,7 +17,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fmtClock
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerViewModel
@@ -86,26 +86,13 @@ fun DimmerTabContent(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.dimmer_wellness),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.dimmer_wellness_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = state.wellnessEnabled,
-                            onCheckedChange = { viewModel.setWellnessEnabled(it) }
-                        )
-                    }
+                    SwitchRow(
+                        title = stringResource(R.string.dimmer_wellness),
+                        description = stringResource(R.string.dimmer_wellness_hint),
+                        checked = state.wellnessEnabled,
+                        onCheckedChange = { viewModel.setWellnessEnabled(it) },
+                        titleStyle = MaterialTheme.typography.titleMedium
+                    )
                     Text(
                         text = stringResource(R.string.dimmer_winddown_label, state.windDownMinutes),
                         style = MaterialTheme.typography.bodyMedium
@@ -165,26 +152,13 @@ fun DimmerTabContent(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.dimmer_night_default),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.dimmer_night_default_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = state.nightDefaultEnabled,
-                            onCheckedChange = { viewModel.setNightDefaultEnabled(it) }
-                        )
-                    }
+                    SwitchRow(
+                        title = stringResource(R.string.dimmer_night_default),
+                        description = stringResource(R.string.dimmer_night_default_hint),
+                        checked = state.nightDefaultEnabled,
+                        onCheckedChange = { viewModel.setNightDefaultEnabled(it) },
+                        titleStyle = MaterialTheme.typography.titleMedium
+                    )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -267,26 +241,13 @@ fun DimmerTabContent(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.dimmer_rules),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.dimmer_rules_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = state.rulesEnabled,
-                            onCheckedChange = { viewModel.setRulesEnabled(it) }
-                        )
-                    }
+                    SwitchRow(
+                        title = stringResource(R.string.dimmer_rules),
+                        description = stringResource(R.string.dimmer_rules_hint),
+                        checked = state.rulesEnabled,
+                        onCheckedChange = { viewModel.setRulesEnabled(it) },
+                        titleStyle = MaterialTheme.typography.titleMedium
+                    )
                     Button(
                         onClick = onNavigateToRules,
                         modifier = Modifier.fillMaxWidth()

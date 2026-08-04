@@ -25,7 +25,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -33,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -67,31 +67,21 @@ fun WeckerTabContent(
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(SpacingConstants.PADDING_CARD)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Automatische Alarme",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Deaktivieren löscht sofort alle bereits gesetzten Wecker. Aktivieren erstellt sie aus dem letzten bekannten Kalenderstand neu.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
+                SwitchRow(
+                    title = "Automatische Alarme",
+                    description = "Deaktivieren löscht sofort alle bereits gesetzten Wecker. Aktivieren erstellt sie aus dem letzten bekannten Kalenderstand neu.",
                     checked = shiftState.currentShiftConfig?.autoAlarmEnabled ?: false,
                     onCheckedChange = { enabled ->
                         shiftState.currentShiftConfig?.let { config ->
                             onUpdateShiftConfig(config.copy(autoAlarmEnabled = enabled))
                         }
-                    }
+                    },
+                    titleStyle = MaterialTheme.typography.titleMedium
                 )
             }
         }

@@ -40,7 +40,6 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,6 +74,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import kotlinx.coroutines.launch
@@ -507,49 +507,6 @@ private fun RuleBasicInfoCard(
                 onCheckedChange = onEnabledChange
             )
         }
-    }
-}
-
-/**
- * Beschriftete Zeile mit Schalter rechts.
- *
- * WARUM ZENTRAL: Vorher stand an jeder dieser Stellen `Row(SpaceBetween) { Column { ... }; Switch }`
- * — und der Column fehlte `weight(1f)`. Eine Row misst gewichtslose Kinder der Reihe nach mit dem
- * verbleibenden Platz: der lange Beschreibungstext nahm sich die volle Kartenbreite, für den
- * Schalter blieb nichts, und er wurde außerhalb der Karte abgesetzt — er klebte am Text und
- * verschwand hinter dem Rand. Zwei Stellen hatten das mit `Modifier.width(240.dp)` bzw.
- * `width(260.dp)` überdeckt; bei ~296dp Karteninnenbreite ragte besonders die 260er samt Schalter
- * wieder heraus, und auf schmaleren Geräten oder bei großer Schrift bricht jede feste Breite.
- *
- * `weight(1f)` dreht die Reihenfolge um: der Schalter bekommt zuerst seine natürliche Breite, der
- * Text den Rest. Das hält bei jeder Displaybreite und jeder Schriftgröße.
- */
-@Composable
-private fun SwitchRow(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    titleStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge,
-    titleFontWeight: FontWeight = FontWeight.Medium
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        // spacedBy statt SpaceBetween: mit weight(1f) bleibt kein freier Platz mehr, den
-        // SpaceBetween verteilen könnte - der Abstand muss explizit her, sonst klebt der
-        // Schalter am Text.
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = titleStyle, fontWeight = titleFontWeight)
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

@@ -43,6 +43,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fmtClock
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
@@ -146,27 +147,18 @@ fun DndSettingsScreen(
 
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(16.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.dnd_follow_dimmer),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.dnd_follow_dimmer_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
+                        SwitchRow(
+                            title = stringResource(R.string.dnd_follow_dimmer),
+                            description = stringResource(R.string.dnd_follow_dimmer_hint),
                             checked = state.followDimmerEnabled,
+                            onCheckedChange = { viewModel.setFollowDimmerEnabled(it) },
                             enabled = isSupported && isGranted,
-                            onCheckedChange = { viewModel.setFollowDimmerEnabled(it) }
+                            titleStyle = MaterialTheme.typography.titleMedium
                         )
                     }
                 }
@@ -180,27 +172,14 @@ fun DndSettingsScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.dnd_during_shift),
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = stringResource(R.string.dnd_during_shift_hint),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = state.duringShiftEnabled,
-                                enabled = isSupported && isGranted,
-                                onCheckedChange = { viewModel.setDuringShiftEnabled(it) }
-                            )
-                        }
+                        SwitchRow(
+                            title = stringResource(R.string.dnd_during_shift),
+                            description = stringResource(R.string.dnd_during_shift_hint),
+                            checked = state.duringShiftEnabled,
+                            onCheckedChange = { viewModel.setDuringShiftEnabled(it) },
+                            enabled = isSupported && isGranted,
+                            titleStyle = MaterialTheme.typography.titleMedium
+                        )
                         if (shiftNames.isNotEmpty()) {
                             Text(
                                 text = stringResource(R.string.dnd_during_shift_exceptions),

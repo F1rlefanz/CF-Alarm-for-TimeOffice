@@ -12,7 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Work
@@ -31,8 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
@@ -154,56 +152,19 @@ fun HomeTabContent(
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            Row(
+            AlarmStatusHeader(
+                alarmState = alarmState,
+                skipState = skipState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.AccessAlarm,
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
-                    tint = when {
-                        skipState.isNextAlarmSkipped -> MaterialTheme.colorScheme.warning
-                        alarmState.hasActiveAlarms -> MaterialTheme.colorScheme.success
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Alarm-Status",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                trailingContent = {
+                    Icon(
+                        Icons.AutoMirrored.Default.KeyboardArrowRight,
+                        contentDescription = null
                     )
-
-                    if (alarmState.hasActiveAlarms) {
-                        Text("${alarmState.activeAlarms.size} aktive Alarme")
-                        alarmState.nextAlarmTime?.let {
-                            Text("Nächster Alarm: $it")
-                        }
-                    } else if (alarmState.isLoading) {
-                        Text(
-                            "Wird geladen …",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            "Keine aktiven Alarme",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
-
-                Icon(
-                    Icons.AutoMirrored.Default.KeyboardArrowRight,
-                    contentDescription = null
-                )
-            }
+            )
         }
 
         // Kalender Events Summary

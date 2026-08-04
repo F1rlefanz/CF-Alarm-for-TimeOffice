@@ -13,7 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
@@ -32,8 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
@@ -153,48 +152,7 @@ private fun EnhancedAlarmStatusCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Header Row (bestehend)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.AccessAlarm,
-                    modifier = Modifier.size(32.dp),
-                    tint = when {
-                        skipState.isNextAlarmSkipped -> MaterialTheme.colorScheme.warning
-                        alarmState.hasActiveAlarms -> MaterialTheme.colorScheme.success
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    contentDescription = null
-                )
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Alarm-Status",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    if (alarmState.hasActiveAlarms) {
-                        Text("${alarmState.activeAlarms.size} aktive Alarme")
-                        alarmState.nextAlarmTime?.let {
-                            Text("Nächster Alarm: $it")
-                        }
-                    } else if (alarmState.isLoading) {
-                        // Analog zur "Nächste Schicht"-Karte: waehrend des Ladens neutral, damit
-                        // der leere Zwischenstand beim Oeffnen nicht wie "keine Wecker aktiv" wirkt.
-                        Text(
-                            "Wird geladen …",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            "Keine aktiven Alarme",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            AlarmStatusHeader(alarmState = alarmState, skipState = skipState)
 
             // Skip-Funktionalität (nur wenn Alarme vorhanden)
             if (alarmState.hasActiveAlarms) {

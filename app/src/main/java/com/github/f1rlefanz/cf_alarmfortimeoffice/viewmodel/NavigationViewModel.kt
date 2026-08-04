@@ -148,7 +148,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToCalendarSelection(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToCalendarSelection(fromTab))
     
-    fun navigateToShiftConfig(fromTab: MainTab = MainTab.SETTINGS) = 
+    fun navigateToShiftConfig(fromTab: MainTab = MainTab.WECKER) =
         handleNavigationAction(NavigationAction.NavigateToShiftConfig(fromTab))
     
     fun navigateToEventList(fromTab: MainTab = MainTab.HOME) = 

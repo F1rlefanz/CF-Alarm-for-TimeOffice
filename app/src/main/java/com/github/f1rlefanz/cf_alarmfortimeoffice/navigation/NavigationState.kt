@@ -13,7 +13,7 @@ sealed class NavigationState {
     // Haupt-Screens
     data class MainContent(val selectedTab: MainTab = MainTab.HOME) : NavigationState()
     data class CalendarSelection(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
-    data class ShiftConfig(val returnToTab: MainTab = MainTab.SETTINGS) : NavigationState()
+    data class ShiftConfig(val returnToTab: MainTab = MainTab.WECKER) : NavigationState()
     data class EventList(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
 
     // Onboarding-Screens (PHASE 1 MIGRATION)
@@ -39,7 +39,7 @@ sealed class NavigationState {
 }
 
 enum class MainTab {
-    HOME, STATUS, SETTINGS, HUE, DIMMER
+    HOME, WECKER, STATUS, SETTINGS, HUE, DIMMER
 }
 
 // Extension functions for NavigationState

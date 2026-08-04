@@ -659,7 +659,9 @@ class AuthViewModel @Inject constructor(
                                 triggerCalendarReloadAfterAuth()
 
                                 // Initialize maintenance service after successful authorization
-                                backgroundServiceManager.initializeMaintenanceService()
+                                viewModelScope.launch {
+                                    backgroundServiceManager.initializeMaintenanceService()
+                                }
                                 Logger.business(
                                     LogTags.AUTH,
                                     "✅ Maintenance service initialized after authorization"

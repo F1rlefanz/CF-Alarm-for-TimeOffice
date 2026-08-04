@@ -58,6 +58,18 @@ class DimScheduleUseCase @Inject constructor(
     }
 
     /**
+     * Räumt den laufenden Overlay-Zustand + die Korrektur-Notification weg und storniert den
+     * rollenden [REQ_TICK]-Alarm - symmetrisch zu [enable]. Rührt bewusst KEINEN
+     * [DimOverlayPrefs.Toggles]-Wert an, damit ein späteres [enable] die exakt vorherige
+     * Konfiguration wiederherstellt.
+     */
+    suspend fun disable() {
+        prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
+        correctionNotifier.cancel()
+        alarmManager().cancel(buildPendingIntent())
+    }
+
+    /**
      * Wendet den Ist-Zustand an UND die Dimmer-Korrektur-Notification (Feature C), falls per
      * [DimOverlayPrefs.correctionNotificationEnabled] aktiviert. Ein evtl. gesetzter
      * [DimOverlayPrefs.Override] (Heller/Dunkler/Pause) wird nur angewendet, solange er noch zur

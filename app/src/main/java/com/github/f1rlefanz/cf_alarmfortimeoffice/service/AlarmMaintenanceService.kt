@@ -93,6 +93,9 @@ class AlarmMaintenanceService : Service() {
     @Inject
     lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 
+    @Inject
+    lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -214,6 +217,33 @@ class AlarmMaintenanceService : Service() {
                 "⏰ Next maintenance scheduled for ${Date(triggerTime)}"
             )
         }
+
+        /**
+         * Kappt die 6h-Wartungskette (Master-Pause).
+         *
+         * Baut denselben Intent/PendingIntent wie [scheduleNext] (gleicher Request-Code
+         * [MAINTENANCE_ALARM_REQUEST_CODE], gleiche Flags) — das ist Pflicht, damit
+         * alarmManager.cancel() wirklich den Alarm trifft, den scheduleNext zuletzt gesetzt hat,
+         * statt einen zweiten, unabhaengigen PendingIntent zu erzeugen.
+         */
+        fun cancelNext(context: Context) {
+            val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
+
+            val intent = Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                MAINTENANCE_ALARM_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            alarmManager.cancel(pendingIntent)
+
+            Logger.business(
+                LogTags.MAINTENANCE,
+                "⏸️ Wartungskette pausiert (Master-Pause aktiv)"
+            )
+        }
     }
     
     override fun onBind(intent: Intent?): IBinder? = null
@@ -237,8 +267,12 @@ class AlarmMaintenanceService : Service() {
             } catch (e: Exception) {
                 Logger.e(LogTags.MAINTENANCE, "Maintenance failed with exception", e)
             } finally {
-                // Always schedule next run and stop service
-                scheduleNext(applicationContext)
+                // Master-Pause: Kette kappen statt neu zu planen, wenn der Nutzer pausiert hat.
+                if (masterPausePrefs.pausedNow()) {
+                    cancelNext(applicationContext)
+                } else {
+                    scheduleNext(applicationContext)
+                }
 
                 // stopSelf(startId) statt stopSelf(): Android stoppt damit nur, wenn seit diesem
                 // Start kein weiterer kam. Wird der Service zweimal gestartet (z.B. der 6h-Alarm
@@ -294,6 +328,12 @@ class AlarmMaintenanceService : Service() {
             applicationContext.getExternalFilesDir(null)?.let { SimpleFileTree.cleanupOldLogs(it) }
         } catch (e: Exception) {
             Logger.w(LogTags.FILE_SYSTEM, "Log-Bereinigung uebersprungen", e)
+        }
+
+        // MASTER-PAUSE: gesamte Wartung ueberspringen, wenn der Nutzer pausiert hat.
+        if (masterPausePrefs.pausedNow()) {
+            Logger.business(LogTags.MAINTENANCE, "Wartung uebersprungen (Master-Pause aktiv)")
+            return
         }
 
         // STEP 1: TOKEN REFRESH

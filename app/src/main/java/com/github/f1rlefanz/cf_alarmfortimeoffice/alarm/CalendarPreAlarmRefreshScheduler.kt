@@ -104,4 +104,9 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
             "Pre-Alarm-Refresh: $scheduled von ${upcoming.size} anstehenden Alarmen geplant"
         )
     }
+
+    fun cancelAll() {
+        WorkManager.getInstance(context).cancelAllWorkByTag(WORK_TAG)
+        Logger.d(LogTags.BACKGROUND_WORKER, "Pre-Alarm-Refresh: alle Jobs abgebrochen (Master-Pause)")
+    }
 }

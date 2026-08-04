@@ -67,6 +67,7 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
     @Inject lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
     @Inject lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+    @Inject lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 
     companion object {
         // 🛡️ Level 4 Configuration
@@ -196,6 +197,8 @@ class BootReceiver : BroadcastReceiver() {
      */
     private fun performCompleteSystemRecovery(context: Context, reason: String) {
         recoveryScope.launch {
+            // Master-Pause: einmal pro Recovery-Lauf lesen, nicht pro Retry-Versuch neu.
+            val paused = masterPausePrefs.pausedNow()
             var recoveryAttempt = 0
             var recoverySuccessful = false
 
@@ -221,7 +224,15 @@ class BootReceiver : BroadcastReceiver() {
                     )
 
                     // 4. Alarm Repository Recovery
-                    val alarmRecoveryResult = performAlarmRecovery()
+                    //    Master-Pause: weder gespeicherte Alarme re-armen noch neue aus dem
+                    //    Kalender anlegen (performAlarmRecovery() faellt sonst bei restoredCount<3
+                    //    und autoAlarmEnabled==true in syncAlarms() - der Wecker klingelt trotz
+                    //    aktiver Pause wieder). Gleiches Gate wie Schritte 6/7/9/10/11 unten.
+                    val alarmRecoveryResult = if (paused) {
+                        "Skipped (Master-Pause aktiv)"
+                    } else {
+                        performAlarmRecovery()
+                    }
                     Logger.business(
                         LogTags.MAINTENANCE_L4,
                         "🔄 LEVEL 4: Alarm recovery completed - $alarmRecoveryResult"
@@ -235,19 +246,45 @@ class BootReceiver : BroadcastReceiver() {
                     )
 
                     // 6. Smart Maintenance Chain Reinitialization (L1-L3)
-                    performSmartMaintenanceChainReinitialization(context)
+                    //    Master-Pause: statt der Chain-Reinitialisierung nur die 6h-Kette kappen.
+                    if (paused) {
+                        AlarmMaintenanceService.cancelNext(context)
+                    } else {
+                        performSmartMaintenanceChainReinitialization(context)
+                    }
 
                     // 7. Background Services Restart
-                    restartBackgroundServices(context)
+                    //    Master-Pause: auch hier statt Neustart nur die 6h-Kette kappen.
+                    if (paused) {
+                        AlarmMaintenanceService.cancelNext(context)
+                    } else {
+                        restartBackgroundServices(context)
+                    }
 
                     // 8. Schedule Post-Recovery Health Check
-                    schedulePostRecoveryHealthCheck(context, reason)
+                    //    Master-Pause: der 30s-Nachcheck wuerde sonst selbst bei korrekt leerer
+                    //    Alarmliste (pause() hat sie geleert) "futureAlarms.size < 2" ausloesen
+                    //    und AlarmMaintenanceService.start() rufen - sichtbare Notification,
+                    //    obwohl der Nutzer die App fuer vollstaendig pausiert haelt.
+                    if (paused) {
+                        Logger.d(
+                            LogTags.MAINTENANCE_L4,
+                            "⏸️ LEVEL 4: Post-Recovery-Health-Check uebersprungen (Master-Pause aktiv)"
+                        )
+                    } else {
+                        schedulePostRecoveryHealthCheck(context, reason)
+                    }
 
                     // 9. Schicht-Dimmer: rollenden Dimm-Tick nach dem Boot neu setzen.
                     //    Best-effort und eigenes try/catch – darf die Wecker-Recovery NIE stoeren.
+                    //    Master-Pause: statt neu zu planen, den Dimmer abschalten.
                     try {
-                        dimSchedule.applyCurrentState()
-                        dimSchedule.scheduleNextTransition()
+                        if (paused) {
+                            dimSchedule.disable()
+                        } else {
+                            dimSchedule.applyCurrentState()
+                            dimSchedule.scheduleNextTransition()
+                        }
                     } catch (e: Exception) {
                         Logger.w(LogTags.DIMMER, "Boot: Dimm-Reschedule fehlgeschlagen", e)
                     }
@@ -255,9 +292,14 @@ class BootReceiver : BroadcastReceiver() {
                     // 10. DND-Steuerung: rollenden Tick nach dem Boot neu setzen. Gleiches
                     //     Muster/gleicher try/catch-Gedanke wie beim Dimmer – Best-effort, darf
                     //     die Wecker-Recovery NIE stoeren.
+                    //     Master-Pause: statt neu zu planen, die DND-Regel abschalten.
                     try {
-                        dndSchedule.applyCurrentState()
-                        dndSchedule.scheduleNextTransition()
+                        if (paused) {
+                            dndSchedule.disable()
+                        } else {
+                            dndSchedule.applyCurrentState()
+                            dndSchedule.scheduleNextTransition()
+                        }
                     } catch (e: Exception) {
                         Logger.w(LogTags.DND, "Boot: DND-Reschedule fehlgeschlagen", e)
                     }
@@ -265,8 +307,13 @@ class BootReceiver : BroadcastReceiver() {
                     // 11. Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) nach dem Boot neu
                     //     planen. Gleiches Muster/gleicher try/catch-Gedanke wie Dimmer/DND –
                     //     Best-effort, darf die Wecker-Recovery NIE stoeren.
+                    //     Master-Pause: statt neu zu planen, alle offenen Jobs canceln.
                     try {
-                        calendarPreAlarmRefreshScheduler.reschedule()
+                        if (paused) {
+                            calendarPreAlarmRefreshScheduler.cancelAll()
+                        } else {
+                            calendarPreAlarmRefreshScheduler.reschedule()
+                        }
                     } catch (e: Exception) {
                         Logger.w(LogTags.BACKGROUND_WORKER, "Boot: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
                     }

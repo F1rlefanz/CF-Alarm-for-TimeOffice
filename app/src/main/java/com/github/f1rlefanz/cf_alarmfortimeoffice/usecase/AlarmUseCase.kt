@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -51,7 +52,9 @@ class AlarmUseCase @Inject constructor(
     private val alarmSkipUseCase: IAlarmSkipUseCase,
     // Feature B: Schicht-Aenderungs-Notification. Bewusst auf der Implementierung, nicht auf
     // IAlarmUseCase - vermeidet Aenderungen an allen 4 Call-Sites des Interfaces.
-    private val shiftChangeNotifier: ShiftChangeNotifier
+    private val shiftChangeNotifier: ShiftChangeNotifier,
+    // Master-Pause: aus demselben Grund auf der Implementierung, nicht auf IAlarmUseCase.
+    private val masterPausePrefs: MasterPausePrefs
 ) : IAlarmUseCase {
     
     /**
@@ -101,8 +104,24 @@ class AlarmUseCase @Inject constructor(
             alarmSkipUseCase.clearExpiredSkip()
 
             SafeExecutor.safeExecute("AlarmUseCase.syncAlarms") {
+                // Master-Pause: zentraler Backstop, NICHT nur an den (aktuell fuenf) bekannten
+                // Aufrufstellen (BootReceiver, AlarmMaintenanceService, CalendarViewModel,
+                // ShiftViewModel, CalendarPreAlarmRefreshWorker) einzeln gaten. syncAlarms() ist
+                // laut Klassenkommentar oben der "einzige Einstiegspunkt der Event→Alarm-Pipeline" -
+                // am Fairphone real reproduziert: CalendarViewModel.createAlarmsFromLoadedEvents()
+                // war beim ersten Bau dieses Features nicht gegated und hat nach einem Reboot mit
+                // aktiver Master-Pause beim naechsten App-Start lautlos wieder 5 Alarme angelegt.
+                // Ein Gate pro Aufrufer ist fehleranfaellig (genau das ist damit passiert); dieser
+                // eine Gate an der gemeinsamen Stelle faengt JEDEN aktuellen UND kuenftigen Aufrufer.
+                if (masterPausePrefs.pausedNow()) {
+                    Logger.business(LogTags.ALARM, "⏸️ SYNC: Master-Pause aktiv - Alarme werden geraeumt, keine neuen erstellt")
+                    clearInternalAlarms()
+                    return@safeExecute emptyList()
+                }
+
                 if (!shiftConfig.autoAlarmEnabled) {
                     Logger.d(LogTags.ALARM, "Auto-alarm disabled, not creating alarms")
+                    clearInternalAlarms()
                     return@safeExecute emptyList()
                 }
                 

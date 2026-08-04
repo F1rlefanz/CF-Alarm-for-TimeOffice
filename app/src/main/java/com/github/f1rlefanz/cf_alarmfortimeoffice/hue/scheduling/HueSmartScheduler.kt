@@ -52,6 +52,7 @@ import java.time.Duration as JavaDuration
 interface HueSmartSchedulerEntryPoint {
     fun alarmUseCase(): IAlarmUseCase
     fun hueRuleUseCase(): IHueRuleUseCase
+    fun masterPausePrefs(): com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 }
 
 /**
@@ -190,6 +191,22 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
+     * Resolve the Hilt-managed master-pause prefs via EntryPoint (gates all Hue background
+     * WorkManager scheduling below).
+     */
+    private fun resolveMasterPausePrefs(): com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs? {
+        if (!::appContext.isInitialized) return null
+        return try {
+            EntryPointAccessors
+                .fromApplication(appContext, HueSmartSchedulerEntryPoint::class.java)
+                .masterPausePrefs()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve master-pause prefs via EntryPoint", e)
+            null
+        }
+    }
+
+    /**
      * MAIN API: Initialize smart scheduling system
      */
     fun initializeSmartScheduling() {
@@ -204,12 +221,24 @@ class HueSmartScheduler private constructor() {
         // Worker-Klasse existiert nicht mehr - siehe LEGACY_AUTO_OFF_WORK. Idempotent.
         workManager.cancelAllWorkByTag(LEGACY_AUTO_OFF_WORK)
 
-        // Schedule daily planning work
-        scheduleDailyPlanning()
-
-        // Initial schedule calculation
+        // Daily planning + initial schedule calculation laufen in DERSELBEN Coroutine, damit
+        // die Master-Pause-Pruefung VOR jeder WorkManager-Planung greift - siehe die Pruefung
+        // direkt unten.
         schedulerScope.launch {
             try {
+                if (resolveMasterPausePrefs()?.pausedNow() == true) {
+                    workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
+                    workManager.cancelUniqueWork(GENERIC_HEALTH_CHECK_WORK)
+                    workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
+                    workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
+                    Logger.i(LogTags.HUE_BRIDGE, "Master-Pause aktiv - Hue-Planung uebersprungen")
+                    return@launch
+                }
+
+                // Schedule daily planning work
+                scheduleDailyPlanning()
+
+                // Initial schedule calculation
                 calculateAndScheduleNextHealthChecks()
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_BRIDGE, "Failed to initialize smart scheduling", e)
@@ -252,6 +281,18 @@ class HueSmartScheduler private constructor() {
      */
     suspend fun calculateAndScheduleNextHealthChecks() = withContext(Dispatchers.IO) {
         Logger.d(LogTags.HUE_BRIDGE, "🔮 SMART-SCHEDULER: Calculating next alarm times for health check scheduling")
+
+        // Master-Pause: greift VOR jeder WorkManager-Planung, auch bei reaktiver Neuberechnung
+        // (observeAlarmChanges()) und manuellem Trigger (recalculateSchedule()) - beide laufen
+        // ueber diese Funktion.
+        if (resolveMasterPausePrefs()?.pausedNow() == true) {
+            workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
+            workManager.cancelUniqueWork(GENERIC_HEALTH_CHECK_WORK)
+            workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
+            workManager.cancelAllWorkByTag(SUNRISE_START_WORK)
+            Logger.i(LogTags.HUE_BRIDGE, "Master-Pause aktiv - Hue-Planung uebersprungen")
+            return@withContext
+        }
 
         // Ohne eingerichtete Bridge ist JEDER Job hier sinnlos: Health-Checks, Sonnenaufgang und
         // Auto-Off sprechen alle die Bridge an. Frueher lief das trotzdem los und der

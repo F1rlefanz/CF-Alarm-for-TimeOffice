@@ -162,7 +162,7 @@ class BootReceiver : BroadcastReceiver() {
                 entries.forEach { entry ->
                     try {
                         AlarmManagerService.rescheduleFromDirectBoot(
-                            context, entry.id, entry.triggerTime, entry.shiftName, entry.alarmTimeFormatted
+                            context, entry.id, entry.triggerTime, entry.shiftName, entry.shiftStartTimeFormatted
                         )
                     } catch (e: Exception) {
                         Logger.e(

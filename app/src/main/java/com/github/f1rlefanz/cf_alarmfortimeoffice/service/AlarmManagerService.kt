@@ -14,7 +14,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
-import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -311,7 +310,7 @@ class AlarmManagerService(
         return Intent(application, AlarmReceiver::class.java).apply {
             putExtra("alarm_id", alarmId)
             putExtra("shift_name", shiftMatch.shiftDefinition.name)
-            putExtra("alarm_time", formatAlarmTime(shiftMatch.calculatedAlarmTime))
+            putExtra("shift_start_time_formatted", formatAlarmTime(shiftMatch.calendarEvent.startTime))
             putExtra("shift_pattern", shiftMatch.shiftDefinition.id)
             putExtra("shift_start_time", shiftMatch.calendarEvent.startTime.toString())
             putExtra("shift_end_time", shiftMatch.calendarEvent.endTime.toString())
@@ -493,6 +492,7 @@ class AlarmManagerService(
             context: Context,
             alarmId: Int,
             shiftName: String,
+            shiftStartTimeFormatted: String,
             minutes: Long = SNOOZE_MINUTES
         ) {
             val triggerTime = System.currentTimeMillis() + minutes * 60 * 1000L
@@ -500,11 +500,10 @@ class AlarmManagerService(
             val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
                 putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
                 putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
-                putExtra(
-                    AlarmReceiver.EXTRA_ALARM_TIME,
-                    LocalDateTime.now().plusMinutes(minutes)
-                        .format(DateTimeFormatter.ofPattern("HH:mm"))
-                )
+                // Der Schichtbeginn aendert sich durchs Schlummern nicht - unveraendert
+                // aus dem urspruenglichen Alarm durchreichen statt hier neu ("jetzt +
+                // Minuten") zu berechnen.
+                putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, shiftStartTimeFormatted)
                 setPackage(context.packageName)
                 action = snoozeAlarmAction(alarmId)
             }
@@ -540,7 +539,7 @@ class AlarmManagerService(
             id: Int,
             triggerTime: Long,
             shiftName: String,
-            alarmTimeFormatted: String
+            shiftStartTimeFormatted: String
         ) {
             if (triggerTime <= System.currentTimeMillis()) return
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -548,7 +547,7 @@ class AlarmManagerService(
             val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
                 putExtra("alarm_id", id)
                 putExtra("shift_name", shiftName)
-                putExtra("alarm_time", alarmTimeFormatted)
+                putExtra("shift_start_time_formatted", shiftStartTimeFormatted)
                 putExtra("alarm_type", "directBootRestore")
                 setPackage(context.packageName)
                 action = enhancedAlarmAction(id)
@@ -575,7 +574,7 @@ class AlarmManagerService(
             )
             Logger.business(
                 LogTags.ALARM_MANAGER,
-                "🔐 DIRECT-BOOT: Alarm neu gesetzt - id=$id, $shiftName @ $alarmTimeFormatted"
+                "🔐 DIRECT-BOOT: Alarm neu gesetzt - id=$id, $shiftName @ $shiftStartTimeFormatted"
             )
         }
     }

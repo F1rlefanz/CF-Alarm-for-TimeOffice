@@ -77,12 +77,19 @@ class AlarmReceiver : BroadcastReceiver() {
         fun isSilentAlarm(alarmInfo: AlarmInfo?): Boolean = alarmInfo?.isSilent == true
 
         /**
-         * MUSS "alarm_time" heissen. AlarmManagerService.createEnhancedAlarmIntent() und
-         * rescheduleFromDirectBoot() schreiben die Uhrzeit unter genau diesem Schluessel.
-         * Frueher stand hier "shift_time" - ein Schluessel, den NIEMAND je gesetzt hat. Die
-         * Uhrzeit war dadurch immer leer und die Notification zeigte "Deine Schicht beginnt um ".
+         * MUSS "shift_start_time_formatted" heissen. AlarmManagerService.
+         * createEnhancedAlarmIntent(), scheduleSnooze() und rescheduleFromDirectBoot()
+         * schreiben die Uhrzeit unter genau diesem Schluessel (frueher "shift_time" - ein
+         * Schluessel, den niemand je gesetzt hat; die Uhrzeit war dadurch immer leer).
+         *
+         * Der Wert ist der tatsaechliche SCHICHTBEGINN (Kalender-Event-Start), NICHT die
+         * Weckzeit. Bis v1.20.0 stand hier "alarm_time" befuellt mit
+         * ShiftMatch.calculatedAlarmTime (der Weckzeit) - die Notification/das Vollbild
+         * zeigten "Deine Schicht beginnt um" dann faelschlich die Weckzeit (bei S2 z.B. die
+         * Default-Weckzeit 14:30 statt des echten Schichtbeginns). Wer hier wieder die
+         * Weckzeit eintraegt, holt sich den Fehler zurueck.
          */
-        const val EXTRA_ALARM_TIME = "alarm_time"
+        const val EXTRA_SHIFT_START_TIME = "shift_start_time_formatted"
         const val EXTRA_ALARM_ID = "alarm_id"
 
         private const val SKIP_CHANNEL_ID = "skip_channel"
@@ -201,7 +208,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 }
 
                 try {
-                    val alarmTime = intent.getStringExtra(EXTRA_ALARM_TIME).orEmpty()
+                    val shiftStartTime = intent.getStringExtra(EXTRA_SHIFT_START_TIME).orEmpty()
 
                     // 🔊 EINZIGER Einstiegspunkt fuer Ton UND Sichtbarkeit.
                     // Der Service startet den MediaPlayer, holt den Audio-Fokus und postet die
@@ -213,7 +220,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     //   erlaubter Background-Activity-Start (AlarmManager-Broadcasts stehen NICHT
                     //   auf der Ausnahmeliste) und wird stillschweigend verworfen. Der einzige
                     //   sanktionierte Weg ist der vom System gesendete Full-Screen-PendingIntent.
-                    startAlarmSoundService(context, shiftName, alarmTime, alarmId)
+                    startAlarmSoundService(context, shiftName, shiftStartTime, alarmId)
 
                     Logger.business(
                         LogTags.ALARM_RECEIVER,
@@ -412,20 +419,20 @@ class AlarmReceiver : BroadcastReceiver() {
      *
      * @param context Context for starting the service
      * @param shiftName Name of the shift for notification display
-     * @param alarmTime Formatierte Startzeit der Schicht (Notification-Text)
+     * @param shiftStartTime Formatierte Startzeit der Schicht (Notification-Text)
      * @param alarmId Unique alarm identifier
      */
     private fun startAlarmSoundService(
         context: Context,
         shiftName: String,
-        alarmTime: String,
+        shiftStartTime: String,
         alarmId: Int
     ) {
         try {
             val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
                 action = AlarmSoundService.ACTION_START_ALARM
                 putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
-                putExtra(AlarmSoundService.EXTRA_ALARM_TIME, alarmTime)
+                putExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME, shiftStartTime)
                 putExtra(AlarmSoundService.EXTRA_ALARM_ID, alarmId)
             }
 

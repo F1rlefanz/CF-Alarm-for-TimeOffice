@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 // PHASE 2 CLEANUP: ShiftViewModel import removed (unused parameter)
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
@@ -371,15 +369,7 @@ fun SettingsTabContent(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                onClick = {
-                    try {
-                        val helpUrl = BatteryOptimizationHelper.getOEMHelpURL(oemType)
-                        val intent = Intent(Intent.ACTION_VIEW, helpUrl.toUri())
-                        context.startActivity(intent)
-                    } catch (_: Exception) {
-                        // Ignore if URL cannot be opened
-                    }
-                }
+                onClick = { BatteryOptimizationHelper.openOEMHelpUrl(context, oemType) }
             ) {
                 Row(
                     modifier = Modifier

@@ -180,7 +180,22 @@ object BatteryOptimizationHelper {
         
         return "https://dontkillmyapp.com/$oemName"
     }
-    
+
+    /**
+     * Oeffnet die dontkillmyapp.com-Anleitung fuer den gegebenen OEM. War vorher in
+     * [com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.OEMWarningScreen] und
+     * [com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent]
+     * fast wortgleich dupliziert.
+     */
+    fun openOEMHelpUrl(context: Context, oemType: OEMType) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, getOEMHelpURL(oemType).toUri())
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Logger.e(LogTags.BATTERY, "Failed to open OEM help URL", e)
+        }
+    }
+
     /**
      * Checks if OEM-specific warning should be shown
      */

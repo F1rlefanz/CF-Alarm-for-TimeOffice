@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,10 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 
 /**
  * OEM Warning Screen - Phase 1
@@ -48,7 +44,6 @@ fun OEMWarningScreen(
 ) {
     val context = LocalContext.current
     val oemName = BatteryOptimizationHelper.getOEMDisplayName(oemType)
-    val helpUrl = BatteryOptimizationHelper.getOEMHelpURL(oemType)
     val aggressiveness = BatteryOptimizationHelper.getOEMAggressivenessDescription(oemType)
     
     Column(
@@ -152,14 +147,7 @@ fun OEMWarningScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Button(
-                onClick = {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, helpUrl.toUri())
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        Logger.e(LogTags.BATTERY, "Failed to open OEM help URL", e)
-                    }
-                },
+                onClick = { BatteryOptimizationHelper.openOEMHelpUrl(context, oemType) },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)

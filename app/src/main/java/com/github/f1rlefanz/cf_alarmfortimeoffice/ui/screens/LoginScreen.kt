@@ -3,18 +3,11 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.InlineErrorCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingIconButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.UIText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
@@ -73,48 +68,23 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXXL))
 
-        Button(
+        LoadingIconButton(
+            loading = authState.calendarOps.calendarsLoading,
+            text = "Mit Google anmelden",
             onClick = onSignIn,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(SpacingConstants.BUTTON_HEIGHT_LARGE),
-            enabled = !authState.calendarOps.calendarsLoading
-        ) {
-            if (authState.calendarOps.calendarsLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    color = MaterialTheme.colorScheme.onPrimary
+            icon = {
+                // Modern credential icon
+                Icon(
+                    painter = painterResource(id = android.R.drawable.ic_partial_secure),
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
                 )
-            } else {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Modern credential icon
-                    Icon(
-                        painter = painterResource(id = android.R.drawable.ic_partial_secure),
-                        contentDescription = null,
-                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
-                    )
-                    Spacer(modifier = Modifier.width(SpacingConstants.SPACING_MEDIUM))
-                    Text("Mit Google anmelden")
-                }
             }
-        }
+        )
 
         authState.errors.error?.let { error ->
             Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Text(
-                    text = error,
-                    modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
+            InlineErrorCard(message = error)
         }
 
         Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXL))

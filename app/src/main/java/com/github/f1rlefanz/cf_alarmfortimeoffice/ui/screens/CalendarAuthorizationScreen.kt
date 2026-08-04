@@ -4,22 +4,15 @@ import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -32,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.InlineErrorCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingIconButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 
@@ -111,49 +106,22 @@ fun CalendarAuthorizationScreen(
 
         Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXXL))
 
-        Button(
-            onClick = {
-                authViewModel.requestCalendarAuthorization(context as? Activity)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(SpacingConstants.BUTTON_HEIGHT_LARGE),
-            enabled = !loading
-        ) {
-            if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    color = MaterialTheme.colorScheme.onPrimary
+        LoadingIconButton(
+            loading = loading,
+            text = "Kalender-Zugriff erlauben",
+            onClick = { authViewModel.requestCalendarAuthorization(context as? Activity) },
+            icon = {
+                Icon(
+                    Icons.Default.CalendarMonth,
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
                 )
-            } else {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.CalendarMonth,
-                        contentDescription = null,
-                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
-                    )
-                    Spacer(modifier = Modifier.width(SpacingConstants.SPACING_MEDIUM))
-                    Text("Kalender-Zugriff erlauben")
-                }
             }
-        }
+        )
 
         authState.error?.let { error ->
             Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Text(
-                    text = error,
-                    modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
+            InlineErrorCard(message = error)
         }
 
         Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXL))

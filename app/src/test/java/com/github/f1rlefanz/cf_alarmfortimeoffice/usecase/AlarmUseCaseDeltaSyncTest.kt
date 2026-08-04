@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -40,7 +41,8 @@ import java.time.LocalTime
  * auftaucht" (Audit P0-3). Diese Tests fixieren den Vertrag der Delta-Synchronisation:
  * - Event bleibt vorhanden  -> Alarm bleibt erhalten
  * - Event verschwindet      -> Alarm wird geloescht (Repository + System-Alarm)
- * - autoAlarm deaktiviert    -> keine Alarme werden angefasst
+ * - autoAlarm deaktiviert    -> bestehende Alarme werden per clearInternalAlarms() geloescht
+ *                               (Repository + System-Alarm), kein neuer Alarm wird gesetzt
  *
  * Getestet gegen die ECHTE [ShiftRecognitionEngine] (Keyword-Matching + Weckzeit) mit
  * handgeschriebenen Fakes; nur der Android-gebundene [AlarmManagerService] ist gemockt.
@@ -172,7 +174,8 @@ class AlarmUseCaseDeltaSyncTest {
         manager: AlarmManagerService,
         config: ShiftConfig,
         skipUseCase: IAlarmSkipUseCase = FakeSkipUseCase(),
-        notifier: FakeShiftChangeNotifier = FakeShiftChangeNotifier()
+        notifier: FakeShiftChangeNotifier = FakeShiftChangeNotifier(),
+        masterPaused: Boolean = false
     ): AlarmUseCase =
         AlarmUseCase(
             repo,
@@ -180,7 +183,10 @@ class AlarmUseCaseDeltaSyncTest {
             FakeShiftConfigRepository(config),
             ShiftRecognitionEngine(FakeShiftConfigRepository(config)),
             skipUseCase,
-            notifier
+            notifier,
+            mock<MasterPausePrefs>().also {
+                kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(masterPaused) }
+            }
         )
 
     private fun mockManager(): AlarmManagerService {
@@ -198,7 +204,7 @@ class AlarmUseCaseDeltaSyncTest {
     // --- Tests ---
 
     @Test
-    fun `autoAlarm deaktiviert - keine Alarme werden angefasst`() = runTest {
+    fun `autoAlarm deaktiviert - bestehende Alarme werden per clearInternalAlarms geloescht`() = runTest {
         val existing = existingAlarm(id = 1, eventId = "evB")
         val repo = FakeAlarmRepository(listOf(existing))
         val manager = mockManager()
@@ -209,9 +215,34 @@ class AlarmUseCaseDeltaSyncTest {
 
         assertTrue(result.isSuccess)
         assertEquals(emptyList<AlarmInfo>(), result.getOrNull())
-        // Bestehender Alarm unangetastet, kein System-Alarm gesetzt oder gecancelt.
-        assertEquals(listOf(existing), repo.current)
-        verify(manager, never()).cancelSystemAlarm(any())
+        // Deaktiviertes autoAlarm raeumt bestehende Alarme vollstaendig ab (clearInternalAlarms):
+        // System-Alarm wird gecancelt UND das Repository geleert. Kein neuer Alarm wird gesetzt.
+        assertEquals(emptyList<AlarmInfo>(), repo.current)
+        verify(manager).cancelSystemAlarm(existing.id)
+        verify(manager, never()).setAlarmFromShiftMatch(any(), any(), any())
+    }
+
+    @Test
+    fun `Master-Pause aktiv - syncAlarms raeumt ab und erstellt trotz autoAlarmEnabled keine neuen Alarme`() = runTest {
+        // Regression fuer einen real am Fairphone reproduzierten Bug: CalendarViewModel.
+        // createAlarmsFromLoadedEvents() (ein von BootReceiver/AlarmMaintenanceService/
+        // ShiftViewModel unabhaengiger fuenfter Aufrufer von syncAlarms) war beim ersten Bau
+        // von Master-Pause nicht gegated und hat nach einem Reboot beim naechsten App-Start
+        // trotz aktiver Pause wieder Alarme angelegt. Dieser Test haelt den zentralen Backstop
+        // in syncAlarms() selbst fest, damit kuenftige Aufrufer (bekannt oder neu) nicht erneut
+        // einzeln gegated werden muessen.
+        val existing = existingAlarm(id = 1, eventId = "evB")
+        val repo = FakeAlarmRepository(listOf(existing))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(repo, manager, config, masterPaused = true)
+            .syncAlarms(listOf(futureEvent("evB", "F", 1)), config)
+
+        assertTrue(result.isSuccess)
+        assertEquals(emptyList<AlarmInfo>(), result.getOrNull())
+        assertEquals(emptyList<AlarmInfo>(), repo.current)
+        verify(manager).cancelSystemAlarm(existing.id)
         verify(manager, never()).setAlarmFromShiftMatch(any(), any(), any())
     }
 

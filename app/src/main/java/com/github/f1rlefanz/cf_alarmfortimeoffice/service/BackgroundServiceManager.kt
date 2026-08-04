@@ -38,7 +38,8 @@ import javax.inject.Singleton
 @Singleton
 class BackgroundServiceManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val calendarSelectionRepository: ICalendarSelectionRepository
+    private val calendarSelectionRepository: ICalendarSelectionRepository,
+    private val masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 ) {
 
     private val preferences =
@@ -91,7 +92,11 @@ class BackgroundServiceManager @Inject constructor(
      * Die Notification bleibt damit ehrlich: Sie kann jetzt nur noch einen Nutzer erreichen, der
      * das Onboarding abgeschlossen und danach alle Kalender abgewaehlt hat — dann stimmt sie auch.
      */
-    fun initializeMaintenanceService() {
+    suspend fun initializeMaintenanceService() {
+        if (masterPausePrefs.pausedNow()) {
+            Logger.business(LogTags.MAINTENANCE, "Master-Pause aktiv - Initialisierung uebersprungen")
+            return
+        }
         // .value statt suspend-Read: Der StateFlow des Repositories haelt die Auswahl bereits
         // im Speicher (aus dem DataStore gespiegelt), und der Auth-Callback ist kein Coroutine-
         // Kontext.

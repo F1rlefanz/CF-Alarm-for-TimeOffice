@@ -69,7 +69,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.TimeOfficeHealthHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
-import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
@@ -81,11 +80,9 @@ fun StatusTabContent(
     authState: AuthState,
     calendarState: CalendarUiState,
     shiftState: ShiftUiState,
-    alarmState: AlarmUiState,
     calendarViewModel: CalendarViewModel?,
     authViewModel: AuthViewModel,
-    onShowCalendarSelection: () -> Unit,
-    onShowShiftConfig: () -> Unit
+    onShowCalendarSelection: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -153,20 +150,6 @@ fun StatusTabContent(
             onAction = onCalendarAction
         )
 
-        // Schicht-Konfiguration Status: null ist ein echter (wenn auch meist kurzer) Zustand
-        // waehrend des initialen Ladens, siehe ShiftViewModel.uiState-Default - kein Deadcode.
-        StatusCard(
-            title = "Schicht-Konfiguration",
-            isOk = shiftState.currentShiftConfig != null,
-            actionLabel = if (shiftState.currentShiftConfig == null) "Konfigurieren" else null,
-            onAction = if (shiftState.currentShiftConfig == null) onShowShiftConfig else null,
-            details = if (shiftState.currentShiftConfig != null) {
-                "${shiftState.currentShiftConfig.definitions.size} Schichttypen definiert"
-            } else {
-                "Keine Konfiguration verfügbar"
-            }
-        )
-
         // Schicht-Erkennung Status
         StatusCard(
             title = "Schicht-Erkennung",
@@ -174,16 +157,6 @@ fun StatusTabContent(
             details = when {
                 shiftState.recognizedShifts.isEmpty() -> "Keine Schichten erkannt"
                 else -> "${shiftState.recognizedShifts.size} Schichten erkannt"
-            }
-        )
-
-        // Alarm Status
-        StatusCard(
-            title = "Alarme",
-            isOk = alarmState.hasActiveAlarms,
-            details = when {
-                !alarmState.hasActiveAlarms -> "Keine aktiven Alarme"
-                else -> "${alarmState.activeAlarms.size} Alarme gesetzt"
             }
         )
 

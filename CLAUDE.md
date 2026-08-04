@@ -114,7 +114,7 @@ All Android components (`Service`, `BroadcastReceiver`) that need injection are 
 
 ### Navigation
 
-Tab-based navigation via `NavigationViewModel` and `MainTab` enum. `MainScreen` is the Compose root; it receives all ViewModels and delegates to tab content composables (`HomeTabContent`, `HueTabContent`, `SettingsTabContent`, `StatusTabContent`).
+Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER, STATUS, SETTINGS, HUE, DIMMER`). `MainScreen` is the Compose root; it receives all ViewModels and delegates to tab content composables (`HomeTabContent`, `WeckerTabContent`, `HueTabContent`, `SettingsTabContent`, `StatusTabContent`, `DimmerTabContent`).
 
 ### Shared State
 
@@ -212,6 +212,70 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   durch (Schichtbeginn ändert sich durchs Schlummern nicht). Fallback bei `shiftStartTime <= 0`
   (z. B. manueller Test-Alarm ohne echte Schicht) bleibt bewusst die Weckzeit — unveränderte
   UX für den Fall, der nicht Teil dieses Bugs war.
+- **`ShiftConfig.autoAlarmEnabled = false` ist eine ECHTE, sofortige Pause** (seit v1.21.0,
+  Wecker-Tab): `AlarmUseCase.syncAlarms()` ruft in diesem Zweig `clearInternalAlarms()` (cancelt
+  System-Alarme + räumt Repository + Direct-Boot-Spiegel), nicht nur ein stilles `return
+  emptyList()`. Wer diesen Aufruf entfernt, macht den Schalter wieder zur Attrappe, die nur
+  *neue* Alarme verhindert, aber bestehende weiterlaufen lässt — das war der ursprüngliche,
+  gemeldete Zustand. `ShiftViewModel.triggerAlarmCreationFromConfigUpdate()` ruft bei
+  `!autoAlarmEnabled` zusätzlich direkt `alarmUseCase.deleteAllAlarms()`, unabhängig vom
+  `CalendarStateHolder`-Cache-Zustand — sonst wirkt „Ausschalten" nicht, wenn gerade keine
+  Kalender-Events geladen sind (realer Fall direkt nach App-Start).
+- **`ShiftRecognitionEngine` ist ein gemeinsam genutzter Singleton mit nicht-atomarem
+  Mehrfeld-Cache** (`lastRecognitionHash`/`cachedMatches`/`recognitionInProgress`/`lastCacheTime`,
+  alle `@Volatile`, aber ohne gemeinsame Atomizität). `AlarmUseCase.syncAlarms()` und
+  `ShiftUseCase.recognizeShiftsInEvents()` rufen dieselbe Instanz auf verschiedenen Dispatchern
+  (IO vs. Main) auf. Real am Fairphone reproduziert: `ShiftViewModel.updateShiftConfig()` löste
+  `processCalendarEvents(currentEvents)` (Engine-Aufruf 1) und danach
+  `triggerAlarmCreationFromConfigUpdate()` (Engine-Aufruf 2, über `syncAlarms`) aus — solange
+  `processCalendarEvents` fire-and-forget lief (eigener, unabgewarteter `viewModelScope.launch`),
+  überlappten sich beide Aufrufe auf derselben Engine-Instanz, und „Automatische Alarme" wieder
+  einschalten erzeugte trotz korrekt erkannter Schichten 0 Alarme. Fix: `processCalendarEvents` ist
+  jetzt `suspend fun` (kein eigener `launch` mehr) — beide bestehenden Aufrufer liefen ohnehin
+  schon in einer Coroutine und rufen es jetzt direkt/abgewartet auf. Wer hier wieder ein
+  fire-and-forget `launch` einbaut, holt sich die Race zurück.
+
+### Hintergrunddienste pausieren (Master-Pause, seit v1.21.0)
+
+- **Eigenständig neben `autoAlarmEnabled`, keine Kombination der beiden.** `MasterPauseUseCase.
+  pause()`/`resume()` (Settings-Tab, `masterpause/`-Package) rührt `ShiftConfig.autoAlarmEnabled`
+  bewusst NICHT an — sie ruft stattdessen direkt `alarmUseCase.deleteAllAlarms()`. Würde `pause()`
+  den Flag umlegen, müsste sich das System merken, ob der Nutzer ihn schon VOR der Pause manuell
+  deaktiviert hatte, um das beim Fortsetzen nicht zurückzudrehen — unnötiger Zustand für denselben
+  Effekt.
+- **`AlarmUseCase.syncAlarms()` hat einen zentralen Master-Pause-Backstop, nicht nur einzelne
+  Gates an den Aufrufstellen.** Beim ersten Bau wurden `BootReceiver`, `AlarmMaintenanceService`
+  und `HueSmartScheduler` einzeln gegen `MasterPausePrefs.pausedNow()` abgesichert — aber
+  `CalendarViewModel.createAlarmsFromLoadedEvents()` (ein fünfter, unabhängiger Aufrufer von
+  `syncAlarms()`, ausgelöst bei JEDEM Kalender-Ladevorgang inkl. normalem App-Start) wurde dabei
+  übersehen. Real am Fairphone reproduziert: nach einem Reboot waren 0 Alarme gesetzt (Master-Pause
+  hielt), aber das bloße Öffnen der App legte sofort wieder 5 Alarme an. Deshalb prüft `syncAlarms()`
+  selbst — als erste Zeile, VOR jeder anderen Logik — `masterPausePrefs.pausedNow()` und räumt bei
+  `true` über `clearInternalAlarms()` auf. Das ist der garantierte Fangnetz-Punkt für JEDEN
+  aktuellen UND künftigen Aufrufer; die einzelnen Gates an den Aufrufstellen bleiben zusätzlich
+  bestehen (vermeiden unnötige Arbeit wie Kalender-Fetches), sind aber NICHT mehr die einzige
+  Verteidigungslinie.
+- **Fünf bekannte `syncAlarms()`-Aufrufer** (Stand v1.21.0): `BootReceiver`,
+  `AlarmMaintenanceService`, `CalendarViewModel.createAlarmsFromLoadedEvents()`,
+  `ShiftViewModel.triggerAlarmCreationFromConfigUpdate()`, `CalendarPreAlarmRefreshWorker`. Wer
+  einen sechsten hinzufügt, muss sich um Master-Pause-Gating NICHT mehr einzeln kümmern (siehe
+  Backstop oben) — aber genau diese Liste zeigt, wie leicht ein Aufrufer beim manuellen Gaten
+  übersehen wird.
+- **`DimScheduleUseCase.disable()`/`DndScheduleUseCase.disable()` rühren KEINE persistierten
+  Toggles an** (`wellnessEnabled`/`rulesEnabled`/`nightDefaultEnabled` bzw. die DND-Trigger) — nur
+  den Laufzeitzustand (aktives Overlay/Zen-Regel-Zustand) und den rollenden Tick-Alarm. Ein
+  späteres `enable()` muss exakt die vorherige Konfiguration wiederherstellen, nicht eine durch
+  die Pause veränderte.
+- **`HueSmartScheduler.initializeSmartScheduling()` läuft bei JEDEM App-Kaltstart**, nicht nur nach
+  einem Reboot (`CFAlarmApplication.initializeApp()` → `HueBridgeConnectionManager.initialize()`).
+  Der Master-Pause-Check steht deshalb als allererste Prüfung INNERHALB der `schedulerScope.launch`-
+  Coroutine, bevor `scheduleDailyPlanning()`/`calculateAndScheduleNextHealthChecks()` überhaupt
+  erreicht werden — sonst würde ein einfacher App-Neustart die Pause für die Hue-Planung lautlos
+  aufheben.
+- **`BackgroundServiceManager.initializeMaintenanceService()` ist `suspend`** und prüft die
+  Master-Pause als ersten Schritt — aufgerufen von `AuthViewModel` nach jeder erfolgreichen
+  (Re-)Autorisierung. Ohne dieses Gate würde eine Re-Authentifizierung während der Pause die
+  6h-Wartungskette lautlos wieder anstoßen.
 
 ### Hue
 

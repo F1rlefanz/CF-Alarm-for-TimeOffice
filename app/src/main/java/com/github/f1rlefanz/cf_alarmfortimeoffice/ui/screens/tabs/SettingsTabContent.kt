@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,13 +47,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MasterPauseViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NotificationSettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsTabContent(
     authViewModel: AuthViewModel,
-    onShowShiftConfig: () -> Unit,
     onShowCalendarSelection: () -> Unit,
     onShowDndSettings: () -> Unit
 ) {
@@ -62,6 +61,8 @@ fun SettingsTabContent(
     val authState by authViewModel.uiState.collectAsState()
     val notificationSettingsViewModel: NotificationSettingsViewModel = hiltViewModel()
     val notificationState by notificationSettingsViewModel.uiState.collectAsState()
+    val masterPauseViewModel: MasterPauseViewModel = hiltViewModel()
+    val masterPausePaused by masterPauseViewModel.paused.collectAsState()
 
     Column(
         modifier = Modifier
@@ -196,42 +197,6 @@ fun SettingsTabContent(
                         )
                     }
                 }
-            }
-        }
-
-        // Schicht-Konfiguration
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onShowShiftConfig
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Work,
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Schicht-Konfiguration",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Definiere Schichttypen und Erkennungsmuster",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    Icons.AutoMirrored.Default.KeyboardArrowRight,
-                    contentDescription = null
-                )
             }
         }
 
@@ -484,6 +449,39 @@ fun SettingsTabContent(
                     "Abmelden",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+
+        // Alles pausieren (Master-Pause fuer laengere Abwesenheit)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(SpacingConstants.PADDING_CARD),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Hintergrunddienste pausieren",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        "Pausiert ALLES: Wecker, Dimmer, Nicht-stören und Hue-Automatik, inklusive der 6h-Wartung selbst. Für längere Abwesenheit. Kein Wecker klingelt, bis du hier wieder aktivierst.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+                Switch(
+                    checked = masterPausePaused,
+                    onCheckedChange = { masterPauseViewModel.setPaused(it) }
                 )
             }
         }

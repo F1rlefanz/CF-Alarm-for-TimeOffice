@@ -27,7 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -93,41 +92,6 @@ fun ShiftConfigScreen(
                 .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
             verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
         ) {
-            // Auto-Alarm Switch
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(SpacingConstants.PADDING_CARD),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Automatische Alarme",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "Alarme automatisch für erkannte Schichten setzen",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = shiftState.currentShiftConfig?.autoAlarmEnabled ?: false,
-                        onCheckedChange = { enabled ->
-                            shiftState.currentShiftConfig?.let { config ->
-                                shiftViewModel.updateShiftConfig(
-                                    config.copy(autoAlarmEnabled = enabled)
-                                )
-                            }
-                        }
-                    )
-                }
-            }
-
             // Schichttypen
             Text(
                 "Schichttypen",

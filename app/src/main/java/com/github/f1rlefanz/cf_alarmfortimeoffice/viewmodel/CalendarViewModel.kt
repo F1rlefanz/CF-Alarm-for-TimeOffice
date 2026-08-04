@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
@@ -87,7 +88,8 @@ class CalendarViewModel @Inject constructor(
     private val calendarStateHolder: CalendarStateHolder,
     private val errorHandler: ErrorHandler,
     private val shiftUseCase: IShiftUseCase,
-    private val alarmUseCase: IAlarmUseCase
+    private val alarmUseCase: IAlarmUseCase,
+    private val masterPausePrefs: MasterPausePrefs
 ) : ViewModel() {
 
     private val _localUiState = MutableStateFlow(CalendarUiState())
@@ -794,7 +796,18 @@ class CalendarViewModel @Inject constructor(
                     Logger.business(LogTags.ALARM, "✅ NO-EVENTS: No calendar events found - no alarms to create")
                     return@launch
                 }
-                
+
+                // Master-Pause: dies ist der primaere, bei jedem Kalender-Ladevorgang (App-Start,
+                // Vordergrund-Sync) durchlaufene Alarm-Erstellungspfad - unabhaengig vom
+                // ShiftViewModel-getriebenen Pfad. Ohne dieses Gate reaktiviert ein simples
+                // Oeffnen der App waehrend einer aktiven Master-Pause lautlos alle Wecker (am
+                // Fairphone nach einem Reboot-Test reproduziert: 0 Alarme direkt nach dem Boot,
+                // aber 5 Alarme nach dem ersten App-Start trotz weiterhin aktiver Pause).
+                if (masterPausePrefs.pausedNow()) {
+                    Logger.business(LogTags.ALARM, "⏸️ Master-Pause aktiv - Alarm-Erstellung aus geladenen Events uebersprungen")
+                    return@launch
+                }
+
                 Logger.business(LogTags.ALARM, "🚨 TIMING-FIX: Starting alarm creation for $eventCount loaded events")
                 
                 // 🔍 DEBUGGING: Log details about the events we found

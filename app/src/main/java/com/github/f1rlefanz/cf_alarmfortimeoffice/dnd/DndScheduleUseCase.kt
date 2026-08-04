@@ -85,6 +85,26 @@ class DndScheduleUseCase @Inject constructor(
         scheduleNextTransition()
     }
 
+    /**
+     * Setzt die Zen-Regel-Bedingung auf inaktiv und storniert den rollenden Tick-Alarm - registriert
+     * die Regel bewusst NICHT ab ([NotificationManager.removeAutomaticZenRule]), sie bleibt sichtbar
+     * und inaktiv liegen. Ein spaeteres [enable] findet sie ueber [ensureZenRule] wieder und muss
+     * nichts neu anlegen.
+     */
+    suspend fun disable() {
+        if (!isSupported()) return
+        val nm = notificationManager()
+        val ruleId = prefs.zenRuleIdNow()
+        if (ruleId.isNotBlank()) {
+            try {
+                nm.setAutomaticZenRuleState(ruleId, Condition(CONDITION_ID, "", Condition.STATE_FALSE))
+            } catch (e: SecurityException) {
+                Logger.e(LogTags.DND, "disable() ohne Freigabe aufgerufen", e)
+            }
+        }
+        alarmManager().cancel(buildPendingIntent())
+    }
+
     suspend fun applyCurrentState() {
         if (!isSupported()) return
         val nm = notificationManager()

@@ -78,6 +78,7 @@ object LogTags {
     const val MAINTENANCE = "CFAlarm.Maintenance" // Phase 1: AlarmMaintenanceService
     const val DIMMER = "CFAlarm.Dimmer" // Schicht-basiertes Screen-Dimming
     const val DND = "CFAlarm.Dnd" // Schicht-basierte "Nicht stoeren"-Steuerung
+    const val MASTER_PAUSE = "CFAlarm.MasterPause" // Globaler Pause-Schalter fuer alle Hintergrunddienste
     const val MAINTENANCE_L2 = "CFAlarm.Maintenance.L2"
     const val MAINTENANCE_L3 = "CFAlarm.Maintenance.L3"
     const val MAINTENANCE_L4 = "CFAlarm.Maintenance.L4"

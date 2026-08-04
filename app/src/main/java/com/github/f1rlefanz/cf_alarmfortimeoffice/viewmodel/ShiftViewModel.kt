@@ -150,11 +150,13 @@ class ShiftViewModel @Inject constructor(
                         kotlinx.coroutines.delay(200)
 
                         processCalendarEvents(currentEvents)
-
-                        // 🚨 CRITICAL FIX: Trigger automatic alarm creation after shift config update!
-                        Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation after shift config change")
-                        triggerAlarmCreationFromConfigUpdate()
                     }
+
+                    // 🚨 CRITICAL FIX: Trigger automatic alarm creation after shift config update!
+                    // Unconditional (auch ohne Events): ein Ausschalten von "Automatische Alarme"
+                    // muss die Alarme sofort raeumen, nicht nur wenn gerade Events geladen sind.
+                    Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation after shift config change")
+                    triggerAlarmCreationFromConfigUpdate(config)
                 }
                 .onFailure { error ->
                     _uiState.value = _uiState.value.copy(
@@ -168,46 +170,58 @@ class ShiftViewModel @Inject constructor(
     // REMOVED: updateDaysAhead() - daysAhead is now fixed at 14 days as per Briefing 4.0
     // REMOVED: updateSyncInterval() - syncIntervalHours is now fixed at 6 hours as per Briefing 4.0
 
-    fun processCalendarEvents(events: List<CalendarEvent>) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
-            // Interface-Version verwendet recognizeShiftsInEvents
-            shiftUseCase.recognizeShiftsInEvents(events)
-                .onSuccess { shiftMatches ->
-                    // Konvertiere ShiftMatch zu ShiftInfo für UI-Kompatibilität
-                    val shifts = shiftMatches.map { match ->
-                        ShiftInfo(
-                            id = match.calendarEvent.id,
-                            shiftType = com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftType(
-                                name = match.shiftDefinition.id,
-                                displayName = match.shiftDefinition.name
-                            ),
-                            startTime = match.calendarEvent.startTime,
-                            endTime = match.calendarEvent.endTime,
-                            eventTitle = match.calendarEvent.title,
-                            alarmTime = match.calculatedAlarmTime
-                        )
-                    }
-                    
-                    // Upcoming shift calculation - legacy method
-                    val upcomingShift = shifts
-                        .filter { it.startTime.isAfter(java.time.LocalDateTime.now()) }
-                        .minByOrNull { it.startTime }
-                    
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        recognizedShifts = shifts,
-                        upcomingShift = upcomingShift
+    /**
+     * WICHTIG: `suspend`, nicht mehr selbst `viewModelScope.launch` - beide Aufrufer
+     * (`observeCalendarEvents()`s `collect`, `updateShiftConfig()`s `.onSuccess`) laufen
+     * bereits in einer eigenen Coroutine. Ein zusätzlicher, fire-and-forget verschachtelter
+     * `launch` hier ließ diesen Aufruf nebenläufig zu `triggerAlarmCreationFromConfigUpdate()`s
+     * eigenem `ShiftRecognitionEngine`-Zugriff laufen - dieselbe Engine-Instanz cached ihren
+     * Zustand aber in einzelnen `@Volatile`-Feldern ohne gemeinsame Atomizität
+     * (`lastRecognitionHash`/`cachedMatches`/`recognitionInProgress`), sodass die beiden
+     * nebenläufigen Aufrufe sich gegenseitig einen falschen (leeren) Zwischenzustand
+     * unterschieben konnten - am Fairphone reproduziert: "Automatische Alarme" wieder
+     * einschalten erzeugte trotz korrekt erkannter Schichten 0 Alarme. Als `suspend` läuft
+     * dieser Aufruf im Aufrufer-Coroutine vollständig ab, BEVOR `triggerAlarmCreationFromConfigUpdate()`
+     * überhaupt startet - keine Überlappung mehr auf der gemeinsamen Engine.
+     */
+    suspend fun processCalendarEvents(events: List<CalendarEvent>) {
+        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+        // Interface-Version verwendet recognizeShiftsInEvents
+        shiftUseCase.recognizeShiftsInEvents(events)
+            .onSuccess { shiftMatches ->
+                // Konvertiere ShiftMatch zu ShiftInfo für UI-Kompatibilität
+                val shifts = shiftMatches.map { match ->
+                    ShiftInfo(
+                        id = match.calendarEvent.id,
+                        shiftType = com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftType(
+                            name = match.shiftDefinition.id,
+                            displayName = match.shiftDefinition.name
+                        ),
+                        startTime = match.calendarEvent.startTime,
+                        endTime = match.calendarEvent.endTime,
+                        eventTitle = match.calendarEvent.title,
+                        alarmTime = match.calculatedAlarmTime
                     )
                 }
-                .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = errorHandler.getErrorMessage(error)
-                    )
-                }
-        }
+
+                // Upcoming shift calculation - legacy method
+                val upcomingShift = shifts
+                    .filter { it.startTime.isAfter(java.time.LocalDateTime.now()) }
+                    .minByOrNull { it.startTime }
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    recognizedShifts = shifts,
+                    upcomingShift = upcomingShift
+                )
+            }
+            .onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = errorHandler.getErrorMessage(error)
+                )
+            }
     }
 
     /**
@@ -216,9 +230,23 @@ class ShiftViewModel @Inject constructor(
      * 
      * NOW USES: CalendarStateHolder events instead of direct CalendarViewModel reference
      */
-    private fun triggerAlarmCreationFromConfigUpdate() {
+    private fun triggerAlarmCreationFromConfigUpdate(config: ShiftConfig) {
         viewModelScope.launch {
             Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm sync for updated shift config")
+
+            // "Automatische Alarme" ausgeschaltet: soll ein sofortiger, echter Pause sein - nicht
+            // nur ein Gate fuer kuenftige Alarme. Bestehende Alarme muessen JETZT verschwinden,
+            // unabhaengig davon ob gerade Kalender-Events vorliegen.
+            if (!config.autoAlarmEnabled) {
+                alarmUseCase.deleteAllAlarms()
+                    .onSuccess {
+                        Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarme pausiert (autoAlarmEnabled=false) - alle Alarme geloescht")
+                    }
+                    .onFailure { error ->
+                        Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Pausieren der Alarme fehlgeschlagen", error)
+                    }
+                return@launch
+            }
 
             // Get current events from CalendarStateHolder (vollstaendiger Soll-Zustand fuer den Delta-Sync)
             val currentEvents = calendarStateHolder.events.value
@@ -231,15 +259,13 @@ class ShiftViewModel @Inject constructor(
             // Orchestrator: syncAlarms erkennt die Schichten selbst (frische Engine dank
             // Cache-Invalidierung in saveShiftConfig) und setzt die System-Alarme intern.
             // Kein Vor-Recognize und kein delay()-Hack mehr noetig.
-            _uiState.value.currentShiftConfig?.let { config ->
-                alarmUseCase.syncAlarms(currentEvents, config)
-                    .onSuccess { alarms ->
-                        Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarm-Sync erfolgreich - ${alarms.size} Alarme aktiv")
-                    }
-                    .onFailure { error ->
-                        Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Alarm-Sync fehlgeschlagen", error)
-                    }
-            }
+            alarmUseCase.syncAlarms(currentEvents, config)
+                .onSuccess { alarms ->
+                    Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarm-Sync erfolgreich - ${alarms.size} Alarme aktiv")
+                }
+                .onFailure { error ->
+                    Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: Alarm-Sync fehlgeschlagen", error)
+                }
         }
     }
     

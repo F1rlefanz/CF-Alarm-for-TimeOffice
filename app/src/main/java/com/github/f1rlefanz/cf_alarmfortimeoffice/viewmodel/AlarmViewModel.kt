@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
@@ -83,7 +84,8 @@ class AlarmViewModel @Inject constructor(
     private val alarmUseCase: IAlarmUseCase,
     private val alarmSkipUseCase: IAlarmSkipUseCase,
     private val shiftUseCase: IShiftUseCase,
-    private val errorHandler: ErrorHandler
+    private val errorHandler: ErrorHandler,
+    private val masterPausePrefs: MasterPausePrefs
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlarmUiState())
@@ -559,6 +561,15 @@ class AlarmViewModel @Inject constructor(
             val state = _manualAlarmState.value
             val selectedShift = state.selectedShift
             val selectedDate = state.selectedDate
+
+            if (masterPausePrefs.pausedNow()) {
+                _manualAlarmState.value = state.copy(
+                    error = AppErrorState.validationError(
+                        "Hintergrunddienste sind pausiert – bitte zuerst die Master-Pause beenden"
+                    )
+                )
+                return@launch
+            }
 
             if (selectedShift == null) {
                 _manualAlarmState.value = state.copy(

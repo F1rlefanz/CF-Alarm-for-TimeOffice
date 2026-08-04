@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
@@ -42,6 +43,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HueTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.StatusTabContent
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.WeckerTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
@@ -145,6 +147,12 @@ fun MainContentScreen(
                     onClick = { onSelectedTabChange(MainTab.HOME) }
                 )
                 NavigationBarItem(
+                    icon = { Icon(Icons.Filled.AccessAlarm, contentDescription = "Wecker") },
+                    label = { Text("Wecker", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    selected = selectedTab == MainTab.WECKER,
+                    onClick = { onSelectedTabChange(MainTab.WECKER) }
+                )
+                NavigationBarItem(
                     icon = { Icon(Icons.Filled.DarkMode, contentDescription = "Dimmen") },
                     label = { Text("Dimmen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     selected = selectedTab == MainTab.DIMMER,
@@ -203,12 +211,22 @@ fun MainContentScreen(
                             // Token refresh handled by AlarmMaintenanceService
                             calendarViewModel.refreshData(forceRefresh = true)
                         },
-                        onSkipNextAlarm = alarmViewModel::skipNextAlarm,
-                        onCancelSkip = alarmViewModel::cancelSkip,
+                        onNavigateToWecker = { onSelectedTabChange(MainTab.WECKER) },
                         onShowEventList = onShowEventList,
                         onReauthorize = {
                             authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
                         }
+                    )
+                }
+                MainTab.WECKER -> {
+                    WeckerTabContent(
+                        shiftState = shiftState,
+                        alarmState = alarmState,
+                        skipState = skipState,
+                        onUpdateShiftConfig = shiftViewModel::updateShiftConfig,
+                        onSkipNextAlarm = alarmViewModel::skipNextAlarm,
+                        onCancelSkip = alarmViewModel::cancelSkip,
+                        onShowShiftConfig = onShowShiftConfig
                     )
                 }
                 MainTab.STATUS -> {
@@ -216,17 +234,14 @@ fun MainContentScreen(
                         authState = authState,
                         calendarState = calendarState,
                         shiftState = shiftState,
-                        alarmState = alarmState,
                         calendarViewModel = calendarViewModel,
                         authViewModel = authViewModel,
-                        onShowCalendarSelection = onShowCalendarSelection,
-                        onShowShiftConfig = onShowShiftConfig
+                        onShowCalendarSelection = onShowCalendarSelection
                     )
                 }
                 MainTab.SETTINGS -> {
                     SettingsTabContent(
                         authViewModel = authViewModel,
-                        onShowShiftConfig = onShowShiftConfig,
                         onShowCalendarSelection = onShowCalendarSelection,
                         onShowDndSettings = onShowDndSettings
                     )

@@ -301,7 +301,7 @@ class AlarmUseCase @Inject constructor(
             }
         }
     
-    override suspend fun scheduleSystemAlarm(alarmInfo: AlarmInfo): Result<Unit> = 
+    override suspend fun scheduleSystemAlarm(alarmInfo: AlarmInfo): Result<Unit> =
         SafeExecutor.safeExecute("AlarmUseCase.scheduleSystemAlarm") {
             // Create dummy ShiftMatch for AlarmManagerService compatibility
             val shiftDefinition = ShiftDefinition(
@@ -311,16 +311,26 @@ class AlarmUseCase @Inject constructor(
                 alarmTime = LocalTime.of(AlarmConstants.DEFAULT_ALARM_HOUR, AlarmConstants.DEFAULT_ALARM_MINUTE), // Default
                 isEnabled = true
             )
-            
+
+            // shiftStartTime (echter Kalender-Schichtbeginn) statt triggerTime (Weckzeit) fuer
+            // die synthetische CalendarEvent.startTime - sonst zeigt "Deine Schicht beginnt um"
+            // nach JEDEM Re-Arming (Sync/Boot/Maintenance - der eigentliche, staendig genutzte
+            // Weg ueber diese Funktion, nicht die einmalige Erstplanung) wieder die Weckzeit
+            // statt des Schichtbeginns. 0 = unbekannt (z.B. manueller Alarm ohne echte Schicht) -
+            // dann bewusst wie bisher auf die Weckzeit zurueckfallen.
+            val shiftStartMillis = alarmInfo.shiftStartTime.takeIf { it > 0 } ?: alarmInfo.triggerTime
+            val shiftEndMillis = alarmInfo.shiftEndTime.takeIf { it > 0 }
+                ?: (alarmInfo.triggerTime + CalendarConstants.DEFAULT_EVENT_DURATION_MS)
+
             val calendarEvent = CalendarEvent(
                 id = alarmInfo.id.toString(), // Convert Int to String
                 title = alarmInfo.shiftName,
                 startTime = LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochMilli(alarmInfo.triggerTime),
+                    java.time.Instant.ofEpochMilli(shiftStartMillis),
                     ZoneId.systemDefault()
                 ),
                 endTime = LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochMilli(alarmInfo.triggerTime + CalendarConstants.DEFAULT_EVENT_DURATION_MS), // +1 hour
+                    java.time.Instant.ofEpochMilli(shiftEndMillis),
                     ZoneId.systemDefault()
                 ),
                 calendarId = ""

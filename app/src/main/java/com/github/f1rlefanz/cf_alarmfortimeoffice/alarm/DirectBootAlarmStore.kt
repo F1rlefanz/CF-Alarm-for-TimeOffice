@@ -37,7 +37,9 @@ data class DirectBootAlarmEntry(
     val id: Int,
     val shiftName: String,
     val triggerTime: Long,
-    val alarmTimeFormatted: String = ""
+    // Tatsaechlicher Schichtbeginn (formatiert "HH:mm"), NICHT die Weckzeit - siehe
+    // AlarmReceiver.EXTRA_SHIFT_START_TIME. Leer = unbekannt.
+    val shiftStartTimeFormatted: String = ""
 )
 
 @Singleton

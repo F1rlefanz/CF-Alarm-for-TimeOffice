@@ -94,13 +94,13 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 
         val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME)
             ?: getString(R.string.alarm_unknown_shift)
-        val alarmTime = intent.getStringExtra(AlarmSoundService.EXTRA_ALARM_TIME).orEmpty()
+        val shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
 
         setContent {
             CFAlarmForTimeOfficeTheme {
                 AlarmScreen(
                     shiftName = shiftName,
-                    alarmTime = alarmTime,
+                    shiftStartTime = shiftStartTime,
                     onDismiss = ::dismissAlarm,
                     onSnooze = ::snoozeAlarm
                 )
@@ -117,7 +117,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // Wecker zweimal stoppen (einmal in der Leiste, einmal hier).
         observeAlarmState()
 
-        Logger.i(LogTags.ALARM, "✅ AlarmFullScreenActivity initialized: $shiftName at $alarmTime")
+        Logger.i(LogTags.ALARM, "✅ AlarmFullScreenActivity initialized: $shiftName at $shiftStartTime")
     }
 
     override fun onStop() {
@@ -299,8 +299,9 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 
             val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME) ?: "Snooze"
             val alarmId = intent.getIntExtra(AlarmSoundService.EXTRA_ALARM_ID, -1)
+            val shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
 
-            AlarmManagerService.scheduleSnooze(this, alarmId, shiftName)
+            AlarmManagerService.scheduleSnooze(this, alarmId, shiftName, shiftStartTime)
 
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(AlarmSoundService.NOTIFICATION_ID)
@@ -327,7 +328,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 @Composable
 private fun AlarmScreen(
     shiftName: String,
-    alarmTime: String,
+    shiftStartTime: String,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit
 ) {
@@ -371,10 +372,10 @@ private fun AlarmScreen(
                     textAlign = TextAlign.Center
                 )
 
-                if (alarmTime.isNotBlank()) {
+                if (shiftStartTime.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.alarm_shift_start, alarmTime),
+                        text = stringResource(R.string.alarm_shift_start, shiftStartTime),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center

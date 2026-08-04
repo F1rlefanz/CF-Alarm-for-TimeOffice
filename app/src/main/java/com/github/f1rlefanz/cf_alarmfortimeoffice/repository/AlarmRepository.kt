@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -135,8 +139,12 @@ class AlarmRepository @Inject constructor(
 
             // Device-Protected-Spiegel synchron mitschreiben, damit die Alarme nach einem Reboot
             // schon VOR der ersten Entsperrung wiederhergestellt werden koennen (Direct Boot).
+            // shiftStartTime (nicht formattedTime/triggerTime, das ist die Weckzeit!) fuellt nach
+            // dem Reboot dieselbe "Deine Schicht beginnt um"-Anzeige wie der reguläre Pfad.
             directBootAlarmStore.saveAll(
-                alarmsData.map { DirectBootAlarmEntry(it.id, it.shiftName, it.triggerTime, it.formattedTime) }
+                alarmsData.map {
+                    DirectBootAlarmEntry(it.id, it.shiftName, it.triggerTime, formatShiftStartTime(it.shiftStartTime))
+                }
             )
 
             Logger.d(LogTags.ALARM, "💾 PERSISTENCE: Saved ${alarms.size} alarms to DataStore (+ Direct-Boot-Spiegel)")
@@ -292,6 +300,13 @@ class AlarmRepository @Inject constructor(
             Logger.e(LogTags.ALARM, "Error during manual alarm cleanup", e)
             Result.failure(e)
         }
+    }
+
+    /** shiftStartTime (Epoch-Millis, 0 = unbekannt) -> "dd.MM.yyyy HH:mm", leer bei unbekannt. */
+    private fun formatShiftStartTime(shiftStartTime: Long): String {
+        if (shiftStartTime <= 0) return ""
+        val formatter = DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
+        return Instant.ofEpochMilli(shiftStartTime).atZone(ZoneId.systemDefault()).format(formatter)
     }
 
     // Extension functions for conversion

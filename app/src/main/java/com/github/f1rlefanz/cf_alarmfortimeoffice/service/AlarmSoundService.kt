@@ -75,7 +75,10 @@ class AlarmSoundService : Service() {
         // Intent Extras
         const val EXTRA_SHIFT_NAME = "shift_name"
         const val EXTRA_ALARM_ID = "alarm_id"
-        const val EXTRA_ALARM_TIME = "alarm_time"
+
+        // Tatsaechlicher Schichtbeginn (Kalender-Event-Start), NICHT die Weckzeit - siehe
+        // AlarmReceiver.EXTRA_SHIFT_START_TIME.
+        const val EXTRA_SHIFT_START_TIME = "shift_start_time_formatted"
 
         // Notification Configuration
         // EINZIGE Alarm-Notification der App. Der AlarmReceiver postete frueher eine zweite
@@ -125,12 +128,12 @@ class AlarmSoundService : Service() {
             ACTION_START_ALARM -> {
                 val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Alarm"
                 val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
-                val alarmTime = intent.getStringExtra(EXTRA_ALARM_TIME).orEmpty()
+                val shiftStartTime = intent.getStringExtra(EXTRA_SHIFT_START_TIME).orEmpty()
 
                 Logger.business(
                     LogTags.ALARM,
                     "🔊 AlarmSoundService START_ALARM",
-                    "Shift: $shiftName, ID: $alarmId, Time: $alarmTime"
+                    "Shift: $shiftName, ID: $alarmId, Start: $shiftStartTime"
                 )
 
                 // Reset shutdown flag for new alarm
@@ -151,7 +154,7 @@ class AlarmSoundService : Service() {
                 // PendingIntent ist auf Android 10+ der einzige erlaubte Weg, aus dem Hintergrund
                 // eine Activity zu starten (ein direktes startActivity() aus dem Receiver wird
                 // verworfen und ist deshalb kein tragfaehiger Fallback mehr).
-                val notification = createAlarmNotification(shiftName, alarmTime, alarmId)
+                val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId)
                 startForeground(NOTIFICATION_ID, notification)
                 Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
 
@@ -167,12 +170,13 @@ class AlarmSoundService : Service() {
                 // hier der EINZIGE Weg zu schlummern (der Vollbild-Button waere unerreichbar).
                 val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Alarm"
                 val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
+                val shiftStartTime = intent.getStringExtra(EXTRA_SHIFT_START_TIME).orEmpty()
                 Logger.i(LogTags.ALARM, "😴 AlarmSoundService SNOOZE_ALARM (Notification): $shiftName, id=$alarmId")
 
                 // ZUERST den neuen Wecker planen (setAlarmClock ist synchron + schnell), DANN den Ton
                 // stoppen - so steht der Snooze sicher, selbst wenn stopSelf() gleich greift. Exakt
                 // derselbe Weg wie "5 Min spaeter" im Vollbild: AlarmManagerService.scheduleSnooze.
-                AlarmManagerService.scheduleSnooze(applicationContext, alarmId, shiftName)
+                AlarmManagerService.scheduleSnooze(applicationContext, alarmId, shiftName, shiftStartTime)
                 stopAlarmAndService()
             }
 
@@ -498,7 +502,7 @@ class AlarmSoundService : Service() {
      */
     private fun createAlarmNotification(
         shiftName: String,
-        alarmTime: String,
+        shiftStartTime: String,
         alarmId: Int
     ): android.app.Notification {
         val stopIntent = PendingIntent.getService(
@@ -510,7 +514,9 @@ class AlarmSoundService : Service() {
 
         // Snooze-Button: der Notausgang zum Schlummern, wenn das Vollbild nicht sichtbar hochkommt.
         // Traegt Schicht + alarmId als Extras, weil die Service-Instanz, die den Snooze verarbeitet,
-        // sie sonst nicht mehr kennt. Eigener requestCode (1) neben dem Stop-Slot (0).
+        // sie sonst nicht mehr kennt. Eigener requestCode (1) neben dem Stop-Slot (0). Der
+        // Schichtbeginn muss ebenfalls mit, sonst zeigt die Notification nach dem Schlummern
+        // "Deine Schicht beginnt um " ohne Uhrzeit.
         val snoozeIntent = PendingIntent.getService(
             this,
             1,
@@ -518,6 +524,7 @@ class AlarmSoundService : Service() {
                 action = ACTION_SNOOZE_ALARM
                 putExtra(EXTRA_SHIFT_NAME, shiftName)
                 putExtra(EXTRA_ALARM_ID, alarmId)
+                putExtra(EXTRA_SHIFT_START_TIME, shiftStartTime)
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
@@ -528,7 +535,7 @@ class AlarmSoundService : Service() {
             Intent(this, AlarmFullScreenActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 putExtra(EXTRA_SHIFT_NAME, shiftName)
-                putExtra(EXTRA_ALARM_TIME, alarmTime)
+                putExtra(EXTRA_SHIFT_START_TIME, shiftStartTime)
                 putExtra(EXTRA_ALARM_ID, alarmId)
                 setPackage(packageName)
             },
@@ -536,10 +543,10 @@ class AlarmSoundService : Service() {
         )
 
         // Leere Uhrzeit sauber abfangen statt "Deine Schicht beginnt um " anzuzeigen.
-        val contentText = if (alarmTime.isBlank()) {
+        val contentText = if (shiftStartTime.isBlank()) {
             getString(R.string.alarm_notification_text_no_time)
         } else {
-            getString(R.string.alarm_notification_text, alarmTime)
+            getString(R.string.alarm_notification_text, shiftStartTime)
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)

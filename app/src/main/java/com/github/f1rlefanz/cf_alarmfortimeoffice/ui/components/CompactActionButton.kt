@@ -10,6 +10,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,6 +70,20 @@ fun CompactOutlinedButton(
         contentPadding = CompactContentPadding
     ) {
         CompactLabel(icon = icon, text = text)
+    }
+}
+
+/**
+ * Textbutton fuer die einzelne sekundaere Aktion einer Status-Karte (meist der Sprung zu einer
+ * Android-Systemeinstellung wie Akku-Optimierung, Bedienungshilfen oder TimeOffice-App-Info; siehe
+ * [StatusTabContent] fuer alle Verwendungsstellen). Kein Pill-Button: die Karte beschreibt bereits
+ * den Zustand, der Text ist nur der Sprung dorthin — dafuer ohne Innenabstand, damit er buendig
+ * unter der Beschreibung sitzt statt einen eigenen Block zu bilden.
+ */
+@Composable
+fun SettingsLinkButton(onClick: () -> Unit, text: String, modifier: Modifier = Modifier) {
+    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(0.dp)) {
+        Text(text)
     }
 }
 

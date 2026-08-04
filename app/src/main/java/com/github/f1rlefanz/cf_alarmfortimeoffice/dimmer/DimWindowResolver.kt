@@ -109,19 +109,32 @@ object DimWindowResolver {
 
     /**
      * Eingebauter Nacht-Standard (seit v1.17.0): dimmt ab [startClockMinutes] bis zum naechsten
-     * Wecker (Tage mit Alarm, ueber [DimAnchor.ALARM]) bzw. bis [freeDayEndClockMinutes] (Tage
-     * ohne Alarm, ueber [DimAnchor.CLOCK]) - jeweils nur an Kalendertagen, fuer die [isExcluded]
+     * Wecker (ueber [DimAnchor.ALARM]) bzw. bis [freeDayEndClockMinutes] (ueber [DimAnchor.CLOCK],
+     * wenn kein Wecker in Reichweite ist) - jeweils nur an Kalendertagen, fuer die [isExcluded]
      * false liefert. [isExcluded] buendelt ZWEI unabhaengige Ausschluss-Wege: eine explizit vom
      * Nutzer ausgeschlossene Schicht (Toggle direkt an der Nacht-Standard-Karte) ODER eine
      * vorhandene [DimRule] (spezifisch, UNIVERSAL oder FREI), die diesen Tag ohnehin schon
      * abdeckt - exakt dieselbe Ausschliesslichkeit wie in [buildRuleSpans].
      *
-     * Ein Tag OHNE eigenen Alarm erzeugt bewusst KEINEN Fallback-Abschnitt, wenn der FOLGETAG einen
-     * Alarm hat - dessen eigene Iteration deckt die Nacht bereits an (CLOCK reicht ueber "vor der
-     * Weckzeit" zurueck). Ohne diese Ausnahme wuerden zwei Spannen mit unterschiedlichem Ende
-     * ueberlappen (heutiger fixer Fallback bis [freeDayEndClockMinutes] UND morgiges Fenster bis
-     * zum echten Wecker) - der fixe Fallback wuerde die Nacht ueber den echten Wecker hinaus verlaengern
-     * und genau den Zweck dieses Standards (dynamisch bis zum tatsaechlichen Wecker) aushebeln.
+     * Pro Tag werden ZWEI voneinander unabhaengige Fenster geprueft, nicht nur eines:
+     * 1. **Rueckwaerts** (nur wenn der Tag selbst einen Wecker hat): die Nacht VOR diesem Wecker,
+     *    endend am Wecker selbst (CLOCK reicht ueber "vor der Weckzeit" zurueck).
+     * 2. **Vorwaerts** (immer, AUSSER der Folgetag hat selbst einen Wecker): der heutige ABEND
+     *    braucht ein eigenes Fenster bis [freeDayEndClockMinutes], weil das Rueckwaerts-Fenster
+     *    (Punkt 1) - falls es ueberhaupt existiert - nur bis zum EIGENEN Wecker des Tages reicht,
+     *    nicht bis in den eigenen Abend hinein. Hat der Tag KEINEN eigenen Wecker (klassischer
+     *    freier Tag), ist Punkt 2 das einzige Fenster.
+     *
+     * Diese Trennung ist bewusst: ein Wecker, der nicht der fruehe Morgen ist (z. B. eine
+     * Nachmittagsschicht mit Wecker 14:30), "verbraucht" den Tag fuer Punkt 1 als Ende einer
+     * Nacht VOR sich - deckt aber NIE den eigenen Abend ab. Waere Punkt 2 weiterhin exklusiv an
+     * "kein eigener Wecker" gebunden (wie vor diesem Fix), faellt die Nacht NACH einem solchen
+     * Nachmittagswecker komplett durch, sobald der Folgetag ebenfalls keinen Wecker hat (der
+     * Skip fuer den Folgetag nimmt faelschlich an, ein Wecker am UEBERnaechsten Tag decke sie
+     * schon ab - dessen Rueckwaerts-Fenster reicht aber nur einen Tag zurueck). Real reproduziert
+     * am 03./04./05.08.2026 (S2-Wecker 14:30 -> Tag ohne Termin -> Fruehschicht 05:30): die Nacht
+     * vom 3. auf den 4.8. blieb dadurch komplett ungedimmt/DND-los. Siehe
+     * `DimWindowResolverTest` fuer den Regressionsfall.
      */
     fun buildDefaultNightSpans(
         alarms: List<AlarmSlot>,
@@ -144,20 +157,19 @@ object DimWindowResolver {
             val date = today.plusDays(i.toLong())
             val alarm = alarmByDate[date]
             if (isExcluded(alarm?.shiftName)) continue
-            if (alarm == null && alarmByDate.containsKey(date.plusDays(1))) {
-                // Morgen hat einen Wecker: dessen eigene Iteration deckt diese Nacht bereits ab
-                // (CLOCK reicht ueber "vor der Weckzeit" zurueck bis in den heutigen Abend). Hier
-                // KEINEN zusaetzlichen festen Fallback erzeugen, sonst ueberlappen sich zwei
-                // Spannen mit unterschiedlichem Ende, und die fixe (spaetere) gewinnt die Nacht
-                // ueber den echten Wecker hinaus - genau der Fehler, den dieser Standard vermeiden soll.
-                continue
+
+            // Rueckwaerts: Nacht VOR dem heutigen Wecker, falls einer existiert.
+            if (alarm != null) {
+                val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0)
+                resolveWindowForDate(window, date, alarm, zone)?.let { out += DimSpan(it, strength, warmth) }
             }
-            val window = if (alarm != null) {
-                DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0)
-            } else {
-                DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.CLOCK, endClockMinutes = freeDayEndClockMinutes)
+
+            // Vorwaerts: heutiger Abend, AUSSER der Folgetag hat selbst einen Wecker (dessen
+            // eigenes Rueckwaerts-Fenster deckt den heutigen Abend dann automatisch mit ab).
+            if (!alarmByDate.containsKey(date.plusDays(1))) {
+                val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.CLOCK, endClockMinutes = freeDayEndClockMinutes)
+                resolveWindowForDate(window, date, null, zone)?.let { out += DimSpan(it, strength, warmth) }
             }
-            resolveWindowForDate(window, date, alarm, zone)?.let { out += DimSpan(it, strength, warmth) }
         }
         return out
     }

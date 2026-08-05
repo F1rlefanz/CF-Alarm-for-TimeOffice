@@ -12,6 +12,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -89,6 +91,18 @@ class DimOverlayPrefs @Inject constructor(
 
     /** Die drei Fenster-Quellen-Schalter. */
     data class Toggles(val wellnessEnabled: Boolean, val rulesEnabled: Boolean, val nightDefaultEnabled: Boolean)
+
+    // Serialisiert JEDEN Read-Modify-Write auf den Override-Zustand ueber ALLE Aufrufer hinweg -
+    // DimNotificationService's Aktions-Handler (Heller/Dunkler/Pause) UND DimScheduleUseCase.
+    // applyCurrentState()'s eigenes Stale-Clearing lesen beide overrideNow() und schreiben ggf.
+    // zurueck, aber aus unabhaengigen, potenziell gleichzeitig laufenden Kontexten (Tick-Alarm,
+    // 6h-Wartung, Boot, jeder DimmerViewModel-Setter, Notification-Button-Tap). Ein rein lokaler
+    // Mutex in einem der Aufrufer schuetzt nur gegen sich selbst, nicht gegen die anderen - dieser
+    // Singleton ist der einzige Ort, an dem ALLE Aufrufer tatsaechlich dieselbe Instanz teilen.
+    private val overrideMutex = Mutex()
+
+    /** Serialisiert [block] gegen jeden anderen Aufrufer dieser Funktion - siehe [overrideMutex]. */
+    suspend fun <T> withOverrideLock(block: suspend () -> T): T = overrideMutex.withLock { block() }
 
     /**
      * Temporärer Nutzer-Override für die Dimmer-Korrektur-Notification (Feature C). Persistiert im

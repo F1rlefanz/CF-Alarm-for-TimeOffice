@@ -443,8 +443,16 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `effectiveStrength` trotzdem noch gedeckelt bleibt (adversarial gefunden/gefixt: Klemmbereich ist
   `-active.strength..(STRENGTH_MAX - active.strength)`, nicht `[0, STRENGTH_MAX]` auf den Delta
   selbst). Das Read-Modify-Write auf die Override-Prefs läuft außerdem hinter einem `Mutex`
-  (`overrideMutex`) — ohne ihn verlieren zwei rasch aufeinanderfolgende Button-Taps (Doppel-Tap)
-  eine der beiden Änderungen beim Zurückschreiben.
+  (`DimOverlayPrefs.withOverrideLock`, ein Singleton-Feld — **nicht** ein lokales Feld in
+  `DimNotificationService`) — ohne ihn verlieren zwei rasch aufeinanderfolgende Button-Taps
+  (Doppel-Tap) eine der beiden Änderungen beim Zurückschreiben. Ein rein lokaler Mutex in
+  `DimNotificationService` allein reicht nicht: `DimScheduleUseCase.applyCurrentState()` liest/
+  räumt denselben Override-Zustand unsynchronisiert von mindestens vier weiteren, unabhängigen
+  Aufrufern (`DimScheduleReceiver`-Tick, 6h-Wartung, `BootReceiver`, jeder `DimmerViewModel`-Setter)
+  — real als Race gefunden: ein Korrektur-Tap genau zur Tick-Fenstergrenze konnte stillschweigend
+  wirkungslos bleiben. Deshalb lebt der Mutex im `@Singleton DimOverlayPrefs` selbst, der einzige
+  Ort, den wirklich alle Aufrufer teilen — `DimNotificationService` UND `DimScheduleUseCase.
+  applyCurrentState()` gehen beide über `withOverrideLock`.
 
 ### DND-Steuerung (Nicht stören)
 

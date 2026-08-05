@@ -10,10 +10,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -25,6 +27,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -32,6 +35,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * Unit-Tests fuer den Delta-Sync in [AlarmUseCase.syncAlarms].
@@ -341,6 +345,108 @@ class AlarmUseCaseDeltaSyncTest {
         val created = result.getOrNull()?.find { it.eventId == "evNormal" }
         assertNotNull(created)
         assertTrue("Regulaere Schicht darf nicht als still markiert werden", created!!.isSilent == false)
+    }
+
+    @Test
+    fun `ShiftDefinition-Feld aendert sich ohne Event-Aenderung - Update wird trotzdem persistiert`() = runTest {
+        // Regression fuer die urspruengliche "unchanged"-Bedingung in syncAlarms(), die nur
+        // eventChecksum und triggerTime verglich: eine reine ShiftDefinition-Aenderung (hier
+        // isSilent) OHNE Aenderung am zugrunde liegenden Kalender-Event (gleicher Titel/gleiche
+        // Zeiten -> gleicher Checksum -> gleiche berechnete Weckzeit) wurde faelschlich als
+        // "unveraendert" behandelt, und der alte (stale) Wert blieb bestehen. Dieser Test faellt
+        // auf dem alten 2-Feld-Vergleich durch und haelt den vollen existingAlarm != newAlarm-
+        // Vergleich fest.
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+        val event = futureEvent("evSilentToggle", "AD1", 9)
+
+        // Erster Sync: Schicht noch normal (isSilent = false).
+        val normalConfig = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(silentShift.copy(isSilent = false)))
+        val firstResult = useCase(repo, manager, normalConfig).syncAlarms(listOf(event), normalConfig)
+        val firstAlarm = firstResult.getOrNull()?.find { it.eventId == "evSilentToggle" }
+        assertNotNull(firstAlarm)
+        assertFalse("Vor dem Umschalten muss isSilent=false sein", firstAlarm!!.isSilent)
+
+        // Zweiter Sync: DASSELBE Kalender-Event (identischer Titel/identische Zeiten -> identischer
+        // Checksum und identische berechnete Weckzeit), aber die ShiftDefinition wurde inzwischen
+        // auf isSilent=true umgestellt.
+        val silentConfig = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(silentShift.copy(isSilent = true)))
+        val secondResult = useCase(repo, manager, silentConfig).syncAlarms(listOf(event), silentConfig)
+        val secondAlarm = secondResult.getOrNull()?.find { it.eventId == "evSilentToggle" }
+
+        assertNotNull(secondAlarm)
+        assertTrue(
+            "Die aktualisierte isSilent=true-Einstellung darf NICHT als 'unveraendert' verworfen " +
+                "werden - sonst bleibt der alte (nicht-stille) Alarm bestehen, obwohl die Schicht " +
+                "inzwischen als still konfiguriert ist",
+            secondAlarm!!.isSilent
+        )
+        assertTrue(
+            "Repository muss ebenfalls den aktualisierten Wert zeigen",
+            repo.current.find { it.eventId == "evSilentToggle" }!!.isSilent
+        )
+    }
+
+    // --- scheduleSystemAlarm: Regression fuer v1.20.1 ("Deine Schicht beginnt um" zeigte die
+    // Weckzeit statt des echten Schichtbeginns nach jedem Re-Arming). Die synthetische
+    // CalendarEvent, die hier gebaut und via ShiftMatch an setAlarmFromShiftMatch() gereicht
+    // wird, muss shiftStartTime/shiftEndTime bevorzugen und nur bei 0 (unbekannt) auf
+    // triggerTime zurueckfallen. ---
+
+    @Test
+    fun `scheduleSystemAlarm - vorhandene shiftStartTime und shiftEndTime werden fuer die synthetische CalendarEvent verwendet, nicht triggerTime`() = runTest {
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val alarmInfo = existingAlarm(id = 1, eventId = "evX").copy(
+            triggerTime = 1_000_000L,
+            shiftStartTime = 2_000_000L,
+            shiftEndTime = 3_000_000L
+        )
+
+        useCase(repo, manager, config).scheduleSystemAlarm(alarmInfo)
+
+        val captor = argumentCaptor<ShiftMatch>()
+        verify(manager).setAlarmFromShiftMatch(captor.capture(), any(), any())
+        val calendarEvent = captor.firstValue.calendarEvent
+        assertEquals(
+            "startTime muss aus shiftStartTime stammen, nicht aus triggerTime",
+            2_000_000L,
+            calendarEvent.startTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        )
+        assertEquals(
+            "endTime muss aus shiftEndTime stammen, nicht aus triggerTime + DEFAULT_EVENT_DURATION_MS",
+            3_000_000L,
+            calendarEvent.endTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        )
+    }
+
+    @Test
+    fun `scheduleSystemAlarm - fehlende shiftStartTime und shiftEndTime fallen auf triggerTime zurueck (manueller Alarm ohne echte Schicht)`() = runTest {
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val alarmInfo = existingAlarm(id = 1, eventId = "evX").copy(
+            triggerTime = 1_000_000L,
+            shiftStartTime = 0L,
+            shiftEndTime = 0L
+        )
+
+        useCase(repo, manager, config).scheduleSystemAlarm(alarmInfo)
+
+        val captor = argumentCaptor<ShiftMatch>()
+        verify(manager).setAlarmFromShiftMatch(captor.capture(), any(), any())
+        val calendarEvent = captor.firstValue.calendarEvent
+        assertEquals(
+            "startTime muss bei shiftStartTime = 0 auf triggerTime zurueckfallen",
+            1_000_000L,
+            calendarEvent.startTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        )
+        assertEquals(
+            "endTime muss bei shiftEndTime = 0 auf triggerTime + DEFAULT_EVENT_DURATION_MS zurueckfallen",
+            1_000_000L + CalendarConstants.DEFAULT_EVENT_DURATION_MS,
+            calendarEvent.endTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        )
     }
 
     // --- Feature B: Schicht-Aenderungs-Notification (Wiring in AlarmUseCase.syncAlarms) ---

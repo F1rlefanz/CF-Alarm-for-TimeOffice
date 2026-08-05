@@ -20,6 +20,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -202,6 +204,14 @@ class DndScheduleUseCase @Inject constructor(
 
     // --- AutomaticZenRule-Verwaltung ---
 
+    // Serialisiert die gesamte Lese-Entscheide-Schreibe-Sequenz aus ensureZenRule() ueber ALLE
+    // Aufrufer hinweg (rollender Tick, Schalter-Toggles, Master-Pause, BootReceiver) - diese Klasse
+    // ist ein @Singleton, also ist diese eine Mutex-Instanz tatsaechlich geteilt. Ohne sie koennen
+    // zwei gleichzeitige Aufrufe beide einen leeren storedId lesen, bevor einer zurueckschreibt, und
+    // dadurch zwei separate AutomaticZenRule-Instanzen beim System registrieren - eine davon wird nie
+    // wieder aktualisiert/verwaist.
+    private val zenRuleMutex = Mutex()
+
     /**
      * Liefert die registrierte Regel-ID; registriert bei Bedarf neu (Erstregistrierung ODER falls
      * der Nutzer die Regel extern - z. B. in den System-Einstellungen - geloescht hat:
@@ -214,20 +224,22 @@ class DndScheduleUseCase @Inject constructor(
         // Direkter SDK_INT-Check (nicht nur ueber isSupported()) noetig, damit Lint den Aufruf
         // von buildAutomaticZenRule() (@RequiresApi R) hier als abgesichert erkennt.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val storedId = prefs.zenRuleIdNow()
-        val rule = buildAutomaticZenRule()
-        return try {
-            if (storedId.isNotBlank() && nm.getAutomaticZenRule(storedId) != null) {
-                nm.updateAutomaticZenRule(storedId, rule)
-                storedId
-            } else {
-                val newId = nm.addAutomaticZenRule(rule)
-                prefs.setZenRuleId(newId)
-                newId
+        return zenRuleMutex.withLock {
+            val storedId = prefs.zenRuleIdNow()
+            val rule = buildAutomaticZenRule()
+            try {
+                if (storedId.isNotBlank() && nm.getAutomaticZenRule(storedId) != null) {
+                    nm.updateAutomaticZenRule(storedId, rule)
+                    storedId
+                } else {
+                    val newId = nm.addAutomaticZenRule(rule)
+                    prefs.setZenRuleId(newId)
+                    newId
+                }
+            } catch (e: SecurityException) {
+                Logger.e(LogTags.DND, "Zen-Regel-Verwaltung ohne Freigabe aufgerufen", e)
+                null
             }
-        } catch (e: SecurityException) {
-            Logger.e(LogTags.DND, "Zen-Regel-Verwaltung ohne Freigabe aufgerufen", e)
-            null
         }
     }
 
@@ -242,16 +254,17 @@ class DndScheduleUseCase @Inject constructor(
     private suspend fun buildAutomaticZenRule(): AutomaticZenRule {
         val component = ComponentName(context, MainActivity::class.java)
         val p = prefs.policyNow()
+        val intent = resolveDndZenPolicyIntent(p)
         val policy = ZenPolicy.Builder()
             .allowRepeatCallers(p.allowRepeatCallers)
-            .allowCalls(if (p.blockCalls) ZenPolicy.PEOPLE_TYPE_NONE else ZenPolicy.PEOPLE_TYPE_ANYONE)
-            .allowMessages(if (p.blockMessages) ZenPolicy.PEOPLE_TYPE_NONE else ZenPolicy.PEOPLE_TYPE_ANYONE)
-            .allowConversations(if (p.blockConversations) ZenPolicy.CONVERSATION_SENDERS_NONE else ZenPolicy.CONVERSATION_SENDERS_ANYONE)
-            .allowReminders(!p.blockReminders)
-            .allowEvents(!p.blockEvents)
-            .allowAlarms(!p.blockAlarms)
-            .allowMedia(!p.blockMedia)
-            .allowSystem(!p.blockSystem)
+            .allowCalls(intent.allowCallsPeopleType)
+            .allowMessages(intent.allowMessagesPeopleType)
+            .allowConversations(intent.allowConversationsSenders)
+            .allowReminders(intent.allowReminders)
+            .allowEvents(intent.allowEvents)
+            .allowAlarms(intent.allowAlarms)
+            .allowMedia(intent.allowMedia)
+            .allowSystem(intent.allowSystem)
             .build()
         return AutomaticZenRule(
             RULE_NAME,

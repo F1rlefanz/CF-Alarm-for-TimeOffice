@@ -188,8 +188,12 @@ class DimOverlayPrefs @Inject constructor(
         dataStore.edit { it[KEY_NIGHT_DEFAULT_START_MIN] = v.coerceIn(0, 24 * 60 - 1) }
     suspend fun setNightDefaultFreeEndMinutes(v: Int) =
         dataStore.edit { it[KEY_NIGHT_DEFAULT_FREE_END_MIN] = v.coerceIn(0, 24 * 60 - 1) }
-    suspend fun setNightDefaultExcludedShifts(v: Set<String>) =
-        dataStore.edit { it[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = v }
+    /** Atomarer Toggle statt Read-Modify-Write im Aufrufer - DataStore.edit{} serialisiert
+     * konkurrierende Transaktionen, ein Doppel-Tap auf zwei Chips verliert so keine Aenderung mehr. */
+    suspend fun toggleNightDefaultExcludedShift(shiftName: String) = dataStore.edit { p ->
+        val current = p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] ?: emptySet()
+        p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = if (shiftName in current) current - shiftName else current + shiftName
+    }
     suspend fun setNightDefaultStrength(v: Int) =
         dataStore.edit { it[KEY_NIGHT_DEFAULT_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
     suspend fun setNightDefaultWarmth(v: Int) =

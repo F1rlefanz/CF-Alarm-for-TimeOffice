@@ -11,8 +11,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 /**
@@ -48,12 +46,6 @@ class DimNotificationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    // Serialisiert das Read-Modify-Write auf DimOverlayPrefs: zwei rasch aufeinanderfolgende
-    // onStartCommand-Aufrufe (z.B. Doppel-Tap auf "Heller") laufen sonst als zwei unabhaengige
-    // Coroutines nebeneinander, lesen beide denselben alten overrideNow()-Stand und einer der
-    // beiden Deltas geht beim Zurueckschreiben verloren.
-    private val overrideMutex = Mutex()
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -82,10 +74,17 @@ class DimNotificationService : Service() {
         val windowEnd = active.range.last
         val windowStrength = active.strength
 
-        // Read-Modify-Write als Ganzes sperren (siehe overrideMutex) - sonst lesen zwei rasch
-        // aufeinanderfolgende Aktionen (Doppel-Tap) denselben Ausgangsstand und eine der beiden
-        // Aenderungen wird beim Zurueckschreiben stillschweigend ueberschrieben.
-        overrideMutex.withLock {
+        // Read-Modify-Write als Ganzes sperren (siehe DimOverlayPrefs.withOverrideLock) - sonst
+        // lesen zwei rasch aufeinanderfolgende Aktionen (Doppel-Tap) ODER ein gleichzeitig
+        // laufender DimScheduleUseCase.applyCurrentState()-Aufruf (Tick/6h-Wartung/Boot/Viewmodel)
+        // denselben Ausgangsstand und eine der beiden Aenderungen wird beim Zurueckschreiben
+        // stillschweigend ueberschrieben.
+        // withOverrideLock ist NICHT inline (anders als das vorherige direkte Mutex.withLock) -
+        // ein "return" aus der Lambda heraus waere daher kein gueltiger Non-Local-Return mehr.
+        // Stattdessen: unbekannte Aktion liefert "false" zurueck, und sowohl setOverride() als
+        // auch der abschliessende applyCurrentState()-Aufruf werden uebersprungen - identisches
+        // Verhalten zum vorherigen fruehen return.
+        val handled = prefs.withOverrideLock {
             val current = prefs.overrideNow()
             val stale = DimWindowResolver.isOverrideStale(windowEnd, windowStrength, current.windowEnd, current.windowStrength)
             val delta = if (stale) 0 else current.strengthDelta
@@ -103,7 +102,7 @@ class DimNotificationService : Service() {
                 ACTION_RESUME -> delta to false
                 else -> {
                     Logger.w(LogTags.DIMMER, "Unbekannte Dimmer-Korrektur-Aktion: $action")
-                    return
+                    return@withOverrideLock false
                 }
             }
 
@@ -111,8 +110,11 @@ class DimNotificationService : Service() {
             // reines Pause-Toggle einen bereits stale gewordenen Delta-Wert unter dem neuen
             // windowEnd unbeabsichtigt wiederbeleben.
             prefs.setOverride(newDelta, newPaused, windowEnd, windowStrength)
+            true
         }
-        dimSchedule.applyCurrentState()
+        if (handled) {
+            dimSchedule.applyCurrentState()
+        }
     }
 
     override fun onDestroy() {

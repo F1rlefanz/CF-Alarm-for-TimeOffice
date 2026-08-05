@@ -81,10 +81,16 @@ class DimScheduleUseCase @Inject constructor(
         val now = System.currentTimeMillis()
         // Aktive Spanne (überlappen mehrere, gewinnt die dunkelste – Logik in DimWindowResolver).
         val active = DimWindowResolver.activeSpan(windows(), now)
-        val override = prefs.overrideNow()
-        val stale = DimWindowResolver.isOverrideStale(active?.range?.last, active?.strength, override.windowEnd, override.windowStrength)
-        if (stale && (override.strengthDelta != 0 || override.paused || override.windowEnd != 0L)) {
-            prefs.clearOverride()
+
+        // Serialisiert gegen DimNotificationService's eigenes Read-Modify-Write auf denselben
+        // Override-Zustand - siehe DimOverlayPrefs.withOverrideLock.
+        val (override, stale) = prefs.withOverrideLock {
+            val ov = prefs.overrideNow()
+            val isStale = DimWindowResolver.isOverrideStale(active?.range?.last, active?.strength, ov.windowEnd, ov.windowStrength)
+            if (isStale && (ov.strengthDelta != 0 || ov.paused || ov.windowEnd != 0L)) {
+                prefs.clearOverride()
+            }
+            ov to isStale
         }
 
         if (active == null) {

@@ -76,6 +76,7 @@ fun MainContentScreen(
     val alarmState by alarmViewModel.uiState.collectAsState()
     val skipState by alarmViewModel.skipState.collectAsState()
     val manualAlarmState by alarmViewModel.manualAlarmState.collectAsState() // NEU
+    val snoozeMinutes by alarmViewModel.snoozeMinutes.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -223,10 +224,12 @@ fun MainContentScreen(
                         shiftState = shiftState,
                         alarmState = alarmState,
                         skipState = skipState,
+                        snoozeMinutes = snoozeMinutes,
                         onUpdateShiftConfig = shiftViewModel::updateShiftConfig,
                         onSkipNextAlarm = alarmViewModel::skipNextAlarm,
                         onCancelSkip = alarmViewModel::cancelSkip,
-                        onShowShiftConfig = onShowShiftConfig
+                        onShowShiftConfig = onShowShiftConfig,
+                        onSnoozeMinutesChange = alarmViewModel::setSnoozeMinutes
                     )
                 }
                 MainTab.STATUS -> {

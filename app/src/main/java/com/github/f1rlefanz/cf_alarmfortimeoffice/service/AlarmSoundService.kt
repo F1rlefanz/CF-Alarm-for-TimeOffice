@@ -80,6 +80,12 @@ class AlarmSoundService : Service() {
         // AlarmReceiver.EXTRA_SHIFT_START_TIME.
         const val EXTRA_SHIFT_START_TIME = "shift_start_time_formatted"
 
+        // Vom AlarmReceiver EINMALIG aus AlarmPrefs gelesene, konfigurierte Schlummer-Dauer in
+        // Minuten. Beide Snooze-Ausloeser (Notification-Button hier, Vollbild-Button in
+        // AlarmFullScreenActivity) lesen sie synchron aus dem Intent statt selbst den DataStore
+        // anzufassen - siehe AlarmPrefs-Klassenkommentar.
+        const val EXTRA_SNOOZE_MINUTES = "snooze_minutes"
+
         // Notification Configuration
         // EINZIGE Alarm-Notification der App. Der AlarmReceiver postete frueher eine zweite
         // (ID 2001) mit eigenem Channel-Sound - das ergab zwei Klingeltoene und zwei Eintraege
@@ -129,6 +135,10 @@ class AlarmSoundService : Service() {
                 val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Alarm"
                 val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
                 val shiftStartTime = intent.getStringExtra(EXTRA_SHIFT_START_TIME).orEmpty()
+                val snoozeMinutes = intent.getIntExtra(
+                    EXTRA_SNOOZE_MINUTES,
+                    AlarmManagerService.SNOOZE_MINUTES.toInt()
+                )
 
                 Logger.business(
                     LogTags.ALARM,
@@ -154,7 +164,7 @@ class AlarmSoundService : Service() {
                 // PendingIntent ist auf Android 10+ der einzige erlaubte Weg, aus dem Hintergrund
                 // eine Activity zu starten (ein direktes startActivity() aus dem Receiver wird
                 // verworfen und ist deshalb kein tragfaehiger Fallback mehr).
-                val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId)
+                val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId, snoozeMinutes)
                 startForeground(NOTIFICATION_ID, notification)
                 Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
 
@@ -171,12 +181,21 @@ class AlarmSoundService : Service() {
                 val shiftName = intent.getStringExtra(EXTRA_SHIFT_NAME) ?: "Alarm"
                 val alarmId = intent.getIntExtra(EXTRA_ALARM_ID, -1)
                 val shiftStartTime = intent.getStringExtra(EXTRA_SHIFT_START_TIME).orEmpty()
+                // Fallback-Default matters: Direct-Boot-Restore oder ein Snooze-auf-Snooze-Zyklus
+                // (dieser Notification-Button selbst) tragen dieses Extra ggf. nicht mit.
+                val snoozeMinutes = intent.getIntExtra(
+                    EXTRA_SNOOZE_MINUTES,
+                    AlarmManagerService.SNOOZE_MINUTES.toInt()
+                )
                 Logger.i(LogTags.ALARM, "😴 AlarmSoundService SNOOZE_ALARM (Notification): $shiftName, id=$alarmId")
 
                 // ZUERST den neuen Wecker planen (setAlarmClock ist synchron + schnell), DANN den Ton
                 // stoppen - so steht der Snooze sicher, selbst wenn stopSelf() gleich greift. Exakt
                 // derselbe Weg wie "5 Min spaeter" im Vollbild: AlarmManagerService.scheduleSnooze.
-                AlarmManagerService.scheduleSnooze(applicationContext, alarmId, shiftName, shiftStartTime)
+                AlarmManagerService.scheduleSnooze(
+                    applicationContext, alarmId, shiftName, shiftStartTime,
+                    minutes = snoozeMinutes.toLong()
+                )
                 stopAlarmAndService()
             }
 
@@ -503,7 +522,8 @@ class AlarmSoundService : Service() {
     private fun createAlarmNotification(
         shiftName: String,
         shiftStartTime: String,
-        alarmId: Int
+        alarmId: Int,
+        snoozeMinutes: Int
     ): android.app.Notification {
         val stopIntent = PendingIntent.getService(
             this,
@@ -525,6 +545,7 @@ class AlarmSoundService : Service() {
                 putExtra(EXTRA_SHIFT_NAME, shiftName)
                 putExtra(EXTRA_ALARM_ID, alarmId)
                 putExtra(EXTRA_SHIFT_START_TIME, shiftStartTime)
+                putExtra(EXTRA_SNOOZE_MINUTES, snoozeMinutes)
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
@@ -537,6 +558,7 @@ class AlarmSoundService : Service() {
                 putExtra(EXTRA_SHIFT_NAME, shiftName)
                 putExtra(EXTRA_SHIFT_START_TIME, shiftStartTime)
                 putExtra(EXTRA_ALARM_ID, alarmId)
+                putExtra(EXTRA_SNOOZE_MINUTES, snoozeMinutes)
                 setPackage(packageName)
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT

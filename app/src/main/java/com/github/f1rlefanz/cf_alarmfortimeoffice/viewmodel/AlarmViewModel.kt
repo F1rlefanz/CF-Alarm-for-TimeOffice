@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -85,11 +87,17 @@ class AlarmViewModel @Inject constructor(
     private val alarmSkipUseCase: IAlarmSkipUseCase,
     private val shiftUseCase: IShiftUseCase,
     private val errorHandler: ErrorHandler,
-    private val masterPausePrefs: MasterPausePrefs
+    private val masterPausePrefs: MasterPausePrefs,
+    private val alarmPrefs: AlarmPrefs
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlarmUiState())
     val uiState: StateFlow<AlarmUiState> = _uiState.asStateFlow()
+
+    /** Konfigurierte Schlummer-Dauer in Minuten (Default siehe [AlarmPrefs.DEFAULT_SNOOZE_MINUTES]). */
+    val snoozeMinutes: StateFlow<Int> =
+        alarmPrefs.snoozeMinutes
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlarmPrefs.DEFAULT_SNOOZE_MINUTES)
 
     private val _skipState = MutableStateFlow(AlarmSkipUiState())
     val skipState: StateFlow<AlarmSkipUiState> = _skipState.asStateFlow()
@@ -343,6 +351,13 @@ class AlarmViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    /** Setzt die Schlummer-Dauer (Minuten), geklemmt auf einen sinnvollen Bereich. */
+    fun setSnoozeMinutes(minutes: Int) {
+        viewModelScope.launch {
+            alarmPrefs.setSnoozeMinutes(minutes.coerceIn(1, 30))
+        }
     }
 
     fun skipNextAlarm() {

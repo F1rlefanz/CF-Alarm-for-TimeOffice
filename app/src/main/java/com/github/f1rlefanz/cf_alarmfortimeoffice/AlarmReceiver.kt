@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -59,6 +60,7 @@ class AlarmReceiver : BroadcastReceiver() {
     @Inject lateinit var hueRuleUseCase: IHueRuleUseCase
     @Inject lateinit var shiftUseCase: IShiftUseCase
     @Inject lateinit var alarmUseCase: IAlarmUseCase
+    @Inject lateinit var alarmPrefs: AlarmPrefs
 
     companion object {
         const val EXTRA_SHIFT_NAME = "shift_name"
@@ -424,19 +426,27 @@ class AlarmReceiver : BroadcastReceiver() {
      * @param shiftName Name of the shift for notification display
      * @param shiftStartTime Formatierte Startzeit der Schicht (Notification-Text)
      * @param alarmId Unique alarm identifier
+     *
+     * SUSPEND: liest [alarmPrefs] EINMAL hier - der einzige Ort, der die konfigurierte
+     * Schlummer-Dauer aus dem DataStore holt. Beide Snooze-Ausloeser (Vollbild-Button,
+     * Notification-Button) bleiben synchron und lesen den Wert stattdessen aus dem Intent-Extra
+     * [AlarmSoundService.EXTRA_SNOOZE_MINUTES], das hier gesetzt wird. Der einzige Aufrufer laeuft
+     * bereits in receiverScope.launch, also ist der suspend-Read hier sicher.
      */
-    private fun startAlarmSoundService(
+    private suspend fun startAlarmSoundService(
         context: Context,
         shiftName: String,
         shiftStartTime: String,
         alarmId: Int
     ) {
         try {
+            val snoozeMinutes = alarmPrefs.snoozeMinutesNow()
             val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
                 action = AlarmSoundService.ACTION_START_ALARM
                 putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
                 putExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME, shiftStartTime)
                 putExtra(AlarmSoundService.EXTRA_ALARM_ID, alarmId)
+                putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, snoozeMinutes)
             }
 
             // minSdk = 26, startForegroundService ist immer verfuegbar.

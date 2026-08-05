@@ -125,9 +125,18 @@ class DndPrefs @Inject constructor(
 
     suspend fun setFollowDimmerEnabled(v: Boolean) = dataStore.edit { it[KEY_FOLLOW_DIMMER] = v }
     suspend fun setDuringShiftEnabled(v: Boolean) = dataStore.edit { it[KEY_DURING_SHIFT] = v }
-    suspend fun setShiftExcludedShifts(v: Set<String>) =
-        dataStore.edit { it[KEY_SHIFT_EXCLUDED_SHIFTS] = v }
-    suspend fun setOnCallShifts(v: Set<String>) = dataStore.edit { it[KEY_ONCALL_SHIFTS] = v }
+    /** Atomarer Toggle statt Read-Modify-Write im Aufrufer - DataStore.edit{} serialisiert
+     * konkurrierende Transaktionen, ein Doppel-Tap auf zwei Chips verliert so keine Aenderung mehr. */
+    suspend fun toggleShiftExcludedShift(shiftName: String) = dataStore.edit { p ->
+        val current = p[KEY_SHIFT_EXCLUDED_SHIFTS] ?: emptySet()
+        p[KEY_SHIFT_EXCLUDED_SHIFTS] = if (shiftName in current) current - shiftName else current + shiftName
+    }
+
+    /** Siehe [toggleShiftExcludedShift] - gleiches Muster fuer die Rufbereitschaft-Chips. */
+    suspend fun toggleOnCallShift(shiftName: String) = dataStore.edit { p ->
+        val current = p[KEY_ONCALL_SHIFTS] ?: emptySet()
+        p[KEY_ONCALL_SHIFTS] = if (shiftName in current) current - shiftName else current + shiftName
+    }
     suspend fun setOnCallCutoffMinutes(v: Int) = dataStore.edit { it[KEY_ONCALL_CUTOFF_MIN] = v }
     suspend fun setZenRuleId(v: String) = dataStore.edit { it[KEY_ZEN_RULE_ID] = v }
 

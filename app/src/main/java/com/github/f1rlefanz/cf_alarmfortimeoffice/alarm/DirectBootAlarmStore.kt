@@ -76,8 +76,35 @@ class DirectBootAlarmStore @Inject constructor(
         }
     }
 
+    /**
+     * Master-Pause-Spiegel im selben Device-Protected-Storage wie die Alarm-Eintraege.
+     *
+     * MasterPausePrefs selbst liegt im @MainDataStore (CE-Storage) und ist vor der ersten
+     * Entsperrung nach einem Reboot NICHT lesbar - siehe Klassenkommentar oben. BootReceiver
+     * braucht den Pause-Zustand aber genau in diesem Fenster (LOCKED_BOOT_COMPLETED), um den
+     * Direct-Boot-Restore korrekt zu unterdruecken. Geschrieben von MasterPauseUseCase.pause()/
+     * resume() im selben Atemzug wie MasterPausePrefs.setPaused(), analog dazu wie
+     * AlarmRepository.persistToDataStore() den Alarm-Spiegel synchron haelt.
+     */
+    fun savePaused(paused: Boolean) {
+        try {
+            prefs.edit().putBoolean(KEY_PAUSED, paused).apply()
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "❌ DIRECT-BOOT: Schreiben des Pause-Spiegels fehlgeschlagen", e)
+        }
+    }
+
+    /** Default false (nicht pausiert) - z.B. wenn der Spiegel noch nie geschrieben wurde. */
+    fun isPausedNow(): Boolean = try {
+        prefs.getBoolean(KEY_PAUSED, false)
+    } catch (e: Exception) {
+        Logger.e(LogTags.ALARM, "❌ DIRECT-BOOT: Lesen des Pause-Spiegels fehlgeschlagen", e)
+        false
+    }
+
     companion object {
         private const val PREFS_NAME = "direct_boot_alarms"
         private const val KEY_ENTRIES = "entries"
+        private const val KEY_PAUSED = "paused"
     }
 }

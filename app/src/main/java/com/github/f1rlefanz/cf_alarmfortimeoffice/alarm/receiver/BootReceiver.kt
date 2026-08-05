@@ -155,6 +155,30 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         recoveryScope.launch {
             try {
+                // Master-Pause: zentraler Backstop wie in performCompleteSystemRecovery() - dieser
+                // Pfad ist ein zweiter, unabhaengiger Ort, an dem echte System-Alarme gearmt werden
+                // (setAlarmClock ueber AlarmManagerService.rescheduleFromDirectBoot), und lief bisher
+                // OHNE jeden Master-Pause-Check. Wird MasterPauseUseCase.pause() zwischen dem Setzen
+                // des Pause-Flags und dem Leeren des DirectBootAlarmStore-Spiegels unterbrochen
+                // (Prozess-Kill, DataStore-Fehler), bleibt der Spiegel mit veralteten Eintraegen
+                // stehen - ohne diesen Check wuerden sie bei jedem folgenden Boot trotzdem gearmt.
+                //
+                // BEWUSST directBootAlarmStore.isPausedNow() statt masterPausePrefs.pausedNow():
+                // MasterPausePrefs liegt im @MainDataStore (CREDENTIAL-ENCRYPTED Storage) und ist
+                // vor der ersten Entsperrung nach einem Reboot NICHT lesbar - dieser Pfad laeuft
+                // aber gerade bei LOCKED_BOOT_COMPLETED, also VOR der Entsperrung (BootReceiver ist
+                // directBootAware). Ein CE-Storage-Read hier wuerde entweder werfen (dann restored
+                // der Fast-Path fuer ALLE Nutzer keine Alarme mehr, nicht nur pausierte) oder
+                // haengen (dann wird pendingResult.finish() nie erreicht - Wakelock-Leck). Der
+                // Pause-Zustand wird deshalb zusaetzlich in denselben Device-Protected-Spiegel
+                // geschrieben (siehe DirectBootAlarmStore.savePaused, MasterPauseUseCase).
+                if (directBootAlarmStore.isPausedNow()) {
+                    Logger.business(
+                        LogTags.MAINTENANCE_L4,
+                        "⏸️ LEVEL 4: Direct-Boot-Restore ($reason) uebersprungen (Master-Pause aktiv)"
+                    )
+                    return@launch
+                }
                 val entries = directBootAlarmStore.getFutureEntries()
                 Logger.business(
                     LogTags.MAINTENANCE_L4,

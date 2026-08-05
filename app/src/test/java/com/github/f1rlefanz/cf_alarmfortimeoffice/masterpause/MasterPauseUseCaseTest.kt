@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.net.Uri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
@@ -22,7 +23,7 @@ import org.mockito.kotlin.whenever
 /**
  * Unit-Tests fuer [MasterPauseUseCase].
  *
- * Der Master-Pause-Schalter haengt sieben Abhaengigkeiten an einem einzigen Aufruf zusammen
+ * Der Master-Pause-Schalter haengt acht Abhaengigkeiten an einem einzigen Aufruf zusammen
  * (siehe Klassenkommentar dort) - eine kuenftige Aenderung koennte stillschweigend einen der
  * pause()/resume()-Aufrufe verlieren (z.B. dndSchedule.disable() vergessen), ohne dass
  * irgendein Test das bemerkt. Diese Tests fixieren: JEDE injizierte Abhaengigkeit wird in
@@ -44,6 +45,7 @@ class MasterPauseUseCaseTest {
         val dndSchedule: DndScheduleUseCase,
         val hueSmartScheduler: HueSmartScheduler,
         val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
+        val directBootAlarmStore: DirectBootAlarmStore,
         val alarmManager: AlarmManager
     )
 
@@ -63,6 +65,7 @@ class MasterPauseUseCaseTest {
         }
         val hueSmartScheduler = mock<HueSmartScheduler>()
         val calendarPreAlarmRefreshScheduler = mock<CalendarPreAlarmRefreshScheduler>()
+        val directBootAlarmStore = mock<DirectBootAlarmStore>()
         val alarmManager = mock<AlarmManager>()
         val context = mock<Context>()
         // AlarmMaintenanceService.cancelNext/scheduleNext() casten das Ergebnis auf AlarmManager -
@@ -76,6 +79,7 @@ class MasterPauseUseCaseTest {
             dndSchedule = dndSchedule,
             hueSmartScheduler = hueSmartScheduler,
             calendarPreAlarmRefreshScheduler = calendarPreAlarmRefreshScheduler,
+            directBootAlarmStore = directBootAlarmStore,
             context = context
         )
 
@@ -87,6 +91,7 @@ class MasterPauseUseCaseTest {
             dndSchedule = dndSchedule,
             hueSmartScheduler = hueSmartScheduler,
             calendarPreAlarmRefreshScheduler = calendarPreAlarmRefreshScheduler,
+            directBootAlarmStore = directBootAlarmStore,
             alarmManager = alarmManager
         )
     }
@@ -98,6 +103,7 @@ class MasterPauseUseCaseTest {
         f.useCase.pause()
 
         verify(f.prefs, times(1)).setPaused(true)
+        verify(f.directBootAlarmStore, times(1)).savePaused(true)
         verify(f.alarmUseCase, times(1)).deleteAllAlarms()
         verify(f.dimSchedule, times(1)).disable()
         verify(f.dndSchedule, times(1)).disable()
@@ -115,6 +121,7 @@ class MasterPauseUseCaseTest {
         f.useCase.resume()
 
         verify(f.prefs, times(1)).setPaused(false)
+        verify(f.directBootAlarmStore, times(1)).savePaused(false)
         verify(f.dimSchedule, times(1)).enable()
         verify(f.dndSchedule, times(1)).enable()
         verify(f.hueSmartScheduler, times(1)).initializeSmartScheduling()

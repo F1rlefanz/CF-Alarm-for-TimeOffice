@@ -266,6 +266,30 @@ class DimWindowResolverTest {
         assertEquals(ep(2026, 1, 14, 5, 30), secondNight.range.last)
     }
 
+    @Test
+    fun `Regression - freier Tag vor einer ausgeschlossenen Schicht verliert nicht die gemeinsame Nacht`() {
+        // Tag N (12.01.) ist frei (kein Alarm), Tag N+1 (13.01.) ist eine vom Nutzer ausgeschlossene
+        // Schicht ("Nachtdienst"). Die alte Vorwaerts-Pruefung fragte nur "hat der Folgetag IRGENDEINEN
+        // Alarm", nicht ob er ausgeschlossen ist - dadurch blieb die gemeinsame Nacht komplett ungedimmt.
+        val today = LocalDate.of(2026, 1, 12)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 20, 0), "Nachtdienst", 0)
+        )
+
+        val spans = DimWindowResolver.buildDefaultNightSpans(
+            alarms = alarms, horizonDays = 2, today = today, zone = zone,
+            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
+            strength = 60, warmth = 40,
+            isExcluded = { name -> name == "Nachtdienst" }
+        )
+
+        // Die Nacht vom 12.01. auf den 13.01. (VOR der ausgeschlossenen Schicht) muss trotzdem gedimmt sein.
+        val night = spans.firstOrNull { ep(2026, 1, 12, 23, 0) in it.range }
+        assertTrue("Nacht 12.01.->13.01. hat keine Spanne - die Luecke ueber den Ausschluss-Pfad ist zurueck", night != null)
+        // Die eigentliche Nachtdienst-Nacht (Tag N+1, ausgeschlossen) bleibt weiterhin ungedimmt.
+        assertTrue(spans.none { ep(2026, 1, 13, 23, 0) in it.range })
+    }
+
     // --- mergeToTimeline: Vorschau-Zeitleiste ---
 
     @Test

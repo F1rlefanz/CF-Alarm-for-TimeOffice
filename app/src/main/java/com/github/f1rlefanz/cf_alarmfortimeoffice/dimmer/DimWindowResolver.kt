@@ -119,11 +119,15 @@ object DimWindowResolver {
      * Pro Tag werden ZWEI voneinander unabhaengige Fenster geprueft, nicht nur eines:
      * 1. **Rueckwaerts** (nur wenn der Tag selbst einen Wecker hat): die Nacht VOR diesem Wecker,
      *    endend am Wecker selbst (CLOCK reicht ueber "vor der Weckzeit" zurueck).
-     * 2. **Vorwaerts** (immer, AUSSER der Folgetag hat selbst einen Wecker): der heutige ABEND
-     *    braucht ein eigenes Fenster bis [freeDayEndClockMinutes], weil das Rueckwaerts-Fenster
-     *    (Punkt 1) - falls es ueberhaupt existiert - nur bis zum EIGENEN Wecker des Tages reicht,
-     *    nicht bis in den eigenen Abend hinein. Hat der Tag KEINEN eigenen Wecker (klassischer
-     *    freier Tag), ist Punkt 2 das einzige Fenster.
+     * 2. **Vorwaerts** (immer, AUSSER der Folgetag hat selbst einen NICHT ausgeschlossenen Wecker):
+     *    der heutige ABEND braucht ein eigenes Fenster bis [freeDayEndClockMinutes], weil das
+     *    Rueckwaerts-Fenster (Punkt 1) - falls es ueberhaupt existiert - nur bis zum EIGENEN Wecker
+     *    des Tages reicht, nicht bis in den eigenen Abend hinein. Hat der Tag KEINEN eigenen Wecker
+     *    (klassischer freier Tag), ist Punkt 2 das einzige Fenster. "Nicht ausgeschlossen" ist
+     *    Teil der Bedingung, nicht nur "hat einen Wecker": ist der Folgetag selbst per [isExcluded]
+     *    ausgeschlossen, ueberspringt SEINE Schleifen-Iteration ihr eigenes Rueckwaerts-Fenster
+     *    komplett (Punkt 1 oben) - dann deckt niemand die gemeinsame Nacht ab, wenn Punkt 2 hier
+     *    trotzdem uebersprungen wird.
      *
      * Diese Trennung ist bewusst: ein Wecker, der nicht der fruehe Morgen ist (z. B. eine
      * Nachmittagsschicht mit Wecker 14:30), "verbraucht" den Tag fuer Punkt 1 als Ende einer
@@ -133,8 +137,10 @@ object DimWindowResolver {
      * Skip fuer den Folgetag nimmt faelschlich an, ein Wecker am UEBERnaechsten Tag decke sie
      * schon ab - dessen Rueckwaerts-Fenster reicht aber nur einen Tag zurueck). Real reproduziert
      * am 03./04./05.08.2026 (S2-Wecker 14:30 -> Tag ohne Termin -> Fruehschicht 05:30): die Nacht
-     * vom 3. auf den 4.8. blieb dadurch komplett ungedimmt/DND-los. Siehe
-     * `DimWindowResolverTest` fuer den Regressionsfall.
+     * vom 3. auf den 4.8. blieb dadurch komplett ungedimmt/DND-los. Derselbe Fehlerklasse kehrte
+     * spaeter ueber den Ausschluss-Pfad zurueck (freier Tag vor einer ausgeschlossenen Schicht),
+     * seither deckt Punkt 2 auch diesen Fall ab. Siehe `DimWindowResolverTest` fuer beide
+     * Regressionsfaelle.
      */
     fun buildDefaultNightSpans(
         alarms: List<AlarmSlot>,
@@ -164,9 +170,15 @@ object DimWindowResolver {
                 resolveWindowForDate(window, date, alarm, zone)?.let { out += DimSpan(it, strength, warmth) }
             }
 
-            // Vorwaerts: heutiger Abend, AUSSER der Folgetag hat selbst einen Wecker (dessen
-            // eigenes Rueckwaerts-Fenster deckt den heutigen Abend dann automatisch mit ab).
-            if (!alarmByDate.containsKey(date.plusDays(1))) {
+            // Vorwaerts: heutiger Abend, AUSSER der Folgetag hat selbst einen NICHT ausgeschlossenen
+            // Wecker (nur dann deckt dessen eigenes Rueckwaerts-Fenster den heutigen Abend automatisch
+            // mit ab). Ist der Folgetag selbst ausgeschlossen (isExcluded), ueberspringt SEINE eigene
+            // Schleifen-Iteration weiter oben ihr Rueckwaerts-Fenster komplett - dann muss dieser Tag
+            // die gemeinsame Nacht selbst abdecken, sonst faellt sie ganz durch (Regression, real
+            // reproduziert: freier Tag vor einer ausgeschlossenen Nachtdienst-Schicht).
+            val nextDayAlarm = alarmByDate[date.plusDays(1)]
+            val nextDayCoversTonight = nextDayAlarm != null && !isExcluded(nextDayAlarm.shiftName)
+            if (!nextDayCoversTonight) {
                 val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.CLOCK, endClockMinutes = freeDayEndClockMinutes)
                 resolveWindowForDate(window, date, null, zone)?.let { out += DimSpan(it, strength, warmth) }
             }

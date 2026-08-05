@@ -93,10 +93,7 @@ class DimmerViewModel @Inject constructor(
 
     /** Schaltet eine Schicht als Ausnahme vom Nacht-Standard ein/aus - keine DimRule dafuer noetig. */
     fun toggleNightDefaultExcludedShift(shiftName: String) = viewModelScope.launch {
-        val current = prefs.nightDefaultExcludedShiftsNow()
-        prefs.setNightDefaultExcludedShifts(
-            if (shiftName in current) current - shiftName else current + shiftName
-        )
+        prefs.toggleNightDefaultExcludedShift(shiftName)
         dimSchedule.enable()
     }
 

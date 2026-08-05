@@ -80,6 +80,12 @@ fun WeckerTabContent(
                             onUpdateShiftConfig(config.copy(autoAlarmEnabled = enabled))
                         }
                     },
+                    // Waehrend ShiftViewModel.loadShiftConfig() noch laedt (kurzes Fenster beim
+                    // Kaltstart) ist currentShiftConfig null - der Tap wuerde sonst wortlos
+                    // verpuffen (checked bleibt an "?: false" haengen, onCheckedChange erreicht
+                    // nie onUpdateShiftConfig), ohne dass der Nutzer erkennt, dass sein Toggle
+                    // wirkungslos war. Deaktiviert statt stumm zu ignorieren.
+                    enabled = shiftState.currentShiftConfig != null,
                     titleStyle = MaterialTheme.typography.titleMedium
                 )
             }

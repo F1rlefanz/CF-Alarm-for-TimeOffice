@@ -147,7 +147,8 @@ fun StatusTabContent(
                 else -> "${calendarState.selectedCalendarIds.size} Kalender ausgewählt, API-Zugriff OK"
             },
             actionLabel = calendarActionLabel,
-            onAction = onCalendarAction
+            onAction = onCalendarAction,
+            actionEnabled = !authState.calendarOps.calendarsLoading
         )
 
         // Schicht-Erkennung Status
@@ -787,7 +788,8 @@ private fun StatusCard(
     isOk: Boolean,
     details: String,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    actionEnabled: Boolean = true
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -826,7 +828,7 @@ private fun StatusCard(
 
                 if (!isOk && actionLabel != null && onAction != null) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(onClick = onAction, text = actionLabel)
+                    SettingsLinkButton(onClick = onAction, text = actionLabel, enabled = actionEnabled)
                 }
             }
         }

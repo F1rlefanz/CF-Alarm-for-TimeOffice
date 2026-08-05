@@ -81,8 +81,8 @@ fun CompactOutlinedButton(
  * unter der Beschreibung sitzt statt einen eigenen Block zu bilden.
  */
 @Composable
-fun SettingsLinkButton(onClick: () -> Unit, text: String, modifier: Modifier = Modifier) {
-    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(0.dp)) {
+fun SettingsLinkButton(onClick: () -> Unit, text: String, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    TextButton(onClick = onClick, modifier = modifier, enabled = enabled, contentPadding = PaddingValues(0.dp)) {
         Text(text)
     }
 }

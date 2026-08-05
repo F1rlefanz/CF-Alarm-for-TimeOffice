@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause
 
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
@@ -32,12 +33,16 @@ class MasterPauseUseCase @Inject constructor(
     private val dndSchedule: DndScheduleUseCase,
     private val hueSmartScheduler: HueSmartScheduler,
     private val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
+    private val directBootAlarmStore: DirectBootAlarmStore,
     @param:ApplicationContext private val context: Context
 ) {
     val paused: Flow<Boolean> = prefs.paused
 
     suspend fun pause() {
         prefs.setPaused(true)
+        // Device-Protected-Spiegel im selben Atemzug wie das DataStore-Flag - BootReceiver liest
+        // ihn bei LOCKED_BOOT_COMPLETED, wo @MainDataStore (CE-Storage) noch nicht lesbar ist.
+        directBootAlarmStore.savePaused(true)
         alarmUseCase.deleteAllAlarms()
             .onSuccess {
                 Logger.business(LogTags.MASTER_PAUSE, "✅ MASTER-PAUSE: Alarme geloescht")
@@ -55,6 +60,7 @@ class MasterPauseUseCase @Inject constructor(
 
     suspend fun resume() {
         prefs.setPaused(false)
+        directBootAlarmStore.savePaused(false)
         AlarmMaintenanceService.scheduleNext(context)
         AlarmMaintenanceService.start(context)
         dimSchedule.enable()

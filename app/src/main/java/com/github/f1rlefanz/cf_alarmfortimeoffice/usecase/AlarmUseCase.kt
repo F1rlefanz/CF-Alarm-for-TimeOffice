@@ -201,10 +201,13 @@ class AlarmUseCase @Inject constructor(
                     val existingAlarm = existingAlarms.find { it.eventId == eventId }
                     
                     if (existingAlarm != null) {
-                        // Alarm exists - check if event changed
-                        if (existingAlarm.eventChecksum != newAlarm.eventChecksum || 
-                            existingAlarm.triggerTime != newAlarm.triggerTime) {
-                            // Event changed → update alarm
+                        // Alarm exists - check if anything about it changed. Voller Vergleich statt
+                        // nur eventChecksum/triggerTime: sonst bleibt newAlarm (frisch aus der
+                        // aktuellen ShiftDefinition berechnet, z.B. isSilent/shiftName) unpersistiert,
+                        // wenn sich nur ein reines ShiftDefinition-Feld aendert, aber das zugrunde
+                        // liegende Kalender-Event gleich bleibt (Checksum+Weckzeit identisch).
+                        if (existingAlarm != newAlarm) {
+                            // Alarm-Daten geaendert → aktualisieren
                             Logger.business(LogTags.ALARM, "🔄 SYNC: Updating changed alarm: ${newAlarm.shiftName} (eventId: $eventId)")
                             
                             // Delete old
@@ -226,8 +229,8 @@ class AlarmUseCase @Inject constructor(
                                 Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Update) fehlgeschlagen", e)
                             }
                         } else {
-                            // Unchanged - keep existing, aber System-Alarm idempotent re-armen,
-                            // damit der Aufrufer nicht mehr selbst schedulen muss (kein Doppel-Scheduling).
+                            // Wirklich unveraendert - System-Alarm idempotent re-armen, damit der
+                            // Aufrufer nicht mehr selbst schedulen muss (kein Doppel-Scheduling).
                             Logger.d(LogTags.ALARM, "✅ SYNC: Alarm unchanged, re-arming system alarm: ${existingAlarm.shiftName}")
                             scheduleSystemAlarm(existingAlarm).getOrThrow()
                             resultAlarms.add(existingAlarm)

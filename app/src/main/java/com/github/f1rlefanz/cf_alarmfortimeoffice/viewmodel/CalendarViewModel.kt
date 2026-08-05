@@ -141,6 +141,33 @@ class CalendarViewModel @Inject constructor(
         initialValue = CalendarUiState()
     )
 
+    /**
+     * RACE-GUARD: Monotonic generation counter für loadEventsForSelectedCalendars().
+     *
+     * loadAvailableCalendars() (oben) wehrt sich mit einem simplen In-Flight-Flag gegen
+     * Überlappung - das passt dort, weil ein zweiter Aufruf während des ersten schlicht
+     * verworfen wird. Bei loadEventsForSelectedCalendars() geht das nicht: observeCalendarSelection()
+     * (Zeile ~249) UND refreshData(forceRefresh = true) (Zeile ~686, z.B. "Aktualisieren"-Button)
+     * dürfen beide legitim feuern, und ein simples Boolean-Gate würde den zweiten Aufruf einfach
+     * schlucken statt seine - eigentlich aktuelleren - Ergebnisse durchzulassen.
+     *
+     * Stattdessen zieht jeder Aufruf beim Start eine eigene Generation-Nummer. Bevor er
+     * Zwischenergebnisse ODER das Endergebnis in _localUiState/CalendarStateHolder schreibt,
+     * prüft er, ob seine Nummer noch die aktuellste ist. Ist inzwischen ein neuerer Aufruf
+     * gestartet, gilt dieser Lauf als überholt und verwirft seine (potenziell aus einem
+     * langsameren Netzwerk-Call stammenden) Ergebnisse, statt sie über die bereits korrekten
+     * Ergebnisse des neueren Laufs zu schreiben - inkl. des daran hängenden
+     * alarmUseCase.syncAlarms() mit veralteten Events.
+     *
+     * MUSS vor dem init{}-Block deklariert sein: Kotlin initialisiert Property-Initializer und
+     * init-Bloecke strikt in Textreihenfolge. init{} ruft observeCalendarSelection() auf, dessen
+     * launch{} ueber einen unconfined Dispatcher-Pfad synchron genug laeuft, um noch waehrend der
+     * Konstruktion loadEventsForSelectedCalendars() zu erreichen - stand diese Property TEXTUELL
+     * nach init{}, war eventLoadGeneration dort noch null (NullPointerException beim allerersten
+     * App-Start, real am Fairphone reproduziert).
+     */
+    private val eventLoadGeneration = java.util.concurrent.atomic.AtomicLong(0)
+
     init {
         checkTokenValidity()
         observeCalendarSelection()
@@ -209,26 +236,6 @@ class CalendarViewModel @Inject constructor(
     private var isCalendarLoadingInProgress = false
     @Volatile
     private var lastCalendarLoadTime = 0L
-
-    /**
-     * RACE-GUARD: Monotonic generation counter für loadEventsForSelectedCalendars().
-     *
-     * loadAvailableCalendars() (oben) wehrt sich mit einem simplen In-Flight-Flag gegen
-     * Überlappung - das passt dort, weil ein zweiter Aufruf während des ersten schlicht
-     * verworfen wird. Bei loadEventsForSelectedCalendars() geht das nicht: observeCalendarSelection()
-     * (Zeile ~249) UND refreshData(forceRefresh = true) (Zeile ~686, z.B. "Aktualisieren"-Button)
-     * dürfen beide legitim feuern, und ein simples Boolean-Gate würde den zweiten Aufruf einfach
-     * schlucken statt seine - eigentlich aktuelleren - Ergebnisse durchzulassen.
-     *
-     * Stattdessen zieht jeder Aufruf beim Start eine eigene Generation-Nummer. Bevor er
-     * Zwischenergebnisse ODER das Endergebnis in _localUiState/CalendarStateHolder schreibt,
-     * prüft er, ob seine Nummer noch die aktuellste ist. Ist inzwischen ein neuerer Aufruf
-     * gestartet, gilt dieser Lauf als überholt und verwirft seine (potenziell aus einem
-     * langsameren Netzwerk-Call stammenden) Ergebnisse, statt sie über die bereits korrekten
-     * Ergebnisse des neueren Laufs zu schreiben - inkl. des daran hängenden
-     * alarmUseCase.syncAlarms() mit veralteten Events.
-     */
-    private val eventLoadGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
     private fun checkTokenValidity() {
         viewModelScope.launch {

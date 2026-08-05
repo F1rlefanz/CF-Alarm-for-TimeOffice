@@ -2,8 +2,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
@@ -25,7 +27,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 // Extension property for Context to create DataStore
-private val Context.calendarSelectionDataStore: DataStore<Preferences> by preferencesDataStore(name = "calendar_selection_prefs")
+// corruptionHandler: eine kaputte Präferenzdatei wird durch einen leeren Zustand ersetzt statt
+// den DataStore.data-Flow dauerhaft (für die gesamte Prozesslaufzeit) zu blockieren - siehe
+// initializeFromDataStore(), deren try/catch sonst der einzige Fangnetz-Punkt wäre und den
+// Collector nur einmalig beendet, ohne _selectedCalendarIds je wieder zu aktualisieren.
+private val Context.calendarSelectionDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "calendar_selection_prefs",
+    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
+)
 
 /**
  * CalendarSelectionRepository - Persistente Speicherung der ausgewählten Kalender

@@ -26,12 +26,29 @@ sealed class NavigationState {
     ) : NavigationState()
 
     // Hue-Screens
-    data class HueRuleConfig(val ruleId: String? = null, val returnToTab: MainTab = MainTab.HUE) : NavigationState()
+    // cameFromSettingsList unterscheidet die zwei Einstiegspfade: direkt vom Hue-Tab ("Neue
+    // Regel") vs. ueber HueSettingsScreen (Regel bearbeiten/anlegen aus der Liste). Zurueck UND
+    // Speichern muessen zum jeweils richtigen Ausgangspunkt fuehren - sonst landet der
+    // Direktpfad-Nutzer auf einer Liste, die er nie geoeffnet hat, oder der Listen-Pfad-Nutzer
+    // ueberspringt die Liste beim Zurueckgehen. Siehe MainScreen.kt BackHandler + die
+    // HueRuleConfig/HueSettings-Navigationsbloecke, die BEIDE diesen Flag konsistent auswerten
+    // muessen.
+    data class HueRuleConfig(
+        val ruleId: String? = null,
+        val returnToTab: MainTab = MainTab.HUE,
+        val cameFromSettingsList: Boolean = false
+    ) : NavigationState()
     data class HueSettings(val returnToTab: MainTab = MainTab.HUE) : NavigationState()
 
     // Dimmer-Screens
     data class DimmerSettings(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
-    data class DimmerRuleConfig(val ruleId: String? = null, val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
+    // Gleiches Muster wie HueRuleConfig.cameFromSettingsList - aktuell gibt es nur den Pfad ueber
+    // DimmerSettingsScreen, deshalb Default true, aber explizit gesetzt an der einzigen Aufrufstelle.
+    data class DimmerRuleConfig(
+        val ruleId: String? = null,
+        val returnToTab: MainTab = MainTab.DIMMER,
+        val cameFromSettingsList: Boolean = true
+    ) : NavigationState()
     data class DimmerPreview(val returnToTab: MainTab = MainTab.DIMMER) : NavigationState()
 
     // DND-Screen (kein eigener Bottom-Tab, erreichbar ueber Settings)
@@ -65,12 +82,20 @@ sealed class NavigationAction {
     ) : NavigationAction()
     
     // Hue Navigation Actions
-    data class NavigateToHueRuleConfig(val ruleId: String? = null, val fromTab: MainTab = MainTab.HUE) : NavigationAction()
+    data class NavigateToHueRuleConfig(
+        val ruleId: String? = null,
+        val fromTab: MainTab = MainTab.HUE,
+        val cameFromSettingsList: Boolean = false
+    ) : NavigationAction()
     data class NavigateToHueSettings(val fromTab: MainTab = MainTab.HUE) : NavigationAction()
 
     // Dimmer Navigation Actions
     data class NavigateToDimmerSettings(val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
-    data class NavigateToDimmerRuleConfig(val ruleId: String? = null, val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
+    data class NavigateToDimmerRuleConfig(
+        val ruleId: String? = null,
+        val fromTab: MainTab = MainTab.DIMMER,
+        val cameFromSettingsList: Boolean = true
+    ) : NavigationAction()
     data class NavigateToDimmerPreview(val fromTab: MainTab = MainTab.DIMMER) : NavigationAction()
 
     // DND Navigation Action

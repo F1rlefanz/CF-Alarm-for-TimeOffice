@@ -225,7 +225,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     //   erlaubter Background-Activity-Start (AlarmManager-Broadcasts stehen NICHT
                     //   auf der Ausnahmeliste) und wird stillschweigend verworfen. Der einzige
                     //   sanktionierte Weg ist der vom System gesendete Full-Screen-PendingIntent.
-                    startAlarmSoundService(context, shiftName, shiftStartTime, alarmId)
+                    startAlarmSoundService(context, shiftName, shiftStartTime, alarmId, userUnlocked)
 
                     Logger.business(
                         LogTags.ALARM_RECEIVER,
@@ -432,15 +432,28 @@ class AlarmReceiver : BroadcastReceiver() {
      * Notification-Button) bleiben synchron und lesen den Wert stattdessen aus dem Intent-Extra
      * [AlarmSoundService.EXTRA_SNOOZE_MINUTES], das hier gesetzt wird. Der einzige Aufrufer laeuft
      * bereits in receiverScope.launch, also ist der suspend-Read hier sicher.
+     *
+     * DIRECT BOOT: [alarmPrefs] liegt im @MainDataStore (CE-Storage) und ist vor der ersten
+     * Entsperrung NICHT lesbar - genau wie der Skip- und Silent-Check weiter oben in onReceive().
+     * Diese Funktion wird dort aber UNGEGATET aufgerufen (der Wecker muss auch im Direct-Boot-Fall
+     * klingeln), deshalb bekommt sie [userUnlocked] durchgereicht und liest den DataStore nur bei
+     * true - sonst waere ein CE-Storage-Read hier fatal statt bloss uebersprungen: der try/catch
+     * darunter haette eine Exception (oder ein Haengen) abgefangen, ohne dass startForegroundService()
+     * je erreicht wird - der Wecker bliebe nach einem Reboot vor der ersten Entsperrung stumm.
      */
     private suspend fun startAlarmSoundService(
         context: Context,
         shiftName: String,
         shiftStartTime: String,
-        alarmId: Int
+        alarmId: Int,
+        userUnlocked: Boolean
     ) {
         try {
-            val snoozeMinutes = alarmPrefs.snoozeMinutesNow()
+            val snoozeMinutes = if (userUnlocked) {
+                alarmPrefs.snoozeMinutesNow()
+            } else {
+                AlarmPrefs.DEFAULT_SNOOZE_MINUTES
+            }
             val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
                 action = AlarmSoundService.ACTION_START_ALARM
                 putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)

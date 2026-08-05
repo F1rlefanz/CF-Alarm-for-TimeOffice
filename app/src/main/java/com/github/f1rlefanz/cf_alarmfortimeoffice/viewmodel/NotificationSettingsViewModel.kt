@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotificationPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +23,8 @@ import javax.inject.Inject
 @HiltViewModel
 class NotificationSettingsViewModel @Inject constructor(
     private val shiftChangeNotificationPrefs: ShiftChangeNotificationPrefs,
-    private val dimOverlayPrefs: DimOverlayPrefs
+    private val dimOverlayPrefs: DimOverlayPrefs,
+    private val dimSchedule: DimScheduleUseCase
 ) : ViewModel() {
 
     data class NotificationSettingsUiState(
@@ -45,6 +47,12 @@ class NotificationSettingsViewModel @Inject constructor(
     }
 
     fun setDimCorrectionNotificationEnabled(enabled: Boolean) {
-        viewModelScope.launch { dimOverlayPrefs.setCorrectionNotificationEnabled(enabled) }
+        viewModelScope.launch {
+            dimOverlayPrefs.setCorrectionNotificationEnabled(enabled)
+            // Ohne diesen Aufruf wirkt der Toggle erst am naechsten Fenster-Tick (meist das
+            // Fenster-ENDE) - der Nutzer sieht die Notification fuer das gerade laufende Fenster
+            // dann praktisch nie. Gleiches Muster wie jeder Setter in DimmerViewModel.
+            dimSchedule.enable()
+        }
     }
 }

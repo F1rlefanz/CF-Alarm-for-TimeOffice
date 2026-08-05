@@ -103,6 +103,16 @@ class DimScheduleUseCase @Inject constructor(
         val isPaused = !stale && override.paused
         val effectiveStrength = DimWindowResolver.applyStrengthDelta(active.strength, effectiveDelta, DimOverlayPrefs.STRENGTH_MAX)
 
+        // Diagnostik fuer "hat gedimmt/nicht gedimmt tatsaechlich stattgefunden": isRunning() ist
+        // der einzige echte Bound-Status des Accessibility-Dienstes. Ohne diese Zeile ist im
+        // Nachhinein aus dem Log nicht rekonstruierbar, ob ein aktives Fenster auf einen NICHT
+        // gebundenen Dienst traf (z. B. ECM-Restricted-Settings nach Sideload).
+        Logger.d(
+            LogTags.DIMMER,
+            "Dimm-Fenster aktiv: strength=$effectiveStrength warmth=${active.warmth} paused=$isPaused " +
+                "accessibilityServiceBound=${DimAccessibilityService.isRunning()}"
+        )
+
         if (isPaused) {
             // paused=true => gar kein Overlay berechnen (nicht nur strength=0 - der Nutzer hat
             // das Dimmen bewusst ausgesetzt).

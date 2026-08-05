@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -634,7 +635,10 @@ private fun DimmerAccessibilityCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isActive)
+                MaterialTheme.colorScheme.surface
+            else
+                MaterialTheme.colorScheme.errorContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -652,14 +656,15 @@ private fun DimmerAccessibilityCard() {
                 tint = if (isActive)
                     MaterialTheme.colorScheme.success
                 else
-                    MaterialTheme.colorScheme.error
+                    MaterialTheme.colorScheme.onErrorContainer
             )
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Schicht-Dimmer",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = if (isActive) Color.Unspecified else MaterialTheme.colorScheme.onErrorContainer
                 )
                 Text(
                     if (isActive) {
@@ -667,10 +672,17 @@ private fun DimmerAccessibilityCard() {
                     } else {
                         "Bedienungshilfen-Dienst nicht aktiv — das Dimmen wirkt erst nach dem Aktivieren"
                     },
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isActive) Color.Unspecified else MaterialTheme.colorScheme.onErrorContainer
                 )
 
                 if (!isActive) {
+                    Text(
+                        "⚠️ Aktiver Fehler — bitte prüfen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
                     SettingsLinkButton(
                         onClick = { showDisclosure = true },

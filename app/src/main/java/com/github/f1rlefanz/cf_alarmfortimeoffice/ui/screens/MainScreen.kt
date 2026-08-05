@@ -163,11 +163,20 @@ fun MainScreen(
             val needsUnusedAppRestrictionsPrompt = hasBatteryExemption &&
                 UnusedAppRestrictionsHelper.isRestricted(context) &&
                 !UnusedAppRestrictionsHelper.isDismissed(context)
+            // Gleiche Pruefung wie proceedPastGates() (siehe oben) - dort nur erreichbar,
+            // wenn der Nutzer gerade aktiv durch Battery/UnusedAppRestrictions zurueckkommt.
+            // handleAuthenticationSuccess() laeuft dagegen bei JEDEM App-Vordergrund und ist
+            // der einzige Weg, Bestandsnutzer zu erreichen, die die frueheren Gates schon vor
+            // diesem Feature durchlaufen hatten.
+            val needsTimeOfficeHealthPrompt = TimeOfficeHealthHelper.isInstalled(context) &&
+                !TimeOfficeHealthHelper.isBatteryExempted(context) &&
+                !TimeOfficeHealthHelper.isPromptDismissed(context)
             navigationViewModel.handleAuthenticationSuccess(
                 mainState.hasSelectedCalendars,
                 hasBatteryExemption,
                 batteryPromptDismissed,
-                needsUnusedAppRestrictionsPrompt
+                needsUnusedAppRestrictionsPrompt,
+                needsTimeOfficeHealthPrompt
             )
         }
     }
@@ -231,6 +240,30 @@ fun MainScreen(
 
             // Wie "Verstanden" - siehe finishOnboarding.
             is NavigationState.OEMWarning -> finishOnboarding()
+
+            // Zwei Einstiegspfade mit unterschiedlichem Rueckziel (siehe
+            // NavigationState.HueRuleConfig.cameFromSettingsList): navigateBackToMain() alleine
+            // wuerde IMMER direkt zu MainContent aufloesen und damit HueSettings ueberspringen,
+            // wenn der Nutzer tatsaechlich ueber die Regel-Liste hierher kam. Muss mit dem
+            // Save/Zurueck-Verhalten im HueRuleConfig-Screen-Block unten konsistent bleiben.
+            is NavigationState.HueRuleConfig -> {
+                val state = navigationState as NavigationState.HueRuleConfig
+                if (state.cameFromSettingsList) {
+                    navigationViewModel.navigateToHueSettings(state.returnToTab)
+                } else {
+                    navigationViewModel.navigateToMainWithTab(state.returnToTab)
+                }
+            }
+
+            // Gleiche Semantik wie HueRuleConfig oben.
+            is NavigationState.DimmerRuleConfig -> {
+                val state = navigationState as NavigationState.DimmerRuleConfig
+                if (state.cameFromSettingsList) {
+                    navigationViewModel.navigateToDimmerSettings(state.returnToTab)
+                } else {
+                    navigationViewModel.navigateToMainWithTab(state.returnToTab)
+                }
+            }
 
             else -> navigationViewModel.navigateBackToMain()
         }
@@ -465,38 +498,84 @@ fun MainScreen(
 
             is NavigationState.HueRuleConfig -> {
                 val hueRuleState = navigationState as NavigationState.HueRuleConfig
+                // Zurueck UND Speichern muessen zum tatsaechlichen Einstiegspunkt fuehren: kam
+                // der Nutzer direkt vom Hue-Tab (kein HueSettings dazwischen), landet er wieder
+                // dort - nicht auf einer Liste, die er nie geoeffnet hat. Kam er ueber
+                // HueSettings, geht es dorthin zurueck. Muss mit dem BackHandler-Fall fuer
+                // HueRuleConfig oben konsistent bleiben.
+                val backToEntryPoint: () -> Unit = {
+                    if (hueRuleState.cameFromSettingsList) {
+                        navigationViewModel.navigateToHueSettings(hueRuleState.returnToTab)
+                    } else {
+                        navigationViewModel.navigateToMainWithTab(hueRuleState.returnToTab)
+                    }
+                }
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
                     ruleId = hueRuleState.ruleId,
                     hueViewModel = hueViewModel,
                     shiftViewModel = shiftViewModel,
-                    onNavigateBack = { navigationViewModel.navigateToHueSettings(hueRuleState.returnToTab) },
-                    onSaveComplete = { navigationViewModel.navigateToHueSettings(hueRuleState.returnToTab) }
+                    onNavigateBack = backToEntryPoint,
+                    onSaveComplete = backToEntryPoint
                 )
             }
 
             is NavigationState.HueSettings -> {
+                val hueSettingsState = navigationState as NavigationState.HueSettings
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueSettingsScreen(
                     hueViewModel = hueViewModel,
                     onNavigateBack = { navigationViewModel.navigateBackToMain() },
-                    onEditRule = { ruleId -> navigationViewModel.navigateToHueRuleConfig(ruleId) },
-                    onCreateNewRule = { navigationViewModel.navigateToHueRuleConfig() }
+                    onEditRule = { ruleId ->
+                        navigationViewModel.navigateToHueRuleConfig(
+                            ruleId = ruleId,
+                            fromTab = hueSettingsState.returnToTab,
+                            cameFromSettingsList = true
+                        )
+                    },
+                    onCreateNewRule = {
+                        navigationViewModel.navigateToHueRuleConfig(
+                            fromTab = hueSettingsState.returnToTab,
+                            cameFromSettingsList = true
+                        )
+                    }
                 )
             }
 
             is NavigationState.DimmerSettings -> {
+                val dimmerSettingsState = navigationState as NavigationState.DimmerSettings
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerSettingsScreen(
                     onNavigateBack = { navigationViewModel.navigateBackToMain() },
-                    onEditRule = { ruleId -> navigationViewModel.navigateToDimmerRuleConfig(ruleId) },
-                    onCreateRule = { navigationViewModel.navigateToDimmerRuleConfig() }
+                    onEditRule = { ruleId ->
+                        navigationViewModel.navigateToDimmerRuleConfig(
+                            ruleId = ruleId,
+                            fromTab = dimmerSettingsState.returnToTab,
+                            cameFromSettingsList = true
+                        )
+                    },
+                    onCreateRule = {
+                        navigationViewModel.navigateToDimmerRuleConfig(
+                            fromTab = dimmerSettingsState.returnToTab,
+                            cameFromSettingsList = true
+                        )
+                    }
                 )
             }
 
             is NavigationState.DimmerRuleConfig -> {
                 val dimRuleState = navigationState as NavigationState.DimmerRuleConfig
+                // Gleiche Semantik wie HueRuleConfig oben - aktuell fuehrt nur der Pfad ueber
+                // DimmerSettings hierher (cameFromSettingsList defaultet auf true), aber der
+                // Verzweig deckt auch einen kuenftigen Direktpfad korrekt ab.
+                val backToEntryPoint: () -> Unit = {
+                    if (dimRuleState.cameFromSettingsList) {
+                        navigationViewModel.navigateToDimmerSettings(dimRuleState.returnToTab)
+                    } else {
+                        navigationViewModel.navigateToMainWithTab(dimRuleState.returnToTab)
+                    }
+                }
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerRuleConfigScreen(
                     ruleId = dimRuleState.ruleId,
-                    onNavigateBack = { navigationViewModel.navigateToDimmerSettings(dimRuleState.returnToTab) },
-                    onSaveComplete = { navigationViewModel.navigateToDimmerSettings(dimRuleState.returnToTab) }
+                    onNavigateBack = backToEntryPoint,
+                    onSaveComplete = backToEntryPoint
                 )
             }
 
@@ -517,7 +596,15 @@ fun MainScreen(
                         )
                     },
                     onShowEventList = { navigationViewModel.navigateToEventList(mainContentState.selectedTab) },
-                    onShowHueRuleConfig = { navigationViewModel.navigateToHueRuleConfig() },
+                    // Direkter Einstieg vom Hue-Tab (kein HueSettings dazwischen) -
+                    // cameFromSettingsList = false, damit Zurueck/Speichern spaeter wieder
+                    // hierher fuehrt statt auf die nie geoeffnete Regel-Liste.
+                    onShowHueRuleConfig = {
+                        navigationViewModel.navigateToHueRuleConfig(
+                            fromTab = mainContentState.selectedTab,
+                            cameFromSettingsList = false
+                        )
+                    },
                     onShowHueSettings = { navigationViewModel.navigateToHueSettings() },
                     onShowDimmerSettings = { navigationViewModel.navigateToDimmerSettings() },
                     onShowDimmerPreview = { navigationViewModel.navigateToDimmerPreview() },

@@ -74,8 +74,8 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             }
             
             is NavigationAction.NavigateToHueRuleConfig -> {
-                Logger.d(LogTags.NAVIGATION, "Main -> Hue Rule Config (from ${action.fromTab}, rule: ${action.ruleId})")
-                NavigationState.HueRuleConfig(action.ruleId, action.fromTab)
+                Logger.d(LogTags.NAVIGATION, "Main -> Hue Rule Config (from ${action.fromTab}, rule: ${action.ruleId}, viaSettingsList: ${action.cameFromSettingsList})")
+                NavigationState.HueRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList)
             }
             
             is NavigationAction.NavigateToHueSettings -> {
@@ -89,8 +89,8 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             }
 
             is NavigationAction.NavigateToDimmerRuleConfig -> {
-                Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Rule Config (from ${action.fromTab}, rule: ${action.ruleId})")
-                NavigationState.DimmerRuleConfig(action.ruleId, action.fromTab)
+                Logger.d(LogTags.NAVIGATION, "Main -> Dimmer Rule Config (from ${action.fromTab}, rule: ${action.ruleId}, viaSettingsList: ${action.cameFromSettingsList})")
+                NavigationState.DimmerRuleConfig(action.ruleId, action.fromTab, action.cameFromSettingsList)
             }
 
             is NavigationAction.NavigateToDimmerPreview -> {
@@ -104,6 +104,25 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             }
 
             is NavigationAction.NavigateBackToMain -> {
+                // HueRuleConfig/DimmerRuleConfig haben zwei Einstiegspfade (siehe
+                // cameFromSettingsList) - ein "zurueck" waehrend dieser Zustaende darf NICHT
+                // blind zu MainContent aufloesen, sonst ueberspringt der Listen-Pfad
+                // HueSettings/DimmerSettings. MainScreen behandelt beide Zustaende zwar bereits
+                // ueber eigene BackHandler-Faelle statt hierueber, aber diese Aufloesung bleibt
+                // als Fail-Safe korrekt, falls je ein weiterer Aufrufer navigateBackToMain()
+                // aus einem dieser Zustaende heraus ruft.
+                if (currentState is NavigationState.HueRuleConfig && currentState.cameFromSettingsList) {
+                    Logger.d(LogTags.NAVIGATION, "-> Hue Settings (${currentState.returnToTab} tab, via settings list)")
+                    return handleNavigationAction(
+                        NavigationAction.NavigateToHueSettings(currentState.returnToTab)
+                    )
+                }
+                if (currentState is NavigationState.DimmerRuleConfig && currentState.cameFromSettingsList) {
+                    Logger.d(LogTags.NAVIGATION, "-> Dimmer Settings (${currentState.returnToTab} tab, via settings list)")
+                    return handleNavigationAction(
+                        NavigationAction.NavigateToDimmerSettings(currentState.returnToTab)
+                    )
+                }
                 val returnTab = when (currentState) {
                     is NavigationState.CalendarSelection -> currentState.returnToTab
                     is NavigationState.ShiftConfig -> currentState.returnToTab
@@ -167,8 +186,12 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToTimeOfficeHealthCheck(fromTab: MainTab = MainTab.HOME) =
         handleNavigationAction(NavigationAction.NavigateToTimeOfficeHealthCheck(fromTab))
 
-    fun navigateToHueRuleConfig(ruleId: String? = null, fromTab: MainTab = MainTab.HUE) = 
-        handleNavigationAction(NavigationAction.NavigateToHueRuleConfig(ruleId, fromTab))
+    fun navigateToHueRuleConfig(
+        ruleId: String? = null,
+        fromTab: MainTab = MainTab.HUE,
+        cameFromSettingsList: Boolean = false
+    ) =
+        handleNavigationAction(NavigationAction.NavigateToHueRuleConfig(ruleId, fromTab, cameFromSettingsList))
     
     fun navigateToHueSettings(fromTab: MainTab = MainTab.HUE) =
         handleNavigationAction(NavigationAction.NavigateToHueSettings(fromTab))
@@ -176,8 +199,12 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToDimmerSettings(fromTab: MainTab = MainTab.DIMMER) =
         handleNavigationAction(NavigationAction.NavigateToDimmerSettings(fromTab))
 
-    fun navigateToDimmerRuleConfig(ruleId: String? = null, fromTab: MainTab = MainTab.DIMMER) =
-        handleNavigationAction(NavigationAction.NavigateToDimmerRuleConfig(ruleId, fromTab))
+    fun navigateToDimmerRuleConfig(
+        ruleId: String? = null,
+        fromTab: MainTab = MainTab.DIMMER,
+        cameFromSettingsList: Boolean = true
+    ) =
+        handleNavigationAction(NavigationAction.NavigateToDimmerRuleConfig(ruleId, fromTab, cameFromSettingsList))
 
     fun navigateToDimmerPreview(fromTab: MainTab = MainTab.DIMMER) =
         handleNavigationAction(NavigationAction.NavigateToDimmerPreview(fromTab))
@@ -209,7 +236,8 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         hasSelectedCalendars: Boolean,
         hasBatteryExemption: Boolean,
         batteryPromptDismissed: Boolean,
-        needsUnusedAppRestrictionsPrompt: Boolean
+        needsUnusedAppRestrictionsPrompt: Boolean,
+        needsTimeOfficeHealthPrompt: Boolean
     ) {
         if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
@@ -220,6 +248,13 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         } else if (hasSelectedCalendars && hasBatteryExemption && needsUnusedAppRestrictionsPrompt && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery exempted but unused-app restrictions still active")
             navigateToUnusedAppRestrictions()
+        } else if (hasSelectedCalendars && hasBatteryExemption && !needsUnusedAppRestrictionsPrompt && needsTimeOfficeHealthPrompt && _navigationState.value.isMainContent()) {
+            // Vierter/letzter Gate-Zweig: dieselbe Pruefung, die proceedPastGates() (MainScreen)
+            // beim Zurueckkehren von den vorherigen Gates ohnehin anstellt - hier zusaetzlich
+            // fuer Nutzer noetig, die die drei vorherigen Gates schon VOR diesem Feature
+            // durchlaufen hatten und darum nie wieder durch proceedPastGates() liefen.
+            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery/Unused-App gates cleared but TimeOffice health check still needed")
+            navigateToTimeOfficeHealthCheck()
         }
     }
     

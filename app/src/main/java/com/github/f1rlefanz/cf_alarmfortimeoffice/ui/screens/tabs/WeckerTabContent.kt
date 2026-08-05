@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
@@ -20,12 +22,18 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -39,15 +47,20 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 
+/** Auswahlmoeglichkeiten fuer die Schlummer-Dauer-Dropdown - deckt die ueblichen Werte ab. */
+private val SNOOZE_MINUTES_OPTIONS = listOf(3, 5, 10, 15)
+
 @Composable
 fun WeckerTabContent(
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
+    snoozeMinutes: Int,
     onUpdateShiftConfig: (ShiftConfig) -> Unit,
     onSkipNextAlarm: () -> Unit,
     onCancelSkip: () -> Unit,
-    onShowShiftConfig: () -> Unit
+    onShowShiftConfig: () -> Unit,
+    onSnoozeMinutesChange: (Int) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -87,6 +100,13 @@ fun WeckerTabContent(
                     // wirkungslos war. Deaktiviert statt stumm zu ignorieren.
                     enabled = shiftState.currentShiftConfig != null,
                     titleStyle = MaterialTheme.typography.titleMedium
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_MEDIUM))
+
+                SnoozeMinutesRow(
+                    snoozeMinutes = snoozeMinutes,
+                    onSnoozeMinutesChange = onSnoozeMinutesChange
                 )
             }
         }
@@ -236,6 +256,54 @@ private fun EnhancedAlarmStatusCard(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Auswahl der Schlummer-Dauer. Wirkt auf beide Snooze-Ausloeser (Vollbild-Button, Notification-
+ * Button) gleichermassen - siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs].
+ */
+@Composable
+private fun SnoozeMinutesRow(
+    snoozeMinutes: Int,
+    onSnoozeMinutesChange: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "Schlummer-Dauer",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                "Gilt für den Vollbild- und den Benachrichtigungs-Schlummer-Knopf",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Box {
+            OutlinedButton(onClick = { expanded = true }) {
+                Text("$snoozeMinutes Min")
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                SNOOZE_MINUTES_OPTIONS.forEach { minutes ->
+                    DropdownMenuItem(
+                        text = { Text("$minutes Min") },
+                        onClick = {
+                            onSnoozeMinutesChange(minutes)
+                            expanded = false
+                        }
+                    )
                 }
             }
         }

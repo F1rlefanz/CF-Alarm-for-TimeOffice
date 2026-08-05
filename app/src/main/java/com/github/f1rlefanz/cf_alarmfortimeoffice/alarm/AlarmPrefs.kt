@@ -1,0 +1,43 @@
+package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
+
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * Einstellungen der Schlummer-Dauer (im bestehenden [MainDataStore]).
+ *
+ * Uebernimmt die frühere Rolle von `AlarmManagerService.SNOOZE_MINUTES` als EINE Quelle fuer
+ * Vollbild-Button UND Notification-Button - aber NICHT indem beide Ausloeser diesen DataStore
+ * direkt lesen. `AlarmSoundService.onStartCommand`s `ACTION_SNOOZE_ALARM`-Zweig ist bewusst ein
+ * synchroner, schneller Notausgang (siehe Klassenkommentar dort) und
+ * `AlarmFullScreenActivity.snoozeAlarm()` ist ebenfalls synchron - beide duerfen keine
+ * DataStore-Reads bekommen. Stattdessen liest [AlarmReceiver] den Wert EINMAL pro Alarm-Feuern
+ * (schon in einer Coroutine, `receiverScope.launch`) und reicht ihn als Intent-Extra
+ * (`AlarmSoundService.EXTRA_SNOOZE_MINUTES`) an beide Ausloeser durch - bis dahin ist der Wert
+ * synchron aus dem Intent verfuegbar.
+ */
+@Singleton
+class AlarmPrefs @Inject constructor(
+    @param:MainDataStore private val dataStore: DataStore<Preferences>
+) {
+    companion object {
+        private val KEY_SNOOZE_MINUTES = intPreferencesKey("snooze_minutes")
+
+        /** Default-Schlummer-Dauer in Minuten - identisch zum frueheren SNOOZE_MINUTES-Default. */
+        const val DEFAULT_SNOOZE_MINUTES = 5
+    }
+
+    val snoozeMinutes: Flow<Int> = dataStore.data.map { it[KEY_SNOOZE_MINUTES] ?: DEFAULT_SNOOZE_MINUTES }
+
+    suspend fun snoozeMinutesNow(): Int = snoozeMinutes.first()
+
+    suspend fun setSnoozeMinutes(v: Int) = dataStore.edit { it[KEY_SNOOZE_MINUTES] = v }
+}

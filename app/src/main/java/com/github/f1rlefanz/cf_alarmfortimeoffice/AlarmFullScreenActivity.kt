@@ -290,7 +290,12 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      * setAlarmClock) liegt bewusst nur dort, damit es EINE Wahrheit bleibt.
      */
     private fun snoozeAlarm() {
-        Logger.i(LogTags.ALARM, "😴 User snoozed alarm for ${AlarmManagerService.SNOOZE_MINUTES} minutes")
+        // Fallback-Default matters: aeltere/Direct-Boot-Pfade koennten das Extra nicht mitfuehren.
+        val snoozeMinutes = intent.getIntExtra(
+            AlarmSoundService.EXTRA_SNOOZE_MINUTES,
+            AlarmManagerService.SNOOZE_MINUTES.toInt()
+        )
+        Logger.i(LogTags.ALARM, "😴 User snoozed alarm for $snoozeMinutes minutes")
 
         try {
             // Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races).
@@ -301,7 +306,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
             val alarmId = intent.getIntExtra(AlarmSoundService.EXTRA_ALARM_ID, -1)
             val shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
 
-            AlarmManagerService.scheduleSnooze(this, alarmId, shiftName, shiftStartTime)
+            AlarmManagerService.scheduleSnooze(
+                this, alarmId, shiftName, shiftStartTime,
+                minutes = snoozeMinutes.toLong()
+            )
 
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(AlarmSoundService.NOTIFICATION_ID)

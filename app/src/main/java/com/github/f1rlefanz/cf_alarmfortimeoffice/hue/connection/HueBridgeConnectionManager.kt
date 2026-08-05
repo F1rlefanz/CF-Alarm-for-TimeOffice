@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -10,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.EntryPoint
@@ -46,6 +48,8 @@ import kotlin.time.Duration.Companion.seconds
 interface HueBridgeConnectionManagerEntryPoint {
     @HueDataStore
     fun hueDataStore(): DataStore<Preferences>
+
+    fun masterPausePrefs(): MasterPausePrefs
 }
 
 /**
@@ -64,7 +68,8 @@ interface HueBridgeConnectionManagerEntryPoint {
 class HueBridgeConnectionManager private constructor(
     context: Context,
     private val networkMonitor: com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor,
-    private val apiClient: HueApiClient
+    private val apiClient: HueApiClient,
+    private val testHueDataStore: DataStore<Preferences>? = null
 ) {
     companion object {
         @Volatile
@@ -88,8 +93,9 @@ class HueBridgeConnectionManager private constructor(
         internal fun createForTesting(
             context: Context,
             networkMonitor: com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor,
-            apiClient: HueApiClient
-        ): HueBridgeConnectionManager = HueBridgeConnectionManager(context, networkMonitor, apiClient)
+            apiClient: HueApiClient,
+            testHueDataStore: DataStore<Preferences>? = null
+        ): HueBridgeConnectionManager = HueBridgeConnectionManager(context, networkMonitor, apiClient, testHueDataStore)
 
         // Configuration constants
         // CONSOLIDATION: moved off the standalone "hue_bridge_connection" SharedPreferences
@@ -119,6 +125,10 @@ class HueBridgeConnectionManager private constructor(
     // Genau eine Initialisierung pro Prozess - siehe initialize().
     private val initialized = AtomicBoolean(false)
 
+    // Single-flight-Schutz gegen ueberlappende attemptRecoveryIfDisconnected()-Aufrufe (siehe
+    // startNetworkRecoveryMonitoring()/onAppForeground(), beide auf healthCheckScope/Dispatchers.IO).
+    private val recoveryInFlight = AtomicBoolean(false)
+
     // Thread-safe connection state
     private val currentConnectionState = AtomicReference<ConnectionState>(ConnectionState.DISCONNECTED)
 
@@ -128,6 +138,7 @@ class HueBridgeConnectionManager private constructor(
      * application context is gone or Hilt is not ready yet.
      */
     private fun resolveHueDataStore(): DataStore<Preferences>? {
+        testHueDataStore?.let { return it }
         val appContext = contextRef.get() ?: return null
         return try {
             EntryPointAccessors
@@ -135,6 +146,23 @@ class HueBridgeConnectionManager private constructor(
                 .hueDataStore()
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve HueDataStore via EntryPoint", e)
+            null
+        }
+    }
+
+    /**
+     * Resolve the Hilt-managed [MasterPausePrefs] via EntryPoint - same pattern/limitations as
+     * [resolveHueDataStore]. Used to make autonomous background recovery/health-check activity
+     * respect Master-Pause (see attemptRecoveryIfDisconnected()/startSmartHealthMonitoring()).
+     */
+    private fun resolveMasterPausePrefs(): MasterPausePrefs? {
+        val appContext = contextRef.get() ?: return null
+        return try {
+            EntryPointAccessors
+                .fromApplication(appContext, HueBridgeConnectionManagerEntryPoint::class.java)
+                .masterPausePrefs()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve master-pause prefs via EntryPoint", e)
             null
         }
     }
@@ -580,9 +608,15 @@ class HueBridgeConnectionManager private constructor(
         
         healthCheckJob = healthCheckScope.launch {
             while (isActive) {
+                val paused = try {
+                    resolveMasterPausePrefs()?.pausedNow() == true
+                } catch (e: Exception) {
+                    Logger.e(LogTags.HUE_BRIDGE, "Failed to check master-pause state in health loop, assuming not paused", e)
+                    false
+                }
                 val currentState = currentConnectionState.get()
-                if (currentState is ConnectionState.CONNECTED) {
-                    
+                if (!paused && currentState is ConnectionState.CONNECTED) {
+
                     // OPTIMIZATION: Only check if app is in foreground AND enough time passed
                     if (isAppInForeground) {
                         val timeSinceLastCheck = System.currentTimeMillis() - lastForegroundCheck
@@ -639,13 +673,41 @@ class HueBridgeConnectionManager private constructor(
      * ([restoreConnectionFromStorage] setzt den persistierten Stand optimistisch, [recoverConnection]
      * validiert ihn live gegen die Bridge). No-op, wenn schon verbunden (der periodische
      * Health-Check deckt das ab) oder wenn ueberhaupt keine Bridge eingerichtet ist.
+     *
+     * `internal` + [VisibleForTesting] statt `private`: ein reflektiver Aufruf einer privaten
+     * suspend fun ist fragil (der zugehoerige Continuation-Parameter aus dem Kotlin-Compiler
+     * lässt sich zwar per Reflection treffen, aber ein synchron durchlaufender Aufruf ruft
+     * `cont.resume()` nie auf und haengt `suspendCoroutine` dauerhaft) - deshalb bleibt es bei
+     * der einfacheren, robusten Sichtbarkeitsloesung fuer den Test in
+     * [HueBridgeConnectionManagerTest].
      */
-    private suspend fun attemptRecoveryIfDisconnected() {
+    @VisibleForTesting
+    internal suspend fun attemptRecoveryIfDisconnected() {
         if (currentConnectionState.get() is ConnectionState.CONNECTED) return
         if (!hasStoredBridge()) return
-        Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Netzwerk verfuegbar, versuche automatische Wiederverbindung")
-        restoreConnectionFromStorage()
-        recoverConnection()
+
+        val paused = try {
+            resolveMasterPausePrefs()?.pausedNow() == true
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to check master-pause state, assuming not paused", e)
+            false
+        }
+        if (paused) {
+            Logger.d(LogTags.HUE_BRIDGE, "Master-Pause aktiv - autonome Wiederverbindung uebersprungen")
+            return
+        }
+
+        if (!recoveryInFlight.compareAndSet(false, true)) {
+            Logger.d(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Wiederverbindung bereits im Gange - ueberspringe")
+            return
+        }
+        try {
+            Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Netzwerk verfuegbar, versuche automatische Wiederverbindung")
+            restoreConnectionFromStorage()
+            recoverConnection()
+        } finally {
+            recoveryInFlight.set(false)
+        }
     }
 
     /**

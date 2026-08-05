@@ -1,8 +1,16 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.mutablePreferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -12,6 +20,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Unit tests for the "off-network pre-flight" guard in [HueBridgeConnectionManager.getValidatedConnection].
@@ -30,6 +39,19 @@ class HueBridgeConnectionManagerTest {
     private val bridgeIp = "192.168.178.24"
     private val username = "test-user"
 
+    /** Minimaler, echter In-Memory-DataStore<Preferences> - deckt data/updateData (und edit{}) ab.
+     * Reimplementiert lokal (statt aus AlarmRepositoryTest importiert) nach demselben Muster,
+     * das dort schon fuer genau diesen Zweck existiert. */
+    private class FakePreferencesDataStore(initial: Preferences) : DataStore<Preferences> {
+        private val flow = MutableStateFlow(initial)
+        override val data: Flow<Preferences> = flow
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+            val updated = transform(flow.value)
+            flow.value = updated
+            return updated
+        }
+    }
+
     private fun buildManager(
         isReachable: Boolean,
     ): Triple<HueBridgeConnectionManager, NetworkStateMonitor, HueApiClient> {
@@ -43,6 +65,44 @@ class HueBridgeConnectionManagerTest {
 
         val manager = HueBridgeConnectionManager.createForTesting(context, networkMonitor, apiClient)
         seedConnectedState(manager)
+
+        return Triple(manager, networkMonitor, apiClient)
+    }
+
+    /**
+     * Baut einen Manager fuer die attemptRecoveryIfDisconnected()-Tests: echtes (Fake-)DataStore
+     * statt EntryPoint-Aufloesung, KEIN geseedeter CONNECTED-Zustand (bleibt beim echten Default
+     * DISCONNECTED) - im Gegensatz zu [buildManager], das gezielt fuer die bereits-verbunden-Faelle
+     * von getValidatedConnection() gebaut ist.
+     */
+    private fun buildManagerForRecoveryTests(
+        hasStoredBridge: Boolean,
+    ): Triple<HueBridgeConnectionManager, NetworkStateMonitor, HueApiClient> {
+        val context = mock<Context>()
+        whenever(context.applicationContext).thenReturn(context)
+
+        val networkMonitor = mock<NetworkStateMonitor>()
+        whenever(networkMonitor.isReachableSubnet(any())).thenReturn(true)
+
+        val apiClient = mock<HueApiClient>()
+
+        val prefs = if (hasStoredBridge) {
+            mutablePreferencesOf().apply {
+                this[stringPreferencesKey("bridge_ip")] = bridgeIp
+                this[stringPreferencesKey("username")] = username
+                this[booleanPreferencesKey("connection_validated")] = true
+            }
+        } else {
+            emptyPreferences()
+        }
+        val fakeDataStore = FakePreferencesDataStore(prefs)
+
+        val manager = HueBridgeConnectionManager.createForTesting(
+            context,
+            networkMonitor,
+            apiClient,
+            testHueDataStore = fakeDataStore,
+        )
 
         return Triple(manager, networkMonitor, apiClient)
     }
@@ -64,6 +124,28 @@ class HueBridgeConnectionManagerTest {
         method.isAccessible = true
         method.invoke(manager, connectedState)
     }
+
+    /**
+     * Setzt den privaten `recoveryInFlight`-AtomicBoolean-Guard direkt per Reflection - simuliert
+     * einen bereits laufenden, gleichzeitigen Wiederverbindungsversuch, ohne echte Nebenlaeufigkeit
+     * im Test orchestrieren zu muessen.
+     */
+    private fun setRecoveryInFlight(manager: HueBridgeConnectionManager, value: Boolean) {
+        val field = HueBridgeConnectionManager::class.java.getDeclaredField("recoveryInFlight")
+        field.isAccessible = true
+        (field.get(manager) as AtomicBoolean).set(value)
+    }
+
+    // NOTE: attemptRecoveryIfDisconnected() is `internal` + @VisibleForTesting (not `private`)
+    // specifically so these tests can call it directly instead of via reflection. A first attempt
+    // reflectively invoked the private suspend fun by synthesizing a Continuation via
+    // suspendCoroutine { cont -> method.invoke(manager, cont) } - that deadlocks whenever the
+    // invoked function body completes SYNCHRONOUSLY (no real suspension point actually reached,
+    // e.g. because the fake DataStore's MutableStateFlow.first() and the mocked EntryPoint
+    // resolution never truly suspend): method.invoke(...) then returns the real result directly
+    // instead of the COROUTINE_SUSPENDED marker, nobody ever calls cont.resume(...), and
+    // suspendCoroutine waits forever. Reproduced live (gradle testDebugUnitTest hung indefinitely
+    // on this test class). `internal` + @VisibleForTesting avoids the whole class of problems.
 
     // NOTE: block bodies (not `= runBlocking { ... }` expression bodies) are deliberate here -
     // JUnit4 requires @Test methods to return void, and an expression body whose last statement
@@ -103,6 +185,52 @@ class HueBridgeConnectionManagerTest {
 
             assertTrue(returnedIp == bridgeIp && returnedUser == username)
             // Fresh cache (just seeded) - still within CONNECTION_CACHE_VALIDITY, so no API call needed.
+            verify(apiClient, never()).getBridgeConfig(any(), any())
+        }
+    }
+
+    @Test
+    fun `attemptRecoveryIfDisconnected - bereits verbunden loest keine Wiederverbindung aus`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManagerForRecoveryTests(hasStoredBridge = true)
+            seedConnectedState(manager)
+
+            manager.attemptRecoveryIfDisconnected()
+
+            verify(apiClient, never()).getBridgeConfig(any(), any())
+        }
+    }
+
+    @Test
+    fun `attemptRecoveryIfDisconnected - keine gespeicherte Bridge loest keine Wiederverbindung aus`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManagerForRecoveryTests(hasStoredBridge = false)
+
+            manager.attemptRecoveryIfDisconnected()
+
+            verify(apiClient, never()).getBridgeConfig(any(), any())
+        }
+    }
+
+    @Test
+    fun `attemptRecoveryIfDisconnected - gespeicherte Bridge loest eine echte Wiederverbindung aus`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManagerForRecoveryTests(hasStoredBridge = true)
+
+            manager.attemptRecoveryIfDisconnected()
+
+            verify(apiClient).getBridgeConfig(any(), any())
+        }
+    }
+
+    @Test
+    fun `attemptRecoveryIfDisconnected - eine bereits laufende Wiederverbindung wird nicht doppelt gestartet`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManagerForRecoveryTests(hasStoredBridge = true)
+            setRecoveryInFlight(manager, true)
+
+            manager.attemptRecoveryIfDisconnected()
+
             verify(apiClient, never()).getBridgeConfig(any(), any())
         }
     }

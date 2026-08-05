@@ -80,19 +80,13 @@ class DndViewModel @Inject constructor(
 
     /** Schaltet eine Schicht als Ausnahme vom "Waehrend der Dienstzeit"-Trigger ein/aus. */
     fun toggleShiftExcludedShift(shiftName: String) = viewModelScope.launch {
-        val current = prefs.shiftExcludedShiftsNow()
-        prefs.setShiftExcludedShifts(
-            if (shiftName in current) current - shiftName else current + shiftName
-        )
+        prefs.toggleShiftExcludedShift(shiftName)
         dndSchedule.enable()
     }
 
     /** Schaltet eine Schicht als Rufbereitschaft (On-Call-Cutoff) ein/aus. */
     fun toggleOnCallShift(shiftName: String) = viewModelScope.launch {
-        val current = prefs.onCallShiftsNow()
-        prefs.setOnCallShifts(
-            if (shiftName in current) current - shiftName else current + shiftName
-        )
+        prefs.toggleOnCallShift(shiftName)
         dndSchedule.enable()
     }
 

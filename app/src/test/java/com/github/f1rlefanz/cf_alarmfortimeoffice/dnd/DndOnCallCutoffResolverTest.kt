@@ -81,6 +81,29 @@ class DndOnCallCutoffResolverTest {
         assertTrue(cutoffs.contains(ep(2026, 1, 20, 5, 0)))
     }
 
+    @Test
+    fun `On-Call-Schicht am DST-Vorspringen-Tag loest den Cutoff als korrekte Wanduhrzeit auf statt Mitternacht plus Minuten`() {
+        val berlin = ZoneId.of("Europe/Berlin")
+        fun berlinEp(y: Int, mo: Int, d: Int, h: Int, mi: Int): Long =
+            LocalDateTime.of(y, mo, d, h, mi).atZone(berlin).toInstant().toEpochMilli()
+
+        // 2026-03-29: Europe/Berlin springt von 02:00 CET (UTC+1) auf 03:00 CEST (UTC+2) vor.
+        // Schicht beginnt 01:00 lokal - noch vor dem Sprung, also CET; Cutoff 05:00 liegt am
+        // selben Kalendertag (startMinutesOfDay=60 < cutoffMinutes=300).
+        val slot = AlarmSlot(shiftName = "AD1", shiftStartTime = berlinEp(2026, 3, 29, 1, 0))
+
+        val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
+            listOf(slot), onCallShifts = setOf("AD1"), cutoffMinutes = 5 * 60, zone = berlin
+        )
+
+        // Die Wanduhrzeit 05:00 liegt NACH dem Sprung, also CEST (UTC+2) -> 2026-03-29T03:00:00Z.
+        // Eine naive "Mitternacht (00:00 CET, UTC+1) + 300 Minuten"-Rechnung liefert stattdessen
+        // 2026-03-29T04:00:00Z (= 06:00 CEST) - eine Stunde zu spaet, genau der Fehler, den die
+        // Wanduhrzeit-Aufloesung in cutoffInstants() vermeidet.
+        assertEquals(1, cutoffs.size)
+        assertEquals(berlinEp(2026, 3, 29, 5, 0), cutoffs[0])
+    }
+
     // --- clip ---
 
     @Test
@@ -116,6 +139,20 @@ class DndOnCallCutoffResolverTest {
 
         assertEquals(1, clipped.size)
         assertEquals(window, clipped[0])
+    }
+
+    @Test
+    fun `Cutoff exakt auf einer Fenstergrenze klippt das Fenster nicht`() {
+        // clip() filtert mit strikten Ungleichheiten ("it > window.first && it < window.last") -
+        // ein Cutoff exakt auf einer Grenze gilt als ausserhalb und darf das Fenster nicht auf
+        // eine leere/negative Spanne klippen.
+        val window = 1000L..2000L
+
+        val clippedAtStart = DndOnCallCutoffResolver.clip(listOf(window), listOf(1000L))
+        val clippedAtEnd = DndOnCallCutoffResolver.clip(listOf(window), listOf(2000L))
+
+        assertEquals(listOf(window), clippedAtStart)
+        assertEquals(listOf(window), clippedAtEnd)
     }
 
     @Test

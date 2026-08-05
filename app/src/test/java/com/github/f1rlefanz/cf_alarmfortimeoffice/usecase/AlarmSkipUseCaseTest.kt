@@ -264,6 +264,32 @@ class AlarmSkipUseCaseTest {
     }
 
     @Test
+    fun `clearExpiredSkip - Legacy-Flag ohne triggerTime (0) bleibt fuer immer unangetastet`() = runTest {
+        // Ungetestete Kombination: isNextAlarmSkipped=true mit skippedAlarmTriggerTime=0 (Legacy-
+        // Flag aus einer Version vor v1.18.2, oder ein kuenftiger Pfad, der isNextAlarmSkipped
+        // setzt ohne triggerTime zu persistieren). Die Bedingung "skippedAlarmTriggerTime > 0"
+        // haelt dieses Flag bewusst fuer immer stehen - wuerde eine kuenftige "Vereinfachung"
+        // diesen Teil der Bedingung entfernen (z.B. nur noch "now > skippedAlarmTriggerTime"
+        // pruefen), wuerde "now > 0" sofort zutreffen und ein legitimes Flag faelschlich sofort
+        // loeschen.
+        val skipRepo = FakeSkipRepository(
+            state = AlarmSkipState(
+                isNextAlarmSkipped = true,
+                skippedAlarmId = 42,
+                skippedAlarmTriggerTime = 0L
+            )
+        )
+        val repo = FakeAlarmRepository(emptyList())
+        val manager = mockManager()
+
+        val result = AlarmSkipUseCase(skipRepo, repo, manager).clearExpiredSkip()
+
+        assertTrue(result.isSuccess)
+        assertFalse("Ein Flag ohne triggerTime darf NIE als abgelaufen gelten", result.getOrNull() == true)
+        assertFalse("clearSkipStatus darf nicht aufgerufen werden", skipRepo.clearCalled)
+    }
+
+    @Test
     fun `checkAndProcessSkip - Fehltreffer (andere Alarm-ID) laesst ein bestehendes Flag stehen`() = runTest {
         // Dokumentiert bewusst die Luecke, die den urspruenglichen Bug ausgemacht hat: feuert ein
         // ANDERER Alarm als der uebersprungene, raeumt checkAndProcessSkip nichts auf (ALARM_EXECUTED

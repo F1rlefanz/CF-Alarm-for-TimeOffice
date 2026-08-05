@@ -45,6 +45,29 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
         // Wie HueSmartScheduler.getNextAlarmTimes(): unbegrenztes Vorausplanen wuerde bei vielen
         // gesetzten Alarmen unnoetig viele parallele WorkManager-Jobs anlegen.
         private const val MAX_SCHEDULED = 10
+
+        /**
+         * Reine Auswahllogik: welche Weckzeiten bekommen einen Pre-Alarm-Refresh-Job? Faellt hier
+         * innerhalb des Lookahead-Fensters, dedupliziert, sortiert und auf [maxScheduled] gedeckelt.
+         * Getrennt von reschedule() gehalten, damit Cap/Dedup/Fenster-Grenzen ohne WorkManager
+         * testbar sind.
+         */
+        internal fun selectUpcomingTriggerTimes(
+            triggerTimes: List<Long>,
+            now: Long,
+            maxLookaheadDays: Long,
+            maxScheduled: Int
+        ): List<Long> = triggerTimes
+            .filter { it > now && it < now + TimeUnit.DAYS.toMillis(maxLookaheadDays) }
+            .distinct()
+            .sorted()
+            .take(maxScheduled)
+
+        /** Liegt [triggerTime] bereits so nah, dass der berechnete Refresh-Zeitpunkt (Vorlauf vor
+         * der Weckzeit) in der Vergangenheit oder JETZT liegt? Dann lohnt sich fuer diese Runde
+         * kein eigener Job mehr - die naechste Wartung/der naechste Boot deckt es erneut ab. */
+        internal fun isWithinLeadTime(triggerTime: Long, now: Long, leadMillis: Long): Boolean =
+            (triggerTime - leadMillis) - now <= 0
     }
 
     suspend fun reschedule() {
@@ -59,27 +82,22 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
         }
 
         val now = System.currentTimeMillis()
-        val maxTime = now + TimeUnit.DAYS.toMillis(MAX_LOOKAHEAD_DAYS)
-
-        val upcoming = alarms
-            .filter { it.isActive }
-            .map { it.triggerTime }
-            .filter { it > now && it < maxTime }
-            .distinct()
-            .sorted()
-            .take(MAX_SCHEDULED)
+        val upcoming = selectUpcomingTriggerTimes(
+            triggerTimes = alarms.filter { it.isActive }.map { it.triggerTime },
+            now = now,
+            maxLookaheadDays = MAX_LOOKAHEAD_DAYS,
+            maxScheduled = MAX_SCHEDULED
+        )
 
         var scheduled = 0
         upcoming.forEachIndexed { index, triggerTime ->
-            val refreshTime = triggerTime - PRE_ALARM_LEAD_MILLIS
-            val delayMillis = refreshTime - now
-
-            if (delayMillis <= 0) {
+            if (isWithinLeadTime(triggerTime, now, PRE_ALARM_LEAD_MILLIS)) {
                 // Alarm liegt bereits innerhalb des 3h-Vorlaufs - fuer diese Runde nichts mehr zu
                 // planen, die naechste Wartung/der naechste Boot deckt es erneut ab.
                 Logger.d(LogTags.BACKGROUND_WORKER, "Pre-Alarm-Refresh: Alarm bereits innerhalb des 3h-Vorlaufs, uebersprungen")
                 return@forEachIndexed
             }
+            val delayMillis = (triggerTime - PRE_ALARM_LEAD_MILLIS) - now
 
             val workRequest = OneTimeWorkRequestBuilder<CalendarPreAlarmRefreshWorker>()
                 .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)

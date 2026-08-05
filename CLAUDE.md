@@ -158,6 +158,21 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **`_alarmActive = true` VOR `startForeground()`** — sonst schließt sich das Vollbild sofort.
 - **Snooze braucht `snoozeAlarmAction(id)`**, nicht `enhancedAlarmAction(id)` — sonst bricht der
   Maintenance-Sync den Snooze ab.
+- **Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
+  Ausloeser** (Vollbild-Button, Notification-Button) — nicht zwei getrennte Werte. Gelöst NICHT
+  durch einen DataStore-Read in einem der beiden Ausloeser selbst: `AlarmSoundService.
+  onStartCommand()`s `ACTION_SNOOZE_ALARM`-Zweig und `AlarmFullScreenActivity.snoozeAlarm()` sind
+  beide bewusst synchron (Notausgang-Charakter, siehe Snooze-Bug-Historie oben). Stattdessen liest
+  `AlarmReceiver` (bereits in einer Coroutine, `receiverScope.launch`) den Wert EINMAL pro
+  Alarm-Feuern aus `AlarmPrefs` und reicht ihn als Intent-Extra (`AlarmSoundService.
+  EXTRA_SNOOZE_MINUTES`) an beide Ausloeser durch — die lesen dort synchron aus dem Intent.
+  **Dieser Read in `AlarmReceiver.startAlarmSoundService()` MUSS hinter `userUnlocked` gegated
+  sein**, genau wie der Skip- und Silent-Check direkt daneben: `AlarmPrefs` liegt im
+  `@MainDataStore` (CE-Storage), das vor der ersten Entsperrung nicht lesbar ist. Real am
+  Fairphone reproduziert (05.08.2026): der erste Wurf dieses Features hatte den Read ungegatet —
+  auf Direct Boot hätte das den Wecker komplett stumm gelassen (Exception im try/catch
+  verschluckt, `startForegroundService()` nie erreicht), das exakte Gegenteil dessen, wofür
+  `directBootAware="true"` existiert.
 - **`AlarmMaintenanceService`: `stopSelf(startId)`, niemals blankes `stopSelf()`.** Zwei
   überlappende Starts teilen sich `serviceScope`; der Erste, der fertig wird, löst sonst
   `onDestroy()` → `scope.cancel()` aus und reißt den anderen mitten in der Arbeit ab.
@@ -334,6 +349,15 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   sonst steht ein Nutzer ohne 6h-Wartung da. Auf dem Home-Tab bleibt der Handler bewusst **aus**
   — dort ist Zurueck wirklich „App verlassen", und der Systemdefault kann das inkl.
   Predictive-Back besser.
+- **`NavigationState.HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`, nicht nur
+  `returnToTab`.** Beide Screens sind auf zwei Wegen erreichbar (direkt vom Home-Tab „Neue Regel"
+  ODER über den jeweiligen Settings-Screen „Bearbeiten"), und der System-Back (`BackHandler`) UND
+  der Screen-eigene Zurück-Pfeil/Speichern-Button MÜSSEN für denselben Einstiegspfad zum selben
+  Ziel führen. Vor v1.22.0 taten sie das nicht: der Screen-eigene Weg ging immer zur Settings-Liste
+  (falsch bei Direkteinstieg vom Tab), der System-Back-Weg ging immer direkt zum Tab (falsch bei
+  Einstieg über die Settings-Liste) — zwei sich widersprechende, feste Annahmen statt einer
+  gemeinsamen. `cameFromSettingsList` wird an beiden Erzeugungsstellen gesetzt und von beiden
+  Rückwegen gleich ausgewertet. Real am Fairphone verifiziert (05.08.2026, alle 4 Kombinationen).
 
 ### Hue-Vorschau & Test
 
@@ -588,6 +612,16 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `BatteryOptimizationHelper`/`UnusedAppRestrictionsHelper` (siehe deren fehlende/minimale Tests):
   dünne Android-Wrapper ohne eigene Logik werden hier nicht getestet, nur reine Funktionen wie
   `UnusedAppRestrictionsHelper.needsPrompt()`.
+- **Das automatische Onboarding-Gate für den TimeOffice-Health-Prompt hängt an
+  `NavigationViewModel.handleAuthenticationSuccess()`, NICHT nur an `proceedPastGates()`.**
+  `proceedPastGates()` (MainScreen) verkettet die Gates nur, wenn der Nutzer die vorherigen Screens
+  gerade durchläuft. `handleAuthenticationSuccess()` ist der EINZIGE Pfad, der bei jedem
+  App-Vordergrund/Auth-Erfolg automatisch prüft, ob noch ein Gate offen ist — ohne einen eigenen
+  Zweig dafür sehen Bestandsnutzer, die Kalender/Akku/Unused-App-Gates schon vor diesem Feature
+  durchlaufen hatten, den TimeOffice-Prompt NIE automatisch (nur noch über die permanente
+  Status-Tab-Karte). Genau der Fall, für den das Feature gebaut wurde. Fix seit v1.22.0: vierter
+  `else if`-Zweig in `handleAuthenticationSuccess()`, gleiche Gate-Reihenfolge wie
+  `proceedPastGates()`.
 
 ### Auth
 
@@ -609,6 +643,19 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Abmelden heißt: nichts bleibt zurück.** `AuthUseCase.signOut()` verwirft Auth-Daten UND Token
   (inkl. GMS-Cache). `CredentialAuthManager.signOutLocally()` ist nur eine Log-Zeile — sich darauf
   zu verlassen war der Fehler.
+- **`OAuth2TokenManager.refresh()`s Rotation-Chain-Check muss den NEUEN Token gegen die ID des
+  ALTEN prüfen, nicht zwei „previous"-Zeiger gegeneinander.** `TokenData.validateRotation(id)` ist
+  `this.previousRotationId == id` — der korrekte Aufruf ist also
+  `storedToken.validateRotation(currentToken.rotationId)` („ist `storedToken` durch Rotation direkt
+  aus `currentToken` entstanden?"), NICHT `currentToken.validateRotation(storedToken.
+  previousRotationId)` (vergleicht zwei fremde Vorgänger-IDs miteinander — das ist nur bei
+  `storedToken == currentToken` je wahr). Die falsche Variante schlägt bei JEDER legitimen
+  gleichzeitigen Rotation fehl: `OAuth2TokenManager` ist ein Hilt-`@Singleton` ohne Mutex um
+  `getValidToken()`/`refresh()`, und `AlarmMaintenanceService`, `CalendarPreAlarmRefreshWorker`,
+  `CalendarUseCase` und `AuthUseCase.hasCalendarAuthorization()` rufen ihn alle unabhängig auf —
+  zwei nahezu gleichzeitige Refreshs sind der Normalfall, kein Diebstahl. Die falsche Variante
+  löste bei jedem Treffer `tokenRepository.clear()` + Zwangs-Re-Login aus, obwohl der erste Refresh
+  längst erfolgreich war. `TokenDataTest` hält die Rotationsketten-Semantik jetzt fest.
 
 ### Kalender-Datenfluss
 
@@ -621,6 +668,30 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Endlosschleifen-Bremse in `MainScreen`** (~Zeile 101): automatisches Nachladen nur bei
   `error == null`. Sonst: Laden scheitert → `isLoading` false → Effect erneut → Liste leer →
   laden … im Sekundentakt gegen die Google-API (real passiert bei 401). Nicht entfernen.
+- **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter, kein einfaches
+  In-Flight-Flag** (anders als `loadAvailableCalendars()` direkt daneben). Zwei legitime Trigger
+  (`observeCalendarSelection()`s Collector UND `refreshData(forceRefresh=true)`, z. B. der
+  „Aktualisieren"-Button) dürfen beide feuern — ein Boolean-Gate würde den zweiten schlucken statt
+  seine (eigentlich aktuelleren) Ergebnisse durchzulassen. `eventLoadGeneration` (`AtomicLong`)
+  zieht jeder Aufruf beim Start eine Nummer; VOR JEDEM Schreiben in `_localUiState`/
+  `CalendarStateHolder` — inklusive des allerersten `isLoading = true`-Writes und des
+  Lazy-Loading-Resets, nicht nur der späteren Zwischen-/Endergebnisse — prüft er, ob er noch
+  aktuell ist. Ein erster Fix-Versuch prüfte nur die späteren Writes und ließ einen bereits
+  überholten Aufruf trotzdem `isLoading = true` setzen und Events leeren, bevor er sich selbst
+  erst am Ende als überholt erkannte — das ließ die UI mit hängendem Spinner und leerer Liste
+  zurück, schlimmer als der ursprüngliche Bug.
+- **Neue Properties in `CalendarViewModel` (und jedem anderen ViewModel mit `init{}`-Block)
+  gehören VOR den `init{}`-Block, nicht danach.** Kotlin initialisiert Property-Initializer und
+  `init{}`-Blöcke strikt in Textreihenfolge. `viewModelScope.launch{}` läuft auf
+  `Dispatchers.Main.immediate` — bereits auf dem Hauptthread synchron bis zum ersten echten
+  Suspend-Punkt. Da `observeCalendarSelection()`s Quelle ein `StateFlow` mit sofort verfügbarem
+  Wert ist, feuert `.collect{}` beim allerersten Sammeln SOFORT, noch während der eigenen
+  Objekt-Konstruktion. Stand `eventLoadGeneration` textuell nach `init{}`, griff der Code beim
+  allerersten App-Start auf `null` zu — `NullPointerException`, real am Fairphone reproduziert
+  (05.08.2026), von keinem der 329 Unit-Tests gefangen (sie bilden dieses exakte
+  Hilt-Konstruktions-Timing nicht nach). Alle 5 anderen ViewModels mit `init{}`
+  (`ShiftViewModel`/`AuthViewModel`/`AlarmViewModel`/`HueViewModel`/`MainViewModel`) wurden
+  geprüft und deklarieren korrekt alles vor `init{}`.
 
 ### Schicht-Änderungs-Notification & Pre-Alarm-Refresh (seit v1.20.0)
 

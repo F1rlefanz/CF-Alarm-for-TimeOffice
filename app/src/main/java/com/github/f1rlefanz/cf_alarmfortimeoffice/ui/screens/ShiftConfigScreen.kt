@@ -135,7 +135,7 @@ fun ShiftConfigScreen(
                 ) {
                     items(
                         shiftState.currentShiftConfig?.definitions ?: emptyList(),
-                        key = { it.name }
+                        key = { it.id }
                     ) { definition ->
                         ShiftDefinitionCard(
                             definition = definition,
@@ -182,8 +182,8 @@ fun ShiftConfigScreen(
             onSave = { newDefinition ->
                 shiftState.currentShiftConfig?.let { config ->
                     val updatedDefinitions = if (editingDefinition != null) {
-                        config.definitions.map { 
-                            if (it.name == editingDefinition?.name) newDefinition else it 
+                        config.definitions.map {
+                            if (it.id == editingDefinition?.id) newDefinition else it
                         }
                     } else {
                         config.definitions + newDefinition

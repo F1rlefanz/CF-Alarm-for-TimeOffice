@@ -271,7 +271,14 @@ class HueSmartScheduler private constructor() {
                 .debounce(ALARM_CHANGE_DEBOUNCE)
                 .collect { alarms ->
                     Logger.i(LogTags.HUE_BRIDGE, "🔔 SMART-SCHEDULER: Alarms changed (${alarms.size}), recalculating Hue schedule")
-                    calculateAndScheduleNextHealthChecks()
+                    try {
+                        calculateAndScheduleNextHealthChecks()
+                    } catch (e: Exception) {
+                        // Ohne diesen Schutz toetet eine Exception hier den Collector dauerhaft
+                        // (SupervisorJob isoliert, startet ihn aber nicht neu) - Hue wuerde bis zum
+                        // naechsten Prozess-Neustart nie wieder auf Alarm-Aenderungen reagieren.
+                        Logger.e(LogTags.HUE_BRIDGE, "Failed to recalculate Hue schedule after alarm change", e)
+                    }
                 }
         }
     }
@@ -284,8 +291,18 @@ class HueSmartScheduler private constructor() {
 
         // Master-Pause: greift VOR jeder WorkManager-Planung, auch bei reaktiver Neuberechnung
         // (observeAlarmChanges()) und manuellem Trigger (recalculateSchedule()) - beide laufen
-        // ueber diese Funktion.
-        if (resolveMasterPausePrefs()?.pausedNow() == true) {
+        // ueber diese Funktion OHNE eigenes try/catch (siehe dort). Anders als isBridgeConfigured()
+        // direkt darunter war dieser Read bisher ungeschuetzt. Bei einem Lesefehler wird bewusst
+        // NICHT pausiert (fail-open): eine verpasste Pause fuer einen einzelnen Planungslauf ist
+        // harmlos (naechster Alarm-Wechsel/App-Start liest erneut), ein dauerhaft totes Scheduling
+        // waere es nicht.
+        val isPaused = try {
+            resolveMasterPausePrefs()?.pausedNow() == true
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to check master-pause state, assuming not paused", e)
+            false
+        }
+        if (isPaused) {
             workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
             workManager.cancelUniqueWork(GENERIC_HEALTH_CHECK_WORK)
             workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
@@ -567,7 +584,14 @@ class HueSmartScheduler private constructor() {
         Logger.i(LogTags.HUE_BRIDGE, "🔄 SMART-SCHEDULER: Manual schedule recalculation triggered")
 
         schedulerScope.launch {
-            calculateAndScheduleNextHealthChecks()
+            try {
+                calculateAndScheduleNextHealthChecks()
+            } catch (e: Exception) {
+                // Aufgerufen u.a. direkt nach erfolgreichem Bridge-Pairing
+                // (HueBridgeConnectionManager.setConnection()) - eine unbehandelte Exception hier
+                // wuerde sonst bis zum Thread-Default-Handler durchreichen und die App crashen.
+                Logger.e(LogTags.HUE_BRIDGE, "Failed to recalculate Hue schedule", e)
+            }
         }
     }
 

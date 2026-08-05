@@ -597,6 +597,22 @@ class AlarmViewModel @Inject constructor(
                     return@launch
                 }
 
+                // Master-Pause erneut pruefen: die suspend-Kette bis hierhin (delete/save/schedule
+                // folgen noch) kann Master-Pause ueberholen, die zwischenzeitlich (z.B. auf einem
+                // anderen Tab) aktiviert wurde. Anders als AlarmUseCase.syncAlarms() hat dieser
+                // manuelle Erstellungspfad keinen zentralen Backstop - der einmalige Check ganz
+                // oben deckt nur den Start der Coroutine ab, nicht den tatsaechlichen Persistenz-
+                // /Scheduling-Moment.
+                if (masterPausePrefs.pausedNow()) {
+                    _manualAlarmState.value = _manualAlarmState.value.copy(
+                        isCreating = false,
+                        error = AppErrorState.validationError(
+                            "Hintergrunddienste sind pausiert – bitte zuerst die Master-Pause beenden"
+                        )
+                    )
+                    return@launch
+                }
+
                 // Lösche vorherigen manuellen Alarm (nur einer zur Zeit)
                 state.activeManualAlarm?.let { existingAlarm ->
                     alarmUseCase.deleteAlarm(existingAlarm.id)

@@ -39,6 +39,16 @@ import javax.inject.Inject
  * ✅ Strukturelle Gleichheit für distinctUntilChanged()
  * ✅ Memory-efficient durch effiziente Copy-Operations
  */
+/**
+ * PURE, TESTBAR: Ergebnis von [CalendarViewModel.resolveCalendarAuthorizationOutcome].
+ * Als eigenständiger Typ statt zweier loser Booleans, damit ein Test die Kombination
+ * eindeutig gegen beide Felder prüfen kann.
+ */
+internal data class CalendarAuthorizationOutcome(
+    val everythingFailed: Boolean,
+    val authStillValid: Boolean
+)
+
 @Immutable
 data class CalendarUiState(
     val isLoading: Boolean = false,
@@ -197,9 +207,29 @@ class CalendarViewModel @Inject constructor(
      */
     @Volatile
     private var isCalendarLoadingInProgress = false
-    @Volatile 
+    @Volatile
     private var lastCalendarLoadTime = 0L
-    
+
+    /**
+     * RACE-GUARD: Monotonic generation counter für loadEventsForSelectedCalendars().
+     *
+     * loadAvailableCalendars() (oben) wehrt sich mit einem simplen In-Flight-Flag gegen
+     * Überlappung - das passt dort, weil ein zweiter Aufruf während des ersten schlicht
+     * verworfen wird. Bei loadEventsForSelectedCalendars() geht das nicht: observeCalendarSelection()
+     * (Zeile ~249) UND refreshData(forceRefresh = true) (Zeile ~686, z.B. "Aktualisieren"-Button)
+     * dürfen beide legitim feuern, und ein simples Boolean-Gate würde den zweiten Aufruf einfach
+     * schlucken statt seine - eigentlich aktuelleren - Ergebnisse durchzulassen.
+     *
+     * Stattdessen zieht jeder Aufruf beim Start eine eigene Generation-Nummer. Bevor er
+     * Zwischenergebnisse ODER das Endergebnis in _localUiState/CalendarStateHolder schreibt,
+     * prüft er, ob seine Nummer noch die aktuellste ist. Ist inzwischen ein neuerer Aufruf
+     * gestartet, gilt dieser Lauf als überholt und verwirft seine (potenziell aus einem
+     * langsameren Netzwerk-Call stammenden) Ergebnisse, statt sie über die bereits korrekten
+     * Ergebnisse des neueren Laufs zu schreiben - inkl. des daran hängenden
+     * alarmUseCase.syncAlarms() mit veralteten Events.
+     */
+    private val eventLoadGeneration = java.util.concurrent.atomic.AtomicLong(0)
+
     private fun checkTokenValidity() {
         viewModelScope.launch {
             val hasValidToken = calendarUseCase.hasValidAccessToken()
@@ -450,14 +480,32 @@ class CalendarViewModel @Inject constructor(
         loadAll: Boolean = false // LAZY LOADING: Default ist Lazy Loading
     ) {
         viewModelScope.launch {
+            // RACE-GUARD: Nummer für diesen Aufruf ziehen, bevor irgendein suspend-Call
+            // stattfindet - siehe eventLoadGeneration weiter oben.
+            val myGeneration = eventLoadGeneration.incrementAndGet()
+
             val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds()
-                .getOrElse { 
+                .getOrElse {
                     Logger.w(LogTags.CALENDAR, "Could not get selected calendar IDs")
-                    emptySet() 
+                    emptySet()
                 }
             
             if (selectedIds.isEmpty()) {
                 Logger.w(LogTags.CALENDAR, "No calendars selected for event loading")
+                return@launch
+            }
+
+            // RACE-GUARD: Erneut pruefen, BEVOR irgendein UI-sichtbarer State geschrieben wird -
+            // waehrend getCurrentSelectedCalendarIds() suspendierte, koennte ein neuerer Aufruf
+            // bereits gestartet UND fertig sein. Ohne diesen Check wuerden die naechsten beiden
+            // Schreibvorgaenge (isLoading=true, Lazy-Reset) trotzdem laufen und dem neueren,
+            // schon korrekten Ergebnis den Boden unter den Fuessen wegziehen - der spaetere
+            // Staleness-Check weiter unten (vgl. eventLoadGeneration) verhindert zwar den
+            // fehlerhaften finalen Schreibvorgang, stellt aber isLoading/events NICHT wieder her.
+            // Zwischen diesem Check und den beiden Schreibvorgaengen liegt kein weiterer
+            // suspend-Punkt, das Fenster ist damit vollstaendig geschlossen.
+            if (myGeneration != eventLoadGeneration.get()) {
+                Logger.d(LogTags.CALENDAR, "loadEventsForSelectedCalendars superseded before any write (generation $myGeneration)")
                 return@launch
             }
 
@@ -513,7 +561,18 @@ class CalendarViewModel @Inject constructor(
                         singleCalendarResult.onSuccess { events ->
                             allEvents.addAll(events)
                             processedCalendars++
-                            
+
+                            // RACE-GUARD: Ein neuerer Aufruf von loadEventsForSelectedCalendars()
+                            // läuft bereits (siehe eventLoadGeneration). allEvents/processedCalendars
+                            // laufen intern weiter mit, damit spätere Berechnungen in dieser
+                            // Coroutine konsistent bleiben - aber es wird nichts mehr nach außen
+                            // (UI-State/CalendarStateHolder) geschrieben, sonst überschreibt dieser
+                            // langsamere, veraltete Lauf die bereits korrekten Ergebnisse des
+                            // neueren Laufs.
+                            if (myGeneration != eventLoadGeneration.get()) {
+                                return@onSuccess
+                            }
+
                             // PROGRESSIVE UI UPDATE: Update UI with partial results
                             val sortedEvents = allEvents.sortedBy { it.startTime }
                             
@@ -563,9 +622,7 @@ class CalendarViewModel @Inject constructor(
                 
                 // Sind ALLE Kalender gescheitert, war das kein erfolgreicher Ladevorgang -
                 // egal, was der bisherige Code behauptete.
-                val everythingFailed = failedCalendars > 0 && failedCalendars == selectedIds.size
-                val failure = firstFailure
-
+                //
                 // calendarAuthorizationValid DARF NICHT MEHR BEDINGUNGSLOS true SEIN.
                 //
                 // Frueher stand hier hart `calendarAuthorizationValid = true`, waehrend die
@@ -586,7 +643,15 @@ class CalendarViewModel @Inject constructor(
                 // Nur wenn ALLE scheitern, ist die Autorisierung als kaputt zu melden. Ein
                 // einzelner fehlschlagender Kalender (geloescht, nicht mehr freigegeben) darf
                 // nicht die ganze Anmeldung in Frage stellen.
-                val authStillValid = !everythingFailed
+                //
+                // Ausgelagert in resolveCalendarAuthorizationOutcome() (siehe companion object
+                // unten) - pur und testbar, damit dieser bereits einmal reale Bug nicht
+                // unbemerkt zurueckkehren kann. Siehe CalendarViewModelTest.
+                val failure = firstFailure
+                val (everythingFailed, authStillValid) = resolveCalendarAuthorizationOutcome(
+                    failedCalendars = failedCalendars,
+                    totalSelectedCalendars = selectedIds.size
+                )
 
                 // Fehler sichtbar machen, statt eine leere Liste als Wahrheit zu verkaufen.
                 val failureMessage = if (everythingFailed && failure != null) {
@@ -600,6 +665,19 @@ class CalendarViewModel @Inject constructor(
                         LogTags.CALENDAR,
                         "❌ Alle $failedCalendars Kalender fehlgeschlagen - Autorisierung wird als ungueltig gemeldet"
                     )
+                }
+
+                // RACE-GUARD: Inzwischen ist ein neuerer Aufruf gestartet - dessen Ergebnisse
+                // sind schon (oder werden gerade) korrekt geschrieben. isLoading bewusst NICHT
+                // hier zuruecksetzen: der neuere, noch laufende Aufruf hat es selbst auf true
+                // gesetzt, und dieser veraltete Lauf darf das nicht unter ihm wegziehen. Auch
+                // KEIN syncAlarms() mit diesen veralteten Events - siehe eventLoadGeneration.
+                if (myGeneration != eventLoadGeneration.get()) {
+                    Logger.d(
+                        LogTags.CALENDAR,
+                        "Discarding stale loadEventsForSelectedCalendars results (generation $myGeneration superseded by ${eventLoadGeneration.get()})"
+                    )
+                    return@launch
                 }
 
                 updateLocalStateImmediate { state ->
@@ -992,5 +1070,32 @@ class CalendarViewModel @Inject constructor(
         // Note: ViewModelScope automatically cancels all coroutines
         // CalendarRepository cleanup wird durch DI Container gehandhabt
     }
-    
+
+    companion object {
+        /**
+         * PURE, TESTBAR: Entscheidet anhand der Kalender-Ladeergebnisse, ob die
+         * Google-Autorisierung noch als gueltig gilt.
+         *
+         * Bewusst aus loadEventsForSelectedCalendars() ausgelagert - dort haengt daran ein
+         * bereits einmal real aufgetretener Bug (siehe Kommentar am Aufrufer):
+         * calendarAuthorizationValid stand fest auf true, obwohl JEDER ausgewaehlte Kalender
+         * an einem toten Token gescheitert war, und versteckte damit den einzigen Weg zurueck
+         * ("Kalender-Zugriff erneuern"). Als reine Funktion ohne Android-/Coroutine-Abhaengigkeiten
+         * laesst sich genau diese Kombination in CalendarViewModelTest ohne Mocking festhalten.
+         *
+         * Regel: Nur wenn ALLE ausgewaehlten Kalender fehlgeschlagen sind, gilt die Autorisierung
+         * als kaputt. Ein einzelner fehlschlagender Kalender (geloescht, nicht mehr freigegeben)
+         * darf die Anmeldung nicht in Frage stellen.
+         */
+        internal fun resolveCalendarAuthorizationOutcome(
+            failedCalendars: Int,
+            totalSelectedCalendars: Int
+        ): CalendarAuthorizationOutcome {
+            val everythingFailed = failedCalendars > 0 && failedCalendars == totalSelectedCalendars
+            return CalendarAuthorizationOutcome(
+                everythingFailed = everythingFailed,
+                authStillValid = !everythingFailed
+            )
+        }
+    }
 }

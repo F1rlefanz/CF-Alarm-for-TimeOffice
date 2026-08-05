@@ -74,7 +74,7 @@ fun ShiftSelectorDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = shift.name, // User-definierter Name
                                         style = MaterialTheme.typography.titleMedium,

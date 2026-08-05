@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,7 +26,7 @@ import javax.inject.Singleton
  * `setOngoing(true)`: die Notification soll nicht versehentlich wegwischbar sein, solange sie
  * noch wirkt - sonst verliert der Nutzer den Korrektur-Zugriff, obwohl der Dimmer weiterhin läuft.
  * [cancel] raeumt sie exakt dann weg, wenn kein Dimm-Fenster mehr aktiv ist ODER der Nutzer-Toggle
- * ausgeschaltet ist (noch ohne Settings-Screen-Anbindung, siehe [DimOverlayPrefs]).
+ * ausgeschaltet ist (siehe [DimOverlayPrefs.correctionNotificationEnabled]).
  */
 @Singleton
 class DimCorrectionNotifier @Inject constructor(
@@ -68,6 +69,14 @@ class DimCorrectionNotifier @Inject constructor(
                 pauseResumeIntent
             )
             .build()
+
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+            // notify() wuerde hier sonst lautlos verschlucken - kein Log, keine Exception. Ohne
+            // diesen Check sieht eine fehlende POST_NOTIFICATIONS-Berechtigung im Logcat exakt
+            // gleich aus wie der (gefixte) Bug "Toggle loest keine Neubewertung aus".
+            Logger.w(LogTags.DIMMER, "Dimmer-Korrektur-Notification unterdrueckt: Benachrichtigungen fuer die App sind deaktiviert")
+            return
+        }
 
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         notificationManager.notify(NOTIFICATION_ID, notification)

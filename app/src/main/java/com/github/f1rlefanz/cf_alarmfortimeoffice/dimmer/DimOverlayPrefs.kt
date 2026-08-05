@@ -48,9 +48,8 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_NIGHT_DEFAULT_STRENGTH = intPreferencesKey("dim_night_default_strength")
         private val KEY_NIGHT_DEFAULT_WARMTH = intPreferencesKey("dim_night_default_warmth")
 
-        // Dimmer-Korrektur-Notification (Feature C) - Override-Zustand + Settings-Toggle. Der
-        // Toggle-Key ist bereits hier angelegt, aber noch NICHT an einen Settings-Screen
-        // angebunden (Default AUS deckt das ab - siehe CLAUDE.md "Dimmer-Korrektur-Notification").
+        // Dimmer-Korrektur-Notification (Feature C) - Override-Zustand + Settings-Toggle. Angebunden
+        // ueber NotificationSettingsViewModel/SettingsTabContent (Default AUS).
         private val KEY_OVERRIDE_STRENGTH_DELTA = intPreferencesKey("dim_override_strength_delta")
         private val KEY_OVERRIDE_PAUSED = booleanPreferencesKey("dim_override_paused")
         private val KEY_OVERRIDE_WINDOW_END = longPreferencesKey("dim_override_window_end")
@@ -163,8 +162,8 @@ class DimOverlayPrefs @Inject constructor(
         )
     }
 
-    /** Settings-Toggle fuer die Dimmer-Korrektur-Notification. Default AUS - noch nicht an einen
-     * Settings-Screen angebunden, siehe Klassen-/Feld-Kommentar oben. */
+    /** Settings-Toggle fuer die Dimmer-Korrektur-Notification. Default AUS - angebunden ueber
+     * NotificationSettingsViewModel/SettingsTabContent. */
     val correctionNotificationEnabled: Flow<Boolean> = dataStore.data.map {
         it[KEY_CORRECTION_NOTIFICATION_ENABLED] ?: false
     }

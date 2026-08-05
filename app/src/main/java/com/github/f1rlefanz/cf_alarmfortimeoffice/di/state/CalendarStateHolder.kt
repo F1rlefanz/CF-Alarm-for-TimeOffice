@@ -28,16 +28,8 @@ class CalendarStateHolder @Inject constructor() {
     private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
 
-    // Loading State (nur Events)
-    private val _isLoadingEvents = MutableStateFlow(false)
-    val isLoadingEvents: StateFlow<Boolean> = _isLoadingEvents.asStateFlow()
-
     fun updateEvents(events: List<CalendarEvent>) {
         _events.value = events
-    }
-
-    fun setLoadingEvents(isLoading: Boolean) {
-        _isLoadingEvents.value = isLoading
     }
 
     fun clearEvents() {

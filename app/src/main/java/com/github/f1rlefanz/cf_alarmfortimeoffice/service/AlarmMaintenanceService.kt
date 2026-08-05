@@ -91,6 +91,9 @@ class AlarmMaintenanceService : Service() {
     lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 
     @Inject
+    lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+
+    @Inject
     lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 
     @Inject
@@ -482,6 +485,19 @@ class AlarmMaintenanceService : Service() {
                 dimSchedule.scheduleNextTransition()
             } catch (e: Exception) {
                 Logger.w(LogTags.DIMMER, "Wartung: Dimm-Reschedule fehlgeschlagen", e)
+            }
+
+            // DND-Steuerung: neu erkannte Schichten in den Nicht-stoeren-Zeitplan uebernehmen.
+            // Gleiches Muster wie der Dimmer-Reschedule oben - eigenes try/catch, ein DND-Fehler
+            // darf die Wartung nie beeintraechtigen. Bislang fehlte dieser Block komplett: die
+            // 6h-Wartung reschedulte den Dimmer-Tick, aber nie den DND-Tick, wodurch "Waehrend der
+            // Dienstzeit"/Rufbereitschaft-Fenster stale wurden, sobald sich Schicht-Alarme
+            // ausserhalb eines App-Neustarts aenderten.
+            try {
+                dndSchedule.applyCurrentState()
+                dndSchedule.scheduleNextTransition()
+            } catch (e: Exception) {
+                Logger.w(LogTags.DND, "Wartung: DND-Reschedule fehlgeschlagen", e)
             }
 
             // Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) neu planen. Eigenes

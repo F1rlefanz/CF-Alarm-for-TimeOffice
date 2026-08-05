@@ -343,7 +343,14 @@ class AlarmManagerService(
 
         return PendingIntent.getActivity(
             application,
-            alarmId + 10000, // Offset to avoid conflicts
+            // Der Offset ist KEIN Kollisionsschutz gegen createAlarmPendingIntent()'s requestCode
+            // (=alarmId): PendingIntent.getActivity() und .getBroadcast() liegen im System auf
+            // getrennten Namensraeumen (Android unterscheidet den "Typ" der Operation als Teil des
+            // Schluessels), zwei verschiedene Alarme koennen wegen der Injektivitaet von x -> x+10000
+            // auch untereinander nicht kollidieren. Bleibt trotzdem stehen: harmlos, und ein zweiter
+            // getActivity()-Aufruf mit requestCode=alarmId anderswo (aktuell: keiner) wuerde sonst
+            // real kollidieren.
+            alarmId + 10000,
             showIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -561,6 +568,9 @@ class AlarmManagerService(
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 setPackage(context.packageName)
             }
+            // Gleicher +10000-Offset wie createShowAlarmIntent() - siehe Kommentar dort, warum das
+            // kein aktiver Kollisionsschutz ist (getrennter PendingIntent-Namensraum getActivity()
+            // vs. getBroadcast()), sondern nur die requestCode-Konvention konsistent haelt.
             val showPendingIntent = PendingIntent.getActivity(
                 context, id + 10000, showIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

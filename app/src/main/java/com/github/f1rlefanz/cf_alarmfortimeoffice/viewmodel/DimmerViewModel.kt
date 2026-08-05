@@ -7,11 +7,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -84,16 +83,13 @@ class DimmerViewModel @Inject constructor(
         val warmth: Int
     )
 
-    private val _shiftNames = MutableStateFlow<List<String>>(emptyList())
-    /** Namen der erkannten Schicht-Definitionen, fuer die Ausnahme-Chips an der Nacht-Standard-Karte. */
-    val shiftNames: StateFlow<List<String>> = _shiftNames.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            _shiftNames.value = shiftUseCase.getCurrentShiftConfig().getOrNull()
-                ?.definitions?.map { it.name } ?: emptyList()
-        }
-    }
+    /** Namen der erkannten Schicht-Definitionen, fuer die Ausnahme-Chips an der Nacht-Standard-Karte.
+     * Reaktiv statt Einmal-Snapshot - eine Schicht-Umbenennung/-Neuanlage ohne App-Neustart muss
+     * sofort sichtbar werden. */
+    val shiftNames: StateFlow<List<String>> =
+        shiftUseCase.shiftConfig
+            .map { config -> config.definitions.map { it.name } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Schaltet eine Schicht als Ausnahme vom Nacht-Standard ein/aus - keine DimRule dafuer noetig. */
     fun toggleNightDefaultExcludedShift(shiftName: String) = viewModelScope.launch {

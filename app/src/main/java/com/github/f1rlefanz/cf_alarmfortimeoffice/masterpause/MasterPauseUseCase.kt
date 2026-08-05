@@ -50,23 +50,75 @@ class MasterPauseUseCase @Inject constructor(
             .onFailure { error ->
                 Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Loeschen der Alarme fehlgeschlagen", error)
             }
-        AlarmMaintenanceService.cancelNext(context)
-        dimSchedule.disable()
-        dndSchedule.disable()
-        hueSmartScheduler.cleanup()
-        calendarPreAlarmRefreshScheduler.cancelAll()
+        // Jeder Schritt eigenes try/catch (Vorbild: BootReceiver.performCompleteSystemRecovery()) -
+        // sonst reisst ein einzelner Fehler alle NACHFOLGENDEN Schritte mit ab, obwohl das
+        // Pause-Flag oben bereits geschrieben ist: UI und Flag saegen "pausiert", aber ein
+        // spaeterer Schritt (z.B. Hue-Cleanup) liefe unbemerkt weiter.
+        try {
+            AlarmMaintenanceService.cancelNext(context)
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: 6h-Wartung canceln fehlgeschlagen", e)
+        }
+        try {
+            dimSchedule.disable()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Dimmer-Disable fehlgeschlagen", e)
+        }
+        try {
+            dndSchedule.disable()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: DND-Disable fehlgeschlagen", e)
+        }
+        try {
+            hueSmartScheduler.cleanup()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Hue-Cleanup fehlgeschlagen", e)
+        }
+        try {
+            calendarPreAlarmRefreshScheduler.cancelAll()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Pre-Alarm-Refresh-Cancel fehlgeschlagen", e)
+        }
         Logger.business(LogTags.MASTER_PAUSE, "Hintergrunddienste pausiert")
     }
 
     suspend fun resume() {
         prefs.setPaused(false)
         directBootAlarmStore.savePaused(false)
-        AlarmMaintenanceService.scheduleNext(context)
-        AlarmMaintenanceService.start(context)
-        dimSchedule.enable()
-        dndSchedule.enable()
-        hueSmartScheduler.initializeSmartScheduling()
-        calendarPreAlarmRefreshScheduler.reschedule()
+        // Jeder Schritt eigenes try/catch (Vorbild: BootReceiver.performCompleteSystemRecovery()) -
+        // sonst reisst ein einzelner Fehler alle NACHFOLGENDEN Schritte mit ab, obwohl das
+        // Pause-Flag oben bereits geschrieben ist: UI und Flag saegen "fortgesetzt", aber ein
+        // spaeterer Schritt (z.B. Hue-Init) liefe unbemerkt nicht wieder an.
+        try {
+            AlarmMaintenanceService.scheduleNext(context)
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: 6h-Wartung neu planen fehlgeschlagen", e)
+        }
+        try {
+            AlarmMaintenanceService.start(context)
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: 6h-Wartung starten fehlgeschlagen", e)
+        }
+        try {
+            dimSchedule.enable()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Dimmer-Enable fehlgeschlagen", e)
+        }
+        try {
+            dndSchedule.enable()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: DND-Enable fehlgeschlagen", e)
+        }
+        try {
+            hueSmartScheduler.initializeSmartScheduling()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Hue-Init fehlgeschlagen", e)
+        }
+        try {
+            calendarPreAlarmRefreshScheduler.reschedule()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
+        }
         Logger.business(LogTags.MASTER_PAUSE, "Hintergrunddienste fortgesetzt")
     }
 }

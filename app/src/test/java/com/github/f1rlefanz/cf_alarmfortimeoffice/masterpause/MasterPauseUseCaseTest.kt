@@ -127,4 +127,29 @@ class MasterPauseUseCaseTest {
         verify(f.hueSmartScheduler, times(1)).initializeSmartScheduling()
         verify(f.calendarPreAlarmRefreshScheduler, times(1)).reschedule()
     }
+
+    @Test
+    fun `pause - eine fehlgeschlagene Abhaengigkeit blockiert die anderen NICHT`() = runTest {
+        val f = buildFixture()
+        whenever(f.dimSchedule.disable()).thenThrow(RuntimeException("boom"))
+
+        f.useCase.pause()
+
+        // dimSchedule.disable() selbst schlug fehl, aber alle NACHFOLGENDEN Schritte muessen trotzdem laufen.
+        verify(f.dndSchedule, times(1)).disable()
+        verify(f.hueSmartScheduler, times(1)).cleanup()
+        verify(f.calendarPreAlarmRefreshScheduler, times(1)).cancelAll()
+    }
+
+    @Test
+    fun `resume - eine fehlgeschlagene Abhaengigkeit blockiert die anderen NICHT`() = runTest {
+        val f = buildFixture()
+        whenever(f.dimSchedule.enable()).thenThrow(RuntimeException("boom"))
+
+        f.useCase.resume()
+
+        verify(f.dndSchedule, times(1)).enable()
+        verify(f.hueSmartScheduler, times(1)).initializeSmartScheduling()
+        verify(f.calendarPreAlarmRefreshScheduler, times(1)).reschedule()
+    }
 }

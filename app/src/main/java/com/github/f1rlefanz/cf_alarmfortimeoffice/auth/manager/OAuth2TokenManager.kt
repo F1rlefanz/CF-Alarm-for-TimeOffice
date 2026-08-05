@@ -212,13 +212,30 @@ class OAuth2TokenManager(
             Logger.i(LogTags.TOKEN, "🔄 Starting token refresh...")
             
             // Validate rotation chain (Security Check)
+            //
+            // Zwei legitime Faelle, KEIN Security Violation:
+            // 1) storedToken.rotationId == currentToken.rotationId: seit dem Einlesen von
+            //    currentToken hat niemand sonst rotiert - Normalfall.
+            // 2) storedToken.validateRotation(currentToken.rotationId) == true, d.h.
+            //    storedToken.previousRotationId == currentToken.rotationId: ein GLEICHZEITIGER
+            //    Aufrufer (z.B. AlarmMaintenanceService und CalendarPreAlarmRefreshWorker teilen
+            //    sich diesen @Singleton ohne Mutex) hat currentToken bereits erfolgreich zu
+            //    storedToken rotiert - die Kette ist intakt, nur zeitlich ueberholt.
+            //
+            // Nur wenn storedToken WEDER identisch mit currentToken ist NOCH direkt aus ihm
+            // hervorgegangen ist, handelt es sich um eine echte Ketten-Verletzung (Replay/Diebstahl):
+            // ein Token, das nicht von dem abstammt, was dieser Aufrufer zuletzt kannte.
             val storedToken = tokenRepository.get()
-            if (storedToken != null && !currentToken.validateRotation(storedToken.previousRotationId)) {
-                Logger.e(LogTags.TOKEN, "⚠️ Token rotation chain broken - possible theft!")
-                tokenRepository.clear()
-                return@withContext Result.failure(
-                    TokenException.SecurityViolation("Token rotation invalid")
-                )
+            if (storedToken != null) {
+                val isSameToken = storedToken.rotationId == currentToken.rotationId
+                val isLegitimateConcurrentRotation = storedToken.validateRotation(currentToken.rotationId)
+                if (!isSameToken && !isLegitimateConcurrentRotation) {
+                    Logger.e(LogTags.TOKEN, "⚠️ Token rotation chain broken - possible theft!")
+                    tokenRepository.clear()
+                    return@withContext Result.failure(
+                        TokenException.SecurityViolation("Token rotation invalid")
+                    )
+                }
             }
             
             // Refresh based on provider

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory
@@ -11,6 +12,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
@@ -101,7 +103,19 @@ class DataStoreTokenRepository @Inject constructor(
     }
     
     override fun observe(): Flow<TokenData?> {
+        // ✅ Muss wie get() degradieren, nicht crashen: wird der verschluesselte Store
+        // unlesbar (EncryptedPreferencesSerializer.readFrom() wirft TinkEncryptionException,
+        // kein corruptionHandler konfiguriert), wuerde die Exception sonst ungefangen aus
+        // tokenDataStore.data heraus propagieren - direkt in AuthViewModel.observeTokenLoss()s
+        // collect{} (viewModelScope.launch ohne try/catch, laeuft ab init{}) und die App bei
+        // JEDEM Start abstuerzen. .catch{} faengt den Upstream-Fehler ab (nicht nur den
+        // JSON-Decode innerhalb von .map{}) und emittiert "kein Token" - dieselbe Degradation
+        // wie get()'s aeusseres try/catch.
         return tokenDataStore.data
+            .catch { e ->
+                Logger.e(LogTags.TOKEN, "Error reading token DataStore (observe)", e)
+                emit(emptyPreferences())
+            }
             .map { preferences ->
                 preferences[TOKEN_KEY]?.let { tokenJson ->
                     try {

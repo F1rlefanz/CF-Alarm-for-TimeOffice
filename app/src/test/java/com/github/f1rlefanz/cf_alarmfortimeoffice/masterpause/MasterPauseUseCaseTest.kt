@@ -3,7 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
-import android.net.Uri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
@@ -12,8 +11,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
-import org.mockito.Mockito
-import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
@@ -53,16 +50,10 @@ class MasterPauseUseCaseTest {
         val prefs = mock<MasterPausePrefs>()
         val alarmUseCase = mock<IAlarmUseCase>()
         val dimSchedule = mock<DimScheduleUseCase>()
-        // DndScheduleUseCase.CONDITION_ID ist ein "...".toUri() Companion-Feld - das laedt beim
-        // ERSTEN Zugriff auf die Klasse (auch nur zum Mocken) android.net.Uri.parse(), das im
-        // Unit-Test-JVM ohne echtes Android ungemockt null liefert und an Kotlins eingebautem
-        // Nicht-Null-Check von toUri() mit einer NullPointerException scheitert. Ein statischer
-        // Mock von Uri.parse() waehrend der Klasseninitialisierung umgeht das, ohne Produktionscode
-        // anzufassen.
-        val dndSchedule = Mockito.mockStatic(Uri::class.java).use { staticUri ->
-            staticUri.`when`<Uri> { Uri.parse(any()) }.thenReturn(mock())
-            mock<DndScheduleUseCase>()
-        }
+        // Kein Uri-Sondermock mehr noetig: DndScheduleUseCase.CONDITION_ID ist `by lazy`, sein
+        // Uri.parse() laeuft also erst beim tatsaechlichen Gebrauch am Geraet - nicht schon bei der
+        // Companion-Initialisierung, die das blosse Mocken der Klasse ausloest.
+        val dndSchedule = mock<DndScheduleUseCase>()
         val hueSmartScheduler = mock<HueSmartScheduler>()
         val calendarPreAlarmRefreshScheduler = mock<CalendarPreAlarmRefreshScheduler>()
         val directBootAlarmStore = mock<DirectBootAlarmStore>()

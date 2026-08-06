@@ -13,9 +13,11 @@ import android.service.notification.Condition
 import android.service.notification.ZenPolicy
 import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.annotation.RequiresApi
+import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -65,7 +67,8 @@ class DndScheduleUseCase @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val alarmUseCase: IAlarmUseCase,
     private val dimSchedule: DimScheduleUseCase,
-    private val prefs: DndPrefs
+    private val prefs: DndPrefs,
+    private val masterPausePrefs: MasterPausePrefs
 ) {
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DND_SCHED_TICK"
@@ -74,9 +77,52 @@ class DndScheduleUseCase @Inject constructor(
         // AlarmMaintenanceService) wiederverwenden - eigene, unabhaengige Alarm-Kette.
         private const val REQ_DND_TICK = 7712
 
-        private val CONDITION_ID: Uri = "condition://com.github.f1rlefanz.cf_alarmfortimeoffice/dnd".toUri()
+        /**
+         * Bewusst `by lazy`, nicht eager: `toUri()` ruft `Uri.parse()`, und das ist im Unit-Test-JVM
+         * (`isReturnDefaultValues`) ein Stub, der `null` liefert - an Kotlins Nicht-Null-Check von
+         * `toUri()` scheitert das mit einer NPE WAEHREND der Companion-Initialisierung. Eager
+         * ausgewertet reisst das jeden Zugriff auf irgendein Companion-Mitglied dieser Klasse mit
+         * (`ExceptionInInitializerError`) - und weil eine gescheiterte Klassen-Initialisierung im
+         * selben JVM dauerhaft ist, danach auch jeden fremden Test, der die Klasse nur mocken will
+         * (`NoClassDefFoundError`, real passiert mit `MasterPauseUseCaseTest`). Lazy zieht `Uri.parse`
+         * erst beim tatsaechlichen Gebrauch auf dem Geraet - Produktionsverhalten unveraendert.
+         */
+        private val CONDITION_ID: Uri by lazy { "condition://com.github.f1rlefanz.cf_alarmfortimeoffice/dnd".toUri() }
         private const val RULE_NAME = "CFAlarm Ruhezeit"
+
+        /** Retry-Abstand, wenn der Alarm-Bestand gerade NICHT lesbar war (transienter Fehler). */
+        private const val RETRY_MS = 15 * 60_000L
+
+        /** Keep-alive-Abstand, wenn eine Fenster-Quelle AN ist, aber gerade kein Fenster-Rand in
+         *  der Zukunft liegt (z. B. Urlaubswoche ohne Schichten). */
+        private const val KEEPALIVE_MS = 6 * 60 * 60_000L
+
+        /**
+         * Naechster Tick, wenn KEIN Fenster-Rand mehr in der Zukunft liegt. Bewusst eine eigene
+         * Kopie neben [DimScheduleUseCase.fallbackTick] - die beiden Ketten (eigene Request-Codes,
+         * unabhaengig deaktivierbar) bleiben absichtlich getrennt.
+         *
+         * Ohne den Fallback reisst die Kette hier endgueltig ab: nach einer Urlaubswoche ohne
+         * Schichten ist die Fensterliste leer, der letzte Tick cancelt den Alarm - und der spaeter
+         * eintreffende neue Dienstplan wird von Aufrufern synchronisiert (CalendarViewModel/
+         * ShiftViewModel/CalendarPreAlarmRefreshWorker), die DND NICHT nacharmieren. "Waehrend der
+         * Dienstzeit" blieb dadurch bis zum naechsten Reboot wirkungslos. Ist keine Fenster-Quelle
+         * aktiv, bleibt die Kette self-cleaning (`null` = Alarm abbestellen).
+         */
+        @VisibleForTesting
+        internal fun fallbackTick(now: Long, alarmReadFailed: Boolean, anySourceEnabled: Boolean): Long? = when {
+            alarmReadFailed -> now + RETRY_MS
+            anySourceEnabled -> now + KEEPALIVE_MS
+            else -> null
+        }
     }
+
+    /** Fenster-Ergebnis samt der beiden Gruende, aus denen es LEER sein kann (siehe [fallbackTick]). */
+    private data class WindowSet(
+        val ranges: List<LongRange>,
+        val alarmReadFailed: Boolean,
+        val anySourceEnabled: Boolean
+    )
 
     /** Nur ab Android 11 (API 30) - configurationActivity-Ownership ohne ConditionProviderService. */
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.R)
@@ -109,6 +155,16 @@ class DndScheduleUseCase @Inject constructor(
 
     suspend fun applyCurrentState() {
         if (!isSupported()) return
+        // Zentraler Master-Pause-Backstop - Vorbild AlarmUseCase.syncAlarms(): jeder
+        // DndViewModel-Setter ruft enable() UNGEGATET auf, und der rollende Tick plant sich selbst
+        // nach. Ohne diesen Fangnetz-Punkt genuegt ein einziger Tap im DND-Screen waehrend der
+        // Pause, um die Zen-Regel + Tick-Kette dauerhaft wieder anzuwerfen. disable() bleibt
+        // bewusst UNgegatet, damit MasterPauseUseCase.pause() weiter durchkommt.
+        if (masterPausePrefs.pausedNow()) {
+            Logger.d(LogTags.DND, "Master-Pause aktiv - Zen-Regel bleibt inaktiv")
+            disable()
+            return
+        }
         val nm = notificationManager()
         if (!nm.isNotificationPolicyAccessGranted) {
             Logger.w(LogTags.DND, "Keine Freigabe fuer Benachrichtigungszugriff - DND-Tick uebersprungen")
@@ -116,7 +172,11 @@ class DndScheduleUseCase @Inject constructor(
         }
         val ruleId = ensureZenRule(nm) ?: return
         val now = System.currentTimeMillis()
-        val active = windows().any { now in it }
+        // Halb offen (first <= now < last), identisch zu DimWindowResolver.activeSpan: der naechste
+        // Wechsel wird strikt auf "> now" geplant. Traefe ein Tick exakt auf das Fenster-Ende,
+        // waere das Fenster hier noch aktiv, der Zustand "aus" wuerde nie berechnet - DND blieb bis
+        // zum naechsten Fensterstart haengen.
+        val active = windows().any { now >= it.first && now < it.last }
         try {
             nm.setAutomaticZenRuleState(
                 ruleId,
@@ -131,6 +191,12 @@ class DndScheduleUseCase @Inject constructor(
         if (!isSupported()) return
         val am = alarmManager()
         val pi = buildPendingIntent()
+        // Master-Pause-Backstop, siehe applyCurrentState().
+        if (masterPausePrefs.pausedNow()) {
+            am.cancel(pi)
+            Logger.d(LogTags.DND, "Master-Pause aktiv - kein DND-Tick geplant")
+            return
+        }
         val next = computeNextTransition(System.currentTimeMillis())
         if (next == null) {
             am.cancel(pi)
@@ -151,11 +217,16 @@ class DndScheduleUseCase @Inject constructor(
 
     // --- Fenster-Berechnung ---
 
-    private suspend fun windows(): List<LongRange> {
+    private suspend fun windows(): List<LongRange> = computeWindows().ranges
+
+    private suspend fun computeWindows(): WindowSet {
         val toggles = prefs.togglesNow()
         val onCallShifts = prefs.onCallShiftsNow()
-        if (!toggles.followDimmerEnabled && !toggles.duringShiftEnabled && onCallShifts.isEmpty()) {
-            return emptyList()
+        // Rufbereitschaft ist KEINE eigene Fenster-Quelle (sie klippt nur) - fuer den Keep-alive
+        // zaehlen daher nur die beiden echten Quellen.
+        val anySourceEnabled = toggles.followDimmerEnabled || toggles.duringShiftEnabled
+        if (!anySourceEnabled && onCallShifts.isEmpty()) {
+            return WindowSet(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
         }
 
         val out = mutableListOf<LongRange>()
@@ -166,9 +237,16 @@ class DndScheduleUseCase @Inject constructor(
 
         // Alarme werden auch NUR fuer den On-Call-Cutoff geholt (unabhaengig von
         // duringShiftEnabled) - der Cutoff klippt auch das "Folgt dem Dimmer"-Fenster.
+        var alarmReadFailed = false
         val alarms = if (toggles.duringShiftEnabled || onCallShifts.isNotEmpty()) {
             alarmUseCase.getAllAlarms().getOrElse {
                 Logger.w(LogTags.DND, "Alarm-Bestand nicht lesbar - keine Dienstzeit-/On-Call-Fenster (fail-open)")
+                // Verhalten unveraendert (keine Dienstzeit-Fenster), aber der Lesefehler wird
+                // gemerkt: sonst wuerde ein einmaliger Fehler die ganze Tick-Kette abreissen.
+                // NUR wenn ueberhaupt eine Fenster-Quelle an ist - sind beide aus und es sind bloss
+                // On-Call-Schichten konfiguriert (die allein nichts ausloesen, sie klippen nur),
+                // haette ein Retry-Tick nichts zu tun und die Kette bliebe endlos am Leben.
+                if (anySourceEnabled) alarmReadFailed = true
                 emptyList()
             }.filter { it.isActive }
         } else {
@@ -191,16 +269,23 @@ class DndScheduleUseCase @Inject constructor(
             val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
                 cutoffSlots, onCallShifts, cutoffMinutes, ZoneId.systemDefault()
             )
-            return DndOnCallCutoffResolver.clip(out, cutoffs)
+            return WindowSet(
+                DndOnCallCutoffResolver.clip(out, cutoffs),
+                alarmReadFailed = alarmReadFailed,
+                anySourceEnabled = anySourceEnabled
+            )
         }
-        return out
+        return WindowSet(out, alarmReadFailed = alarmReadFailed, anySourceEnabled = anySourceEnabled)
     }
 
-    private suspend fun computeNextTransition(now: Long): Long? =
-        windows()
+    private suspend fun computeNextTransition(now: Long): Long? {
+        val w = computeWindows()
+        return w.ranges
             .flatMap { listOf(it.first, it.last) }
             .filter { it > now }
             .minOrNull()
+            ?: fallbackTick(now, w.alarmReadFailed, w.anySourceEnabled)
+    }
 
     // --- AutomaticZenRule-Verwaltung ---
 

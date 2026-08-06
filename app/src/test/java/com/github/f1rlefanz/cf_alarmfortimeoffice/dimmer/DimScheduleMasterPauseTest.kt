@@ -83,6 +83,10 @@ class DimScheduleMasterPauseTest {
         whenever(prefs.togglesNow()).thenReturn(
             DimOverlayPrefs.Toggles(wellnessEnabled = true, rulesEnabled = false, nightDefaultEnabled = false)
         )
+        // Pflicht-Stub: `windDownMinutesNow()` ist eine SUSPEND-Funktion, ihr Rueckgabewert laeuft
+        // damit ueber `Any?` - Mockitos Default ist `null`, NICHT die 0 eines echten Int. Ungestubbt
+        // scheitert die Wellness-Fenster-Berechnung (`windDownMinutesNow() * MIN_MS`) an einer NPE.
+        whenever(prefs.windDownMinutesNow()).thenReturn(120)
         val alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.getAllAlarms()).thenReturn(Result.success(emptyList()))
 

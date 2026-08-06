@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.annotation.VisibleForTesting
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -40,14 +42,49 @@ class DimScheduleUseCase @Inject constructor(
     private val alarmUseCase: IAlarmUseCase,
     private val dimRuleUseCase: DimRuleUseCase,
     private val prefs: DimOverlayPrefs,
-    private val correctionNotifier: DimCorrectionNotifier
+    private val correctionNotifier: DimCorrectionNotifier,
+    private val masterPausePrefs: MasterPausePrefs
 ) {
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
         private const val REQ_TICK = 7710
         private const val HORIZON_DAYS = 14
         private const val MIN_MS = 60_000L
+
+        /** Retry-Abstand, wenn der Alarm-Bestand gerade NICHT lesbar war (transienter Fehler). */
+        private const val RETRY_MS = 15 * 60_000L
+
+        /** Keep-alive-Abstand, wenn mindestens eine Quelle AN ist, aber gerade kein Fenster-Rand
+         *  in der Zukunft liegt (z. B. Urlaubswoche ohne Schichten). */
+        private const val KEEPALIVE_MS = 6 * 60 * 60_000L
+
+        /**
+         * Naechster Tick, wenn KEIN Fenster-Rand mehr in der Zukunft liegt. Ohne diesen Fallback
+         * reisst die rollende Tick-Kette an dieser Stelle endgueltig ab und kann sich nicht selbst
+         * wiederbeleben - sie haengt dann komplett an einem externen `enable()`. Real relevant:
+         * nach einer Urlaubswoche ohne Schichten ist die Fensterliste leer, der letzte Tick
+         * cancelt den Alarm; der neue Dienstplan wird spaeter von Aufrufern synchronisiert
+         * (CalendarViewModel/ShiftViewModel/CalendarPreAlarmRefreshWorker), die Dimmer/DND
+         * NICHT nacharmieren.
+         *
+         * Aendert NICHTS an der Bedeutung einer leeren Fensterliste (= heute wird nicht gedimmt,
+         * z. B. Nachtdienst-Unterdrueckung) - es wird nur nachgesehen, statt aufzugeben. Ist gar
+         * keine Quelle aktiv, bleibt die Kette bewusst self-cleaning (`null` = Alarm abbestellen).
+         */
+        @VisibleForTesting
+        internal fun fallbackTick(now: Long, alarmReadFailed: Boolean, anySourceEnabled: Boolean): Long? = when {
+            alarmReadFailed -> now + RETRY_MS
+            anySourceEnabled -> now + KEEPALIVE_MS
+            else -> null
+        }
     }
+
+    /** Fenster-Ergebnis samt der beiden Gruende, aus denen es LEER sein kann (siehe [fallbackTick]). */
+    private data class Windows(
+        val spans: List<DimWindowResolver.DimSpan>,
+        val alarmReadFailed: Boolean,
+        val anySourceEnabled: Boolean
+    )
 
     private val zone: ZoneId get() = ZoneId.systemDefault()
 
@@ -78,6 +115,20 @@ class DimScheduleUseCase @Inject constructor(
      * ohnehin rollende Tick ruft diese Funktion an jeder Fenstergrenze neu auf).
      */
     suspend fun applyCurrentState() {
+        // Zentraler Master-Pause-Backstop - Vorbild AlarmUseCase.syncAlarms(): jeder
+        // DimmerViewModel-/NotificationSettingsViewModel-Setter ruft enable() UNGEGATET auf, und der
+        // rollende Tick plant sich selbst nach. Ohne diesen Fangnetz-Punkt genuegt eine einzige
+        // Einstellungs-Aenderung waehrend der Pause, um Dimmen + Tick-Kette dauerhaft wieder
+        // anzuwerfen, obwohl die UI "pausiert" anzeigt. disable() bleibt bewusst UNgegatet, damit
+        // MasterPauseUseCase.pause() weiter durchkommt.
+        if (masterPausePrefs.pausedNow()) {
+            Logger.d(LogTags.DIMMER, "Master-Pause aktiv - Dimmen ausgesetzt")
+            // Derselbe Aufraeumpfad wie disable(), aber ohne den rollenden Alarm anzufassen: den
+            // storniert scheduleNextTransition() (beide werden immer zusammen gerufen, siehe enable()).
+            prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
+            correctionNotifier.cancel()
+            return
+        }
         val now = System.currentTimeMillis()
         // Aktive Spanne (überlappen mehrere, gewinnt die dunkelste – Logik in DimWindowResolver).
         val active = DimWindowResolver.activeSpan(windows(), now)
@@ -138,6 +189,12 @@ class DimScheduleUseCase @Inject constructor(
     suspend fun scheduleNextTransition() {
         val am = alarmManager()
         val pi = buildPendingIntent()
+        // Master-Pause-Backstop, siehe applyCurrentState().
+        if (masterPausePrefs.pausedNow()) {
+            am.cancel(pi)
+            Logger.d(LogTags.DIMMER, "Master-Pause aktiv - kein Dimm-Tick geplant")
+            return
+        }
         val next = computeNextTransition(System.currentTimeMillis())
         if (next == null) {
             am.cancel(pi)
@@ -159,18 +216,31 @@ class DimScheduleUseCase @Inject constructor(
     // --- Fenster-Berechnung (reine Zeitmathematik in DimWindowResolver) ---
 
     /** Vorschau fuer die UI (siehe [DimWindowResolver.mergeToTimeline]) - identische Berechnung wie
-     * der echte Scheduler, aber ohne jeden Seiteneffekt. */
-    suspend fun previewTimeline(): List<DimWindowResolver.ResolvedInterval> =
-        DimWindowResolver.mergeToTimeline(windows())
+     * der echte Scheduler, aber ohne jeden Seiteneffekt. Bereits BEENDETE Abschnitte werden
+     * ausgeblendet: die Fenster-Quellen rechnen bewusst einen Kalendertag zurueck (siehe
+     * `DimWindowResolver.LOOKBACK_DAYS`), damit eine ueber Mitternacht laufende Nacht nach dem
+     * Datumswechsel nicht verschwindet - fuer "die naechsten Abschnitte" ist die Vornacht aber
+     * Rauschen. Fuer DND-Modus 1 (prueft `now in range`) macht der Filter keinen Unterschied. */
+    suspend fun previewTimeline(): List<DimWindowResolver.ResolvedInterval> {
+        val now = System.currentTimeMillis()
+        return DimWindowResolver.mergeToTimeline(windows()).filter { it.range.last > now }
+    }
 
-    private suspend fun windows(): List<DimWindowResolver.DimSpan> {
+    private suspend fun windows(): List<DimWindowResolver.DimSpan> = computeWindows().spans
+
+    private suspend fun computeWindows(): Windows {
         val toggles = prefs.togglesNow()
-        if (!toggles.wellnessEnabled && !toggles.rulesEnabled && !toggles.nightDefaultEnabled) return emptyList()
+        val anySourceEnabled = toggles.wellnessEnabled || toggles.rulesEnabled || toggles.nightDefaultEnabled
+        if (!anySourceEnabled) return Windows(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
 
-        val alarms = alarmUseCase.getAllAlarms().getOrElse {
+        val alarmsResult = alarmUseCase.getAllAlarms()
+        if (alarmsResult.isFailure) {
+            // Fail-open unveraendert: kein Dimming. Aber die Tick-Kette darf daran nicht
+            // ABREISSEN - alarmReadFailed sorgt in scheduleNextTransition fuer einen Retry-Tick.
             Logger.w(LogTags.DIMMER, "Alarm-Bestand nicht lesbar - kein Dimming (fail-open)")
-            return emptyList()
-        }.filter { it.isActive }
+            return Windows(emptyList(), alarmReadFailed = true, anySourceEnabled = true)
+        }
+        val alarms = alarmsResult.getOrDefault(emptyList()).filter { it.isActive }
 
         val out = mutableListOf<DimWindowResolver.DimSpan>()
         val gStrength = prefs.strengthNow()
@@ -225,14 +295,17 @@ class DimScheduleUseCase @Inject constructor(
                 },
             )
         }
-        return out
+        return Windows(out, alarmReadFailed = false, anySourceEnabled = true)
     }
 
-    private suspend fun computeNextTransition(now: Long): Long? =
-        windows()
+    private suspend fun computeNextTransition(now: Long): Long? {
+        val w = computeWindows()
+        return w.spans
             .flatMap { listOf(it.range.first, it.range.last) }
             .filter { it > now }
             .minOrNull()
+            ?: fallbackTick(now, w.alarmReadFailed, w.anySourceEnabled)
+    }
 
     private fun alarmManager() = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 

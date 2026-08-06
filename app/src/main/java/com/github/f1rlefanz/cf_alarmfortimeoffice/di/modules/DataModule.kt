@@ -2,9 +2,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.di.modules
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
-import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
@@ -19,17 +20,34 @@ import javax.inject.Singleton
  * Hilt Module für DataStore und Core Data Dependencies
  *
  * WICHTIG: Nur Preferences DataStore (KEIN Proto DataStore!)
- * TinkEncryptionHelper bleibt als getInstance() Singleton
  *
  * HIER LIEGEN NUR DIE UNVERSCHLÜSSELTEN STORES. Der Token-Store gehört bewusst NICHT dazu:
  * `DataStoreTokenRepository` baut ihn sich selbst über `EncryptedDataStoreFactory`
  * (`token_data_v2_encrypted`, Tink-verschlüsselt) und injiziert von hier nur den Context.
- * Wer Tokens sucht, sucht dort — nicht in diesem Modul.
+ * Wer Tokens sucht, sucht dort — nicht in diesem Modul. `TinkEncryptionHelper` wird ebenfalls
+ * NICHT hier bereitgestellt: einziger Zugriffsweg ist `TinkEncryptionHelper.getInstance()` in
+ * `EncryptedDataStoreFactory` (der frühere Hilt-Provider war ein ungenutzter Leichenrest der
+ * Hilt-Migration und hätte den CE-Storage-Keyset-Read in fremde DI-Graphen gezogen —
+ * inklusive der directBootAware-Komponenten).
  */
 
 // DataStore Extensions - NICHT Proto!
-private val Context.mainDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
-private val Context.hueDataStore: DataStore<Preferences> by preferencesDataStore(name = "hue_settings")
+//
+// corruptionHandler: Ohne ihn blockiert eine beschädigte preferences_pb NICHT nur jedes Lesen,
+// sondern auch jedes Schreiben (DataStore liest vor jedem Write erneut) — und zwar dauerhaft, weil
+// die kaputte Datei liegen bleibt. Im "settings"-Store liegen Alarme, Master-Pause, AlarmPrefs,
+// Skip-Zustand, Dimmer- und DND-Konfiguration: ein Defekt hätte den Wecker reboot-fest stumm
+// gelassen, ohne jede Selbstheilung außer "App-Daten löschen". Bewusster Preis: die betroffene
+// Datei fällt EINMAL auf Werkszustand zurück (sie ist ohnehin unlesbar). Gleiches Muster wie
+// CalendarSelectionRepository.
+private val Context.mainDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "settings",
+    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
+)
+private val Context.hueDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "hue_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
+)
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -48,14 +66,6 @@ object DataModule {
     fun provideHueDataStore(
         @ApplicationContext context: Context
     ): DataStore<Preferences> = context.hueDataStore
-    
-    // KRITISCH: TinkEncryptionHelper MUSS als Singleton bleiben!
-    // Security-kritische Komponente mit getInstance() Pattern
-    @Provides
-    @Singleton
-    fun provideTinkEncryptionHelper(
-        @ApplicationContext context: Context
-    ): TinkEncryptionHelper = TinkEncryptionHelper.getInstance(context)
     
     // ErrorHandler ist bereits ein Kotlin object - Singleton by design
     @Provides

@@ -1,10 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security
 
 import android.content.Context
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +59,26 @@ object EncryptedDataStoreFactory {
         
         return DataStoreFactory.create(
             serializer = EncryptedPreferencesSerializer(encryptionHelper),
+            // corruptionHandler: PFLICHT, nicht Kosmetik. DataStore liest VOR JEDEM Schreiben erneut
+            // (DataStoreImpl.transformAndWrite -> readDataOrHandleCorruption); ein Lesefehler macht
+            // den Store deshalb nicht nur lese-, sondern dauerhaft SCHREIB-tot. Ohne Handler wäre
+            // ein unbrauchbares Tink-Keyset (invalidierter Keystore-Key, Geräte-Restore) eine
+            // Endlosschleife: Re-Login gelingt, `save()` scheitert am internen Read, der
+            // Token-Verlust-Watcher schlägt sofort wieder zu — dauerhaft, ohne Selbstheilung.
+            //
+            // Abwägung bewusst so entschieden: Der Handler WIRFT den (nicht entschlüsselbaren und
+            // damit ohnehin wertlosen) Token weg und erzwingt EINE Neuanmeldung. Das ist das
+            // kleinere Übel gegenüber einer App, die nie wieder einen Token speichern kann.
+            // Sicherheitsargument bleibt gewahrt: es wird nichts entschlüsselt ausgeliefert, die
+            // unlesbare Datei wird durch einen LEEREN Zustand ersetzt.
+            corruptionHandler = ReplaceFileCorruptionHandler {
+                Logger.w(
+                    LogTags.TOKEN,
+                    "⚠️ SECURITY: Verschluesselter Store '$name' war unlesbar und wurde durch einen " +
+                        "leeren Zustand ersetzt - eine Neuanmeldung ist noetig"
+                )
+                emptyPreferences()
+            },
             scope = coroutineScope,
             produceFile = {
                 File(context.filesDir, "datastore/$name.preferences_pb")
@@ -66,10 +89,13 @@ object EncryptedDataStoreFactory {
 
 /**
  * Custom Serializer für verschlüsselte Preferences
- * 
+ *
  * Verschlüsselt die gesamte Preferences-Datei mit Tink AEAD
+ *
+ * `internal` (nicht private) ausschliesslich, damit das Übersetzen von
+ * [TinkEncryptionException] in eine [CorruptionException] testbar bleibt.
  */
-private class EncryptedPreferencesSerializer(
+internal class EncryptedPreferencesSerializer(
     private val encryptionHelper: TinkEncryptionHelper
 ) : Serializer<Preferences> {
     
@@ -107,9 +133,14 @@ private class EncryptedPreferencesSerializer(
             preferences
             
         } catch (e: TinkEncryptionException) {
-            // Verschlüsselung fehlgeschlagen (Tampering?)
+            // Verschlüsselung fehlgeschlagen (Tampering? Keyset unbrauchbar?)
+            //
+            // WICHTIG: als CorruptionException weiterwerfen, NICHT als TinkEncryptionException.
+            // DataStores Selbstheilungspfad (corruptionHandler) fängt ausschliesslich
+            // CorruptionException; eine TinkEncryptionException (erbt direkt von Exception) macht
+            // den Store dauerhaft lese- UND schreib-tot, weil DataStore vor jedem Schreiben liest.
             Logger.e(LogTags.TOKEN, "❌ SECURITY: Decryption failed - possible tampering!", e)
-            throw e
+            throw CorruptionException("Verschluesselte Preferences nicht entschluesselbar", e)
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Failed to read encrypted preferences", e)
             // Bei Fehler: Rückgabe default statt crash

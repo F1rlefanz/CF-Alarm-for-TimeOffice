@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.Instant
@@ -80,6 +83,31 @@ class AlarmRepository @Inject constructor(
     private val _activeAlarms = MutableStateFlow<List<AlarmInfo>>(emptyList())
     override val activeAlarms: Flow<List<AlarmInfo>> = _activeAlarms.asStateFlow()
 
+    /**
+     * BEREIT-SIGNAL für den asynchronen Init-Load.
+     *
+     * Ohne dieses Signal war der leere Start-Cache von `_activeAlarms` nicht von „es gibt keine
+     * Alarme" zu unterscheiden: ein durch einen Hintergrund-Trigger (Wartung/Worker/Boot) frisch
+     * gestarteter Prozess bekam von `getAllAlarms()` eine leere Liste, der Delta-Sync hielt jede
+     * erkannte Schicht für neu — und der danach zurückkehrende Init-Load überschrieb Cache,
+     * DataStore UND Direct-Boot-Spiegel mit seinem alten Snapshot (Last-Writer-Wins gegen den
+     * eigenen Initialisierer).
+     *
+     * Wird in `finally` IMMER erfüllt, damit ein Lesefehler die Aufrufer nicht hängen lässt.
+     */
+    private val initialLoadDone = CompletableDeferred<Unit>()
+
+    /**
+     * Serialisiert ALLE Read-Modify-Write-Pfade auf dem Ganzlisten-Bestand (Init-Bereinigung,
+     * save/delete/deleteAll/cleanup). Ohne ihn schreiben zwei unabhängige Aufrufer je eine
+     * komplette Liste aus ihrem eigenen Snapshot — eine Änderung geht verloren. Vorbild:
+     * `DimOverlayPrefs.withOverrideLock`.
+     *
+     * NICHT reentrant: `persistToDataStore()`/`cleanupExpiredAlarms()` nehmen den Lock deshalb
+     * bewusst NICHT selbst, sie werden nur von Lock-Haltern aufgerufen.
+     */
+    private val stateMutex = Mutex()
+
     init {
         // CRITICAL: Lade Alarme beim Repository-Init
         loadAlarmsFromDataStore()
@@ -92,41 +120,54 @@ class AlarmRepository @Inject constructor(
     private fun loadAlarmsFromDataStore() {
         repositoryScope.launch {
             try {
-                val preferences = dataStore.data.first()
-                val alarmsJson = preferences[ALARMS_KEY]
+                stateMutex.withLock {
+                    val preferences = dataStore.data.first()
+                    val alarmsJson = preferences[ALARMS_KEY]
 
-                if (alarmsJson != null) {
-                    val alarmsData = json.decodeFromString<List<AlarmInfoData>>(alarmsJson)
-                    val alarms = alarmsData.map { it.toAlarmInfo() }
+                    if (alarmsJson != null) {
+                        val alarmsData = json.decodeFromString<List<AlarmInfoData>>(alarmsJson)
+                        val alarms = alarmsData.map { it.toAlarmInfo() }
 
-                    // Cleanup: Entferne automatisch abgelaufene Alarme
-                    val currentTime = System.currentTimeMillis()
-                    val validAlarms = alarms.filter { it.triggerTime > currentTime }
+                        // Cleanup: Entferne automatisch abgelaufene Alarme
+                        val currentTime = System.currentTimeMillis()
+                        val validAlarms = alarms.filter { it.triggerTime > currentTime }
 
-                    _activeAlarms.value = validAlarms
+                        _activeAlarms.value = validAlarms
 
-                    Logger.business(
-                        LogTags.ALARM,
-                        "✅ PERSISTENCE: Loaded ${validAlarms.size} alarms from DataStore (removed ${alarms.size - validAlarms.size} expired)"
-                    )
+                        Logger.business(
+                            LogTags.ALARM,
+                            "✅ PERSISTENCE: Loaded ${validAlarms.size} alarms from DataStore (removed ${alarms.size - validAlarms.size} expired)"
+                        )
 
-                    // Wenn wir abgelaufene Alarme entfernt haben, speichere die bereinigte Liste
-                    if (validAlarms.size < alarms.size) {
-                        persistToDataStore(validAlarms)
+                        // Wenn wir abgelaufene Alarme entfernt haben, speichere die bereinigte Liste
+                        if (validAlarms.size < alarms.size) {
+                            persistToDataStore(validAlarms)
+                        }
+                    } else {
+                        Logger.d(LogTags.ALARM, "📭 PERSISTENCE: No saved alarms found in DataStore")
+                        _activeAlarms.value = emptyList()
                     }
-                } else {
-                    Logger.d(LogTags.ALARM, "📭 PERSISTENCE: No saved alarms found in DataStore")
-                    _activeAlarms.value = emptyList()
                 }
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Error loading alarms from DataStore", e)
                 _activeAlarms.value = emptyList()
+            } finally {
+                initialLoadDone.complete(Unit)
             }
         }
     }
 
     /**
+     * Wartet auf den Abschluss des Init-Loads. Erste Anweisung JEDER öffentlichen Operation:
+     * Leser bekommen so nie einen noch nicht gefüllten Cache als Wahrheit, und Schreiber können
+     * nicht vom nachträglich zurückkehrenden Init-Load überschrieben werden.
+     */
+    private suspend fun awaitInitialLoad() = initialLoadDone.await()
+
+    /**
      * PERSISTENCE: Speichert Alarme in DataStore
+     *
+     * ACHTUNG: nimmt [stateMutex] NICHT selbst (nicht reentrant) - nur aus einem Lock-Halter rufen.
      */
     private suspend fun persistToDataStore(alarms: List<AlarmInfo>) {
         try {
@@ -165,27 +206,30 @@ class AlarmRepository @Inject constructor(
                 return Result.failure(IllegalArgumentException("Alarm time is in the past: ${alarmInfo.formattedTime}"))
             }
 
-            val currentAlarms = _activeAlarms.value.toMutableList()
-            val existingIndex = currentAlarms.indexOfFirst { it.id == alarmInfo.id }
+            awaitInitialLoad()
+            stateMutex.withLock {
+                val currentAlarms = _activeAlarms.value.toMutableList()
+                val existingIndex = currentAlarms.indexOfFirst { it.id == alarmInfo.id }
 
-            if (existingIndex != -1) {
-                // Update existing alarm
-                currentAlarms[existingIndex] = alarmInfo
-                Logger.d(LogTags.ALARM, "Alarm updated: ${alarmInfo.id}")
-            } else {
-                // Add new alarm
-                currentAlarms.add(alarmInfo)
-                Logger.business(LogTags.ALARM, "Alarm added", alarmInfo.id.toString())
+                if (existingIndex != -1) {
+                    // Update existing alarm
+                    currentAlarms[existingIndex] = alarmInfo
+                    Logger.d(LogTags.ALARM, "Alarm updated: ${alarmInfo.id}")
+                } else {
+                    // Add new alarm
+                    currentAlarms.add(alarmInfo)
+                    Logger.business(LogTags.ALARM, "Alarm added", alarmInfo.id.toString())
+                }
+
+                // Update cache
+                _activeAlarms.value = currentAlarms
+
+                // PERSIST to DataStore
+                persistToDataStore(currentAlarms)
+
+                // CLEANUP: Trigger cleanup after save
+                cleanupExpiredAlarms()
             }
-
-            // Update cache
-            _activeAlarms.value = currentAlarms
-
-            // PERSIST to DataStore
-            persistToDataStore(currentAlarms)
-
-            // CLEANUP: Trigger cleanup after save
-            cleanupExpiredAlarms()
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -196,6 +240,9 @@ class AlarmRepository @Inject constructor(
 
     override suspend fun getAllAlarms(): Result<List<AlarmInfo>> {
         return try {
+            // Ohne dieses Warten wäre die leere Startliste im Prozess-Startfenster nicht von
+            // "keine Alarme" zu unterscheiden - der Delta-Sync hätte alles für neu gehalten.
+            awaitInitialLoad()
             Result.success(_activeAlarms.value)
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "Error getting all alarms", e)
@@ -205,6 +252,7 @@ class AlarmRepository @Inject constructor(
 
     override suspend fun getAlarmById(alarmId: Int): Result<AlarmInfo?> {
         return try {
+            awaitInitialLoad()
             val alarm = _activeAlarms.value.find { it.id == alarmId }
             Result.success(alarm)
         } catch (e: Exception) {
@@ -215,11 +263,14 @@ class AlarmRepository @Inject constructor(
 
     override suspend fun deleteAlarm(alarmId: Int): Result<Unit> {
         return try {
-            val updatedAlarms = _activeAlarms.value.filter { it.id != alarmId }
-            _activeAlarms.value = updatedAlarms
+            awaitInitialLoad()
+            stateMutex.withLock {
+                val updatedAlarms = _activeAlarms.value.filter { it.id != alarmId }
+                _activeAlarms.value = updatedAlarms
 
-            // PERSIST to DataStore
-            persistToDataStore(updatedAlarms)
+                // PERSIST to DataStore
+                persistToDataStore(updatedAlarms)
+            }
 
             Logger.business(LogTags.ALARM, "Alarm removed", alarmId.toString())
             Result.success(Unit)
@@ -231,10 +282,15 @@ class AlarmRepository @Inject constructor(
 
     override suspend fun deleteAllAlarms(): Result<Unit> {
         return try {
-            _activeAlarms.value = emptyList()
+            // Master-Pause/autoAlarmEnabled=false laufen hierüber: das Leeren darf NICHT vom
+            // nachträglich zurückkehrenden Init-Load wieder aufgefüllt werden.
+            awaitInitialLoad()
+            stateMutex.withLock {
+                _activeAlarms.value = emptyList()
 
-            // PERSIST to DataStore
-            persistToDataStore(emptyList())
+                // PERSIST to DataStore
+                persistToDataStore(emptyList())
+            }
 
             Logger.business(LogTags.ALARM, "All alarms cleared")
             Result.success(Unit)
@@ -246,6 +302,7 @@ class AlarmRepository @Inject constructor(
 
     override suspend fun alarmExists(alarmId: Int): Result<Boolean> {
         return try {
+            awaitInitialLoad()
             val exists = _activeAlarms.value.any { it.id == alarmId }
             Result.success(exists)
         } catch (e: Exception) {
@@ -256,6 +313,8 @@ class AlarmRepository @Inject constructor(
 
     /**
      * CLEANUP: Remove expired alarms automatically
+     *
+     * ACHTUNG: nimmt [stateMutex] NICHT selbst (nicht reentrant) - nur aus einem Lock-Halter rufen.
      */
     private suspend fun cleanupExpiredAlarms() {
         try {

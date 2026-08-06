@@ -49,6 +49,18 @@ internal data class CalendarAuthorizationOutcome(
     val authStillValid: Boolean
 )
 
+/**
+ * PURE, TESTBAR: Ergebnis von [CalendarViewModel.mergeMoreEvents] - die Liste, die nach dem
+ * Nachladen in _localUiState UND CalendarStateHolder geschrieben wird, plus die daraus
+ * abgeleiteten Pagination-Felder. Als eigener Typ, damit ein Test alle drei Werte gemeinsam
+ * gegen dieselbe Eingabe pruefen kann.
+ */
+internal data class MoreEventsMergeResult(
+    val events: List<CalendarEvent>,
+    val eventOffset: Int,
+    val hasMoreEvents: Boolean
+)
+
 @Immutable
 data class CalendarUiState(
     val isLoading: Boolean = false,
@@ -168,6 +180,28 @@ class CalendarViewModel @Inject constructor(
      */
     private val eventLoadGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
+    /**
+     * LAZY LOADING OPTIMIZATION: Verhindert doppelte Calendar-Loadings
+     * THREAD-SAFE: Atomic operations für Race Condition Prevention
+     * PERFORMANCE: Time-based throttling für excessive API calls
+     *
+     * MUSS - wie eventLoadGeneration darueber - vor dem init{}-Block stehen. Beide Felder
+     * standen bis zu diesem Fix TEXTUELL NACH init{} und waren nur zufaellig harmlos: als
+     * primitive Typen entsprechen ihre Initializer (false/0L) genau den JVM-Feld-Defaults,
+     * also gab es weder NPE noch falschen Startwert. Sobald hier aber ein Nicht-Default
+     * (z.B. System.currentTimeMillis() als Drossel-Startwert) oder ein Objekt-Typ
+     * (AtomicBoolean, Instant?) stehen wuerde, laufen die Initializer NACH init{} - und
+     * init{} startet observeCalendarSelection(), dessen StateFlow-Collector auf
+     * Dispatchers.Main.immediate noch waehrend der Objekt-Konstruktion feuert und diese
+     * Felder liest/schreibt. Genau dieses Muster war am 05.08.2026 ein realer
+     * Crash-on-Launch am Fairphone, den kein Unit-Test gefangen hat.
+     */
+    @Volatile
+    private var isCalendarLoadingInProgress = false
+
+    @Volatile
+    private var lastCalendarLoadTime = 0L
+
     init {
         checkTokenValidity()
         observeCalendarSelection()
@@ -226,16 +260,6 @@ class CalendarViewModel @Inject constructor(
             _localUiState.value = newState
         }
     }
-
-    /**
-     * LAZY LOADING OPTIMIZATION: Verhindert doppelte Calendar-Loadings
-     * THREAD-SAFE: Atomic operations für Race Condition Prevention
-     * PERFORMANCE: Time-based throttling für excessive API calls
-     */
-    @Volatile
-    private var isCalendarLoadingInProgress = false
-    @Volatile
-    private var lastCalendarLoadTime = 0L
 
     private fun checkTokenValidity() {
         viewModelScope.launch {
@@ -795,23 +819,54 @@ class CalendarViewModel @Inject constructor(
      * LAZY LOADING: Load more events with pagination
      * FIXED: Always uses DEFAULT_DAYS_AHEAD (14 days) per PROJEKT-BRIEFING 4.0
      * PERFORMANCE FIX: Verbesserte Race Condition Prevention
+     *
+     * OFFSET-SEMANTIK: Nachgeladen wird immer ein PRAEFIX der Vereinigung aller
+     * ausgewaehlten Kalender (offset = 0, maxEvents = bereits geladen + limit) - NICHT
+     * eine Seite ab [offset].
+     *
+     * Warum: getCalendarEventsLazy() bildet intern erst die Vereinigung ALLER uebergebenen
+     * calendarIds, sortiert sie nach startTime und schneidet daraus subList(offset,
+     * offset+maxEvents) heraus. Der Erst-Ladevorgang (loadEventsForSelectedCalendars) laedt
+     * dagegen PRO Kalender die ersten initialPageSize Events - bei mehr als einem Kalender
+     * ist das eben KEIN Praefix der Vereinigung. Mit dem alten
+     * "offset = bisherige Listenlaenge" mischten sich damit zwei unvereinbare
+     * Offset-Semantiken: die zurueckgegebene Seite enthielt Events, die bereits in der
+     * Liste standen (doppelte LazyColumn-Keys -> IllegalArgumentException "Key was already
+     * used" -> Crash; und doppelte Schichten in Home ueber den CalendarStateHolder),
+     * waehrend ein Block dazwischen komplett fehlte.
+     *
+     * Das Praefix ist die einzige Slice, die mit der Erst-Ladung ueberhaupt vergleichbar
+     * ist, und kostet nichts: getCalendarEventsLazy() holt intern ohnehin alle Events jedes
+     * Kalenders und schneidet erst danach - ein hoeherer offset spart also keinen
+     * Netzwerk-Call. Zusaetzlich wird defensiv nach id dedupliziert und neu sortiert
+     * (mergeMoreEvents, pur + testbar), damit ein kuenftiger Umbau nicht wieder Duplikate
+     * in dieselben zwei Senken schreibt.
      */
     fun loadMoreEvents(offset: Int = 0, limit: Int = 50) {
         viewModelScope.launch {
             val currentState = _localUiState.value
-            
+
             // RACE CONDITION PROTECTION: Atomic check and set
             if (currentState.isLoadingMoreEvents) {
                 Logger.w(LogTags.CALENDAR, "loadMoreEvents already in progress, ignoring duplicate call")
                 return@launch
             }
-            
+
+            // RACE-GUARD: Generation nur LESEN, niemals hochzaehlen. Nachladen ist ein
+            // Anhaenger an den aktuellen Ladevorgang, kein neuer - wuerde es selbst eine
+            // Nummer ziehen, wuerde es einen gerade laufenden
+            // loadEventsForSelectedCalendars() faelschlich als "ueberholt" abwuergen
+            // (haengender Spinner, leere Liste). Umgekehrt darf ein noch laufendes
+            // Nachladen NICHT an die frische Liste eines inzwischen gestarteten
+            // "Aktualisieren" anhaengen - siehe Pruefung in onSuccess.
+            val baseGeneration = eventLoadGeneration.get()
+
             // IMMEDIATE STATE UPDATE: Prevent further calls
             updateLocalStateImmediate { it.copy(isLoadingMoreEvents = true, error = null) }
-            
+
             val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds()
                 .getOrElse { emptySet() }
-            
+
             if (selectedIds.isEmpty()) {
                 Logger.w(LogTags.CALENDAR, "No calendars selected for loading more events")
                 updateLocalStateImmediate { it.copy(isLoadingMoreEvents = false) }
@@ -819,31 +874,54 @@ class CalendarViewModel @Inject constructor(
             }
 
             // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
-            
+
+            // Der uebergebene offset ist nur ein Hinweis des Aufrufers auf die bereits
+            // angezeigte Menge; maszgeblich ist der aktuelle State (er kann inzwischen
+            // gewachsen sein).
+            val alreadyLoaded = maxOf(offset, _localUiState.value.events.size)
+            val requestedMaxEvents = resolveLoadMoreWindow(alreadyLoaded, limit)
+
             calendarUseCase.getCalendarEventsLazy(
                 calendarIds = selectedIds,
-                maxEvents = limit,
-                offset = offset
+                maxEvents = requestedMaxEvents,
+                offset = 0
             ).onSuccess { eventPage ->
-                val currentEvents = _localUiState.value.events
-                val allEvents = currentEvents + eventPage.events
-                
-                updateLocalState { 
+                // RACE-GUARD: Inzwischen laeuft ein neuer loadEventsForSelectedCalendars() -
+                // dessen Liste ist die aktuellere Wahrheit, an die hier nichts angehaengt
+                // werden darf. isLoadingMoreEvents muss trotzdem zurueckgesetzt werden:
+                // kein anderer Pfad raeumt dieses Flag auf, es wuerde sonst jedes weitere
+                // Nachladen dauerhaft blockieren.
+                if (baseGeneration != eventLoadGeneration.get()) {
+                    Logger.d(
+                        LogTags.CALENDAR,
+                        "Discarding stale loadMoreEvents results (generation $baseGeneration superseded by ${eventLoadGeneration.get()})"
+                    )
+                    updateLocalStateImmediate { it.copy(isLoadingMoreEvents = false) }
+                    return@onSuccess
+                }
+
+                val merged = mergeMoreEvents(
+                    currentEvents = _localUiState.value.events,
+                    pageEvents = eventPage.events,
+                    totalEvents = eventPage.totalEvents
+                )
+
+                updateLocalState {
                     it.copy(
                         isLoadingMoreEvents = false,
-                        events = allEvents,
-                        hasMoreEvents = eventPage.hasMore,
-                        eventOffset = offset + eventPage.events.size,
+                        events = merged.events,
+                        hasMoreEvents = merged.hasMoreEvents,
+                        eventOffset = merged.eventOffset,
                         totalEvents = eventPage.totalEvents
                     )
                 }
-                
+
                 // CRITICAL: Update CalendarStateHolder when loading more events
-                calendarStateHolder.updateEvents(allEvents)
-                
-                    Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} more events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, total: ${allEvents.size}/${eventPage.totalEvents}")
+                calendarStateHolder.updateEvents(merged.events)
+
+                Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} union-prefix events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, total: ${merged.events.size}/${eventPage.totalEvents}")
             }.onFailure { error ->
-                updateLocalState { 
+                updateLocalState {
                     it.copy(
                         isLoadingMoreEvents = false,
                         error = errorHandler.getErrorMessage(error)
@@ -1102,6 +1180,57 @@ class CalendarViewModel @Inject constructor(
             return CalendarAuthorizationOutcome(
                 everythingFailed = everythingFailed,
                 authStillValid = !everythingFailed
+            )
+        }
+
+        /**
+         * PURE, TESTBAR: Wie viele Events aus der Vereinigung aller ausgewaehlten Kalender
+         * beim Nachladen angefordert werden.
+         *
+         * Immer ein PRAEFIX (offset = 0) der Vereinigung, gross genug fuer alles bereits
+         * Angezeigte PLUS [limit] neue - siehe die Begruendung an loadMoreEvents(). Negative
+         * bzw. nicht-positive Eingaben werden geklemmt, damit ein fehlerhafter Aufrufer
+         * nicht eine leere Seite anfordert und "keine weiteren Events" vortaeuscht.
+         */
+        internal fun resolveLoadMoreWindow(alreadyLoaded: Int, limit: Int): Int =
+            maxOf(alreadyLoaded, 0) + maxOf(limit, 1)
+
+        /**
+         * PURE, TESTBAR: Fuehrt die bereits angezeigten Events mit der nachgeladenen
+         * Vereinigungs-Seite zusammen.
+         *
+         * Deduplizierung nach [CalendarEvent.id] ist hier NICHT kosmetisch: die Liste landet
+         * unverändert in einer LazyColumn mit `key = { event -> event.id }`. Zwei Eintraege
+         * mit derselben id lassen SubcomposeLayout mit
+         * IllegalArgumentException("Key ... was already used") abstuerzen - und ueber den
+         * CalendarStateHolder erkennt ShiftViewModel dieselbe Schicht zweimal.
+         *
+         * Neu sortiert wird, weil die Vereinigungs-Seite Events enthalten kann, die
+         * zeitlich VOR bereits angezeigten liegen (unterschiedliche Kalender).
+         *
+         * Bei gleicher id gewinnt der Eintrag aus [pageEvents]: er ist frisch aus dem
+         * UseCase, waehrend der bereits angezeigte aus einem aelteren Ladevorgang stammt -
+         * eine verschobene Schicht wuerde sonst bis zum naechsten vollen Refresh mit der
+         * alten Uhrzeit stehenbleiben. Eintraege, die NUR in [currentEvents] stehen
+         * (jenseits des geladenen Praefix), bleiben unangetastet erhalten.
+         *
+         * eventOffset ist die Laenge des Ergebnisses und damit wieder ein gueltiger
+         * Vereinigungs-Offset fuer den naechsten Aufruf; hasMoreEvents leitet sich aus dem
+         * echten Gesamtbestand ab, nicht aus der Seitengroesse.
+         */
+        internal fun mergeMoreEvents(
+            currentEvents: List<CalendarEvent>,
+            pageEvents: List<CalendarEvent>,
+            totalEvents: Int
+        ): MoreEventsMergeResult {
+            val merged = (pageEvents + currentEvents)
+                .distinctBy { it.id }
+                .sortedBy { it.startTime }
+
+            return MoreEventsMergeResult(
+                events = merged,
+                eventOffset = merged.size,
+                hasMoreEvents = merged.size < totalEvents
             )
         }
     }

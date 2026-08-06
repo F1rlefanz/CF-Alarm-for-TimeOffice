@@ -423,29 +423,7 @@ class CalendarRepository @Inject constructor(
 
         for (event in events) {
             try {
-                val startDateTime = event.start?.dateTime ?: event.start?.date
-                val endDateTime = event.end?.dateTime ?: event.end?.date
-
-                if (startDateTime != null && endDateTime != null) {
-                    val startTime = LocalDateTime.ofInstant(
-                        java.time.Instant.ofEpochMilli(startDateTime.value),
-                        ZoneId.systemDefault()
-                    )
-                    val endTime = LocalDateTime.ofInstant(
-                        java.time.Instant.ofEpochMilli(endDateTime.value),
-                        ZoneId.systemDefault()
-                    )
-
-                    calendarEvents.add(
-                        CalendarEvent(
-                            id = event.id ?: "unknown_${System.currentTimeMillis()}",
-                            title = event.summary ?: "Unbenannter Termin",
-                            startTime = startTime,
-                            endTime = endTime,
-                            calendarId = calendarId
-                        )
-                    )
-                }
+                CalendarEventConverter.toCalendarEvent(event, calendarId)?.let(calendarEvents::add)
             } catch (e: Exception) {
                 Logger.w(LogTags.CALENDAR_API, "Failed to parse event", e)
             }
@@ -454,4 +432,93 @@ class CalendarRepository @Inject constructor(
         Logger.d(LogTags.CALENDAR_API, "Processed ${calendarEvents.size} events")
         return calendarEvents
     }
+}
+
+/**
+ * Wandelt ein Google-Calendar-Event in ein internes [CalendarEvent] um.
+ *
+ * Bewusst als eigene, reine Funktion ausserhalb von [CalendarRepository]: die Umrechnung ist die
+ * einzige echte Logik am Google-API-Rand und muss ohne Android/Netzwerk testbar sein
+ * ([com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarEventConversionTest]).
+ *
+ * GANZTAEGIGE TERMINE SIND KEINE ZEITGEBUNDENEN. Google liefert entweder `start.dateTime`
+ * (Zeitstempel mit Zone) ODER `start.date` (nur Datum, `DateTime.isDateOnly == true`). Beide Felder
+ * in einen Topf zu werfen (frueher: `event.start?.dateTime ?: event.start?.date`, dann beide ueber
+ * `Instant.ofEpochMilli(value)` in der Systemzone) ist falsch: der `value` eines `date`-Feldes wird
+ * in der Google-Bibliothek in einem GMT-Kalender OHNE Uhrzeitanteil berechnet, ist also
+ * UTC-Mitternacht. In Europe/Berlin wurde daraus 01:00 (Winter) bzw. 02:00 (Sommer) - in
+ * UTC-negativen Zonen sogar der VORTAG. Folgen im Betrieb: "Deine Schicht beginnt um 02:00" in
+ * Notification/Vollbild, ein DND-Dienstzeit-Fenster ab 02:00, und ein rund 24h zu langes Fenster,
+ * weil `end.date` bei Google END-EXKLUSIV ist (der Folgetag) und das nicht kompensiert wurde.
+ *
+ * Darum hier: das Kalenderdatum zonenunabhaengig aus dem UTC-Wert lesen und daraus lokale
+ * Tagesgrenzen bilden (Beginn 00:00 des ersten Tages, Ende 23:59 des LETZTEN Tages, also
+ * `end.date` minus einen Tag). [CalendarEvent.isAllDay] wird dabei gesetzt, damit nachgelagerte
+ * Logik den Unterschied ueberhaupt sehen kann.
+ *
+ * NOCH OFFEN (bewusst NICHT hier geloest): `ShiftRecognitionEngine.calculateAlarmTime()` rechnet
+ * die Weckzeit einen Tag zurueck, sobald sie nach dem Schichtbeginn liegt und die Vorlaufzeit danach
+ * <= 12h bleibt (Nachtschicht-Heuristik). Bei einem ganztaegigen Eintrag ist der Schichtbeginn jetzt
+ * 00:00 - eine Nachtschicht-Weckzeit von z. B. 21:00 loest die Heuristik damit weiterhin aus (3h
+ * Vorlauf) und der Wecker landet auf dem VORTAG. Die Umrechnung allein kann das nicht beheben: jeder
+ * Zeitpunkt, der die Heuristik verstummen liesse, waere eine erfundene Uhrzeit und wuerde Anzeige und
+ * DND-Fenster erneut verfaelschen. Richtig waere, die Heuristik bei `event.isAllDay` zu ueberspringen
+ * (ein ganztaegiger Eintrag hat gar keinen Schichtbeginn, gegen den "danach" pruefbar waere) - das
+ * gehoert in `ShiftRecognitionEngine`, nicht hierher. Genau dafuer wird `isAllDay` hier gesetzt.
+ */
+internal object CalendarEventConverter {
+
+    internal fun toCalendarEvent(
+        event: com.google.api.services.calendar.model.Event,
+        calendarId: String
+    ): CalendarEvent? {
+        val id = event.id ?: "unknown_${System.currentTimeMillis()}"
+        val title = event.summary ?: "Unbenannter Termin"
+
+        val startTimed = event.start?.dateTime
+        if (startTimed != null) {
+            // Zeitgebundener Termin: unveraendertes Verhalten (Zeitstempel in der Systemzone).
+            val endTime = event.end?.dateTime?.let { toLocalDateTime(it.value) }
+                ?: event.end?.date?.let { utcCalendarDateOf(it.value).atStartOfDay() }
+                ?: return null
+
+            return CalendarEvent(
+                id = id,
+                title = title,
+                startTime = toLocalDateTime(startTimed.value),
+                endTime = endTime,
+                calendarId = calendarId,
+                isAllDay = false
+            )
+        }
+
+        val startDateOnly = event.start?.date ?: return null
+        val firstDay = utcCalendarDateOf(startDateOnly.value)
+
+        // end.date ist EXKLUSIV (Google-Semantik): ein einzelner ganzer Tag am 05.08. hat
+        // end.date = 06.08. Fehlt das Feld oder ist es unplausibel, gilt "ein Tag".
+        val endExclusive = event.end?.date?.let { utcCalendarDateOf(it.value) }
+            ?.takeIf { it.isAfter(firstDay) }
+            ?: firstDay.plusDays(1)
+
+        return CalendarEvent(
+            id = id,
+            title = title,
+            startTime = firstDay.atStartOfDay(),
+            endTime = endExclusive.atStartOfDay().minusMinutes(1),
+            calendarId = calendarId,
+            isAllDay = true
+        )
+    }
+
+    private fun toLocalDateTime(epochMillis: Long): LocalDateTime =
+        LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault())
+
+    /**
+     * Kalendertag eines `date`-Feldes (dateOnly). Bewusst in UTC gelesen: genau so hat die
+     * Google-Bibliothek den Wert gebildet (GMT-Kalender, Uhrzeit 0). Jede andere Zone wuerde den
+     * Tag verschieben.
+     */
+    private fun utcCalendarDateOf(epochMillis: Long): java.time.LocalDate =
+        java.time.Instant.ofEpochMilli(epochMillis).atZone(java.time.ZoneOffset.UTC).toLocalDate()
 }

@@ -64,9 +64,22 @@ class CalendarPreAlarmRefreshWorker(
                 return@withContext Result.success()
             }
 
+            // Der Read geht bewusst durch das Repository-Result hindurch statt per
+            // `getOrNull() ?: emptySet()`: ein fehlgeschlagener Read und "wirklich nichts
+            // ausgewaehlt" sind zwei verschiedene Dinge und muessen im Log unterscheidbar
+            // bleiben. Dass ein Kaltstart-Read nicht mehr faelschlich leer ist, garantiert
+            // CalendarSelectionRepository.getCurrentSelectedCalendarIds() selbst (liest den
+            // DataStore, nicht den noch nicht hydrierten StateFlow).
             val selectedCalendars = entryPoint.calendarSelectionRepository()
                 .getCurrentSelectedCalendarIds()
-                .getOrNull() ?: emptySet()
+                .getOrElse { error ->
+                    Logger.w(
+                        LogTags.BACKGROUND_WORKER,
+                        "Pre-Alarm-Refresh: Kalenderauswahl konnte nicht gelesen werden, uebersprungen",
+                        error
+                    )
+                    return@withContext Result.success()
+                }
 
             if (selectedCalendars.isEmpty()) {
                 Logger.d(LogTags.BACKGROUND_WORKER, "Pre-Alarm-Refresh: keine Kalender ausgewaehlt, uebersprungen")
@@ -79,6 +92,23 @@ class CalendarPreAlarmRefreshWorker(
             )
             val events = eventsResult.getOrElse { error ->
                 Logger.w(LogTags.BACKGROUND_WORKER, "Pre-Alarm-Refresh: Events konnten nicht geladen werden", error)
+                return@withContext Result.success()
+            }
+
+            // KEIN Sync mit leerer Eventliste. AlarmUseCase.syncAlarms() deutet `events.isEmpty()`
+            // als "keine Schichten" und loescht daraufhin ALLE Alarme (System-Alarme, Repository
+            // UND Direct-Boot-Spiegel). Dieser Worker laeuft 3h vor der Weckzeit - eine leere
+            // Liste hier wuerde den Wecker also ausgerechnet kurz vor dem Klingeln entfernen,
+            // ohne dass etwas nach einem Fehler aussieht. Dieselbe Absicherung wie bei den
+            // anderen syncAlarms()-Aufrufern (BootReceiver, CalendarViewModel, ShiftViewModel):
+            // "leer" ist fuer eine Wecker-App die gefaehrlichste Luege. Ein wirklich leerer
+            // Dienstplan wird vom naechsten regulaeren Sync (6h-Wartung/Vordergrund) korrekt
+            // verarbeitet - dieser Worker ist nur eine Vorbereitung, keine Aufraeumstelle.
+            if (events.isEmpty()) {
+                Logger.w(
+                    LogTags.BACKGROUND_WORKER,
+                    "Pre-Alarm-Refresh: 0 Events geliefert - kein Sync (leere Liste wird nicht als 'keine Schichten' gedeutet)"
+                )
                 return@withContext Result.success()
             }
 

@@ -5,7 +5,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Duration
 import java.time.LocalDateTime
 
@@ -22,19 +23,38 @@ class ShiftRecognitionEngine(
     @Volatile
     private var cachedMatches: List<ShiftMatch> = emptyList()
     @Volatile
-    private var recognitionInProgress = false
-    @Volatile 
     private var lastCacheTime = 0L
     @Volatile
     private var cacheHitCount = 0
     @Volatile
     private var configChangeCount = 0
-    
+
+    /**
+     * INVARIANTE (Fix v1.22.2): Cache-Pruefung UND Cache-Veroeffentlichung liegen gemeinsam
+     * hinter diesem Mutex. Der Mehrfeld-Cache (`lastRecognitionHash`/`cachedMatches`/
+     * `lastCacheTime`) hat keine gemeinsame Atomizitaet - `@Volatile` schuetzt nur jedes Feld
+     * einzeln. Vorher wurde `lastRecognitionHash` VOR der Erkennung gesetzt und `cachedMatches`
+     * erst danach; ein nebenlaeufiger Aufrufer mit identischem Event-Hash traf in diesem Fenster
+     * die Cache-Treffer-Bedingung und bekam den ALTEN Stand - im frischen Prozess bzw. direkt
+     * nach `clearRecognitionCache()` eine LEERE Liste. `AlarmUseCase.syncAlarms()` versteht eine
+     * leere Trefferliste als "keine Schichten" und loescht daraufhin ALLE Alarme.
+     *
+     * Es gibt mindestens drei voneinander unabhaengige Aufrufer dieser einen Singleton-Instanz
+     * (`AlarmUseCase.syncAlarms()`, `ShiftUseCase.recognizeShiftsInEvents()`,
+     * `AlarmMaintenanceService`), die letzten beiden ausserhalb jedes Alarm-Mutex - die
+     * Ueberlappung ist der Normalfall, nicht der Ausnahmefall.
+     *
+     * Der Mutex ersetzt die frueheren Felder `recognitionInProgress` + `MAX_CONCURRENT_WAIT_MS`
+     * (Polling mit 200ms-Timeout, das "zur Sicherheit" trotzdem weiterlief und damit genau den
+     * halbfertigen Zustand las, den es verhindern sollte). Wer hier wieder ein Boolean-Flag mit
+     * Timeout einbaut, holt sich den Fehler zurueck.
+     */
+    private val recognitionMutex = Mutex()
+
     private companion object {
         const val BASE_CACHE_VALIDITY_MS = 5000L  // Base 5 seconds
         const val ADAPTIVE_CACHE_MIN_MS = 2000L   // Minimum 2 seconds
         const val ADAPTIVE_CACHE_MAX_MS = 30000L  // Maximum 30 seconds
-        const val MAX_CONCURRENT_WAIT_MS = 200L   // Max wait for concurrent operations
         val MAX_NIGHT_SHIFT_LEAD_TIME: Duration = Duration.ofHours(12)
     }
     
@@ -72,9 +92,8 @@ class ShiftRecognitionEngine(
     fun clearRecognitionCache() {
         lastRecognitionHash = 0
         cachedMatches = emptyList()
-        recognitionInProgress = false
         lastCacheTime = 0L
-        
+
         // ADAPTIVE LEARNING: Track configuration changes for cache optimization
         configChangeCount++
         cacheHitCount = 0 // Reset hit count on config change
@@ -87,62 +106,61 @@ class ShiftRecognitionEngine(
     suspend fun getAllMatchingShifts(events: List<CalendarEvent>): List<ShiftMatch> {
         // PERFORMANCE: Calculate hash of input to prevent duplicate processing
         val eventsHash = events.hashCode()
-        val currentTime = System.currentTimeMillis()
-        
-        // ADAPTIVE CACHE: Check cache validity with dynamic expiration
-        if (lastRecognitionHash == eventsHash && lastRecognitionHash != 0) {
-            val adaptiveCacheValidity = getAdaptiveCacheValidity()
-            val cacheAge = currentTime - lastCacheTime
-            
-            if (cacheAge < adaptiveCacheValidity) {
-                cacheHitCount++
-                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${cachedMatches.size} matches (hit #$cacheHitCount)")
-                return cachedMatches
-            } else {
-                Logger.d(LogTags.SHIFT_RECOGNITION, "⏰ ADAPTIVE-CACHE-EXPIRED: Cache is ${cacheAge}ms old (validity=${adaptiveCacheValidity}ms), needs refresh")
-            }
-        }
-        
-        // ENHANCED DEDUPLICATION: Smart waiting with timeout
-        if (recognitionInProgress) {
-            Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 WAIT-CONCURRENT: Recognition in progress, waiting smartly...")
-            
-            val startWait = System.currentTimeMillis()
-            while (recognitionInProgress && (System.currentTimeMillis() - startWait) < MAX_CONCURRENT_WAIT_MS) {
-                delay(25) // Shorter polling interval
-            }
-            
-            // If still in progress after timeout, proceed anyway to prevent deadlock
-            if (recognitionInProgress) {
-                Logger.w(LogTags.SHIFT_RECOGNITION, "⚠️ WAIT-TIMEOUT: Concurrent operation timed out after ${MAX_CONCURRENT_WAIT_MS}ms, proceeding anyway")
-            } else {
-                // Check if the concurrent operation produced the result we need
-                if (lastRecognitionHash == eventsHash && lastRecognitionHash != 0) {
-                    Logger.d(LogTags.SHIFT_RECOGNITION, "✅ CONCURRENT-SUCCESS: Concurrent operation completed, using fresh results")
-                    return cachedMatches
+
+        // Cache-Pruefung und -Veroeffentlichung liegen bewusst BEIDE im selben kritischen
+        // Abschnitt - siehe Kommentar an `recognitionMutex`. Ein nebenlaeufiger Aufrufer wartet
+        // hier auf das FERTIGE Ergebnis des ersten und bekommt es danach als Cache-Treffer,
+        // statt einen halbfertigen Zwischenzustand zu lesen.
+        return recognitionMutex.withLock {
+            // ADAPTIVE CACHE: Check cache validity with dynamic expiration
+            if (lastRecognitionHash == eventsHash && lastRecognitionHash != 0) {
+                val adaptiveCacheValidity = getAdaptiveCacheValidity()
+                val cacheAge = System.currentTimeMillis() - lastCacheTime
+
+                if (cacheAge < adaptiveCacheValidity) {
+                    cacheHitCount++
+                    Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${cachedMatches.size} matches (hit #$cacheHitCount)")
+                    return@withLock cachedMatches
+                } else {
+                    Logger.d(LogTags.SHIFT_RECOGNITION, "⏰ ADAPTIVE-CACHE-EXPIRED: Cache is ${cacheAge}ms old (validity=${adaptiveCacheValidity}ms), needs refresh")
                 }
             }
-        }
-        
-        recognitionInProgress = true
-        lastRecognitionHash = eventsHash
-        lastCacheTime = currentTime
-        
-        try {
+
             val matches = performRecognition(events)
+
+            // ERST JETZT veroeffentlichen - Ergebnis und Cache-Schluessel gemeinsam, nachdem die
+            // Erkennung wirklich fertig ist. Schlaegt `performRecognition` mit einer Exception
+            // fehl, bleibt der alte Cache-Schluessel stehen und der naechste Aufruf versucht es
+            // erneut, statt ein Fehlergebnis zu cachen.
             cachedMatches = matches
+            lastRecognitionHash = eventsHash
+            lastCacheTime = System.currentTimeMillis()
+
             Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${matches.size} matches (cache validity: ${getAdaptiveCacheValidity()}ms)")
-            return matches
-        } finally {
-            recognitionInProgress = false
+            matches
         }
     }
     
     private suspend fun performRecognition(events: List<CalendarEvent>): List<ShiftMatch> {
         val shiftConfigResult = shiftConfigRepository.getCurrentShiftConfig()
-        val shiftDefinitions = shiftConfigResult.getOrNull()?.definitions ?: emptyList()
+        val allDefinitions = shiftConfigResult.getOrNull()?.definitions ?: emptyList()
+
+        // Der Schalter "Schichtdefinition aktiviert" (`ShiftDefinition.isEnabled`) muss die
+        // Erkennung wirklich abschalten. Bis v1.22.1 las ihn NIEMAND ausser der Auswahl-UI
+        // (AlarmViewModel-Liste, Hue-Regel-Editor) - die Erkennung lief ueber ALLE Definitionen.
+        // Folge: eine deaktivierte Schicht verschwand aus den Auswahllisten, erzeugte aber
+        // weiterhin Alarme und klingelte. Bewusst NUR hier gefiltert, NICHT in
+        // `ShiftConfig.findDefinitionFor()`: dort wird ein BESTEHENDER Alarm einer Definition
+        // zugeordnet (Hue-Regeln, stille Schicht) - ein Filter wuerde einem Alarm, der noch aus
+        // der Zeit vor dem Deaktivieren stammt, seine Regeln entziehen.
+        val shiftDefinitions = allDefinitions.filter { it.isEnabled }
         val matches = mutableListOf<ShiftMatch>()
-        
+
+        val skipped = allDefinitions.size - shiftDefinitions.size
+        if (skipped > 0) {
+            Logger.d(LogTags.SHIFT_RECOGNITION, "🚫 DISABLED-SKIP: $skipped von ${allDefinitions.size} Schichtdefinitionen sind deaktiviert und werden nicht erkannt")
+        }
+
         Logger.d(LogTags.SHIFT_RECOGNITION, "Starting shift recognition with ${shiftDefinitions.size} definitions and ${events.size} events")
         
         for (event in events) {

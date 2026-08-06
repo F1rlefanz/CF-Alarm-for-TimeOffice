@@ -57,6 +57,30 @@ class ShiftRecognitionEngineTest {
         override suspend fun hasValidConfig(): Result<Boolean> = Result.success(true)
     }
 
+    /**
+     * Repository, dessen ERSTER Lesezugriff mit einer Exception scheitert und danach normal
+     * liefert - fuer den Nachweis, dass ein gescheiterter Lauf nicht als leeres Ergebnis
+     * gecacht wird.
+     */
+    private class FailingOnceShiftConfigRepository(
+        private val config: ShiftConfig
+    ) : IShiftConfigRepository {
+        var loadCount = 0
+            private set
+
+        override val shiftConfig: Flow<ShiftConfig> = flowOf(config)
+
+        override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> {
+            loadCount++
+            if (loadCount == 1) throw IllegalStateException("DataStore nicht lesbar")
+            return Result.success(config)
+        }
+
+        override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
+        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
+        override suspend fun hasValidConfig(): Result<Boolean> = Result.success(true)
+    }
+
     private fun event(title: String, day: Int = 10) = CalendarEvent(
         id = "e$day-$title",
         title = title,
@@ -183,5 +207,92 @@ class ShiftRecognitionEngineTest {
         assertEquals(1, firstRun.size)
         assertEquals(1, secondRun.size)
         assertEquals("Zweiter Aufruf muss aus dem Cache kommen", 1, repo.loadCount)
+    }
+
+    /**
+     * Die Erkennung bricht pro Event beim ERSTEN passenden Treffer ab (`break`). Eine
+     * deaktivierte Definition, die weiter vorn in der Liste steht, darf deshalb einer
+     * aktivierten dahinter nicht den Treffer wegnehmen - sonst haette das Deaktivieren einer
+     * Schicht die Nebenwirkung, eine andere passende Schicht stillzulegen.
+     */
+    @Test
+    fun `deaktivierte Definition verdeckt keine aktivierte mit demselben Keyword`() = runTest {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(
+                definition("Altlast", listOf("FS"), enabled = false),
+                definition("Fruehschicht", listOf("FS"), enabled = true)
+            )
+        )
+        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+
+        val matches = engine.getAllMatchingShifts(listOf(event("FS")))
+
+        assertEquals(1, matches.size)
+        assertEquals("Fruehschicht", matches.first().shiftDefinition.name)
+    }
+
+    /**
+     * Ein Lauf, der mit einer Exception scheitert (z.B. DataStore gerade nicht lesbar), darf
+     * KEINEN Cache-Eintrag hinterlassen. Vor dem Fix wurde `lastRecognitionHash` vor der
+     * Erkennung gesetzt und beim Fehlschlag nicht zurueckgenommen - der naechste Aufruf mit
+     * denselben Events bekam deshalb einen "Cache-Treffer" auf die leere Vorbelegung, obwohl
+     * nie eine Erkennung gelaufen war. Fuer eine Wecker-App ist "leer" die gefaehrlichste
+     * Luege: `syncAlarms()` loescht darauf alle Alarme.
+     */
+    @Test
+    fun `gescheiterter Lauf wird nicht als leeres Ergebnis gecacht`() = runTest {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Fruehschicht", listOf("FS")))
+        )
+        val repo = FailingOnceShiftConfigRepository(config)
+        val engine = ShiftRecognitionEngine(repo)
+        val events = listOf(event("FS"))
+
+        try {
+            engine.getAllMatchingShifts(events)
+            throw AssertionError("Der erste Lauf muss die Exception durchreichen")
+        } catch (expected: IllegalStateException) {
+            // so gewollt: der Aufrufer (SafeExecutor) sieht den Fehler, nicht "0 Schichten"
+        }
+
+        val secondRun = engine.getAllMatchingShifts(events)
+
+        assertEquals(
+            "Nach einem gescheiterten Lauf muss erneut wirklich erkannt werden",
+            1,
+            secondRun.size
+        )
+        assertEquals("Zweiter Aufruf muss das Repository erneut lesen", 2, repo.loadCount)
+    }
+
+    /**
+     * Der Mutex darf die Deduplizierung nicht verlieren: zwei gleichzeitige Aufrufer mit
+     * identischen Events duerfen die (teure) Erkennung nur EINMAL ausfuehren - der zweite
+     * bekommt das fertige Ergebnis als Cache-Treffer.
+     */
+    @Test
+    fun `gleichzeitige Aufrufer erkennen nur einmal`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Fruehschicht", listOf("FS")))
+        )
+        val repo = GatedShiftConfigRepository(config, gate)
+        val engine = ShiftRecognitionEngine(repo)
+        val events = listOf(event("FS"))
+
+        val first = async { engine.getAllMatchingShifts(events) }
+        runCurrent()
+        val second = async { engine.getAllMatchingShifts(events) }
+        runCurrent()
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, first.await().size)
+        assertEquals(1, second.await().size)
+        assertEquals("Die Erkennung darf nur einmal gelaufen sein", 1, repo.loadCount)
     }
 }

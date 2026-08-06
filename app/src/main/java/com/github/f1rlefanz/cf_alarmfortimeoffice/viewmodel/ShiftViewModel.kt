@@ -117,21 +117,18 @@ class ShiftViewModel @Inject constructor(
     fun updateShiftConfig(config: ShiftConfig) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
-            // CRITICAL FIX: Clear recognition cache BEFORE saving config
-            try {
-                // Access the ShiftRecognitionEngine through the UseCase and clear its cache
-                Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-CLEAR: Clearing recognition cache before config update")
-                
-                // Force clear the recognition cache by calling recognizeShiftsInEvents with empty list
-                // This will reset the internal cache state
-                shiftUseCase.recognizeShiftsInEvents(emptyList())
-                
-                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ CACHE-CLEAR: Recognition cache cleared successfully")
-            } catch (e: Exception) {
-                Logger.w(LogTags.SHIFT_RECOGNITION, "⚠️ CACHE-CLEAR: Failed to clear cache", e)
-            }
-            
+
+            // Hier stand bis v1.22.1 ein `recognizeShiftsInEvents(emptyList())` mit dem Kommentar
+            // "Force clear the recognition cache" und einem Erfolgs-Log "Recognition cache cleared
+            // successfully". Der Aufruf loeschte NICHTS: er fuehrte eine vollstaendige Erkennung
+            // mit leerer Eventliste durch und BEFUELLTE den Cache dabei sogar neu
+            // (lastRecognitionHash = emptyList().hashCode(), cachedMatches = emptyList()). Der
+            // echte Reset passiert eine Zeile weiter unten in `saveShiftConfig()` ->
+            // `invalidateAllCaches()` -> `ShiftRecognitionEngine.clearRecognitionCache()`, und
+            // zwar nur bei erfolgreichem Speichern - genau richtig. Das falsche Erfolgs-Log war
+            // aktiv schaedlich: es liess im Datei-Log einen Cache-Reset als bewiesen erscheinen,
+            // der nie stattgefunden hat. Kein Erfolgs-Log fuer eine Operation, die nicht passiert.
+
             shiftUseCase.saveShiftConfig(config)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(

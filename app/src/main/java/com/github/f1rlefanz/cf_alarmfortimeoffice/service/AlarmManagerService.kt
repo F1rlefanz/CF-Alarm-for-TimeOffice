@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmReceiver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
@@ -418,6 +419,18 @@ class AlarmManagerService(
         }
     }
 
+    /**
+     * Bricht ALLE schwebenden Snooze-Alarme ab (Instanz-Variante fuer Aufrufer ohne Context,
+     * z.B. AlarmUseCase).
+     *
+     * NUR fuer ausdruecklichen Nutzer-Willen ("Hintergrunddienste pausieren", "Automatische
+     * Alarme aus", "alle Alarme loeschen") - NICHT fuer datengetriebene Aufraeumzweige und
+     * bewusst NICHT an `deleteAlarm(id)` gehaengt: dort raeumt u.a. der BootReceiver abgelaufene
+     * Alarme weg, und der Ursprungsalarm eines schwebenden Snooze IST abgelaufen - genau dieser
+     * Weg haette den Snooze wieder mitgeloescht. Siehe [Companion.cancelAllSnoozes].
+     */
+    fun cancelAllSnoozes() = cancelAllSnoozes(application)
+
     private fun formatAlarmTime(alarmTime: java.time.LocalDateTime): String {
         val formatter = DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
         return alarmTime.format(formatter)
@@ -490,8 +503,22 @@ class AlarmManagerService(
          * den PendingIntent-Slot mit seinem Ursprungsalarm, raeumte ihn der Maintenance-Sync beim
          * Loeschen des gefeuerten Alarms mit ab - der Nutzer haette "schlummern" gedrueckt und waere
          * nie wieder geweckt worden. requestCode = alarmId, damit ein zweiter Snooze denselben Slot
-         * ersetzt statt zu stapeln. setAlarmClock() ist von der Exact-Alarm-Berechtigung ausgenommen
-         * und doze-fest.
+         * ersetzt statt zu stapeln.
+         *
+         * BERECHTIGUNG: setAlarmClock() ist NICHT von der Exact-Alarm-Berechtigung ausgenommen (das
+         * behauptete dieser Kommentar frueher). Auf API 31/32 haengt sie an SCHEDULE_EXACT_ALARM,
+         * das der Nutzer in den Systemeinstellungen entziehen kann - dann wirft AlarmManager eine
+         * SecurityException. Ungefangen riss die aus dem Snooze-Button der Notification den
+         * kompletten AlarmSoundService-Prozess mit: kein Snooze, kein Ton, keine Meldung. Deshalb
+         * hier zweistufig: bei fehlender Berechtigung inexakt per setAndAllowWhileIdle() planen
+         * (ein um Minuten verzoegerter Snooze ist besser als kein Snooze), und alles in try/catch.
+         *
+         * SHOW-INTENT: Der erste Parameter von [AlarmManager.AlarmClockInfo] ist der Intent, den
+         * Uhr-Widgets/Sperrbildschirm ANZEIGEN bzw. per send() ausloesen - dort gehoert eine
+         * Activity hin, nicht der Broadcast-PendingIntent, der den Wecker AUSLOEST (sonst klingelt
+         * der Wecker sofort, sobald jemand die Wecker-Affordance antippt). Gleiche
+         * requestCode-Konvention (alarmId + 10000) wie [createShowAlarmIntent] und
+         * [rescheduleFromDirectBoot].
          */
         fun scheduleSnooze(
             context: Context,
@@ -518,16 +545,176 @@ class AlarmManagerService(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(triggerTime, pendingIntent),
-                pendingIntent
+            val showIntent = Intent(context, MainActivity::class.java).apply {
+                putExtra("alarm_id", alarmId)
+                putExtra("shift_name", shiftName)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                setPackage(context.packageName)
+            }
+            val showPendingIntent = PendingIntent.getActivity(
+                context, alarmId + 10000, showIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            Logger.business(
-                LogTags.ALARM_MANAGER,
-                "😴 Snooze-Alarm gesetzt: $shiftName in $minutes Min (id=$alarmId)"
-            )
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val canScheduleExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                alarmManager.canScheduleExactAlarms()
+
+            try {
+                if (canScheduleExact) {
+                    alarmManager.setAlarmClock(
+                        AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent),
+                        pendingIntent
+                    )
+                } else {
+                    Logger.w(
+                        LogTags.ALARM_MANAGER,
+                        "⚠️ Keine Exact-Alarm-Berechtigung - Snooze wird inexakt geplant (kann sich um Minuten verzoegern)"
+                    )
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent
+                    )
+                }
+                // Erst NACH erfolgreicher Planung vormerken: der Eintrag ist die einzige Spur, ueber
+                // die ein schwebender Snooze spaeter noch abgebrochen werden kann.
+                rememberPendingSnooze(context, alarmId, triggerTime)
+
+                Logger.business(
+                    LogTags.ALARM_MANAGER,
+                    "😴 Snooze-Alarm gesetzt: $shiftName in $minutes Min (id=$alarmId)"
+                )
+            } catch (e: SecurityException) {
+                Logger.e(
+                    LogTags.ALARM_MANAGER,
+                    "❌ Snooze konnte nicht geplant werden - Alarm-Berechtigung verweigert (id=$alarmId)",
+                    e
+                )
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze konnte nicht geplant werden (id=$alarmId)", e)
+            }
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Schwebende Snooze-Alarme: eigener Cancel-Weg
+        //
+        // Der Snooze liegt bewusst in einem EIGENEN PendingIntent-Slot (siehe [snoozeAlarmAction]),
+        // damit ihn der Maintenance-Sync nicht mit abraeumt. Genau daraus folgte aber ein Loch:
+        // [cancelSystemAlarm] baut ausschliesslich [enhancedAlarmAction] und trifft den Snooze-Slot
+        // damit NIE. Ein bereits gestellter Snooze lief deshalb durch JEDE App-seitige Abschaltung
+        // hindurch (Master-Pause, "Automatische Alarme aus", deleteAllAlarms) und klingelte mitten
+        // in einer Pause, die der Nutzer gerade eingeschaltet hatte.
+        //
+        // Die Snooze-IDs sind sonst nirgends persistiert (der gefeuerte Ursprungsalarm ist zu dem
+        // Zeitpunkt schon aus dem Repository geraeumt), deshalb dieser winzige eigene Merker im
+        // DEVICE-PROTECTED Storage - dieselbe Wahl und derselbe Grund wie beim DirectBootAlarmStore
+        // (synchron, ohne Coroutine, auch vor der ersten Entsperrung lesbar).
+        // ---------------------------------------------------------------------------------------
+
+        private const val SNOOZE_PREFS_NAME = "pending_snoozes"
+        private const val KEY_SNOOZE_ENTRIES = "entries"
+        private const val SNOOZE_ENTRY_SEPARATOR = "|"
+
+        private fun snoozePrefs(context: Context): SharedPreferences =
+            context.createDeviceProtectedStorageContext()
+                .getSharedPreferences(SNOOZE_PREFS_NAME, Context.MODE_PRIVATE)
+
+        /** "id|triggerTime" - reine Funktion, damit das Format testbar bleibt. */
+        internal fun encodeSnoozeEntry(alarmId: Int, triggerTime: Long): String =
+            "$alarmId$SNOOZE_ENTRY_SEPARATOR$triggerTime"
+
+        /** null bei kaputtem/fremdem Eintrag - ein Lesefehler darf nie den Cancel-Weg sprengen. */
+        internal fun parseSnoozeEntry(entry: String): Pair<Int, Long>? {
+            val parts = entry.split(SNOOZE_ENTRY_SEPARATOR)
+            if (parts.size != 2) return null
+            val id = parts[0].toIntOrNull() ?: return null
+            val triggerTime = parts[1].toLongOrNull() ?: return null
+            return id to triggerTime
+        }
+
+        /**
+         * Selbstreinigung: Eintraege, deren Snooze-Zeit verstrichen ist, sind erledigt (der Alarm
+         * ist gefeuert oder wurde gestoppt) und wuerden den Merker sonst unbegrenzt wachsen lassen.
+         */
+        internal fun pruneSnoozeEntries(entries: Set<String>, now: Long): Set<String> =
+            entries.filter { raw ->
+                val parsed = parseSnoozeEntry(raw)
+                parsed != null && parsed.second > now
+            }.toSet()
+
+        internal fun snoozeIdsOf(entries: Set<String>): List<Int> =
+            entries.mapNotNull { parseSnoozeEntry(it)?.first }.distinct()
+
+        private fun rememberPendingSnooze(context: Context, alarmId: Int, triggerTime: Long) {
+            try {
+                val prefs = snoozePrefs(context)
+                val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
+                val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
+                    .filterNot { parseSnoozeEntry(it)?.first == alarmId }
+                    .toSet()
+                prefs.edit()
+                    .putStringSet(KEY_SNOOZE_ENTRIES, kept + encodeSnoozeEntry(alarmId, triggerTime))
+                    .apply()
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht geschrieben werden", e)
+            }
+        }
+
+        private fun forgetPendingSnooze(context: Context, alarmId: Int) {
+            try {
+                val prefs = snoozePrefs(context)
+                val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
+                val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
+                    .filterNot { parseSnoozeEntry(it)?.first == alarmId }
+                    .toSet()
+                prefs.edit().putStringSet(KEY_SNOOZE_ENTRIES, kept).apply()
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht bereinigt werden", e)
+            }
+        }
+
+        /**
+         * Bricht den schwebenden Snooze-Alarm zu [alarmId] ab. Baut denselben PendingIntent wie
+         * [scheduleSnooze] (requestCode = alarmId, action = [snoozeAlarmAction]) - nur so trifft
+         * der Cancel den richtigen Slot.
+         */
+        fun cancelSnooze(context: Context, alarmId: Int) {
+            try {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
+                    setPackage(context.packageName)
+                    action = snoozeAlarmAction(alarmId)
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context, alarmId, alarmIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.cancel(pendingIntent)
+                pendingIntent.cancel()
+                forgetPendingSnooze(context, alarmId)
+                Logger.business(LogTags.ALARM_MANAGER, "🚫 Schwebender Snooze abgebrochen (id=$alarmId)")
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze konnte nicht abgebrochen werden (id=$alarmId)", e)
+            }
+        }
+
+        /**
+         * Bricht ALLE vorgemerkten Snooze-Alarme ab.
+         *
+         * NUR bei ausdruecklichem Nutzer-Willen aufrufen (Master-Pause, "Automatische Alarme aus",
+         * "alle Alarme loeschen"). NICHT in datengetriebenen Aufraeumzweigen wie "Kalender liefert
+         * gerade keine Events" - genau davor schuetzt der eigene Snooze-Slot, und ein leerer
+         * Kalender-Abruf ist direkt nach dem Boot/ohne Netz der Normalfall.
+         */
+        fun cancelAllSnoozes(context: Context) {
+            val ids = try {
+                snoozeIdsOf(snoozePrefs(context).getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet())
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht gelesen werden", e)
+                emptyList()
+            }
+            if (ids.isEmpty()) return
+            Logger.business(LogTags.ALARM_MANAGER, "🚫 ${ids.size} schwebende Snooze-Alarme werden abgebrochen")
+            ids.forEach { cancelSnooze(context, it) }
         }
 
         /**
@@ -535,9 +722,14 @@ class AlarmManagerService(
          *
          * Baut exakt denselben PendingIntent wie der regulaere Pfad (gleiche requestCode=id und
          * action), sodass ein spaeteres regulaeres Rescheduling nach Entsperrung den Alarm via
-         * FLAG_UPDATE_CURRENT aktualisiert statt zu duplizieren. Braucht KEIN Hilt/CE/Kalender:
-         * setAlarmClock() ist von der Exact-Alarm-Berechtigung ausgenommen und darf im Direct-Boot
-         * laufen. Nur fuer Alarme in der Zukunft.
+         * FLAG_UPDATE_CURRENT aktualisiert statt zu duplizieren. Braucht KEIN Hilt/CE/Kalender und
+         * darf im Direct-Boot laufen. Nur fuer Alarme in der Zukunft.
+         *
+         * setAlarmClock() ist NICHT von der Exact-Alarm-Berechtigung ausgenommen (das behauptete
+         * dieser Kommentar frueher): auf API 31/32 kann der Nutzer sie entziehen, dann fliegt eine
+         * SecurityException. Sie darf hier NIEMALS nach oben durchschlagen - der Aufrufer
+         * (BootReceiver) restauriert in derselben Schleife weitere Alarme, und ein Absturz im
+         * Boot-Fenster liesse alle folgenden ungesetzt. Fallback wie beim Snooze: inexakt planen.
          */
         fun rescheduleFromDirectBoot(
             context: Context,
@@ -576,14 +768,36 @@ class AlarmManagerService(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent),
-                pendingIntent
-            )
-            Logger.business(
-                LogTags.ALARM_MANAGER,
-                "🔐 DIRECT-BOOT: Alarm neu gesetzt - id=$id, $shiftName @ $shiftStartTimeFormatted"
-            )
+            try {
+                val canScheduleExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                    alarmManager.canScheduleExactAlarms()
+                if (canScheduleExact) {
+                    alarmManager.setAlarmClock(
+                        AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent),
+                        pendingIntent
+                    )
+                } else {
+                    Logger.w(
+                        LogTags.ALARM_MANAGER,
+                        "⚠️ DIRECT-BOOT: Keine Exact-Alarm-Berechtigung - Alarm id=$id wird inexakt geplant"
+                    )
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent
+                    )
+                }
+                Logger.business(
+                    LogTags.ALARM_MANAGER,
+                    "🔐 DIRECT-BOOT: Alarm neu gesetzt - id=$id, $shiftName @ $shiftStartTimeFormatted"
+                )
+            } catch (e: SecurityException) {
+                Logger.e(
+                    LogTags.ALARM_MANAGER,
+                    "❌ DIRECT-BOOT: Alarm id=$id konnte nicht gesetzt werden - Berechtigung verweigert",
+                    e
+                )
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_MANAGER, "❌ DIRECT-BOOT: Alarm id=$id konnte nicht gesetzt werden", e)
+            }
         }
     }
 }

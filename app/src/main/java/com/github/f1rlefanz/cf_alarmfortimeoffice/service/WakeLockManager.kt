@@ -8,7 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -124,8 +124,11 @@ class WakeLockManager(
             releaseWakeLock(tag)
         }
         
-        // Cancel cleanup scope
-        cleanupScope.cancel()
+        // Nur die laufenden Timeout-Jobs abbrechen, NICHT den Scope selbst: WakeLockManager ist ein
+        // Hilt-@Singleton. Ein cleanupScope.cancel() waere endgueltig - danach koennte
+        // acquireAlarmWakeLock() seinen Auto-Release-Timeout-Job nie mehr starten, und ein nicht
+        // freigegebener PARTIAL_WAKE_LOCK haengt in einer Wecker-App stundenlang am Akku.
+        cleanupScope.coroutineContext.cancelChildren()
     }
     
     override fun isWakeLockHeld(tag: String): Boolean {

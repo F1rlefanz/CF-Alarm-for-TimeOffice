@@ -35,7 +35,7 @@ import kotlin.time.Duration
  * `keywords.any { shiftName.contains(it) }` (so stand es einmal im AlarmReceiver) laesst "S" auf
  * "S2", "Nachtschicht" und "Zwischendienst" passen - die S2-Regel feuerte nie, die
  * Spaetschicht-Regel bei fast jeder Schicht. Am Emulator gegen die echte Standardkonfiguration
- * reproduziert (v1.11.0). Bis v1.22.2 behauptete der KDoc ueber `autoOffTargetsOf()` weiterhin,
+ * reproduziert (v1.11.0). Lange behauptete der KDoc ueber `autoOffTargetsOf()` weiterhin,
  * `findApplicableRules` matche "auch ueber Keywords" - eine veraltete Begruendung, die genau dazu
  * verleitet, diese Fehlerfamilie "wiederherzustellen". Dieser Test macht den Rueckbau sichtbar.
  *

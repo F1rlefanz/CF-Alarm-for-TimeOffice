@@ -194,8 +194,11 @@ android {
         // Use our custom lint configuration
         lintConfig = file("lint.xml")
 
-        // Optional: Create baseline for existing issues
-        // baseline = file("lint-baseline.xml")
+        // BEWUSST KEINE Baseline: es gibt keine lint-baseline.xml mehr (August 2026 gelöscht).
+        // Die alte enthielt nur 27 FullBackupContent-Einträge zu <exclude>-Zeilen, die es in
+        // den Backup-Regeln längst nicht mehr gab, und wurde durch diese auskommentierte Zeile
+        // ohnehin nie gelesen - halb verdrahteter toter Ballast. Wer eine Baseline will:
+        // frisch erzeugen UND diese Zeile aktivieren, nicht das eine ohne das andere.
 
         // HTML/XML reports werden seit AGP 9 immer erzeugt (Standardpfad
         // build/reports/lint-results-<variant>.*) - kein Opt-in mehr noetig.

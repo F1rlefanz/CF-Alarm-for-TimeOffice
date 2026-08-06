@@ -48,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -177,7 +178,7 @@ private fun BridgeStatusCard(
     onForgetBridge: () -> Unit
 ) {
     // UX FEATURE (B): confirmation dialog before actually disconnecting/forgetting the bridge.
-    var showForgetDialog by remember { mutableStateOf(false) }
+    var showForgetDialog by rememberSaveable { mutableStateOf(false) }
 
     Card(
         colors = CardDefaults.cardColors(
@@ -352,6 +353,12 @@ private fun RuleCard(
     onDelete: () -> Unit,
     onTest: () -> Unit
 ) {
+    // Loeschen ist unwiderruflich (Lampenauswahl, Farbwerte, Auto-Aus, Sunrise sind danach weg) und
+    // der Papierkorb sitzt in einer schmalen Zeile direkt neben "Bearbeiten" — ein Fehlgriff kostete
+    // bisher die ganze Regel ohne Rueckfrage. Dieselbe Karte fragt fuer die WENIGER folgenreiche
+    // Aktion "Bridge vergessen" schon nach (BridgeStatusCard), das war ein Widerspruch.
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (rule.enabled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
@@ -399,10 +406,39 @@ private fun RuleCard(
                     icon = Icons.Default.PlayArrow,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = onDelete) {
+                IconButton(onClick = { showDeleteDialog = true }) {
                     Icon(Icons.Default.Delete, "Löschen", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Regel löschen?") },
+            text = {
+                Text(
+                    "Die Regel \"${rule.name}\" wird mit allen Einstellungen (Lampenauswahl, " +
+                        "Farbe, Auto-Aus, Sonnenaufgang) gelöscht. Das lässt sich nicht rückgängig " +
+                        "machen."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDelete()
+                    }
+                ) {
+                    Text("Löschen", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
     }
 }

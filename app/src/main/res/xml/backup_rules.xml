@@ -1,28 +1,79 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-   SECURITY-HARDENED Full Backup Rules (Android 6.0-11 compatibility)
-   
-   PRINCIPLE: Include only safe data, exclude ALL sensitive data
-   SECURITY IMPACT: Prevents token leakage through legacy backup mechanisms
-   
-   Note: This file is used for Android 6.0 to 11 (API 23-30)
-   For Android 12+ (API 31+), see data_extraction_rules.xml
-   
+   Backup-Regeln fuer Android 6.0-11 (API 23-30).
+   Fuer Android 12+ (API 31+) gilt data_extraction_rules.xml.
+
+   BEIDE DATEIEN MUESSEN INHALTLICH IDENTISCH BLEIBEN. Sonst sichert dasselbe Geraet je
+   nach Android-Version Unterschiedliches, und ein Fehler faellt nur auf einer Haelfte der
+   Installationsbasis auf.
+
+   WARUM DIESE DATEI 2026-08 KOMPLETT NEU GESCHRIEBEN WURDE:
+   Vorher standen hier ausschliesslich Pfade, die diese App NIE angelegt hat -
+   shift_config.xml, alarm_settings.xml, ui_preferences.xml, app_preferences.xml
+   (domain="sharedpref") und app_database.db (domain="database"). Die Einstellungen liegen
+   real in DataStore-Dateien unter files/datastore/*.preferences_pb (domain="file"), und
+   eine Room-/SQLite-Datenbank gibt es in dieser App gar nicht. Weil eine reine
+   <include>-Liste alles Nicht-Genannte ausschliesst, war die effektive Backup-Menge LEER:
+   allowBackup="true" war gesetzt, uebertragen wurde bei einem Geraetewechsel aber NICHTS.
+   Die Pfade unten sind am Emulator per `run-as <pkg> ls -R` gegen die tatsaechlich
+   angelegten Dateien geprueft.
+
+   GRUNDSATZ: Gesichert wird nur, was der Nutzer selbst konfiguriert hat (Schichten,
+   Dimm-/DND-/Hue-Regeln, Kalenderauswahl). Anmelde- und Verschluesselungsartefakte sind
+   geraetegebunden und bleiben draussen.
+
    See https://developer.android.com/guide/topics/data/autobackup
 -->
 <full-backup-content>
-    <!-- SIMPLIFIED APPROACH: Include only explicitly safe data -->
-    <!-- No wildcards or exclusions of non-included paths -->
-    
-    <!-- Safe app configuration that can be backed up -->
-    <include domain="sharedpref" path="shift_config.xml"/>
-    <include domain="sharedpref" path="alarm_settings.xml"/>
-    <include domain="sharedpref" path="ui_preferences.xml"/>
-    <include domain="sharedpref" path="app_preferences.xml"/>
-    
-    <!-- Safe app database (non-sensitive user data) -->
-    <include domain="database" path="app_database.db"/>
-    
-    <!-- Note: By not including sensitive paths, they are automatically excluded -->
-    <!-- This approach is Lint-compliant and secure -->
+    <!-- Alle DataStore-Dateien (files/datastore/*.preferences_pb):
+         - settings ................. Dimmer-Regeln, Nacht-Standard, DND-Toggles/-Policy,
+                                      Schlummer-Dauer, Notification-Toggles, Master-Pause
+         - shift_prefs .............. Schichtdefinitionen (Weckzeiten, Keywords, Flags)
+         - hue_settings ............. Bridge-Zugang + Hue-Regeln
+         - calendar_selection_prefs . ausgewaehlte Google-Kalender
+         Reine Laufzeit-Spiegel in "settings" (active_alarms, dim_render_*, dnd_zen_rule_id,
+         last_maintenance_time, Skip-Keys) werden mitgesichert, sind aber harmlos: sie werden
+         beim naechsten syncAlarms()/applyCurrentState() aus Kalender + Konfiguration neu
+         abgeleitet, und eine restaurierte, auf dem Zielgeraet unbekannte Zen-Regel-ID legt
+         ensureZenRule() einfach neu an. -->
+    <include domain="file" path="datastore"/>
+
+    <!-- AUSSCHLUSS 1 - Token-Store: mit einem Tink-AES256-GCM-Keyset verschluesselt, dessen
+         Masterkey unter android-keystore://token_master_key im Keystore des ALTEN Geraets
+         liegt und dieses nie verlaesst. Restauriertes Ciphertext ist auf dem Zielgeraet
+         dauerhaft unentschluesselbar und wuerde bei jedem Read eine TinkEncryptionException
+         erzeugen. Der Token wird stattdessen ueber GoogleAuthUtil neu geholt. -->
+    <exclude domain="file" path="datastore/token_data_v2_encrypted.preferences_pb"/>
+
+    <!-- AUSSCHLUSS 2 - Anmeldezustand: auth_prefs enthaelt login_status, Kontoidentitaet und
+         Token-Felder. Ein restauriertes login_status=true OHNE gueltiges Token ist ein
+         Zustand, den die Auth-Gate-Logik nicht kennt (siehe observeTokenLoss/signOut-
+         Invarianten in CLAUDE.md). Neu anmelden ist der einzige saubere Weg. -->
+    <exclude domain="file" path="datastore/auth_prefs.preferences_pb"/>
+
+    <!-- SharedPreferences: Domain aufgenommen, damit die folgenden <exclude>-Regeln wirksam
+         (und Lint-konform) sind - ein <exclude> ausserhalb eines <include>-Pfades ist ein
+         No-Op und wird von Lint als FullBackupContent gemeldet; genau das erzeugte die alte
+         lint-baseline.xml. Faktisch bleibt von domain="sharedpref" heute NICHTS uebrig, weil
+         alle drei real existierenden Dateien unten ausgeschlossen sind. WER EINE NEUE
+         SharedPreferences-DATEI ANLEGT, muss hier bewusst entscheiden, ob sie ins Backup darf. -->
+    <include domain="sharedpref" path="."/>
+
+    <!-- AUSSCHLUSS 3 - token_encryption_prefs.xml: haelt das Tink-Keyset
+         (token_master_keyset). Es ist GERAETEGEBUNDEN; ein restaurierter Token ohne passendes
+         Keyset ist unentschluesselbar und erzeugt eine Anmeldeschleife. Zudem ein
+         Sicherheitsartefakt, das grundsaetzlich nicht in eine Cloud gehoert. -->
+    <exclude domain="sharedpref" path="token_encryption_prefs.xml"/>
+
+    <!-- AUSSCHLUSS 4 - hue_trust_pinning.xml: Trust-On-First-Use-Basislinie einer BESTIMMTEN
+         physischen Bridge (Bridge-ID-Pinning), also geraete- und netzspezifisch. Ein fremder
+         Pin erzeugt auf dem Zielgeraet nur die "Bridge identity changed"-Warnung. -->
+    <exclude domain="sharedpref" path="hue_trust_pinning.xml"/>
+
+    <!-- background_services.xml: reine Diagnosedaten des ALTEN Geraets (device_info,
+         Startzeitpunkt, Version) - auf dem Zielgeraet irrefuehrend, wird beim ersten Start
+         ohnehin neu geschrieben.
+         Nicht aufgefuehrt, weil gar nicht in dieser Domain: direct_boot_alarms.xml liegt im
+         Device-Protected Storage (/data/user_de/) und ist ein Spiegel der Alarme. -->
+    <exclude domain="sharedpref" path="background_services.xml"/>
 </full-backup-content>

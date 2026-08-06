@@ -78,10 +78,13 @@ class BootReceiver : BroadcastReceiver() {
             30000L  // 30 seconds for post-boot health check
 
         // Boot Actions
+        // KEIN ACTION_PACKAGE_REPLACED: der Intent-Filter im Manifest kann es nicht zustellen -
+        // PACKAGE_REPLACED braeuchte ein <data android:scheme="package"/>, und ein <data>-Element
+        // wuerde die drei URI-losen Actions hier komplett aussperren. Der praktisch relevante
+        // Update-Fall laeuft ueber MY_PACKAGE_REPLACED.
         private const val ACTION_BOOT_COMPLETED = Intent.ACTION_BOOT_COMPLETED
         private const val ACTION_LOCKED_BOOT_COMPLETED = Intent.ACTION_LOCKED_BOOT_COMPLETED
         private const val ACTION_MY_PACKAGE_REPLACED = Intent.ACTION_MY_PACKAGE_REPLACED
-        private const val ACTION_PACKAGE_REPLACED = Intent.ACTION_PACKAGE_REPLACED
     }
 
     // Recovery Scope für Boot-Recovery-Operations
@@ -113,8 +116,9 @@ class BootReceiver : BroadcastReceiver() {
                     "📱 LEVEL 4: Device booted - initiating complete system recovery"
                 )
                 // Zuerst der schnelle, prozess-tod-sichere Restore (Alarme stehen sofort wieder),
-                // dann die vollstaendige CE-basierte Validierung/Recovery.
+                // dann der Prozess-Anker, dann die vollstaendige CE-basierte Validierung/Recovery.
                 restoreAlarmsFromDirectBootStore(context, "BOOT_COMPLETED")
+                startMaintenanceAnchor(context, "BOOT_COMPLETED")
                 performCompleteSystemRecovery(context, "BOOT_COMPLETED")
             }
 
@@ -124,18 +128,8 @@ class BootReceiver : BroadcastReceiver() {
                     "📦 LEVEL 4: App updated - performing post-update recovery"
                 )
                 restoreAlarmsFromDirectBootStore(context, "APP_UPDATED")
+                startMaintenanceAnchor(context, "APP_UPDATED")
                 performCompleteSystemRecovery(context, "APP_UPDATED")
-            }
-
-            ACTION_PACKAGE_REPLACED -> {
-                if (intent.data?.schemeSpecificPart == context.packageName) {
-                    Logger.business(
-                        LogTags.MAINTENANCE_L4,
-                        "📦 LEVEL 4: Our package replaced - performing recovery"
-                    )
-                    restoreAlarmsFromDirectBootStore(context, "PACKAGE_REPLACED")
-                    performCompleteSystemRecovery(context, "PACKAGE_REPLACED")
-                }
             }
 
             else -> {
@@ -201,6 +195,56 @@ class BootReceiver : BroadcastReceiver() {
             } finally {
                 pendingResult.finish()
             }
+        }
+    }
+
+    /**
+     * PROZESS-ANKER + Sicherheitsnetz fuer die lange Boot-Recovery.
+     *
+     * [performCompleteSystemRecovery] laeuft in einem eigenen `recoveryScope` OHNE `goAsync()`:
+     * sobald `onReceive()` zurueckkehrt, haelt der Prozess keine aktive Komponente mehr und ist
+     * als "empty process" jederzeit abschiessbar - waehrend die Coroutine noch 5s
+     * Stabilitaets-Wartezeit absitzt, danach Token-/Kalender-Arbeit macht und bis zu 3x mit je
+     * 10s Pause wiederholt. `goAsync()` allein reicht dafuer nicht (Broadcast-Zeitfenster).
+     *
+     * Der kurzlebige Foreground-Service gibt dem Prozess eine Vordergrund-Komponente fuer die
+     * kritischen ersten Sekunden UND leistet - unabhaengig vom Ausgang der Recovery-Coroutine -
+     * genau die Schritte, deren Verlust am teuersten ist: 6h-Kette neu planen (bzw. bei
+     * Master-Pause kappen), Kalender laden + Delta-Sync, Dimmer-/DND-Tick und
+     * Pre-Alarm-Refresh-Jobs neu setzen. Wird die Coroutine also abgeschossen, steht die App
+     * trotzdem nicht ohne laufende Wartung da.
+     *
+     * `forceSync = true`: nach einem Boot/Update sind die Daten grundsaetzlich verdaechtig - das
+     * regulaere Lade-Gate (Puffer/Datenalter) wuerde hier oft ueberspringen.
+     *
+     * BEWUSST `directBootAlarmStore.isPausedNow()` statt `masterPausePrefs.pausedNow()`: der
+     * Aufruf muss SYNCHRON in `onReceive()` passieren (nur dort ist der Start eines
+     * Foreground-Service aus dem Hintergrund garantiert erlaubt - BOOT_COMPLETED/
+     * MY_PACKAGE_REPLACED sind ausdruecklich von den Android-12-FGS-Beschraenkungen ausgenommen),
+     * und `MasterPausePrefs` liegt im CE-Storage und ist nur suspendierend lesbar. Der
+     * Device-Protected-Spiegel liefert denselben Zustand synchron - gleiche Begruendung wie im
+     * schnellen Direct-Boot-Restore. Bei aktiver Pause bleibt es beim Kappen der Kette durch die
+     * Recovery selbst; hier wird bewusst KEIN Service (und damit keine sichtbare Notification)
+     * gestartet.
+     */
+    private fun startMaintenanceAnchor(context: Context, reason: String) {
+        try {
+            if (directBootAlarmStore.isPausedNow()) {
+                Logger.business(
+                    LogTags.MAINTENANCE_L4,
+                    "⏸️ LEVEL 4: Wartungs-Anker ($reason) uebersprungen (Master-Pause aktiv)"
+                )
+                return
+            }
+            AlarmMaintenanceService.start(context, forceSync = true)
+            Logger.business(
+                LogTags.MAINTENANCE_L4,
+                "⚓ LEVEL 4: Wartungs-Anker gestartet ($reason) - haelt den Prozess und sichert Sync/Planung ab"
+            )
+        } catch (e: Exception) {
+            // Best-effort: schlaegt der FGS-Start fehl (z.B. Hersteller-Einschraenkung), laeuft die
+            // Recovery-Coroutine wie bisher weiter - nur eben ohne Anker.
+            Logger.w(LogTags.MAINTENANCE_L4, "⚠️ LEVEL 4: Wartungs-Anker konnte nicht starten", e)
         }
     }
 

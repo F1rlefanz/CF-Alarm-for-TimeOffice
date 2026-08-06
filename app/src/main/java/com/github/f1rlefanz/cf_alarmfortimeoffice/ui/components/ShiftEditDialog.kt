@@ -120,7 +120,10 @@ fun ShiftEditDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Geben Sie Textmuster ein, die in Kalenderterminen vorkommen",
+                            text = "Ein Muster trifft, wenn es im Titel des Kalendertermins als " +
+                                "eigenes Wort vorkommt (\"IMCF\" trifft \"IMCF Dienst\", nicht " +
+                                "\"IMCF2\"). Der Schichtname oben zählt ab zwei Zeichen " +
+                                "ebenfalls als Muster.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -144,7 +147,25 @@ fun ShiftEditDialog(
                                     label = { Text("Muster ${index + 1}") },
                                     modifier = Modifier.weight(1f),
                                     singleLine = true,
-                                    isError = keyword.isBlank()
+                                    isError = keyword.isBlank(),
+                                    // Ein einzelner Buchstabe ist kein Tippfehler, sondern eine
+                                    // Falle: die Erkennung laeuft ueber ALLE ausgewaehlten
+                                    // Kalender, und "Kino mit F" hat damit einen echten Wecker
+                                    // um 05:30 erzeugt. Deshalb sichtbar warnen statt verbieten -
+                                    // wer sein Kuerzel wirklich einbuchstabig braucht, darf das.
+                                    supportingText = if (keyword.trim().length == 1) {
+                                        {
+                                            Text(
+                                                text = "Ein einzelner Buchstabe trifft auch " +
+                                                    "fremde Termine (z. B. \"Kino mit F\") und " +
+                                                    "weckt dich dann an freien Tagen.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    } else {
+                                        null
+                                    }
                                 )
                                 
                                 if (keywords.size > 1) {
@@ -277,7 +298,16 @@ fun ShiftEditDialog(
                     
                     Button(
                         onClick = {
-                            val validKeywords = keywords.filter { it.isNotBlank() }
+                            // TRIMMEN ist Pflicht, nicht Kosmetik: ein per Tastatur/
+                            // Autovervollstaendigung angehaengtes Leerzeichen wurde als " IMCF"
+                            // gespeichert und legte die Schicht lautlos still (Wortgrenzen-Regex,
+                            // siehe ShiftDefinition.matchesKeywords). `isNotBlank()` allein hat
+                            // das durchgelassen, weil " IMCF" nicht blank ist. `distinct()`
+                            // verhindert doppelte Muster nach dem Trimmen.
+                            val validKeywords = keywords
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() }
+                                .distinct()
                             val parsedAlarmTime = try {
                                 LocalTime.parse(alarmTimeString, timeFormatter)
                             } catch (_: Exception) {

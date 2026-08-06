@@ -152,7 +152,7 @@ class ShiftConfigSerializationTest {
 
         val early = config.definitions.first { it.id == "early_shift" }
         assertEquals(LocalTime.of(5, 30), early.alarmTime)
-        assertEquals(listOf("F", "IMCF"), early.keywords)
+        assertEquals(listOf("IMCF", "Frühdienst"), early.keywords)
 
         val late = config.definitions.first { it.id == "late_shift" }
         assertEquals(LocalTime.of(12, 30), late.alarmTime)
@@ -167,5 +167,48 @@ class ShiftConfigSerializationTest {
         assertEquals(LocalTime.of(7, 0), intermediate.alarmTime)
 
         assertTrue("Alle Standard-Definitionen sollten aktiviert sein", config.definitions.all { it.isEnabled })
+    }
+
+    /**
+     * Haelt die bewusste Entscheidung fest, dass in der Standardkonfiguration KEINE
+     * einbuchstabigen Muster mehr stehen.
+     *
+     * `matchesKeywords()` trifft auf Wortgrenzen und laeuft ueber ALLE ausgewaehlten Kalender.
+     * Mit den frueheren Mustern "F"/"S"/"N" erzeugte ein privater Termin "Kino mit F" einen
+     * echten System-Wecker um 05:30 - dieselbe Begruendung, die
+     * [ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH] schon fuer `findDefinitionFor()` traegt.
+     */
+    @Test
+    fun `kein Standard-Muster ist kuerzer als MIN_FUZZY_KEYWORD_LENGTH`() {
+        val zuKurz = ShiftConfig.getDefaultConfig().definitions
+            .flatMap { def -> def.keywords.map { def.name to it } }
+            .filter { (_, keyword) -> keyword.length < ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH }
+
+        assertTrue(
+            "Einbuchstabige Standard-Muster wecken auch bei fremden Terminen: $zuKurz",
+            zuKurz.isEmpty()
+        )
+    }
+
+    /**
+     * Jede Standard-Definition muss mindestens EIN Muster haben, das nicht das Kuerzel einer
+     * einzelnen Station ist.
+     *
+     * Vorher hatte "Zwischendienst" genau ein Muster: "IMCZ". Auf jeder Station, die nicht "IMC"
+     * codiert, war diese Definition damit strukturell tot - der Kollege haette dafuer NIE einen
+     * Wecker bekommen und es erst nach dem Verschlafen gemerkt.
+     */
+    @Test
+    fun `jede Standard-Definition hat ein Muster ohne Stationskuerzel`() {
+        val nurStationsspezifisch = ShiftConfig.getDefaultConfig().definitions
+            .filter { def ->
+                def.keywords.none { !it.startsWith("IMC", ignoreCase = true) }
+            }
+            .map { it.name }
+
+        assertTrue(
+            "Nur stationsspezifische Muster = auf jeder anderen Station tot: $nurStationsspezifisch",
+            nurStationsspezifisch.isEmpty()
+        )
     }
 }

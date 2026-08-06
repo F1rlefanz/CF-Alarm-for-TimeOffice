@@ -75,27 +75,51 @@ data class ShiftConfig(
          */
         const val MIN_FUZZY_KEYWORD_LENGTH = 2
 
+        /**
+         * Die Konfiguration, die ein Nutzer OHNE eigene Anpassung bekommt.
+         *
+         * WARUM HIER KEINE EINBUCHSTABIGEN KEYWORDS MEHR STEHEN ("F"/"S"/"N"):
+         * [ShiftDefinition.matchesKeywords] trifft, sobald das Muster als eigenstaendiges Wort
+         * IRGENDWO im Titel steht - und die Erkennung laeuft ueber alle ausgewaehlten Kalender,
+         * nicht nur ueber den Dienstplan-Feed. Ein privater Termin "Kino mit F" hat damit einen
+         * echten System-Wecker um 05:30 erzeugt, und weil der Titel nicht wie eine Schicht
+         * aussieht, ist die Ursache praktisch nicht auffindbar. Genau dieselbe Begruendung, die
+         * [MIN_FUZZY_KEYWORD_LENGTH] schon fuer [findDefinitionFor] traegt.
+         *
+         * WARUM JEDE DEFINITION EIN GENERISCHES MUSTER NEBEN DEM STATIONSKUERZEL HAT:
+         * "IMCF"/"IMCS"/"IMCN"/"IMCZ" sind die Kuerzel EINER Station. Fuer einen Kollegen auf
+         * einer anderen Station traf der Zwischendienst mit seinem einzigen Muster "IMCZ"
+         * garantiert nie - er haette dafuer NIE einen Wecker bekommen und es erst nach dem
+         * Verschlafen gemerkt. Deshalb hat jede Definition zusaetzlich ein generisches,
+         * mehrbuchstabiges Muster; der Definitionsname selbst zaehlt seit demselben Fix
+         * ebenfalls als Muster (siehe [ShiftDefinition.matchesKeywords]), sodass ein Termin, der
+         * wortwoertlich "Frühschicht"/"Zwischendienst" heisst, auch ohne eigenes Keyword trifft.
+         *
+         * Das ersetzt KEINE Konfiguration: wessen Station anders codiert, muss seine Kuerzel
+         * eintragen. Darauf weist der Schicht-Konfigurationsscreen sichtbar hin - lieber gar
+         * kein Wecker als ein falscher.
+         */
         fun getDefaultConfig(): ShiftConfig = ShiftConfig(
             autoAlarmEnabled = true,
             definitions = listOf(
                 ShiftDefinition(
                     id = "early_shift",
                     name = "Frühschicht",
-                    keywords = listOf("F", "IMCF"),
+                    keywords = listOf("IMCF", "Frühdienst"),
                     alarmTime = LocalTime.of(5, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
-                    id = "late_shift", 
+                    id = "late_shift",
                     name = "Spätschicht",
-                    keywords = listOf("S", "IMCS"),
+                    keywords = listOf("IMCS", "Spätdienst"),
                     alarmTime = LocalTime.of(12, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
                     id = "night_shift",
                     name = "Nachtschicht",
-                    keywords = listOf("N", "IMCN"),
+                    keywords = listOf("IMCN", "Nachtdienst"),
                     alarmTime = LocalTime.of(20, 0),
                     isEnabled = true
                 ),
@@ -109,7 +133,7 @@ data class ShiftConfig(
                 ShiftDefinition(
                     id = "intermediate_shift",
                     name = "Zwischendienst",
-                    keywords = listOf("IMCZ"),
+                    keywords = listOf("IMCZ", "ZD"),
                     alarmTime = LocalTime.of(7, 0),
                     isEnabled = true
                 )

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -55,6 +57,14 @@ fun ShiftConfigScreen(
     val shiftState by shiftViewModel.uiState.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingDefinition by remember { mutableStateOf<ShiftDefinition?>(null) }
+
+    // Beide destruktiven Aktionen dieses Screens laufen ueber eine Rueckfrage. Ohne sie war ein
+    // Fehlgriff nicht wiederherstellbar: `updateShiftConfig()` persistiert sofort UND ruft
+    // `triggerAlarmCreationFromConfigUpdate()`, das die System-Alarme neu setzt bzw. den Alarm
+    // der geloeschten Schicht cancelt. Es gibt kein Undo, und "Auf Standardwerte zuruecksetzen"
+    // holt nur die Standardwerte zurueck, nicht die selbst getippten Muster/Weckzeiten.
+    var pendingDelete by remember { mutableStateOf<ShiftDefinition?>(null) }
+    var showResetConfirmation by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -99,6 +109,40 @@ fun ShiftConfigScreen(
                 fontWeight = FontWeight.Bold
             )
 
+            // Die Standard-Muster sind die Kuerzel EINER Station. Wer auf einer anderen Station
+            // arbeitet, wird ohne diesen Hinweis nicht erkannt und bekommt gar keinen Wecker -
+            // sichtbar an genau der Stelle, an der man es aendert, statt es ihn erst nach dem
+            // Verschlafen herausfinden zu lassen.
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                    Text(
+                        "Erkannt wird über die Muster, nicht über den Schichtnamen allein: ein " +
+                            "Muster muss im Titel deines Kalendertermins als eigenes Wort " +
+                            "vorkommen. Die Standardmuster (IMCF, IMCS, IMCN, IMCZ) sind die " +
+                            "Kürzel einer bestimmten Station – arbeitest du auf einer anderen, " +
+                            "trage hier deine eigenen Kürzel ein. Ohne passendes Muster wird " +
+                            "keine Schicht erkannt und es klingelt kein Wecker.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
             if (shiftState.currentShiftConfig?.definitions?.isEmpty() == true) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -140,15 +184,7 @@ fun ShiftConfigScreen(
                         ShiftDefinitionCard(
                             definition = definition,
                             onEdit = { editingDefinition = definition },
-                            onDelete = {
-                                shiftState.currentShiftConfig?.let { config ->
-                                    shiftViewModel.updateShiftConfig(
-                                        config.copy(
-                                            definitions = config.definitions - definition
-                                        )
-                                    )
-                                }
-                            }
+                            onDelete = { pendingDelete = definition }
                         )
                     }
                 }
@@ -158,10 +194,7 @@ fun ShiftConfigScreen(
             Spacer(modifier = Modifier.weight(1f))
             
             OutlinedButton(
-                onClick = {
-                    // Reset to defaults
-                    shiftViewModel.updateShiftConfig(ShiftConfig.getDefaultConfig())
-                },
+                onClick = { showResetConfirmation = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
@@ -198,6 +231,74 @@ fun ShiftConfigScreen(
             onDismiss = {
                 showAddDialog = false
                 editingDefinition = null
+            }
+        )
+    }
+
+    // Rueckfrage vor dem Loeschen einer Schicht: der Muelleimer sitzt am rechten Rand einer
+    // Karte, deren restliche Flaeche "Bearbeiten" ist - ein Fehlgriff ist strukturell
+    // wahrscheinlich, und er nimmt Muster, Weckzeit UND den bereits gesetzten Alarm mit.
+    pendingDelete?.let { definition ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Schicht löschen?") },
+            text = {
+                Text(
+                    "\"${definition.name}\" wird mit allen Mustern und der Weckzeit " +
+                        "${definition.getAlarmTimeFormatted()} gelöscht. Der zugehörige Wecker " +
+                        "entfällt damit sofort. Das lässt sich nicht rückgängig machen."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        shiftState.currentShiftConfig?.let { config ->
+                            shiftViewModel.updateShiftConfig(
+                                config.copy(definitions = config.definitions - definition)
+                            )
+                        }
+                        pendingDelete = null
+                    }
+                ) {
+                    Text("Löschen")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
+    }
+
+    // Rueckfrage vor dem Zuruecksetzen: der Knopf ist ganzbreit und sitzt am unteren Rand,
+    // direkt dort, wo beim Scrollen getippt wird.
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = { Text("Auf Standardwerte zurücksetzen?") },
+            text = {
+                Text(
+                    "Alle Schichtdefinitionen werden durch die Standardwerte ersetzt – eigene " +
+                        "Namen, Erkennungsmuster, Weckzeiten und die Einstellung \"Stille " +
+                        "Schicht\" gehen verloren. Alle kommenden Wecker werden mit den " +
+                        "Standard-Weckzeiten neu gesetzt. Das lässt sich nicht rückgängig machen."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        shiftViewModel.updateShiftConfig(ShiftConfig.getDefaultConfig())
+                        showResetConfirmation = false
+                    }
+                ) {
+                    Text("Zurücksetzen")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmation = false }) {
+                    Text("Abbrechen")
+                }
             }
         )
     }

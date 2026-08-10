@@ -109,7 +109,12 @@ internal fun noShiftExplanation(
             // (StatusTabContent, Karte "Kalender") - dorthin zeigen, nicht auf einen erfundenen Weg.
             "Noch kein Kalender ausgewählt — im Status-Tab unter \"Kalender\" den Dienstplan-Kalender wählen."
         NoShiftReason.AUTHORIZATION_LOST ->
-            "Kalender-Zugriff abgelaufen — erneuere ihn in der Karte darunter."
+            // KEINE Positionsangabe ("in der Karte darunter"): direkt unter dieser Karte liegt die
+            // Alarm-Status-Karte, die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
+            // sitzt erst eine Karte weiter. Wie bei den anderen Gruenden die Beschriftung nennen,
+            // die im Screen wirklich steht (Karte "Kalender-Events", Knopf darin).
+            "Kalender-Zugriff abgelaufen — in der Karte \"Kalender-Events\" auf " +
+                "\"Kalender-Zugriff erneuern\" tippen."
         NoShiftReason.LOAD_ERROR ->
             "Termine konnten nicht geladen werden: ${errorMessage?.takeIf { it.isNotBlank() } ?: "unbekannter Fehler"}"
         NoShiftReason.NO_EVENTS ->

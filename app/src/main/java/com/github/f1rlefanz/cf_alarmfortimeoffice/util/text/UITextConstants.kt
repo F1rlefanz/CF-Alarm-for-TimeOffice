@@ -62,18 +62,12 @@ object UIText {
     const val ACTIVE_ALARMS = "aktive Alarme"
     const val NO_ACTIVE_ALARMS = "Keine aktiven Alarme"
     const val EXACT_ALARM_DISABLED = "Exakte Alarme sind in den Einstellungen deaktiviert"
-    const val TIME_UNTIL_ALARM = "Zeit bis zum Wecker"
-    const val TIME_EXPIRED = "Zeit abgelaufen!"
-    const val ALARM_ACTIVE = "ALARM AKTIV!"
     const val AUTO_ALARMS = "Automatische Alarme"
     const val AUTO_ALARMS_DESCRIPTION = "Alarme automatisch für erkannte Schichten setzen"
-    
-    // Zeit-Einheiten
-    const val UNIT_DAYS = "Tage"
-    const val UNIT_HOURS = "Std"
-    const val UNIT_MINUTES = "Min"
-    const val UNIT_SECONDS = "Sek"
-    
+
+    // Die Countdown-Texte (TIME_UNTIL_ALARM/TIME_EXPIRED/ALARM_ACTIVE) und der Block
+    // "Zeit-Einheiten" sind mit ihrem einzigen Nutzer ui/components/CountdownTimer.kt entfallen.
+
     // Schicht-bezogene Texte
     const val NEXT_SHIFT_LABEL = "Nächste Schicht"
     const val NO_SHIFT_DETECTED = "Keine Schicht erkannt"

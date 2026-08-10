@@ -48,6 +48,71 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 
+/**
+ * Die Beispiele, die [SHIFT_RECOGNITION_HINT] nennt - bewusst als Listen und nicht als Prosa im
+ * Satz: so behauptet der Hinweistext ueberpruefbar etwas ueber die echte
+ * [ShiftConfig.getDefaultConfig], und `ShiftConfigScreenTextTest` schlaegt fehl, sobald ein hier
+ * genanntes Muster dort nicht mehr vorkommt. Genau diese Drift hatte der Text schon einmal: er
+ * nannte nur die Stationskuerzel als "die Standardmuster", obwohl die Vorgaben laengst zusaetzlich
+ * allgemeine Bezeichnungen enthalten.
+ */
+internal val SHIFT_HINT_STATION_EXAMPLES = listOf("IMCF", "IMCS", "IMCN", "IMCZ")
+
+/** Siehe [SHIFT_HINT_STATION_EXAMPLES]. */
+internal val SHIFT_HINT_GENERIC_EXAMPLES = listOf("Frühdienst", "Spätdienst", "Nachtdienst", "ZD")
+
+/** Siehe [SHIFT_HINT_STATION_EXAMPLES]. */
+internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N")
+
+/**
+ * Der Hinweistext ueber der Schichtliste.
+ *
+ * WARUM ER SO GENAU FORMULIERT IST: Er beschrieb bis v1.22.2 zwei Dinge falsch, die derselbe
+ * Arbeitsdurchgang geaendert hatte, der ihn eingefuehrt hat. (1) "Erkannt wird ueber die Muster,
+ * nicht ueber den Schichtnamen allein" - [ShiftDefinition.matchesKeywords] zaehlt den Namen ab
+ * zwei Zeichen ausdruecklich als zusaetzliches Muster, der [ShiftEditDialog] sagt das auch so; zwei
+ * Bildschirme derselben App widersprachen sich. (2) "Die Standardmuster (IMCF, IMCS, IMCN, IMCZ)" -
+ * die Vorgaben enthalten neben den Stationskuerzeln allgemeine Bezeichnungen, genau um die
+ * Stationsabhaengigkeit aufzuloesen; wer nur die Kuerzel liest, haelt die neue
+ * Stationsunabhaengigkeit fuer nicht vorhanden und sucht den Fehler an der falschen Stelle.
+ *
+ * Der Text nennt deshalb KEINE vollstaendige Musterliste (die driftet mit jeder Aenderung der
+ * Vorgaben), sondern verweist auf die Karten darunter - dort steht pro Schicht, welche Muster
+ * wirklich gelten.
+ */
+internal val SHIFT_RECOGNITION_HINT: String =
+    "Erkannt wird über die Muster oder den Schichtnamen (ab zwei Zeichen): eines davon muss im " +
+        "Titel deines Kalendertermins als eigenes Wort vorkommen. Welche Muster eine Schicht hat, " +
+        "steht in ihrer Karte in der Liste darunter – die Vorgaben mischen Stationskürzel (" +
+        SHIFT_HINT_STATION_EXAMPLES.joinToString(", ") +
+        ") mit allgemeinen Bezeichnungen (" +
+        SHIFT_HINT_GENERIC_EXAMPLES.joinToString(", ") +
+        ") und kurzen Codes (" +
+        SHIFT_HINT_SHORT_CODE_EXAMPLES.joinToString(", ") +
+        "). Arbeitest du auf einer anderen Station, trage dort deine eigenen Kürzel ein. Ohne " +
+        "passendes Muster und ohne passenden Namen wird keine Schicht erkannt und es klingelt " +
+        "kein Wecker."
+
+/**
+ * PURE, TESTBAR: Was "Auf Standardwerte zuruecksetzen" wirklich schreibt.
+ *
+ * WARUM NICHT EINFACH [ShiftConfig.getDefaultConfig]: Die Standardkonfiguration enthaelt
+ * `autoAlarmEnabled = true`. Wer die automatischen Alarme im Wecker-Tab bewusst ausgeschaltet hat
+ * (laut CLAUDE.md eine ECHTE, sofortige Pause) und danach hier seine Schichtdefinitionen aufraeumt,
+ * haette diese Pause unwissentlich aufgehoben - `updateShiftConfig()` persistiert sofort und ruft
+ * `triggerAlarmCreationFromConfigUpdate()`, es wuerden also im selben Moment wieder Wecker
+ * angelegt. Dieser Screen konfiguriert Schichtdefinitionen; der Automatik-Schalter gehoert dem
+ * Wecker-Tab und bleibt deshalb unangetastet - dieselbe Trennung, die auch die Master-Pause
+ * einhaelt (sie ruehrt `autoAlarmEnabled` bewusst nicht an).
+ *
+ * Nur wenn noch gar keine Konfiguration geladen ist, gelten die Standardwerte vollstaendig - dann
+ * gibt es keinen Nutzerwunsch, der erhalten werden koennte.
+ */
+internal fun resetToDefaultsPreservingAutoAlarm(current: ShiftConfig?): ShiftConfig {
+    val defaults = ShiftConfig.getDefaultConfig()
+    return current?.let { defaults.copy(autoAlarmEnabled = it.autoAlarmEnabled) } ?: defaults
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShiftConfigScreen(
@@ -109,10 +174,10 @@ fun ShiftConfigScreen(
                 fontWeight = FontWeight.Bold
             )
 
-            // Die Standard-Muster sind die Kuerzel EINER Station. Wer auf einer anderen Station
-            // arbeitet, wird ohne diesen Hinweis nicht erkannt und bekommt gar keinen Wecker -
-            // sichtbar an genau der Stelle, an der man es aendert, statt es ihn erst nach dem
-            // Verschlafen herausfinden zu lassen.
+            // Wer auf einer anderen Station arbeitet, wird ohne diesen Hinweis nicht erkannt und
+            // bekommt gar keinen Wecker - sichtbar an genau der Stelle, an der man es aendert,
+            // statt es ihn erst nach dem Verschlafen herausfinden zu lassen. Der Wortlaut steht in
+            // SHIFT_RECOGNITION_HINT, damit er gegen die echte Standardkonfiguration testbar ist.
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -131,12 +196,7 @@ fun ShiftConfigScreen(
                     )
                     Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
                     Text(
-                        "Erkannt wird über die Muster, nicht über den Schichtnamen allein: ein " +
-                            "Muster muss im Titel deines Kalendertermins als eigenes Wort " +
-                            "vorkommen. Die Standardmuster (IMCF, IMCS, IMCN, IMCZ) sind die " +
-                            "Kürzel einer bestimmten Station – arbeitest du auf einer anderen, " +
-                            "trage hier deine eigenen Kürzel ein. Ohne passendes Muster wird " +
-                            "keine Schicht erkannt und es klingelt kein Wecker.",
+                        SHIFT_RECOGNITION_HINT,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f)
                     )
@@ -282,13 +342,19 @@ fun ShiftConfigScreen(
                     "Alle Schichtdefinitionen werden durch die Standardwerte ersetzt – eigene " +
                         "Namen, Erkennungsmuster, Weckzeiten und die Einstellung \"Stille " +
                         "Schicht\" gehen verloren. Alle kommenden Wecker werden mit den " +
-                        "Standard-Weckzeiten neu gesetzt. Das lässt sich nicht rückgängig machen."
+                        "Standard-Weckzeiten neu gesetzt. Der Schalter \"Automatische Alarme\" " +
+                        "im Wecker-Tab bleibt dabei unverändert. Das lässt sich nicht rückgängig " +
+                        "machen."
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        shiftViewModel.updateShiftConfig(ShiftConfig.getDefaultConfig())
+                        // Nur die Definitionen zuruecksetzen, nicht den Automatik-Schalter -
+                        // siehe resetToDefaultsPreservingAutoAlarm().
+                        shiftViewModel.updateShiftConfig(
+                            resetToDefaultsPreservingAutoAlarm(shiftState.currentShiftConfig)
+                        )
                         showResetConfirmation = false
                     }
                 ) {

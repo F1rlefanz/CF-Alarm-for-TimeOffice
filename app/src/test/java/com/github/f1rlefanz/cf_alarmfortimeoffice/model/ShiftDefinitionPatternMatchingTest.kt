@@ -35,17 +35,60 @@ class ShiftDefinitionPatternMatchingTest {
 
     // ---- 1. Standardkonfiguration weckt nicht bei fremden Terminen ----
 
+    /**
+     * Der Normalfall: ein privater Termin, der KEINEN alleinstehenden Schicht-Buchstaben
+     * enthaelt, darf niemals eine Schicht erkennen. Die Wortgrenzen erledigen das - ein Muster
+     * als Bestandteil eines laengeren Wortes trifft nicht.
+     */
     @Test
-    fun `Standardkonfiguration matcht keinen privaten Termin mit einzelnem Buchstaben`() {
+    fun `Standardkonfiguration matcht keinen gewoehnlichen privaten Termin`() {
         val config = ShiftConfig.getDefaultConfig()
 
-        listOf("Kino mit F", "Abschluss S", "Termin N", "Geburtstag M").forEach { titel ->
+        listOf(
+            "Geburtstag Maria", "Fortbildung", "Sommerfest", "Notaufnahme",
+            "Zahnarzt", "Frühstück mit Anna", "Nachbesprechung"
+        ).forEach { titel ->
             val treffer = config.definitions.filter { it.matchesKeywords(titel) }
             assertTrue(
                 "'$titel' darf keine Schicht erkennen, traf aber: ${treffer.map { it.name }}",
                 treffer.isEmpty()
             )
         }
+    }
+
+    /**
+     * DAS BEWUSST IN KAUF GENOMMENE RESTRISIKO, hier ausdruecklich festgehalten statt verschwiegen.
+     *
+     * Die Standardmuster enthalten die kurzen Dienstplan-Codes "F"/"S"/"N", weil genau die real
+     * im Dienstplan stehen - ohne sie bleibt eine echte Schicht unerkannt und der Wecker aus (am
+     * Geraet nachgewiesen, 10.08.2026: Erkennung fiel von 4 auf 1 Schicht). Der Preis: ein
+     * privater Termin mit einem alleinstehenden Buchstaben trifft ebenfalls.
+     *
+     * Warum das die richtige Richtung ist: fuer einen ueberzaehligen Wecker gibt es
+     * "Naechsten Alarm ueberspringen", fuer einen verschlafenen gibt es nichts. Und das Risiko
+     * ist eng: die Erkennung liest nur Kalender, die der Nutzer selbst ausgewaehlt hat, und das
+     * Muster laesst sich entfernen.
+     *
+     * Dieser Test ist Absicht, kein Versehen. Schlaegt er fehl, hat jemand die Muster oder die
+     * Matching-Semantik geaendert - dann gehoert die Abwaegung neu getroffen und dokumentiert,
+     * nicht der Test stillschweigend angepasst.
+     */
+    @Test
+    fun `alleinstehender Buchstabe in einem privaten Termin trifft - bekanntes Restrisiko`() {
+        val config = ShiftConfig.getDefaultConfig()
+
+        assertEquals(
+            listOf("Frühschicht"),
+            config.definitions.filter { it.matchesKeywords("Kino mit F") }.map { it.name }
+        )
+        assertEquals(
+            listOf("Nachtschicht"),
+            config.definitions.filter { it.matchesKeywords("Termin N") }.map { it.name }
+        )
+        assertTrue(
+            "Ein Buchstabe, der kein Schicht-Muster ist, darf weiterhin nichts treffen",
+            config.definitions.none { it.matchesKeywords("Geburtstag M") }
+        )
     }
 
     @Test

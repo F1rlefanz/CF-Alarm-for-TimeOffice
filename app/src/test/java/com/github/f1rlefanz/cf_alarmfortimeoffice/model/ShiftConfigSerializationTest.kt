@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -152,7 +153,7 @@ class ShiftConfigSerializationTest {
 
         val early = config.definitions.first { it.id == "early_shift" }
         assertEquals(LocalTime.of(5, 30), early.alarmTime)
-        assertEquals(listOf("IMCF", "Frühdienst"), early.keywords)
+        assertEquals(listOf("F", "IMCF", "Frühdienst"), early.keywords)
 
         val late = config.definitions.first { it.id == "late_shift" }
         assertEquals(LocalTime.of(12, 30), late.alarmTime)
@@ -170,23 +171,46 @@ class ShiftConfigSerializationTest {
     }
 
     /**
-     * Haelt die bewusste Entscheidung fest, dass in der Standardkonfiguration KEINE
-     * einbuchstabigen Muster mehr stehen.
+     * Einbuchstabige Standard-Muster ("F"/"S"/"N") sind ERLAUBT - aber sie duerfen ausschliesslich
+     * ueber die Wortgrenzen-Erkennung greifen, niemals ueber die unscharfe Teiltreffer-Stufe.
      *
-     * `matchesKeywords()` trifft auf Wortgrenzen und laeuft ueber ALLE ausgewaehlten Kalender.
-     * Mit den frueheren Mustern "F"/"S"/"N" erzeugte ein privater Termin "Kino mit F" einen
-     * echten System-Wecker um 05:30 - dieselbe Begruendung, die
-     * [ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH] schon fuer `findDefinitionFor()` traegt.
+     * Die Unterscheidung ist der ganze Punkt, und sie wurde einmal verwechselt:
+     *  - `matchesKeywords()` (Kalendertitel -> Definition) arbeitet mit Wortgrenzen. Dort ist "F"
+     *    praezise: es trifft ein alleinstehendes F, nicht "Fruehschicht", nicht "Fortbildung".
+     *    Genau diese kurzen Codes stehen real im Dienstplan - ohne sie bleibt eine echte Schicht
+     *    unerkannt und der Wecker aus (am Geraet nachgewiesen, 10.08.2026).
+     *  - `findDefinitionFor()` (Alarm -> Definition) vergleicht unscharf per `contains` OHNE
+     *    Wortgrenzen. Dort waehlt ein einzelner Buchstabe die falsche Definition ("S" steckt in
+     *    "Nacht**s**chicht") - deshalb filtert diese Stufe alles unter
+     *    [ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH] heraus.
+     *
+     * Dieser Test sichert die zweite Haelfte ab: kein einbuchstabiges Standard-Muster darf ueber
+     * einen Teiltreffer eine Definition gewinnen.
      */
     @Test
-    fun `kein Standard-Muster ist kuerzer als MIN_FUZZY_KEYWORD_LENGTH`() {
-        val zuKurz = ShiftConfig.getDefaultConfig().definitions
+    fun `einbuchstabige Standard-Muster gewinnen keinen unscharfen Teiltreffer`() {
+        val config = ShiftConfig.getDefaultConfig()
+        val einbuchstabige = config.definitions
             .flatMap { def -> def.keywords.map { def.name to it } }
             .filter { (_, keyword) -> keyword.length < ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH }
 
         assertTrue(
-            "Einbuchstabige Standard-Muster wecken auch bei fremden Terminen: $zuKurz",
-            zuKurz.isEmpty()
+            "Erwartet werden die kurzen Dienstplan-Codes F/S/N in den Vorgaben",
+            einbuchstabige.isNotEmpty()
+        )
+
+        // Jeder Schichtname, der einen dieser Buchstaben nur als Bestandteil enthaelt, muss
+        // trotzdem seiner EIGENEN Definition zugeordnet werden.
+        assertEquals("Nachtschicht", config.findDefinitionFor("Nachtschicht")?.name)
+        assertEquals("Spätschicht", config.findDefinitionFor("Spätschicht")?.name)
+        assertEquals("Zwischendienst", config.findDefinitionFor("Zwischendienst")?.name)
+        assertEquals("S2", config.findDefinitionFor("S2")?.name)
+
+        // Und ein Name, der zu KEINER Definition gehoert, darf nicht ueber einen einzelnen
+        // Buchstaben eingefangen werden.
+        assertNull(
+            "Ein einzelner Buchstabe darf keinen unscharfen Teiltreffer gewinnen",
+            config.findDefinitionFor("Sonderdienst Nord")
         )
     }
 

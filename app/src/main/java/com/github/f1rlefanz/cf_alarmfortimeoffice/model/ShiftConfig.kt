@@ -78,13 +78,28 @@ data class ShiftConfig(
         /**
          * Die Konfiguration, die ein Nutzer OHNE eigene Anpassung bekommt.
          *
-         * WARUM HIER KEINE EINBUCHSTABIGEN KEYWORDS MEHR STEHEN ("F"/"S"/"N"):
-         * [ShiftDefinition.matchesKeywords] trifft, sobald das Muster als eigenstaendiges Wort
-         * IRGENDWO im Titel steht - und die Erkennung laeuft ueber alle ausgewaehlten Kalender,
-         * nicht nur ueber den Dienstplan-Feed. Ein privater Termin "Kino mit F" hat damit einen
-         * echten System-Wecker um 05:30 erzeugt, und weil der Titel nicht wie eine Schicht
-         * aussieht, ist die Ursache praktisch nicht auffindbar. Genau dieselbe Begruendung, die
-         * [MIN_FUZZY_KEYWORD_LENGTH] schon fuer [findDefinitionFor] traegt.
+         * WARUM DIE EINBUCHSTABIGEN KEYWORDS "F"/"S"/"N" HIER STEHEN - UND WARUM SIE EINMAL
+         * ENTFERNT WAREN:
+         * Ein Aufraeumschritt hatte sie mit der Begruendung entfernt, ein privater Termin
+         * "Kino mit F" koenne einen Wecker um 05:30 erzeugen, und dabei auf
+         * [MIN_FUZZY_KEYWORD_LENGTH] verwiesen. Das war ein Verwechslungsfehler zwischen zwei
+         * verschiedenen Funktionen:
+         *  - [findDefinitionFor] ordnet einem BESTEHENDEN Alarm eine Definition zu und vergleicht
+         *    unscharf per `contains` OHNE Wortgrenzen. Dort ist ein einzelner Buchstabe wirklich
+         *    gefaehrlich ("S" steckt in "Nacht**s**chicht") - deshalb gilt dort
+         *    [MIN_FUZZY_KEYWORD_LENGTH] = 2, und das bleibt so.
+         *  - [ShiftDefinition.matchesKeywords] erkennt Schichten in KALENDERTITELN und arbeitet
+         *    mit Wortgrenzen. "F" trifft dort nur ein alleinstehendes F, nicht "Fruehschicht" und
+         *    nicht "Fortbildung".
+         * Am Emulator gegen den echten Dienstplan-Feed nachgewiesen (10.08.2026): ohne die
+         * Buchstaben sank die Erkennung von 4 auf 1 Schicht. Die real vorkommenden Titel sind
+         * kurze Codes ("F", "IMCF", "AD1", "FBE", "+"); der Eintrag "F" traf kein Muster mehr -
+         * fuer eine echte Fruehschicht gab es keinen Wecker.
+         * Abwaegung, bewusst so entschieden: eine nicht erkannte Schicht heisst KEIN WECKER. Fuer
+         * einen ueberzaehligen Wecker gibt es "Naechsten Alarm ueberspringen", fuer einen
+         * verschlafenen gibt es nichts. Das Restrisiko bleibt eng und beherrschbar: die Erkennung
+         * liest nur Kalender, die der Nutzer selbst ausgewaehlt hat, und das Keyword ist
+         * entfernbar. `ShiftConfigDefaultsTest` haelt beide Seiten fest.
          *
          * WARUM JEDE DEFINITION EIN GENERISCHES MUSTER NEBEN DEM STATIONSKUERZEL HAT:
          * "IMCF"/"IMCS"/"IMCN"/"IMCZ" sind die Kuerzel EINER Station. Fuer einen Kollegen auf
@@ -96,8 +111,13 @@ data class ShiftConfig(
          * wortwoertlich "Frühschicht"/"Zwischendienst" heisst, auch ohne eigenes Keyword trifft.
          *
          * Das ersetzt KEINE Konfiguration: wessen Station anders codiert, muss seine Kuerzel
-         * eintragen. Darauf weist der Schicht-Konfigurationsscreen sichtbar hin - lieber gar
-         * kein Wecker als ein falscher.
+         * eintragen. Darauf weist der Schicht-Konfigurationsscreen sichtbar hin.
+         *
+         * Der eigentliche Weg dahin sind aber nicht besser geratene Vorgaben, sondern die
+         * Kuerzel, die im Kalender des Nutzers TATSAECHLICH vorkommen: die App kann die geladenen
+         * Termintitel auswerten, die wiederkehrenden Kuerzel nach Haeufigkeit vorlegen und
+         * zuordnen lassen. Solange das fehlt, sind diese Vorgaben ein Kompromiss und kein
+         * Ersatz.
          */
         fun getDefaultConfig(): ShiftConfig = ShiftConfig(
             autoAlarmEnabled = true,
@@ -105,21 +125,21 @@ data class ShiftConfig(
                 ShiftDefinition(
                     id = "early_shift",
                     name = "Frühschicht",
-                    keywords = listOf("IMCF", "Frühdienst"),
+                    keywords = listOf("F", "IMCF", "Frühdienst"),
                     alarmTime = LocalTime.of(5, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
                     id = "late_shift",
                     name = "Spätschicht",
-                    keywords = listOf("IMCS", "Spätdienst"),
+                    keywords = listOf("S", "IMCS", "Spätdienst"),
                     alarmTime = LocalTime.of(12, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
                     id = "night_shift",
                     name = "Nachtschicht",
-                    keywords = listOf("IMCN", "Nachtdienst"),
+                    keywords = listOf("N", "IMCN", "Nachtdienst"),
                     alarmTime = LocalTime.of(20, 0),
                     isEnabled = true
                 ),

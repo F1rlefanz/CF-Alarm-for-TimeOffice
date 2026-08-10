@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,7 +26,14 @@ data class ShiftUiState(
     val currentShiftConfig: ShiftConfig? = null,
     val recognizedShifts: List<ShiftInfo> = emptyList(),
     val upcomingShift: ShiftInfo? = null,
-    val error: String? = null
+    val error: String? = null,
+    /**
+     * Kuerzel, die im Kalender des Nutzers vorkommen, aber von keinem Erkennungsmuster getroffen
+     * werden - siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester].
+     * Bewusst nur Vorschlaege: zugeordnet wird von Hand.
+     */
+    val codeSuggestions: ShiftCodeSuggester.SuggestionResult =
+        ShiftCodeSuggester.SuggestionResult(emptyList(), 0)
 )
 
 /**
@@ -118,6 +126,60 @@ class ShiftViewModel @Inject constructor(
                     )
                 }
         }
+    }
+
+    /**
+     * Ordnet ein im Kalender gefundenes Kuerzel einer bestehenden Schichtdefinition zu - der
+     * Handgriff, den [ShiftCodeSuggester] vorbereitet.
+     *
+     * Bewusst KEINE Automatik: die App schlaegt vor, der Mensch entscheidet. Eine stille Zuordnung,
+     * die danebengreift, stellt einen Wecker auf die falsche Uhrzeit, und darauf verlaesst sich
+     * jemand.
+     *
+     * Das Kuerzel wird als exaktes Keyword ergaenzt. Damit greift Stufe 2 der Staffelung in
+     * [ShiftConfig.findDefinitionFor] (exaktes Keyword) und - entscheidend fuer die Erkennung -
+     * [ShiftDefinition.matchesKeywords] mit Wortgrenzen. Auch einbuchstabige Kuerzel sind erlaubt:
+     * sie treffen dort nur als eigenstaendiges Wort, und genau solche Codes stehen real im
+     * Dienstplan. Die unscharfe Teiltreffer-Stufe bleibt von ihnen unberuehrt
+     * ([ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH]).
+     *
+     * Geht ueber [updateShiftConfig], damit alles daran Haengende mitlaeuft: Speichern,
+     * Cache-Invalidierung, erneute Erkennung und Alarm-Sync.
+     */
+    fun assignCodeToDefinition(code: String, definitionId: String) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ KUERZEL-ZUORDNUNG: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        val normalized = code.trim()
+        if (normalized.isEmpty()) return
+
+        val target = config.definitions.firstOrNull { it.id == definitionId }
+        if (target == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ KUERZEL-ZUORDNUNG: Definition $definitionId nicht gefunden")
+            return
+        }
+        if (target.keywords.any { it.equals(normalized, ignoreCase = true) }) {
+            Logger.d(LogTags.SHIFT_CONFIG, "KUERZEL-ZUORDNUNG: '$normalized' steht schon bei '${target.name}'")
+            return
+        }
+
+        Logger.business(
+            LogTags.SHIFT_CONFIG,
+            "✅ KUERZEL-ZUORDNUNG: '$normalized' wird Muster von '${target.name}'"
+        )
+        updateShiftConfig(
+            config.copy(
+                definitions = config.definitions.map { definition ->
+                    if (definition.id == definitionId) {
+                        definition.copy(keywords = definition.keywords + normalized)
+                    } else {
+                        definition
+                    }
+                }
+            )
+        )
     }
 
     fun updateShiftConfig(config: ShiftConfig) {
@@ -213,10 +275,28 @@ class ShiftViewModel @Inject constructor(
                     .filter { it.startTime.isAfter(java.time.LocalDateTime.now()) }
                     .minByOrNull { it.startTime }
 
+                // Kuerzel-Vorschlaege im SELBEN Durchgang berechnen: hier liegen Events und
+                // Konfiguration beide vor, und die Erkennung ist gerade gelaufen - was jetzt keinen
+                // Treffer hatte, ist genau der Kandidat, den der Nutzer zuordnen soll. Rein
+                // rechnerisch, kein Netz, kein DataStore.
+                val suggestions = _uiState.value.currentShiftConfig?.let { config ->
+                    ShiftCodeSuggester.suggest(events, config)
+                } ?: ShiftCodeSuggester.SuggestionResult(emptyList(), 0)
+
+                if (suggestions.suggestions.isNotEmpty()) {
+                    Logger.business(
+                        LogTags.SHIFT_RECOGNITION,
+                        "💡 KUERZEL-VORSCHLAEGE: ${suggestions.suggestions.size} unbekannte Kuerzel im " +
+                            "Kalender (${suggestions.suggestions.joinToString { "${it.code}×${it.occurrences}" }})" +
+                            if (suggestions.droppedCount > 0) ", ${suggestions.droppedCount} weitere nicht gezeigt" else ""
+                    )
+                }
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     recognizedShifts = shifts,
-                    upcomingShift = upcomingShift
+                    upcomingShift = upcomingShift,
+                    codeSuggestions = suggestions
                 )
             }
             .onFailure { error ->

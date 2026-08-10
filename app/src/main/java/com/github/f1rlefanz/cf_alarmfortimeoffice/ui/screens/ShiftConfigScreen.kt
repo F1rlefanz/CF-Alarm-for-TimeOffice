@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
@@ -130,6 +134,9 @@ fun ShiftConfigScreen(
     // holt nur die Standardwerte zurueck, nicht die selbst getippten Muster/Weckzeiten.
     var pendingDelete by remember { mutableStateOf<ShiftDefinition?>(null) }
     var showResetConfirmation by remember { mutableStateOf(false) }
+
+    /** Das Kuerzel, fuer das gerade die Schicht gewaehlt wird (null = kein Dialog offen). */
+    var assigningCode by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -237,6 +244,18 @@ fun ShiftConfigScreen(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
+                    // Kuerzel-Vorschlaege aus dem ECHTEN Kalender - steht bewusst GANZ OBEN, denn
+                    // wer diesen Screen oeffnet, sucht meist genau das: warum eine Schicht nicht
+                    // erkannt wird.
+                    if (!shiftState.codeSuggestions.isEmpty) {
+                        item(key = "code-suggestions") {
+                            CodeSuggestionCard(
+                                result = shiftState.codeSuggestions,
+                                onCodeClick = { assigningCode = it }
+                            )
+                        }
+                    }
+
                     items(
                         shiftState.currentShiftConfig?.definitions ?: emptyList(),
                         key = { it.id }
@@ -367,6 +386,148 @@ fun ShiftConfigScreen(
                 }
             }
         )
+    }
+
+    // ZUORDNUNG eines im Kalender gefundenen Kuerzels. Bewusst ein Dialog mit Auswahl und keine
+    // Automatik: welche Schicht "AD1" ist, weiss nur der Mensch - und eine falsche Zuordnung
+    // stellt einen Wecker auf die falsche Uhrzeit.
+    assigningCode?.let { code ->
+        val definitions = shiftState.currentShiftConfig?.definitions ?: emptyList()
+        AlertDialog(
+            onDismissRequest = { assigningCode = null },
+            title = { Text("Zu welcher Schicht gehört „$code\"?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
+                    Text(
+                        "„$code\" steht in deinem Kalender, wird aber von keinem Erkennungsmuster " +
+                            "getroffen. Wähle die Schicht, zu der es gehört — das Kürzel wird dann " +
+                            "als Erkennungsmuster ergänzt.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (definitions.isEmpty()) {
+                        Text(
+                            "Es gibt noch keine Schichttypen. Lege zuerst einen an.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    definitions.forEach { definition ->
+                        OutlinedButton(
+                            onClick = {
+                                shiftViewModel.assignCodeToDefinition(code, definition.id)
+                                assigningCode = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(definition.name, fontWeight = FontWeight.Medium)
+                                Text(
+                                    "weckt um ${definition.getAlarmTimeFormatted()}" +
+                                        if (definition.keywords.isEmpty()) {
+                                            ""
+                                        } else {
+                                            " · bisher: ${definition.keywords.joinToString(", ")}"
+                                        },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { assigningCode = null }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Zeigt die Kürzel, die im Kalender des Nutzers stehen, aber von keinem Erkennungsmuster getroffen
+ * werden — nach Häufigkeit sortiert, zum Antippen.
+ *
+ * WARUM DIESE KARTE EXISTIERT: Die Standardkonfiguration kann die Kürzel einer fremden Station nur
+ * raten, und Raten skaliert nicht — am echten Dienstplan ist genau das schiefgegangen. Was im
+ * Kalender steht, weiß die App dagegen genau; sie muss es nur zeigen. Für jemanden auf einer
+ * anderen Station ist das der Unterschied zwischen „läuft nach zwei Minuten" und „läuft nie, und er
+ * merkt es erst nach dem Verschlafen".
+ *
+ * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) —
+ * eine stillschweigend gekürzte Liste liest sich wie Vollständigkeit.
+ */
+@Composable
+private fun CodeSuggestionCard(
+    result: ShiftCodeSuggester.SuggestionResult,
+    onCodeClick: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                Text(
+                    "Diese Kürzel stehen in deinem Kalender",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+            Text(
+                "Für sie gibt es noch kein Erkennungsmuster — also auch keinen Wecker. Tippe ein " +
+                    "Kürzel an, um es einer Schicht zuzuordnen.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            // FlowRow statt Row mit chunked(): bricht selbst um und ist in Compose 1.11.4 stabil.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+            ) {
+                result.suggestions.forEach { suggestion ->
+                    AssistChip(
+                        onClick = { onCodeClick(suggestion.code) },
+                        label = {
+                            Text(
+                                if (suggestion.occurrences > 1) {
+                                    "${suggestion.code} · ${suggestion.occurrences}×"
+                                } else {
+                                    suggestion.code
+                                }
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    )
+                }
+            }
+            if (result.droppedCount > 0) {
+                Text(
+                    "… und ${result.droppedCount} weitere, hier nicht gezeigt.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
     }
 }
 

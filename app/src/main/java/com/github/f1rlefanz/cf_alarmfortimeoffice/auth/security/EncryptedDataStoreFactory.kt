@@ -62,7 +62,7 @@ object EncryptedDataStoreFactory {
             // corruptionHandler: PFLICHT, nicht Kosmetik. DataStore liest VOR JEDEM Schreiben erneut
             // (DataStoreImpl.transformAndWrite -> readDataOrHandleCorruption); ein Lesefehler macht
             // den Store deshalb nicht nur lese-, sondern dauerhaft SCHREIB-tot. Ohne Handler wäre
-            // ein unbrauchbares Tink-Keyset (invalidierter Keystore-Key, Geräte-Restore) eine
+            // ein kaputter Ciphertext (abgebrochener Schreibvorgang, Speicherfehler) eine
             // Endlosschleife: Re-Login gelingt, `save()` scheitert am internen Read, der
             // Token-Verlust-Watcher schlägt sofort wieder zu — dauerhaft, ohne Selbstheilung.
             //
@@ -71,11 +71,26 @@ object EncryptedDataStoreFactory {
             // kleinere Übel gegenüber einer App, die nie wieder einen Token speichern kann.
             // Sicherheitsargument bleibt gewahrt: es wird nichts entschlüsselt ausgeliefert, die
             // unlesbare Datei wird durch einen LEEREN Zustand ersetzt.
+            //
+            // ZWEI Ursachen, EIN Handler — und sie heilen NICHT gleich weit (deshalb der
+            // isAvailable()-Log, der sie im Nachhinein unterscheidbar macht):
+            //  * Ciphertext/Datei kaputt, Keyset intakt -> vollständig geheilt: der Ersatz-Write
+            //    gelingt regulär verschlüsselt, der nächste Token wird normal gespeichert.
+            //  * Keyset unbrauchbar (invalidierter Keystore-Key, Geräte-Restore) -> nur die
+            //    Leseseite heilt. `EncryptedPreferencesSerializer.writeTo()` verschlüsselt mit
+            //    derselben aead-Instanz, die beim Lesen schon gescheitert ist; ein leerer Zustand
+            //    kommt dank des dortigen Notausgangs (0-Byte-Datei) trotzdem auf die Platte, ein
+            //    echter Token aber nicht. Ein NEUES Keyset kann nur `TinkEncryptionHelper`
+            //    aufbauen (Keyset-SharedPrefs löschen + Singleton neu bauen) — bis dahin bleibt
+            //    "App-Daten löschen" der einzige Weg. Nicht behaupten, das sei schon geheilt.
             corruptionHandler = ReplaceFileCorruptionHandler {
                 Logger.w(
                     LogTags.TOKEN,
                     "⚠️ SECURITY: Verschluesselter Store '$name' war unlesbar und wurde durch einen " +
-                        "leeren Zustand ersetzt - eine Neuanmeldung ist noetig"
+                        "leeren Zustand ersetzt - eine Neuanmeldung ist noetig " +
+                        "(Verschluesselung verfuegbar: ${encryptionHelper.isAvailable()} - " +
+                        "false = Keyset defekt, ein neuer Token laesst sich bis zum Keyset-Neuaufbau " +
+                        "NICHT speichern)"
                 )
                 emptyPreferences()
             },
@@ -142,10 +157,20 @@ internal class EncryptedPreferencesSerializer(
             Logger.e(LogTags.TOKEN, "❌ SECURITY: Decryption failed - possible tampering!", e)
             throw CorruptionException("Verschluesselte Preferences nicht entschluesselbar", e)
         } catch (e: Exception) {
+            // KEIN stilles `defaultValue` mehr. Ein zurückgegebener Default ist für DataStore der
+            // GÜLTIGE Ist-Zustand: er cacht "kein Token" und der nächste Write schreibt diesen
+            // leeren Stand über den noch intakten Ciphertext — Token weg, obwohl er nie unlesbar war.
+            //
+            // Stattdessen unverändert weiterwerfen (NICHT in eine CorruptionException umdeuten):
+            //  * Ein defektes Preferences-Protobuf meldet der delegateSerializer bereits selbst als
+            //    CorruptionException — die läuft hier durch und der corruptionHandler heilt sie.
+            //  * Ein transienter IO-Fehler (Speicherdruck, Storage-Hänger) und eine
+            //    CancellationException dürfen dagegen NIEMALS den Handler auslösen: der würde die
+            //    intakte Datei durch einen leeren Zustand ersetzen. Als IOException/Cancellation
+            //    propagiert, degradieren `get()` (try/catch) und `observe()` (.catch) wie bisher auf
+            //    "kein Token", ohne etwas zu überschreiben.
             Logger.e(LogTags.TOKEN, "❌ Failed to read encrypted preferences", e)
-            // Bei Fehler: Rückgabe default statt crash
-            Logger.w(LogTags.TOKEN, "⚠️ Returning default preferences due to read error")
-            defaultValue
+            throw e
         }
     }
     
@@ -163,7 +188,33 @@ internal class EncryptedPreferencesSerializer(
             val preferencesBytes = byteArrayOutputStream.toByteArray()
             
             // 2. Verschlüssele mit Tink
-            val encryptedBytes = encryptionHelper.encrypt(preferencesBytes)
+            val encryptedBytes = try {
+                encryptionHelper.encrypt(preferencesBytes)
+            } catch (e: TinkEncryptionException) {
+                // NOTAUSGANG genau für den Fall, für den der corruptionHandler gebaut ist: ist das
+                // Keyset unbrauchbar, scheitert nicht nur das Lesen, sondern auch der ERSATZ-Write
+                // des Handlers (dieselbe lazy aead-Instanz) — und der Store bliebe dauerhaft lese-
+                // UND schreib-tot, also genau die Endlosschleife, die der Handler verhindern soll.
+                //
+                // Ein LEERER Zustand braucht keine Verschlüsselung: eine 0-Byte-Datei liest
+                // readFrom() bereits als "noch nie etwas gespeichert". Damit gelingt die Ersetzung
+                // und die Leseseite ist wieder gesund. Ausschliesslich für den leeren Zustand -
+                // echte Token-Daten werden NIEMALS unverschlüsselt geschrieben, die scheitern
+                // weiterhin laut (siehe throw unten).
+                if (t.asMap().isEmpty()) {
+                    Logger.w(
+                        LogTags.TOKEN,
+                        "⚠️ SECURITY: Verschluesselung nicht verfuegbar (Keyset defekt?) - LEERER " +
+                            "Zustand wird als 0-Byte-Datei geschrieben, damit der Store wieder " +
+                            "lesbar wird. Ein neuer Token laesst sich bis zum Keyset-Neuaufbau nicht " +
+                            "speichern.",
+                        e
+                    )
+                    output.flush()
+                    return
+                }
+                throw e
+            }
             Logger.d(LogTags.TOKEN, "🔐 Encrypted ${preferencesBytes.size} bytes -> ${encryptedBytes.size} bytes")
             
             // 3. Schreibe verschlüsselte Bytes

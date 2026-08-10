@@ -103,14 +103,20 @@ class DataStoreTokenRepository @Inject constructor(
     }
     
     override fun observe(): Flow<TokenData?> {
-        // ✅ Muss wie get() degradieren, nicht crashen: wird der verschluesselte Store
-        // unlesbar (EncryptedPreferencesSerializer.readFrom() wirft TinkEncryptionException,
-        // kein corruptionHandler konfiguriert), wuerde die Exception sonst ungefangen aus
-        // tokenDataStore.data heraus propagieren - direkt in AuthViewModel.observeTokenLoss()s
-        // collect{} (viewModelScope.launch ohne try/catch, laeuft ab init{}) und die App bei
-        // JEDEM Start abstuerzen. .catch{} faengt den Upstream-Fehler ab (nicht nur den
-        // JSON-Decode innerhalb von .map{}) und emittiert "kein Token" - dieselbe Degradation
-        // wie get()'s aeusseres try/catch.
+        // ✅ Muss wie get() degradieren, nicht crashen. Der Store hat inzwischen einen
+        // corruptionHandler und `EncryptedPreferencesSerializer.readFrom()` uebersetzt einen
+        // Tink-Fehler in eine CorruptionException (siehe EncryptedDataStoreFactory) - das .catch{}
+        // ist dadurch NICHT ueberfluessig geworden:
+        //  * Der Handler greift ausschliesslich bei CorruptionException. Ein IO-Fehler oder eine
+        //    gescheiterte Verschluesselung beim (Ersatz-)Schreiben laeuft weiterhin als Exception
+        //    aus tokenDataStore.data heraus.
+        //  * readFrom() wirft einen unerwarteten Lesefehler seit dem Fix bewusst weiter, statt
+        //    still leere Preferences zu liefern (ein stiller Default wuerde beim naechsten Write
+        //    ueber den intakten Token geschrieben).
+        // Ungefangen landet so ein Fehler direkt in AuthViewModel.observeTokenLoss()s collect{}
+        // (viewModelScope.launch ohne try/catch, laeuft ab init{}) und beendet die App bei JEDEM
+        // Start. .catch{} faengt den Upstream-Fehler ab (nicht nur den JSON-Decode innerhalb von
+        // .map{}) und emittiert "kein Token" - dieselbe Degradation wie get()'s aeusseres try/catch.
         return tokenDataStore.data
             .catch { e ->
                 Logger.e(LogTags.TOKEN, "Error reading token DataStore (observe)", e)

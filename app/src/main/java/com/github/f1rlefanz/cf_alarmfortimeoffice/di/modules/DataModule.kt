@@ -9,6 +9,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -40,13 +42,37 @@ import javax.inject.Singleton
 // gelassen, ohne jede Selbstheilung außer "App-Daten löschen". Bewusster Preis: die betroffene
 // Datei fällt EINMAL auf Werkszustand zurück (sie ist ohnehin unlesbar). Gleiches Muster wie
 // CalendarSelectionRepository.
+//
+// "Werkszustand" ist dabei NICHT harmlos, deshalb wird der Fall laut geloggt statt still ersetzt:
+// `MasterPausePrefs` liest bei fehlendem Schlüssel `false` — eine AKTIVE Master-Pause (Urlaub)
+// endet damit lautlos, der Backstop in `syncAlarms()` greift nicht mehr und Wecker/Dimmer/DND/Hue
+// planen wieder. Ebenso still verschwinden Dimm-Regeln und die DND-Konfiguration. Eine Sicherung
+// wie `ShiftConfigRepository.backupBrokenConfig()` ist hier nicht möglich: dort ist nur EIN
+// String-Wert defekt, hier das protobuf der ganzen Datei — es gibt nichts Lesbares zu retten.
+// Diese Log-Zeile ist damit die einzige Spur, an der ein "meine Einstellungen sind weg" später
+// überhaupt zuzuordnen ist. Nicht entfernen.
 private val Context.mainDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "settings",
-    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
+    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = {
+        Logger.w(
+            LogTags.DATASTORE,
+            "⚠️ 'settings' war beschaedigt und wurde durch einen leeren Zustand ersetzt: Alarme, " +
+                "AlarmPrefs, Skip-Zustand, Dimm-Regeln und DND-Konfiguration sind auf Werkszustand " +
+                "zurueck - eine AKTIVE Master-Pause ist damit ebenfalls beendet"
+        )
+        emptyPreferences()
+    })
 )
 private val Context.hueDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "hue_settings",
-    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
+    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = {
+        Logger.w(
+            LogTags.DATASTORE,
+            "⚠️ 'hue_settings' war beschaedigt und wurde durch einen leeren Zustand ersetzt - " +
+                "Bridge-Kopplung und Hue-Regeln muessen neu eingerichtet werden"
+        )
+        emptyPreferences()
+    })
 )
 
 @Module

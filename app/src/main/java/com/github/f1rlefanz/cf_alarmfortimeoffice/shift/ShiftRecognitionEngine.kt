@@ -15,15 +15,51 @@ class ShiftRecognitionEngine(
 ) {
     
     /**
+     * Der komplette Cache-Stand in EINEM unveraenderlichen Objekt: Event-Schluessel, Ergebnis,
+     * Veroeffentlichungszeit und die [cacheEpoch], unter der er entstanden ist.
+     *
+     * WARUM EIN OBJEKT UND NICHT DREI FELDER (Fix v1.22.2): Drei einzelne `@Volatile`-Felder haben
+     * keine gemeinsame Atomizitaet - jeder Leser kann eine Mischung aus altem und neuem Stand
+     * sehen. Eine einzige `@Volatile`-Referenz zu veroeffentlichen ist dagegen unteilbar: entweder
+     * der Leser sieht den ganzen alten Stand oder den ganzen neuen.
+     */
+    private data class RecognitionCache(
+        val eventsHash: Int,
+        val matches: List<ShiftMatch>,
+        val publishedAt: Long,
+        val epoch: Int
+    )
+
+    /**
      * PERFORMANCE OPTIMIZATION: Enhanced recognition with intelligent caching
      * Caches results for identical event sets and prevents concurrent calls
      */
     @Volatile
-    private var lastRecognitionHash = 0
+    private var cache: RecognitionCache? = null
+
+    /**
+     * INVARIANTE (Fix v1.22.2): Der Zaehler, mit dem [clearRecognitionCache] eine Invalidierung
+     * OHNE Mutex durchsetzen kann.
+     *
+     * [clearRecognitionCache] ist bewusst NICHT `suspend`: der einzige Aufrufer ist
+     * `ShiftUseCase.invalidateAllCaches()`, eine normale (nicht-suspend) private Funktion. Ein
+     * `suspend`-Umbau hier wuerde diese Signatur und damit fremde Dateien mitziehen - und der
+     * Mutex allein wuerde das Problem gar nicht loesen (siehe unten).
+     *
+     * Das Problem ohne Epoche: ein Lauf haelt den Mutex und hat die ALTE Konfiguration gelesen;
+     * mitten darin loescht der Nutzer per Speichern den Cache; danach veroeffentlicht der laufende
+     * Lauf seinen ueberholten Stand samt frischem Zeitstempel - die Invalidierung ist verpufft und
+     * der alte Stand gilt fuer die volle adaptive Cache-Dauer (2-30s) als Treffer. Genau darueber
+     * behielt eine gerade deaktivierte Schicht ihren Wecker.
+     *
+     * Die Loesung: jeder veroeffentlichte Stand traegt die Epoche, unter der er ENTSTANDEN ist.
+     * [clearRecognitionCache] zaehlt sie hoch (und zwar VOR dem Nullen des Standes). Ein Leser
+     * akzeptiert nur einen Stand, dessen Epoche noch die aktuelle ist. Damit ist selbst ein
+     * Lauf, der zwischen Pruefung und Schreiben ueberholt wird, harmlos: sein Stand ist mit der
+     * alten Epoche gestempelt und wird von jedem Leser verworfen.
+     */
     @Volatile
-    private var cachedMatches: List<ShiftMatch> = emptyList()
-    @Volatile
-    private var lastCacheTime = 0L
+    private var cacheEpoch = 0
     @Volatile
     private var cacheHitCount = 0
     @Volatile
@@ -43,6 +79,10 @@ class ShiftRecognitionEngine(
      * (`AlarmUseCase.syncAlarms()`, `ShiftUseCase.recognizeShiftsInEvents()`,
      * `AlarmMaintenanceService`), die letzten beiden ausserhalb jedes Alarm-Mutex - die
      * Ueberlappung ist der Normalfall, nicht der Ausnahmefall.
+     *
+     * Der Mutex deckt Pruefung und Veroeffentlichung ab, NICHT die Invalidierung: die laeuft ueber
+     * [clearRecognitionCache] aus synchronem Kontext und kann den Mutex nicht nehmen. Dafuer sorgt
+     * [cacheEpoch] - siehe dort.
      *
      * Der Mutex ersetzt die frueheren Felder `recognitionInProgress` + `MAX_CONCURRENT_WAIT_MS`
      * (Polling mit 200ms-Timeout, das "zur Sicherheit" trotzdem weiterlief und damit genau den
@@ -88,11 +128,16 @@ class ShiftRecognitionEngine(
      * Clears the recognition cache to force re-processing of events.
      * This should be called when shift configuration changes.
      * PERFORMANCE: Optimized cache management with lifecycle callbacks
+     *
+     * REIHENFOLGE IST TRAGEND: erst [cacheEpoch] hochzaehlen, dann den Stand nullen. Ein Lauf, der
+     * gerade im kritischen Abschnitt steckt, sieht die neue Epoche damit spaetestens beim
+     * Veroeffentlichen - und sein mit der alten Epoche gestempelter Stand wird ohnehin von jedem
+     * Leser verworfen. Andersherum (erst nullen, dann zaehlen) gaebe es ein Fenster, in dem ein
+     * Lauf noch mit der alten Epoche als "aktuell" veroeffentlichen darf.
      */
     fun clearRecognitionCache() {
-        lastRecognitionHash = 0
-        cachedMatches = emptyList()
-        lastCacheTime = 0L
+        cacheEpoch++
+        cache = null
 
         // ADAPTIVE LEARNING: Track configuration changes for cache optimization
         configChangeCount++
@@ -112,15 +157,20 @@ class ShiftRecognitionEngine(
         // hier auf das FERTIGE Ergebnis des ersten und bekommt es danach als Cache-Treffer,
         // statt einen halbfertigen Zwischenzustand zu lesen.
         return recognitionMutex.withLock {
+            // Die Epoche, unter der DIESER Lauf arbeitet - festgehalten, BEVOR die Erkennung
+            // beginnt. Ein zwischenzeitliches clearRecognitionCache() macht sie ungueltig.
+            val epochAtStart = cacheEpoch
+
             // ADAPTIVE CACHE: Check cache validity with dynamic expiration
-            if (lastRecognitionHash == eventsHash && lastRecognitionHash != 0) {
+            val snapshot = cache
+            if (snapshot != null && snapshot.epoch == epochAtStart && snapshot.eventsHash == eventsHash) {
                 val adaptiveCacheValidity = getAdaptiveCacheValidity()
-                val cacheAge = System.currentTimeMillis() - lastCacheTime
+                val cacheAge = System.currentTimeMillis() - snapshot.publishedAt
 
                 if (cacheAge < adaptiveCacheValidity) {
                     cacheHitCount++
-                    Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${cachedMatches.size} matches (hit #$cacheHitCount)")
-                    return@withLock cachedMatches
+                    Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${snapshot.matches.size} matches (hit #$cacheHitCount)")
+                    return@withLock snapshot.matches
                 } else {
                     Logger.d(LogTags.SHIFT_RECOGNITION, "⏰ ADAPTIVE-CACHE-EXPIRED: Cache is ${cacheAge}ms old (validity=${adaptiveCacheValidity}ms), needs refresh")
                 }
@@ -128,13 +178,27 @@ class ShiftRecognitionEngine(
 
             val matches = performRecognition(events)
 
-            // ERST JETZT veroeffentlichen - Ergebnis und Cache-Schluessel gemeinsam, nachdem die
-            // Erkennung wirklich fertig ist. Schlaegt `performRecognition` mit einer Exception
-            // fehl, bleibt der alte Cache-Schluessel stehen und der naechste Aufruf versucht es
+            // ERST JETZT veroeffentlichen - Ergebnis und Cache-Schluessel gemeinsam als EIN Objekt,
+            // nachdem die Erkennung wirklich fertig ist. Schlaegt `performRecognition` mit einer
+            // Exception fehl, bleibt der alte Stand stehen und der naechste Aufruf versucht es
             // erneut, statt ein Fehlergebnis zu cachen.
-            cachedMatches = matches
-            lastRecognitionHash = eventsHash
-            lastCacheTime = System.currentTimeMillis()
+            //
+            // Der Stand traegt `epochAtStart` - lief zwischendurch ein clearRecognitionCache(),
+            // ist er damit als ueberholt erkennbar und wird von jedem Leser verworfen. Das
+            // ERGEBNIS geht trotzdem an den Aufrufer zurueck: es ist zwar auf einer inzwischen
+            // ersetzten Konfiguration entstanden, aber real erkannt - eine leere Liste
+            // zurueckzugeben waere die gefaehrlichere Luege (syncAlarms loescht darauf alle
+            // Alarme), und der Aufrufer, der gerade gespeichert hat, loest ohnehin einen neuen
+            // Lauf aus.
+            cache = RecognitionCache(
+                eventsHash = eventsHash,
+                matches = matches,
+                publishedAt = System.currentTimeMillis(),
+                epoch = epochAtStart
+            )
+            if (cacheEpoch != epochAtStart) {
+                Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-STALE: Konfiguration wurde waehrend der Erkennung geaendert (Epoche $epochAtStart -> $cacheEpoch), Ergebnis wird nicht als frisch gecacht")
+            }
 
             Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${matches.size} matches (cache validity: ${getAdaptiveCacheValidity()}ms)")
             matches

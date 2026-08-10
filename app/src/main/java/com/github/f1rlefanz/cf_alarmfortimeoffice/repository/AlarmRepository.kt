@@ -69,6 +69,10 @@ class AlarmRepository @Inject constructor(
 
     companion object {
         private val ALARMS_KEY = stringPreferencesKey("active_alarms")
+
+        /** Sicherung des rohen, nicht dekodierbaren Bestands - siehe [backupBrokenAlarms]. */
+        internal const val BROKEN_ALARMS_KEY_NAME = "active_alarms_broken"
+        private val BROKEN_ALARMS_KEY = stringPreferencesKey(BROKEN_ALARMS_KEY_NAME)
     }
 
     private val json = Json {
@@ -108,6 +112,28 @@ class AlarmRepository @Inject constructor(
      */
     private val stateMutex = Mutex()
 
+    /**
+     * SCHREIBSPERRE nach einem gescheiterten Init-Load.
+     *
+     * Ein Dekodier- oder Lesefehler degradiert den Cache zwangsläufig auf `emptyList()` — mehr ist
+     * nicht bekannt. Was NICHT passieren darf: dass diese Notlage-Leere über die noch vorhandenen
+     * Rohdaten UND über den Direct-Boot-Spiegel geschrieben wird. Genau das tat der Delta-Sync:
+     * `getAllAlarms()` liefert leer → jede erkannte Schicht gilt als neu → `saveAlarm()` →
+     * `persistToDataStore()` überschreibt `active_alarms` und spiegelt per
+     * `directBootAlarmStore.saveAll()`. Verloren gehen dabei genau die Alarme, die sich NICHT aus
+     * dem Kalender rekonstruieren lassen (manuelle Alarme) — und der Direct-Boot-Spiegel, der der
+     * einzige Weg zurück nach einem Reboot vor der ersten Entsperrung ist.
+     *
+     * Dieselbe Entscheidung wie in `DimRuleRepository.editRules()` und
+     * `ShiftConfigRepository.getCurrentShiftConfig()`: nicht speichern ist besser als alles
+     * verlieren. Die System-Alarme werden trotzdem gesetzt (der Wecker klingelt), nur die
+     * Persistenz bleibt für diesen Prozess außen vor. Einzige bewusste Ausnahme:
+     * [deleteAllAlarms] (Master-Pause / autoAlarmEnabled=false) MUSS auch dann wirklich räumen,
+     * sonst re-armt ein Direct-Boot-Restore Alarme, die der Nutzer gerade pausiert hat.
+     */
+    @Volatile
+    private var persistenceBlocked = false
+
     init {
         // CRITICAL: Lade Alarme beim Repository-Init
         loadAlarmsFromDataStore()
@@ -125,7 +151,25 @@ class AlarmRepository @Inject constructor(
                     val alarmsJson = preferences[ALARMS_KEY]
 
                     if (alarmsJson != null) {
-                        val alarmsData = json.decodeFromString<List<AlarmInfoData>>(alarmsJson)
+                        // Dekodieren EIGENSTÄNDIG abfangen: ein defekter Wert ist etwas anderes als
+                        // ein IO-Fehler und darf nicht als "keine Alarme" durchgehen (siehe
+                        // persistenceBlocked).
+                        val alarmsData = try {
+                            json.decodeFromString<List<AlarmInfoData>>(alarmsJson)
+                        } catch (e: Exception) {
+                            persistenceBlocked = true
+                            backupBrokenAlarms(alarmsJson)
+                            _activeAlarms.value = emptyList()
+                            Logger.e(
+                                LogTags.ALARM,
+                                "❌ PERSISTENCE: Alarm-Bestand (${alarmsJson.length} Zeichen) ist NICHT " +
+                                    "dekodierbar - Sicherung unter '$BROKEN_ALARMS_KEY_NAME', Persistenz " +
+                                    "und Direct-Boot-Spiegel werden fuer diesen Prozess NICHT mehr " +
+                                    "ueberschrieben",
+                                e
+                            )
+                            return@withLock
+                        }
                         val alarms = alarmsData.map { it.toAlarmInfo() }
 
                         // Cleanup: Entferne automatisch abgelaufene Alarme
@@ -149,11 +193,38 @@ class AlarmRepository @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Error loading alarms from DataStore", e)
+                // Auch ein LESEFEHLER (kein Dekodier-Fehler) degradiert den Cache auf leer, während
+                // die Datei intakt sein kann - der nächste Write würde sie und den
+                // Direct-Boot-Spiegel mit dieser Leere überschreiben. Gleiche Sperre.
+                persistenceBlocked = true
+                Logger.e(
+                    LogTags.ALARM,
+                    "❌ PERSISTENCE: Error loading alarms from DataStore - Persistenz und " +
+                        "Direct-Boot-Spiegel werden fuer diesen Prozess NICHT mehr ueberschrieben",
+                    e
+                )
                 _activeAlarms.value = emptyList()
             } finally {
                 initialLoadDone.complete(Unit)
             }
+        }
+    }
+
+    /**
+     * Legt den rohen, nicht dekodierbaren Alarm-Bestand einmalig unter einem eigenen Schlüssel ab,
+     * BEVOR irgendein Schreibpfad ihn überschreiben kann - Vorbild
+     * `ShiftConfigRepository.backupBrokenConfig()`. Überschreibt eine vorhandene Sicherung NICHT:
+     * die ERSTE ist die dem Original nächste. Fehler werden nur geloggt.
+     */
+    private suspend fun backupBrokenAlarms(raw: String) {
+        try {
+            dataStore.edit { preferences ->
+                if (preferences[BROKEN_ALARMS_KEY] == null) {
+                    preferences[BROKEN_ALARMS_KEY] = raw
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Sicherung des defekten Alarm-Bestands fehlgeschlagen", e)
         }
     }
 
@@ -168,8 +239,20 @@ class AlarmRepository @Inject constructor(
      * PERSISTENCE: Speichert Alarme in DataStore
      *
      * ACHTUNG: nimmt [stateMutex] NICHT selbst (nicht reentrant) - nur aus einem Lock-Halter rufen.
+     *
+     * @param force überschreibt die [persistenceBlocked]-Sperre. NUR für ein ausdrückliches Räumen
+     *   (siehe [deleteAllAlarms]) - dort ist "nichts" der gewollte Zustand, nicht eine Notlage.
      */
-    private suspend fun persistToDataStore(alarms: List<AlarmInfo>) {
+    private suspend fun persistToDataStore(alarms: List<AlarmInfo>, force: Boolean = false) {
+        if (persistenceBlocked && !force) {
+            Logger.w(
+                LogTags.ALARM,
+                "⛔ PERSISTENCE: Schreiben von ${alarms.size} Alarmen uebersprungen - der Init-Load " +
+                    "ist gescheitert, der vorhandene Bestand und der Direct-Boot-Spiegel bleiben " +
+                    "unangetastet (Sicherung: '$BROKEN_ALARMS_KEY_NAME')"
+            )
+            return
+        }
         try {
             val alarmsData = alarms.map { it.toAlarmInfoData() }
             val alarmsJson = json.encodeToString(alarmsData)
@@ -288,8 +371,11 @@ class AlarmRepository @Inject constructor(
             stateMutex.withLock {
                 _activeAlarms.value = emptyList()
 
-                // PERSIST to DataStore
-                persistToDataStore(emptyList())
+                // PERSIST to DataStore - force: ein ausdrückliches Räumen muss auch bei blockierter
+                // Persistenz durchgehen, sonst re-armt ein Direct-Boot-Restore genau die Alarme,
+                // die Master-Pause/autoAlarmEnabled=false gerade abgeschaltet haben. Der defekte
+                // Rohbestand ist unter BROKEN_ALARMS_KEY_NAME gesichert.
+                persistToDataStore(emptyList(), force = true)
             }
 
             Logger.business(LogTags.ALARM, "All alarms cleared")

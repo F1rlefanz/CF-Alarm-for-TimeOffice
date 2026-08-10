@@ -26,13 +26,17 @@ class ShiftDefinitionMatchingTest {
     private val config = ShiftConfig.getDefaultConfig()
 
     /**
-     * Die Standardkonfiguration, wie sie VOR der Ausweitung des Testkreises aussah - mit den
-     * einbuchstabigen Keywords "F"/"S"/"N".
+     * Die Standardkonfiguration, wie sie VOR der Ausweitung des Testkreises aussah: nur das
+     * Stationskuerzel neben dem einbuchstabigen Code, also OHNE die inzwischen ergaenzten
+     * generischen Muster ("Frühdienst"/"Spätdienst"/"Nachtdienst"/"ZD").
      *
-     * Warum die hier weiterlebt, obwohl [ShiftConfig.getDefaultConfig] sie nicht mehr liefert:
-     * eine bereits gespeicherte `ShiftConfig` wird NICHT migriert. Bestandsnutzer fahren also
-     * genau diese Keywords weiter, und die Staffelung in `findDefinitionFor` muss die
-     * "S"-Kollision fuer sie unveraendert abfangen.
+     * Die einbuchstabigen Codes "F"/"S"/"N" sind KEIN Altlast-Merkmal - [ShiftConfig.getDefaultConfig]
+     * liefert sie weiterhin und absichtlich (ohne sie bleibt eine echte Schicht unerkannt, am
+     * Geraet nachgewiesen; siehe `ShiftDefinitionPatternMatchingTest`). Warum diese Alt-Fassung
+     * hier trotzdem weiterlebt: eine bereits gespeicherte `ShiftConfig` wird NICHT migriert.
+     * Bestandsnutzer fahren also genau diese schmalere Keyword-Liste weiter, und die Staffelung in
+     * `findDefinitionFor` muss die "S"-Kollision auch fuer sie abfangen - ohne dass ein
+     * zusaetzliches generisches Muster dabei aushilft.
      */
     private val legacyConfig = ShiftConfig(
         definitions = listOf(
@@ -116,10 +120,10 @@ class ShiftDefinitionMatchingTest {
 
     @Test
     fun `einbuchstabige Keywords matchen nicht mehr unscharf`() {
-        // Gegen eine Konfiguration mit einbuchstabigem Keyword geprueft (die Standardkonfiguration
-        // hat seit der Ausweitung des Testkreises keine solchen Keywords mehr - die Staffelung in
-        // findDefinitionFor muss die Falle aber weiterhin abfangen, weil ein Nutzer sich selbst
-        // ein einbuchstabiges Muster anlegen darf).
+        // Gegen eine minimale Konfiguration mit einbuchstabigem Keyword geprueft. Solche Keywords
+        // stehen weiterhin in der Standardkonfiguration ("F"/"S"/"N", absichtlich - siehe
+        // legacyConfig oben); die Staffelung in findDefinitionFor muss die "S"-Falle deshalb
+        // dauerhaft abfangen, nicht nur fuer selbst angelegte Muster.
         val mitEinzelbuchstabe = ShiftConfig(
             definitions = listOf(
                 ShiftDefinition("late", "Spätschicht", listOf("S", "IMCS"), LocalTime.of(12, 30))

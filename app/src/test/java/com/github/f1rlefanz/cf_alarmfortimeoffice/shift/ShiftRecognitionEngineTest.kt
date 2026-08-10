@@ -297,6 +297,77 @@ class ShiftRecognitionEngineTest {
     }
 
     /**
+     * DIE ANDERE KANTE DES MUTEX: `clearRecognitionCache()` laeuft aus SYNCHRONEM Kontext
+     * (`ShiftUseCase.invalidateAllCaches()`) und kann den Mutex gar nicht nehmen. Ein Lauf, der
+     * gerade im kritischen Abschnitt steckt, darf seinen auf der ALTEN Konfiguration entstandenen
+     * Stand danach nicht als frischen Cache veroeffentlichen.
+     *
+     * Reihenfolge im Test = die reale Reihenfolge am Geraet: (1) ein regulaerer Engine-Aufruf
+     * (Vordergrund-Refresh, 400ms-Debounce des ShiftViewModel oder die 6h-Wartung) haengt mitten
+     * in der Erkennung; (2) der Nutzer speichert eine geaenderte Schicht-Konfiguration ->
+     * `clearRecognitionCache()`; (3) der haengende Lauf wird fertig und schreibt.
+     *
+     * Vor dem Fix nutzte der naechste Aufruf mit denselben Events diesen Stand fuer die volle
+     * adaptive Cache-Dauer (2-30s) als Treffer - die gerade deaktivierte Schicht behielt ihren
+     * Wecker, die geaenderte Weckzeit wurde nicht uebernommen. Belegt ueber `loadCount`: nach der
+     * Invalidierung MUSS die Konfiguration erneut gelesen werden.
+     */
+    @Test
+    fun `Invalidierung waehrend eines laufenden Aufrufs wird nicht ueberschrieben`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Fruehschicht", listOf("FS")))
+        )
+        val repo = GatedShiftConfigRepository(config, gate)
+        val engine = ShiftRecognitionEngine(repo)
+        val events = listOf(event("FS"))
+
+        // (1) Lauf A haengt mitten in performRecognition().
+        val running = async { engine.getAllMatchingShifts(events) }
+        runCurrent()
+
+        // (2) Der Nutzer speichert -> Invalidierung, ohne Mutex, mitten in Lauf A.
+        engine.clearRecognitionCache()
+
+        // (3) Lauf A wird fertig und veroeffentlicht seinen Stand.
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("Lauf A liefert sein Ergebnis normal an seinen Aufrufer", 1, running.await().size)
+
+        val afterInvalidation = engine.getAllMatchingShifts(events)
+
+        assertEquals(1, afterInvalidation.size)
+        assertEquals(
+            "Nach einer Invalidierung mitten im Lauf muss die Konfiguration erneut gelesen werden",
+            2,
+            repo.loadCount
+        )
+    }
+
+    /**
+     * Gegenprobe: eine Invalidierung, die NICHT mit einem laufenden Aufruf kollidiert, muss den
+     * Cache genauso wirksam leeren - der Epochen-Mechanismus darf den normalen Fall nicht
+     * verschlucken.
+     */
+    @Test
+    fun `Invalidierung nach einem abgeschlossenen Lauf erzwingt neues Lesen`() = runTest {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Fruehschicht", listOf("FS")))
+        )
+        val repo = GatedShiftConfigRepository(config)
+        val engine = ShiftRecognitionEngine(repo)
+        val events = listOf(event("FS"))
+
+        engine.getAllMatchingShifts(events)
+        engine.clearRecognitionCache()
+        engine.getAllMatchingShifts(events)
+
+        assertEquals("Nach clearRecognitionCache() darf kein Cache-Treffer mehr entstehen", 2, repo.loadCount)
+    }
+
+    /**
      * Repository, das einen Lesefehler als `Result.failure` MELDET statt zu werfen — genau das
      * tut der echte [ShiftConfigRepository] bei einer vorhandenen, aber nicht dekodierbaren
      * Konfiguration ("Broken").

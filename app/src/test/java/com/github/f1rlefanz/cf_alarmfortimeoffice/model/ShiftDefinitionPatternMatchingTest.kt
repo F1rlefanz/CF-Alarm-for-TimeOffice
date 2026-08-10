@@ -199,8 +199,9 @@ class ShiftDefinitionPatternMatchingTest {
 
     @Test
     fun `leeres Muster matcht nie`() {
-        // `Regex.escape("")` ergibt `\b\Q\E\b` - das trifft JEDEN Titel mit einem Wortzeichen.
-        // Ein leeres Muster wuerde also jeden Termin zu dieser Schicht machen.
+        // Ein leeres Muster laesst nur die beiden Wortgrenzen stehen - die treffen als LEERER
+        // Treffer ueberall, wo links und rechts kein Wortzeichen steht. Ein leeres Muster wuerde
+        // also Termine erkennen, ohne irgendetwas zu bedeuten.
         val def = definition(keywords = listOf(""), name = "X")
 
         assertFalse(def.matchesKeywords("Kino"))

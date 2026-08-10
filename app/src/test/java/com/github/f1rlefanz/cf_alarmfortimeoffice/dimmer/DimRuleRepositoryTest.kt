@@ -113,16 +113,17 @@ class DimRuleRepositoryTest {
         assertEquals(broken, store.raw())
     }
 
+    /** Simuliert ein Downgrade auf eine APK, die diesen Anker-Wert nicht kennt. */
+    private val withUnknownAnchor = """
+        [{"id":"a","name":"A","shiftPattern":"__UNIVERSAL__","enabled":true,
+          "windows":[{"startAnchor":"MOND_AUFGANG","startClockMinutes":1200,
+                      "startOffsetMinutes":-120,"endAnchor":"ALARM",
+                      "endClockMinutes":360,"endOffsetMinutes":0}],
+          "strength":55,"warmth":40}]
+    """.trimIndent()
+
     @Test
     fun `ein unbekannter Anker-Wert kostet nur das Feld, nicht die ganze Regel-Liste`() = runTest {
-        // Simuliert ein Downgrade auf eine APK, die diesen Anker-Wert nicht kennt.
-        val withUnknownAnchor = """
-            [{"id":"a","name":"A","shiftPattern":"__UNIVERSAL__","enabled":true,
-              "windows":[{"startAnchor":"MOND_AUFGANG","startClockMinutes":1200,
-                          "startOffsetMinutes":-120,"endAnchor":"ALARM",
-                          "endClockMinutes":360,"endOffsetMinutes":0}],
-              "strength":55,"warmth":40}]
-        """.trimIndent()
         val store = storeWithRaw(withUnknownAnchor)
         val repo = DimRuleRepository(store)
 
@@ -135,5 +136,36 @@ class DimRuleRepositoryTest {
             DimAnchor.CLOCK,
             rules.first().windows.first().startAnchor
         )
+    }
+
+    /**
+     * Die Kehrseite der Toleranz: `editRules()` serialisiert den DEKODIERTEN Bestand komplett neu.
+     * Duerfte der auf den Feld-Default gefallene Anker mitgeschrieben werden, waere der
+     * Originalwert nach dem Bearbeiten einer BELIEBIGEN anderen Regel dauerhaft weg - der
+     * Rueckweg ueber ein Update/Downgrade-Fix, den der Kommentar an editRules() verspricht, ist
+     * dann zu. Deshalb liest der Schreibpfad strikt und bricht ab wie bei defektem JSON.
+     */
+    @Test
+    fun `upsert schreibt einen unbekannten Anker-Wert nicht still auf den Default um`() = runTest {
+        val store = storeWithRaw(withUnknownAnchor)
+        val repo = DimRuleRepository(store)
+
+        repo.upsert(rule("neu"))
+
+        assertEquals(
+            "Rohdaten mit unbekanntem Anker muessen unangetastet liegen bleiben",
+            withUnknownAnchor,
+            store.raw()
+        )
+    }
+
+    @Test
+    fun `delete laesst einen unbekannten Anker-Wert unangetastet`() = runTest {
+        val store = storeWithRaw(withUnknownAnchor)
+        val repo = DimRuleRepository(store)
+
+        repo.delete("a")
+
+        assertEquals(withUnknownAnchor, store.raw())
     }
 }

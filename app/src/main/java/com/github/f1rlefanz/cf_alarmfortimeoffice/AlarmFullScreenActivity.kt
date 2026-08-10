@@ -52,6 +52,46 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
+ * Einweg-Sperre: genau EINE der beiden Wecker-Handlungen (Dismiss ODER Snooze) darf laufen.
+ *
+ * REAL BELEGT (Log 05.08.2026, 05:30:07): "🛑 User dismissed alarm" um .596 und "😴 User snoozed
+ * alarm for 5 minutes" um .620 — 24ms auseinander, beide Handler liefen vollständig durch. Für
+ * einen Menschen sind 24ms unerreichbar; die zwei Knöpfe liegen bildschirmfüllend direkt
+ * übereinander (12dp Abstand am unteren Rand), und Compose gibt jedem gleichzeitigen Zeiger seinen
+ * eigenen Klick — eine Handkante/ein Daumenballen beim blinden Greifen im Halbschlaf trifft beide.
+ * Folge damals: der Nutzer drückte "Alarm stoppen" und bekam trotzdem einen Schlummer-Wecker 5
+ * Minuten später. Umgekehrt räumt ein nachlaufendes Dismiss den gerade geplanten Snooze wieder ab —
+ * dann wird gar nicht mehr geweckt.
+ *
+ * Kein Debounce nach Zeit, sondern eine echte Einweg-Sperre: der erste bewusste Griff gewinnt, jeder
+ * weitere ist per Definition ein Versehen.
+ *
+ * Bewusst als eigene, Android-freie Klasse NEBEN der Activity (nicht als privates Feld darin): so
+ * ist der Vertrag ohne Instrumentierung testbar ([com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenHandoffTest]) —
+ * eine echte Gleichzeitigkeit ließ sich per adb nicht erzeugen, deshalb war der Fix vorher nur
+ * durch seinen Kommentar abgesichert.
+ *
+ * [AtomicBoolean.compareAndSet] statt eines einfachen `var`: die Klick-Handler laufen zwar beide auf
+ * dem Hauptthread, aber genau das war die Annahme, die den Bug erst zu einem Rätsel gemacht hat —
+ * eine atomare Prüf-und-Setz-Operation ist hier kostenlos und schließt auch den Fall aus, dass die
+ * Auslösung je über einen anderen Thread kommt.
+ *
+ * Der Notausgang bleibt unberührt: die Notification-Knöpfe gehen direkt an den
+ * [AlarmSoundService], nicht durch diese Activity — und `stopAndClose()` fragt die Sperre bewusst
+ * nicht.
+ */
+internal class OneShotAlarmHandoff {
+
+    private val claimed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** true nur beim ERSTEN Aufruf; jeder weitere Aufruf liefert false. */
+    fun claim(): Boolean = claimed.compareAndSet(false, true)
+
+    /** Wurde die Sperre schon beansprucht? Reine Abfrage, beansprucht selbst nichts. */
+    val isClaimed: Boolean get() = claimed.get()
+}
+
+/**
  * Vollbild-Wecker über dem Sperrbildschirm.
  *
  * ROLLENVERTEILUNG (v3.0):
@@ -78,23 +118,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     /**
-     * Merkt sich, ob Dismiss/Snooze bereits gelaufen sind. Zwei Aufgaben:
-     *  1. Der alarmActive-Observer soll danach nicht noch eine zweite Log-Zeile schreiben.
-     *  2. **Sperre gegen Doppelauslösung**: Dismiss und Snooze dürfen sich nicht überlagern.
-     *
-     * Zu 2. real belegt (Log 05.08.2026, 05:30:07): "🛑 User dismissed alarm" um .596 und
-     * "😴 User snoozed alarm for 5 minutes" um .620 — 24ms auseinander, beide Handler liefen
-     * vollständig durch. Für einen Menschen sind 24ms unerreichbar; die zwei Knöpfe liegen
-     * bildschirmfüllend direkt übereinander (12dp Abstand am unteren Rand), und Compose gibt
-     * jedem gleichzeitigen Zeiger seinen eigenen Klick — eine Handkante/ein Daumenballen beim
-     * blinden Greifen im Halbschlaf trifft beide. Folge damals: der Nutzer drückte "Alarm
-     * stoppen" und bekam trotzdem einen Schlummer-Wecker 5 Minuten später.
-     *
-     * Kein Debounce nach Zeit, sondern eine Einweg-Sperre: der erste bewusste Griff gewinnt,
-     * jeder weitere ist per Definition ein Versehen. Der Notausgang bleibt unberührt — die
-     * Notification-Knöpfe gehen direkt an den Service, nicht durch diese Activity.
+     * Einweg-Sperre gegen Doppelauslösung von Dismiss/Snooze — siehe [OneShotAlarmHandoff].
+     * Dient zusätzlich dem alarmActive-Observer als "wurde hier schon bewusst gehandelt?".
      */
-    private var userHandledAlarm = false
+    private val alarmHandoff = OneShotAlarmHandoff()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -174,7 +201,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // Bewusst WARN: muss auch im Release-Log auftauchen, dort landet nur WARN+.
         val stoppedWhileRinging = AlarmSoundService.alarmActive.value && !isFinishing
         val detail = "${visibilitySnapshot()}, isFinishing=$isFinishing, " +
-            "changingConfig=$isChangingConfigurations, userHandled=$userHandledAlarm"
+            "changingConfig=$isChangingConfigurations, userHandled=${alarmHandoff.isClaimed}"
         if (stoppedWhileRinging) {
             Logger.w(
                 LogTags.ALARM,
@@ -286,7 +313,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                 AlarmSoundService.alarmActive
                     .filter { active -> !active }
                     .collect {
-                        if (!userHandledAlarm) {
+                        if (!alarmHandoff.isClaimed) {
                             Logger.i(LogTags.ALARM, "🔕 Kein Wecker mehr aktiv — Vollbild schließt sich")
                         }
                         finish()
@@ -392,12 +419,11 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     private fun dismissAlarm() {
-        if (userHandledAlarm) {
+        if (!alarmHandoff.claim()) {
             Logger.w(LogTags.ALARM, "🚫 Dismiss ignoriert — Wecker wurde in dieser Activity schon behandelt")
             return
         }
         Logger.i(LogTags.ALARM, "🛑 User dismissed alarm")
-        userHandledAlarm = true
         stopAndClose()
     }
 
@@ -405,6 +431,11 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      * Ton stoppen, Alarm-Notification abräumen, Vollbild schließen. Gemeinsamer Endpunkt von
      * Dismiss und des Snooze-Fehlerpfads — der darf NICHT über [dismissAlarm] laufen, weil die
      * Doppelauslösungs-Sperre dann schon zugeschlagen hätte und den Notausgang blockierte.
+     *
+     * Deshalb ruft diese Funktion selbst KEIN [OneShotAlarmHandoff.claim] — der Notausgang muss
+     * auch nach bereits beanspruchter Sperre noch durchlaufen. Wer hier ein claim() ergänzt, macht
+     * den Snooze-Fehlerpfad wirkungslos: der Wecker klingelte dann weiter, obwohl der Snooze
+     * gescheitert ist.
      */
     private fun stopAndClose() {
         stopAlarmSoundService()
@@ -424,7 +455,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      * setAlarmClock) liegt bewusst nur dort, damit es EINE Wahrheit bleibt.
      */
     private fun snoozeAlarm() {
-        if (userHandledAlarm) {
+        if (!alarmHandoff.claim()) {
             Logger.w(LogTags.ALARM, "🚫 Snooze ignoriert — Wecker wurde in dieser Activity schon behandelt")
             return
         }
@@ -437,7 +468,6 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 
         try {
             // Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races).
-            userHandledAlarm = true
             stopAlarmSoundService()
 
             val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME) ?: "Snooze"

@@ -130,6 +130,15 @@ class AlarmManagerService(
         }
     }
 
+    /**
+     * Oeffnet die Systemeinstellung "Alarme & Erinnerungen".
+     *
+     * NUR AUS DER UI AUFRUFEN (Status-Karte/Onboarding). `application.startActivity()` ist aus
+     * einem Hintergrundpfad (6h-Wartung, Worker, BootReceiver) ein Background-Activity-Start und
+     * wird von Android verworfen: der Nutzer sieht nichts. Genau deshalb ruft
+     * [setAlarmFromShiftMatch] das hier NICHT mehr - dort wurde der Dialog "angefordert" und
+     * gleichzeitig gar kein Alarm gestellt, in einem Pfad, der den Dialog nie zeigen konnte.
+     */
     fun requestExactAlarmPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (!alarmManager.canScheduleExactAlarms()) {
@@ -215,16 +224,23 @@ class AlarmManagerService(
             "canScheduleExactAlarms=${permissionStatus.canScheduleExactAlarms}"
         )
 
+        // FEHLENDE EXACT-ALARM-BERECHTIGUNG IST KEIN ABBRUCHGRUND (Fix).
+        //
+        // Vorher stand hier ein frueher Return ohne jede Planung, plus ein
+        // requestExactAlarmPermission(): auf einem Geraet mit entzogener Berechtigung
+        // (Android 12/12L, oder ein Hersteller-"Akku-Assistent") landete damit KEIN einziger
+        // Schicht-Wecker im AlarmManager - waehrend Repository und UI weiter "5 Alarme aktiv"
+        // zeigten. Es klingelte nie. Der Dialog, der das haette erklaeren koennen, kam obendrein
+        // nicht: dieser Pfad laeuft aus der 6h-Wartung/dem Worker, und ein
+        // Background-Activity-Start wird verworfen (siehe [requestExactAlarmPermission]).
+        //
+        // Dieselbe Fehlerklasse behandeln Snooze und Direct-Boot-Restore laengst zweistufig -
+        // ein inexakt geplanter Wecker (Minuten Verzug) ist unvergleichlich besser als keiner.
+        // Alle drei Aufrufstellen gehen deshalb jetzt ueber [setExactOrInexact].
         if (!permissionStatus.canScheduleExactAlarms) {
             Logger.w(
                 LogTags.ALARM_MANAGER,
-                "❌ No permission for exact alarms - requesting permission"
-            )
-            // Auto-request permission for better UX
-            requestExactAlarmPermission()
-            return createAlarmStatus(
-                systemAlarmSet = false,
-                message = "Alarm-Berechtigung fehlt - Berechtigung angefordert"
+                "⚠️ Keine Exact-Alarm-Berechtigung - Wecker wird inexakt geplant statt uebersprungen"
             )
         }
 
@@ -264,13 +280,18 @@ class AlarmManagerService(
 
             // KRITISCHE VERBESSERUNG: Verwende setAlarmClock() für maximale Doze-Mode Zuverlässigkeit
             val showIntent = createShowAlarmIntent(alarmId, shiftMatch)
-            val alarmClockInfo = AlarmManager.AlarmClockInfo(alarmTimeMillis, showIntent)
-            alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+            val exact = setExactOrInexact(
+                alarmManager = alarmManager,
+                triggerTime = alarmTimeMillis,
+                showPendingIntent = showIntent,
+                pendingIntent = pendingIntent,
+                logContext = "Wecker id=$alarmId"
+            )
 
             val formattedTime = formatAlarmTime(shiftMatch.calculatedAlarmTime)
             Logger.business(
                 LogTags.ALARM_MANAGER, "✅ ALARM DEBUG: System alarm set successfully",
-                "${shiftMatch.shiftDefinition.name} at $formattedTime (ID: $alarmId)"
+                "${shiftMatch.shiftDefinition.name} at $formattedTime (ID: $alarmId, ${if (exact) "exakt" else "INEXAKT"})"
             )
 
             // Verify alarm was set by checking next alarm
@@ -282,7 +303,11 @@ class AlarmManagerService(
 
             createAlarmStatus(
                 systemAlarmSet = true,
-                message = "Alarm gesetzt für $formattedTime"
+                message = if (exact) {
+                    "Alarm gesetzt für $formattedTime"
+                } else {
+                    "Alarm gesetzt für $formattedTime (inexakt - Berechtigung 'Alarme & Erinnerungen' fehlt)"
+                }
             )
 
         } catch (e: SecurityException) {
@@ -467,6 +492,52 @@ class AlarmManagerService(
         private const val ALARM_REQUEST_CODE = 1001
 
         /**
+         * Der EINE Weg, einen Wecker in den AlarmManager zu legen: exakt per `setAlarmClock()`,
+         * und wenn die Exact-Alarm-Berechtigung fehlt, inexakt per `setAndAllowWhileIdle()`.
+         *
+         * WARUM ZENTRAL: `setAlarmClock()` ist NICHT von der Exact-Alarm-Berechtigung ausgenommen.
+         * Auf API 31/32 haengt sie an SCHEDULE_EXACT_ALARM, das der Nutzer (oder ein
+         * Hersteller-"Akku-Assistent") entziehen kann. Diese Datei behandelte denselben Fall an
+         * ihren drei Aufrufstellen unterschiedlich: Snooze und Direct-Boot-Restore ueberlebten
+         * inexakt, der eigentliche Schicht-Wecker fiel komplett aus (frueher Return ohne Planung).
+         * Genau diese Inkonsistenz macht das Debuggen unmoeglich - deshalb gibt es die Entscheidung
+         * nur noch hier, einmal.
+         *
+         * Fangt bewusst NICHTS: die SecurityException gehoert zum jeweiligen Aufrufer, der sie
+         * schon heute in seinem eigenen try/catch behandelt (Snooze/Direct-Boot: weiterlaufen,
+         * setAlarmFromShiftMatch: AlarmStatus mit Fehlermeldung).
+         *
+         * @return true, wenn exakt geplant wurde
+         */
+        private fun setExactOrInexact(
+            alarmManager: AlarmManager,
+            triggerTime: Long,
+            showPendingIntent: PendingIntent,
+            pendingIntent: PendingIntent,
+            logContext: String
+        ): Boolean {
+            val canScheduleExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                alarmManager.canScheduleExactAlarms()
+
+            if (canScheduleExact) {
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent),
+                    pendingIntent
+                )
+                return true
+            }
+
+            // WARN, damit es im Release-Log steht (dort landet nur WARN+): "der Wecker kann sich um
+            // Minuten verzoegern" ist genau die Information, die man spaeter im Log braucht.
+            Logger.w(
+                LogTags.ALARM_MANAGER,
+                "⚠️ Keine Exact-Alarm-Berechtigung - $logContext wird inexakt geplant (kann sich um Minuten verzoegern)"
+            )
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+            return false
+        }
+
+        /**
          * Action-String des Alarm-PendingIntents. MUSS an allen Stellen identisch sein
          * (Setzen, Abbrechen, Direct-Boot-Restore), sonst adressieren sie verschiedene
          * Alarm-Slots und es entstehen Doppel-Alarme.
@@ -557,24 +628,15 @@ class AlarmManagerService(
             )
 
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val canScheduleExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                alarmManager.canScheduleExactAlarms()
 
             try {
-                if (canScheduleExact) {
-                    alarmManager.setAlarmClock(
-                        AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent),
-                        pendingIntent
-                    )
-                } else {
-                    Logger.w(
-                        LogTags.ALARM_MANAGER,
-                        "⚠️ Keine Exact-Alarm-Berechtigung - Snooze wird inexakt geplant (kann sich um Minuten verzoegern)"
-                    )
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent
-                    )
-                }
+                setExactOrInexact(
+                    alarmManager = alarmManager,
+                    triggerTime = triggerTime,
+                    showPendingIntent = showPendingIntent,
+                    pendingIntent = pendingIntent,
+                    logContext = "Snooze id=$alarmId"
+                )
                 // Erst NACH erfolgreicher Planung vormerken: der Eintrag ist die einzige Spur, ueber
                 // die ein schwebender Snooze spaeter noch abgebrochen werden kann.
                 rememberPendingSnooze(context, alarmId, triggerTime)
@@ -769,22 +831,13 @@ class AlarmManagerService(
             )
 
             try {
-                val canScheduleExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                    alarmManager.canScheduleExactAlarms()
-                if (canScheduleExact) {
-                    alarmManager.setAlarmClock(
-                        AlarmManager.AlarmClockInfo(triggerTime, showPendingIntent),
-                        pendingIntent
-                    )
-                } else {
-                    Logger.w(
-                        LogTags.ALARM_MANAGER,
-                        "⚠️ DIRECT-BOOT: Keine Exact-Alarm-Berechtigung - Alarm id=$id wird inexakt geplant"
-                    )
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent
-                    )
-                }
+                setExactOrInexact(
+                    alarmManager = alarmManager,
+                    triggerTime = triggerTime,
+                    showPendingIntent = showPendingIntent,
+                    pendingIntent = pendingIntent,
+                    logContext = "DIRECT-BOOT-Alarm id=$id"
+                )
                 Logger.business(
                     LogTags.ALARM_MANAGER,
                     "🔐 DIRECT-BOOT: Alarm neu gesetzt - id=$id, $shiftName @ $shiftStartTimeFormatted"

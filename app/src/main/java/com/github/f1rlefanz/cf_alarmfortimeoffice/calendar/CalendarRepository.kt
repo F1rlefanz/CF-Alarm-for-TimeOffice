@@ -456,15 +456,20 @@ class CalendarRepository @Inject constructor(
  * `end.date` minus einen Tag). [CalendarEvent.isAllDay] wird dabei gesetzt, damit nachgelagerte
  * Logik den Unterschied ueberhaupt sehen kann.
  *
- * NOCH OFFEN (bewusst NICHT hier geloest): `ShiftRecognitionEngine.calculateAlarmTime()` rechnet
- * die Weckzeit einen Tag zurueck, sobald sie nach dem Schichtbeginn liegt und die Vorlaufzeit danach
- * <= 12h bleibt (Nachtschicht-Heuristik). Bei einem ganztaegigen Eintrag ist der Schichtbeginn jetzt
- * 00:00 - eine Nachtschicht-Weckzeit von z. B. 21:00 loest die Heuristik damit weiterhin aus (3h
- * Vorlauf) und der Wecker landet auf dem VORTAG. Die Umrechnung allein kann das nicht beheben: jeder
- * Zeitpunkt, der die Heuristik verstummen liesse, waere eine erfundene Uhrzeit und wuerde Anzeige und
- * DND-Fenster erneut verfaelschen. Richtig waere, die Heuristik bei `event.isAllDay` zu ueberspringen
- * (ein ganztaegiger Eintrag hat gar keinen Schichtbeginn, gegen den "danach" pruefbar waere) - das
- * gehoert in `ShiftRecognitionEngine`, nicht hierher. Genau dafuer wird `isAllDay` hier gesetzt.
+ * WOFUER [CalendarEvent.isAllDay] GEBRAUCHT WIRD (und warum die Vortags-Frage hier NICHT geloest
+ * ist): `ShiftRecognitionEngine.calculateAlarmTime()` rechnet die Weckzeit einen Tag zurueck, sobald
+ * sie nach dem Schichtbeginn liegt und die Vorlaufzeit danach <= 12h bleibt (Nachtschicht-Heuristik).
+ * Bei einem ganztaegigen Eintrag ist der "Schichtbeginn" nur der 00:00-Anker des Kalendertags, gegen
+ * den "danach" nichts sinnvoll pruefbar ist. Die Engine ueberspringt die Heuristik deshalb bei
+ * `event.isAllDay` (`if (!event.isAllDay && alarmDateTime.isAfter(shiftStartTime))`), festgehalten in
+ * `ShiftRecognitionEngineTest` ("ganztaegiger Termin weckt am Tag des Termins, nicht am Vortag" /
+ * "zeitgebundene Nachtschicht weckt weiterhin am Vortag").
+ *
+ * HIER wird das bewusst NICHT nachgebaut: jeder Zeitpunkt, der die Heuristik durch eine andere
+ * Umrechnung verstummen liesse, waere eine erfundene Uhrzeit und wuerde Anzeige und DND-Fenster
+ * erneut verfaelschen. Die Umrechnung liefert nur die Wahrheit ueber den Termin; die Bewertung
+ * "Nachtschicht oder nicht" gehoert in die Engine. Eine zweite Behandlung an dieser Stelle waere
+ * genau die zweite Wahrheit, vor der der Absatz darueber warnt.
  */
 internal object CalendarEventConverter {
 

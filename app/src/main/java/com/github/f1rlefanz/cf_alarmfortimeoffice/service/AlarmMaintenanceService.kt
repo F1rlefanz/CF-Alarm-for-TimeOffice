@@ -31,6 +31,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -601,9 +602,23 @@ class AlarmMaintenanceService : Service() {
         // STEP 3: EVENT LOADING
         Logger.d(LogTags.MAINTENANCE, "Step 3: Loading events")
         
+        // getOrElse statt getOrNull ?: emptySet(): "Lesefehler" und "nichts ausgewaehlt" sind zwei
+        // verschiedene Aussagen, und seit getCurrentSelectedCalendarIds() den DataStore liest
+        // (statt den StateFlow-Wert) kann der Read wirklich scheitern (IOException, gerade
+        // greifender ReplaceFileCorruptionHandler). Als leere Menge gedeutet endete der Lauf mit
+        // der Notification "Keine Kalender ausgewaehlt" - eine Fehldiagnose, die den Nutzer in
+        // eine App schickt, in der seine Kalender korrekt angehakt sind, waehrend im Log kein
+        // Lesefehler stand. Gleiche Unterscheidung wie im CalendarPreAlarmRefreshWorker.
         val selectedCalendars = calendarSelectionRepository.getCurrentSelectedCalendarIds()
-            .getOrNull() ?: emptySet()
-        
+            .getOrElse { error ->
+                Logger.e(
+                    LogTags.MAINTENANCE,
+                    "Kalenderauswahl nicht lesbar - Wartungslauf uebersprungen (KEINE Konfigurations-Meldung, die Auswahl ist nur unlesbar)",
+                    error
+                )
+                return
+            }
+
         if (selectedCalendars.isEmpty()) {
             Logger.w(LogTags.MAINTENANCE, "No calendars selected, skipping")
             showActionRequiredNotification(
@@ -649,7 +664,28 @@ class AlarmMaintenanceService : Service() {
         // STEP 4: SHIFT RECOGNITION (nur Diagnose)
         Logger.d(LogTags.MAINTENANCE, "Step 4: Shift recognition")
 
-        val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
+        // getAllMatchingShifts() wirft bei defekter Schicht-Konfiguration (getOrThrow in
+        // ShiftRecognitionEngine.performRecognition). Ungefangen landete das im generischen catch
+        // von onStartCommand ("Maintenance failed with exception"): der Nutzer bekam KEINEN
+        // Hinweis, waehrend alle 6h jede Dienstplan-Aenderung (auch Streichung/Krankschreibung)
+        // unbemerkt liegen blieb - in Release-Builds (nur WARN+) rueckwirkend kaum
+        // rekonstruierbar. Deshalb hier als das behandeln, was es ist: ein Konfigurationsdefekt,
+        // der den Nutzer erreichen muss. Bestehende Alarme bleiben bewusst stehen (kein Sync,
+        // kein saveMaintenanceTime) - lieber ein veralteter Wecker als gar keiner.
+        val shiftMatches = try {
+            shiftRecognitionEngine.getAllMatchingShifts(events)
+        } catch (e: CancellationException) {
+            // Cancellation ist kein Konfigurationsdefekt (Service wird gestoppt) - weiterwerfen,
+            // damit der finally-Block in onStartCommand die Kette regulaer neu plant.
+            throw e
+        } catch (e: Exception) {
+            Logger.e(LogTags.MAINTENANCE, "Schicht-Erkennung fehlgeschlagen - Konfiguration nicht lesbar", e)
+            showActionRequiredNotification(
+                title = "Schicht-Konfiguration nicht lesbar",
+                message = "Deine Schichtdefinitionen konnten nicht gelesen werden. Bitte öffne die App und prüfe die Schicht-Einstellungen — bis dahin werden keine Dienstplan-Änderungen mehr übernommen."
+            )
+            return
+        }
 
         val newShifts = shiftMatches.filter { match ->
             // Use pre-calculated alarm time from ShiftMatch
@@ -676,9 +712,27 @@ class AlarmMaintenanceService : Service() {
         // STEP 5: ALARM CREATION
         Logger.d(LogTags.MAINTENANCE, "Step 5: Alarm creation")
         
-        val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-        
-        if (shiftConfig?.autoAlarmEnabled != true) {
+        // "Konfiguration nicht lesbar" und "Auto-Alarm aus" bewusst getrennt: der frueher
+        // gemeinsame Zweig (shiftConfig?.autoAlarmEnabled != true) loggte bei einem echten Defekt
+        // "Auto-alarm disabled, skipping" - die falsche Diagnose fuer den teureren der beiden
+        // Faelle, und die einzige Spur im Log.
+        val shiftConfigResult = shiftUseCase.getCurrentShiftConfig()
+        val shiftConfig = shiftConfigResult.getOrNull()
+
+        if (shiftConfig == null) {
+            Logger.e(
+                LogTags.MAINTENANCE,
+                "Schicht-Konfiguration nicht lesbar - Sync uebersprungen (bestehende Alarme bleiben)",
+                shiftConfigResult.exceptionOrNull()
+            )
+            showActionRequiredNotification(
+                title = "Schicht-Konfiguration nicht lesbar",
+                message = "Deine Schichtdefinitionen konnten nicht gelesen werden. Bitte öffne die App und prüfe die Schicht-Einstellungen — bis dahin werden keine Dienstplan-Änderungen mehr übernommen."
+            )
+            return
+        }
+
+        if (!shiftConfig.autoAlarmEnabled) {
             Logger.d(LogTags.MAINTENANCE, "Auto-alarm disabled, skipping")
             return
         }

@@ -19,6 +19,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -196,6 +197,7 @@ class AlarmUseCase @Inject constructor(
                 // 🔧 SYNC-FIX Step 2: Update changed alarms & create new ones
                 var updatedCount = 0
                 var createdCount = 0
+                var skippedCount = 0
                 val resultAlarms = mutableListOf<AlarmInfo>()
 
                 // "Naechsten Alarm ueberspringen": EINMAL pro Sync lesen. Fail-safe wie der
@@ -284,8 +286,20 @@ class AlarmUseCase @Inject constructor(
                             }
                         }
                     }
+                  } catch (e: CancellationException) {
+                    // MUSS VOR dem generischen catch stehen: CancellationException ist eine
+                    // Exception, aber KEIN Event-Fehler. Wird syncAlarms() gecancelt (z.B.
+                    // AlarmMaintenanceService.onDestroy() -> serviceScope.cancel(), oder ein
+                    // beendeter viewModelScope), wirft ab diesem Moment JEDER suspendierende
+                    // Aufruf im Schleifenkoerper sofort - ohne dieses Weiterwerfen lief die
+                    // Schleife stur bis zum Ende, loggte pro Event einen "uebersprungen"-Fehler
+                    // und meldete anschliessend "complete" mit einer unvollstaendigen Liste.
+                    // Der Aufrufer stempelte darauf saveMaintenanceTime() und die Statusanzeige
+                    // behauptete einen erfolgreichen Sync, obwohl gar nichts geschrieben wurde.
+                    throw e
                   } catch (e: Exception) {
                     // Nur DIESES Event ist gescheitert - der Rest des Delta-Syncs laeuft weiter.
+                    skippedCount++
                     Logger.e(
                         LogTags.ALARM,
                         "❌ SYNC: Alarm fuer Event $eventId (${newAlarm.shiftName}) uebersprungen - Rest des Syncs laeuft weiter",
@@ -294,9 +308,16 @@ class AlarmUseCase @Inject constructor(
                   }
                 }
 
+                // "complete" nur, wenn wirklich alles durchlief - sonst behauptet die Abschlusszeile
+                // einen vollstaendigen Sync, den es nicht gab (die einzelnen Fehlerzeilen darueber
+                // sind in Release-Builds zwar sichtbar, aber leicht zu uebersehen).
                 Logger.business(
-                    LogTags.ALARM, 
-                    "✅ SYNC: Intelligent synchronization complete - " +
+                    LogTags.ALARM,
+                    (if (skippedCount == 0) {
+                        "✅ SYNC: Intelligent synchronization complete - "
+                    } else {
+                        "⚠️ SYNC: Intelligent synchronization UNVOLLSTAENDIG ($skippedCount Event(s) uebersprungen) - "
+                    }) +
                     "Created: $createdCount, Updated: $updatedCount, Deleted: $deletedCount, " +
                     "Total: ${resultAlarms.size} alarms"
                 )

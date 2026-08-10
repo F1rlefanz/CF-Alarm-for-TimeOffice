@@ -142,8 +142,15 @@ class ShiftRecognitionEngine(
     }
     
     private suspend fun performRecognition(events: List<CalendarEvent>): List<ShiftMatch> {
-        val shiftConfigResult = shiftConfigRepository.getCurrentShiftConfig()
-        val allDefinitions = shiftConfigResult.getOrNull()?.definitions ?: emptyList()
+        // Ein gescheiterter Read darf NICHT zu "0 Definitionen" degradieren. Der echte
+        // Repository-Pfad fuer eine vorhandene, aber nicht dekodierbare Konfiguration liefert
+        // genau ein Result.failure (keine Exception) - mit `getOrNull() ?: emptyList()` wurde
+        // daraus lautlos eine leere Trefferliste, und AlarmUseCase.syncAlarms() versteht "leer"
+        // als "keine Schichten" und loescht ALLE Alarme. Fuer eine Wecker-App ist "leer" die
+        // gefaehrlichste Luege (CLAUDE.md): sie ist nicht von "du hast frei" zu unterscheiden.
+        // getOrThrow() reicht den Fehler an den Aufrufer durch; der Cache-Schluessel bleibt dabei
+        // unangetastet (siehe getAllMatchingShifts), der naechste Versuch laeuft also frisch.
+        val allDefinitions = shiftConfigRepository.getCurrentShiftConfig().getOrThrow().definitions
 
         // Der Schalter "Schichtdefinition aktiviert" (`ShiftDefinition.isEnabled`) muss die
         // Erkennung wirklich abschalten. Bis v1.22.1 las ihn NIEMAND ausser der Auswahl-UI
@@ -209,7 +216,20 @@ class ShiftRecognitionEngine(
         // Tagesabzug, nicht fuer die rohe Differenz am selben Kalendertag - beim echten
         // Mitternachts-Fall (Schicht 00:30, Weckzeit 23:30 Vortag) betraegt die rohe Differenz
         // ~23h, die tatsaechliche Vorlaufzeit nach Abzug aber nur 1h.
-        if (alarmDateTime.isAfter(shiftStartTime)) {
+        //
+        // GANZTAEGIGE TERMINE SIND AUSGENOMMEN. Ein ganztaegiger Eintrag (Google: `start.date`
+        // ohne Uhrzeit) hat gar keinen Schichtbeginn - die 00:00 sind nur der Anker des
+        // Kalendertags. Es gibt also nichts, gegen das "danach" sinnvoll pruefbar waere, und die
+        // Heuristik wuerde bei JEDER Weckzeit ab 12:00 zuschlagen (ab 00:00 gerechnet bleibt die
+        // Vorlaufzeit nach dem Tagesabzug dann unter 12h). Die Standard-Spaetschicht 12:30 waere
+        // dadurch einen ganzen Tag zu frueh geweckt worden, und am eigentlichen Schichttag haette
+        // es gar keinen Wecker gegeben. Vor der korrigierten Ganztags-Umrechnung fiel das nicht
+        // auf, weil dort UTC-Mitternacht stand (in Europe/Berlin 01:00/02:00) und die Grenze
+        // damit zufaellig erst bei 13:00/14:00 lag - eine Zonenabhaengigkeit, die es nie geben
+        // sollte. `ShiftRecognitionEngineTest` haelt beide Seiten fest: Ganztags weckt am Tag des
+        // Termins, die echte zeitgebundene Nachtschicht (Beginn 00:30, Weckzeit 23:30) weiter am
+        // Vortag.
+        if (!event.isAllDay && alarmDateTime.isAfter(shiftStartTime)) {
             val previousDayAlarm = alarmDateTime.minusDays(1)
             if (Duration.between(previousDayAlarm, shiftStartTime) <= MAX_NIGHT_SHIFT_LEAD_TIME) {
                 return previousDayAlarm

@@ -994,10 +994,29 @@ class CalendarViewModel @Inject constructor(
                 }
                 
                 if (shiftConfig == null) {
-                    Logger.w(LogTags.ALARM, "⚠️ TIMING-FIX: ShiftConfig still not available after $maxAttempts attempts - checking for default config")
-                    
-                    // FALLBACK: Try to load or create a default ShiftConfig
-                    shiftConfig = createDefaultShiftConfigIfNeeded()
+                    // KEIN Default-Fallback mehr, und zwar bewusst: bis v1.22.1 schrieb dieser
+                    // Zweig `ShiftConfig.getDefaultConfig()` PERSISTENT in den Store. Seit
+                    // `ShiftConfigRepository` zwischen "noch nie konfiguriert" und "vorhanden,
+                    // aber unlesbar" unterscheidet, kann `getCurrentShiftConfig()` hier nur noch
+                    // aus EINEM Grund fehlschlagen: der Store ist defekt oder unlesbar. Der
+                    // Not-konfiguriert-Fall liefert die Standardkonfiguration bereits als Erfolg.
+                    //
+                    // Genau in diesem Defektfall war der Fallback fatal: er hat die Weckzeiten des
+                    // Nutzers mit den Standardzeiten ueberschrieben - lautlos, bei JEDEM
+                    // Kalender-Ladevorgang, also bei jedem App-Start. Damit war die Sicherung im
+                    // Repository ("die echte Konfiguration wird NICHT ueberschrieben") im Betrieb
+                    // wirkungslos. Der bewusste Weg zum Default heisst `resetToDefaults()` und
+                    // gehoert dem Nutzer.
+                    //
+                    // Stattdessen fail-safe: diesen Sync auslassen. Bestehende Alarme bleiben
+                    // gesetzt, die Rohdaten liegen als `shift_config_broken` gesichert im Store,
+                    // und der naechste Ladevorgang versucht es erneut.
+                    Logger.e(
+                        LogTags.ALARM,
+                        "❌ SHIFT-CONFIG: nach $maxAttempts Versuchen nicht lesbar - Alarm-Sync wird " +
+                            "AUSGELASSEN. Bestehende Alarme bleiben unveraendert; die Konfiguration wird " +
+                            "NICHT mit Standardwerten ueberschrieben."
+                    )
                 }
                 
                 if (shiftConfig?.autoAlarmEnabled == true) {
@@ -1025,33 +1044,6 @@ class CalendarViewModel @Inject constructor(
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "❌ AUTO-ALARM: Exception during alarm creation", e)
             }
-        }
-    }
-
-    /**
-     * FALLBACK: Creates a default ShiftConfig if none exists
-     * This ensures alarm creation can proceed even if ShiftConfig loading fails
-     */
-    private suspend fun createDefaultShiftConfigIfNeeded(): com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig? {
-        return try {
-            Logger.i(LogTags.ALARM, "🔧 FALLBACK: Attempting to create default ShiftConfig")
-            
-            // Use the existing default configuration from ShiftConfig companion object
-            val defaultConfig = com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig.getDefaultConfig()
-            
-            // Save the default config
-            shiftUseCase.saveShiftConfig(defaultConfig)
-                .onSuccess {
-                    Logger.business(LogTags.ALARM, "✅ FALLBACK: Default ShiftConfig created and saved successfully")
-                }
-                .onFailure { error ->
-                    Logger.e(LogTags.ALARM, "❌ FALLBACK: Failed to save default ShiftConfig", error)
-                }
-            
-            defaultConfig
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "❌ FALLBACK: Exception creating default ShiftConfig", e)
-            null
         }
     }
 

@@ -295,4 +295,135 @@ class ShiftRecognitionEngineTest {
         assertEquals(1, second.await().size)
         assertEquals("Die Erkennung darf nur einmal gelaufen sein", 1, repo.loadCount)
     }
+
+    /**
+     * Repository, das einen Lesefehler als `Result.failure` MELDET statt zu werfen — genau das
+     * tut der echte [ShiftConfigRepository] bei einer vorhandenen, aber nicht dekodierbaren
+     * Konfiguration ("Broken").
+     */
+    private class FailingResultShiftConfigRepository : IShiftConfigRepository {
+        override val shiftConfig: Flow<ShiftConfig> = flowOf(ShiftConfig())
+        override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> =
+            Result.failure(IllegalStateException("Schicht-Konfiguration ist defekt"))
+        override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
+        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
+        override suspend fun hasValidConfig(): Result<Boolean> = Result.success(false)
+    }
+
+    /**
+     * Ein gescheiterter Konfigurations-Read darf NICHT als "keine Schichtdefinitionen" und damit
+     * als leere Trefferliste durchgehen.
+     *
+     * `performRecognition()` las die Definitionen als
+     * `shiftConfigResult.getOrNull()?.definitions ?: emptyList()`. Der echte Repository-Pfad fuer
+     * eine DEFEKTE Konfiguration liefert genau ein `Result.failure` — nicht eine Exception.
+     * Damit wurden aus "ich kann die Konfiguration nicht lesen" lautlos "0 Definitionen", daraus
+     * "0 erkannte Schichten", und `AlarmUseCase.syncAlarms()` versteht das als "keine Schichten"
+     * und loescht ALLE Alarme. Dieselbe Fehlerklasse, die CLAUDE.md als "leer ist die
+     * gefaehrlichste Luege" festhaelt.
+     *
+     * Erwartung: der Fehler kommt beim Aufrufer an, statt sich als leeres Ergebnis zu tarnen.
+     */
+    @Test
+    fun `gescheiterter Konfigurations-Read wird nicht zu einer leeren Trefferliste`() = runTest {
+        val engine = ShiftRecognitionEngine(FailingResultShiftConfigRepository())
+
+        var thrown: Throwable? = null
+        val matches = try {
+            engine.getAllMatchingShifts(listOf(event("FS")))
+        } catch (e: Throwable) {
+            thrown = e
+            null
+        }
+
+        assertTrue(
+            "Ein Lesefehler muss beim Aufrufer ankommen, statt als leere Trefferliste getarnt zu " +
+                "werden (bekommen: ${matches?.size ?: "Exception"})",
+            thrown != null
+        )
+    }
+
+    /**
+     * GANZTAEGIGER TERMIN: Die Vortags-Heuristik fuer Nachtschichten darf nicht zuschlagen.
+     *
+     * Ein ganztaegiger Google-Kalendereintrag hat gar keinen Schichtbeginn — er liefert
+     * `start.date` ohne Uhrzeit. Seit die Umrechnung ihn korrekt auf lokal 00:00 des Kalendertags
+     * legt (vorher: UTC-Mitternacht, in Europe/Berlin also 01:00/02:00), ist JEDE Weckzeit ab
+     * 12:00 "nach Schichtbeginn" mit einer Vorlaufzeit von unter 12h — die Heuristik rollt sie
+     * also auf den Vortag. Die Standard-Spaetschicht (12:30) waere damit einen ganzen Tag zu
+     * frueh geweckt worden, und am eigentlichen Schichttag haette es keinen Wecker gegeben.
+     *
+     * Bei einem ganztaegigen Eintrag ist 00:00 kein echter Schichtbeginn, sondern nur der Anker
+     * des Kalendertags. Es gibt also nichts, gegen das "danach" sinnvoll pruefbar waere.
+     */
+    @Test
+    fun `ganztaegiger Termin weckt am Tag des Termins, nicht am Vortag`() = runTest {
+        val allDay = CalendarEvent(
+            id = "allday-1",
+            title = "S2",
+            startTime = LocalDateTime.of(2026, 8, 10, 0, 0),
+            endTime = LocalDateTime.of(2026, 8, 10, 23, 59),
+            calendarId = "cal1",
+            isAllDay = true
+        )
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(
+                ShiftDefinition(
+                    id = "s2",
+                    name = "Spaetschicht",
+                    keywords = listOf("S2"),
+                    alarmTime = LocalTime.of(12, 30)
+                )
+            )
+        )
+        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+
+        val matches = engine.getAllMatchingShifts(listOf(allDay))
+
+        assertEquals(1, matches.size)
+        assertEquals(
+            "Weckzeit muss am Kalendertag des ganztaegigen Termins liegen, nicht am Vortag",
+            LocalDateTime.of(2026, 8, 10, 12, 30),
+            matches.first().calculatedAlarmTime
+        )
+    }
+
+    /**
+     * Gegenprobe: bei einem ZEITGEBUNDENEN Termin muss die Vortags-Heuristik weiter greifen.
+     * Echter Mitternachts-Fall: Schicht beginnt 00:30, Weckzeit 23:30 — der Wecker gehoert auf
+     * den Vortag. Ohne diesen Test koennte ein Fix fuer den Ganztags-Fall die Heuristik
+     * versehentlich komplett abschalten.
+     */
+    @Test
+    fun `zeitgebundene Nachtschicht weckt weiterhin am Vortag`() = runTest {
+        val nightShift = CalendarEvent(
+            id = "night-1",
+            title = "ND",
+            startTime = LocalDateTime.of(2026, 8, 10, 0, 30),
+            endTime = LocalDateTime.of(2026, 8, 10, 8, 30),
+            calendarId = "cal1"
+        )
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(
+                ShiftDefinition(
+                    id = "nd",
+                    name = "Nachtschicht",
+                    keywords = listOf("ND"),
+                    alarmTime = LocalTime.of(23, 30)
+                )
+            )
+        )
+        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+
+        val matches = engine.getAllMatchingShifts(listOf(nightShift))
+
+        assertEquals(1, matches.size)
+        assertEquals(
+            "Echte Nachtschicht: Weckzeit 23:30 gehoert auf den Vortag",
+            LocalDateTime.of(2026, 8, 9, 23, 30),
+            matches.first().calculatedAlarmTime
+        )
+    }
 }

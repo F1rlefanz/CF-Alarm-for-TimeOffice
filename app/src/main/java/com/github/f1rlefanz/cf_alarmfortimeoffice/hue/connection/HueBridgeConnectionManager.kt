@@ -653,8 +653,15 @@ class HueBridgeConnectionManager private constructor(
      * (bereits vorhanden, bislang ungenutzt) und stoesst bei jeder Netzwerk-Wiederherstellung
      * [attemptRecoveryIfDisconnected] an - z.B. Heimkehr ins Heim-WLAN nach unterwegs. Laeuft im
      * selben [healthCheckScope] wie die uebrige Ueberwachung, wird also von [cleanup] mit
-     * abgebrochen (cancelChildren() faengt alle Kinder-Jobs). Nur einmal pro Prozess
-     * gestartet (aufgerufen aus [initialize], das selbst idempotent ist).
+     * abgebrochen (cancelChildren() faengt alle Kinder-Jobs).
+     *
+     * Einmal pro [initialize]-ZYKLUS, nicht einmal pro Prozess: [initialize] ist idempotent
+     * (Waechter-Flag), aber [cleanup] gibt dieses Flag wieder frei - ein spaeteres [initialize]
+     * (z.B. ein kuenftiger "Hue deaktivieren"-Schalter, der cleanup() ruft und danach wieder
+     * einschaltet) startet den Collector also erneut, zusammen mit dem uebrigen
+     * Initialisierungspfad inkl. `smartScheduler.initializeSmartScheduling()`. Das ist in Ordnung,
+     * weil [cleanup] vorher auch `smartScheduler.cleanup()` ruft - aber es ist ausdruecklich KEINE
+     * "nur einmal pro Prozess"-Zusicherung mehr, auf die sich neuer Code verlassen darf.
      */
     private fun startNetworkRecoveryMonitoring() {
         healthCheckScope.launch {

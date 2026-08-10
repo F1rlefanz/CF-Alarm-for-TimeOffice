@@ -459,17 +459,30 @@ class HueApiClient(context: Context? = null) {
      * "✅ ALARM-CRITICAL: Successfully controlled light" und "5/5 actions successful", ohne dass
      * eine einzige Lampe anging - aus dem Log nicht diagnostizierbar, weil das Log Erfolg behauptet.
      *
-     * [HueV1Envelope.parseAll] und nicht `parseFirst`: ein PUT auf /state liefert EINEN EINTRAG
-     * PRO GEAENDERTEM ATTRIBUT (`[{"success":{"…/on":true}},{"success":{"…/bri":200}}]`). Die
-     * richtige Regel ist "kein Eintrag enthaelt error", nicht "der erste enthaelt success".
+     * [HueV1Envelope.parseControl] und nicht `parseFirst`: ein PUT auf /state liefert EINEN
+     * EINTRAG PRO GEAENDERTEM ATTRIBUT (`[{"success":{"…/on":true}},{"success":{"…/bri":200}}]`).
+     * Und auch nicht [HueV1Envelope.parseAll]: dessen strenge Regel "KEIN Eintrag enthaelt error"
+     * macht aus einem TEILERFOLG einen Totalausfall - siehe [HueV1Envelope.parseControl].
+     * Angenommen heisst hier deshalb "mindestens ein Eintrag meldet success"; abgelehnte
+     * Einzelattribute werden geloggt, damit ein Teilerfolg im Log nicht als glatter Erfolg
+     * erscheint.
      */
     private fun wasAccepted(result: Result<String>, targetLabel: String): Boolean {
         val responseBody = result.getOrElse { error ->
             Logger.w(LogTags.HUE_LIGHTS, "Steuer-Anfrage fuer $targetLabel fehlgeschlagen: ${error.message}")
             return false
         }
-        return HueV1Envelope.parseAll(responseBody).fold(
-            onSuccess = { true },
+        return HueV1Envelope.parseControl(responseBody).fold(
+            onSuccess = { rejectedAttributes ->
+                if (rejectedAttributes.isNotEmpty()) {
+                    Logger.w(
+                        LogTags.HUE_LIGHTS,
+                        "Bridge nahm die Steuerung von $targetLabel nur TEILWEISE an - der Rest wurde " +
+                            "angewendet: ${rejectedAttributes.joinToString(" | ")}"
+                    )
+                }
+                true
+            },
             onFailure = { error ->
                 Logger.w(LogTags.HUE_LIGHTS, "Bridge lehnte die Steuerung von $targetLabel ab: ${error.message}")
                 false
@@ -618,6 +631,19 @@ class HueApiClient(context: Context? = null) {
         )
         val responseBody = result.getOrElse { return@withContext Result.failure(it) }
 
+        // Gleiche Falle wie in [getLights]/[getGroups]: HTTP 200 + Fehlerhuelle bei entzogenem
+        // Whitelist-Eintrag. Ohne diesen Waechter wirft erst Gson im Map-Parsing ("Expected
+        // BEGIN_ARRAY but was BEGIN_OBJECT"), und im Log stand ein kryptischer Parserfehler statt
+        // der Beschreibung der Bridge - fuer das Aufraeumen der eigenen Auto-Aus-Timer
+        // ([HueLightUseCase.clearOwnBridgeSchedules]) die einzige Diagnosequelle. Eine Bridge
+        // OHNE Zeitplaene antwortet mit `{}`, also einem Objekt - kein Fehlalarm.
+        if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
+            val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
+                ?: IOException("Bridge antwortete mit einer Huelle statt mit Zeitplaenen: $responseBody")
+            Logger.w(LogTags.HUE_BRIDGE, "Bridge lehnte die Zeitplan-Abfrage ab: ${failure.message}")
+            return@withContext Result.failure(failure)
+        }
+
         try {
             val type = object : TypeToken<Map<String, BridgeSchedule>>() {}.type
             Result.success(gson.fromJson(responseBody, type) ?: emptyMap())
@@ -660,10 +686,15 @@ class HueApiClient(context: Context? = null) {
  * Licht geht nie wieder aus) bzw. eine abgelehnte Lampen-Steuerung fuer ausgefuehrt.
  * [HueApiClient.createUser] parst aus demselben Grund den Body.
  *
- * ZWEI AUSWERTUNGEN, WEIL DIE API ZWEI ANTWORT-FORMEN HAT:
+ * DREI AUSWERTUNGEN, WEIL DIE API MEHRERE ANTWORT-FORMEN HAT:
  * - [parseFirst] fuer Endpunkte mit GENAU EINEM Ergebnis (POST/DELETE /schedules).
- * - [parseAll] fuer Endpunkte mit EINEM EINTRAG PRO GEAENDERTEM ATTRIBUT (PUT auf
- *   /lights/<id>/state bzw. /groups/<id>/action).
+ * - [parseControl] fuer die STEUER-PUTs (/lights/<id>/state, /groups/<id>/action): ein Eintrag pro
+ *   Attribut, und einzelne Attribute duerfen abgelehnt werden, waehrend die anderen greifen -
+ *   Teilerfolg ist dort ein Erfolg.
+ * - [parseAll] als STRENGE Variante ("kein Eintrag darf error enthalten") fuer die
+ *   Fehlerhuellen-Waechter der GET-Endpunkte ([HueApiClient.getBridgeConfig],
+ *   [HueApiClient.getLights], [HueApiClient.getGroups], [HueApiClient.getSchedules]): dort ist eine
+ *   Huelle NIE die erwartete Antwort, es geht nur darum, die Beschreibung der Bridge herauszuholen.
  */
 internal object HueV1Envelope {
 
@@ -711,11 +742,13 @@ internal object HueV1Envelope {
     }
 
     /**
-     * ALLE Eintraege - fuer die Steuer-Endpunkte, die pro geaendertem Attribut einen eigenen
-     * Eintrag liefern. Die Regel ist deshalb "KEIN Eintrag enthaelt `error`", nicht "der erste
-     * enthaelt `success`": eine Verengung auf den ersten Eintrag wuerde eine Ablehnung in
-     * Eintrag 2 uebersehen. Auf `success` wird bewusst NICHT typisiert geprueft (Objekt oder
-     * String, siehe [parseFirst]).
+     * ALLE Eintraege, STRENG: "KEIN Eintrag enthaelt `error`". Fuer die Fehlerhuellen-Waechter der
+     * GET-Endpunkte, die eine Huelle ueberhaupt nur zu sehen bekommen, wenn etwas schiefgegangen
+     * ist - dort ist jede Ablehnung, in welchem Eintrag auch immer, das ganze Ergebnis. Auf
+     * `success` wird bewusst NICHT typisiert geprueft (Objekt oder String, siehe [parseFirst]).
+     *
+     * NICHT fuer die Steuer-PUTs benutzen: dort ist ein einzelner abgelehnter Eintrag neben
+     * angenommenen kein Totalausfall - siehe [parseControl].
      */
     fun parseAll(responseBody: String): Result<Unit> {
         val entries = entriesOf(responseBody).getOrElse { return Result.failure(it) }
@@ -735,6 +768,51 @@ internal object HueV1Envelope {
         }
 
         return Result.success(Unit)
+    }
+
+    /**
+     * STEUER-PUTs: ein TEILERFOLG ist ein Erfolg.
+     *
+     * Ein PUT auf /lights/<id>/state liefert einen Eintrag PRO ATTRIBUT - und die Bridge darf
+     * einzelne Attribute ABLEHNEN, waehrend sie die anderen anwendet: `ct`/`hue`/`sat` an einer
+     * Lampe ohne diese Faehigkeit (Hue White, Fremdlampe im ZigBee-Netz) → error type 6,
+     * `bri`/`alert` an einer ausgeschalteten Lampe → error type 201. Eine reale Antwort ist dann
+     * `[{"success":{"…/on":true}},{"success":{"…/bri":1}},{"error":{"type":6,"address":"…/ct"}}]`
+     * - das Licht IST an, nur die Farbtemperatur wurde ignoriert.
+     *
+     * Die strenge Regel von [parseAll] wuerde das zum kompletten Fehlschlag machen, und der
+     * schlaegt bis in die Kette durch: `HueLightRepository.controlLight` liefert dann
+     * `Result.failure`, und `HueLightUseCase.startSunrise` steigt nach Schritt 1 mit
+     * `return initial` aus - die eigentliche Aufhell-Transition (Schritt 2) liefe NIE, die Lampe
+     * bliebe am Wecktag auf `bri=1` stehen. Genau davor warnt CLAUDE.md beim Sonnenaufgang: ein zu
+     * strenges Urteil bricht die Rampe mitten im Aufblenden ab.
+     *
+     * Angenommen = MINDESTENS EIN `success`-Eintrag. Erst wenn KEIN Eintrag Erfolg meldet, ist es
+     * ein echter Fehlschlag - der eigentliche Zielfall "unauthorized user" (ausschliesslich
+     * error-Eintraege) bleibt damit unveraendert vollstaendig abgedeckt.
+     *
+     * @return bei Erfolg die Meldungen der ABGELEHNTEN Attribute (meist leer). Der Aufrufer loggt
+     *         sie als Warnung - sonst waere ein Teilerfolg im Log von einem glatten Erfolg nicht zu
+     *         unterscheiden, und genau diese Log-Ehrlichkeit war der Zweck der Body-Auswertung.
+     */
+    fun parseControl(responseBody: String): Result<List<String>> {
+        val entries = entriesOf(responseBody).getOrElse { return Result.failure(it) }
+
+        if (entries.isEmpty()) {
+            return Result.failure(IOException("Bridge returned an empty response"))
+        }
+
+        val rejections = entries.mapNotNull { errorOf(it) }
+        val accepted = entries.any { it?.containsKey(FIELD_SUCCESS) == true }
+
+        if (!accepted) {
+            return Result.failure(
+                rejections.firstOrNull()
+                    ?: IOException("Bridge response contained neither success nor error: $responseBody")
+            )
+        }
+
+        return Result.success(rejections.map { it.message ?: "unknown error" })
     }
 
     /** Schluessel, unter dem ein String-Erfolg abgelegt wird (siehe [parseFirst]). */

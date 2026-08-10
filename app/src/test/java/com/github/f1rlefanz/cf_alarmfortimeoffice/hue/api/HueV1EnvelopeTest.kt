@@ -137,6 +137,99 @@ class HueV1EnvelopeTest {
     }
 
     // =====================================================================================
+    // parseControl - Steuer-PUTs: TEILERFOLG IST ERFOLG
+    // =====================================================================================
+
+    /**
+     * DER Regressionsfall der strengen Auswertung: Die Bridge lehnt EINZELNE Attribute ab und
+     * wendet die anderen trotzdem an - `ct` an einer Lampe ohne Farbtemperatur (Hue White,
+     * Fremdlampe) ist error type 6, das Licht geht aber an. Galt das als Totalausfall, stieg
+     * `HueLightUseCase.startSunrise` nach Schritt 1 mit `return initial` aus und die eigentliche
+     * Aufhell-Rampe (Schritt 2) lief nie: Die Lampe blieb am Wecktag auf bri=1 stehen.
+     */
+    @Test
+    fun `teilweise angenommener PUT gilt als angenommen`() {
+        val partialResponse =
+            """[{"success":{"/lights/4/state/on":true}},
+               {"success":{"/lights/4/state/bri":1}},
+               {"error":{"type":6,"address":"/lights/4/state/ct","description":"parameter, ct, not available"}}]"""
+
+        // Der Beweis, dass hier wirklich zwei Urteile gebraucht werden: die strenge Variante,
+        // mit der die Steuerung bis zu diesem Fix ausgewertet wurde, kippt bei genau diesem
+        // Body - und genau das brach die Rampe ab.
+        assertTrue(
+            "parseAll MUSS hier streng bleiben (Huellen-Waechter der GETs)",
+            HueV1Envelope.parseAll(partialResponse).isFailure
+        )
+
+        val result = HueV1Envelope.parseControl(partialResponse)
+
+        assertTrue(
+            "Ein angenommenes on/bri neben einem abgelehnten ct ist KEIN Totalausfall",
+            result.isSuccess
+        )
+        val rejections = result.getOrThrow()
+        assertEquals("Genau ein Attribut wurde abgelehnt", 1, rejections.size)
+        assertTrue(
+            "Das abgelehnte Attribut muss loggbar benannt sein: $rejections",
+            rejections.single().contains("ct, not available")
+        )
+    }
+
+    /** "Aus" plus gewaehlte Farbe: `on` greift, `ct` scheitert an der ausgeschalteten Lampe. */
+    @Test
+    fun `Ausschalten mit abgelehnter Farbe bleibt ein Erfolg`() {
+        val result = HueV1Envelope.parseControl(
+            """[{"success":{"/lights/4/state/on":false}},
+               {"error":{"type":201,"address":"/lights/4/state/ct","description":"parameter, ct, is not modifiable. Device is set to off."}}]"""
+        )
+
+        assertTrue("Das Licht ging korrekt aus - das darf nicht als Fehlschlag gelten", result.isSuccess)
+    }
+
+    /** Der eigentliche Zielfall der Body-Auswertung bleibt vollstaendig abgedeckt. */
+    @Test
+    fun `nur Fehler-Eintraege sind ein echter Fehlschlag`() {
+        val result = HueV1Envelope.parseControl(
+            """[{"error":{"type":1,"address":"/lights","description":"unauthorized user"}}]"""
+        )
+
+        assertTrue("Entzogener Whitelist-Eintrag: HTTP 200, aber nichts ging an", result.isFailure)
+        assertTrue(
+            "Die Beschreibung der Bridge gehoert in die Meldung",
+            result.exceptionOrNull()?.message?.contains("unauthorized user") == true
+        )
+    }
+
+    @Test
+    fun `mehrere Fehler ohne einen Erfolg sind ein Fehlschlag`() {
+        val result = HueV1Envelope.parseControl(
+            """[{"error":{"type":6,"description":"parameter, ct, not available"}},
+               {"error":{"type":6,"description":"parameter, sat, not available"}}]"""
+        )
+
+        assertTrue("Kein einziges Attribut angenommen = Fehlschlag", result.isFailure)
+    }
+
+    @Test
+    fun `parseControl behandelt leere Antwort Muell und Eintraege ohne Urteil als Failure`() {
+        assertTrue(HueV1Envelope.parseControl("[]").isFailure)
+        assertTrue(HueV1Envelope.parseControl("").isFailure)
+        assertTrue(HueV1Envelope.parseControl("<html>Router-Login</html>").isFailure)
+        assertTrue(HueV1Envelope.parseControl("""[{"weder":"noch"}]""").isFailure)
+    }
+
+    @Test
+    fun `parseControl meldet einen glatten Erfolg ohne Ablehnungen`() {
+        val result = HueV1Envelope.parseControl(
+            """[{"success":{"/lights/4/state/on":true}},{"success":{"/lights/4/state/bri":200}}]"""
+        )
+
+        assertTrue(result.isSuccess)
+        assertTrue("Ohne Ablehnung darf nichts zu loggen sein", result.getOrThrow().isEmpty())
+    }
+
+    // =====================================================================================
     // looksLikeEnvelope - "Huelle statt Ressource?" fuer die GET-Endpunkte
     // =====================================================================================
 

@@ -26,6 +26,15 @@ android {
     // ==============================
     // 🔐 SECURE SIGNING CONFIGURATION
     // ==============================
+    // SIGNIERUNG NUR, WENN DER SCHLUESSEL DA IST. Ohne das scheitert `assembleRelease` in der CI am
+    // fehlenden Keystore - und genau deshalb hat die CI den Release-Pfad bisher gar nicht gebaut,
+    // obwohl dort das eigentliche Risiko liegt (R8, lintVitalRelease). Fehlt der Schluessel, entsteht
+    // eine UNSIGNIERTE Release-APK: die laesst sich weder installieren noch hochladen, der Fehler
+    // kann also nicht unbemerkt durchrutschen. Lokal existiert keystore.properties immer
+    // (Voraussetzung laut CLAUDE.md), dort wird wie bisher signiert.
+    val releaseSigningAvailable =
+        keystorePropertiesFile.exists() || System.getenv("KEYSTORE_PASSWORD") != null
+
     signingConfigs {
         create("release") {
             // Secure production signing - NO hardcoded passwords!
@@ -104,11 +113,36 @@ android {
             // 🚀 PRODUCTION BUILD CONFIGURATION
             // ==============================
 
-            // SIGNING: Use production keystore
-            signingConfig = signingConfigs.getByName("release")
+            // SIGNING: Produktions-Keystore, wenn vorhanden - siehe releaseSigningAvailable oben.
+            signingConfig =
+                if (releaseSigningAvailable) signingConfigs.getByName("release") else null
 
-            // TODO: Re-enable after AGP upgrade fixes R8 9.2.14 NPE bug (core:1.19.0 + compileSdk 37)
-            isMinifyEnabled = false
+            // R8 IST AN, seit 10.08.2026 (AGP 9.3.1). Vorher stand hier `false` mit dem Vermerk
+            // "Re-enable after AGP upgrade fixes R8 9.2.14 NPE bug (core:1.19.0 + compileSdk 37)".
+            // Der NPE tritt mit AGP 9.3.1 nicht mehr auf; nachgemessen und am Geraet verifiziert:
+            //  - `assembleRelease` laeuft durch, `minifyReleaseWithR8` ohne Fehler
+            //  - APK 19,8 MB -> 10,9 MB (-45%)
+            //  - Release-APK auf dem Emulator (Android 16) durch den vollen Happy Path: Anmeldung
+            //    ueber Google, Kalenderliste, Kalenderauswahl speichern, 5 Schichten erkannt,
+            //    5 Alarme gesetzt, alle sechs Tabs gerendert - kein ClassNotFoundException,
+            //    NoSuchMethodError, NoClassDefFoundError oder VerifyError im Logcat.
+            //    Damit sind die klassischen R8-Opfer mitgeprueft: der Google-HTTP-Client (Reflection),
+            //    Gson, Retrofit und kotlinx-serialization.
+            // Einzige Warnung: R8 meldet, dass `Log4JLogger.<clinit>()` aus commons-logging nicht
+            // typ-prueft und als unerreichbar gilt - eine transitive Abhaengigkeit des
+            // Google-HTTP-Clients, die die App nie benutzt. Harmlos.
+            //
+            // WICHTIG, falls das je wieder abgeschaltet wird: dann MUESSEN auch `-dontshrink` und
+            // `-dontoptimize` in proguard-rules.pro wieder aktiviert werden - oder eben nicht.
+            // Beides halb ist der schlechteste Zustand: mit gesetztem `-dontshrink` waere
+            // `isMinifyEnabled = true` eine Attrappe, die Bauzeit kostet und nichts bringt.
+            //
+            // `assembleRelease` braucht NETZ: die nur mit Minify laufende Task
+            // `produceReleaseComposeMapping` zieht eine Abhaengigkeit, die nicht im Offline-Cache
+            // liegt. `--offline` scheitert daran mit einem irrefuehrenden
+            // "Configuration cache state could not be cached" - kein R8-Problem.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -161,8 +195,9 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
 
-            // Use production signing for realistic testing
-            signingConfig = signingConfigs.getByName("release")
+            // Produktions-Signierung fuer realistisches Testen - dieselbe Bedingung wie release.
+            signingConfig =
+                if (releaseSigningAvailable) signingConfigs.getByName("release") else null
         }
         */
     }

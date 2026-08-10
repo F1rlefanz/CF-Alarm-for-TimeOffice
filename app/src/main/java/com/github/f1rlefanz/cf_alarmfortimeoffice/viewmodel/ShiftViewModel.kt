@@ -94,22 +94,28 @@ class ShiftViewModel @Inject constructor(
                     Logger.business(LogTags.SHIFT_CONFIG, "✅ SINGLETON-STARTUP: ShiftConfig loaded successfully - autoAlarm=${config.autoAlarmEnabled}, definitions=${config.definitions.size}")
                 }
                 .onFailure { error ->
-                    Logger.w(LogTags.SHIFT_CONFIG, "⚠️ SINGLETON-STARTUP: Failed to load ShiftConfig, creating default", error)
-                    
-                    // FALLBACK: Create default configuration if loading fails
-                    val defaultConfig = ShiftConfig.getDefaultConfig()
-                    
-                    shiftUseCase.saveShiftConfig(defaultConfig)
-                        .onSuccess {
-                            _uiState.value = _uiState.value.copy(currentShiftConfig = defaultConfig)
-                            Logger.business(LogTags.SHIFT_CONFIG, "✅ SINGLETON-STARTUP: Default ShiftConfig created and loaded - autoAlarm=${defaultConfig.autoAlarmEnabled}")
-                        }
-                        .onFailure { saveError ->
-                            _uiState.value = _uiState.value.copy(
-                                error = errorHandler.getErrorMessage(saveError)
-                            )
-                            Logger.e(LogTags.SHIFT_CONFIG, "❌ SINGLETON-STARTUP: Failed to save default ShiftConfig", saveError)
-                        }
+                    // KEIN Default-Fallback, der SCHREIBT - siehe die identische Stelle in
+                    // CalendarViewModel.createAlarmsFromLoadedEvents() und in
+                    // CFAlarmApplication.initializeApp(): dieselbe Fehlerklasse hatte DREI
+                    // Schreibstellen.
+                    //
+                    // Seit ShiftConfigRepository zwischen "noch nie konfiguriert" und "vorhanden,
+                    // aber unlesbar" unterscheidet, kann getCurrentShiftConfig() nur noch aus
+                    // EINEM Grund fehlschlagen: die Konfiguration ist defekt. Der
+                    // Nicht-konfiguriert-Fall liefert die Standardkonfiguration bereits als
+                    // Erfolg. Genau im Defektfall ist Ueberschreiben Datenverlust - und diese
+                    // Funktion laeuft im init{}-Block, also bei JEDER ViewModel-Erzeugung.
+                    // Der bewusste Weg zum Default heisst resetToDefaults() und gehoert dem
+                    // Nutzer; die Rohdaten liegen als shift_config_broken gesichert.
+                    _uiState.value = _uiState.value.copy(
+                        error = errorHandler.getErrorMessage(error)
+                    )
+                    Logger.e(
+                        LogTags.SHIFT_CONFIG,
+                        "❌ SINGLETON-STARTUP: Schicht-Konfiguration nicht lesbar - sie wird NICHT mit " +
+                            "Standardwerten ueberschrieben. Rohdaten liegen als shift_config_broken.",
+                        error
+                    )
                 }
         }
     }

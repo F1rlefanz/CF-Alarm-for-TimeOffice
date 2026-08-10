@@ -6,7 +6,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -27,15 +26,6 @@ class DimmerViewModel @Inject constructor(
     private val dimSchedule: DimScheduleUseCase,
     private val shiftUseCase: IShiftUseCase
 ) : ViewModel() {
-
-    private companion object {
-        /** Entprellung der Darstellungs-Regler, siehe [applyRenderChangeDebounced]. */
-        const val RENDER_APPLY_DEBOUNCE_MS = 300L
-    }
-
-    /** Laufende Entprellung der Darstellungs-Regler - bewusst VOR jeder anderen Nutzung deklariert
-     * (Kotlin initialisiert Properties strikt in Textreihenfolge). */
-    private var renderApplyJob: Job? = null
 
     data class DimmerUiState(
         val wellnessEnabled: Boolean = false,
@@ -141,39 +131,34 @@ class DimmerViewModel @Inject constructor(
     // Fenstergrenze (typischerweise das Fenster-ENDE am Morgen) wirkungslos - dieselbe Falle wie
     // beim Korrektur-Notification-Toggle (v1.22.1). Siehe Invariante in CLAUDE.md:
     // "Jeder Setter, der einen DimOverlayPrefs-Wert schreibt, MUSS direkt danach enable() rufen".
+    //
+    // Das enable() laeuft hier bewusst UNENTPRELLT, genau wie bei allen anderen Settern dieser
+    // Klasse: `DimmerTabContent.CommitOnReleaseSlider` meldet den Wert erst beim LOSLASSEN nach oben
+    // (`onValueChangeFinished`), also genau EINMAL pro Reglerbewegung - der frueher befuerchtete
+    // Frame-Sturm entsteht strukturell nicht mehr. Eine zusaetzliche Entprellung hier hatte deshalb
+    // keinen Nutzen mehr, riss aber ein Loch in die Invariante: der Entprellungs-Job hing am
+    // viewModelScope und starb beim Verlassen der App vor seinem delay() - der Prefs-Wert war
+    // geschrieben, das laufende Overlay behielt bis zur naechsten Fenstergrenze die alte
+    // Verdunkelung. Wer die Entprellung wieder einbaut, muss sie ausserhalb des viewModelScope
+    // aufhaengen - besser: es beim commit-on-release der UI belassen.
     fun setStrength(value: Int) = viewModelScope.launch {
         prefs.setStrength(value)
-        applyRenderChangeDebounced()
+        dimSchedule.enable()
     }
 
     fun setWarmth(value: Int) = viewModelScope.launch {
         prefs.setWarmth(value)
-        applyRenderChangeDebounced()
+        dimSchedule.enable()
     }
 
     fun setNightDefaultStrength(value: Int) = viewModelScope.launch {
         prefs.setNightDefaultStrength(value)
-        applyRenderChangeDebounced()
+        dimSchedule.enable()
     }
 
     fun setNightDefaultWarmth(value: Int) = viewModelScope.launch {
         prefs.setNightDefaultWarmth(value)
-        applyRenderChangeDebounced()
-    }
-
-    /**
-     * Die vier Darstellungs-Regler feuern pro Frame der Slider-Bewegung (`onValueChange`, siehe
-     * `DimmerTabContent`), [DimScheduleUseCase.enable] ist dagegen teuer (komplette
-     * Fenster-Neuberechnung inkl. Alarm-Bestand + Exact-Alarm neu setzen). Der Prefs-Write bleibt
-     * deshalb sofort (die UI zeigt den Wert unverzoegert), nur das Anwenden wird entprellt - der
-     * letzte Wert einer Drag-Bewegung gewinnt.
-     */
-    private fun applyRenderChangeDebounced() {
-        renderApplyJob?.cancel()
-        renderApplyJob = viewModelScope.launch {
-            delay(RENDER_APPLY_DEBOUNCE_MS)
-            dimSchedule.enable()
-        }
+        dimSchedule.enable()
     }
 
     fun setWindDownMinutes(value: Int) = viewModelScope.launch {

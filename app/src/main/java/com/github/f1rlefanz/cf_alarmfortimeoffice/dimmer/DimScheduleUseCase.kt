@@ -123,8 +123,15 @@ class DimScheduleUseCase @Inject constructor(
         // MasterPauseUseCase.pause() weiter durchkommt.
         if (masterPausePrefs.pausedNow()) {
             Logger.d(LogTags.DIMMER, "Master-Pause aktiv - Dimmen ausgesetzt")
-            // Derselbe Aufraeumpfad wie disable(), aber ohne den rollenden Alarm anzufassen: den
-            // storniert scheduleNextTransition() (beide werden immer zusammen gerufen, siehe enable()).
+            // Derselbe Aufraeumpfad wie disable(), aber ohne den rollenden Alarm anzufassen.
+            // ACHTUNG, keine Garantie: applyCurrentState() wird auch OHNE
+            // scheduleNextTransition() gerufen (DimNotificationService, DimmerRulesViewModel,
+            // DimmerViewModel.previewDim) - "beide immer zusammen" gilt nur fuer enable().
+            // Storniert wird der REQ_TICK-Alarm heute ausschliesslich von disable() bzw.
+            // scheduleNextTransition(), und die Pause wird nur ueber MasterPauseUseCase.pause()
+            // gesetzt, das disable() mit-ruft. Wer das Pause-Flag kuenftig woanders setzt, MUSS
+            // disable() hinterherrufen - sonst bleibt der Exact-Alarm stehen und weckt das Geraet
+            // weiter (wirkungslos, aber nicht kostenlos).
             prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
             correctionNotifier.cancel()
             return
@@ -215,16 +222,40 @@ class DimScheduleUseCase @Inject constructor(
 
     // --- Fenster-Berechnung (reine Zeitmathematik in DimWindowResolver) ---
 
+    /**
+     * Vorschau samt dem Grund, aus dem sie LEER sein kann. Ohne [alarmReadFailed] ist ein
+     * transienter Lesefehler des Alarm-Bestands von "heute gibt es einfach kein Fenster" nicht zu
+     * unterscheiden - und genau diese Unterscheidung braucht DND-Modus 1 ("Schlaf-Fenster folgt dem
+     * Dimmer"), um seinen 15-Minuten-Retry-Tick statt des 6-Stunden-Keep-alive zu planen. Der
+     * Dimmer selbst holt sich den Retry ueber [computeNextTransition]/[fallbackTick]; ohne diesen
+     * Kanal erholte sich der Dimmer nach 15 Minuten, DND aber erst nach 6 Stunden - die laufende
+     * Nacht wurde gedimmt, blieb aber ohne "Nicht stoeren".
+     */
+    data class TimelinePreview(
+        val intervals: List<DimWindowResolver.ResolvedInterval>,
+        val alarmReadFailed: Boolean
+    )
+
+    /** Siehe [previewTimeline] - identische Berechnung, zusaetzlich mit dem Lesefehler-Status. */
+    suspend fun previewTimelineWithStatus(): TimelinePreview {
+        val now = System.currentTimeMillis()
+        val w = computeWindows()
+        return TimelinePreview(
+            intervals = DimWindowResolver.mergeToTimeline(w.spans).filter { it.range.last > now },
+            alarmReadFailed = w.alarmReadFailed
+        )
+    }
+
     /** Vorschau fuer die UI (siehe [DimWindowResolver.mergeToTimeline]) - identische Berechnung wie
      * der echte Scheduler, aber ohne jeden Seiteneffekt. Bereits BEENDETE Abschnitte werden
      * ausgeblendet: die Fenster-Quellen rechnen bewusst einen Kalendertag zurueck (siehe
      * `DimWindowResolver.LOOKBACK_DAYS`), damit eine ueber Mitternacht laufende Nacht nach dem
      * Datumswechsel nicht verschwindet - fuer "die naechsten Abschnitte" ist die Vornacht aber
-     * Rauschen. Fuer DND-Modus 1 (prueft `now in range`) macht der Filter keinen Unterschied. */
-    suspend fun previewTimeline(): List<DimWindowResolver.ResolvedInterval> {
-        val now = System.currentTimeMillis()
-        return DimWindowResolver.mergeToTimeline(windows()).filter { it.range.last > now }
-    }
+     * Rauschen. Fuer DND-Modus 1 macht der Filter keinen Unterschied: dessen Aktiv-Test ist ebenso
+     * halb offen (`first <= now < last`, siehe `DndScheduleUseCase.isActiveAt`), ein hier
+     * herausgefiltertes Intervall (`range.last <= now`) faellt dort also genauso durch. */
+    suspend fun previewTimeline(): List<DimWindowResolver.ResolvedInterval> =
+        previewTimelineWithStatus().intervals
 
     private suspend fun windows(): List<DimWindowResolver.DimSpan> = computeWindows().spans
 

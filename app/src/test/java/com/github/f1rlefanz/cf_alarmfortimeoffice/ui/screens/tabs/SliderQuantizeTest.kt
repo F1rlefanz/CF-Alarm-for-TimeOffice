@@ -42,7 +42,13 @@ class SliderQuantizeTest {
         var value = min.toFloat()
         while (value <= max.toFloat()) {
             val quantized = quantizeToStep(value, 15)
-            assertTrue("$quantized liegt unter dem Minimum $min", quantized >= 0)
+            // Gegen `min`, NICHT gegen 0: die Rasterung darf nie unter die Prefs-Untergrenze
+            // rutschen. Sonst schreibt onCommit() z. B. 0, DimOverlayPrefs klemmt beim Lesen still
+            // auf 15 hoch - und weil sich der persistierte Wert dadurch nicht aendert, feuert der
+            // LaunchedEffect(value) im CommitOnReleaseSlider nicht: Anzeige und gespeicherter Wert
+            // laufen auseinander. Faellt diese Zusicherung um (z. B. Schrittweite 20 bei Minimum
+            // 15), ist das ein echter Befund an der Rasterung, kein Testproblem.
+            assertTrue("$quantized liegt unter dem Minimum $min", quantized >= min)
             assertTrue("$quantized liegt ueber dem Maximum $max", quantized <= max)
             value += 0.7f
         }

@@ -4,7 +4,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver.DimSp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -191,11 +190,16 @@ class DimWindowResolverTimeArithmeticTest {
 
     @Test
     fun `An der Grenze zweier anschliessender Fenster gewinnt das FOLGENDE`() {
-        val first = DimSpan(0L..100L, strength = 30, warmth = 10)
-        val second = DimSpan(100L..200L, strength = 70, warmth = 50)
+        // Das ENDENDE Fenster ist absichtlich das DUNKLERE: waere die Zugehoerigkeit noch inklusiv,
+        // gehoerte es bei now = 100 weiter dazu und "dunkelste gewinnt" ergaebe 70. Nur weil das
+        // Ende halb offen ist, bleibt allein das folgende Fenster uebrig. Mit umgekehrten Staerken
+        // waere der Test unter BEIDEN Semantiken gruen - und damit wertlos.
+        val first = DimSpan(0L..100L, strength = 70, warmth = 50)
+        val second = DimSpan(100L..200L, strength = 30, warmth = 10)
 
         val active = DimWindowResolver.activeSpan(listOf(first, second), now = 100L)
 
-        assertTrue(active!!.strength == 70)
+        assertEquals(30, active!!.strength)
+        assertEquals(100L..200L, active.range)
     }
 }

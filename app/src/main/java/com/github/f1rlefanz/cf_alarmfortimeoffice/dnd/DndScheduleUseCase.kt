@@ -32,9 +32,10 @@ import javax.inject.Singleton
  * Steuert die App-eigene [AutomaticZenRule] aus ZWEI unabhaengigen, per OR (Vereinigung) kombinierten
  * Fenster-Quellen, ueber EINEN rollenden exakten Alarm (Muster wie [DimScheduleUseCase]):
  *
- *  1. "Folgt dem Dimmer" ([DndPrefs.Toggles.followDimmerEnabled]): liest [DimScheduleUseCase.previewTimeline]
- *     direkt (Einbahnstrasse - der Dimmer bleibt unveraendert/unwissend von DND). Keine eigene
- *     Fenster-Definition, kein Drift-Risiko: es gibt nur eine Quelle der Wahrheit fuer "wann dimmt".
+ *  1. "Folgt dem Dimmer" ([DndPrefs.Toggles.followDimmerEnabled]): liest
+ *     [DimScheduleUseCase.previewTimelineWithStatus] direkt (Einbahnstrasse - der Dimmer bleibt
+ *     unveraendert/unwissend von DND). Keine eigene Fenster-Definition, kein Drift-Risiko: es gibt
+ *     nur eine Quelle der Wahrheit fuer "wann dimmt".
  *  2. "Waehrend der Dienstzeit" ([DndPrefs.Toggles.duringShiftEnabled]): die rohe Kalender-Event-Spanne
  *     jeder Schicht ([DndShiftSpanResolver]), abzueglich per Chip ausgeschlossener Schichten.
  *
@@ -115,6 +116,21 @@ class DndScheduleUseCase @Inject constructor(
             anySourceEnabled -> now + KEEPALIVE_MS
             else -> null
         }
+
+        /**
+         * Fenster-Zugehoerigkeit HALB OFFEN (`first <= now < last`), identisch zu
+         * `DimWindowResolver.activeSpan`. Bewusst eine eigene, aber benannte und getestete Funktion
+         * statt eines Inline-Ausdrucks: der naechste Wechsel wird strikt auf "> now" geplant. Traefe
+         * ein Tick exakt auf ein Fenster-Ende (0 ms Zustellungs-Latenz, real bei
+         * `setExactAndAllowWhileIdle`), waere das Fenster bei inklusiver Pruefung noch aktiv,
+         * waehrend als naechster Wechsel schon die Grenze DANACH gesetzt wird - der Zustand "aus"
+         * wuerde fuer diesen Rand nie berechnet und "Nicht stoeren" blieb bis zum naechsten
+         * Fensterstart haengen. Wer das zum idiomatischeren `now in range` zurueckbaut, holt sich
+         * genau das zurueck - `DndScheduleTickChainTest` haelt die drei Raender fest.
+         */
+        @VisibleForTesting
+        internal fun isActiveAt(range: LongRange, now: Long): Boolean =
+            now >= range.first && now < range.last
     }
 
     /** Fenster-Ergebnis samt der beiden Gruende, aus denen es LEER sein kann (siehe [fallbackTick]). */
@@ -172,11 +188,8 @@ class DndScheduleUseCase @Inject constructor(
         }
         val ruleId = ensureZenRule(nm) ?: return
         val now = System.currentTimeMillis()
-        // Halb offen (first <= now < last), identisch zu DimWindowResolver.activeSpan: der naechste
-        // Wechsel wird strikt auf "> now" geplant. Traefe ein Tick exakt auf das Fenster-Ende,
-        // waere das Fenster hier noch aktiv, der Zustand "aus" wuerde nie berechnet - DND blieb bis
-        // zum naechsten Fensterstart haengen.
-        val active = windows().any { now >= it.first && now < it.last }
+        // Halb offen, siehe isActiveAt (dort steht das WARUM, und dort ist es getestet).
+        val active = windows().any { isActiveAt(it, now) }
         try {
             nm.setAutomaticZenRuleState(
                 ruleId,
@@ -230,14 +243,23 @@ class DndScheduleUseCase @Inject constructor(
         }
 
         val out = mutableListOf<LongRange>()
+        var alarmReadFailed = false
 
         if (toggles.followDimmerEnabled) {
-            out += dimSchedule.previewTimeline().map { it.range }
+            // previewTimelineWithStatus statt previewTimeline: der Dimmer liest den Alarm-Bestand
+            // INNERHALB seiner Fensterberechnung, und ein transienter Lesefehler kommt dort als
+            // LEERE Fensterliste heraus - von "heute gibt es kein Fenster" nicht zu unterscheiden.
+            // Ohne diesen Kanal blieb alarmReadFailed bei "nur Modus 1 aktiv" immer false (der
+            // eigene getAllAlarms()-Zweig unten wird dann gar nicht betreten): der Dimmer erholte
+            // sich planmaessig nach 15 Minuten und dimmte die Nacht, DND kam erst 6 Stunden spaeter
+            // wieder - also praktisch erst morgens.
+            val preview = dimSchedule.previewTimelineWithStatus()
+            out += preview.intervals.map { it.range }
+            if (preview.alarmReadFailed) alarmReadFailed = true
         }
 
         // Alarme werden auch NUR fuer den On-Call-Cutoff geholt (unabhaengig von
         // duringShiftEnabled) - der Cutoff klippt auch das "Folgt dem Dimmer"-Fenster.
-        var alarmReadFailed = false
         val alarms = if (toggles.duringShiftEnabled || onCallShifts.isNotEmpty()) {
             alarmUseCase.getAllAlarms().getOrElse {
                 Logger.w(LogTags.DND, "Alarm-Bestand nicht lesbar - keine Dienstzeit-/On-Call-Fenster (fail-open)")
@@ -278,7 +300,11 @@ class DndScheduleUseCase @Inject constructor(
         return WindowSet(out, alarmReadFailed = alarmReadFailed, anySourceEnabled = anySourceEnabled)
     }
 
-    private suspend fun computeNextTransition(now: Long): Long? {
+    /** Naechster Tick-Zeitpunkt (`null` = Kette abbestellen). [VisibleForTesting], weil der
+     *  eigentliche Planer darueber hinaus AlarmManager/PendingIntent braucht - beides in der
+     *  Unit-Test-JVM nicht verfuegbar. */
+    @VisibleForTesting
+    internal suspend fun computeNextTransition(now: Long): Long? {
         val w = computeWindows()
         return w.ranges
             .flatMap { listOf(it.first, it.last) }

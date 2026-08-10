@@ -33,10 +33,12 @@ import org.mockito.kotlin.whenever
  * verstellter Regler blieb dadurch bis zur naechsten Fenstergrenze wirkungslos (typischerweise das
  * Fenster-ENDE am Morgen) - dieselbe Falle wie beim Korrektur-Notification-Toggle (v1.22.1).
  *
- * Zweiter Teil: das Anwenden ist ENTPRELLT, weil die Regler pro Frame der Slider-Bewegung feuern
- * (`onValueChange`) und `enable()` teuer ist (komplette Fenster-Neuberechnung inkl. Alarm-Bestand +
- * Exact-Alarm neu setzen). Der Prefs-Write bleibt trotzdem sofort - die UI zeigt den Wert
- * unverzoegert an.
+ * Das `enable()` folgt UNENTPRELLT, direkt im selben Setter. Eine frueher hier verankerte
+ * 300-ms-Entprellung ist entfallen: `DimmerTabContent.CommitOnReleaseSlider` meldet den Wert erst
+ * beim Loslassen (`onValueChangeFinished`), also genau einmal pro Reglerbewegung - die Entprellung
+ * schuetzte damit vor einem Frame-Sturm, der strukturell nicht mehr entsteht, hing aber am
+ * viewModelScope und konnte beim Verlassen der App vor ihrem `delay()` sterben. Dann war der Wert
+ * geschrieben, aber nie angewendet - genau die Luecke, die diese Tests zumauern.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
 class DimmerViewModelRenderSettersTest {
@@ -138,19 +140,20 @@ class DimmerViewModelRenderSettersTest {
     }
 
     @Test
-    fun `Eine Slider-Bewegung schreibt jeden Zwischenwert, wendet aber nur einmal an`() = runTest(dispatcher) {
+    fun `Jeder Regler-Commit wendet seinen Wert an - kein verschluckter Zwischenstand`() = runTest(dispatcher) {
         val f = buildFixture()
 
-        // Mehrere Frames derselben Drag-Bewegung, ohne die Entprellung dazwischen ablaufen zu lassen.
+        // Drei Reglerbewegungen hintereinander (jedes onValueChangeFinished = ein Commit). Eine
+        // Entprellung wuerde die ersten beiden verwerfen; da die UI nur beim Loslassen meldet, ist
+        // jeder dieser Commits ein echter Nutzer-Wunsch und muss auch angewendet werden.
         f.viewModel.setStrength(10)
-        f.viewModel.setStrength(20)
-        f.viewModel.setStrength(30)
+        f.viewModel.setNightDefaultStrength(20)
+        f.viewModel.setWarmth(30)
         advanceUntilIdle()
 
         verify(f.prefs).setStrength(10)
-        verify(f.prefs).setStrength(20)
-        verify(f.prefs).setStrength(30)
-        // ... aber nur EIN teurer Fenster-Neuaufbau (der letzte Wert gewinnt).
-        verify(f.dimSchedule, times(1)).enable()
+        verify(f.prefs).setNightDefaultStrength(20)
+        verify(f.prefs).setWarmth(30)
+        verify(f.dimSchedule, times(3)).enable()
     }
 }

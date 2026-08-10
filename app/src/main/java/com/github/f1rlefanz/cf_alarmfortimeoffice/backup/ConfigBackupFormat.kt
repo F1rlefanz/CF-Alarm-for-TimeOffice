@@ -1,0 +1,185 @@
+package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
+
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
+import kotlinx.serialization.Serializable
+
+/**
+ * Ein einzelner Einstellungswert, typerhaltend serialisiert.
+ *
+ * WARUM NICHT EINFACH `Map<String, String>`: DataStore-Preferences sind typisiert. Ein
+ * `Int`-Schluessel mit einem String-Wert zurueckgeschrieben wirft beim naechsten Lesen eine
+ * ClassCastException - und das ausgerechnet in den Einstellungen, die den Wecker steuern. Der Typ
+ * muss also mit.
+ *
+ * Bewusst eine flache, diskriminierte Datenklasse und keine polymorphe Serialisierung: das
+ * Dateiformat bleibt fuer einen Menschen lesbar und ohne Serializer-Registrierung stabil.
+ */
+@Serializable
+data class StoredValue(
+    /** "boolean" | "int" | "long" | "float" | "double" | "string" | "stringSet" */
+    val type: String,
+    val value: String? = null,
+    val setValue: List<String>? = null
+)
+
+/**
+ * Der Inhalt einer exportierten Konfigurationsdatei.
+ *
+ * @param formatVersion wird beim Import geprueft. Eine Datei aus einer neueren App-Version mit
+ *        hoeherer Version wird abgelehnt statt halb eingelesen.
+ * @param appVersion nur zur Nachvollziehbarkeit fuer Menschen, keine Logik daran.
+ * @param shiftConfig die Schichtdefinitionen - der aufwendigste Teil und der Grund fuer das
+ *        ganze Feature. Geht bewusst durch das typisierte Modell und nicht als Rohwert.
+ * @param settings Schluessel/Wert aus dem "settings"-Store, gefiltert (siehe [ConfigBackupFilter]).
+ * @param hue Schluessel/Wert aus dem "hue_settings"-Store, gefiltert.
+ */
+@Serializable
+data class ConfigBackup(
+    val formatVersion: Int = CURRENT_FORMAT_VERSION,
+    val appVersion: String = "",
+    val createdAt: String = "",
+    val shiftConfig: ShiftConfig? = null,
+    val settings: Map<String, StoredValue> = emptyMap(),
+    val hue: Map<String, StoredValue> = emptyMap()
+) {
+    companion object {
+        const val CURRENT_FORMAT_VERSION = 1
+    }
+}
+
+/**
+ * Entscheidet, WELCHE Einstellungen in eine Exportdatei gehoeren - und vor allem, welche nicht.
+ *
+ * Rein und ohne Android, damit die Entscheidung testbar ist. Sie ist der sicherheitskritische Teil
+ * des ganzen Features: was hier faelschlich durchgelassen wird, landet beim Import auf einem
+ * fremden Geraet.
+ *
+ * DREI GRUENDE FUER EINEN AUSSCHLUSS, alle sachlich und nicht Geschmackssache:
+ *
+ * 1. LAUFZEITZUSTAND. Ein Dimm-Overlay, das gerade an ist, eine Korrektur, die an ein konkretes
+ *    Zeitfenster gebunden ist, eine laufende Master-Pause - das beschreibt einen Moment, keine
+ *    Einstellung. Der gefaehrlichste davon ist `master_pause_enabled`: importiert man eine aktive
+ *    Pause, bleibt der Wecker auf dem neuen Geraet STUMM, und niemand kommt darauf, in einer
+ *    Importdatei nach der Ursache zu suchen.
+ * 2. ZUGANGSDATEN UND GERAETEBEZUG. Der Hue-Bridge-Username ist ein Zugangstoken zur Bridge im
+ *    Heimnetz, die Bridge-IP gilt nur in genau diesem Netz, und die Zen-Regel-ID zeigt auf eine
+ *    Regel, die dieses Geraet bei Android registriert hat. Nichts davon ist auf einem anderen
+ *    Geraet gueltig, und die Zugangsdaten gehoeren nicht in eine Datei, die der Nutzer per
+ *    Messenger weitergibt.
+ * 3. GERAETELOKALE ONBOARDING-MARKIERUNGEN. Dieselbe Begruendung wie in
+ *    [DeviceLocalFlagsGuard]: "Akku-Hinweis schon weggetippt" gilt fuer EIN Geraet. Kaeme das mit,
+ *    wuerde auf dem neuen Geraet nie nach der Akku-Ausnahme gefragt - einer der zwei nachgewiesenen
+ *    Wecker-Killer.
+ *
+ * Alles andere wird exportiert. Diese Richtung ist Absicht: eine neue Einstellung ist automatisch
+ * dabei, statt beim naechsten Feature stillschweigend zu fehlen. Wer eine neue LAUFZEIT-Groesse
+ * einfuehrt, muss sie hier eintragen - darauf weist der Test hin.
+ */
+object ConfigBackupFilter {
+
+    /**
+     * Laufzeitzustand: beschreibt einen Moment, keine Einstellung.
+     *
+     * WIE DIESE LISTE ENTSTANDEN IST - und warum sie vollstaendig ist: Der erste Wurf entstand aus
+     * den Schluesseln von vier Paketen (dimmer/dnd/alarm/masterpause) und war damit LUECKENHAFT. Der
+     * erste echte Export am Geraet enthielt genau drei Schluessel, und ALLE DREI gehoerten nicht
+     * hinein - darunter `active_alarms`, die persistierte Alarmliste. Seither ist die Liste aus einer
+     * vollstaendigen Inventur ALLER `*PreferencesKey("…")` im ganzen Baum abgeleitet.
+     */
+    private val RUNTIME_KEYS = setOf(
+        // Die persistierte Alarmliste. Sie leitet sich aus DIESEM Kalender ab; importiert wuerde sie
+        // fremde Alarme mit fremden IDs in das Repository und in den Direct-Boot-Spiegel schreiben.
+        "active_alarms",
+        // Zeitstempel der Hintergrundarbeit
+        "last_maintenance_time",
+        "last_event_load_time",
+        "last_success_timestamp",
+        // Was der Overlay-Dienst gerade rendert
+        "dim_overlay_on",
+        "dim_render_strength",
+        "dim_render_warmth",
+        // Die Heller/Dunkler-Korrektur haengt an EINEM konkreten Fenster (windowEnd + windowStrength)
+        "dim_override_strength_delta",
+        "dim_override_paused",
+        "dim_override_window_end",
+        "dim_override_window_strength",
+        // Eine laufende Pause. Importiert wuerde sie den Wecker stumm schalten.
+        "master_pause_enabled",
+        "master_pause_until",
+        // "Naechsten Alarm ueberspringen" gilt fuer EINEN konkreten, bereits geplanten Alarm.
+        "is_next_alarm_skipped",
+        "skip_activated_at",
+        "skip_reason",
+        "skipped_alarm_id",
+        "skipped_alarm_trigger_time"
+    )
+
+    /**
+     * Praefixe/Endungen, die unabhaengig von der genauen Schreibweise nie exportiert werden.
+     * Faengt auch Schluessel, die es heute noch nicht gibt.
+     */
+    private val DENIED_SUFFIXES = listOf(
+        // Sicherungen unlesbarer Rohdaten (shift_config_broken, active_alarms_broken). Sie gehoeren
+        // zu einem Defekt auf DIESEM Geraet und sind fuer ein anderes wertlos.
+        "_broken"
+    )
+
+    /** Geraetebezug oder Zugangsdaten - auf einem anderen Geraet ungueltig oder gefaehrlich. */
+    private val DEVICE_OR_SECRET_KEYS = setOf(
+        // Von dieser App bei Android registrierte Zen-Regel
+        "dnd_zen_rule_id",
+        // Die Geraete-Kennung des Waechters. Sie steht BEWUSST nicht in
+        // DeviceLocalFlagsGuard.isDeviceLocalKey - der Waechter darf seinen eigenen Marker nicht
+        // loeschen. Exportiert werden darf sie aber genauso wenig: mit der Kennung eines fremden
+        // Geraets im Store haelt der Waechter das neue Geraet fuer dasselbe und setzt die
+        // Onboarding-Flags nie zurueck. Zwei verschiedene Regeln fuer denselben Schluessel, beide
+        // richtig - ein Test haelt jede davon fest.
+        "device_local_flags_marker",
+        // Hue: Zugangstoken zur Bridge und netzspezifische Adresse, in zwei Schreibweisen
+        "hue_username",
+        "username",
+        "hue_bridge_ip",
+        "bridge_ip",
+        // Ergebnis einer Pruefung gegen DIESE Bridge in DIESEM Netz
+        "connection_validated",
+        // Anmeldung und Tokens. Liegen in anderen Stores, die diese Klasse nicht liest - hier
+        // trotzdem benannt, damit ein kuenftiges Zusammenlegen von Stores nicht still ein Leck oeffnet.
+        "access_token",
+        "refresh_token",
+        "token_data_v2",
+        "token_expiry_long",
+        "login_status",
+        "user_email",
+        "user_id",
+        // Die Kalenderauswahl ist an das Google-Konto gebunden: die IDs einer Kollegin zeigen auf
+        // Kalender, die es auf diesem Geraet nicht gibt. Der Nutzer waehlt seinen Dienstplan selbst -
+        // dafuer gibt es ein eigenes Gate im Onboarding.
+        "selected_calendar_ids",
+        "calendar_id",
+        // Die Schichtkonfiguration geht bewusst ueber das typisierte Repository (validiert, mit
+        // Defekt-Schutz) und nicht als Rohwert. Explizit ausgeschlossen, damit ein spaeteres
+        // Verschieben dieses Schluessels in den settings-Store keinen zweiten, ungeprueften Weg oeffnet.
+        "shift_config"
+    )
+
+    /**
+     * @param keyName der Preferences-Schluesselname
+     * @return true, wenn der Wert in eine Exportdatei gehoert
+     */
+    fun isExportable(keyName: String): Boolean = exclusionReason(keyName) == null
+
+    /**
+     * Der EINE Ort, an dem entschieden wird. [isExportable] leitet sich davon ab, damit Entscheidung
+     * und Begruendung nicht auseinanderlaufen koennen - die Begruendung erscheint nach einem Import
+     * auch in der Rueckmeldung an den Nutzer.
+     */
+    fun exclusionReason(keyName: String): String? = when {
+        keyName in RUNTIME_KEYS -> "Laufzeitzustand"
+        keyName in DEVICE_OR_SECRET_KEYS -> "Geraetebezug oder Zugangsdaten"
+        DENIED_SUFFIXES.any { keyName.endsWith(it) } -> "Sicherung unlesbarer Rohdaten"
+        // Dieselbe Liste wie beim Geraetewechsel-Waechter - eine Quelle, kein zweiter Katalog.
+        DeviceLocalFlagsGuard.isDeviceLocalKey(keyName) -> "geraetelokale Onboarding-Markierung"
+        else -> null
+    }
+}

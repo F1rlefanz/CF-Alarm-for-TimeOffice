@@ -1,6 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 // PHASE 2 CLEANUP: ShiftViewModel import removed (unused parameter)
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,20 +34,27 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ConfigBackupViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MasterPauseViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NotificationSettingsViewModel
 
@@ -407,6 +417,20 @@ fun SettingsTabContent(
 
         HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
 
+        // KONFIGURATION SICHERN. Loest, was in der Testphase wiederholt Handarbeit war: nach jeder
+        // Neuinstallation alles neu eintragen. Bewusst unabhaengig von Googles Auto-Backup - diese
+        // Datei funktioniert immer, auch bei Neuinstallation auf demselben Geraet, und laesst sich
+        // an eine Kollegin weitergeben.
+        Text(
+            "Konfiguration",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        ConfigBackupCard()
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL))
+
         // Account-Bereich
         Text(
             "Account",
@@ -475,5 +499,115 @@ fun SettingsTabContent(
                 )
             }
         }
+    }
+}
+
+/**
+ * Export und Import der Konfiguration ueber den System-Dateidialog.
+ *
+ * WARUM ES DAS GIBT: In der Testphase kostete jede Neuinstallation Handarbeit - Schichtdefinitionen,
+ * Hue-Regeln, Dimmer-Regeln und DND-Einstellungen von Hand neu eintragen. Googles Auto-Backup ist
+ * eine andere, zweite Sache: es greift nur bei einem Geraetewechsel, nur wenn der Nutzer es hat und
+ * nur wenn Google es ausfuehrt. Diese Datei funktioniert immer - auch auf demselben Geraet - und
+ * laesst sich weitergeben.
+ *
+ * DER IMPORT FRAGT VORHER. Er ueberschreibt die aktuelle Konfiguration und setzt anschliessend die
+ * Wecker neu; es gibt kein Undo. Deshalb erst die Rueckfrage, dann der Dateidialog.
+ *
+ * ABSICHTLICH NICHT IN DER DATEI: Anmeldung, Tokens, Tink-Keyset, Kalenderauswahl und die
+ * Hue-Bridge-Zugangsdaten. Der Nutzer erfaehrt das im Kartentext UND nach dem Import - sonst wartet
+ * er auf Wecker, deren Voraussetzungen er fuer mitgebracht haelt.
+ */
+@Composable
+private fun ConfigBackupCard() {
+    val viewModel: ConfigBackupViewModel = hiltViewModel()
+    val state by viewModel.uiState.collectAsState()
+    var showImportConfirmation by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { viewModel.exportTo(it) } }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { viewModel.importFrom(it) } }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Text(
+                "Exportieren / Importieren",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                "Sichert Schichttypen, Hue-Regeln, Dimmer-Regeln und \"Nicht stören\" als Datei. " +
+                    "Anmeldung, Kalenderauswahl und die Hue-Bridge-Verbindung sind absichtlich " +
+                    "nicht enthalten — die richtest du auf jedem Gerät selbst ein.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
+                // CompactActionButton: zwei geteilte Buttons in einer Kartenzeile - mit
+                // ButtonDefaults.ContentPadding (24dp je Seite) bricht Compose hier mitten im Wort.
+                CompactButton(
+                    onClick = { exportLauncher.launch(viewModel.suggestedFileName()) },
+                    text = "Exportieren",
+                    modifier = Modifier.weight(1f),
+                    enabled = !state.busy
+                )
+                CompactOutlinedButton(
+                    onClick = { showImportConfirmation = true },
+                    text = "Importieren",
+                    modifier = Modifier.weight(1f),
+                    enabled = !state.busy
+                )
+            }
+        }
+    }
+
+    if (showImportConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showImportConfirmation = false },
+            title = { Text("Konfiguration importieren?") },
+            text = {
+                Text(
+                    "Der Import überschreibt deine aktuellen Schichttypen, Hue-Regeln, " +
+                        "Dimmer-Regeln und \"Nicht stören\"-Einstellungen und setzt danach alle " +
+                        "Wecker neu. Das lässt sich nicht rückgängig machen — exportiere vorher, " +
+                        "wenn du den aktuellen Stand behalten willst."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImportConfirmation = false
+                        // Bewusst breit: manche Dateimanager liefern JSON als application/octet-stream
+                        // oder text/plain aus, eine reine application/json-Filterung liesse die
+                        // eigene Exportdatei dann ausgegraut erscheinen.
+                        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                    }
+                ) { Text("Datei wählen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportConfirmation = false }) { Text("Abbrechen") }
+            }
+        )
+    }
+
+    state.result?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissResult() },
+            title = { Text(if (state.isError) "Fehlgeschlagen" else "Fertig") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissResult() }) { Text("OK") }
+            }
+        )
     }
 }

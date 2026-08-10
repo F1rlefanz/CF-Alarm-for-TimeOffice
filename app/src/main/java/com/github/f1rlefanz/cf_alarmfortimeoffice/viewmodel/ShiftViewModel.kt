@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -60,6 +61,58 @@ class ShiftViewModel @Inject constructor(
     init {
         loadShiftConfig()
         observeCalendarEvents() // Reactive Schichterkennung via StateHolder
+        observeExternalConfigChanges()
+    }
+
+    /**
+     * Faengt Konfigurationsaenderungen auf, die NICHT ueber [updateShiftConfig] dieses ViewModels
+     * kamen - und zieht Anzeige, Schichterkennung UND Alarme nach.
+     *
+     * WARUM DAS NOETIG WURDE (am Geraet gefunden, 11.08.2026): Der Konfigurations-Import
+     * ([com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackupUseCase]) schreibt direkt
+     * ueber das Repository. Der Store war danach korrekt - nach einem App-Neustart stand das
+     * importierte Muster da - aber die LAUFENDE App zeigte weiter den alten Stand, weil
+     * `currentShiftConfig` nur beim Start und in `updateShiftConfig()` gesetzt wurde. Der Nutzer
+     * importiert, sieht nichts und haelt es fuer gescheitert.
+     * Schlimmer noch: die ALARME wurden nicht neu gesetzt. Eine importierte Konfiguration mit
+     * anderen Weckzeiten haette bis zur naechsten 6h-Wartung die alten Zeiten weitergeweckt - bei
+     * einer Wecker-App der ernstere Teil des Fehlers.
+     *
+     * Bewusst ein Beobachter am gemeinsamen Datenfluss statt eines Aufrufs im Import: das ist
+     * dieselbe Lehre wie beim Master-Pause-Backstop in `syncAlarms()` - ein zentraler Punkt am
+     * geteilten Einstieg deckt JEDEN heutigen und kuenftigen Schreiber ab, waehrend ein Gate pro
+     * Aufrufer beim naechsten uebersehen wird. `IShiftUseCase.shiftConfig` existierte bereits und
+     * wurde von diesem ViewModel schlicht nicht beobachtet.
+     *
+     * KEINE DOPPELARBEIT: Eigene Aenderungen ueber [updateShiftConfig] setzen `currentShiftConfig`
+     * selbst; die daraufhin folgende Flow-Emission ist dann gleich und wird uebersprungen. Nur
+     * fremde Aenderungen loesen hier Arbeit aus. Ohne diesen Vergleich liefen Erkennung und
+     * Alarm-Sync bei jeder Nutzeraenderung zweimal - und zwar nebenlaeufig auf derselben
+     * Engine-Instanz, was CLAUDE.md ausdruecklich als Race-Ursache festhaelt.
+     */
+    private fun observeExternalConfigChanges() {
+        viewModelScope.launch {
+            shiftUseCase.shiftConfig
+                .drop(1) // Erste Emission ist der Ist-Zustand, den loadShiftConfig() ohnehin holt.
+                .collect { config ->
+                    if (config == _uiState.value.currentShiftConfig) return@collect
+
+                    Logger.business(
+                        LogTags.SHIFT_CONFIG,
+                        "🔄 EXTERNE KONFIGURATIONSAENDERUNG erkannt (${config.definitions.size} " +
+                            "Definitionen) - Anzeige, Erkennung und Alarme werden nachgezogen"
+                    )
+                    _uiState.value = _uiState.value.copy(currentShiftConfig = config)
+
+                    // Erkennung neu laufen lassen (aktualisiert auch die Kuerzel-Vorschlaege) und
+                    // die Alarme an die neuen Weckzeiten anpassen.
+                    val events = calendarStateHolder.events.value
+                    if (events.isNotEmpty()) {
+                        processCalendarEvents(events)
+                    }
+                    triggerAlarmCreationFromConfigUpdate(config)
+                }
+        }
     }
 
     /**

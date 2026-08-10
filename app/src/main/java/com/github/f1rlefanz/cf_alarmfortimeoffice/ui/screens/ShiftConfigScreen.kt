@@ -242,6 +242,13 @@ fun ShiftConfigScreen(
                 }
             } else {
                 LazyColumn(
+                    // weight(1f) ist Pflicht: ohne sie misst die LazyColumn sich auf ihre
+                    // Inhaltshoehe und frisst bei genuegend Eintraegen die gesamte Resthoehe der
+                    // Column - der darunter liegende "Auf Standardwerte zuruecksetzen"-Knopf wird
+                    // dann aus dem Bildschirm geschoben und ist UNERREICHBAR (am Geraet mit fuenf
+                    // Schichten plus Kuerzel-Karte reproduziert, 11.08.2026). Mit weight bleibt die
+                    // Liste in ihrem Bereich scrollbar und der Knopf unten stehen.
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
                     // Kuerzel-Vorschlaege aus dem ECHTEN Kalender - steht bewusst GANZ OBEN, denn
@@ -269,8 +276,8 @@ fun ShiftConfigScreen(
                 }
             }
 
-            // Reset Button
-            Spacer(modifier = Modifier.weight(1f))
+            // Reset Button - die Liste darueber traegt weight(1f), ein zweiter Spacer mit weight
+            // wuerde ihr Platz wegnehmen.
             
             OutlinedButton(
                 onClick = { showResetConfirmation = true },

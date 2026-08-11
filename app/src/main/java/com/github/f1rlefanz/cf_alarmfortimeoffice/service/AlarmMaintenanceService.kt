@@ -194,6 +194,21 @@ class AlarmMaintenanceService : Service() {
          * benutzt haben; die zweite Kette lief auf 9999 und ist weg.
          */
         private const val MAINTENANCE_ALARM_REQUEST_CODE = 0
+
+        /**
+         * EIGENER Slot fuer den Nachhol-Alarm aus [start], bewusst NICHT
+         * [MAINTENANCE_ALARM_REQUEST_CODE].
+         *
+         * Das ist kein zweiter Planer der 6h-Kette (die Invariante dazu in CLAUDE.md gilt weiter):
+         * dieser Alarm ist EINMALIG, plant sich nicht selbst nach und traegt deshalb einen eigenen
+         * Code, damit er den einzigen Slot der rollierenden Kette nicht ueberschreibt. Wuerde er
+         * Code 0 benutzen, ersetzte er den geplanten naechsten Wartungslauf - der Nachhol-Versuch
+         * wuerde die Kette also um Stunden nach vorn ziehen und damit still veraendern.
+         */
+        private const val MAINTENANCE_CATCHUP_REQUEST_CODE = 8801
+
+        /** Kurz, aber nicht sofort: der Wurf kommt aus dem Hintergrund, ein Alarm darf das. */
+        private const val CATCHUP_DELAY_MS = 10_000L
         private const val MAINTENANCE_INTERVAL_HOURS = 6L
 
         /**
@@ -257,10 +272,80 @@ class AlarmMaintenanceService : Service() {
          *   und erzwingt Kalender-Abfrage + Delta-Sync. Default false — die regulaere 6h-Kette
          *   und alle Bestandsaufrufer verhalten sich unveraendert.
          */
+        /**
+         * Startet den Wartungslauf. FAENGT den Fehlschlag - und zwar HIER, nicht bei den Aufrufern.
+         *
+         * `startForegroundService()` wirft ab Android 12 eine
+         * `ForegroundServiceStartNotAllowedException` (eine `IllegalStateException`), wenn die App
+         * im Hintergrund ist und der Anlass nicht auf Androids Ausnahmeliste steht. Auf der Liste
+         * stehen u. a. BOOT_COMPLETED, LOCKED_BOOT_COMPLETED, MY_PACKAGE_REPLACED und das Feuern
+         * eines Exact-Alarms - **`ACTION_TIMEZONE_CHANGED` steht dort NICHT**. Von den sechs
+         * Aufrufstellen fing genau eine nicht (`TimezoneChangeReceiver`), und eine Exception aus
+         * `onReceive()` reisst den Prozess mit: doppelter Schaden, denn ausgefallen waere damit
+         * genau die Neuberechnung der Weckzeiten, fuer die dieser Receiver als einzige
+         * Verteidigungslinie existiert.
+         *
+         * Der Fang steht deshalb an DIESER Stelle: sie deckt alle heutigen und kuenftigen Aufrufer
+         * ab, statt sich darauf zu verlassen, dass jeder von ihnen daran denkt - dieselbe
+         * Ueberlegung wie beim Master-Pause-Backstop in `syncAlarms()`.
+         *
+         * Statt es dabei zu belassen, wird EINMALIG per Exact-Alarm nachgeholt: das Feuern eines
+         * Alarms IST ein erlaubter Anlass, der Lauf kommt also ~10 s spaeter doch zustande. Ohne
+         * das waere die Zeitzonen-Korrektur bis zum naechsten regulaeren 6h-Lauf verzoegert.
+         */
         fun start(context: Context, forceSync: Boolean = false) {
             val intent = Intent(context, AlarmMaintenanceService::class.java)
                 .putExtra(EXTRA_FORCE_SYNC, forceSync)
-            context.startForegroundService(intent)
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                Logger.w(
+                    LogTags.MAINTENANCE,
+                    "⚠️ WARTUNG: Vordergrund-Start abgelehnt (App im Hintergrund, Anlass nicht " +
+                        "ausgenommen) - wird per Alarm in ${CATCHUP_DELAY_MS / 1000}s nachgeholt",
+                    e
+                )
+                scheduleCatchUp(context, forceSync)
+            }
+        }
+
+        /**
+         * Einmaliger Nachhol-Alarm fuer [start]. Selbst wieder in try/catch: eine entzogene
+         * Exact-Alarm-Berechtigung darf aus dem Fehlerpfad keinen zweiten Absturz machen.
+         */
+        private fun scheduleCatchUp(context: Context, forceSync: Boolean) {
+            try {
+                val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    MAINTENANCE_CATCHUP_REQUEST_CODE,
+                    Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
+                        .putExtra(EXTRA_FORCE_SYNC, forceSync),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                // Dieselbe Absicherung wie in scheduleNext() direkt darunter: ohne
+                // SCHEDULE_EXACT_ALARM wirft setExactAndAllowWhileIdle() auf API 31/32 eine
+                // SecurityException - im Fehlerpfad einen zweiten Fehler zu erzeugen waere die
+                // schlechteste Stelle dafuer. Ein um Minuten verzoegerter Nachholversuch ist
+                // besser als keiner.
+                val triggerAt = System.currentTimeMillis() + CATCHUP_DELAY_MS
+                val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    alarmManager.canScheduleExactAlarms()
+                } else {
+                    true
+                }
+                if (canBeExact) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                } else {
+                    Logger.w(
+                        LogTags.MAINTENANCE,
+                        "⚠️ WARTUNG: Exact-Alarm-Berechtigung fehlt - Nachholversuch wird inexakt geplant"
+                    )
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                }
+            } catch (e: Exception) {
+                Logger.e(LogTags.MAINTENANCE, "❌ WARTUNG: auch der Nachhol-Alarm scheiterte", e)
+            }
         }
 
         /**

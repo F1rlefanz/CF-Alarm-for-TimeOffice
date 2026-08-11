@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -210,6 +212,42 @@ fun ShiftConfigScreen(
                 }
             }
 
+            // NICHT LESBARE KONFIGURATION ist etwas anderes als "noch keine angelegt".
+            //
+            // Seit die App eine vorhandene, aber nicht dekodierbare Konfiguration NICHT mehr mit
+            // Standardwerten ueberschreibt (Rohdaten liegen als `shift_config_broken`), ist
+            // `currentShiftConfig == null` ein echter, dauerhafter Zustand - und dieser Screen
+            // rendert dann eine leere Liste, die aussieht wie "du hast noch nichts eingerichtet".
+            // In diesem Projekt ist "leer" die gefaehrlichste Anzeige.
+            if (shiftState.currentShiftConfig == null && !shiftState.isLoading) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(SpacingConstants.PADDING_CARD)) {
+                        Text(
+                            "Schicht-Konfiguration nicht lesbar",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            "Deine gespeicherte Konfiguration konnte nicht gelesen werden. Sie wird " +
+                                "NICHT überschrieben — die Rohdaten sind gesichert. Bestehende Wecker " +
+                                "bleiben gestellt. Diese Liste ist deshalb leer, nicht weil du nichts " +
+                                "eingerichtet hättest.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(SpacingConstants.SPACING_MEDIUM))
+            }
+
             if (shiftState.currentShiftConfig?.definitions?.isEmpty() == true) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -404,7 +442,18 @@ fun ShiftConfigScreen(
             onDismissRequest = { assigningCode = null },
             title = { Text("Zu welcher Schicht gehört „$code\"?") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
+                // SCROLLBAR, weil die Liste so lang ist wie der Nutzer Schichttypen hat.
+                //
+                // Bei fuenf Standard-Definitionen plus Erklaertext reicht die Dialoghoehe auf einem
+                // schmalen Geraet (oder bei groesserer Systemschrift) nicht mehr - der letzte Knopf
+                // war abgeschnitten und damit UNERREICHBAR. Genau die Fehlerklasse, die CLAUDE.md
+                // fuer den "Auf Standardwerte zuruecksetzen"-Knopf desselben Screens festhaelt. Und
+                // hier ist der Knopf der EINZIGE angebotene Weg fuer dieses Kuerzel: kein Muster,
+                // keine erkannte Schicht, kein Wecker.
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+                ) {
                     Text(
                         "„$code\" steht in deinem Kalender, wird aber von keinem Erkennungsmuster " +
                             "getroffen. Wähle die Schicht, zu der es gehört — das Kürzel wird dann " +
@@ -569,10 +618,26 @@ private fun ShiftDefinitionCard(
                     style = MaterialTheme.typography.bodySmall
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // EINE ANGEZEIGTE WECKZEIT, DIE NIE GESTELLT WIRD, IST DIE GEFAEHRLICHSTE
+                    // ANZEIGE, DIE EINE WECKER-APP HABEN KANN.
+                    //
+                    // Seit v1.23.0 ueberspringt `ShiftRecognitionEngine.performRecognition()`
+                    // deaktivierte Definitionen vollstaendig - es entsteht kein Alarm. Die Karte
+                    // zeigte trotzdem unveraendert "Alarm: 05:30" in der Akzentfarbe, ohne jeden
+                    // Hinweis. Wer sich darauf verlaesst, verschlaeft. Das Gegenstueck `isSilent`
+                    // hat aus demselben Grund ein eigenes Icon.
                     Text(
-                        "Alarm: ${definition.getAlarmTimeFormatted()}",
+                        if (definition.isEnabled) {
+                            "Alarm: ${definition.getAlarmTimeFormatted()}"
+                        } else {
+                            "Ausgeschaltet — kein Wecker (${definition.getAlarmTimeFormatted()})"
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (definition.isEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        }
                     )
                     if (definition.isSilent) {
                         Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))

@@ -58,6 +58,26 @@ class ShiftViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ShiftUiState())
     val uiState: StateFlow<ShiftUiState> = _uiState.asStateFlow()
 
+    /**
+     * Die Konfiguration, die DIESES ViewModel gerade selbst schreibt - damit
+     * [observeExternalConfigChanges] sie nicht fuer eine fremde Aenderung haelt.
+     *
+     * Gesetzt VOR dem Write, geloescht beim ersten Treffer im Beobachter. Ein Vergleich gegen
+     * `uiState.currentShiftConfig` kann das nicht leisten: DataStore veroeffentlicht seinen neuen
+     * Wert typischerweise, bevor `edit{}` zurueckkehrt - der Beobachter laeuft also potenziell
+     * VOR dem `onSuccess`, das den UI-State setzt. Folge waere ein zweiter, nebenlaeufiger Lauf von
+     * Erkennung und Alarm-Sync auf derselben ShiftRecognitionEngine.
+     *
+     * `@Volatile`, weil der Setter (viewModelScope, Main) und der Collector (ebenfalls Main, aber
+     * ueber einen anderen Suspend-Punkt eingeplant) nicht in derselben Ausfuehrung liegen.
+     *
+     * Steht VOR dem `init{}`-Block - Kotlin initialisiert in Textreihenfolge, und der Collector im
+     * `init{}` kann synchron bis zum ersten echten Suspend-Punkt laufen (siehe die
+     * Initialisierungsfalle in CLAUDE.md, die im August einen Crash-on-Launch verursacht hat).
+     */
+    @Volatile
+    private var selfWrittenConfig: ShiftConfig? = null
+
     init {
         loadShiftConfig()
         observeCalendarEvents() // Reactive Schichterkennung via StateHolder
@@ -95,6 +115,18 @@ class ShiftViewModel @Inject constructor(
             shiftUseCase.shiftConfig
                 .drop(1) // Erste Emission ist der Ist-Zustand, den loadShiftConfig() ohnehin holt.
                 .collect { flowConfig ->
+                    // EIGENE Schreibvorgaenge erkennen - ueber den VOR dem Write gesetzten Merker,
+                    // nicht ueber `currentShiftConfig`. Letzteres verliert das Rennen: DataStore
+                    // veroeffentlicht seinen neuen Wert typischerweise, BEVOR `edit{}` zurueckkehrt,
+                    // also bevor `onSuccess` den UI-State aktualisiert hat. Der Vergleich gegen den
+                    // UI-State sah die eigene Aenderung deshalb als fremde an und liess Erkennung
+                    // UND Alarm-Sync ein zweites Mal laufen - nebenlaeufig auf derselben
+                    // ShiftRecognitionEngine, also genau die Race-Ursache, die CLAUDE.md als
+                    // "0 Alarme trotz korrekt erkannter Schichten" festhaelt.
+                    if (flowConfig == selfWrittenConfig) {
+                        selfWrittenConfig = null
+                        return@collect
+                    }
                     if (flowConfig == _uiState.value.currentShiftConfig) return@collect
 
                     // DIE VIERTE TUER, die dieser Beobachter selbst geoeffnet hatte: der Flow
@@ -249,6 +281,10 @@ class ShiftViewModel @Inject constructor(
 
     fun updateShiftConfig(config: ShiftConfig) {
         viewModelScope.launch {
+            // VOR dem Write vormerken, nicht danach - siehe [selfWrittenConfig]. Die
+            // DataStore-Emission kann den Beobachter erreichen, BEVOR `saveShiftConfig()`
+            // zurueckkehrt; ein Merker, der erst im `onSuccess` gesetzt wird, kommt zu spaet.
+            selfWrittenConfig = config
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             // Hier stand bis v1.22.1 ein `recognizeShiftsInEvents(emptyList())` mit dem Kommentar
@@ -289,6 +325,10 @@ class ShiftViewModel @Inject constructor(
                     triggerAlarmCreationFromConfigUpdate(config)
                 }
                 .onFailure { error ->
+                    // Merker zuruecksetzen: es kommt keine passende Emission mehr, und ein
+                    // haengender Merker wuerde die NAECHSTE echte externe Aenderung mit demselben
+                    // Inhalt (Import derselben Datei, zweiter Zuordnungsversuch) verschlucken.
+                    selfWrittenConfig = null
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = errorHandler.getErrorMessage(error)

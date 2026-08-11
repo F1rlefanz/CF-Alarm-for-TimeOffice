@@ -171,21 +171,12 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
 - **Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log.** Die Rohdaten liegen als
   `shift_config_broken` gesichert, der Sync wird ausgelassen, bestehende Alarme bleiben — aber ein
   sichtbarer Hinweis samt Angebot, die Sicherung zu verwerfen, fehlt noch. Bewusst offengelassen.
-- **`WakeLockManager`/`IWakeLockManager` haben aktuell KEINEN Aufrufer** (`AlarmManagerService`
-  bekommt eine Instanz injiziert und benutzt sie nirgends). Die Wake-Locks des echten Weckvorgangs
-  liegen direkt in `AlarmReceiver` (PARTIAL, um den Broadcast zu überleben) und
-  `AlarmFullScreenActivity` (SCREEN_BRIGHT). Wer einem Wake-Lock-Verdacht nachgeht, muss DORT suchen;
-  eine Änderung an `WakeLockManager` ändert am Laufzeitverhalten nichts. Vollständiges Entfernen
-  (Klasse + Interface + Konstruktorparameter + die beiden Provider in `ServiceModule`) steht aus.
-
----
-
-## Invarianten — nicht versehentlich zurückdrehen
-
-Siehe auch Memory `project_alarm_ux_rebuild.md`.
-
-### Wecker
-
+- **`WakeLockManager`/`IWakeLockManager` sind ENTFERNT** (v1.23.1, Klasse + Interface + der ungenutzte
+  Konstruktor-Parameter von `AlarmManagerService` + zwei Provider in `ServiceModule`). Sie hatten
+  keinen Aufrufer; die Wake-Locks des echten Weckvorgangs liegen direkt in `AlarmReceiver` (PARTIAL,
+  um den Broadcast zu überleben) und `AlarmFullScreenActivity` (SCREEN_BRIGHT). Wer einem
+  Wake-Lock-Verdacht nachgeht, muss DORT suchen — vorher stand hier eine Klasse, die wie der
+  zuständige Ort aussah und am Laufzeitverhalten nichts änderte.
 - **Eine Instanz besitzt den Wecker**: `AlarmSoundService` hält Ton, Vibration, Audio-Fokus und
   die einzige **Wecker**-Notification (ID 2002). Channel **stumm**, aber `IMPORTANCE_HIGH` (Pflicht
   für Full-Screen-Intent). Der `AlarmReceiver` darf **keine eigene Wecker-Notification** posten
@@ -229,6 +220,76 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   (sonst sind sie nirgends persistiert). Bewusst NICHT in datengetriebenen Aufräumzweigen und nicht an
   `deleteAlarm(id)`: dort räumt der `BootReceiver` abgelaufene Alarme weg — und der Ursprungsalarm
   eines schwebenden Snooze IST abgelaufen.
+- **Blockierte Benachrichtigungen sind ein WECKER OHNE OBERFLAECHE — und das muss sowohl sichtbar
+  als auch im Log auswertbar sein.** Sind Benachrichtigungen fuer die App aus, laeuft
+  `AlarmSoundService` weiter (Ton, Vibration), aber seine Notification wird unterdrueckt UND der
+  Full-Screen-Intent abgelehnt: kein Weck-Bildschirm, keine Stopp-/Schlummer-Knoepfe, einziger
+  Ausweg „App beenden" in den Systemeinstellungen. Am Emulator im echten Zustand gesehen
+  (11.08.2026). Der Zustand entsteht ohne Zutun, wenn der Nutzer die EINMALIGE Abfrage ablehnt
+  (`MainActivity.checkNotificationPermission()`, `LaunchedEffect` beim ersten Erreichen des
+  Hauptbereichs) oder die Berechtigung spaeter entzieht — danach fragt die App nie wieder. Deshalb
+  zwei Dinge: die Status-Karte `NotificationsEnabledCard` steht **VOR** `FullScreenIntentCard`
+  (ohne Benachrichtigungen ist deren Aussage bedeutungslos) und fuehrt per
+  `ACTION_APP_NOTIFICATION_SETTINGS` in die Einstellung — die Laufzeit-Abfrage zeigt Android nach
+  einer Ablehnung gar nicht mehr; und `AlarmSoundService` loggt direkt nach `startForeground()` ein
+  **WARN** (Release-Logs enthalten nur WARN+), sonst ist der Fall im Log von einem funktionierenden
+  Wecker nicht zu unterscheiden.
+- **Löschen heißt IMMER: erst `cancelSystemAlarm()`, dann `deleteAlarm()`.** Der Delta-Sync tat es
+  umgekehrt — und damit gab es ein Fenster, in dem der Alarm im AlarmManager noch armiert war, aber
+  weder Repository noch Direct-Boot-Spiegel ihn kannten. ALLE Cancel-Wege der App iterieren über den
+  Repository-Bestand; es gibt keinen zweiten Anker. Bricht die Sequenz dort ab (Prozess-Tod,
+  DataStore-Fehler), ist der Wecker unsichtbar UND unabbrechbar — er feuert bis zum nächsten
+  Geräte-Neustart, und ein Handy läuft Wochen.
+- **Der `isPersistenceBlocked()`-Wächter in `clearInternalAlarms()` unterscheidet, WARUM geräumt
+  wird.** Im datengetriebenen Zweig wird nichts angefasst und laut gescheitert (Räumen ohne
+  Cancellen ist die gefährliche Kombination). Bei einer AUSDRÜCKLICHEN Abschaltung (Master-Pause,
+  „Automatische Alarme aus") laufen dagegen die zwei Schritte weiter, die den unlesbaren Bestand
+  gar nicht brauchen: `cancelAllSnoozes()` (eigener Merker im Device-Protected-Storage) und
+  `deleteAllAlarms()` (die dokumentierte `force`-Ausnahme — ohne sie re-armt der
+  Direct-Boot-Restore genau die Alarme, die gerade abgeschaltet wurden). Der erste Wurf des
+  Wächters stand vor allem und machte damit einen schwebenden Snooze wieder unkündbar: die App
+  zeigte „pausiert", während der Schlummer-Alarm scharf blieb.
+- **Ein manueller Alarm lässt sich nicht anlegen, während „Automatische Alarme" aus ist.** Der
+  Schalter ist eine echte Pause, die ALLE Alarme räumt — auch manuelle (so entschieden, testlich
+  festgeschrieben). Ohne die Ablehnung bekam der Nutzer eine Erfolgsmeldung für einen Wecker, den der
+  nächste `syncAlarms()`-Lauf ohne Rückmeldung wieder löscht. Bei der Master-Pause war dieser
+  Widerspruch längst geschlossen, beim Schwester-Schalter nicht.
+- **Der Snooze-Merker ist serialisiert (`snoozeRegistryLock`) und schreibt mit `commit()`.** Drei
+  unabhängige Read-Modify-Write-Pfade (Vormerken, Vergessen, Writeback des Boot-Restores) sind bei
+  jedem Boot nebenläufig erreichbar; ein verlorener Eintrag heißt: der Snooze ist im AlarmManager
+  scharf, aber die App kennt ihn nicht mehr — weder abbrechbar noch nach einem Reboot
+  wiederherstellbar. `apply()` schreibt asynchron und verlöre denselben Eintrag bei einem
+  Prozess-Tod unmittelbar danach. `armSnooze()` gibt seinen Erfolg zurück, und
+  `restorePendingSnoozes()` zählt ECHTE Erfolge — vorher behauptete das Boot-Log eine
+  Wiederherstellung, die nicht stattgefunden hatte.
+- **Die datengetriebenen Räumzweige von `syncAlarms()` schonen MANUELLE Alarme**
+  (`clearInternalAlarms(keepManualAlarms = true)` bei „keine Events" und „keine passende Schicht").
+  Der Delta-Sync tat das immer (`eventId.isNotEmpty()`), die beiden Abkürzungs-Zweige davor
+  umgingen die Zusicherung komplett und riefen ein pauschales `clearInternalAlarms()`. Ausgerechnet
+  der manuelle Alarm ist der EINZIGE, der sich nicht aus dem Kalender rekonstruieren lässt: er kam
+  nie wieder, und im Log stand „No matching shifts found - clearing all alarms", was wie
+  Normalbetrieb klingt. Realer Ablauf: Urlaubswoche ohne Schicht-Treffer, Wecker für einen
+  Arzttermin von Hand gestellt, App geöffnet — Wecker weg. **Ausdrückliche** Abschaltungen
+  (Master-Pause, „Automatische Alarme aus", `deleteAllAlarms`) räumen weiter ALLES: dort will der
+  Nutzer Stille, und der Direct-Boot-Spiegel muss wirklich leer werden. Drei Tests halten beide
+  Seiten fest.
+- **`clearInternalAlarms()` fragt ZUERST `alarmRepository.isPersistenceBlocked()` und scheitert
+  laut.** Der Kommentar dort sicherte „lieber laut scheitern als leeren" zu, konnte das aber nicht
+  halten: nach einem gescheiterten Init-Load steht der Cache auf einer leeren Liste, und
+  `getAllAlarms()` gibt genau die als **Erfolg** heraus (die Sperre wurde nur intern vermerkt).
+  `getOrThrow()` warf also nie, die Cancel-Schleife lief ins Leere — und `deleteAllAlarms()` leerte
+  Store UND Spiegel trotzdem, weil es bewusst mit `force = true` schreibt. Genau die Kombination,
+  die der Kommentar ausschließen sollte: verwaiste, armierte System-Alarme, die niemand mehr
+  abbrechen kann (bei aktiver Master-Pause klingelt der Wecker dann trotz Pause).
+- **Die Hue-Regelausführung im `AlarmReceiver` ist gedeckelt (`withTimeoutOrNull`, 20 s), weil
+  `pendingResult.finish()` erst danach kommt.** Der Hue-Pfad hat keine Gesamtschranke:
+  `executeRulesForAlarm()` läuft über ALLE passenden Regeln (je 30 s Batch-Timeout), danach folgt
+  `scheduleBridgeAutoOff()` ganz ohne Timeout (GET + n DELETEs + ein POST pro Ziel, je 10 s
+  OkHttp). Zwei Regeln und eine nicht antwortende Bridge (Handy nicht im Heim-WLAN — der Normalfall
+  auf Reisen) reichen über das Broadcast-Fenster hinaus, und dann darf das System den Prozess
+  abwürgen. Der Wecker selbst hängt nicht daran: Ton, Vibration und Vollbild laufen über den bereits
+  gestarteten `AlarmSoundService`. Licht, das nicht angeht, ist hinnehmbar; ein abgewürgter Prozess
+  nicht.
 - **Kein `startActivity()` aus dem AlarmReceiver**: AlarmManager-Broadcasts stehen nicht auf der
   Exemption-Liste für Background-Activity-Starts. Einziger Weg: `setFullScreenIntent()`.
 - **`_alarmActive = true` VOR `startForeground()`** — sonst schließt sich das Vollbild sofort.
@@ -250,6 +311,45 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   wiederhergestellten Snooze nicht mehr — und ein nicht abbrechbarer Snooze klingelt mitten in
   einer gerade eingeschalteten Pause. Der Aufruf steht bewusst hinter demselben
   Master-Pause-Gate wie die Alarme (`directBootAlarmStore.isPausedNow()`, nicht der CE-Store).
+- **NICHTS am Application-Graphen darf WorkManager (oder CE-Storage) beim BAUEN anfassen.** Der
+  Hilt-Graph der Application wird in JEDEM Prozessstart aufgebaut — auch in dem, den das System VOR
+  der ersten Entsperrung für den `directBootAware` `BootReceiver` startet. Dort ist WorkManager
+  NICHT initialisiert: seine Initialisierung hängt am `androidx.startup.InitializationProvider`, und
+  ContentProvider ohne `directBootAware` werden vor dem Entsperren gar nicht instanziiert —
+  `WorkManager.getInstance()` wirft „WorkManager is not initialized properly". Am Emulator
+  reproduziert (11.08.2026): `CFAlarmApplication` injizierte `MasterPauseUseCase` direkt, der zieht
+  über seinen Konstruktor `HueSmartScheduler`, und dessen `initialize()` rief eager
+  `WorkManager.getInstance()`. Der Wurf schlug aus der Feld-Injektion nach oben durch, der Prozess
+  starb mit „Unable to create application" — und damit lief der Direct-Boot-Restore der Alarme UND
+  der schwebenden Snoozes NIE. Die Wecker kamen erst zurück, nachdem der Nutzer das Gerät entsperrt
+  hatte; startet das Gerät nachts neu und niemand entsperrt es, gibt es keinen Wecker. Zwei
+  Maßnahmen, beide nötig: `MasterPauseUseCase` hängt als **`dagger.Lazy`** am Feld (Konstruktion
+  erst nach erkanntem Gerätewechsel, was einen erfolgreichen CE-Read voraussetzt), und
+  `HueSmartScheduler` löst WorkManager erst **beim Gebrauch** auf (Getter statt `lateinit`-Feld) und
+  überspringt sich mit WARN, wenn er nicht verfügbar ist. **Kein Unit-Test kann das fangen** (auch
+  `ColdStartSmokeTest` nicht: er läuft im entsperrten Prozess) — die Prüfung ist ein echter
+  `adb reboot` mit gefülltem Direct-Boot-Spiegel, Ablauf im HANDOFF.
+- **Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen** — er hat den ersten Anlauf
+  dieses Fixes fälschlich als „am Gerät verifiziert" aussehen lassen. Ohne Credential gilt der
+  Nutzer beim `LOCKED_BOOT_COMPLETED` bereits als entsperrend/entsperrt
+  (`ContextImpl.isUserUnlockingOrUnlocked()`), CE-Storage ist lesbar und die Exception bleibt aus;
+  mit PIN ist der Nutzer `RUNNING_LOCKED` und sie kommt. **Vor jedem Direct-Boot-Test deshalb
+  `adb shell locksettings set-pin 1234` setzen und nach dem Reboot NICHT entsperren.** Damit wurde
+  die zweite Fundstelle (`BackgroundServiceManager`, CE-`SharedPreferences` im Property-Initializer
+  des ERSTEN Application-Feldes) erst reproduzierbar: `SharedPreferences in credential encrypted
+  storage are not available until after user (id 0) is unlocked` → 0 wiederhergestellte Alarme.
+  Praktischer Nebeneffekt derselben Sperre: `run-as` kommt an das CE-Verzeichnis nur im entsperrten
+  Zustand — Testdaten also VOR dem Reboot schreiben.
+- **Kein `getSharedPreferences()` und kein CE-Zugriff in einem Property-Initializer einer Klasse am
+  Application-Graphen** (`BackgroundServiceManager`, `HueBridgePinningStore`: beide `by lazy`). Der
+  Zugriff selbst ist harmlos, der ZEITPUNKT ist es nicht. Wer daraus wieder einen sofortigen
+  Initializer macht, baut einen Absturz, den weder ein Unit-Test noch ein Emulator ohne
+  Bildschirmsperre zeigt.
+- **`HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`.** Vorher
+  stand die Zuweisung davor: warf `initialize()` (siehe oben), blieb ein halb initialisiertes
+  Singleton zurück, das `getInstance()` für den ganzen Prozess kommentarlos weiter herausgab —
+  jeder WorkManager-Zugriff darauf scheiterte, heilbar nur durch Prozess-Neustart. Dieselbe
+  Fehlerklasse wie `cleanup()` auf Prozess-Singletons.
 - **Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
   Ausloeser** (Vollbild-Button, Notification-Button) — nicht zwei getrennte Werte. Gelöst NICHT
   durch einen DataStore-Read in einem der beiden Ausloeser selbst: `AlarmSoundService.
@@ -400,6 +500,20 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   → `syncAlarms()` löscht ALLE Alarme. Jetzt `getOrThrow()`: der Fehler kommt beim Aufrufer an, der
   Cache-Schlüssel bleibt unangetastet, der nächste Versuch läuft frisch.
 
+- **`AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst — nicht die
+  Aufrufer.** `startForegroundService()` wirft ab Android 12 eine
+  `ForegroundServiceStartNotAllowedException`, wenn die App im Hintergrund ist und der Anlass nicht
+  auf Androids Ausnahmeliste steht; **`ACTION_TIMEZONE_CHANGED` steht dort NICHT.** Von sechs
+  Aufrufstellen fing genau eine nicht (`TimezoneChangeReceiver`), und eine Exception aus
+  `onReceive()` reißt den Prozess mit — ausgefallen wäre damit genau die Neuberechnung, für die
+  dieser Receiver als einzige Verteidigungslinie existiert. Der Fang steht deshalb in `start()`
+  selbst (deckt jeden künftigen Aufrufer ab, gleiche Überlegung wie der Master-Pause-Backstop) plus
+  ein EINMALIGER Nachhol-Alarm auf **eigenem** Request-Code (`MAINTENANCE_CATCHUP_REQUEST_CODE`,
+  +10 s) — das Feuern eines Alarms IST ein erlaubter Anlass. Eigener Code, weil Code 0 der einzige
+  Slot der rollierenden 6h-Kette ist; der Nachhol-Alarm plant sich nicht selbst nach, ist also kein
+  zweiter Planer. Dazu reicht `AlarmMaintenanceBroadcastReceiver` das `forceSync`-Extra weiter —
+  ohne das liefe der nachgeholte Lauf ohne Erzwingen zurück, also wirkungslos.
+
 ### Hintergrunddienste pausieren (Master-Pause, seit v1.21.0)
 
 - **Eigenständig neben `autoAlarmEnabled`, keine Kombination der beiden.** `MasterPauseUseCase.
@@ -427,6 +541,21 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   Tick-Kette plant sich selbst nach — eine einzige Einstellungsänderung während der Pause weckte
   Dimmer bzw. Zen-Regel dauerhaft wieder auf, obwohl die UI „pausiert" anzeigt. `disable()` bleibt
   bewusst ungegatet, sonst kommt `MasterPauseUseCase.pause()` nicht mehr durch.
+- **Der Pausen-Spiegel wird beim App-Start mit der CE-Wahrheit abgeglichen
+  (`reconcileDirectBootMirror()`).** `KEY_PAUSED` hat zwei Schreiber und drei Leser, die alle im
+  Boot-Pfad sitzen — der Spiegel ist das Einzige, was der `BootReceiver` vor der ersten Entsperrung
+  über die Pause weiß. `savePaused()` schluckt seinen Fehler; fiel ein Schreibvorgang aus,
+  divergierten beide dauerhaft, denn es gab keinen abgleichenden Pfad. Beide Richtungen sind
+  schlecht: ein hängendes `true` sperrt die Boot-Wiederherstellung dauerhaft (kein Wecker nach dem
+  nächsten Neustart), ein hängendes `false` re-armt Alarme, die der Nutzer pausiert hat.
+- **`pause()`/`resume()` laufen in `withContext(NonCancellable)`.** Beide stellen einen Zustand HER,
+  statt nur einen Schalter umzulegen — und der Schalter wird als ERSTES geschrieben. Der einzige
+  Aufrufer startet sie im `viewModelScope`; wird der abgebrochen (Activity beendet, Task
+  weggewischt), stehen Flag und Wirklichkeit auseinander. Beide Richtungen sind gefährlich: bei
+  `pause()` zeigt die App „pausiert", während 6h-Wartung, Dimmer-Tick, DND-Tick und Hue-Planung
+  weiterlaufen; bei `resume()` zeigt sie „aktiv", während keine dieser Ketten wieder angelaufen ist
+  — der Wecker bliebe STILL, und beim nächsten Boot liest der `BootReceiver` einen Spiegel, der
+  nicht mehr zum Flag passt.
 - **Die Master-Pause überlebt weder einen Gerätewechsel noch einen Konfigurations-Import** — beides
   Absicht: sie ist maßgeblicher Zustand, der (anders als die übrigen Laufzeitwerte im
   `settings`-Store) nicht neu abgeleitet wird, und mitgebracht bliebe der Wecker auf dem neuen Gerät
@@ -497,6 +626,27 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   meldete die Discovery sonst Erfolg, danach scheiterte jeder Zugriff, und der N-UPnP-Fallback greift
   nicht, weil mDNS ja „etwas" gefunden hatte. Nur-IPv6 liefert ehrlich `null`. Eine Nicht-IPv4-Adresse
   ist kein „SECURITY"-Vorfall — Adressfamilie, nicht Angriff; die Klemme bleibt genauso streng.
+- **`healthCheckScope` braucht einen `CoroutineExceptionHandler` — der `SupervisorJob` reicht
+  NICHT.** Ein SupervisorJob isoliert nur Geschwister; die Exception läuft trotzdem zum
+  Thread-Default-Handler und beendet den PROZESS. In diesem Scope liegen fünf fire-and-forget
+  `launch`-Blöcke, mehrere davon greifen ungeschützt auf den Hue-DataStore zu
+  (`restoreConnectionFromStorage()` macht `dataStore.data.first()`); der
+  `ReplaceFileCorruptionHandler` fängt nur Korruption, eine IOException reicht DataStore durch. Für
+  eine Wecker-App ist das die falsche Reihenfolge der Wichtigkeit: ein misslungener
+  Lichtsteuerungs-Read darf nie den Prozess beenden, der die Alarme hält. Zusätzlich liegt das
+  `try/catch` des Netzwerk-Recovery-Collectors **INNERHALB** des `collect` — außen herum hätte ein
+  einzelner fehlgeschlagener Versuch den Collector beendet, und der startet in diesem Prozess nie
+  wieder (`initialize()` ist per Wächter idempotent): die autonome Wiederverbindung bei der
+  Heimkehr ins Heim-WLAN wäre dauerhaft tot. Der Scope-Handler rettet den Prozess, nicht das
+  Feature — beides ist nötig.
+- **Eine im Direct-Boot übersprungene Hue-Planung wird NACHGEHOLT
+  (`HueSmartScheduler.retrySkippedSchedulingIfNeeded()`).** Der Prozess, der vor der ersten
+  Entsperrung startet, stirbt beim Entsperren nicht — er ist genau der Prozess, in dem der Nutzer
+  die App danach bedient, und `HueBridgeConnectionManager.initialize()` ist per Wächter idempotent.
+  Ohne das Nachholen fehlten für dessen gesamte Lebensdauer tägliche Planung, Pre-Alarm-Checks und
+  der Alarm-Beobachter. Zwei Aufrufstellen: der **ignorierte** Zweig von `initialize()` und
+  `onAppForeground()`. Ein früherer Kommentar behauptete, ein späterer Aufruf plane von selbst neu —
+  das war falsch.
 - **`cleanup()` auf Prozess-Singletons cancelt NUR Kinder.** `HueBridgeConnectionManager.cleanup()`
   rief `healthCheckScope.cancel()` — auf einem Singleton mit Prozess-Lebensdauer endgültig: jedes
   spätere `launch` (Restore, Health-Monitoring, Netzwerk-Recovery) wäre lautlos nie mehr gestartet,
@@ -695,8 +845,13 @@ Wecker gekostet:**
   beim Master-Pause-Backstop: ein zentraler Punkt deckt jeden heutigen und künftigen Schreiber ab.
   Eigene Änderungen werden per Gleichheitsvergleich übersprungen, sonst laufen Erkennung und Sync bei
   jeder Nutzeränderung zweimal — und zwar nebenläufig auf derselben Engine-Instanz.
-- **`ShiftUseCase.add/update/deleteShiftDefinition` sind unbenutzt und lösen KEINEN Alarm-Resync
-  aus.** Nicht darauf aufsetzen (Entfernen braucht auch `IShiftUseCase`, spätere Runde).
+- **`ShiftUseCase.add/update/deleteShiftDefinition` sind ENTFERNT** (v1.23.1, samt
+  `IShiftUseCase`-Deklarationen). Sie hatten keinen Aufrufer und waren eine Falle: der Name klang
+  passend („eine Schicht hinzufügen"), aber der Pfad speicherte die Konfiguration und invalidierte
+  die Caches, ohne die System-Alarme anzufassen — die neue Schicht hätte bis zur nächsten 6h-Wartung
+  keinen Wecker bekommen, die gelöschte weitergeklingelt. Der einzige richtige Weg bleibt
+  `ShiftViewModel.updateShiftConfig(config)`, weil nur dort `triggerAlarmCreationFromConfigUpdate()`
+  → `AlarmUseCase.syncAlarms()` dranhängt.
 
 ### Schicht-Dimmer (Regel-Auflösung)
 
@@ -1005,6 +1160,29 @@ Wecker gekostet:**
     INNERHALB einer einzigen `dataStore.edit{}`-Transaktion (Vorbild `HueConfigRepository`), damit ein
     Doppel-Tap keine Änderung verliert und ein defektes JSON das Speichern abbricht statt den ganzen
     Regelbestand zu leeren (inklusive der bedeutungstragenden leeren Fensterliste).
+- **Ein CE-DataStore-Read VOR der ersten Entsperrung wirft NICHT — er liefert still leere
+  Preferences.** Am Emulator mit PIN im Zustand `RUNNING_LOCKED` nachgemessen: die Datei ist nicht
+  öffenbar, `exists()` ist false, DataStore fällt auf `serializer.defaultValue` zurück und meldet
+  ERFOLG. Im Log stand „📭 No saved alarms found in DataStore", `persistenceBlocked` blieb false, und
+  der Cache galt als Wahrheit. **Und dieser Prozess stirbt beim Entsperren nicht** — er ist derselbe,
+  in dem der Nutzer die App danach bedient (pid im Test unverändert), während der Init-Load nur EINMAL
+  lief. Folge: die App hielt dauerhaft „keine Alarme" für wahr, obwohl `active_alarms` sie noch
+  enthielt; der nächste Sync hielt jede Schicht für neu und schrieb Bestand UND Direct-Boot-Spiegel
+  neu — der manuelle Wecker war weg, und im Log sah das wie ein normaler Erstsync aus. Beide anderen
+  Wachen liefen dabei ins Leere (`keepManualAlarms` kann nichts schonen, was nicht in der Liste steht;
+  `isPersistenceBlocked()` meldet nichts ohne gesetzte Sperre). Deshalb: `AlarmRepository` fragt VOR
+  dem Read den `UserManager`, akzeptiert bei gesperrtem Nutzer KEIN Ergebnis (Sperre an, damit kein
+  Write die Notlage-Leere festschreibt) und **lädt beim ersten Zugriff nach dem Entsperren nach** —
+  aufgehängt in `awaitInitialLoad()`, weil da jeder Lese- und Ganzlisten-Schreibpfad durchgeht, PLUS
+  `onStart` am `activeAlarms`-Flow (ein Bildschirm, der nur beobachtet, ruft keine Methode; der Haken
+  fehlte im ersten Wurf und fiel erst am Gerät auf). `CalendarSelectionRepository` hat für dieselbe
+  Prozess-Lage `retryWhen`.
+- **Der Direct-Boot-Spiegel wird bei JEDEM erfolgreichen Load abgeglichen.** `persistToDataStore()`
+  schreibt zuerst den DataStore, dann den Spiegel; fällt der zweite Schritt aus, divergieren beide —
+  und die Divergenz war PERMANENT, weil nachgespiegelt nur wurde, wenn der Load selbst abgelaufene
+  Alarme entfernt hatte. Der häufigste Sync-Zweig („unverändert – nur re-armen") schreibt das
+  Repository gar nicht, der Spiegel konnte also wochenlang falsch bleiben und nach einem Reboot die
+  falschen (oder keine) Alarme wiederherstellen. `saveAll` ist idempotent.
 - **`TinkEncryptionException` wird in `EncryptedDataStoreFactory` als `CorruptionException`
   übersetzt** (nur die fängt DataStores Selbstheilung), plus `ReplaceFileCorruptionHandler`. Abwägung:
   ein nicht entschlüsselbarer Token ist ohnehin wertlos — EINE Neuanmeldung ist das kleinere Übel
@@ -1056,6 +1234,22 @@ Wecker gekostet:**
   der erste Wurf war lückenhaft, der erste echte Export enthielt genau drei Schlüssel und ALLE DREI
   gehörten nicht hinein — darunter `active_alarms`. Wer eine neue Laufzeitgröße einführt, trägt sie
   hier ein; ein Test hält jede Kategorie fest.
+- **Der Import lehnt eine LEERE Definitionsliste ab.** kotlinx.serialization füllt ein fehlendes
+  `definitions`-Feld stillschweigend mit `emptyList()`; aus „Datei unvollständig oder von Hand
+  verstümmelt" würde lautlos „keine Schichten" — und das ist der dokumentierte Weg zu NULL ALARMEN
+  (Save → Cache-Invalidierung → `observeExternalConfigChanges()` → `syncAlarms()` erkennt nichts →
+  kalenderbasierte Alarme weg), während der Import „Erfolg: 0 Schichtdefinitionen" meldet. Dieselbe
+  Überlegung wie `structuralRejection` für die beiden JSON-Regelwerke, nur für den wertvollsten Teil.
+- **Der erwartete TYP eines importierten Wertes kommt vom SCHLÜSSEL, nicht aus der Datei**
+  (`ConfigBackupUseCase.typeMismatch`). Vorher prüfte `applyValue` nur, ob sich der Wert in den
+  BEHAUPTETEN Typ parsen lässt — damit entschied eine fremde Datei über den DataStore-Typ. Ein
+  falsch typisierter Wert ist schlimmer als ein fehlender: er liegt reboot-fest in der
+  `preferences_pb`, und der nächste Lesezugriff scheitert mit einer ClassCastException, BEVOR ein
+  `?:`-Default oder `coerceIn` greifen kann (`snooze_minutes` als String → `AlarmPrefs` wirft bei
+  jedem Alarm-Feuern, der `AlarmReceiver` verschluckt es, der Wecker bleibt stumm). Erwartung aus
+  dem lokalen Bestand, sonst aus einer kleinen Liste bekannter Zahlen-Schlüssel; ein lokal
+  unbekannter Schlüssel behält den Typ der Datei (bei einem Schlüssel aus einer neueren Version ist
+  das die einzige Information, und er kann keinen bestehenden Leser beschädigen).
 - **Der Schlüssel-Filter sagt nichts über den WERT.** Eine Exportdatei ist Text: von Hand
   bearbeitbar, aus einer älteren Version, unterwegs beschädigt. Zwei Zahlen sind deshalb
   zusätzlich bereichsgeprüft (`ConfigBackupFilter.rangeRejection`, bewusst nur diese zwei):
@@ -1118,6 +1312,20 @@ Wecker gekostet:**
   löste bei jedem Treffer `tokenRepository.clear()` + Zwangs-Re-Login aus, obwohl der erste Refresh
   längst erfolgreich war. `TokenDataTest` hält die Rotationsketten-Semantik jetzt fest.
 
+### Fehlerbehandlung
+
+- **`SafeExecutor.safeExecute()` wirft `CancellationException` WEITER, statt sie in einen `AppError`
+  zu verpacken.** Eine Cancellation ist kein Fehler des Aufrufs, sondern die Ansage, dass die
+  umgebende Coroutine beendet wird — sie muss die Aufrufkette hochlaufen, und `Result.failure` ist
+  keine Aufrufkette. Verpackt verlor sie ihre Identität, und dadurch lief der ausdrückliche
+  `catch (e: CancellationException) { throw e }` der Delta-Sync-Schleife ins Leere:
+  `AlarmUseCase.scheduleSystemAlarm()` ist über `safeExecute` gewrappt, die Cancellation kam dort als
+  gewöhnliches Failure an und wurde als Fehler EINES Events verbucht — die Schleife lief stur über
+  alle restlichen Events weiter, ohne einen einzigen zu re-armieren, während die Abschlusszeile
+  „complete" meldete. Dasselbe gilt für `AlarmRepository.getAllAlarms()`/`isPersistenceBlocked()`:
+  eine Cancellation aus `awaitInitialLoad()` sagt nichts über den Bestand und darf nicht als
+  „Persistenz gesperrt" gedeutet werden.
+
 ### Kalender-Datenfluss
 
 - **`CalendarStateHolder` ist eine Einbahnstraße**: `CalendarViewModel` schreibt hinein, liest nie
@@ -1130,6 +1338,14 @@ Wecker gekostet:**
   `availableCalendars.isEmpty() && error == null`): automatisches Nachladen nur ohne Fehler. Sonst:
   Laden scheitert → `isLoading` false → Effect erneut → Liste leer → laden … im Sekundentakt gegen
   die Google-API (real passiert bei 401). Nicht entfernen.
+- **Der Collector der Kalenderauswahl nimmt sich wieder auf (`retryWhen`).** Das `collect` lag in
+  einem `try/catch`: der ERSTE Upstream-Fehler beendete es für die gesamte Prozesslaufzeit, und es
+  gibt keinen zweiten Aufrufer von `initializeFromDataStore()`. Danach stand
+  `_selectedCalendarIds` dauerhaft auf `emptySet()`, obwohl Kalender ausgewählt sind — für eine
+  Wecker-App genau die gefährliche Leere, die diese Klasse an anderer Stelle bekämpft. Im
+  Direct-Boot-Prozess (der `BootReceiver` injiziert dieses Repository) ist der Fehler garantiert:
+  CE-Store nicht lesbar. Nach dem Entsperren wäre er lesbar, deshalb 10 Versuche mit wachsendem
+  Abstand statt endgültigem Aus.
 - **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — für eine Wecker-App ist „leer" die
   gefährlichste Lüge, und `syncAlarms()` deutet eine leere Eventliste als „keine Schichten" und
   löscht ALLE Alarme (System, Repository, Direct-Boot-Spiegel). Vier Stellen sind deshalb festgelegt:
@@ -1242,6 +1458,23 @@ Wecker gekostet:**
   Schichtnamen allein"; beides hatte derselbe Arbeitsdurchgang unwahr gemacht, der den Text einführte.
   Zwei Bildschirme widersprachen sich (der `ShiftEditDialog` sagte es korrekt). Drift muss auffallen,
   nicht stumm bleiben.
+- **Kein Text darf eine Anzeige behaupten, die es nicht gibt, und kein Zustand darf sich als
+  anderer ausgeben.** Vier Fälle in einer Runde gefunden und behoben: „Zeige 5 von N Events" auf
+  einer Karte, die überhaupt keine Events listet; „Schichttypen werden noch geladen" für einen
+  Ladevorgang, der DAUERHAFT gescheitert ist; „⚠️ Aktiver Fehler" auf der Dimmer-Karte, obwohl der
+  Nutzer den Dimmer nie eingeschaltet hat (das entwertet genau die roten Karten daneben, an denen
+  der Wecker wirklich hängt); und „Verstanden" als Beschriftung des ABBRECHEN-Knopfs, während
+  daneben der Knopf steht, der wirklich weiterführt. Dazu: eine nicht lesbare Schicht-Konfiguration
+  rendert im Konfigurations-Screen keine stumme leere Liste mehr, sondern sagt, dass sie nicht
+  lesbar ist und NICHT überschrieben wird.
+- **Eine deaktivierte Schichtdefinition darf keine Weckzeit anzeigen.** Die Erkennung überspringt
+  sie vollständig, es entsteht kein Alarm — die Liste zeigte trotzdem „Alarm: 05:30" in der
+  Akzentfarbe. Eine angezeigte Weckzeit, die nie gestellt wird, ist die gefährlichste Anzeige, die
+  eine Wecker-App haben kann; das Gegenstück `isSilent` hat aus demselben Grund ein eigenes Icon.
+- **Der Kürzel-Zuordnungsdialog ist scrollbar.** Bei fünf Standard-Definitionen plus Erklärtext war
+  der letzte Knopf auf schmalen Geräten abgeschnitten — und er ist der EINZIGE angebotene Weg für
+  dieses Kürzel: kein Muster, keine erkannte Schicht, kein Wecker. Dieselbe Fehlerklasse wie der
+  unerreichbare „Auf Standardwerte zurücksetzen"-Knopf desselben Screens.
 - **Deutsche Nutzer-Texte in `UITextConstants` ohne Aufrufer löschen, nicht liegen lassen.** Sie sehen
   wie aktive UI-Texte aus und werden sonst als Vorlage weitergeschleppt (die Countdown-Texte hatten
   nach dem Entfernen von `CountdownTimer.kt` nur noch ihre Deklaration).

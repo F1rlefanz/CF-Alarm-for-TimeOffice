@@ -29,10 +29,20 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
  */
 class HueBridgePinningStore(context: Context) {
 
-    private val prefs = context.applicationContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    /**
+     * `by lazy` aus demselben Grund wie in `BackgroundServiceManager` (siehe dort): ein
+     * sofortiger `getSharedPreferences()`-Aufruf auf dem CREDENTIAL-ENCRYPTED Context wirft in
+     * einem Prozess, der vor der ersten Entsperrung startet. Diese Klasse haengt heute nicht am
+     * eager Application-Graphen, aber sie ist ein Konstruktor-Argument im Hue-Netzwerkpfad, und
+     * ob der je in einen frueh gebauten Graphen wandert, entscheidet eine kuenftige Aenderung -
+     * nicht diese Datei.
+     */
+    private val prefs by lazy {
+        context.applicationContext.getSharedPreferences(
+            PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
+    }
 
     /** Returns the previously pinned bridge ID, or null if none has been recorded yet. */
     fun getPinnedBridgeId(): String? = prefs.getString(KEY_PINNED_BRIDGE_ID, null)

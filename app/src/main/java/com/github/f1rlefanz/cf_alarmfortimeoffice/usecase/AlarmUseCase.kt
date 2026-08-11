@@ -128,10 +128,11 @@ class AlarmUseCase @Inject constructor(
                 }
                 
                 if (events.isEmpty()) {
-                    Logger.business(LogTags.ALARM, "✅ SYNC: No calendar events found - clearing all alarms")
-                    // No events → delete all alarms
-                    clearInternalAlarms()
-                    return@safeExecute emptyList()
+                    Logger.business(LogTags.ALARM, "✅ SYNC: No calendar events found - clearing calendar alarms")
+                    // Keine Events → kalenderbasierte Alarme weg, manuelle bleiben (siehe
+                    // keepManualAlarms). Zurueckgegeben wird der VERBLIEBENE Bestand, nicht
+                    // emptyList: der Aufrufer protokolliert die Zahl, und "0" waere hier unwahr.
+                    return@safeExecute clearInternalAlarms(keepManualAlarms = true)
                 }
                 
                 Logger.business(LogTags.ALARM, "🔄 SYNC: Starting intelligent alarm synchronization for ${events.size} events")
@@ -145,9 +146,8 @@ class AlarmUseCase @Inject constructor(
                 val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
                 
                 if (shiftMatches.isEmpty()) {
-                    Logger.business(LogTags.ALARM, "✅ SYNC: No matching shifts found - clearing all alarms")
-                    clearInternalAlarms()
-                    return@safeExecute emptyList()
+                    Logger.business(LogTags.ALARM, "✅ SYNC: No matching shifts found - clearing calendar alarms")
+                    return@safeExecute clearInternalAlarms(keepManualAlarms = true)
                 }
                 
                 // Build checksum map for events
@@ -181,8 +181,16 @@ class AlarmUseCase @Inject constructor(
                     if (existingAlarm.eventId.isNotEmpty() && !newAlarmsMap.containsKey(existingAlarm.eventId)) {
                         // Event was deleted from calendar
                         Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
-                        alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
+                        // ERST cancellen, DANN loeschen - wie an allen anderen Loeschstellen
+                        // (`deleteAlarm()`, `clearInternalAlarms()` Step 1, `AlarmSkipUseCase`).
+                        // Umgekehrt gab es ein Fenster, in dem der Alarm im AlarmManager noch
+                        // armiert war, aber weder Repository noch Direct-Boot-Spiegel ihn kannten:
+                        // ALLE Cancel-Wege der App iterieren ueber den Repository-Bestand, es gibt
+                        // also keinen zweiten Anker. Bricht die Sequenz dort ab (Prozess-Tod,
+                        // DataStore-Fehler), ist der Wecker unsichtbar UND unabbrechbar - er feuert
+                        // bis zum naechsten Geraete-Neustart, und ein Handy laeuft Wochen.
                         alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                        alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
                         deletedCount++
                         // Feature B: eigenes try/catch - eine fehlgeschlagene Notification darf die
                         // eigentlich kritische Alarm-Loeschung nie mit rueckgaengig machen.
@@ -354,7 +362,23 @@ class AlarmUseCase @Inject constructor(
      * nach dem Boot oder ohne Netz der Normalfall) auf keinen Fall mitgeloescht werden. Sonst
      * haette der Nutzer "5 Minuten schlummern" gedrueckt und wuerde nie wieder geweckt.
      */
-    private suspend fun clearInternalAlarms(alsoCancelPendingSnoozes: Boolean = false) {
+    /**
+     * @param keepManualAlarms Manuelle Alarme (leere `eventId`) NICHT anfassen. Pflicht in den
+     *   DATENGETRIEBENEN Zweigen ("keine Events" / "keine passende Schicht"): dort geht es um
+     *   Kalenderinhalte, und ein manuell gestellter Wecker hat damit nichts zu tun. Der
+     *   Delta-Pfad direkt darunter schont sie ausdruecklich (`eventId.isNotEmpty()`) und
+     *   `CalendarViewModel` sichert es im Kommentar zu - die beiden Abkuerzungs-Zweige umgingen
+     *   diese Zusicherung komplett und loeschten sie mit. Ausgerechnet der manuelle Alarm ist der
+     *   EINZIGE, der sich nicht aus dem Kalender rekonstruieren laesst: er kam nie wieder, und im
+     *   Log stand "No matching shifts found - clearing all alarms", was wie Normalbetrieb klingt.
+     *   `false` bleibt richtig fuer die AUSDRUECKLICHEN Abschaltungen (Master-Pause,
+     *   "Automatische Alarme aus", [deleteAllAlarms]): dort will der Nutzer Stille, und der
+     *   Direct-Boot-Spiegel muss wirklich leer werden.
+     */
+    private suspend fun clearInternalAlarms(
+        alsoCancelPendingSnoozes: Boolean = false,
+        keepManualAlarms: Boolean = false
+    ): List<AlarmInfo> {
         Logger.d(LogTags.ALARM, "🧹 INTERNAL-CLEAR: Fast internal clearing (system + repository)")
 
         // Step 1: Cancel system alarms
@@ -372,8 +396,62 @@ class AlarmUseCase @Inject constructor(
         // stillschweigend "nichts zu cancels" daraus werden - dann lieber laut scheitern (der
         // Aufrufer laeuft in safeExecute) und das Repository unangetastet lassen, statt es zu leeren
         // und armierte System-Alarme zurueckzulassen, von denen die App nichts mehr weiss.
+        // ZUERST die Sperre pruefen - `getAllAlarms()` allein kann den Fall nicht melden.
+        //
+        // Der Kommentar unten sicherte "lieber laut scheitern" zu, konnte das aber nicht halten:
+        // nach einem gescheiterten Init-Load steht der Cache auf einer leeren Liste, und
+        // `getAllAlarms()` gibt genau die als ERFOLG heraus (die Sperre wird nur intern vermerkt).
+        // `getOrThrow()` warf also nie, die Cancel-Schleife lief ins Leere - und `deleteAllAlarms()`
+        // leerte Store UND Direct-Boot-Spiegel trotzdem, weil es bewusst mit `force = true`
+        // schreibt. Ergebnis war exakt die Kombination, die hier ausgeschlossen sein sollte:
+        // verwaiste, armierte System-Alarme, von denen die App nichts mehr weiss - bei aktiver
+        // Master-Pause klingelt der Wecker dann trotz Pause.
+        if (alarmRepository.isPersistenceBlocked()) {
+            // GESPERRT - aber die Reaktion haengt davon ab, WARUM geraeumt wird.
+            //
+            // Der erste Wurf dieses Waechters stand vor ALLEM und blockierte damit auch die zwei
+            // Schritte, die den unlesbaren Bestand gar nicht brauchen: `cancelAllSnoozes()` liest
+            // seinen eigenen Merker im Device-Protected-Storage, und `deleteAllAlarms()` ist die
+            // ausdrueckliche, dokumentierte Ausnahme von der Sperre (`force = true`) - ohne sie
+            // re-armt der Direct-Boot-Restore genau die Alarme, die gerade abgeschaltet wurden.
+            // Ergebnis war: die Master-Pause zeigte "pausiert", waehrend ein schwebender
+            // Schlummer-Alarm scharf blieb - genau der Bug, gegen den `cancelAllSnoozes()` gebaut
+            // wurde.
+            if (keepManualAlarms) {
+                // Datengetriebener Zweig ("keine Events" / "keine passende Schicht"): hier ist
+                // Raeumen ohne Cancellen die gefaehrliche Kombination. Nichts anfassen, laut
+                // scheitern - bestehende Alarme bleiben gesetzt.
+                throw IllegalStateException(
+                    "Alarm-Bestand ist in diesem Prozess nicht lesbar (Persistenz gesperrt) - es " +
+                        "wird NICHT geraeumt. Sonst blieben armierte System-Alarme zurueck, die " +
+                        "niemand mehr abbrechen kann. Rohdaten liegen als active_alarms_broken."
+                )
+            }
+
+            // Ausdrueckliche Abschaltung (Master-Pause, "Automatische Alarme aus",
+            // deleteAllAlarms): der Nutzer will Stille. Das Beste, was ohne Bestandsliste geht -
+            // und deutlich besser als gar nichts.
+            Logger.w(
+                LogTags.ALARM,
+                "⚠️ INTERNAL-CLEAR: Bestand nicht lesbar (Persistenz gesperrt). Schwebende Snoozes " +
+                    "und der Direct-Boot-Spiegel werden trotzdem geraeumt - einzelne bereits " +
+                    "armierte System-Alarme lassen sich ohne die Liste NICHT abbrechen und feuern " +
+                    "bis zum naechsten Neustart. Rohdaten liegen als active_alarms_broken."
+            )
+            if (alsoCancelPendingSnoozes) {
+                alarmManagerService.cancelAllSnoozes()
+            }
+            alarmRepository.deleteAllAlarms().getOrThrow()
+            return emptyList()
+        }
+
         val activeAlarmsList = alarmRepository.getAllAlarms().getOrThrow()
-        for (alarm in activeAlarmsList) {
+        val (kept, toRemove) = if (keepManualAlarms) {
+            activeAlarmsList.partition { it.eventId.isEmpty() }
+        } else {
+            emptyList<AlarmInfo>() to activeAlarmsList
+        }
+        for (alarm in toRemove) {
             alarmManagerService.cancelSystemAlarm(alarm.id)
         }
 
@@ -385,9 +463,23 @@ class AlarmUseCase @Inject constructor(
         }
 
         // Step 3: Clear repository
-        alarmRepository.deleteAllAlarms().getOrThrow()
+        if (kept.isEmpty()) {
+            alarmRepository.deleteAllAlarms().getOrThrow()
+        } else {
+            // Einzeln loeschen, damit die manuellen Alarme im Repository UND im
+            // Direct-Boot-Spiegel stehen bleiben - deleteAllAlarms() leert beides.
+            for (alarm in toRemove) {
+                alarmRepository.deleteAlarm(alarm.id).getOrThrow()
+            }
+            Logger.business(
+                LogTags.ALARM,
+                "🛟 INTERNAL-CLEAR: ${kept.size} manuelle(r) Alarm bleibt erhalten " +
+                    "(${toRemove.size} kalenderbasierte entfernt)"
+            )
+        }
 
         Logger.d(LogTags.ALARM, "✅ INTERNAL-CLEAR: Fast clearing completed")
+        return kept
     }
 
     override suspend fun deleteAlarm(alarmId: Int): Result<Unit> =

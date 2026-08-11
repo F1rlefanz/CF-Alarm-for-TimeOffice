@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
@@ -169,7 +170,26 @@ class HueBridgeConnectionManager private constructor(
     
     // Background health monitoring with app lifecycle awareness
     private var healthCheckJob: Job? = null
-    private val healthCheckScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    /**
+     * MIT `CoroutineExceptionHandler` - der SupervisorJob allein reicht NICHT.
+     *
+     * Ein SupervisorJob verhindert nur, dass Geschwister-Coroutinen mitgerissen werden; die
+     * Exception selbst verschluckt er nicht: ohne Handler laeuft sie zum Thread-Default-Handler und
+     * beendet den PROZESS. In diesem Scope liegen fuenf fire-and-forget `launch`-Bloecke, von denen
+     * mehrere ungeschuetzt auf den Hue-DataStore zugreifen (`restoreConnectionFromStorage()` macht
+     * `dataStore.data.first()`). Der `ReplaceFileCorruptionHandler` des Stores faengt nur
+     * Korruption - eine IOException (voller Speicher, EACCES, transienter Lesefehler) reicht
+     * DataStore durch.
+     *
+     * Fuer eine WECKER-App ist das die falsche Reihenfolge der Wichtigkeit: ein misslungener
+     * Lichtsteuerungs-Lesezugriff darf niemals den Prozess beenden, der die Alarme haelt. Dieselbe
+     * Ueberlegung steht in `HueSmartScheduler.recalculateSchedule()` als Kommentar - dort war der
+     * Schutz da, hier fehlte er.
+     */
+    private val healthCheckScope = CoroutineScope(
+        Dispatchers.IO + SupervisorJob() +
+            ErrorHandler.createCoroutineExceptionHandler("HueBridgeConnectionManager.healthCheckScope")
+    )
     
     // OPTIMIZATION: App lifecycle state tracking
     private var isAppInForeground = false
@@ -227,6 +247,12 @@ class HueBridgeConnectionManager private constructor(
     fun initialize() {
         if (!initialized.compareAndSet(false, true)) {
             Logger.d(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Bereits initialisiert - doppelter Aufruf ignoriert")
+            // NICHT ganz ohne Wirkung: wurde dieser Prozess VOR der ersten Entsperrung gestartet
+            // (Direct Boot), hat der SmartScheduler seine Planung uebersprungen, weil es dort
+            // keinen WorkManager gibt. Derselbe Prozess bedient danach die App weiter - der
+            // ignorierte Zweig hier ist die erste Stelle, an der das Nachholen ueberhaupt moeglich
+            // ist. Idempotent und billig, wenn nichts nachzuholen ist.
+            smartScheduler?.retrySkippedSchedulingIfNeeded()
             return
         }
 
@@ -452,6 +478,10 @@ class HueBridgeConnectionManager private constructor(
         isAppInForeground = true
         Logger.d(LogTags.HUE_BRIDGE, "📱 BRIDGE-MANAGER: App entered foreground")
 
+        // Zweite Gelegenheit zum Nachholen einer im Direct-Boot uebersprungenen Hue-Planung -
+        // spaetestens hier ist das Geraet entsperrt und WorkManager verfuegbar.
+        smartScheduler?.retrySkippedSchedulingIfNeeded()
+
         // Immediate health check if enough time passed since last check. performHealthCheck()
         // only RE-validates an already-CONNECTED state (see its own guard) - ohne die Abzweigung
         // hier wuerde ein Wiederoeffnen der App nach DISCONNECTED/ERROR nie selbst reconnecten,
@@ -666,8 +696,24 @@ class HueBridgeConnectionManager private constructor(
     private fun startNetworkRecoveryMonitoring() {
         healthCheckScope.launch {
             networkMonitor.isNetworkAvailable.collect { available ->
+                // try/catch INNERHALB des collect, nicht darum: ein Fehler in einem einzelnen
+                // Wiederverbindungs-Versuch darf den Collector nicht beenden. Genau das waere
+                // sonst passiert - und dieser Collector ist die autonome Wiederverbindung bei der
+                // Heimkehr ins Heim-WLAN (siehe Memory project_hue_bridge_auto_reconnect). Waere
+                // er einmal tot, wuerde er in diesem Prozess nie wieder starten: `initialize()`
+                // ist per Waechter idempotent. Der Scope-Handler allein rettet nur den Prozess,
+                // nicht das Feature.
                 if (available) {
-                    attemptRecoveryIfDisconnected()
+                    try {
+                        attemptRecoveryIfDisconnected()
+                    } catch (e: Exception) {
+                        Logger.w(
+                            LogTags.HUE_BRIDGE,
+                            "⚠️ BRIDGE-MANAGER: Wiederverbindungs-Versuch fehlgeschlagen - " +
+                                "Beobachter laeuft weiter",
+                            e
+                        )
+                    }
                 }
             }
         }

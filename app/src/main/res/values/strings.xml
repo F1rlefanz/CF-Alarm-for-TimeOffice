@@ -83,7 +83,11 @@
     <string name="dimmer_open_accessibility">Bedienungshilfen-Dienst aktivieren</string>
     <string name="dimmer_disclosure_title">Was dieser Dienst tut</string>
     <string name="dimmer_disclosure_body">Der Schicht-Dimmer nutzt einen Android-Bedienungshilfen-Dienst ausschließlich, um eine abdunkelnde Schicht über den Bildschirm zu legen. Er liest keine Bildschirminhalte, erfasst keine Eingaben und sendet keine Daten. Du kannst ihn jederzeit in den Android-Einstellungen wieder abschalten.</string>
-    <string name="dimmer_disclosure_understood">Verstanden</string>
+    <!-- Sitzt im dismissButton-Slot des Offenlegungs-Dialogs, tut also NICHTS ausser schliessen.
+         "Verstanden" hat in diesem Projekt die Bedeutung "bestaetigen/weiter" (siehe OEM-Hinweis in
+         CLAUDE.md) - genau daneben steht der Knopf, der wirklich weiterfuehrt. Zwei Knoepfe, von
+         denen einer wie eine Bestaetigung klingt und nichts tut, sind eine Falle. -->
+    <string name="dimmer_disclosure_understood">Abbrechen</string>
 
     <!-- DND-Einstellungen (Nicht stören automatisch schaltbar) -->
     <string name="dnd_header">Nicht stören</string>

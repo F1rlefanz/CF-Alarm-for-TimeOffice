@@ -67,9 +67,25 @@ class CFAlarmApplication : Application() {
     @MainDataStore
     lateinit var mainDataStore: DataStore<Preferences>
 
-    /** Fuer das Aufheben einer Master-Pause beim Geraetewechsel - siehe initializeApp(). */
+    /**
+     * Fuer das Aufheben einer Master-Pause beim Geraetewechsel - siehe initializeApp().
+     *
+     * BEWUSST `dagger.Lazy`, NICHT der Typ direkt. Der erste Wurf injizierte
+     * `MasterPauseUseCase` unmittelbar - und der zieht ueber seinen Konstruktor
+     * `HueSmartScheduler` in den Graphen, der wiederum `WorkManager.getInstance()` aufrief.
+     * Ergebnis (am Emulator reproduziert, 11.08.2026): der Prozess, den das System VOR der ersten
+     * Entsperrung fuer den directBootAware BootReceiver startet, starb mit "Unable to create
+     * application / WorkManager is not initialized properly" - und damit lief der
+     * Direct-Boot-Restore der Alarme nie. Dieselbe Falle, die CLAUDE.md fuer
+     * `TinkEncryptionHelper` beschreibt: was am Application-Graphen haengt, wird in JEDEM
+     * Prozessstart gebaut, auch im gesperrten.
+     *
+     * Mit `Lazy` entsteht die Instanz erst, wenn ein Geraetewechsel wirklich erkannt wurde - und
+     * das setzt einen erfolgreichen Read aus dem CE-Storage voraus, also ein entsperrtes Geraet.
+     * Wer diesen Wrapper entfernt, baut den Absturz zurueck.
+     */
     @Inject
-    lateinit var masterPauseUseCase: MasterPauseUseCase
+    lateinit var masterPauseUseCase: dagger.Lazy<MasterPauseUseCase>
 
     override fun onCreate() {
         super.onCreate()
@@ -123,7 +139,10 @@ class CFAlarmApplication : Application() {
                 // hier darf den Start nicht aufhalten.
                 try {
                     val deviceChanged = DeviceLocalFlagsGuard.resetIfDeviceChanged(mainDataStore)
-                    if (deviceChanged && masterPauseUseCase.paused.first()) {
+                    // `.get()` erst NACH dem erfolgreichen CE-Read und nur bei erkanntem Wechsel -
+                    // siehe die Begruendung am Feld: die Konstruktion zieht WorkManager in den
+                    // Graphen und darf in einem Direct-Boot-Prozess nicht passieren.
+                    if (deviceChanged && masterPauseUseCase.get().paused.first()) {
                         // Eine Master-Pause darf einen Geraetewechsel nicht ueberleben (sonst bleibt
                         // der Wecker auf dem neuen Geraet still). Aufgehoben wird sie ueber
                         // resume() und NICHT durch Loeschen des Flags: pause() schreibt auch den
@@ -135,8 +154,14 @@ class CFAlarmApplication : Application() {
                             "🔄 GERAETEWECHSEL: aktive Master-Pause wird aufgehoben - sie gilt fuer " +
                                 "das alte Geraet. Hintergrundketten werden neu aufgebaut."
                         )
-                        masterPauseUseCase.resume()
+                        masterPauseUseCase.get().resume()
                     }
+
+                    // Spiegel und CE-Wahrheit des Pausenzustands abgleichen. Steht hier, weil der
+                    // erfolgreiche DeviceLocalFlagsGuard-Read oben belegt, dass der CE-Storage
+                    // lesbar ist (also entsperrt) - in einem Direct-Boot-Prozess kommt dieser Zweig
+                    // gar nicht so weit.
+                    masterPauseUseCase.get().reconcileDirectBootMirror()
                 } catch (e: Exception) {
                     Logger.w(LogTags.APP, "⚠️ STARTUP: Geraete-Marker konnte nicht geprueft werden", e)
                 }

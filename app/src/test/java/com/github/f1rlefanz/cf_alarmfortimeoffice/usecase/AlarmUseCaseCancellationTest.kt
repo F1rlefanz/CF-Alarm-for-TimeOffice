@@ -59,6 +59,7 @@ class AlarmUseCaseCancellationTest {
     private class FakeAlarmRepository(
         private val alwaysCancel: Boolean
     ) : IAlarmRepository {
+        override suspend fun isPersistenceBlocked(): Boolean = false
         private val state = MutableStateFlow<List<AlarmInfo>>(emptyList())
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         var saveAttempts = 0
@@ -142,8 +143,25 @@ class AlarmUseCaseCancellationTest {
         val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
         val repo = FakeAlarmRepository(alwaysCancel = true)
 
-        val result = useCase(repo, config)
-            .syncAlarms(listOf(futureEvent("evA", 1), futureEvent("evB", 2)), config)
+        // Die Cancellation kommt jetzt als EXCEPTION heraus, nicht als Result.failure - und das ist
+        // die staerkere Zusicherung, nicht die schwaechere: `SafeExecutor.safeExecute()` wirft
+        // CancellationException seit dieser Runde weiter, statt sie in einen AppError zu verpacken.
+        // Verpackt verlor sie ihre Identitaet, und genau dadurch lief der ausdrueckliche
+        // `catch (e: CancellationException) { throw e }` der Delta-Sync-Schleife ins Leere:
+        // `scheduleSystemAlarm()` ist ueber safeExecute gewrappt, die Cancellation kam dort als
+        // gewoehnliches Failure an und wurde als Fehler EINES Events verbucht - die Schleife lief
+        // ueber alle restlichen Events weiter, ohne einen einzigen zu re-armieren.
+        //
+        // Unveraendert bleibt der Kern: nach der Cancellation wird KEIN weiteres Event angefasst,
+        // und der Aufrufer bekommt auf keinen Fall einen Erfolg (er darf keinen
+        // saveMaintenanceTime()-Stempel fuer einen Lauf setzen, der nichts geschrieben hat).
+        var thrown: Throwable? = null
+        try {
+            useCase(repo, config)
+                .syncAlarms(listOf(futureEvent("evA", 1), futureEvent("evB", 2)), config)
+        } catch (e: Throwable) {
+            thrown = e
+        }
 
         assertEquals(
             "Nach der Cancellation darf KEIN weiteres Event mehr angefasst werden",
@@ -151,9 +169,9 @@ class AlarmUseCaseCancellationTest {
             repo.saveAttempts
         )
         assertTrue(
-            "Ein gecancelter Sync darf niemals als Erfolg zurueckkommen - sonst stempelt der " +
-                "Aufrufer saveMaintenanceTime() fuer einen Lauf, der nichts geschrieben hat",
-            result.isFailure
+            "Eine Cancellation MUSS die Aufrufkette hochlaufen (kein Result.failure) - der Scope " +
+                "des Aufrufers ist in diesem Moment ohnehin nicht mehr am Leben. Bekommen: $thrown",
+            thrown is kotlinx.coroutines.CancellationException
         )
     }
 

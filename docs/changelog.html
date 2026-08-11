@@ -46,7 +46,26 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.23.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.23.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Reine Zuverlässigkeits-Runde. Zwei Fehler haben nach einem nächtlichen Neustart verhindert, dass die Wecker vor dem ersten Entsperren zurückkamen — beide waren nur mit gesetzter Bildschirmsperre überhaupt sichtbar.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Nach einem Neustart kamen die Wecker erst zurück, wenn das Handy entsperrt wurde:</strong> Beim Start vor der ersten Entsperrung stürzte die App unbemerkt ab, noch bevor sie die gespeicherten Wecker wiederherstellen konnte. Startet das Gerät nachts neu (Systemupdate, leerer Akku am Ladegerät) und niemand entsperrt es, klingelte am Morgen nichts. Zwei unabhängige Ursachen, beide behoben und am Testgerät mit PIN nachgewiesen.</li>
+                <li><strong>Die App konnte „keine Wecker" für wahr halten, obwohl Wecker gespeichert waren:</strong> Vor der ersten Entsperrung ist der gespeicherte Bestand nicht lesbar — das sah für die App aber aus wie „es gibt keine". Der nächste Abgleich hielt daraufhin jede Schicht für neu und überschrieb den Bestand; ein selbst gestellter Wecker war damit weg. Der Bestand wird jetzt nach dem Entsperren nachgeladen, statt die Leere zu glauben.</li>
+                <li><strong>Ein selbst gestellter Wecker konnte bei „keine passende Schicht" mitgelöscht werden</strong> — obwohl er nichts mit dem Kalender zu tun hat. Er bleibt jetzt erhalten; nur ausdrückliches Ausschalten (Master-Pause, „Automatische Alarme aus") räumt weiterhin alles.</li>
+                <li><strong>„Automatische Alarme" aus: ein manuell gestellter Wecker verschwand stillschweigend wieder.</strong> Jetzt sagt die App beim Anlegen, dass in diesem Zustand alle Wecker gelöscht werden.</li>
+                <li><strong>Ein Zeitzonenwechsel im Hintergrund konnte die App beenden</strong> — und damit ausgerechnet die Neuberechnung der Weckzeiten verhindern, für die dieser Mechanismus existiert.</li>
+                <li><strong>Ein Fehler beim Lichtsteuerungs-Zugriff konnte die App beenden.</strong> Für eine Wecker-App die falsche Reihenfolge der Wichtigkeit: das ist jetzt abgefangen, und die selbstständige Wiederverbindung zur Hue-Bridge überlebt einen einzelnen Fehlversuch.</li>
+                <li><strong>Der Schlummer-Wecker war nach einem Neustart nicht immer wiederherstellbar</strong> (der Merker konnte bei gleichzeitigen Zugriffen verloren gehen), und das Start-Protokoll behauptete Wiederherstellungen, die nicht stattgefunden hatten.</li>
+                <li><strong>Anzeigen, die etwas anderes behaupteten als die App tut:</strong> ein ausgeschalteter Schichttyp zeigte weiter eine Weckzeit an (obwohl er nie einen Wecker stellt), die Startseite meldete „Schichttypen werden noch geladen" für einen dauerhaft gescheiterten Ladeversuch und „Zeige 5 von N Terminen" auf einer Karte, die überhaupt keine Termine listet, und die Dimmer-Karte meldete einen „aktiven Fehler", obwohl der Dimmer nie eingeschaltet war.</li>
+                <li><strong>Im Kürzel-Zuordnungsdialog war die letzte Schicht auf schmalen Geräten nicht antippbar</strong> — und der Dialog ist der einzige Weg, ein Kürzel zuzuordnen.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.23.0</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Der größte Zuverlässigkeits-Durchgang bisher: der Wecker fällt in einer Reihe von Situationen nicht mehr aus, in denen er es vorher konnte. Dazu zwei Dinge, die die Einrichtung deutlich einfacher machen – die Kürzel deines echten Dienstplans werden vorgeschlagen, und die Konfiguration lässt sich als Datei sichern.</em></p>
 

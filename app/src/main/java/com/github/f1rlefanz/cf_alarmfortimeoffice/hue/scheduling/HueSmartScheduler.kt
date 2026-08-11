@@ -77,11 +77,20 @@ class HueSmartScheduler private constructor() {
         @Volatile
         private var INSTANCE: HueSmartScheduler? = null
 
+        /**
+         * INSTANCE wird erst NACH erfolgreichem [initialize] veroeffentlicht.
+         *
+         * Vorher stand `INSTANCE = it` VOR dem `initialize()`-Aufruf. Warf der (bis v1.23.0 tat er
+         * das bei jedem Direct-Boot-Prozess, siehe unten), blieb ein halb initialisiertes Singleton
+         * zurueck: `getInstance()` gab es danach fuer den ganzen Prozess kommentarlos heraus, und
+         * jeder Zugriff auf `workManager` schlug fehl - heilbar nur durch Prozess-Neustart.
+         * Dieselbe Fehlerklasse wie beim `cleanup()`-auf-Singleton-Scopes (siehe CLAUDE.md).
+         */
         fun getInstance(context: Context): HueSmartScheduler {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: HueSmartScheduler().also {
-                    INSTANCE = it
                     it.initialize(context.applicationContext)
+                    INSTANCE = it
                 }
             }
         }
@@ -114,7 +123,18 @@ class HueSmartScheduler private constructor() {
         private val ALARM_CHANGE_DEBOUNCE = 1500.milliseconds
     }
 
-    private lateinit var workManager: WorkManager
+    /**
+     * NICHT im Konstruktor/`initialize()` aufloesen - siehe [initialize].
+     *
+     * `WorkManager.getInstance()` wirft, solange WorkManager im Prozess nicht initialisiert ist.
+     * Als Getter passiert das erst beim tatsaechlichen GEBRAUCH, also an Stellen, die ohnehin in
+     * einem try/catch bzw. in [schedulerScope] liegen - und nicht schon beim Bau des Hilt-Graphen.
+     */
+    private val workManager: WorkManager get() = WorkManager.getInstance(appContext)
+
+    /** Ob WorkManager in diesem Prozess ueberhaupt benutzbar ist (siehe [initializeSmartScheduling]). */
+    private val isWorkManagerAvailable: Boolean
+        get() = ::appContext.isInitialized && runCatching { WorkManager.getInstance(appContext) }.isSuccess
 
     /** Application context, retained to resolve Hilt dependencies via the EntryPoint. */
     private lateinit var appContext: Context
@@ -133,11 +153,57 @@ class HueSmartScheduler private constructor() {
     private var alarmObserverJob: Job? = null
 
     /**
+     * Wurde [initializeSmartScheduling] uebersprungen, weil WorkManager nicht verfuegbar war?
+     * `@Volatile`: gesetzt im Direct-Boot-Prozess, gelesen nach dem Entsperren aus einem anderen
+     * Thread.
+     */
+    @Volatile
+    private var schedulingSkipped = false
+
+    /**
+     * Holt eine im Direct-Boot-Prozess uebersprungene Planung nach, sobald WorkManager verfuegbar
+     * ist. Idempotent und billig: ohne vorgemerktes Ueberspringen tut sie nichts.
+     *
+     * Wird von [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager]
+     * an zwei Stellen gerufen, die nach dem Entsperren zuverlaessig vorbeikommen: bei einem
+     * erneuten `initialize()` (auch im ignorierten Zweig) und bei jedem App-Vordergrund.
+     */
+    fun retrySkippedSchedulingIfNeeded() {
+        if (!schedulingSkipped) return
+        if (!isWorkManagerAvailable) return
+        Logger.business(
+            LogTags.HUE_BRIDGE,
+            "🔁 SMART-SCHEDULER: im Direct-Boot uebersprungene Planung wird nachgeholt"
+        )
+        initializeSmartScheduling()
+    }
+
+    /**
      * Initialize with application context (called once by getInstance)
      */
     private fun initialize(context: Context) {
         appContext = context
-        workManager = WorkManager.getInstance(context)
+        // BEWUSST KEIN WorkManager.getInstance() HIER.
+        //
+        // Diese Klasse haengt am Hilt-Graphen (HueModule.provideHueSmartScheduler), und der wird in
+        // JEDEM Prozessstart gebaut - auch in dem, den das System VOR der ersten Entsperrung fuer
+        // den directBootAware BootReceiver startet. In so einem Prozess ist WorkManager NICHT
+        // initialisiert: seine Initialisierung haengt am `androidx.startup.InitializationProvider`,
+        // und ContentProvider ohne `directBootAware` werden vor dem Entsperren gar nicht
+        // instanziiert. `WorkManager.getInstance()` wirft dort "WorkManager is not initialized
+        // properly".
+        //
+        // Genau das ist am 11.08.2026 am Emulator passiert: der Wurf schlug aus der Feld-Injektion
+        // der Application nach oben durch, der ganze Prozess starb mit "Unable to create
+        // application" - und damit lief der Direct-Boot-Restore der Alarme (und der schwebenden
+        // Snoozes) NIE. Die Wecker kamen erst zurueck, nachdem der Nutzer das Geraet entsperrt
+        // hatte. Fuer eine Wecker-App ist das der schlimmste denkbare Ausfall: Geraet startet
+        // nachts neu (Systemupdate, leerer Akku am Kabel), niemand entsperrt, kein Wecker.
+        //
+        // WorkManager wird deshalb erst beim GEBRAUCH aufgeloest (siehe Getter oben). Ein
+        // Direct-Boot-Prozess baut den Graphen dann klaglos, benutzt WorkManager aber nicht -
+        // was richtig ist, denn dessen Datenbank liegt im CE-Storage und waere dort ohnehin
+        // unlesbar.
     }
 
     /**
@@ -210,10 +276,22 @@ class HueSmartScheduler private constructor() {
      * MAIN API: Initialize smart scheduling system
      */
     fun initializeSmartScheduling() {
-        if (!::workManager.isInitialized) {
-            Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: WorkManager not initialized, scheduler not ready")
+        if (!isWorkManagerAvailable) {
+            // Normalfall in einem Direct-Boot-Prozess (vor der ersten Entsperrung): dort gibt es
+            // keinen WorkManager, und die Hue-Planung hat dort auch nichts zu tun.
+            //
+            // ABER: dieser Prozess STIRBT NICHT beim Entsperren - er ist genau der Prozess, in dem
+            // der Nutzer die App danach bedient. Und der einzige Aufrufer
+            // (HueBridgeConnectionManager.initialize()) ist per Waechter idempotent, ruft also nicht
+            // erneut. Ein frueherer Kommentar behauptete hier "ein spaeterer Aufruf plant normal" -
+            // das war falsch: taegliche Planung, Pre-Alarm-Health-Checks und der Alarm-Beobachter
+            // fehlten fuer die gesamte Lebensdauer dieses Prozesses. Deshalb wird das Ueberspringen
+            // VORGEMERKT und ueber [retrySkippedSchedulingIfNeeded] nachgeholt.
+            schedulingSkipped = true
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: WorkManager in diesem Prozess nicht verfuegbar (Direct Boot?) - Planung vorgemerkt und uebersprungen")
             return
         }
+        schedulingSkipped = false
 
         Logger.i(LogTags.HUE_BRIDGE, "🧠 SMART-SCHEDULER: Initializing intelligent health check scheduling")
 
@@ -603,7 +681,7 @@ class HueSmartScheduler private constructor() {
         // so the singleton remains reusable after an Activity teardown/restart.
         schedulerScope.coroutineContext.cancelChildren()
         alarmObserverJob = null
-        if (::workManager.isInitialized) {
+        if (isWorkManagerAvailable) {
             // Per Tag, nicht per Name: die Pre-Alarm-Checks tragen den Index im Unique-Namen.
             workManager.cancelAllWorkByTag(PRE_ALARM_HEALTH_CHECK_WORK)
             workManager.cancelAllWorkByTag(SUNRISE_START_WORK)

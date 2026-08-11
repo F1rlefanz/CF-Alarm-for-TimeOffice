@@ -408,7 +408,9 @@ fun ShiftConfigScreen(
                     Text(
                         "„$code\" steht in deinem Kalender, wird aber von keinem Erkennungsmuster " +
                             "getroffen. Wähle die Schicht, zu der es gehört — das Kürzel wird dann " +
-                            "als Erkennungsmuster ergänzt.",
+                            "als Erkennungsmuster ergänzt, die Schicht aktiviert (falls sie " +
+                            "ausgeschaltet war) und das Kürzel bei allen anderen Schichten " +
+                            "entfernt, damit es nur einen Besitzer hat.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     if (definitions.isEmpty()) {

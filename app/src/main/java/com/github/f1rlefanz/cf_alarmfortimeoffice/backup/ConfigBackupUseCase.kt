@@ -13,7 +13,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
-import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.first
@@ -52,7 +56,14 @@ data class ImportSummary(
 class ConfigBackupUseCase @Inject constructor(
     @param:MainDataStore private val mainDataStore: DataStore<Preferences>,
     @param:HueDataStore private val hueDataStore: DataStore<Preferences>,
-    private val shiftConfigRepository: IShiftConfigRepository
+    // BEWUSST der UseCase und NICHT das Repository: nur IShiftUseCase.saveShiftConfig() ruft
+    // invalidateAllCaches() und damit ShiftRecognitionEngine.clearRecognitionCache(). Ueber das
+    // Repository geschrieben blieb der Erkennungs-Cache stehen, und die anschliessend nachgezogene
+    // Erkennung lieferte bei unveraenderter Eventliste einen Cache-Treffer mit den ALTEN
+    // Weckzeiten - der Import waere bis zum Ablauf der Cache-Gueltigkeit wirkungslos gewesen.
+    private val shiftUseCase: IShiftUseCase,
+    private val dimSchedule: DimScheduleUseCase,
+    private val dndSchedule: DndScheduleUseCase
 ) {
 
     private val json = Json {
@@ -67,7 +78,7 @@ class ConfigBackupUseCase @Inject constructor(
      *        Uhrzeit-Abhaengigkeiten
      */
     suspend fun export(appVersion: String, createdAt: String): Result<String> = runCatching {
-        val shiftConfig = shiftConfigRepository.getCurrentShiftConfig().getOrNull()
+        val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
         if (shiftConfig == null) {
             // Kein Abbruch: die restliche Konfiguration ist trotzdem wertvoll. Aber sichtbar machen.
             Logger.w(
@@ -106,13 +117,41 @@ class ConfigBackupUseCase @Inject constructor(
         // Schichtdefinitionen ueber das typisierte Repository - dort greifen Validierung und
         // Serialisierung, und der Defekt-Schutz bleibt zustaendig.
         var definitions = 0
-        backup.shiftConfig?.let { config ->
-            shiftConfigRepository.saveShiftConfig(config).getOrThrow()
+        backup.shiftConfig?.let { fromFile ->
+            // `autoAlarmEnabled` wird NICHT importiert. Es ist keine Konfiguration, sondern eine
+            // echte, sofortige Pause (CLAUDE.md: `autoAlarmEnabled = false` raeumt die Alarme per
+            // clearInternalAlarms() ab). Eine Datei, die waehrend einer solchen Pause entstand,
+            // haette auf dem Zielgeraet den Wecker stummgeschaltet UND dessen Alarme geloescht -
+            // dieselbe Fehlerklasse wie die Master-Pause, nur reist sie INNERHALB des
+            // ShiftConfig-Objekts mit und wird deshalb von ConfigBackupFilter nicht erfasst
+            // (der sieht nur Preferences-Schluessel).
+            // Der Wert des ZIELGERAETS gewinnt; ist er nicht lesbar, gilt "Alarme an" - im Zweifel
+            // wecken.
+            val localAutoAlarm = shiftUseCase.getCurrentShiftConfig().getOrNull()?.autoAlarmEnabled ?: true
+            val config = fromFile.copy(autoAlarmEnabled = localAutoAlarm)
+            if (fromFile.autoAlarmEnabled != localAutoAlarm) {
+                rejected += "autoAlarmEnabled (Alarm-Pause des Quellgeraets, nicht uebernommen)"
+            }
+            shiftUseCase.saveShiftConfig(config).getOrThrow()
             definitions = config.definitions.size
         }
 
         val settingsWritten = writeValues(mainDataStore, backup.settings, rejected)
         val hueWritten = writeValues(hueDataStore, backup.hue, rejected)
+
+        // "Jeder Setter, der einen DimOverlayPrefs-Wert schreibt, MUSS direkt danach
+        // DimScheduleUseCase.enable() aufrufen" (CLAUDE.md). Der Import ist ein neuer, generischer
+        // Schreiber genau dieser Schluessel - ohne diesen Schritt stehen importierte Dimm-/DND-
+        // Einstellungen im Store, aber es laeuft keine Tick-Kette: in der Nacht nach dem Import
+        // wuerde nicht gedimmt und kein "Nicht stoeren" gesetzt, bis die naechste 6h-Wartung die
+        // Ketten nebenbei wieder armiert (bis zu 6 Stunden spaeter).
+        // Best-effort und getrennt gefangen: enable() traegt seinen eigenen Master-Pause-Backstop,
+        // ist also auch bei aktiver Pause gefahrlos, aber ein Fehlschlag hier darf den bereits
+        // geschriebenen Import nicht als gescheitert melden.
+        runCatching { dimSchedule.enable() }
+            .onFailure { Logger.w(LogTags.DIMMER, "⚠️ IMPORT: Dimmer-Kette nicht armiert", it) }
+        runCatching { dndSchedule.enable() }
+            .onFailure { Logger.w(LogTags.DND, "⚠️ IMPORT: DND-Kette nicht armiert", it) }
 
         Logger.business(
             LogTags.APP,
@@ -143,6 +182,19 @@ class ConfigBackupUseCase @Inject constructor(
                     rejected += "$name ($reason)"
                     return@forEach
                 }
+                // Zusaetzlich zum Schluessel-Filter: der WERT muss verwertbar sein. Eine
+                // Exportdatei ist Text und kann von Hand veraendert worden sein.
+                val outOfRange = stored.value?.toIntOrNull()
+                    ?.let { ConfigBackupFilter.rangeRejection(name, it) }
+                if (outOfRange != null) {
+                    rejected += "$name ($outOfRange)"
+                    return@forEach
+                }
+                val malformed = structuralRejection(name, stored.value)
+                if (malformed != null) {
+                    rejected += "$name ($malformed)"
+                    return@forEach
+                }
                 if (applyValue(prefs, name, stored)) written++ else rejected += "$name (unbekannter Typ '${stored.type}')"
             }
         }
@@ -150,6 +202,44 @@ class ConfigBackupUseCase @Inject constructor(
     }
 
     companion object {
+        /**
+         * Die zwei Schluessel, deren Wert ein ganzes JSON-Dokument ist - die aufwendigsten und
+         * wertvollsten Teile der Konfiguration (Dimmer-Regeln, Hue-Regeln).
+         *
+         * WARUM SIE GEPRUEFT WERDEN, obwohl beide Leser einen unlesbaren Wert bereits abfangen
+         * (`DimRuleRepository` per `runCatching`, `HueConfigRepository` per `try/catch`, beide mit
+         * Rueckfall auf eine leere Liste): genau dieser Rueckfall ist das Problem. Ein
+         * beschaedigter Wert wuerde als "keine Regeln" durchgehen - der Import meldet Erfolg, und
+         * der Nutzer sieht eine leere Regelliste, ohne zu wissen warum. Der Ort, an dem das noch
+         * SAGBAR ist, ist der Import. Danach ist die Information weg.
+         *
+         * Bewusst nur strukturell: es wird geprueft, ob sich der Wert ueberhaupt in die erwarteten
+         * Objekte lesen laesst - nicht, ob die Regeln fachlich sinnvoll sind.
+         */
+        private val STRUCTURED_JSON_KEYS = setOf("dim_rules", "hue_schedule_rules")
+
+        /** Toleranter Leser, wie ihn die beiden Repositories selbst benutzen. */
+        private val validationJson = Json { ignoreUnknownKeys = true; isLenient = true }
+
+        /**
+         * @return `null`, wenn der Wert in Ordnung ist oder es kein JSON-Schluessel ist, sonst die
+         *         Begruendung fuer die Rueckmeldung an den Nutzer.
+         */
+        fun structuralRejection(name: String, value: String?): String? {
+            if (name !in STRUCTURED_JSON_KEYS) return null
+            val raw = value ?: return "leerer Wert fuer ein Regelwerk"
+            if (raw.isBlank()) return null // "keine Regeln" ist ein zulaessiger Zustand
+            val result = runCatching {
+                when (name) {
+                    "dim_rules" -> validationJson.decodeFromString<List<DimRule>>(raw)
+                    "hue_schedule_rules" -> validationJson.decodeFromString<List<HueSchedule>>(raw)
+                    else -> Unit
+                }
+            }
+            return if (result.isSuccess) null
+            else "Regelwerk nicht lesbar - nicht uebernommen, damit es nicht als 'keine Regeln' durchgeht"
+        }
+
         /**
          * REIN UND TESTBAR: DataStore-Wert -> Dateiformat. `null` fuer Typen, die es in
          * Preferences nicht gibt - dann fehlt der Wert in der Datei statt sie zu zerstoeren.

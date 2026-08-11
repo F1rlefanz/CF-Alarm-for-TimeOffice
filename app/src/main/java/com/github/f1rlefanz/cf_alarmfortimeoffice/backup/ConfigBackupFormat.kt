@@ -106,7 +106,6 @@ object ConfigBackupFilter {
         "dim_override_window_strength",
         // Eine laufende Pause. Importiert wuerde sie den Wecker stumm schalten.
         "master_pause_enabled",
-        "master_pause_until",
         // "Naechsten Alarm ueberspringen" gilt fuer EINEN konkreten, bereits geplanten Alarm.
         "is_next_alarm_skipped",
         "skip_activated_at",
@@ -174,6 +173,42 @@ object ConfigBackupFilter {
      * und Begruendung nicht auseinanderlaufen koennen - die Begruendung erscheint nach einem Import
      * auch in der Rueckmeldung an den Nutzer.
      */
+    /**
+     * PLAUSIBLE WERTEBEREICHE fuer Zahlen, deren Leser einen sinnvollen Bereich VORAUSSETZEN.
+     *
+     * Der Filter oben entscheidet, WELCHE Schluessel durchkommen - er sagt nichts darueber, ob der
+     * WERT verwertbar ist. Eine Datei ist aber eine Textdatei: sie kann von Hand bearbeitet, von
+     * einer aelteren Version geschrieben oder unterwegs beschaedigt worden sein. Zwei Leser hatten
+     * bis v1.23.0 keine eigene Klemme (der Dimmer hat ueberall eine, siehe die `coerceIn`-Aufrufe
+     * in `DimOverlayPrefs`):
+     *
+     *   - `snooze_minutes`: `0` oder negativ heisst, der Schlummer-Alarm liegt in der Vergangenheit
+     *     und feuert SOFORT wieder - ein Wecker, den man nicht mehr wegdrueckt.
+     *   - `dnd_oncall_cutoff_min`: `DndOnCallCutoffResolver` rechnet
+     *     `LocalTime.ofSecondOfDay(cutoffMinutes * 60L)`. Negativ oder >= 1440 wirft eine
+     *     `DateTimeException` - der DND-Tick stirbt dann bei jedem Lauf.
+     *
+     * Bewusst NUR diese beiden: fuer alles andere ist eine Klemme im Lesepfad die richtige Ebene,
+     * und die ist dort vorhanden. Dieser Katalog ist keine zweite Validierungsschicht fuer alles,
+     * sondern der Schutz an der Stelle, an der FREMDE Daten hereinkommen.
+     */
+    private val PLAUSIBLE_INT_RANGES: Map<String, IntRange> = mapOf(
+        "snooze_minutes" to 1..120,
+        "dnd_oncall_cutoff_min" to 0..(24 * 60 - 1)
+    )
+
+    /**
+     * REINE FUNKTION: liegt dieser Zahlenwert im plausiblen Bereich?
+     *
+     * @return `null`, wenn der Wert in Ordnung ist (oder kein Bereich hinterlegt ist), sonst die
+     *         Begruendung fuer die Rueckmeldung an den Nutzer.
+     */
+    fun rangeRejection(keyName: String, value: Int): String? {
+        val range = PLAUSIBLE_INT_RANGES[keyName] ?: return null
+        return if (value in range) null
+        else "Wert $value ausserhalb des sinnvollen Bereichs ${range.first}-${range.last}"
+    }
+
     fun exclusionReason(keyName: String): String? = when {
         keyName in RUNTIME_KEYS -> "Laufzeitzustand"
         keyName in DEVICE_OR_SECRET_KEYS -> "Geraetebezug oder Zugangsdaten"

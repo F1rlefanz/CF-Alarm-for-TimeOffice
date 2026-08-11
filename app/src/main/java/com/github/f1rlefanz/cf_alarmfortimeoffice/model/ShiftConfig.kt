@@ -45,6 +45,51 @@ data class ShiftConfig(
      * @return die Definition, oder null wenn keine passt (dann lieber keine Regel als die
      *         falschen Lampen).
      */
+    /**
+     * Ordnet ein Schichtkuerzel aus dem Kalender GENAU EINER Definition zu (Vorschlags-Karte im
+     * Schicht-Konfigurations-Screen). REIN und testbar, damit die drei Fallen unten festgehalten
+     * werden koennen.
+     *
+     * Drei Dinge passieren zusammen, weil jedes einzeln fuer sich wirkungslos waere:
+     *
+     *  1. Das Kuerzel kommt als Erkennungsmuster an die Zieldefinition.
+     *  2. Die Zieldefinition wird AKTIVIERT. `ShiftRecognitionEngine` beachtet nur aktivierte
+     *     Definitionen - eine Zuordnung an eine ausgeschaltete Schicht waere ein stiller
+     *     Nichts-Passiert-Klick. Genau der Fall tritt real auf: die Vorschlags-Karte bietet ein
+     *     Kuerzel nur an, wenn es von keiner AKTIVIERTEN Definition getroffen wird - ein Kuerzel,
+     *     das bei einer ausgeschalteten Schicht liegt, wird also vorgeschlagen.
+     *  3. Das Kuerzel wird bei JEDER anderen Definition ENTFERNT. Sonst haette es zwei Besitzer,
+     *     und `findDefinitionFor` nimmt den ERSTEN Treffer in Listenreihenfolge - eine stille,
+     *     von der Sortierung abhaengige Entscheidung ueber den Wecker. Der Nutzer hat gerade
+     *     gesagt, zu WELCHER Schicht das Kuerzel gehoert; das ist die Antwort, nicht die
+     *     Listenreihenfolge.
+     *
+     * @return die neue Konfiguration, oder `null` wenn nichts zu tun war (leeres Kuerzel,
+     *         unbekannte Ziel-ID, oder alles steht schon so).
+     */
+    fun withCodeAssignedTo(code: String, definitionId: String): ShiftConfig? {
+        val normalized = code.trim()
+        if (normalized.isEmpty()) return null
+        if (definitions.none { it.id == definitionId }) return null
+
+        val updated = definitions.map { definition ->
+            if (definition.id == definitionId) {
+                val keywords =
+                    if (definition.keywords.any { it.equals(normalized, ignoreCase = true) }) {
+                        definition.keywords
+                    } else {
+                        definition.keywords + normalized
+                    }
+                definition.copy(keywords = keywords, isEnabled = true)
+            } else {
+                val cleaned = definition.keywords.filterNot { it.equals(normalized, ignoreCase = true) }
+                if (cleaned.size == definition.keywords.size) definition
+                else definition.copy(keywords = cleaned)
+            }
+        }
+        return if (updated == definitions) null else copy(definitions = updated)
+    }
+
     fun findDefinitionFor(shiftName: String): ShiftDefinition? {
         if (definitions.isEmpty()) return null
 

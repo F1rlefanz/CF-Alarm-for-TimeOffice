@@ -33,11 +33,32 @@ class AlarmPrefs @Inject constructor(
 
         /** Default-Schlummer-Dauer in Minuten - identisch zum frueheren SNOOZE_MINUTES-Default. */
         const val DEFAULT_SNOOZE_MINUTES = 5
+
+        /**
+         * Sinnvolle Grenzen, geklemmt beim LESEN und beim SCHREIBEN.
+         *
+         * `0` oder negativ waere kein "kurzer Schlummer", sondern ein Schlummer-Alarm in der
+         * Vergangenheit: er feuert sofort wieder, und der Wecker laesst sich nicht mehr
+         * wegdruecken. Der Wert kommt nicht nur aus der eigenen UI - er liegt im `settings`-Store,
+         * also auch im Android-Backup und in der Konfigurationsdatei (Export/Import). Beides sind
+         * Wege, auf denen ein Wert von einem anderen Geraet, einer aelteren Version oder aus einer
+         * von Hand bearbeiteten Datei hereinkommt. Der Import prueft den Bereich zwar selbst
+         * (`ConfigBackupFilter.rangeRejection`), aber der Lesepfad ist die letzte Linie und die
+         * einzige, die auch fuer das Android-Backup gilt - genauso wie `DimOverlayPrefs` jeden
+         * seiner Werte beim Lesen klemmt.
+         */
+        const val MIN_SNOOZE_MINUTES = 1
+        const val MAX_SNOOZE_MINUTES = 120
     }
 
-    val snoozeMinutes: Flow<Int> = dataStore.data.map { it[KEY_SNOOZE_MINUTES] ?: DEFAULT_SNOOZE_MINUTES }
+    val snoozeMinutes: Flow<Int> = dataStore.data.map {
+        (it[KEY_SNOOZE_MINUTES] ?: DEFAULT_SNOOZE_MINUTES)
+            .coerceIn(MIN_SNOOZE_MINUTES, MAX_SNOOZE_MINUTES)
+    }
 
     suspend fun snoozeMinutesNow(): Int = snoozeMinutes.first()
 
-    suspend fun setSnoozeMinutes(v: Int) = dataStore.edit { it[KEY_SNOOZE_MINUTES] = v }
+    suspend fun setSnoozeMinutes(v: Int) = dataStore.edit {
+        it[KEY_SNOOZE_MINUTES] = v.coerceIn(MIN_SNOOZE_MINUTES, MAX_SNOOZE_MINUTES)
+    }
 }

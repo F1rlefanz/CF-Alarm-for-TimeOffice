@@ -17,19 +17,68 @@ import org.junit.Test
  * Snooze-ID ist sonst nirgends persistiert (der Ursprungsalarm ist zu dem Zeitpunkt schon aus dem
  * Repository geraeumt), also braucht der Cancel-Weg diese eigene Spur.
  *
+ * Seit v1.23.0 dient derselbe Merker einem ZWEITEN Zweck: `restorePendingSnoozes()` setzt einen
+ * schwebenden Snooze nach einem Reboot neu. Deshalb tragen die Eintraege jetzt auch die
+ * Anzeigedaten - und deshalb muss der zweiteilige Altbestand weiter lesbar bleiben.
+ *
  * Hier getestet ist nur der reine Teil (Kodierung/Parsen/Selbstreinigung) - das
  * SharedPreferences-Schreiben und der AlarmManager-Cancel sind Android-Raender.
  */
 class AlarmManagerServiceSnoozeRegistryTest {
 
     @Test
-    fun `Eintrag kodiert und parst id und triggerTime verlustfrei`() {
-        val entry = AlarmManagerService.encodeSnoozeEntry(alarmId = -629498222, triggerTime = 1_775_000_000_000L)
+    fun `Eintrag kodiert und parst alle vier Felder verlustfrei`() {
+        val entry = AlarmManagerService.encodeSnoozeEntry(
+            alarmId = -629498222,
+            triggerTime = 1_775_000_000_000L,
+            shiftName = "Fruehdienst",
+            shiftStartTimeFormatted = "05:48"
+        )
 
         val parsed = AlarmManagerService.parseSnoozeEntry(entry)
 
-        assertEquals(-629498222, parsed?.first)
-        assertEquals(1_775_000_000_000L, parsed?.second)
+        assertEquals(-629498222, parsed?.id)
+        assertEquals(1_775_000_000_000L, parsed?.triggerTime)
+        assertEquals("Fruehdienst", parsed?.shiftName)
+        assertEquals("05:48", parsed?.shiftStartTimeFormatted)
+    }
+
+    /**
+     * Der Merker ist die EINZIGE Spur eines schwebenden Snooze. Wuerde ein Eintrag aus einer
+     * Version vor v1.23.0 (nur "id|triggerTime") jetzt als kaputt gelten, verloere genau der
+     * Nutzer, der ueber die Aktualisierung hinweg schlummert, sowohl die Wiederherstellung als
+     * auch die Moeglichkeit, diesen Snooze noch abzubrechen.
+     */
+    @Test
+    fun `zweiteiliger Altbestand bleibt lesbar - ohne Anzeigedaten`() {
+        val parsed = AlarmManagerService.parseSnoozeEntry("4711|1775000000000")
+
+        assertEquals(4711, parsed?.id)
+        assertEquals(1_775_000_000_000L, parsed?.triggerTime)
+        assertEquals("", parsed?.shiftName)
+        assertEquals("", parsed?.shiftStartTimeFormatted)
+    }
+
+    /**
+     * Das Trennzeichen wird aus den Anzeigetexten ENTFERNT statt escaped: ein ersetztes Zeichen in
+     * einem Anzeigetext ist harmlos, ein zerbrochener Eintrag nicht - er wuerde den Snooze
+     * unauffindbar machen.
+     */
+    @Test
+    fun `Trennzeichen im Schichtnamen zerbricht den Eintrag nicht`() {
+        val entry = AlarmManagerService.encodeSnoozeEntry(
+            alarmId = 5,
+            triggerTime = 9_000L,
+            shiftName = "Frueh|dienst",
+            shiftStartTimeFormatted = "05:48"
+        )
+
+        val parsed = AlarmManagerService.parseSnoozeEntry(entry)
+
+        assertEquals(5, parsed?.id)
+        assertEquals(9_000L, parsed?.triggerTime)
+        assertEquals("Frueh/dienst", parsed?.shiftName)
+        assertEquals("05:48", parsed?.shiftStartTimeFormatted)
     }
 
     @Test
@@ -41,6 +90,7 @@ class AlarmManagerServiceSnoozeRegistryTest {
         assertNull(AlarmManagerService.parseSnoozeEntry("42|nicht-numerisch"))
         assertNull(AlarmManagerService.parseSnoozeEntry("keine-zahl|1000"))
         assertNull(AlarmManagerService.parseSnoozeEntry("1|2|3"))
+        assertNull(AlarmManagerService.parseSnoozeEntry("1|2|3|4|5"))
     }
 
     @Test

@@ -94,8 +94,29 @@ class ShiftViewModel @Inject constructor(
         viewModelScope.launch {
             shiftUseCase.shiftConfig
                 .drop(1) // Erste Emission ist der Ist-Zustand, den loadShiftConfig() ohnehin holt.
-                .collect { config ->
-                    if (config == _uiState.value.currentShiftConfig) return@collect
+                .collect { flowConfig ->
+                    if (flowConfig == _uiState.value.currentShiftConfig) return@collect
+
+                    // DIE VIERTE TUER, die dieser Beobachter selbst geoeffnet hatte: der Flow
+                    // `shiftConfig` DEGRADIERT bei einer vorhandenen, aber unlesbaren Konfiguration
+                    // bewusst auf die Standardwerte (damit die Dimmer-/DND-Screens nicht abstuerzen).
+                    // Ungefiltert haette dieser Collector das als "externe Aenderung" gelesen, die
+                    // Standardwerte in den UI-State geschrieben UND einen Alarm-Sync mit ihnen
+                    // ausgeloest - also genau das getan, was in CalendarViewModel, ShiftViewModel
+                    // und CFAlarmApplication gerade abgeschafft wurde.
+                    // `getCurrentShiftConfig()` ist der maßgebliche Pfad: er SCHEITERT im
+                    // Defektfall. Nur ein Erfolg gilt als echte Aenderung.
+                    val authoritative = shiftUseCase.getCurrentShiftConfig().getOrElse { error ->
+                        Logger.e(
+                            LogTags.SHIFT_CONFIG,
+                            "❌ EXTERNE AENDERUNG ignoriert: Schicht-Konfiguration nicht lesbar - es " +
+                                "werden KEINE Standardwerte uebernommen und kein Alarm-Sync ausgeloest.",
+                            error
+                        )
+                        return@collect
+                    }
+                    if (authoritative == _uiState.value.currentShiftConfig) return@collect
+                    val config = authoritative
 
                     Logger.business(
                         LogTags.SHIFT_CONFIG,
@@ -205,34 +226,25 @@ class ShiftViewModel @Inject constructor(
             Logger.w(LogTags.SHIFT_CONFIG, "⚠️ KUERZEL-ZUORDNUNG: keine Konfiguration geladen - abgebrochen")
             return
         }
-        val normalized = code.trim()
-        if (normalized.isEmpty()) return
-
-        val target = config.definitions.firstOrNull { it.id == definitionId }
-        if (target == null) {
-            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ KUERZEL-ZUORDNUNG: Definition $definitionId nicht gefunden")
+        // Die eigentliche Entscheidung liegt als reine Funktion im Modell (aktiviert das Ziel,
+        // entfernt das Kuerzel bei allen anderen - siehe dort, warum jedes davon noetig ist).
+        val updated = config.withCodeAssignedTo(code, definitionId)
+        if (updated == null) {
+            Logger.d(
+                LogTags.SHIFT_CONFIG,
+                "KUERZEL-ZUORDNUNG: nichts zu tun fuer '$code' -> $definitionId (steht schon so, " +
+                    "leeres Kuerzel oder unbekannte Definition)"
+            )
             return
         }
-        if (target.keywords.any { it.equals(normalized, ignoreCase = true) }) {
-            Logger.d(LogTags.SHIFT_CONFIG, "KUERZEL-ZUORDNUNG: '$normalized' steht schon bei '${target.name}'")
-            return
-        }
 
+        val target = updated.definitions.first { it.id == definitionId }
         Logger.business(
             LogTags.SHIFT_CONFIG,
-            "✅ KUERZEL-ZUORDNUNG: '$normalized' wird Muster von '${target.name}'"
+            "✅ KUERZEL-ZUORDNUNG: '${code.trim()}' gehoert jetzt zu '${target.name}' (aktiviert, " +
+                "bei allen anderen Schichten entfernt)"
         )
-        updateShiftConfig(
-            config.copy(
-                definitions = config.definitions.map { definition ->
-                    if (definition.id == definitionId) {
-                        definition.copy(keywords = definition.keywords + normalized)
-                    } else {
-                        definition
-                    }
-                }
-            )
-        )
+        updateShiftConfig(updated)
     }
 
     fun updateShiftConfig(config: ShiftConfig) {

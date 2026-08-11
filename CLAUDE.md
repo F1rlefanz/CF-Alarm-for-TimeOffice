@@ -1000,8 +1000,7 @@ Wecker gekostet:**
   Gerätewechsel gerätelokale Flags zurück.** Der `settings`-Store liegt richtigerweise im
   Android-Backup, enthält aber auch vier „schon abgelehnt"-Markierungen
   (`battery_prompt_dismissed`, `unused_app_restrictions_dismissed`,
-  `timeoffice_health_prompt_dismissed`, `oem_hint_shown_<OEM>`) **und die Master-Pause**
-  (`master_pause_enabled`/`master_pause_until`). Nach einem Restore fragte die App auf dem neuen
+  `timeoffice_health_prompt_dismissed`, `oem_hint_shown_<OEM>`). Nach einem Restore fragte die App auf dem neuen
   Gerät nie wieder nach Akku-Ausnahme und „Pause bei Nichtnutzung" — genau die zwei Einstellungen,
   die in diesem Projekt nachweislich Wecker verschluckt haben. **Ein selektiver Ausschluss einzelner
   Schlüssel ist unmöglich: ein Preferences-Store ist EINE Datei** — deshalb ein Wächter über
@@ -1011,6 +1010,18 @@ Wecker gekostet:**
   von vor dieser Version), wird NICHT zurückgesetzt — sonst verliert ein laufender Install seine
   Abweisungen. Die beiden Backup-Regel-Dateien müssen inhaltlich identisch bleiben, sonst sichert
   dasselbe Gerät je nach Android-Version Unterschiedliches.
+- **Eine mitgesicherte Master-Pause wird über `MasterPauseUseCase.resume()` aufgehoben, NICHT indem
+  `DeviceLocalFlagsGuard` den Schlüssel löscht** — deshalb steht `master_pause_enabled` bewusst
+  NICHT in `DEVICE_LOCAL_KEY_PATTERNS`, und `resetIfDeviceChanged()` gibt stattdessen `Boolean`
+  zurück, damit `initializeApp()` `resume()` rufen kann. Eine Pause ist mehr als das
+  DataStore-Flag: `pause()` schreibt zusätzlich den Device-Protected-Spiegel (den der
+  `BootReceiver` VOR der ersten Entsperrung liest), löscht die Alarme und reißt 6h-Wartung,
+  Dimmer-Tick, DND-Tick, Hue-Planung und Pre-Alarm-Refresh ab. Wer nur den Schlüssel entfernt,
+  hinterlässt eine App, die „nicht pausiert" ANZEIGT, deren Boot-Wiederherstellung aber dauerhaft
+  gesperrt bleibt und deren Hintergrundketten nie wieder anlaufen — die gefährlichere Variante des
+  Bugs, den der Wächter beheben soll. (Der erste Wurf machte genau das; `master_pause_until`
+  existiert im Code überhaupt nicht — ein erfundener Schlüssel, der in zwei Produktivdateien, zwei
+  Tests und dieser Datei stand. `MasterPausePrefs` kennt nur `master_pause_enabled`.)
 - **Der Konfigurations-Export (Settings-Tab → „Konfiguration" → „Exportieren"/„Importieren")
   entscheidet durch AUSSCHLUSS, nicht durch Aufzählen.** Die Stores werden generisch exportiert,
   `ConfigBackupFilter` nimmt heraus, was nicht mit darf — damit ist eine neue Einstellung automatisch

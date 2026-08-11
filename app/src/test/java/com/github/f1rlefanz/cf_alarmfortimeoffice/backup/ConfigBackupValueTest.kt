@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 /**
@@ -100,4 +101,35 @@ class ConfigBackupValueTest {
         assertEquals(false, prefs[booleanPreferencesKey("b")])
         assertNull(prefs[booleanPreferencesKey("c")])
     }
+    /**
+     * BESCHAEDIGTE REGELWERKE werden beim Import abgelehnt, statt als "keine Regeln" durchzugehen.
+     *
+     * Beide Leser fangen einen unlesbaren Wert bereits ab (`DimRuleRepository` per `runCatching`,
+     * `HueConfigRepository` per `try/catch`) - und genau dieser Rueckfall auf eine leere Liste ist
+     * das Problem: der Import haette Erfolg gemeldet, und der Nutzer sieht danach eine leere
+     * Regelliste, ohne zu wissen warum. Der Import ist der letzte Ort, an dem das noch SAGBAR ist.
+     */
+    @Test
+    fun `unlesbares Regelwerk wird beim Import abgelehnt`() {
+        assertNotNull(ConfigBackupUseCase.structuralRejection("dim_rules", "{kein json"))
+        assertNotNull(ConfigBackupUseCase.structuralRejection("hue_schedule_rules", "[[[" ))
+        // Ein Objekt statt einer Liste ist strukturell falsch, auch wenn es gueltiges JSON ist.
+        assertNotNull(ConfigBackupUseCase.structuralRejection("dim_rules", """{"id":"x"}"""))
+    }
+
+    /** Leer heisst "keine Regeln" - ein zulaessiger Zustand, kein Defekt. */
+    @Test
+    fun `leeres Regelwerk gilt nicht als beschaedigt`() {
+        assertNull(ConfigBackupUseCase.structuralRejection("dim_rules", ""))
+        assertNull(ConfigBackupUseCase.structuralRejection("dim_rules", "   "))
+        assertNull(ConfigBackupUseCase.structuralRejection("hue_schedule_rules", "[]"))
+    }
+
+    /** Alle anderen Schluessel werden strukturell nicht beurteilt - kein blinder Zweitfilter. */
+    @Test
+    fun `andere Schluessel werden strukturell nicht beurteilt`() {
+        assertNull(ConfigBackupUseCase.structuralRejection("dim_strength", "kein json"))
+        assertNull(ConfigBackupUseCase.structuralRejection("irgendwas", null))
+    }
+
 }

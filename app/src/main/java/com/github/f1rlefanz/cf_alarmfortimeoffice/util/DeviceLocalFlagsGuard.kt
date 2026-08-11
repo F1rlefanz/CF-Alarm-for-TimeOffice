@@ -53,21 +53,7 @@ object DeviceLocalFlagsGuard {
         "battery_prompt_dismissed",
         "unused_app_restrictions_dismissed",
         "timeoffice_health_prompt_dismissed",
-        "oem_hint_shown*",
-        // MASTER-PAUSE. Nicht ganz dieselbe Kategorie wie die Onboarding-Markierungen, aber
-        // dieselbe Notwendigkeit - und deshalb bewusst hier und nicht in einem zweiten Waechter:
-        // die Pause liegt im "settings"-Store, der (richtigerweise) im Android-Backup ist, und
-        // einzelne Schluessel lassen sich aus einem Preferences-Store nicht ausnehmen. Nach einem
-        // Geraetewechsel waere eine aktive Pause damit wieder aktiv - und auf dem neuen Geraet
-        // bliebe der Wecker STILL, ohne dass jemand die Ursache in einer Wiederherstellung sucht.
-        // Anders als die uebrigen Laufzeitwerte in diesem Store wird die Pause NICHT neu
-        // abgeleitet: active_alarms, dim_render_*, die Zen-Regel-ID und die Wartungs-Zeitstempel
-        // entstehen beim naechsten Sync von selbst neu, ein Pausen-Flag nicht.
-        // Abwaegung wie beim Rest dieser App: ein unerwartet klingelnder Wecker ist deutlich
-        // harmloser als ein unerwartet stummer. Wer die Pause auf dem neuen Geraet weiter will,
-        // legt sie mit einem Schalter wieder um; ein Verschlafen laesst sich nicht zurueckholen.
-        "master_pause_enabled",
-        "master_pause_until"
+        "oem_hint_shown*"
     )
 
     /**
@@ -97,8 +83,20 @@ object DeviceLocalFlagsGuard {
     /**
      * Wird beim App-Start aufgerufen. Best-effort: ein Fehler hier darf den Start nicht
      * beeintraechtigen, deshalb faengt der Aufrufer.
+     *
+     * @return true, wenn ein Geraetewechsel erkannt wurde. Der Aufrufer muss daraufhin auch die
+     *         Master-Pause aufheben - und zwar ueber [com.github.f1rlefanz.cf_alarmfortimeoffice
+     *         .masterpause.MasterPauseUseCase.resume], NICHT indem er hier einen Schluessel
+     *         entfernt. Das war der erste, falsche Wurf dieses Waechters: eine Pause besteht aus
+     *         MEHR als dem DataStore-Flag - `pause()` schreibt zusaetzlich den
+     *         Device-Protected-Spiegel (den der BootReceiver VOR der ersten Entsperrung liest),
+     *         loescht die Alarme und reisst 6h-Wartung, Dimmer-Tick, DND-Tick, Hue-Planung und den
+     *         Pre-Alarm-Refresh ab. Wer nur `master_pause_enabled` loescht, hinterlaesst eine App,
+     *         die "nicht pausiert" ANZEIGT, deren Boot-Wiederherstellung aber dauerhaft gesperrt
+     *         bleibt und deren Hintergrundketten nie wieder anlaufen. Genau deshalb steht die
+     *         Master-Pause NICHT in [DEVICE_LOCAL_KEY_PATTERNS].
      */
-    suspend fun resetIfDeviceChanged(dataStore: DataStore<Preferences>) {
+    suspend fun resetIfDeviceChanged(dataStore: DataStore<Preferences>): Boolean {
         val current = currentDeviceMarker()
         val stored = dataStore.data.first()[KEY_DEVICE_MARKER]
 
@@ -107,7 +105,7 @@ object DeviceLocalFlagsGuard {
                 dataStore.edit { it[KEY_DEVICE_MARKER] = current }
                 Logger.d(LogTags.APP, "🔖 GERAETE-MARKER gesetzt (Erstinstallation oder Bestandsinstall)")
             }
-            return
+            return false
         }
 
         val removed = mutableListOf<String>()
@@ -127,5 +125,6 @@ object DeviceLocalFlagsGuard {
                 "(${removed.size}: ${removed.joinToString()}). Akku-Ausnahme und " +
                 "\"Pause bei Nichtnutzung\" muessen auf diesem Geraet neu erteilt werden."
         )
+        return true
     }
 }

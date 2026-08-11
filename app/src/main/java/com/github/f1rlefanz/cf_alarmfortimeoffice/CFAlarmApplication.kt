@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPauseUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
@@ -17,6 +18,7 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -64,6 +66,10 @@ class CFAlarmApplication : Application() {
     @Inject
     @MainDataStore
     lateinit var mainDataStore: DataStore<Preferences>
+
+    /** Fuer das Aufheben einer Master-Pause beim Geraetewechsel - siehe initializeApp(). */
+    @Inject
+    lateinit var masterPauseUseCase: MasterPauseUseCase
 
     override fun onCreate() {
         super.onCreate()
@@ -116,7 +122,21 @@ class CFAlarmApplication : Application() {
                 // per Backup wiederhergestellten Geraet wieder greifen. Best-effort - ein Fehler
                 // hier darf den Start nicht aufhalten.
                 try {
-                    DeviceLocalFlagsGuard.resetIfDeviceChanged(mainDataStore)
+                    val deviceChanged = DeviceLocalFlagsGuard.resetIfDeviceChanged(mainDataStore)
+                    if (deviceChanged && masterPauseUseCase.paused.first()) {
+                        // Eine Master-Pause darf einen Geraetewechsel nicht ueberleben (sonst bleibt
+                        // der Wecker auf dem neuen Geraet still). Aufgehoben wird sie ueber
+                        // resume() und NICHT durch Loeschen des Flags: pause() schreibt auch den
+                        // Device-Protected-Spiegel, den der BootReceiver vor der ersten Entsperrung
+                        // liest, und reisst 6h-Wartung, Dimmer-/DND-Tick, Hue-Planung und
+                        // Pre-Alarm-Refresh ab. Nur resume() baut das alles wieder auf.
+                        Logger.w(
+                            LogTags.MASTER_PAUSE,
+                            "🔄 GERAETEWECHSEL: aktive Master-Pause wird aufgehoben - sie gilt fuer " +
+                                "das alte Geraet. Hintergrundketten werden neu aufgebaut."
+                        )
+                        masterPauseUseCase.resume()
+                    }
                 } catch (e: Exception) {
                     Logger.w(LogTags.APP, "⚠️ STARTUP: Geraete-Marker konnte nicht geprueft werden", e)
                 }

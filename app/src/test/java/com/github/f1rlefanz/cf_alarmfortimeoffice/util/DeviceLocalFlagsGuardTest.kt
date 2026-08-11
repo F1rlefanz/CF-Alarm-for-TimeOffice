@@ -39,16 +39,25 @@ class DeviceLocalFlagsGuardTest {
     }
 
     /**
-     * Die Master-Pause MUSS beim Geraetewechsel zurueckgesetzt werden. Sie liegt im
-     * "settings"-Store, der im Android-Backup ist, und einzelne Schluessel lassen sich daraus
-     * nicht ausnehmen - eine aktive Pause waere nach einem Restore wieder aktiv und der Wecker auf
-     * dem neuen Geraet STILL. Anders als die uebrigen Laufzeitwerte dort wird sie NICHT neu
-     * abgeleitet.
+     * DIE MASTER-PAUSE GEHOERT AUSDRUECKLICH NICHT HIERHER - und das ist die Korrektur eines
+     * eigenen Fehlers, nicht eine Luecke.
+     *
+     * Sie MUSS beim Geraetewechsel aufgehoben werden (sie liegt im "settings"-Store, der im
+     * Android-Backup ist; nach einem Restore waere der Wecker auf dem neuen Geraet STILL). Aber
+     * nicht durch Loeschen dieses Schluessels: eine Pause besteht aus mehr als dem
+     * DataStore-Flag - `MasterPauseUseCase.pause()` schreibt zusaetzlich den
+     * Device-Protected-Spiegel, den der BootReceiver VOR der ersten Entsperrung liest, loescht die
+     * Alarme und reisst 6h-Wartung, Dimmer-Tick, DND-Tick, Hue-Planung und Pre-Alarm-Refresh ab.
+     * Wer nur den Schluessel entfernt, hinterlaesst eine App, die "nicht pausiert" ANZEIGT, deren
+     * Boot-Wiederherstellung aber dauerhaft gesperrt bleibt und deren Hintergrundketten nie wieder
+     * anlaufen - die GEFAEHRLICHERE Variante desselben Bugs.
+     *
+     * Deshalb gibt `resetIfDeviceChanged()` ein `Boolean` zurueck und `CFAlarmApplication.
+     * initializeApp()` ruft bei einem erkannten Wechsel `MasterPauseUseCase.resume()`.
      */
     @Test
-    fun `Master-Pause wird beim Geraetewechsel zurueckgesetzt`() {
-        assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("master_pause_enabled"))
-        assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("master_pause_until"))
+    fun `Master-Pause ist kein geraetelokaler Schluessel - sie wird ueber resume aufgehoben`() {
+        assertFalse(DeviceLocalFlagsGuard.isDeviceLocalKey("master_pause_enabled"))
     }
 
     @Test

@@ -599,7 +599,35 @@ class AlarmManagerService(
             minutes: Long = SNOOZE_MINUTES
         ) {
             val triggerTime = System.currentTimeMillis() + minutes * 60 * 1000L
+            armSnooze(
+                context = context,
+                alarmId = alarmId,
+                triggerTime = triggerTime,
+                shiftName = shiftName,
+                shiftStartTimeFormatted = shiftStartTimeFormatted,
+                logContext = "Snooze-Alarm gesetzt: $shiftName in $minutes Min"
+            )
+        }
 
+        /**
+         * Armiert einen Snooze-Alarm zu einem BEREITS BERECHNETEN Zeitpunkt und merkt ihn vor.
+         *
+         * EIN Weg fuer beide Anlaesse - [scheduleSnooze] (der Nutzer drueckt schlummern) und
+         * [restorePendingSnoozes] (nach einem Reboot). Bewusst gemeinsam: der PendingIntent muss in
+         * BEIDEN Faellen bis aufs Zeichen derselbe sein (requestCode = alarmId, action =
+         * [snoozeAlarmAction]), sonst trifft ein spaeterer Abbruch den wiederhergestellten Snooze
+         * nicht mehr - und ein Snooze, der sich nicht abbrechen laesst, klingelt mitten in einer
+         * Pause, die der Nutzer eingeschaltet hat. Zwei getrennte Kopien dieses Intents waeren genau
+         * die Doppelung, die im Projekt schon einmal zu zwei Wartungsketten gefuehrt hat.
+         */
+        private fun armSnooze(
+            context: Context,
+            alarmId: Int,
+            triggerTime: Long,
+            shiftName: String,
+            shiftStartTimeFormatted: String,
+            logContext: String
+        ) {
             val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
                 putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
                 putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
@@ -639,12 +667,9 @@ class AlarmManagerService(
                 )
                 // Erst NACH erfolgreicher Planung vormerken: der Eintrag ist die einzige Spur, ueber
                 // die ein schwebender Snooze spaeter noch abgebrochen werden kann.
-                rememberPendingSnooze(context, alarmId, triggerTime)
+                rememberPendingSnooze(context, alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
 
-                Logger.business(
-                    LogTags.ALARM_MANAGER,
-                    "😴 Snooze-Alarm gesetzt: $shiftName in $minutes Min (id=$alarmId)"
-                )
+                Logger.business(LogTags.ALARM_MANAGER, "😴 $logContext (id=$alarmId)")
             } catch (e: SecurityException) {
                 Logger.e(
                     LogTags.ALARM_MANAGER,
@@ -680,17 +705,58 @@ class AlarmManagerService(
             context.createDeviceProtectedStorageContext()
                 .getSharedPreferences(SNOOZE_PREFS_NAME, Context.MODE_PRIVATE)
 
-        /** "id|triggerTime" - reine Funktion, damit das Format testbar bleibt. */
-        internal fun encodeSnoozeEntry(alarmId: Int, triggerTime: Long): String =
-            "$alarmId$SNOOZE_ENTRY_SEPARATOR$triggerTime"
+        /**
+         * Ein vorgemerkter Snooze. [shiftName]/[shiftStartTimeFormatted] koennen leer sein - dann
+         * stammt der Eintrag aus einem Merker vor v1.23.0, der nur ID und Zeit kannte.
+         */
+        internal data class SnoozeEntry(
+            val id: Int,
+            val triggerTime: Long,
+            val shiftName: String,
+            val shiftStartTimeFormatted: String
+        )
 
-        /** null bei kaputtem/fremdem Eintrag - ein Lesefehler darf nie den Cancel-Weg sprengen. */
-        internal fun parseSnoozeEntry(entry: String): Pair<Int, Long>? {
+        /**
+         * "id|triggerTime|shiftName|shiftStart" - reine Funktion, damit das Format testbar bleibt.
+         *
+         * Die beiden Textfelder kamen mit v1.23.0 dazu, weil der Merker seit dem
+         * Reboot-Wiederherstellen (siehe [restorePendingSnoozes]) nicht nur zum ABBRECHEN dient:
+         * zum Neusetzen braucht der Alarm dieselben Anzeigedaten wie beim ersten Mal, sonst zeigt
+         * das Vollbild nach einem Reboot "Deine Schicht beginnt um" ohne Zeit.
+         *
+         * Das Trennzeichen wird aus den Textfeldern entfernt, statt sie zu escapen: es sind reine
+         * Anzeigetexte, ein ersetztes Zeichen ist harmlos - ein zerbrochener Eintrag nicht.
+         */
+        internal fun encodeSnoozeEntry(
+            alarmId: Int,
+            triggerTime: Long,
+            shiftName: String = "",
+            shiftStartTimeFormatted: String = ""
+        ): String = listOf(
+            alarmId.toString(),
+            triggerTime.toString(),
+            shiftName.replace(SNOOZE_ENTRY_SEPARATOR, "/"),
+            shiftStartTimeFormatted.replace(SNOOZE_ENTRY_SEPARATOR, "/")
+        ).joinToString(SNOOZE_ENTRY_SEPARATOR)
+
+        /**
+         * null bei kaputtem/fremdem Eintrag - ein Lesefehler darf nie den Cancel-Weg sprengen.
+         *
+         * Der ZWEITEILIGE Altbestand bleibt lesbar. Wuerde er hier als kaputt gelten, verloere ein
+         * Nutzer, der genau ueber die Aktualisierung hinweg schlummert, den einzigen Weg, diesen
+         * Snooze noch abzubrechen - der Eintrag ist seine einzige Spur.
+         */
+        internal fun parseSnoozeEntry(entry: String): SnoozeEntry? {
             val parts = entry.split(SNOOZE_ENTRY_SEPARATOR)
-            if (parts.size != 2) return null
+            if (parts.size != 2 && parts.size != 4) return null
             val id = parts[0].toIntOrNull() ?: return null
             val triggerTime = parts[1].toLongOrNull() ?: return null
-            return id to triggerTime
+            return SnoozeEntry(
+                id = id,
+                triggerTime = triggerTime,
+                shiftName = parts.getOrNull(2) ?: "",
+                shiftStartTimeFormatted = parts.getOrNull(3) ?: ""
+            )
         }
 
         /**
@@ -700,21 +766,30 @@ class AlarmManagerService(
         internal fun pruneSnoozeEntries(entries: Set<String>, now: Long): Set<String> =
             entries.filter { raw ->
                 val parsed = parseSnoozeEntry(raw)
-                parsed != null && parsed.second > now
+                parsed != null && parsed.triggerTime > now
             }.toSet()
 
         internal fun snoozeIdsOf(entries: Set<String>): List<Int> =
-            entries.mapNotNull { parseSnoozeEntry(it)?.first }.distinct()
+            entries.mapNotNull { parseSnoozeEntry(it)?.id }.distinct()
 
-        private fun rememberPendingSnooze(context: Context, alarmId: Int, triggerTime: Long) {
+        private fun rememberPendingSnooze(
+            context: Context,
+            alarmId: Int,
+            triggerTime: Long,
+            shiftName: String,
+            shiftStartTimeFormatted: String
+        ) {
             try {
                 val prefs = snoozePrefs(context)
                 val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
                 val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
-                    .filterNot { parseSnoozeEntry(it)?.first == alarmId }
+                    .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
                 prefs.edit()
-                    .putStringSet(KEY_SNOOZE_ENTRIES, kept + encodeSnoozeEntry(alarmId, triggerTime))
+                    .putStringSet(
+                        KEY_SNOOZE_ENTRIES,
+                        kept + encodeSnoozeEntry(alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
+                    )
                     .apply()
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht geschrieben werden", e)
@@ -726,7 +801,7 @@ class AlarmManagerService(
                 val prefs = snoozePrefs(context)
                 val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
                 val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
-                    .filterNot { parseSnoozeEntry(it)?.first == alarmId }
+                    .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
                 prefs.edit().putStringSet(KEY_SNOOZE_ENTRIES, kept).apply()
             } catch (e: Exception) {
@@ -777,6 +852,68 @@ class AlarmManagerService(
             if (ids.isEmpty()) return
             Logger.business(LogTags.ALARM_MANAGER, "🚫 ${ids.size} schwebende Snooze-Alarme werden abgebrochen")
             ids.forEach { cancelSnooze(context, it) }
+        }
+
+        /**
+         * Setzt schwebende Snooze-Alarme nach einem Reboot neu - der Weg, der sonst zum Verschlafen
+         * fuehrt.
+         *
+         * AlarmManager verliert bei einem Reboot ALLE Alarme. Der [DirectBootAlarmStore] deckt die
+         * regulaeren Alarme ab; ein Snooze stand bis v1.23.0 in keinem der beiden
+         * Wiederherstellungs-Pfade. Der Ablauf war damit: Wecker klingelt, der Nutzer drueckt
+         * schlummern, das Geraet startet in den naechsten Minuten neu (Systemupdate, Akku leer und
+         * am Kabel wieder an, Absturz) - und es klingelt NIE wieder. Der Ursprungsalarm ist zu dem
+         * Zeitpunkt schon gefeuert und aus dem Repository geraeumt, es gibt also auch keinen
+         * zweiten Anker. Genau die Datenlage, fuer die dieser Merker existiert: er liegt im
+         * DEVICE-PROTECTED Storage und ist deshalb schon bei LOCKED_BOOT_COMPLETED lesbar, also vor
+         * der ersten Entsperrung.
+         *
+         * Verstrichene Eintraege werden dabei weggeraeumt (nicht neu gesetzt): ihr Snooze ist
+         * gefeuert oder wurde gestoppt. Ein Eintrag aus einer Version vor v1.23.0 hat keine
+         * Anzeigedaten - er wird trotzdem gesetzt, nur ohne Schichtnamen. Lieber ein Wecker ohne
+         * Beschriftung als kein Wecker.
+         *
+         * @return Anzahl der wiederhergestellten Snooze-Alarme.
+         */
+        fun restorePendingSnoozes(context: Context): Int {
+            val now = System.currentTimeMillis()
+            val entries = try {
+                snoozePrefs(context).getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
+            } catch (e: Exception) {
+                Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht gelesen werden", e)
+                return 0
+            }
+            if (entries.isEmpty()) return 0
+
+            val alive = pruneSnoozeEntries(entries, now)
+            if (alive.size != entries.size) {
+                try {
+                    snoozePrefs(context).edit().putStringSet(KEY_SNOOZE_ENTRIES, alive).apply()
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht bereinigt werden", e)
+                }
+            }
+
+            var restored = 0
+            alive.mapNotNull { parseSnoozeEntry(it) }.forEach { entry ->
+                try {
+                    armSnooze(
+                        context = context,
+                        alarmId = entry.id,
+                        triggerTime = entry.triggerTime,
+                        shiftName = entry.shiftName,
+                        shiftStartTimeFormatted = entry.shiftStartTimeFormatted,
+                        logContext = "Schwebender Snooze nach Neustart wiederhergestellt"
+                    )
+                    restored++
+                } catch (e: Exception) {
+                    Logger.e(
+                        LogTags.ALARM_MANAGER,
+                        "❌ Schwebender Snooze id=${entry.id} konnte nicht wiederhergestellt werden", e
+                    )
+                }
+            }
+            return restored
         }
 
         /**

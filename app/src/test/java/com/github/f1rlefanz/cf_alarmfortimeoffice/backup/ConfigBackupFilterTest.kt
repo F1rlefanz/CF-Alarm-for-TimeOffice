@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,7 +21,6 @@ class ConfigBackupFilterTest {
     @Test
     fun `Master-Pause wird nie exportiert`() {
         assertFalse(ConfigBackupFilter.isExportable("master_pause_enabled"))
-        assertFalse(ConfigBackupFilter.isExportable("master_pause_until"))
         assertEquals("Laufzeitzustand", ConfigBackupFilter.exclusionReason("master_pause_enabled"))
     }
 
@@ -181,5 +181,75 @@ class ConfigBackupFilterTest {
     @Test
     fun `unbekannte Schluessel werden im Zweifel exportiert`() {
         assertTrue(ConfigBackupFilter.isExportable("irgendeine_kuenftige_einstellung"))
+    }
+
+    /**
+     * DIE ZUSICHERUNG, DIE BISHER UNGEPRUEFT WAR: der Filter gilt in BEIDE Richtungen.
+     *
+     * `exclusionReason` ist der eine Ort, an dem entschieden wird - benutzt vom Export (was kommt in
+     * die Datei) UND vom Import (was wird aus einer Datei uebernommen). Der Import darf sich NICHT
+     * darauf verlassen, dass die Datei von diesem Filter erzeugt wurde: sie ist Text, kann von Hand
+     * bearbeitet, aus einer aelteren Version stammen oder von einer anderen Person kommen. Waere die
+     * Pruefung nur im Export, wuerde eine praeparierte Datei eine Master-Pause, fremde Alarme oder
+     * Hue-Zugangsdaten direkt in den Store schreiben.
+     *
+     * Dieser Test haelt fest, dass Begruendung und Entscheidung EIN Wert sind - `isExportable` ist
+     * per Definition `exclusionReason(...) == null`, es gibt also keinen Schluessel, der in einer
+     * Richtung erlaubt und in der anderen verboten waere.
+     */
+    @Test
+    fun `Filter gilt in beide Richtungen - Export und Import teilen eine Entscheidung`() {
+        val verboten = listOf(
+            "master_pause_enabled", "active_alarms", "hue_username", "access_token",
+            "dnd_zen_rule_id", "shift_config", "battery_prompt_dismissed", "dim_overlay_on"
+        )
+        val erlaubt = listOf("snooze_minutes", "dim_rules", "hue_schedule_rules", "dnd_oncall_shifts")
+
+        (verboten + erlaubt).forEach { key ->
+            assertEquals(
+                "'$key': isExportable und exclusionReason muessen dieselbe Entscheidung treffen - " +
+                    "sonst haetten Export und Import unterschiedliche Regeln",
+                ConfigBackupFilter.exclusionReason(key) == null,
+                ConfigBackupFilter.isExportable(key)
+            )
+        }
+        verboten.forEach { assertFalse(ConfigBackupFilter.isExportable(it)) }
+        erlaubt.forEach { assertTrue(ConfigBackupFilter.isExportable(it)) }
+    }
+
+    /**
+     * WERTEBEREICHE: der Schluessel-Filter sagt nichts darueber, ob der WERT verwertbar ist. Zwei
+     * Zahlen sind gefaehrlich, wenn sie aus einer von Hand bearbeiteten Datei kommen:
+     *
+     *  - `snooze_minutes` = 0 oder negativ: der Schlummer-Alarm liegt in der Vergangenheit und
+     *    feuert SOFORT wieder - ein Wecker, der sich nicht mehr wegdruecken laesst.
+     *  - `dnd_oncall_cutoff_min` >= 1440 oder negativ: `DndOnCallCutoffResolver` rechnet
+     *    `LocalTime.ofSecondOfDay(min * 60L)` und wirft dann eine `DateTimeException` - der
+     *    DND-Tick stirbt bei jedem Lauf.
+     */
+    @Test
+    fun `unsinnige Zahlenwerte werden beim Import abgelehnt`() {
+        assertNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 5))
+        assertNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 1))
+        assertNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 120))
+        assertNotNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 0))
+        assertNotNull(ConfigBackupFilter.rangeRejection("snooze_minutes", -5))
+        assertNotNull(ConfigBackupFilter.rangeRejection("snooze_minutes", 121))
+
+        assertNull(ConfigBackupFilter.rangeRejection("dnd_oncall_cutoff_min", 0))
+        assertNull(ConfigBackupFilter.rangeRejection("dnd_oncall_cutoff_min", 1439))
+        assertNotNull(ConfigBackupFilter.rangeRejection("dnd_oncall_cutoff_min", 1440))
+        assertNotNull(ConfigBackupFilter.rangeRejection("dnd_oncall_cutoff_min", -1))
+    }
+
+    /**
+     * Kein Bereich hinterlegt = kein Urteil. Dieser Katalog ist bewusst KEINE zweite
+     * Validierungsschicht fuer alles - fuer die Dimmer-Werte ist die Klemme im Lesepfad die
+     * richtige Ebene, und die ist dort vorhanden.
+     */
+    @Test
+    fun `Schluessel ohne hinterlegten Bereich werden nicht beurteilt`() {
+        assertNull(ConfigBackupFilter.rangeRejection("dim_strength", 99999))
+        assertNull(ConfigBackupFilter.rangeRejection("irgendwas", -1))
     }
 }

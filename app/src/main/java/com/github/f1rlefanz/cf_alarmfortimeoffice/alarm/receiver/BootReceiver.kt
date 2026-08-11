@@ -221,6 +221,24 @@ class BootReceiver : BroadcastReceiver() {
                         )
                     }
                 }
+
+                // SCHWEBENDER SNOOZE: eigener Merker, eigener PendingIntent-Slot - und bis v1.23.0
+                // in KEINEM Wiederherstellungs-Pfad. Wer schlummert und dessen Geraet in den
+                // naechsten Minuten neu startet, wurde nie wieder geweckt: der Ursprungsalarm ist
+                // gefeuert und geraeumt, der Snooze-Alarm stirbt mit dem Reboot. Steht bewusst
+                // hinter demselben Master-Pause-Gate wie die Alarme oben und liest denselben
+                // Device-Protected-Storage, laeuft also auch bei LOCKED_BOOT_COMPLETED.
+                try {
+                    val restoredSnoozes = AlarmManagerService.restorePendingSnoozes(context)
+                    if (restoredSnoozes > 0) {
+                        Logger.business(
+                            LogTags.MAINTENANCE_L4,
+                            "😴 LEVEL 4: $restoredSnoozes schwebende(r) Snooze nach $reason wiederhergestellt"
+                        )
+                    }
+                } catch (e: Exception) {
+                    Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Snooze-Wiederherstellung fehlgeschlagen", e)
+                }
             } catch (e: Exception) {
                 Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Direct-Boot-Restore-Lauf fehlgeschlagen", e)
             } finally {

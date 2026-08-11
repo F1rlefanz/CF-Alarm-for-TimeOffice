@@ -250,6 +250,29 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   wiederhergestellten Snooze nicht mehr — und ein nicht abbrechbarer Snooze klingelt mitten in
   einer gerade eingeschalteten Pause. Der Aufruf steht bewusst hinter demselben
   Master-Pause-Gate wie die Alarme (`directBootAlarmStore.isPausedNow()`, nicht der CE-Store).
+- **NICHTS am Application-Graphen darf WorkManager (oder CE-Storage) beim BAUEN anfassen.** Der
+  Hilt-Graph der Application wird in JEDEM Prozessstart aufgebaut — auch in dem, den das System VOR
+  der ersten Entsperrung für den `directBootAware` `BootReceiver` startet. Dort ist WorkManager
+  NICHT initialisiert: seine Initialisierung hängt am `androidx.startup.InitializationProvider`, und
+  ContentProvider ohne `directBootAware` werden vor dem Entsperren gar nicht instanziiert —
+  `WorkManager.getInstance()` wirft „WorkManager is not initialized properly". Am Emulator
+  reproduziert (11.08.2026): `CFAlarmApplication` injizierte `MasterPauseUseCase` direkt, der zieht
+  über seinen Konstruktor `HueSmartScheduler`, und dessen `initialize()` rief eager
+  `WorkManager.getInstance()`. Der Wurf schlug aus der Feld-Injektion nach oben durch, der Prozess
+  starb mit „Unable to create application" — und damit lief der Direct-Boot-Restore der Alarme UND
+  der schwebenden Snoozes NIE. Die Wecker kamen erst zurück, nachdem der Nutzer das Gerät entsperrt
+  hatte; startet das Gerät nachts neu und niemand entsperrt es, gibt es keinen Wecker. Zwei
+  Maßnahmen, beide nötig: `MasterPauseUseCase` hängt als **`dagger.Lazy`** am Feld (Konstruktion
+  erst nach erkanntem Gerätewechsel, was einen erfolgreichen CE-Read voraussetzt), und
+  `HueSmartScheduler` löst WorkManager erst **beim Gebrauch** auf (Getter statt `lateinit`-Feld) und
+  überspringt sich mit WARN, wenn er nicht verfügbar ist. **Kein Unit-Test kann das fangen** (auch
+  `ColdStartSmokeTest` nicht: er läuft im entsperrten Prozess) — die Prüfung ist ein echter
+  `adb reboot` mit gefülltem Direct-Boot-Spiegel, Ablauf im HANDOFF.
+- **`HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`.** Vorher
+  stand die Zuweisung davor: warf `initialize()` (siehe oben), blieb ein halb initialisiertes
+  Singleton zurück, das `getInstance()` für den ganzen Prozess kommentarlos weiter herausgab —
+  jeder WorkManager-Zugriff darauf scheiterte, heilbar nur durch Prozess-Neustart. Dieselbe
+  Fehlerklasse wie `cleanup()` auf Prozess-Singletons.
 - **Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
   Ausloeser** (Vollbild-Button, Notification-Button) — nicht zwei getrennte Werte. Gelöst NICHT
   durch einen DataStore-Read in einem der beiden Ausloeser selbst: `AlarmSoundService.

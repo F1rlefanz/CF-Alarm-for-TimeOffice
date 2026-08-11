@@ -25,6 +25,44 @@ class ShiftDefinitionMatchingTest {
 
     private val config = ShiftConfig.getDefaultConfig()
 
+    /**
+     * Die Standardkonfiguration, wie sie VOR der Ausweitung des Testkreises aussah: nur das
+     * Stationskuerzel neben dem einbuchstabigen Code, also OHNE die inzwischen ergaenzten
+     * generischen Muster ("Frühdienst"/"Spätdienst"/"Nachtdienst"/"ZD").
+     *
+     * Die einbuchstabigen Codes "F"/"S"/"N" sind KEIN Altlast-Merkmal - [ShiftConfig.getDefaultConfig]
+     * liefert sie weiterhin und absichtlich (ohne sie bleibt eine echte Schicht unerkannt, am
+     * Geraet nachgewiesen; siehe `ShiftDefinitionPatternMatchingTest`). Warum diese Alt-Fassung
+     * hier trotzdem weiterlebt: eine bereits gespeicherte `ShiftConfig` wird NICHT migriert.
+     * Bestandsnutzer fahren also genau diese schmalere Keyword-Liste weiter, und die Staffelung in
+     * `findDefinitionFor` muss die "S"-Kollision auch fuer sie abfangen - ohne dass ein
+     * zusaetzliches generisches Muster dabei aushilft.
+     */
+    private val legacyConfig = ShiftConfig(
+        definitions = listOf(
+            ShiftDefinition("early_shift", "Frühschicht", listOf("F", "IMCF"), LocalTime.of(5, 30)),
+            ShiftDefinition("late_shift", "Spätschicht", listOf("S", "IMCS"), LocalTime.of(12, 30)),
+            ShiftDefinition("night_shift", "Nachtschicht", listOf("N", "IMCN"), LocalTime.of(20, 0)),
+            ShiftDefinition("s2_shift", "S2", listOf("S2"), LocalTime.of(14, 30)),
+            ShiftDefinition("intermediate_shift", "Zwischendienst", listOf("IMCZ"), LocalTime.of(7, 0))
+        )
+    )
+
+    @Test
+    fun `Bestandskonfiguration mit einbuchstabigen Keywords bleibt korrekt zugeordnet`() {
+        // Der eigentliche historische Bug, jetzt gegen die gespeicherte Alt-Konfiguration:
+        // "S2", "Nachtschicht" und "Zwischendienst" enthalten alle ein "s" und landeten frueher
+        // samt und sonders auf "Spaetschicht".
+        legacyConfig.definitions.forEach { expected ->
+            assertEquals(
+                "Schicht '${expected.name}' muss ihre eigene Definition treffen",
+                expected.id,
+                legacyConfig.findDefinitionFor(expected.name)?.id
+            )
+        }
+        assertNull(legacyConfig.findDefinitionFor("Buerodienst"))
+    }
+
     @Test
     fun `jede Standard-Schicht findet ihre eigene Definition`() {
         // Der eigentliche Regressionstest: vorher landeten S2, Nachtschicht und
@@ -43,6 +81,7 @@ class ShiftDefinitionMatchingTest {
         // Der konkrete Fall vom Emulator-Test: "S2" enthaelt das Keyword "S" der Spaetschicht,
         // und Spaetschicht steht in der Liste VOR S2.
         assertEquals("s2_shift", config.findDefinitionFor("S2")?.id)
+        assertEquals("s2_shift", legacyConfig.findDefinitionFor("S2")?.id)
     }
 
     @Test
@@ -50,6 +89,8 @@ class ShiftDefinitionMatchingTest {
         // Beide enthalten ein kleines "s" - fruehere Ursache derselben Fehlzuordnung.
         assertEquals("night_shift", config.findDefinitionFor("Nachtschicht")?.id)
         assertEquals("intermediate_shift", config.findDefinitionFor("Zwischendienst")?.id)
+        assertEquals("night_shift", legacyConfig.findDefinitionFor("Nachtschicht")?.id)
+        assertEquals("intermediate_shift", legacyConfig.findDefinitionFor("Zwischendienst")?.id)
     }
 
     @Test
@@ -79,8 +120,18 @@ class ShiftDefinitionMatchingTest {
 
     @Test
     fun `einbuchstabige Keywords matchen nicht mehr unscharf`() {
+        // Gegen eine minimale Konfiguration mit einbuchstabigem Keyword geprueft. Solche Keywords
+        // stehen weiterhin in der Standardkonfiguration ("F"/"S"/"N", absichtlich - siehe
+        // legacyConfig oben); die Staffelung in findDefinitionFor muss die "S"-Falle deshalb
+        // dauerhaft abfangen, nicht nur fuer selbst angelegte Muster.
+        val mitEinzelbuchstabe = ShiftConfig(
+            definitions = listOf(
+                ShiftDefinition("late", "Spätschicht", listOf("S", "IMCS"), LocalTime.of(12, 30))
+            )
+        )
         // "Buerodienst" enthaelt ein "s" - frueher haette das Spaetschicht getroffen.
         // Jetzt lieber gar keine Regel als die falschen Lampen.
+        assertNull(mitEinzelbuchstabe.findDefinitionFor("Buerodienst"))
         assertNull(config.findDefinitionFor("Buerodienst"))
     }
 

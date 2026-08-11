@@ -19,10 +19,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -115,13 +115,15 @@ class AlarmUseCase @Inject constructor(
                 // eine Gate an der gemeinsamen Stelle faengt JEDEN aktuellen UND kuenftigen Aufrufer.
                 if (masterPausePrefs.pausedNow()) {
                     Logger.business(LogTags.ALARM, "⏸️ SYNC: Master-Pause aktiv - Alarme werden geraeumt, keine neuen erstellt")
-                    clearInternalAlarms()
+                    // Ausdruecklicher Nutzer-Wille -> auch ein schwebender Snooze muss weg
+                    // (siehe alsoCancelPendingSnoozes).
+                    clearInternalAlarms(alsoCancelPendingSnoozes = true)
                     return@safeExecute emptyList()
                 }
 
                 if (!shiftConfig.autoAlarmEnabled) {
                     Logger.d(LogTags.ALARM, "Auto-alarm disabled, not creating alarms")
-                    clearInternalAlarms()
+                    clearInternalAlarms(alsoCancelPendingSnoozes = true)
                     return@safeExecute emptyList()
                 }
                 
@@ -195,11 +197,42 @@ class AlarmUseCase @Inject constructor(
                 // 🔧 SYNC-FIX Step 2: Update changed alarms & create new ones
                 var updatedCount = 0
                 var createdCount = 0
+                var skippedCount = 0
                 val resultAlarms = mutableListOf<AlarmInfo>()
-                
+
+                // "Naechsten Alarm ueberspringen": EINMAL pro Sync lesen. Fail-safe wie der
+                // Silent-/Skip-Check im AlarmReceiver - schlaegt der Lesevorgang fehl (getOrNull =
+                // null), gilt NICHTS als uebersprungen und der Alarm wird ganz normal gestellt.
+                // Im Zweifel wecken.
+                val skippedAlarmId = alarmSkipUseCase.getSkipStatus().getOrNull()
+                    ?.takeIf { it.isNextAlarmSkipped }
+                    ?.skippedAlarmId
+
                 for ((eventId, newAlarm) in newAlarmsMap) {
+                  // Pro Event ein eigenes try/catch: ein einzelner abgelehnter Alarm (z.B.
+                  // AlarmRepository.saveAlarm lehnt eine inzwischen verstrichene Weckzeit ab, weil
+                  // `now` einmal oben gelesen wurde und die DataStore-Schreibvorgaenge der vorherigen
+                  // Events Zeit gekostet haben) hat sonst den GESAMTEN Delta-Sync abgebrochen: der
+                  // schon geloeschte Alarm blieb geloescht und alle noch nicht abgearbeiteten
+                  // Eintraege der (unsortierten) Map wurden weder erstellt noch re-armed.
+                  try {
+                    // SKIP-IMMEDIATE-UX: Der uebersprungene Alarm darf hier NICHT wieder auftauchen.
+                    // AlarmSkipUseCase.skipNextAlarm() cancelt den System-Alarm sofort und loescht den
+                    // Alarm aus dem Repository - fuer den naechsten Sync sah dessen Kalender-Event
+                    // damit wie ein NEUES Event aus: System-Alarm wieder scharf UND eine falsche
+                    // "Neue Schicht erkannt"-Notification, obwohl der Nutzer den Wecker gerade
+                    // abgeschaltet hatte. Das Flag laeuft weiterhin ZEITBASIERT ab
+                    // (clearExpiredSkip oben), nicht ueber diesen Zweig.
+                    if (skippedAlarmId != null && newAlarm.id == skippedAlarmId) {
+                        Logger.business(
+                            LogTags.ALARM,
+                            "⏭️ SYNC: Uebersprungener Alarm wird nicht neu gestellt: ${newAlarm.shiftName} (id=${newAlarm.id})"
+                        )
+                        continue
+                    }
+
                     val existingAlarm = existingAlarms.find { it.eventId == eventId }
-                    
+
                     if (existingAlarm != null) {
                         // Alarm exists - check if anything about it changed. Voller Vergleich statt
                         // nur eventChecksum/triggerTime: sonst bleibt newAlarm (frisch aus der
@@ -253,11 +286,38 @@ class AlarmUseCase @Inject constructor(
                             }
                         }
                     }
+                  } catch (e: CancellationException) {
+                    // MUSS VOR dem generischen catch stehen: CancellationException ist eine
+                    // Exception, aber KEIN Event-Fehler. Wird syncAlarms() gecancelt (z.B.
+                    // AlarmMaintenanceService.onDestroy() -> serviceScope.cancel(), oder ein
+                    // beendeter viewModelScope), wirft ab diesem Moment JEDER suspendierende
+                    // Aufruf im Schleifenkoerper sofort - ohne dieses Weiterwerfen lief die
+                    // Schleife stur bis zum Ende, loggte pro Event einen "uebersprungen"-Fehler
+                    // und meldete anschliessend "complete" mit einer unvollstaendigen Liste.
+                    // Der Aufrufer stempelte darauf saveMaintenanceTime() und die Statusanzeige
+                    // behauptete einen erfolgreichen Sync, obwohl gar nichts geschrieben wurde.
+                    throw e
+                  } catch (e: Exception) {
+                    // Nur DIESES Event ist gescheitert - der Rest des Delta-Syncs laeuft weiter.
+                    skippedCount++
+                    Logger.e(
+                        LogTags.ALARM,
+                        "❌ SYNC: Alarm fuer Event $eventId (${newAlarm.shiftName}) uebersprungen - Rest des Syncs laeuft weiter",
+                        e
+                    )
+                  }
                 }
-                
+
+                // "complete" nur, wenn wirklich alles durchlief - sonst behauptet die Abschlusszeile
+                // einen vollstaendigen Sync, den es nicht gab (die einzelnen Fehlerzeilen darueber
+                // sind in Release-Builds zwar sichtbar, aber leicht zu uebersehen).
                 Logger.business(
-                    LogTags.ALARM, 
-                    "✅ SYNC: Intelligent synchronization complete - " +
+                    LogTags.ALARM,
+                    (if (skippedCount == 0) {
+                        "✅ SYNC: Intelligent synchronization complete - "
+                    } else {
+                        "⚠️ SYNC: Intelligent synchronization UNVOLLSTAENDIG ($skippedCount Event(s) uebersprungen) - "
+                    }) +
                     "Created: $createdCount, Updated: $updatedCount, Deleted: $deletedCount, " +
                     "Total: ${resultAlarms.size} alarms"
                 )
@@ -285,17 +345,46 @@ class AlarmUseCase @Inject constructor(
     /**
      * Internes Clearing (System-Alarme + Repository). Kein eigener Guard: läuft immer
      * unter [alarmSyncMutex] (aufgerufen aus [syncAlarms], [deleteAllAlarms], Legacy-Pfad).
+     *
+     * [alsoCancelPendingSnoozes] NUR bei ausdruecklichem Nutzer-Willen setzen (Master-Pause,
+     * "Automatische Alarme aus", [deleteAllAlarms]). Der Snooze liegt bewusst in einem eigenen
+     * PendingIntent-Slot, damit ihn der Maintenance-Sync NICHT mit abraeumt (siehe
+     * AlarmManagerService.snoozeAlarmAction) - genau deshalb darf er in datengetriebenen
+     * Aufraeumzweigen ("Kalender liefert gerade keine Events / keine passende Schicht", direkt
+     * nach dem Boot oder ohne Netz der Normalfall) auf keinen Fall mitgeloescht werden. Sonst
+     * haette der Nutzer "5 Minuten schlummern" gedrueckt und wuerde nie wieder geweckt.
      */
-    private suspend fun clearInternalAlarms() {
+    private suspend fun clearInternalAlarms(alsoCancelPendingSnoozes: Boolean = false) {
         Logger.d(LogTags.ALARM, "🧹 INTERNAL-CLEAR: Fast internal clearing (system + repository)")
 
         // Step 1: Cancel system alarms
-        val activeAlarmsList = alarmRepository.activeAlarms.first()
+        //
+        // BEWUSST getAllAlarms() und NICHT activeAlarms.first(): activeAlarms ist ein StateFlow,
+        // dessen Startwert emptyList() ist, bis der asynchrone Init-Load des Repositories
+        // zurueckkommt - first() liefert genau diesen leeren Wert sofort, ohne zu warten. In einem
+        // frisch gestarteten Prozess (Wartungs-Service/Worker/Boot) wurde deshalb KEIN System-Alarm
+        // gecancelt, waehrend deleteAllAlarms() gleich danach Repository UND Direct-Boot-Spiegel
+        // leerraeumte: der verwaiste AlarmManager-Eintrag feuerte spaeter trotzdem - bei aktiver
+        // Master-Pause klingelte der Wecker also trotz Pause. getAllAlarms() wartet auf den
+        // Init-Load (siehe AlarmRepository.awaitInitialLoad) und ist damit die einzige verlaessliche
+        // Quelle fuer "welche Alarme kennt die App gerade".
+        // getOrThrow, nicht getOrNull: laesst sich der Bestand gerade nicht lesen, darf NICHT
+        // stillschweigend "nichts zu cancels" daraus werden - dann lieber laut scheitern (der
+        // Aufrufer laeuft in safeExecute) und das Repository unangetastet lassen, statt es zu leeren
+        // und armierte System-Alarme zurueckzulassen, von denen die App nichts mehr weiss.
+        val activeAlarmsList = alarmRepository.getAllAlarms().getOrThrow()
         for (alarm in activeAlarmsList) {
             alarmManagerService.cancelSystemAlarm(alarm.id)
         }
 
-        // Step 2: Clear repository
+        // Step 2: Schwebende Snooze-Alarme - eigener Slot, eigener Cancel-Weg. cancelSystemAlarm()
+        // erreicht sie strukturell nicht, ein bereits gestellter Snooze lief deshalb bisher durch
+        // JEDE App-seitige Abschaltung hindurch und klingelte mitten in der Pause.
+        if (alsoCancelPendingSnoozes) {
+            alarmManagerService.cancelAllSnoozes()
+        }
+
+        // Step 3: Clear repository
         alarmRepository.deleteAllAlarms().getOrThrow()
 
         Logger.d(LogTags.ALARM, "✅ INTERNAL-CLEAR: Fast clearing completed")
@@ -319,12 +408,30 @@ class AlarmUseCase @Inject constructor(
         SafeExecutor.safeExecute("AlarmUseCase.deleteAllAlarms") {
             // Serialisiert gegen syncAlarms/deleteAlarm über denselben Mutex.
             alarmSyncMutex.withLock {
-                clearInternalAlarms()
+                // "Alles loeschen" ist immer ausdruecklicher Nutzer-Wille (Master-Pause,
+                // Wecker-Tab-Schalter) - ein schwebender Snooze muss dabei mit weg.
+                clearInternalAlarms(alsoCancelPendingSnoozes = true)
             }
         }
     
     override suspend fun scheduleSystemAlarm(alarmInfo: AlarmInfo): Result<Unit> =
         SafeExecutor.safeExecute("AlarmUseCase.scheduleSystemAlarm") {
+            // Zentraler Backstop fuer "Naechsten Alarm ueberspringen": diese Funktion ist der EINZIGE
+            // Weg, auf dem ein Alarm (neu, geaendert, unveraendert-re-armed, Boot-Restore) im
+            // AlarmManager landet. Ein Gate pro Aufrufer waere genauso fehleranfaellig wie beim
+            // Master-Pause-Backstop in syncAlarms() - BootReceiver re-armt z.B. alle gespeicherten
+            // Alarme direkt hierueber.
+            // Fail-safe: schlaegt der Lesevorgang fehl (getOrNull = null), gilt der Alarm als NICHT
+            // uebersprungen und wird gestellt. Im Zweifel wecken.
+            val skipState = alarmSkipUseCase.getSkipStatus().getOrNull()
+            if (skipState?.isNextAlarmSkipped == true && skipState.skippedAlarmId == alarmInfo.id) {
+                Logger.business(
+                    LogTags.ALARM,
+                    "⏭️ SCHEDULE: Alarm ${alarmInfo.id} (${alarmInfo.shiftName}) ist als uebersprungen markiert - kein System-Alarm"
+                )
+                return@safeExecute
+            }
+
             // Create dummy ShiftMatch for AlarmManagerService compatibility
             val shiftDefinition = ShiftDefinition(
                 id = alarmInfo.shiftId,

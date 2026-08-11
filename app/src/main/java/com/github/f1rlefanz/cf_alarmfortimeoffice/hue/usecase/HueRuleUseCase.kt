@@ -343,12 +343,19 @@ class HueRuleUseCase @Inject constructor(
     /**
      * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln.
      *
-     * Bewusst OHNE eigenen Schicht-Filter: der Aufrufer hat die Regeln schon passend gewaehlt
-     * ([findApplicableRules] matcht auch ueber die KEYWORDS einer Schicht). Ein zweiter Filter
-     * gegen den Schichtnamen wuerde genau die Regeln wieder wegwerfen, die ueber ein Keyword
-     * getroffen haben - eine Regel mit shiftPattern "Frueh" faellt gegen "Fruehschicht" durch
-     * und verloere ihr Auto-Aus. Diese Funktion besitzt nur den Rechenweg (welche Ziele, welche
-     * Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
+     * Bewusst OHNE eigenen Schicht-Filter: die Auswahl gehoert allein [findApplicableRules]
+     * (exakter Definitionsname ODER [UNIVERSAL_SHIFT_PATTERN]). Ein zweiter Filter gegen den
+     * Schichtnamen waere eine zweite Wahrheit - und wuerde konkret die UNIVERSAL-Regeln wieder
+     * wegwerfen, deren `shiftPattern` per Definition NICHT dem Schichtnamen gleicht: sie
+     * verloeren ihr Auto-Aus, das Licht blieb an. Diese Funktion besitzt nur den Rechenweg
+     * (welche Ziele, welche Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
+     *
+     * (Hier stand bis zu diesem Fix als Begruendung, [findApplicableRules] matche "auch ueber die
+     * KEYWORDS einer Schicht" - das tut es seit dem Keyword-Fix in v1.11.0 nicht mehr, siehe
+     * den Kommentar dort und `matchingPreAlarmSunriseRules`. Die Entscheidung "kein zweiter
+     * Filter" war richtig, nur die Begruendung war veraltet - und eine veraltete Begruendung
+     * verleitet dazu, das Keyword-Matching "wiederherzustellen", also genau die Fehlerfamilie
+     * neu zu bauen, die CLAUDE.md unter "Schicht -> Regel" festhaelt.)
      */
     private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -121,10 +122,28 @@ class CalendarSelectionRepository @Inject constructor(
             Logger.i(LogTags.CALENDAR, "Calendar selection saved: ${calendarIds.size} calendars selected")
         }
 
-    override suspend fun getCurrentSelectedCalendarIds(): Result<Set<String>> = 
+    override suspend fun getCurrentSelectedCalendarIds(): Result<Set<String>> =
         SafeExecutor.safeExecute("CalendarSelectionRepository.getCurrentSelectedCalendarIds") {
-            // Nutze StateFlow für synchronen Zugriff
-            _selectedCalendarIds.value
+            // LIEST DEN DATASTORE, NICHT DEN STATEFLOW.
+            //
+            // _selectedCalendarIds startet auf emptySet() und wird erst durch den in init{}
+            // gestarteten, unabgewarteten Collector befuellt (eigener repositoryScope auf
+            // Dispatchers.IO). Wer den .value direkt danach liest, bekommt "keine Kalender
+            // ausgewaehlt" - ohne jedes Signal, dass nur noch nicht geladen wurde. Genau die
+            // Fehlerklasse, vor der CLAUDE.md warnt: fuer eine Wecker-App ist "leer" von
+            // "wirklich nichts ausgewaehlt" nicht zu unterscheiden.
+            //
+            // Real relevant fuer prozess-kalt gestartete Hintergrund-Aufrufer:
+            // CalendarPreAlarmRefreshWorker (WorkManager, 3h vor der Weckzeit) und
+            // AlarmMaintenanceService haben kein Aequivalent zum 5s-Warten des BootReceivers -
+            // sie haetten den Lauf lautlos als "keine Kalender ausgewaehlt" verbraucht.
+            //
+            // Diese Funktion ist bereits `suspend`; der DataStore-Read ist der einzige Weg, der
+            // die Hydrierung garantiert abwartet. Der StateFlow bleibt unveraendert die Quelle
+            // fuer reaktive Beobachter (UI/ViewModels).
+            dataStore.data
+                .map { preferences -> preferences[selectedCalendarIdsKey] ?: emptySet() }
+                .first()
         }
 
     /**

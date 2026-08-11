@@ -1,11 +1,16 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.app.Application
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPauseUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.SimpleFileTree
@@ -13,6 +18,7 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -51,7 +57,20 @@ class CFAlarmApplication : Application() {
     
     @Inject
     lateinit var shiftUseCase: IShiftUseCase
-    
+
+    /**
+     * Der "settings"-Store. Gebraucht fuer [DeviceLocalFlagsGuard]: er enthaelt neben den echten
+     * Einstellungen auch geraetelokale Onboarding-Flags, die nach einem Backup-Restore auf ein
+     * neues Geraet nicht gelten duerfen.
+     */
+    @Inject
+    @MainDataStore
+    lateinit var mainDataStore: DataStore<Preferences>
+
+    /** Fuer das Aufheben einer Master-Pause beim Geraetewechsel - siehe initializeApp(). */
+    @Inject
+    lateinit var masterPauseUseCase: MasterPauseUseCase
+
     override fun onCreate() {
         super.onCreate()
         
@@ -98,6 +117,30 @@ class CFAlarmApplication : Application() {
     private fun initializeApp() {
         applicationScope.launch {
             try {
+                // ZUERST: geraetelokale Onboarding-Flags pruefen. Muss VOR allem anderen laufen,
+                // damit die Onboarding-Gates (Akku-Ausnahme, "Pause bei Nichtnutzung") auf einem
+                // per Backup wiederhergestellten Geraet wieder greifen. Best-effort - ein Fehler
+                // hier darf den Start nicht aufhalten.
+                try {
+                    val deviceChanged = DeviceLocalFlagsGuard.resetIfDeviceChanged(mainDataStore)
+                    if (deviceChanged && masterPauseUseCase.paused.first()) {
+                        // Eine Master-Pause darf einen Geraetewechsel nicht ueberleben (sonst bleibt
+                        // der Wecker auf dem neuen Geraet still). Aufgehoben wird sie ueber
+                        // resume() und NICHT durch Loeschen des Flags: pause() schreibt auch den
+                        // Device-Protected-Spiegel, den der BootReceiver vor der ersten Entsperrung
+                        // liest, und reisst 6h-Wartung, Dimmer-/DND-Tick, Hue-Planung und
+                        // Pre-Alarm-Refresh ab. Nur resume() baut das alles wieder auf.
+                        Logger.w(
+                            LogTags.MASTER_PAUSE,
+                            "🔄 GERAETEWECHSEL: aktive Master-Pause wird aufgehoben - sie gilt fuer " +
+                                "das alte Geraet. Hintergrundketten werden neu aufgebaut."
+                        )
+                        masterPauseUseCase.resume()
+                    }
+                } catch (e: Exception) {
+                    Logger.w(LogTags.APP, "⚠️ STARTUP: Geraete-Marker konnte nicht geprueft werden", e)
+                }
+
                 // CRITICAL: Initialize Hue Bridge Connection Manager first
                 Logger.i(LogTags.HUE_BRIDGE, "🔄 STARTUP: Initializing robust Hue Bridge connection management")
                 try {
@@ -126,15 +169,23 @@ class CFAlarmApplication : Application() {
                         if (currentConfig != null) {
                             Logger.business(LogTags.SHIFT_CONFIG, "✅ STARTUP: ShiftConfig loaded successfully - autoAlarm=${currentConfig.autoAlarmEnabled}")
                         } else {
-                            Logger.i(LogTags.SHIFT_CONFIG, "🔧 STARTUP: No ShiftConfig found, creating default")
-                            val defaultConfig = com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig.getDefaultConfig()
-                            shiftUseCase.saveShiftConfig(defaultConfig)
-                                .onSuccess {
-                                    Logger.business(LogTags.SHIFT_CONFIG, "✅ STARTUP: Default ShiftConfig created - autoAlarm=${defaultConfig.autoAlarmEnabled}")
-                                }
-                                .onFailure { error ->
-                                    Logger.e(LogTags.SHIFT_CONFIG, "❌ STARTUP: Failed to save default ShiftConfig", error)
-                                }
+                            // KEIN Default-Fallback, der SCHREIBT. Dieselbe Fehlerklasse hatte drei
+                            // Schreibstellen (hier, ShiftViewModel.loadShiftConfig() und
+                            // CalendarViewModel.createAlarmsFromLoadedEvents()); alle drei sind
+                            // geschlossen.
+                            //
+                            // `null` bedeutet hier NICHT mehr "noch nie konfiguriert": seit
+                            // ShiftConfigRepository die Faelle trennt, liefert der
+                            // Nicht-konfiguriert-Fall die Standardkonfiguration als ERFOLG. Ein
+                            // Fehlschlag heisst also: vorhanden, aber unlesbar - und genau dort
+                            // ist Ueberschreiben Datenverlust. Dieser Pfad laeuft bei JEDEM
+                            // Kaltstart im applicationScope, auch bei rein hintergrund-getriebenen
+                            // Prozessstarts, also ohne dass ein Nutzer etwas davon mitbekaeme.
+                            Logger.e(
+                                LogTags.SHIFT_CONFIG,
+                                "❌ STARTUP: Schicht-Konfiguration nicht lesbar - sie wird NICHT mit " +
+                                    "Standardwerten ueberschrieben. Rohdaten liegen als shift_config_broken."
+                            )
                         }
                     } catch (e: Exception) {
                         Logger.e(LogTags.SHIFT_CONFIG, "❌ STARTUP: Exception during ShiftConfig initialization", e)

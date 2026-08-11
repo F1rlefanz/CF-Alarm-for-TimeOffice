@@ -109,8 +109,15 @@ class DndPrefs @Inject constructor(
     val onCallShifts: Flow<Set<String>> = dataStore.data.map { it[KEY_ONCALL_SHIFTS] ?: emptySet() }
 
     /** Cutoff-Uhrzeit an Rufbereitschafts-Tagen, in Minuten seit Mitternacht. Default 05:00. */
+    /**
+     * Geklemmt auf einen echten Tageszeitpunkt: [DndOnCallCutoffResolver] rechnet
+     * `LocalTime.ofSecondOfDay(cutoffMinutes * 60L)`, und das wirft bei negativem Wert oder ab
+     * 1440 eine `DateTimeException` - der DND-Tick wuerde dann bei JEDEM Lauf sterben. Der Wert
+     * liegt im `settings`-Store, kommt also auch aus dem Android-Backup und der
+     * Konfigurationsdatei, nicht nur aus der eigenen UI.
+     */
     val onCallCutoffMinutes: Flow<Int> = dataStore.data.map {
-        it[KEY_ONCALL_CUTOFF_MIN] ?: DEFAULT_ONCALL_CUTOFF_MIN
+        (it[KEY_ONCALL_CUTOFF_MIN] ?: DEFAULT_ONCALL_CUTOFF_MIN).coerceIn(0, 24 * 60 - 1)
     }
 
     /** Die einmal registrierte [android.app.AutomaticZenRule]-ID; leer = noch nicht registriert. */

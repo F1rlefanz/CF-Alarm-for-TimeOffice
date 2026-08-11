@@ -40,6 +40,108 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+/**
+ * PURE, TESTBAR: Warum die Karte "Naechste Schicht" gerade keine Schicht anzeigen kann.
+ *
+ * Der else-Zweig zeigte fuer mindestens sechs voellig verschiedene Zustaende denselben,
+ * ursachenlosen Satz "Keine Schicht erkannt" - ein Nutzer konnte daraus nicht ablesen, ob der
+ * Kalender, die Anmeldung oder seine Erkennungsmuster das Problem sind. Alle unterscheidenden
+ * Felder liegen im Composable ohnehin schon als Parameter vor.
+ */
+internal enum class NoShiftReason {
+    NO_CALENDAR_SELECTED,
+    AUTHORIZATION_LOST,
+    LOAD_ERROR,
+    NO_EVENTS,
+    SHIFT_CONFIG_NOT_LOADED,
+    NO_SHIFT_TYPES,
+    NO_PATTERN_MATCH,
+    ONLY_PAST_SHIFTS
+}
+
+/**
+ * PURE, TESTBAR: Leitet den Grund aus den vorhandenen UI-Zustaenden ab.
+ *
+ * Reihenfolge = von der grundlegendsten Ursache zur speziellsten: Ohne Kalender ist alles andere
+ * belanglos, ohne Autorisierung koennen keine Termine kommen, usw. Der letzte Fall ist bewusst
+ * kein "unbekannt": Sind Schichten erkannt, aber keine kuenftige dabei, liegen sie in der
+ * Vergangenheit ([ShiftUiState.upcomingShift] filtert auf `startTime.isAfter(now)`).
+ */
+internal fun noShiftReason(
+    hasSelectedCalendars: Boolean,
+    calendarAuthorizationValid: Boolean,
+    errorMessage: String?,
+    eventCount: Int,
+    shiftConfigLoaded: Boolean,
+    enabledShiftTypeCount: Int,
+    recognizedShiftCount: Int
+): NoShiftReason = when {
+    !hasSelectedCalendars -> NoShiftReason.NO_CALENDAR_SELECTED
+    !calendarAuthorizationValid -> NoShiftReason.AUTHORIZATION_LOST
+    !errorMessage.isNullOrBlank() -> NoShiftReason.LOAD_ERROR
+    eventCount == 0 -> NoShiftReason.NO_EVENTS
+    !shiftConfigLoaded -> NoShiftReason.SHIFT_CONFIG_NOT_LOADED
+    enabledShiftTypeCount == 0 -> NoShiftReason.NO_SHIFT_TYPES
+    recognizedShiftCount == 0 -> NoShiftReason.NO_PATTERN_MATCH
+    else -> NoShiftReason.ONLY_PAST_SHIFTS
+}
+
+/**
+ * PURE, TESTBAR: Formuliert Grund + Handlungsschritt.
+ *
+ * Bei [NoShiftReason.NO_PATTERN_MATCH] werden die tatsaechlich geladenen Termintitel genannt - das
+ * ist der Fall, in dem der Nutzer seine Stichwoerter mit dem vergleichen muss, was im Kalender
+ * wirklich steht (der gemeldete Konfigurationsfall eines Kollegen auf einer anderen Station).
+ *
+ * Der Hinweis auf ausgeschaltete Automatik-Alarme ist bewusst ein ZUSATZ und kein eigener Grund:
+ * Die Schichterkennung laeuft unabhaengig von `autoAlarmEnabled` weiter (ShiftViewModel
+ * .observeCalendarEvents), der Schalter erklaert also nie, warum keine Schicht erkannt wurde.
+ */
+internal fun noShiftExplanation(
+    reason: NoShiftReason,
+    errorMessage: String? = null,
+    sampleEventTitles: List<String> = emptyList(),
+    autoAlarmEnabled: Boolean = true
+): String {
+    val core = when (reason) {
+        NoShiftReason.NO_CALENDAR_SELECTED ->
+            // "Kalender wählen" ist der Knopf, den der Status-Tab in genau diesem Zustand anbietet
+            // (StatusTabContent, Karte "Kalender") - dorthin zeigen, nicht auf einen erfundenen Weg.
+            "Noch kein Kalender ausgewählt — im Status-Tab unter \"Kalender\" den Dienstplan-Kalender wählen."
+        NoShiftReason.AUTHORIZATION_LOST ->
+            // KEINE Positionsangabe ("in der Karte darunter"): direkt unter dieser Karte liegt die
+            // Alarm-Status-Karte, die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
+            // sitzt erst eine Karte weiter. Wie bei den anderen Gruenden die Beschriftung nennen,
+            // die im Screen wirklich steht (Karte "Kalender-Events", Knopf darin).
+            "Kalender-Zugriff abgelaufen — in der Karte \"Kalender-Events\" auf " +
+                "\"Kalender-Zugriff erneuern\" tippen."
+        NoShiftReason.LOAD_ERROR ->
+            "Termine konnten nicht geladen werden: ${errorMessage?.takeIf { it.isNotBlank() } ?: "unbekannter Fehler"}"
+        NoShiftReason.NO_EVENTS ->
+            "Keine Termine in den nächsten 14 Tagen — im gewählten Kalender steht nichts."
+        NoShiftReason.SHIFT_CONFIG_NOT_LOADED ->
+            "Schichttypen werden noch geladen."
+        NoShiftReason.NO_SHIFT_TYPES ->
+            "Keine aktiven Schichttypen — lege sie im Wecker-Tab unter \"Schichttypen verwalten\" an."
+        NoShiftReason.NO_PATTERN_MATCH -> buildString {
+            append("Termine gefunden, aber kein Erkennungsmuster passt")
+            if (sampleEventTitles.isNotEmpty()) {
+                append(" (im Kalender steht: ")
+                append(sampleEventTitles.joinToString(", "))
+                append(")")
+            }
+            append(". Erkennungsmuster im Wecker-Tab unter \"Schichttypen verwalten\" prüfen.")
+        }
+        NoShiftReason.ONLY_PAST_SHIFTS ->
+            "Alle erkannten Schichten liegen bereits in der Vergangenheit."
+    }
+    return if (autoAlarmEnabled) {
+        core
+    } else {
+        "$core\nHinweis: Automatische Alarme sind derzeit ausgeschaltet."
+    }
+}
+
 @Composable
 fun HomeTabContent(
     calendarState: CalendarUiState,
@@ -133,9 +235,36 @@ fun HomeTabContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
+                        // Nicht nur "Keine Schicht erkannt", sondern WARUM: der Satz allein galt fuer
+                        // sechs verschiedene Ursachen und liess den Nutzer ohne Anhaltspunkt zurueck.
+                        val shiftConfig = shiftState.currentShiftConfig
+                        val reason = noShiftReason(
+                            hasSelectedCalendars = calendarState.selectedCalendarIds.isNotEmpty(),
+                            calendarAuthorizationValid = calendarState.calendarAuthorizationValid,
+                            errorMessage = calendarState.error ?: shiftState.error,
+                            eventCount = calendarState.events.size,
+                            shiftConfigLoaded = shiftConfig != null,
+                            enabledShiftTypeCount = shiftConfig?.definitions?.count { it.isEnabled } ?: 0,
+                            recognizedShiftCount = shiftState.recognizedShifts.size
+                        )
                         Text(
                             "Keine Schicht erkannt",
                             style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            noShiftExplanation(
+                                reason = reason,
+                                errorMessage = calendarState.error ?: shiftState.error,
+                                // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
+                                // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
+                                sampleEventTitles = calendarState.events
+                                    .map { it.title }
+                                    .distinct()
+                                    .take(3),
+                                autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

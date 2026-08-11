@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
@@ -94,7 +95,11 @@ class DimScheduleUseCaseTest {
         whenever(alarmUseCase.getAllAlarms()).thenReturn(alarms)
         val context = mock<Context>()
         val notifier = mock<DimCorrectionNotifier>()
-        return DimScheduleUseCase(context, alarmUseCase, ruleUseCase(rules), prefs, notifier)
+        // Master-Pause-Backstop (in applyCurrentState/scheduleNextTransition): fuer die reine
+        // Fenster-Vorschau hier immer "nicht pausiert".
+        val masterPausePrefs = mock<MasterPausePrefs>()
+        whenever(masterPausePrefs.pausedNow()).thenReturn(false)
+        return DimScheduleUseCase(context, alarmUseCase, ruleUseCase(rules), prefs, notifier, masterPausePrefs)
     }
 
     @Test

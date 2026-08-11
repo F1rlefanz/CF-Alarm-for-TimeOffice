@@ -18,10 +18,39 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import javax.inject.Inject
+
+/**
+ * Reine, Android-freie Entscheidungslogik der Boot-Alarm-Validierung — bewusst als eigenes
+ * Top-Level-Objekt (Vorbild: `MaintenanceLoadDecision`), damit sie ohne einen echten
+ * BroadcastReceiver testbar bleibt.
+ */
+internal object BootAlarmValidation {
+
+    /**
+     * Darf ueber einen Alarm auf Basis des oben gelesenen Snapshots noch entschieden werden?
+     *
+     * WARUM DIESE FRAGE UEBERHAUPT: Seit dem Wartungs-Anker (`startMaintenanceAnchor`) laeuft beim
+     * Boot/Update eine ZWEITE, unabhaengige Sync-Pipeline parallel zur Recovery
+     * (`AlarmMaintenanceService` mit `forceSync = true`) — beide fassen dieselben Alarme an, nur die
+     * einzelnen Repository-Operationen sind ueber `AlarmUseCase.alarmSyncMutex` serialisiert, nicht
+     * die read-modify-write-Sequenz der Recovery. `performAlarmRecovery()` liest seinen Bestand
+     * EINMAL oben, holt danach Kalender-Events (Sekunden) und entscheidet erst dann pro Alarm.
+     *
+     * Der teure Fall: der Anker korrigiert in diesem Fenster einen verschobenen Alarm (gleiche
+     * `id`, denn `id = calendarEvent.id.hashCode()` ist pro Event stabil; neuer `triggerTime` +
+     * neuer `eventChecksum`) und stellt den System-Alarm korrekt. Die Recovery vergleicht danach
+     * ihre VERALTETE Kopie gegen den frischen Event-Checksum, sieht einen Mismatch und loescht den
+     * gerade korrigierten Alarm — ohne ihn neu anzulegen (`continue`).
+     *
+     * @param snapshotChecksum `eventChecksum` aus dem oben gelesenen Snapshot
+     * @param freshChecksum `eventChecksum` desselben Alarms JETZT (null = nicht mehr im Repository)
+     */
+    fun snapshotStillCurrent(snapshotChecksum: String, freshChecksum: String?): Boolean =
+        freshChecksum != null && freshChecksum == snapshotChecksum
+}
 
 /**
  * 🛡️ SMART MAINTENANCE CHAIN Level 4: Enhanced Boot Receiver
@@ -78,10 +107,13 @@ class BootReceiver : BroadcastReceiver() {
             30000L  // 30 seconds for post-boot health check
 
         // Boot Actions
+        // KEIN ACTION_PACKAGE_REPLACED: der Intent-Filter im Manifest kann es nicht zustellen -
+        // PACKAGE_REPLACED braeuchte ein <data android:scheme="package"/>, und ein <data>-Element
+        // wuerde die drei URI-losen Actions hier komplett aussperren. Der praktisch relevante
+        // Update-Fall laeuft ueber MY_PACKAGE_REPLACED.
         private const val ACTION_BOOT_COMPLETED = Intent.ACTION_BOOT_COMPLETED
         private const val ACTION_LOCKED_BOOT_COMPLETED = Intent.ACTION_LOCKED_BOOT_COMPLETED
         private const val ACTION_MY_PACKAGE_REPLACED = Intent.ACTION_MY_PACKAGE_REPLACED
-        private const val ACTION_PACKAGE_REPLACED = Intent.ACTION_PACKAGE_REPLACED
     }
 
     // Recovery Scope für Boot-Recovery-Operations
@@ -113,8 +145,11 @@ class BootReceiver : BroadcastReceiver() {
                     "📱 LEVEL 4: Device booted - initiating complete system recovery"
                 )
                 // Zuerst der schnelle, prozess-tod-sichere Restore (Alarme stehen sofort wieder),
-                // dann die vollstaendige CE-basierte Validierung/Recovery.
+                // dann der Wartungslauf als Sicherheitsnetz, dann die vollstaendige CE-basierte
+                // Validierung/Recovery. Die beiden Letzteren laufen NEBENLAEUFIG - siehe
+                // [startMaintenanceAnchor] und [BootAlarmValidation.snapshotStillCurrent].
                 restoreAlarmsFromDirectBootStore(context, "BOOT_COMPLETED")
+                startMaintenanceAnchor(context, "BOOT_COMPLETED")
                 performCompleteSystemRecovery(context, "BOOT_COMPLETED")
             }
 
@@ -124,18 +159,8 @@ class BootReceiver : BroadcastReceiver() {
                     "📦 LEVEL 4: App updated - performing post-update recovery"
                 )
                 restoreAlarmsFromDirectBootStore(context, "APP_UPDATED")
+                startMaintenanceAnchor(context, "APP_UPDATED")
                 performCompleteSystemRecovery(context, "APP_UPDATED")
-            }
-
-            ACTION_PACKAGE_REPLACED -> {
-                if (intent.data?.schemeSpecificPart == context.packageName) {
-                    Logger.business(
-                        LogTags.MAINTENANCE_L4,
-                        "📦 LEVEL 4: Our package replaced - performing recovery"
-                    )
-                    restoreAlarmsFromDirectBootStore(context, "PACKAGE_REPLACED")
-                    performCompleteSystemRecovery(context, "PACKAGE_REPLACED")
-                }
             }
 
             else -> {
@@ -196,11 +221,91 @@ class BootReceiver : BroadcastReceiver() {
                         )
                     }
                 }
+
+                // SCHWEBENDER SNOOZE: eigener Merker, eigener PendingIntent-Slot - und bis v1.23.0
+                // in KEINEM Wiederherstellungs-Pfad. Wer schlummert und dessen Geraet in den
+                // naechsten Minuten neu startet, wurde nie wieder geweckt: der Ursprungsalarm ist
+                // gefeuert und geraeumt, der Snooze-Alarm stirbt mit dem Reboot. Steht bewusst
+                // hinter demselben Master-Pause-Gate wie die Alarme oben und liest denselben
+                // Device-Protected-Storage, laeuft also auch bei LOCKED_BOOT_COMPLETED.
+                try {
+                    val restoredSnoozes = AlarmManagerService.restorePendingSnoozes(context)
+                    if (restoredSnoozes > 0) {
+                        Logger.business(
+                            LogTags.MAINTENANCE_L4,
+                            "😴 LEVEL 4: $restoredSnoozes schwebende(r) Snooze nach $reason wiederhergestellt"
+                        )
+                    }
+                } catch (e: Exception) {
+                    Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Snooze-Wiederherstellung fehlgeschlagen", e)
+                }
             } catch (e: Exception) {
                 Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Direct-Boot-Restore-Lauf fehlgeschlagen", e)
             } finally {
                 pendingResult.finish()
             }
+        }
+    }
+
+    /**
+     * SICHERHEITSNETZ fuer die lange Boot-Recovery: ein eigenstaendiger, vollstaendiger
+     * Wartungslauf, der NICHT davon abhaengt, dass die Recovery-Coroutine ueberlebt.
+     *
+     * [performCompleteSystemRecovery] laeuft in einem eigenen `recoveryScope` OHNE `goAsync()`:
+     * sobald `onReceive()` zurueckkehrt, haelt der Prozess keine aktive Komponente mehr und ist
+     * als "empty process" jederzeit abschiessbar - waehrend die Coroutine noch 5s
+     * Stabilitaets-Wartezeit absitzt, danach Token-/Kalender-Arbeit macht und bis zu 3x mit je
+     * 10s Pause wiederholt. `goAsync()` allein reicht dafuer nicht (Broadcast-Zeitfenster).
+     *
+     * Der kurzlebige Foreground-Service leistet - unabhaengig vom Ausgang der Recovery-Coroutine -
+     * genau die Schritte, deren Verlust am teuersten ist: 6h-Kette neu planen (bzw. bei
+     * Master-Pause kappen), Kalender laden + Delta-Sync, Dimmer-/DND-Tick und
+     * Pre-Alarm-Refresh-Jobs neu setzen. Wird die Coroutine abgeschossen, steht die App trotzdem
+     * nicht ohne laufende Wartung da.
+     *
+     * KEIN VERLAESSLICHER "PROZESS-ANKER" (das behauptete dieser Kommentar frueher): der Service
+     * raeumt sich am Ende seines EIGENEN Laufs per `stopSelf(startId)` ab. Auf den kurzen Pfaden
+     * (kein Netz/Token direkt nach dem Boot - der Normalfall) ist das nach Bruchteilen einer
+     * Sekunde, also noch waehrend die Recovery ihre 5s Stabilitaets-Wartezeit absitzt. Danach hat
+     * der Prozess wieder keine Vordergrund-Komponente. Wer eine echte Prozess-Haltung fuer die
+     * gesamte Recovery braucht, muss die Recovery-Arbeit IN den Service ziehen - nicht auf diese
+     * Funktion vertrauen.
+     *
+     * NEBENLAEUFIGKEIT: Dieser Lauf ist eine zweite, unabhaengige Sync-Pipeline parallel zur
+     * Recovery. Die read-modify-write-Sequenz von [performAlarmRecovery] ist deshalb gegen
+     * gleichzeitige Aenderungen abgesichert (siehe [BootAlarmValidation.snapshotStillCurrent]).
+     *
+     * `forceSync = true`: nach einem Boot/Update sind die Daten grundsaetzlich verdaechtig - das
+     * regulaere Lade-Gate (Puffer/Datenalter) wuerde hier oft ueberspringen.
+     *
+     * BEWUSST `directBootAlarmStore.isPausedNow()` statt `masterPausePrefs.pausedNow()`: der
+     * Aufruf muss SYNCHRON in `onReceive()` passieren (nur dort ist der Start eines
+     * Foreground-Service aus dem Hintergrund garantiert erlaubt - BOOT_COMPLETED/
+     * MY_PACKAGE_REPLACED sind ausdruecklich von den Android-12-FGS-Beschraenkungen ausgenommen),
+     * und `MasterPausePrefs` liegt im CE-Storage und ist nur suspendierend lesbar. Der
+     * Device-Protected-Spiegel liefert denselben Zustand synchron - gleiche Begruendung wie im
+     * schnellen Direct-Boot-Restore. Bei aktiver Pause bleibt es beim Kappen der Kette durch die
+     * Recovery selbst; hier wird bewusst KEIN Service (und damit keine sichtbare Notification)
+     * gestartet.
+     */
+    private fun startMaintenanceAnchor(context: Context, reason: String) {
+        try {
+            if (directBootAlarmStore.isPausedNow()) {
+                Logger.business(
+                    LogTags.MAINTENANCE_L4,
+                    "⏸️ LEVEL 4: Wartungs-Anker ($reason) uebersprungen (Master-Pause aktiv)"
+                )
+                return
+            }
+            AlarmMaintenanceService.start(context, forceSync = true)
+            Logger.business(
+                LogTags.MAINTENANCE_L4,
+                "⚓ LEVEL 4: Wartungslauf als Sicherheitsnetz gestartet ($reason) - sichert Sync/Planung unabhaengig von der Recovery-Coroutine ab"
+            )
+        } catch (e: Exception) {
+            // Best-effort: schlaegt der FGS-Start fehl (z.B. Hersteller-Einschraenkung), laeuft die
+            // Recovery-Coroutine wie bisher weiter - nur eben ohne Anker.
+            Logger.w(LogTags.MAINTENANCE_L4, "⚠️ LEVEL 4: Wartungs-Anker konnte nicht starten", e)
         }
     }
 
@@ -411,13 +516,19 @@ class BootReceiver : BroadcastReceiver() {
             diagnosticResults.add("Authentication: ${if (authStatus) "✅ Authenticated" else "⚠️ Not Authenticated"}")
 
             // Check Calendar Selection
-            val selectedCalendars = try {
-                calendarSelectionRepository.selectedCalendarIds.first()
-            } catch (e: Exception) {
-                Logger.w(LogTags.MAINTENANCE_L4, "Failed to check calendar selection", e)
-                emptySet()
-            }
-            diagnosticResults.add("Selected Calendars: ${selectedCalendars.size} calendars")
+            // getCurrentSelectedCalendarIds() (DataStore) statt selectedCalendarIds.first()
+            // (StateFlow, startet leer): sonst diagnostiziert der prozess-kaelteste Aufrufer von
+            // allen faelschlich "0 calendars" - und "nicht lesbar" ist bewusst als eigene Aussage
+            // sichtbar, nicht als 0 getarnt.
+            diagnosticResults.add(
+                calendarSelectionRepository.getCurrentSelectedCalendarIds().fold(
+                    onSuccess = { ids -> "Selected Calendars: ${ids.size} calendars" },
+                    onFailure = { error ->
+                        Logger.w(LogTags.MAINTENANCE_L4, "Failed to check calendar selection", error)
+                        "Selected Calendars: ⚠️ nicht lesbar (${error.message})"
+                    }
+                )
+            )
 
             // Check Current Alarm Count
             val currentAlarms = try {
@@ -466,10 +577,31 @@ class BootReceiver : BroadcastReceiver() {
             var restoredCount = 0
             var validatedCount = 0
             var deletedCount = 0
-            
+            var concurrentlyChangedCount = 0
+
             // Get current calendar events for validation
             // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
-            val selectedCalendars = calendarSelectionRepository.selectedCalendarIds.first()
+            //
+            // getCurrentSelectedCalendarIds() (DataStore-Read) statt selectedCalendarIds.first()
+            // (StateFlow): der StateFlow startet auf emptySet() und wird erst durch den in init{}
+            // gestarteten, unabgewarteten Collector befuellt. Die 5s BOOT_RECOVERY_DELAY_MS sind
+            // eine Timing-ANNAHME, keine Garantie - und seit dem Wartungs-Anker konkurriert genau in
+            // dieser Zeitspanne ein zweiter Prozessteil um DataStore-/Netz-I/O. Ein noch nicht
+            // hydrierter StateFlow sah wie "keine Kalender ausgewaehlt" aus: die ganze
+            // SYNC-FIX-Validierung fiel still aus UND der Nachlege-Zweig unten war tot.
+            //
+            // Der Fehlerfall ist bewusst vom Leerfall getrennt (Log), fuehrt aber absichtlich in
+            // dieselbe fail-safe Wiederherstellung: ohne verlaessliche Kalenderdaten darf NIE
+            // geloescht werden (lieber ein veralteter Wecker als gar keiner).
+            val selectedCalendars = calendarSelectionRepository.getCurrentSelectedCalendarIds()
+                .getOrElse { error ->
+                    Logger.w(
+                        LogTags.MAINTENANCE_L4,
+                        "⚠️ LEVEL 4: Kalenderauswahl nicht lesbar (KEIN 'nichts ausgewaehlt') - Validierung wird uebersprungen",
+                        error
+                    )
+                    emptySet()
+                }
             // 🛡️ FAIL-SAFE: Validierung (inkl. Loeschen verwaister Alarme) NUR bei nachweislich
             // erfolgreichem UND nicht-leerem Kalender-Abruf. Direkt nach dem Boot ist "kein Netz /
             // Token noch nicht bereit / StateFlow noch nicht geladen" der Normalfall - dann duerfen
@@ -500,6 +632,25 @@ class BootReceiver : BroadcastReceiver() {
                     // Validierung (mit moeglicher Loeschung) nur bei erfolgreichem Kalender-Abruf.
                     // Ohne Validierung faellt der Alarm unten direkt in scheduleSystemAlarm (Restore).
                     if (validationPossible && alarm.eventId.isNotEmpty()) {
+                        // FRISCH NACHLESEN, bevor auf dem Snapshot von oben entschieden wird: der
+                        // parallel laufende Wartungs-Anker kann denselben Alarm in der Zwischenzeit
+                        // korrigiert (gleiche id, neuer Checksum) oder geloescht haben. Details siehe
+                        // [BootAlarmValidation.snapshotStillCurrent].
+                        val freshChecksum = alarmUseCase.getAllAlarms().getOrNull()
+                            ?.find { it.id == alarm.id }?.eventChecksum
+                        if (!BootAlarmValidation.snapshotStillCurrent(alarm.eventChecksum, freshChecksum)) {
+                            // Kein Re-Arming (continue): ist der Alarm weg, wuerde er hier als
+                            // verwaister System-Alarm wieder auferstehen; ist er neu geschrieben,
+                            // hat der Anker den System-Alarm schon korrekt gestellt (syncAlarms
+                            // armt intern).
+                            Logger.business(
+                                LogTags.MAINTENANCE_L4,
+                                "⏭️ LEVEL 4: Alarm ${alarm.shiftName} (id=${alarm.id}) wurde parallel geaendert/geloescht - Validierung auf veraltetem Stand uebersprungen"
+                            )
+                            concurrentlyChangedCount++
+                            continue
+                        }
+
                         val currentEvent = currentEventMap[alarm.eventId]
                         
                         if (currentEvent == null) {
@@ -552,7 +703,8 @@ class BootReceiver : BroadcastReceiver() {
             
             Logger.business(
                 LogTags.MAINTENANCE_L4,
-                "📊 LEVEL 4: Alarm recovery stats - Restored: $restoredCount, Validated: $validatedCount, Deleted: $deletedCount"
+                "📊 LEVEL 4: Alarm recovery stats - Restored: $restoredCount, Validated: $validatedCount, " +
+                    "Deleted: $deletedCount, parallel geaendert: $concurrentlyChangedCount"
             )
 
             // 4. If few alarms restored, try to create new ones from calendar
@@ -586,7 +738,8 @@ class BootReceiver : BroadcastReceiver() {
                 }
             }
 
-            "Restored $restoredCount alarms (Validated: $validatedCount, Deleted: $deletedCount) from ${storedAlarms.size} stored"
+            "Restored $restoredCount alarms (Validated: $validatedCount, Deleted: $deletedCount, " +
+                "parallel geaendert: $concurrentlyChangedCount) from ${storedAlarms.size} stored"
 
         } catch (e: Exception) {
             Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Alarm recovery failed", e)
@@ -619,8 +772,23 @@ class BootReceiver : BroadcastReceiver() {
 
             // 2. Test calendar connection by trying to get calendar events
             // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+            //
+            // getCurrentSelectedCalendarIds() (DataStore) statt selectedCalendarIds.first()
+            // (StateFlow, startet leer) - gleiche Begruendung wie in performAlarmRecovery(). Ein
+            // Lesefehler wird hier als solcher gemeldet und NICHT als "keine Kalender ausgewaehlt"
+            // (was diese Funktion sonst als gesunde Verbindung durchgewinkt haette).
+            val selectionResult = calendarSelectionRepository.getCurrentSelectedCalendarIds()
+            if (selectionResult.isFailure) {
+                Logger.w(
+                    LogTags.MAINTENANCE_L4,
+                    "⚠️ LEVEL 4: Kalenderauswahl nicht lesbar - Verbindungstest uebersprungen",
+                    selectionResult.exceptionOrNull()
+                )
+                return "⚠️ Kalenderauswahl nicht lesbar - Verbindungstest uebersprungen"
+            }
+
             val connectionTest = try {
-                val selectedCalendars = calendarSelectionRepository.selectedCalendarIds.first()
+                val selectedCalendars = selectionResult.getOrThrow()
                 if (selectedCalendars.isNotEmpty()) {
                     val testEvents = calendarUseCase.getCalendarEventsWithCache(
                         calendarIds = selectedCalendars,

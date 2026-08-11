@@ -38,6 +38,28 @@ class HueMdnsDiscoveryService(private val context: Context) {
          * ~1,2s statt der vollen 10s Timeout - die Bridge antwortet real in ~170ms.
          */
         private const val GRACE_PERIOD_MS = 1000L
+
+        /**
+         * Die erste IPv4-Adresse aus den aufgeloesten Adressen einer Bridge - oder null, wenn
+         * keine dabei ist.
+         *
+         * WARUM NICHT EINFACH DIE ERSTE: `hostAddresses` kann IPv6 enthalten oder damit
+         * beginnen (bei vielen deutschen Providern ist IPv6 im Heimnetz Standard), der gesamte
+         * nachgelagerte Hue-Pfad ist aber IPv4-only: HueApiClient.isPrivateNetworkAddress
+         * matcht nur auf 192.168./10./172.16-31./169.254., die URL wird als
+         * "https://$bridgeIp$endpoint" gebaut (ein IPv6-Literal braeuchte eckige Klammern), und
+         * HueBridgeConnectionManager.isBridgeReachableNow prueft ebenfalls nur IPv4-Praefixe.
+         * Eine per mDNS gefundene Bridge mit IPv6-Adresse war deshalb unbenutzbar: die
+         * Discovery meldete Erfolg, jeder Zugriff scheiterte danach an der Adress-Klemme, und
+         * HueBridgeRepository.testBridgeConnection filterte die Bridge wieder heraus - "keine
+         * Bridge gefunden", obwohl sie gerade gefunden wurde. Der N-UPnP-Fallback greift nicht,
+         * denn mDNS hatte ja etwas gefunden.
+         *
+         * Rein und statisch, damit es ohne Android-Framework testbar ist (siehe
+         * HueMdnsAddressSelectionTest).
+         */
+        internal fun firstIpv4HostAddress(addresses: List<java.net.InetAddress>): String? =
+            addresses.firstOrNull { it is java.net.Inet4Address }?.hostAddress
     }
     
     private val nsdManager: NsdManager by lazy {
@@ -180,19 +202,23 @@ class HueMdnsDiscoveryService(private val context: Context) {
     /**
      * Creates HueBridge from resolved NsdServiceInfo
      * MODERNIZED: Uses hostname for API 34+ while maintaining backward compatibility
+     *
+     * NUR IPv4 - siehe [firstIpv4HostAddress]. Annonciert eine Bridge ausschliesslich IPv6,
+     * ist sie fuer diese App nicht ansprechbar; dann lieber ehrlich nichts liefern (der
+     * N-UPnP-Fallback bekommt so seine Chance) als einen unbenutzbaren Treffer.
      */
     private fun createHueBridgeFromService(serviceInfo: NsdServiceInfo): HueBridge? {
         return try {
             // Modern approach: Use hostAddresses for API 34+, fallback to host for older versions
             val hostAddress = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // API 34+: Use hostAddresses array (first address)
-                serviceInfo.hostAddresses.firstOrNull()?.hostAddress
+                // API 34+: erste IPv4-Adresse aus dem hostAddresses-Array
+                firstIpv4HostAddress(serviceInfo.hostAddresses)
             } else {
                 // Legacy API: Use deprecated host property for backward compatibility
                 @Suppress("DEPRECATION")
-                serviceInfo.host?.hostAddress
+                serviceInfo.host?.let { firstIpv4HostAddress(listOf(it)) }
             }
-            
+
             if (hostAddress != null) {
                 // Extract bridge ID from service name if possible
                 // Hue service names typically contain the last 6 digits of bridge ID
@@ -206,7 +232,22 @@ class HueMdnsDiscoveryService(private val context: Context) {
                     discoveryMethod = com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryMethod.MDNS
                 )
             } else {
-                Logger.w(LogTags.HUE_DISCOVERY, "Service has no IP address: ${serviceInfo.serviceName}")
+                // Ehrlicher Unterschied: gar keine Adresse vs. nur IPv6 (dann ist die Bridge da,
+                // aber ueber den IPv4-only-Pfad dieser App nicht erreichbar).
+                val announced = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    serviceInfo.hostAddresses.size
+                } else {
+                    @Suppress("DEPRECATION")
+                    if (serviceInfo.host != null) 1 else 0
+                }
+                if (announced > 0) {
+                    Logger.w(
+                        LogTags.HUE_DISCOVERY,
+                        "Bridge ${serviceInfo.serviceName} annonciert keine IPv4-Adresse ($announced Adresse(n), nur IPv6) - fuer diese App nicht ansprechbar"
+                    )
+                } else {
+                    Logger.w(LogTags.HUE_DISCOVERY, "Service has no IP address: ${serviceInfo.serviceName}")
+                }
                 null
             }
         } catch (e: Exception) {

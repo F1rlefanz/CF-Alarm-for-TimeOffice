@@ -53,6 +53,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
@@ -88,6 +90,18 @@ import kotlinx.coroutines.launch
 private val MIN_TOUCH_TARGET = 48.dp
 
 /**
+ * Saver fuer die Lampen-/Gruppen-Auswahl.
+ *
+ * Ein `Set` ist nicht garantiert bundle-faehig (es haengt an der konkreten Implementierung, die
+ * gerade in der Variable steckt); eine Liste von Strings ist es immer. Deshalb der Umweg ueber
+ * [listSaver] statt sich auf den autoSaver zu verlassen.
+ */
+private val StringSetSaver = listSaver<Set<String>, String>(
+    save = { it.toList() },
+    restore = { it.toSet() }
+)
+
+/**
  * Hue Regel-Konfiguration Screen - Deutsche Version
  *
  * HILT MIGRATION: Now receives HueViewModel and ShiftViewModel directly instead of ViewModelFactory
@@ -115,33 +129,47 @@ fun HueRuleConfigScreen(
     }
 
     // Form state
-    var ruleName by remember { mutableStateOf("") }
-    var selectedShiftPattern by remember { mutableStateOf("") }
-    var selectedLightIds by remember { mutableStateOf(setOf<String>()) }
-    var selectedGroupIds by remember { mutableStateOf(setOf<String>()) }
-    var targetOn by remember { mutableStateOf(true) }
-    var targetBrightness by remember { mutableIntStateOf(128) }
-    var isEnabled by remember { mutableStateOf(true) }
+    //
+    // Durchgaengig rememberSaveable, NICHT remember: MainActivity ist weder auf eine Orientierung
+    // festgenagelt (kein screenOrientation) noch faengt sie Konfigurationswechsel ab (kein
+    // configChanges) - jede Rotation zerstoert die Activity und baut sie neu auf. Mit `remember`
+    // waren damit alle 17 Formularfelder (Name, Schichtmuster, Lampenauswahl, Farbe, Auto-Aus,
+    // Sunrise-Parameter) kommentarlos weg, sobald das Geraet beim Tippen gedreht/abgelegt wurde -
+    // ebenso bei Prozesstod im Hintergrund und bei "Aktivitaeten nicht behalten".
+    var ruleName by rememberSaveable { mutableStateOf("") }
+    var selectedShiftPattern by rememberSaveable { mutableStateOf("") }
+    var selectedLightIds by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(setOf()) }
+    var selectedGroupIds by rememberSaveable(stateSaver = StringSetSaver) { mutableStateOf(setOf()) }
+    var targetOn by rememberSaveable { mutableStateOf(true) }
+    var targetBrightness by rememberSaveable { mutableIntStateOf(128) }
+    var isEnabled by rememberSaveable { mutableStateOf(true) }
 
     // Color state
-    var colorMode by remember { mutableStateOf(ColorMode.NONE) }
-    var colorKelvin by remember { mutableIntStateOf(2700) }
-    var colorPreset by remember { mutableStateOf(HueColorConverter.ColorPreset.RED) }
+    var colorMode by rememberSaveable { mutableStateOf(ColorMode.NONE) }
+    var colorKelvin by rememberSaveable { mutableIntStateOf(2700) }
+    var colorPreset by rememberSaveable { mutableStateOf(HueColorConverter.ColorPreset.RED) }
 
     // Auto-off state (turn the lights off again after N minutes)
-    var autoOffEnabled by remember { mutableStateOf(false) }
-    var autoOffMinutes by remember { mutableIntStateOf(30) }
+    var autoOffEnabled by rememberSaveable { mutableStateOf(false) }
+    var autoOffMinutes by rememberSaveable { mutableIntStateOf(30) }
 
     // Sunrise state
-    var sunriseEnabled by remember { mutableStateOf(false) }
-    var sunriseDurationMinutes by remember { mutableIntStateOf(15) }
-    var sunriseStartKelvin by remember { mutableIntStateOf(2000) }
-    var sunriseEndKelvin by remember { mutableIntStateOf(4000) }
-    var sunriseEndBrightness by remember { mutableIntStateOf(254) }
-    var sunriseStartBeforeAlarm by remember { mutableStateOf(true) }
+    var sunriseEnabled by rememberSaveable { mutableStateOf(false) }
+    var sunriseDurationMinutes by rememberSaveable { mutableIntStateOf(15) }
+    var sunriseStartKelvin by rememberSaveable { mutableIntStateOf(2000) }
+    var sunriseEndKelvin by rememberSaveable { mutableIntStateOf(4000) }
+    var sunriseEndBrightness by rememberSaveable { mutableIntStateOf(254) }
+    var sunriseStartBeforeAlarm by rememberSaveable { mutableStateOf(true) }
 
     // Validation state
-    var showValidationErrors by remember { mutableStateOf(false) }
+    var showValidationErrors by rememberSaveable { mutableStateOf(false) }
+
+    // Merkt sich, fuer welche Regel das Formular schon einmal aus der gespeicherten Regel gefuellt
+    // wurde - und muss deshalb selbst saveable sein. Ohne diesen Waechter waere rememberSaveable
+    // oben wirkungslos: Nach einer Rotation laedt LaunchedEffect(ruleId) die Regel erneut, und der
+    // LaunchedEffect(uiState.editingRule) darunter wuerde die gerade wiederhergestellten,
+    // ungespeicherten Eingaben mit den ALTEN Werten aus der Regel ueberschreiben.
+    var initializedForRuleId by rememberSaveable { mutableStateOf<String?>(null) }
     
     // Load rule for editing if ruleId is provided
     LaunchedEffect(ruleId) {
@@ -162,6 +190,10 @@ fun HueRuleConfigScreen(
     // Initialize form fields when editing rule is loaded
     LaunchedEffect(uiState.editingRule) {
         uiState.editingRule?.let { rule ->
+            // Nur beim ERSTEN Laden dieser Regel fuellen (siehe initializedForRuleId oben).
+            if (initializedForRuleId == rule.id) return@LaunchedEffect
+            initializedForRuleId = rule.id
+
             ruleName = rule.name
             selectedShiftPattern = rule.shiftPattern
             isEnabled = rule.enabled
@@ -637,7 +669,10 @@ private fun TargetSelectionCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             
-            var selectedTab by remember { mutableIntStateOf(0) }
+            // Ebenfalls saveable: Der Reiter gehoert zum Formular. Bliebe er bei `remember`, sprang
+            // eine Rotation zurueck auf "Gruppen", obwohl die Auswahl selbst erhalten ist - der
+            // Nutzer haette den Verlust seiner Lichter-Auswahl vermutet, wo keiner ist.
+            var selectedTab by rememberSaveable { mutableIntStateOf(0) }
             
             PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(

@@ -46,7 +46,7 @@
         </div>
 
         <div class="content-card">
-            <p><strong>Letzte Aktualisierung:</strong> 3. Juli 2026 | <strong>Version:</strong> 1.3 | <strong>Gültig ab:</strong> 3. Juli 2026</p>
+            <p><strong>Letzte Aktualisierung:</strong> 11. August 2026 | <strong>Version:</strong> 1.4 | <strong>Gültig ab:</strong> 11. August 2026</p>
 
             <h3>1. Verantwortlicher</h3>
             <p><strong>Entwickler:</strong> f1rlefanz<br>
@@ -54,7 +54,7 @@
             <strong>GitHub:</strong> <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice" rel="external">https://github.com/f1rlefanz/cf-alarmfortimeoffice</a></p>
 
             <h3>2. Zweck der App</h3>
-            <p>CF Alarm for Time Office ist eine Kalender-basierte Wecker-App, die automatisch Alarme basierend auf Kalenderterminen setzt und optional Philips Hue-Beleuchtung steuert.</p>
+            <p>CF Alarm for Time Office ist eine Kalender-basierte Wecker-App, die automatisch Alarme basierend auf Kalenderterminen setzt. Optional steuert sie dazu Philips Hue-Beleuchtung, dunkelt den Bildschirm rund um die Schichten ab (Schicht-Dimmer, Abschnitt 3.4) und schaltet Androids „Nicht stören" (Abschnitt 3.5).</p>
 
             <h3>3. Verarbeitete Daten</h3>
 
@@ -84,6 +84,32 @@
                 <li><strong>Rechtsgrundlage:</strong> Berechtigtes Interesse (Art. 6 Abs. 1 lit. f DSGVO)</li>
                 <li><strong>Speicherort:</strong> Temporär zur Laufzeit, keine dauerhafte Speicherung</li>
                 <li><strong>Speicherdauer:</strong> Keine permanente Speicherung</li>
+            </ul>
+
+            <h4>3.4 🌙 Bedienungshilfe-Dienst (Schicht-Dimmer, optional)</h4>
+            <p>Der Schicht-Dimmer legt rund um Ihre Schichten eine abdunkelnde Schicht über den Bildschirm – auch unter die System-Mindesthelligkeit. Android erlaubt das nur über einen Bedienungshilfen-Dienst, deshalb enthält die App einen (<code>DimAccessibilityService</code>).</p>
+            <ul>
+                <li><strong>Zweck:</strong> ausschließlich das Abdunkeln des Bildschirms (vergleichbar mit Androids „Extra Dim").</li>
+                <li><strong>Was er NICHT tut:</strong> Er liest <strong>keine</strong> Bildschirminhalte (<code>canRetrieveWindowContent="false"</code> in der Dienst-Konfiguration) und wertet <strong>keine</strong> Eingaben oder Tastatureingaben aus. Es werden dabei keinerlei Daten erhoben, gespeichert oder übertragen.</li>
+                <li><strong>Aktivierung:</strong> Der Dienst ist nach der Installation inaktiv und läuft erst, wenn Sie ihn selbst in den Android-Bedienungshilfen einschalten. Sie können ihn dort jederzeit wieder abschalten; der Status ist in der App im Status-Tab unter „Schicht-Dimmer" sichtbar.</li>
+                <li><strong>Rechtsgrundlage:</strong> Einwilligung (Art. 6 Abs. 1 lit. a DSGVO) – erteilt durch das Aktivieren des Dienstes.</li>
+            </ul>
+
+            <h4>3.5 🔕 „Nicht stören"-Steuerung (optional, ab Android 11)</h4>
+            <ul>
+                <li><strong>Datentyp:</strong> keine personenbezogenen Daten. Die App registriert bei Android einen eigenen „Nicht stören"-Zeitplan (<code>AutomaticZenRule</code>) und schaltet ihn nach Ihren Schicht- und Dimm-Zeiten ein und aus.</li>
+                <li><strong>Umfang:</strong> Die App kann ausschließlich ihre <strong>eigene</strong> Regel lesen und schalten – keine fremden Zeitpläne und keine Inhalte von Benachrichtigungen.</li>
+                <li><strong>Speicherort:</strong> Die Regel liegt in den Android-Systemeinstellungen (Ton → Nicht stören → Zeitpläne) und ist dort für Sie sichtbar und löschbar.</li>
+            </ul>
+
+            <h4>3.6 📦 Installationsabfrage TimeOffice</h4>
+            <p>Die App fragt bei Android ab, ob die App TimeOffice (<code>de.pradtke.timeoffice</code>) installiert ist und ob sie von der Akku-Optimierung ausgenommen ist. Das dient nur dem Hinweis im Status-Tab, dass der Dienstplan-Sync von dieser App abhängt. Es wird kein weiterer App-Bestand ausgelesen und nichts davon übertragen.</p>
+
+            <h4>3.7 💾 Konfigurationsdatei (Export/Import)</h4>
+            <ul>
+                <li><strong>Inhalt:</strong> Ihre Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören"-Einstellungen.</li>
+                <li><strong>Bewusst NICHT enthalten:</strong> Anmeldedaten, Google-Token, Verschlüsselungsschlüssel, die Kalenderauswahl sowie die Hue-Bridge-Zugangsdaten (Benutzername und IP der Bridge).</li>
+                <li><strong>Speicherort:</strong> dort, wo Sie die Datei über den Android-Dateidialog selbst ablegen. Die Datei verlässt Ihr Gerät nur, wenn Sie sie selbst weitergeben.</li>
             </ul>
 
             <h3>4. Datenweitergabe & Sicherheit</h3>
@@ -127,16 +153,19 @@
 
             <h4>6.1 📱 In der App</h4>
             <ul>
-                <li><strong>Einstellungen → Konto → Abmelden:</strong> Löscht alle Authentifizierungsdaten</li>
-                <li><strong>Einstellungen → Datenschutz → Alle Daten löschen:</strong> Vollständige lokale Datenlöschung</li>
-                <li><strong>Kalender-Cache leeren:</strong> Entfernt gespeicherte Kalenderdaten</li>
+                <li><strong>Einstellungen-Tab → „Abmelden":</strong> Verwirft Anmeldedaten und Google-Token (auch im Zwischenspeicher der Google-Dienste).</li>
+                <li><strong>Status-Tab → „Cache leeren":</strong> Verwirft die zwischengespeicherten Kalenderdaten.</li>
+                <li><strong>Wecker-Tab → Schichttypen verwalten → „Auf Standardwerte zurücksetzen":</strong> Verwirft Ihre eigenen Schichtdefinitionen (Muster und Weckzeiten).</li>
             </ul>
+            <p>Eine „Alle Daten löschen"-Funktion gibt es in der App bewusst nicht – dafür ist der Android-Weg unter 6.2 der vollständige und zuverlässige.</p>
 
             <h4>6.2 🔄 Vollständige Löschung</h4>
             <ul>
                 <li><strong>App deinstallieren:</strong> Entfernt automatisch alle lokalen Daten</li>
                 <li><strong>Google-Berechtigungen widerrufen:</strong> <a href="https://myaccount.google.com/permissions" rel="external">myaccount.google.com/permissions</a></li>
                 <li><strong>Android-Einstellungen:</strong> Apps → CF Alarm → Speicher → Daten löschen</li>
+                <li><strong>Bedienungshilfe-Dienst:</strong> Android-Einstellungen → Bedienungshilfen → CF Alarm → aus (siehe 3.4)</li>
+                <li><strong>„Nicht stören"-Zeitplan:</strong> Android-Einstellungen → Ton → Nicht stören → Zeitpläne (siehe 3.5)</li>
             </ul>
 
             <h3>7. 👶 Minderjährige</h3>
@@ -151,6 +180,7 @@
             <h3>10. 📞 Kontakt & Datenschutzbeauftragter</h3>
             <p>Bei Fragen zum Datenschutz oder zur Ausübung Ihrer Rechte kontaktieren Sie uns:</p>
             <ul>
+                <li><strong>E-Mail:</strong> <a href="mailto:cfischer@csj.de">cfischer@csj.de</a></li>
                 <li><strong>GitHub Issues:</strong> <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice/issues" rel="external">https://github.com/f1rlefanz/cf-alarmfortimeoffice/issues</a></li>
             </ul>
             
@@ -162,7 +192,7 @@
             <h3>🔓 Open Source & Transparenz</h3>
             <p>Diese App ist Open Source. Der vollständige Quellcode kann auf GitHub eingesehen werden: <a href="https://github.com/f1rlefanz/cf-alarmfortimeoffice" rel="external">https://github.com/f1rlefanz/cf-alarmfortimeoffice</a></p>
             
-            <p><strong>Letzte Aktualisierung:</strong> 3. Juli 2026 | <strong>Version:</strong> 1.3 | <strong>App Version:</strong> 1.9.1</p>
+            <p><strong>Letzte Aktualisierung:</strong> 11. August 2026 | <strong>Version:</strong> 1.4 | <strong>App-Version:</strong> 1.23.0</p>
         </div>
     </main>
 
@@ -172,7 +202,7 @@
                 <a href="privacy.html">Datenschutz</a>
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
-                <a href="mailto:support@cf-alarm.app">Kontakt</a>
+                <a href="mailto:cfischer@csj.de">Kontakt</a>
             </div>
             <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
             <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>

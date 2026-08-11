@@ -46,7 +46,56 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.22.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.23.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Der größte Zuverlässigkeits-Durchgang bisher: der Wecker fällt in einer Reihe von Situationen nicht mehr aus, in denen er es vorher konnte. Dazu zwei Dinge, die die Einrichtung deutlich einfacher machen – die Kürzel deines echten Dienstplans werden vorgeschlagen, und die Konfiguration lässt sich als Datei sichern.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Kürzel aus deinem Kalender werden vorgeschlagen (Wecker-Tab → „Schichttypen verwalten"):</strong> Ganz oben steht jetzt die Karte „Diese Kürzel stehen in deinem Kalender" – sie zeigt die Termin-Kürzel, die von keinem Erkennungsmuster getroffen werden, nach Häufigkeit sortiert. Antippen, Schicht auswählen, und das Kürzel wird als Muster ergänzt. Bisher musste man raten, welche Muster die Vorgaben mitbringen; auf einer anderen Station als der, für die sie gedacht waren, hätte man ohne diesen Schritt <em>nie</em> einen Wecker bekommen. Zugeordnet wird nur, was du selbst zuordnest – eine falsche Automatik würde einen Wecker auf die falsche Uhrzeit stellen.</li>
+                <li><strong>Konfiguration exportieren und importieren (Einstellungen-Tab → „Konfiguration"):</strong> Sichert Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören" als Datei – überlebt eine Neuinstallation, funktioniert auch auf demselben Gerät und lässt sich an Kolleginnen und Kollegen weitergeben. Anmeldung, Kalenderauswahl und die Hue-Bridge-Zugangsdaten sind bewusst <em>nicht</em> in der Datei; die richtet man auf jedem Gerät selbst ein. Der Import fragt vorher nach, überschreibt den aktuellen Stand und setzt die Wecker sofort neu.</li>
+                <li><strong>Schichterkennung nicht mehr an eine Station gebunden:</strong> Jeder vorgegebene Schichttyp hat jetzt neben dem Stationskürzel eine allgemeine Bezeichnung, und der Name des Schichttyps zählt selbst als Erkennungsmuster (ab zwei Zeichen). An bestehenden Konfigurationen ändert sich nichts, solange du nicht auf Standardwerte zurücksetzt.</li>
+                <li><strong>Rückfrage vor destruktiven Aktionen:</strong> „Auf Standardwerte zurücksetzen" und das Löschen eines Schichttyps fragen jetzt nach – beides wirkte sofort auf die gesetzten Wecker und ließ sich nicht rückgängig machen.</li>
+                <li><strong>Die App ist deutlich kleiner:</strong> rund 10,9 statt 19,8 MB.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Deaktivierte Schichttypen weckten trotzdem:</strong> Der Schalter „Schichtdefinition aktiviert" nahm den Typ nur aus den Auswahllisten, die Erkennung lief unverändert weiter und stellte weiter Wecker.</li>
+                <li><strong>Ein fehlgeschlagener Kalenderabruf konnte ALLE Wecker löschen:</strong> Eine leere Terminliste war von „du hast frei" nicht zu unterscheiden – ein Netzfehler oder ein Lesefehler wurde damit als „keine Schichten" verstanden und räumte die gesetzten Wecker ab. An mehreren Stellen behoben, unter anderem auch in der Prüfung 3 Stunden vor dem Wecker.</li>
+                <li><strong>Die 6-Stunden-Wartung erkannte verschobene und gestrichene Schichten nicht:</strong> Solange der Dienstplan weit im Voraus gepflegt war, sah sie den Kalender praktisch nie an. Der Wecker klingelte dann zur alten Zeit oder für eine Schicht, die es nicht mehr gab – bei einer Krankschreibung Ende Juli rund vier Tage lang unbemerkt.</li>
+                <li><strong>Ein gestellter Schlummer-Wecker war durch nichts abzubrechen:</strong> Er klingelte durch „Automatische Alarme aus" und durch „Hintergrunddienste pausieren" hindurch – also mitten in einer gerade eingeschalteten Pause.</li>
+                <li><strong>Der Wecker fiel ganz aus, wenn die Berechtigung für exakte Alarme entzogen war</strong> – während die App weiterhin „Alarme aktiv" anzeigte. Jetzt wird in diesem Fall ungenau geplant (ein paar Minuten Abweichung) statt gar nicht.</li>
+                <li><strong>„Wecker aus" und „5 Min später" gleichzeitig getroffen</strong> (die Knöpfe liegen dicht übereinander) stoppte den Wecker <em>und</em> stellte zusätzlich einen Schlummer.</li>
+                <li><strong>Ganztägige Kalendertermine wurden um Stunden verrechnet:</strong> „Deine Schicht beginnt um 02:00", Nicht-stören-Fenster ab 02:00, und in einer Konstellation ein Wecker einen ganzen Tag zu früh.</li>
+                <li><strong>„Mehr laden" in der Terminliste zeigte Termine doppelt, ließ einen Block dazwischen aus und konnte beim Scrollen abstürzen</strong> – bei mehr als einem ausgewählten Kalender. Dadurch erschienen auch Schichten doppelt auf der Startseite.</li>
+                <li><strong>Schicht-Dimmer und „Nicht stören" verpassten ganze Nächte:</strong> An den Zeitumstellungstagen verschoben sich die Fenster um eine Stunde; ein über Mitternacht laufendes Fenster wurde nach 00:00 fälschlich für beendet gehalten und abgeschaltet; und nach einer Woche ohne Schichten blieb „Während der Dienstzeit" bis zum nächsten Geräte-Neustart wirkungslos.</li>
+                <li><strong>Verdunkelung und Wärme wirkten erst am nächsten Morgen:</strong> Ein mitten in der Nacht verstellter Regler änderte am laufenden Dimmen nichts.</li>
+                <li><strong>Hue: die Bridge meldet auch eine Ablehnung als Erfolg</strong> – die App hielt daraufhin Licht für eingeschaltet, das nie anging, legte trotzdem das Auto-Aus an, zeigte „Keine Lampen gefunden" statt eines Hinweises auf die nötige Neukopplung, und die Sonnenaufgangs-Rampe konnte komplett ausfallen. Die Antworten der Bridge werden jetzt wirklich ausgewertet.</li>
+                <li><strong>Beschädigte gespeicherte Daten überschrieben stillschweigend echte Einstellungen:</strong> Ein Lesefehler galt als „leer" bzw. „Standardwerte", und der nächste Speichervorgang machte das dauerhaft – betraf Schichtkonfiguration, Weckerliste und Anmeldedaten. Jetzt wird der Fehler gemeldet, der ursprüngliche Stand gesichert und nicht überschrieben.</li>
+                <li><strong>„Auf Standardwerte zurücksetzen" hob die ausgeschaltete Wecker-Automatik auf</strong> – wer nur seine Schichttypen aufräumte, hatte im selben Moment wieder Wecker für alle erkannten Termine. Der Automatik-Schalter bleibt jetzt unangetastet. Außerdem war der Knopf bei fünf Schichttypen aus dem Bildschirm geschoben und dadurch nicht erreichbar.</li>
+                <li><strong>Nach einer Wiederherstellung auf einem neuen Gerät fragte die App nie wieder nach der Akku-Ausnahme und „App bei Nichtnutzung pausieren"</strong> – obwohl auf dem neuen Gerät naturgemäß keine erteilt war; genau die zwei Einstellungen, die in diesem Projekt nachweislich Wecker verschluckt haben. Ebenso wird ein aktives „Hintergrunddienste pausieren" nicht mehr auf das neue Gerät mitgeschleppt, wo es den Wecker stumm gehalten hätte.</li>
+                <li><strong>Ein Neustart des Geräts während des Schlummerns ließ den Wecker verschwinden:</strong> Android verliert bei einem Neustart alle gestellten Wecker, und der ursprüngliche Wecker war zu dem Zeitpunkt schon abgelaufen — wer schlummerte und dessen Handy in den Minuten danach neu startete (Systemupdate, leerer Akku am Kabel), wurde nie wieder geweckt. Der Schlummer wird jetzt beim Start wiederhergestellt, auch schon vor der ersten Entsperrung.</li>
+                <li><strong>Ein Kürzel einer ausgeschalteten Schicht zuzuordnen tat garantiert nichts:</strong> Die Erkennung beachtet nur eingeschaltete Schichttypen. Die Zuordnung schaltet den Typ jetzt mit ein und entfernt das Kürzel bei allen anderen Schichten — sonst hätte die Reihenfolge der Liste darüber entschieden, wann geweckt wird.</li>
+                <li><strong>Eine beschädigte oder von Hand bearbeitete Konfigurationsdatei wird beim Import nicht mehr blind übernommen:</strong> Unsinnige Werte (etwa eine Schlummer-Dauer von 0 Minuten — der Wecker hätte sich nicht mehr wegdrücken lassen) und unlesbare Regelwerke werden benannt abgelehnt, statt still als „keine Regeln" durchzugehen.</li>
+                <li><strong>Hinweistexte, die etwas anderes behaupteten als die App tut,</strong> sind richtiggestellt – unter anderem der Erkennungs-Hinweis in der Schicht-Konfiguration und der Weg zurück zum Kalender-Zugriff.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.22.1</h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Die Dimmer-Korrektur-Benachrichtigung erschien praktisch nie, obwohl sie eingeschaltet war.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Der Schalter für die Dimmer-Korrektur-Benachrichtigung wirkte erst beim nächsten Fensterwechsel:</strong> Wer ihn mitten in einer laufenden Dimm-Phase einschaltete, sah die Benachrichtigung für genau diese Phase nicht mehr – der nächste Wechsel ist üblicherweise das Ende des Fensters am Morgen. Jetzt wirkt der Schalter sofort.</li>
+                <li><strong>Ohne erteilte Benachrichtigungs-Berechtigung blieb die Korrektur-Benachrichtigung lautlos aus</strong>, ohne jeden Hinweis.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.22.0</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Schlummer-Dauer ist jetzt einstellbar, dazu ein größerer Rundum-Check mit mehreren behobenen Rand- und Fehlerfällen.</em></p>
 
@@ -172,7 +221,7 @@
         </div>
 
         <div class="content-card">
-            <h3>Version 1.17.1</h3>
+            <h3>Version 1.17.0 / 1.17.1</h3>
             <p><strong>Stand:</strong> Juli 2026</p>
             <p><em>Nacht-Dimmen ohne eigene Regel, eine Vorschau-Zeitleiste für den Schicht-Dimmer und eine Hue-Bridge, die sich nach Netzwerkverlust von selbst wieder verbindet.</em></p>
 
@@ -753,7 +802,7 @@
             <blockquote>
                 <strong>💬 Feedback:</strong> Haben Sie Verbesserungsvorschläge oder haben Bugs entdeckt? 
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues" rel="external">Erstellen Sie ein Issue</a> 
-                oder kontaktieren Sie uns über <a href="mailto:support@cf-alarm.app">support@cf-alarm.app</a>.
+                oder kontaktieren Sie uns über <a href="mailto:cfischer@csj.de">cfischer@csj.de</a>.
             </blockquote>
         </div>
     </main>
@@ -764,7 +813,7 @@
                 <a href="privacy.html">Datenschutz</a>
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
-                <a href="mailto:support@cf-alarm.app">Kontakt</a>
+                <a href="mailto:cfischer@csj.de">Kontakt</a>
             </div>
             <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
             <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>

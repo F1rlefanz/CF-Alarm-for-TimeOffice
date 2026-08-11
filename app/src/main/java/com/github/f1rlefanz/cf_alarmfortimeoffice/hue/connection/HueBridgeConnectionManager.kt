@@ -23,7 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -653,8 +653,15 @@ class HueBridgeConnectionManager private constructor(
      * (bereits vorhanden, bislang ungenutzt) und stoesst bei jeder Netzwerk-Wiederherstellung
      * [attemptRecoveryIfDisconnected] an - z.B. Heimkehr ins Heim-WLAN nach unterwegs. Laeuft im
      * selben [healthCheckScope] wie die uebrige Ueberwachung, wird also von [cleanup] mit
-     * abgebrochen (healthCheckScope.cancel() faengt alle Kinder-Jobs). Nur einmal pro Prozess
-     * gestartet (aufgerufen aus [initialize], das selbst idempotent ist).
+     * abgebrochen (cancelChildren() faengt alle Kinder-Jobs).
+     *
+     * Einmal pro [initialize]-ZYKLUS, nicht einmal pro Prozess: [initialize] ist idempotent
+     * (Waechter-Flag), aber [cleanup] gibt dieses Flag wieder frei - ein spaeteres [initialize]
+     * (z.B. ein kuenftiger "Hue deaktivieren"-Schalter, der cleanup() ruft und danach wieder
+     * einschaltet) startet den Collector also erneut, zusammen mit dem uebrigen
+     * Initialisierungspfad inkl. `smartScheduler.initializeSmartScheduling()`. Das ist in Ordnung,
+     * weil [cleanup] vorher auch `smartScheduler.cleanup()` ruft - aber es ist ausdruecklich KEINE
+     * "nur einmal pro Prozess"-Zusicherung mehr, auf die sich neuer Code verlassen darf.
      */
     private fun startNetworkRecoveryMonitoring() {
         healthCheckScope.launch {
@@ -768,20 +775,38 @@ class HueBridgeConnectionManager private constructor(
     }
 
     /**
-     * CRITICAL FIX: Enhanced cleanup for MainActivity destruction
-     * Prevents pthread_mutex_lock errors by properly canceling all background operations
+     * Cleanup: stoppt alle laufenden Hintergrundarbeiten dieses Managers.
+     *
+     * WIEDERVERWENDBAR BLEIBEN, NICHT VERBRENNEN: Das ist ein Singleton mit
+     * PROZESS-Lebensdauer (statisches [INSTANCE]), keine Activity-gebundene Instanz. Ein
+     * `healthCheckScope.cancel()` waere endgueltig - jedes spaetere `healthCheckScope.launch`
+     * (Restore aus dem Storage, Health-Monitoring, Netzwerk-Recovery, die
+     * Hintergrund-Validierung in getValidatedConnection()) wuerde danach lautlos nie mehr
+     * starten, und nur ein kompletter Prozess-Neustart wuerde das heilen: beim Wecken blieb das
+     * Licht aus, ohne Fehlermeldung. Deshalb `cancelChildren()` - genau wie im Schwester-
+     * Singleton [HueSmartScheduler.cleanup]. Und [initialized] wird zurueckgesetzt, weil sonst
+     * der (bewusst idempotente, siehe [initialize]) CAS-Waechter ein spaeteres [initialize]
+     * sofort verwerfen wuerde.
+     *
+     * Aktuell ruft das niemand (MainActivity hat seinen onDestroy-Cleanup absichtlich entfernt) -
+     * die Falle wird hier entschaerft, bevor ein kuenftiger Aufrufer (z.B. ein
+     * "Hue deaktivieren"-Schalter, analog MasterPauseUseCase -> hueSmartScheduler.cleanup())
+     * hineintritt.
      */
     fun cleanup() {
         try {
             Logger.d(LogTags.HUE_BRIDGE, "🧹 BRIDGE-MANAGER: Starting comprehensive cleanup to prevent mutex errors...")
-            
+
             // CRITICAL FIX: Cancel all background jobs immediately
             healthCheckJob?.cancel()
             healthCheckJob = null
-            
-            // CRITICAL FIX: Cancel the entire health check scope with timeout
-            healthCheckScope.cancel()
-            
+
+            // Nur die Kinder - der Scope selbst bleibt benutzbar (siehe KDoc).
+            healthCheckScope.coroutineContext.cancelChildren()
+
+            // Ein spaeteres initialize() darf wieder greifen.
+            initialized.set(false)
+
             // CRITICAL FIX: Clear connection state to prevent stale references
             updateConnectionState(ConnectionState.DISCONNECTED)
             

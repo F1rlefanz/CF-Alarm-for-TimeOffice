@@ -31,12 +31,15 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.ZoneId
 import java.util.Date
 import java.util.concurrent.TimeUnit
@@ -56,19 +59,98 @@ interface AlarmMaintenanceEntryPoint {
 }
 
 /**
+ * Reine, Android-freie Entscheidungslogik der 6h-Wartung — bewusst als eigenes Top-Level-Objekt
+ * (nicht im Companion von [AlarmMaintenanceService]), damit Unit-Tests sie ohne das Laden einer
+ * `android.app.Service`-Ableitung pruefen koennen.
+ */
+internal object MaintenanceLoadDecision {
+
+    /** Puffer-Kriterium wie bisher: liegt der letzte geplante Alarm naeher, muss nachgeladen werden. */
+    const val MIN_BUFFER_DAYS = 7L
+
+    /**
+     * Liegt der NAECHSTE Alarm innerhalb dieses Fensters, wird immer geladen.
+     *
+     * Warum 48h: eine Dienstplan-Aenderung schlaegt umso teurer zu, je naeher der betroffene
+     * Wecker ist (falsche Weckzeit / Wecker fuer eine gestrichene Schicht). 48h deckt bei
+     * 6h-Takt die letzten ~8 Wartungslaeufe vor dem Wecker ab und ueberlappt sicher mit dem
+     * 3h-Vorab-Worker (CalendarPreAlarmRefreshWorker), der ohne Netz ausfallen kann.
+     */
+    const val NEAR_ALARM_HOURS = 48L
+
+    /**
+     * Maximales Alter der letzten ECHTEN Kalender-Abfrage, danach wird unabhaengig vom Puffer geladen.
+     *
+     * Warum 12h: die Kette laeuft alle 6h, also laedt hoechstens jeder ZWEITE Lauf (2 statt 4
+     * Google-Kalender-Abfragen pro Tag) — der Sparzweck des alten Puffer-Gates bleibt damit
+     * erhalten. Gleichzeitig ist eine Streichung/Verschiebung, die weiter als 48h in der Zukunft
+     * liegt, nach spaetestens 12h erkannt statt (wie vorher) erst wenn der Puffer unter 7 Tage
+     * faellt oder der Nutzer die App oeffnet. Ohne dieses Kriterium war die 6h-Wartung im
+     * eingeschwungenen Zustand (Dienstplan 14 Tage gepflegt) dauerhaft blind.
+     */
+    const val MAX_DATA_AGE_HOURS = 12L
+
+    /**
+     * Entscheidet, ob Kalender-Events geladen werden muessen.
+     *
+     * @param futureAlarmTriggerTimes Trigger-Zeitpunkte aller noch zukuenftigen Alarme (Epoch-Millis)
+     * @param now aktuelle Zeit (Epoch-Millis)
+     * @param lastEventLoad Zeitpunkt der letzten erfolgreichen, nicht-leeren Kalender-Abfrage
+     *                      (0 = noch nie geladen)
+     * @param forceSync erzwungener Lauf (z.B. Zeitzonen-Wechsel, Boot) — laedt immer
+     */
+    fun shouldLoadEvents(
+        futureAlarmTriggerTimes: List<Long>,
+        now: Long,
+        lastEventLoad: Long,
+        forceSync: Boolean
+    ): Boolean {
+        if (forceSync) return true
+        if (futureAlarmTriggerTimes.isEmpty()) return true
+
+        val dataAgeHours = TimeUnit.MILLISECONDS.toHours(now - lastEventLoad)
+        if (lastEventLoad <= 0L || dataAgeHours >= MAX_DATA_AGE_HOURS) return true
+
+        val bufferDays = TimeUnit.MILLISECONDS.toDays(futureAlarmTriggerTimes.max() - now)
+        if (bufferDays < MIN_BUFFER_DAYS) return true
+
+        val hoursToNextAlarm = TimeUnit.MILLISECONDS.toHours(futureAlarmTriggerTimes.min() - now)
+        return hoursToNextAlarm <= NEAR_ALARM_HOURS
+    }
+
+    /**
+     * Entscheidet, ob nach einem Ladevorgang synchronisiert wird.
+     *
+     * Bewusst NUR an "es liegen ueberhaupt Events vor" gehaengt, NICHT an "es gibt neue
+     * Schichten": der Delta-Sync in `AlarmUseCase.syncAlarms()` ist idempotent und beherrscht als
+     * einziger Ort auch UPDATE (Schicht verschoben, Event-ID unveraendert) und DELETE (Schicht
+     * gestrichen/Krankschreibung). Frueher brach die Wartung bei `newShifts.isEmpty()` ab — genau
+     * die beiden Faelle, fuer die der Delta-Sync gebaut wurde, erreichten ihn damit NIE.
+     *
+     * Die Leerlisten-Sperre ist Pflicht und kein Detail: ein gescheiterter Abruf kann heute
+     * `success(emptyList())` liefern, und eine leere Eventliste ist fuer `syncAlarms()` das Signal
+     * "alle Alarme loeschen". Fuer eine Wecker-App ist "leer" die gefaehrlichste Luege (gleiche
+     * Fail-safe-Logik wie in `BootReceiver.performAlarmRecovery`: lieber ein veralteter Wecker als
+     * gar keiner).
+     */
+    fun shouldSyncAfterLoad(loadedEventCount: Int): Boolean = loadedEventCount > 0
+}
+
+/**
  * AlarmMaintenanceService - Short-Lived Foreground Service
- * 
+ *
  * ARCHITECTURE (Briefing 4.0):
  * - Runs as Foreground Service (visible notification for 10-30 seconds)
  * - Triggered by Exact Alarm every 6 hours
  * - Performs: Token Refresh → Health Check → Event Loading → Alarm Creation
  * - Self-Healing: Schedules next run before stopping
- * 
- * HEALTH CHECK (v3.0 - Time-based):
- * - Checks last scheduled alarm's trigger time
- * - Loads events only if buffer < 7 days
- * - Adaptive to shift frequency
- * 
+ *
+ * HEALTH CHECK (siehe [MaintenanceLoadDecision.shouldLoadEvents]):
+ * - Puffer des letzten geplanten Alarms (< 7 Tage → laden)
+ * - Alter der letzten echten Kalender-Abfrage (>= 12h → laden)
+ * - Naehe des naechsten Alarms (<= 48h → laden)
+ * - Erzwungener Lauf (Zeitzonen-Wechsel, Boot) → immer laden
+ *
  * LIFECYCLE:
  * 1. BroadcastReceiver starts service
  * 2. startForeground() - notification appears
@@ -113,13 +195,31 @@ class AlarmMaintenanceService : Service() {
          */
         private const val MAINTENANCE_ALARM_REQUEST_CODE = 0
         private const val MAINTENANCE_INTERVAL_HOURS = 6L
-        private const val MIN_BUFFER_DAYS = 7
+
+        /**
+         * Erzwingt einen vollen Lauf (Kalender laden + synchronisieren), auch wenn der Puffer
+         * reicht und die Daten frisch sind. Gesetzt vom [TimezoneChangeReceiver] und vom
+         * Boot-Pfad — Anlaesse, bei denen die abgeleiteten Weckzeiten neu berechnet werden
+         * MUESSEN, nicht nur "koennten".
+         */
+        const val EXTRA_FORCE_SYNC = "force_sync"
 
         // CONSOLIDATION: moved off the standalone "cf_alarm_prefs" SharedPreferences file
         // and into the existing Hilt @MainDataStore.
         // NO MIGRATION: only the developer uses the app right now, so the old SharedPreferences
         // value is intentionally left behind - losing the last-maintenance timestamp once is harmless.
         private val KEY_LAST_MAINTENANCE = longPreferencesKey("last_maintenance_time")
+
+        /**
+         * Zeitpunkt der letzten ECHTEN, erfolgreichen und nicht-leeren Kalender-Abfrage.
+         *
+         * Bewusst ein EIGENER Schluessel und nicht [KEY_LAST_MAINTENANCE]: der wird auch im
+         * Skip-Zweig und aus dem Vordergrund-Sync gestempelt ("Letzter Sync" in den
+         * Einstellungen) und ist damit als Frische-Signal fuer die Kalenderdaten wertlos —
+         * ein Skip-Lauf wuerde die Daten sonst dauerhaft "frisch" aussehen lassen und das
+         * 12h-Kriterium aus [MaintenanceLoadDecision] aushebeln.
+         */
+        private val KEY_LAST_EVENT_LOAD = longPreferencesKey("last_event_load_time")
 
         /**
          * Gets the timestamp of the last successful maintenance.
@@ -151,10 +251,15 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Starts the maintenance service
+         * Starts the maintenance service.
+         *
+         * @param forceSync ueberspringt das Lade-Gate ([MaintenanceLoadDecision.shouldLoadEvents])
+         *   und erzwingt Kalender-Abfrage + Delta-Sync. Default false — die regulaere 6h-Kette
+         *   und alle Bestandsaufrufer verhalten sich unveraendert.
          */
-        fun start(context: Context) {
+        fun start(context: Context, forceSync: Boolean = false) {
             val intent = Intent(context, AlarmMaintenanceService::class.java)
+                .putExtra(EXTRA_FORCE_SYNC, forceSync)
             context.startForegroundService(intent)
         }
 
@@ -257,40 +362,132 @@ class AlarmMaintenanceService : Service() {
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Logger.business(LogTags.MAINTENANCE, "🔧 Maintenance service started")
-        
+        val forceSync = intent?.getBooleanExtra(EXTRA_FORCE_SYNC, false) == true
+        Logger.business(
+            LogTags.MAINTENANCE,
+            "🔧 Maintenance service started${if (forceSync) " (erzwungener Lauf)" else ""}"
+        )
+
         // Create notification and start foreground
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
-        
+
         // Perform maintenance in background
         serviceScope.launch {
             try {
-                performMaintenance()
+                performMaintenance(forceSync)
             } catch (e: Exception) {
                 Logger.e(LogTags.MAINTENANCE, "Maintenance failed with exception", e)
             } finally {
-                // Master-Pause: Kette kappen statt neu zu planen, wenn der Nutzer pausiert hat.
-                if (masterPausePrefs.pausedNow()) {
-                    cancelNext(applicationContext)
-                } else {
-                    scheduleNext(applicationContext)
-                }
+                // withContext(NonCancellable): der Abschluss MUSS auch dann vollstaendig laufen,
+                // wenn die Coroutine gecancelt wurde (onDestroy -> serviceScope.cancel(), z.B.
+                // weil das System den Foreground-Service unter Speicherdruck stoppt). Vorher stand
+                // hier als ERSTE Anweisung der suspendierende Read masterPausePrefs.pausedNow():
+                // in einer gecancelten Coroutine wirft der sofort CancellationException, wodurch
+                // WEDER scheduleNext() NOCH stopSelf(startId) je liefen. Damit war die Annahme der
+                // Invariante "die 6h-Kette hat genau einen Planer, und der finally-Block deckt
+                // jeden Pfad ab" verletzt: Request-Code 0 ist der einzige Slot - ohne
+                // scheduleNext() war die rollierende Kette bis zum naechsten Boot/Re-Login tot.
+                withContext(NonCancellable) {
+                    // Eigenes try/catch um den DataStore-Read: ist @MainDataStore gerade nicht
+                    // lesbar (IOException, korrupte Datei), darf das die Neuplanung nicht
+                    // verhindern. Im Zweifel NICHT pausiert annehmen - ein ueberfluessiger
+                    // Wartungslauf ist harmlos, eine abgerissene Kette ist der teuerste,
+                    // weil unsichtbare Ausfall.
+                    val paused = try {
+                        masterPausePrefs.pausedNow()
+                    } catch (e: Exception) {
+                        Logger.w(
+                            LogTags.MAINTENANCE,
+                            "Master-Pause-Status nicht lesbar - Kette wird sicherheitshalber weitergeplant",
+                            e
+                        )
+                        false
+                    }
 
-                // stopSelf(startId) statt stopSelf(): Android stoppt damit nur, wenn seit diesem
-                // Start kein weiterer kam. Wird der Service zweimal gestartet (z.B. der 6h-Alarm
-                // faellt mit einem Start nach der Autorisierung zusammen), laufen zwei Zyklen auf
-                // demselben serviceScope. Das blanke stopSelf() des ERSTEN, der fertig wurde,
-                // loeste onDestroy() -> serviceScope.cancel() aus und riss den zweiten mitten in
-                // der Arbeit ab (JobCancellationException, Log 14.07. 22:07:30). Fuer eine
-                // Wecker-App ist das gefaehrlich: der abgeschnittene Zyklus koennte gerade
-                // Alarme angelegt haben. Mit startId raeumt erst der letzte Zyklus den Service ab.
-                stopSelf(startId)
+                    try {
+                        // Master-Pause: Kette kappen statt neu zu planen, wenn der Nutzer pausiert hat.
+                        if (paused) {
+                            cancelNext(applicationContext)
+                        } else {
+                            scheduleNext(applicationContext)
+                        }
+                    } catch (e: Exception) {
+                        Logger.e(LogTags.MAINTENANCE, "Neuplanung der Wartungskette fehlgeschlagen", e)
+                    }
+
+                    // Dimmer/DND/Pre-Alarm-Refresh laufen hier - NICHT mehr nur im tiefsten
+                    // Erfolgszweig von performMaintenance(). Dort waren sie hinter fuenf Returns
+                    // versteckt (Puffer reicht, keine Kalender, Ladefehler, keine neuen Schichten,
+                    // Auto-Alarm aus), also gerade bei den HAEUFIGSTEN Laeufen unerreichbar - und
+                    // der Zeitzonen-Wechsel-Pfad, der genau diese Neuberechnung braucht, lief
+                    // dadurch praktisch immer ins Leere. Gleiches Argument wie bei scheduleNext():
+                    // der finally-Block ist die einzige Stelle, die jeden Pfad abdeckt.
+                    rescheduleSideChannels(paused)
+
+                    // stopSelf(startId) statt stopSelf(): Android stoppt damit nur, wenn seit diesem
+                    // Start kein weiterer kam. Wird der Service zweimal gestartet (z.B. der 6h-Alarm
+                    // faellt mit einem Start nach der Autorisierung zusammen), laufen zwei Zyklen auf
+                    // demselben serviceScope. Das blanke stopSelf() des ERSTEN, der fertig wurde,
+                    // loeste onDestroy() -> serviceScope.cancel() aus und riss den zweiten mitten in
+                    // der Arbeit ab (JobCancellationException, Log 14.07. 22:07:30). Fuer eine
+                    // Wecker-App ist das gefaehrlich: der abgeschnittene Zyklus koennte gerade
+                    // Alarme angelegt haben. Mit startId raeumt erst der letzte Zyklus den Service ab.
+                    stopSelf(startId)
+                }
             }
         }
-        
+
         // Don't restart if killed by system
         return START_NOT_STICKY
+    }
+
+    /**
+     * Dimmer-, DND- und Pre-Alarm-Refresh-Planung auffrischen (Best-effort).
+     *
+     * Jeder Block hat sein EIGENES try/catch: keiner der drei darf den jeweils anderen oder die
+     * Wartungskette beeintraechtigen. Wirft daher nie - Aufrufer im finally-Block verlassen sich
+     * darauf, dass danach noch stopSelf(startId) erreicht wird.
+     *
+     * Bei aktiver Master-Pause wird abgeschaltet statt neu geplant (gleiches Muster wie
+     * `BootReceiver`); `disable()` ruehrt laut Invariante keine persistierten Toggles an.
+     */
+    private suspend fun rescheduleSideChannels(paused: Boolean) {
+        try {
+            if (paused) {
+                dimSchedule.disable()
+            } else {
+                dimSchedule.applyCurrentState()
+                dimSchedule.scheduleNextTransition()
+            }
+        } catch (e: Exception) {
+            Logger.w(LogTags.DIMMER, "Wartung: Dimm-Reschedule fehlgeschlagen", e)
+        }
+
+        try {
+            if (paused) {
+                dndSchedule.disable()
+            } else {
+                dndSchedule.applyCurrentState()
+                dndSchedule.scheduleNextTransition()
+            }
+        } catch (e: Exception) {
+            Logger.w(LogTags.DND, "Wartung: DND-Reschedule fehlgeschlagen", e)
+        }
+
+        try {
+            if (paused) {
+                calendarPreAlarmRefreshScheduler.cancelAll()
+            } else {
+                calendarPreAlarmRefreshScheduler.reschedule()
+            }
+        } catch (e: Exception) {
+            Logger.w(
+                LogTags.BACKGROUND_WORKER,
+                "Wartung: Pre-Alarm-Refresh-Reschedule fehlgeschlagen",
+                e
+            )
+        }
     }
     
     override fun onDestroy() {
@@ -311,6 +508,16 @@ class AlarmMaintenanceService : Service() {
     }
 
     /**
+     * Stempelt den Zeitpunkt einer erfolgreichen, nicht-leeren Kalender-Abfrage.
+     * Grundlage des 12h-Frische-Kriteriums in [MaintenanceLoadDecision].
+     */
+    private suspend fun saveEventLoadTime() {
+        mainDataStore.edit { prefs ->
+            prefs[KEY_LAST_EVENT_LOAD] = System.currentTimeMillis()
+        }
+    }
+
+    /**
      * Main maintenance logic
      *
      * STEPS:
@@ -319,8 +526,10 @@ class AlarmMaintenanceService : Service() {
      * 3. Event Loading if needed (5-10s)
      * 4. Shift Recognition (1-2s)
      * 5. Alarm Creation (1-2s)
+     *
+     * @param forceSync ueberspringt Schritt 2 (Lade-Gate) — siehe [EXTRA_FORCE_SYNC].
      */
-    private suspend fun performMaintenance() {
+    private suspend fun performMaintenance(forceSync: Boolean) {
         val startTime = System.currentTimeMillis()
         Logger.business(LogTags.MAINTENANCE, "🔧 Starting maintenance cycle")
 
@@ -360,28 +569,26 @@ class AlarmMaintenanceService : Service() {
         val allAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
         val now = System.currentTimeMillis()
         val futureAlarms = allAlarms.filter { it.triggerTime > now }
-        
-        Logger.d(LogTags.MAINTENANCE, "Found ${futureAlarms.size} future alarms")
-        
-        val needsLoad = if (futureAlarms.isEmpty()) {
-            Logger.d(LogTags.MAINTENANCE, "No future alarms, needs load")
-            true
-        } else {
-            val lastAlarmTime = futureAlarms.maxOf { it.triggerTime }
-            val bufferMillis = lastAlarmTime - now
-            val bufferDays = TimeUnit.MILLISECONDS.toDays(bufferMillis)
-            
-            Logger.d(LogTags.MAINTENANCE, "Last alarm in $bufferDays days")
-            
-            if (bufferDays < MIN_BUFFER_DAYS) {
-                Logger.d(LogTags.MAINTENANCE, "Buffer < $MIN_BUFFER_DAYS days, needs load")
-                true
-            } else {
-                Logger.d(LogTags.MAINTENANCE, "Buffer sufficient ($bufferDays days), skipping")
-                false
-            }
-        }
-        
+        val lastEventLoad = mainDataStore.data.first()[KEY_LAST_EVENT_LOAD] ?: 0L
+
+        Logger.d(
+            LogTags.MAINTENANCE,
+            "Found ${futureAlarms.size} future alarms, letzte Kalender-Abfrage: " +
+                if (lastEventLoad > 0) "${TimeUnit.MILLISECONDS.toHours(now - lastEventLoad)}h alt" else "nie"
+        )
+
+        val needsLoad = MaintenanceLoadDecision.shouldLoadEvents(
+            futureAlarmTriggerTimes = futureAlarms.map { it.triggerTime },
+            now = now,
+            lastEventLoad = lastEventLoad,
+            forceSync = forceSync
+        )
+
+        Logger.d(
+            LogTags.MAINTENANCE,
+            if (needsLoad) "Kalender wird geladen" else "Kalender-Abfrage uebersprungen (Puffer + Daten frisch)"
+        )
+
         if (!needsLoad) {
             val duration = System.currentTimeMillis() - startTime
             Logger.business(
@@ -395,9 +602,23 @@ class AlarmMaintenanceService : Service() {
         // STEP 3: EVENT LOADING
         Logger.d(LogTags.MAINTENANCE, "Step 3: Loading events")
         
+        // getOrElse statt getOrNull ?: emptySet(): "Lesefehler" und "nichts ausgewaehlt" sind zwei
+        // verschiedene Aussagen, und seit getCurrentSelectedCalendarIds() den DataStore liest
+        // (statt den StateFlow-Wert) kann der Read wirklich scheitern (IOException, gerade
+        // greifender ReplaceFileCorruptionHandler). Als leere Menge gedeutet endete der Lauf mit
+        // der Notification "Keine Kalender ausgewaehlt" - eine Fehldiagnose, die den Nutzer in
+        // eine App schickt, in der seine Kalender korrekt angehakt sind, waehrend im Log kein
+        // Lesefehler stand. Gleiche Unterscheidung wie im CalendarPreAlarmRefreshWorker.
         val selectedCalendars = calendarSelectionRepository.getCurrentSelectedCalendarIds()
-            .getOrNull() ?: emptySet()
-        
+            .getOrElse { error ->
+                Logger.e(
+                    LogTags.MAINTENANCE,
+                    "Kalenderauswahl nicht lesbar - Wartungslauf uebersprungen (KEINE Konfigurations-Meldung, die Auswahl ist nur unlesbar)",
+                    error
+                )
+                return
+            }
+
         if (selectedCalendars.isEmpty()) {
             Logger.w(LogTags.MAINTENANCE, "No calendars selected, skipping")
             showActionRequiredNotification(
@@ -408,9 +629,13 @@ class AlarmMaintenanceService : Service() {
         }
         
         // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+        // forceRefresh nur beim erzwungenen Lauf: der Cache haelt CalendarEvents als
+        // LocalDateTime, also in der Zone, die beim Abruf galt. Nach einem Zeitzonen-Wechsel waere
+        // ein Cache-Treffer wertlos (dieselben falschen Wanduhr-Zeiten) - genau deshalb muss der
+        // erzwungene Lauf wirklich an die API. Im Normalbetrieb bleibt es beim Cache.
         val eventsResult = calendarUseCase.getCalendarEventsWithCache(
             calendarIds = selectedCalendars,
-            forceRefresh = false
+            forceRefresh = forceSync
         )
         
         if (eventsResult.isFailure) {
@@ -420,53 +645,106 @@ class AlarmMaintenanceService : Service() {
         
         val events = eventsResult.getOrThrow()
         Logger.d(LogTags.MAINTENANCE, "Loaded ${events.size} events")
-        
-        // STEP 4: SHIFT RECOGNITION
+
+        // FAIL-SAFE: leere Eventliste NICHT synchronisieren. syncAlarms() versteht "keine Events"
+        // als "alle Alarme loeschen" - und ein gescheiterter Abruf kann als success(emptyList())
+        // zurueckkommen. Lieber ein veralteter Wecker als gar keiner (gleiche Logik wie
+        // BootReceiver.performAlarmRecovery). Auch NICHT stempeln: der naechste Lauf soll es
+        // sofort erneut versuchen, nicht erst nach 12h.
+        if (!MaintenanceLoadDecision.shouldSyncAfterLoad(events.size)) {
+            Logger.w(
+                LogTags.MAINTENANCE,
+                "Kalender-Abfrage lieferte 0 Events - Sync uebersprungen (fail-safe, bestehende Alarme bleiben)"
+            )
+            return
+        }
+
+        saveEventLoadTime()
+
+        // STEP 4: SHIFT RECOGNITION (nur Diagnose)
         Logger.d(LogTags.MAINTENANCE, "Step 4: Shift recognition")
-        
-        val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
-        
+
+        // getAllMatchingShifts() wirft bei defekter Schicht-Konfiguration (getOrThrow in
+        // ShiftRecognitionEngine.performRecognition). Ungefangen landete das im generischen catch
+        // von onStartCommand ("Maintenance failed with exception"): der Nutzer bekam KEINEN
+        // Hinweis, waehrend alle 6h jede Dienstplan-Aenderung (auch Streichung/Krankschreibung)
+        // unbemerkt liegen blieb - in Release-Builds (nur WARN+) rueckwirkend kaum
+        // rekonstruierbar. Deshalb hier als das behandeln, was es ist: ein Konfigurationsdefekt,
+        // der den Nutzer erreichen muss. Bestehende Alarme bleiben bewusst stehen (kein Sync,
+        // kein saveMaintenanceTime) - lieber ein veralteter Wecker als gar keiner.
+        val shiftMatches = try {
+            shiftRecognitionEngine.getAllMatchingShifts(events)
+        } catch (e: CancellationException) {
+            // Cancellation ist kein Konfigurationsdefekt (Service wird gestoppt) - weiterwerfen,
+            // damit der finally-Block in onStartCommand die Kette regulaer neu plant.
+            throw e
+        } catch (e: Exception) {
+            Logger.e(LogTags.MAINTENANCE, "Schicht-Erkennung fehlgeschlagen - Konfiguration nicht lesbar", e)
+            showActionRequiredNotification(
+                title = "Schicht-Konfiguration nicht lesbar",
+                message = "Deine Schichtdefinitionen konnten nicht gelesen werden. Bitte öffne die App und prüfe die Schicht-Einstellungen — bis dahin werden keine Dienstplan-Änderungen mehr übernommen."
+            )
+            return
+        }
+
         val newShifts = shiftMatches.filter { match ->
             // Use pre-calculated alarm time from ShiftMatch
             val alarmTimeMillis = match.calculatedAlarmTime
                 .atZone(ZoneId.systemDefault())
                 .toInstant()
                 .toEpochMilli()
-            
+
             alarmTimeMillis > now && futureAlarms.none { alarm ->
                 // Check if alarm already exists for this event
                 alarm.eventId == match.calendarEvent.id
             }
         }
-        
-        Logger.d(LogTags.MAINTENANCE, "Found ${newShifts.size} new shifts to schedule")
-        
-        if (newShifts.isEmpty()) {
-            val duration = System.currentTimeMillis() - startTime
-            Logger.business(
-                LogTags.MAINTENANCE,
-                "✅ Maintenance completed (no new shifts) in ${duration}ms"
-            )
-            saveMaintenanceTime()
-            return
-        }
-        
+
+        // NUR LOGGING - kein Abbruch mehr. Frueher stand hier ein Early-Return bei
+        // newShifts.isEmpty(): damit erreichten geaenderte (gleiche Event-ID, neue Zeit) und
+        // gestrichene Schichten den Delta-Sync NIE, obwohl genau er Update/Delete beherrscht.
+        // Siehe MaintenanceLoadDecision.shouldSyncAfterLoad.
+        Logger.d(
+            LogTags.MAINTENANCE,
+            "${newShifts.size} neue Schichten erkannt (Sync laeuft unabhaengig davon - erkennt auch Aenderungen/Streichungen)"
+        )
+
         // STEP 5: ALARM CREATION
         Logger.d(LogTags.MAINTENANCE, "Step 5: Alarm creation")
         
-        val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-        
-        if (shiftConfig?.autoAlarmEnabled != true) {
+        // "Konfiguration nicht lesbar" und "Auto-Alarm aus" bewusst getrennt: der frueher
+        // gemeinsame Zweig (shiftConfig?.autoAlarmEnabled != true) loggte bei einem echten Defekt
+        // "Auto-alarm disabled, skipping" - die falsche Diagnose fuer den teureren der beiden
+        // Faelle, und die einzige Spur im Log.
+        val shiftConfigResult = shiftUseCase.getCurrentShiftConfig()
+        val shiftConfig = shiftConfigResult.getOrNull()
+
+        if (shiftConfig == null) {
+            Logger.e(
+                LogTags.MAINTENANCE,
+                "Schicht-Konfiguration nicht lesbar - Sync uebersprungen (bestehende Alarme bleiben)",
+                shiftConfigResult.exceptionOrNull()
+            )
+            showActionRequiredNotification(
+                title = "Schicht-Konfiguration nicht lesbar",
+                message = "Deine Schichtdefinitionen konnten nicht gelesen werden. Bitte öffne die App und prüfe die Schicht-Einstellungen — bis dahin werden keine Dienstplan-Änderungen mehr übernommen."
+            )
+            return
+        }
+
+        if (!shiftConfig.autoAlarmEnabled) {
             Logger.d(LogTags.MAINTENANCE, "Auto-alarm disabled, skipping")
             return
         }
         
         // Delta-Sync erwartet den VOLLSTAENDIGEN Soll-Zustand. Nur die neu erkannten Schichten
         // zu uebergeben wuerde alle bereits geplanten Wecker loeschen, deren Event nicht in der
-        // Teilliste steht (syncAlarms entfernt Alarme ohne passendes Event). Die
-        // newShifts-Pruefung oben dient nur der Entscheidung, OB ueberhaupt synchronisiert wird.
+        // Teilliste steht (syncAlarms entfernt Alarme ohne passendes Event).
         // Orchestrator: syncAlarms setzt die System-Alarme INTERN (Delta-Sync + idempotentes
         // Re-Arming). Kein separates scheduleSystemAlarm mehr noetig (frueher: Doppel-Scheduling).
+        // Dimmer-/DND-/Pre-Alarm-Reschedule stehen bewusst NICHT mehr hier, sondern im
+        // finally-Block von onStartCommand (siehe rescheduleSideChannels) - hier waren sie hinter
+        // allen Early-Returns unerreichbar.
         val syncResult = alarmUseCase.syncAlarms(events, shiftConfig)
 
         if (syncResult.isSuccess) {
@@ -477,36 +755,6 @@ class AlarmMaintenanceService : Service() {
                 "✅ Maintenance completed: ${syncedAlarms.size} alarms in sync in ${duration}ms"
             )
             saveMaintenanceTime()
-
-            // Schicht-Dimmer: neu erkannte Schichten in den Dimm-Zeitplan uebernehmen.
-            // Eigenes try/catch – ein Dimm-Fehler darf die Wartung nie beeintraechtigen.
-            try {
-                dimSchedule.applyCurrentState()
-                dimSchedule.scheduleNextTransition()
-            } catch (e: Exception) {
-                Logger.w(LogTags.DIMMER, "Wartung: Dimm-Reschedule fehlgeschlagen", e)
-            }
-
-            // DND-Steuerung: neu erkannte Schichten in den Nicht-stoeren-Zeitplan uebernehmen.
-            // Gleiches Muster wie der Dimmer-Reschedule oben - eigenes try/catch, ein DND-Fehler
-            // darf die Wartung nie beeintraechtigen. Bislang fehlte dieser Block komplett: die
-            // 6h-Wartung reschedulte den Dimmer-Tick, aber nie den DND-Tick, wodurch "Waehrend der
-            // Dienstzeit"/Rufbereitschaft-Fenster stale wurden, sobald sich Schicht-Alarme
-            // ausserhalb eines App-Neustarts aenderten.
-            try {
-                dndSchedule.applyCurrentState()
-                dndSchedule.scheduleNextTransition()
-            } catch (e: Exception) {
-                Logger.w(LogTags.DND, "Wartung: DND-Reschedule fehlgeschlagen", e)
-            }
-
-            // Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) neu planen. Eigenes
-            // try/catch – ein Fehler hier darf die Wartung nie beeintraechtigen.
-            try {
-                calendarPreAlarmRefreshScheduler.reschedule()
-            } catch (e: Exception) {
-                Logger.w(LogTags.BACKGROUND_WORKER, "Wartung: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
-            }
         } else {
             Logger.e(LogTags.MAINTENANCE, "Alarm sync failed", syncResult.exceptionOrNull())
         }

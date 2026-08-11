@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.provider.Settings
@@ -41,7 +42,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +61,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
@@ -851,10 +853,53 @@ private fun StatusCard(
 private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
     val context = LocalContext.current
     var cacheStats by remember { mutableStateOf("Cache-Statistiken laden...") }
-    val isOffline by remember { 
-        derivedStateOf { !isNetworkAvailable(context) }
+
+    // KEIN derivedStateOf: Hier stand `remember { derivedStateOf { !isNetworkAvailable(context) } }`.
+    // `derivedStateOf` invalidiert ausschliesslich, wenn ein im Block GELESENER Snapshot-State sich
+    // aendert — `isNetworkAvailable()` liest aber den ConnectivityManager, keinen Snapshot-State.
+    // Der Wert wurde also genau einmal berechnet und blieb fuer die gesamte Lebensdauer der
+    // Composition stehen: Flugmodus an, Karte behauptet weiter "Online - Cache aktiv". In einem
+    // Screen, dessen Zweck die Diagnose von "warum kam kein Wecker" ist, ist das genau in dem
+    // Moment eine Falschaussage, in dem sie zaehlt.
+    //
+    // Bewusst der NetworkCallback statt des ON_RESUME-Musters der Nachbarkarten: Der gemeldete Fall
+    // ist "Flugmodus an, WAEHREND der Tab offen ist" — ON_RESUME feuert dabei nie. Der Callback
+    // deckt beides ab, deshalb bleibt es bei EINEM Mechanismus statt zwei.
+    var isOffline by remember { mutableStateOf(!isNetworkAvailable(context)) }
+    DisposableEffect(context) {
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            private fun refresh() {
+                isOffline = !isNetworkAvailable(context)
+            }
+
+            override fun onAvailable(network: Network) = refresh()
+            override fun onLost(network: Network) = refresh()
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities
+            ) = refresh()
+        }
+        // Der Callback ist reine Diagnose-Anzeige: schlaegt die Registrierung fehl, bleibt es beim
+        // Startwert, statt den Status-Tab mitzunehmen.
+        val registered = try {
+            connectivityManager?.registerDefaultNetworkCallback(callback)
+            connectivityManager != null
+        } catch (_: Exception) {
+            false
+        }
+        onDispose {
+            if (registered) {
+                try {
+                    connectivityManager?.unregisterNetworkCallback(callback)
+                } catch (_: Exception) {
+                    // bereits abgemeldet - nichts zu tun
+                }
+            }
+        }
     }
-    
+
     // Nur einmal laden, nicht bei jeder Recomposition
     LaunchedEffect(calendarViewModel) {
         calendarViewModel?.let { viewModel ->
@@ -946,19 +991,22 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
-                    OutlinedButton(
+                    // Zwei weight(1f)-Buttons in einer Kartenzeile: genau der Fall, fuer den es
+                    // CompactActionButton gibt. Mit der Standard-ContentPadding (24dp pro Seite)
+                    // bleiben auf einem 360dp-Geraet nur ~96dp fuer die Schrift — bei groesserer
+                    // Systemschrift bricht Compose "Cache leeren" mitten im Wort um (dasselbe
+                    // Symptom, das im HueSettingsScreen als "Bea/rbei/ten" gemeldet wurde).
+                    CompactOutlinedButton(
                         onClick = { calendarViewModel.clearEventCache() },
+                        text = "Cache leeren",
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Cache leeren")
-                    }
-                    
-                    Button(
+                    )
+
+                    CompactButton(
                         onClick = { calendarViewModel.refreshData(forceRefresh = true) },
+                        text = "Neu laden",
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Neu laden")
-                    }
+                    )
                 }
             }
         }

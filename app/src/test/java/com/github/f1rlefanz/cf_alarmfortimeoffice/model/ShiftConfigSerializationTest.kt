@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -152,7 +153,7 @@ class ShiftConfigSerializationTest {
 
         val early = config.definitions.first { it.id == "early_shift" }
         assertEquals(LocalTime.of(5, 30), early.alarmTime)
-        assertEquals(listOf("F", "IMCF"), early.keywords)
+        assertEquals(listOf("F", "IMCF", "Frühdienst"), early.keywords)
 
         val late = config.definitions.first { it.id == "late_shift" }
         assertEquals(LocalTime.of(12, 30), late.alarmTime)
@@ -167,5 +168,71 @@ class ShiftConfigSerializationTest {
         assertEquals(LocalTime.of(7, 0), intermediate.alarmTime)
 
         assertTrue("Alle Standard-Definitionen sollten aktiviert sein", config.definitions.all { it.isEnabled })
+    }
+
+    /**
+     * Einbuchstabige Standard-Muster ("F"/"S"/"N") sind ERLAUBT - aber sie duerfen ausschliesslich
+     * ueber die Wortgrenzen-Erkennung greifen, niemals ueber die unscharfe Teiltreffer-Stufe.
+     *
+     * Die Unterscheidung ist der ganze Punkt, und sie wurde einmal verwechselt:
+     *  - `matchesKeywords()` (Kalendertitel -> Definition) arbeitet mit Wortgrenzen. Dort ist "F"
+     *    praezise: es trifft ein alleinstehendes F, nicht "Fruehschicht", nicht "Fortbildung".
+     *    Genau diese kurzen Codes stehen real im Dienstplan - ohne sie bleibt eine echte Schicht
+     *    unerkannt und der Wecker aus (am Geraet nachgewiesen, 10.08.2026).
+     *  - `findDefinitionFor()` (Alarm -> Definition) vergleicht unscharf per `contains` OHNE
+     *    Wortgrenzen. Dort waehlt ein einzelner Buchstabe die falsche Definition ("S" steckt in
+     *    "Nacht**s**chicht") - deshalb filtert diese Stufe alles unter
+     *    [ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH] heraus.
+     *
+     * Dieser Test sichert die zweite Haelfte ab: kein einbuchstabiges Standard-Muster darf ueber
+     * einen Teiltreffer eine Definition gewinnen.
+     */
+    @Test
+    fun `einbuchstabige Standard-Muster gewinnen keinen unscharfen Teiltreffer`() {
+        val config = ShiftConfig.getDefaultConfig()
+        val einbuchstabige = config.definitions
+            .flatMap { def -> def.keywords.map { def.name to it } }
+            .filter { (_, keyword) -> keyword.length < ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH }
+
+        assertTrue(
+            "Erwartet werden die kurzen Dienstplan-Codes F/S/N in den Vorgaben",
+            einbuchstabige.isNotEmpty()
+        )
+
+        // Jeder Schichtname, der einen dieser Buchstaben nur als Bestandteil enthaelt, muss
+        // trotzdem seiner EIGENEN Definition zugeordnet werden.
+        assertEquals("Nachtschicht", config.findDefinitionFor("Nachtschicht")?.name)
+        assertEquals("Spätschicht", config.findDefinitionFor("Spätschicht")?.name)
+        assertEquals("Zwischendienst", config.findDefinitionFor("Zwischendienst")?.name)
+        assertEquals("S2", config.findDefinitionFor("S2")?.name)
+
+        // Und ein Name, der zu KEINER Definition gehoert, darf nicht ueber einen einzelnen
+        // Buchstaben eingefangen werden.
+        assertNull(
+            "Ein einzelner Buchstabe darf keinen unscharfen Teiltreffer gewinnen",
+            config.findDefinitionFor("Sonderdienst Nord")
+        )
+    }
+
+    /**
+     * Jede Standard-Definition muss mindestens EIN Muster haben, das nicht das Kuerzel einer
+     * einzelnen Station ist.
+     *
+     * Vorher hatte "Zwischendienst" genau ein Muster: "IMCZ". Auf jeder Station, die nicht "IMC"
+     * codiert, war diese Definition damit strukturell tot - der Kollege haette dafuer NIE einen
+     * Wecker bekommen und es erst nach dem Verschlafen gemerkt.
+     */
+    @Test
+    fun `jede Standard-Definition hat ein Muster ohne Stationskuerzel`() {
+        val nurStationsspezifisch = ShiftConfig.getDefaultConfig().definitions
+            .filter { def ->
+                def.keywords.none { !it.startsWith("IMC", ignoreCase = true) }
+            }
+            .map { it.name }
+
+        assertTrue(
+            "Nur stationsspezifische Muster = auf jeder anderen Station tot: $nurStationsspezifisch",
+            nurStationsspezifisch.isEmpty()
+        )
     }
 }

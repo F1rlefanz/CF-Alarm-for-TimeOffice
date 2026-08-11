@@ -7,8 +7,14 @@
     
     Diese Datei unterdrückt bekannte False Positives und passt die Lint-Prüfungen
     an die spezifischen Anforderungen unserer App an.
-    
-    Letzte Aktualisierung: August 2025
+
+    WICHTIG: Nur Issue-IDs eintragen, die es wirklich gibt. Lint meldet jede unbekannte ID
+    als UnknownIssueId-Warnung - und zwar einmal pro geprüfter Variante, also mehrfach.
+    Vor August 2026 standen hier drei erfundene IDs (HardcodedCredentials, UnencryptedIntent,
+    LeakCanary), die allein 18 der damals 50 Lint-Warnungen erzeugten, ohne irgendetwas zu
+    bewirken. Neue Einträge deshalb immer mit `./gradlew --offline lintDebug` gegenprüfen.
+
+    Letzte Aktualisierung: August 2026
     -->
 
     <!-- ================= KRITISCHE FALSE POSITIVES ================= -->
@@ -34,9 +40,14 @@
     Grund: Nur lokale WLAN-Kommunikation mit Hue Bridge
     Risiko: Akzeptabel - kein Internet-Traffic betroffen
     Hinweis: Falls wieder Zeit investiert wird - vorherige Ansätze siehe Git History
+
+    Dateiname: Der TrustManager heißt HueTrustManager.kt. Bis August 2026 stand hier
+    "TrustAllCertificatesManager.kt" - eine Datei, die es im Repo längst nicht mehr gibt;
+    die Unterdrückung griff also für nichts, und die einzige dokumentierte Begründung für
+    den bewussten Trust-Bypass hing an einem Namen, den niemand mehr findet.
     -->
     <issue id="CustomX509TrustManager">
-        <ignore path="**/TrustAllCertificatesManager.kt" />
+        <ignore path="**/HueTrustManager.kt" />
     </issue>
     
     <!-- ================= DEPENDENCY UPDATES ================= -->
@@ -136,29 +147,37 @@
     Diese Checks wollen wir STRENGER haben:
     -->
     
-    <!-- Sicherheitsprobleme immer als Error -->
-    <issue id="HardcodedCredentials" severity="error" />
+    <!-- Sicherheitsprobleme immer als Error.
+         HardcodedCredentials und UnencryptedIntent standen hier bis August 2026, sind aber
+         keine existierenden Lint-Issue-IDs (frei erfunden) - entfernt, sie erzeugten nur
+         UnknownIssueId-Warnungen. -->
     <issue id="InsecureBaseConfiguration" severity="error" />
-    <issue id="UnencryptedIntent" severity="error" />
     <issue id="WorldReadableFiles" severity="error" />
     <issue id="WorldWriteableFiles" severity="error" />
-    
-    <!-- Memory Leaks als Error -->
+
+    <!-- Memory Leaks als Error.
+         "LeakCanary" ist ebenfalls keine Lint-Issue-ID (LeakCanary ist eine Bibliothek, die
+         hier gar nicht eingebunden ist) - entfernt. -->
     <issue id="StaticFieldLeak" severity="error" />
-    <issue id="LeakCanary" severity="error" />
     
     <!-- Crash-Risiken als Error -->
     <issue id="NullSafeMutableLiveData" severity="error" />
     <issue id="FragmentLiveDataObserve" severity="error" />
     
     <!-- ================= BASELINE ================= -->
-    
-    <!-- 
-    Für existierende Probleme können wir eine Baseline erstellen:
-    ./gradlew lintFix
-    
-    Dies erstellt eine lint-baseline.xml mit allen aktuellen Problemen,
-    die dann ignoriert werden bis sie gefixt sind.
+
+    <!--
+    Es gibt BEWUSST keine Baseline-Datei.
+
+    Bis August 2026 lag ein app/lint-baseline.xml im Repo, das ausschließlich 27
+    FullBackupContent-Einträge zu <exclude>-Zeilen enthielt, die es in backup_rules.xml /
+    data_extraction_rules.xml längst nicht mehr gibt - und das obendrein nie gelesen wurde,
+    weil `baseline = file("lint-baseline.xml")` in build.gradle.kts auskommentiert war. Toter
+    Ballast, der 27 unterdrückte Backup-Sicherheitsprobleme vortäuschte. Datei gelöscht,
+    Kommentar in build.gradle.kts entsprechend korrigiert.
+
+    Falls später wirklich eine Baseline gebraucht wird: frisch erzeugen UND in
+    build.gradle.kts aktivieren - nicht halb. Die alte Datei nicht wiederbeleben.
     -->
     
 </lint>

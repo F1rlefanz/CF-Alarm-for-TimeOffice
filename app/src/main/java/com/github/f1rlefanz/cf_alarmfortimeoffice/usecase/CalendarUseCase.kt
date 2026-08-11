@@ -241,7 +241,8 @@ class CalendarUseCase @Inject constructor(
                 
                 // PROGRESSIVE LOADING: Single calendar at a time to prevent UI blocking
                 val allEvents = mutableListOf<CalendarEvent>()
-                var hasErrors = false
+                var failedCount = 0
+                var firstError: Throwable? = null
                 var processedCount = 0
                 
                 for (calendarId in calendarIds) {
@@ -268,26 +269,63 @@ class CalendarUseCase @Inject constructor(
                                 // die restlichen Kalender in denselben Fehler und der naechste
                                 // Sync gleich mit.
                                 invalidateTokenIfRejectedByGoogle(error)
-                                hasErrors = true
+                                failedCount++
+                                if (firstError == null) firstError = error
                                 processedCount++
                                 // Continue with other calendars instead of failing completely
                             }
                         )
-                        
+
                     } catch (e: Exception) {
                         Logger.e(LogTags.CALENDAR_API, "Exception loading events for calendar ${calendarId.take(8)}...", e)
-                        hasErrors = true
+                        failedCount++
+                        if (firstError == null) firstError = e
                         processedCount++
                     }
                 }
-                
+
+                // TOTALAUSFALL IST EIN FEHLER, KEINE LEERE ERFOLGSLISTE.
+                //
+                // Scheitert MINDESTENS EIN Kalender, aber nicht alle, bleibt das bewusst ein
+                // Teilerfolg (dieselbe Abgrenzung wie CalendarViewModel.
+                // resolveCalendarAuthorizationOutcome()). Scheitern aber ALLE - beim Nutzer ist
+                // typischerweise genau EINER ausgewaehlt ("Timeoffice Dienstplanfeed") - dann waere
+                // Result.success(emptyList()) genau die Luege, vor der CLAUDE.md warnt: fuer eine
+                // Wecker-App ist "leer" von "du hast frei" nicht zu unterscheiden. Und der
+                // Unterschied ist nicht theoretisch: AlarmUseCase.syncAlarms() deutet eine leere
+                // Eventliste als "keine Schichten" und LOESCHT daraufhin alle Alarme.
+                //
+                // Der Wurf landet im umgebenden SafeExecutor.safeExecute und wird dort zu
+                // Result.failure - Aufrufer, die bereits isFailure pruefen (BootReceiver,
+                // AlarmMaintenanceService, CalendarPreAlarmRefreshWorker), profitieren sofort.
+                if (failedCount > 0 && failedCount == calendarIds.size) {
+                    val error = firstError
+                        ?: AppError.UnknownError("Alle Kalender-Abrufe sind fehlgeschlagen")
+                    Logger.e(
+                        LogTags.CALENDAR,
+                        "❌ ALLE $failedCount Kalender-Abrufe fehlgeschlagen - kein Teilergebnis, meldet Fehler statt leerer Liste",
+                        error
+                    )
+                    throw error
+                }
+
                 // FINAL PROCESSING: Sort events by start time
                 val sortedEvents = allEvents.sortedBy { it.startTime }
-                
-                Logger.i(LogTags.CALENDAR, "Loaded total ${sortedEvents.size} events from ${calendarIds.size} calendars" + 
-                        if (hasErrors) " (with some errors)" else "" +
-                        if (forceRefresh) " (force refreshed)" else "")
-                
+
+                // Klammern statt verschachtelter if-Ausdruecke in einer String-Konkatenation:
+                // `"a" + if (x) "b" else "" + if (y) "c" else ""` parst Kotlin als
+                // `if (x) "b" else ("" + if (y) "c" else "")` - der force-refresh-Hinweis fiel
+                // damit ausgerechnet im Fehlerfall weg, dem einzigen, in dem er bei der Diagnose
+                // gebraucht wird.
+                val logSuffix = buildString {
+                    if (failedCount > 0) append(" (with some errors: $failedCount/${calendarIds.size} calendars failed)")
+                    if (forceRefresh) append(" (force refreshed)")
+                }
+                Logger.i(
+                    LogTags.CALENDAR,
+                    "Loaded total ${sortedEvents.size} events from ${calendarIds.size} calendars$logSuffix"
+                )
+
                 sortedEvents
             }
         }

@@ -8,7 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -16,12 +16,28 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Manages WakeLocks for alarm operations with proper resource management
  * and automatic cleanup to prevent battery drain.
- * 
+ *
  * Features:
  * - Automatic release after timeout
  * - Resource leak prevention
  * - Structured lifecycle management
  * - Thread-safe operations
+ *
+ * ⚠️ AKTUELL OHNE JEDEN AUFRUFER — ALTLAST, NICHT DER WEG ZUM WECK-WAKE-LOCK.
+ *
+ * In `app/src/main` gibt es keine einzige Verwendung von [acquireAlarmWakeLock],
+ * [releaseAllWakeLocks] oder [withWakeLock]; `AlarmManagerService` bekommt eine Instanz per
+ * Konstruktor injiziert und benutzt sie nirgends. Die Wake-Locks des echten Weckvorgangs liegen
+ * woanders und werden dort direkt genommen: `AlarmReceiver` (PARTIAL, um den Broadcast zu
+ * ueberleben) und `AlarmFullScreenActivity` (SCREEN_BRIGHT, damit das Vollbild nicht wieder
+ * wegdozt). Wer einem echten Wake-Lock-Verdacht nachgeht, muss DORT suchen — eine Aenderung an
+ * dieser Klasse aendert am Laufzeitverhalten der App nichts.
+ *
+ * Nicht geloescht, weil die vollstaendige Entfernung ausserhalb dieses Fixes liegt: Klasse +
+ * Interface + Extension + der ungenutzte Konstruktorparameter in `AlarmManagerService` + die
+ * beiden Provider in `di/modules/ServiceModule.kt` gehoeren in einem Zug weg. Dieser Hinweis steht
+ * hier, damit die Klasse in der Zwischenzeit nicht als "so nehmen Alarme Wake-Locks" missverstanden
+ * wird.
  */
 interface IWakeLockManager {
     /**
@@ -124,8 +140,11 @@ class WakeLockManager(
             releaseWakeLock(tag)
         }
         
-        // Cancel cleanup scope
-        cleanupScope.cancel()
+        // Nur die laufenden Timeout-Jobs abbrechen, NICHT den Scope selbst: WakeLockManager ist ein
+        // Hilt-@Singleton. Ein cleanupScope.cancel() waere endgueltig - danach koennte
+        // acquireAlarmWakeLock() seinen Auto-Release-Timeout-Job nie mehr starten, und ein nicht
+        // freigegebener PARTIAL_WAKE_LOCK haengt in einer Wecker-App stundenlang am Akku.
+        cleanupScope.coroutineContext.cancelChildren()
     }
     
     override fun isWakeLockHeld(tag: String): Boolean {

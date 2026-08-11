@@ -104,6 +104,20 @@ class HueApiClient(context: Context? = null) {
         
         // Validate private network address first
         if (!isPrivateNetworkAddress(bridgeIp)) {
+            // EHRLICHE FEHLERKLASSE: Eine IPv6-Adresse ist KEIN Sicherheitsvorfall, sondern ein
+            // Adressfamilien-Problem - der komplette Hue-Pfad ist IPv4 (Praefix-Pruefung hier,
+            // URL-Bau ohne eckige Klammern unten, isBridgeReachableNow im ConnectionManager).
+            // Als "🚨 SECURITY" geloggt sucht man im Log einen Angriff statt einer Adressfamilie.
+            // Die Klemme selbst bleibt bewusst so streng wie sie ist: nur lokale Geraete.
+            if (bridgeIp.contains(":")) {
+                Logger.w(
+                    LogTags.HUE_NETWORK,
+                    "Bridge-Adresse $bridgeIp ist keine IPv4-Adresse - der Hue-Pfad dieser App ist IPv4-only"
+                )
+                return@withContext Result.failure(
+                    IOException("Bridge address is not an IPv4 address: $bridgeIp")
+                )
+            }
             Logger.w(LogTags.HUE_NETWORK, "🚨 SECURITY: Bridge IP $bridgeIp is not a private network address")
             return@withContext Result.failure(
                 SecurityException("Bridge IP must be in private network range")
@@ -213,6 +227,21 @@ class HueApiClient(context: Context? = null) {
 
     /**
      * Get bridge configuration with modern HTTPS approach
+     *
+     * PRUEFT DIE ANTWORT, statt sie nur zu deserialisieren. Beide Aufrufer benutzen diese
+     * Funktion als "hat sie geworfen?"-Orakel (HueBridgeConnectionManager.
+     * validateConnectionCredentials, HueBridgeRepository.testBridgeConnection) - sie ist damit
+     * de facto die Zugangsdaten-/Bridge-Pruefung der App. Ohne Feldpruefung galt aber JEDES
+     * JSON-Objekt als gesunde Bridge: Gson baut Objekte per Unsafe und erzwingt Kotlins
+     * Non-Null-Deklarationen NICHT, `fromJson("{}", …)` liefert also ein Objekt mit lauter
+     * nulls und wirft nicht. Wandert der DHCP-Lease der Bridge, haette ein beliebiges anderes
+     * Geraet an derselben IP (Router-Webinterface, NAS) als "unsere Bridge" gegolten.
+     * `bridgeid`/`mac` stehen auch in der oeffentlichen, unauthentifizierten Teilmenge von
+     * /api/config - die Pruefung funktioniert deshalb auf beiden Endpunkten.
+     *
+     * Zusaetzlich: bei ungueltigem Username antwortet die Bridge mit HTTP 200 und der
+     * V1-Fehlerhuelle (`[{"error":{"type":1,"description":"unauthorized user"}}]`). Die wird
+     * jetzt gezielt als solche gemeldet, statt als kryptischer Gson-Syntaxfehler.
      */
     suspend fun getBridgeConfig(bridgeIp: String, username: String? = null): HueBridgeConfig =
         withContext(Dispatchers.IO) {
@@ -223,10 +252,29 @@ class HueApiClient(context: Context? = null) {
             }
 
             val result = makeSecureHueRequest(bridgeIp, endpoint, "GET")
-            
+
             if (result.isSuccess) {
                 val responseBody = result.getOrNull() ?: "{}"
-                return@withContext gson.fromJson(responseBody, HueBridgeConfig::class.java)
+
+                if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
+                    val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
+                        ?: IOException("Bridge antwortete mit einer Huelle statt mit einer Config: $responseBody")
+                    Logger.w(LogTags.HUE_BRIDGE, "Bridge lehnte die Config-Abfrage ab: ${failure.message}")
+                    throw failure
+                }
+
+                val config = gson.fromJson(responseBody, HueBridgeConfig::class.java)
+                    ?: throw IOException("Bridge config response was empty: $responseBody")
+
+                // Gson erzwingt die Non-Null-Deklarationen nicht - deshalb ueber nullable
+                // Zwischenwerte pruefen statt sich auf den Typ zu verlassen.
+                val bridgeId: String? = config.bridgeid
+                val mac: String? = config.mac
+                if (bridgeId.isNullOrBlank() && mac.isNullOrBlank()) {
+                    throw IOException("Antwort ist keine Hue-Bridge-Config (weder bridgeid noch mac): $responseBody")
+                }
+
+                return@withContext config
             } else {
                 throw result.exceptionOrNull() ?: IOException("Failed to get bridge config")
             }
@@ -295,6 +343,22 @@ class HueApiClient(context: Context? = null) {
                 val responseBody = result.getOrNull() ?: "{}"
                 Logger.d(LogTags.HUE_LIGHTS, "Lights API response: $responseBody")
 
+                // FEHLERHUELLE STATT LAMPEN: Ist der Whitelist-Eintrag der App weg (Nutzer hat
+                // sie in der Hue-App entfernt, Bridge zurueckgesetzt/getauscht), antwortet die
+                // Bridge mit HTTP 200 und einem JSON-ARRAY
+                // (`[{"error":{"type":1,"description":"unauthorized user"}}]`). Das Map-Parsing
+                // unten scheitert daran zwangsläufig, und der catch machte daraus "0 Lampen" -
+                // also einen ERFOLG mit leerem Ergebnis. Der Nutzer sah eine leere Lampenliste
+                // bzw. "Keine Lampen gefunden", ohne jeden Hinweis, dass die Bridge neu
+                // gekoppelt werden muss. Deshalb VOR dem try: die Huelle auswerten und werfen -
+                // HueLightRepository faengt das und liefert ein ehrliches Result.failure.
+                if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
+                    val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
+                        ?: IOException("Bridge antwortete mit einer Huelle statt mit Lampen: $responseBody")
+                    Logger.w(LogTags.HUE_LIGHTS, "Bridge lehnte die Lampen-Abfrage ab: ${failure.message}")
+                    throw failure
+                }
+
                 return@withContext try {
                     val type = object : TypeToken<Map<String, HueLight>>() {}.type
                     gson.fromJson(responseBody, type) ?: emptyMap()
@@ -321,6 +385,14 @@ class HueApiClient(context: Context? = null) {
             if (result.isSuccess) {
                 val responseBody = result.getOrNull() ?: "{}"
                 Logger.d(LogTags.HUE_LIGHTS, "Groups API response: $responseBody")
+
+                // Gleiche Falle wie in [getLights]: HTTP 200 + Fehlerhuelle wurde zu "0 Gruppen".
+                if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
+                    val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
+                        ?: IOException("Bridge antwortete mit einer Huelle statt mit Gruppen: $responseBody")
+                    Logger.w(LogTags.HUE_LIGHTS, "Bridge lehnte die Gruppen-Abfrage ab: ${failure.message}")
+                    throw failure
+                }
 
                 return@withContext try {
                     val type = object : TypeToken<Map<String, HueGroup>>() {}.type
@@ -350,7 +422,7 @@ class HueApiClient(context: Context? = null) {
         try {
             val json = gson.toJson(update)
             val result = makeSecureHueRequest(bridgeIp, "/api/$username/lights/$lightId/state", "PUT", json)
-            result.isSuccess
+            wasAccepted(result, "Lampe $lightId")
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Error controlling light $lightId", e)
             false
@@ -369,11 +441,53 @@ class HueApiClient(context: Context? = null) {
         try {
             val json = gson.toJson(update)
             val result = makeSecureHueRequest(bridgeIp, "/api/$username/groups/$groupId/action", "PUT", json)
-            result.isSuccess
+            wasAccepted(result, "Gruppe $groupId")
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Error controlling group $groupId", e)
             false
         }
+    }
+
+    /**
+     * Hat die Bridge diesen Steuer-PUT wirklich ANGENOMMEN?
+     *
+     * Vor diesem Fix gaben [setLightState]/[setGroupAction]/[controlLight]/[controlGroup] blank
+     * `result.isSuccess` zurueck - also nur den HTTP-Status. Die V1-API antwortet aber auch bei
+     * ABLEHNUNG mit HTTP 200 (`[{"error":{"type":1,"description":"unauthorized user"}}]`), genau
+     * die Falle, fuer die [HueV1Envelope] existiert - sie war nur auf die Zeitplaene angewandt,
+     * nicht auf die Steuerung. Folge: nach einem entzogenen Whitelist-Eintrag meldete die Kette
+     * "✅ ALARM-CRITICAL: Successfully controlled light" und "5/5 actions successful", ohne dass
+     * eine einzige Lampe anging - aus dem Log nicht diagnostizierbar, weil das Log Erfolg behauptet.
+     *
+     * [HueV1Envelope.parseControl] und nicht `parseFirst`: ein PUT auf /state liefert EINEN
+     * EINTRAG PRO GEAENDERTEM ATTRIBUT (`[{"success":{"…/on":true}},{"success":{"…/bri":200}}]`).
+     * Und auch nicht [HueV1Envelope.parseAll]: dessen strenge Regel "KEIN Eintrag enthaelt error"
+     * macht aus einem TEILERFOLG einen Totalausfall - siehe [HueV1Envelope.parseControl].
+     * Angenommen heisst hier deshalb "mindestens ein Eintrag meldet success"; abgelehnte
+     * Einzelattribute werden geloggt, damit ein Teilerfolg im Log nicht als glatter Erfolg
+     * erscheint.
+     */
+    private fun wasAccepted(result: Result<String>, targetLabel: String): Boolean {
+        val responseBody = result.getOrElse { error ->
+            Logger.w(LogTags.HUE_LIGHTS, "Steuer-Anfrage fuer $targetLabel fehlgeschlagen: ${error.message}")
+            return false
+        }
+        return HueV1Envelope.parseControl(responseBody).fold(
+            onSuccess = { rejectedAttributes ->
+                if (rejectedAttributes.isNotEmpty()) {
+                    Logger.w(
+                        LogTags.HUE_LIGHTS,
+                        "Bridge nahm die Steuerung von $targetLabel nur TEILWEISE an - der Rest wurde " +
+                            "angewendet: ${rejectedAttributes.joinToString(" | ")}"
+                    )
+                }
+                true
+            },
+            onFailure = { error ->
+                Logger.w(LogTags.HUE_LIGHTS, "Bridge lehnte die Steuerung von $targetLabel ab: ${error.message}")
+                false
+            }
+        )
     }
 
     /**
@@ -442,9 +556,11 @@ class HueApiClient(context: Context? = null) {
         try {
             val json = gson.toJson(stateChange)
             val result = makeSecureHueRequest(bridgeIp, "/api/$username/lights/$lightId/state", "PUT", json)
-            
-            Logger.d(LogTags.HUE_LIGHTS, "Light state update result: ${result.isSuccess}")
-            return@withContext result.isSuccess
+
+            // Body auswerten, nicht nur den HTTP-Status - siehe [wasAccepted].
+            val accepted = wasAccepted(result, "Lampe $lightId")
+            Logger.d(LogTags.HUE_LIGHTS, "Light state update result: $accepted")
+            return@withContext accepted
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Error setting light state for $lightId", e)
             return@withContext false
@@ -464,8 +580,10 @@ class HueApiClient(context: Context? = null) {
             val json = gson.toJson(actionChange)
             val result = makeSecureHueRequest(bridgeIp, "/api/$username/groups/$groupId/action", "PUT", json)
 
-            Logger.d(LogTags.HUE_LIGHTS, "Group action update result: ${result.isSuccess}")
-            return@withContext result.isSuccess
+            // Body auswerten, nicht nur den HTTP-Status - siehe [wasAccepted].
+            val accepted = wasAccepted(result, "Gruppe $groupId")
+            Logger.d(LogTags.HUE_LIGHTS, "Group action update result: $accepted")
+            return@withContext accepted
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Error setting group action for $groupId", e)
             return@withContext false
@@ -475,40 +593,6 @@ class HueApiClient(context: Context? = null) {
     // =========================================================================
     // BRIDGE-SEITIGE ZEITPLÄNE (/schedules)
     // =========================================================================
-
-    /**
-     * Wertet die Antwort-Hülle der V1-API aus.
-     *
-     * ACHTUNG, die zentrale Falle dieser API: Sie antwortet **auch bei Ablehnung mit HTTP 200**.
-     * Das Urteil steht ausschliesslich im Body — `[{"success":{…}}]` oder
-     * `[{"error":{"type":7,"description":"…"}}]`. [makeSecureHueRequest] kennt nur den
-     * HTTP-Status; wer sich darauf verlaesst, haelt einen abgelehnten Zeitplan fuer angelegt und
-     * schaltet das Licht nie wieder aus. [createUser] parst aus demselben Grund den Body.
-     *
-     * @return den Wert unter "success" oder ein Failure mit der Fehlerbeschreibung der Bridge.
-     */
-    private fun parseV1Envelope(responseBody: String): Result<Map<*, *>> {
-        return try {
-            val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-            val entries: List<Map<String, Any>> = gson.fromJson(responseBody, type)
-                ?: return Result.failure(IOException("Bridge returned an unparseable response"))
-
-            val first = entries.firstOrNull()
-                ?: return Result.failure(IOException("Bridge returned an empty response"))
-
-            (first["error"] as? Map<*, *>)?.let { error ->
-                val description = error["description"] ?: "unknown error"
-                val errorType = (error["type"] as? Double)?.toInt()
-                return Result.failure(IOException("Bridge rejected the request (type $errorType): $description"))
-            }
-
-            (first["success"] as? Map<*, *>)?.let { return Result.success(it) }
-
-            Result.failure(IOException("Bridge response contained neither success nor error: $responseBody"))
-        } catch (e: Exception) {
-            Result.failure(IOException("Failed to parse bridge response: $responseBody", e))
-        }
-    }
 
     /**
      * Legt einen Zeitplan auf der Bridge an.
@@ -529,7 +613,7 @@ class HueApiClient(context: Context? = null) {
         )
         val responseBody = result.getOrElse { return@withContext Result.failure(it) }
 
-        parseV1Envelope(responseBody).mapCatching { success ->
+        HueV1Envelope.parseFirst(responseBody).mapCatching { success ->
             success["id"] as? String
                 ?: throw IOException("Bridge accepted the schedule but returned no id: $responseBody")
         }
@@ -547,6 +631,19 @@ class HueApiClient(context: Context? = null) {
         )
         val responseBody = result.getOrElse { return@withContext Result.failure(it) }
 
+        // Gleiche Falle wie in [getLights]/[getGroups]: HTTP 200 + Fehlerhuelle bei entzogenem
+        // Whitelist-Eintrag. Ohne diesen Waechter wirft erst Gson im Map-Parsing ("Expected
+        // BEGIN_ARRAY but was BEGIN_OBJECT"), und im Log stand ein kryptischer Parserfehler statt
+        // der Beschreibung der Bridge - fuer das Aufraeumen der eigenen Auto-Aus-Timer
+        // ([HueLightUseCase.clearOwnBridgeSchedules]) die einzige Diagnosequelle. Eine Bridge
+        // OHNE Zeitplaene antwortet mit `{}`, also einem Objekt - kein Fehlalarm.
+        if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
+            val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
+                ?: IOException("Bridge antwortete mit einer Huelle statt mit Zeitplaenen: $responseBody")
+            Logger.w(LogTags.HUE_BRIDGE, "Bridge lehnte die Zeitplan-Abfrage ab: ${failure.message}")
+            return@withContext Result.failure(failure)
+        }
+
         try {
             val type = object : TypeToken<Map<String, BridgeSchedule>>() {}.type
             Result.success(gson.fromJson(responseBody, type) ?: emptyMap())
@@ -556,7 +653,13 @@ class HueApiClient(context: Context? = null) {
         }
     }
 
-    /** Löscht einen Zeitplan auf der Bridge. */
+    /**
+     * Löscht einen Zeitplan auf der Bridge.
+     *
+     * Ein DELETE antwortet mit `[{"success":"/schedules/1 deleted"}]` - "success" ist hier ein
+     * STRING, kein Objekt. Siehe [HueV1Envelope.parseFirst]: genau daran scheiterte das
+     * Aufraeumen fruueher scheinbar, obwohl es geklappt hatte.
+     */
     suspend fun deleteSchedule(
         bridgeIp: String,
         username: String,
@@ -568,6 +671,182 @@ class HueApiClient(context: Context? = null) {
             "DELETE"
         )
         val responseBody = result.getOrElse { return@withContext Result.failure(it) }
-        parseV1Envelope(responseBody).map { }
+        HueV1Envelope.parseFirst(responseBody).map { }
+    }
+}
+
+/**
+ * Auswertung der ANTWORT-HUELLE der Hue-V1-API - rein, ohne Netzwerk, deshalb testbar
+ * (siehe HueV1EnvelopeTest; der Rest dieser Datei laeuft nur gegen eine echte Bridge).
+ *
+ * ACHTUNG, die zentrale Falle dieser API: Sie antwortet **auch bei Ablehnung mit HTTP 200**.
+ * Das Urteil steht ausschliesslich im Body — `[{"success":…}]` oder
+ * `[{"error":{"type":7,"description":"…"}}]`. [HueApiClient.makeSecureHueRequest] kennt nur den
+ * HTTP-Status; wer sich darauf verlaesst, haelt einen abgelehnten Zeitplan fuer angelegt (das
+ * Licht geht nie wieder aus) bzw. eine abgelehnte Lampen-Steuerung fuer ausgefuehrt.
+ * [HueApiClient.createUser] parst aus demselben Grund den Body.
+ *
+ * DREI AUSWERTUNGEN, WEIL DIE API MEHRERE ANTWORT-FORMEN HAT:
+ * - [parseFirst] fuer Endpunkte mit GENAU EINEM Ergebnis (POST/DELETE /schedules).
+ * - [parseControl] fuer die STEUER-PUTs (/lights/<id>/state, /groups/<id>/action): ein Eintrag pro
+ *   Attribut, und einzelne Attribute duerfen abgelehnt werden, waehrend die anderen greifen -
+ *   Teilerfolg ist dort ein Erfolg.
+ * - [parseAll] als STRENGE Variante ("kein Eintrag darf error enthalten") fuer die
+ *   Fehlerhuellen-Waechter der GET-Endpunkte ([HueApiClient.getBridgeConfig],
+ *   [HueApiClient.getLights], [HueApiClient.getGroups], [HueApiClient.getSchedules]): dort ist eine
+ *   Huelle NIE die erwartete Antwort, es geht nur darum, die Beschreibung der Bridge herauszuholen.
+ */
+internal object HueV1Envelope {
+
+    private val gson = Gson()
+
+    /**
+     * Sieht der Body wie eine V1-Huelle aus (JSON-Array) statt wie die erwartete Ressource
+     * (JSON-Objekt)? Genutzt von den GET-Endpunkten, die ein Objekt erwarten und deren
+     * Map-Parsing an einer Fehlerhuelle sonst still zu "0 Ergebnisse" degradiert.
+     */
+    fun looksLikeEnvelope(responseBody: String): Boolean = responseBody.trimStart().startsWith("[")
+
+    /**
+     * Der EINE erwartete Eintrag.
+     *
+     * @return den Wert unter "success" oder ein Failure mit der Fehlerbeschreibung der Bridge.
+     *
+     * "success" ist je Endpunkt ein OBJEKT ODER EIN STRING: ein DELETE auf /schedules antwortet
+     * mit `[{"success":"/schedules/1 deleted"}]`. Ein `as? Map<*, *>` darauf schlug fehl, fiel in
+     * den "weder success noch error"-Zweig und machte aus einem erfolgreichen Loeschen ein
+     * Failure - im Log stand `WARN Alt-Zeitplan id=1 nicht entfernt`, obwohl die Bridge ihn
+     * wirklich geloescht hatte (echtes Geraetelog 05.08.2026). Doppelt schaedlich: die
+     * Aufraeum-Logik war falsch informiert (und aufgeraeumt werden MUSS - sonst haeuft jeder
+     * Snooze einen Timer an und der aelteste schaltet zu frueh aus), und echte Fehlschlaege
+     * gingen im Rauschen falscher Warnungen unter. Seither gilt: JEDES vorhandene
+     * "success"-Feld ist ein Erfolg. Ein String-Erfolg wird in eine Map verpackt
+     * (Schluessel [KEY_MESSAGE]), damit die Signatur - und damit jeder Aufrufer - unveraendert
+     * bleibt.
+     */
+    fun parseFirst(responseBody: String): Result<Map<*, *>> {
+        val entries = entriesOf(responseBody).getOrElse { return Result.failure(it) }
+
+        val first = entries.firstOrNull()
+            ?: return Result.failure(IOException("Bridge returned an empty response"))
+
+        errorOf(first)?.let { return Result.failure(it) }
+
+        if (!first.containsKey(FIELD_SUCCESS)) {
+            return Result.failure(
+                IOException("Bridge response contained neither success nor error: $responseBody")
+            )
+        }
+
+        return Result.success(successAsMap(first[FIELD_SUCCESS]))
+    }
+
+    /**
+     * ALLE Eintraege, STRENG: "KEIN Eintrag enthaelt `error`". Fuer die Fehlerhuellen-Waechter der
+     * GET-Endpunkte, die eine Huelle ueberhaupt nur zu sehen bekommen, wenn etwas schiefgegangen
+     * ist - dort ist jede Ablehnung, in welchem Eintrag auch immer, das ganze Ergebnis. Auf
+     * `success` wird bewusst NICHT typisiert geprueft (Objekt oder String, siehe [parseFirst]).
+     *
+     * NICHT fuer die Steuer-PUTs benutzen: dort ist ein einzelner abgelehnter Eintrag neben
+     * angenommenen kein Totalausfall - siehe [parseControl].
+     */
+    fun parseAll(responseBody: String): Result<Unit> {
+        val entries = entriesOf(responseBody).getOrElse { return Result.failure(it) }
+
+        if (entries.isEmpty()) {
+            return Result.failure(IOException("Bridge returned an empty response"))
+        }
+
+        entries.forEach { entry ->
+            errorOf(entry)?.let { return Result.failure(it) }
+        }
+
+        if (entries.none { it?.containsKey(FIELD_SUCCESS) == true }) {
+            return Result.failure(
+                IOException("Bridge response contained neither success nor error: $responseBody")
+            )
+        }
+
+        return Result.success(Unit)
+    }
+
+    /**
+     * STEUER-PUTs: ein TEILERFOLG ist ein Erfolg.
+     *
+     * Ein PUT auf /lights/<id>/state liefert einen Eintrag PRO ATTRIBUT - und die Bridge darf
+     * einzelne Attribute ABLEHNEN, waehrend sie die anderen anwendet: `ct`/`hue`/`sat` an einer
+     * Lampe ohne diese Faehigkeit (Hue White, Fremdlampe im ZigBee-Netz) → error type 6,
+     * `bri`/`alert` an einer ausgeschalteten Lampe → error type 201. Eine reale Antwort ist dann
+     * `[{"success":{"…/on":true}},{"success":{"…/bri":1}},{"error":{"type":6,"address":"…/ct"}}]`
+     * - das Licht IST an, nur die Farbtemperatur wurde ignoriert.
+     *
+     * Die strenge Regel von [parseAll] wuerde das zum kompletten Fehlschlag machen, und der
+     * schlaegt bis in die Kette durch: `HueLightRepository.controlLight` liefert dann
+     * `Result.failure`, und `HueLightUseCase.startSunrise` steigt nach Schritt 1 mit
+     * `return initial` aus - die eigentliche Aufhell-Transition (Schritt 2) liefe NIE, die Lampe
+     * bliebe am Wecktag auf `bri=1` stehen. Genau davor warnt CLAUDE.md beim Sonnenaufgang: ein zu
+     * strenges Urteil bricht die Rampe mitten im Aufblenden ab.
+     *
+     * Angenommen = MINDESTENS EIN `success`-Eintrag. Erst wenn KEIN Eintrag Erfolg meldet, ist es
+     * ein echter Fehlschlag - der eigentliche Zielfall "unauthorized user" (ausschliesslich
+     * error-Eintraege) bleibt damit unveraendert vollstaendig abgedeckt.
+     *
+     * @return bei Erfolg die Meldungen der ABGELEHNTEN Attribute (meist leer). Der Aufrufer loggt
+     *         sie als Warnung - sonst waere ein Teilerfolg im Log von einem glatten Erfolg nicht zu
+     *         unterscheiden, und genau diese Log-Ehrlichkeit war der Zweck der Body-Auswertung.
+     */
+    fun parseControl(responseBody: String): Result<List<String>> {
+        val entries = entriesOf(responseBody).getOrElse { return Result.failure(it) }
+
+        if (entries.isEmpty()) {
+            return Result.failure(IOException("Bridge returned an empty response"))
+        }
+
+        val rejections = entries.mapNotNull { errorOf(it) }
+        val accepted = entries.any { it?.containsKey(FIELD_SUCCESS) == true }
+
+        if (!accepted) {
+            return Result.failure(
+                rejections.firstOrNull()
+                    ?: IOException("Bridge response contained neither success nor error: $responseBody")
+            )
+        }
+
+        return Result.success(rejections.map { it.message ?: "unknown error" })
+    }
+
+    /** Schluessel, unter dem ein String-Erfolg abgelegt wird (siehe [parseFirst]). */
+    const val KEY_MESSAGE = "message"
+
+    private const val FIELD_SUCCESS = "success"
+    private const val FIELD_ERROR = "error"
+
+    /**
+     * Die Huelle als Liste. Eintraege sind bewusst nullable: `[null]` ist gueltiges JSON und
+     * wuerde als Nicht-Null-Typ erst spaeter knallen.
+     */
+    private fun entriesOf(responseBody: String): Result<List<Map<String, Any>?>> {
+        return try {
+            val type = object : TypeToken<List<Map<String, Any>?>>() {}.type
+            val entries: List<Map<String, Any>?> = gson.fromJson(responseBody, type)
+                ?: return Result.failure(IOException("Bridge returned an unparseable response"))
+            Result.success(entries)
+        } catch (e: Exception) {
+            Result.failure(IOException("Failed to parse bridge response: $responseBody", e))
+        }
+    }
+
+    /** Die Fehlerbeschreibung der Bridge, falls dieser Eintrag eine Ablehnung ist. */
+    private fun errorOf(entry: Map<*, *>?): IOException? {
+        val error = entry?.get(FIELD_ERROR) as? Map<*, *> ?: return null
+        val description = error["description"] ?: "unknown error"
+        val errorType = (error["type"] as? Double)?.toInt()
+        return IOException("Bridge rejected the request (type $errorType): $description")
+    }
+
+    private fun successAsMap(success: Any?): Map<*, *> = when (success) {
+        is Map<*, *> -> success
+        null -> emptyMap<String, Any>()
+        else -> mapOf(KEY_MESSAGE to success)
     }
 }

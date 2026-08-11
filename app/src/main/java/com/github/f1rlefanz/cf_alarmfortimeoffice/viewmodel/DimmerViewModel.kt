@@ -122,11 +122,44 @@ class DimmerViewModel @Inject constructor(
         dimSchedule.enable()
     }
 
-    // Verdunkelung/Wärme ändern keine Fenster – der Service färbt reaktiv neu, kein Reschedule.
-    fun setStrength(value: Int) = viewModelScope.launch { prefs.setStrength(value) }
-    fun setWarmth(value: Int) = viewModelScope.launch { prefs.setWarmth(value) }
-    fun setNightDefaultStrength(value: Int) = viewModelScope.launch { prefs.setNightDefaultStrength(value) }
-    fun setNightDefaultWarmth(value: Int) = viewModelScope.launch { prefs.setNightDefaultWarmth(value) }
+    // Verdunkelung/Waerme aendern keine FENSTERGRENZEN - aber sehr wohl die Darstellung des gerade
+    // laufenden Fensters, und die faerbt der Dienst NICHT von allein reaktiv nach: er beobachtet
+    // ausschliesslich DimOverlayPrefs.renderState, und das liest KEY_RENDER_STRENGTH/-WARMTH mit den
+    // globalen Slidern nur als FALLBACK. Die Render-Keys schreibt einzig setActiveOverlay(), also
+    // nur applyCurrentState()/die Vorschau - nach dem ersten Scheduler-Lauf greift der Fallback
+    // nie mehr. Ohne enable() blieb ein mitten in der Nacht verstellter Regler bis zur naechsten
+    // Fenstergrenze (typischerweise das Fenster-ENDE am Morgen) wirkungslos - dieselbe Falle wie
+    // beim Korrektur-Notification-Toggle (v1.22.1). Siehe Invariante in CLAUDE.md:
+    // "Jeder Setter, der einen DimOverlayPrefs-Wert schreibt, MUSS direkt danach enable() rufen".
+    //
+    // Das enable() laeuft hier bewusst UNENTPRELLT, genau wie bei allen anderen Settern dieser
+    // Klasse: `DimmerTabContent.CommitOnReleaseSlider` meldet den Wert erst beim LOSLASSEN nach oben
+    // (`onValueChangeFinished`), also genau EINMAL pro Reglerbewegung - der frueher befuerchtete
+    // Frame-Sturm entsteht strukturell nicht mehr. Eine zusaetzliche Entprellung hier hatte deshalb
+    // keinen Nutzen mehr, riss aber ein Loch in die Invariante: der Entprellungs-Job hing am
+    // viewModelScope und starb beim Verlassen der App vor seinem delay() - der Prefs-Wert war
+    // geschrieben, das laufende Overlay behielt bis zur naechsten Fenstergrenze die alte
+    // Verdunkelung. Wer die Entprellung wieder einbaut, muss sie ausserhalb des viewModelScope
+    // aufhaengen - besser: es beim commit-on-release der UI belassen.
+    fun setStrength(value: Int) = viewModelScope.launch {
+        prefs.setStrength(value)
+        dimSchedule.enable()
+    }
+
+    fun setWarmth(value: Int) = viewModelScope.launch {
+        prefs.setWarmth(value)
+        dimSchedule.enable()
+    }
+
+    fun setNightDefaultStrength(value: Int) = viewModelScope.launch {
+        prefs.setNightDefaultStrength(value)
+        dimSchedule.enable()
+    }
+
+    fun setNightDefaultWarmth(value: Int) = viewModelScope.launch {
+        prefs.setNightDefaultWarmth(value)
+        dimSchedule.enable()
+    }
 
     fun setWindDownMinutes(value: Int) = viewModelScope.launch {
         prefs.setWindDownMinutes(value)

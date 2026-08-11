@@ -55,7 +55,21 @@ class ShiftUseCase @Inject constructor(
     override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = 
         shiftConfigRepository.getCurrentShiftConfig()
     
-    override suspend fun addShiftDefinition(definition: ShiftDefinition): Result<Unit> = 
+    /**
+     * ACHTUNG - DIESE DREI CRUD-METHODEN LOESEN KEINEN ALARM-RESYNC AUS.
+     *
+     * [addShiftDefinition]/[updateShiftDefinition]/[deleteShiftDefinition] haben in `app/src/main`
+     * aktuell KEINEN Aufrufer: die UI geht ausschliesslich ueber
+     * `ShiftViewModel.updateShiftConfig(config)` mit der ganzen Config - und NUR dort haengt
+     * anschliessend `triggerAlarmCreationFromConfigUpdate()` -> `AlarmUseCase.syncAlarms()` dran.
+     *
+     * Wer hier ansetzt, weil der Name so passend klingt ("eine Schicht hinzufuegen"), bekommt
+     * einen Pfad, der die Config speichert und die Caches invalidiert, aber die System-Alarme
+     * NICHT anfasst: die neue Schicht wuerde bis zur naechsten 6h-Wartung keinen Wecker
+     * bekommen, die geloeschte weiterhin klingeln. Entweder den ViewModel-Weg nehmen oder den
+     * Resync selbst anstossen.
+     */
+    override suspend fun addShiftDefinition(definition: ShiftDefinition): Result<Unit> =
         SafeExecutor.safeExecute("ShiftUseCase.addShiftDefinition") {
             val currentConfig = shiftConfigRepository.getCurrentShiftConfig().getOrThrow()
             val updatedDefinitions = currentConfig.definitions + definition

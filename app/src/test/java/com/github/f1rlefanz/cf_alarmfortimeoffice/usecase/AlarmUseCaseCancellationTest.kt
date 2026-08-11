@@ -59,6 +59,7 @@ class AlarmUseCaseCancellationTest {
     private class FakeAlarmRepository(
         private val alwaysCancel: Boolean
     ) : IAlarmRepository {
+        override suspend fun isPersistenceBlocked(): Boolean = false
         private val state = MutableStateFlow<List<AlarmInfo>>(emptyList())
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         var saveAttempts = 0

@@ -21,6 +21,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcess
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,6 +64,11 @@ class AlarmReceiver : BroadcastReceiver() {
     @Inject lateinit var alarmPrefs: AlarmPrefs
 
     companion object {
+        /**
+         * Gesamtbudget fuer die Hue-Regelausfuehrung innerhalb des Broadcast-Fensters. Bewusst
+         * deutlich unter den 60 s, die ein Hintergrund-Broadcast hat - `finish()` kommt danach.
+         */
+        private const val HUE_EXECUTION_BUDGET_MS = 20_000L
         const val EXTRA_SHIFT_NAME = "shift_name"
 
         /**
@@ -237,7 +243,34 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Sound + Full-Screen-Intent nicht verzögert.
                     // Direct Boot: Hue braucht Netz + CE/Hue-Storage - vor Entsperrung ueberspringen.
                     if (userUnlocked) {
-                        executeHueRulesForAlarm(shiftName)
+                        // GEDECKELT, weil `pendingResult.finish()` erst danach kommt.
+                        //
+                        // Ein BroadcastReceiver muss sein `finish()` innerhalb des
+                        // Broadcast-Zeitfensters erreichen; danach protokolliert das System ein
+                        // "Broadcast of Intent"-ANR und darf den Prozess abwuergen. Der Hue-Pfad
+                        // hat aber KEINE Gesamtschranke: `executeRulesForAlarm()` laeuft ueber
+                        // ALLE passenden Regeln, jede mit eigenem 30-s-Batch-Timeout, danach folgt
+                        // `scheduleBridgeAutoOff()` voellig ohne Timeout (GET + n DELETEs + ein POST
+                        // pro Ziel, je 10 s OkHttp). Zwei Regeln und eine Bridge, die nicht
+                        // antwortet (Handy nicht im Heim-WLAN - der Normalfall auf Reisen), reichen
+                        // fuer eine Minute und mehr.
+                        //
+                        // Der Wecker selbst ist davon unabhaengig: Ton, Vibration und
+                        // Full-Screen-Intent laufen ueber den bereits gestarteten
+                        // AlarmSoundService, nicht ueber diese Coroutine. Licht, das nicht angeht,
+                        // ist ein hinnehmbarer Verlust; ein abgewuergter Prozess ist es nicht.
+                        val hueDone = withTimeoutOrNull(HUE_EXECUTION_BUDGET_MS) {
+                            executeHueRulesForAlarm(shiftName)
+                            true
+                        }
+                        if (hueDone == null) {
+                            Logger.w(
+                                LogTags.ALARM_RECEIVER,
+                                "⚠️ HUE: Regelausfuehrung nach ${HUE_EXECUTION_BUDGET_MS / 1000}s " +
+                                    "abgebrochen (Bridge nicht erreichbar?) - der Wecker selbst ist " +
+                                    "davon unberuehrt, er laeuft im AlarmSoundService"
+                            )
+                        }
                     }
 
                 } catch (e: Exception) {

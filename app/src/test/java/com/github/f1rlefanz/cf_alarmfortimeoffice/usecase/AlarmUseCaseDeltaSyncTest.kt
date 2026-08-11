@@ -63,6 +63,7 @@ class AlarmUseCaseDeltaSyncTest {
     }
 
     private class FakeAlarmRepository(initial: List<AlarmInfo> = emptyList()) : IAlarmRepository {
+        override suspend fun isPersistenceBlocked(): Boolean = false
         private val state = MutableStateFlow(initial)
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         val current: List<AlarmInfo> get() = state.value
@@ -547,4 +548,91 @@ class AlarmUseCaseDeltaSyncTest {
 
         assertTrue(ShiftChangeNotifier.exceedsThreshold(old, new))
     }
+    // --- Manuelle Alarme in den datengetriebenen Raeumzweigen ---
+
+    /**
+     * DER MANUELLE ALARM UEBERLEBT "keine passende Schicht".
+     *
+     * Der Delta-Sync schont manuelle Alarme (leere eventId) ausdruecklich - die Loeschschleife
+     * prueft `eventId.isNotEmpty()`. Die beiden Abkuerzungs-Zweige davor umgingen diese Zusicherung
+     * komplett: sie riefen `clearInternalAlarms()` ohne jede Unterscheidung. Ausgerechnet der
+     * manuelle Alarm ist der EINZIGE, der sich nicht aus dem Kalender rekonstruieren laesst - er kam
+     * nie wieder, und im Log stand "No matching shifts found - clearing all alarms", was wie
+     * Normalbetrieb klingt.
+     *
+     * Szenario: Urlaubswoche. Im Kalender stehen Termine, aber keiner trifft ein Schichtmuster;
+     * der Nutzer hat sich fuer Mittwoch 06:00 einen Wecker fuer einen Arzttermin gestellt.
+     */
+    @Test
+    fun `manueller Alarm bleibt erhalten wenn keine Schicht passt`() = runTest {
+        val manual = existingAlarm(id = 77, eventId = "")
+        val calendarBased = existingAlarm(id = 78, eventId = "evA")
+        val repo = FakeAlarmRepository(listOf(manual, calendarBased))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        // Ein Event, das KEIN Schichtmuster trifft
+        val result = useCase(repo, manager, config).syncAlarms(
+            listOf(
+                CalendarEvent(
+                    id = "evUrlaub",
+                    title = "Zahnarzt",
+                    startTime = LocalDateTime.now().plusDays(2).withHour(9),
+                    endTime = LocalDateTime.now().plusDays(2).withHour(10),
+                    calendarId = "cal"
+                )
+            ),
+            config
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            "der manuelle Alarm muss im Repository bleiben",
+            listOf(77),
+            repo.current.map { it.id }
+        )
+        verify(manager).cancelSystemAlarm(78)
+        verify(manager, never()).cancelSystemAlarm(77)
+        assertEquals(
+            "der Rueckgabewert muss den verbliebenen Bestand nennen, nicht leer sein",
+            listOf(77),
+            result.getOrThrow().map { it.id }
+        )
+    }
+
+    /** Dasselbe fuer den zweiten Abkuerzungs-Zweig: Kalender liefert gar keine Events. */
+    @Test
+    fun `manueller Alarm bleibt erhalten wenn der Kalender keine Events liefert`() = runTest {
+        val manual = existingAlarm(id = 77, eventId = "")
+        val calendarBased = existingAlarm(id = 78, eventId = "evA")
+        val repo = FakeAlarmRepository(listOf(manual, calendarBased))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(repo, manager, config).syncAlarms(emptyList(), config)
+
+        assertEquals(listOf(77), repo.current.map { it.id })
+        verify(manager, never()).cancelSystemAlarm(77)
+        assertEquals(listOf(77), result.getOrThrow().map { it.id })
+    }
+
+    /**
+     * GEGENPROBE: bei einer AUSDRUECKLICHEN Abschaltung ("Automatische Alarme aus") wird weiterhin
+     * ALLES geraeumt - dort will der Nutzer Stille, und der Direct-Boot-Spiegel muss wirklich leer
+     * werden. Die Schonung gilt nur fuer die datengetriebenen Zweige.
+     */
+    @Test
+    fun `Automatische Alarme aus raeumt auch manuelle Alarme`() = runTest {
+        val repo = FakeAlarmRepository(
+            listOf(existingAlarm(id = 77, eventId = ""), existingAlarm(id = 78, eventId = "evA"))
+        )
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = false, definitions = listOf(earlyShift))
+
+        useCase(repo, manager, config).syncAlarms(emptyList(), config)
+
+        assertTrue("bei ausdruecklicher Abschaltung bleibt nichts", repo.current.isEmpty())
+        verify(manager).cancelSystemAlarm(77)
+    }
+
 }

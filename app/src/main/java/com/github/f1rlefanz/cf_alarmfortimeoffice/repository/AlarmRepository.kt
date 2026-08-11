@@ -321,6 +321,17 @@ class AlarmRepository @Inject constructor(
         }
     }
 
+    override suspend fun isPersistenceBlocked(): Boolean {
+        // Auf den Init-Load warten: vorher ist die Sperre noch nicht entschieden.
+        return try {
+            awaitInitialLoad()
+            persistenceBlocked
+        } catch (e: Exception) {
+            Logger.w(LogTags.ALARM, "Init-Load nicht abschliessbar - Persistenz gilt als gesperrt", e)
+            true
+        }
+    }
+
     override suspend fun getAllAlarms(): Result<List<AlarmInfo>> {
         return try {
             // Ohne dieses Warten wäre die leere Startliste im Prozess-Startfenster nicht von

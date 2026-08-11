@@ -153,6 +153,32 @@ class HueSmartScheduler private constructor() {
     private var alarmObserverJob: Job? = null
 
     /**
+     * Wurde [initializeSmartScheduling] uebersprungen, weil WorkManager nicht verfuegbar war?
+     * `@Volatile`: gesetzt im Direct-Boot-Prozess, gelesen nach dem Entsperren aus einem anderen
+     * Thread.
+     */
+    @Volatile
+    private var schedulingSkipped = false
+
+    /**
+     * Holt eine im Direct-Boot-Prozess uebersprungene Planung nach, sobald WorkManager verfuegbar
+     * ist. Idempotent und billig: ohne vorgemerktes Ueberspringen tut sie nichts.
+     *
+     * Wird von [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager]
+     * an zwei Stellen gerufen, die nach dem Entsperren zuverlaessig vorbeikommen: bei einem
+     * erneuten `initialize()` (auch im ignorierten Zweig) und bei jedem App-Vordergrund.
+     */
+    fun retrySkippedSchedulingIfNeeded() {
+        if (!schedulingSkipped) return
+        if (!isWorkManagerAvailable) return
+        Logger.business(
+            LogTags.HUE_BRIDGE,
+            "🔁 SMART-SCHEDULER: im Direct-Boot uebersprungene Planung wird nachgeholt"
+        )
+        initializeSmartScheduling()
+    }
+
+    /**
      * Initialize with application context (called once by getInstance)
      */
     private fun initialize(context: Context) {
@@ -252,11 +278,20 @@ class HueSmartScheduler private constructor() {
     fun initializeSmartScheduling() {
         if (!isWorkManagerAvailable) {
             // Normalfall in einem Direct-Boot-Prozess (vor der ersten Entsperrung): dort gibt es
-            // keinen WorkManager, und die Hue-Planung hat dort auch nichts zu tun. Ein spaeterer
-            // Aufruf im entsperrten Prozess plant normal - der Zustand ist nicht eingefroren.
-            Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: WorkManager in diesem Prozess nicht verfuegbar (Direct Boot?) - Planung uebersprungen")
+            // keinen WorkManager, und die Hue-Planung hat dort auch nichts zu tun.
+            //
+            // ABER: dieser Prozess STIRBT NICHT beim Entsperren - er ist genau der Prozess, in dem
+            // der Nutzer die App danach bedient. Und der einzige Aufrufer
+            // (HueBridgeConnectionManager.initialize()) ist per Waechter idempotent, ruft also nicht
+            // erneut. Ein frueherer Kommentar behauptete hier "ein spaeterer Aufruf plant normal" -
+            // das war falsch: taegliche Planung, Pre-Alarm-Health-Checks und der Alarm-Beobachter
+            // fehlten fuer die gesamte Lebensdauer dieses Prozesses. Deshalb wird das Ueberspringen
+            // VORGEMERKT und ueber [retrySkippedSchedulingIfNeeded] nachgeholt.
+            schedulingSkipped = true
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: WorkManager in diesem Prozess nicht verfuegbar (Direct Boot?) - Planung vorgemerkt und uebersprungen")
             return
         }
+        schedulingSkipped = false
 
         Logger.i(LogTags.HUE_BRIDGE, "🧠 SMART-SCHEDULER: Initializing intelligent health check scheduling")
 

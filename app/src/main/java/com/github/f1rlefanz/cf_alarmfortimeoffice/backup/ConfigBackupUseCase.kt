@@ -127,6 +127,23 @@ class ConfigBackupUseCase @Inject constructor(
             // (der sieht nur Preferences-Schluessel).
             // Der Wert des ZIELGERAETS gewinnt; ist er nicht lesbar, gilt "Alarme an" - im Zweifel
             // wecken.
+            // LEERE DEFINITIONSLISTE WIRD ABGELEHNT - dieselbe Ueberlegung wie
+            // `structuralRejection` fuer die beiden JSON-Regelwerke, nur fuer den wertvollsten und
+            // gefaehrlichsten Teil der Datei. kotlinx.serialization fuellt ein fehlendes
+            // `definitions`-Feld stillschweigend mit dem Default `emptyList()`; aus "Datei
+            // unvollstaendig oder von Hand verstuemmelt" wuerde damit lautlos "keine Schichten".
+            // Und das ist in diesem Projekt der dokumentierte Weg zu NULL ALARMEN: der Save
+            // invalidiert die Caches, `ShiftViewModel.observeExternalConfigChanges()` zieht nach,
+            // `syncAlarms()` erkennt mit 0 Definitionen keine Schicht und raeumt die
+            // kalenderbasierten Alarme ab - waehrend der Import "Erfolg: 0 Schichtdefinitionen"
+            // meldet. Eine Konfiguration ohne jede Schichtdefinition ist ausserdem fuer sich
+            // sinnlos: es gibt nichts zu importieren.
+            if (fromFile.definitions.isEmpty()) {
+                rejected += "shiftConfig (keine einzige Schichtdefinition in der Datei - " +
+                    "unvollstaendig oder beschaedigt; bestehende Konfiguration bleibt unangetastet)"
+                return@let
+            }
+
             val localAutoAlarm = shiftUseCase.getCurrentShiftConfig().getOrNull()?.autoAlarmEnabled ?: true
             val config = fromFile.copy(autoAlarmEnabled = localAutoAlarm)
             if (fromFile.autoAlarmEnabled != localAutoAlarm) {
@@ -195,6 +212,11 @@ class ConfigBackupUseCase @Inject constructor(
                     rejected += "$name ($malformed)"
                     return@forEach
                 }
+                val wrongType = typeMismatch(prefs, name, stored.type)
+                if (wrongType != null) {
+                    rejected += "$name ($wrongType)"
+                    return@forEach
+                }
                 if (applyValue(prefs, name, stored)) written++ else rejected += "$name (unbekannter Typ '${stored.type}')"
             }
         }
@@ -238,6 +260,54 @@ class ConfigBackupUseCase @Inject constructor(
             }
             return if (result.isSuccess) null
             else "Regelwerk nicht lesbar - nicht uebernommen, damit es nicht als 'keine Regeln' durchgeht"
+        }
+
+        /**
+         * Der ERWARTETE Typ kommt vom SCHLUESSEL, nicht aus der Datei.
+         *
+         * `applyValue` prueft nur, ob sich der Wert in den in der Datei BEHAUPTETEN Typ parsen
+         * laesst - damit entschied eine fremde Datei ueber den DataStore-Typ. Ein falsch
+         * typisierter Wert ist schlimmer als ein fehlender: er liegt reboot-fest in der
+         * `preferences_pb`, und der naechste Lesezugriff scheitert mit einer ClassCastException,
+         * BEVOR irgendein `?:`-Default oder `coerceIn` greifen kann. Bei `snooze_minutes` als
+         * String hiesse das: `AlarmPrefs.snoozeMinutes` wirft bei jedem Alarm-Feuern, und der
+         * `AlarmReceiver` verschluckt es in seinem try/catch - der Wecker bliebe stumm.
+         *
+         * Zwei Quellen fuer die Erwartung, in dieser Reihenfolge:
+         *  1. Der Wert, der HEUTE im Store steht (dessen Typ ist die Wahrheit dieses Geraets).
+         *  2. Eine kleine Liste bekannter Zahlen-Schluessel - sie kann auch dann urteilen, wenn der
+         *     Schluessel lokal noch nie geschrieben wurde.
+         * Ist der Schluessel lokal unbekannt und steht nicht in der Liste, wird der Typ der Datei
+         * akzeptiert: fuer einen Schluessel aus einer neueren Version ist das die einzige
+         * verfuegbare Information, und ein unbekannter Schluessel kann keinen bestehenden Leser
+         * beschaedigen.
+         *
+         * @return `null`, wenn der Typ passt oder keine Erwartung existiert, sonst die Begruendung.
+         */
+        fun typeMismatch(prefs: Preferences, name: String, fileType: String): String? {
+            val expected = prefs.asMap().entries
+                .firstOrNull { it.key.name == name }
+                ?.let { typeNameOf(it.value) }
+                ?: KNOWN_INT_KEYS.takeIf { name in it }?.let { "int" }
+                ?: return null
+
+            return if (expected == fileType) null
+            else "Typ '$fileType' in der Datei, erwartet wird '$expected' - nicht uebernommen, " +
+                "ein falsch typisierter Wert laesst jeden Lesezugriff scheitern"
+        }
+
+        /** Schluessel, deren Typ auch ohne lokalen Bestand feststeht (beide zusaetzlich geklemmt). */
+        private val KNOWN_INT_KEYS = setOf("snooze_minutes", "dnd_oncall_cutoff_min")
+
+        private fun typeNameOf(value: Any?): String? = when (value) {
+            is Boolean -> "boolean"
+            is Int -> "int"
+            is Long -> "long"
+            is Float -> "float"
+            is Double -> "double"
+            is String -> "string"
+            is Set<*> -> "stringSet"
+            else -> null
         }
 
         /**

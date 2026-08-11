@@ -49,6 +49,7 @@ class AlarmSkipUseCaseTest {
     )
 
     private class FakeAlarmRepository(initial: List<AlarmInfo>) : IAlarmRepository {
+        override suspend fun isPersistenceBlocked(): Boolean = false
         private val state = MutableStateFlow(initial)
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         val current: List<AlarmInfo> get() = state.value

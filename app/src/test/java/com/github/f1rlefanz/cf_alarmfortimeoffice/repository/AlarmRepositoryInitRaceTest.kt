@@ -71,7 +71,7 @@ class AlarmRepositoryInitRaceTest {
         val store = storeWith(alarmData(id = 42, offsetMs = 60 * 60 * 1000L))
 
         // Direkt nach der Konstruktion gefragt - genau das Fenster, in dem der Init-Load noch laeuft.
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
         val alarms = repo.getAllAlarms().getOrThrow()
 
         assertEquals(
@@ -89,7 +89,7 @@ class AlarmRepositoryInitRaceTest {
             alarmData(id = 1, offsetMs = -60 * 60 * 1000L),
             alarmData(id = 2, offsetMs = 60 * 60 * 1000L)
         )
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         repo.deleteAllAlarms().getOrThrow()
 

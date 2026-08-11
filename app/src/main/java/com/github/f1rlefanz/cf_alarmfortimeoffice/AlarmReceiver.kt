@@ -65,10 +65,29 @@ class AlarmReceiver : BroadcastReceiver() {
 
     companion object {
         /**
-         * Gesamtbudget fuer die Hue-Regelausfuehrung innerhalb des Broadcast-Fensters. Bewusst
-         * deutlich unter den 60 s, die ein Hintergrund-Broadcast hat - `finish()` kommt danach.
+         * Gesamtbudget fuer die Hue-Regelausfuehrung innerhalb des Broadcast-Fensters.
+         *
+         * WARUM NICHT KLEINER: `executeRulesForAlarm()` schaltet erst in der Regel-Schleife alle
+         * Lampen ein und legt das Auto-Aus als Bridge-Zeitplan ERST DANACH an. Schneidet der Deckel
+         * dazwischen, ist das Licht an und es gibt keinen Mechanismus mehr, der es ausschaltet -
+         * CLAUDE.md begruendet das ersatzlose Entfernen des `AutoOffWorker` genau damit, dass
+         * "ging das Licht an, war die Bridge erreichbar und der Zeitplan entsteht". Ein zu knappes
+         * Budget hebt diese Invariante auf. 20 s waren zu knapp: allein der Batch-Timeout einer
+         * einzigen Regel ist 30 s.
+         *
+         * WARUM NICHT GROESSER: ein Hintergrund-Broadcast hat 60 s, danach protokolliert das System
+         * ein ANR und darf den Prozess abwuergen - und `pendingResult.finish()` kommt erst nach
+         * diesem Aufruf.
+         *
+         * 45 s ist der Kompromiss: genug fuer eine Regel samt Auto-Aus und in der Praxis fuer zwei,
+         * mit Luft bis zur Broadcast-Grenze. RESTRISIKO, bewusst akzeptiert: bei sehr vielen Regeln
+         * und einer nicht antwortenden Bridge kann der Schnitt weiterhin zwischen "an" und
+         * "Auto-Aus" fallen; dann bleibt das Licht an und der Nutzer braucht die Hue-App. Die
+         * saubere Loesung waere, die Hue-Ausfuehrung in den `AlarmSoundService` zu verlegen (ein
+         * Vordergrunddienst hat kein Broadcast-Fenster) - das ist ein Umbau am Weckpfad und
+         * bewusst nicht Teil dieser Runde.
          */
-        private const val HUE_EXECUTION_BUDGET_MS = 20_000L
+        private const val HUE_EXECUTION_BUDGET_MS = 45_000L
         const val EXTRA_SHIFT_NAME = "shift_name"
 
         /**
@@ -268,7 +287,9 @@ class AlarmReceiver : BroadcastReceiver() {
                                 LogTags.ALARM_RECEIVER,
                                 "⚠️ HUE: Regelausfuehrung nach ${HUE_EXECUTION_BUDGET_MS / 1000}s " +
                                     "abgebrochen (Bridge nicht erreichbar?) - der Wecker selbst ist " +
-                                    "davon unberuehrt, er laeuft im AlarmSoundService"
+                                    "davon unberuehrt (AlarmSoundService). ACHTUNG: faellt der " +
+                                    "Abbruch zwischen Einschalten und Auto-Aus-Zeitplan, bleibt das " +
+                                    "Licht an und muss von Hand ausgeschaltet werden."
                             )
                         }
                     }

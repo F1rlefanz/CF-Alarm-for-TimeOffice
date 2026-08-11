@@ -41,6 +41,35 @@ class MasterPauseUseCase @Inject constructor(
     val paused: Flow<Boolean> = prefs.paused
 
     /**
+     * Bringt den Device-Protected-Spiegel des Pausenzustands mit der CE-Wahrheit in Deckung.
+     *
+     * `KEY_PAUSED` hat genau zwei Schreiber ([pause]/[resume]) und drei Leser, die ALLE im Boot-Pfad
+     * sitzen - der Spiegel ist das einzige, was der `BootReceiver` vor der ersten Entsperrung ueber
+     * die Pause weiss. `savePaused()` schluckt seinen Fehler; faellt ein Schreibvorgang aus,
+     * divergieren beide dauerhaft, denn es gab bisher keinen einzigen Pfad, der sie wieder
+     * abgleicht. Beide Richtungen sind schlecht: ein haengendes `true` sperrt die
+     * Boot-Wiederherstellung dauerhaft (kein Wecker nach dem naechsten Neustart), ein haengendes
+     * `false` re-armt Alarme, die der Nutzer pausiert hat.
+     *
+     * Wird beim App-Start aufgerufen (best effort, nur bei entsperrtem Geraet - vorher ist der
+     * CE-Wert nicht lesbar) und ist billig: ein Read und im Regelfall kein Write.
+     */
+    suspend fun reconcileDirectBootMirror() {
+        val truth = prefs.pausedNow()
+        val mirror = directBootAlarmStore.isPausedNow()
+        if (truth == mirror) return
+
+        Logger.w(
+            LogTags.MASTER_PAUSE,
+            "🔄 MASTER-PAUSE: Spiegel und Wahrheit lagen auseinander (Spiegel=$mirror, " +
+                "tatsaechlich=$truth) - Spiegel wird korrigiert. Der BootReceiver liest ihn vor der " +
+                "ersten Entsperrung; falsch herum haette er entweder die Wiederherstellung gesperrt " +
+                "oder pausierte Alarme re-armiert."
+        )
+        directBootAlarmStore.savePaused(truth)
+    }
+
+    /**
      * NICHT abbrechbar: die Sequenz stellt einen Zustand HER, statt nur einen Schalter umzulegen -
      * und der Schalter wird als ERSTES geschrieben. Bricht der Aufrufer-Scope mitten dabei ab
      * (`viewModelScope` des `MasterPauseViewModel`: Activity beendet, Task weggewischt), stehen Flag

@@ -176,8 +176,11 @@ internal fun NotificationsEnabledCard() {
  * still zu einem Banner — der Wecker klingelt, aber der Weck-Screen kommt nie hoch, und nichts
  * weist darauf hin. Ein reiner Hinweistext ohne Absprung waere hier wertlos.
  *
- * Der Zustand wird bei jedem Aufruf frisch gelesen (kein remember), damit die Karte nach der
- * Rueckkehr aus den Einstellungen sofort umspringt.
+ * Der Zustand wird bei jedem ON_RESUME neu gelesen (`remember` + `DisposableEffect`, siehe unten),
+ * damit die Karte nach der Rueckkehr aus den Einstellungen sofort umspringt. NICHT "kein
+ * remember": der Code benutzt eines. Der frueher hier stehende Satz verleitete dazu, den
+ * ON_RESUME-Refresh als redundant zu entfernen ("liest doch bei jedem Aufruf neu") - danach fror
+ * die Karte auf ihrem Startwert ein und behauptete eine Berechtigung, die es nicht mehr gibt.
  */
 @Composable
 internal fun FullScreenIntentCard() {
@@ -642,8 +645,13 @@ internal fun DimmerAccessibilityCard() {
                 )
 
                 if (!isActive) {
+                    // KEIN "Aktiver Fehler", wenn der Nutzer den Dimmer nie eingeschaltet hat -
+                    // dann ist der Dienst schlicht nicht gebraucht. Der Status-Tab ist die
+                    // Diagnosflaeche fuer "warum kam kein Wecker"; eine dauerhaft rote Karte, die
+                    // einen Fehler behauptet, der nicht eingetreten ist, entwertet genau die roten
+                    // Karten daneben, an denen der Wecker wirklich haengt.
                     Text(
-                        "⚠️ Aktiver Fehler — bitte prüfen",
+                        "Wird gebraucht, sobald du den Schicht-Dimmer benutzt",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         fontWeight = FontWeight.Bold

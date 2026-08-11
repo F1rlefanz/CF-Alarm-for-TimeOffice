@@ -120,7 +120,13 @@ internal fun noShiftExplanation(
         NoShiftReason.NO_EVENTS ->
             "Keine Termine in den nächsten 14 Tagen — im gewählten Kalender steht nichts."
         NoShiftReason.SHIFT_CONFIG_NOT_LOADED ->
-            "Schichttypen werden noch geladen."
+            // NICHT nur "wird geladen": derselbe Zustand entsteht, wenn der Read DAUERHAFT
+            // gescheitert ist (vorhandene, aber nicht dekodierbare Konfiguration - das Repository
+            // liefert dann ein Result.failure und die Rohdaten liegen als `shift_config_broken`).
+            // Diese Karte wurde ausdruecklich gebaut, um den WARUM-Zustand ehrlich zu benennen; ein
+            // behaupteter laufender Ladevorgang, der nie endet, ist das Gegenteil davon.
+            "Schichttypen sind (noch) nicht lesbar. Bleibt das so, hilft der Status-Tab weiter — " +
+                "die Konfiguration liegt dann gesichert vor und wird NICHT überschrieben."
         NoShiftReason.NO_SHIFT_TYPES ->
             "Keine aktiven Schichttypen — lege sie im Wecker-Tab unter \"Schichttypen verwalten\" an."
         NoShiftReason.NO_PATTERN_MATCH -> buildString {
@@ -365,7 +371,6 @@ fun HomeTabContent(
                     }
                 } else if (calendarState.events.isNotEmpty()) {
                     // LAZY LOADING: Show limited events overview in home tab
-                    val displayEventCount = minOf(calendarState.events.size, 5) // Show max 5 events in overview
                     Text("${calendarState.events.size} Events in den nächsten 14 Tagen")
                     Text(
                         "${shiftState.recognizedShifts.size} Schichten erkannt",
@@ -403,10 +408,16 @@ fun HomeTabContent(
                         }
                     }
                     
-                    // LAZY LOADING: Show if more events are available
+                    // LAZY LOADING: Hinweis, dass noch mehr geladen werden kann.
+                    //
+                    // Hier stand "Zeige $displayEventCount von N Events" - das war unwahr: diese
+                    // Karte listet ueberhaupt keine Events, sie zeigt Zahlen und die erkannten
+                    // Schichten fuer heute/morgen. Der Satz behauptete eine Anzeigemenge, die es
+                    // nicht gibt, blieb beim Nachladen konstant bei 5 und liess offen, ob die App
+                    // alle Termine kennt - bei einer Wecker-App genau die falsche Unsicherheit.
                     if (calendarState.hasMoreEvents) {
                         Text(
-                            "Zeige $displayEventCount von ${if (calendarState.totalEvents > 0) calendarState.totalEvents else "mehr"} Events",
+                            "Es gibt weitere Termine — in der Terminliste nachladbar",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary
                         )

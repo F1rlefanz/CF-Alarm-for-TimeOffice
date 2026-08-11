@@ -323,11 +323,26 @@ class AlarmMaintenanceService : Service() {
                         .putExtra(EXTRA_FORCE_SYNC, forceSync),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    System.currentTimeMillis() + CATCHUP_DELAY_MS,
-                    pendingIntent
-                )
+                // Dieselbe Absicherung wie in scheduleNext() direkt darunter: ohne
+                // SCHEDULE_EXACT_ALARM wirft setExactAndAllowWhileIdle() auf API 31/32 eine
+                // SecurityException - im Fehlerpfad einen zweiten Fehler zu erzeugen waere die
+                // schlechteste Stelle dafuer. Ein um Minuten verzoegerter Nachholversuch ist
+                // besser als keiner.
+                val triggerAt = System.currentTimeMillis() + CATCHUP_DELAY_MS
+                val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    alarmManager.canScheduleExactAlarms()
+                } else {
+                    true
+                }
+                if (canBeExact) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                } else {
+                    Logger.w(
+                        LogTags.MAINTENANCE,
+                        "⚠️ WARTUNG: Exact-Alarm-Berechtigung fehlt - Nachholversuch wird inexakt geplant"
+                    )
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                }
             } catch (e: Exception) {
                 Logger.e(LogTags.MAINTENANCE, "❌ WARTUNG: auch der Nachhol-Alarm scheiterte", e)
             }

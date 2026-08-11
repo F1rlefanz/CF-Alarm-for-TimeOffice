@@ -325,6 +325,10 @@ class ShiftViewModel @Inject constructor(
                     triggerAlarmCreationFromConfigUpdate(config)
                 }
                 .onFailure { error ->
+                    // Merker zuruecksetzen: es kommt keine passende Emission mehr, und ein
+                    // haengender Merker wuerde die NAECHSTE echte externe Aenderung mit demselben
+                    // Inhalt (Import derselben Datei, zweiter Zuordnungsversuch) verschlucken.
+                    selfWrittenConfig = null
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = errorHandler.getErrorMessage(error)

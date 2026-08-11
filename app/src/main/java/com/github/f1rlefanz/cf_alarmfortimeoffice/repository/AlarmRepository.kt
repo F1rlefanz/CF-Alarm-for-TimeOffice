@@ -2,6 +2,10 @@
 
 package com.github.f1rlefanz.cf_alarmfortimeoffice.repository
 
+import kotlinx.coroutines.flow.onStart
+import dagger.hilt.android.qualifiers.ApplicationContext
+import android.os.UserManager
+import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -64,7 +68,8 @@ data class AlarmInfoData(
 @Singleton
 class AlarmRepository @Inject constructor(
     @param:MainDataStore private val dataStore: DataStore<Preferences>,
-    private val directBootAlarmStore: DirectBootAlarmStore
+    private val directBootAlarmStore: DirectBootAlarmStore,
+    @param:ApplicationContext private val appContext: Context
 ) : IAlarmRepository {
 
     companion object {
@@ -85,7 +90,17 @@ class AlarmRepository @Inject constructor(
 
     // In-memory cache für schnellen Zugriff + reaktive UI
     private val _activeAlarms = MutableStateFlow<List<AlarmInfo>>(emptyList())
-    override val activeAlarms: Flow<List<AlarmInfo>> = _activeAlarms.asStateFlow()
+    /**
+     * `onStart { awaitInitialLoad() }` ist KEIN Beiwerk: der Flow ist die Quelle fuer die UI, und
+     * ohne diesen Haken heilt sich ein im gesperrten Zustand ergebnislos gebliebener Init-Load nur
+     * bei einem METHODEN-Aufruf (`getAllAlarms()` & Co.). Ein Bildschirm, der ausschliesslich
+     * beobachtet, saehe die Notlage-Leere fuer die gesamte Prozesslaufzeit - und dieser Prozess
+     * ueberlebt das Entsperren (am Emulator nachgemessen: pid unveraendert). Der Haken wurde beim
+     * ersten Wurf dieses Fixes vergessen und beim Geraetetest bemerkt: nach dem Entsperren kam kein
+     * Nachladen, weil niemand eine Methode aufrief.
+     */
+    override val activeAlarms: Flow<List<AlarmInfo>> =
+        _activeAlarms.asStateFlow().onStart { awaitInitialLoad() }
 
     /**
      * BEREIT-SIGNAL für den asynchronen Init-Load.
@@ -134,6 +149,46 @@ class AlarmRepository @Inject constructor(
     @Volatile
     private var persistenceBlocked = false
 
+    /**
+     * Wurde der Bestand schon EINMAL im entsperrten Zustand gelesen?
+     *
+     * DER GRUND (am Emulator mit PIN im Zustand RUNNING_LOCKED nachgemessen): der `settings`-Store
+     * liegt im CREDENTIAL-ENCRYPTED Storage. Liest man ihn in einem Prozess, der VOR der ersten
+     * Entsperrung gestartet wurde (Android startet genau so einen fuer den `directBootAware`
+     * `BootReceiver`), dann WIRFT DataStore NICHT - die Datei ist nicht oeffenbar, `exists()` ist
+     * false, und die Bibliothek liefert `serializer.defaultValue`, also `emptyPreferences()`, als
+     * ERFOLG. Im Log stand daraufhin "📭 No saved alarms found in DataStore", `persistenceBlocked`
+     * blieb false, und der Cache galt als Wahrheit.
+     *
+     * Und dieser Prozess stirbt beim Entsperren NICHT - er ist derselbe, in dem der Nutzer die App
+     * danach bedient (pid im Test unveraendert). Der Init-Load lief aber nur EINMAL. Folge: die App
+     * hielt dauerhaft "keine Alarme" fuer wahr, obwohl `active_alarms` sie noch enthielt. Der
+     * naechste Sync hielt damit JEDE Schicht fuer neu und schrieb Bestand und Direct-Boot-Spiegel
+     * neu - der manuelle Wecker des Nutzers war weg, und im Log sah das wie ein normaler Erstsync
+     * aus. Auch die beiden anderen Wachen liefen ins Leere: `keepManualAlarms` kann nichts schonen,
+     * was nicht in der Liste steht, und `isPersistenceBlocked()` meldet nichts, weil nie eine
+     * Sperre gesetzt wurde.
+     *
+     * Deshalb wird der Read bei gesperrtem Nutzer NICHT als Ergebnis akzeptiert, sondern beim
+     * naechsten Zugriff nach dem Entsperren WIEDERHOLT (siehe [awaitInitialLoad]). Bis dahin gilt
+     * die Persistenz als gesperrt, damit kein Schreibpfad die Notlage-Leere festschreibt.
+     */
+    @Volatile
+    private var loadedWhileUnlocked = false
+
+    /** Laeuft gerade ein Nachlade-Versuch? Verhindert, dass zehn Aufrufer zehn Reads starten. */
+    private val reloadMutex = Mutex()
+
+    private val userUnlocked: Boolean
+        get() = try {
+            appContext.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+        } catch (e: Exception) {
+            // Im Zweifel als entsperrt behandeln: ein falsch-positives "gesperrt" wuerde die
+            // Persistenz dauerhaft sperren.
+            Logger.w(LogTags.ALARM, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
+            true
+        }
+
     init {
         // CRITICAL: Lade Alarme beim Repository-Init
         loadAlarmsFromDataStore()
@@ -147,6 +202,22 @@ class AlarmRepository @Inject constructor(
         repositoryScope.launch {
             try {
                 stateMutex.withLock {
+                    // GESPERRTER NUTZER: gar nicht erst lesen. Der Read wuerde nicht werfen,
+                    // sondern still eine leere Preferences-Instanz liefern (siehe
+                    // [loadedWhileUnlocked]) - und diese Leere waere von "keine Alarme"
+                    // nicht zu unterscheiden.
+                    if (!userUnlocked) {
+                        persistenceBlocked = true
+                        _activeAlarms.value = emptyList()
+                        Logger.w(
+                            LogTags.ALARM,
+                            "🔐 PERSISTENCE: Nutzer noch nicht entsperrt - Alarm-Bestand NICHT " +
+                                "gelesen (ein Read wuerde still 'leer' liefern). Persistenz bis zum " +
+                                "Entsperren gesperrt, danach wird nachgeladen. Der Direct-Boot-Restore " +
+                                "arbeitet unabhaengig davon aus dem Device-Protected-Spiegel."
+                        )
+                        return@withLock
+                    }
                     val preferences = dataStore.data.first()
                     val alarmsJson = preferences[ALARMS_KEY]
 
@@ -177,6 +248,8 @@ class AlarmRepository @Inject constructor(
                         val validAlarms = alarms.filter { it.triggerTime > currentTime }
 
                         _activeAlarms.value = validAlarms
+                        loadedWhileUnlocked = true
+                        persistenceBlocked = false
 
                         Logger.business(
                             LogTags.ALARM,
@@ -186,10 +259,38 @@ class AlarmRepository @Inject constructor(
                         // Wenn wir abgelaufene Alarme entfernt haben, speichere die bereinigte Liste
                         if (validAlarms.size < alarms.size) {
                             persistToDataStore(validAlarms)
+                        } else {
+                            // SPIEGEL-ABGLEICH bei JEDEM erfolgreichen Load.
+                            //
+                            // `persistToDataStore()` schreibt zuerst den DataStore (durabel) und
+                            // danach den Device-Protected-Spiegel. Faellt der zweite Schritt aus
+                            // (Prozess-Tod, IO-Fehler), divergieren beide - und die Divergenz war
+                            // PERMANENT: es gibt genau einen Schreiber und einen Leser, und
+                            // nachgespiegelt wurde bisher nur, wenn der Load selbst abgelaufene
+                            // Alarme entfernt hatte. Ein App-Neustart mit intaktem Bestand
+                            // reparierte den Spiegel also NICHT, und der haeufigste Sync-Zweig
+                            // ("unveraendert - nur re-armen") schreibt das Repository gar nicht: der
+                            // Spiegel konnte wochenlang falsch bleiben und nach einem Reboot vor
+                            // der ersten Entsperrung die falschen (oder keine) Alarme
+                            // wiederherstellen. `saveAll` ist idempotent und billig.
+                            directBootAlarmStore.saveAll(
+                                validAlarms.map {
+                                    DirectBootAlarmEntry(
+                                        it.id,
+                                        it.shiftName,
+                                        it.triggerTime,
+                                        formatShiftStartTime(it.shiftStartTime)
+                                    )
+                                }
+                            )
                         }
                     } else {
+                        // Hier ist "leer" belastbar: der Nutzer IST entsperrt (oben geprueft), der
+                        // Store also wirklich lesbar - es steht schlicht nichts drin.
                         Logger.d(LogTags.ALARM, "📭 PERSISTENCE: No saved alarms found in DataStore")
                         _activeAlarms.value = emptyList()
+                        loadedWhileUnlocked = true
+                        persistenceBlocked = false
                     }
                 }
             } catch (e: Exception) {
@@ -233,7 +334,76 @@ class AlarmRepository @Inject constructor(
      * Leser bekommen so nie einen noch nicht gefüllten Cache als Wahrheit, und Schreiber können
      * nicht vom nachträglich zurückkehrenden Init-Load überschrieben werden.
      */
-    private suspend fun awaitInitialLoad() = initialLoadDone.await()
+    /**
+     * Wartet auf den Init-Load - und HOLT IHN NACH, wenn er nur deshalb ergebnislos war, weil der
+     * Nutzer noch nicht entsperrt hatte (siehe [loadedWhileUnlocked]).
+     *
+     * Bewusst HIER: jeder Lese- und jeder Ganzlisten-Schreibpfad geht durch diese Funktion. Damit
+     * heilt sich der Zustand beim ersten Zugriff nach dem Entsperren von selbst, ohne neuen
+     * Receiver, ohne Scheduler und ohne dass ein kuenftiger Aufrufer daran denken muss.
+     */
+    private suspend fun awaitInitialLoad() {
+        initialLoadDone.await()
+        if (loadedWhileUnlocked || !userUnlocked) return
+
+        reloadMutex.withLock {
+            if (loadedWhileUnlocked) return
+            Logger.business(
+                LogTags.ALARM,
+                "🔓 PERSISTENCE: Nutzer ist jetzt entsperrt - Alarm-Bestand wird nachgeladen"
+            )
+            reloadFromDataStore()
+        }
+    }
+
+    /**
+     * Der eigentliche Lesevorgang des Nachladens. Teilt [stateMutex] mit allen anderen
+     * Ganzlisten-Pfaden, damit er sich nicht mit einem gleichzeitigen Write kreuzt.
+     */
+    private suspend fun reloadFromDataStore() {
+        try {
+            stateMutex.withLock {
+                val alarmsJson = dataStore.data.first()[ALARMS_KEY]
+                if (alarmsJson == null) {
+                    _activeAlarms.value = emptyList()
+                    loadedWhileUnlocked = true
+                    persistenceBlocked = false
+                    Logger.d(LogTags.ALARM, "📭 PERSISTENCE: Nachladen - kein Bestand gespeichert")
+                    return@withLock
+                }
+                val alarms = try {
+                    json.decodeFromString<List<AlarmInfoData>>(alarmsJson).map { it.toAlarmInfo() }
+                } catch (e: Exception) {
+                    // Wie im Init-Load: ein defekter Wert sperrt die Persistenz und wird gesichert,
+                    // statt als "keine Alarme" durchzugehen.
+                    persistenceBlocked = true
+                    loadedWhileUnlocked = true
+                    backupBrokenAlarms(alarmsJson)
+                    _activeAlarms.value = emptyList()
+                    Logger.e(
+                        LogTags.ALARM,
+                        "❌ PERSISTENCE: Nachgeladener Alarm-Bestand ist nicht dekodierbar - " +
+                            "Sicherung unter '$BROKEN_ALARMS_KEY_NAME', Persistenz gesperrt",
+                        e
+                    )
+                    return@withLock
+                }
+                val valid = alarms.filter { it.triggerTime > System.currentTimeMillis() }
+                _activeAlarms.value = valid
+                loadedWhileUnlocked = true
+                persistenceBlocked = false
+                Logger.business(
+                    LogTags.ALARM,
+                    "✅ PERSISTENCE: ${valid.size} Alarme nachgeladen (${alarms.size - valid.size} abgelaufen)"
+                )
+            }
+        } catch (e: Exception) {
+            // NICHT `loadedWhileUnlocked` setzen: ein echter Lesefehler soll beim naechsten Zugriff
+            // erneut versucht werden. Die Sperre bleibt, damit nichts ueberschrieben wird.
+            persistenceBlocked = true
+            Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Nachladen fehlgeschlagen - Persistenz bleibt gesperrt", e)
+        }
+    }
 
     /**
      * PERSISTENCE: Speichert Alarme in DataStore
@@ -326,6 +496,12 @@ class AlarmRepository @Inject constructor(
         return try {
             awaitInitialLoad()
             persistenceBlocked
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // NICHT als Defekt deuten: `awaitInitialLoad()` wirft eine CancellationException, wenn
+            // die AUFRUFENDE Coroutine gecancelt wird - das sagt nichts ueber den Bestand. Als
+            // "gesperrt" gedeutet haette es `clearInternalAlarms()` in den Fehlerpfad geschickt und
+            // z. B. eine Master-Pause scheitern lassen, obwohl alles in Ordnung ist.
+            throw e
         } catch (e: Exception) {
             Logger.w(LogTags.ALARM, "Init-Load nicht abschliessbar - Persistenz gilt als gesperrt", e)
             true
@@ -338,6 +514,8 @@ class AlarmRepository @Inject constructor(
             // "keine Alarme" zu unterscheiden - der Delta-Sync hätte alles für neu gehalten.
             awaitInitialLoad()
             Result.success(_activeAlarms.value)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "Error getting all alarms", e)
             Result.failure(e)

@@ -156,6 +156,12 @@ class CFAlarmApplication : Application() {
                         )
                         masterPauseUseCase.get().resume()
                     }
+
+                    // Spiegel und CE-Wahrheit des Pausenzustands abgleichen. Steht hier, weil der
+                    // erfolgreiche DeviceLocalFlagsGuard-Read oben belegt, dass der CE-Storage
+                    // lesbar ist (also entsperrt) - in einem Direct-Boot-Prozess kommt dieser Zweig
+                    // gar nicht so weit.
+                    masterPauseUseCase.get().reconcileDirectBootMirror()
                 } catch (e: Exception) {
                     Logger.w(LogTags.APP, "⚠️ STARTUP: Geraete-Marker konnte nicht geprueft werden", e)
                 }

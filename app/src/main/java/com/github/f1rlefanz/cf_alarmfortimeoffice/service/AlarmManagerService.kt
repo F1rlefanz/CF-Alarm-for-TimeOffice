@@ -51,51 +51,7 @@ class AlarmManagerService(
         val isAlarmClockType: Boolean = false
     )
 
-    /**
-     * Enhanced permission check including battery optimization status
-     */
-    fun checkAlarmPermissions(): AlarmPermissionStatus {
-        val canScheduleExact = canScheduleExactAlarms()
-        val batteryExempt = BatteryOptimizationHelper.isExempted(application)
-        val canUseFullScreen = canUseFullScreenIntent()
 
-        val overallStatus = when {
-            canScheduleExact && batteryExempt -> AlarmPermissionLevel.OPTIMAL
-            canScheduleExact && !batteryExempt -> AlarmPermissionLevel.GOOD_BUT_RISKY
-            !canScheduleExact && batteryExempt -> AlarmPermissionLevel.MISSING_EXACT_ALARM
-            else -> AlarmPermissionLevel.CRITICAL_MISSING
-        }
-
-        return AlarmPermissionStatus(
-            level = overallStatus,
-            canScheduleExactAlarms = canScheduleExact,
-            batteryOptimizationExempt = batteryExempt,
-            canUseFullScreenIntent = canUseFullScreen,
-            recommendations = buildRecommendations(canScheduleExact, batteryExempt, canUseFullScreen)
-        )
-    }
-
-    private fun buildRecommendations(
-        canScheduleExact: Boolean,
-        batteryExempt: Boolean,
-        canUseFullScreen: Boolean
-    ): List<String> {
-        val recommendations = mutableListOf<String>()
-
-        if (!canScheduleExact) {
-            recommendations.add("Aktiviere 'Exakte Alarme' in den App-Einstellungen")
-        }
-
-        if (!batteryExempt) {
-            recommendations.add("Aktiviere Akkuoptimierung-Ausnahme für zuverlässige Alarme")
-        }
-
-        if (!canUseFullScreen) {
-            recommendations.add("Erlaube 'Vollbild-Benachrichtigungen' - ohne sie erscheint der Wecker nur als Banner statt als Vollbild")
-        }
-
-        return recommendations
-    }
 
     fun canScheduleExactAlarms(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -129,42 +85,7 @@ class AlarmManagerService(
         }
     }
 
-    /**
-     * Oeffnet die Systemeinstellung "Alarme & Erinnerungen".
-     *
-     * NUR AUS DER UI AUFRUFEN (Status-Karte/Onboarding). `application.startActivity()` ist aus
-     * einem Hintergrundpfad (6h-Wartung, Worker, BootReceiver) ein Background-Activity-Start und
-     * wird von Android verworfen: der Nutzer sieht nichts. Genau deshalb ruft
-     * [setAlarmFromShiftMatch] das hier NICHT mehr - dort wurde der Dialog "angefordert" und
-     * gleichzeitig gar kein Alarm gestellt, in einem Pfad, der den Dialog nie zeigen konnte.
-     */
-    fun requestExactAlarmPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!alarmManager.canScheduleExactAlarms()) {
-                val intent = Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                application.startActivity(intent)
-            }
-        }
-    }
 
-    /**
-     * Oeffnet die Systemeinstellung "Vollbild-Benachrichtigungen" fuer diese App.
-     * Der einzige Weg, die von Play entzogene Berechtigung zurueckzuholen.
-     */
-    fun requestFullScreenIntentPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !canUseFullScreenIntent()) {
-            val intent = Intent(
-                android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
-                android.net.Uri.parse("package:${application.packageName}")
-            ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
-            try {
-                application.startActivity(intent)
-            } catch (e: Exception) {
-                Logger.e(LogTags.ALARM_MANAGER, "❌ Einstellung für Vollbild-Benachrichtigungen nicht erreichbar", e)
-            }
-        }
-    }
 
     fun getNextAlarmInfo(): NextAlarmInfo? {
         return try {
@@ -455,40 +376,60 @@ class AlarmManagerService(
      */
     fun cancelAllSnoozes() = cancelAllSnoozes(application)
 
+    /**
+     * Enhanced permission check including battery optimization status
+     */
+    fun checkAlarmPermissions(): AlarmPermissionStatus {
+        val canScheduleExact = canScheduleExactAlarms()
+        val batteryExempt = BatteryOptimizationHelper.isExempted(application)
+        val canUseFullScreen = canUseFullScreenIntent()
+
+        val overallStatus = when {
+            canScheduleExact && batteryExempt -> AlarmPermissionLevel.OPTIMAL
+            canScheduleExact && !batteryExempt -> AlarmPermissionLevel.GOOD_BUT_RISKY
+            !canScheduleExact && batteryExempt -> AlarmPermissionLevel.MISSING_EXACT_ALARM
+            else -> AlarmPermissionLevel.CRITICAL_MISSING
+        }
+
+        return AlarmPermissionStatus(
+            level = overallStatus,
+            canScheduleExactAlarms = canScheduleExact,
+            batteryOptimizationExempt = batteryExempt,
+            canUseFullScreenIntent = canUseFullScreen,
+            recommendations = buildRecommendations(canScheduleExact, batteryExempt, canUseFullScreen)
+        )
+    }
+
+
+    private fun buildRecommendations(
+        canScheduleExact: Boolean,
+        batteryExempt: Boolean,
+        canUseFullScreen: Boolean
+    ): List<String> {
+        val recommendations = mutableListOf<String>()
+
+        if (!canScheduleExact) {
+            recommendations.add("Aktiviere 'Exakte Alarme' in den App-Einstellungen")
+        }
+
+        if (!batteryExempt) {
+            recommendations.add("Aktiviere Akkuoptimierung-Ausnahme für zuverlässige Alarme")
+        }
+
+        if (!canUseFullScreen) {
+            recommendations.add("Erlaube 'Vollbild-Benachrichtigungen' - ohne sie erscheint der Wecker nur als Banner statt als Vollbild")
+        }
+
+        return recommendations
+    }
+
     private fun formatAlarmTime(alarmTime: java.time.LocalDateTime): String {
         val formatter = DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
         return alarmTime.format(formatter)
     }
 
-    /**
-     * 🔍 ENHANCED DEBUG: Comprehensive alarm status for debugging
-     */
-    fun getEnhancedAlarmDebugInfo(): String {
-        val permissionStatus = checkAlarmPermissions()
-        val nextAlarm = getNextAlarmInfo()
-
-        return buildString {
-            appendLine("=== ENHANCED ALARM DEBUG INFO ===")
-            appendLine("Permission Level: ${permissionStatus.level}")
-            appendLine("Can schedule exact alarms: ${permissionStatus.canScheduleExactAlarms}")
-            appendLine("Battery optimization exempt: ${permissionStatus.batteryOptimizationExempt}")
-            // false => Wecker erscheint nur als Banner, der Weck-Screen kommt nicht von selbst.
-            appendLine("Can use full-screen intent: ${permissionStatus.canUseFullScreenIntent}")
-            appendLine("Next alarm: ${nextAlarm?.formattedTime ?: "None"}")
-            appendLine("Next alarm type: ${if (nextAlarm?.isAlarmClockType == true) "AlarmClock" else "Regular"}")
-            appendLine("Alarm manager: $alarmManager")
-            appendLine("App package: ${application.packageName}")
-            appendLine()
-            appendLine("=== RECOMMENDATIONS ===")
-            permissionStatus.recommendations.forEach { recommendation ->
-                appendLine("- $recommendation")
-            }
-            appendLine("==================================")
-        }
-    }
 
     companion object {
-        private const val ALARM_REQUEST_CODE = 1001
 
         /**
          * Der EINE Weg, einen Wecker in den AlarmManager zu legen: exakt per `setAlarmClock()`,
@@ -626,7 +567,7 @@ class AlarmManagerService(
             shiftName: String,
             shiftStartTimeFormatted: String,
             logContext: String
-        ) {
+        ): Boolean {
             val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
                 putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
                 putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
@@ -669,6 +610,7 @@ class AlarmManagerService(
                 rememberPendingSnooze(context, alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
 
                 Logger.business(LogTags.ALARM_MANAGER, "😴 $logContext (id=$alarmId)")
+                return true
             } catch (e: SecurityException) {
                 Logger.e(
                     LogTags.ALARM_MANAGER,
@@ -678,6 +620,7 @@ class AlarmManagerService(
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze konnte nicht geplant werden (id=$alarmId)", e)
             }
+            return false
         }
 
         // ---------------------------------------------------------------------------------------
@@ -699,6 +642,22 @@ class AlarmManagerService(
         private const val SNOOZE_PREFS_NAME = "pending_snoozes"
         private const val KEY_SNOOZE_ENTRIES = "entries"
         private const val SNOOZE_ENTRY_SEPARATOR = "|"
+
+        /**
+         * Serialisiert JEDEN Read-Modify-Write auf dem Snooze-Merker.
+         *
+         * Drei unabhaengige Schreibpfade ([rememberPendingSnooze], [forgetPendingSnooze] und der
+         * Writeback in [restorePendingSnoozes]) lesen die Menge, rechnen und schreiben zurueck. Ohne
+         * Serialisierung gewinnt der letzte Schreiber, und ein verlorener Eintrag heisst: ein Snooze
+         * ist im AlarmManager scharf, aber die App kennt ihn nicht mehr - er laesst sich weder
+         * abbrechen noch nach einem Reboot wiederherstellen. Nebenlaeufig erreichbar ist das bei
+         * jedem Boot (Restore-Writeback) und bei jedem Snooze-Tippen.
+         *
+         * `synchronized` statt Mutex: die Aufrufer sind teils synchron (Vollbild-Button,
+         * Notification-Notausgang), ein `suspend`-Lock waere dort nicht verfuegbar. Die
+         * eingeschlossene Arbeit ist ein Prefs-Read und ein Write - Millisekunden.
+         */
+        private val snoozeRegistryLock = Any()
 
         private fun snoozePrefs(context: Context): SharedPreferences =
             context.createDeviceProtectedStorageContext()
@@ -777,32 +736,38 @@ class AlarmManagerService(
             triggerTime: Long,
             shiftName: String,
             shiftStartTimeFormatted: String
-        ) {
+        ) = synchronized(snoozeRegistryLock) {
             try {
                 val prefs = snoozePrefs(context)
                 val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
                 val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
                     .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
+                // commit(), NICHT apply(): dieser Eintrag ist die EINZIGE Spur eines
+                // schwebenden Snooze. `apply()` schreibt asynchron; stirbt der Prozess unmittelbar
+                // danach (Doze, Low-Memory-Kill, Reboot), ist der Snooze im AlarmManager scharf,
+                // aber nirgends vermerkt - nicht abbrechbar und nach einem Reboot nicht
+                // wiederherstellbar. Der Aufrufer ist ein Notausgang von Millisekunden-Dauer, ein
+                // synchroner Write ist hier billiger als der Verlust.
                 prefs.edit()
                     .putStringSet(
                         KEY_SNOOZE_ENTRIES,
                         kept + encodeSnoozeEntry(alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
                     )
-                    .apply()
+                    .commit()
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht geschrieben werden", e)
             }
         }
 
-        private fun forgetPendingSnooze(context: Context, alarmId: Int) {
+        private fun forgetPendingSnooze(context: Context, alarmId: Int) = synchronized(snoozeRegistryLock) {
             try {
                 val prefs = snoozePrefs(context)
                 val existing = prefs.getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
                 val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
                     .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
-                prefs.edit().putStringSet(KEY_SNOOZE_ENTRIES, kept).apply()
+                prefs.edit().putStringSet(KEY_SNOOZE_ENTRIES, kept).commit()
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht bereinigt werden", e)
             }
@@ -893,24 +858,30 @@ class AlarmManagerService(
                 }
             }
 
+            // ERFOLGE zaehlen, nicht Versuche. `armSnooze()` faengt SecurityException und Exception
+            // selbst ab und wirft nie nach oben - ein `try/catch` um den Aufruf waere toter Code, und
+            // ein blindes `restored++` behauptete im Boot-Log eine Wiederherstellung, die nicht
+            // stattgefunden hat. Fuer einen Vorfall ist das die schlimmste Art Log: es sieht aus, als
+            // waere alles in Ordnung.
             var restored = 0
+            var failed = 0
             alive.mapNotNull { parseSnoozeEntry(it) }.forEach { entry ->
-                try {
-                    armSnooze(
-                        context = context,
-                        alarmId = entry.id,
-                        triggerTime = entry.triggerTime,
-                        shiftName = entry.shiftName,
-                        shiftStartTimeFormatted = entry.shiftStartTimeFormatted,
-                        logContext = "Schwebender Snooze nach Neustart wiederhergestellt"
-                    )
-                    restored++
-                } catch (e: Exception) {
-                    Logger.e(
-                        LogTags.ALARM_MANAGER,
-                        "❌ Schwebender Snooze id=${entry.id} konnte nicht wiederhergestellt werden", e
-                    )
-                }
+                val ok = armSnooze(
+                    context = context,
+                    alarmId = entry.id,
+                    triggerTime = entry.triggerTime,
+                    shiftName = entry.shiftName,
+                    shiftStartTimeFormatted = entry.shiftStartTimeFormatted,
+                    logContext = "Schwebender Snooze nach Neustart wiederhergestellt"
+                )
+                if (ok) restored++ else failed++
+            }
+            if (failed > 0) {
+                Logger.w(
+                    LogTags.ALARM_MANAGER,
+                    "⚠️ $failed schwebende(r) Snooze konnte NICHT wiederhergestellt werden - " +
+                        "diese Weckvorgaenge fallen aus"
+                )
             }
             return restored
         }

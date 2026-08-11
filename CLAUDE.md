@@ -234,6 +234,22 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **`_alarmActive = true` VOR `startForeground()`** — sonst schließt sich das Vollbild sofort.
 - **Snooze braucht `snoozeAlarmAction(id)`**, nicht `enhancedAlarmAction(id)` — sonst bricht der
   Maintenance-Sync den Snooze ab.
+- **Ein schwebender Snooze muss einen Reboot überleben** (`AlarmManagerService.
+  restorePendingSnoozes()`, aufgerufen im `BootReceiver` direkt nach dem Direct-Boot-Restore der
+  regulären Alarme, seit v1.23.0). AlarmManager verliert beim Neustart ALLE Alarme; der
+  Ursprungsalarm ist zu dem Zeitpunkt bereits gefeuert und aus dem Repository geräumt, es gibt also
+  keinen zweiten Anker. Bis v1.23.0 stand der Snooze in KEINEM der beiden Wiederherstellungs-Pfade:
+  wer schlummerte und dessen Gerät in den Minuten danach neu startete, wurde nie wieder geweckt.
+  Der Merker (`pending_snoozes`, DEVICE-PROTECTED, existierte schon für den Cancel-Weg) trägt
+  seither auch Schichtname und Schichtbeginn — sonst zeigte das Vollbild nach einem Reboot
+  „Deine Schicht beginnt um" ohne Zeit. **Der zweiteilige Altbestand (`id|triggerTime`) MUSS
+  lesbar bleiben**: er ist die einzige Spur eines Snooze, der über die Aktualisierung hinweg
+  läuft — gälte er als kaputt, wäre er weder wiederherstellbar noch abbrechbar. **Beide Anlässe
+  armieren über dasselbe `armSnooze()`**: der PendingIntent muss bis aufs Zeichen identisch sein
+  (requestCode = alarmId, `snoozeAlarmAction`), sonst trifft ein späterer Abbruch den
+  wiederhergestellten Snooze nicht mehr — und ein nicht abbrechbarer Snooze klingelt mitten in
+  einer gerade eingeschalteten Pause. Der Aufruf steht bewusst hinter demselben
+  Master-Pause-Gate wie die Alarme (`directBootAlarmStore.isPausedNow()`, nicht der CE-Store).
 - **Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
   Ausloeser** (Vollbild-Button, Notification-Button) — nicht zwei getrennte Werte. Gelöst NICHT
   durch einen DataStore-Read in einem der beiden Ausloeser selbst: `AlarmSoundService.
@@ -1040,6 +1056,28 @@ Wecker gekostet:**
   der erste Wurf war lückenhaft, der erste echte Export enthielt genau drei Schlüssel und ALLE DREI
   gehörten nicht hinein — darunter `active_alarms`. Wer eine neue Laufzeitgröße einführt, trägt sie
   hier ein; ein Test hält jede Kategorie fest.
+- **Der Schlüssel-Filter sagt nichts über den WERT.** Eine Exportdatei ist Text: von Hand
+  bearbeitbar, aus einer älteren Version, unterwegs beschädigt. Zwei Zahlen sind deshalb
+  zusätzlich bereichsgeprüft (`ConfigBackupFilter.rangeRejection`, bewusst nur diese zwei):
+  `snooze_minutes` ≤ 0 legt den Schlummer-Alarm in die VERGANGENHEIT — er feuert sofort wieder und
+  der Wecker lässt sich nicht mehr wegdrücken; `dnd_oncall_cutoff_min` außerhalb `0..1439` lässt
+  `DndOnCallCutoffResolver`s `LocalTime.ofSecondOfDay()` werfen und tötet den DND-Tick bei jedem
+  Lauf. **Beide sind zusätzlich im LESEPFAD geklemmt** (`AlarmPrefs`, `DndPrefs`) — genau wie
+  `DimOverlayPrefs` es überall tut: das Android-Backup ist ein zweiter Weg, auf dem so ein Wert
+  ankommt, und den sieht der Import nie.
+- **Unlesbare Regelwerke werden beim Import BENANNT abgelehnt**
+  (`ConfigBackupUseCase.structuralRejection` für `dim_rules`/`hue_schedule_rules`) — obwohl beide
+  Leser einen kaputten Wert bereits abfangen. Genau dieser Rückfall auf „leere Liste" ist das
+  Problem: der Import meldete Erfolg, und der Nutzer sah eine leere Regelliste ohne Grund. Der
+  Import ist der letzte Ort, an dem das noch sagbar ist.
+- **`ShiftConfig.withCodeAssignedTo()` (Kürzel-Vorschlagskarte) macht DREI Dinge zusammen, weil
+  jedes einzeln wirkungslos wäre:** Muster ergänzen, **Zieldefinition aktivieren** (die
+  `ShiftRecognitionEngine` beachtet seit v1.23.0 nur aktivierte Definitionen — eine Zuordnung an
+  eine ausgeschaltete Schicht wäre ein garantierter Nichts-passiert-Klick, und die Karte bietet
+  genau solche Kürzel an, weil sie von keiner aktivierten Definition getroffen werden) und das
+  Kürzel **bei allen anderen Definitionen entfernen** (zwei Besitzer hieße: `findDefinitionFor`
+  nimmt den ersten Treffer, und die LISTENREIHENFOLGE entscheidet still über die Weckzeit). Reine
+  Funktion im Modell, damit alle drei Fallen testbar festgehalten sind.
 
 ### Auth
 

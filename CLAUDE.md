@@ -171,21 +171,12 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
 - **Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log.** Die Rohdaten liegen als
   `shift_config_broken` gesichert, der Sync wird ausgelassen, bestehende Alarme bleiben — aber ein
   sichtbarer Hinweis samt Angebot, die Sicherung zu verwerfen, fehlt noch. Bewusst offengelassen.
-- **`WakeLockManager`/`IWakeLockManager` haben aktuell KEINEN Aufrufer** (`AlarmManagerService`
-  bekommt eine Instanz injiziert und benutzt sie nirgends). Die Wake-Locks des echten Weckvorgangs
-  liegen direkt in `AlarmReceiver` (PARTIAL, um den Broadcast zu überleben) und
-  `AlarmFullScreenActivity` (SCREEN_BRIGHT). Wer einem Wake-Lock-Verdacht nachgeht, muss DORT suchen;
-  eine Änderung an `WakeLockManager` ändert am Laufzeitverhalten nichts. Vollständiges Entfernen
-  (Klasse + Interface + Konstruktorparameter + die beiden Provider in `ServiceModule`) steht aus.
-
----
-
-## Invarianten — nicht versehentlich zurückdrehen
-
-Siehe auch Memory `project_alarm_ux_rebuild.md`.
-
-### Wecker
-
+- **`WakeLockManager`/`IWakeLockManager` sind ENTFERNT** (v1.23.1, Klasse + Interface + der ungenutzte
+  Konstruktor-Parameter von `AlarmManagerService` + zwei Provider in `ServiceModule`). Sie hatten
+  keinen Aufrufer; die Wake-Locks des echten Weckvorgangs liegen direkt in `AlarmReceiver` (PARTIAL,
+  um den Broadcast zu überleben) und `AlarmFullScreenActivity` (SCREEN_BRIGHT). Wer einem
+  Wake-Lock-Verdacht nachgeht, muss DORT suchen — vorher stand hier eine Klasse, die wie der
+  zuständige Ort aussah und am Laufzeitverhalten nichts änderte.
 - **Eine Instanz besitzt den Wecker**: `AlarmSoundService` hält Ton, Vibration, Audio-Fokus und
   die einzige **Wecker**-Notification (ID 2002). Channel **stumm**, aber `IMPORTANCE_HIGH` (Pflicht
   für Full-Screen-Intent). Der `AlarmReceiver` darf **keine eigene Wecker-Notification** posten
@@ -819,8 +810,13 @@ Wecker gekostet:**
   beim Master-Pause-Backstop: ein zentraler Punkt deckt jeden heutigen und künftigen Schreiber ab.
   Eigene Änderungen werden per Gleichheitsvergleich übersprungen, sonst laufen Erkennung und Sync bei
   jeder Nutzeränderung zweimal — und zwar nebenläufig auf derselben Engine-Instanz.
-- **`ShiftUseCase.add/update/deleteShiftDefinition` sind unbenutzt und lösen KEINEN Alarm-Resync
-  aus.** Nicht darauf aufsetzen (Entfernen braucht auch `IShiftUseCase`, spätere Runde).
+- **`ShiftUseCase.add/update/deleteShiftDefinition` sind ENTFERNT** (v1.23.1, samt
+  `IShiftUseCase`-Deklarationen). Sie hatten keinen Aufrufer und waren eine Falle: der Name klang
+  passend („eine Schicht hinzufügen"), aber der Pfad speicherte die Konfiguration und invalidierte
+  die Caches, ohne die System-Alarme anzufassen — die neue Schicht hätte bis zur nächsten 6h-Wartung
+  keinen Wecker bekommen, die gelöschte weitergeklingelt. Der einzige richtige Weg bleibt
+  `ShiftViewModel.updateShiftConfig(config)`, weil nur dort `triggerAlarmCreationFromConfigUpdate()`
+  → `AlarmUseCase.syncAlarms()` dranhängt.
 
 ### Schicht-Dimmer (Regel-Auflösung)
 

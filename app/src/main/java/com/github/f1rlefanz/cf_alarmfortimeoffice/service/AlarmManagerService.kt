@@ -32,8 +32,7 @@ import java.time.format.DateTimeFormatter
  * Architecture: Clean separation of concerns with dependency injection support
  */
 class AlarmManagerService(
-    private val application: Application,
-    private val wakeLockManager: WakeLockManager
+    private val application: Application
 ) {
 
     private val alarmManager = application.getSystemService(Context.ALARM_SERVICE) as AlarmManager

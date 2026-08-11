@@ -38,6 +38,19 @@ class DeviceLocalFlagsGuardTest {
         assertFalse(DeviceLocalFlagsGuard.shouldResetFlags(null, "google/sdk_gphone64/…"))
     }
 
+    /**
+     * Die Master-Pause MUSS beim Geraetewechsel zurueckgesetzt werden. Sie liegt im
+     * "settings"-Store, der im Android-Backup ist, und einzelne Schluessel lassen sich daraus
+     * nicht ausnehmen - eine aktive Pause waere nach einem Restore wieder aktiv und der Wecker auf
+     * dem neuen Geraet STILL. Anders als die uebrigen Laufzeitwerte dort wird sie NICHT neu
+     * abgeleitet.
+     */
+    @Test
+    fun `Master-Pause wird beim Geraetewechsel zurueckgesetzt`() {
+        assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("master_pause_enabled"))
+        assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("master_pause_until"))
+    }
+
     @Test
     fun `alle vier geraetelokalen Flags werden erkannt`() {
         assertTrue(DeviceLocalFlagsGuard.isDeviceLocalKey("battery_prompt_dismissed"))
@@ -56,7 +69,7 @@ class DeviceLocalFlagsGuardTest {
     @Test
     fun `echte Nutzereinstellungen werden nicht angefasst`() {
         listOf(
-            "shift_config", "snooze_minutes", "master_pause_until", "dim_rules",
+            "shift_config", "snooze_minutes", "dim_rules",
             "dim_overlay_strength", "dnd_toggles", "dnd_policy", "selected_calendar_ids",
             "alarm_skip_state", "device_local_flags_marker"
         ).forEach { key ->

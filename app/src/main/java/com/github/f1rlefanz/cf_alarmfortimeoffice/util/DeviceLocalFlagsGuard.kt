@@ -53,7 +53,21 @@ object DeviceLocalFlagsGuard {
         "battery_prompt_dismissed",
         "unused_app_restrictions_dismissed",
         "timeoffice_health_prompt_dismissed",
-        "oem_hint_shown*"
+        "oem_hint_shown*",
+        // MASTER-PAUSE. Nicht ganz dieselbe Kategorie wie die Onboarding-Markierungen, aber
+        // dieselbe Notwendigkeit - und deshalb bewusst hier und nicht in einem zweiten Waechter:
+        // die Pause liegt im "settings"-Store, der (richtigerweise) im Android-Backup ist, und
+        // einzelne Schluessel lassen sich aus einem Preferences-Store nicht ausnehmen. Nach einem
+        // Geraetewechsel waere eine aktive Pause damit wieder aktiv - und auf dem neuen Geraet
+        // bliebe der Wecker STILL, ohne dass jemand die Ursache in einer Wiederherstellung sucht.
+        // Anders als die uebrigen Laufzeitwerte in diesem Store wird die Pause NICHT neu
+        // abgeleitet: active_alarms, dim_render_*, die Zen-Regel-ID und die Wartungs-Zeitstempel
+        // entstehen beim naechsten Sync von selbst neu, ein Pausen-Flag nicht.
+        // Abwaegung wie beim Rest dieser App: ein unerwartet klingelnder Wecker ist deutlich
+        // harmloser als ein unerwartet stummer. Wer die Pause auf dem neuen Geraet weiter will,
+        // legt sie mit einem Schalter wieder um; ein Verschlafen laesst sich nicht zurueckholen.
+        "master_pause_enabled",
+        "master_pause_until"
     )
 
     /**

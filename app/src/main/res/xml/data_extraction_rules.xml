@@ -36,7 +36,15 @@
              dnd_zen_rule_id, last_maintenance_time, Skip-Keys) werden mitgesichert, sind aber
              harmlos: sie werden beim naechsten syncAlarms()/applyCurrentState() aus Kalender +
              Konfiguration neu abgeleitet, und eine restaurierte, auf dem Zielgeraet unbekannte
-             Zen-Regel-ID legt ensureZenRule() einfach neu an. -->
+             Zen-Regel-ID legt ensureZenRule() einfach neu an.
+             AUSNAHME, die das NICHT ist: die Master-Pause (master_pause_enabled/-_until) wird
+             NICHT neu abgeleitet - sie ist massgeblicher Zustand und gated Wecker, Dimmer, DND und
+             die 6h-Wartung. Nach einem Restore waere eine aktive Pause wieder aktiv, und auf dem
+             neuen Geraet bliebe der Wecker STILL, ohne dass jemand die Ursache in einer
+             Wiederherstellung sucht. Einzelne Schluessel lassen sich aus einem Preferences-Store
+             nicht ausnehmen; deshalb setzt DeviceLocalFlagsGuard sie beim erkannten
+             Geraetewechsel zurueck, zusammen mit den Onboarding-Markierungen. Ein unerwartet
+             klingelnder Wecker ist harmloser als ein unerwartet stummer. -->
         <include domain="file" path="datastore"/>
 
         <!-- AUSSCHLUSS 1 - Token-Store: mit einem Tink-AES256-GCM-Keyset verschluesselt,

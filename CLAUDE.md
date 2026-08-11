@@ -282,6 +282,22 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   überspringt sich mit WARN, wenn er nicht verfügbar ist. **Kein Unit-Test kann das fangen** (auch
   `ColdStartSmokeTest` nicht: er läuft im entsperrten Prozess) — die Prüfung ist ein echter
   `adb reboot` mit gefülltem Direct-Boot-Spiegel, Ablauf im HANDOFF.
+- **Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen** — er hat den ersten Anlauf
+  dieses Fixes fälschlich als „am Gerät verifiziert" aussehen lassen. Ohne Credential gilt der
+  Nutzer beim `LOCKED_BOOT_COMPLETED` bereits als entsperrend/entsperrt
+  (`ContextImpl.isUserUnlockingOrUnlocked()`), CE-Storage ist lesbar und die Exception bleibt aus;
+  mit PIN ist der Nutzer `RUNNING_LOCKED` und sie kommt. **Vor jedem Direct-Boot-Test deshalb
+  `adb shell locksettings set-pin 1234` setzen und nach dem Reboot NICHT entsperren.** Damit wurde
+  die zweite Fundstelle (`BackgroundServiceManager`, CE-`SharedPreferences` im Property-Initializer
+  des ERSTEN Application-Feldes) erst reproduzierbar: `SharedPreferences in credential encrypted
+  storage are not available until after user (id 0) is unlocked` → 0 wiederhergestellte Alarme.
+  Praktischer Nebeneffekt derselben Sperre: `run-as` kommt an das CE-Verzeichnis nur im entsperrten
+  Zustand — Testdaten also VOR dem Reboot schreiben.
+- **Kein `getSharedPreferences()` und kein CE-Zugriff in einem Property-Initializer einer Klasse am
+  Application-Graphen** (`BackgroundServiceManager`, `HueBridgePinningStore`: beide `by lazy`). Der
+  Zugriff selbst ist harmlos, der ZEITPUNKT ist es nicht. Wer daraus wieder einen sofortigen
+  Initializer macht, baut einen Absturz, den weder ein Unit-Test noch ein Emulator ohne
+  Bildschirmsperre zeigt.
 - **`HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`.** Vorher
   stand die Zuweisung davor: warf `initialize()` (siehe oben), blieb ein halb initialisiertes
   Singleton zurück, das `getInstance()` für den ganzen Prozess kommentarlos weiter herausgab —

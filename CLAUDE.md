@@ -16,7 +16,7 @@ Folgt dem globalen Default aus `~/.claude/CLAUDE.md` (Branch pro Änderung, proa
 # Debug build
 ./gradlew assembleDebug
 
-# Release build (requires keystore.properties)
+# Release build (R8/Minify AN; braucht NETZ, siehe unten)
 ./gradlew assembleRelease
 
 # Run all unit tests
@@ -30,7 +30,21 @@ Folgt dem globalen Default aus `~/.claude/CLAUDE.md` (Branch pro Änderung, proa
 
 # Install debug APK to connected device
 ./gradlew installDebug
+
+# Instrumentation-Tests (ColdStartSmokeTest) - NICHT mit --offline, siehe unten
+./gradlew connectedDebugAndroidTest
 ```
+
+- **`assembleRelease` braucht Netz.** Die nur mit Minify laufende Task
+  `produceReleaseComposeMapping` zieht eine Abhängigkeit, die nicht im Offline-Cache liegt;
+  `--offline` scheitert mit dem irreführenden „Configuration cache state could not be cached".
+  Signiert wird nur, wenn `keystore.properties` ODER `KEYSTORE_PASSWORD` da ist — sonst entsteht
+  `app-release-unsigned.apk` (Absicht, siehe CI-Punkt unter „Umgebung / Arbeitsweise").
+- **`connectedDebugAndroidTest` läuft NICHT mit `--offline`** (UTP braucht
+  `android-test-plugin-host-additional-test-output`, nicht im Cache), das Gerät MUSS wach sein
+  (bei dunklem Bildschirm bleibt die Activity bei CREATED — kein App-Bug), und die Task
+  **deinstalliert die App danach**: ein von Hand eingerichteter Emulator-Zustand (Anmeldung,
+  Kalenderauswahl) ist hinterher weg.
 
 ## Prerequisites
 
@@ -64,11 +78,11 @@ di/modules/                    ← Hilt module definitions
 ### Dependency Injection (Hilt)
 
 Modules in `di/modules/`:
-- **DataModule** – provides three `DataStore<Preferences>` instances (qualifiers `@MainDataStore`, `@HueDataStore`, `@TokenDataStore`) and `TinkEncryptionHelper` singleton
+- **DataModule** – provides exactly **two** unverschlüsselte `DataStore<Preferences>` (`@MainDataStore` = `settings`, `@HueDataStore` = `hue_settings`, beide mit `ReplaceFileCorruptionHandler`) plus `ErrorHandler`. **Kein Token-Store und kein `TinkEncryptionHelper`** — Details unter „Authentication & Token Storage"
 - **RepositoryModule** – binds repository interfaces to implementations
 - **UseCaseModule** – binds use-case interfaces to implementations
 - **HueModule** – OkHttp/Retrofit clients for Philips Hue API
-- **ServiceModule** – `AlarmManagerService`, `BackgroundServiceManager`
+- **ServiceModule** – `CredentialAuthManager`, `OAuth2TokenManager`, `WakeLockManager`/`IWakeLockManager`, `AlarmManagerService`, `ShiftRecognitionEngine`. `BackgroundServiceManager` steht bewusst **nicht** hier: er hat seinen eigenen `@Singleton @Inject`-Konstruktor
 - **StateModule** – `CalendarStateHolder` (shared state between ViewModels)
 
 All Android components (`Service`, `BroadcastReceiver`) that need injection are annotated `@AndroidEntryPoint`.
@@ -81,7 +95,11 @@ All Android components (`Service`, `BroadcastReceiver`) that need injection are 
 - **`DataStoreTokenRepository`** – persists tokens encrypted with **Google Tink** (AES-256-GCM) via `TinkEncryptionHelper`
 - Der Token liegt im DataStore **`token_data_v2_encrypted`**, den sich `DataStoreTokenRepository`
   per `EncryptedDataStoreFactory` **selbst** baut (nur `@ApplicationContext` injiziert).
-  `TinkEncryptionHelper` muss ein Singleton bleiben.
+  `TinkEncryptionHelper` muss ein Singleton bleiben, und **`getInstance()` in
+  `EncryptedDataStoreFactory` ist der einzige Zugriffsweg**: der frühere Hilt-Provider in
+  `DataModule` war ungenutzt und hätte den Keyset-Read aus dem CE-Storage in fremde DI-Graphen
+  gezogen — inklusive der `directBootAware`-Komponenten, wo die Feldinjektion vor der ersten
+  Entsperrung geworfen und den Wecker stumm gelassen hätte. Nicht zurückholen.
 - **Es gibt bewusst keinen `@TokenDataStore`-Qualifier.** `DataModule` stellte bis v1.11.2 einen
   bereit (`oauth_tokens`), den **niemand** injizierte — ein Leichenrest der Hilt-Migration. Am
   Geraet verifiziert: `oauth_tokens.preferences_pb` existierte gar nicht. Die Falle war die
@@ -114,11 +132,11 @@ All Android components (`Service`, `BroadcastReceiver`) that need injection are 
 
 ### Navigation
 
-Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER, STATUS, SETTINGS, HUE, DIMMER`). `MainScreen` is the Compose root; it receives all ViewModels and delegates to tab content composables (`HomeTabContent`, `WeckerTabContent`, `HueTabContent`, `SettingsTabContent`, `StatusTabContent`, `DimmerTabContent`).
+Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER, STATUS, SETTINGS, HUE, DIMMER`). `MainScreen` is the Compose root; es verzweigt die `NavigationState`s (Unterscreens, Onboarding-Gates) und hält den `BackHandler`. Die Tab-Inhalte verteilt `MainContentScreen` auf `HomeTabContent`, `WeckerTabContent`, `StatusTabContent`, `SettingsTabContent`, `HueTabContent`, `DimmerTabContent`.
 
 ### Shared State
 
-`di/state/CalendarStateHolder` – a Hilt singleton `StateFlow` holder shared between `CalendarViewModel` and `MainViewModel` to avoid direct ViewModel-to-ViewModel dependencies.
+`di/state/CalendarStateHolder` – a Hilt singleton `StateFlow` holder: `CalendarViewModel` **schreibt**, `ShiftViewModel` **liest** (Einbahnstraße, siehe „Kalender-Datenfluss"). Vermeidet direkte ViewModel-zu-ViewModel-Abhängigkeiten.
 
 ## Key Constraints
 
@@ -128,6 +146,15 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
   die ersten beiden kommen aus `DataModule`; der Token-Store ist der selbstgebaute
   verschluesselte `token_data_v2_encrypted` (siehe Authentication & Token Storage)
 - `TinkEncryptionHelper.getInstance()` must stay a singleton — reinitializing it would break decryption of existing tokens
+- **Jeder `preferencesDataStore` in diesem Projekt braucht einen `corruptionHandler`.** DataStore
+  liest VOR JEDEM Write erneut — ohne Handler blockiert eine beschädigte `preferences_pb` nicht nur
+  Lesen, sondern dauerhaft auch Schreiben, reboot-fest und ohne Selbstheilung außer „App-Daten
+  löschen". Betroffen wären u. a. Alarme, Master-Pause, Dimmer-/DND-Konfiguration und der
+  Anmeldezustand (`auth_prefs` war der letzte Store ohne Handler)
+- **R8/Minify ist AN** (seit v1.23.0, `isMinifyEnabled = true` im Release-Buildtype; mit AGP 9.3.1 ohne den
+  alten R8-NPE; APK 19,8 → 10,9 MB). Deshalb MÜSSEN `-dontshrink` und `-dontoptimize` in
+  `proguard-rules.pro` aus bleiben — mit ihnen wäre Minify eine Attrappe, die Bauzeit kostet und
+  nichts entfernt. Beide Zeilen stehen dort auskommentiert mit Begründung
 - `minSdk = 26`, `compileSdk = 37`, `targetSdk = 37`; Java 17 source/target with core library desugaring enabled
 
 ---
@@ -135,12 +162,21 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
 ## Bekannt und so gewollt
 
 - **`Logger.business()` loggt auf INFO** → PII (E-Mail, Kalendertitel) landet in Debug-Builds im
-  Datei-Log (`Logger.kt:116`). Bewusst: Release-Logs enthalten nur WARN+.
+  Datei-Log (`Logger.business`, `util/Logger.kt`). Bewusst: Release-Logs enthalten nur WARN+.
 - **Regel speichern navigiert sofort weg** (`HueRuleConfigScreen`: `createRule()` ist
   fire-and-forget, `onSaveComplete()` folgt unmittelbar). Ein Fehler landet dadurch erst auf dem
   `HueSettingsScreen` statt im Formular. Seit v1.10.4 kann die Validierung tatsächlich ablehnen —
   bisher nur theoretisch, weil die UI-Validierung dieselben Bedingungen vorher abfängt. Wird das
   je unangenehm: auf das Result warten, bevor navigiert wird.
+- **Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log.** Die Rohdaten liegen als
+  `shift_config_broken` gesichert, der Sync wird ausgelassen, bestehende Alarme bleiben — aber ein
+  sichtbarer Hinweis samt Angebot, die Sicherung zu verwerfen, fehlt noch. Bewusst offengelassen.
+- **`WakeLockManager`/`IWakeLockManager` haben aktuell KEINEN Aufrufer** (`AlarmManagerService`
+  bekommt eine Instanz injiziert und benutzt sie nirgends). Die Wake-Locks des echten Weckvorgangs
+  liegen direkt in `AlarmReceiver` (PARTIAL, um den Broadcast zu überleben) und
+  `AlarmFullScreenActivity` (SCREEN_BRIGHT). Wer einem Wake-Lock-Verdacht nachgeht, muss DORT suchen;
+  eine Änderung an `WakeLockManager` ändert am Laufzeitverhalten nichts. Vollständiges Entfernen
+  (Klasse + Interface + Konstruktorparameter + die beiden Provider in `ServiceModule`) steht aus.
 
 ---
 
@@ -151,8 +187,48 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 ### Wecker
 
 - **Eine Instanz besitzt den Wecker**: `AlarmSoundService` hält Ton, Vibration, Audio-Fokus und
-  die einzige Notification (ID 2002). Channel **stumm**, aber `IMPORTANCE_HIGH` (Pflicht für
-  Full-Screen-Intent). Der `AlarmReceiver` darf **keine** eigene Notification posten.
+  die einzige **Wecker**-Notification (ID 2002). Channel **stumm**, aber `IMPORTANCE_HIGH` (Pflicht
+  für Full-Screen-Intent). Der `AlarmReceiver` darf **keine eigene Wecker-Notification** posten
+  (die frühere ID 2001 brachte über ihren Channel einen zweiten Klingelton mit). Ausdrücklich
+  ausgenommen: die stille Skip-Bestätigung `AlarmReceiver.showSkipNotification()` (eigener
+  `SKIP_CHANNEL_ID`, `IMPORTANCE_LOW`, ID 9999, `setTimeoutAfter`) — kein Ton, kein Vollbild.
+- **`AlarmSoundService`: `stopSelf(startId)` und `START_REDELIVER_INTENT`.** Blankes `stopSelf()`
+  räumt bei zwei überlappenden Alarmen den gerade gestarteten mit ab; `START_STICKY` startet den
+  Service mit `intent == null` neu, und daraus kann der `else`-Zweig nichts wiederherstellen — ein
+  stummer Zombie-Service, während das Log wie ein funktionierender Wecker aussieht. Der Weckton
+  probiert außerdem **alle** Ringtone-Kandidaten der Reihe nach und loggt einen Totalausfall laut
+  (Direct Boot kann MediaStore-URIs unauflösbar machen).
+- **Vollbild: Dismiss und Snooze teilen eine Einweg-Sperre (`OneShotAlarmHandoff.claim()`, am Anfang
+  BEIDER Handler).** Belegt aus dem Gerätelog (05.08.2026): „dismissed" und „snoozed" 24 ms
+  auseinander, beide Handler komplett durchgelaufen — Compose gibt jedem gleichzeitigen Zeiger seinen
+  eigenen Klick, und die zwei bildschirmbreiten Knöpfe liegen 12 dp übereinander; „Alarm stoppen"
+  plante also zusätzlich einen Schlummer-Wecker. Der Notausgang `stopAndClose()` fragt die Sperre
+  bewusst NICHT (sonst blockiert sie den Fehlerpfad des Snooze). `AlarmFullScreenHandoffTest`.
+- **`AlarmFullScreenActivity` braucht `onNewIntent()` mit `setIntent()`.** `launchMode="singleTask"`
+  liefert eine zweite Zustellung desselben Full-Screen-Intents als `onNewIntent`, nicht als
+  `onCreate` — ohne Überschreiben las `snoozeAlarm()` Schicht/ID/Snooze-Dauer aus dem VORHERIGEN Alarm.
+- **`visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS.** Sie protokolliert
+  `interactive`/`display`/`keyguardLocked`/`deviceSecure`/`wakeLockHeld` an `onCreate`/`onStart`/
+  `onStop` und bei jedem Fensterfokus-Wechsel — stoppt die Activity, während der Wecker läuft, als
+  **WARN** (Release-Logs enthalten nur WARN+). Das verschwindende Vollbild (05.08.2026, `STOPPED`
+  276 ms nach `initialized`, Wecker klingelte 11 s weiter) ließ sich aus dem Log nicht von
+  „Bildschirm aus" unterscheiden und ist am Emulator in drei Läufen nicht reproduzierbar — deshalb
+  bewusst kein Fix ins Blaue. Auf DEBUG herunterstufen macht den nächsten Vorfall wieder unauswertbar.
+- **Alle drei `setAlarmClock()`-Aufrufstellen behandeln eine entzogene Exact-Alarm-Berechtigung gleich
+  (`AlarmManagerService.setExactOrInexact`): try/catch + inexakter Fallback.** `setAlarmClock()` ist
+  NICHT davon ausgenommen (der alte KDoc behauptete das) und wirft auf API 31/32 ohne
+  `SCHEDULE_EXACT_ALARM` eine `SecurityException` — ungefangen aus dem Notification-Snooze-Button riss
+  das den ganzen Prozess mit. Ein verzögerter Wecker schlägt keinen Wecker; der Schicht-Wecker fiel
+  vorher komplett aus, während UI und Repository „Alarme aktiv" zeigten.
+  `requestExactAlarmPermission()` gehört NICHT in diesen Pfad — aus 6h-Wartung/Worker kann der
+  Systemdialog wegen Background-Activity-Start gar nicht erscheinen.
+- **Ein schwebender Snooze ist abbrechbar (`cancelSnooze`/`cancelAllSnoozes`) — aber nur auf
+  ausdrücklichen Nutzer-Willen.** `cancelSystemAlarm()` baut ausschließlich `enhancedAlarmAction` und
+  trifft den eigenen Snooze-Slot nie; ein Snooze lief dadurch durch Master-Pause, „Automatische Alarme
+  aus" und `deleteAllAlarms` hindurch. Dazu ein Merker der Snooze-IDs im device-protected Storage
+  (sonst sind sie nirgends persistiert). Bewusst NICHT in datengetriebenen Aufräumzweigen und nicht an
+  `deleteAlarm(id)`: dort räumt der `BootReceiver` abgelaufene Alarme weg — und der Ursprungsalarm
+  eines schwebenden Snooze IST abgelaufen.
 - **Kein `startActivity()` aus dem AlarmReceiver**: AlarmManager-Broadcasts stehen nicht auf der
   Exemption-Liste für Background-Activity-Starts. Einziger Weg: `setFullScreenIntent()`.
 - **`_alarmActive = true` VOR `startForeground()`** — sonst schließt sich das Vollbild sofort.
@@ -182,6 +258,40 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `onStartCommand` ohnehin immer `scheduleNext()` ruft, liefen dauerhaft zwei Wartungszyklen alle
   6h im Millisekunden-Abstand. Wer einen Lauf „sicherheitshalber" selbst nachplant, baut das
   wieder ein — der `finally`-Block deckt jeden Pfad ab.
+- **Dieser `finally`-Block läuft in `withContext(NonCancellable)` und fängt den
+  Master-Pause-Read.** Vorher stand der suspendierende `pausedNow()`-Read als erste Anweisung darin:
+  in einer gecancelten Coroutine (`onDestroy()` → `serviceScope.cancel()`) warf er sofort, wodurch
+  WEDER `scheduleNext()` NOCH `stopSelf(startId)` liefen — Request-Code 0 ist der einzige Slot, die
+  rollierende Kette war damit bis zum nächsten Boot tot. Ebenfalls im `finally`: Dimmer-, DND- und
+  Pre-Alarm-Refresh-Reschedule. Sie standen im tiefsten Erfolgszweig hinter fünf Returns, also
+  gerade bei den häufigsten Läufen unerreichbar; bei Master-Pause wird abgeschaltet statt geplant.
+- **Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Lade-/Sync-Entscheidung
+  liegt als reines `MaintenanceLoadDecision` daneben.** Zwei Gates standen vor dem Delta-Sync, der
+  Update/Delete als einziger Ort beherrscht: Events wurden nur geladen, wenn der letzte Alarm < 7
+  Tage entfernt lag (bei einem 14 Tage gepflegten Dienstplan praktisch nie), und danach brach die
+  Wartung ab, sobald es keine Schicht OHNE bestehenden Alarm gab — ein verschobenes Event behält
+  seine Event-ID, ein gestrichenes erzeugt gar keinen Match. Folge real am 30.07.2026 (~4 Tage
+  unbemerkt): Wecker zur alten Zeit bzw. für eine Schicht, die es nicht mehr gab. Jetzt lädt es bei
+  Puffer < 7 Tage ODER letzter echter Kalender-Abfrage ≥ 12 h ODER nächster Alarm ≤ 48 h, und
+  synchronisiert **immer**, sobald Events vorliegen (`newShifts` ist nur noch Diagnose-Log). Eigener
+  Frische-Stempel `last_event_load_time` — `last_maintenance_time` wird auch im Skip-Zweig gesetzt
+  und ließe die Daten dauerhaft frisch aussehen. Die Leerlisten-Sperre bleibt.
+- **`BootReceiver` liest die Kalenderauswahl über den DataStore und entscheidet nicht auf einem
+  veralteten Snapshot.** Beim Boot ist der `StateFlow` noch nicht hydriert; und die
+  Validierungs-/Löschschleife konnte einen vom parallel laufenden Wartungslauf gerade korrigierten
+  Wecker wieder löschen, ohne ihn neu anzulegen (`BootAlarmValidation`). Außerdem setzt der Receiver
+  **vor** der langen Recovery einen Wartungs-Anker (Foreground-Service, `forceSync=true`):
+  `performCompleteSystemRecovery` läuft ohne `goAsync` in einem eigenen Scope und sitzt zuerst 5 s
+  ab — in der Zeit ist der Prozess als „empty process" abschießbar, womit 6h-Kette, Sync und
+  Dimmer-/DND-Planung lautlos ausfielen. Bei aktiver Master-Pause wird kein Anker gestartet
+  (synchron über den Direct-Boot-Spiegel geprüft, weil `MasterPausePrefs` im CE-Storage nur
+  suspendierend lesbar ist). Der `ACTION_PACKAGE_REPLACED`-Zweig ist entfernt: der Manifest-Filter
+  kann ihn nicht zustellen (bräuchte `<data scheme="package"/>`, was die drei URI-losen Actions
+  aussperren würde) — `MY_PACKAGE_REPLACED` deckt den echten Update-Fall ab.
+- **`TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`.** Ohne das Flag kehrte der
+  angestoßene Lauf im Normalbetrieb zurück, ohne den Kalender anzufassen — der Receiver war
+  wirkungslos. Ein bloßes Re-Arming wäre kein Ersatz: es rechnet die gespeicherten Millis mit
+  derselben Zone hin und zurück.
 - **Das "Nächsten Alarm überspringen"-Flag läuft zeitbasiert ab, nicht per ID-Match.**
   `AlarmSkipUseCase.skipNextAlarm()` löscht den System-Alarm SOFORT (SKIP-IMMEDIATE-UX) — damit
   feuert er nie wieder, und der eigentlich vorgesehene Rücksetz-Pfad
@@ -196,6 +306,15 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   verstrichen ist. Aufgehängt an `AlarmUseCase.syncAlarms()` — dem einzigen Einstiegspunkt der
   Event→Alarm-Pipeline (Vordergrund-Sync beim App-Öffnen UND 6h-Wartung) — bewusst kein neuer
   Scheduler. Wer den Ablauf wieder auf reines ID-Matching zurückbaut, holt sich den Bug zurück.
+  **Zusätzlich braucht das Flag ein Gate in `syncAlarms()` UND einen Backstop in
+  `scheduleSystemAlarm()`** (dem einzigen Weg in den `AlarmManager`, u. a. Boot-Restore): der
+  übersprungene Alarm ist aus dem Repository gelöscht, sein Event galt damit für den nächsten Sync als
+  NEU — System-Alarm wieder scharf plus falsche „Neue Schicht erkannt"-Notification.
+- **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft.**
+  Ohne das brach ein einzelner abgelehnter Alarm (verstrichene Weckzeit) über `getOrThrow()` den
+  GESAMTEN Sync ab und ließ den Rest der unsortierten Map ungesetzt; wird die Cancellation dagegen als
+  Event-Fehler verbucht, meldet die Abschlusszeile „complete" mit unvollständiger Liste. Die
+  Abschlusszeile sagt jetzt, wenn Events übersprungen wurden.
 - **Stille Schicht (`ShiftDefinition.isSilent`/`AlarmInfo.isSilent`, seit v1.20.0) ist KEIN Ersatz
   für eine optionale `alarmTime`.** `alarmTime` bleibt bewusst ein nicht-nullables Pflichtfeld — sie
   ist der Zeit-Anker, den DND/Dimmer/Feature A (Rufbereitschaft-Cutoff) weiterhin brauchen. Eine
@@ -236,19 +355,34 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `!autoAlarmEnabled` zusätzlich direkt `alarmUseCase.deleteAllAlarms()`, unabhängig vom
   `CalendarStateHolder`-Cache-Zustand — sonst wirkt „Ausschalten" nicht, wenn gerade keine
   Kalender-Events geladen sind (realer Fall direkt nach App-Start).
-- **`ShiftRecognitionEngine` ist ein gemeinsam genutzter Singleton mit nicht-atomarem
-  Mehrfeld-Cache** (`lastRecognitionHash`/`cachedMatches`/`recognitionInProgress`/`lastCacheTime`,
-  alle `@Volatile`, aber ohne gemeinsame Atomizität). `AlarmUseCase.syncAlarms()` und
-  `ShiftUseCase.recognizeShiftsInEvents()` rufen dieselbe Instanz auf verschiedenen Dispatchern
-  (IO vs. Main) auf. Real am Fairphone reproduziert: `ShiftViewModel.updateShiftConfig()` löste
-  `processCalendarEvents(currentEvents)` (Engine-Aufruf 1) und danach
-  `triggerAlarmCreationFromConfigUpdate()` (Engine-Aufruf 2, über `syncAlarms`) aus — solange
-  `processCalendarEvents` fire-and-forget lief (eigener, unabgewarteter `viewModelScope.launch`),
-  überlappten sich beide Aufrufe auf derselben Engine-Instanz, und „Automatische Alarme" wieder
-  einschalten erzeugte trotz korrekt erkannter Schichten 0 Alarme. Fix: `processCalendarEvents` ist
-  jetzt `suspend fun` (kein eigener `launch` mehr) — beide bestehenden Aufrufer liefen ohnehin
-  schon in einer Coroutine und rufen es jetzt direkt/abgewartet auf. Wer hier wieder ein
-  fire-and-forget `launch` einbaut, holt sich die Race zurück.
+- **`ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter einer Volatile-Referenz,
+  Prüfung UND Veröffentlichung hinter `recognitionMutex`, PLUS eine Epochen-Kennung.** Der frühere
+  Mehrfeld-Cache veröffentlichte seinen Schlüssel VOR dem Ergebnis (`lastRecognitionHash`/
+  `lastCacheTime` vor, `cachedMatches` nach `performRecognition()`); dazwischen liegt eine echte
+  Suspend-Phase, und ein nebenläufiger Aufrufer mit gleichem Event-Hash traf die Cache-Bedingung und
+  bekam den alten Stand — im frischen Prozess eine **leere** Liste. `syncAlarms()` liest „leer" als
+  „keine Schichten" und ruft `clearInternalAlarms()`: alle System-Alarme gecancelt, Repository und
+  Direct-Boot-Spiegel geleert. Genau das Symptom „0 Alarme trotz korrekt erkannter Schichten"
+  (v1.21.0 am Fairphone). **Der Mutex allein reicht nicht:** `clearRecognitionCache()` läuft aus
+  synchronem Kontext und kann ihn nicht nehmen — es zählt die Epoche hoch und nullt DANACH den
+  Stand; ein Lauf, dessen Grundlage inzwischen invalidiert wurde, veröffentlicht seinen Stand nicht
+  mehr als frisch. Das ersetzt das alte `recognitionInProgress` mit 200-ms-Polling-Timeout, das nach
+  Ablauf „sicherheitshalber" genau den halbfertigen Zustand las, den es verhindern sollte.
+  `ShiftViewModel.processCalendarEvents` bleibt `suspend` (kein fire-and-forget `launch`) — das war
+  der v1.21.0-Teilfix und ist weiterhin richtig, deckt aber nur einen der Aufrufer ab.
+- **`ShiftDefinition.isEnabled` wird in `performRecognition()` respektiert.** Der Schalter
+  „Schichtdefinition aktiviert" war eine Attrappe: gelesen hat ihn nur die Auswahl-UI, die Erkennung
+  lief über ALLE Definitionen — eine deaktivierte Schicht verschwand aus den Listen, klingelte aber
+  weiter. Gefiltert wird EINMAL, mit Log, wie viele übersprungen wurden. Bewusst **nicht** in
+  `ShiftConfig.findDefinitionFor()`: dort wird ein BESTEHENDER Alarm einer Definition zugeordnet, ein
+  Filter würde einem Alarm aus der Zeit vor dem Deaktivieren seine Hue-Regeln und das
+  `isSilent`-Flag entziehen.
+- **Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden.**
+  `performRecognition()` las `getOrNull()?.definitions ?: emptyList()` — der Repository-Pfad für eine
+  vorhandene, aber nicht dekodierbare Konfiguration liefert ein `Result.failure`, keine Exception.
+  Aus „ich kann die Konfiguration nicht lesen" wurden lautlos 0 Definitionen → 0 erkannte Schichten
+  → `syncAlarms()` löscht ALLE Alarme. Jetzt `getOrThrow()`: der Fehler kommt beim Aufrufer an, der
+  Cache-Schlüssel bleibt unangetastet, der nächste Versuch läuft frisch.
 
 ### Hintergrunddienste pausieren (Master-Pause, seit v1.21.0)
 
@@ -265,11 +399,22 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `syncAlarms()`, ausgelöst bei JEDEM Kalender-Ladevorgang inkl. normalem App-Start) wurde dabei
   übersehen. Real am Fairphone reproduziert: nach einem Reboot waren 0 Alarme gesetzt (Master-Pause
   hielt), aber das bloße Öffnen der App legte sofort wieder 5 Alarme an. Deshalb prüft `syncAlarms()`
-  selbst — als erste Zeile, VOR jeder anderen Logik — `masterPausePrefs.pausedNow()` und räumt bei
-  `true` über `clearInternalAlarms()` auf. Das ist der garantierte Fangnetz-Punkt für JEDEN
-  aktuellen UND künftigen Aufrufer; die einzelnen Gates an den Aufrufstellen bleiben zusätzlich
-  bestehen (vermeiden unnötige Arbeit wie Kalender-Fetches), sind aber NICHT mehr die einzige
-  Verteidigungslinie.
+  selbst `masterPausePrefs.pausedNow()` — als **erste inhaltliche Prüfung innerhalb von
+  `SafeExecutor.safeExecute`**, vor jeder Event-/Alarm-Verarbeitung; davor laufen nur die
+  Serialisierung (`alarmSyncMutex`) und das folgenlose `clearExpiredSkip()`. Bei `true` wird über
+  `clearInternalAlarms(alsoCancelPendingSnoozes = true)` geräumt. Das ist der garantierte
+  Fangnetz-Punkt für JEDEN aktuellen UND künftigen Aufrufer; die einzelnen Gates an den Aufrufstellen
+  bleiben zusätzlich bestehen (vermeiden unnötige Arbeit wie Kalender-Fetches), sind aber NICHT mehr
+  die einzige Verteidigungslinie.
+- **Denselben Backstop haben `DimScheduleUseCase.enable()` und `DndScheduleUseCase.enable()`**
+  (Vorbild `syncAlarms()`): jeder ViewModel-Setter ruft `enable()` ungegatet, und die rollende
+  Tick-Kette plant sich selbst nach — eine einzige Einstellungsänderung während der Pause weckte
+  Dimmer bzw. Zen-Regel dauerhaft wieder auf, obwohl die UI „pausiert" anzeigt. `disable()` bleibt
+  bewusst ungegatet, sonst kommt `MasterPauseUseCase.pause()` nicht mehr durch.
+- **Die Master-Pause überlebt weder einen Gerätewechsel noch einen Konfigurations-Import** — beides
+  Absicht: sie ist maßgeblicher Zustand, der (anders als die übrigen Laufzeitwerte im
+  `settings`-Store) nicht neu abgeleitet wird, und mitgebracht bliebe der Wecker auf dem neuen Gerät
+  STILL. Details in „Gerätewechsel & Konfigurations-Datei".
 - **Fünf bekannte `syncAlarms()`-Aufrufer** (Stand v1.21.0): `BootReceiver`,
   `AlarmMaintenanceService`, `CalendarViewModel.createAlarmsFromLoadedEvents()`,
   `ShiftViewModel.triggerAlarmCreationFromConfigUpdate()`, `CalendarPreAlarmRefreshWorker`. Wer
@@ -303,7 +448,46 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Die V1-API antwortet auch bei ABLEHNUNG mit HTTP 200.** Das Urteil steht im Body
   (`[{"error":…}]`). `makeSecureHueRequest` kennt nur den Status — wer sich darauf verlässt,
   hält einen abgelehnten Zeitplan für angelegt und das Licht geht nie wieder aus. Dafür gibt es
-  `parseV1Envelope`. Dieselbe Zwei-Ebenen-Falle wie bei `Result<RuleValidationResult>`.
+  `HueV1Envelope` (`internal object`, rein und testbar) — **auch die STEUER-Endpunkte werten den Body
+  aus**, nicht nur `result.isSuccess`: nach einem entzogenen Whitelist-Eintrag meldete die Kette „5/5
+  actions successful" und legte danach noch den Auto-Aus-Zeitplan an, für Licht, das nie anging.
+  Dieselbe Zwei-Ebenen-Falle wie bei `Result<RuleValidationResult>`. Drei Regeln, alle aus echten
+  Gerätelogs:
+  - **`parseAll` ist streng** („kein Eintrag enthält `error`") und ausschließlich das Urteil der
+    Fehlerhüllen-Wächter der GET-Endpunkte (`getLights`/`getGroups`/`getSchedules`). Eine Fehlerhülle
+    (HTTP 200 + JSON-**Array** statt Map) wird VOR dem Parsen erkannt und geworfen, statt still „0
+    Lampen" zu liefern — der Nutzer sah sonst „Keine Lampen gefunden", ohne Hinweis auf die nötige
+    Neukopplung.
+  - **`parseControl` ist bewusst milder** („mindestens ein `success`"): ein PUT auf `/state` liefert
+    einen Eintrag **pro Attribut**, und die Bridge lehnt einzelne ab, während sie die anderen anwendet
+    (`ct` an einer Lampe ohne Farbtemperatur = error 6, an ausgeschalteter = error 201). Mit `parseAll`
+    wurde daraus ein Fehlschlag, `startSunrise` stieg nach Schritt 1 aus, die Lampe blieb am Wecktag
+    auf `bri=1`. Abgelehnte Einzelattribute werden geloggt.
+  - **Jedes vorhandene `success`-Feld ist ein Erfolg — auch als String.** Ein DELETE antwortet
+    `[{"success":"/schedules/1 deleted"}]`; der frühere `as? Map<*, *>` machte aus einem erfolgreichen
+    Löschen ein Failure — schädlich, weil das Aufräumen der Auto-Aus-Timer darauf angewiesen ist.
+- **Ein Fehlschlag der Bridge darf nicht zur leeren Liste degradieren.**
+  `HueLightUseCase.getAllLightTargets()` fing das Failure ab und lieferte `success(LightTargets(leer,
+  leer))` — genau die stille leere Lampenliste, die die Hüllen-Wächter beseitigen sollten. Scheitern
+  BEIDE Abfragen, wird der Fehler durchgereicht; der Teilerfolg-Zweig bleibt (eine Bridge ohne
+  Gruppen ist normal). `HueLightTargetsFailureTest` trennt „Bridge lehnt ab" von „Bridge hat nichts".
+- **`getBridgeConfig` prüft die Antwort (`bridgeid` oder `mac` müssen da sein), statt sie nur zu
+  deserialisieren.** Beide Aufrufer benutzen sie als „hat sie geworfen?"-Orakel, sie ist damit de
+  facto die Bridge-/Zugangsdaten-Prüfung der App — Gson erzwingt Kotlins Non-Null-Deklarationen aber
+  NICHT, `fromJson("{}", …)` liefert ein Objekt voller nulls und wirft nicht. Wandert der DHCP-Lease,
+  hätte ein beliebiges anderes Gerät an derselben IP als „unsere Bridge" gegolten.
+- **Der gesamte Hue-Pfad ist IPv4-only** (Präfix-Klemme, URL-Bau ohne eckige Klammern,
+  `isBridgeReachableNow`). mDNS wählt deshalb die erste **IPv4**-Adresse: in einem IPv6-Heimnetz
+  meldete die Discovery sonst Erfolg, danach scheiterte jeder Zugriff, und der N-UPnP-Fallback greift
+  nicht, weil mDNS ja „etwas" gefunden hatte. Nur-IPv6 liefert ehrlich `null`. Eine Nicht-IPv4-Adresse
+  ist kein „SECURITY"-Vorfall — Adressfamilie, nicht Angriff; die Klemme bleibt genauso streng.
+- **`cleanup()` auf Prozess-Singletons cancelt NUR Kinder.** `HueBridgeConnectionManager.cleanup()`
+  rief `healthCheckScope.cancel()` — auf einem Singleton mit Prozess-Lebensdauer endgültig: jedes
+  spätere `launch` (Restore, Health-Monitoring, Netzwerk-Recovery) wäre lautlos nie mehr gestartet,
+  heilbar nur durch Prozess-Neustart, und beim Wecken blieb das Licht ohne Fehlermeldung aus. Jetzt
+  `cancelChildren()` + Zurücksetzen von `initialized`, wie `HueSmartScheduler.cleanup()` und
+  `WakeLockManager.releaseAllWakeLocks()`. Folge: `startNetworkRecoveryMonitoring()` läuft **nicht**
+  „nur einmal pro Prozess" — ein späteres `initialize()` startet den Collector erneut.
 - **Das 90-Zeichen-Limit für `command` aus der offiziellen Doku greift nicht.** Ein reales
   Command misst mit 40-Zeichen-Username ~111 Zeichen und wird akzeptiert (verifiziert 15.07.2026
   gegen BSB002, apiversion 1.78.0; die öffentlich archivierte Doku ist von 2013/API 1.0). Nicht
@@ -314,10 +498,15 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Auf der Bridge liegen fremde Zeitpläne** (real: zwei „Hue dimmer switch 1"). Aufgeräumt wird
   ausschließlich, was `BridgeTimer.NAME_PREFIX` trägt. Und aufgeräumt werden **muss**: sonst legt
   jeder Snooze einen weiteren Timer an, und der älteste schaltet zu früh aus.
-- **`autoOffTargetsOf()` filtert bewusst NICHT nach Schichtnamen.** Die Auswahl gehört dem
-  Aufrufer (`findApplicableRules` matcht auch über **Keywords**). Ein zweiter Filter gegen den
-  Schichtnamen würde genau die Regeln wegwerfen, die über ein Keyword getroffen haben — eine
-  Regel mit `shiftPattern` „Früh" fällt gegen „Frühschicht" durch und verlöre ihr Auto-Aus.
+- **`autoOffTargetsOf()` filtert bewusst NICHT nach Schichtnamen.** Die Auswahl gehört allein
+  `findApplicableRules` — und die matcht seit v1.11.0 **exakter Definitionsname ODER
+  `UNIVERSAL_SHIFT_PATTERN`**, kein Keyword, kein Teiltreffer (`HueRuleMatchingTest`). Ein zweiter
+  Filter gegen den Schichtnamen würde genau die UNIVERSAL-Regeln wegwerfen, deren `shiftPattern` per
+  Definition NICHT dem Schichtnamen gleicht: sie verlören ihr Auto-Aus, das Licht bliebe an. Diese
+  Funktion besitzt nur den Rechenweg (welche Ziele, welche Verzögerung inkl.
+  Sonnenaufgangs-Versatz). **Die frühere Begründung „findApplicableRules matcht auch über Keywords"
+  war veraltet** — sie verleitete dazu, das Keyword-Matching „wiederherzustellen", also genau die
+  S-auf-S2-Fehlerfamilie neu zu bauen (siehe „Schichterkennung & Musterabgleich").
 - **`HueBridgeConnectionManager.initialize()` muss idempotent bleiben.** Zwei Aufrufer ohne
   feststehende Reihenfolge: `CFAlarmApplication.initializeApp()` (asynchron im applicationScope)
   und `HueBridgeRepository.init` (Hauptthread, sobald Hilt das HueViewModel baut). Ohne Wächter
@@ -342,22 +531,27 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   von allein behandelt. Ohne Handler landet jeder Druck beim Activity-Default und **beendet die
   App**: aus „Kalender-Events" sprang der Nutzer auf den Android-Homescreen (am Fairphone 6
   gemeldet, 15.07.2026). Wer einen neuen `NavigationState` ergaenzt, muss ihn dort mitbedenken —
-  der `else`-Zweig faengt jeden Unterscreen ab, die Sonderfaelle stehen davor. Zwei davon sind
-  nicht optional: `BatteryExemption` muss wie „Spaeter" wirken (`dismissBatteryPrompt()`), sonst
-  schickt `handleAuthenticationSuccess()` den Nutzer sofort zurueck und Zurueck sieht wirkungslos
-  aus; `OEMWarning` muss wie „Verstanden" die Wartungskette anstossen (`finishOnboarding()`),
-  sonst steht ein Nutzer ohne 6h-Wartung da. Auf dem Home-Tab bleibt der Handler bewusst **aus**
+  der `else`-Zweig faengt jeden Unterscreen ab, die Sonderfaelle stehen davor. **VIER Gates sind
+  nicht optional:** `BatteryExemption`, `UnusedAppRestrictions` und `TimeOfficeHealthCheck` muessen
+  wie „Spaeter" wirken, also ihr jeweiliges Dismissed-Flag schreiben
+  (`dismissBatteryPrompt()` bzw. `UnusedAppRestrictionsHelper.setDismissed`/
+  `TimeOfficeHealthHelper.setPromptDismissed`) — sonst schickt `handleAuthenticationSuccess()` den
+  Nutzer sofort zurueck und Zurueck sieht wirkungslos aus; `OEMWarning` muss wie „Verstanden" die
+  Wartungskette anstossen (`finishOnboarding()`), sonst steht ein Nutzer ohne 6h-Wartung da.
+  Dazu ein `MainContent`-Zweig: auf einem Nicht-Home-Tab fuehrt Zurueck auf HOME
+  (Android-Konvention fuer Bottom-Navigation). Auf dem Home-Tab bleibt der Handler bewusst **aus**
   — dort ist Zurueck wirklich „App verlassen", und der Systemdefault kann das inkl.
   Predictive-Back besser.
 - **`NavigationState.HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`, nicht nur
-  `returnToTab`.** Beide Screens sind auf zwei Wegen erreichbar (direkt vom Home-Tab „Neue Regel"
-  ODER über den jeweiligen Settings-Screen „Bearbeiten"), und der System-Back (`BackHandler`) UND
-  der Screen-eigene Zurück-Pfeil/Speichern-Button MÜSSEN für denselben Einstiegspfad zum selben
+  `returnToTab`.** `HueRuleConfig` ist auf zwei Wegen erreichbar (direkt vom **HUE-Tab** „Neue
+  Regel" ODER über `HueSettings` „Bearbeiten"), und der System-Back (`BackHandler`) UND der
+  Screen-eigene Zurück-Pfeil/Speichern-Button MÜSSEN für denselben Einstiegspfad zum selben
   Ziel führen. Vor v1.22.0 taten sie das nicht: der Screen-eigene Weg ging immer zur Settings-Liste
   (falsch bei Direkteinstieg vom Tab), der System-Back-Weg ging immer direkt zum Tab (falsch bei
   Einstieg über die Settings-Liste) — zwei sich widersprechende, feste Annahmen statt einer
-  gemeinsamen. `cameFromSettingsList` wird an beiden Erzeugungsstellen gesetzt und von beiden
-  Rückwegen gleich ausgewertet. Real am Fairphone verifiziert (05.08.2026, alle 4 Kombinationen).
+  gemeinsamen. Real am Fairphone verifiziert (05.08.2026, alle 4 Hue-Kombinationen).
+  `DimmerRuleConfig` hat heute nur den Weg über `DimmerSettings` (Default `true`), trägt das Flag
+  aber gleich mit, damit ein späterer Direktpfad automatisch korrekt zurückführt.
 
 ### Hue-Vorschau & Test
 
@@ -396,19 +590,97 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   ist die Liste leer, der erste Klick stiess den Refresh an, las die leere Liste und meldete
   „Keine Lampen gefunden". Wer Ziele braucht, ruft `getAllLightTargets()` und **wartet**.
 
-### Schicht → Regel
+### Schichterkennung & Musterabgleich
 
-- **`ShiftConfig.findDefinitionFor()` ist streng nach Genauigkeit gestaffelt: exakter Name →
-  exaktes Keyword → Teiltreffer (nur Keywords ab 2 Zeichen).** Vorher stand im `AlarmReceiver`
-  ein `find { name == x || keywords.any { shiftName.contains(it) } }`. `find` nimmt den **ersten**
+**Zwei verschiedene Funktionen, zwei verschiedene Regeln — die Verwechslung hat schon zweimal
+Wecker gekostet:**
+
+- **`ShiftConfig.findDefinitionFor(shiftName)`** ordnet einem **bestehenden Alarm** eine Definition
+  zu (für Hue-Regeln und `isSilent`). Streng nach Genauigkeit gestaffelt: exakter Name → exaktes
+  Keyword → Teiltreffer per `contains` **ohne** Wortgrenzen, und dort nur mit Keywords ab
+  `MIN_FUZZY_KEYWORD_LENGTH = 2`. Vorher stand im `AlarmReceiver` ein
+  `find { name == x || keywords.any { shiftName.contains(it) } }`. `find` nimmt den **ersten**
   Treffer, und die Spätschicht trägt das Keyword **„S"** — das steckt in „S2", „Nacht**s**chicht"
   und „Zwi**s**chendienst". Folge: die S2-Regel feuerte **nie**, die Spätschicht-Regel bei fast
-  **jeder** Schicht. Nur die Frühschicht stimmte, weil sie zufällig vorn in der Liste steht.
-  Am Emulator gegen die echte Standardkonfiguration reproduziert (v1.11.0).
+  **jeder** Schicht. Am Emulator gegen die echte Standardkonfiguration reproduziert (v1.11.0).
   `AlarmInfo.shiftName` ist immer der **Name** einer Definition → Stufe 1 trifft im Normalfall
-  immer; die Keyword-Stufen sind nur für umbenannte Definitionen da. Wer `contains` wieder nach
-  vorn zieht oder die Längengrenze senkt, baut den Fehler neu — `ShiftDefinitionMatchingTest`
-  hält alle fünf Standard-Schichten fest.
+  immer; die Keyword-Stufen sind nur für umbenannte Definitionen da. Wer `contains` nach vorn zieht
+  oder `MIN_FUZZY_KEYWORD_LENGTH` senkt, baut den Fehler neu — `ShiftDefinitionMatchingTest` hält
+  alle fünf Standard-Schichten fest, zusätzlich gegen eine nicht migrierte Bestandskonfiguration.
+- **`ShiftDefinition.matchesKeywords(eventTitle)`** erkennt Schichten in **Kalendertiteln** und
+  arbeitet mit **Wortgrenzen**. Dort trifft „F" nur ein alleinstehendes F, nicht „Frühschicht" und
+  nicht „Fortbildung". Der `name` zählt ab `MIN_FUZZY_KEYWORD_LENGTH` als zusätzliches Muster (die
+  Längengrenze ist Pflicht, sonst kehrt die einbuchstabige Falle über den Namen zurück). Muster
+  werden beim Speichern **und** beim Matchen getrimmt (" IMCF" ergab sonst ein Regex, das „IMCF"
+  nicht mehr traf, während die UI genau dieses Muster zeigte); leere Muster matchen nie.
+- **Wortgrenzen über Unicode-Kategorien, NICHT `\b`.** `WORD_START`/`WORD_END` sind Lookarounds
+  `(?<![\p{L}\p{N}_])` / `(?![\p{L}\p{N}_])`. Javas `\b` ist ASCII-basiert: Umlaute und `ß` gelten als
+  Nicht-Wortzeichen, wodurch die Semantik für Muster mit führendem Umlaut oder abschließendem `ß`
+  **invertiert** war — nachgemessen (10.08.2026): `\büd\b` traf „üd" und „station üd" NICHT, aber
+  „xüd", also ausgerechnet mitten im Wort. Betrifft echte deutsche Bezeichnungen („Übergabedienst",
+  „Ärztlicher Dienst", Kürzel „ÜD"), und seit der Name als Muster zählt, sagt der Editor dem Nutzer
+  ausdrücklich zu, dass sein Schichtname erkannt wird. Bewusst Lookarounds statt `(?U)`: das
+  Inline-Flag würde `\w`/`\d`/`\s` im ganzen Ausdruck umdefinieren. Die Konstanten liegen auf
+  **Dateiebene**, nicht im Companion — `ShiftDefinition` ist `@Serializable`, ein
+  `private companion object` macht `serializer()` mit privat.
+- **Die einbuchstabigen Standard-Keywords „F"/"S"/"N" gehören in die Vorgaben.** Sie waren einmal
+  entfernt (Begründung: ein privates „Kino mit F" erzeugt einen Wecker um 05:30) — das war die
+  Verwechslung der beiden Funktionen oben. Am Emulator gegen den echten Dienstplan-Feed nachgewiesen
+  (10.08.2026): ohne sie sank die Erkennung von 4 auf 1 Schicht, denn die realen Titel sind kurze
+  Codes („F", „IMCF", „AD1", „FBE", „+"). Abwägung, vom Nutzer ausdrücklich so entschieden: eine nicht
+  erkannte Schicht heißt KEIN WECKER — für einen überzähligen gibt es „Nächsten Alarm überspringen",
+  für einen verschlafenen gibt es nichts. **Restrisiko akzeptiert und testlich festgeschrieben**
+  (`ShiftConfigDefaultsTest` fordert ausdrücklich, dass „F"/"S"/"N" treffen), damit es niemand für ein
+  Versehen hält: die Erkennung liest nur selbst ausgewählte Kalender, und das Muster ist entfernbar.
+  Der Editor warnt sichtbar bei einem einzeichigen Muster, verbietet es nicht.
+- **Jede Standard-Definition hat neben dem Stationskürzel ein generisches, mehrbuchstabiges
+  Muster** (Frühdienst/Spätdienst/Nachtdienst/ZD). „IMCF/IMCS/IMCN/IMCZ" sind die Kürzel EINER
+  Station; für einen Kollegen auf einer anderen war der Zwischendienst mit seinem einzigen Muster
+  „IMCZ" strukturell tot — kein Treffer, kein Wecker, keine Meldung. `ShiftConfigSerializationTest`
+  hält das fest („jede Standard-Definition hat ein Muster ohne Stationskuerzel") plus die Gegenprobe,
+  dass die einbuchstabigen Muster keinen unscharfen Teiltreffer gewinnen.
+- **Geraten wird nicht mehr — vorgeschlagen wird** (seit v1.23.0). `ShiftCodeSuggester` (rein, ohne
+  Android) sammelt die Termintitel, die von KEINEM aktiven Muster getroffen werden, sortiert nach
+  Häufigkeit (bei Gleichstand alphabetisch, damit die Reihenfolge nicht springt) und deckelt auf 8 —
+  die Deckelung wird als `droppedCount` **benannt**, nicht verschwiegen. Zwei Ausschlüsse, beide
+  technisch: zu lang (>24 Zeichen) ist Freitext, und ein Titel ohne einzigen Buchstaben/Ziffer („+"
+  steht real im Dienstplan) könnte über Wortgrenzen NIE treffen — ihn vorzuschlagen wäre ein
+  Versprechen, das die Erkennung nicht hält. Muster einer **deaktivierten** Definition unterdrücken
+  keinen Vorschlag: sie erkennen nichts, für dieses Kürzel fehlt also gerade ein Wecker. Karte „Diese
+  Kürzel stehen in deinem Kalender", oben im Schicht-Konfigurationsscreen. **Die App ordnet NICHTS
+  selbst zu** — eine stille Automatik, die danebengreift, stellt einen Wecker auf die falsche Uhrzeit.
+  `assignCodeToDefinition()` ergänzt das Kürzel als exaktes Keyword und geht über
+  `updateShiftConfig()`, damit Speichern, Cache-Invalidierung, Erkennung und Alarm-Sync mitlaufen.
+- **Kein stiller Default-Überschreiber der Schicht-Konfiguration — es gab DREI Schreibstellen.**
+  Seit `ShiftConfigRepository` „noch nie konfiguriert" (liefert den Default als **Erfolg**) von
+  „vorhanden, aber unlesbar" (`Result.failure`, Rohdaten gesichert unter `shift_config_broken`)
+  unterscheidet, bedeutet ein Fehlschlag nur noch: defekt — und genau dort ist Überschreiben
+  Datenverlust. Alle drei Fallbacks sind ersatzlos entfernt:
+  `CalendarViewModel.createAlarmsFromLoadedEvents()` (lief bei JEDEM Kalender-Ladevorgang, also
+  jedem App-Start), `ShiftViewModel.loadShiftConfig()` (im `init{}`, also bei JEDER
+  ViewModel-Erzeugung) und `CFAlarmApplication.initializeApp()` (bei JEDEM Kaltstart, auch bei rein
+  hintergrundgetriebenen Prozessstarts — unbemerkbar). Fail-safe stattdessen: Sync auslassen, Fehler
+  loggen bzw. in den UI-State schreiben, bestehende Alarme bleiben gesetzt. Der bewusste Weg zum
+  Default heißt `resetToDefaults()` und gehört dem Nutzer.
+- **„Auf Standardwerte zurücksetzen" rührt `autoAlarmEnabled` nicht an**
+  (`resetToDefaultsPreservingAutoAlarm()`). Vorher speicherte der Knopf die komplette
+  `getDefaultConfig()`, und die enthält `autoAlarmEnabled = true`: wer die automatischen Alarme im
+  Wecker-Tab bewusst ausgeschaltet hatte (eine ECHTE, sofortige Pause) und danach nur seine
+  Schichtdefinitionen aufräumte, hob die Pause unwissentlich auf — `updateShiftConfig()` persistiert
+  sofort und triggert den Resync. Der Automatik-Schalter gehört dem Wecker-Tab, dieselbe Trennung
+  wie bei der Master-Pause; der Rückfrage-Dialog sagt das ausdrücklich. Zurücksetzen und Löschen
+  einer Schicht fragen beide vorher nach — es gibt kein Undo.
+- **`ShiftViewModel` beobachtet `IShiftUseCase.shiftConfig` und zieht Anzeige, Erkennung UND Alarme
+  nach** (`observeExternalConfigChanges()`). Am Gerät gefunden (11.08.2026): der
+  Konfigurations-Import schreibt direkt über das Repository, der Store war danach korrekt — aber die
+  laufende App zeigte den alten Stand, und schlimmer: die **Alarme** wurden nicht neu gesetzt, eine
+  importierte Konfiguration hätte bis zur nächsten 6h-Wartung die ALTEN Zeiten weitergeweckt.
+  Bewusst ein Beobachter am gemeinsamen Datenfluss statt eines Aufrufs im Import — dieselbe Lehre wie
+  beim Master-Pause-Backstop: ein zentraler Punkt deckt jeden heutigen und künftigen Schreiber ab.
+  Eigene Änderungen werden per Gleichheitsvergleich übersprungen, sonst laufen Erkennung und Sync bei
+  jeder Nutzeränderung zweimal — und zwar nebenläufig auf derselben Engine-Instanz.
+- **`ShiftUseCase.add/update/deleteShiftDefinition` sind unbenutzt und lösen KEINEN Alarm-Resync
+  aus.** Nicht darauf aufsetzen (Entfernen braucht auch `IShiftUseCase`, spätere Runde).
 
 ### Schicht-Dimmer (Regel-Auflösung)
 
@@ -427,6 +699,28 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **CLOCK↔CLOCK = lückenlos jede Kalendernacht** (unabhängig von Schicht/frei); ALARM/SHIFT_END sind
   schicht-relativ und brauchen einen Alarm an dem Datum. Wer CLOCK↔CLOCK wieder schicht-relativ
   macht, reißt „immer 22–7 außer ND" wieder auf. `DimWindowResolverTest` hält das Kern-Szenario fest.
+- **Zeitrechnung: echte Wanduhrzeit + Datums-Arithmetik, niemals „Mitternacht-Instant + Minuten" und
+  niemals fixe 24h-Millis.** An den DST-Umstellungstagen ist ein Kalendertag 23 h bzw. 25 h lang — aus
+  22:00 wurde 23:00 bzw. 21:00, und Dimmen UND DND-Modus 1 (rechnet über dieselben Fenster)
+  verschoben sich um eine Stunde. Dieselbe Falle wie beim DND-Rufbereitschaft-Cutoff.
+- **Die Fenster-Schleifen beginnen einen Kalendertag VOR `today` (`LOOKBACK_DAYS`).** Sonst erzeugte
+  ein am Vorabend gestartetes Fenster nach dem Datumswechsel keine Iteration mehr: jede Neuberechnung
+  nach 00:00 (App-Update, 6h-Wartung, Master-Pause-Resume, ViewModel-Setter, Tap auf die
+  Korrektur-Notification) hielt die laufende Nacht für „kein aktives Fenster" und schaltete Dimmen +
+  DND ab. Vergangene Spannen sind harmlos, weil `activeSpan` per „now in range" und der Scheduler per
+  „> now" filtert. **Achtung bei Tests, die Spannen absolut zählen** — ab `today` zählen.
+- **Das Fenster-Ende ist HALB OFFEN (`first <= now < last`)** — in `DimWindowResolver` und in
+  `DndScheduleUseCase.applyCurrentState()` (dort als benannte `isActiveAt()`). Ein Tick exakt auf
+  `range.last` galt sonst noch als „im Fenster", während der nächste Wechsel strikt auf „> now"
+  geplant wird: der Zustand „aus" wurde für diesen Rand nie berechnet, Dimmen/DND blieben bis zum
+  nächsten Fensterstart hängen. Ein Rückbau auf „now in range" holt das zurück.
+- **Die Tick-Kette darf nicht abreißen.** Lag keine Fenstergrenze mehr in der Zukunft, cancelte
+  `scheduleNextTransition()` den Alarm — danach konnte sich die Kette nicht selbst wiederbeleben, und
+  die übrigen `syncAlarms()`-Aufrufer armieren Dimmer/DND nicht nach: nach einer Urlaubswoche ohne
+  Schichten blieb „Während der Dienstzeit" bis zum nächsten Reboot wirkungslos. Deshalb ein
+  Keep-alive-Tick (6 h), solange überhaupt eine Quelle AN ist, plus ein kurzer Retry-Tick (15 min)
+  nach einem **Lesefehler des Alarm-Bestands**. Die BEDEUTUNG einer leeren Fensterliste
+  (Nachtdienst-Unterdrückung) bleibt unverändert — es wird nur später noch einmal nachgesehen.
 - **Nacht-Standard (`DimWindowResolver.buildDefaultNightSpans`, seit v1.17.0) ist eine DRITTE,
   eigenständige Fenster-Quelle** neben Regeln — dimmt ab fester Uhrzeit bis zum nächsten Wecker,
   ganz ohne dass dafür eine `DimRule` existieren muss. Wirkt NUR an Tagen, die `isExcluded` nicht
@@ -487,6 +781,15 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   nächste Tick ist typischerweise das Fenster-ENDE, das die Notification sofort wieder wegräumt. Der
   Nutzer sah sie für das gerade laufende Fenster praktisch nie. Real gemeldet (05.08.2026). Wer einen
   neuen Dimmer-Prefs-Setter ergänzt, ohne `enable()` hinterherzurufen, baut dieselbe Falle neu.
+  **Und zwar unentprellt.** Die vier Darstellungs-Regler hatten kurzzeitig eine 300-ms-Entprellung
+  („die Regler feuern pro Frame") — durch den UI-Umbau auf `CommitOnReleaseSlider`
+  (`onValueChangeFinished`) kommt pro Bewegung genau EIN Setter-Aufruf an: Nutzen null, Risiko real.
+  Der Job hing am `viewModelScope` und starb beim Verlassen der App vor seinem `delay()`; der
+  Prefs-Wert war geschrieben, das laufende Overlay behielt aber bis zur nächsten Fenstergrenze
+  (typischerweise das Fenster-ENDE am Morgen) die alte Verdunkelung — exakt die Lücke, gegen die diese
+  Invariante existiert. Hintergrund, warum `enable()` überhaupt nötig ist: der Dienst beobachtet nur
+  `DimOverlayPrefs.renderState`, und das liest die globalen Regler nur als FALLBACK; die Render-Keys
+  schreibt einzig `setActiveOverlay()`.
 - **`DimAccessibilityService.isRunning()` (der einzige echte Bound-Status) wird seit v1.22.1 in
   `DimScheduleUseCase.applyCurrentState()` mitgeloggt**, zusammen mit Fenster-Zustand/Stärke/Pause.
   Vorher loggte der Tick nur generisch "Naechster Dimm-Wechsel geplant" — ob ein aktives Fenster auf
@@ -522,12 +825,19 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `LocalTime.atZone()` als echte Wanduhrzeit aufgelöst werden, NICHT als Mitternacht-Instant plus
   fixer Minuten-Millis-Offset — sonst landet er an einem DST-Vorspringen-Tag eine Stunde zu spät.
   `DndOnCallCutoffResolverTest` hält beide Fälle fest.
-- **Modus 1 dupliziert KEINE Fenster-Logik.** Er ruft `DimScheduleUseCase.previewTimeline()`
-  direkt auf (bereits öffentlich, seiteneffektfrei) statt eine eigene Kopie der
-  Dimmer-Fensterberechnung zu pflegen. Einbahnstraße wie `CalendarStateHolder`: `dnd/` liest von
-  `dimmer/`, nie umgekehrt — der Dimmer bleibt unverändert und unwissend von DND. Wer hier eine
-  eigene, „ähnliche" Fensterberechnung für DND einbaut, öffnet genau das Drift-Risiko (zwei
-  Quellen der Wahrheit für „ist gerade Nacht"), vor dem die adversariale Kritikrunde gewarnt hat.
+- **Modus 1 dupliziert KEINE Fenster-Logik.** Er ruft `DimScheduleUseCase.previewTimelineWithStatus()`
+  direkt auf (seiteneffektfrei) statt eine eigene Kopie der Dimmer-Fensterberechnung zu pflegen.
+  Einbahnstraße wie `CalendarStateHolder`: `dnd/` liest von `dimmer/`, nie umgekehrt — der Dimmer
+  bleibt unverändert und unwissend von DND. Wer hier eine eigene, „ähnliche" Fensterberechnung für DND
+  einbaut, öffnet genau das Drift-Risiko (zwei Quellen der Wahrheit für „ist gerade Nacht"), vor dem
+  die adversariale Kritikrunde gewarnt hat.
+- **Das `…WithStatus` ist kein Luxus: der Lesefehler muss über die Dimmer-DND-Grenze kommen.** Nach
+  einem transienten Lesefehler des Alarm-Bestands blieb DND-Modus 1 bis zu 6 h ohne „Nicht stören",
+  obwohl der Dimmer sich planmäßig nach 15 min erholte und die Nacht dimmte: der Fehler passiert
+  INNERHALB von `DimScheduleUseCase.computeWindows()` und kam bei DND als ununterscheidbar leere
+  Fensterliste an, sein eigenes `alarmReadFailed` blieb `false` (der eigene `getAllAlarms()`-Zweig
+  wird bei nur-Modus-1 nie betreten) und `fallbackTick()` plante den 6-Stunden-Keep-alive statt des
+  15-Minuten-Retry. Wer den Status wieder wegoptimiert, holt genau das zurück.
 - **Modus 2 braucht `AlarmInfo.shiftStartTime`**, nicht `triggerTime` (Weckzeit, meist vor
   Schichtbeginn wegen Anfahrt) und nicht nur `shiftEndTime`. Gesetzt in
   `AlarmUseCase.createAlarmFromShiftMatch` aus `shiftMatch.calendarEvent.startTime` — exakt
@@ -578,6 +888,10 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   (`DndScheduleReceiver`) — bewusst NICHT mit dem Dimmer-Tick (`REQ_TICK = 7710`,
   `DimScheduleUseCase`) oder der 6h-Wartung (Code 0) zusammengelegt. Zwei fachlich unabhängige
   Features, unabhängig deaktivierbar; ein Bug in einem darf nicht das andere mitreißen.
+- **`DndScheduleUseCase.CONDITION_ID` ist `by lazy`.** Eager ausgewertet scheiterte `Uri.parse()` im
+  Unit-Test-JVM bereits bei der Companion-Initialisierung und riss über die dauerhaft gescheiterte
+  Klassen-Initialisierung auch fremde Tests mit, die die Klasse nur mocken wollten. Produktionsverhalten
+  unverändert.
 - **`ensureZenRule()` prüft `Build.VERSION.SDK_INT` direkt**, nicht nur über `isSupported()` –
   Lint verfolgt die Absicherung für `@RequiresApi`-Aufrufe (`buildAutomaticZenRule()`) nur bei
   einem lokalen, direkten SDK_INT-Vergleich zuverlässig durch mehrere Funktionsebenen.
@@ -643,12 +957,90 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   `else if`-Zweig in `handleAuthenticationSuccess()`, gleiche Gate-Reihenfolge wie
   `proceedPastGates()`.
 
+### Persistenz (DataStore)
+
+- **Stille Degradierung darf nie zur Schreibwahrheit werden.** DataStore liest vor jedem Write
+  erneut; wer einen Lesefehler auf „leer"/„Default" degradiert, speist genau diese Notlage-Leere in
+  den nächsten Read-Modify-Write und überschreibt echte Nutzerdaten. Konkret festgelegt:
+  - **`AlarmRepository`**: ein nicht dekodierbarer `active_alarms`-Wert (oder ein Lesefehler) sperrt
+    die Persistenz für diesen Prozess und sichert das Roh-JSON unter `active_alarms_broken`. Vorher
+    setzte der Init-Load `emptyList()`, erfüllte das Bereit-Signal — und der Delta-Sync hielt jede
+    Schicht für neu und schrieb über Rohdaten UND Direct-Boot-Spiegel. Verloren gingen genau die
+    Alarme, die sich nicht aus dem Kalender rekonstruieren lassen (manuelle), plus der einzige Weg
+    zurück vor der ersten Entsperrung nach einem Reboot. `deleteAllAlarms()` räumt bewusst trotzdem
+    (force): Master-Pause muss den Spiegel wirklich leeren, sonst re-armt der Direct-Boot-Restore
+    pausierte Alarme. Dazu ein Bereit-Signal (`CompletableDeferred`) plus gemeinsamer Mutex für alle
+    Ganzlisten-Schreibpfade — vorher lieferte `getAllAlarms()` im Prozess-Startfenster fälschlich
+    eine leere Liste, und der nachträglich zurückkehrende Init-Load überschrieb Cache, DataStore und
+    Spiegel mit seinem alten Snapshot. Deshalb liest auch `clearInternalAlarms` über
+    `getAllAlarms()`, nicht über `activeAlarms.first()`: sonst wurde KEIN System-Alarm gecancelt,
+    während Repository und Spiegel geleert wurden — der verwaiste Alarm feuerte trotz Master-Pause.
+  - **`EncryptedPreferencesSerializer.readFrom()`** wirft Fehler unverändert weiter, statt still
+    `defaultValue` zu liefern (für DataStore der gültige Ist-Zustand, den der nächste Write über den
+    intakten Ciphertext schreibt). Bewusst **nicht** als `CorruptionException` umgedeutet: ein
+    IO-Fehler oder eine Cancellation dürfen den `corruptionHandler` nicht auslösen, der würde die
+    intakte Datei ersetzen; ein defektes Protobuf meldet der `delegateSerializer` ohnehin selbst.
+    `writeTo()` schreibt einen LEEREN Zustand als 0-Byte-Datei (`readFrom` liest das als „noch
+    nichts gespeichert") — bei unbrauchbarem Keyset scheiterte sonst auch der Ersatz-Write an
+    derselben `aead`-Instanz und der Store blieb lese- UND schreib-tot. Keyset-Neuaufbau bleibt offen.
+  - **`DimRuleRepository`**: `coerceInputValues` gilt für die ANZEIGE, `editRules()` liest **strikt**.
+    Sonst schrieb das nächste `upsert()`/`delete()` — auch an einer völlig anderen Regel — einen auf
+    den Feld-Default gefallenen Anker dauerhaft fest. `upsert`/`delete` laufen als Read-Modify-Write
+    INNERHALB einer einzigen `dataStore.edit{}`-Transaktion (Vorbild `HueConfigRepository`), damit ein
+    Doppel-Tap keine Änderung verliert und ein defektes JSON das Speichern abbricht statt den ganzen
+    Regelbestand zu leeren (inklusive der bedeutungstragenden leeren Fensterliste).
+- **`TinkEncryptionException` wird in `EncryptedDataStoreFactory` als `CorruptionException`
+  übersetzt** (nur die fängt DataStores Selbstheilung), plus `ReplaceFileCorruptionHandler`. Abwägung:
+  ein nicht entschlüsselbarer Token ist ohnehin wertlos — EINE Neuanmeldung ist das kleinere Übel
+  gegenüber einer App, die nie wieder einen Token speichern kann (Endlos-Re-Auth, keine Alarme).
+
+### Gerätewechsel & Konfigurations-Datei (seit v1.23.0)
+
+- **`DeviceLocalFlagsGuard` (erster Schritt in `initializeApp()`, best-effort) setzt beim erkannten
+  Gerätewechsel gerätelokale Flags zurück.** Der `settings`-Store liegt richtigerweise im
+  Android-Backup, enthält aber auch vier „schon abgelehnt"-Markierungen
+  (`battery_prompt_dismissed`, `unused_app_restrictions_dismissed`,
+  `timeoffice_health_prompt_dismissed`, `oem_hint_shown_<OEM>`) **und die Master-Pause**
+  (`master_pause_enabled`/`master_pause_until`). Nach einem Restore fragte die App auf dem neuen
+  Gerät nie wieder nach Akku-Ausnahme und „Pause bei Nichtnutzung" — genau die zwei Einstellungen,
+  die in diesem Projekt nachweislich Wecker verschluckt haben. **Ein selektiver Ausschluss einzelner
+  Schlüssel ist unmöglich: ein Preferences-Store ist EINE Datei** — deshalb ein Wächter über
+  `Build.FINGERPRINT` statt einer Backup-Regel. Zurücksetzen ist harmlos, die Hinweise erscheinen nur,
+  wenn die Einstellung real fehlt; ein unerwartet klingelnder Wecker ist deutlich harmloser als ein
+  unerwartet stummer. **Bewusste Grenze:** fehlt der Marker (Erstinstallation oder Bestandsinstall
+  von vor dieser Version), wird NICHT zurückgesetzt — sonst verliert ein laufender Install seine
+  Abweisungen. Die beiden Backup-Regel-Dateien müssen inhaltlich identisch bleiben, sonst sichert
+  dasselbe Gerät je nach Android-Version Unterschiedliches.
+- **Der Konfigurations-Export (Settings-Tab → „Konfiguration" → „Exportieren"/„Importieren")
+  entscheidet durch AUSSCHLUSS, nicht durch Aufzählen.** Die Stores werden generisch exportiert,
+  `ConfigBackupFilter` nimmt heraus, was nicht mit darf — damit ist eine neue Einstellung automatisch
+  dabei statt beim nächsten Feature stillschweigend zu fehlen. Drei Ausschlussgründe:
+  **Laufzeitzustand** (`active_alarms`, Skip-Marker, Dimmer-Render- und -Korrekturzustand,
+  Wartungs-Zeitstempel und vor allem `master_pause_enabled` — ein importierter Pausenzustand lässt
+  den Wecker STUMM, und niemand sucht die Ursache in einer Importdatei), **Gerätebezug/Zugangsdaten**
+  (Hue-Bridge-Username und -IP, die von diesem Gerät registrierte Zen-Regel-ID, Tokens, Anmeldung,
+  die kontogebundene Kalenderauswahl, der Marker des `DeviceLocalFlagsGuard`, `shift_config` — das
+  geht bewusst über das typisierte Repository) und **gerätelokale Onboarding-Markierungen** (dieselbe
+  Liste wie der Wächter, eine Quelle statt zweier Kataloge). **Der Filter gilt in BEIDE Richtungen:**
+  beim Import wird jeder Schlüssel erneut geprüft, eine handbearbeitete oder ältere Datei kann nichts
+  einschleusen; abgelehnte Schlüssel werden dem Nutzer BENANNT. `exclusionReason()` ist der EINE Ort
+  der Entscheidung, `isExportable()` leitet sich davon ab. **Die Ausschlussliste ist aus einer
+  Inventur ALLER `*PreferencesKey("…")` im Baum abgeleitet, nicht aus den Schlüsseln einiger Pakete:**
+  der erste Wurf war lückenhaft, der erste echte Export enthielt genau drei Schlüssel und ALLE DREI
+  gehörten nicht hinein — darunter `active_alarms`. Wer eine neue Laufzeitgröße einführt, trägt sie
+  hier ein; ein Test hält jede Kategorie fest.
+
 ### Auth
 
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.** Für eine Wecker-App ist
   „leer" die gefährlichste Lüge — nicht von „du hast frei" zu unterscheiden.
 - **GMS-Token-Cache liegt außerhalb des App-Speichers** und überlebt die Deinstallation. Nur
   `GoogleAuthUtil.clearToken()` räumt ihn ab.
+- **`auth_prefs` braucht `corruptionHandler` UND `.catch{}` am `authData`-Flow.** Dort liegt der
+  Zustand, der die ganze App gated (`login_status`/`user_email`): eine beschädigte `preferences_pb`
+  wäre dauerhaft lese- UND schreib-tot gewesen, und ein Upstream-Fehler hätte in den
+  ViewModel-Collectorn die App beendet. Degradation auf „nicht angemeldet" löst einen Re-Login aus —
+  das ist hier der richtige Ausgang.
 - **`onResult` gehört `OAuth2TokenManager.authorize()`** — es feuert auf jedem Weg genau einmal
   (Sofort-Erfolg, Fehler, Dialog via `handlePermissionResult`). Niemand sonst ruft ihn. Ein
   zweiter Aufruf im `AuthUseCase` startete die Wartung doppelt.
@@ -685,9 +1077,45 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Laden gehört ausschließlich dem `CalendarViewModel`** (`refreshData(forceRefresh = true)`
   aktualisiert beides und trägt Fehler in den State). Keinen zweiten Ladepfad einbauen — genau der
   hat den stummen Retry erzeugt.
-- **Endlosschleifen-Bremse in `MainScreen`** (~Zeile 101): automatisches Nachladen nur bei
-  `error == null`. Sonst: Laden scheitert → `isLoading` false → Effect erneut → Liste leer →
-  laden … im Sekundentakt gegen die Google-API (real passiert bei 401). Nicht entfernen.
+- **Endlosschleifen-Bremse im Kalender-`LaunchedEffect` von `MainScreen`** (Bedingung
+  `availableCalendars.isEmpty() && error == null`): automatisches Nachladen nur ohne Fehler. Sonst:
+  Laden scheitert → `isLoading` false → Effect erneut → Liste leer → laden … im Sekundentakt gegen
+  die Google-API (real passiert bei 401). Nicht entfernen.
+- **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — für eine Wecker-App ist „leer" die
+  gefährlichste Lüge, und `syncAlarms()` deutet eine leere Eventliste als „keine Schichten" und
+  löscht ALLE Alarme (System, Repository, Direct-Boot-Spiegel). Vier Stellen sind deshalb festgelegt:
+  `CalendarUseCase.getCalendarEventsWithCache()` wirft bei **Totalausfall** aller angefragten
+  Kalender den ersten Fehler (Teilerfolg bleibt bewusst Erfolg — gleiche Abgrenzung wie
+  `CalendarViewModel.resolveCalendarAuthorizationOutcome()`); `CalendarPreAlarmRefreshWorker` und
+  `AlarmMaintenanceService` haben zusätzlich je ein eigenes Leerlisten-Gate (zweite
+  Verteidigungslinie, weil jeder künftige Aufrufer dieselbe Falle erbt);
+  `CalendarSelectionRepository.getCurrentSelectedCalendarIds()` liest den **DataStore**, nicht den im
+  prozess-kalten Start noch nicht hydrierten `StateFlow` (Startwert `emptySet` hieß „keine Kalender
+  ausgewählt" und verbrauchte den Worker-Job endgültig). Der `StateFlow` bleibt Quelle für reaktive
+  Beobachter.
+- **Ganztägige Termine gehen durch `CalendarEventConverter`** (rein, testbar) und setzen
+  `CalendarEvent.isAllDay`. Der `value` eines `date`-Feldes ist UTC-Mitternacht, in Europe/Berlin also
+  01:00/02:00 lokal — vorher stand „Deine Schicht beginnt um 02:00" in Notification/Vollbild, das
+  DND-Dienstzeit-Fenster begann um 02:00, und wegen des end-exklusiven `end.date` war das Event ~24 h
+  zu lang. Der Konverter leitet den Kalendertag zonenunabhängig aus dem UTC-Wert ab und macht daraus
+  lokale Tagesgrenzen (00:00 bis 23:59 des LETZTEN Tages). **`calculateAlarmTime()` überspringt die
+  Nachtschicht-Vortags-Heuristik bei `isAllDay`**: ein ganztägiger Eintrag hat keinen Schichtbeginn,
+  gegen den „danach" prüfbar wäre. Ohne diesen Zusatz weckte die Standard-Spätschicht (12:30) einen
+  ganzen Tag zu früh — und am Schichttag gar nicht.
+- **Nachgeladen wird immer ein PRÄFIX, nie eine Seite ab Offset.** Der Erst-Ladevorgang holt PRO
+  Kalender die ersten 10 Events; `getCalendarEventsLazy(alle Kalender)` schneidet dagegen aus der
+  sortierten **Vereinigung**. Bei mehr als einem Kalender ist „je Kalender die ersten 10" kein Präfix
+  dieser Vereinigung: die Nachlade-Seite lieferte bereits angezeigte Events erneut, während ein Block
+  dazwischen fehlte. Real: dieselbe Event-Id zweimal in einer `LazyColumn` mit `key = { event.id }` →
+  `IllegalArgumentException "Key … was already used"` → Absturz beim Scrollen; ohne Absturz doppelte
+  Schichten auf Home. Deshalb `offset = 0, maxEvents = bereits angezeigt + limit` — das kostet nichts,
+  weil `getCalendarEventsLazy()` intern ohnehin alles holt und erst danach schneidet.
+  `mergeMoreEvents()` dedupliziert und sortiert zusätzlich defensiv (bei gleicher Id gewinnt die
+  frische Fassung, sonst bliebe eine verschobene Schicht auf der alten Uhrzeit stehen).
+  `loadMoreEvents()` **liest** die `eventLoadGeneration` nur, zieht keine eigene Nummer (Nachladen ist
+  ein Anhänger, kein neuer Ladevorgang — sonst würgt es ein laufendes
+  `loadEventsForSelectedCalendars()` als „überholt" ab) und setzt `isLoadingMoreEvents` auch beim
+  Verwerfen zurück.
 - **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter, kein einfaches
   In-Flight-Flag** (anders als `loadAvailableCalendars()` direkt daneben). Zwei legitime Trigger
   (`observeCalendarSelection()`s Collector UND `refreshData(forceRefresh=true)`, z. B. der
@@ -711,7 +1139,11 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   (05.08.2026), von keinem der 329 Unit-Tests gefangen (sie bilden dieses exakte
   Hilt-Konstruktions-Timing nicht nach). Alle 5 anderen ViewModels mit `init{}`
   (`ShiftViewModel`/`AuthViewModel`/`AlarmViewModel`/`HueViewModel`/`MainViewModel`) wurden
-  geprüft und deklarieren korrekt alles vor `init{}`.
+  geprüft und deklarieren korrekt alles vor `init{}`. In `CalendarViewModel` standen danach noch
+  `isCalendarLoadingInProgress`/`lastCalendarLoadTime` hinter `init{}` — harmlos nur zufällig, weil
+  ihre Initializer (`false`/`0L`) genau den JVM-Feld-Defaults entsprechen; bei einem Nicht-Default
+  oder Objekt-Typ hätte der Initializer nach `init{}` überschrieben, was der synchron gestartete
+  Collector schon gesetzt hat. Jetzt vor `init{}`, neben `eventLoadGeneration`.
 
 ### Schicht-Änderungs-Notification & Pre-Alarm-Refresh (seit v1.20.0)
 
@@ -751,6 +1183,19 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 - **Kernpunkt einmal, konkret, mit dem echten Einsatz.** Für eine Wecker-App heißt das nicht
   „Background-Jobs werden gestoppt", sondern „der Wecker bleibt still". Tiefere Erklärung gehört
   hinter „Warum ist das nötig?", nicht ein zweites Mal auf den Screen.
+- **Ein Hinweistext nennt Karten- und Knopfbeschriftung wortgleich mit der UI, NIE eine Position.**
+  „die Karte darunter" im AUTHORIZATION_LOST-Text zeigte auf die Alarm-Status-Karte; der Knopf
+  „Kalender-Zugriff erneuern" sitzt eine Karte weiter. Positionen verschieben sich beim nächsten
+  Layout-Umbau lautlos, Beschriftungen fallen beim Umbenennen auf.
+- **Beispiele in Hinweistexten aus deklarierten Listen zusammenführen, die ein Test gegen die echte
+  Standardkonfiguration prüft** (`ShiftConfigScreenTextTest`) — der Konfigurations-Hinweis nannte
+  Muster („IMCF, IMCS, IMCN, IMCZ") und behauptete „erkannt wird über die Muster, nicht über den
+  Schichtnamen allein"; beides hatte derselbe Arbeitsdurchgang unwahr gemacht, der den Text einführte.
+  Zwei Bildschirme widersprachen sich (der `ShiftEditDialog` sagte es korrekt). Drift muss auffallen,
+  nicht stumm bleiben.
+- **Deutsche Nutzer-Texte in `UITextConstants` ohne Aufrufer löschen, nicht liegen lassen.** Sie sehen
+  wie aktive UI-Texte aus und werden sonst als Vorlage weitergeschleppt (die Countdown-Texte hatten
+  nach dem Entfernen von `CountdownTimer.kt` nur noch ihre Deklaration).
 
 ### Compose-Layout
 
@@ -758,9 +1203,14 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   der Beschreibungstext die volle Breite und der Schalter landet außerhalb der Karte. Eine feste
   `.width(…dp)` als Pflaster bricht bei schmalem Display oder großer Schrift.
 - **`ButtonDefaults.ContentPadding` = 24dp pro Seite.** In schmalen, geteilten Buttons bleibt zu
-  wenig für die Schrift, und Compose bricht mitten im Wort. Dafür gibt es
-  `ui/components/CompactActionButton.kt` — **nur** für schmale, geteilte Buttons, nicht für
-  ganzbreite, wo ein Zweizeiler gewollt ist.
+  wenig für die Schrift, und Compose bricht mitten im Wort. Dafür gibt es **`CompactButton`** und
+  **`CompactOutlinedButton`** (in `ui/components/CompactActionButton.kt`) — **nur** für schmale,
+  geteilte Buttons, nicht für ganzbreite, wo ein Zweizeiler gewollt ist.
+- **Eine `LazyColumn` in einer `Column` braucht `weight(1f)`.** Ohne sie misst sie sich auf ihre
+  Inhaltshöhe und frisst die gesamte Resthöhe — im `ShiftConfigScreen` war der Knopf „Auf
+  Standardwerte zurücksetzen" darunter dadurch **unerreichbar** (bei fünf Schichten plus der
+  Kürzel-Karte, am Gerät nachgeprüft). Ein zweiter Spacer mit `weight` daneben hilft nicht, er
+  konkurriert nur.
 - **`RadioButton`/`Checkbox` mit `onClick = null` brauchen `heightIn(min = 48.dp)` am Row.**
   Das Muster „ganze Zeile klickbar" (`Modifier.selectable`/`toggleable` am Row, `onClick = null`
   am Knopf) ist richtig — aber der Knopf ist damit **nicht mehr klickbar** und bringt seine
@@ -778,22 +1228,45 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
 
 - **Gradle UND der Emulator sind in dieser Umgebung erreichbar** (verifiziert 15.07.2026 über
   `./gradlew --offline installDebug` → echter Build + Install auf `emulator-5554`, exit 0, ~40s).
-  `--offline` nutzen — der Cache ist durch lokale Builds des Nutzers warm. Selbst bauen,
-  installieren, messen, A/B-testen statt nur durch Inspektion zu verifizieren. `emulator`-Binary
+  `--offline` nutzen — der Cache ist durch lokale Builds des Nutzers warm; **Ausnahmen:
+  `assembleRelease` und `connectedDebugAndroidTest` brauchen Netz** (siehe „Build & Development
+  Commands"). Selbst bauen, installieren, messen, A/B-testen statt nur durch Inspektion zu
+  verifizieren. `emulator`-Binary
   ist nicht auf PATH:
   `C:\Users\Christoph\AppData\Local\Android\Sdk\emulator\emulator.exe`. Bibliotheks-Quelltext bei
   Bedarf trotzdem direkt lesbar: `~/.gradle/caches/modules-2/files-2.1/<group>/…-sources.jar`.
   Details siehe Memory `env-local-build-and-emulator`.
 - **„Warnungen plötzlich weg" ist kein Fortschritt.** `org.gradle.configuration-cache=true`
-  (`gradle.properties:23`): Die Deprecation-Warnungen entstehen in der Konfigurationsphase. Wird
+  (in `gradle.properties`): Die Deprecation-Warnungen entstehen in der Konfigurationsphase. Wird
   der Konfigurations-Cache wiederverwendet, erscheinen sie schlicht nicht neu. Nach jeder Änderung
   an `build.gradle.kts`/`gradle.properties` sind sie wieder da.
 - **Die Warnung lügt:** Ihr Vorschlag, `android.builtInKotlin`/`android.newDsl` zu entfernen und
   auf built-in Kotlin zu migrieren, zerlegt das Dreieck aus KSP 2.x, KGP 2.x und AGP 9.x. Beide
   Flags bleiben auf `false`.
-- **Debug-Build** schreibt VERBOSE ins Datei-Log (`CFAlarmApplication.kt:72`). Release-Logs
-  enthalten **nur WARN+** → erfolgreiche Operationen sind dort unsichtbar. Für Diagnose immer
-  einen Debug-Build verlangen.
+- **Debug-Build** schreibt VERBOSE ins Datei-Log (`CFAlarmApplication.onCreate()`, Variable
+  `fileLogMinPriority`). Release-Logs enthalten **nur WARN+** → erfolgreiche Operationen sind dort
+  unsichtbar. Für Diagnose immer einen Debug-Build verlangen — **Ausnahme**: die
+  Vollbild-Sichtbarkeits-Diagnostik loggt bewusst WARN und ist auch im Release da.
+- **Die CI baut auch den Release-Pfad** (`.github/workflows/ci.yml`: `testDebugUnitTest`, `lintDebug`,
+  `assembleDebug`, dann `lintVitalRelease` + `assembleRelease`). Vorher wäre ein kaputter
+  Release-Build erst beim Ausliefern aufgefallen — und genau dort sitzt mit R8 das Risiko. Ohne
+  Keystore-Secret entsteht `app-release-unsigned.apk`; das ist Absicht (geprüft werden
+  Shrinking/Optimierung und Release-Lint, nicht das Signieren) und kann nicht unbemerkt ausgeliefert
+  werden, weil sich eine unsignierte APK weder installieren noch hochladen lässt. Signiert wird lokal.
+- **Grüne Unit-Tests sind kein Startbeweis.** Der Crash vom 05.08.2026 (Property nach `init{}`) fiel
+  durch 329 grüne Tests und einen grünen Build; gefunden hat ihn erst die Installation. Dafür gibt es
+  jetzt `ColdStartSmokeTest` (`app/src/androidTest/`, drei Fälle: Application kommt hoch, MainActivity
+  erreicht RESUMED, und übersteht einen ZWEITEN Start in derselben Sitzung — deckt nicht-idempotente
+  `initialize()` und dauerhaft gecancelte Singleton-Scopes ab) gegen den **echten, unveränderten
+  Hilt-Graphen**, bewusst ohne `hilt-android-testing` und ohne eigenen Runner: die braucht man nur, um
+  Bindings zu ERSETZEN. Ersetzt trotzdem keinen Gerätetest — mehrere Fehler dieser Runde
+  (Import-Aktualisierung, unerreichbarer Knopf) hat erst das Gerät gezeigt.
 - Debug-SHA-1 ist in der Google Cloud Console eingetragen (verifiziert 14.07.).
 - Getestet wird auf einem echten Gerät **und einem Emulator als Zweitgerät**; Logcat-Auszüge
   kommen vom Nutzer.
+- **Agenten committen nicht selbst in einen gemeinsamen Baum.** In der Härtungs-Runde zu v1.23.0
+  liefen sechs Fix-Pakete parallel im selben Arbeitsverzeichnis; ein Agent hat beim Committen die noch
+  unkommittierten Dateien eines fremden Pakets mitgenommen (der Commit
+  „fix(persistenz): stille Degradierung…" enthält deshalb auch das Paket „Erkennungs-Engine und
+  Musterabgleich"). Künftig: entweder committet der Orchestrator EINMAL nach Abschluss aller Agenten,
+  oder jeder Agent arbeitet in einem eigenen `git worktree`.

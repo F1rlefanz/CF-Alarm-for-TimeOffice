@@ -78,6 +78,7 @@
                 <a href="troubleshooting.html">🆘 Support</a>
 
                 <a href="advanced-setup.html">⚙️ Konfiguration</a>
+                <a href="changelog.html">📋 Changelog</a>
 
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">📱 GitHub</a>
                 <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice" rel="external noopener" target="_blank">📲 Play Store</a>
@@ -97,28 +98,53 @@
             <h3>🚀 Features</h3>
             
             <section>
-                <h4>📅 Google Calendar Integration</h4>
+                <h4>⏰ Wecker aus dem Dienstplan</h4>
                 <ul>
-                    <li><strong>Automatische Alarm-Erstellung</strong> basierend auf Kalenderterminen</li>
-                    <li><strong>Schichtmuster-Erkennung</strong> für Früh-, Spät- und Nachtschichten</li>
-                    <li><strong>Intelligente Weckzeit-Berechnung</strong> mit konfigurierbaren Vorlaufzeiten</li>
+                    <li><strong>Automatische Wecker</strong> aus den Terminen deines TimeOffice-Kalenders – pro Schichttyp eine eigene Weckzeit.</li>
+                    <li><strong>Kürzel-Vorschläge aus deinem Kalender:</strong> Die App zeigt die Termin-Kürzel, für die noch kein Erkennungsmuster existiert (also auch kein Wecker), nach Häufigkeit sortiert. Ein Antippen ordnet ein Kürzel einer Schicht zu. Wichtig für Stationen mit eigenen Kürzeln – geraten wird nichts.</li>
+                    <li><strong>Sagt, warum nichts erkannt wurde:</strong> Statt einer leeren Liste nennt die Startseite den konkreten Grund und den nächsten Schritt.</li>
+                    <li><strong>Nächsten Alarm überspringen</strong> für einen einzelnen Tag, ohne die Automatik abzuschalten.</li>
+                    <li><strong>Stille Schicht:</strong> Schichten wie Rufbereitschaft ohne Ton, Vibration und Vollbild-Wecker – die Weckzeit bleibt aber als Anker für Dimmer und „Nicht stören".</li>
+                    <li><strong>Benachrichtigung bei Schichtänderung,</strong> wenn TimeOffice eine Schicht verschiebt, streicht oder ergänzt.</li>
+                    <li><strong>Schlummer-Dauer</strong> einstellbar (3/5/10/15 Minuten).</li>
+                </ul>
+            </section>
+
+            <section>
+                <h4>🌙 Schicht-Dimmer (Reiter „Dimmen")</h4>
+                <ul>
+                    <li><strong>Dunkelt den Bildschirm rund um deine Schichten ab</strong> – warm und einstellbar, als Herunterfahr-Hilfe vor dem Schlafen, und blendet zur Weckzeit wieder auf.</li>
+                    <li><strong>Kennt deine Schichten:</strong> z. B. „jede Nacht 22–7 Uhr dimmen, außer in Nachtdienst-Nächten", oder ein Fenster relativ zum Schichtende für den Tagschlaf. Dazu ein Nacht-Standard, der ohne eigene Regel funktioniert, und eine Vorschau-Zeitleiste.</li>
+                    <li><strong>Optionaler Bedienungshilfen-Dienst:</strong> Android erlaubt das Abdunkeln nur so. Der Dienst dient <em>ausschließlich</em> dem Dimmen – er liest keine Bildschirminhalte und erfasst keine Eingaben. Du aktivierst ihn selbst und kannst ihn jederzeit abschalten (<a href="privacy.html">Details im Datenschutz</a>).</li>
+                </ul>
+            </section>
+
+            <section>
+                <h4>🔕 „Nicht stören" automatisch (ab Android 11)</h4>
+                <ul>
+                    <li><strong>Zwei unabhängige Auslöser:</strong> „Schlaf-Fenster folgt dem Dimmer" und „Während der Dienstzeit" (Schichtbeginn bis Schichtende laut Kalender).</li>
+                    <li><strong>Rufbereitschaft:</strong> Markierte Schichten beenden „Nicht stören" spätestens zu einer festen Uhrzeit, damit du erreichbar bist.</li>
+                    <li><strong>Was stummgeschaltet wird, entscheidest du</strong> – und dein eigener Wecker klingelt immer. Die App legt dafür einen eigenen, für dich sichtbaren Zeitplan an, statt deine Einstellungen zu überschreiben.</li>
                 </ul>
             </section>
 
             <section>
                 <h4>💡 Philips Hue Integration</h4>
                 <ul>
-                    <li><strong>Intelligente Lichtsteuerung</strong> mit gradueller Helligkeitsanpassung</li>
+                    <li><strong>Licht zum Wecken</strong> mit optionalem Sonnenaufgang (Helligkeit und Farbtemperatur fahren über eine einstellbare Dauer hoch).</li>
                     <li><strong>Bridge-Auto-Discovery</strong> für einfache Einrichtung</li>
+                    <li><strong>Auto-Aus als Zeitplan auf der Bridge</strong> – das Licht geht auch aus, wenn das Handy nicht mehr im Heim-WLAN ist.</li>
                 </ul>
             </section>
 
             <section>
-                <h4>🔋 Performance & Sicherheit</h4>
+                <h4>🔒 Zuverlässigkeit & Sicherheit</h4>
                 <ul>
-                    <li><strong>Batterieoptimiert</strong> mit intelligentem Background-Management</li>
-                    <li><strong>AES-256-GCM Verschlüsselung</strong> für sensitive Daten</li>
-                    <li><strong>Lokale Datenspeicherung</strong> - keine Cloud-Abhängigkeit</li>
+                    <li><strong>Status-Tab als Kontrollstelle:</strong> Karten für Akku-Ausnahme, Androids „App bei Nichtnutzung pausieren", den Schicht-Dimmer-Dienst und die TimeOffice-Zuverlässigkeit – die drei nachgewiesenen Gründe, aus denen ein Wecker ausfällt, sind damit sichtbar statt still.</li>
+                    <li><strong>„Hintergrunddienste pausieren"</strong> (Einstellungen-Tab): ein Schalter für längere Abwesenheit – pausiert Wecker, Dimmer, „Nicht stören" und Hue-Automatik gemeinsam, auch über einen Geräte-Neustart hinweg.</li>
+                    <li><strong>Konfiguration exportieren/importieren:</strong> Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören" als Datei – überlebt eine Neuinstallation und lässt sich an Kolleginnen und Kollegen weitergeben. Anmeldedaten, Token und Hue-Zugangsdaten sind bewusst nicht enthalten.</li>
+                    <li><strong>AES-256-GCM Verschlüsselung</strong> für die gespeicherten Google-Token</li>
+                    <li><strong>Lokale Datenspeicherung</strong> – keine eigenen Server, keine Analytics</li>
                 </ul>
             </section>
 
@@ -127,7 +153,7 @@
                 <ul>
                     <li><strong>Google Account</strong> für Calendar-Integration</li>
                     <li><strong>TimeOffice:</strong> Dienstplan an Google Kalender aktivieren</li>
-                    <li><strong>Ersteinrichtung</strong> durchführen</li>
+                    <li><strong>Ersteinrichtung</strong> durchführen – die App führt durch Akku-Ausnahme und die weiteren Hintergrund-Einstellungen</li>
                 </ul>
             </section>
         </article>
@@ -139,7 +165,7 @@
                 <a href="privacy.html">Datenschutz</a>
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
-                <a href="mailto:support@cf-alarm.app">Kontakt</a>
+                <a href="mailto:cfischer@csj.de">Kontakt</a>
             </nav>
             <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
             <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>

@@ -62,11 +62,54 @@
                 <li><strong>Tipp:</strong> Drücken Sie den Bridge-Button vor der Koppelung</li>
             </ul>
 
-            <h4>⏰ Alarm funktioniert nicht</h4>
+            <h4>⏰ Wecker klingelt nicht – die drei nachgewiesenen Ursachen</h4>
+            <p>Alle drei sind in der Praxis wirklich aufgetreten, und alle drei liegen <em>außerhalb</em> der App selbst. Der Status-Tab der App zeigt für jede eine eigene Karte – dort zuerst nachsehen.</p>
+
             <ul>
-                <li><strong>Problem:</strong> Keine automatischen Alarme</li>
-                <li><strong>Lösung:</strong> Deaktivieren Sie die Batterieoptimierung für CF Alarm</li>
-                <li><strong>Android:</strong> Einstellungen → Apps → CF Alarm → Akku → Nicht optimieren</li>
+                <li>
+                    <strong>Ursache 1 – Akku-Optimierung</strong>
+                    <ul>
+                        <li><strong>Symptom:</strong> Wecker klingeln unregelmäßig oder gar nicht, obwohl die App Alarme anzeigt.</li>
+                        <li><strong>Prüfen:</strong> Status-Tab → Karte „Akku-Ausnahme". Rot heißt: keine Ausnahme erteilt.</li>
+                        <li><strong>Tun:</strong> Android-Einstellungen → Apps → CF Alarm → Akku → „Uneingeschränkt" bzw. nicht optimieren. Bei OnePlus/Xiaomi/Huawei zusätzlich Autostart bzw. „Geschützte Apps".</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Ursache 2 – Androids „App bei Nichtnutzung pausieren"</strong>
+                    <ul>
+                        <li><strong>Symptom:</strong> Nach einigen Tagen, in denen die App nicht geöffnet wurde, klingelt gar nichts mehr. Das ist die tückischste Ursache: Android stoppt die App zwangsweise und <strong>löscht dabei die schon gesetzten Wecker</strong>, ohne Meldung.</li>
+                        <li><strong>Prüfen:</strong> Status-Tab → Karte „Nicht verwendete Apps". Alternativ Android-Einstellungen → Apps → CF Alarm – dort steht der Schalter.</li>
+                        <li><strong>Tun:</strong> „App bei Nichtnutzung pausieren" ausschalten. Die App fragt bei der Ersteinrichtung danach; wer das übersprungen hat, holt es hier nach.</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Ursache 3 – TimeOffice selbst, die Kette davor</strong>
+                    <ul>
+                        <li><strong>Symptom:</strong> Der Wecker klingelt zuverlässig, aber zur <em>alten</em> Schicht: eine Änderung oder Krankschreibung, die in TimeOffice längst steht, kommt nicht an. CF Alarm liest den Dienstplan aus einem Kalender, den TimeOffice füllt – bleibt dieser Sync stehen, arbeitet CF Alarm korrekt mit veralteten Daten.</li>
+                        <li><strong>Prüfen:</strong> Status-Tab → Karte „TimeOffice-Zuverlässigkeit" (zeigt die Akku-Ausnahme von TimeOffice). Gegenprobe: Steht die Änderung in der Google-Kalender-App im TimeOffice-Kalender? Wenn nicht, liegt es an TimeOffice, nicht an CF Alarm.</li>
+                        <li><strong>Tun:</strong> Über den Knopf „TimeOffice-Einstellungen öffnen" (oder Android-Einstellungen → Apps → TimeOffice) dort „Akkunutzung" auf „Uneingeschränkt" stellen und „App bei Nichtnutzung pausieren" ausschalten. TimeOffice danach einmal öffnen, damit es synchronisiert.</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h4>🔎 „Keine Schicht erkannt"</h4>
+            <ul>
+                <li><strong>Die App nennt den Grund selbst:</strong> Auf dem Home-Tab steht statt einer leeren Liste, woran es liegt – kein Kalender gewählt, Kalender-Zugriff abgelaufen, keine Termine, keine aktiven Schichttypen, oder: Termine gefunden, aber kein Erkennungsmuster passt (dann werden die Termintitel genannt, die wirklich im Kalender stehen).</li>
+                <li><strong>Passt kein Muster</strong> (der Normalfall auf einer anderen Station als der, für die die Vorgaben gedacht sind): Wecker-Tab → „Schichttypen verwalten". Ganz oben steht die Karte „Diese Kürzel stehen in deinem Kalender" – die App zeigt dort die Kürzel deines echten Dienstplans, für die es noch kein Muster gibt. Antippen, Schicht auswählen, fertig; das Kürzel wird als Erkennungsmuster ergänzt und die Wecker werden sofort neu gesetzt.</li>
+                <li><strong>Erkannt wird über die Muster oder den Schichtnamen</strong> (ab zwei Zeichen), und das jeweils als eigenes Wort im Termintitel. Welche Muster eine Schicht hat, steht in ihrer Karte in der Liste.</li>
+            </ul>
+
+            <h4>🌙 Bildschirm wird nicht abgedunkelt</h4>
+            <ul>
+                <li><strong>Problem:</strong> Der Schicht-Dimmer dimmt nicht, obwohl der Bedienungshilfen-Dienst auf „An" steht.</li>
+                <li><strong>Prüfen:</strong> Status-Tab → Karte „Schicht-Dimmer".</li>
+                <li><strong>Tun:</strong> Bei einer außerhalb des Play Stores installierten APK blockiert Android 13+ Bedienungshilfen-Dienste, bis man sie ausdrücklich freigibt: Android-Einstellungen → Apps → CF Alarm → ⋮ (Menü oben rechts) → „Eingeschränkte Einstellungen zulassen", danach den Dienst erneut einschalten.</li>
+            </ul>
+
+            <h4>🤫 Es klingelt nichts, obwohl alles richtig eingestellt ist</h4>
+            <ul>
+                <li><strong>Prüfen:</strong> Ist im Einstellungen-Tab „Hintergrunddienste pausieren" noch aktiv? Dieser Schalter pausiert absichtlich alles, auch über einen Neustart hinweg.</li>
+                <li><strong>Ebenfalls prüfen (Wecker-Tab):</strong> War für diesen Tag „Nächsten Alarm überspringen" gesetzt? Und ist die betroffene Schicht als still markiert – unter „Schichttypen verwalten" → Schicht antippen? Eine stille Schicht klingelt bewusst nicht.</li>
             </ul>
 
             <h3>📞 Support Kontakte</h3>
@@ -83,7 +126,7 @@
                 <a href="privacy.html">Datenschutz</a>
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
-                <a href="mailto:support@cf-alarm.app">Kontakt</a>
+                <a href="mailto:cfischer@csj.de">Kontakt</a>
             </div>
             <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
             <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>

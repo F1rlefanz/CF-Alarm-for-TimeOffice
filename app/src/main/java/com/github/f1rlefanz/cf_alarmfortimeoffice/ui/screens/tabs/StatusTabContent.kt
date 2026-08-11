@@ -63,6 +63,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
+import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
@@ -165,6 +166,10 @@ fun StatusTabContent(
         )
 
         // Vollbild-Berechtigung: ohne sie kommt der Weck-Screen nie hoch
+        NotificationsEnabledCard()
+
+        Spacer(modifier = Modifier.height(SpacingConstants.SPACING_MEDIUM))
+
         FullScreenIntentCard()
 
         // Akku-Ausnahme: ohne sie darf Android die 6h-Wartung und die exakten Wecker-Alarme
@@ -200,6 +205,96 @@ fun StatusTabContent(
         
         // Cache-Statistiken und Offline-Status
         CacheStatusCard(calendarViewModel = calendarViewModel)
+    }
+}
+
+/**
+ * Meldet, ob die App ueberhaupt Benachrichtigungen zeigen darf - die Voraussetzung fuer ALLES
+ * daran, inklusive der Vollbild-Karte darunter.
+ *
+ * WARUM DIESE KARTE EXISTIERT (am Emulator am 11.08.2026 im echten Zustand gesehen): Sind
+ * Benachrichtigungen blockiert, klingelt der Wecker trotzdem - der Vordergrunddienst laeuft, Ton
+ * und Vibration laufen -, aber seine Benachrichtigung wird unterdrueckt UND der Full-Screen-Intent
+ * abgelehnt. Der Nutzer hat damit KEINE Oberflaeche, um den Wecker zu stoppen oder zu schlummern:
+ * kein Weck-Bildschirm, keine Knoepfe, nichts. Der einzige Ausweg ist "App beenden" in den
+ * Systemeinstellungen. Genau dieser Zustand entsteht ohne Zutun, wenn der Nutzer die einmalige
+ * Abfrage (MainActivity, beim ersten Erreichen des Hauptbereichs) ablehnt oder die Berechtigung
+ * spaeter entzieht - danach fragt die App nie wieder.
+ *
+ * Deshalb die Karte, und deshalb steht sie VOR der Vollbild-Karte: ohne Benachrichtigungen ist
+ * deren Aussage bedeutungslos.
+ *
+ * Wie die Karten daneben wird der Zustand bei jedem ON_RESUME frisch gelesen - der Nutzer kann ihn
+ * ausserhalb der App aendern, und danach muss die Karte stimmen.
+ */
+@Composable
+private fun NotificationsEnabledCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var enabled by remember {
+        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (enabled) Icons.Default.CheckCircle else Icons.Default.Error,
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = if (enabled)
+                    MaterialTheme.colorScheme.success
+                else
+                    MaterialTheme.colorScheme.error
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Benachrichtigungen",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (enabled) {
+                        "Erlaubt — Weck-Bildschirm und Wecker-Knöpfe können erscheinen"
+                    } else {
+                        "⚠️ Blockiert — der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm " +
+                            "und ohne Knöpfe zum Stoppen oder Schlummern"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (!enabled) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    SettingsLinkButton(
+                        onClick = { openAppNotificationSettings(context) },
+                        text = "Einstellung öffnen"
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -781,6 +876,22 @@ private fun checkFullScreenIntentAllowed(context: android.content.Context): Bool
         // < API 34: Die Berechtigung wird mit der Installation gewaehrt und nicht entzogen.
         true
     }
+
+/**
+ * Fuehrt auf die Benachrichtigungs-Einstellungen DIESER App. Bewusst nicht die
+ * Laufzeit-Berechtigungsabfrage: die zeigt Android nach einer Ablehnung gar nicht mehr an, der Weg
+ * ueber die Einstellungen ist dann der einzige, der wirklich funktioniert.
+ */
+private fun openAppNotificationSettings(context: android.content.Context) {
+    try {
+        context.startActivity(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        )
+    } catch (e: Exception) {
+        Logger.e(LogTags.UI, "❌ Benachrichtigungs-Einstellungen nicht erreichbar", e)
+    }
+}
 
 private fun openFullScreenIntentSettings(context: android.content.Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return

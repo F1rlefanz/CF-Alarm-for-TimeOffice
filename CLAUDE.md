@@ -229,6 +229,20 @@ Siehe auch Memory `project_alarm_ux_rebuild.md`.
   (sonst sind sie nirgends persistiert). Bewusst NICHT in datengetriebenen Aufräumzweigen und nicht an
   `deleteAlarm(id)`: dort räumt der `BootReceiver` abgelaufene Alarme weg — und der Ursprungsalarm
   eines schwebenden Snooze IST abgelaufen.
+- **Blockierte Benachrichtigungen sind ein WECKER OHNE OBERFLAECHE — und das muss sowohl sichtbar
+  als auch im Log auswertbar sein.** Sind Benachrichtigungen fuer die App aus, laeuft
+  `AlarmSoundService` weiter (Ton, Vibration), aber seine Notification wird unterdrueckt UND der
+  Full-Screen-Intent abgelehnt: kein Weck-Bildschirm, keine Stopp-/Schlummer-Knoepfe, einziger
+  Ausweg „App beenden" in den Systemeinstellungen. Am Emulator im echten Zustand gesehen
+  (11.08.2026). Der Zustand entsteht ohne Zutun, wenn der Nutzer die EINMALIGE Abfrage ablehnt
+  (`MainActivity.checkNotificationPermission()`, `LaunchedEffect` beim ersten Erreichen des
+  Hauptbereichs) oder die Berechtigung spaeter entzieht — danach fragt die App nie wieder. Deshalb
+  zwei Dinge: die Status-Karte `NotificationsEnabledCard` steht **VOR** `FullScreenIntentCard`
+  (ohne Benachrichtigungen ist deren Aussage bedeutungslos) und fuehrt per
+  `ACTION_APP_NOTIFICATION_SETTINGS` in die Einstellung — die Laufzeit-Abfrage zeigt Android nach
+  einer Ablehnung gar nicht mehr; und `AlarmSoundService` loggt direkt nach `startForeground()` ein
+  **WARN** (Release-Logs enthalten nur WARN+), sonst ist der Fall im Log von einem funktionierenden
+  Wecker nicht zu unterscheiden.
 - **Kein `startActivity()` aus dem AlarmReceiver**: AlarmManager-Broadcasts stehen nicht auf der
   Exemption-Liste für Background-Activity-Starts. Einziger Weg: `setFullScreenIntent()`.
 - **`_alarmActive = true` VOR `startForeground()`** — sonst schließt sich das Vollbild sofort.

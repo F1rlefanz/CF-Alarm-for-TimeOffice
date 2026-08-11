@@ -17,6 +17,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -172,6 +173,23 @@ class AlarmSoundService : Service() {
                 val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId, snoozeMinutes)
                 startForeground(NOTIFICATION_ID, notification)
                 Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
+
+                // DIAGNOSE, die im Release-Log landen MUSS (WARN): sind Benachrichtigungen
+                // blockiert, laeuft dieser Dienst weiter - Ton und Vibration kommen -, aber seine
+                // Notification wird unterdrueckt UND der Full-Screen-Intent abgelehnt. Der Nutzer
+                // hat dann KEINE Oberflaeche, um den Wecker zu stoppen oder zu schlummern; der
+                // einzige Ausweg ist "App beenden" in den Systemeinstellungen. Am Emulator im
+                // echten Zustand gesehen (11.08.2026), und ohne diese Zeile war der Fall im Log
+                // nicht von einem funktionierenden Wecker zu unterscheiden. Der Status-Tab hat
+                // dafuer eine eigene Karte; hier geht es um die nachtraegliche Auswertbarkeit.
+                if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "⚠️ WECKER OHNE OBERFLAECHE: Benachrichtigungen sind fuer diese App " +
+                            "blockiert - Ton laeuft, aber Weck-Bildschirm und Stopp-/Schlummer-" +
+                            "Knoepfe erscheinen NICHT. Nur ueber die Systemeinstellungen zu beheben."
+                    )
+                }
 
                 // Start alarm sound and vibration
                 requestAudioFocus()

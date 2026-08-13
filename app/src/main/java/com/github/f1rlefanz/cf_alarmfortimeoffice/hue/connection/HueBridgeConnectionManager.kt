@@ -19,6 +19,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,6 +35,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
@@ -113,6 +115,13 @@ class HueBridgeConnectionManager private constructor(
         private val CONNECTION_CACHE_VALIDITY = 30.minutes  // Extended from 5 minutes
         private val FOREGROUND_HEALTH_CHECK_INTERVAL = 5.minutes  // Only when app visible
         private val BACKGROUND_HEALTH_CHECK_INTERVAL = 30.minutes  // Rare background checks
+
+        /**
+         * Deckel fuer einen Versuch, den die Subnetz-Heuristik fuer aussichtslos haelt.
+         * Deutlich kuerzer als die 10s von OkHttp: wer wirklich ausser Haus ist, soll nicht
+         * warten - aber eine Bridge hinter einem Router antwortet in Bruchteilen davon.
+         */
+        private val OFF_SUBNET_PROBE_TIMEOUT = 3.seconds
     }
     
     // Use WeakReference to prevent memory leaks
@@ -297,7 +306,15 @@ class HueBridgeConnectionManager private constructor(
                 // 30-min cache should survive the trip so no needless reconnect/health-check
                 // cycle fires the moment Wi-Fi is back, and the UI doesn't flash a misleading
                 // persistent error banner while just out of range.
-                if (!isBridgeReachableNow(currentState.bridgeIp)) {
+                // Die Subnetz-Pruefung ist ein HINWEIS, kein Urteil - deshalb hier kein blindes
+                // Abbrechen mehr, sondern ein kurz gedeckelter echter Versuch (siehe
+                // [probeBridge]: Gast-WLAN/VLAN/Mesh/Doppel-NAT/Emulator erreichen die Bridge,
+                // ohne im selben Subnetz zu liegen). Nur wenn AUCH der scheitert, gilt sie als
+                // unerreichbar. Der teure Fall bleibt damit billig: wer wirklich ausser Haus
+                // ist, wartet OFF_SUBNET_PROBE_TIMEOUT statt der vollen 10s.
+                if (!isBridgeReachableNow(currentState.bridgeIp) &&
+                    !probeBridge(currentState.bridgeIp, currentState.username)
+                ) {
                     Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Cached bridge ${currentState.bridgeIp} not reachable from current network, skipping live connection attempt")
                     throw IllegalStateException("Bridge unreachable: not on the bridge's local network (${currentState.bridgeIp})")
                 }
@@ -609,23 +626,77 @@ class HueBridgeConnectionManager private constructor(
     }
 
     /**
-     * INTERNAL: Validate connection credentials against bridge
+     * INTERNAL: Fragt die Bridge WIRKLICH - [isBridgeReachableNow] ist dabei nur ein Hinweis
+     * darauf, wie lange sich das Warten lohnt, NICHT das Urteil.
+     *
+     * **Warum das wichtig ist:** Die Subnetz-Prüfung verlangt, dass das Gerät eine eigene IPv4
+     * im selben Subnetz wie die Bridge hat. Das ist im Normalfall („zu Hause im WLAN" gegen
+     * „unterwegs") eine gute, billige Abkürzung — aber es ist eine HEURISTIK, und sie liefert
+     * Falsch-Negative überall dort, wo ein Router zwischen zwei erreichbaren Netzen vermittelt:
+     * Gast-WLAN, getrenntes VLAN, Mesh-/Repeater-Setups mit eigenem Subnetz, Doppel-NAT — und
+     * der Android-Emulator, der über NAT (10.0.2.x) durchaus ins Heimnetz routet.
+     *
+     * Vorher war die Heuristik ein VETO **vor** dem echten Test, und genau das ist am
+     * 13.08.2026 am Emulator aufgeschlagen: das Pairing bekam eine HTTPS **200** von der
+     * Bridge, und 7 ms später verwarf `validateConnectionCredentials()` dieselbe Bridge mit
+     * „not reachable from current network". Der Nutzer sah „Bridge connection validation
+     * failed" und hatte keinen Weg, das zu übergehen — eine antwortende Bridge, abgelehnt von
+     * einer Vermutung über sie.
+     *
+     * Der echte Request ist das einzige belastbare Urteil. Die Heuristik entscheidet nur noch,
+     * ob wir dem Versuch das volle OkHttp-Timeout (10 s) zugestehen oder ihn nach
+     * [OFF_SUBNET_PROBE_TIMEOUT] abschneiden. Damit bleibt der ursprüngliche Zweck erhalten —
+     * kein langer Hänger, wenn man tatsächlich außer Haus ist — ohne eine erreichbare Bridge
+     * auszusperren.
      */
-    private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean {
-        if (!isBridgeReachableNow(bridgeIp)) {
-            Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: $bridgeIp not reachable from current network (off home Wi-Fi or wrong subnet), skipping bridge connection")
-            return false
+    private suspend fun probeBridge(bridgeIp: String, username: String): Boolean {
+        val sameSubnet = isBridgeReachableNow(bridgeIp)
+        if (!sameSubnet) {
+            Logger.w(
+                LogTags.HUE_BRIDGE,
+                "⚠️ BRIDGE-MANAGER: $bridgeIp liegt in keinem lokalen IPv4-Subnetz dieses Geraets " +
+                    "(vermutlich ausser Haus) - Versuch trotzdem, gedeckelt auf ${OFF_SUBNET_PROBE_TIMEOUT.inWholeSeconds}s"
+            )
         }
-
         return try {
-            apiClient.getBridgeConfig(bridgeIp, username)
-            Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")
-            true
+            if (sameSubnet) {
+                apiClient.getBridgeConfig(bridgeIp, username)
+                Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")
+                true
+            } else {
+                // withTimeoutOrNull statt withTimeout: ein Ablauf ist hier ein normales
+                // Ergebnis ("nicht erreichbar"), kein Fehler.
+                val ok = withTimeoutOrNull(OFF_SUBNET_PROBE_TIMEOUT) {
+                    apiClient.getBridgeConfig(bridgeIp, username)
+                    true
+                }
+                if (ok == true) {
+                    Logger.i(
+                        LogTags.HUE_BRIDGE,
+                        "✅ BRIDGE-MANAGER: Bridge trotz fremden Subnetzes erreichbar - die Heuristik lag falsch, " +
+                            "der echte Request entscheidet"
+                    )
+                    true
+                } else {
+                    Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: $bridgeIp auch im Kurzversuch nicht erreichbar")
+                    false
+                }
+            }
+        } catch (e: CancellationException) {
+            // Weiterwerfen: eine Cancellation ist keine Aussage ueber die Bridge, sondern das
+            // Ende der umgebenden Coroutine (siehe CLAUDE.md, "Fehlerbehandlung").
+            throw e
         } catch (e: Exception) {
             Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Connection validation failed: ${e.message}")
             false
         }
     }
+
+    /**
+     * INTERNAL: Validate connection credentials against bridge
+     */
+    private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean =
+        probeBridge(bridgeIp, username)
     
     /**
      * OPTIMIZATION: Smart health monitoring - Event-driven instead of continuous polling

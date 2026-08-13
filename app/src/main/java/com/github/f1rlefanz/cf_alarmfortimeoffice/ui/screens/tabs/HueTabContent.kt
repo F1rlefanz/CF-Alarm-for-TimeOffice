@@ -39,11 +39,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
@@ -60,6 +61,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.AnimatedDisc
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import kotlinx.coroutines.launch
+
+/**
+ * Aktionen des Hue-Tabs, die den lokalen Netzwerkzugriff brauchen (ab Android 16 /
+ * ACCESS_LOCAL_NETWORK). Bewusst ein Enum und kein Lambda: Nur so ueberlebt die gemerkte Absicht
+ * einen Activity-Neuaufbau, waehrend der Berechtigungsdialog offen steht (siehe Kommentar an
+ * `pendingAction` in [HueTabContent]).
+ */
+private enum class PendingHueAction { VALIDATE, DISCOVER, PAIR }
 
 /**
  * Fixed Hue Tab Content with proper scrolling and layout
@@ -75,10 +84,24 @@ fun HueTabContent(
     onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val uiState by hueViewModel.uiState.collectAsState()
-    val discoveryStatus by hueViewModel.discoveryStatus.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: Beide Flows sind reine Anzeige-Zustaende
+    // dieses Tabs. Mit der Lifecycle-Variante ruht das Abo unterhalb von STARTED, statt im
+    // Hintergrund weiter Recompositions auszuloesen; beim Zurueckkehren liefert der StateFlow
+    // sofort seinen aktuellen Wert. Nichts hier loest einen Seiteneffekt aus, der im Hintergrund
+    // laufen muesste - der Berechtigungsdialog haelt die Activity ohnehin auf STARTED.
+    val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
+    val discoveryStatus by hueViewModel.discoveryStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var pendingHueAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    // Die nach Erteilung von ACCESS_LOCAL_NETWORK auszufuehrende Aktion als SPEICHERBARE Absicht,
+    // nicht als Lambda in `remember`: Waehrend der System-Berechtigungsdialog offen steht, kann die
+    // Activity neu aufgebaut werden (Rotation - MainActivity hat weder screenOrientation noch
+    // configChanges). Ein gemerktes Lambda ist danach weg, und "Zulassen" fuehrte zu einem stillen
+    // No-op: Berechtigung da, aber die Suche startete nicht und es kam keine Meldung. Enum + Bridge-Id
+    // ueberleben den Neuaufbau in rememberSaveable; die Bridge selbst wird ueber ihre Id wieder aus
+    // uiState.discoveredBridges geholt (das ViewModel ueberlebt die Rotation ohnehin).
+    var pendingAction by rememberSaveable { mutableStateOf<PendingHueAction?>(null) }
+    var pendingBridgeId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(hueViewModel) {
         hueViewModel.userMessages.collect { message ->
@@ -86,26 +109,56 @@ fun HueTabContent(
         }
     }
 
+    // EINE Abbildung Absicht -> ViewModel-Aufruf, genutzt von beiden Wegen (Berechtigung liegt schon
+    // vor ODER wurde gerade im Dialog erteilt) - damit koennen die beiden Wege nicht auseinanderlaufen.
+    fun executeHueAction(action: PendingHueAction, bridgeId: String?) {
+        when (action) {
+            PendingHueAction.VALIDATE -> hueViewModel.validateBridgeConnection()
+            PendingHueAction.DISCOVER -> hueViewModel.discoverBridges()
+            PendingHueAction.PAIR -> {
+                val bridge = uiState.discoveredBridges.firstOrNull { it.id == bridgeId }
+                if (bridge != null) {
+                    hueViewModel.setupBridge(bridge)
+                } else {
+                    hueViewModel.setError(
+                        "Die Bridge steht nicht mehr in der Trefferliste. Bitte erneut suchen und dann verbinden."
+                    )
+                }
+            }
+        }
+    }
+
     val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            pendingHueAction?.invoke()
+            val action = pendingAction
+            if (action != null) {
+                executeHueAction(action, pendingBridgeId)
+            } else {
+                // Kein stiller No-op: Ohne gemerkte Absicht (z. B. Prozesstod waehrend des Dialogs)
+                // muss der Nutzer erfahren, dass die Berechtigung da ist und er nur nochmal tippen muss.
+                hueViewModel.setError(
+                    "Netzwerkzugriff erteilt. Bitte die gewünschte Aktion noch einmal antippen."
+                )
+            }
         } else {
             hueViewModel.setError("Lokaler Netzwerkzugriff verweigert. Bitte in den Android-Einstellungen erteilen.")
         }
-        pendingHueAction = null
+        pendingAction = null
+        pendingBridgeId = null
     }
 
-    fun requireLocalNetworkPermission(action: () -> Unit) {
+    fun requireLocalNetworkPermission(action: PendingHueAction, bridgeId: String? = null) {
         if (Build.VERSION.SDK_INT >= 37 &&
             context.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK")
                 != PackageManager.PERMISSION_GRANTED
         ) {
-            pendingHueAction = action
+            pendingAction = action
+            pendingBridgeId = bridgeId
             localNetworkPermissionLauncher.launch("android.permission.ACCESS_LOCAL_NETWORK")
         } else {
-            action()
+            executeHueAction(action, bridgeId)
         }
     }
 
@@ -238,7 +291,7 @@ fun HueTabContent(
             item {
                 BridgeConnectionStatusCard(
                     connectionInfo = uiState.bridgeConnectionInfo,
-                    onValidateConnection = { requireLocalNetworkPermission { hueViewModel.validateBridgeConnection() } }
+                    onValidateConnection = { requireLocalNetworkPermission(PendingHueAction.VALIDATE) }
                 )
             }
         }
@@ -257,9 +310,9 @@ fun HueTabContent(
             item {
                 BridgeDiscoveryCard(
                     discoveredBridges = uiState.discoveredBridges,
-                    onDiscoverBridges = { requireLocalNetworkPermission { hueViewModel.discoverBridges() } },
+                    onDiscoverBridges = { requireLocalNetworkPermission(PendingHueAction.DISCOVER) },
                     onConnectToBridge = { bridge ->
-                        requireLocalNetworkPermission { hueViewModel.setupBridge(bridge) }
+                        requireLocalNetworkPermission(PendingHueAction.PAIR, bridge.id)
                     }
                 )
             }
@@ -301,6 +354,7 @@ private fun ConnectedManagementCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
+                    // dekorativ: "Bridge verbunden" steht direkt daneben
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.success,
                     modifier = Modifier.size(32.dp)
@@ -353,6 +407,7 @@ private fun ConnectedManagementCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -396,6 +451,7 @@ private fun QuickStatItem(
     ) {
         Icon(
             imageVector = icon,
+            // dekorativ: Wert und Beschriftung stehen direkt darunter
             contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.primary
@@ -456,6 +512,8 @@ private fun BridgeConnectionStatusCard(
                         neverConfigured -> Icons.Default.Lightbulb
                         else -> Icons.Default.Error
                     },
+                    // dekorativ: der Zustand steht als Text daneben ("Verbunden" / "Noch keine
+                    // Bridge eingerichtet" / "Nicht verbunden"), das Icon spiegelt ihn nur
                     contentDescription = null,
                     tint = when {
                         isConnected -> MaterialTheme.colorScheme.success
@@ -514,6 +572,7 @@ private fun BridgeConnectionStatusCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
+                            // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
@@ -563,6 +622,7 @@ private fun BridgeDiscoveryCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -589,6 +649,7 @@ private fun BridgeDiscoveryCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
@@ -653,6 +714,7 @@ private fun BridgeConnectionCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.FlashOn,
+                    // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -694,6 +756,7 @@ private fun ConnectedFeaturesCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
+                    // dekorativ: "🎉 Erfolgreich verbunden!" steht direkt darunter
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.success,
                     modifier = Modifier.size(48.dp) // Bigger celebration icon
@@ -734,6 +797,7 @@ private fun ConnectedFeaturesCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )

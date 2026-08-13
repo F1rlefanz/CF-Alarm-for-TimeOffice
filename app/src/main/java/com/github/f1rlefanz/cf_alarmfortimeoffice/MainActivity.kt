@@ -12,12 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
@@ -97,7 +97,14 @@ class MainActivity : ComponentActivity() {
                 ) {
                     // MEMORY LEAK FIX: Consolidated State Collection für MainActivity
                     // Reduziert excessive Recompositions durch weniger collectAsState() calls
-                    val authState by authViewModel.uiState.collectAsState()
+                    //
+                    // collectAsStateWithLifecycle, nicht collectAsState: authState waehlt nur den
+                    // anzuzeigenden Screen (loading/login/calendar_auth/main). Unterhalb von
+                    // STARTED gibt es nichts zu zeichnen, das Sammeln darf also pausieren; der
+                    // StateFlow ist konfliert und liefert beim Zurueckkehren sofort den aktuellen
+                    // Wert. Der Auto-Re-Auth-Pfad haengt NICHT hieran - der sammelt separat und
+                    // bewusst erst ab RESUMED (repeatOnLifecycle unten).
+                    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
 
                     // AUTO-RE-AUTH: Verliert die App das Token zur Laufzeit (401/403 -> invalidate),
                     // meldet das AuthViewModel das hier - denn den Zustimmungsdialog kann nur eine

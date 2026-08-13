@@ -55,44 +55,6 @@ class ShiftUseCase @Inject constructor(
     override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = 
         shiftConfigRepository.getCurrentShiftConfig()
     
-    override suspend fun addShiftDefinition(definition: ShiftDefinition): Result<Unit> = 
-        SafeExecutor.safeExecute("ShiftUseCase.addShiftDefinition") {
-            val currentConfig = shiftConfigRepository.getCurrentShiftConfig().getOrThrow()
-            val updatedDefinitions = currentConfig.definitions + definition
-            val updatedConfig = currentConfig.copy(definitions = updatedDefinitions)
-            
-            shiftConfigRepository.saveShiftConfig(updatedConfig).getOrThrow()
-            
-            // SINGLETON OPTIMIZATION: Clear all caches when definitions change
-            invalidateAllCaches()
-        }
-    
-    override suspend fun updateShiftDefinition(definition: ShiftDefinition): Result<Unit> = 
-        SafeExecutor.safeExecute("ShiftUseCase.updateShiftDefinition") {
-            val currentConfig = shiftConfigRepository.getCurrentShiftConfig().getOrThrow()
-            val updatedDefinitions = currentConfig.definitions.map { existing ->
-                if (existing.id == definition.id) definition else existing
-            }
-            val updatedConfig = currentConfig.copy(definitions = updatedDefinitions)
-            
-            shiftConfigRepository.saveShiftConfig(updatedConfig).getOrThrow()
-            
-            // SINGLETON OPTIMIZATION: Clear all caches when definitions change
-            invalidateAllCaches()
-        }
-    
-    override suspend fun deleteShiftDefinition(definitionId: String): Result<Unit> = 
-        SafeExecutor.safeExecute("ShiftUseCase.deleteShiftDefinition") {
-            val currentConfig = shiftConfigRepository.getCurrentShiftConfig().getOrThrow()
-            val updatedDefinitions = currentConfig.definitions.filter { it.id != definitionId }
-            val updatedConfig = currentConfig.copy(definitions = updatedDefinitions)
-            
-            shiftConfigRepository.saveShiftConfig(updatedConfig).getOrThrow()
-            
-            // SINGLETON OPTIMIZATION: Clear all caches when definitions change
-            invalidateAllCaches()
-        }
-    
     override suspend fun recognizeShiftsInEvents(events: List<CalendarEvent>): Result<List<ShiftMatch>> = 
         SafeExecutor.safeExecute("ShiftUseCase.recognizeShiftsInEvents") {
             val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)

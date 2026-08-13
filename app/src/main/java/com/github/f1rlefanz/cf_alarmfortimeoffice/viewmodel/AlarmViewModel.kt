@@ -409,12 +409,13 @@ class AlarmViewModel @Inject constructor(
         const val MANUAL_SHIFT_ID_PREFIX = "manual_"
 
         fun createManualAlarmId(date: LocalDate, shiftId: String): Int {
-            val dateString = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+            // ID-BILDUNG, kein Anzeige-Format: der String geht ueber hashCode() in die Alarm-ID
+            val dateString = date.format(DateTimeFormatter.ofPattern(DateTimeFormats.ID_DATE_COMPACT))
             return "$MANUAL_ALARM_PREFIX$dateString$shiftId".hashCode()
         }
 
         fun createManualShiftId(originalShiftId: String, date: LocalDate): String {
-            val dateString = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+            val dateString = date.format(DateTimeFormatter.ofPattern(DateTimeFormats.ID_DATE_COMPACT))
             return "$MANUAL_SHIFT_ID_PREFIX${originalShiftId}_$dateString"
         }
 
@@ -586,6 +587,29 @@ class AlarmViewModel @Inject constructor(
                 return@launch
             }
 
+            // DIE ZWEITE ABSCHALTUNG: "Automatische Alarme" im Wecker-Tab.
+            //
+            // Sie ist eine ECHTE, sofortige Pause (CLAUDE.md): `syncAlarms()` raeumt in diesem
+            // Zustand ALLE Alarme ab, ausdruecklich auch manuelle - das ist so entschieden und
+            // testlich festgeschrieben. Genau deshalb darf hier keiner mehr entstehen: der Nutzer
+            // bekaeme eine Erfolgsmeldung fuer einen Wecker, den der naechste `syncAlarms()`-Lauf
+            // (jeder App-Start, jede 6h-Wartung) ohne jede Rueckmeldung wieder cancelt und loescht.
+            // "Ich habe einen Wecker gestellt und er ist stillschweigend verschwunden" ist fuer
+            // eine Wecker-App der schlechteste denkbare Ausgang. Bei der Master-Pause daneben ist
+            // dieser Widerspruch schon geschlossen; hier fehlte er.
+            val autoAlarmEnabled =
+                shiftUseCase.getCurrentShiftConfig().getOrNull()?.autoAlarmEnabled ?: true
+            if (!autoAlarmEnabled) {
+                _manualAlarmState.value = state.copy(
+                    error = AppErrorState.validationError(
+                        "„Automatische Alarme“ ist im Wecker-Tab ausgeschaltet – solange das so " +
+                            "ist, werden ALLE Wecker geloescht, auch manuell gestellte. Bitte " +
+                            "zuerst dort einschalten."
+                    )
+                )
+                return@launch
+            }
+
             if (selectedShift == null) {
                 _manualAlarmState.value = state.copy(
                     error = AppErrorState.validationError("Bitte wählen Sie eine Schicht aus")
@@ -744,8 +768,6 @@ class AlarmViewModel @Inject constructor(
      * CRITICAL FIX: This was missing and causing memory leaks!
      */
     override fun onCleared() {
-        super.onCleared()
-
         try {
             // MEMORY LEAK FIX: Cancel alarm observation job
             alarmObservationJob?.cancel()

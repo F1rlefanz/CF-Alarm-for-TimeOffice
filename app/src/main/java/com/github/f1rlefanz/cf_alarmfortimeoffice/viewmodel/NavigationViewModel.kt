@@ -263,8 +263,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
      * MEMORY LEAK PREVENTION: Clear navigation state on destruction
      */
     override fun onCleared() {
-        super.onCleared()
-        
         try {
             // CRITICAL FIX: Reset navigation state to prevent memory leaks
             _navigationState.value = NavigationState.MainContent(MainTab.HOME)

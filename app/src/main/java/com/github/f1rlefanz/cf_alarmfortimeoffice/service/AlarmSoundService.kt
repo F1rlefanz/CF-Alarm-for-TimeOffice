@@ -17,6 +17,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -46,7 +47,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * Full-Screen-Activity gar nicht erst hochkommt.
  *
  * LIFECYCLE:
- * - START_STICKY: Auto-restart if killed by system (Android behavior)
+ * - START_REDELIVER_INTENT: Wird der Prozess unter Speicherdruck beendet, liefert Android denselben
+ *   START_ALARM-Intent erneut aus - Ton, Vibration und Notification kommen also zurueck. Mit dem
+ *   frueheren START_STICKY war die Zusage "Auto-restart if killed" eine Attrappe: sticky startet den
+ *   Service mit intent == null, und der else-Zweig unten kann daraus nichts wiederherstellen (kein
+ *   startForeground, kein Ton) - uebrig blieb ein stummer Zombie-Service, waehrend das Log wie ein
+ *   funktionierender Wecker aussah.
  * - Foreground: No background execution limits, reliable alarm execution
  * - onDestroy: Guaranteed cleanup hook for all resources
  * - onTaskRemoved bewusst NICHT ueberschrieben (siehe Kommentar unten)
@@ -168,6 +174,23 @@ class AlarmSoundService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
                 Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
 
+                // DIAGNOSE, die im Release-Log landen MUSS (WARN): sind Benachrichtigungen
+                // blockiert, laeuft dieser Dienst weiter - Ton und Vibration kommen -, aber seine
+                // Notification wird unterdrueckt UND der Full-Screen-Intent abgelehnt. Der Nutzer
+                // hat dann KEINE Oberflaeche, um den Wecker zu stoppen oder zu schlummern; der
+                // einzige Ausweg ist "App beenden" in den Systemeinstellungen. Am Emulator im
+                // echten Zustand gesehen (11.08.2026), und ohne diese Zeile war der Fall im Log
+                // nicht von einem funktionierenden Wecker zu unterscheiden. Der Status-Tab hat
+                // dafuer eine eigene Karte; hier geht es um die nachtraegliche Auswertbarkeit.
+                if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "⚠️ WECKER OHNE OBERFLAECHE: Benachrichtigungen sind fuer diese App " +
+                            "blockiert - Ton laeuft, aber Weck-Bildschirm und Stopp-/Schlummer-" +
+                            "Knoepfe erscheinen NICHT. Nur ueber die Systemeinstellungen zu beheben."
+                    )
+                }
+
                 // Start alarm sound and vibration
                 requestAudioFocus()
                 startAlarmSound()
@@ -192,25 +215,37 @@ class AlarmSoundService : Service() {
                 // ZUERST den neuen Wecker planen (setAlarmClock ist synchron + schnell), DANN den Ton
                 // stoppen - so steht der Snooze sicher, selbst wenn stopSelf() gleich greift. Exakt
                 // derselbe Weg wie "5 Min spaeter" im Vollbild: AlarmManagerService.scheduleSnooze.
-                AlarmManagerService.scheduleSnooze(
-                    applicationContext, alarmId, shiftName, shiftStartTime,
-                    minutes = snoozeMinutes.toLong()
-                )
-                stopAlarmAndService()
+                //
+                // Eigenes try/catch: ein Planungsfehler (z.B. entzogene Exact-Alarm-Berechtigung auf
+                // API 31/32) darf diesen Service NIEMALS mit in den Absturz ziehen - sonst stirbt der
+                // Prozess, stopAlarmAndService() wird nie erreicht und der Nutzer steht ohne Snooze
+                // UND ohne jede Rueckmeldung da.
+                try {
+                    AlarmManagerService.scheduleSnooze(
+                        applicationContext, alarmId, shiftName, shiftStartTime,
+                        minutes = snoozeMinutes.toLong()
+                    )
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM, "❌ Snooze konnte nicht geplant werden (id=$alarmId)", e)
+                }
+                stopAlarmAndService(startId)
             }
 
             ACTION_STOP_ALARM -> {
                 Logger.i(LogTags.ALARM, "🛑 AlarmSoundService STOP_ALARM")
-                stopAlarmAndService()
+                stopAlarmAndService(startId)
             }
 
             else -> {
                 Logger.w(LogTags.ALARM, "⚠️ AlarmSoundService received unknown action: ${intent?.action}")
+                // Kein Wecker aktiv und nichts zu tun -> nicht als Zombie weiterlaufen lassen.
+                if (!_alarmActive.value) stopSelf(startId)
             }
         }
-        
-        // START_STICKY: System will restart service if killed (with null intent)
-        return START_STICKY
+
+        // START_REDELIVER_INTENT statt START_STICKY: nach einem System-Kill liefert Android denselben
+        // START_ALARM-Intent erneut aus, statt mit intent == null zu starten (siehe Klassenkommentar).
+        return START_REDELIVER_INTENT
     }
     
     /**
@@ -220,15 +255,23 @@ class AlarmSoundService : Service() {
      *
      * `_alarmActive = false` signalisiert der [AlarmFullScreenActivity], sich zu schliessen, falls sie
      * laeuft - sonst muesste der Nutzer zweimal stoppen (Leiste UND Vollbild).
+     *
+     * [startId] ist Pflicht, `stopSelf(startId)` statt blankem `stopSelf()` - dieselbe Ueberlegung
+     * wie beim AlarmMaintenanceService: `stopSelf()` (= stopSelf(-1)) beendet den Service auch dann,
+     * wenn nach dem ausloesenden Start bereits ein NEUER START_ALARM eingegangen ist. Feuern zwei
+     * Alarme dicht hintereinander (dieselbe Schicht aus zwei ausgewaehlten Kalendern, oder Snooze
+     * trifft auf regulaeren Alarm), raeumte das anschliessende onDestroy() Ton, Vibration und
+     * Notification des GERADE gestarteten zweiten Weckers lautlos mit ab. Mit startId honoriert
+     * Android den Stop nur, wenn kein neuerer Start dazwischen kam.
      */
-    private fun stopAlarmAndService() {
+    private fun stopAlarmAndService(startId: Int) {
         _alarmActive.value = false
         stopAlarmSound()
         stopVibration()
         abandonAudioFocus() // laesst pausierte Medien (Podcast/Musik) wieder anlaufen
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-        Logger.d(LogTags.ALARM, "✅ AlarmSoundService stopped and cleaned up")
+        stopSelf(startId)
+        Logger.d(LogTags.ALARM, "✅ AlarmSoundService stopped and cleaned up (startId=$startId)")
     }
 
     override fun onDestroy() {
@@ -309,6 +352,12 @@ class AlarmSoundService : Service() {
      * shutdown flag AND the token so that a stale async callback from a previous
      * player can never start playback even if isShuttingDown was reset in the
      * meantime (e.g. stop → snooze → start race).
+     *
+     * DIRECT BOOT: Der Service ist directBootAware, laeuft also ggf. VOR der ersten Entsperrung.
+     * Die RingtoneManager-URIs sind dann `content://media/...`-Verweise auf den MediaProvider und
+     * koennen unaufloesbar sein. Deshalb werden ALLE Kandidaten der Reihe nach versucht (frueher
+     * fing die `?:`-Kette nur den null-Fall ab, nicht ein scheiterndes setDataSource) und ein
+     * vollstaendiges Scheitern laut geloggt - sonst blieb der Wecker stumm, ohne Spur im Log.
      */
     private fun startAlarmSound() {
         if (isShuttingDown) {
@@ -328,60 +377,83 @@ class AlarmSoundService : Service() {
         // player will see a mismatched generation and release itself instead of starting.
         val myGeneration = ++playerGeneration
 
-        try {
-            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        val candidates = listOfNotNull(
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        ).distinct()
 
-            if (alarmUri == null) {
-                Logger.w(LogTags.ALARM, "⚠️ No alarm URIs available for MediaPlayer")
-                return
-            }
-
-            Logger.d(LogTags.ALARM, "🎵 Starting MediaPlayer with URI: $alarmUri")
-
-            alarmMediaPlayer = MediaPlayer().apply {
-                setDataSource(this@AlarmSoundService, alarmUri)
-
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-
-                isLooping = true
-
-                setOnPreparedListener { player ->
-                    // Guard: only start if this is still the active player
-                    if (!isShuttingDown && myGeneration == playerGeneration) {
-                        try {
-                            player.start()
-                            Logger.business(LogTags.ALARM, "✅ MediaPlayer started successfully in service")
-                        } catch (e: Exception) {
-                            Logger.e(LogTags.ALARM, "❌ MediaPlayer start failed", e)
-                        }
-                    } else {
-                        Logger.d(
-                            LogTags.ALARM,
-                            "🚫 Player gen=$myGeneration superseded (current=$playerGeneration, shutting=$isShuttingDown) — releasing"
-                        )
-                        try { player.release() } catch (_: Exception) {}
-                    }
-                }
-
-                setOnErrorListener { _, what, extra ->
-                    Logger.e(LogTags.ALARM, "❌ MediaPlayer error: what=$what, extra=$extra")
-                    false
-                }
-
-                prepareAsync()
-                Logger.d(LogTags.ALARM, "🔄 MediaPlayer preparing asynchronously")
-            }
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "❌ Failed to start alarm sound in service", e)
+        if (candidates.isEmpty()) {
+            Logger.w(LogTags.ALARM, "⚠️ No alarm URIs available for MediaPlayer - Wecker bleibt stumm, nur Vibration")
+            return
         }
+
+        for (alarmUri in candidates) {
+            // Lokale Referenz VOR dem Konfigurieren: `alarmMediaPlayer = MediaPlayer().apply {...}`
+            // weist das Feld erst zu, wenn der apply-Block durchgelaufen ist - scheitert
+            // setDataSource(), waere der frisch erzeugte Player unerreichbar und nie freigegeben
+            // (ein geleakter MediaPlayer pro Fehlversuch).
+            var candidatePlayer: MediaPlayer? = null
+            try {
+                Logger.d(LogTags.ALARM, "🎵 Starting MediaPlayer with URI: $alarmUri")
+
+                candidatePlayer = MediaPlayer()
+                alarmMediaPlayer = candidatePlayer
+                candidatePlayer.apply {
+                    setDataSource(this@AlarmSoundService, alarmUri)
+
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+
+                    isLooping = true
+
+                    setOnPreparedListener { player ->
+                        // Guard: only start if this is still the active player
+                        if (!isShuttingDown && myGeneration == playerGeneration) {
+                            try {
+                                player.start()
+                                Logger.business(LogTags.ALARM, "✅ MediaPlayer started successfully in service")
+                            } catch (e: Exception) {
+                                Logger.e(LogTags.ALARM, "❌ MediaPlayer start failed", e)
+                            }
+                        } else {
+                            Logger.d(
+                                LogTags.ALARM,
+                                "🚫 Player gen=$myGeneration superseded (current=$playerGeneration, shutting=$isShuttingDown) — releasing"
+                            )
+                            try { player.release() } catch (_: Exception) {}
+                        }
+                    }
+
+                    setOnErrorListener { _, what, extra ->
+                        Logger.e(LogTags.ALARM, "❌ MediaPlayer error: what=$what, extra=$extra")
+                        false
+                    }
+
+                    prepareAsync()
+                    Logger.d(LogTags.ALARM, "🔄 MediaPlayer preparing asynchronously")
+                }
+                return
+
+            } catch (e: Exception) {
+                // Naechsten Kandidaten versuchen: eine unaufloesbare MediaStore-URI (Direct Boot!)
+                // darf nicht das Ende des Weckers sein.
+                Logger.w(LogTags.ALARM, "⚠️ Weckton-Quelle nicht nutzbar: $alarmUri", e)
+                candidatePlayer?.let { try { it.release() } catch (_: Exception) {} }
+                alarmMediaPlayer = null
+            }
+        }
+
+        Logger.e(
+            LogTags.ALARM,
+            "❌ KEINE Weckton-Quelle konnte geoeffnet werden (${candidates.size} versucht) - " +
+                "der Wecker weckt nur per Vibration und Vollbild. Typischer Fall: Direct Boot " +
+                "vor der ersten Entsperrung, MediaStore-URI nicht aufloesbar."
+        )
     }
 
     /**

@@ -72,12 +72,17 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
 
     suspend fun reschedule() {
         val workManager = WorkManager.getInstance(context)
-        // Vorherige Planung komplett verwerfen und neu aufbauen - einfacher/robuster als ein Diff;
-        // reschedule() laeuft ohnehin nur alle 6h bzw. beim Boot, nicht bei jeder Kleinigkeit.
-        workManager.cancelAllWorkByTag(WORK_TAG)
 
+        // ERST LESEN, DANN VERWERFEN. Umgekehrt (bis v1.22.1) stand die bestehende Planung schon
+        // geloescht da, wenn der Read danach fehlschlug: alte Jobs weg, keine neuen geplant, und
+        // Feature B bis zur naechsten qualifizierenden Wartung still. Der Read ist der Teil, der
+        // scheitern kann - er gehoert deshalb vor den irreversiblen Schritt.
         val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
-            Logger.e(LogTags.BACKGROUND_WORKER, "Pre-Alarm-Refresh: Alarme konnten nicht geladen werden", error)
+            Logger.e(
+                LogTags.BACKGROUND_WORKER,
+                "Pre-Alarm-Refresh: Alarme konnten nicht geladen werden - bestehende Planung bleibt unangetastet",
+                error
+            )
             return
         }
 
@@ -88,6 +93,10 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
             maxLookaheadDays = MAX_LOOKAHEAD_DAYS,
             maxScheduled = MAX_SCHEDULED
         )
+
+        // Vorherige Planung komplett verwerfen und neu aufbauen - einfacher/robuster als ein Diff;
+        // reschedule() laeuft ohnehin nur alle 6h bzw. beim Boot, nicht bei jeder Kleinigkeit.
+        workManager.cancelAllWorkByTag(WORK_TAG)
 
         var scheduled = 0
         upcoming.forEachIndexed { index, triggerTime ->

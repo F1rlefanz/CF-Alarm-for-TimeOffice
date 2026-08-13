@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -25,7 +27,14 @@ data class ShiftUiState(
     val currentShiftConfig: ShiftConfig? = null,
     val recognizedShifts: List<ShiftInfo> = emptyList(),
     val upcomingShift: ShiftInfo? = null,
-    val error: String? = null
+    val error: String? = null,
+    /**
+     * Kuerzel, die im Kalender des Nutzers vorkommen, aber von keinem Erkennungsmuster getroffen
+     * werden - siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester].
+     * Bewusst nur Vorschlaege: zugeordnet wird von Hand.
+     */
+    val codeSuggestions: ShiftCodeSuggester.SuggestionResult =
+        ShiftCodeSuggester.SuggestionResult(emptyList(), 0)
 )
 
 /**
@@ -49,9 +58,114 @@ class ShiftViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ShiftUiState())
     val uiState: StateFlow<ShiftUiState> = _uiState.asStateFlow()
 
+    /**
+     * Die Konfiguration, die DIESES ViewModel gerade selbst schreibt - damit
+     * [observeExternalConfigChanges] sie nicht fuer eine fremde Aenderung haelt.
+     *
+     * Gesetzt VOR dem Write, geloescht beim ersten Treffer im Beobachter. Ein Vergleich gegen
+     * `uiState.currentShiftConfig` kann das nicht leisten: DataStore veroeffentlicht seinen neuen
+     * Wert typischerweise, bevor `edit{}` zurueckkehrt - der Beobachter laeuft also potenziell
+     * VOR dem `onSuccess`, das den UI-State setzt. Folge waere ein zweiter, nebenlaeufiger Lauf von
+     * Erkennung und Alarm-Sync auf derselben ShiftRecognitionEngine.
+     *
+     * `@Volatile`, weil der Setter (viewModelScope, Main) und der Collector (ebenfalls Main, aber
+     * ueber einen anderen Suspend-Punkt eingeplant) nicht in derselben Ausfuehrung liegen.
+     *
+     * Steht VOR dem `init{}`-Block - Kotlin initialisiert in Textreihenfolge, und der Collector im
+     * `init{}` kann synchron bis zum ersten echten Suspend-Punkt laufen (siehe die
+     * Initialisierungsfalle in CLAUDE.md, die im August einen Crash-on-Launch verursacht hat).
+     */
+    @Volatile
+    private var selfWrittenConfig: ShiftConfig? = null
+
     init {
         loadShiftConfig()
         observeCalendarEvents() // Reactive Schichterkennung via StateHolder
+        observeExternalConfigChanges()
+    }
+
+    /**
+     * Faengt Konfigurationsaenderungen auf, die NICHT ueber [updateShiftConfig] dieses ViewModels
+     * kamen - und zieht Anzeige, Schichterkennung UND Alarme nach.
+     *
+     * WARUM DAS NOETIG WURDE (am Geraet gefunden, 11.08.2026): Der Konfigurations-Import
+     * ([com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackupUseCase]) schreibt direkt
+     * ueber das Repository. Der Store war danach korrekt - nach einem App-Neustart stand das
+     * importierte Muster da - aber die LAUFENDE App zeigte weiter den alten Stand, weil
+     * `currentShiftConfig` nur beim Start und in `updateShiftConfig()` gesetzt wurde. Der Nutzer
+     * importiert, sieht nichts und haelt es fuer gescheitert.
+     * Schlimmer noch: die ALARME wurden nicht neu gesetzt. Eine importierte Konfiguration mit
+     * anderen Weckzeiten haette bis zur naechsten 6h-Wartung die alten Zeiten weitergeweckt - bei
+     * einer Wecker-App der ernstere Teil des Fehlers.
+     *
+     * Bewusst ein Beobachter am gemeinsamen Datenfluss statt eines Aufrufs im Import: das ist
+     * dieselbe Lehre wie beim Master-Pause-Backstop in `syncAlarms()` - ein zentraler Punkt am
+     * geteilten Einstieg deckt JEDEN heutigen und kuenftigen Schreiber ab, waehrend ein Gate pro
+     * Aufrufer beim naechsten uebersehen wird. `IShiftUseCase.shiftConfig` existierte bereits und
+     * wurde von diesem ViewModel schlicht nicht beobachtet.
+     *
+     * KEINE DOPPELARBEIT: Eigene Aenderungen ueber [updateShiftConfig] setzen `currentShiftConfig`
+     * selbst; die daraufhin folgende Flow-Emission ist dann gleich und wird uebersprungen. Nur
+     * fremde Aenderungen loesen hier Arbeit aus. Ohne diesen Vergleich liefen Erkennung und
+     * Alarm-Sync bei jeder Nutzeraenderung zweimal - und zwar nebenlaeufig auf derselben
+     * Engine-Instanz, was CLAUDE.md ausdruecklich als Race-Ursache festhaelt.
+     */
+    private fun observeExternalConfigChanges() {
+        viewModelScope.launch {
+            shiftUseCase.shiftConfig
+                .drop(1) // Erste Emission ist der Ist-Zustand, den loadShiftConfig() ohnehin holt.
+                .collect { flowConfig ->
+                    // EIGENE Schreibvorgaenge erkennen - ueber den VOR dem Write gesetzten Merker,
+                    // nicht ueber `currentShiftConfig`. Letzteres verliert das Rennen: DataStore
+                    // veroeffentlicht seinen neuen Wert typischerweise, BEVOR `edit{}` zurueckkehrt,
+                    // also bevor `onSuccess` den UI-State aktualisiert hat. Der Vergleich gegen den
+                    // UI-State sah die eigene Aenderung deshalb als fremde an und liess Erkennung
+                    // UND Alarm-Sync ein zweites Mal laufen - nebenlaeufig auf derselben
+                    // ShiftRecognitionEngine, also genau die Race-Ursache, die CLAUDE.md als
+                    // "0 Alarme trotz korrekt erkannter Schichten" festhaelt.
+                    if (flowConfig == selfWrittenConfig) {
+                        selfWrittenConfig = null
+                        return@collect
+                    }
+                    if (flowConfig == _uiState.value.currentShiftConfig) return@collect
+
+                    // DIE VIERTE TUER, die dieser Beobachter selbst geoeffnet hatte: der Flow
+                    // `shiftConfig` DEGRADIERT bei einer vorhandenen, aber unlesbaren Konfiguration
+                    // bewusst auf die Standardwerte (damit die Dimmer-/DND-Screens nicht abstuerzen).
+                    // Ungefiltert haette dieser Collector das als "externe Aenderung" gelesen, die
+                    // Standardwerte in den UI-State geschrieben UND einen Alarm-Sync mit ihnen
+                    // ausgeloest - also genau das getan, was in CalendarViewModel, ShiftViewModel
+                    // und CFAlarmApplication gerade abgeschafft wurde.
+                    // `getCurrentShiftConfig()` ist der maßgebliche Pfad: er SCHEITERT im
+                    // Defektfall. Nur ein Erfolg gilt als echte Aenderung.
+                    val authoritative = shiftUseCase.getCurrentShiftConfig().getOrElse { error ->
+                        Logger.e(
+                            LogTags.SHIFT_CONFIG,
+                            "❌ EXTERNE AENDERUNG ignoriert: Schicht-Konfiguration nicht lesbar - es " +
+                                "werden KEINE Standardwerte uebernommen und kein Alarm-Sync ausgeloest.",
+                            error
+                        )
+                        return@collect
+                    }
+                    if (authoritative == _uiState.value.currentShiftConfig) return@collect
+                    val config = authoritative
+
+                    Logger.business(
+                        LogTags.SHIFT_CONFIG,
+                        "🔄 EXTERNE KONFIGURATIONSAENDERUNG erkannt (${config.definitions.size} " +
+                            "Definitionen) - Anzeige, Erkennung und Alarme werden nachgezogen"
+                    )
+                    _uiState.value = _uiState.value.copy(currentShiftConfig = config)
+
+                    // Erkennung neu laufen lassen (aktualisiert auch die Kuerzel-Vorschlaege) und
+                    // die Alarme an die neuen Weckzeiten anpassen.
+                    val events = calendarStateHolder.events.value
+                    if (events.isNotEmpty()) {
+                        processCalendarEvents(events)
+                    }
+                    triggerAlarmCreationFromConfigUpdate(config)
+                }
+        }
     }
 
     /**
@@ -94,44 +208,96 @@ class ShiftViewModel @Inject constructor(
                     Logger.business(LogTags.SHIFT_CONFIG, "✅ SINGLETON-STARTUP: ShiftConfig loaded successfully - autoAlarm=${config.autoAlarmEnabled}, definitions=${config.definitions.size}")
                 }
                 .onFailure { error ->
-                    Logger.w(LogTags.SHIFT_CONFIG, "⚠️ SINGLETON-STARTUP: Failed to load ShiftConfig, creating default", error)
-                    
-                    // FALLBACK: Create default configuration if loading fails
-                    val defaultConfig = ShiftConfig.getDefaultConfig()
-                    
-                    shiftUseCase.saveShiftConfig(defaultConfig)
-                        .onSuccess {
-                            _uiState.value = _uiState.value.copy(currentShiftConfig = defaultConfig)
-                            Logger.business(LogTags.SHIFT_CONFIG, "✅ SINGLETON-STARTUP: Default ShiftConfig created and loaded - autoAlarm=${defaultConfig.autoAlarmEnabled}")
-                        }
-                        .onFailure { saveError ->
-                            _uiState.value = _uiState.value.copy(
-                                error = errorHandler.getErrorMessage(saveError)
-                            )
-                            Logger.e(LogTags.SHIFT_CONFIG, "❌ SINGLETON-STARTUP: Failed to save default ShiftConfig", saveError)
-                        }
+                    // KEIN Default-Fallback, der SCHREIBT - siehe die identische Stelle in
+                    // CalendarViewModel.createAlarmsFromLoadedEvents() und in
+                    // CFAlarmApplication.initializeApp(): dieselbe Fehlerklasse hatte DREI
+                    // Schreibstellen.
+                    //
+                    // Seit ShiftConfigRepository zwischen "noch nie konfiguriert" und "vorhanden,
+                    // aber unlesbar" unterscheidet, kann getCurrentShiftConfig() nur noch aus
+                    // EINEM Grund fehlschlagen: die Konfiguration ist defekt. Der
+                    // Nicht-konfiguriert-Fall liefert die Standardkonfiguration bereits als
+                    // Erfolg. Genau im Defektfall ist Ueberschreiben Datenverlust - und diese
+                    // Funktion laeuft im init{}-Block, also bei JEDER ViewModel-Erzeugung.
+                    // Der bewusste Weg zum Default heisst resetToDefaults() und gehoert dem
+                    // Nutzer; die Rohdaten liegen als shift_config_broken gesichert.
+                    _uiState.value = _uiState.value.copy(
+                        error = errorHandler.getErrorMessage(error)
+                    )
+                    Logger.e(
+                        LogTags.SHIFT_CONFIG,
+                        "❌ SINGLETON-STARTUP: Schicht-Konfiguration nicht lesbar - sie wird NICHT mit " +
+                            "Standardwerten ueberschrieben. Rohdaten liegen als shift_config_broken.",
+                        error
+                    )
                 }
         }
     }
 
+    /**
+     * Ordnet ein im Kalender gefundenes Kuerzel einer bestehenden Schichtdefinition zu - der
+     * Handgriff, den [ShiftCodeSuggester] vorbereitet.
+     *
+     * Bewusst KEINE Automatik: die App schlaegt vor, der Mensch entscheidet. Eine stille Zuordnung,
+     * die danebengreift, stellt einen Wecker auf die falsche Uhrzeit, und darauf verlaesst sich
+     * jemand.
+     *
+     * Das Kuerzel wird als exaktes Keyword ergaenzt. Damit greift Stufe 2 der Staffelung in
+     * [ShiftConfig.findDefinitionFor] (exaktes Keyword) und - entscheidend fuer die Erkennung -
+     * [ShiftDefinition.matchesKeywords] mit Wortgrenzen. Auch einbuchstabige Kuerzel sind erlaubt:
+     * sie treffen dort nur als eigenstaendiges Wort, und genau solche Codes stehen real im
+     * Dienstplan. Die unscharfe Teiltreffer-Stufe bleibt von ihnen unberuehrt
+     * ([ShiftConfig.MIN_FUZZY_KEYWORD_LENGTH]).
+     *
+     * Geht ueber [updateShiftConfig], damit alles daran Haengende mitlaeuft: Speichern,
+     * Cache-Invalidierung, erneute Erkennung und Alarm-Sync.
+     */
+    fun assignCodeToDefinition(code: String, definitionId: String) {
+        val config = _uiState.value.currentShiftConfig
+        if (config == null) {
+            Logger.w(LogTags.SHIFT_CONFIG, "⚠️ KUERZEL-ZUORDNUNG: keine Konfiguration geladen - abgebrochen")
+            return
+        }
+        // Die eigentliche Entscheidung liegt als reine Funktion im Modell (aktiviert das Ziel,
+        // entfernt das Kuerzel bei allen anderen - siehe dort, warum jedes davon noetig ist).
+        val updated = config.withCodeAssignedTo(code, definitionId)
+        if (updated == null) {
+            Logger.d(
+                LogTags.SHIFT_CONFIG,
+                "KUERZEL-ZUORDNUNG: nichts zu tun fuer '$code' -> $definitionId (steht schon so, " +
+                    "leeres Kuerzel oder unbekannte Definition)"
+            )
+            return
+        }
+
+        val target = updated.definitions.first { it.id == definitionId }
+        Logger.business(
+            LogTags.SHIFT_CONFIG,
+            "✅ KUERZEL-ZUORDNUNG: '${code.trim()}' gehoert jetzt zu '${target.name}' (aktiviert, " +
+                "bei allen anderen Schichten entfernt)"
+        )
+        updateShiftConfig(updated)
+    }
+
     fun updateShiftConfig(config: ShiftConfig) {
         viewModelScope.launch {
+            // VOR dem Write vormerken, nicht danach - siehe [selfWrittenConfig]. Die
+            // DataStore-Emission kann den Beobachter erreichen, BEVOR `saveShiftConfig()`
+            // zurueckkehrt; ein Merker, der erst im `onSuccess` gesetzt wird, kommt zu spaet.
+            selfWrittenConfig = config
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            
-            // CRITICAL FIX: Clear recognition cache BEFORE saving config
-            try {
-                // Access the ShiftRecognitionEngine through the UseCase and clear its cache
-                Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-CLEAR: Clearing recognition cache before config update")
-                
-                // Force clear the recognition cache by calling recognizeShiftsInEvents with empty list
-                // This will reset the internal cache state
-                shiftUseCase.recognizeShiftsInEvents(emptyList())
-                
-                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ CACHE-CLEAR: Recognition cache cleared successfully")
-            } catch (e: Exception) {
-                Logger.w(LogTags.SHIFT_RECOGNITION, "⚠️ CACHE-CLEAR: Failed to clear cache", e)
-            }
-            
+
+            // Hier stand bis v1.22.1 ein `recognizeShiftsInEvents(emptyList())` mit dem Kommentar
+            // "Force clear the recognition cache" und einem Erfolgs-Log "Recognition cache cleared
+            // successfully". Der Aufruf loeschte NICHTS: er fuehrte eine vollstaendige Erkennung
+            // mit leerer Eventliste durch und BEFUELLTE den Cache dabei sogar neu
+            // (lastRecognitionHash = emptyList().hashCode(), cachedMatches = emptyList()). Der
+            // echte Reset passiert eine Zeile weiter unten in `saveShiftConfig()` ->
+            // `invalidateAllCaches()` -> `ShiftRecognitionEngine.clearRecognitionCache()`, und
+            // zwar nur bei erfolgreichem Speichern - genau richtig. Das falsche Erfolgs-Log war
+            // aktiv schaedlich: es liess im Datei-Log einen Cache-Reset als bewiesen erscheinen,
+            // der nie stattgefunden hat. Kein Erfolgs-Log fuer eine Operation, die nicht passiert.
+
             shiftUseCase.saveShiftConfig(config)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
@@ -159,6 +325,10 @@ class ShiftViewModel @Inject constructor(
                     triggerAlarmCreationFromConfigUpdate(config)
                 }
                 .onFailure { error ->
+                    // Merker zuruecksetzen: es kommt keine passende Emission mehr, und ein
+                    // haengender Merker wuerde die NAECHSTE echte externe Aenderung mit demselben
+                    // Inhalt (Import derselben Datei, zweiter Zuordnungsversuch) verschlucken.
+                    selfWrittenConfig = null
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = errorHandler.getErrorMessage(error)
@@ -210,10 +380,28 @@ class ShiftViewModel @Inject constructor(
                     .filter { it.startTime.isAfter(java.time.LocalDateTime.now()) }
                     .minByOrNull { it.startTime }
 
+                // Kuerzel-Vorschlaege im SELBEN Durchgang berechnen: hier liegen Events und
+                // Konfiguration beide vor, und die Erkennung ist gerade gelaufen - was jetzt keinen
+                // Treffer hatte, ist genau der Kandidat, den der Nutzer zuordnen soll. Rein
+                // rechnerisch, kein Netz, kein DataStore.
+                val suggestions = _uiState.value.currentShiftConfig?.let { config ->
+                    ShiftCodeSuggester.suggest(events, config)
+                } ?: ShiftCodeSuggester.SuggestionResult(emptyList(), 0)
+
+                if (suggestions.suggestions.isNotEmpty()) {
+                    Logger.business(
+                        LogTags.SHIFT_RECOGNITION,
+                        "💡 KUERZEL-VORSCHLAEGE: ${suggestions.suggestions.size} unbekannte Kuerzel im " +
+                            "Kalender (${suggestions.suggestions.joinToString { "${it.code}×${it.occurrences}" }})" +
+                            if (suggestions.droppedCount > 0) ", ${suggestions.droppedCount} weitere nicht gezeigt" else ""
+                    )
+                }
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     recognizedShifts = shifts,
-                    upcomingShift = upcomingShift
+                    upcomingShift = upcomingShift,
+                    codeSuggestions = suggestions
                 )
             }
             .onFailure { error ->
@@ -278,8 +466,6 @@ class ShiftViewModel @Inject constructor(
      * MUTEX ERROR PREVENTION: Clear all state references that could cause threading issues
      */
     override fun onCleared() {
-        super.onCleared()
-        
         try {
             Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Starting cleanup...")
             

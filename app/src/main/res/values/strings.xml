@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">CF-Alarm for TimeOffice</string>
     <!-- CLEANUP 2025: Removed 27 unused OnePlus-specific strings that were never implemented -->
     <!-- Current OnePlus support: Simple hint dialog in BatteryOptimizationHelper.kt -->
@@ -50,7 +50,9 @@
     <string name="dimmer_rules_title">Dimm-Regeln</string>
     <string name="dimmer_rules_empty">Noch keine Regeln. Tippe auf +, um eine anzulegen.</string>
     <string name="dimmer_rule_unnamed">(ohne Name)</string>
-    <string name="dimmer_rule_subtitle">%1$s · %2$d Fenster</string>
+    <!-- Kein <plurals>: "Fenster" lautet im Deutschen in Singular UND Plural gleich - eine
+         Pluralform waere ein kuenstlicher, wortgleicher Zweig ohne Nutzen. -->
+    <string name="dimmer_rule_subtitle" tools:ignore="PluralsCandidate">%1$s · %2$d Fenster</string>
     <string name="dimmer_rule_off">aus</string>
     <string name="dimmer_pattern_free">Freie Tage (keine Schicht)</string>
     <string name="dimmer_pattern_universal">Alle Tage (Universal)</string>
@@ -77,13 +79,19 @@
     <string name="dimmer_appearance_hint">Verdunkelung und Wärme dieser Wellness-Abdunkelung. Schicht-Regeln haben je eigene Werte (im Regel-Editor).</string>
     <string name="dimmer_strength_label">Verdunkelung: %1$d %%</string>
     <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
-    <string name="dimmer_winddown_label">Beginn: %1$d Min vor der Weckzeit</string>
+    <!-- Kein <plurals>: "Min" ist eine Abkuerzung und im Deutschen in Singular UND Plural
+         identisch - eine Pluralform waere wortgleich und damit ohne Nutzen. -->
+    <string name="dimmer_winddown_label" tools:ignore="PluralsCandidate">Beginn: %1$d Min vor der Weckzeit</string>
     <string name="dimmer_preview">Vorschau (5 s dimmen)</string>
     <string name="dimmer_preview_hint">Zeigt das Dimmen kurz mit den aktuellen Werten – auch ohne Schicht/Alarm.</string>
     <string name="dimmer_open_accessibility">Bedienungshilfen-Dienst aktivieren</string>
     <string name="dimmer_disclosure_title">Was dieser Dienst tut</string>
     <string name="dimmer_disclosure_body">Der Schicht-Dimmer nutzt einen Android-Bedienungshilfen-Dienst ausschließlich, um eine abdunkelnde Schicht über den Bildschirm zu legen. Er liest keine Bildschirminhalte, erfasst keine Eingaben und sendet keine Daten. Du kannst ihn jederzeit in den Android-Einstellungen wieder abschalten.</string>
-    <string name="dimmer_disclosure_understood">Verstanden</string>
+    <!-- Sitzt im dismissButton-Slot des Offenlegungs-Dialogs, tut also NICHTS ausser schliessen.
+         "Verstanden" hat in diesem Projekt die Bedeutung "bestaetigen/weiter" (siehe OEM-Hinweis in
+         CLAUDE.md) - genau daneben steht der Knopf, der wirklich weiterfuehrt. Zwei Knoepfe, von
+         denen einer wie eine Bestaetigung klingt und nichts tut, sind eine Falle. -->
+    <string name="dimmer_disclosure_understood">Abbrechen</string>
 
     <!-- DND-Einstellungen (Nicht stören automatisch schaltbar) -->
     <string name="dnd_header">Nicht stören</string>

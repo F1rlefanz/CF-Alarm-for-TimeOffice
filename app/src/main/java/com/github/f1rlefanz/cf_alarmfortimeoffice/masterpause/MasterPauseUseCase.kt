@@ -11,6 +11,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,7 +40,46 @@ class MasterPauseUseCase @Inject constructor(
 ) {
     val paused: Flow<Boolean> = prefs.paused
 
-    suspend fun pause() {
+    /**
+     * Bringt den Device-Protected-Spiegel des Pausenzustands mit der CE-Wahrheit in Deckung.
+     *
+     * `KEY_PAUSED` hat genau zwei Schreiber ([pause]/[resume]) und drei Leser, die ALLE im Boot-Pfad
+     * sitzen - der Spiegel ist das einzige, was der `BootReceiver` vor der ersten Entsperrung ueber
+     * die Pause weiss. `savePaused()` schluckt seinen Fehler; faellt ein Schreibvorgang aus,
+     * divergieren beide dauerhaft, denn es gab bisher keinen einzigen Pfad, der sie wieder
+     * abgleicht. Beide Richtungen sind schlecht: ein haengendes `true` sperrt die
+     * Boot-Wiederherstellung dauerhaft (kein Wecker nach dem naechsten Neustart), ein haengendes
+     * `false` re-armt Alarme, die der Nutzer pausiert hat.
+     *
+     * Wird beim App-Start aufgerufen (best effort, nur bei entsperrtem Geraet - vorher ist der
+     * CE-Wert nicht lesbar) und ist billig: ein Read und im Regelfall kein Write.
+     */
+    suspend fun reconcileDirectBootMirror() {
+        val truth = prefs.pausedNow()
+        val mirror = directBootAlarmStore.isPausedNow()
+        if (truth == mirror) return
+
+        Logger.w(
+            LogTags.MASTER_PAUSE,
+            "🔄 MASTER-PAUSE: Spiegel und Wahrheit lagen auseinander (Spiegel=$mirror, " +
+                "tatsaechlich=$truth) - Spiegel wird korrigiert. Der BootReceiver liest ihn vor der " +
+                "ersten Entsperrung; falsch herum haette er entweder die Wiederherstellung gesperrt " +
+                "oder pausierte Alarme re-armiert."
+        )
+        directBootAlarmStore.savePaused(truth)
+    }
+
+    /**
+     * NICHT abbrechbar: die Sequenz stellt einen Zustand HER, statt nur einen Schalter umzulegen -
+     * und der Schalter wird als ERSTES geschrieben. Bricht der Aufrufer-Scope mitten dabei ab
+     * (`viewModelScope` des `MasterPauseViewModel`: Activity beendet, Task weggewischt), stehen Flag
+     * und Wirklichkeit auseinander. Beide Richtungen sind gefaehrlich: bei `pause()` zeigt die App
+     * "pausiert", waehrend 6h-Wartung, Dimmer-Tick, DND-Tick und Hue-Planung weiterlaufen; bei
+     * `resume()` zeigt sie "aktiv", waehrend keine dieser Ketten wieder angelaufen ist - der Wecker
+     * bliebe STILL, und beim naechsten Boot liest der `BootReceiver` einen Spiegel, der nicht mehr
+     * zum Flag passt.
+     */
+    suspend fun pause() = withContext(NonCancellable) {
         prefs.setPaused(true)
         // Device-Protected-Spiegel im selben Atemzug wie das DataStore-Flag - BootReceiver liest
         // ihn bei LOCKED_BOOT_COMPLETED, wo @MainDataStore (CE-Storage) noch nicht lesbar ist.
@@ -82,7 +123,8 @@ class MasterPauseUseCase @Inject constructor(
         Logger.business(LogTags.MASTER_PAUSE, "Hintergrunddienste pausiert")
     }
 
-    suspend fun resume() {
+    /** Nicht abbrechbar - siehe [pause]. */
+    suspend fun resume() = withContext(NonCancellable) {
         prefs.setPaused(false)
         directBootAlarmStore.savePaused(false)
         // Jeder Schritt eigenes try/catch (Vorbild: BootReceiver.performCompleteSystemRecovery()) -

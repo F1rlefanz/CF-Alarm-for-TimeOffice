@@ -28,7 +28,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.DimmerTabContent
@@ -70,13 +70,20 @@ fun MainContentScreen(
     onShowDndSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    val authState by authViewModel.uiState.collectAsState()
-    val calendarState by calendarViewModel.uiState.collectAsState()
-    val shiftState by shiftViewModel.uiState.collectAsState()
-    val alarmState by alarmViewModel.uiState.collectAsState()
-    val skipState by alarmViewModel.skipState.collectAsState()
-    val manualAlarmState by alarmViewModel.manualAlarmState.collectAsState() // NEU
-    val snoozeMinutes by alarmViewModel.snoozeMinutes.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: Alles hier ist reiner Bildschirm-
+    // Zustand (Tab-Inhalte, Snackbar-Fehler) - unterhalb von STARTED gibt es nichts zu
+    // zeichnen, also darf das Sammeln pausieren. Wichtig fuer snoozeMinutes: der Flow ist
+    // stateIn(SharingStarted.WhileSubscribed(5_000)) auf den DataStore; mit collectAsState
+    // lief der Timeout nie ab, solange die Composition lebte. Der Wecker haengt NICHT daran -
+    // die Schlummer-Dauer beim Feuern liest AlarmReceiver einmal pro Alarm direkt aus
+    // AlarmPrefs (siehe CLAUDE.md); dieser Flow speist nur die Anzeige im Wecker-Tab.
+    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val calendarState by calendarViewModel.uiState.collectAsStateWithLifecycle()
+    val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
+    val alarmState by alarmViewModel.uiState.collectAsStateWithLifecycle()
+    val skipState by alarmViewModel.skipState.collectAsStateWithLifecycle()
+    val manualAlarmState by alarmViewModel.manualAlarmState.collectAsStateWithLifecycle() // NEU
+    val snoozeMinutes by alarmViewModel.snoozeMinutes.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -184,6 +191,8 @@ fun MainContentScreen(
             if (selectedTab == MainTab.HOME) {
                 ExtendedFloatingActionButton(
                     onClick = { showManualAlarmSheet = true },
+                    // dekorativ: der Knopftext "Manueller Alarm" daneben sagt es bereits -
+                    // eine eigene Beschreibung liesse den Screenreader die Aktion doppelt lesen
                     icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                     text = { Text("Manueller Alarm") }
                 )

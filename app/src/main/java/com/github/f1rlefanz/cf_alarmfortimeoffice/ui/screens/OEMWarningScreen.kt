@@ -60,6 +60,9 @@ fun OEMWarningScreen(
         ) {
             Icon(
                 Icons.Default.Warning,
+                // dekorativ: Ueberschrift ("<Hersteller>-Geraet erkannt") und die Zeile darunter
+                // ("Sehr aggressives Energiemanagement") sagen bereits BEIDES - worum es geht und
+                // wie ernst es ist. Das Warnsymbol traegt hier keine eigene Information.
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.tertiary
@@ -150,6 +153,7 @@ fun OEMWarningScreen(
                 onClick = { BatteryOptimizationHelper.openOEMHelpUrl(context, oemType) },
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // dekorativ: die Knopfbeschriftung "Detaillierte Anleitung" sagt es bereits
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Detaillierte Anleitung")
@@ -173,6 +177,8 @@ private fun OEMStep(title: String, description: String) {
     ) {
         Icon(
             Icons.Default.CheckCircle,
+            // dekorativ: Aufzaehlungszeichen vor Titel und Beschreibung des Schritts, kein
+            // Zustand - es ist NICHT "erledigt", sondern nur der Punkt der Liste
             contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.tertiary

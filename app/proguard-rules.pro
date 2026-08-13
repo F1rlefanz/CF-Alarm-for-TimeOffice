@@ -343,8 +343,10 @@
 # ==============================
 
 # Remove unused resources
--dontshrink
--dontoptimize # Temporarily disabled for stability
+# -dontshrink    AUS seit 10.08.2026: mit dieser Zeile waere isMinifyEnabled=true eine
+#                Attrappe - R8 laeuft, entfernt aber nichts. Siehe build.gradle.kts.
+# -dontoptimize  AUS seit 10.08.2026 (war "Temporarily disabled for stability").
+#                Am Geraet verifiziert: Release-APK mit vollem Happy Path lauffaehig.
 
 # Enable R8 full mode optimizations in gradle
 # android.enableR8.fullMode=true

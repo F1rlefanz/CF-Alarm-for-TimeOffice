@@ -25,11 +25,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 
@@ -54,7 +54,10 @@ fun CalendarSelectionScreen(
      */
     onRequestAuthorization: () -> Unit
 ) {
-    val calendarState by calendarViewModel.uiState.collectAsState()
+    // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand. Die Auswahl selbst
+    // schreibt toggleCalendarSelection() ueber das ViewModel ins Repository - am Sammeln hier
+    // haengt kein Seiteneffekt, der auch im Hintergrund laufen muesste.
+    val calendarState by calendarViewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {

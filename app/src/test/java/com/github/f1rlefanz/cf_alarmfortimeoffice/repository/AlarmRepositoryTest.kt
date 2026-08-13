@@ -80,7 +80,7 @@ class AlarmRepositoryTest {
     @Test
     fun `init laedt persistierte zukuenftige Alarme aus dem DataStore`() = runTest {
         val store = storeWith(alarmData(id = 42, offsetMs = 60 * 60 * 1000L))
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         // Warte deterministisch, bis der asynchrone Init-Load den Cache befuellt hat.
         val loaded = repo.activeAlarms.first { list -> list.any { it.id == 42 } }
@@ -95,7 +95,7 @@ class AlarmRepositoryTest {
             alarmData(id = 1, offsetMs = -60 * 60 * 1000L), // Vergangenheit -> raus
             alarmData(id = 2, offsetMs = 60 * 60 * 1000L)   // Zukunft -> bleibt
         )
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         val loaded = repo.activeAlarms.first { it.isNotEmpty() }
 
@@ -104,7 +104,7 @@ class AlarmRepositoryTest {
 
     @Test
     fun `saveAlarm lehnt einen Alarm in der Vergangenheit ab`() = runTest {
-        val repo = AlarmRepository(storeWith(), mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(storeWith(), mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         val past = futureAlarmInfo(id = 3, offsetMs = -60 * 60 * 1000L)
         val result = repo.saveAlarm(past)
@@ -117,7 +117,7 @@ class AlarmRepositoryTest {
     fun `init laedt das persistierte Schichtende mit`() = runTest {
         val shiftEnd = now + 8 * 60 * 60 * 1000L
         val store = storeWith(alarmData(id = 7, offsetMs = 60 * 60 * 1000L).copy(shiftEndTime = shiftEnd))
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         val loaded = repo.activeAlarms.first { list -> list.any { it.id == 7 } }
 
@@ -132,7 +132,7 @@ class AlarmRepositoryTest {
         val store = FakePreferencesDataStore(
             mutablePreferencesOf().apply { this[alarmsKey] = legacyJson }
         )
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         val loaded = repo.activeAlarms.first { list -> list.any { it.id == 9 } }
 
@@ -142,7 +142,7 @@ class AlarmRepositoryTest {
     @Test
     fun `init laedt das persistierte isSilent-Flag mit`() = runTest {
         val store = storeWith(alarmData(id = 8, offsetMs = 60 * 60 * 1000L).copy(isSilent = true))
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         val loaded = repo.activeAlarms.first { list -> list.any { it.id == 8 } }
 
@@ -157,7 +157,7 @@ class AlarmRepositoryTest {
         val store = FakePreferencesDataStore(
             mutablePreferencesOf().apply { this[alarmsKey] = legacyJson }
         )
-        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>())
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
 
         val loaded = repo.activeAlarms.first { list -> list.any { it.id == 11 } }
 
@@ -169,7 +169,7 @@ class AlarmRepositoryTest {
     fun `saveAlarm persistiert isSilent = true und ueberlebt einen Reload`() = runTest {
         val directBoot = mock<DirectBootAlarmStore>()
         val store = storeWith()
-        val repo = AlarmRepository(store, directBoot)
+        val repo = AlarmRepository(store, directBoot, AlarmRepoTestContext.unlocked())
         repo.activeAlarms.first() // Init-Load abwarten (leerer Bestand)
 
         val silentAlarm = futureAlarmInfo(id = 99, offsetMs = 60 * 60 * 1000L).copy(isSilent = true)
@@ -177,7 +177,7 @@ class AlarmRepositoryTest {
 
         // Aus einem frischen Repository (derselbe DataStore) geladen - beweist, dass isSilent
         // tatsaechlich im persistierten JSON steht und nicht nur im In-Memory-Cache.
-        val reloaded = AlarmRepository(store, directBoot)
+        val reloaded = AlarmRepository(store, directBoot, AlarmRepoTestContext.unlocked())
         val loaded = reloaded.activeAlarms.first { list -> list.any { it.id == 99 } }
 
         assertTrue("isSilent muss den Persist/Reload-Zyklus ueberleben", loaded.first { it.id == 99 }.isSilent)
@@ -190,7 +190,7 @@ class AlarmRepositoryTest {
             alarmData(id = 10, offsetMs = 60 * 60 * 1000L),
             alarmData(id = 20, offsetMs = 2 * 60 * 60 * 1000L)
         )
-        val repo = AlarmRepository(store, directBoot)
+        val repo = AlarmRepository(store, directBoot, AlarmRepoTestContext.unlocked())
 
         // Erst Init-Load abwarten (beide Alarme im Cache), dann loeschen.
         repo.activeAlarms.first { it.size == 2 }

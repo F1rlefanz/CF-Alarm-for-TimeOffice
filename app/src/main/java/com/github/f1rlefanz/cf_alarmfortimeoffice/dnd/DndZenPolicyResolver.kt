@@ -23,6 +23,14 @@ data class DndZenPolicyIntent(
     val allowSystem: Boolean,
 )
 
+// Lint meldet hier InlinedApi (die ZenPolicy-Konstanten PEOPLE_TYPE_... und
+// CONVERSATION_SENDERS_... brauchen API 29/30, minSdk ist 26) - Falschbefund, aus zwei Gruenden:
+// 1. Es sind Compile-Zeit-Konstanten (statische Ints), die der Compiler als Literale einbackt. Zur
+//    Laufzeit findet KEIN Zugriff auf eine fehlende API statt, der Wert ist einfach eine Zahl.
+// 2. Der einzige Produktiv-Konsument ist DndScheduleUseCase.buildAutomaticZenRule() mit
+//    RequiresApi(30); das gesamte DND-Feature ist ohnehin auf API 30+ gegated
+//    (DndPermissionHelper.isFeatureSupported() / DndScheduleUseCase.isSupported()).
+@Suppress("InlinedApi")
 fun resolveDndZenPolicyIntent(p: DndPrefs.Policy): DndZenPolicyIntent = DndZenPolicyIntent(
     allowCallsPeopleType = if (p.blockCalls) ZenPolicy.PEOPLE_TYPE_NONE else ZenPolicy.PEOPLE_TYPE_ANYONE,
     allowMessagesPeopleType = if (p.blockMessages) ZenPolicy.PEOPLE_TYPE_NONE else ZenPolicy.PEOPLE_TYPE_ANYONE,

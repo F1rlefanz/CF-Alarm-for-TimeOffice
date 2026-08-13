@@ -56,6 +56,21 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 
+      # RELEASE-PFAD. Bis 10.08.2026 baute die CI ausschliesslich Debug - ein kaputter
+      # Release-Build waere also erst beim Ausliefern aufgefallen, und genau dort sitzt das
+      # eigentliche Risiko: R8/Minify (seit 10.08.2026 aktiv) und lintVitalRelease.
+      #
+      # Ohne Keystore-Secret: `signingConfig` ist in build.gradle.kts an das Vorhandensein des
+      # Schluessels gebunden, die APK entsteht hier also UNSIGNIERT. Das ist Absicht - geprueft
+      # werden soll Shrinking/Optimierung und Release-Lint, nicht das Signieren. Eine unsignierte
+      # APK laesst sich weder installieren noch hochladen, der Unterschied kann also nicht
+      # unbemerkt in eine Auslieferung geraten. Signiert wird lokal beim Release.
+      - name: Release-Lint (blockierende Checks der Release-Variante)
+        run: ./gradlew lintVitalRelease --stacktrace
+
+      - name: Release-Build mit R8 (unsigniert, prueft Shrinking/Optimierung)
+        run: ./gradlew assembleRelease --stacktrace
+
       - name: Test-/Lint-Reports bei Fehler
         if: failure()
         uses: actions/upload-artifact@v7

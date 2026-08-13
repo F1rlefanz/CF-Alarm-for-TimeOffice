@@ -19,12 +19,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.InlineErrorCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingIconButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -48,7 +48,10 @@ fun CalendarAuthorizationScreen(
     authViewModel: AuthViewModel,
     onSignOut: () -> Unit
 ) {
-    val authState by authViewModel.uiState.collectAsState()
+    // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand (Ladeflag,
+    // Fehlertext, Kontoname). Der Zustimmungsdialog laeuft ueber die Activity und das ViewModel
+    // weiter - am Sammeln haengt kein Seiteneffekt, der im Hintergrund laufen muesste.
+    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val loading = authState.calendarOps.calendarsLoading
 
@@ -68,6 +71,7 @@ fun CalendarAuthorizationScreen(
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Default.CalendarMonth,
+                    // dekorativ: "Kalender-Zugriff erforderlich" darunter sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
@@ -113,6 +117,7 @@ fun CalendarAuthorizationScreen(
             icon = {
                 Icon(
                     Icons.Default.CalendarMonth,
+                    // dekorativ: die Knopfbeschriftung "Kalender-Zugriff erlauben" sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
                 )

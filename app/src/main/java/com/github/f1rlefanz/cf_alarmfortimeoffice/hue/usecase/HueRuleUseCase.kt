@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.SunriseConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCaseAdvanced
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.AutoOffTarget
@@ -9,7 +8,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleExecutionResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleValidationResult
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -30,15 +28,27 @@ class HueRuleUseCase @Inject constructor(
     private val configRepository: IHueConfigRepository,
     private val lightUseCase: IHueLightUseCaseAdvanced
 ) : IHueRuleUseCase {
-    
+
+    /**
+     * Die Sonnenaufgangs-Ausfuehrung liegt in einer eigenen Klasse, wird hier aber INTERN
+     * erzeugt: kein Hilt-Binding, kein zusaetzlicher Konstruktor-Parameter. Es gibt genau einen
+     * Besitzer der Rampe, und das ist dieser UseCase.
+     */
+    private val sunriseExecutor = HueSunriseExecutor(lightUseCase) { getAllRules() }
+
     companion object {
         private const val MAX_RULES_PER_SHIFT = 10
 
         /**
-         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt. Wird von der Regel-UI derzeit
-         * nicht angeboten (sie listet nur die Definitionsnamen), im UseCase aber ausgewertet.
+         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt. Seit v1.24.0 bietet der
+         * Regel-Editor das als Eintrag "Alle Schichten" an (davor wertete nur der UseCase es
+         * aus, ohne dass es je jemand setzen konnte).
+         *
+         * `internal` statt `private`, weil [HueSunriseExecutor] und die Regel-UI dasselbe Muster
+         * auswerten muessen - ein zweites Literal waere eine zweite Wahrheit, und genau daran
+         * haengt, ob eine Universal-Regel ihr Auto-Aus behaelt.
          */
-        private const val UNIVERSAL_SHIFT_PATTERN = "ALL"
+        internal const val UNIVERSAL_SHIFT_PATTERN = "ALL"
 
         // War 3 - eine willkuerliche Schwelle, die nie greifen konnte, weil der Validierungs-
         // Check kaputt war (siehe requireValidRule). Mit der Reparatur wuerde sie ploetzlich
@@ -193,10 +203,10 @@ class HueRuleUseCase @Inject constructor(
                             // end state now so the alarm ALWAYS lights up, even if that worker
                             // never ran (device off/offline). Idempotent if the ramp completed.
                             Logger.d(LogTags.HUE_USECASE, "Rule ${rule.name}: finalizing pre-alarm sunrise at alarm time")
-                            finalizeSunriseForRule(rule, sunrise)
+                            sunriseExecutor.finalizeSunriseForRule(rule, sunrise)
                         } else {
                             // Sunrise starts at the alarm: run the full ramp now.
-                            runSunriseForRule(rule, sunrise)
+                            sunriseExecutor.runSunriseForRule(rule, sunrise)
                         }
                         totalActions += sunriseResult.attempted
                         successfulActions += sunriseResult.succeeded
@@ -291,64 +301,28 @@ class HueRuleUseCase @Inject constructor(
         }
     }
 
-    override suspend fun executeSunrisePreAlarm(shiftName: String): Result<RuleExecutionResult> {
-        Logger.i(LogTags.HUE_USECASE, "🌅 Executing PRE-ALARM sunrise ramps for shift: $shiftName")
+    override suspend fun executeSunrisePreAlarm(shiftName: String): Result<RuleExecutionResult> =
+        sunriseExecutor.executeSunrisePreAlarm(shiftName)
 
-        return try {
-            val rules = getAllRules().getOrElse { error ->
-                Logger.e(LogTags.HUE_USECASE, "Failed to load rules for pre-alarm sunrise", error)
-                return Result.failure(error)
-            }
-            val sunriseRules = matchingPreAlarmSunriseRules(rules, shiftName)
-
-            val errors = mutableListOf<String>()
-            var attempted = 0
-            var succeeded = 0
-
-            for (rule in sunriseRules) {
-                val sunrise = rule.sunrise ?: continue
-                val result = runSunriseForRule(rule, sunrise)
-                attempted += result.attempted
-                succeeded += result.succeeded
-                errors.addAll(result.errors)
-            }
-
-            val result = RuleExecutionResult(
-                rulesExecuted = sunriseRules.size,
-                actionsExecuted = attempted,
-                successfulActions = succeeded,
-                errors = errors
-            )
-
-            Logger.i(LogTags.HUE_USECASE, "🌅 Pre-alarm sunrise complete: ${sunriseRules.size} rule(s), $succeeded/$attempted targets")
-            Result.success(result)
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to execute pre-alarm sunrise", e)
-            Result.failure(e)
-        }
-    }
-
-    override fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int? {
-        return try {
-            matchingPreAlarmSunriseRules(rules, shiftName)
-                .mapNotNull { it.sunrise?.durationMinutes }
-                .maxOrNull()
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to compute pre-alarm sunrise lead minutes", e)
-            null
-        }
-    }
+    override fun getPreAlarmSunriseLeadMinutes(rules: List<HueSchedule>, shiftName: String): Int? =
+        sunriseExecutor.getPreAlarmSunriseLeadMinutes(rules, shiftName)
 
     /**
      * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln.
      *
-     * Bewusst OHNE eigenen Schicht-Filter: der Aufrufer hat die Regeln schon passend gewaehlt
-     * ([findApplicableRules] matcht auch ueber die KEYWORDS einer Schicht). Ein zweiter Filter
-     * gegen den Schichtnamen wuerde genau die Regeln wieder wegwerfen, die ueber ein Keyword
-     * getroffen haben - eine Regel mit shiftPattern "Frueh" faellt gegen "Fruehschicht" durch
-     * und verloere ihr Auto-Aus. Diese Funktion besitzt nur den Rechenweg (welche Ziele, welche
-     * Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
+     * Bewusst OHNE eigenen Schicht-Filter: die Auswahl gehoert allein [findApplicableRules]
+     * (exakter Definitionsname ODER [UNIVERSAL_SHIFT_PATTERN]). Ein zweiter Filter gegen den
+     * Schichtnamen waere eine zweite Wahrheit - und wuerde konkret die UNIVERSAL-Regeln wieder
+     * wegwerfen, deren `shiftPattern` per Definition NICHT dem Schichtnamen gleicht: sie
+     * verloeren ihr Auto-Aus, das Licht blieb an. Diese Funktion besitzt nur den Rechenweg
+     * (welche Ziele, welche Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
+     *
+     * (Hier stand bis zu diesem Fix als Begruendung, [findApplicableRules] matche "auch ueber die
+     * KEYWORDS einer Schicht" - das tut es seit dem Keyword-Fix in v1.11.0 nicht mehr, siehe
+     * den Kommentar dort und `HueSunriseExecutor.matchingPreAlarmSunriseRules`. Die Entscheidung
+     * "kein zweiter Filter" war richtig, nur die Begruendung war veraltet - und eine veraltete Begruendung
+     * verleitet dazu, das Keyword-Matching "wiederherzustellen", also genau die Fehlerfamilie
+     * neu zu bauen, die CLAUDE.md unter "Schicht -> Regel" festhaelt.)
      */
     private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {
@@ -378,111 +352,6 @@ class HueRuleUseCase @Inject constructor(
             emptyList()
         }
     }
-
-    /**
-     * Enabled "start before alarm" sunrise rules whose shift pattern matches [shiftName]
-     * (or the universal [UNIVERSAL_SHIFT_PATTERN]).
-     *
-     * [shiftName] ist hier der Definitionsname, den der Alarm traegt - derselbe Massstab wie in
-     * [findApplicableRules]. Kein Keyword-Vergleich, keine Teiltreffer.
-     */
-    private fun matchingPreAlarmSunriseRules(rules: List<HueSchedule>, shiftName: String): List<HueSchedule> {
-        return rules.filter { rule ->
-            val sunrise = rule.sunrise
-            rule.enabled &&
-                sunrise != null &&
-                sunrise.enabled &&
-                sunrise.startBeforeAlarm &&
-                (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
-                    rule.shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true))
-        }
-    }
-
-    /**
-     * Runs the sunrise ramp on every target of [rule] via the light use case.
-     */
-    private suspend fun runSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
-        val targets = rule.lightActions
-            .map { it.targetId to it.isGroup }
-            .filter { it.first.isNotBlank() }
-            .distinct()
-
-        if (targets.isEmpty()) {
-            Logger.w(LogTags.HUE_USECASE, "🌅 Sunrise rule ${rule.name} has no targets")
-            return SunriseRunResult(0, 0, listOf("Sunrise rule ${rule.name} has no targets"))
-        }
-
-        val errors = mutableListOf<String>()
-        var succeeded = 0
-
-        targets.forEach { (targetId, isGroup) ->
-            val result = lightUseCase.startSunrise(
-                targetId = targetId,
-                isGroup = isGroup,
-                startKelvin = sunrise.startKelvin,
-                endKelvin = sunrise.endKelvin,
-                endBrightness = sunrise.endBrightness,
-                durationMinutes = sunrise.durationMinutes
-            )
-            if (result.isSuccess) {
-                succeeded++
-            } else {
-                errors.add("Sunrise failed for $targetId: ${result.exceptionOrNull()?.message}")
-            }
-        }
-
-        Logger.i(LogTags.HUE_USECASE, "🌅 Sunrise for rule ${rule.name}: $succeeded/${targets.size} targets")
-        return SunriseRunResult(targets.size, succeeded, errors)
-    }
-
-    /**
-     * Snaps a pre-alarm sunrise rule's targets to the END state (full brightness + end color
-     * temperature) with a short transition. Used at alarm time as a safety net so the lights
-     * always reach the wake-up state even if the pre-alarm ramp never ran.
-     */
-    private suspend fun finalizeSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
-        val targets = rule.lightActions
-            .map { it.targetId to it.isGroup }
-            .filter { it.first.isNotBlank() }
-            .distinct()
-
-        if (targets.isEmpty()) {
-            Logger.w(LogTags.HUE_USECASE, "🌅 Sunrise rule ${rule.name} has no targets")
-            return SunriseRunResult(0, 0, listOf("Sunrise rule ${rule.name} has no targets"))
-        }
-
-        val endCt = HueColorConverter.kelvinToHueMireds(sunrise.endKelvin)
-        val actions = targets.map { (targetId, isGroup) ->
-            LightAction(
-                targetId = targetId,
-                isGroup = isGroup,
-                on = true,
-                brightness = sunrise.endBrightness,
-                colorTemperature = endCt,
-                transitionTime = HueConstants.Lights.SLOW_TRANSITION_TIME,
-                actionDescription = "Sunrise finalize: ${rule.name}"
-            )
-        }
-
-        val batch = lightUseCase.executeBatchLightActions(actions)
-        return if (batch.isSuccess) {
-            val result = batch.getOrNull()
-            SunriseRunResult(
-                attempted = actions.size,
-                succeeded = result?.successfulActions ?: 0,
-                errors = result?.failedActions?.mapNotNull { it.error } ?: emptyList()
-            )
-        } else {
-            SunriseRunResult(actions.size, 0, listOf("Sunrise finalize failed for rule ${rule.name}: ${batch.exceptionOrNull()?.message}"))
-        }
-    }
-
-    /** Outcome of running a sunrise ramp across a rule's targets. */
-    private data class SunriseRunResult(
-        val attempted: Int,
-        val succeeded: Int,
-        val errors: List<String>
-    )
 
     /**
      * Converts a HueSchedule rule to executable LightAction list
@@ -740,7 +609,7 @@ class HueRuleUseCase @Inject constructor(
             if (sunrise?.enabled == true) {
                 // Demo the ramp over a short, observable duration instead of the full time.
                 val testSunrise = sunrise.copy(durationMinutes = SUNRISE_TEST_DURATION_MINUTES)
-                val result = runSunriseForRule(rule, testSunrise)
+                val result = sunriseExecutor.runSunriseForRule(rule, testSunrise)
 
                 // Das Aus kommt NACH der (verkuerzten) Rampe, nicht mittendrin: Die Rampe
                 // laeuft als native Bridge-Transition ueber SUNRISE_TEST_DURATION_MINUTES -

@@ -38,29 +38,8 @@ interface IShiftUseCase {
      */
     suspend fun getCurrentShiftConfig(): Result<ShiftConfig>
     
-    /**
-     * Fügt eine neue Schicht-Definition hinzu
-     * 
-     * @param definition Neue Schicht-Definition
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
-    suspend fun addShiftDefinition(definition: ShiftDefinition): Result<Unit>
     
-    /**
-     * Aktualisiert eine bestehende Schicht-Definition
-     * 
-     * @param definition Aktualisierte Schicht-Definition
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
-    suspend fun updateShiftDefinition(definition: ShiftDefinition): Result<Unit>
     
-    /**
-     * Löscht eine Schicht-Definition anhand der ID
-     * 
-     * @param definitionId ID der zu löschenden Schicht-Definition
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
-    suspend fun deleteShiftDefinition(definitionId: String): Result<Unit>
     
     /**
      * Erkennt Schichten in Kalender-Events basierend auf der aktuellen Konfiguration

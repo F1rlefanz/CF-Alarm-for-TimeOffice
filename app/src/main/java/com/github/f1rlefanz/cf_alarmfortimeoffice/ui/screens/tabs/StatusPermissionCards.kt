@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -130,6 +131,8 @@ internal fun NotificationsEnabledCard() {
         ) {
             Icon(
                 imageVector = if (enabled) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: der Text daneben sagt den Zustand ausdruecklich ("Erlaubt — …" bzw.
+                // "⚠️ Blockiert — …"), das Icon spiegelt ihn nur
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (enabled)
@@ -217,6 +220,7 @@ internal fun FullScreenIntentCard() {
         ) {
             Icon(
                 imageVector = if (canUseFsi) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (canUseFsi)
@@ -301,6 +305,7 @@ internal fun BatteryOptimizationCard() {
         ) {
             Icon(
                 imageVector = if (isExempt) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (isExempt)
@@ -358,7 +363,9 @@ internal fun UnusedAppRestrictionsCard() {
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var isOk by remember { mutableStateOf(true) }
-    var refreshTrigger by remember { mutableStateOf(0) }
+    // mutableIntStateOf statt mutableStateOf(0): kein Autoboxing des Zaehlers (Delegat-Nutzung
+    // unveraendert - `refreshTrigger++` und der LaunchedEffect-Key bleiben, wie sie sind).
+    var refreshTrigger by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refreshTrigger) {
         isOk = !UnusedAppRestrictionsHelper.isRestricted(context)
@@ -390,6 +397,7 @@ internal fun UnusedAppRestrictionsCard() {
         ) {
             Icon(
                 imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (isOk)
@@ -496,6 +504,8 @@ internal fun TimeOfficeHealthCard() {
             ) {
                 Icon(
                     imageVector = if (isBatteryExempt) Icons.Default.CheckCircle else Icons.Default.Error,
+                    // dekorativ: "Akku-Optimierung: ausgenommen" bzw. "⚠️ … eingeschränkt — …"
+                    // steht direkt daneben
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                     tint = if (isBatteryExempt)
@@ -522,6 +532,7 @@ internal fun TimeOfficeHealthCard() {
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
+                    // dekorativ: Hinweis-Icon zum Erklaertext daneben, kein eigener Zustand
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -619,6 +630,7 @@ internal fun DimmerAccessibilityCard() {
         ) {
             Icon(
                 imageVector = if (isActive) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: "Bedienungshilfen-Dienst aktiv/nicht aktiv — …" steht daneben
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (isActive)
@@ -707,6 +719,8 @@ internal fun DndPermissionCard() {
         ) {
             Icon(
                 imageVector = if (!isSupported || isGranted) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: der Statustext daneben (dnd_status_ok / dnd_status_missing /
+                // dnd_unsupported) sagt den Zustand ausdruecklich
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (!isSupported || isGranted) MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error

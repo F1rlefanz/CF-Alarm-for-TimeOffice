@@ -180,6 +180,24 @@ class HueRuleMatchingTest {
         assertEquals(1, useCase.findApplicableRules(shift("Nachtschicht"), LocalTime.of(20, 0)).getOrThrow().size)
     }
 
+    /**
+     * Seit v1.24.0 bietet der Regel-Editor das Universalmuster selbst an ("Alle Schichten",
+     * `ShiftPatternCard`); vorher war es nur ueber eine von Hand gebaute Regel erreichbar.
+     *
+     * Der Test setzt bewusst [HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN] ein - genau den Wert, den
+     * die UI schreibt - statt eines zweiten Literals "ALL". Liefen UI-Konstante und Abgleich je
+     * auseinander, entstuende eine Regel, die der Editor als ausgewaehlt anzeigt, die aber nie
+     * feuert: fuer Licht hinnehmbar, als Muster in dieser App nicht.
+     */
+    @Test
+    fun `im Editor gesetztes Universalmuster trifft jede Schicht`() = runTest {
+        val useCase = useCase(listOf(rule("Flurlicht", HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN)))
+
+        assertEquals(1, useCase.findApplicableRules(shift("S2"), LocalTime.of(14, 30)).getOrThrow().size)
+        assertEquals(1, useCase.findApplicableRules(shift("Zwischendienst"), LocalTime.of(9, 0)).getOrThrow().size)
+        assertEquals(1, useCase.findApplicableRules(shift("IMCF"), LocalTime.of(5, 30)).getOrThrow().size)
+    }
+
     @Test
     fun `deaktivierte Regel trifft nicht`() = runTest {
         val result = useCase(listOf(rule("Licht Frueh", "Frühschicht", enabled = false)))

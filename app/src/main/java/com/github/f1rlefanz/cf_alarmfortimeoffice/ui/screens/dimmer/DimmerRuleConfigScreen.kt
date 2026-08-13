@@ -29,8 +29,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
@@ -59,14 +60,17 @@ fun DimmerRuleConfigScreen(
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val shiftNames by viewModel.shiftNames.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: reiner Anzeige-Zustand (Namen der
+    // Schicht-Definitionen fuers Dropdown). Das Abo darf im Hintergrund ruhen - es haengt kein
+    // Seiteneffekt daran, und `WhileSubscribed` kann den Upstream nur so wirklich freigeben.
+    val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
     val existing = remember(ruleId) { viewModel.ruleById(ruleId) }
 
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var shiftPattern by remember { mutableStateOf(existing?.shiftPattern ?: DimRule.SHIFT_UNIVERSAL) }
     var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
-    var strength by remember { mutableStateOf(existing?.strength ?: DimOverlayPrefs.DEFAULT_STRENGTH) }
-    var warmth by remember { mutableStateOf(existing?.warmth ?: DimOverlayPrefs.DEFAULT_WARMTH) }
+    var strength by remember { mutableIntStateOf(existing?.strength ?: DimOverlayPrefs.DEFAULT_STRENGTH) }
+    var warmth by remember { mutableIntStateOf(existing?.warmth ?: DimOverlayPrefs.DEFAULT_WARMTH) }
     val windows = remember { mutableStateListOf<DimWindow>().apply { existing?.windows?.let { addAll(it) } } }
 
     Scaffold(
@@ -257,6 +261,8 @@ private fun ShiftDropdown(
         Box {
             OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(text = dimPatternLabel(selected), modifier = Modifier.weight(1f))
+                // dekorativ: der Text im selben Knopf sagt es bereits, und bedienbar ist der Knopf,
+                // nicht das Icon - eine eigene Beschreibung liesse den Screenreader doppelt lesen.
                 Icon(Icons.Default.ArrowDropDown, contentDescription = null)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

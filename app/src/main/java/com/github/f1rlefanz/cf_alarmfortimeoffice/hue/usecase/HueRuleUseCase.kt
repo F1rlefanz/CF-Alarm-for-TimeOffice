@@ -40,11 +40,13 @@ class HueRuleUseCase @Inject constructor(
         private const val MAX_RULES_PER_SHIFT = 10
 
         /**
-         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt. Wird von der Regel-UI derzeit
-         * nicht angeboten (sie listet nur die Definitionsnamen), im UseCase aber ausgewertet.
+         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt. Seit v1.24.0 bietet der
+         * Regel-Editor das als Eintrag "Alle Schichten" an (davor wertete nur der UseCase es
+         * aus, ohne dass es je jemand setzen konnte).
          *
-         * `internal` statt `private`, weil [HueSunriseExecutor] dasselbe Muster auswerten muss -
-         * eine zweite Konstante waere eine zweite Wahrheit.
+         * `internal` statt `private`, weil [HueSunriseExecutor] und die Regel-UI dasselbe Muster
+         * auswerten muessen - ein zweites Literal waere eine zweite Wahrheit, und genau daran
+         * haengt, ob eine Universal-Regel ihr Auto-Aus behaelt.
          */
         internal const val UNIVERSAL_SHIFT_PATTERN = "ALL"
 

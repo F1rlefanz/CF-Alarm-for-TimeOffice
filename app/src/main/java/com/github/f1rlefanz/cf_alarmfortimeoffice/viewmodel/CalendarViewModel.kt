@@ -1121,8 +1121,6 @@ class CalendarViewModel @Inject constructor(
      * MEMORY LEAK PREVENTION: Proper resource cleanup to prevent mutex errors
      */
     override fun onCleared() {
-        super.onCleared()
-        
         try {
             Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Starting cleanup...")
             

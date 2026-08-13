@@ -44,7 +44,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +55,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
@@ -75,7 +75,10 @@ fun HueSettingsScreen(
     onCreateNewRule: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val uiState by hueViewModel.uiState.collectAsState()
+    // collectAsStateWithLifecycle statt collectAsState: der Zustand speist nur diesen Bildschirm,
+    // das Abo darf unterhalb von STARTED ruhen. Kein Seiteneffekt haengt daran - die einmaligen
+    // Meldungen laufen ueber den LaunchedEffect auf `userMessages`.
+    val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -195,6 +198,8 @@ private fun BridgeStatusCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
+                    // dekorativ: der Text daneben sagt den Zustand bereits aus
+                    // ("Verbunden mit ..." bzw. "Nicht verbunden")
                     if (connectionInfo?.isConnected == true) Icons.Default.CheckCircle else Icons.Default.Error,
                     contentDescription = null,
                     tint = if (connectionInfo?.isConnected == true) MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error,
@@ -241,6 +246,7 @@ private fun BridgeStatusCard(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
+                    // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                     Icon(Icons.Default.LinkOff, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Verbindung trennen / Bridge vergessen")
@@ -312,6 +318,7 @@ private fun StatItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        // dekorativ: Label und Wert stehen als Text direkt darunter
         Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
         Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -329,6 +336,7 @@ private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // dekorativ: die Ueberschrift darunter sagt es bereits
             Icon(Icons.Default.Lightbulb, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Noch keine Regeln erstellt", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
@@ -337,6 +345,7 @@ private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Button(onClick = onCreateNewRule, modifier = Modifier.fillMaxWidth()) {
+                // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                 Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Erste Regel erstellen")
@@ -377,7 +386,13 @@ private fun RuleCard(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(rule.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Schichtmuster: ${rule.shiftPattern}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // hueShiftPatternLabel: das Universalmuster ist ein Sentinel ("ALL") und
+                    // darf in der Liste nicht roh erscheinen - dieselbe Beschriftung wie im Editor.
+                    Text(
+                        "Schichtmuster: ${hueShiftPatternLabel(rule.shiftPattern)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Text(
                         "${if (rule.enabled) "Aktiv" else "Deaktiviert"} • ${rule.timeRanges.size} Zeitbereich(e)",
                         style = MaterialTheme.typography.bodySmall,
@@ -407,7 +422,9 @@ private fun RuleCard(
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = { showDeleteDialog = true }) {
-                    Icon(Icons.Default.Delete, "Löschen", tint = MaterialTheme.colorScheme.error)
+                    // Eigenstaendiges Bedienelement ohne sichtbare Beschriftung: die
+                    // contentDescription benennt die AKTION, nicht das Symbol.
+                    Icon(Icons.Default.Delete, "Regel löschen", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }

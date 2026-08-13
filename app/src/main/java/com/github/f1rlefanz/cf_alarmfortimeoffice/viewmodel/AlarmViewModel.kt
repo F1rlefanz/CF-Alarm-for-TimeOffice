@@ -409,12 +409,13 @@ class AlarmViewModel @Inject constructor(
         const val MANUAL_SHIFT_ID_PREFIX = "manual_"
 
         fun createManualAlarmId(date: LocalDate, shiftId: String): Int {
-            val dateString = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+            // ID-BILDUNG, kein Anzeige-Format: der String geht ueber hashCode() in die Alarm-ID
+            val dateString = date.format(DateTimeFormatter.ofPattern(DateTimeFormats.ID_DATE_COMPACT))
             return "$MANUAL_ALARM_PREFIX$dateString$shiftId".hashCode()
         }
 
         fun createManualShiftId(originalShiftId: String, date: LocalDate): String {
-            val dateString = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+            val dateString = date.format(DateTimeFormatter.ofPattern(DateTimeFormats.ID_DATE_COMPACT))
             return "$MANUAL_SHIFT_ID_PREFIX${originalShiftId}_$dateString"
         }
 
@@ -767,8 +768,6 @@ class AlarmViewModel @Inject constructor(
      * CRITICAL FIX: This was missing and causing memory leaks!
      */
     override fun onCleared() {
-        super.onCleared()
-
         try {
             // MEMORY LEAK FIX: Cancel alarm observation job
             alarmObservationJob?.cancel()

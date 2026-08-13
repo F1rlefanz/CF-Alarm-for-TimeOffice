@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,7 +21,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -40,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -216,6 +215,8 @@ private fun StatusCard(
         ) {
             Icon(
                 imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: `details` daneben benennt den Zustand bereits in Worten
+                // (z. B. "Nicht angemeldet", "Kein Kalender ausgewählt")
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (isOk)
@@ -326,6 +327,7 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
             ) {
                 Icon(
                     imageVector = if (isOffline) Icons.Default.CloudOff else Icons.Default.Storage,
+                    // dekorativ: "Offline-Modus"/"Cache-Status" samt Erklaerzeile steht daneben
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                     tint = if (isOffline)
@@ -411,7 +413,9 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
 @Composable
 private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
     val context = LocalContext.current
-    var lastMaintenanceTime by remember { mutableStateOf(0L) }
+    // mutableLongStateOf statt mutableStateOf(0L): kein Autoboxing des Zeitstempels bei jedem
+    // 30s-Tick (Delegat-Nutzung unveraendert).
+    var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
 
     // Wartungszeit laden und alle 30s aktualisieren
     LaunchedEffect(Unit) {
@@ -462,6 +466,8 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
         ) {
             Icon(
                 Icons.Default.Refresh,
+                // dekorativ: "Letzter Sync" und der Abstand in Worten stehen daneben, die
+                // Warnung bei >24h zusaetzlich als eigener Text
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                 tint = statusColor
@@ -565,6 +571,7 @@ private fun DebugInfoCard() {
             ) {
                 Icon(
                     imageVector = Icons.Default.Storage,
+                    // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
                 )
@@ -606,6 +613,7 @@ private fun DebugInfoCard() {
             ) {
                 Icon(
                     imageVector = Icons.Default.DeleteSweep,
+                    // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
                 )
@@ -657,17 +665,12 @@ private fun DebugInfoCard() {
  */
 private fun isNetworkAvailable(context: Context): Boolean {
     val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        val activeNetwork = connectivityManager.activeNetwork ?: return false
-        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
 
-        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+    // Kein SDK_INT-Zweig mehr: minSdk ist 26, der frühere else-Zweig (deprecated
+    // activeNetworkInfo, nur < API 23) war unerreichbar.
+    val activeNetwork = connectivityManager.activeNetwork ?: return false
+    val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+
+    return networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
         networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    } else {
-        @Suppress("DEPRECATION")
-        val activeNetworkInfo = connectivityManager.activeNetworkInfo
-        @Suppress("DEPRECATION")
-        activeNetworkInfo?.isConnectedOrConnecting == true
-    }
 }

@@ -67,6 +67,7 @@ fun BatteryEducationalDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
+            // dekorativ: der Dialogtitel "Warum diese Berechtigung?" folgt direkt darunter
             Icon(Icons.Default.Info, contentDescription = null)
         },
         title = {

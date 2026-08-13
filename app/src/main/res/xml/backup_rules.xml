@@ -36,7 +36,7 @@
          beim naechsten syncAlarms()/applyCurrentState() aus Kalender + Konfiguration neu
          abgeleitet, und eine restaurierte, auf dem Zielgeraet unbekannte Zen-Regel-ID legt
          ensureZenRule() einfach neu an.
-         AUSNAHME, die das NICHT ist: die Master-Pause (master_pause_enabled/-_until) wird NICHT
+         AUSNAHME, die das NICHT ist: die Master-Pause (master_pause_enabled) wird NICHT
          neu abgeleitet - sie ist massgeblicher Zustand und gated Wecker, Dimmer, DND und die
          6h-Wartung. Nach einem Restore waere eine aktive Pause wieder aktiv, und auf dem neuen
          Geraet bliebe der Wecker STILL, ohne dass jemand die Ursache in einer Wiederherstellung

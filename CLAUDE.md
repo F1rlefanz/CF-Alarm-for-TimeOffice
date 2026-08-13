@@ -1624,9 +1624,18 @@ Wecker gekostet:**
   (in `gradle.properties`): Die Deprecation-Warnungen entstehen in der Konfigurationsphase. Wird
   der Konfigurations-Cache wiederverwendet, erscheinen sie schlicht nicht neu. Nach jeder Änderung
   an `build.gradle.kts`/`gradle.properties` sind sie wieder da.
-- **Die Warnung lügt:** Ihr Vorschlag, `android.builtInKotlin`/`android.newDsl` zu entfernen und
-  auf built-in Kotlin zu migrieren, zerlegt das Dreieck aus KSP 2.x, KGP 2.x und AGP 9.x. Beide
-  Flags bleiben auf `false`.
+- **Built-in Kotlin: migriert (v1.24.x).** Hier stand bis dahin „Die Warnung lügt: ihr Vorschlag
+  zerlegt das Dreieck aus KSP 2.x, KGP 2.x und AGP 9.x, beide Flags bleiben auf `false`." Das war
+  einmal richtig und ist es nicht mehr — am 13.08.2026 nachgemessen statt geglaubt. Der
+  `BaseExtension`-Cast, an dem `newDsl=true` scheiterte, existiert weiterhin; er trifft aber nur
+  das **`kotlin.android`-Plugin**, und genau das braucht AGP 9 nicht mehr. Der Weg ist deshalb
+  nicht „Flags entfernen", sondern die Migration: Plugin aus `app/build.gradle.kts` **und** aus
+  der Wurzel raus, `builtInKotlin=true`, `newDsl=true`. Bleibt genau ein enger Bypass,
+  `android.disallowKotlinSourceSets=false` — KSP 2.3.2 meldet seine generierten Quellen noch über
+  `kotlin.sourceSets` an. Verifiziert: KSP + Hilt laufen, Tests grün, `lintDebug`,
+  `lintVitalRelease` und `assembleRelease` (R8) grün, APK gleich groß, App startet am Emulator —
+  und die Deprecation-Warnungen sind **weg** statt unterdrückt. Wer die Flags künftig anfasst,
+  misst wieder nach, statt dieser Zeile zu glauben.
 - **Debug-Build** schreibt VERBOSE ins Datei-Log (`CFAlarmApplication.onCreate()`, Variable
   `fileLogMinPriority`). Release-Logs enthalten **nur WARN+** → erfolgreiche Operationen sind dort
   unsichtbar. Für Diagnose immer einen Debug-Build verlangen — **Ausnahme**: die

@@ -15,7 +15,7 @@
 
 ## ⚠️ Alpha-Test-Status
 
-Aktueller Stand: **1.24.0** (versionCode 87), verteilt im **internen Alpha-Test**. Die App ist **nicht** öffentlich im Play Store veröffentlicht und geht ausschließlich an eine kleine Gruppe eingeladener Tester (aktuell: Kolleginnen und Kollegen aus der Pflege).
+Aktueller Stand: **1.24.1** (versionCode 88), verteilt im **internen Alpha-Test**. Die App ist **nicht** öffentlich im Play Store veröffentlicht und geht ausschließlich an eine kleine Gruppe eingeladener Tester (aktuell: Kolleginnen und Kollegen aus der Pflege).
 
 Was das bedeutet:
 - Es kann Bugs geben – Feedback ist ausdrücklich erwünscht.

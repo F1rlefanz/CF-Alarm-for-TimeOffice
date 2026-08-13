@@ -1622,7 +1622,7 @@ Wecker gekostet:**
   Reihe auf ~32dp: breiter als vorher, aber flacher als Materials Minimum. Am Emulator
   nachgemessen (Density 420: 48dp = 126px). Konstante: `MIN_TOUCH_TARGET` in
   `HueRuleConfigScreen`.
-- **Chip-Reihen als `FlowRow`**, nicht `Row` mit `chunked(n)`. `FlowRow` ist in Compose 1.11.4
+- **Chip-Reihen als `FlowRow`**, nicht `Row` mit `chunked(n)`. `FlowRow` ist seit Compose 1.11.4
   stabil (nur die deprecated Überladung mit `overflow` ist `@ExperimentalLayoutApi`) → kein
   `@OptIn` nötig.
 

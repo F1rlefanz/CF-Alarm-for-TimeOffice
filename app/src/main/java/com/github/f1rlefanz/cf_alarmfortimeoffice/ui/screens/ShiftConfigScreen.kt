@@ -562,7 +562,7 @@ private fun CodeSuggestionCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
-            // FlowRow statt Row mit chunked(): bricht selbst um und ist in Compose 1.11.4 stabil.
+            // FlowRow statt Row mit chunked(): bricht selbst um und ist seit Compose 1.11.4 stabil.
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
                 verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)

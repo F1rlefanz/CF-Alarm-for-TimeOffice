@@ -31,7 +31,8 @@ Folgt dem globalen Default aus `~/.claude/CLAUDE.md` (Branch pro Änderung, proa
 # Install debug APK to connected device
 ./gradlew installDebug
 
-# Instrumentation-Tests (ColdStartSmokeTest) - NICHT mit --offline, siehe unten
+# Instrumentation-Tests (ColdStartSmokeTest, AlarmFullScreenSmokeTest) - NICHT mit --offline,
+# und NICHT bei zwei angesteckten Geraeten (laeuft sonst auch auf dem echten Handy), siehe unten
 ./gradlew connectedDebugAndroidTest
 ```
 
@@ -1674,6 +1675,22 @@ Wecker gekostet:**
   Hilt-Graphen**, bewusst ohne `hilt-android-testing` und ohne eigenen Runner: die braucht man nur, um
   Bindings zu ERSETZEN. Ersetzt trotzdem keinen Gerätetest — mehrere Fehler dieser Runde
   (Import-Aktualisierung, unerreichbarer Knopf) hat erst das Gerät gezeigt.
+- **`AlarmFullScreenSmokeTest` (`app/src/androidTest/`) startet den Weck-Bildschirm ÜBER DEN
+  SERVICE-ZUSTAND, nicht als nackte Activity.** `AlarmFullScreenActivity` beobachtet
+  `AlarmSoundService.alarmActive` und schließt sich sofort, solange dort `false` steht
+  (`observeAlarmState()`, Absicht — sonst bliebe nach dem Stoppen über die Notification ein totes
+  Vollbild stehen). Wer den Test auf ein blankes `ActivityScenario.launch` zurückbaut, misst nur
+  noch, wie schnell sich die Activity beendet. Der Test spielt echten Weckton — vorher
+  `cmd media_session volume --stream 4` herunterregeln. **Warum es ihn gibt:** dieser Bildschirm ist
+  die EINZIGE Stelle der App, die an `androidx.appcompat` hängt (`AppCompatActivity` plus beide
+  Themes aus `Theme.AppCompat.*`), und am Gerät ist er ohne Anmeldung gar nicht erreichbar — ein
+  appcompat-, Theme- oder Compose-Bump war vorher nicht überprüfbar, ohne sich anzumelden und einen
+  echten Kalender-Alarm abzuwarten.
+- **Gegen zwei angesteckte Geräte hilft `installDebug`/`connectedDebugAndroidTest` nicht** — beide
+  scheitern („more than one device/emulator") bzw. laufen auf ALLEN Geräten, also auch auf dem
+  produktiven Fairphone. Sicherer Weg: `assembleDebug` + `assembleDebugAndroidTest`, dann
+  `adb -s emulator-5554 install -r …` und `adb -s emulator-5554 shell am instrument -w -e class …`.
+  Das trifft garantiert nur den Emulator und deinstalliert die App hinterher NICHT.
 - Debug-SHA-1 ist in der Google Cloud Console eingetragen (verifiziert 14.07.).
 - Getestet wird auf einem echten Gerät **und einem Emulator als Zweitgerät**; Logcat-Auszüge
   kommen vom Nutzer.

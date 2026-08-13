@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
+import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmReceiver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
@@ -730,6 +731,14 @@ class AlarmManagerService(
         internal fun snoozeIdsOf(entries: Set<String>): List<Int> =
             entries.mapNotNull { parseSnoozeEntry(it)?.id }.distinct()
 
+        // Lint-Befund ApplySharedPref ("nimm apply()") wird hier bewusst NICHT befolgt: der
+        // synchrone commit() ist eine Entscheidung, kein Versehen - siehe Kommentar am Write unten
+        // und CLAUDE.md, Abschnitt "Alarm System" ("Der Snooze-Merker ist serialisiert
+        // (snoozeRegistryLock) und schreibt mit commit()"). apply() schreibt asynchron und verloere
+        // denselben Eintrag bei einem Prozess-Tod unmittelbar danach; der Snooze waere dann im
+        // AlarmManager scharf, aber der App unbekannt - weder abbrechbar noch nach einem Reboot
+        // wiederherstellbar.
+        @Suppress("ApplySharedPref")
         private fun rememberPendingSnooze(
             context: Context,
             alarmId: Int,
@@ -749,17 +758,24 @@ class AlarmManagerService(
                 // aber nirgends vermerkt - nicht abbrechbar und nach einem Reboot nicht
                 // wiederherstellbar. Der Aufrufer ist ein Notausgang von Millisekunden-Dauer, ein
                 // synchroner Write ist hier billiger als der Verlust.
-                prefs.edit()
-                    .putStringSet(
+                prefs.edit(commit = true) {
+                    putStringSet(
                         KEY_SNOOZE_ENTRIES,
                         kept + encodeSnoozeEntry(alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
                     )
-                    .commit()
+                }
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht geschrieben werden", e)
             }
         }
 
+        // Lint-Befund ApplySharedPref ("nimm apply()") wird hier bewusst NICHT befolgt - dieselbe
+        // Begruendung wie bei [rememberPendingSnooze] und CLAUDE.md, Abschnitt "Alarm System":
+        // der Merker ist die einzige Spur eines schwebenden Snooze, und ein asynchroner Write kann
+        // bei einem Prozess-Tod unmittelbar danach verloren gehen. Beim Vergessen ist die Richtung
+        // gespiegelt, aber genauso wenig hinnehmbar: ein bereits abgebrochener Snooze bliebe im
+        // Merker stehen und wuerde beim naechsten Boot-Restore wieder scharf gesetzt.
+        @Suppress("ApplySharedPref")
         private fun forgetPendingSnooze(context: Context, alarmId: Int) = synchronized(snoozeRegistryLock) {
             try {
                 val prefs = snoozePrefs(context)
@@ -767,7 +783,7 @@ class AlarmManagerService(
                 val kept = pruneSnoozeEntries(existing, System.currentTimeMillis())
                     .filterNot { parseSnoozeEntry(it)?.id == alarmId }
                     .toSet()
-                prefs.edit().putStringSet(KEY_SNOOZE_ENTRIES, kept).commit()
+                prefs.edit(commit = true) { putStringSet(KEY_SNOOZE_ENTRIES, kept) }
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht bereinigt werden", e)
             }
@@ -852,7 +868,26 @@ class AlarmManagerService(
             val alive = pruneSnoozeEntries(entries, now)
             if (alive.size != entries.size) {
                 try {
-                    snoozePrefs(context).edit().putStringSet(KEY_SNOOZE_ENTRIES, alive).apply()
+                    // DRITTER Read-Modify-Write-Pfad auf dem Merker - und deshalb unter DERSELBEN
+                    // Sperre und mit DEMSELBEN commit() wie `rememberPendingSnooze()`/
+                    // `forgetPendingSnooze()`. Vorher stand hier ein ungesichertes `apply()` auf der
+                    // oben gelesenen Menge: schlummert der Nutzer, waehrend der Boot-Restore laeuft
+                    // (der Ursprungsalarm kann waehrend der Wiederherstellung feuern), dann legt
+                    // `rememberPendingSnooze()` seinen Eintrag an - und dieser Writeback schrieb die
+                    // ALTE, vor dem Eintrag gelesene Menge darueber. Der Snooze waere im AlarmManager
+                    // scharf, dem Merker aber unbekannt: weder abbrechbar (auch nicht durch die
+                    // Master-Pause) noch nach dem naechsten Reboot wiederherstellbar - genau der
+                    // Ausfall, gegen den dieser Merker ueberhaupt existiert.
+                    // Deshalb INNERHALB der Sperre neu lesen und erst dann kuerzen; ein frisch
+                    // vorgemerkter Snooze liegt in der Zukunft und ueberlebt das Kuerzen.
+                    synchronized(snoozeRegistryLock) {
+                        val current = snoozePrefs(context)
+                            .getStringSet(KEY_SNOOZE_ENTRIES, emptySet()) ?: emptySet()
+                        val pruned = pruneSnoozeEntries(current, now)
+                        snoozePrefs(context).edit(commit = true) {
+                            putStringSet(KEY_SNOOZE_ENTRIES, pruned)
+                        }
+                    }
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht bereinigt werden", e)
                 }

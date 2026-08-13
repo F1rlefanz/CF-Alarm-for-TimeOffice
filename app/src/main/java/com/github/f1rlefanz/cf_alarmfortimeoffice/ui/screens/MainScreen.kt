@@ -10,7 +10,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
@@ -94,10 +94,18 @@ fun MainScreen(
 
     // MEMORY LEAK FIX: Consolidated State Collection
     // Reduziert individuelle collectAsState() auf strukturierte Sammlung
-    val authState by authViewModel.uiState.collectAsState()
-    val calendarState by calendarViewModel.uiState.collectAsState()
-    val mainState by mainViewModel.uiState.collectAsState()
-    val navigationState by navigationViewModel.navigationState.collectAsState()
+    //
+    // collectAsStateWithLifecycle, nicht collectAsState: Diese vier Zustaende steuern
+    // ausschliesslich Vordergrund-Verhalten (Screen-Auswahl, BackHandler, die Gate-Kette im
+    // LaunchedEffect unten). Unterhalb von STARTED pausiert das Sammeln - genau richtig hier,
+    // denn der Gate-Effect startet Activities (Akku-Ausnahme, Settings) bzw. navigiert, und
+    // beides ist aus dem Hintergrund ohnehin nicht erlaubt. Alle vier Quellen sind StateFlows
+    // (konfliert bzw. SharingStarted.Lazily), beim Zurueckkehren kommt also sofort der aktuelle
+    // Wert an; es geht kein Zustand verloren.
+    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val calendarState by calendarViewModel.uiState.collectAsStateWithLifecycle()
+    val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
+    val navigationState by navigationViewModel.navigationState.collectAsStateWithLifecycle()
 
     // PHASE 2 CLEANUP: Removed unused shiftState collection
     // ShiftViewModel is passed directly to screens that need it

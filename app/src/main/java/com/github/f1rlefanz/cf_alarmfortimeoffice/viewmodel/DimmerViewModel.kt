@@ -5,7 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -167,13 +177,58 @@ class DimmerViewModel @Inject constructor(
     }
 
     /**
+     * Scope fuer das Aufraeumen der Vorschau - bewusst GETRENNT vom [viewModelScope], Vorbild
+     * `HueLightUseCase.followUpScope` ("Der Abbruch-Timer und das Vorschau-Auto-Aus haengen an
+     * followUpScope, nicht am Aufrufer").
+     *
+     * Der [CoroutineExceptionHandler] ist Pflicht und nicht durch den [SupervisorJob] gedeckt: der
+     * isoliert nur Geschwister-Jobs, eine ungefangene Exception laeuft trotzdem zum
+     * Thread-Default-Handler und beendet den PROZESS - denselben Prozess, der die Wecker haelt.
+     * Eine gescheiterte Dimm-Vorschau darf das nie.
+     */
+    private val previewScope = CoroutineScope(
+        Dispatchers.IO + SupervisorJob() + CoroutineExceptionHandler { _, e ->
+            Logger.w(LogTags.DIMMER, "Dimmer-Vorschau: Aufraeumen fehlgeschlagen", e)
+        }
+    )
+
+    /** Laufende Vorschau, damit ein zweiter Tipp die erste sauber abloest (siehe [previewDim]). */
+    private var previewJob: Job? = null
+
+    /**
      * Zeigt das Overlay kurz mit den aktuellen Werten – zum Ausprobieren OHNE Schicht/Alarm.
      * Der Bedienungshilfen-Dienst muss aktiv sein. Danach regulären Zustand wiederherstellen.
+     *
+     * Laeuft bewusst NICHT im [viewModelScope]: `setActiveOverlay(true, …)` schreibt einen
+     * PERSISTENTEN Zustand, den `DimAccessibilityService` beobachtet - und der Dienst hat eine vom
+     * ViewModel voellig unabhaengige Lebensdauer. Hing das Zuruecksetzen am viewModelScope, dann
+     * genuegte es, die App waehrend der 5 Sekunden zu verlassen (zweimal Zurueck / aus den Recents
+     * wischen): `onCleared()` cancelte das `delay()`, `applyCurrentState()` lief NIE, und der
+     * Bildschirm blieb systemweit bis zu 85 % verdunkelt. Geheilt haette das erst der naechste
+     * Dimm-Tick - und wenn keine der drei Fenster-Quellen (Wellness/Regeln/Nacht-Standard) an ist
+     * (der typische Zustand von jemandem, der die Vorschau zum Ausprobieren nutzt, BEVOR er etwas
+     * einschaltet), kommt dieser Tick unter Umstaenden gar nicht.
+     *
+     * Deshalb drei Dinge: eigener [previewScope], das Zuruecksetzen im `finally` (greift auch bei
+     * Exception oder Cancellation) und dort `NonCancellable` - dieselbe Ueberlegung wie bei
+     * `MasterPauseUseCase.pause()/resume()`: hier wird ein Zustand HERGESTELLT, nicht nur ein
+     * Schalter umgelegt. Ein zweiter Tipp laesst zuerst das Aufraeumen der laufenden Vorschau zu
+     * Ende laufen (`cancelAndJoin`), sonst schaltete deren `finally` die gerade neu eingeschaltete
+     * Vorschau sofort wieder aus.
      */
-    fun previewDim(seconds: Int = 5) = viewModelScope.launch {
-        // Vorschau zeigt die GLOBALEN Darstellungswerte (die Slider, die der Nutzer gerade sieht).
-        prefs.setActiveOverlay(true, prefs.strengthNow(), prefs.warmthNow())
-        delay(seconds * 1000L)
-        dimSchedule.applyCurrentState()
+    fun previewDim(seconds: Int = 5): Job {
+        val running = previewJob
+        val job = previewScope.launch {
+            running?.cancelAndJoin()
+            try {
+                // Vorschau zeigt die GLOBALEN Darstellungswerte (die Slider, die der Nutzer gerade sieht).
+                prefs.setActiveOverlay(true, prefs.strengthNow(), prefs.warmthNow())
+                delay(seconds * 1000L)
+            } finally {
+                withContext(NonCancellable) { dimSchedule.applyCurrentState() }
+            }
+        }
+        previewJob = job
+        return job
     }
 }

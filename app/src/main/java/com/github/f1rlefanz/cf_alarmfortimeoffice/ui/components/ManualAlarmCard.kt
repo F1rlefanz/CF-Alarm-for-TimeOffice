@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ManualAlarmUiState
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -84,6 +85,8 @@ fun ManualAlarmCard(
                     else Icons.Default.AlarmAdd,
                     modifier = Modifier.size(32.dp),
                     tint = MaterialTheme.colorScheme.primary,
+                    // dekorativ: der Text daneben sagt denselben Zustand bereits
+                    // ("Manueller Alarm aktiv" vs. "Manueller Alarm")
                     contentDescription = null
                 )
                 
@@ -160,6 +163,7 @@ fun ManualAlarmCard(
                         Icon(
                             Icons.Default.DateRange,
                             modifier = Modifier.size(16.dp),
+                            // dekorativ: der Knopftext daneben nennt bereits das gewaehlte Datum
                             contentDescription = null
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -185,6 +189,8 @@ fun ManualAlarmCard(
                         Icon(
                             Icons.Default.Schedule,
                             modifier = Modifier.size(16.dp),
+                            // dekorativ: der Knopftext daneben nennt die Schicht bzw.
+                            // "Schicht wählen"
                             contentDescription = null
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -213,6 +219,7 @@ fun ManualAlarmCard(
                                 Icons.Default.AccessAlarm,
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                // dekorativ: "Weckzeit: …" steht direkt daneben
                                 contentDescription = null
                             )
                             Text(
@@ -281,6 +288,7 @@ fun ManualAlarmCard(
                         Icon(
                             Icons.Default.AlarmAdd,
                             modifier = Modifier.size(16.dp),
+                            // dekorativ: "Alarm erstellen" steht als Knopftext daneben
                             contentDescription = null
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -324,7 +332,8 @@ private fun formatDate(date: LocalDate): String {
     return when {
         date.isEqual(today) -> "Heute"
         date.isEqual(today.plusDays(1)) -> "Morgen"
-        date.year == today.year -> date.format(DateTimeFormatter.ofPattern("dd.MM"))
-        else -> date.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+        // ANZEIGE-Formate (nicht Persistenz/ID) - Werte unveraendert, siehe DateTimeFormats
+        date.year == today.year -> date.format(DateTimeFormatter.ofPattern(DateTimeFormats.DATE_SHORT))
+        else -> date.format(DateTimeFormatter.ofPattern(DateTimeFormats.DATE_ONLY))
     }
 }

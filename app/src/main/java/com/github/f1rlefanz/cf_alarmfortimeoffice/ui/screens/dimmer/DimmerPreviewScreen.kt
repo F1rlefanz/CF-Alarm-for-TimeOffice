@@ -14,15 +14,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
 import java.time.Instant
 import java.time.ZoneId
@@ -40,7 +41,10 @@ fun DimmerPreviewScreen(
     onNavigateBack: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
-    val timeline by viewModel.timeline.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: die Zeitleiste ist ein reiner
+    // Anzeige-Zustand ohne Seiteneffekt (berechnet wird sie ausschliesslich vom LaunchedEffect
+    // darunter) - das Abo darf unterhalb von STARTED ruhen.
+    val timeline by viewModel.timeline.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.refreshTimeline() }
 
@@ -84,7 +88,8 @@ fun DimmerPreviewScreen(
     }
 }
 
-private val DAY_TIME_FORMAT = DateTimeFormatter.ofPattern("EE dd.MM. HH:mm", Locale.GERMAN)
+// Locale.GERMAN bleibt zwingend: ohne das Argument haengt der Wochentagsname an der Systemsprache.
+private val DAY_TIME_FORMAT = DateTimeFormatter.ofPattern(DateTimeFormats.DAY_TIME, Locale.GERMAN)
 
 private fun formatRange(range: LongRange): String {
     val zone = ZoneId.systemDefault()

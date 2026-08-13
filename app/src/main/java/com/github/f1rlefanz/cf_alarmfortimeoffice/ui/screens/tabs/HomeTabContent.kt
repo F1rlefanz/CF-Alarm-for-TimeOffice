@@ -207,6 +207,7 @@ fun HomeTabContent(
             ) {
                 Icon(
                     Icons.Default.Work,
+                    // dekorativ: Text daneben sagt es bereits ("Nächste Schicht")
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
                     tint = MaterialTheme.colorScheme.primary
@@ -295,6 +296,8 @@ fun HomeTabContent(
                     .padding(SpacingConstants.PADDING_CARD),
                 trailingContent = {
                     Icon(
+                        // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
+                        // Element und traegt ihre Beschriftung ueber AlarmStatusHeader selbst
                         Icons.AutoMirrored.Default.KeyboardArrowRight,
                         contentDescription = null
                     )
@@ -327,6 +330,9 @@ fun HomeTabContent(
                 ) {
                     Icon(
                         Icons.Default.CalendarMonth,
+                        // dekorativ: Ueberschrift daneben sagt es bereits ("Kalender-Events"); den
+                        // Fehlerzustand nennt der Text darunter ausdruecklich
+                        // ("⚠️ Kalender-Autorisierung verloren"), nicht dieses Icon
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                         tint = if (!calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()) {

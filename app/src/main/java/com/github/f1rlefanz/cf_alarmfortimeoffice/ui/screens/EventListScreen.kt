@@ -30,7 +30,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -38,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
@@ -60,7 +60,10 @@ fun EventListScreen(
     calendarViewModel: CalendarViewModel,
     onBack: () -> Unit
 ) {
-    val calendarState by calendarViewModel.uiState.collectAsState()
+    // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand. Das Laden selbst
+    // stoesst dieser Screen ueber das ViewModel an (refreshData/loadMoreEvents) und laeuft dort im
+    // viewModelScope weiter - am Sammeln haengt kein Seiteneffekt, der im Hintergrund laufen muss.
+    val calendarState by calendarViewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
     Scaffold(
@@ -122,6 +125,7 @@ fun EventListScreen(
                 ) {
                     Icon(
                         Icons.Default.CalendarMonth,
+                        // dekorativ: "Keine Events gefunden" darunter sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_XXXL),
                         tint = MaterialTheme.colorScheme.outline
@@ -279,6 +283,7 @@ private fun EventSummaryCard(
         ) {
             Icon(
                 Icons.Default.CalendarMonth,
+                // dekorativ: "Events Übersicht" daneben sagt es bereits
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
                 tint = MaterialTheme.colorScheme.primary
@@ -338,10 +343,14 @@ private fun EventCard(
             horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM),
             verticalAlignment = Alignment.Top
         ) {
-            // Event Type Icon — Arbeitsschichten hervorgehoben durch Markenrot
+            // Event Type Icon — Arbeitsschichten hervorgehoben durch Markenrot.
+            // ZUSTAND, KEIN SCHMUCK: Ob dieser Termin nach einer Arbeitsschicht aussieht, steht
+            // NUR in Icon und Farbe - im Text daneben (Titel, Zeit, Dauer, Kalender) taucht es
+            // nirgends auf. Ohne Beschreibung geht die Unterscheidung fuer den Screenreader
+            // vollstaendig verloren, deshalb hier kein null.
             Icon(
                 imageVector = if (isWorkShift) Icons.Default.Work else Icons.Default.CalendarMonth,
-                contentDescription = null,
+                contentDescription = if (isWorkShift) "Arbeitsschicht" else "Normaler Termin",
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
                 tint = if (isWorkShift)
                     MaterialTheme.colorScheme.primary

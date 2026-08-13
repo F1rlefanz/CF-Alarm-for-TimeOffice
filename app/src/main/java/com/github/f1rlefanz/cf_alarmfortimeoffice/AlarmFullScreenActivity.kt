@@ -525,6 +525,9 @@ private fun AlarmScreen(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Alarm,
+                    // dekorativ: direkt darunter steht R.string.alarm_title ("⏰ CF-ALARM"),
+                    // dazu Schichtname und Schichtbeginn - der Screenreader liest den Anlass
+                    // bereits im Klartext vor
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(72.dp)

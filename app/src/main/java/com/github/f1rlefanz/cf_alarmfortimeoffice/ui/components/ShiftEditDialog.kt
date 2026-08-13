@@ -37,6 +37,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.AlarmConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.LayoutFractions
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import java.time.LocalTime
@@ -55,15 +56,19 @@ fun ShiftEditDialog(
     
     var name by remember { mutableStateOf(shift?.name ?: "") }
     var keywords by remember { mutableStateOf(shift?.keywords ?: listOf("")) }
-    var alarmTimeString by remember { 
-        mutableStateOf(shift?.alarmTime?.format(DateTimeFormatter.ofPattern("HH:mm")) 
-            ?: String.format(Locale.ROOT, "%02d:%02d", AlarmConstants.DEFAULT_ALARM_HOUR, AlarmConstants.DEFAULT_ALARM_MINUTE)) 
+    // TIME_ONLY (ANZEIGE), NICHT PERSIST_TIME: diese beiden Stellen zeigen die vom Nutzer
+    // eingetippte Weckzeit an und parsen sie zurueck. Persistiert wird sie danach ueber
+    // LocalTimeSerializer, der bewusst PERSIST_TIME benutzt. Die Formate sind entkoppelt - wer
+    // sie spaeter zusammenlegt, koppelt die Eingabe-Interpretation an ein Persistenzformat.
+    var alarmTimeString by remember {
+        mutableStateOf(shift?.alarmTime?.format(DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY))
+            ?: String.format(Locale.ROOT, "%02d:%02d", AlarmConstants.DEFAULT_ALARM_HOUR, AlarmConstants.DEFAULT_ALARM_MINUTE))
     }
     var isEnabled by remember { mutableStateOf(shift?.isEnabled ?: true) }
     var isSilent by remember { mutableStateOf(shift?.isSilent ?: false) }
-    
-    // Time formatter
-    val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+    // Time formatter (siehe Hinweis oben: ANZEIGE-Format, nicht das Persistenzformat)
+    val timeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -190,6 +195,7 @@ fun ShiftEditDialog(
                             onClick = { keywords = keywords + "" },
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            // dekorativ: "Weiteres Muster hinzufügen" steht als Knopftext daneben
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
                             Text("Weiteres Muster hinzufügen")

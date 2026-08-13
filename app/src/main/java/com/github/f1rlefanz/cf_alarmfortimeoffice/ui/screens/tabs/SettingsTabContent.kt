@@ -36,7 +36,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
@@ -66,11 +66,17 @@ fun SettingsTabContent(
     onShowDndSettings: () -> Unit
 ) {
     val context = LocalContext.current
-    val authState by authViewModel.uiState.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: Es sind reine Anzeige-Zustaende, an deren
+    // Sammeln kein Seiteneffekt haengt. Zwei der Quellen sind ausserdem
+    // `stateIn(SharingStarted.WhileSubscribed(5_000))` ueber DataStore-Fluesse
+    // (NotificationSettingsViewModel, MasterPauseViewModel) - mit collectAsState laeuft das Abo
+    // weiter, solange die Composition lebt, also auch im Hintergrund, und der 5s-Timeout wird zur
+    // Attrappe. Gleiche Begruendung wie im DimmerTabContent.
+    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
     val notificationSettingsViewModel: NotificationSettingsViewModel = hiltViewModel()
-    val notificationState by notificationSettingsViewModel.uiState.collectAsState()
+    val notificationState by notificationSettingsViewModel.uiState.collectAsStateWithLifecycle()
     val masterPauseViewModel: MasterPauseViewModel = hiltViewModel()
-    val masterPausePaused by masterPauseViewModel.paused.collectAsState()
+    val masterPausePaused by masterPauseViewModel.paused.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -107,6 +113,7 @@ fun SettingsTabContent(
             ) {
                 Icon(
                     Icons.Default.CalendarMonth,
+                    // dekorativ: Text daneben sagt es bereits ("Kalender auswählen")
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                     tint = MaterialTheme.colorScheme.primary
@@ -123,6 +130,8 @@ fun SettingsTabContent(
                     )
                 }
                 Icon(
+                    // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
+                    // Element und traegt ihre Beschriftung selbst
                     Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = null
                 )
@@ -176,6 +185,8 @@ fun SettingsTabContent(
                 ) {
                     Icon(
                         icon,
+                        // dekorativ: titleText/descriptionText daneben nennen denselben Zustand
+                        // ("Kalender-Zugriff erneuern" bzw. "Calendar-Berechtigung")
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                         tint = iconColor
@@ -200,6 +211,8 @@ fun SettingsTabContent(
                     } else {
                         Icon(
                             Icons.Default.Lock,
+                            // dekorativ: descriptionText daneben sagt bereits, dass der Zugriff
+                            // autorisiert bzw. erneuert werden muss
                             contentDescription = null,
                             tint = iconColor
                         )
@@ -222,6 +235,7 @@ fun SettingsTabContent(
             ) {
                 Icon(
                     Icons.Default.DoNotDisturbOn,
+                    // dekorativ: Text daneben sagt es bereits ("Nicht stören")
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                     tint = MaterialTheme.colorScheme.primary
@@ -238,6 +252,8 @@ fun SettingsTabContent(
                     )
                 }
                 Icon(
+                    // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
+                    // Element und traegt ihre Beschriftung selbst
                     Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = null
                 )
@@ -259,6 +275,7 @@ fun SettingsTabContent(
                 ) {
                     Icon(
                         Icons.Default.NotificationsActive,
+                        // dekorativ: Ueberschrift daneben sagt es bereits ("Benachrichtigungen")
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                         tint = MaterialTheme.colorScheme.primary
@@ -345,6 +362,8 @@ fun SettingsTabContent(
                 ) {
                     Icon(
                         Icons.Default.Warning,
+                        // dekorativ: der Titel daneben beginnt selbst mit "⚠️" - eine zusaetzliche
+                        // Beschreibung liesse den Screenreader die Warnung doppelt vorlesen
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                         tint = MaterialTheme.colorScheme.onErrorContainer
@@ -363,6 +382,10 @@ fun SettingsTabContent(
                     }
                     Icon(
                         Icons.Default.Settings,
+                        // dekorativ: der Kartentext traegt die Aussage. BEWUSST NICHT "Einstellungen
+                        // oeffnen" - die Karte loest Androids Systemdialog aus, keine
+                        // Einstellungsliste (siehe CLAUDE.md, "Der Akku-Onboarding-Screen darf keine
+                        // Einstellungen versprechen").
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -390,7 +413,9 @@ fun SettingsTabContent(
                 ) {
                     Icon(
                         Icons.Default.Warning,
-                        contentDescription = null,
+                        // Zustand, der sonst nur in der Farbe steckt: der Kartentext daneben nennt
+                        // keinen Warnhinweis, die Warnfarbe allein erreicht Screenreader nicht.
+                        contentDescription = "Warnung",
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                         tint = MaterialTheme.colorScheme.warning
                     )
@@ -408,7 +433,9 @@ fun SettingsTabContent(
                     }
                     Icon(
                         Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = null,
+                        // Kein reines Weiter-Zeichen: die Karte verlaesst die App und oeffnet die
+                        // Hilfeseite des Herstellers im Browser - das steht sonst nirgends im Text.
+                        contentDescription = "Öffnet die Hilfeseite im Browser",
                         tint = MaterialTheme.colorScheme.warning
                     )
                 }
@@ -455,6 +482,7 @@ fun SettingsTabContent(
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Logout,
+                    // dekorativ: Text daneben sagt es bereits ("Abmelden")
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                     tint = MaterialTheme.colorScheme.onErrorContainer
@@ -521,7 +549,7 @@ fun SettingsTabContent(
 @Composable
 private fun ConfigBackupCard() {
     val viewModel: ConfigBackupViewModel = hiltViewModel()
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showImportConfirmation by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(

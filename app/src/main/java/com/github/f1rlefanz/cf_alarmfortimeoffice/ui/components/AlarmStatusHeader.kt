@@ -38,7 +38,15 @@ fun AlarmStatusHeader(
     ) {
         Icon(
             Icons.Default.AccessAlarm,
-            contentDescription = null,
+            // Der Skip-Zustand steht NUR in der Faerbung - kein Text daneben erwaehnt ihn
+            // ("N aktive Alarme"/"Keine aktiven Alarme" sagen dazu nichts). Deshalb braucht
+            // genau dieser Zweig eine Beschreibung. Die beiden anderen Faerbungen sind
+            // dekorativ: der Text daneben sagt es bereits.
+            contentDescription = if (skipState.isNextAlarmSkipped) {
+                "Nächster Alarm wird übersprungen"
+            } else {
+                null
+            },
             modifier = Modifier.size(SpacingConstants.ICON_SIZE_EXTRA_LARGE),
             tint = when {
                 skipState.isNextAlarmSkipped -> MaterialTheme.colorScheme.warning

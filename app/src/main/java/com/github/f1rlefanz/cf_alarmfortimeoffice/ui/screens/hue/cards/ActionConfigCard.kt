@@ -1,0 +1,153 @@
+package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.COLOR_PRESETS
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorMode
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorSwatch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.presetLabel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForKelvin
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForPreset
+
+/** Manuelle Einschalt-Konfiguration (An/Aus, Helligkeit, Farbe). Aus `HueRuleConfigScreen` ausgelagert. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ActionConfigCard(
+    targetOn: Boolean,
+    targetBrightness: Int,
+    colorMode: ColorMode,
+    colorKelvin: Int,
+    colorPreset: HueColorConverter.ColorPreset,
+    onTargetOnChange: (Boolean) -> Unit,
+    onTargetBrightnessChange: (Int) -> Unit,
+    onColorModeChange: (ColorMode) -> Unit,
+    onColorKelvinChange: (Int) -> Unit,
+    onColorPresetChange: (HueColorConverter.ColorPreset) -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Der Ein/Aus-Schalter IST die Ueberschrift dieser Karte (kraeftiger gesetzt, analog
+            // zur Sunrise-Karte). Kein eigener "Aktionskonfiguration"-Titel mehr: der las sich wie
+            // ein Oberbegriff fuer beides, obwohl der Sunrise-Lichtwecker eine eigene, gleichrangige
+            // Karte ist. Ist Sunrise an, wird diese Karte gar nicht erst gezeigt (siehe Aufrufer).
+            SwitchRow(
+                title = if (targetOn) "Einschalten" else "Ausschalten",
+                description = "Lichter ${if (targetOn) "einschalten" else "ausschalten"} bei Regelausführung",
+                checked = targetOn,
+                onCheckedChange = onTargetOnChange,
+                titleStyle = MaterialTheme.typography.titleMedium,
+                titleFontWeight = FontWeight.Bold
+            )
+
+            if (targetOn) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Helligkeit: ${(targetBrightness * 100 / 254)}%",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Slider(
+                        value = targetBrightness.toFloat(),
+                        onValueChange = { onTargetBrightnessChange(it.toInt()) },
+                        valueRange = 1f..254f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("1%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("100%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                // Color mode selector
+                Text("Farbe", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                // FlowRow statt Row: in einer Row quetscht sich der letzte Chip in den Rest der
+                // Zeile, und passt sein Wort nicht hinein, wird es zerlegt ("Farb/e"). FlowRow
+                // schiebt ihn stattdessen in die nächste Zeile. Bei Standardschrift passen alle
+                // drei nebeneinander - es ändert sich also nur, was bei großer Schrift passiert.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = colorMode == ColorMode.NONE,
+                        onClick = { onColorModeChange(ColorMode.NONE) },
+                        label = { Text("Standard") }
+                    )
+                    FilterChip(
+                        selected = colorMode == ColorMode.WHITE,
+                        onClick = { onColorModeChange(ColorMode.WHITE) },
+                        label = { Text("Weißton") }
+                    )
+                    FilterChip(
+                        selected = colorMode == ColorMode.COLOR,
+                        onClick = { onColorModeChange(ColorMode.COLOR) },
+                        label = { Text("Farbe") }
+                    )
+                }
+
+                when (colorMode) {
+                    ColorMode.WHITE -> {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ColorSwatch(previewColorForKelvin(colorKelvin))
+                            Text("Farbtemperatur: $colorKelvin K", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        }
+                        Slider(
+                            value = colorKelvin.toFloat(),
+                            onValueChange = { onColorKelvinChange(it.toInt()) },
+                            valueRange = 2000f..6500f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Warm (2000K)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Kühl (6500K)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    ColorMode.COLOR -> {
+                        // chunked(4) unterstellte, dass vier Farbchips nebeneinander passen. Bei
+                        // ~296dp Karteninnenbreite und Chips aus Farbpunkt + Wort ("Orange",
+                        // "Türkis") tun sie das nicht - die vierte Spalte lief über den Rand.
+                        // FlowRow bricht nach tatsächlichem Platz um statt nach fester Anzahl.
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            COLOR_PRESETS.forEach { preset ->
+                                FilterChip(
+                                    selected = colorPreset == preset,
+                                    onClick = { onColorPresetChange(preset) },
+                                    leadingIcon = { ColorSwatch(previewColorForPreset(preset), size = 16) },
+                                    label = { Text(presetLabel(preset)) }
+                                )
+                            }
+                        }
+                    }
+                    ColorMode.NONE -> { /* keep current bulb color */ }
+                }
+            }
+        }
+    }
+}

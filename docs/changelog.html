@@ -46,7 +46,33 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.23.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.24.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Aufräum-Runde mit einer kleinen, lang überfälligen Neuerung. Die Prüfung am Ende lief bewusst über Code, an dem in dieser Runde <em>nichts</em> geändert wurde – und fand dabei vier echte Fehler, die alle schon länger drinsteckten.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Lichtregeln für „Alle Schichten" (Hue-Tab → Regel anlegen):</strong> Bisher musste jede Lichtregel an einen bestimmten Schichttyp gebunden werden. Jetzt gibt es die Auswahl „Alle Schichten“ – die Regel gilt dann für jeden erkannten Dienst. Praktisch für „Licht an, egal welche Schicht“. Die Funktion war intern längst vorhanden, ließ sich aber über keine Ansicht einstellen.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Ein Lesefehler an den Schichttypen konnte die Weckzeiten auf die Vorgabewerte zurückwerfen:</strong> Ließ sich die gespeicherte Konfiguration einmal nicht lesen, war das für die App nicht von „noch nichts eingerichtet“ zu unterscheiden. Sie arbeitete dann eine halbe Minute lang mit den Standard-Weckzeiten weiter – und Schichten mit eigenen Erkennungsmustern wurden in dieser Zeit nicht mehr erkannt und ihre Wecker gelöscht.</li>
+                <li><strong>Nach einem Neustart konnte die gesamte Wiederherstellung ausfallen:</strong> Ein einzelner fehlgeschlagener Lesezugriff direkt nach dem Hochfahren beendete die App, bevor sie Wecker, 6-Stunden-Wartung, Dimmer und „Nicht stören“ wieder in Gang setzen konnte.</li>
+                <li><strong>Ein Lesefehler an den Dimmer-Einstellungen konnte die App beenden</strong> – also ausgerechnet die App, die den Wecker hält.</li>
+                <li><strong>Der Bildschirm konnte nach der Dimmer-Vorschau dauerhaft abgedunkelt bleiben:</strong> Wer die App innerhalb der fünf Sekunden verließ, behielt eine geräteweite Verdunkelung, die sich von selbst unter Umständen gar nicht mehr löste. Betraf beide Vorschau-Knöpfe (Dimmer-Tab und „Regel testen“).</li>
+                <li><strong>Ein Schlummer-Wecker konnte beim Neustart aus der Merkliste fallen</strong> und war danach weder abbrechbar noch wiederherstellbar.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li>Bedienungshilfen verbessert: Alle Symbole wurden einzeln daraufhin geprüft, ob ein Screenreader sie vorlesen muss – bedienbare Schaltflächen haben jetzt eine Beschriftung, rein dekorative bleiben bewusst stumm, damit nicht alles doppelt vorgelesen wird.</li>
+                <li>Der Hue-Regel-Editor und die interne Sonnenaufgangs-Steuerung wurden entflochten; Bildschirme aktualisieren sich jetzt nur noch, solange sie sichtbar sind (schont den Akku).</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.23.1</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Reine Zuverlässigkeits-Runde. Zwei Fehler haben nach einem nächtlichen Neustart verhindert, dass die Wecker vor dem ersten Entsperren zurückkamen — beide waren nur mit gesetzter Bildschirmsperre überhaupt sichtbar.</em></p>
 

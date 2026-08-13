@@ -37,7 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
@@ -125,7 +125,10 @@ fun ShiftConfigScreen(
     shiftViewModel: ShiftViewModel,
     onNavigateBack: () -> Unit
 ) {
-    val shiftState by shiftViewModel.uiState.collectAsState()
+    // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand. Sammeln pausiert
+    // unterhalb von STARTED, es haengt also kein Seiteneffekt daran - der Zustand ist ein heisser
+    // StateFlow im ViewModel und liegt beim Zurueckkehren sofort wieder aktuell an.
+    val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingDefinition by remember { mutableStateOf<ShiftDefinition?>(null) }
 
@@ -199,6 +202,7 @@ fun ShiftConfigScreen(
                 ) {
                     Icon(
                         Icons.Default.Info,
+                        // dekorativ: der Hinweistext daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM),
                         tint = MaterialTheme.colorScheme.primary
@@ -262,6 +266,7 @@ fun ShiftConfigScreen(
                     ) {
                         Icon(
                             Icons.Default.Info,
+                            // dekorativ: "Keine Schichttypen definiert" darunter sagt es bereits
                             contentDescription = null,
                             modifier = Modifier.size(SpacingConstants.ICON_SIZE_XXL),
                             tint = MaterialTheme.colorScheme.primary
@@ -323,6 +328,7 @@ fun ShiftConfigScreen(
             ) {
                 Icon(
                     Icons.Default.RestartAlt,
+                    // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
                 )
@@ -537,6 +543,7 @@ private fun CodeSuggestionCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Default.Info,
+                    // dekorativ: die Kartenueberschrift daneben sagt es bereits
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(20.dp)

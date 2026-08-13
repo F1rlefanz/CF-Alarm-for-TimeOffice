@@ -466,8 +466,6 @@ class ShiftViewModel @Inject constructor(
      * MUTEX ERROR PREVENTION: Clear all state references that could cause threading issues
      */
     override fun onCleared() {
-        super.onCleared()
-        
         try {
             Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Starting cleanup...")
             

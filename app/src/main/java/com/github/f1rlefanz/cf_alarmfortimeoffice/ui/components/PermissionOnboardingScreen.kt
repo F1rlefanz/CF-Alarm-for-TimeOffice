@@ -61,6 +61,7 @@ fun PermissionOnboardingScreen(
     ) {
         Icon(
             icon,
+            // dekorativ: die Ueberschrift direkt darunter sagt dasselbe im Klartext
             contentDescription = null,
             modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.primary
@@ -102,6 +103,7 @@ fun PermissionOnboardingScreen(
             ) {
                 Icon(
                     Icons.Default.Info,
+                    // dekorativ: `infoText` daneben ist die Information selbst
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.primary

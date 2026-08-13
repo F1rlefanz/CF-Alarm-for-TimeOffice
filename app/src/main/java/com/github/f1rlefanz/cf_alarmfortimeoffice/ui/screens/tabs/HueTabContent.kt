@@ -39,7 +39,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
@@ -84,8 +84,13 @@ fun HueTabContent(
     onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val uiState by hueViewModel.uiState.collectAsState()
-    val discoveryStatus by hueViewModel.discoveryStatus.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: Beide Flows sind reine Anzeige-Zustaende
+    // dieses Tabs. Mit der Lifecycle-Variante ruht das Abo unterhalb von STARTED, statt im
+    // Hintergrund weiter Recompositions auszuloesen; beim Zurueckkehren liefert der StateFlow
+    // sofort seinen aktuellen Wert. Nichts hier loest einen Seiteneffekt aus, der im Hintergrund
+    // laufen muesste - der Berechtigungsdialog haelt die Activity ohnehin auf STARTED.
+    val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
+    val discoveryStatus by hueViewModel.discoveryStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Die nach Erteilung von ACCESS_LOCAL_NETWORK auszufuehrende Aktion als SPEICHERBARE Absicht,
@@ -349,6 +354,7 @@ private fun ConnectedManagementCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
+                    // dekorativ: "Bridge verbunden" steht direkt daneben
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.success,
                     modifier = Modifier.size(32.dp)
@@ -401,6 +407,7 @@ private fun ConnectedManagementCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -444,6 +451,7 @@ private fun QuickStatItem(
     ) {
         Icon(
             imageVector = icon,
+            // dekorativ: Wert und Beschriftung stehen direkt darunter
             contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.primary
@@ -504,6 +512,8 @@ private fun BridgeConnectionStatusCard(
                         neverConfigured -> Icons.Default.Lightbulb
                         else -> Icons.Default.Error
                     },
+                    // dekorativ: der Zustand steht als Text daneben ("Verbunden" / "Noch keine
+                    // Bridge eingerichtet" / "Nicht verbunden"), das Icon spiegelt ihn nur
                     contentDescription = null,
                     tint = when {
                         isConnected -> MaterialTheme.colorScheme.success
@@ -562,6 +572,7 @@ private fun BridgeConnectionStatusCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
+                            // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
@@ -611,6 +622,7 @@ private fun BridgeDiscoveryCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -637,6 +649,7 @@ private fun BridgeDiscoveryCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
@@ -701,6 +714,7 @@ private fun BridgeConnectionCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.FlashOn,
+                    // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -742,6 +756,7 @@ private fun ConnectedFeaturesCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
+                    // dekorativ: "🎉 Erfolgreich verbunden!" steht direkt darunter
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.success,
                     modifier = Modifier.size(48.dp) // Bigger celebration icon
@@ -782,6 +797,7 @@ private fun ConnectedFeaturesCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
+                        // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )

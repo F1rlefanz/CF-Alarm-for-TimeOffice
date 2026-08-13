@@ -12,13 +12,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.InlineErrorCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingIconButton
@@ -31,7 +31,10 @@ fun LoginScreen(
     authViewModel: AuthViewModel,
     onSignIn: () -> Unit
 ) {
-    val authState by authViewModel.uiState.collectAsState()
+    // collectAsStateWithLifecycle statt collectAsState: reiner Anzeige-Zustand (Ladeflag und
+    // Fehlertext). Es haengt kein Seiteneffekt am Sammeln, das Pausieren unterhalb von STARTED
+    // ist also folgenlos - der Anmeldevorgang selbst laeuft im ViewModel weiter.
+    val authState by authViewModel.uiState.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -76,6 +79,7 @@ fun LoginScreen(
                 // Modern credential icon
                 Icon(
                     painter = painterResource(id = android.R.drawable.ic_partial_secure),
+                    // dekorativ: die Knopfbeschriftung "Mit Google anmelden" sagt es bereits
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
                 )

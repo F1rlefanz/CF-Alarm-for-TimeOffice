@@ -3,10 +3,16 @@
      Liest KEINE Bildschirminhalte (canRetrieveWindowContent=false) und wertet keine
      Eingaben aus. isAccessibilityTool=true: dient dem Dimmen unter die System-
      Mindesthelligkeit (Lichtempfindlichkeit/Augenermuedung, analog zu "Extra Dim"). -->
+<!-- tools:ignore="UnusedAttribute": isAccessibilityTool wertet erst API 31+ aus, minSdk ist 26.
+     Das Attribut bleibt trotzdem - es ist inhaltlich richtig (der Dienst IST ein Bedienungshilfen-
+     Werkzeug) und wird auf aelteren Versionen schlicht ignoriert. Entfernen wuerde die Deklaration
+     auf allen aktuellen Geraeten verlieren. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="0"
     android:canRetrieveWindowContent="false"
     android:isAccessibilityTool="true"
-    android:description="@string/dim_accessibility_desc" />
+    android:description="@string/dim_accessibility_desc"
+    tools:ignore="UnusedAttribute" />

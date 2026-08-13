@@ -64,8 +64,22 @@ class CalendarSelectionRepository @Inject constructor(
     private val selectedCalendarIdsKey = stringSetPreferencesKey("selected_calendar_ids")
     
     /**
-     * Repository-eigener CoroutineScope für DataStore-Synchronisation
-     * SupervisorJob: Fehler in einem Child-Coroutine beeinflussen andere nicht
+     * Repository-eigener CoroutineScope für DataStore-Synchronisation.
+     * SupervisorJob: ein Fehler in einer Child-Coroutine beeinflusst die anderen nicht.
+     *
+     * **Hier wird bewusst NIE `.cancel()` gerufen** — das ist Absicht, kein vergessenes
+     * Aufräumen (die Frage kam in mehreren Prüfrunden auf). Die Klasse ist ein `@Singleton`
+     * mit Prozess-Lebensdauer; es gibt keinen Zeitpunkt, zu dem sie "fertig" wäre. Ein
+     * `cancel()` auf einem solchen Scope ist endgültig: jedes spätere `launch` startet
+     * lautlos nie mehr, heilbar nur durch Prozess-Neustart. Genau diese Fehlerklasse steckte
+     * in `HueBridgeConnectionManager.cleanup()` (siehe CLAUDE.md) — dort wurde daraus
+     * `cancelChildren()`.
+     *
+     * Konkret hinge hier der `retryWhen`-Collector der Kalenderauswahl daran. Der ist die
+     * einzige Verteidigung gegen den Direct-Boot-Fall (CE-Store vor der ersten Entsperrung
+     * nicht lesbar): Stirbt er, steht `_selectedCalendarIds` dauerhaft auf `emptySet()`,
+     * obwohl Kalender ausgewählt sind — und eine leere Auswahl liest `syncAlarms()` als
+     * "keine Schichten". Für eine Wecker-App ist das die gefährlichste Leere.
      */
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     

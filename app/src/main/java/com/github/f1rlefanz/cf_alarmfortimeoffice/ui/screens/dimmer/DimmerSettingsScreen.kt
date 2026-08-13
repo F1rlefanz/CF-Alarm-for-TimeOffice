@@ -19,13 +19,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
@@ -47,7 +47,9 @@ fun DimmerSettingsScreen(
     onCreateRule: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
-    val rules by viewModel.rules.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: reine Listen-Anzeige ohne Seiteneffekt -
+    // das Abo darf unterhalb von STARTED ruhen (Speichern/Loeschen laeuft ueber das ViewModel).
+    val rules by viewModel.rules.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -58,7 +60,9 @@ fun DimmerSettingsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onCreateRule) {
-                Icon(Icons.Default.Add, contentDescription = null)
+                // Eigenstaendig bedienbar und der einzige Inhalt des Knopfes: ohne Beschreibung
+                // liest der Screenreader nur "Schaltflaeche". Benannt wird die AKTION.
+                Icon(Icons.Default.Add, contentDescription = "Neue Regel anlegen")
             }
         }
     ) { padding ->

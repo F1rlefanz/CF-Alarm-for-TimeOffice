@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -117,7 +118,25 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     // Recovery Scope für Boot-Recovery-Operations
-    private val recoveryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    //
+    // Der CoroutineExceptionHandler ist PFLICHT, der SupervisorJob reicht NICHT (gleiche
+    // Fehlerklasse wie HueBridgeConnectionManager.healthCheckScope): ein SupervisorJob isoliert nur
+    // GESCHWISTER-Coroutinen voneinander; eine unbehandelte Exception laeuft trotzdem weiter zum
+    // Thread-Default-Handler und BEENDET DEN PROZESS. In diesem Scope liegen alle drei
+    // Boot-Pfade - Direct-Boot-Restore, die lange Recovery und der 30s-Nachcheck - und der kurz
+    // zuvor gestartete Wartungs-Anker laeuft im selben Prozess: ein einziger Wurf ausserhalb eines
+    // try/catch haette die GESAMTE Boot-Wiederherstellung mitgerissen, ohne eine Spur ausser einem
+    // Prozess-Tod. Fuer eine Wecker-App ist das die teuerste Richtung.
+    private val recoveryExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Logger.e(
+            LogTags.MAINTENANCE_L4,
+            "💥 LEVEL 4: Unbehandelte Exception im Recovery-Scope abgefangen (Prozess bleibt am Leben)",
+            throwable
+        )
+    }
+
+    private val recoveryScope =
+        CoroutineScope(Dispatchers.IO + SupervisorJob() + recoveryExceptionHandler)
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
@@ -327,7 +346,35 @@ class BootReceiver : BroadcastReceiver() {
     private fun performCompleteSystemRecovery(context: Context, reason: String) {
         recoveryScope.launch {
             // Master-Pause: einmal pro Recovery-Lauf lesen, nicht pro Retry-Versuch neu.
-            val paused = masterPausePrefs.pausedNow()
+            //
+            // DIESER READ STAND UNGESCHUETZT VOR DER while-SCHLEIFE, also AUSSERHALB des einzigen
+            // try/catch (das erst darin beginnt). `MasterPausePrefs.paused` ist ein blankes
+            // `dataStore.data.map{}` ohne `.catch` - eine transiente IOException (Storage-Druck
+            // direkt nach dem Boot; der ReplaceFileCorruptionHandler faengt NUR eine
+            // CorruptionException) kam damit ungefangen aus dem `launch` heraus und riss ueber den
+            // Thread-Default-Handler den ganzen Prozess mit: keine Alarm-Recovery, keine
+            // Neuinitialisierung der 6h-Kette, kein Dimmer-/DND-/Pre-Alarm-Reschedule, und der
+            // parallel laufende Wartungs-Anker (selber Prozess) gleich mit. Die Retry-Schleife, die
+            // genau solche Fehler abfangen soll, wurde nie erreicht.
+            //
+            // RICHTUNG DER DEGRADATION - `false` (= NICHT pausiert), niemals `true`: ein
+            // faelschlich wiederhergestellter Wecker KLINGELT hoerbar, der Nutzer stellt ihn ab und
+            // sieht, dass etwas nicht stimmt. Ein faelschlich unterdrueckter Wecker ist STILL, und
+            // niemand merkt es, bis er verschlafen hat. Dieselbe Abwaegung wie beim
+            // DeviceLocalFlagsGuard ("ein unerwartet klingelnder Wecker ist deutlich harmloser als
+            // ein unerwartet stummer"). Der Fehlerfall wird dabei ausdruecklich als solcher
+            // geloggt und NICHT als "nicht pausiert" getarnt - sonst ist er im Log von einem
+            // normalen Boot nicht zu unterscheiden.
+            val paused = try {
+                masterPausePrefs.pausedNow()
+            } catch (e: Exception) {
+                Logger.w(
+                    LogTags.MAINTENANCE_L4,
+                    "⚠️ LEVEL 4: Master-Pause nicht lesbar - Recovery laeuft fail-safe als NICHT pausiert weiter",
+                    e
+                )
+                false
+            }
             var recoveryAttempt = 0
             var recoverySuccessful = false
 

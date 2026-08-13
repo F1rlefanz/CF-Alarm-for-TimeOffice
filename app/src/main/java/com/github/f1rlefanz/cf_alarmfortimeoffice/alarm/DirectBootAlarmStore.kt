@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
 import android.content.Context
+import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -44,7 +45,7 @@ data class DirectBootAlarmEntry(
 
 @Singleton
 class DirectBootAlarmStore @Inject constructor(
-    @param:ApplicationContext appContext: Context
+    @ApplicationContext appContext: Context
 ) {
     // WICHTIG: Device-Protected-Context -> im Direct-Boot lesbar. NICHT der normale Context.
     private val prefs = appContext.createDeviceProtectedStorageContext()
@@ -58,7 +59,8 @@ class DirectBootAlarmStore @Inject constructor(
     /** Ersetzt den gespiegelten Bestand (idempotent, synchron). */
     fun saveAll(entries: List<DirectBootAlarmEntry>) {
         try {
-            prefs.edit().putString(KEY_ENTRIES, json.encodeToString(entries)).apply()
+            // Bewusst apply() (KTX-Default, commit = false) - unveraendertes Schreibverhalten.
+            prefs.edit { putString(KEY_ENTRIES, json.encodeToString(entries)) }
             Logger.d(LogTags.ALARM, "🔐 DIRECT-BOOT: ${entries.size} Alarme in Device-Protected-Spiegel geschrieben")
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ DIRECT-BOOT: Schreiben des Alarm-Spiegels fehlgeschlagen", e)
@@ -88,7 +90,8 @@ class DirectBootAlarmStore @Inject constructor(
      */
     fun savePaused(paused: Boolean) {
         try {
-            prefs.edit().putBoolean(KEY_PAUSED, paused).apply()
+            // Bewusst apply() (KTX-Default, commit = false) - unveraendertes Schreibverhalten.
+            prefs.edit { putBoolean(KEY_PAUSED, paused) }
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ DIRECT-BOOT: Schreiben des Pause-Spiegels fehlgeschlagen", e)
         }

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
@@ -15,7 +16,9 @@ import java.time.format.DateTimeFormatter
 object LocalTimeSerializer : KSerializer<LocalTime> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("LocalTime", PrimitiveKind.STRING)
     
-    private val formatter = DateTimeFormatter.ofPattern("HH:mm")
+    // PERSIST_TIME, nicht TIME_ONLY: dieses Format steht in bereits gespeicherten
+    // Schicht-Konfigurationen. Siehe KDoc an DateTimeFormats.PERSIST_TIME.
+    private val formatter = DateTimeFormatter.ofPattern(DateTimeFormats.PERSIST_TIME)
 
     override fun serialize(encoder: Encoder, value: LocalTime) {
         encoder.encodeString(value.format(formatter))

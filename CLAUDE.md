@@ -82,7 +82,7 @@ Modules in `di/modules/`:
 - **RepositoryModule** – binds repository interfaces to implementations
 - **UseCaseModule** – binds use-case interfaces to implementations
 - **HueModule** – OkHttp/Retrofit clients for Philips Hue API
-- **ServiceModule** – `CredentialAuthManager`, `OAuth2TokenManager`, `WakeLockManager`/`IWakeLockManager`, `AlarmManagerService`, `ShiftRecognitionEngine`. `BackgroundServiceManager` steht bewusst **nicht** hier: er hat seinen eigenen `@Singleton @Inject`-Konstruktor
+- **ServiceModule** – `CredentialAuthManager`, `OAuth2TokenManager`, `AlarmManagerService`, `ShiftRecognitionEngine` (genau vier Provider). `BackgroundServiceManager` steht bewusst **nicht** hier: er hat seinen eigenen `@Singleton @Inject`-Konstruktor. `WakeLockManager`/`IWakeLockManager` standen hier bis v1.23.1 und sind ENTFERNT — siehe „Bekannt und so gewollt"
 - **StateModule** – `CalendarStateHolder` (shared state between ViewModels)
 
 All Android components (`Service`, `BroadcastReceiver`) that need injection are annotated `@AndroidEntryPoint`.
@@ -159,7 +159,52 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
 
 ---
 
+## Grundregeln
+
+- **Eine Funktion ohne Bedienoberfläche gibt es für den Nutzer nicht.** Wer eine Fähigkeit einbaut,
+  baut die Stelle mit, an der man sie **sieht**, sie **auslöst** und ihren **Zustand abliest** —
+  sonst ist sie totes Kapital, das bei jeder Prüfrunde Aufmerksamkeit kostet und niemandem nützt.
+  Zwei reale Anlässe: das Auto-Backup wurde repariert, ohne dass der Nutzer je erfahren hätte, ob es
+  greift (deshalb kam der sichtbare Export/Import dazu), und `UNIVERSAL_SHIFT_PATTERN` wurde vom
+  Hue-UseCase seit v1.11.0 korrekt ausgewertet, war aber bis v1.24.0 über keine Oberfläche
+  setzbar — ein funktionierender Codepfad, den niemand erreichen konnte.
+- **Der Sweep über frisch geschriebenen Code beweist wenig.** Das Härtungsprogramm zu v1.23.0 hat
+  seine Abbruchbedingung („zwei aufeinanderfolgende Runden ohne neue bestätigte Befunde") nie
+  erfüllt — aber ein erheblicher Teil der Befunde lag jeweils in Code, den dieselbe Sitzung erst
+  erzeugt hatte, und jeder Fix schafft neue Prüffläche. Aussagekräftig ist erst eine Runde über
+  **unverändertem** Code. In v1.24.0 wurde das erstmals sauber getrennt: die drei Dimensionen über
+  dem Sitzungs-Diff fanden NICHTS Bestätigtes (die Aufräumarbeit hat keine Regression eingebaut),
+  die drei über unverändertem Code fanden 4 echte Befunde von 13 Rohbefunden. **Die
+  Abbruchbedingung ist damit weiterhin NICHT erfüllt** — die nächste Runde muss wieder über
+  unverändertem Code laufen.
+- **Refutation-Voting ist kein Orakel — in beide Richtungen.** In derselben Runde wurden 9 von 13
+  Befunden widerlegt, darunter drei sehr plausibel klingende (angeblich `deleteAlarm()` vor
+  `cancelSystemAlarm()` im Delta-Sync; ein Alarm, der gespeichert, aber nie armiert wird; ein
+  Boot-Zähler, der Erfolge behauptet) — alle drei zu Recht, mit Codebeleg. **Ein Fall wurde aber zu
+  Unrecht widerlegt**: `DimmerRulesViewModel.previewRule()` ist zeichengleich derselbe Fehler wie
+  der bestätigte in `DimmerViewModel.previewDim()`. Gefunden hat das nicht die Abstimmung, sondern
+  der Fix-Agent des Zwillings. Ein „widerlegt" ist ein Hinweis, kein Freispruch — bei einem Befund,
+  der ein bestätigtes Muster spiegelt, immer selbst am Code nachsehen.
+
 ## Bekannt und so gewollt
+
+- **`res/mipmap-anydpi-v26` bleibt, obwohl Lint den `-v26`-Qualifier bei `minSdk 26` als
+  überflüssig meldet (`ObsoleteSdkInt`).** Gemessen, nicht vermutet (v1.24.0): nach dem Umzug nach
+  `mipmap-anydpi` meldet Lint **zwei `IconXmlAndPng`-WARNUNGEN** — im qualifierlosen Bucket verdeckt
+  die Adaptive-Icon-XML die `ic_launcher*.webp` der Dichte-Ordner. Der Umzug tauscht also einen
+  kosmetischen Hinweis gegen zwei Warnungen und weicht zusätzlich von der
+  Android-Studio-Standardstruktur ab. Die verdeckten Bitmaps stattdessen zu löschen wäre ein
+  sichtbares Risiko am App-Icon ohne Gegenwert. Der eine verbleibende Hinweis ist Absicht.
+- **Zwei Scopes rufen bewusst NIE `.cancel()`** — beide sind seit v1.24.0 an Ort und Stelle
+  begründet, weil jede Prüfrunde sie erneut als „vergessenes Aufräumen" gemeldet hat:
+  `AlarmReceiver.receiverScope` (das System erzeugt pro Broadcast eine frische Receiver-Instanz,
+  und die Arbeit MUSS `onReceive()` überleben — dafür steht `goAsync()` darüber; ein `cancel()`
+  würde Ton-Start, Skip-Prüfung und Hue-Regeln mitten im Lauf abschneiden) und
+  `CalendarSelectionRepository.repositoryScope` (`@Singleton` mit Prozess-Lebensdauer; ein
+  `cancel()` wäre endgültig und legte den `retryWhen`-Collector still, der die einzige
+  Verteidigung gegen den Direct-Boot-Fall ist — dieselbe Fehlerklasse wie
+  `HueBridgeConnectionManager.cleanup()`). Gegenstück: `HueLightUseCase.followUpScope` ist
+  ebenfalls Absicht, dort wäre ein `.cancel()` die Regression.
 
 - **`Logger.business()` loggt auf INFO** → PII (E-Mail, Kalendertitel) landet in Debug-Builds im
   Datei-Log (`Logger.business`, `util/Logger.kt`). Bewusst: Release-Logs enthalten nur WARN+.
@@ -673,6 +718,17 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
   Sonnenaufgangs-Versatz). **Die frühere Begründung „findApplicableRules matcht auch über Keywords"
   war veraltet** — sie verleitete dazu, das Keyword-Matching „wiederherzustellen", also genau die
   S-auf-S2-Fehlerfamilie neu zu bauen (siehe „Schichterkennung & Musterabgleich").
+- **`UNIVERSAL_SHIFT_PATTERN = "ALL"` ist seit v1.24.0 über den Regel-Editor erreichbar**
+  (Eintrag „Alle Schichten" in `ShiftPatternCard`). Davor wertete der UseCase das Muster zwar aus,
+  aber keine Oberfläche konnte es setzen — ein funktionierender Codepfad ohne Zugang. Drei Dinge
+  hängen zusammen und dürfen nicht auseinanderlaufen: die UI referenziert die **Konstante**
+  (`internal`, in der Companion von `HueRuleUseCase`) statt ein eigenes `"ALL"`-Literal zu führen;
+  der Rücklesepfad erkennt sie mit **demselben Maßstab** wie `findApplicableRules`
+  (`equals(..., ignoreCase = true)`) — sonst zeigt eine gespeicherte Universal-Regel beim
+  Wiederöffnen „nichts ausgewählt" und der nächste Speichervorgang überschreibt sie unbemerkt mit
+  einem Schichtnamen; und Regel-Liste wie Vorschau zeigen „Alle Schichten" statt des rohen
+  Sentinels. Das **Matching selbst bleibt unverändert** — der Editor wurde erreichbar gemacht,
+  nicht die Erkennung gelockert.
 - **`HueBridgeConnectionManager.initialize()` muss idempotent bleiben.** Zwei Aufrufer ohne
   feststehende Reihenfolge: `CFAlarmApplication.initializeApp()` (asynchron im applicationScope)
   und `HueBridgeRepository.init` (Hauptthread, sobald Hilt das HueViewModel baut). Ohne Wächter
@@ -854,6 +910,22 @@ Wecker gekostet:**
   → `AlarmUseCase.syncAlarms()` dranhängt.
 
 ### Schicht-Dimmer (Regel-Auflösung)
+
+- **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** (v1.24.0, an ZWEI
+  Stellen: `DimmerViewModel.previewDim()` und `DimmerRulesViewModel.previewRule()` — „Regel
+  testen"). Beide schrieben mit `setActiveOverlay(true, …)` einen **persistenten** Zustand und
+  stellten den regulären erst nach `delay(5s)` wieder her. `DimAccessibilityService` beobachtet nur
+  `DimOverlayPrefs.renderState` und hat eine vom ViewModel völlig unabhängige Lebensdauer: verlässt
+  der Nutzer die App innerhalb dieser 5 s (zweimal Zurück beendet die Activity, oder Wegwischen aus
+  den Recents), lief `applyCurrentState()` nie, der Schreibvorgang aber schon — der Bildschirm
+  bleibt bis zu 85 % verdunkelt, **systemweit**. Geheilt hätte das erst der nächste Dimm-Tick, und
+  wer die Vorschau zum Ausprobieren nutzt, hat typischerweise noch gar keine Fenster-Quelle aktiv,
+  es kommt also womöglich keiner. Deshalb je ein eigener `previewScope` (mit
+  `CoroutineExceptionHandler` — der `SupervisorJob` allein deckt das NICHT ab), Zurücksetzen im
+  `finally` unter `NonCancellable`, und ein zweiter Tipp lässt die laufende Vorschau per
+  `cancelAndJoin()` ZUERST aufräumen (sonst schaltet deren `finally` die gerade neu eingeschaltete
+  sofort wieder aus). Vorbild ist `HueLightUseCase.followUpScope`. Diese Scopes werden bewusst
+  **nicht** in `onCleared()` gecancelt — genau das wäre der Bug.
 
 - **Pro Kalendertag GENAU eine Regel** (`DimWindowResolver.buildRuleSpans`): Schicht-Tag →
   `findRuleForShift` (exakter Schichtname → sonst UNIVERSAL), freier Tag → `findRuleForFreeDay`
@@ -1130,6 +1202,36 @@ Wecker gekostet:**
 
 ### Persistenz (DataStore)
 
+- **Die REIHENFOLGE von `.catch` und `.map` in einem Preferences-Flow ist tragend** (v1.24.0).
+  `ShiftConfigRepository.shiftConfig` hatte `.catch { emit(emptyPreferences()) }` **vor** dem `.map`.
+  Damit konnte das `map` „Store nicht lesbar" nicht mehr von „noch nie konfiguriert" unterscheiden:
+  `decodeShiftConfig(json, null)` liefert `NotConfigured`, und genau dieser Zweig schreibt
+  `cachedConfig = getDefaultConfig()` samt frischem Zeitstempel — während der `Broken`-Zweig
+  daneben bewusst NICHT cacht. Folge: `getCurrentShiftConfig()` prüft den Cache als allererste
+  Anweisung und lieferte 30 s lang (`CACHE_VALIDITY_MS`) die **Standardkonfiguration als
+  `Result.success`**, ohne den frischen Read zu erreichen, der ehrlich gescheitert wäre. Die vier
+  Konsumenten, die sich ausdrücklich auf dieses Scheitern verlassen
+  (`ShiftViewModel.observeExternalConfigChanges()`, `AlarmMaintenanceService`, `CFAlarmApplication`,
+  `CalendarViewModel`), hätten mit Standard-Weckzeiten synchronisiert und die Alarme nicht mehr
+  erkannter Schichten im Delta-Sync gelöscht. Auslöser ist eine **IOException** auf `shift_prefs` —
+  der `ReplaceFileCorruptionHandler` fängt nur `CorruptionException`. Das `.catch` steht deshalb
+  jetzt **hinter** dem `.map` (dann sieht das `map` den degradierten Zustand nie und kann nichts
+  cachen) und **invalidiert zusätzlich den Cache**. Die Anzeige darf degradieren, die
+  SCHREIBWAHRHEIT nicht. Wer das `.catch` wieder nach oben zieht, baut den Bug zurück.
+- **Bei der Master-Pause ist die RICHTUNG der Degradation die eigentliche Entscheidung.**
+  `MasterPausePrefs.paused` hatte kein `.catch` (v1.24.0 ergänzt, Vorbild `auth_prefs`) — betroffen
+  waren der zentrale Backstop in `AlarmUseCase.syncAlarms()`, die Gates von
+  `DimScheduleUseCase`/`DndScheduleUseCase` und der `BootReceiver`. Degradiert wird auf **`false` =
+  NICHT pausiert**: ein fälschlich wiederhergestellter Wecker klingelt hörbar und ist abstellbar,
+  ein fälschlich unterdrückter ist STILL und fällt erst beim Verschlafen auf. Dieselbe Abwägung wie
+  beim `DeviceLocalFlagsGuard`. Der Fehler wird geloggt — sonst ist er im Log von normalem,
+  nicht pausiertem Betrieb nicht zu unterscheiden.
+- **`DimOverlayPrefs` schützt seine 13 Lese-Flows über EINEN gemeinsamen `safeData`-Quell-Flow**
+  (v1.24.0), nicht über 13 einzelne `.catch`-Blöcke — damit ist ein später ergänzter Flow nicht
+  wieder ungeschützt. Degradiert wird auf leere Preferences, also auf den Default jedes Flows; für
+  `renderState` heißt das `overlayOn = false`. Diese Richtung ist Absicht: **im Zweifel NICHT
+  verdunkeln.** Bei voller Verdunkelung kann der Nutzer sein Gerät nicht mehr bedienen und den
+  Dimmer nicht mehr abschalten — ein unerwartet heller Bildschirm ist das kleinere Übel.
 - **Stille Degradierung darf nie zur Schreibwahrheit werden.** DataStore liest vor jedem Write
   erneut; wer einen Lesefehler auf „leer"/„Default" degradiert, speist genau diese Notlage-Leere in
   den nächsten Read-Modify-Write und überschreibt echte Nutzerdaten. Konkret festgelegt:

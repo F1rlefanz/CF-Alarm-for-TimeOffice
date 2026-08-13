@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackupUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -122,6 +123,6 @@ class ConfigBackupViewModel @Inject constructor(
     }
 
     private companion object {
-        val FILE_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmm")
+        val FILE_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.FILE_STAMP)
     }
 }

@@ -128,6 +128,16 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     // Coroutine Scope für die asynchrone onReceive-Verarbeitung (goAsync)
+    //
+    // KEIN `.cancel()` — und das ist Absicht, kein vergessenes Aufräumen (die Frage kam in
+    // mehreren Prüfrunden auf). Zwei Gründe:
+    //  1. Das System erzeugt für JEDEN Broadcast eine FRISCHE Receiver-Instanz und gibt sie
+    //     danach frei. Der Scope lebt also ohnehin nur so lange wie diese eine Zustellung; es
+    //     sammelt sich nichts über mehrere Alarme hinweg an.
+    //  2. Die Arbeit MUSS `onReceive()` überleben — genau dafür steht `goAsync()` darüber. Ein
+    //     `cancel()` am Ende von `onReceive()` würde Ton-Start, Skip-Prüfung und Hue-Regeln
+    //     mitten im Lauf abschneiden, also den Wecker abwürgen.
+    // Das Ende der Verarbeitung markiert `pendingResult.finish()` im finally, nicht der Scope.
     private val receiverScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     override fun onReceive(context: Context, intent: Intent) {

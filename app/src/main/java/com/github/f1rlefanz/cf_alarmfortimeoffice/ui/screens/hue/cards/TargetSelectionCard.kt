@@ -1,0 +1,199 @@
+package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.MIN_TOUCH_TARGET
+
+/** Auswahl der Lampen/Gruppen, die eine Hue-Regel steuert. Aus `HueRuleConfigScreen` ausgelagert. */
+@Composable
+internal fun TargetSelectionCard(
+    lightTargets: LightTargets,
+    selectedLightIds: Set<String>,
+    selectedGroupIds: Set<String>,
+    onLightSelectionChange: (Set<String>) -> Unit,
+    onGroupSelectionChange: (Set<String>) -> Unit,
+    onRefreshTargets: () -> Unit,
+    showValidationErrors: Boolean
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Zielauswahl", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onRefreshTargets) {
+                    Icon(Icons.Default.Refresh, "Lichter aktualisieren")
+                }
+            }
+
+            Text(
+                "Wählen Sie aus, welche Lichter oder Gruppen diese Regel steuern soll:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Ebenfalls saveable: Der Reiter gehoert zum Formular. Bliebe er bei `remember`, sprang
+            // eine Rotation zurueck auf "Gruppen", obwohl die Auswahl selbst erhalten ist - der
+            // Nutzer haette den Verlust seiner Lichter-Auswahl vermutet, wo keiner ist.
+            var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("Gruppen (${lightTargets.groups.size})") }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("Lichter (${lightTargets.lights.size})") }
+                )
+            }
+
+            when (selectedTab) {
+                0 -> {
+                    if (lightTargets.groups.isEmpty()) {
+                        Text(
+                            "Keine Gruppen gefunden. Erstellen Sie zunächst Gruppen in der Hue-App.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        lightTargets.groups.forEach { group ->
+                            // Ganze Zeile als Ziel - Begruendung siehe Schichtmuster-Auswahl
+                            // (ShiftPatternCard); heightIn(MIN_TOUCH_TARGET) ist Pflicht, weil die
+                            // Checkbox mit onCheckedChange = null ihre eigene Mindestgroesse
+                            // nicht mehr mitbringt.
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = MIN_TOUCH_TARGET)
+                                    .toggleable(
+                                        value = selectedGroupIds.contains(group.id),
+                                        onValueChange = { isChecked ->
+                                            onGroupSelectionChange(
+                                                if (isChecked) selectedGroupIds + group.id else selectedGroupIds - group.id
+                                            )
+                                        },
+                                        role = Role.Checkbox
+                                    )
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selectedGroupIds.contains(group.id),
+                                    onCheckedChange = null
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(group.name, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "Gruppe • ${if (group.state.any_on) "An" else "Aus"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    if (lightTargets.lights.isEmpty()) {
+                        Text(
+                            "Keine Lichter gefunden. Stellen Sie sicher, dass Ihre Bridge verbunden ist.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        lightTargets.lights.forEach { light ->
+                            // Ganze Zeile als Ziel - Begruendung siehe Schichtmuster-Auswahl
+                            // (ShiftPatternCard); dieselbe 48dp-Klemme wie oben.
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = MIN_TOUCH_TARGET)
+                                    .toggleable(
+                                        value = selectedLightIds.contains(light.id),
+                                        onValueChange = { isChecked ->
+                                            onLightSelectionChange(
+                                                if (isChecked) selectedLightIds + light.id else selectedLightIds - light.id
+                                            )
+                                        },
+                                        role = Role.Checkbox
+                                    )
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selectedLightIds.contains(light.id),
+                                    onCheckedChange = null
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(light.name, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "Licht • ${if (light.state.on) "An" else "Aus"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showValidationErrors && selectedLightIds.isEmpty() && selectedGroupIds.isEmpty()) {
+                Text(
+                    "Bitte wählen Sie mindestens ein Licht oder eine Gruppe aus",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty()) {
+                Text(
+                    "Ausgewählt: ${selectedLightIds.size} Lichter, ${selectedGroupIds.size} Gruppen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}

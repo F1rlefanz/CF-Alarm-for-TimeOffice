@@ -90,6 +90,9 @@ fun SettingsLinkButton(onClick: () -> Unit, text: String, modifier: Modifier = M
 @Composable
 private fun CompactLabel(icon: ImageVector?, text: String) {
     if (icon != null) {
+        // dekorativ: das Icon steht hier nie allein - direkt daneben folgt immer `text`,
+        // die Beschriftung des Knopfes. Eine eigene Beschreibung liesse den Screenreader
+        // dieselbe Aktion zweimal vorlesen.
         Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(4.dp))
     }

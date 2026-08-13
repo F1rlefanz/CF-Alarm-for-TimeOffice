@@ -37,7 +37,7 @@ googleApiServicesCalendar = "v3-rev20220715-2.0.0"
 googleHttpClient = "2.2.0"
 
 # Android UI dependencies
-appcompat = "1.7.1"
+appcompat = "1.8.0"
 
 # Dependency Injection
 hilt = "2.60.1"

@@ -671,6 +671,26 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
   meldete die Discovery sonst Erfolg, danach scheiterte jeder Zugriff, und der N-UPnP-Fallback greift
   nicht, weil mDNS ja „etwas" gefunden hatte. Nur-IPv6 liefert ehrlich `null`. Eine Nicht-IPv4-Adresse
   ist kein „SECURITY"-Vorfall — Adressfamilie, nicht Angriff; die Klemme bleibt genauso streng.
+- **Die Subnetz-Prüfung ist ein HINWEIS auf das Timeout, NIEMALS ein Veto** (Fix 13.08.2026).
+  `isBridgeReachableNow()` → `NetworkStateMonitor.isReachableSubnet()` verlangt, dass das Gerät
+  eine eigene IPv4 **im selben Subnetz** wie die Bridge hat. Als Abkürzung für „zu Hause vs.
+  unterwegs" ist das brauchbar — aber es ist eine Heuristik, und sie liefert Falsch-Negative
+  überall dort, wo ein Router zwischen zwei erreichbaren Netzen vermittelt: **Gast-WLAN,
+  getrenntes VLAN, Mesh-/Repeater-Setups mit eigenem Subnetz, Doppel-NAT — und der Emulator**
+  (10.0.2.x hinter NAT, routet aber ins Heimnetz; `ping` auf die Bridge: 0 % Verlust).
+  Vorher stand die Prüfung als Veto **VOR** dem echten Test. Am Emulator aufgeschlagen: das
+  Pairing bekam eine HTTPS **200** von der Bridge, und 7 ms später verwarf
+  `validateConnectionCredentials()` genau diese Bridge mit „not reachable from current network" —
+  eine antwortende Bridge, abgelehnt von einer Vermutung über sie, ohne Weg für den Nutzer, das
+  zu übergehen. Jetzt entscheidet die Heuristik nur noch, ob der Versuch das volle
+  OkHttp-Timeout (10 s) bekommt oder nach `OFF_SUBNET_PROBE_TIMEOUT` (3 s) abgeschnitten wird;
+  der echte Request ist das Urteil. **Beide** Aufrufstellen sind so gebaut (Einrichtung UND der
+  Cache-Pfad in `getValidatedConnection()`) — nur eine davon zu ändern hieße: das Setup
+  verbindet, und jede spätere Nutzung scheitert weiter. Unverändert bleibt, dass der
+  Verbindungszustand dabei **nicht** auf `ERROR` herabgestuft wird (ein transientes „falsches
+  Netz" ist kein Bridge-/Zugangsdaten-Fehler). `HueBridgeConnectionManagerTest` hält beide
+  Richtungen fest; am Gerät belegt (Kopplung erfolgreich, Log: „Bridge trotz fremden Subnetzes
+  erreichbar — die Heuristik lag falsch").
 - **`healthCheckScope` braucht einen `CoroutineExceptionHandler` — der `SupervisorJob` reicht
   NICHT.** Ein SupervisorJob isoliert nur Geschwister; die Exception läuft trotzdem zum
   Thread-Default-Handler und beendet den PROZESS. In diesem Scope liegen fünf fire-and-forget

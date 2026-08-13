@@ -308,12 +308,12 @@ class HueBridgeConnectionManager private constructor(
                 // persistent error banner while just out of range.
                 // Die Subnetz-Pruefung ist ein HINWEIS, kein Urteil - deshalb hier kein blindes
                 // Abbrechen mehr, sondern ein kurz gedeckelter echter Versuch (siehe
-                // [probeBridge]: Gast-WLAN/VLAN/Mesh/Doppel-NAT/Emulator erreichen die Bridge,
+                // [validateConnectionCredentials]: Gast-WLAN/VLAN/Mesh/Doppel-NAT/Emulator erreichen die Bridge,
                 // ohne im selben Subnetz zu liegen). Nur wenn AUCH der scheitert, gilt sie als
                 // unerreichbar. Der teure Fall bleibt damit billig: wer wirklich ausser Haus
                 // ist, wartet OFF_SUBNET_PROBE_TIMEOUT statt der vollen 10s.
                 if (!isBridgeReachableNow(currentState.bridgeIp) &&
-                    !probeBridge(currentState.bridgeIp, currentState.username)
+                    !validateConnectionCredentials(currentState.bridgeIp, currentState.username)
                 ) {
                     Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Cached bridge ${currentState.bridgeIp} not reachable from current network, skipping live connection attempt")
                     throw IllegalStateException("Bridge unreachable: not on the bridge's local network (${currentState.bridgeIp})")
@@ -649,7 +649,7 @@ class HueBridgeConnectionManager private constructor(
      * kein langer Hänger, wenn man tatsächlich außer Haus ist — ohne eine erreichbare Bridge
      * auszusperren.
      */
-    private suspend fun probeBridge(bridgeIp: String, username: String): Boolean {
+    private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean {
         val sameSubnet = isBridgeReachableNow(bridgeIp)
         if (!sameSubnet) {
             Logger.w(
@@ -692,12 +692,6 @@ class HueBridgeConnectionManager private constructor(
         }
     }
 
-    /**
-     * INTERNAL: Validate connection credentials against bridge
-     */
-    private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean =
-        probeBridge(bridgeIp, username)
-    
     /**
      * OPTIMIZATION: Smart health monitoring - Event-driven instead of continuous polling
      * 

@@ -45,6 +45,51 @@ data class ShiftConfig(
      * @return die Definition, oder null wenn keine passt (dann lieber keine Regel als die
      *         falschen Lampen).
      */
+    /**
+     * Ordnet ein Schichtkuerzel aus dem Kalender GENAU EINER Definition zu (Vorschlags-Karte im
+     * Schicht-Konfigurations-Screen). REIN und testbar, damit die drei Fallen unten festgehalten
+     * werden koennen.
+     *
+     * Drei Dinge passieren zusammen, weil jedes einzeln fuer sich wirkungslos waere:
+     *
+     *  1. Das Kuerzel kommt als Erkennungsmuster an die Zieldefinition.
+     *  2. Die Zieldefinition wird AKTIVIERT. `ShiftRecognitionEngine` beachtet nur aktivierte
+     *     Definitionen - eine Zuordnung an eine ausgeschaltete Schicht waere ein stiller
+     *     Nichts-Passiert-Klick. Genau der Fall tritt real auf: die Vorschlags-Karte bietet ein
+     *     Kuerzel nur an, wenn es von keiner AKTIVIERTEN Definition getroffen wird - ein Kuerzel,
+     *     das bei einer ausgeschalteten Schicht liegt, wird also vorgeschlagen.
+     *  3. Das Kuerzel wird bei JEDER anderen Definition ENTFERNT. Sonst haette es zwei Besitzer,
+     *     und `findDefinitionFor` nimmt den ERSTEN Treffer in Listenreihenfolge - eine stille,
+     *     von der Sortierung abhaengige Entscheidung ueber den Wecker. Der Nutzer hat gerade
+     *     gesagt, zu WELCHER Schicht das Kuerzel gehoert; das ist die Antwort, nicht die
+     *     Listenreihenfolge.
+     *
+     * @return die neue Konfiguration, oder `null` wenn nichts zu tun war (leeres Kuerzel,
+     *         unbekannte Ziel-ID, oder alles steht schon so).
+     */
+    fun withCodeAssignedTo(code: String, definitionId: String): ShiftConfig? {
+        val normalized = code.trim()
+        if (normalized.isEmpty()) return null
+        if (definitions.none { it.id == definitionId }) return null
+
+        val updated = definitions.map { definition ->
+            if (definition.id == definitionId) {
+                val keywords =
+                    if (definition.keywords.any { it.equals(normalized, ignoreCase = true) }) {
+                        definition.keywords
+                    } else {
+                        definition.keywords + normalized
+                    }
+                definition.copy(keywords = keywords, isEnabled = true)
+            } else {
+                val cleaned = definition.keywords.filterNot { it.equals(normalized, ignoreCase = true) }
+                if (cleaned.size == definition.keywords.size) definition
+                else definition.copy(keywords = cleaned)
+            }
+        }
+        return if (updated == definitions) null else copy(definitions = updated)
+    }
+
     fun findDefinitionFor(shiftName: String): ShiftDefinition? {
         if (definitions.isEmpty()) return null
 
@@ -75,27 +120,71 @@ data class ShiftConfig(
          */
         const val MIN_FUZZY_KEYWORD_LENGTH = 2
 
+        /**
+         * Die Konfiguration, die ein Nutzer OHNE eigene Anpassung bekommt.
+         *
+         * WARUM DIE EINBUCHSTABIGEN KEYWORDS "F"/"S"/"N" HIER STEHEN - UND WARUM SIE EINMAL
+         * ENTFERNT WAREN:
+         * Ein Aufraeumschritt hatte sie mit der Begruendung entfernt, ein privater Termin
+         * "Kino mit F" koenne einen Wecker um 05:30 erzeugen, und dabei auf
+         * [MIN_FUZZY_KEYWORD_LENGTH] verwiesen. Das war ein Verwechslungsfehler zwischen zwei
+         * verschiedenen Funktionen:
+         *  - [findDefinitionFor] ordnet einem BESTEHENDEN Alarm eine Definition zu und vergleicht
+         *    unscharf per `contains` OHNE Wortgrenzen. Dort ist ein einzelner Buchstabe wirklich
+         *    gefaehrlich ("S" steckt in "Nacht**s**chicht") - deshalb gilt dort
+         *    [MIN_FUZZY_KEYWORD_LENGTH] = 2, und das bleibt so.
+         *  - [ShiftDefinition.matchesKeywords] erkennt Schichten in KALENDERTITELN und arbeitet
+         *    mit Wortgrenzen. "F" trifft dort nur ein alleinstehendes F, nicht "Fruehschicht" und
+         *    nicht "Fortbildung".
+         * Am Emulator gegen den echten Dienstplan-Feed nachgewiesen (10.08.2026): ohne die
+         * Buchstaben sank die Erkennung von 4 auf 1 Schicht. Die real vorkommenden Titel sind
+         * kurze Codes ("F", "IMCF", "AD1", "FBE", "+"); der Eintrag "F" traf kein Muster mehr -
+         * fuer eine echte Fruehschicht gab es keinen Wecker.
+         * Abwaegung, bewusst so entschieden: eine nicht erkannte Schicht heisst KEIN WECKER. Fuer
+         * einen ueberzaehligen Wecker gibt es "Naechsten Alarm ueberspringen", fuer einen
+         * verschlafenen gibt es nichts. Das Restrisiko bleibt eng und beherrschbar: die Erkennung
+         * liest nur Kalender, die der Nutzer selbst ausgewaehlt hat, und das Keyword ist
+         * entfernbar. `ShiftConfigDefaultsTest` haelt beide Seiten fest.
+         *
+         * WARUM JEDE DEFINITION EIN GENERISCHES MUSTER NEBEN DEM STATIONSKUERZEL HAT:
+         * "IMCF"/"IMCS"/"IMCN"/"IMCZ" sind die Kuerzel EINER Station. Fuer einen Kollegen auf
+         * einer anderen Station traf der Zwischendienst mit seinem einzigen Muster "IMCZ"
+         * garantiert nie - er haette dafuer NIE einen Wecker bekommen und es erst nach dem
+         * Verschlafen gemerkt. Deshalb hat jede Definition zusaetzlich ein generisches,
+         * mehrbuchstabiges Muster; der Definitionsname selbst zaehlt seit demselben Fix
+         * ebenfalls als Muster (siehe [ShiftDefinition.matchesKeywords]), sodass ein Termin, der
+         * wortwoertlich "Frühschicht"/"Zwischendienst" heisst, auch ohne eigenes Keyword trifft.
+         *
+         * Das ersetzt KEINE Konfiguration: wessen Station anders codiert, muss seine Kuerzel
+         * eintragen. Darauf weist der Schicht-Konfigurationsscreen sichtbar hin.
+         *
+         * Der eigentliche Weg dahin sind aber nicht besser geratene Vorgaben, sondern die
+         * Kuerzel, die im Kalender des Nutzers TATSAECHLICH vorkommen: die App kann die geladenen
+         * Termintitel auswerten, die wiederkehrenden Kuerzel nach Haeufigkeit vorlegen und
+         * zuordnen lassen. Solange das fehlt, sind diese Vorgaben ein Kompromiss und kein
+         * Ersatz.
+         */
         fun getDefaultConfig(): ShiftConfig = ShiftConfig(
             autoAlarmEnabled = true,
             definitions = listOf(
                 ShiftDefinition(
                     id = "early_shift",
                     name = "Frühschicht",
-                    keywords = listOf("F", "IMCF"),
+                    keywords = listOf("F", "IMCF", "Frühdienst"),
                     alarmTime = LocalTime.of(5, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
-                    id = "late_shift", 
+                    id = "late_shift",
                     name = "Spätschicht",
-                    keywords = listOf("S", "IMCS"),
+                    keywords = listOf("S", "IMCS", "Spätdienst"),
                     alarmTime = LocalTime.of(12, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
                     id = "night_shift",
                     name = "Nachtschicht",
-                    keywords = listOf("N", "IMCN"),
+                    keywords = listOf("N", "IMCN", "Nachtdienst"),
                     alarmTime = LocalTime.of(20, 0),
                     isEnabled = true
                 ),
@@ -109,7 +198,7 @@ data class ShiftConfig(
                 ShiftDefinition(
                     id = "intermediate_shift",
                     name = "Zwischendienst",
-                    keywords = listOf("IMCZ"),
+                    keywords = listOf("IMCZ", "ZD"),
                     alarmTime = LocalTime.of(7, 0),
                     isEnabled = true
                 )

@@ -11,13 +11,19 @@ import java.time.LocalTime
  * `matchesKeywords()`.
  *
  * HINWEIS zu Umlauten (per javac/java auf einer isolierten Testdatei nachgerechnet,
- * NICHT geraten): Java-Regex definiert `\w` standardmäßig (ohne
- * `Pattern.UNICODE_CHARACTER_CLASS`) als `[a-zA-Z0-9_]` – Umlaute wie 'ü' zählen also
- * NICHT als Wortzeichen. Das ändert an den hier getesteten Fällen im Ergebnis nichts
- * (Leerzeichen/Satzzeichen sind ohnehin Nicht-Wortzeichen und bilden gültige
- * \b-Grenzen), ist aber der Grund, warum "Früh" NICHT als Teilstring in
- * "Frühschicht" matcht: 'h' (Wortzeichen) und 's' (Wortzeichen) direkt aneinander
- * bilden keine \b-Grenze, unabhängig vom 'ü' davor.
+ * NICHT geraten – zuletzt am 10.08.2026): Java-Regex zählt ohne
+ * `Pattern.UNICODE_CHARACTER_CLASS` nur `[a-zA-Z0-9_]` als Wortzeichen – Umlaute und 'ß'
+ * zählen also NICHT dazu. Für Muster, die MITTEN im Wort einen Umlaut haben ("Früh"),
+ * ist das folgenlos: dass "Früh" nicht in "Frühschicht" matcht, liegt an 'h' und 's'
+ * (beides Wortzeichen) direkt aneinander, nicht am 'ü'.
+ *
+ * Für Muster, die mit einem Umlaut oder 'ß' BEGINNEN oder ENDEN, drehte `\b` die
+ * Semantik dagegen komplett um – gemessen: `\büd\b` traf "üd" NICHT, dafür aber "xüd";
+ * `\bgruß\b` traf "gruß anna" NICHT, dafür "grußformel". Deshalb formuliert
+ * [ShiftDefinition] die Wortgrenzen seit v1.22.2 selbst über Lookarounds auf
+ * Unicode-Kategorien statt über `\b`. Die Tests unten halten BEIDE Seiten fest: die
+ * Umlaut-Fälle treffen jetzt richtig, und ein einzelner Buchstabe trifft weiterhin
+ * nicht innerhalb eines Wortes.
  */
 class ShiftDefinitionTest {
 
@@ -118,6 +124,62 @@ class ShiftDefinitionTest {
     @Test
     fun `matchesKeywords Fruehschicht-Keyword matcht bei Satzzeichen-Umrandung`() {
         assertTrue(definition(listOf("Früh")).matchesKeywords("Termin: Früh!"))
+    }
+
+    // ---- Muster, die mit Umlaut/ß ANFANGEN oder ENDEN (Fix v1.22.2) ----
+    //
+    // Mit `\b` war die Semantik hier exakt umgedreht: das Muster traf NUR mitten im Wort und
+    // NIEMALS als eigenes Wort. Echte deutsche Schichtbezeichnungen sind davon betroffen, und
+    // seit der Schichtname selbst als Muster zaehlt, sagt der Dialogtext dem Nutzer die Erkennung
+    // ausdruecklich zu.
+
+    @Test
+    fun `matchesKeywords Muster mit fuehrendem Umlaut trifft den gleichnamigen Titel`() {
+        assertTrue(definition(listOf("ÜD")).matchesKeywords("ÜD"))
+    }
+
+    @Test
+    fun `matchesKeywords Muster mit fuehrendem Umlaut trifft als eigenes Wort im Titel`() {
+        assertTrue(definition(listOf("ÜD")).matchesKeywords("Station ÜD"))
+        assertTrue(definition(listOf("ÜD")).matchesKeywords("Dienstplan: ÜD (8h)"))
+    }
+
+    @Test
+    fun `matchesKeywords Muster mit fuehrendem Umlaut trifft NICHT innerhalb eines Wortes`() {
+        // Die Kehrseite, die `\b` ausgerechnet erlaubte: "üd" in "XÜD" ist kein eigenes Wort.
+        assertFalse(definition(listOf("ÜD")).matchesKeywords("XÜD"))
+        assertFalse(definition(listOf("ÜD")).matchesKeywords("ÜDX"))
+    }
+
+    @Test
+    fun `matchesKeywords ausgeschriebene Umlaut-Schichtbezeichnung trifft`() {
+        assertTrue(definition(listOf("Übergabedienst")).matchesKeywords("Übergabedienst"))
+        assertTrue(
+            definition(listOf("Ärztlicher Dienst")).matchesKeywords("Dienstplan: Ärztlicher Dienst")
+        )
+    }
+
+    @Test
+    fun `matchesKeywords Muster mit abschliessendem ss trifft als eigenes Wort`() {
+        // Gemessen: `\bgruß\b` traf "gruß anna" NICHT, dafuer aber "grußformel".
+        assertTrue(definition(listOf("Gruß")).matchesKeywords("Gruß Anna"))
+        assertFalse(definition(listOf("Gruß")).matchesKeywords("Grußformel"))
+    }
+
+    @Test
+    fun `matchesKeywords Umlaut-Schichtname zaehlt ebenfalls als Muster`() {
+        // Der [name] ist seit v1.22.0 ein zusaetzliches Muster - fuer umlaut-initiale Namen war
+        // diese Zusage bis v1.22.2 nicht einloesbar.
+        val def = ShiftDefinition(
+            id = "uebergabe",
+            name = "Übergabedienst",
+            keywords = listOf("IMCZ"),
+            alarmTime = LocalTime.of(7, 0)
+        )
+
+        assertTrue(def.matchesKeywords("Übergabedienst"))
+        assertTrue(def.matchesKeywords("Station 3: Übergabedienst"))
+        assertFalse(def.matchesKeywords("Übergabedienstplan"))
     }
 
     // ---- getAlarmTimeFormatted / getAlarmLocalTime ----

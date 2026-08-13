@@ -80,7 +80,35 @@ class HueLightUseCase @Inject constructor(
                 
                 val lightsResult = lightsDeferred.await()
                 val groupsResult = groupsDeferred.await()
-                
+
+                // BEIDE ABFRAGEN GESCHEITERT = EHRLICHER FEHLSCHLAG, kein leeres Ergebnis.
+                //
+                // Der Waechter in HueApiClient.getLights()/getGroups() erkennt inzwischen die
+                // V1-Fehlerhuelle (HTTP 200 + `[{"error":{"type":1,"description":"unauthorized
+                // user"}}]`, z.B. nachdem der Nutzer die App in der Hue-App aus der Whitelist
+                // entfernt oder die Bridge getauscht hat) und wirft. Der landete aber genau hier
+                // wieder im "graceful partial failure"-Zweig unten und wurde zu
+                // Result.success(LightTargets(leer, leer)) - also exakt der stillen leeren
+                // Lampenliste bzw. "Keine Lampen gefunden", die der Waechter beseitigen sollte.
+                // Nebeneffekt: HueViewModel.refreshLightTargets() ueberschrieb damit sogar eine
+                // vorher korrekt geladene Liste mit einer leeren.
+                //
+                // Der Teilerfolg-Zweig unten bleibt bewusst erhalten: eine Bridge ganz ohne
+                // Gruppen ist normal, und dann sollen die Lampen trotzdem nutzbar sein. Nur wenn
+                // KEINE der beiden Abfragen durchkam, ist "keine Ziele" keine Aussage ueber die
+                // Bridge, sondern ein Fehler - und ein Fehler muss als Fehler nach oben.
+                if (lightsResult.isFailure && groupsResult.isFailure) {
+                    val error = lightsResult.exceptionOrNull()
+                        ?: groupsResult.exceptionOrNull()
+                        ?: Exception("Bridge lieferte weder Lampen noch Gruppen")
+                    Logger.w(
+                        LogTags.HUE_USECASE,
+                        "Weder Lampen noch Gruppen abrufbar - Fehler wird durchgereicht statt als " +
+                            "leere Liste getarnt: ${error.message}"
+                    )
+                    return@coroutineScope Result.failure(error)
+                }
+
                 // Handle partial failures gracefully
                 val lights = if (lightsResult.isSuccess) {
                     lightsResult.getOrNull() ?: emptyList()

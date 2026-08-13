@@ -13,8 +13,20 @@ import java.time.ZoneId
  * deterministisch gegen eine feste Zeitzone laufen.
  */
 object DimWindowResolver {
-    private const val DAY_MS = 24L * 60 * 60 * 1000
     private const val MIN_MS = 60_000L
+
+    /**
+     * Wie viele Kalendertage VOR [today] die Fenster-Schleifen zusaetzlich mitrechnen. Ohne diesen
+     * Rueckblick verschwindet ein am Vorabend gestartetes Fenster (Vorwaerts-Fenster des
+     * Nacht-Standards, jedes CLOCK<->CLOCK-Regelfenster) nach dem Datumswechsel aus JEDER
+     * Iteration: die Iteration fuer den neuen Tag erzeugt nur dessen EIGENEN Abend. Jede
+     * Neuberechnung nach Mitternacht (App-Update via MY_PACKAGE_REPLACED, 6h-Wartung,
+     * Master-Pause-Resume, jeder ViewModel-Setter, ein Tap auf die Korrektur-Notification) haette
+     * die gerade laufende Nacht dadurch als "kein aktives Fenster" bewertet und Dimmen + DND
+     * (Modus 1 rechnet ueber dieselben Fenster) mitten in der Nacht abgeschaltet. Vergangene
+     * Spannen sind harmlos: `activeSpan` filtert per "now in range", der Scheduler per "> now".
+     */
+    private const val LOOKBACK_DAYS = 1L
 
     /** Ein aufgelöstes Dimm-Fenster samt Intensität seiner Quelle (Wellness = global, Regel = Regel-Wert). */
     data class DimSpan(val range: LongRange, val strength: Int, val warmth: Int)
@@ -40,8 +52,15 @@ object DimWindowResolver {
                 shiftEndEpoch + w.endOffsetMinutes * MIN_MS
             }
             DimAnchor.CLOCK -> {
-                var e = clockOnDateOf(alarmEpoch, w.endClockMinutes, zone)
-                while (e <= start) e += DAY_MS
+                // Roll-forward ueber KALENDERTAGE, nicht ueber +24h-Millis: an einem
+                // DST-Umstellungstag ist ein Tag 23 h bzw. 25 h lang, ein fixer Millis-Sprung
+                // traefe dort die falsche Wanduhrzeit.
+                var date = dateOf(alarmEpoch, zone)
+                var e = wallClock(date, w.endClockMinutes, zone)
+                while (e <= start) {
+                    date = date.plusDays(1)
+                    e = wallClock(date, w.endClockMinutes, zone)
+                }
                 e
             }
         }
@@ -51,19 +70,28 @@ object DimWindowResolver {
     /** Fenster eines freien Tags – nur CLOCK-Anker sinnvoll (kein Wecker/keine Schicht). */
     fun resolveFreeWindow(w: DimWindow, date: LocalDate, zone: ZoneId): LongRange? {
         if (w.startAnchor != DimAnchor.CLOCK || w.endAnchor != DimAnchor.CLOCK) return null
-        val base = date.atStartOfDay(zone).toInstant().toEpochMilli()
-        val start = base + w.startClockMinutes * MIN_MS
-        var end = base + w.endClockMinutes * MIN_MS
-        if (end <= start) end += DAY_MS // über Mitternacht
+        val start = wallClock(date, w.startClockMinutes, zone)
+        // Über Mitternacht = die Uhrzeit auf dem FOLGE-KALENDERTAG (nicht Start + 24h-Millis) –
+        // sonst eine Stunde falsch an DST-Umstellungstagen.
+        val end = wallClock(date, w.endClockMinutes, zone).let {
+            if (it <= start) wallClock(date.plusDays(1), w.endClockMinutes, zone) else it
+        }
         return start..end
     }
 
     /**
      * Die gerade aktive Spanne für [now]. Überlappen mehrere, gewinnt die DUNKELSTE
      * (max strength, bei Gleichstand max warmth) – so schlägt eine „hart dimmen"-Regel eine mildere.
+     *
+     * Die Zugehoerigkeit ist HALB OFFEN (`first <= now < last`), nicht inklusiv: der Scheduler plant
+     * den naechsten Wechsel strikt auf `> now`. Traefe ein Tick exakt auf `range.last` (0 ms
+     * Zustellungs-Latenz), waere das Fenster hier noch aktiv, waehrend als naechster Wechsel schon
+     * die Grenze DANACH gesetzt wird - der Zustand "aus" fuer diesen Fensterrand wuerde nie
+     * berechnet und das Overlay/DND blieb bis zum naechsten Fensterstart haengen.
      */
     fun activeSpan(spans: List<DimSpan>, now: Long): DimSpan? =
-        spans.filter { now in it.range }.maxWithOrNull(compareBy({ it.strength }, { it.warmth }))
+        spans.filter { now >= it.range.first && now < it.range.last }
+            .maxWithOrNull(compareBy({ it.strength }, { it.warmth }))
 
     /** Minimal-Info eines Alarms für die Fenster-Berechnung (entkoppelt von AlarmInfo/Android). */
     data class AlarmSlot(val triggerTime: Long, val shiftName: String, val shiftEndTime: Long)
@@ -95,8 +123,10 @@ object DimWindowResolver {
             if (!alarmByDate.containsKey(d)) alarmByDate[d] = a
         }
         val out = mutableListOf<DimSpan>()
-        for (i in 0 until horizonDays) {
-            val date = today.plusDays(i.toLong())
+        // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): ein CLOCK<->CLOCK-Fenster
+        // vom Vorabend gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
+        for (i in -LOOKBACK_DAYS until horizonDays.toLong()) {
+            val date = today.plusDays(i)
             val alarm = alarmByDate[date]
             val rule = if (alarm != null) ruleForShift(alarm.shiftName) else ruleForFreeDay()
             rule ?: continue
@@ -159,8 +189,10 @@ object DimWindowResolver {
             if (!alarmByDate.containsKey(d)) alarmByDate[d] = a
         }
         val out = mutableListOf<DimSpan>()
-        for (i in 0 until horizonDays) {
-            val date = today.plusDays(i.toLong())
+        // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): das Vorwaerts-Fenster des
+        // Vorabends gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
+        for (i in -LOOKBACK_DAYS until horizonDays.toLong()) {
+            val date = today.plusDays(i)
             val alarm = alarmByDate[date]
             if (isExcluded(alarm?.shiftName)) continue
 
@@ -251,13 +283,28 @@ object DimWindowResolver {
 
     /** Die Uhrzeit [clockMinutes] auf dem Kalendertag von [referenceEpoch], aber nicht nach der Referenz. */
     private fun clockAtOrBefore(referenceEpoch: Long, clockMinutes: Int, zone: ZoneId): Long {
-        var t = clockOnDateOf(referenceEpoch, clockMinutes, zone)
-        if (t > referenceEpoch) t -= DAY_MS
-        return t
+        val date = dateOf(referenceEpoch, zone)
+        val t = wallClock(date, clockMinutes, zone)
+        // Einen KALENDERTAG zurueck (nicht −24h-Millis), sonst an DST-Tagen eine Stunde falsch.
+        return if (t > referenceEpoch) wallClock(date.minusDays(1), clockMinutes, zone) else t
     }
 
-    private fun clockOnDateOf(referenceEpoch: Long, clockMinutes: Int, zone: ZoneId): Long {
-        val date = Instant.ofEpochMilli(referenceEpoch).atZone(zone).toLocalDate()
-        return date.atStartOfDay(zone).toInstant().toEpochMilli() + clockMinutes * MIN_MS
-    }
+    private fun dateOf(referenceEpoch: Long, zone: ZoneId): LocalDate =
+        Instant.ofEpochMilli(referenceEpoch).atZone(zone).toLocalDate()
+
+    /**
+     * Loest [clockMinutes] als echte WANDUHRZEIT auf [date] auf - NICHT als „Mitternacht-Instant +
+     * Minuten-Millis". An den beiden DST-Umstellungstagen ist ein Kalendertag 23 h bzw. 25 h lang;
+     * der reine Millis-Offset traefe dort die falsche Uhrzeit (aus 22:00 wuerde am
+     * Vorspringen-Tag 23:00, am Zurueckspringen-Tag 21:00) und verschob damit Dimmen UND DND
+     * (Modus 1 rechnet ueber dieselben Fenster) um eine Stunde. Genau dieselbe Falle war fuer den
+     * DND-Rufbereitschaft-Cutoff schon dokumentiert und dort behoben
+     * ([com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndOnCallCutoffResolver]).
+     *
+     * `LocalDateTime.plusMinutes` rechnet bewusst auf der LOKALEN Zeitachse - `ZonedDateTime.
+     * plusMinutes` wuerde wieder auf der Instant-Achse rechnen und den Fehler zurueckholen.
+     * `atZone` loest anschliessend eine uebersprungene/doppelte Stunde regelkonform auf.
+     */
+    private fun wallClock(date: LocalDate, clockMinutes: Int, zone: ZoneId): Long =
+        date.atStartOfDay().plusMinutes(clockMinutes.toLong()).atZone(zone).toInstant().toEpochMilli()
 }

@@ -7,8 +7,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.IWakeLockManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WakeLockManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import dagger.Module
 import dagger.Provides
@@ -48,22 +46,9 @@ object ServiceModule {
     
     @Provides
     @Singleton
-    fun provideWakeLockManager(
-        @ApplicationContext context: Context
-    ): WakeLockManager = WakeLockManager(context)
-    
-    @Provides
-    @Singleton
-    fun provideIWakeLockManager(
-        wakeLockManager: WakeLockManager
-    ): IWakeLockManager = wakeLockManager
-    
-    @Provides
-    @Singleton
     fun provideAlarmManagerService(
-        application: Application,
-        wakeLockManager: WakeLockManager
-    ): AlarmManagerService = AlarmManagerService(application, wakeLockManager)
+        application: Application
+    ): AlarmManagerService = AlarmManagerService(application)
     
     @Provides
     @Singleton

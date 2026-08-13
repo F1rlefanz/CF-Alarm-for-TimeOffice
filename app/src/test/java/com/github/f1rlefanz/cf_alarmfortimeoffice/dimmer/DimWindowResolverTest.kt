@@ -172,7 +172,12 @@ class DimWindowResolverTest {
         )
 
         // 4 Nächte gedimmt (Mo, Di, Do, Fr) – die Nachtschicht-Arbeitsnacht (Mi) NICHT.
-        assertEquals(4, spans.size)
+        // Gezählt wird ab `today`: die Fenster-Schleife rechnet bewusst zusätzlich den Kalendertag
+        // VOR `today` mit (LOOKBACK_DAYS), damit eine über Mitternacht laufende Nacht nach dem
+        // Datumswechsel nicht aus jeder Iteration verschwindet. Diese Vornacht ist für die
+        // Lückenlosigkeits-Frage hier irrelevant, für die Zählung aber eine zusätzliche Spanne.
+        val fromToday = spans.filter { it.range.first >= ep(2026, 1, 12, 0, 0) }
+        assertEquals(4, fromToday.size)
         // Di-Nacht (nach der Frühschicht) IST gedimmt – genau hier hatte das alte Modell eine Lücke.
         assertTrue(spans.any { ep(2026, 1, 13, 23, 0) in it.range })
         // Mi→Do (Arbeitsnacht der Nachtschicht) NICHT gedimmt.
@@ -212,9 +217,13 @@ class DimWindowResolverTest {
             isExcluded = { false }
         )
 
-        assertEquals(1, spans.size)
-        assertEquals(ep(2026, 1, 12, 22, 0), spans[0].range.first)
-        assertEquals(ep(2026, 1, 13, 7, 0), spans[0].range.last)
+        // Ab `today` genau EIN Fenster (die Nacht 12.->13.01.). Die Schleife rechnet zusätzlich die
+        // Vornacht mit (LOOKBACK_DAYS, damit eine laufende Nacht nach Mitternacht nicht wegfällt) –
+        // die wird hier bewusst herausgefiltert.
+        val fromToday = spans.filter { it.range.first >= ep(2026, 1, 12, 0, 0) }
+        assertEquals(1, fromToday.size)
+        assertEquals(ep(2026, 1, 12, 22, 0), fromToday[0].range.first)
+        assertEquals(ep(2026, 1, 13, 7, 0), fromToday[0].range.last)
     }
 
     @Test
@@ -229,7 +238,12 @@ class DimWindowResolverTest {
             isExcluded = { name -> name == "Nachtdienst" }
         )
 
-        assertTrue(spans.isEmpty())
+        // Der ausgeschlossene Tag SELBST bekommt kein Fenster – das ist die Aussage dieses Tests.
+        // Die Vornacht (11.->12.01., durch LOOKBACK_DAYS mitgerechnet) ist ein freier Tag VOR einer
+        // ausgeschlossenen Schicht und wird korrekt gedimmt – siehe den eigenen Regressionstest
+        // „freier Tag vor einer ausgeschlossenen Schicht" weiter unten.
+        assertTrue(spans.none { ep(2026, 1, 12, 23, 0) in it.range })
+        assertTrue(spans.none { it.range.first >= ep(2026, 1, 12, 0, 0) })
     }
 
     @Test

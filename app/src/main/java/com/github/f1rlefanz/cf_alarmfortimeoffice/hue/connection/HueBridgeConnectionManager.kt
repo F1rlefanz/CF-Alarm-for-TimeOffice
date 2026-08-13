@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
@@ -18,12 +19,13 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +35,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.minutes
@@ -112,6 +115,13 @@ class HueBridgeConnectionManager private constructor(
         private val CONNECTION_CACHE_VALIDITY = 30.minutes  // Extended from 5 minutes
         private val FOREGROUND_HEALTH_CHECK_INTERVAL = 5.minutes  // Only when app visible
         private val BACKGROUND_HEALTH_CHECK_INTERVAL = 30.minutes  // Rare background checks
+
+        /**
+         * Deckel fuer einen Versuch, den die Subnetz-Heuristik fuer aussichtslos haelt.
+         * Deutlich kuerzer als die 10s von OkHttp: wer wirklich ausser Haus ist, soll nicht
+         * warten - aber eine Bridge hinter einem Router antwortet in Bruchteilen davon.
+         */
+        private val OFF_SUBNET_PROBE_TIMEOUT = 3.seconds
     }
     
     // Use WeakReference to prevent memory leaks
@@ -169,7 +179,26 @@ class HueBridgeConnectionManager private constructor(
     
     // Background health monitoring with app lifecycle awareness
     private var healthCheckJob: Job? = null
-    private val healthCheckScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    /**
+     * MIT `CoroutineExceptionHandler` - der SupervisorJob allein reicht NICHT.
+     *
+     * Ein SupervisorJob verhindert nur, dass Geschwister-Coroutinen mitgerissen werden; die
+     * Exception selbst verschluckt er nicht: ohne Handler laeuft sie zum Thread-Default-Handler und
+     * beendet den PROZESS. In diesem Scope liegen fuenf fire-and-forget `launch`-Bloecke, von denen
+     * mehrere ungeschuetzt auf den Hue-DataStore zugreifen (`restoreConnectionFromStorage()` macht
+     * `dataStore.data.first()`). Der `ReplaceFileCorruptionHandler` des Stores faengt nur
+     * Korruption - eine IOException (voller Speicher, EACCES, transienter Lesefehler) reicht
+     * DataStore durch.
+     *
+     * Fuer eine WECKER-App ist das die falsche Reihenfolge der Wichtigkeit: ein misslungener
+     * Lichtsteuerungs-Lesezugriff darf niemals den Prozess beenden, der die Alarme haelt. Dieselbe
+     * Ueberlegung steht in `HueSmartScheduler.recalculateSchedule()` als Kommentar - dort war der
+     * Schutz da, hier fehlte er.
+     */
+    private val healthCheckScope = CoroutineScope(
+        Dispatchers.IO + SupervisorJob() +
+            ErrorHandler.createCoroutineExceptionHandler("HueBridgeConnectionManager.healthCheckScope")
+    )
     
     // OPTIMIZATION: App lifecycle state tracking
     private var isAppInForeground = false
@@ -227,6 +256,12 @@ class HueBridgeConnectionManager private constructor(
     fun initialize() {
         if (!initialized.compareAndSet(false, true)) {
             Logger.d(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Bereits initialisiert - doppelter Aufruf ignoriert")
+            // NICHT ganz ohne Wirkung: wurde dieser Prozess VOR der ersten Entsperrung gestartet
+            // (Direct Boot), hat der SmartScheduler seine Planung uebersprungen, weil es dort
+            // keinen WorkManager gibt. Derselbe Prozess bedient danach die App weiter - der
+            // ignorierte Zweig hier ist die erste Stelle, an der das Nachholen ueberhaupt moeglich
+            // ist. Idempotent und billig, wenn nichts nachzuholen ist.
+            smartScheduler?.retrySkippedSchedulingIfNeeded()
             return
         }
 
@@ -271,7 +306,15 @@ class HueBridgeConnectionManager private constructor(
                 // 30-min cache should survive the trip so no needless reconnect/health-check
                 // cycle fires the moment Wi-Fi is back, and the UI doesn't flash a misleading
                 // persistent error banner while just out of range.
-                if (!isBridgeReachableNow(currentState.bridgeIp)) {
+                // Die Subnetz-Pruefung ist ein HINWEIS, kein Urteil - deshalb hier kein blindes
+                // Abbrechen mehr, sondern ein kurz gedeckelter echter Versuch (siehe
+                // [validateConnectionCredentials]: Gast-WLAN/VLAN/Mesh/Doppel-NAT/Emulator erreichen die Bridge,
+                // ohne im selben Subnetz zu liegen). Nur wenn AUCH der scheitert, gilt sie als
+                // unerreichbar. Der teure Fall bleibt damit billig: wer wirklich ausser Haus
+                // ist, wartet OFF_SUBNET_PROBE_TIMEOUT statt der vollen 10s.
+                if (!isBridgeReachableNow(currentState.bridgeIp) &&
+                    !validateConnectionCredentials(currentState.bridgeIp, currentState.username)
+                ) {
                     Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Cached bridge ${currentState.bridgeIp} not reachable from current network, skipping live connection attempt")
                     throw IllegalStateException("Bridge unreachable: not on the bridge's local network (${currentState.bridgeIp})")
                 }
@@ -452,6 +495,10 @@ class HueBridgeConnectionManager private constructor(
         isAppInForeground = true
         Logger.d(LogTags.HUE_BRIDGE, "📱 BRIDGE-MANAGER: App entered foreground")
 
+        // Zweite Gelegenheit zum Nachholen einer im Direct-Boot uebersprungenen Hue-Planung -
+        // spaetestens hier ist das Geraet entsperrt und WorkManager verfuegbar.
+        smartScheduler?.retrySkippedSchedulingIfNeeded()
+
         // Immediate health check if enough time passed since last check. performHealthCheck()
         // only RE-validates an already-CONNECTED state (see its own guard) - ohne die Abzweigung
         // hier wuerde ein Wiederoeffnen der App nach DISCONNECTED/ERROR nie selbst reconnecten,
@@ -579,24 +626,72 @@ class HueBridgeConnectionManager private constructor(
     }
 
     /**
-     * INTERNAL: Validate connection credentials against bridge
+     * INTERNAL: Fragt die Bridge WIRKLICH - [isBridgeReachableNow] ist dabei nur ein Hinweis
+     * darauf, wie lange sich das Warten lohnt, NICHT das Urteil.
+     *
+     * **Warum das wichtig ist:** Die Subnetz-Prüfung verlangt, dass das Gerät eine eigene IPv4
+     * im selben Subnetz wie die Bridge hat. Das ist im Normalfall („zu Hause im WLAN" gegen
+     * „unterwegs") eine gute, billige Abkürzung — aber es ist eine HEURISTIK, und sie liefert
+     * Falsch-Negative überall dort, wo ein Router zwischen zwei erreichbaren Netzen vermittelt:
+     * Gast-WLAN, getrenntes VLAN, Mesh-/Repeater-Setups mit eigenem Subnetz, Doppel-NAT — und
+     * der Android-Emulator, der über NAT (10.0.2.x) durchaus ins Heimnetz routet.
+     *
+     * Vorher war die Heuristik ein VETO **vor** dem echten Test, und genau das ist am
+     * 13.08.2026 am Emulator aufgeschlagen: das Pairing bekam eine HTTPS **200** von der
+     * Bridge, und 7 ms später verwarf `validateConnectionCredentials()` dieselbe Bridge mit
+     * „not reachable from current network". Der Nutzer sah „Bridge connection validation
+     * failed" und hatte keinen Weg, das zu übergehen — eine antwortende Bridge, abgelehnt von
+     * einer Vermutung über sie.
+     *
+     * Der echte Request ist das einzige belastbare Urteil. Die Heuristik entscheidet nur noch,
+     * ob wir dem Versuch das volle OkHttp-Timeout (10 s) zugestehen oder ihn nach
+     * [OFF_SUBNET_PROBE_TIMEOUT] abschneiden. Damit bleibt der ursprüngliche Zweck erhalten —
+     * kein langer Hänger, wenn man tatsächlich außer Haus ist — ohne eine erreichbare Bridge
+     * auszusperren.
      */
     private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean {
-        if (!isBridgeReachableNow(bridgeIp)) {
-            Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: $bridgeIp not reachable from current network (off home Wi-Fi or wrong subnet), skipping bridge connection")
-            return false
+        val sameSubnet = isBridgeReachableNow(bridgeIp)
+        if (!sameSubnet) {
+            Logger.w(
+                LogTags.HUE_BRIDGE,
+                "⚠️ BRIDGE-MANAGER: $bridgeIp liegt in keinem lokalen IPv4-Subnetz dieses Geraets " +
+                    "(vermutlich ausser Haus) - Versuch trotzdem, gedeckelt auf ${OFF_SUBNET_PROBE_TIMEOUT.inWholeSeconds}s"
+            )
         }
-
         return try {
-            apiClient.getBridgeConfig(bridgeIp, username)
-            Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")
-            true
+            if (sameSubnet) {
+                apiClient.getBridgeConfig(bridgeIp, username)
+                Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")
+                true
+            } else {
+                // withTimeoutOrNull statt withTimeout: ein Ablauf ist hier ein normales
+                // Ergebnis ("nicht erreichbar"), kein Fehler.
+                val ok = withTimeoutOrNull(OFF_SUBNET_PROBE_TIMEOUT) {
+                    apiClient.getBridgeConfig(bridgeIp, username)
+                    true
+                }
+                if (ok == true) {
+                    Logger.i(
+                        LogTags.HUE_BRIDGE,
+                        "✅ BRIDGE-MANAGER: Bridge trotz fremden Subnetzes erreichbar - die Heuristik lag falsch, " +
+                            "der echte Request entscheidet"
+                    )
+                    true
+                } else {
+                    Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: $bridgeIp auch im Kurzversuch nicht erreichbar")
+                    false
+                }
+            }
+        } catch (e: CancellationException) {
+            // Weiterwerfen: eine Cancellation ist keine Aussage ueber die Bridge, sondern das
+            // Ende der umgebenden Coroutine (siehe CLAUDE.md, "Fehlerbehandlung").
+            throw e
         } catch (e: Exception) {
             Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Connection validation failed: ${e.message}")
             false
         }
     }
-    
+
     /**
      * OPTIMIZATION: Smart health monitoring - Event-driven instead of continuous polling
      * 
@@ -653,14 +748,37 @@ class HueBridgeConnectionManager private constructor(
      * (bereits vorhanden, bislang ungenutzt) und stoesst bei jeder Netzwerk-Wiederherstellung
      * [attemptRecoveryIfDisconnected] an - z.B. Heimkehr ins Heim-WLAN nach unterwegs. Laeuft im
      * selben [healthCheckScope] wie die uebrige Ueberwachung, wird also von [cleanup] mit
-     * abgebrochen (healthCheckScope.cancel() faengt alle Kinder-Jobs). Nur einmal pro Prozess
-     * gestartet (aufgerufen aus [initialize], das selbst idempotent ist).
+     * abgebrochen (cancelChildren() faengt alle Kinder-Jobs).
+     *
+     * Einmal pro [initialize]-ZYKLUS, nicht einmal pro Prozess: [initialize] ist idempotent
+     * (Waechter-Flag), aber [cleanup] gibt dieses Flag wieder frei - ein spaeteres [initialize]
+     * (z.B. ein kuenftiger "Hue deaktivieren"-Schalter, der cleanup() ruft und danach wieder
+     * einschaltet) startet den Collector also erneut, zusammen mit dem uebrigen
+     * Initialisierungspfad inkl. `smartScheduler.initializeSmartScheduling()`. Das ist in Ordnung,
+     * weil [cleanup] vorher auch `smartScheduler.cleanup()` ruft - aber es ist ausdruecklich KEINE
+     * "nur einmal pro Prozess"-Zusicherung mehr, auf die sich neuer Code verlassen darf.
      */
     private fun startNetworkRecoveryMonitoring() {
         healthCheckScope.launch {
             networkMonitor.isNetworkAvailable.collect { available ->
+                // try/catch INNERHALB des collect, nicht darum: ein Fehler in einem einzelnen
+                // Wiederverbindungs-Versuch darf den Collector nicht beenden. Genau das waere
+                // sonst passiert - und dieser Collector ist die autonome Wiederverbindung bei der
+                // Heimkehr ins Heim-WLAN (siehe Memory project_hue_bridge_auto_reconnect). Waere
+                // er einmal tot, wuerde er in diesem Prozess nie wieder starten: `initialize()`
+                // ist per Waechter idempotent. Der Scope-Handler allein rettet nur den Prozess,
+                // nicht das Feature.
                 if (available) {
-                    attemptRecoveryIfDisconnected()
+                    try {
+                        attemptRecoveryIfDisconnected()
+                    } catch (e: Exception) {
+                        Logger.w(
+                            LogTags.HUE_BRIDGE,
+                            "⚠️ BRIDGE-MANAGER: Wiederverbindungs-Versuch fehlgeschlagen - " +
+                                "Beobachter laeuft weiter",
+                            e
+                        )
+                    }
                 }
             }
         }
@@ -768,20 +886,38 @@ class HueBridgeConnectionManager private constructor(
     }
 
     /**
-     * CRITICAL FIX: Enhanced cleanup for MainActivity destruction
-     * Prevents pthread_mutex_lock errors by properly canceling all background operations
+     * Cleanup: stoppt alle laufenden Hintergrundarbeiten dieses Managers.
+     *
+     * WIEDERVERWENDBAR BLEIBEN, NICHT VERBRENNEN: Das ist ein Singleton mit
+     * PROZESS-Lebensdauer (statisches [INSTANCE]), keine Activity-gebundene Instanz. Ein
+     * `healthCheckScope.cancel()` waere endgueltig - jedes spaetere `healthCheckScope.launch`
+     * (Restore aus dem Storage, Health-Monitoring, Netzwerk-Recovery, die
+     * Hintergrund-Validierung in getValidatedConnection()) wuerde danach lautlos nie mehr
+     * starten, und nur ein kompletter Prozess-Neustart wuerde das heilen: beim Wecken blieb das
+     * Licht aus, ohne Fehlermeldung. Deshalb `cancelChildren()` - genau wie im Schwester-
+     * Singleton [HueSmartScheduler.cleanup]. Und [initialized] wird zurueckgesetzt, weil sonst
+     * der (bewusst idempotente, siehe [initialize]) CAS-Waechter ein spaeteres [initialize]
+     * sofort verwerfen wuerde.
+     *
+     * Aktuell ruft das niemand (MainActivity hat seinen onDestroy-Cleanup absichtlich entfernt) -
+     * die Falle wird hier entschaerft, bevor ein kuenftiger Aufrufer (z.B. ein
+     * "Hue deaktivieren"-Schalter, analog MasterPauseUseCase -> hueSmartScheduler.cleanup())
+     * hineintritt.
      */
     fun cleanup() {
         try {
             Logger.d(LogTags.HUE_BRIDGE, "🧹 BRIDGE-MANAGER: Starting comprehensive cleanup to prevent mutex errors...")
-            
+
             // CRITICAL FIX: Cancel all background jobs immediately
             healthCheckJob?.cancel()
             healthCheckJob = null
-            
-            // CRITICAL FIX: Cancel the entire health check scope with timeout
-            healthCheckScope.cancel()
-            
+
+            // Nur die Kinder - der Scope selbst bleibt benutzbar (siehe KDoc).
+            healthCheckScope.coroutineContext.cancelChildren()
+
+            // Ein spaeteres initialize() darf wieder greifen.
+            initialized.set(false)
+
             // CRITICAL FIX: Clear connection state to prevent stale references
             updateConnectionState(ConnectionState.DISCONNECTED)
             

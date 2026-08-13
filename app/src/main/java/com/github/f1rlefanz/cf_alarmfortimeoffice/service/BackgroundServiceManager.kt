@@ -42,8 +42,32 @@ class BackgroundServiceManager @Inject constructor(
     private val masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 ) {
 
-    private val preferences =
+    /**
+     * `by lazy`, NICHT als sofortiger Initializer - und das ist kein Stilentscheid.
+     *
+     * Diese Klasse ist das ERSTE @Inject-Feld von [CFAlarmApplication] (im generierten
+     * Hilt-Code das erste `inject...`), sie entsteht also bei JEDEM Prozessstart in der
+     * Feld-Injektion - auch in dem, den Android VOR der ersten Entsperrung fuer den
+     * directBootAware BootReceiver startet. `getSharedPreferences()` auf dem normalen
+     * (CREDENTIAL-ENCRYPTED) Application-Context wirft dort ab targetSdk 26:
+     * "SharedPreferences in credential encrypted storage are not available until after user
+     * (id 0) is unlocked". Aus der Feld-Injektion heraus wird daraus "Unable to create
+     * application" - der Prozess stirbt, BEVOR `BootReceiver.onReceive()` laeuft, und der
+     * Direct-Boot-Restore der Alarme und der schwebenden Snoozes findet NIE statt.
+     *
+     * Das ist derselbe Absturz, der am 11.08.2026 ueber `HueSmartScheduler`/WorkManager
+     * gefunden wurde - dieselbe Fehlerklasse, zweite Stelle. Am EMULATOR ist er hier nicht
+     * sichtbar: ohne Bildschirmsperre gilt der Nutzer schon beim LOCKED_BOOT_COMPLETED als
+     * entsperrt, CE-Storage ist lesbar und die Exception bleibt aus. Auf einem Geraet MIT
+     * PIN (Fairphone) nicht. Wer hier wieder einen sofortigen Initializer hinschreibt, baut
+     * einen Absturz, den kein Emulator ohne Bildschirmsperre und kein Unit-Test zeigt.
+     *
+     * Alle Zugriffe liegen in Funktionen, die erst nach dem Entsperren laufen - `by lazy`
+     * aendert das Verhalten also nicht, es verschiebt nur den Zeitpunkt.
+     */
+    private val preferences by lazy {
         context.getSharedPreferences("background_services", Context.MODE_PRIVATE)
+    }
 
     /**
      * Initializes background services - PHASE 1 MIGRATION

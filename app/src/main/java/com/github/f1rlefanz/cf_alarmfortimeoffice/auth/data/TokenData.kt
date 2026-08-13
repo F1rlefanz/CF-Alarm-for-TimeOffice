@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDateTime
@@ -128,7 +129,7 @@ data class TokenData(
                 Instant.ofEpochMilli(timestamp),
                 ZoneId.systemDefault()
             )
-            dateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"))
+            dateTime.format(DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME_SECONDS))
         } catch (_: Exception) {
             "Invalid: $timestamp"
         }

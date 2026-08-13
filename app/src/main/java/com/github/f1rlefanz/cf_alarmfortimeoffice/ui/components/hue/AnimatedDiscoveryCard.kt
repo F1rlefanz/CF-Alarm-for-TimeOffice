@@ -138,6 +138,8 @@ fun AnimatedDiscoveryCard(
                             ) {
                                 Icon(
                                     imageVector = getDiscoveryIcon(status.stage),
+                                    // dekorativ: getDiscoveryTitle(status.stage) und
+                                    // status.message darunter benennen dieselbe Phase
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimary,
                                     modifier = Modifier.size(24.dp)
@@ -197,6 +199,7 @@ fun AnimatedDiscoveryCard(
                         ) {
                             Icon(
                                 imageVector = getMethodIcon(method),
+                                // dekorativ: der Methodenname steht als Text direkt daneben
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(16.dp)
@@ -219,6 +222,7 @@ fun AnimatedDiscoveryCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
+                            // dekorativ: "Cancel" steht als Knopftext daneben
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )

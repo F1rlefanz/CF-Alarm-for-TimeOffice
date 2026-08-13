@@ -5,11 +5,15 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -114,7 +118,42 @@ class DimOverlayPrefs @Inject constructor(
      */
     data class Override(val strengthDelta: Int, val paused: Boolean, val windowEnd: Long, val windowStrength: Int)
 
-    val renderState: Flow<RenderState> = dataStore.data.map { p ->
+    /**
+     * ALLE Lese-Flows dieser Klasse gehen hierueber, keiner mehr direkt auf `dataStore.data`.
+     *
+     * Vorher war jeder Flow ein blankes `dataStore.data.map{}` ohne ein einziges `.catch` - waehrend
+     * AuthDataStoreRepository, ShiftConfigRepository und DataStoreTokenRepository fuer denselben
+     * Store-Typ alle eines haben. Der `ReplaceFileCorruptionHandler` des Stores faengt nur
+     * Korruption; eine IOException (voller Speicher, EACCES, transienter Lesefehler) reicht DataStore
+     * durch. Der gefaehrlichste Konsument ist [DimAccessibilityService]: er sammelt [renderState] in
+     * einem eigenen Scope, dessen SupervisorJob nur Geschwister isoliert - die Exception lief zum
+     * Thread-Default-Handler und beendete den PROZESS, der die Alarme haelt. Fuer eine WECKER-App ist
+     * das die falsche Reihenfolge der Wichtigkeit (dieselbe Ueberlegung wie bei
+     * HueBridgeConnectionManager.healthCheckScope).
+     *
+     * Degradiert wird auf LEERE Preferences, also auf die Defaults jedes einzelnen Flows. Fuer den
+     * Dimmer ist das die fail-safe Richtung: [renderState] faellt damit auf `overlayOn = false`, im
+     * Zweifel wird also NICHT verdunkelt. Ein unerwartet dunkler Bildschirm ist deutlich schlimmer
+     * als ein unerwartet heller - bei voller Verdunkelung kann der Nutzer sein Geraet nicht mehr
+     * bedienen und den Dimmer nicht mehr abschalten.
+     *
+     * Und die Notlage-Leere wird nicht zur Schreibwahrheit (die Invariante aus CLAUDE.md,
+     * "Persistenz"): jeder Setter geht ueber `dataStore.edit{}` mit eigenem Read, keiner speist
+     * einen dieser Flows zurueck. Die einzige Stelle, die einen gelesenen Wert weiterschreibt, ist
+     * `DimScheduleUseCase`s `setActiveOverlay(false, strengthNow(), warmthNow())` - dort landen die
+     * Defaults nur in den abgeleiteten RENDER-Schluesseln, die ohnehin bei jedem
+     * `applyCurrentState()` mit den Werten der aktiven Spanne neu geschrieben werden, und zwar
+     * zusammen mit `overlayOn = false`. Die vom Nutzer eingestellten Werte (KEY_STRENGTH/
+     * KEY_WARMTH und die Toggles) schreibt nur die UI mit ihren eigenen Eingaben - eine
+     * Nutzer-Einstellung kann durch diese Degradierung also nicht verloren gehen.
+     */
+    private val safeData: Flow<Preferences> = dataStore.data
+        .catch { e ->
+            Logger.e(LogTags.DIMMER, "Dimmer-Einstellungen nicht lesbar - degradiert auf Defaults (kein Dimmen)", e)
+            emit(emptyPreferences())
+        }
+
+    val renderState: Flow<RenderState> = safeData.map { p ->
         RenderState(
             overlayOn = p[KEY_OVERLAY_ON] ?: false,
             strength = (p[KEY_RENDER_STRENGTH] ?: p[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX),
@@ -122,7 +161,7 @@ class DimOverlayPrefs @Inject constructor(
         )
     }
 
-    val toggles: Flow<Toggles> = dataStore.data.map { p ->
+    val toggles: Flow<Toggles> = safeData.map { p ->
         Toggles(
             wellnessEnabled = p[KEY_WELLNESS] ?: false,
             rulesEnabled = p[KEY_RULES_ON] ?: false,
@@ -130,30 +169,30 @@ class DimOverlayPrefs @Inject constructor(
         )
     }
 
-    val strength: Flow<Int> = dataStore.data.map { (it[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX) }
-    val warmth: Flow<Int> = dataStore.data.map { (it[KEY_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX) }
-    val windDownMinutes: Flow<Int> = dataStore.data.map {
+    val strength: Flow<Int> = safeData.map { (it[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX) }
+    val warmth: Flow<Int> = safeData.map { (it[KEY_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX) }
+    val windDownMinutes: Flow<Int> = safeData.map {
         (it[KEY_WINDDOWN_MIN] ?: DEFAULT_WINDDOWN_MIN).coerceIn(WINDDOWN_MIN_LIMIT, WINDDOWN_MAX_LIMIT)
     }
-    val nightDefaultStartMinutes: Flow<Int> = dataStore.data.map {
+    val nightDefaultStartMinutes: Flow<Int> = safeData.map {
         (it[KEY_NIGHT_DEFAULT_START_MIN] ?: DEFAULT_NIGHT_DEFAULT_START_MIN).coerceIn(0, 24 * 60 - 1)
     }
-    val nightDefaultFreeEndMinutes: Flow<Int> = dataStore.data.map {
+    val nightDefaultFreeEndMinutes: Flow<Int> = safeData.map {
         (it[KEY_NIGHT_DEFAULT_FREE_END_MIN] ?: DEFAULT_NIGHT_DEFAULT_FREE_END_MIN).coerceIn(0, 24 * 60 - 1)
     }
     /** Schichtnamen, deren Nacht der Nacht-Standard NICHT dimmt (z. B. Nachtdienst). */
-    val nightDefaultExcludedShifts: Flow<Set<String>> = dataStore.data.map {
+    val nightDefaultExcludedShifts: Flow<Set<String>> = safeData.map {
         it[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] ?: emptySet()
     }
     /** Eigene Verdunkelung/Wärme des Nacht-Standards - unabhängig von der globalen Wellness-Darstellung. */
-    val nightDefaultStrength: Flow<Int> = dataStore.data.map {
+    val nightDefaultStrength: Flow<Int> = safeData.map {
         (it[KEY_NIGHT_DEFAULT_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX)
     }
-    val nightDefaultWarmth: Flow<Int> = dataStore.data.map {
+    val nightDefaultWarmth: Flow<Int> = safeData.map {
         (it[KEY_NIGHT_DEFAULT_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
     }
 
-    val override: Flow<Override> = dataStore.data.map { p ->
+    val override: Flow<Override> = safeData.map { p ->
         Override(
             strengthDelta = p[KEY_OVERRIDE_STRENGTH_DELTA] ?: 0,
             paused = p[KEY_OVERRIDE_PAUSED] ?: false,
@@ -164,7 +203,7 @@ class DimOverlayPrefs @Inject constructor(
 
     /** Settings-Toggle fuer die Dimmer-Korrektur-Notification. Default AUS - angebunden ueber
      * NotificationSettingsViewModel/SettingsTabContent. */
-    val correctionNotificationEnabled: Flow<Boolean> = dataStore.data.map {
+    val correctionNotificationEnabled: Flow<Boolean> = safeData.map {
         it[KEY_CORRECTION_NOTIFICATION_ENABLED] ?: false
     }
 

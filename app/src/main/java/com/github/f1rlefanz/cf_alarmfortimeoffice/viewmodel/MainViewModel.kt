@@ -109,8 +109,6 @@ class MainViewModel @Inject constructor(
      * PERFORMANCE OPTIMIZATION: Clear all state and references
      */
     override fun onCleared() {
-        super.onCleared()
-        
         try {
             _uiState.value = MainUiState()
             Logger.d(LogTags.LIFECYCLE, "MainViewModel cleared - cleaning up state references and resources")

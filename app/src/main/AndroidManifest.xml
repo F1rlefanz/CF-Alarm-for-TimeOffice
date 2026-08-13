@@ -14,16 +14,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-
-    <!-- Required for Hue bridge communication on Android 17+ (API 37+) -->
+    <!-- Erforderlich fuer die Hue-Bridge-Kommunikation ab Android 17+ (API 37+) -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
     <!-- USE_FULL_SCREEN_INTENT: Required to display full-screen alarm UI over lock screen and during deep sleep
@@ -63,10 +59,26 @@
         android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
         tools:ignore="ProtectedPermissions" />
 
-    <!-- SYSTEM_ALERT_WINDOW und DISABLE_KEYGUARD bewusst entfernt: im Code ungenutzt.
-         Der Full-Screen-Alarm laeuft ueber USE_FULL_SCREEN_INTENT + showWhenLocked/turnScreenOn.
-         SYSTEM_ALERT_WINDOW ist zudem Play-Review-sensibel, DISABLE_KEYGUARD seit API 26 wirkungslos.
-         NICHT wieder hinzufuegen, ohne echte Code-Nutzung. -->
+    <!-- BEWUSST ENTFERNTE PERMISSIONS - nicht "sicherheitshalber" zurueckholen, sondern nur
+         gegen eine echte, nachgewiesene Code-Nutzung:
+
+         SYSTEM_ALERT_WINDOW und DISABLE_KEYGUARD: im Code ungenutzt. Der Full-Screen-Alarm
+         laeuft ueber USE_FULL_SCREEN_INTENT + showWhenLocked/turnScreenOn. SYSTEM_ALERT_WINDOW
+         ist zudem Play-Review-sensibel, DISABLE_KEYGUARD seit API 26 wirkungslos.
+
+         ACCESS_WIFI_STATE und CHANGE_WIFI_MULTICAST_STATE (entfernt August 2026): Altlast aus der
+         Zeit vor dem NsdManager-Umbau. Die mDNS-Bridge-Suche laeuft ueber Androids
+         NsdManager (HueMdnsDiscoveryService) - der Systemdienst haelt seinen Multicast-Lock
+         selbst, die App braucht dafuer keine Wifi-Permission. Per Grep verifiziert: kein
+         WifiManager, kein MulticastLock, kein MulticastSocket, kein WIFI_SERVICE im Baum.
+         ACCESS_WIFI_STATE galt vor Android 8 zusaetzlich als standortnaher Signalgeber und
+         ist deshalb ueberdurchschnittlich Play-Review-auffaellig.
+
+         MODIFY_AUDIO_SETTINGS (entfernt August 2026): ebenfalls ungenutzt. AlarmSoundService holt
+         nur den AudioManager und nutzt requestAudioFocus()/abandonAudioFocusRequest() - beides
+         permissionsfrei; der Ton laeuft ueber MediaPlayer mit AudioAttributes.USAGE_ALARM. Die
+         permissionspflichtigen APIs (setMode/setRingerMode/adjust*Volume/setStreamVolume/
+         setSpeakerphoneOn/setMicrophoneMute/startBluetoothSco) kommen im Code nicht vor. -->
 
     <!-- Package-Sichtbarkeit fuer TimeOffice (Android 11+): CFAlarms Alarme haengen an einem
          Kalender, den die TimeOffice-App lokal befuellt (siehe TimeOfficeHealthHelper) - ohne

@@ -20,7 +20,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -61,8 +64,22 @@ class CalendarSelectionRepository @Inject constructor(
     private val selectedCalendarIdsKey = stringSetPreferencesKey("selected_calendar_ids")
     
     /**
-     * Repository-eigener CoroutineScope für DataStore-Synchronisation
-     * SupervisorJob: Fehler in einem Child-Coroutine beeinflussen andere nicht
+     * Repository-eigener CoroutineScope für DataStore-Synchronisation.
+     * SupervisorJob: ein Fehler in einer Child-Coroutine beeinflusst die anderen nicht.
+     *
+     * **Hier wird bewusst NIE `.cancel()` gerufen** — das ist Absicht, kein vergessenes
+     * Aufräumen (die Frage kam in mehreren Prüfrunden auf). Die Klasse ist ein `@Singleton`
+     * mit Prozess-Lebensdauer; es gibt keinen Zeitpunkt, zu dem sie "fertig" wäre. Ein
+     * `cancel()` auf einem solchen Scope ist endgültig: jedes spätere `launch` startet
+     * lautlos nie mehr, heilbar nur durch Prozess-Neustart. Genau diese Fehlerklasse steckte
+     * in `HueBridgeConnectionManager.cleanup()` (siehe CLAUDE.md) — dort wurde daraus
+     * `cancelChildren()`.
+     *
+     * Konkret hinge hier der `retryWhen`-Collector der Kalenderauswahl daran. Der ist die
+     * einzige Verteidigung gegen den Direct-Boot-Fall (CE-Store vor der ersten Entsperrung
+     * nicht lesbar): Stirbt er, steht `_selectedCalendarIds` dauerhaft auf `emptySet()`,
+     * obwohl Kalender ausgewählt sind — und eine leere Auswahl liest `syncAlarms()` als
+     * "keine Schichten". Für eine Wecker-App ist das die gefährlichste Leere.
      */
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
@@ -92,20 +109,54 @@ class CalendarSelectionRepository @Inject constructor(
      */
     private fun initializeFromDataStore() {
         repositoryScope.launch {
-            try {
-                dataStore.data
-                    .map { preferences ->
-                        preferences[selectedCalendarIdsKey] ?: emptySet()
+            // WIEDERAUFNAHME statt endgueltigem Aus.
+            //
+            // Vorher lag das `collect` in einem try/catch: der ERSTE Fehler aus dem Upstream
+            // beendete den Collector fuer die gesamte Prozesslaufzeit, und es gibt keinen zweiten
+            // Aufrufer dieser Funktion (nur `init{}`). Danach stand `_selectedCalendarIds`
+            // dauerhaft auf `emptySet()`, obwohl im DataStore Kalender ausgewaehlt sind - fuer eine
+            // Wecker-App ist genau das die gefaehrliche Luege, die diese Klasse an anderer Stelle
+            // ausdruecklich bekaempft ("leer" ist von "nichts ausgewaehlt" nicht zu unterscheiden).
+            //
+            // Der Fehler ist nicht hypothetisch: entsteht dieses Repository in einem Prozess, der
+            // VOR der ersten Entsperrung startet (der directBootAware BootReceiver injiziert es),
+            // ist der CE-DataStore garantiert nicht lesbar. Nach dem Entsperren waere er es -
+            // deshalb wird es erneut versucht, mit wachsendem Abstand und einer Obergrenze, damit
+            // ein dauerhaft defekter Store keine Endlosschleife erzeugt.
+            dataStore.data
+                .map { preferences -> preferences[selectedCalendarIdsKey] ?: emptySet() }
+                .distinctUntilChanged()
+                .retryWhen { cause, attempt ->
+                    if (attempt >= MAX_SYNC_RETRIES) {
+                        Logger.e(
+                            LogTags.CALENDAR,
+                            "❌ Kalenderauswahl konnte nach ${attempt} Versuchen nicht beobachtet " +
+                                "werden - der StateFlow bleibt leer. getCurrentSelectedCalendarIds() " +
+                                "liest weiterhin direkt aus dem DataStore.",
+                            cause
+                        )
+                        return@retryWhen false
                     }
-                    .distinctUntilChanged()
-                    .collect { ids ->
-                        _selectedCalendarIds.value = ids
-                        Logger.d(LogTags.CALENDAR, "Calendar selection synced from DataStore: ${ids.size} calendars")
-                    }
-            } catch (e: Exception) {
-                Logger.e(LogTags.CALENDAR, "Failed to sync calendar selection from DataStore", e)
-            }
+                    Logger.w(
+                        LogTags.CALENDAR,
+                        "⚠️ Kalenderauswahl nicht lesbar (Versuch ${attempt + 1}, evtl. Direct Boot) - " +
+                            "neuer Versuch in ${SYNC_RETRY_DELAY_MS * (attempt + 1)}ms",
+                        cause
+                    )
+                    delay(SYNC_RETRY_DELAY_MS * (attempt + 1))
+                    true
+                }
+                .collect { ids ->
+                    _selectedCalendarIds.value = ids
+                    Logger.d(LogTags.CALENDAR, "Calendar selection synced from DataStore: ${ids.size} calendars")
+                }
         }
+    }
+
+    private companion object {
+        /** 10 Versuche mit wachsendem Abstand deckt die Zeit bis zur ersten Entsperrung ab. */
+        const val MAX_SYNC_RETRIES = 10L
+        const val SYNC_RETRY_DELAY_MS = 3_000L
     }
 
     /**
@@ -121,10 +172,28 @@ class CalendarSelectionRepository @Inject constructor(
             Logger.i(LogTags.CALENDAR, "Calendar selection saved: ${calendarIds.size} calendars selected")
         }
 
-    override suspend fun getCurrentSelectedCalendarIds(): Result<Set<String>> = 
+    override suspend fun getCurrentSelectedCalendarIds(): Result<Set<String>> =
         SafeExecutor.safeExecute("CalendarSelectionRepository.getCurrentSelectedCalendarIds") {
-            // Nutze StateFlow für synchronen Zugriff
-            _selectedCalendarIds.value
+            // LIEST DEN DATASTORE, NICHT DEN STATEFLOW.
+            //
+            // _selectedCalendarIds startet auf emptySet() und wird erst durch den in init{}
+            // gestarteten, unabgewarteten Collector befuellt (eigener repositoryScope auf
+            // Dispatchers.IO). Wer den .value direkt danach liest, bekommt "keine Kalender
+            // ausgewaehlt" - ohne jedes Signal, dass nur noch nicht geladen wurde. Genau die
+            // Fehlerklasse, vor der CLAUDE.md warnt: fuer eine Wecker-App ist "leer" von
+            // "wirklich nichts ausgewaehlt" nicht zu unterscheiden.
+            //
+            // Real relevant fuer prozess-kalt gestartete Hintergrund-Aufrufer:
+            // CalendarPreAlarmRefreshWorker (WorkManager, 3h vor der Weckzeit) und
+            // AlarmMaintenanceService haben kein Aequivalent zum 5s-Warten des BootReceivers -
+            // sie haetten den Lauf lautlos als "keine Kalender ausgewaehlt" verbraucht.
+            //
+            // Diese Funktion ist bereits `suspend`; der DataStore-Read ist der einzige Weg, der
+            // die Hydrierung garantiert abwartet. Der StateFlow bleibt unveraendert die Quelle
+            // fuer reaktive Beobachter (UI/ViewModels).
+            dataStore.data
+                .map { preferences -> preferences[selectedCalendarIdsKey] ?: emptySet() }
+                .first()
         }
 
     /**

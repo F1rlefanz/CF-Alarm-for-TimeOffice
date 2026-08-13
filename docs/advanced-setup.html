@@ -63,8 +63,8 @@
 
             <h4>3. Grundeinstellungen</h4>
             <ul>
-                <li><strong>Weckzeit:</strong> Z.B. 60 Minuten vor Schichtbeginn</li>
-                <li><strong>Schichtarten:</strong> Früh, Spät, Nacht konfigurieren</li>
+                <li><strong>Schichttypen prüfen:</strong> Wecker-Tab → „Schichttypen verwalten". Jeder Schichttyp hat eine <strong>feste Weckzeit</strong> (keine Vorlaufzeit-Rechnung) und ein oder mehrere Erkennungsmuster.</li>
+                <li><strong>Kürzel zuordnen:</strong> Ganz oben zeigt die Karte „Diese Kürzel stehen in deinem Kalender" die Termin-Kürzel deines echten Dienstplans, für die noch kein Muster existiert. Antippen, Schicht wählen – ohne diesen Schritt bleiben Schichten anderer Stationen unerkannt und es klingelt kein Wecker.</li>
             </ul>
 
             <blockquote>
@@ -94,8 +94,8 @@
             <h4>🔔 Benachrichtigungs-Probleme</h4>
             <ul>
                 <li><strong>Stille Alarme?</strong> Android Einstellungen → Apps → CF Alarm → Benachrichtigungen → alle aktivieren</li>
-                <li><strong>Nicht-Stören-Modus:</strong> CF Alarm als Ausnahme hinzufügen</li>
-                <li><strong>Kein Vollbild-Alarm?</strong> "Über anderen Apps anzeigen" Berechtigung prüfen</li>
+                <li><strong>Nicht-Stören-Modus:</strong> Keine Ausnahme nötig – der CF-Alarm-Wecker klingelt auch bei aktivem „Nicht stören", unabhängig von jeder Einstellung.</li>
+                <li><strong>Kein Vollbild-Alarm?</strong> Android Einstellungen → Apps → CF Alarm → Benachrichtigungen → „Vollbild-Benachrichtigungen" erlauben. Hinweis: Das Vollbild ist für das gesperrte/dunkle Gerät gedacht – benutzt man das Handy gerade aktiv, erscheint bewusst nur ein Banner.</li>
             </ul>
 
             <h4>📱 Verschiedene Android-Versionen</h4>
@@ -120,16 +120,16 @@
 
             <h4>🌅 Licht-Szenarien</h4>
             <ul>
-                <li><strong>Sanftes Aufwachen:</strong> Licht startet 15 Min vor Weckzeit</li>
-                <li><strong>Helligkeit:</strong> Von 1% auf 80% über 10 Minuten</li>
-                <li><strong>Farbe:</strong> Warmes Orange → Tageslicht-Weiß</li>
-                <li><strong>Räume:</strong> Schlafzimmer-Gruppe auswählen</li>
+                <li><strong>Sanftes Aufwachen (Sonnenaufgang):</strong> Die Rampe endet standardmäßig zur Weckzeit und startet entsprechend früher – Dauer einstellbar (Vorgabe 15 Minuten).</li>
+                <li><strong>Farbtemperatur:</strong> fährt von warm nach kühler (Vorgabe 2000 K → 4000 K), Helligkeit bis zum eingestellten Zielwert.</li>
+                <li><strong>Ziele:</strong> Einzelne Lampen oder Gruppen/Zonen der Bridge auswählen.</li>
+                <li><strong>Auto-Aus:</strong> Wird als Zeitplan auf der Bridge selbst angelegt – das Licht geht deshalb auch aus, wenn das Handy inzwischen nicht mehr im Heim-WLAN ist.</li>
             </ul>
 
             <h4>🔧 Hue-Probleme beheben</h4>
             <ul>
                 <li><strong>Bridge nicht gefunden?</strong> WLAN prüfen, Bridge neustarten</li>
-                <li><strong>Verbindung verloren?</strong> CF Alarm automatische Wiederverbindung (2 Min)</li>
+                <li><strong>Verbindung verloren?</strong> CF Alarm verbindet sich selbst wieder, sobald das Heim-WLAN zurück ist – spätestens beim nächsten Öffnen der App. Manuell geht es über „Erneut versuchen" im Hue-Tab.</li>
                 <li><strong>Licht geht nicht an?</strong> Hue-Lampen an regulärem Schalter prüfen</li>
             </ul>
         </div>
@@ -140,16 +140,16 @@
             
             <h4>📊 Optimal nutzen</h4>
             <ul>
-                <li><strong>Backup:</strong> Einstellungen regelmäßig sichern (Export-Funktion)</li>
-                <li><strong>Test-Modus:</strong> Neue Schichtzeiten mit kurzem Test-Alarm prüfen</li>
-                <li><strong>Urlaub:</strong> Auto-Alarm temporär deaktivieren</li>
-                <li><strong>Diensttausch:</strong> Manueller Alarm als Backup</li>
+                <li><strong>Konfiguration sichern:</strong> Einstellungen-Tab → „Konfiguration" → „Exportieren" legt Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören" als Datei ab. „Importieren" holt sie zurück – nach einer Neuinstallation oder auf einem neuen Gerät. Anmeldung, Kalenderauswahl und Hue-Bridge-Verbindung sind bewusst nicht in der Datei und werden auf jedem Gerät neu eingerichtet.</li>
+                <li><strong>Kürzel zuordnen statt raten:</strong> Wecker-Tab → „Schichttypen verwalten". Oben zeigt die Karte „Diese Kürzel stehen in deinem Kalender" die Termin-Kürzel ohne Erkennungsmuster – antippen und der passenden Schicht zuordnen.</li>
+                <li><strong>Urlaub:</strong> „Automatische Alarme" im Wecker-Tab ausschalten – oder für längere Abwesenheit „Hintergrunddienste pausieren" im Einstellungen-Tab, das pausiert zusätzlich Dimmer, „Nicht stören" und Hue-Automatik.</li>
+                <li><strong>Diensttausch:</strong> „Manueller Alarm" (Knopf unten rechts im Home-Tab) als Absicherung.</li>
             </ul>
 
             <h4>🚨 Notfall-Funktionen</h4>
             <ul>
-                <li><strong>Skip-Funktion:</strong> Einzelne Alarme überspringen</li>
-                <li><strong>Snooze-Strategie:</strong> Max. 2x Snooze, dann Vollalarm</li>
+                <li><strong>Nächsten Alarm überspringen:</strong> Einen einzelnen Wecker aussetzen, ohne die Automatik abzuschalten (Wecker-Tab). Der Hinweis setzt sich von selbst zurück, sobald der Zeitpunkt vorbei ist.</li>
+                <li><strong>Schlummer-Dauer:</strong> Im Wecker-Tab wählbar (3/5/10/15 Minuten) – ein Wert, der für den Vollbild- und den Benachrichtigungs-Knopf gleichermaßen gilt. Eine Obergrenze für die Anzahl der Schlummer-Durchgänge gibt es nicht.</li>
                 <li><strong>Fallback-Wecker:</strong> Zusätzlicher Handy-Wecker zur Sicherheit</li>
             </ul>
 
@@ -185,7 +185,7 @@
                 <a href="privacy.html">Datenschutz</a>
                 <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
-                <a href="mailto:support@cf-alarm.app">Kontakt</a>
+                <a href="mailto:cfischer@csj.de">Kontakt</a>
             </div>
             <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
             <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>

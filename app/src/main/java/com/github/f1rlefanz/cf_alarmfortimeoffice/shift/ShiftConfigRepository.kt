@@ -2,8 +2,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
@@ -14,6 +16,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerializationException
@@ -22,7 +25,44 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 // Extension property for Context to create DataStore
-private val Context.shiftDataStore: DataStore<Preferences> by preferencesDataStore(name = "shift_prefs")
+// corruptionHandler: siehe DataModule - ohne ihn blockiert eine beschaedigte preferences_pb nicht
+// nur jedes Lesen, sondern dauerhaft auch jedes Schreiben (DataStore liest vor jedem Write erneut).
+private val Context.shiftDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "shift_prefs",
+    corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
+)
+
+/**
+ * Dekodier-Ergebnis der persistierten Schicht-Konfiguration.
+ *
+ * Die Unterscheidung ist der eigentliche Kern: „noch nie konfiguriert" ([NotConfigured]) und
+ * „vorhanden, aber unlesbar" ([Broken]) durften nie beide zu „Erfolg mit Standardkonfiguration"
+ * werden. Genau das hat zwei Dinge gleichzeitig verursacht: Wecker zu den DEFAULT-Zeiten statt zu
+ * den gepflegten, UND ein anschliessendes Bearbeiten schrieb den Default persistent ueber die
+ * echte Konfiguration (ShiftUseCase liest `getCurrentShiftConfig()`, kopiert eine Aenderung hinein
+ * und speichert alles zurueck).
+ */
+internal sealed interface ShiftConfigDecodeResult {
+    data class Ok(val config: ShiftConfig) : ShiftConfigDecodeResult
+    data object NotConfigured : ShiftConfigDecodeResult
+    data class Broken(val raw: String, val cause: Throwable) : ShiftConfigDecodeResult
+}
+
+/**
+ * Reine, Android-freie Dekodier-Funktion (deshalb top-level + `internal`: direkt testbar).
+ *
+ * Faengt bewusst [Exception], nicht nur [SerializationException]: der projekteigene
+ * `LocalTimeSerializer` wirft bei einem nicht parsbaren `HH:mm`-Wert eine `DateTimeParseException`
+ * (eine `RuntimeException`), die sonst ungefangen aus dem Flow herauslaufen wuerde.
+ */
+internal fun decodeShiftConfig(json: Json, raw: String?): ShiftConfigDecodeResult {
+    if (raw == null) return ShiftConfigDecodeResult.NotConfigured
+    return try {
+        ShiftConfigDecodeResult.Ok(json.decodeFromString<ShiftConfig>(raw))
+    } catch (e: Exception) {
+        ShiftConfigDecodeResult.Broken(raw, e)
+    }
+}
 
 /**
  * ShiftConfigRepository - implementiert IShiftConfigRepository Interface
@@ -44,6 +84,9 @@ class ShiftConfigRepository @Inject constructor(
     private val dataStore = context.shiftDataStore
     private val shiftConfigKey = stringPreferencesKey("shift_config")
 
+    /** Sicherung der rohen, nicht dekodierbaren Konfiguration - siehe [backupBrokenConfig]. */
+    private val brokenConfigKey = stringPreferencesKey(BROKEN_CONFIG_KEY_NAME)
+
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -60,31 +103,102 @@ class ShiftConfigRepository @Inject constructor(
     private companion object {
         const val CACHE_VALIDITY_MS = 30000L // 30 seconds cache validity
         const val MAX_LOAD_WAIT_MS = 500L   // Max wait for concurrent loads
+        const val BROKEN_CONFIG_KEY_NAME = "shift_config_broken"
     }
 
-    override val shiftConfig: Flow<ShiftConfig> = dataStore.data.map { preferences ->
-        val jsonString = preferences[shiftConfigKey]
-        if (jsonString != null) {
-            try {
-                val config = json.decodeFromString<ShiftConfig>(jsonString)
-                // Update cache when config flows change
-                cachedConfig = config
-                cacheTimestamp = System.currentTimeMillis()
-                config
-            } catch (e: SerializationException) {
-                Logger.e(LogTags.SHIFT_CONFIG, "Error decoding shift config from flow, returning default", e)
-                val defaultConfig = ShiftConfig.getDefaultConfig()
-                cachedConfig = defaultConfig
-                cacheTimestamp = System.currentTimeMillis()
-                defaultConfig
+    /**
+     * Legt das rohe, nicht dekodierbare JSON einmalig unter einem eigenen Schluessel ab, BEVOR
+     * irgendein Schreibpfad die Chance hat, es zu ueberschreiben - so bleibt die Konfiguration
+     * rekonstruierbar (z. B. nach einem Downgrade oder einem Serialisierungs-Fix).
+     *
+     * Ueberschreibt eine bereits vorhandene Sicherung NICHT: die ERSTE (dem Original naechste)
+     * Version ist die wertvolle. Fehler beim Sichern werden nur geloggt - eine gescheiterte
+     * Sicherung darf die Fehlermeldung an den Aufrufer nicht ersetzen.
+     */
+    private suspend fun backupBrokenConfig(raw: String) {
+        try {
+            dataStore.edit { preferences ->
+                if (preferences[brokenConfigKey] == null) {
+                    preferences[brokenConfigKey] = raw
+                    Logger.w(
+                        LogTags.SHIFT_CONFIG,
+                        "Defekte Schicht-Konfiguration (${raw.length} Zeichen) unter '$BROKEN_CONFIG_KEY_NAME' gesichert"
+                    )
+                }
             }
-        } else {
-            val defaultConfig = ShiftConfig.getDefaultConfig()
-            cachedConfig = defaultConfig
-            cacheTimestamp = System.currentTimeMillis()
-            defaultConfig
+        } catch (e: Exception) {
+            Logger.e(LogTags.SHIFT_CONFIG, "Sicherung der defekten Schicht-Konfiguration fehlgeschlagen", e)
         }
     }
+
+    /**
+     * ANZEIGE-Flow. Darf degradieren, aber niemals crashen: `.catch` faengt sowohl eine defekte
+     * preferences_pb (Upstream) als auch alles, was aus dem `map{}` kommen koennte - Vorbild
+     * `DataStoreTokenRepository.observe()`. Ohne das wuerde der Fehler an den
+     * CoroutineExceptionHandler der drei `stateIn(viewModelScope, ...)`-Konsumenten gehen
+     * (DimmerRulesViewModel/DimmerViewModel/DndViewModel) und die App beim Oeffnen des
+     * Dimmer-/DND-Tabs beenden.
+     *
+     * WICHTIG: bei einer DEFEKTEN Konfiguration wird der Default NICHT in den Cache geschrieben -
+     * sonst wuerde `getCurrentShiftConfig()` ihn als Cache-Hit als echte Konfiguration ausliefern
+     * und der Schreibpfad ihn ueber die (noch vorhandenen) Rohdaten schreiben.
+     *
+     * REIHENFOLGE IST TRAGEND: `.catch` steht HINTER dem `.map`, nicht davor. Davor emittierte es
+     * `emptyPreferences()` in das `map` hinein - und das kann einen leeren Store nicht von einem
+     * unlesbaren unterscheiden: es landete im `NotConfigured`-Zweig und schrieb GENAU DEN Default
+     * in den Cache, den der `Broken`-Zweig eine Zeile darueber bewusst nicht cacht. Danach gab
+     * `getCurrentShiftConfig()` fuer 30 s (CACHE_VALIDITY_MS) `Result.success(Standard-
+     * konfiguration)` zurueck, ohne den frischen Read ueberhaupt zu erreichen - der Fehler kam bei
+     * keinem der vier Konsumenten an (ShiftViewModel, AlarmMaintenanceService, CFAlarmApplication,
+     * CalendarViewModel), `syncAlarms()` lief mit Standardzeiten und der Delta-Sync loeschte die
+     * Alarme nicht mehr erkannter Schichten. Ausloeser: eine IOException auf `shift_prefs` - genau
+     * der Fall, fuer den dieses `.catch` existiert (der ReplaceFileCorruptionHandler faengt nur
+     * CorruptionException). Wer das `.catch` wieder nach oben zieht, baut das neu.
+     */
+    override val shiftConfig: Flow<ShiftConfig> = dataStore.data
+        .map { preferences ->
+            when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey])) {
+                is ShiftConfigDecodeResult.Ok -> {
+                    // Update cache when config flows change
+                    cachedConfig = decoded.config
+                    cacheTimestamp = System.currentTimeMillis()
+                    decoded.config
+                }
+
+                is ShiftConfigDecodeResult.Broken -> {
+                    Logger.e(
+                        LogTags.SHIFT_CONFIG,
+                        "Schicht-Konfiguration ist DEFEKT (${decoded.raw.length} Zeichen) - Anzeige zeigt " +
+                            "Standardwerte, die echte Konfiguration wird NICHT ueberschrieben",
+                        decoded.cause
+                    )
+                    ShiftConfig.getDefaultConfig()
+                }
+
+                ShiftConfigDecodeResult.NotConfigured -> {
+                    val defaultConfig = ShiftConfig.getDefaultConfig()
+                    cachedConfig = defaultConfig
+                    cacheTimestamp = System.currentTimeMillis()
+                    defaultConfig
+                }
+            }
+        }
+        .catch { e ->
+            // Faengt Upstream (unlesbare shift_prefs) UND alles, was aus dem `map{}` kaeme -
+            // deshalb steht es hier unten und nicht zwischen Quelle und `map`.
+            // Die ANZEIGE darf degradieren, die SCHREIBWAHRHEIT nicht: der Default geht direkt an
+            // den Collector, aber NICHT in den Cache. Zusaetzlich wird ein evtl. vorhandener
+            // Cache-Eintrag verworfen, damit `getCurrentShiftConfig()` auf den frischen Read
+            // durchfaellt und dort ehrlich scheitert, statt einen Cache-Hit zu melden.
+            // Nur `cachedConfig` wird genullt: alle Cache-Treffer sind mit `cachedConfig?.let`
+            // bewacht, `cacheTimestamp` ist ohne Eintrag bedeutungslos - und `configLoadInProgress`
+            // gehoert einem evtl. parallel laufenden Load und darf hier nicht angefasst werden.
+            // Schlimmster Fall der Nebenlaeufigkeit: ein zeitgleich gefuellter, gueltiger Cache
+            // wird verworfen und einmal frisch gelesen. Das ist die sichere Richtung.
+            cachedConfig = null
+            Logger.e(LogTags.SHIFT_CONFIG, "shift_prefs nicht lesbar - Anzeige degradiert auf Standardkonfiguration, Cache verworfen", e)
+            emit(ShiftConfig.getDefaultConfig())
+        }
 
     /**
      * SINGLETON CACHE: Invalidates cached config to force fresh load
@@ -164,22 +278,29 @@ class ShiftConfigRepository @Inject constructor(
             
             try {
                 val preferences = dataStore.data.first()
-                val jsonString = preferences[shiftConfigKey]
-                val config = if (jsonString != null) {
-                    try {
-                        json.decodeFromString<ShiftConfig>(jsonString)
-                    } catch (e: SerializationException) {
-                        Logger.e(LogTags.SHIFT_CONFIG, "Error decoding shift config, returning default", e)
-                        ShiftConfig.getDefaultConfig()
+                val config = when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey])) {
+                    is ShiftConfigDecodeResult.Ok -> decoded.config
+
+                    // KEIN stiller Default: eine vorhandene, aber unlesbare Konfiguration wird als
+                    // FEHLER gemeldet. Sonst weckt die Pipeline zu Standardzeiten (statt zu den
+                    // gepflegten) und das naechste Bearbeiten schreibt den Default endgueltig
+                    // ueber die echte Konfiguration. Der bewusste Weg zum Default heisst
+                    // resetToDefaults() und gehoert dem Nutzer.
+                    is ShiftConfigDecodeResult.Broken -> {
+                        backupBrokenConfig(decoded.raw)
+                        throw AppError.DataStoreError(
+                            message = "Schicht-Konfiguration ist nicht lesbar (Sicherung unter '$BROKEN_CONFIG_KEY_NAME')",
+                            cause = decoded.cause
+                        )
                     }
-                } else {
-                    ShiftConfig.getDefaultConfig()
+
+                    ShiftConfigDecodeResult.NotConfigured -> ShiftConfig.getDefaultConfig()
                 }
-                
+
                 // SINGLETON PATTERN: Update cache with fresh data
                 cachedConfig = config
                 cacheTimestamp = currentTime
-                
+
                 Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-FRESH-LOAD: Config loaded with ${config.definitions.size} definitions and cached")
                 config
             } finally {

@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CFAlarmForTimeOfficeTheme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.GraphicsConstants
@@ -88,7 +89,11 @@ fun NoAlarmCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .offset(y = floatAnimation.value.dp),
+            // Lambda-Ueberladung von offset (Lint UseOfNonLambdaOffsetOverload): der animierte
+            // Wert wird erst in der Layout-Phase gelesen, statt bei jedem Frame die Composition
+            // neu anzustossen. `roundToPx()` ist exakt das, was die Dp-Ueberladung intern tut -
+            // das sichtbare Ergebnis bleibt pixelgleich.
+            .offset { IntOffset(0, floatAnimation.value.dp.roundToPx()) },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -130,6 +135,8 @@ fun NoAlarmCard(
                 ) {
                     Icon(
                         imageVector = reason.icon,
+                        // dekorativ: Titel und Beschreibung direkt darunter sagen denselben
+                        // Grund im Klartext (reason.title / reason.description)
                         contentDescription = null,
                         tint = reason.color,
                         modifier = Modifier
@@ -170,6 +177,7 @@ fun NoAlarmCard(
                     ) {
                         Icon(
                             imageVector = reason.actionIcon,
+                            // dekorativ: reason.actionText steht als Knopftext daneben
                             contentDescription = null,
                             modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM)
                         )

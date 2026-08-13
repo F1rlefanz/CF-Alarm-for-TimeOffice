@@ -133,6 +133,7 @@ fun WeckerTabContent(
             ) {
                 Icon(
                     Icons.Default.Work,
+                    // dekorativ: Text daneben sagt es bereits ("Schichttypen verwalten")
                     contentDescription = null,
                     modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
                     tint = MaterialTheme.colorScheme.primary
@@ -149,6 +150,8 @@ fun WeckerTabContent(
                     )
                 }
                 Icon(
+                    // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
+                    // Element und traegt ihre Beschriftung selbst
                     Icons.AutoMirrored.Default.KeyboardArrowRight,
                     contentDescription = null
                 )
@@ -200,6 +203,8 @@ private fun EnhancedAlarmStatusCard(
                                 Icons.Default.SkipNext,
                                 tint = MaterialTheme.colorScheme.warning,
                                 modifier = Modifier.size(20.dp),
+                                // dekorativ: Text daneben sagt es bereits ("Nächster Alarm wird
+                                // übersprungen")
                                 contentDescription = null
                             )
                             Text(
@@ -249,6 +254,8 @@ private fun EnhancedAlarmStatusCard(
                                 Icon(
                                     Icons.Default.SkipNext,
                                     modifier = Modifier.size(16.dp),
+                                    // dekorativ: die Beschriftung im selben Button sagt es bereits
+                                    // ("Überspringen")
                                     contentDescription = null
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -293,7 +300,11 @@ private fun SnoozeMinutesRow(
         Box {
             OutlinedButton(onClick = { expanded = true }) {
                 Text("$snoozeMinutes Min")
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                // Nicht dekorativ: die Beschriftung des Knopfes ist nur "5 Min" - die Ueberschrift
+                // "Schlummer-Dauer" steht daneben in einer eigenen Spalte und wird nicht
+                // mitgelesen. Ohne diese Beschreibung meldet der Screenreader den Knopf als
+                // blosses "5 Min", ohne zu sagen, was er aendert.
+                Icon(Icons.Default.ArrowDropDown, contentDescription = "Schlummer-Dauer ändern")
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 SNOOZE_MINUTES_OPTIONS.forEach { minutes ->

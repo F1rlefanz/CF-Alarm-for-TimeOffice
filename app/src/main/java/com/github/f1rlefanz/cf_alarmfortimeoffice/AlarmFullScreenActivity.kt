@@ -1,10 +1,13 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
+import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.Intent
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.view.Display
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -49,6 +52,46 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
+ * Einweg-Sperre: genau EINE der beiden Wecker-Handlungen (Dismiss ODER Snooze) darf laufen.
+ *
+ * REAL BELEGT (Log 05.08.2026, 05:30:07): "🛑 User dismissed alarm" um .596 und "😴 User snoozed
+ * alarm for 5 minutes" um .620 — 24ms auseinander, beide Handler liefen vollständig durch. Für
+ * einen Menschen sind 24ms unerreichbar; die zwei Knöpfe liegen bildschirmfüllend direkt
+ * übereinander (12dp Abstand am unteren Rand), und Compose gibt jedem gleichzeitigen Zeiger seinen
+ * eigenen Klick — eine Handkante/ein Daumenballen beim blinden Greifen im Halbschlaf trifft beide.
+ * Folge damals: der Nutzer drückte "Alarm stoppen" und bekam trotzdem einen Schlummer-Wecker 5
+ * Minuten später. Umgekehrt räumt ein nachlaufendes Dismiss den gerade geplanten Snooze wieder ab —
+ * dann wird gar nicht mehr geweckt.
+ *
+ * Kein Debounce nach Zeit, sondern eine echte Einweg-Sperre: der erste bewusste Griff gewinnt, jeder
+ * weitere ist per Definition ein Versehen.
+ *
+ * Bewusst als eigene, Android-freie Klasse NEBEN der Activity (nicht als privates Feld darin): so
+ * ist der Vertrag ohne Instrumentierung testbar ([com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenHandoffTest]) —
+ * eine echte Gleichzeitigkeit ließ sich per adb nicht erzeugen, deshalb war der Fix vorher nur
+ * durch seinen Kommentar abgesichert.
+ *
+ * [AtomicBoolean.compareAndSet] statt eines einfachen `var`: die Klick-Handler laufen zwar beide auf
+ * dem Hauptthread, aber genau das war die Annahme, die den Bug erst zu einem Rätsel gemacht hat —
+ * eine atomare Prüf-und-Setz-Operation ist hier kostenlos und schließt auch den Fall aus, dass die
+ * Auslösung je über einen anderen Thread kommt.
+ *
+ * Der Notausgang bleibt unberührt: die Notification-Knöpfe gehen direkt an den
+ * [AlarmSoundService], nicht durch diese Activity — und `stopAndClose()` fragt die Sperre bewusst
+ * nicht.
+ */
+internal class OneShotAlarmHandoff {
+
+    private val claimed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** true nur beim ERSTEN Aufruf; jeder weitere Aufruf liefert false. */
+    fun claim(): Boolean = claimed.compareAndSet(false, true)
+
+    /** Wurde die Sperre schon beansprucht? Reine Abfrage, beansprucht selbst nichts. */
+    val isClaimed: Boolean get() = claimed.get()
+}
+
+/**
  * Vollbild-Wecker über dem Sperrbildschirm.
  *
  * ROLLENVERTEILUNG (v3.0):
@@ -75,10 +118,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     /**
-     * Merkt sich, ob Dismiss/Snooze bereits den Service gestoppt haben. Verhindert, dass der
-     * alarmActive-Observer danach noch ein zweites finish() auslöst.
+     * Einweg-Sperre gegen Doppelauslösung von Dismiss/Snooze — siehe [OneShotAlarmHandoff].
+     * Dient zusätzlich dem alarmActive-Observer als "wurde hier schon bewusst gehandelt?".
      */
-    private var userHandledAlarm = false
+    private val alarmHandoff = OneShotAlarmHandoff()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -118,18 +161,124 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         observeAlarmState()
 
         Logger.i(LogTags.ALARM, "✅ AlarmFullScreenActivity initialized: $shiftName at $shiftStartTime")
+        Logger.i(
+            LogTags.ALARM,
+            "🔎 FSI-DIAG onCreate: ${visibilitySnapshot()}, recreated=${savedInstanceState != null}, " +
+                "taskId=$taskId, isTaskRoot=$isTaskRoot, canUseFsi=${canUseFullScreenIntentNow()}"
+        )
+    }
+
+    /**
+     * Bei launchMode="singleTask" liefert eine ZWEITE Zustellung desselben Full-Screen-Intents
+     * onNewIntent statt onCreate — die Activity bleibt dieselbe Instanz. Ohne setIntent() bliebe
+     * `intent` auf dem alten Stand, und snoozeAlarm() laese Schicht/ID/Snooze-Dauer aus dem
+     * VORHERIGEN Alarm. Das ist real erreichbar: der Snooze-Wecker feuert erneut, waehrend die
+     * Activity noch (gestoppt, aber nicht zerstoert) im Task liegt.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        Logger.i(LogTags.ALARM, "🔎 FSI-DIAG onNewIntent (singleTask-Wiederzustellung): ${visibilitySnapshot()}")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Logger.d(LogTags.ALARM, "▶️ AlarmFullScreenActivity STARTED: ${visibilitySnapshot()}")
     }
 
     override fun onStop() {
         super.onStop()
-        Logger.d(LogTags.ALARM, "⏹️ AlarmFullScreenActivity STOPPED")
 
         // Wecker hier NICHT stoppen: onStop feuert auch bei Bildschirm-Aus (Power-Taste im
         // Halbschlaf), eingehendem Anruf, App-Wechsel oder Rotation. Der Ton laeuft im
         // Foreground-Service weiter und wird ausschliesslich durch bewusstes Dismiss/Snooze beendet.
 
+        // DIAGNOSE (v1.23.0): Verschwindet das Vollbild, waehrend der Wecker weiterklingelt, ist das
+        // der Fehlerfall vom 05.08.2026 (STOPPED 276ms nach initialized, Ton lief 11s weiter). Der
+        // Snapshot trennt die Ursachen, die sich sonst NICHT unterscheiden lassen: interactive=false
+        // => Bildschirm ist ausgegangen (Wake-Lock wirkungslos), interactive=true + focus=false =>
+        // ein fremdes Fenster (Keyguard, Systemdialog, andere Activity) liegt darueber.
+        // Bewusst WARN: muss auch im Release-Log auftauchen, dort landet nur WARN+.
+        val stoppedWhileRinging = AlarmSoundService.alarmActive.value && !isFinishing
+        val detail = "${visibilitySnapshot()}, isFinishing=$isFinishing, " +
+            "changingConfig=$isChangingConfigurations, userHandled=${alarmHandoff.isClaimed}"
+        if (stoppedWhileRinging) {
+            Logger.w(
+                LogTags.ALARM,
+                "⚠️ AlarmFullScreenActivity STOPPED, obwohl der Wecker noch laeuft — $detail"
+            )
+        } else {
+            Logger.d(LogTags.ALARM, "⏹️ AlarmFullScreenActivity STOPPED — $detail")
+        }
+
         releaseWakeLock()
     }
+
+    /**
+     * Der einzige Weg, "ein fremdes Fenster liegt darueber" von "Bildschirm ist aus" zu
+     * unterscheiden: Fokusverlust bei weiterhin eingeschaltetem Bildschirm.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus && AlarmSoundService.alarmActive.value) {
+            Logger.w(LogTags.ALARM, "⚠️ Vollbild verliert Fensterfokus bei laufendem Wecker — ${visibilitySnapshot()}")
+        } else {
+            Logger.d(LogTags.ALARM, "🔎 FSI-DIAG Fensterfokus=$hasFocus: ${visibilitySnapshot()}")
+        }
+    }
+
+    /**
+     * Ein Zustandsabbild der Sichtbarkeits-Voraussetzungen. Absichtlich in EINER Zeile und ohne
+     * PII — es soll im Release-Log neben der WARN-Zeile stehen koennen.
+     */
+    private fun visibilitySnapshot(): String {
+        val interactive = try {
+            (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+        } catch (e: Exception) {
+            null
+        }
+        val keyguard = try {
+            getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+        } catch (e: Exception) {
+            null
+        }
+        // displayManager statt activity.display: display existiert erst ab API 30, minSdk ist 26.
+        val displayState = try {
+            (getSystemService(DISPLAY_SERVICE) as DisplayManager)
+                .getDisplay(Display.DEFAULT_DISPLAY)?.state
+        } catch (e: Exception) {
+            null
+        }
+        return "interactive=$interactive, display=${displayStateName(displayState)}, " +
+            "keyguardLocked=${keyguard?.isKeyguardLocked}, deviceSecure=${keyguard?.isDeviceSecure}, " +
+            "wakeLockHeld=${wakeLock?.isHeld}"
+    }
+
+    private fun displayStateName(state: Int?): String = when (state) {
+        null -> "unknown"
+        Display.STATE_OFF -> "OFF"
+        Display.STATE_ON -> "ON"
+        Display.STATE_DOZE -> "DOZE"
+        Display.STATE_DOZE_SUSPEND -> "DOZE_SUSPEND"
+        Display.STATE_ON_SUSPEND -> "ON_SUSPEND"
+        else -> "state$state"
+    }
+
+    /**
+     * Die Berechtigung wird bisher nur beim PLANEN geprueft (AlarmManagerService) und in der
+     * Status-Karte. Kommt sie zwischen Planung und Weckzeit weg, sagt bisher kein Log, dass das
+     * Vollbild deshalb ausblieb.
+     */
+    private fun canUseFullScreenIntentNow(): Boolean? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
+                (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).canUseFullScreenIntent()
+            } catch (e: Exception) {
+                null
+            }
+        } else {
+            true
+        }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -164,7 +313,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                 AlarmSoundService.alarmActive
                     .filter { active -> !active }
                     .collect {
-                        if (!userHandledAlarm) {
+                        if (!alarmHandoff.isClaimed) {
                             Logger.i(LogTags.ALARM, "🔕 Kein Wecker mehr aktiv — Vollbild schließt sich")
                         }
                         finish()
@@ -270,9 +419,25 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     private fun dismissAlarm() {
+        if (!alarmHandoff.claim()) {
+            Logger.w(LogTags.ALARM, "🚫 Dismiss ignoriert — Wecker wurde in dieser Activity schon behandelt")
+            return
+        }
         Logger.i(LogTags.ALARM, "🛑 User dismissed alarm")
-        userHandledAlarm = true
+        stopAndClose()
+    }
 
+    /**
+     * Ton stoppen, Alarm-Notification abräumen, Vollbild schließen. Gemeinsamer Endpunkt von
+     * Dismiss und des Snooze-Fehlerpfads — der darf NICHT über [dismissAlarm] laufen, weil die
+     * Doppelauslösungs-Sperre dann schon zugeschlagen hätte und den Notausgang blockierte.
+     *
+     * Deshalb ruft diese Funktion selbst KEIN [OneShotAlarmHandoff.claim] — der Notausgang muss
+     * auch nach bereits beanspruchter Sperre noch durchlaufen. Wer hier ein claim() ergänzt, macht
+     * den Snooze-Fehlerpfad wirkungslos: der Wecker klingelte dann weiter, obwohl der Snooze
+     * gescheitert ist.
+     */
+    private fun stopAndClose() {
         stopAlarmSoundService()
 
         // Gezielt die Alarm-Notification abräumen statt cancelAll(): cancelAll() löschte auch
@@ -290,6 +455,10 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      * setAlarmClock) liegt bewusst nur dort, damit es EINE Wahrheit bleibt.
      */
     private fun snoozeAlarm() {
+        if (!alarmHandoff.claim()) {
+            Logger.w(LogTags.ALARM, "🚫 Snooze ignoriert — Wecker wurde in dieser Activity schon behandelt")
+            return
+        }
         // Fallback-Default matters: aeltere/Direct-Boot-Pfade koennten das Extra nicht mitfuehren.
         val snoozeMinutes = intent.getIntExtra(
             AlarmSoundService.EXTRA_SNOOZE_MINUTES,
@@ -299,7 +468,6 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 
         try {
             // Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races).
-            userHandledAlarm = true
             stopAlarmSoundService()
 
             val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME) ?: "Snooze"
@@ -317,7 +485,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ Failed to snooze alarm", e)
-            dismissAlarm()
+            stopAndClose()
         }
     }
 }
@@ -357,6 +525,9 @@ private fun AlarmScreen(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Alarm,
+                    // dekorativ: direkt darunter steht R.string.alarm_title ("⏰ CF-ALARM"),
+                    // dazu Schichtname und Schichtbeginn - der Screenreader liest den Anlass
+                    // bereits im Klartext vor
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(72.dp)

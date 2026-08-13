@@ -29,6 +29,17 @@ interface IAlarmRepository {
      * @return Result mit Erfolgs- oder Fehlerinformation
      */
     suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit>
+
+    /**
+     * Ist die Persistenz fuer diesen Prozess gesperrt, weil der Bestand nicht lesbar war?
+     *
+     * Braucht ein Aufrufer, der GANZ raeumen will: nach einem gescheiterten Init-Load ist der
+     * Cache auf eine leere Liste degradiert, und [getAllAlarms] meldet das NICHT als Fehler (es
+     * liefert den degradierten Stand als Erfolg). Wer sich darauf verlaesst, cancelt keinen
+     * einzigen System-Alarm, leert aber Store und Direct-Boot-Spiegel - und laesst genau die
+     * verwaisten, armierten Alarme zurueck, von denen die App danach nichts mehr weiss.
+     */
+    suspend fun isPersistenceBlocked(): Boolean
     
     /**
      * Lädt alle gespeicherten Alarm-Informationen

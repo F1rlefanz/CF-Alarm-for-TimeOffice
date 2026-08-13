@@ -9,7 +9,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 
-/** TopAppBar mit Titel und Zurueck-Pfeil - Standardfall fuer Unterscreens ohne weitere Actions. */
+/**
+ * TopAppBar mit Titel und Zurueck-Pfeil - Standardfall fuer Unterscreens ohne weitere Actions.
+ *
+ * Die `contentDescription` ist Pflicht und darf nicht auf `null` zurueckgedreht werden: Bei einem
+ * IconButton ohne Textlabel ist das Icon der EINZIGE Traeger der Beschriftung — mit `null` liest
+ * TalkBack nur "Schaltfläche" vor. Betrifft alle vier Screens, die diese Leiste nutzen
+ * (Dimmer-Regeln, Dimmer-Regel-Editor, Dimmer-Vorschau, DND-Einstellungen). Alle handgebauten
+ * Zurueck-Pfeile der App (z. B. HueSettingsScreen, ShiftConfigScreen) sagen ebenfalls "Zurück".
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SimpleBackTopAppBar(title: String, onNavigateBack: () -> Unit) {
@@ -17,7 +25,7 @@ fun SimpleBackTopAppBar(title: String, onNavigateBack: () -> Unit) {
         title = { Text(title) },
         navigationIcon = {
             IconButton(onClick = onNavigateBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
             }
         }
     )

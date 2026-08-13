@@ -21,6 +21,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcess
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,6 +64,30 @@ class AlarmReceiver : BroadcastReceiver() {
     @Inject lateinit var alarmPrefs: AlarmPrefs
 
     companion object {
+        /**
+         * Gesamtbudget fuer die Hue-Regelausfuehrung innerhalb des Broadcast-Fensters.
+         *
+         * WARUM NICHT KLEINER: `executeRulesForAlarm()` schaltet erst in der Regel-Schleife alle
+         * Lampen ein und legt das Auto-Aus als Bridge-Zeitplan ERST DANACH an. Schneidet der Deckel
+         * dazwischen, ist das Licht an und es gibt keinen Mechanismus mehr, der es ausschaltet -
+         * CLAUDE.md begruendet das ersatzlose Entfernen des `AutoOffWorker` genau damit, dass
+         * "ging das Licht an, war die Bridge erreichbar und der Zeitplan entsteht". Ein zu knappes
+         * Budget hebt diese Invariante auf. 20 s waren zu knapp: allein der Batch-Timeout einer
+         * einzigen Regel ist 30 s.
+         *
+         * WARUM NICHT GROESSER: ein Hintergrund-Broadcast hat 60 s, danach protokolliert das System
+         * ein ANR und darf den Prozess abwuergen - und `pendingResult.finish()` kommt erst nach
+         * diesem Aufruf.
+         *
+         * 45 s ist der Kompromiss: genug fuer eine Regel samt Auto-Aus und in der Praxis fuer zwei,
+         * mit Luft bis zur Broadcast-Grenze. RESTRISIKO, bewusst akzeptiert: bei sehr vielen Regeln
+         * und einer nicht antwortenden Bridge kann der Schnitt weiterhin zwischen "an" und
+         * "Auto-Aus" fallen; dann bleibt das Licht an und der Nutzer braucht die Hue-App. Die
+         * saubere Loesung waere, die Hue-Ausfuehrung in den `AlarmSoundService` zu verlegen (ein
+         * Vordergrunddienst hat kein Broadcast-Fenster) - das ist ein Umbau am Weckpfad und
+         * bewusst nicht Teil dieser Runde.
+         */
+        private const val HUE_EXECUTION_BUDGET_MS = 45_000L
         const val EXTRA_SHIFT_NAME = "shift_name"
 
         /**
@@ -103,6 +128,16 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     // Coroutine Scope für die asynchrone onReceive-Verarbeitung (goAsync)
+    //
+    // KEIN `.cancel()` — und das ist Absicht, kein vergessenes Aufräumen (die Frage kam in
+    // mehreren Prüfrunden auf). Zwei Gründe:
+    //  1. Das System erzeugt für JEDEN Broadcast eine FRISCHE Receiver-Instanz und gibt sie
+    //     danach frei. Der Scope lebt also ohnehin nur so lange wie diese eine Zustellung; es
+    //     sammelt sich nichts über mehrere Alarme hinweg an.
+    //  2. Die Arbeit MUSS `onReceive()` überleben — genau dafür steht `goAsync()` darüber. Ein
+    //     `cancel()` am Ende von `onReceive()` würde Ton-Start, Skip-Prüfung und Hue-Regeln
+    //     mitten im Lauf abschneiden, also den Wecker abwürgen.
+    // Das Ende der Verarbeitung markiert `pendingResult.finish()` im finally, nicht der Scope.
     private val receiverScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -237,7 +272,36 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Sound + Full-Screen-Intent nicht verzögert.
                     // Direct Boot: Hue braucht Netz + CE/Hue-Storage - vor Entsperrung ueberspringen.
                     if (userUnlocked) {
-                        executeHueRulesForAlarm(shiftName)
+                        // GEDECKELT, weil `pendingResult.finish()` erst danach kommt.
+                        //
+                        // Ein BroadcastReceiver muss sein `finish()` innerhalb des
+                        // Broadcast-Zeitfensters erreichen; danach protokolliert das System ein
+                        // "Broadcast of Intent"-ANR und darf den Prozess abwuergen. Der Hue-Pfad
+                        // hat aber KEINE Gesamtschranke: `executeRulesForAlarm()` laeuft ueber
+                        // ALLE passenden Regeln, jede mit eigenem 30-s-Batch-Timeout, danach folgt
+                        // `scheduleBridgeAutoOff()` voellig ohne Timeout (GET + n DELETEs + ein POST
+                        // pro Ziel, je 10 s OkHttp). Zwei Regeln und eine Bridge, die nicht
+                        // antwortet (Handy nicht im Heim-WLAN - der Normalfall auf Reisen), reichen
+                        // fuer eine Minute und mehr.
+                        //
+                        // Der Wecker selbst ist davon unabhaengig: Ton, Vibration und
+                        // Full-Screen-Intent laufen ueber den bereits gestarteten
+                        // AlarmSoundService, nicht ueber diese Coroutine. Licht, das nicht angeht,
+                        // ist ein hinnehmbarer Verlust; ein abgewuergter Prozess ist es nicht.
+                        val hueDone = withTimeoutOrNull(HUE_EXECUTION_BUDGET_MS) {
+                            executeHueRulesForAlarm(shiftName)
+                            true
+                        }
+                        if (hueDone == null) {
+                            Logger.w(
+                                LogTags.ALARM_RECEIVER,
+                                "⚠️ HUE: Regelausfuehrung nach ${HUE_EXECUTION_BUDGET_MS / 1000}s " +
+                                    "abgebrochen (Bridge nicht erreichbar?) - der Wecker selbst ist " +
+                                    "davon unberuehrt (AlarmSoundService). ACHTUNG: faellt der " +
+                                    "Abbruch zwischen Einschalten und Auto-Aus-Zeitplan, bleibt das " +
+                                    "Licht an und muss von Hand ausgeschaltet werden."
+                            )
+                        }
                     }
 
                 } catch (e: Exception) {

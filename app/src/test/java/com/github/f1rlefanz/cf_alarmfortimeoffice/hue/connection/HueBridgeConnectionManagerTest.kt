@@ -16,8 +16,11 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.util.concurrent.atomic.AtomicBoolean
@@ -29,10 +32,21 @@ import java.util.concurrent.atomic.AtomicBoolean
  * to the Hue Bridge - and waiting out a 10s [java.net.SocketTimeoutException] - even though the
  * phone was demonstrably not on the bridge's network. That happened because the cached
  * `ConnectionState.CONNECTED` fast path in `getValidatedConnection()` returned the bridge
- * IP/credentials with no reachability check at all. These tests lock in the fix: when
- * [NetworkStateMonitor.isReachableSubnet] says the bridge isn't reachable, the manager must
- * fail fast WITHOUT ever calling the real API client, and must not downgrade the cached
- * connection state (a transient "wrong network" isn't a bridge/credential failure).
+ * IP/credentials with no reachability check at all.
+ *
+ * NACHGESCHAERFT (v1.24.x): Der erste Fix machte [NetworkStateMonitor.isReachableSubnet] zum
+ * VETO - "fail fast WITHOUT ever calling the real API client". Das ging zu weit. Die Pruefung
+ * verlangt eine eigene IPv4 im selben Subnetz und liefert Falsch-Negative, sobald ein Router
+ * zwischen zwei erreichbaren Netzen vermittelt: Gast-WLAN, getrenntes VLAN, Mesh mit eigenem
+ * Subnetz, Doppel-NAT - und der Emulator, der ueber NAT (10.0.2.x) sehr wohl ins Heimnetz
+ * routet. Am 13.08.2026 real aufgeschlagen: das Pairing bekam eine HTTPS 200 von der Bridge,
+ * und Millisekunden spaeter verwarf die Validierung genau diese Bridge als "not reachable".
+ *
+ * Heutige Zusicherung: die Heuristik entscheidet ueber das TIMEOUT, nicht ueber das Ergebnis.
+ * Off-subnet wird ein KURZ gedeckelter echter Versuch gemacht; nur wenn auch der scheitert,
+ * gilt die Bridge als unerreichbar. Der urspruengliche Zweck (kein 10s-Haenger ausser Haus)
+ * bleibt erhalten, ebenso das Nicht-Herabstufen des Verbindungszustands - ein transientes
+ * "falsches Netz" ist kein Bridge-/Zugangsdaten-Fehler.
  */
 class HueBridgeConnectionManagerTest {
 
@@ -152,16 +166,59 @@ class HueBridgeConnectionManagerTest {
     // is a `verify(mock).suspendFun(...)` call would otherwise infer a non-Unit return type
     // (the suspend function's return type), which JUnit4 rejects with InvalidTestClassError.
 
+    /**
+     * ABGELOEST die fruehere Zusicherung "off-subnet wirft, OHNE den API-Client je aufzurufen".
+     *
+     * Die alte Fassung schrieb fest, dass die Subnetz-Heuristik ein VETO ist. Genau das war der
+     * Fehler: `isReachableSubnet()` verlangt eine eigene IPv4 im selben Subnetz und liefert
+     * Falsch-Negative bei Gast-WLAN, getrenntem VLAN, Mesh mit eigenem Subnetz, Doppel-NAT und
+     * am Emulator (NAT 10.0.2.x, routet aber ins Heimnetz). Am 13.08.2026 real aufgeschlagen:
+     * das Pairing bekam eine HTTPS 200 von der Bridge, und Millisekunden spaeter verwarf die
+     * Validierung dieselbe Bridge als "not reachable" - eine antwortende Bridge, abgelehnt von
+     * einer Vermutung ueber sie.
+     *
+     * Die Heuristik entscheidet jetzt nur noch ueber das TIMEOUT. Der echte Request ist das
+     * Urteil - deshalb wird er auch off-subnet versucht.
+     */
     @Test
-    fun `off-subnet cached connection throws without ever calling the real API client`() {
+    fun `off-subnet - der echte Request wird trotzdem versucht, nicht uebersprungen`() {
         runBlocking {
             val (manager, _, apiClient) = buildManager(isReachable = false)
+
+            runCatching { manager.getValidatedConnection() }
+
+            // Der Kern der Aenderung: GENAU EIN echter Versuch statt null.
+            verify(apiClient, times(1)).getBridgeConfig(any(), any())
+        }
+    }
+
+    /** Scheitert auch der Kurzversuch, bleibt es beim alten, richtigen Ausgang. */
+    @Test
+    fun `off-subnet - scheitert auch der Kurzversuch, wird geworfen`() {
+        runBlocking {
+            val (manager, _, apiClient) = buildManager(isReachable = false)
+            apiClient.stub {
+                onBlocking { getBridgeConfig(any(), any()) } doAnswer { throw java.io.IOException("no route") }
+            }
 
             assertThrows(IllegalStateException::class.java) {
                 runBlocking { manager.getValidatedConnection() }
             }
+        }
+    }
 
-            verify(apiClient, never()).getBridgeConfig(any(), any())
+    /**
+     * Der eigentliche Zweck des Fixes: antwortet die Bridge, gilt sie als erreichbar - auch wenn
+     * die Subnetz-Heuristik das Gegenteil behauptet.
+     */
+    @Test
+    fun `off-subnet - antwortet die Bridge trotzdem, wird die Verbindung benutzt`() {
+        runBlocking {
+            val (manager, _, _) = buildManager(isReachable = false)
+
+            val (returnedIp, returnedUser) = manager.getValidatedConnection()
+
+            assertTrue(returnedIp == bridgeIp && returnedUser == username)
         }
     }
 

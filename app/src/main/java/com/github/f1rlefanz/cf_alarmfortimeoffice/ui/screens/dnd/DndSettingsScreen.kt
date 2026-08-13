@@ -22,7 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +36,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
@@ -57,8 +57,11 @@ fun DndSettingsScreen(
     onNavigateBack: () -> Unit,
     viewModel: DndViewModel = hiltViewModel()
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val shiftNames by viewModel.shiftNames.collectAsState()
+    // collectAsStateWithLifecycle, nicht collectAsState: beides ist reiner Anzeige-Zustand dieses
+    // Bildschirms. Die eigentliche DND-Steuerung haengt an [DndScheduleUseCase] (rollierender
+    // Tick-Alarm), nicht an diesen Abos - sie duerfen unterhalb von STARTED ruhen.
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 

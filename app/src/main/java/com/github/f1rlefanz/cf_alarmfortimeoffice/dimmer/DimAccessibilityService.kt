@@ -18,6 +18,7 @@ import androidx.annotation.RequiresApi
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,7 +54,24 @@ class DimAccessibilityService : AccessibilityService() {
     @Inject
     lateinit var prefs: DimOverlayPrefs
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * MIT `CoroutineExceptionHandler` - der SupervisorJob allein reicht NICHT.
+     *
+     * Ein SupervisorJob isoliert nur Geschwister-Coroutinen; die Exception selbst verschluckt er
+     * nicht: ohne Handler laeuft sie zum Thread-Default-Handler und beendet den PROZESS - hier sogar
+     * auf dem Hauptthread. In diesem Scope liegen der [DimOverlayPrefs.renderState]-Collector und die
+     * Alpha-Rampe. Fuer eine WECKER-App ist das die falsche Reihenfolge der Wichtigkeit: ein
+     * misslungener Dimmer-Lesezugriff darf niemals den Prozess beenden, der die Alarme haelt
+     * (dieselbe Falle und derselbe Fix wie bei HueBridgeConnectionManager.healthCheckScope).
+     * Die zweite Haelfte des Schutzes sitzt in DimOverlayPrefs.safeData (`.catch` -> Defaults,
+     * also KEIN Dimmen); dieser Handler ist das Netz fuer alles, was danach noch kommen kann.
+     */
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main.immediate +
+            CoroutineExceptionHandler { _, t ->
+                Logger.e(LogTags.DIMMER, "Ungefangener Fehler im Dimm-Dienst - Prozess bleibt am Leben", t)
+            }
+    )
 
     // Weg 1: Display-Overlay (fensterlose SurfaceControl)
     private var displaySc: SurfaceControl? = null
@@ -85,6 +103,11 @@ class DimAccessibilityService : AccessibilityService() {
         running = true
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         scope.launch {
+            // renderState ist upstream abgesichert (DimOverlayPrefs.safeData): ein Lesefehler kommt
+            // hier als EIN Default-Zustand an (overlayOn = false -> Overlay wird abgeraeumt) und
+            // beendet den Collector, statt den Prozess zu reissen. Danach kommen bis zum naechsten
+            // Verbinden des Dienstes keine Aenderungen mehr an - ein heller Bildschirm ohne
+            // Dimm-Aktualisierung ist der bewusst gewaehlte, bedienbare Ausgang.
             prefs.renderState
                 .distinctUntilChanged { a, b -> a.overlayOn == b.overlayOn && a.color == b.color }
                 .collect { render(it.overlayOn, it.color) }

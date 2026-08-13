@@ -142,12 +142,20 @@ class ShiftConfigRepository @Inject constructor(
      * WICHTIG: bei einer DEFEKTEN Konfiguration wird der Default NICHT in den Cache geschrieben -
      * sonst wuerde `getCurrentShiftConfig()` ihn als Cache-Hit als echte Konfiguration ausliefern
      * und der Schreibpfad ihn ueber die (noch vorhandenen) Rohdaten schreiben.
+     *
+     * REIHENFOLGE IST TRAGEND: `.catch` steht HINTER dem `.map`, nicht davor. Davor emittierte es
+     * `emptyPreferences()` in das `map` hinein - und das kann einen leeren Store nicht von einem
+     * unlesbaren unterscheiden: es landete im `NotConfigured`-Zweig und schrieb GENAU DEN Default
+     * in den Cache, den der `Broken`-Zweig eine Zeile darueber bewusst nicht cacht. Danach gab
+     * `getCurrentShiftConfig()` fuer 30 s (CACHE_VALIDITY_MS) `Result.success(Standard-
+     * konfiguration)` zurueck, ohne den frischen Read ueberhaupt zu erreichen - der Fehler kam bei
+     * keinem der vier Konsumenten an (ShiftViewModel, AlarmMaintenanceService, CFAlarmApplication,
+     * CalendarViewModel), `syncAlarms()` lief mit Standardzeiten und der Delta-Sync loeschte die
+     * Alarme nicht mehr erkannter Schichten. Ausloeser: eine IOException auf `shift_prefs` - genau
+     * der Fall, fuer den dieses `.catch` existiert (der ReplaceFileCorruptionHandler faengt nur
+     * CorruptionException). Wer das `.catch` wieder nach oben zieht, baut das neu.
      */
     override val shiftConfig: Flow<ShiftConfig> = dataStore.data
-        .catch { e ->
-            Logger.e(LogTags.SHIFT_CONFIG, "shift_prefs nicht lesbar - Flow degradiert auf Standardkonfiguration", e)
-            emit(emptyPreferences())
-        }
         .map { preferences ->
             when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey])) {
                 is ShiftConfigDecodeResult.Ok -> {
@@ -174,6 +182,22 @@ class ShiftConfigRepository @Inject constructor(
                     defaultConfig
                 }
             }
+        }
+        .catch { e ->
+            // Faengt Upstream (unlesbare shift_prefs) UND alles, was aus dem `map{}` kaeme -
+            // deshalb steht es hier unten und nicht zwischen Quelle und `map`.
+            // Die ANZEIGE darf degradieren, die SCHREIBWAHRHEIT nicht: der Default geht direkt an
+            // den Collector, aber NICHT in den Cache. Zusaetzlich wird ein evtl. vorhandener
+            // Cache-Eintrag verworfen, damit `getCurrentShiftConfig()` auf den frischen Read
+            // durchfaellt und dort ehrlich scheitert, statt einen Cache-Hit zu melden.
+            // Nur `cachedConfig` wird genullt: alle Cache-Treffer sind mit `cachedConfig?.let`
+            // bewacht, `cacheTimestamp` ist ohne Eintrag bedeutungslos - und `configLoadInProgress`
+            // gehoert einem evtl. parallel laufenden Load und darf hier nicht angefasst werden.
+            // Schlimmster Fall der Nebenlaeufigkeit: ein zeitgleich gefuellter, gueltiger Cache
+            // wird verworfen und einmal frisch gelesen. Das ist die sichere Richtung.
+            cachedConfig = null
+            Logger.e(LogTags.SHIFT_CONFIG, "shift_prefs nicht lesbar - Anzeige degradiert auf Standardkonfiguration, Cache verworfen", e)
+            emit(ShiftConfig.getDefaultConfig())
         }
 
     /**

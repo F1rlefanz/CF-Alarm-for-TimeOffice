@@ -3,6 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
@@ -46,9 +48,12 @@ class DimSchedulePreviewStatusTest {
         val masterPausePrefs = mock<MasterPausePrefs>()
         whenever(masterPausePrefs.pausedNow()).thenReturn(false)
 
+        val spanStore = mock<ShiftSpanStore>()
+        whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
         return DimScheduleUseCase(
             mock<Context>(),
             alarmUseCase,
+            spanStore,
             DimRuleUseCase(mock<DimRuleRepository>()),
             prefs,
             mock<DimCorrectionNotifier>(),

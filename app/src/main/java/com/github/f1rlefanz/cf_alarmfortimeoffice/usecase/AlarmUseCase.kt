@@ -12,6 +12,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftCo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -54,7 +56,12 @@ class AlarmUseCase @Inject constructor(
     // IAlarmUseCase - vermeidet Aenderungen an allen 4 Call-Sites des Interfaces.
     private val shiftChangeNotifier: ShiftChangeNotifier,
     // Master-Pause: aus demselben Grund auf der Implementierung, nicht auf IAlarmUseCase.
-    private val masterPausePrefs: MasterPausePrefs
+    private val masterPausePrefs: MasterPausePrefs,
+    // Schichtspannen: ebenfalls bewusst auf der Implementierung statt auf IAlarmUseCase - das
+    // Interface bleibt unveraendert, und jeder kuenftige syncAlarms()-Aufrufer schreibt die
+    // Spannen automatisch mit, ohne selbst etwas tun zu muessen (gleiche Ueberlegung wie beim
+    // ShiftChangeNotifier und beim Master-Pause-Backstop).
+    private val shiftSpanStore: ShiftSpanStore
 ) : IAlarmUseCase {
     
     /**
@@ -132,6 +139,7 @@ class AlarmUseCase @Inject constructor(
                     // Keine Events → kalenderbasierte Alarme weg, manuelle bleiben (siehe
                     // keepManualAlarms). Zurueckgegeben wird der VERBLIEBENE Bestand, nicht
                     // emptyList: der Aufrufer protokolliert die Zahl, und "0" waere hier unwahr.
+                    persistShiftSpans(emptyList())
                     return@safeExecute clearInternalAlarms(keepManualAlarms = true)
                 }
                 
@@ -147,9 +155,24 @@ class AlarmUseCase @Inject constructor(
                 
                 if (shiftMatches.isEmpty()) {
                     Logger.business(LogTags.ALARM, "✅ SYNC: No matching shifts found - clearing calendar alarms")
+                    persistShiftSpans(emptyList())
                     return@safeExecute clearInternalAlarms(keepManualAlarms = true)
                 }
-                
+
+                // Schichtspannen VOR dem Vergangenheits-Filter unten schreiben - genau die
+                // Schichten, die der Alarm-Bestand nach dem Klingeln nicht mehr hergibt, sind hier
+                // noch vollstaendig da. Siehe ShiftSpanStore fuer das Warum.
+                persistShiftSpans(
+                    shiftMatches.map { match ->
+                        ShiftSpan(
+                            shiftName = match.shiftDefinition.name,
+                            startTime = match.calendarEvent.startTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                            endTime = match.calendarEvent.endTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                            alarmTriggerTime = match.calculatedAlarmTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        )
+                    }
+                )
+
                 // Build checksum map for events
                 val eventChecksumMap = events.associate { event ->
                     event.id to calculateEventChecksum(event)
@@ -157,15 +180,22 @@ class AlarmUseCase @Inject constructor(
                 
                 // Build map of new alarms we want to create
                 val newAlarmsMap = mutableMapOf<String, AlarmInfo>()  // eventId -> AlarmInfo
+                // Events, deren Termin WEITER EXISTIERT und deren Weckzeit lediglich verstrichen
+                // ist. Ohne diese Unterscheidung meldet der Loeschzweig unten sie als "Event was
+                // deleted from calendar" - der Nutzer bekam dadurch an JEDEM Schichtmorgen eine
+                // sachlich falsche "Schicht entfernt"-Benachrichtigung fuer den Dienst, den er
+                // gerade antritt.
+                val expiredEventIds = mutableSetOf<String>()
                 val now = LocalDateTime.now()
-                
+
                 for (shiftMatch in shiftMatches) {
                     try {
                         if (shiftMatch.calculatedAlarmTime.isBefore(now)) {
                             Logger.w(LogTags.ALARM, "⏰ SYNC: Skipping alarm in the past: ${shiftMatch.shiftDefinition.name}")
+                            expiredEventIds += shiftMatch.calendarEvent.id
                             continue
                         }
-                        
+
                         val eventId = shiftMatch.calendarEvent.id
                         val checksum = eventChecksumMap[eventId] ?: ""
                         val alarmInfo = createAlarmFromShiftMatch(shiftMatch, eventId, checksum)
@@ -179,8 +209,21 @@ class AlarmUseCase @Inject constructor(
                 var deletedCount = 0
                 for (existingAlarm in existingAlarms) {
                     if (existingAlarm.eventId.isNotEmpty() && !newAlarmsMap.containsKey(existingAlarm.eventId)) {
-                        // Event was deleted from calendar
-                        Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        // ZWEI verschiedene Gruende, hier zu landen - und nur EINER davon ist eine
+                        // entfernte Schicht:
+                        //  1. Der Termin ist wirklich aus dem Kalender verschwunden.
+                        //  2. Der Termin laeuft weiter, nur die WECKZEIT ist verstrichen (der
+                        //     Wecker hat heute frueh geklingelt). Der Alarm wird trotzdem geraeumt
+                        //     - ein abgelaufener Alarm gehoert nicht in den Bestand - aber es ist
+                        //     KEINE Aenderung des Dienstplans, also gibt es dafuer auch keine
+                        //     Meldung. Die Schichtspanne bleibt davon unberuehrt erhalten, damit
+                        //     Dimmer und "Nicht stoeren" die laufende Schicht weiter kennen.
+                        val onlyExpired = existingAlarm.eventId in expiredEventIds
+                        if (onlyExpired) {
+                            Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        } else {
+                            Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                        }
                         // ERST cancellen, DANN loeschen - wie an allen anderen Loeschstellen
                         // (`deleteAlarm()`, `clearInternalAlarms()` Step 1, `AlarmSkipUseCase`).
                         // Umgekehrt gab es ein Fenster, in dem der Alarm im AlarmManager noch
@@ -194,10 +237,12 @@ class AlarmUseCase @Inject constructor(
                         deletedCount++
                         // Feature B: eigenes try/catch - eine fehlgeschlagene Notification darf die
                         // eigentlich kritische Alarm-Loeschung nie mit rueckgaengig machen.
-                        try {
-                            shiftChangeNotifier.notifyDeleted(existingAlarm)
-                        } catch (e: Exception) {
-                            Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Delete) fehlgeschlagen", e)
+                        if (!onlyExpired) {
+                            try {
+                                shiftChangeNotifier.notifyDeleted(existingAlarm)
+                            } catch (e: Exception) {
+                                Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Delete) fehlgeschlagen", e)
+                            }
                         }
                     }
                 }
@@ -581,6 +626,30 @@ class AlarmUseCase @Inject constructor(
     /**
      * Erstellt AlarmInfo aus ShiftMatch mit Event-Tracking
      */
+    /**
+     * Schreibt den Schichtspannen-Bestand ([ShiftSpanStore]) - die Quelle, aus der Dimmer und
+     * "Nicht stoeren" ihre Dienstzeit-Fenster beziehen, seit klar ist, dass der Alarm-Bestand die
+     * Weckzeit nicht ueberlebt.
+     *
+     * **Eigenes try/catch, bewusst nicht-fatal.** Dieselbe Haltung wie bei den drei
+     * [ShiftChangeNotifier]-Aufrufen: ein fehlgeschlagener Nebenschauplatz darf die eigentlich
+     * kritische Alarm-Synchronisation niemals abbrechen oder rueckgaengig machen. Im
+     * Fehlerfall behalten Dimmer/DND ihren letzten bekannten Stand - schlechter als frisch, aber
+     * unendlich besser als ein ausgefallener Wecker.
+     *
+     * [CancellationException] wird weitergeworfen: sie ist kein Schreibfehler, sondern die Ansage,
+     * dass die umgebende Coroutine endet.
+     */
+    private suspend fun persistShiftSpans(spans: List<ShiftSpan>) {
+        try {
+            shiftSpanStore.replaceAll(spans)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.ALARM, "Schichtspannen konnten nicht gespeichert werden - Dimmer/DND behalten den letzten Stand", e)
+        }
+    }
+
     private fun createAlarmFromShiftMatch(shiftMatch: ShiftMatch, eventId: String, eventChecksum: String): AlarmInfo {
         val alarmTime = shiftMatch.calculatedAlarmTime
             .atZone(ZoneId.systemDefault())

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.annotation.VisibleForTesting
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -40,6 +41,7 @@ import javax.inject.Singleton
 class DimScheduleUseCase @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val alarmUseCase: IAlarmUseCase,
+    private val shiftSpanStore: ShiftSpanStore,
     private val dimRuleUseCase: DimRuleUseCase,
     private val prefs: DimOverlayPrefs,
     private val correctionNotifier: DimCorrectionNotifier,
@@ -273,6 +275,20 @@ class DimScheduleUseCase @Inject constructor(
         }
         val alarms = alarmsResult.getOrDefault(emptyList()).filter { it.isActive }
 
+        // Schichtspannen sind seit v1.25.2 die Quelle fuer alles SCHICHT-bezogene (Regel-Fenster,
+        // Nacht-Standard). Der Alarm-Bestand ueberlebt die Weckzeit nicht - ein SHIFT_END-
+        // verankertes Fenster verschwand deshalb mitten in der Schicht, sobald der Wecker
+        // geklingelt hatte und der naechste Sync ihn geraeumt hatte. Siehe ShiftSpanStore.
+        //
+        // Die WELLNESS-Quelle unten bleibt bewusst am echten Alarm-Bestand: sie dimmt vor der
+        // Weckzeit, ihr Fenster ist nach dem Klingeln ohnehin vorbei.
+        val spansResult = shiftSpanStore.spansNow()
+        if (spansResult.isFailure) {
+            Logger.w(LogTags.DIMMER, "Schichtspannen nicht lesbar - kein Dimming (fail-open)")
+            return Windows(emptyList(), alarmReadFailed = true, anySourceEnabled = true)
+        }
+        val spans = spansResult.getOrDefault(emptyList())
+
         val out = mutableListOf<DimWindowResolver.DimSpan>()
         val gStrength = prefs.strengthNow()
         val gWarmth = prefs.warmthNow()
@@ -290,7 +306,12 @@ class DimScheduleUseCase @Inject constructor(
         //    „immer 22–7 außer ND"), ALARM/SHIFT_END = schicht-relativ, leere Fensterliste = ND-Ausnahme.
         val rules = if (toggles.rulesEnabled) dimRuleUseCase.getAllRules() else emptyList()
         val rulesActive = toggles.rulesEnabled && rules.any { it.enabled }
-        val slots = alarms.map { DimWindowResolver.AlarmSlot(it.triggerTime, it.shiftName, it.shiftEndTime) }
+        // `triggerTime` MUSS hier die urspruenglich berechnete Weckzeit sein, auch wenn sie
+        // laengst verstrichen ist: DimWindowResolver leitet daraus den KALENDERTAG des Slots ab
+        // (buildRuleSpans/buildDefaultNightSpans). Genau deshalb fuehrt ShiftSpan sie mit - mit
+        // einem Platzhalter waere der Slot auf 1970 datiert und die Tagesverankerung der
+        // Dimm-Fenster kaputt.
+        val slots = spans.map { DimWindowResolver.AlarmSlot(it.alarmTriggerTime, it.shiftName, it.endTime) }
         if (rulesActive) {
             out += DimWindowResolver.buildRuleSpans(
                 alarms = slots,

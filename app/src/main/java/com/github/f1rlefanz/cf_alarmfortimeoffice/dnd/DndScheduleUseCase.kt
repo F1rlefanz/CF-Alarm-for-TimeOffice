@@ -18,7 +18,7 @@ import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -66,7 +66,7 @@ import javax.inject.Singleton
 @Singleton
 class DndScheduleUseCase @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val alarmUseCase: IAlarmUseCase,
+    private val shiftSpanStore: ShiftSpanStore,
     private val dimSchedule: DimScheduleUseCase,
     private val prefs: DndPrefs,
     private val masterPausePrefs: MasterPausePrefs
@@ -258,11 +258,18 @@ class DndScheduleUseCase @Inject constructor(
             if (preview.alarmReadFailed) alarmReadFailed = true
         }
 
-        // Alarme werden auch NUR fuer den On-Call-Cutoff geholt (unabhaengig von
+        // Schichtspannen werden auch NUR fuer den On-Call-Cutoff geholt (unabhaengig von
         // duringShiftEnabled) - der Cutoff klippt auch das "Folgt dem Dimmer"-Fenster.
-        val alarms = if (toggles.duringShiftEnabled || onCallShifts.isNotEmpty()) {
-            alarmUseCase.getAllAlarms().getOrElse {
-                Logger.w(LogTags.DND, "Alarm-Bestand nicht lesbar - keine Dienstzeit-/On-Call-Fenster (fail-open)")
+        //
+        // Quelle ist seit v1.25.2 der ShiftSpanStore und NICHT mehr der Alarm-Bestand: der
+        // ueberlebt die Weckzeit nicht (AlarmRepository verwirft abgelaufene Alarme in beiden
+        // Ladepfaden), wodurch das Dienstzeit-Fenster genau dann verschwand, wenn der Dienst
+        // begann. Am Emulator gemessen: 20.08. 08:00, mitten in der Frueschicht, zen_mode=0.
+        // Eine Spanne kennt bewusst kein `isActive` - ein deaktivierter oder uebersprungener
+        // Wecker aendert nichts daran, dass der Dienst stattfindet.
+        val spans = if (toggles.duringShiftEnabled || onCallShifts.isNotEmpty()) {
+            shiftSpanStore.spansNow().getOrElse {
+                Logger.w(LogTags.DND, "Schichtspannen nicht lesbar - keine Dienstzeit-/On-Call-Fenster (fail-open)")
                 // Verhalten unveraendert (keine Dienstzeit-Fenster), aber der Lesefehler wird
                 // gemerkt: sonst wuerde ein einmaliger Fehler die ganze Tick-Kette abreissen.
                 // NUR wenn ueberhaupt eine Fenster-Quelle an ist - sind beide aus und es sind bloss
@@ -270,23 +277,23 @@ class DndScheduleUseCase @Inject constructor(
                 // haette ein Retry-Tick nichts zu tun und die Kette bliebe endlos am Leben.
                 if (anySourceEnabled) alarmReadFailed = true
                 emptyList()
-            }.filter { it.isActive }
+            }
         } else {
             emptyList()
         }
 
         if (toggles.duringShiftEnabled) {
             val excluded = prefs.shiftExcludedShiftsNow()
-            val slots = alarms.map {
-                DndShiftSpanResolver.AlarmSlot(it.shiftName, it.shiftStartTime, it.shiftEndTime)
+            val slots = spans.map {
+                DndShiftSpanResolver.AlarmSlot(it.shiftName, it.startTime, it.endTime)
             }
             out += DndShiftSpanResolver.buildShiftSpans(slots, excluded)
         }
 
         if (onCallShifts.isNotEmpty() && out.isNotEmpty()) {
             val cutoffMinutes = prefs.onCallCutoffMinutesNow()
-            val cutoffSlots = alarms.map {
-                DndOnCallCutoffResolver.AlarmSlot(it.shiftName, it.shiftStartTime)
+            val cutoffSlots = spans.map {
+                DndOnCallCutoffResolver.AlarmSlot(it.shiftName, it.startTime)
             }
             val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
                 cutoffSlots, onCallShifts, cutoffMinutes, ZoneId.systemDefault()

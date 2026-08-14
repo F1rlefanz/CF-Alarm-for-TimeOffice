@@ -3,6 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -93,13 +95,23 @@ class DimScheduleUseCaseTest {
     ): DimScheduleUseCase {
         val alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.getAllAlarms()).thenReturn(alarms)
+        // Seit v1.25.2 speisen sich Regel- und Nacht-Standard-Fenster aus den Schichtspannen statt
+        // aus dem Alarm-Bestand (der ueberlebt die Weckzeit nicht). Fuer die Tests werden sie aus
+        // denselben Fixtures abgeleitet - inklusive des Fehlerfalls, damit der Fail-open-Pfad
+        // weiterhin geprueft wird.
+        val spanStore = mock<ShiftSpanStore>()
+        whenever(spanStore.spansNow()).thenReturn(
+            alarms.map { list ->
+                list.map { ShiftSpan(it.shiftName, it.shiftStartTime, it.shiftEndTime, it.triggerTime) }
+            }
+        )
         val context = mock<Context>()
         val notifier = mock<DimCorrectionNotifier>()
         // Master-Pause-Backstop (in applyCurrentState/scheduleNextTransition): fuer die reine
         // Fenster-Vorschau hier immer "nicht pausiert".
         val masterPausePrefs = mock<MasterPausePrefs>()
         whenever(masterPausePrefs.pausedNow()).thenReturn(false)
-        return DimScheduleUseCase(context, alarmUseCase, ruleUseCase(rules), prefs, notifier, masterPausePrefs)
+        return DimScheduleUseCase(context, alarmUseCase, spanStore, ruleUseCase(rules), prefs, notifier, masterPausePrefs)
     }
 
     @Test

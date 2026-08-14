@@ -86,12 +86,29 @@ class CalendarPreAlarmRefreshWorker(
                 return@withContext Result.success()
             }
 
-            val eventsResult = entryPoint.calendarUseCase().getCalendarEventsWithCache(
+            // getCalendarEventsWithStatus statt ...WithCache: ein TEILERFOLG (mindestens ein
+            // Kalender geladen, mindestens einer gescheitert) kommt bewusst als Result.success
+            // mit den Events der ueberlebenden Kalender zurueck - fuer die Anzeige richtig, hier
+            // toedlich. Der Delta-Sync unten loescht jeden Alarm, dessen eventId in der
+            // uebergebenen Liste fehlt; faellt ausgerechnet der Dienstplan-Feed aus, waeren das
+            // ALLE Schicht-Wecker. Dieser Worker laeuft 3h VOR der Weckzeit - er hat damit den
+            // kuerzesten Weg zum verschlafenen Wecker von allen syncAlarms()-Aufrufern.
+            val eventsResult = entryPoint.calendarUseCase().getCalendarEventsWithStatus(
                 calendarIds = selectedCalendars,
                 forceRefresh = true
             )
-            val events = eventsResult.getOrElse { error ->
+            val fetchOutcome = eventsResult.getOrElse { error ->
                 Logger.w(LogTags.BACKGROUND_WORKER, "Pre-Alarm-Refresh: Events konnten nicht geladen werden", error)
+                return@withContext Result.success()
+            }
+            val events = fetchOutcome.events
+
+            if (!fetchOutcome.isComplete) {
+                Logger.w(
+                    LogTags.BACKGROUND_WORKER,
+                    "Pre-Alarm-Refresh: ${fetchOutcome.failedCalendars}/${fetchOutcome.requestedCalendars} " +
+                        "Kalender nicht abrufbar - kein Sync (fail-safe, bestehende Alarme bleiben)"
+                )
                 return@withContext Result.success()
             }
 

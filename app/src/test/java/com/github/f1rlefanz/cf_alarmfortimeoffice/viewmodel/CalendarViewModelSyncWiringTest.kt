@@ -16,6 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -89,9 +91,9 @@ class CalendarViewModelSyncWiringTest {
         totalEvents: Int,
         completeFetch: CalendarFetchOutcome? = null,
         alarmUseCase: IAlarmUseCase = mock(),
-        stateHolder: CalendarStateHolder = CalendarStateHolder()
+        stateHolder: CalendarStateHolder = CalendarStateHolder(),
+        calendarUseCase: ICalendarUseCase = mock()
     ): CalendarViewModel {
-        val calendarUseCase = mock<ICalendarUseCase>()
         calendarUseCase.stub {
             onBlocking { hasValidAccessToken() } doReturn true
             onBlocking { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
@@ -209,6 +211,71 @@ class CalendarViewModelSyncWiringTest {
         assertTrue(
             "Der Holder muss als vollstaendig gelten - ShiftViewModel gibt seine Liste an syncAlarms weiter",
             holder.eventsComplete.value
+        )
+    }
+
+    @Test
+    fun `Abwaehlen ALLER Kalender ueberholt einen laufenden Ladevorgang`() = runTest(dispatcher) {
+        // REGRESSION: Der Race-Guard beruht darauf, dass ein ueberholender Vorgang die
+        // eventLoadGeneration hochzaehlt. Der else-Zweig von observeCalendarSelection ("Auswahl
+        // ist jetzt leer") loeschte Events und StateHolder, zog aber KEINE neue Nummer - ein noch
+        // laufender Ladevorgang bestand danach beide Staleness-Pruefungen, schrieb seine Events
+        // zurueck und legte ueber syncAlarms() Wecker fuer genau die Kalender an, die der Nutzer
+        // soeben abgewaehlt hatte. Die Oberflaeche zeigte dabei korrekt "kein Kalender ausgewaehlt".
+        val alarmUseCase = mock<IAlarmUseCase>()
+        val holder = CalendarStateHolder()
+        val all = (0 until 4).map { event("A$it", it) }
+        buildViewModel(
+            pageEvents = all,
+            totalEvents = 4,
+            alarmUseCase = alarmUseCase,
+            stateHolder = holder
+        )
+
+        // Ladevorgang anstossen und SOFORT wieder abwaehlen - der Lauf ist noch unterwegs.
+        selectedIds.value = setOf("cal-a")
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+
+        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        assertTrue(
+            "Nach dem Abwaehlen darf kein zurueckkehrender Ladevorgang die Events wieder einsetzen",
+            holder.events.value.isEmpty()
+        )
+        assertFalse(holder.eventsComplete.value)
+    }
+
+    @Test
+    fun `Nachladen bleibt nach einem dazwischenkommenden Sofort-Update weiter moeglich`() = runTest(dispatcher) {
+        // REGRESSION: Der Erfolgs-Reset von isLoadingMoreEvents lief ueber den GEBATCHTEN Pfad
+        // (updateLocalState, 16-33 ms Verzoegerung). Jeder dazwischenkommende
+        // updateLocalStateImmediate-Aufruf cancelt diesen Job und verwirft das Pending ersatzlos -
+        // das Flag blieb fuer die Lebensdauer des ViewModels auf true, und die Wache am Anfang von
+        // loadMoreEvents() liess danach KEINEN weiteren Nachlade-Versuch mehr zu (Dauer-Spinner,
+        // weitere Events ohne App-Neustart unerreichbar).
+        val all = (0 until 4).map { event("A$it", it) }
+        val vm = buildViewModel(
+            pageEvents = all,
+            totalEvents = 12 // hasMore = true, damit Nachladen ueberhaupt sinnvoll ist
+        )
+        // uiState ist ein `stateIn(started = Lazily)` - ohne Sammler bleibt es auf dem Startwert.
+        backgroundScope.launch { vm.uiState.collect { } }
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        vm.loadMoreEvents()
+        // NUR so weit vorspulen, dass die (sofort antwortende) Abfrage zurueckkehrt - aber noch
+        // NICHT ueber das 16-33ms-Batch-Fenster hinaus. Genau in dieser Luecke lag der Fehler.
+        advanceTimeBy(5)
+
+        // Das Sofort-Update, das den gebatchten Reset ersatzlos verworfen hat.
+        vm.refreshData(forceRefresh = true)
+        advanceUntilIdle()
+
+        assertFalse(
+            "isLoadingMoreEvents muss zurueckgesetzt sein - bleibt es haengen, laesst die Wache " +
+                "am Anfang von loadMoreEvents() keinen weiteren Versuch mehr zu (Dauer-Spinner)",
+            vm.uiState.value.isLoadingMoreEvents
         )
     }
 

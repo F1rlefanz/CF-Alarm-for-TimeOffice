@@ -208,4 +208,81 @@ class TokenDataTest {
         // storedToken == currentToken (gleiche rotationId): niemand sonst hat rotiert.
         assertEquals(token.rotationId, token.rotationId)
     }
+
+    // --- isLegitimateSuccessorOf: das vollstaendige Urteil, das refresh() faellt ---
+
+    @Test
+    fun `identisches Token ist ein legitimer Nachfolger`() {
+        val token = tokenAt(expiresAt = System.currentTimeMillis() - 1000)
+        assertTrue(token.isLegitimateSuccessorOf(token))
+    }
+
+    @Test
+    fun `direkt rotiertes Token ist ein legitimer Nachfolger`() {
+        val original = tokenAt(expiresAt = System.currentTimeMillis() - 1000)
+        val rotated = original.rotate(newAccessToken = "rotated")
+        assertTrue(rotated.isLegitimateSuccessorOf(original))
+    }
+
+    @Test
+    fun `frische Neu-Autorisierung ist KEIN Kettenbruch - Regressionstest`() {
+        // REALER BEFUND (Pruefrunde 14.08.2026, Dimension "Auth / Token-Rotation"):
+        // `authorize()` speichert ein ueber fromOAuthResponse() gebautes Token. Das rotiert
+        // nicht, sondern beginnt eine NEUE Kette (previousRotationId = null, rotationCount = 0)
+        // und stammt damit zwangslaeufig nicht vom bisherigen Token ab. Landete dieser Write
+        // zwischen dem Lesen des alten Tokens und der Kettenpruefung in refresh() - realistisch,
+        // weil OAuth2TokenManager ein @Singleton ohne Mutex ist und Wartungslauf, Pre-Alarm-
+        // Worker und UI unabhaengig refreshen -, galt er als Diebstahl: `clear()` loeschte
+        // ausgerechnet das Token, das der Nutzer sich soeben per "Kalender-Zugriff erneuern"
+        // geholt hatte. Die Oberflaeche zeigte danach weiter "angemeldet", waehrend jeder
+        // Wartungslauf ohne Token abbrach.
+        val expiring = tokenAt(expiresAt = System.currentTimeMillis() - 1000)
+        val freshlyAuthorized = TokenData.fromOAuthResponse(
+            accessToken = "frisch-autorisiert",
+            refreshToken = null,
+            expiresInSeconds = 3600,
+            scope = "scope",
+            googleAccountEmail = "user@example.com",
+            tokenProvider = TokenProvider.GOOGLE_PLAY_SERVICES
+        )
+
+        assertNotEquals(freshlyAuthorized.rotationId, expiring.rotationId)
+        assertFalse(
+            "Eine Neu-Autorisierung rotiert nicht - sie kann den alten Vorgaenger nicht kennen",
+            freshlyAuthorized.validateRotation(expiring.rotationId)
+        )
+        assertTrue(
+            "Eine frische Neu-Autorisierung muss als legitim gelten, sonst loescht refresh() " +
+                "das gerade geholte Token",
+            freshlyAuthorized.isLegitimateSuccessorOf(expiring)
+        )
+    }
+
+    @Test
+    fun `unabhaengiges fremdes Token bleibt ein Kettenbruch`() {
+        // Die Gegenprobe zum Test darueber: der Diebstahls-Zweig darf nicht generell abgeschaltet
+        // werden. Ein fremdes Token, das AELTER ist als der bekannte Stand, stammt weder von ihm
+        // ab noch ist es eine neuere Anmeldung.
+        val now = System.currentTimeMillis()
+        val current = tokenAt(expiresAt = now - 1000).copy(lastRotationAt = now)
+        val unrelatedRoot = tokenAt(expiresAt = now, accessToken = "unrelated")
+            .copy(lastRotationAt = now - 60_000)
+        val unrelatedRotated = unrelatedRoot.rotate(newAccessToken = "unrelated-rotated")
+            .copy(lastRotationAt = now - 60_000)
+
+        assertFalse(unrelatedRotated.isLegitimateSuccessorOf(current))
+    }
+
+    @Test
+    fun `eine AELTERE fremde Erstanmeldung gilt nicht als Nachfolger`() {
+        val now = System.currentTimeMillis()
+        val current = tokenAt(expiresAt = now - 1000).copy(lastRotationAt = now)
+        val olderFreshChain = tokenAt(expiresAt = now, accessToken = "aelter")
+            .copy(lastRotationAt = now - 60_000)
+
+        assertFalse(
+            "previousRotationId == null allein reicht nicht - der Stand muss auch neuer sein",
+            olderFreshChain.isLegitimateSuccessorOf(current)
+        )
+    }
 }

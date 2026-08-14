@@ -14,7 +14,6 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.flow.first
 
 /**
  * Hilt EntryPoint that lets the plain [TimeOfficeHealthHelper] object reach the Hilt-managed
@@ -92,7 +91,7 @@ object TimeOfficeHealthHelper {
 
     /** Hat der Nutzer diesen Onboarding-Schritt bereits uebersprungen? Persistiert. */
     suspend fun isPromptDismissed(context: Context): Boolean =
-        mainDataStore(context).data.first()[KEY_PROMPT_DISMISSED] ?: false
+        mainDataStore(context).readOrEmpty(LogTags.TIMEOFFICE_HEALTH, "TimeOffice-Prompt-Merker")[KEY_PROMPT_DISMISSED] ?: false
 
     suspend fun setPromptDismissed(context: Context) {
         mainDataStore(context).edit { it[KEY_PROMPT_DISMISSED] = true }

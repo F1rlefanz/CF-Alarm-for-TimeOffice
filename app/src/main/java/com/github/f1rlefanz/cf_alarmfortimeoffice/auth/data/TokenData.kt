@@ -102,7 +102,38 @@ data class TokenData(
     fun validateRotation(expectedPreviousId: String?): Boolean {
         return previousRotationId == expectedPreviousId
     }
-    
+
+    /**
+     * Ist DIESES (soeben aus dem Store gelesene) Token ein legitimer Nachfolger von [previous],
+     * dem Stand, den der Aufrufer zuletzt kannte?
+     *
+     * Drei legitime Faelle - der dritte fehlte und hat einen frisch geholten, gueltigen Token
+     * geloescht:
+     *  1. Identisch: seit dem Lesen von [previous] hat niemand rotiert (Normalfall).
+     *  2. Direkt aus [previous] rotiert: ein gleichzeitiger Aufrufer war schneller
+     *     ([OAuth2TokenManager] ist ein @Singleton ohne Mutex, und AlarmMaintenanceService,
+     *     CalendarPreAlarmRefreshWorker, CalendarUseCase sowie AuthUseCase rufen unabhaengig) -
+     *     die Kette ist intakt, nur zeitlich ueberholt.
+     *  3. FRISCHE NEU-AUTORISIERUNG: `authorize()` speichert ein ueber
+     *     [Companion.fromOAuthResponse] gebautes Token; das rotiert NICHT, sondern beginnt eine
+     *     neue Kette (previousRotationId = null, rotationCount = 0). Es stammt damit
+     *     zwangslaeufig nicht von [previous] ab. Landete dieser Write zwischen dem Lesen von
+     *     [previous] und dieser Pruefung, galt er als Kettenbruch - und der Diebstahls-Zweig
+     *     loeschte ausgerechnet das Token, das der Nutzer sich soeben per
+     *     "Kalender-Zugriff erneuern" geholt hatte. Danach zeigte die Oberflaeche weiter
+     *     "angemeldet", waehrend jeder Wartungslauf ohne Token abbrach.
+     *
+     * Alles andere ist ein echter Kettenbruch: ein Token, das weder von dem abstammt, was dieser
+     * Aufrufer kannte, noch eine erkennbar neuere Anmeldung ist.
+     */
+    fun isLegitimateSuccessorOf(previous: TokenData): Boolean {
+        if (rotationId == previous.rotationId) return true
+        if (validateRotation(previous.rotationId)) return true
+        val isFreshAuthorization = previousRotationId == null && rotationCount == 0
+        return isFreshAuthorization && lastRotationAt >= previous.lastRotationAt
+    }
+
+
 
     /**
      * Creates a sanitized version for logging.

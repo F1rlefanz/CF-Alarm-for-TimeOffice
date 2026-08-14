@@ -26,6 +26,21 @@ data class EventPage(
 )
 
 /**
+ * Ergebnis eines Kalender-Abrufs MIT der Angabe, ob es vollstaendig ist.
+ *
+ * [isComplete] ist die einzige Frage, die loeschende Konsumenten stellen duerfen: nur wenn JEDER
+ * angefragte Kalender geantwortet hat, bedeutet "kein Event mit dieser id" auch wirklich "Termin
+ * geloescht". Siehe [ICalendarUseCase.getCalendarEventsWithStatus].
+ */
+data class CalendarFetchOutcome(
+    val events: List<CalendarEvent>,
+    val requestedCalendars: Int,
+    val failedCalendars: Int
+) {
+    val isComplete: Boolean get() = failedCalendars == 0
+}
+
+/**
  * Interface für Calendar UseCase Operations
  * 
  * TESTING IMPROVEMENT: Interface ermöglicht Mock-Implementierungen
@@ -107,6 +122,32 @@ interface ICalendarUseCase {
         calendarIds: Set<String>,
         forceRefresh: Boolean = false
     ): Result<List<CalendarEvent>>
+
+    /**
+     * Wie [getCalendarEventsWithCache], liefert aber zusaetzlich, WIE VOLLSTAENDIG das Ergebnis ist.
+     *
+     * WARUM ES DIESE ZWEITE FASSUNG BRAUCHT (gleiche Ueberlegung wie
+     * `DimScheduleUseCase.previewTimelineWithStatus()`): Ein Teilerfolg - mindestens ein Kalender
+     * geladen, mindestens einer gescheitert - bleibt bewusst `Result.success` (siehe
+     * `resolveCalendarAuthorizationOutcome`: ein einzelner kaputter Kalender darf nicht die ganze
+     * Anmeldung in Frage stellen). Fuer die ANZEIGE ist das richtig.
+     *
+     * Fuer jeden Konsumenten, der aus dem Fehlen eines Events auf "Termin geloescht" schliesst, ist
+     * es toedlich: `AlarmUseCase.syncAlarms()` loescht im Delta-Sync jeden Alarm, dessen eventId
+     * nicht in der uebergebenen Liste steht, und `BootReceiver` loescht jeden Alarm ohne Treffer in
+     * der Event-Map. Faellt von zwei ausgewaehlten Kalendern der Dienstplan-Feed aus, waehrend der
+     * private Kalender antwortet, sind "dieses Event gibt es nicht mehr" und "dieser Kalender hat
+     * gerade nicht geantwortet" auf der reinen Liste NICHT mehr unterscheidbar - alle Schicht-Wecker
+     * werden geloescht, im Repository, im AlarmManager und im Direct-Boot-Spiegel.
+     *
+     * Loeschende Konsumenten muessen deshalb ueber diese Fassung gehen und bei
+     * [CalendarFetchOutcome.isComplete] == false auf das Loeschen verzichten (lieber ein veralteter
+     * Wecker als gar keiner).
+     */
+    suspend fun getCalendarEventsWithStatus(
+        calendarIds: Set<String>,
+        forceRefresh: Boolean = false
+    ): Result<CalendarFetchOutcome>
     
     /**
      * Invalidiert Cache für spezifische Kalender

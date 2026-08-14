@@ -16,7 +16,6 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
@@ -85,7 +84,7 @@ object UnusedAppRestrictionsHelper {
 
     /** Hat der Nutzer diesen Onboarding-Schritt bereits uebersprungen? Persistiert. */
     suspend fun isDismissed(context: Context): Boolean =
-        mainDataStore(context).data.first()[KEY_DISMISSED] ?: false
+        mainDataStore(context).readOrEmpty(LogTags.UNUSED_APP_RESTRICTIONS, "Unused-App-Merker")[KEY_DISMISSED] ?: false
 
     suspend fun setDismissed(context: Context) {
         mainDataStore(context).edit { it[KEY_DISMISSED] = true }

@@ -312,8 +312,18 @@ class CalendarViewModel @Inject constructor(
                             initialPageSize = 10 // LAZY LOADING: Load only 10 events initially
                         )
                     } else {
+                        // RACE-GUARD: Auch das Abwaehlen ALLER Kalender ist ein Ereignis, das
+                        // laufende Ladevorgaenge ueberholt - es muss deshalb genauso eine neue
+                        // Generation ziehen wie ein neuer Ladevorgang. Ohne das bestand ein noch
+                        // laufender Lauf (Netz, Sekunden) beide Staleness-Pruefungen, schrieb nach
+                        // dem Leeren seine Events zurueck in UI-State und CalendarStateHolder und
+                        // legte ueber syncAlarms() Wecker aus den Terminen genau der Kalender an,
+                        // die der Nutzer soeben abgewaehlt hatte - waehrend die Oberflaeche
+                        // korrekt "kein Kalender ausgewaehlt" zeigte.
+                        eventLoadGeneration.incrementAndGet()
+
                         // Clear events und reset pagination wenn keine Kalender ausgewählt
-                        updateLocalState { 
+                        updateLocalState {
                             it.copy(
                                 events = emptyList(),
                                 eventOffset = 0,
@@ -728,10 +738,64 @@ class CalendarViewModel @Inject constructor(
                 calendarStateHolder.updateEvents(finalSortedEvents)
                 
                 // 🚨 CRITICAL FIX: Automatically create alarms from recognized shifts!
+                //
+                // ABER NIEMALS AUF EINER UNVOLLSTAENDIGEN LISTE - siehe
+                // [isEventListCompleteForAlarmSync]. Die ANZEIGE darf ein Praefix sein, die
+                // Grundlage einer Loeschentscheidung nicht.
                 if (finalSortedEvents.isNotEmpty()) {
                     // DEBUGGING: Log current state before alarm creation
                     logCurrentStateForDebugging(finalSortedEvents)
-                    createAlarmsFromLoadedEvents(finalSortedEvents)
+
+                    val eventsForAlarmSync = if (
+                        isEventListCompleteForAlarmSync(
+                            loadedEventCount = finalSortedEvents.size,
+                            totalEventCount = totalEventCount,
+                            failedCalendars = failedCalendars,
+                            loadAll = loadAll
+                        )
+                    ) {
+                        finalSortedEvents
+                    } else {
+                        // Die vollstaendige Liste nachfordern, statt den Sync einfach ausfallen zu
+                        // lassen: "App geoeffnet -> Wecker sind aktuell" ist eine tragende
+                        // Zusicherung dieser App. Das kostet praktisch nichts, weil
+                        // getCalendarEventsLazy() intern ohnehin den kompletten Bestand geholt und
+                        // erst danach geschnitten hat - dieser Abruf trifft den Cache
+                        // (forceRefresh = false).
+                        Logger.d(
+                            LogTags.CALENDAR,
+                            "Angezeigte Liste ist ein Praefix (${finalSortedEvents.size}/$totalEventCount, " +
+                                "$failedCalendars Kalender fehlgeschlagen) - vollstaendige Liste fuer den Alarm-Sync nachfordern"
+                        )
+                        val completeFetch = calendarUseCase
+                            .getCalendarEventsWithStatus(calendarIds = selectedIds, forceRefresh = false)
+                            .getOrNull()
+
+                        if (completeFetch != null && completeFetch.isComplete && completeFetch.events.isNotEmpty()) {
+                            completeFetch.events
+                        } else {
+                            null
+                        }
+                    }
+
+                    // RACE-GUARD erneut: das Nachfordern oben ist ein suspend-Punkt, in dem ein
+                    // neuerer Ladevorgang gestartet sein kann. Dessen Events sind die aktuellere
+                    // Wahrheit; mit den alten zu synchronisieren hiesse, seine Ergebnisse zu
+                    // ueberschreiben - inklusive Loeschungen.
+                    when {
+                        eventsForAlarmSync == null -> Logger.w(
+                            LogTags.CALENDAR,
+                            "Alarm-Sync uebersprungen: keine nachweislich vollstaendige Eventliste " +
+                                "(fail-safe, bestehende Alarme bleiben)"
+                        )
+
+                        myGeneration != eventLoadGeneration.get() -> Logger.d(
+                            LogTags.CALENDAR,
+                            "Alarm-Sync uebersprungen: Ladevorgang $myGeneration inzwischen ueberholt"
+                        )
+
+                        else -> createAlarmsFromLoadedEvents(eventsForAlarmSync)
+                    }
                 }
                 
                 if (forceRefresh) {
@@ -906,7 +970,16 @@ class CalendarViewModel @Inject constructor(
                     totalEvents = eventPage.totalEvents
                 )
 
-                updateLocalState {
+                // updateLocalStateImmediate, NICHT updateLocalState: der gebatchte Pfad legt das
+                // Ergebnis nur in pendingStateUpdate und plant einen Job 16-33 ms spaeter. Jeder
+                // dazwischenkommende updateLocalStateImmediate-Aufruf (z. B. der Start eines
+                // "Aktualisieren") cancelt diesen Job und verwirft das Pending ERSATZLOS. Genau
+                // daran haengt hier der einzige Ruecksetzpfad von isLoadingMoreEvents im
+                // Erfolgsfall - die Wache am Anfang von loadMoreEvents() haette danach jedes
+                // weitere Nachladen fuer die Lebensdauer des ViewModels blockiert (Dauer-Spinner).
+                // Die beiden anderen Ruecksetzstellen benutzen aus demselben Grund bereits
+                // updateLocalStateImmediate.
+                updateLocalStateImmediate {
                     it.copy(
                         isLoadingMoreEvents = false,
                         events = merged.events,
@@ -921,7 +994,9 @@ class CalendarViewModel @Inject constructor(
 
                 Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} union-prefix events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, total: ${merged.events.size}/${eventPage.totalEvents}")
             }.onFailure { error ->
-                updateLocalState {
+                // Ebenfalls immediate - gleiche Begruendung wie im Erfolgszweig: ein verworfener
+                // Batch liesse isLoadingMoreEvents dauerhaft auf true stehen.
+                updateLocalStateImmediate {
                     it.copy(
                         isLoadingMoreEvents = false,
                         error = errorHandler.getErrorMessage(error)
@@ -1171,6 +1246,40 @@ class CalendarViewModel @Inject constructor(
                 everythingFailed = everythingFailed,
                 authStillValid = !everythingFailed
             )
+        }
+
+        /**
+         * PURE, TESTBAR: Darf die geladene Eventliste in die Alarm-Pipeline
+         * ([AlarmUseCase.syncAlarms]) gegeben werden?
+         *
+         * WARUM DAS NOETIG IST: Der Vordergrund-Ladevorgang laeuft im Normalfall LAZY - pro
+         * Kalender nur die ersten [initialPageSize] (10) Events, waehrend `totalEventCount` den
+         * vollen 14-Tage-Bestand mitzaehlt. Genau diese abgeschnittene Liste ging bis hierher
+         * unveraendert an syncAlarms(), und dessen Delta-Sync loescht JEDEN bestehenden Alarm,
+         * dessen eventId in der uebergebenen Liste fehlt - er kann "Termin geloescht" nicht von
+         * "Termin lag hinter dem 10er-Praefix" unterscheiden. Bei mehr als zehn Schichten in 14
+         * Tagen (fuer einen Schichtplan der Normalfall) loeschte damit JEDES App-Oeffnen die
+         * spaetesten Wecker, samt "Schicht entfaellt"-Notification, bis die naechste 6h-Wartung
+         * sie wieder anlegte.
+         *
+         * Zweiter Fall, gleiche Fehlerklasse: hat auch nur EIN Kalender nicht geantwortet, fehlen
+         * dessen Events - und der Delta-Sync liest das als "alle diese Termine sind weg".
+         *
+         * Regel deshalb: synchronisiert wird NUR auf einer nachweislich vollstaendigen Liste.
+         * Fehlt die Vollstaendigkeit, ist das kein Grund zu loeschen - die 6h-Wartung, der
+         * Pre-Alarm-Refresh und ein "Aktualisieren" mit vollem Abruf holen das nach (lieber ein
+         * veralteter Wecker als gar keiner).
+         */
+        internal fun isEventListCompleteForAlarmSync(
+            loadedEventCount: Int,
+            totalEventCount: Int,
+            failedCalendars: Int,
+            loadAll: Boolean
+        ): Boolean {
+            if (failedCalendars > 0) return false
+            // Beim vollen Abruf gibt es kein Praefix - die geladene Liste IST der Bestand.
+            if (loadAll) return true
+            return loadedEventCount >= totalEventCount
         }
 
         /**

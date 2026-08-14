@@ -654,16 +654,38 @@ class BootReceiver : BroadcastReceiver() {
             // Token noch nicht bereit / StateFlow noch nicht geladen" der Normalfall - dann duerfen
             // gespeicherte Alarme NIEMALS geloescht, sondern muessen unveraendert wiederhergestellt
             // werden (lieber ein veralteter Wecker als gar keiner).
+            //
+            // ...UND NUR BEI VOLLSTAENDIGEM ABRUF. `isSuccess` allein hielt diese Zusicherung
+            // NICHT: ein Teilerfolg (mindestens ein Kalender geladen, mindestens einer
+            // gescheitert) ist bewusst `Result.success` mit den Events der ueberlebenden
+            // Kalender - fuer die Anzeige richtig, hier toedlich. Faellt von zwei ausgewaehlten
+            // Kalendern ausgerechnet der Dienstplan-Feed aus (Timeout, transienter 5xx, neu
+            // angelegter Feed mit neuer id), waehrend der private Kalender antwortet, findet
+            // KEIN Schicht-Alarm mehr seinen Treffer in currentEventMap - und jeder einzelne
+            // wird unten als "Event aus dem Kalender geloescht" entfernt, ohne Neuanlage.
+            // Genau nach einem Boot ist ein halb gescheiterter Abruf der Normalfall.
+            // Deshalb entscheidet [CalendarFetchOutcome.isComplete], nicht isSuccess.
             val eventsResult = if (selectedCalendars.isNotEmpty()) {
-                calendarUseCase.getCalendarEventsWithCache(
+                calendarUseCase.getCalendarEventsWithStatus(
                     calendarIds = selectedCalendars,
                     forceRefresh = false
                 )
             } else {
                 null
             }
-            val currentEvents = eventsResult?.getOrNull() ?: emptyList()
-            val validationPossible = eventsResult?.isSuccess == true && currentEvents.isNotEmpty()
+            val fetchOutcome = eventsResult?.getOrNull()
+            val currentEvents = fetchOutcome?.events ?: emptyList()
+            val fetchIncomplete = fetchOutcome != null && !fetchOutcome.isComplete
+            val validationPossible = fetchOutcome?.isComplete == true && currentEvents.isNotEmpty()
+
+            if (fetchIncomplete) {
+                Logger.w(
+                    LogTags.MAINTENANCE_L4,
+                    "⚠️ LEVEL 4: ${fetchOutcome.failedCalendars}/${fetchOutcome.requestedCalendars} " +
+                        "Kalender nicht abrufbar - Validierung uebersprungen, Alarme werden " +
+                        "unveraendert wiederhergestellt (fail-safe)"
+                )
+            }
 
             Logger.d(
                 LogTags.MAINTENANCE_L4,

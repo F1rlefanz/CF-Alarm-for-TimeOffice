@@ -135,10 +135,56 @@ class NavigationViewModelTest {
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = false
         )
-        // Kein Zweig trifft (needsUnusedAppRestrictionsPrompt/needsTimeOfficeHealthPrompt sind
-        // hier bewusst false, weil hasBatteryExemption=false ist - siehe MainScreen-Kurzschluss) ->
+        // Kein Zweig trifft, weil hier auch die beiden nachfolgenden Gates nichts wollen ->
         // Zustand bleibt unveraendert MainContent(HOME).
         assertEquals(NavigationState.MainContent(MainTab.HOME), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Akku-Prompt dismissed OHNE Ausnahme laesst die nachfolgenden Gates trotzdem feuern`() {
+        val vm = newViewModel()
+        vm.handleAuthenticationSuccess(
+            hasSelectedCalendars = true,
+            hasBatteryExemption = false,   // Ausnahme NICHT erteilt
+            batteryPromptDismissed = true, // ...aber mit "Spaeter" erledigt
+            needsUnusedAppRestrictionsPrompt = true,
+            needsTimeOfficeHealthPrompt = false
+        )
+        // REGRESSION: Zweig 3 und 4 verlangten frueher beide hasBatteryExemption. Wer "Spaeter"
+        // tippte, fiel damit aus JEDEM Zweig heraus (Zweig 2 durch das Dismissed-Flag, Zweig 3/4
+        // durch die fehlende Ausnahme) - der Schritt "App bei Nichtnutzung pausieren" wurde ihm
+        // NIE angeboten, obwohl genau dieser Android-Schalter die App am 20.07.2026 nachweislich
+        // force-gestoppt und dabei alle AlarmManager-Alarme geloescht hat. Das Akku-Gate
+        // abzulehnen ist eine Aussage ueber die Akku-Ausnahme, keine ueber die unabhaengigen
+        // Gates dahinter.
+        assertEquals(NavigationState.UnusedAppRestrictions(MainTab.HOME), vm.navigationState.value)
+    }
+
+    @Test
+    fun `Akku-Prompt dismissed OHNE Ausnahme laesst auch das TimeOffice-Gate feuern`() {
+        val vm = newViewModel()
+        vm.handleAuthenticationSuccess(
+            hasSelectedCalendars = true,
+            hasBatteryExemption = false,
+            batteryPromptDismissed = true,
+            needsUnusedAppRestrictionsPrompt = false,
+            needsTimeOfficeHealthPrompt = true
+        )
+        assertEquals(NavigationState.TimeOfficeHealthCheck(MainTab.HOME), vm.navigationState.value)
+    }
+
+    @Test
+    fun `offenes Akku-Gate hat weiterhin Vorrang vor den nachfolgenden Gates`() {
+        val vm = newViewModel()
+        vm.handleAuthenticationSuccess(
+            hasSelectedCalendars = true,
+            hasBatteryExemption = false,
+            batteryPromptDismissed = false, // noch NICHT erledigt
+            needsUnusedAppRestrictionsPrompt = true,
+            needsTimeOfficeHealthPrompt = true
+        )
+        // Die Kette bleibt eine Kette: solange das Akku-Gate offen ist, kommt es zuerst.
+        assertEquals(NavigationState.BatteryExemption(MainTab.HOME), vm.navigationState.value)
     }
 
     @Test
@@ -215,19 +261,22 @@ class NavigationViewModelTest {
     }
 
     @Test
-    fun `needsTimeOfficeHealthPrompt allein ohne Akku-Ausnahme loest nichts aus`() {
+    fun `TimeOffice-Gate feuert nicht, solange das Akku-Gate noch offen ist`() {
         val vm = newViewModel()
-        // hasBatteryExemption=false widerspricht dem, was MainScreen fuer diese Kombination
-        // je liefern wuerde, dient hier aber als Absicherung, dass der TimeOffice-Zweig
-        // wirklich hasBatteryExemption explizit prueft statt sich blind auf das Flag zu verlassen.
+        // Diese Pruefung hielt frueher das GEGENTEIL fest ("loest nichts aus" bei
+        // batteryPromptDismissed = true) und schrieb damit einen Fehler als gewollt fest. Ihre
+        // Begruendung war nachweislich falsch: MainScreen berechnete needsTimeOfficeHealthPrompt
+        // nie mit einer Akku-Bedingung, lieferte genau diese Kombination also sehr wohl - und
+        // dann fiel der Nutzer aus jedem Zweig heraus. Richtig ist die Kette: nur ein OFFENES
+        // Akku-Gate hat Vorrang, ein mit "Spaeter" erledigtes nicht (siehe die Tests oben).
         vm.handleAuthenticationSuccess(
             hasSelectedCalendars = true,
             hasBatteryExemption = false,
-            batteryPromptDismissed = true,
+            batteryPromptDismissed = false,
             needsUnusedAppRestrictionsPrompt = false,
             needsTimeOfficeHealthPrompt = true
         )
-        assertEquals(NavigationState.MainContent(MainTab.HOME), vm.navigationState.value)
+        assertEquals(NavigationState.BatteryExemption(MainTab.HOME), vm.navigationState.value)
     }
 
     @Test

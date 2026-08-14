@@ -175,9 +175,13 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
   erzeugt hatte, und jeder Fix schafft neue Prüffläche. Aussagekräftig ist erst eine Runde über
   **unverändertem** Code. In v1.24.0 wurde das erstmals sauber getrennt: die drei Dimensionen über
   dem Sitzungs-Diff fanden NICHTS Bestätigtes (die Aufräumarbeit hat keine Regression eingebaut),
-  die drei über unverändertem Code fanden 4 echte Befunde von 13 Rohbefunden. **Die
-  Abbruchbedingung ist damit weiterhin NICHT erfüllt** — die nächste Runde muss wieder über
-  unverändertem Code laufen.
+  die drei über unverändertem Code fanden 4 echte Befunde von 13 Rohbefunden. Die Runde vom
+  14.08.2026 lief wieder über unverändertem Code (vier Dimensionen: Kalender-Datenfluss,
+  Auth/Token-Rotation, Wartungskette/Boot, Navigation) und fand **9 bestätigte von 10
+  Rohbefunden** — deutlich mehr als zuvor. **Die Abbruchbedingung ist damit weiterhin NICHT
+  erfüllt, der Zähler steht bei null**; die nächste Runde muss erneut über unverändertem Code
+  laufen. Und: **die Rohbefund-/Bestätigungszahlen gehören ins Protokoll** — ohne sie ist eine
+  Runde nicht bewertbar und zählt nicht mit, egal wie gut sie war.
 - **Refutation-Voting ist kein Orakel — in beide Richtungen.** In derselben Runde wurden 9 von 13
   Befunden widerlegt, darunter drei sehr plausibel klingende (angeblich `deleteAlarm()` vor
   `cancelSystemAlarm()` im Delta-Sync; ein Alarm, der gespeichert, aber nie armiert wird; ein

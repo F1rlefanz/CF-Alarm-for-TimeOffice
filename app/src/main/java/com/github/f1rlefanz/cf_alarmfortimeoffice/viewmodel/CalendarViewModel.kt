@@ -633,8 +633,10 @@ class CalendarViewModel @Inject constructor(
                                 )
                             }
                             
-                            // CRITICAL: Update CalendarStateHolder with progressive events
-                            calendarStateHolder.updateEvents(sortedEvents)
+                            // CRITICAL: Update CalendarStateHolder with progressive events.
+                            // Ein Zwischenstand ist per Definition unvollstaendig - es fehlen
+                            // mindestens die noch nicht verarbeiteten Kalender.
+                            calendarStateHolder.updateEvents(sortedEvents, complete = false)
                             
                     Logger.d(LogTags.CALENDAR, "Progressive loading: ${events.size} events loaded, total: $totalEventCount")
                         }.onFailure { error ->
@@ -734,9 +736,19 @@ class CalendarViewModel @Inject constructor(
                     )
                 }
                 
+                // Vollstaendigkeit EINMAL bestimmen - sie entscheidet ZWEI Dinge: was der
+                // CalendarStateHolder als geteilte Wahrheit ausweist (ShiftViewModel gibt die
+                // Liste an syncAlarms weiter!) und ob hier synchronisiert werden darf.
+                val displayedListIsComplete = isEventListCompleteForAlarmSync(
+                    loadedEventCount = finalSortedEvents.size,
+                    totalEventCount = totalEventCount,
+                    failedCalendars = failedCalendars,
+                    loadAll = loadAll
+                )
+
                 // CRITICAL: Update CalendarStateHolder with final events
-                calendarStateHolder.updateEvents(finalSortedEvents)
-                
+                calendarStateHolder.updateEvents(finalSortedEvents, complete = displayedListIsComplete)
+
                 // 🚨 CRITICAL FIX: Automatically create alarms from recognized shifts!
                 //
                 // ABER NIEMALS AUF EINER UNVOLLSTAENDIGEN LISTE - siehe
@@ -746,14 +758,7 @@ class CalendarViewModel @Inject constructor(
                     // DEBUGGING: Log current state before alarm creation
                     logCurrentStateForDebugging(finalSortedEvents)
 
-                    val eventsForAlarmSync = if (
-                        isEventListCompleteForAlarmSync(
-                            loadedEventCount = finalSortedEvents.size,
-                            totalEventCount = totalEventCount,
-                            failedCalendars = failedCalendars,
-                            loadAll = loadAll
-                        )
-                    ) {
+                    val eventsForAlarmSync = if (displayedListIsComplete) {
                         finalSortedEvents
                     } else {
                         // Die vollstaendige Liste nachfordern, statt den Sync einfach ausfallen zu
@@ -794,7 +799,15 @@ class CalendarViewModel @Inject constructor(
                             "Alarm-Sync uebersprungen: Ladevorgang $myGeneration inzwischen ueberholt"
                         )
 
-                        else -> createAlarmsFromLoadedEvents(eventsForAlarmSync)
+                        else -> {
+                            // Erst HIER darf der Holder als vollstaendig gelten: vorher war der
+                            // Race-Guard nicht geprueft. Bei einem nachgeforderten Bestand ist das
+                            // zugleich die bessere geteilte Wahrheit - ShiftViewModel gibt sie an
+                            // syncAlarms() weiter und braucht deshalb den ganzen Bestand, nicht
+                            // das Anzeige-Praefix.
+                            calendarStateHolder.updateEvents(eventsForAlarmSync, complete = true)
+                            createAlarmsFromLoadedEvents(eventsForAlarmSync)
+                        }
                     }
                 }
                 
@@ -989,8 +1002,13 @@ class CalendarViewModel @Inject constructor(
                     )
                 }
 
-                // CRITICAL: Update CalendarStateHolder when loading more events
-                calendarStateHolder.updateEvents(merged.events)
+                // CRITICAL: Update CalendarStateHolder when loading more events.
+                // Nachladen liefert ein groesseres PRAEFIX der Vereinigung, nicht zwangslaeufig
+                // den ganzen Bestand - vollstaendig nur, wenn nichts mehr aussteht.
+                calendarStateHolder.updateEvents(
+                    merged.events,
+                    complete = !merged.hasMoreEvents && merged.events.size >= eventPage.totalEvents
+                )
 
                 Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} union-prefix events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, total: ${merged.events.size}/${eventPage.totalEvents}")
             }.onFailure { error ->

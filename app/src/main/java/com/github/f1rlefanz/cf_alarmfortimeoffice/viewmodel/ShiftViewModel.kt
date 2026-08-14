@@ -436,11 +436,31 @@ class ShiftViewModel @Inject constructor(
                 return@launch
             }
 
-            // Get current events from CalendarStateHolder (vollstaendiger Soll-Zustand fuer den Delta-Sync)
+            // Events aus dem CalendarStateHolder - aber NUR, wenn sie nachweislich der
+            // vollstaendige Bestand sind.
+            //
+            // Der fruehere Kommentar hier nannte sie pauschal den "vollstaendigen Soll-Zustand
+            // fuer den Delta-Sync". Das stimmte nicht: CalendarViewModel legt dort im Normalfall
+            // das LAZY-PRAEFIX ab (pro Kalender die ersten 10 Events), und ein ausgefallener
+            // Kalender fehlt darin ebenfalls. syncAlarms() loescht jeden Alarm, dessen eventId in
+            // der uebergebenen Liste fehlt - jede Aenderung an der Schicht-Konfiguration hat damit
+            // bei mehr als zehn Terminen in 14 Tagen die spaetesten Wecker entfernt.
             val currentEvents = calendarStateHolder.events.value
 
             if (currentEvents.isEmpty()) {
                 Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: No events available for alarm sync")
+                return@launch
+            }
+
+            if (!calendarStateHolder.eventsComplete.value) {
+                // Fail-safe: lieber ein spaeter nachgezogener Wecker als ein geloeschter. Die
+                // Konfiguration ist bereits gespeichert; der naechste vollstaendige Ladevorgang
+                // (Vordergrund-Sync, 6h-Wartung, Pre-Alarm-Refresh) synchronisiert sie nach.
+                Logger.w(
+                    LogTags.ALARM,
+                    "⚠️ CONFIG-UPDATE: Eventliste ist nur ein Ausschnitt (${currentEvents.size} Events) - " +
+                        "kein Alarm-Sync, bestehende Alarme bleiben unveraendert"
+                )
                 return@launch
             }
 

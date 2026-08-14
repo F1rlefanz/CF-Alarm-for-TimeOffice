@@ -718,18 +718,37 @@ class AlarmMaintenanceService : Service() {
         // LocalDateTime, also in der Zone, die beim Abruf galt. Nach einem Zeitzonen-Wechsel waere
         // ein Cache-Treffer wertlos (dieselben falschen Wanduhr-Zeiten) - genau deshalb muss der
         // erzwungene Lauf wirklich an die API. Im Normalbetrieb bleibt es beim Cache.
-        val eventsResult = calendarUseCase.getCalendarEventsWithCache(
+        val eventsResult = calendarUseCase.getCalendarEventsWithStatus(
             calendarIds = selectedCalendars,
             forceRefresh = forceSync
         )
-        
+
         if (eventsResult.isFailure) {
             Logger.e(LogTags.MAINTENANCE, "Event loading failed", eventsResult.exceptionOrNull())
             return
         }
-        
-        val events = eventsResult.getOrThrow()
+
+        val fetchOutcome = eventsResult.getOrThrow()
+        val events = fetchOutcome.events
         Logger.d(LogTags.MAINTENANCE, "Loaded ${events.size} events")
+
+        // FAIL-SAFE, zweiter Teil: NICHT synchronisieren, wenn nur ein TEIL der Kalender
+        // geantwortet hat. Ein Teilerfolg ist bewusst Result.success (siehe
+        // getCalendarEventsWithStatus) - aber der Delta-Sync unten loescht jeden Alarm, dessen
+        // eventId in der uebergebenen Liste fehlt. Ist der Dienstplan-Feed gerade der
+        // ausgefallene Kalender, waeren das ALLE Schicht-Wecker, und die Loeschung trifft
+        // Repository, AlarmManager und Direct-Boot-Spiegel gleichzeitig. Dieselbe Ueberlegung
+        // wie bei der Leerlisten-Sperre direkt darunter und bei BootReceiver: lieber ein
+        // veralteter Wecker als gar keiner. Auch hier bewusst KEIN Zeitstempel - der naechste
+        // Lauf soll es sofort erneut versuchen.
+        if (!fetchOutcome.isComplete) {
+            Logger.w(
+                LogTags.MAINTENANCE,
+                "${fetchOutcome.failedCalendars}/${fetchOutcome.requestedCalendars} Kalender nicht " +
+                    "abrufbar - Sync uebersprungen (fail-safe, bestehende Alarme bleiben)"
+            )
+            return
+        }
 
         // FAIL-SAFE: leere Eventliste NICHT synchronisieren. syncAlarms() versteht "keine Events"
         // als "alle Alarme loeschen" - und ein gescheiterter Abruf kann als success(emptyList())

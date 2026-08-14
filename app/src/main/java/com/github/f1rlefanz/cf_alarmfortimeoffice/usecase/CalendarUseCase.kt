@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.CalendarFetchOutcome
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.CalendarPage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.EventPage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
@@ -182,12 +183,23 @@ class CalendarUseCase @Inject constructor(
      * 
      * 🔧 OPTION 4 FIX: Defensive token validation before API calls
      */
+    /**
+     * Unveraenderter Vertrag (Liste oder Fehler) - fuer alle Konsumenten, die nur ANZEIGEN.
+     * Wer aus dem Fehlen eines Events auf "Termin geloescht" schliesst, MUSS
+     * [getCalendarEventsWithStatus] nehmen: siehe die Begruendung dort.
+     */
     override suspend fun getCalendarEventsWithCache(
         calendarIds: Set<String>,
         forceRefresh: Boolean
-    ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsWithCache") {
-            
+    ): Result<List<CalendarEvent>> =
+        getCalendarEventsWithStatus(calendarIds, forceRefresh).map { it.events }
+
+    override suspend fun getCalendarEventsWithStatus(
+        calendarIds: Set<String>,
+        forceRefresh: Boolean
+    ): Result<CalendarFetchOutcome> = withContext(Dispatchers.IO) {
+        SafeExecutor.safeExecute("CalendarUseCase.getCalendarEventsWithStatus") {
+
             // ✅ PHASE 4: Modern token validation with OAuth2TokenManager
             val accessToken = if (oauth2TokenManager != null) {
                 Logger.business(LogTags.CALENDAR, "🔐 MODERNIZED: Validating OAuth2 token before events access...")
@@ -231,7 +243,7 @@ class CalendarUseCase @Inject constructor(
             
             if (calendarIds.isEmpty()) {
                 Logger.w(LogTags.CALENDAR, "No calendar IDs provided")
-                emptyList<CalendarEvent>()
+                CalendarFetchOutcome(emptyList(), requestedCalendars = 0, failedCalendars = 0)
             } else {
                 if (forceRefresh) {
                     Logger.i(LogTags.CALENDAR, "Force refresh requested - loading events from API for ${calendarIds.size} calendars")
@@ -326,7 +338,11 @@ class CalendarUseCase @Inject constructor(
                     "Loaded total ${sortedEvents.size} events from ${calendarIds.size} calendars$logSuffix"
                 )
 
-                sortedEvents
+                CalendarFetchOutcome(
+                    events = sortedEvents,
+                    requestedCalendars = calendarIds.size,
+                    failedCalendars = failedCount
+                )
             }
         }
     }

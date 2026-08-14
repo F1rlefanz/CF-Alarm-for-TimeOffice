@@ -121,10 +121,28 @@ class BackgroundServiceManager @Inject constructor(
             Logger.business(LogTags.MAINTENANCE, "Master-Pause aktiv - Initialisierung uebersprungen")
             return
         }
-        // .value statt suspend-Read: Der StateFlow des Repositories haelt die Auswahl bereits
-        // im Speicher (aus dem DataStore gespiegelt), und der Auth-Callback ist kein Coroutine-
-        // Kontext.
-        if (calendarSelectionRepository.selectedCalendarIds.value.isEmpty()) {
+        // DataStore-Read statt .value: Der StateFlow startet auf emptySet() und wird erst durch
+        // den in init{} gestarteten, NICHT abgewarteten Collector befuellt - "noch nicht geladen"
+        // sah damit aus wie "keine Kalender ausgewaehlt". Genau der Fall, den diese Funktion
+        // eigentlich bedienen soll (Re-Autorisierung in einem frischen Prozess), ist der, in dem
+        // der Collector am wahrscheinlichsten noch nicht durch ist: der Sofort-Sync fiel aus und
+        // das Log behauptete "Onboarding laeuft". Vier andere Stellen (BootReceiver x2,
+        // AlarmMaintenanceService, CalendarPreAlarmRefreshWorker) wurden aus demselben Grund
+        // bereits umgestellt. Die frueher hier stehende Begruendung ("der Auth-Callback ist kein
+        // Coroutine-Kontext") war ueberholt: diese Funktion IST suspend und liest eine Zeile
+        // darueber bereits suspendierend.
+        val selectedCalendars = calendarSelectionRepository.getCurrentSelectedCalendarIds()
+            .getOrElse { error ->
+                // Nicht lesbar ist NICHT "nichts ausgewaehlt" - im Zweifel den Wartungslauf
+                // starten (er prueft die Auswahl selbst erneut und bricht sauber ab).
+                Logger.w(
+                    LogTags.MAINTENANCE,
+                    "Kalenderauswahl nicht lesbar - Wartungslauf wird trotzdem angestossen",
+                    error
+                )
+                null
+            }
+        if (selectedCalendars != null && selectedCalendars.isEmpty()) {
             Logger.business(
                 LogTags.MAINTENANCE,
                 "⏭️ Kein Wartungslauf: noch keine Kalender ausgewaehlt (Onboarding laeuft)"

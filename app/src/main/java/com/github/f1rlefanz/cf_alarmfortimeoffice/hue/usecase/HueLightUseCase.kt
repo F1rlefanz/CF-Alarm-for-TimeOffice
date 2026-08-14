@@ -124,10 +124,14 @@ class HueLightUseCase @Inject constructor(
                     emptyList()
                 }
                 
-                // Return combined result
+                // Return combined result. Der Teilausfall wird MITGEFUEHRT, nicht nur geloggt:
+                // fuer den Ziel-Abgleich ist "Gruppen nicht abrufbar" etwas voellig anderes als
+                // "Bridge hat keine Gruppen" - siehe LightTargets.
                 val lightTargets = LightTargets(
                     lights = lights,
-                    groups = groups
+                    groups = groups,
+                    lightsFailed = lightsResult.isFailure,
+                    groupsFailed = groupsResult.isFailure
                 )
                 
                 Logger.i(LogTags.HUE_USECASE, "Retrieved ${lights.size} lights and ${groups.size} groups")

@@ -16,7 +16,6 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.flow.first
 
 /**
  * Hilt EntryPoint that lets the plain [BatteryOptimizationHelper] object reach the
@@ -245,7 +244,7 @@ object BatteryOptimizationHelper {
      */
     suspend fun shouldNavigateToOemWarningScreen(context: Context, oemType: OEMType): Boolean {
         if (!shouldShowOEMWarning(oemType)) return false
-        return mainDataStore(context).data.first()[oemHintKey(oemType)] != true
+        return mainDataStore(context).readOrEmpty(LogTags.BATTERY, "OEM-Hinweis-Merker")[oemHintKey(oemType)] != true
     }
 
     /** Markiert den OEM-Warnscreen fuer diesen Typ als gezeigt (einmalig, dauerhaft). */
@@ -259,7 +258,7 @@ object BatteryOptimizationHelper {
      * App-Neustart erneut zeigte) - gleiches Muster wie [UnusedAppRestrictionsHelper].
      */
     suspend fun isBatteryPromptDismissed(context: Context): Boolean =
-        mainDataStore(context).data.first()[KEY_BATTERY_PROMPT_DISMISSED] ?: false
+        mainDataStore(context).readOrEmpty(LogTags.BATTERY, "Akku-Prompt-Merker")[KEY_BATTERY_PROMPT_DISMISSED] ?: false
 
     suspend fun setBatteryPromptDismissed(context: Context) {
         mainDataStore(context).edit { it[KEY_BATTERY_PROMPT_DISMISSED] = true }

@@ -166,9 +166,13 @@ fun MainScreen(
             delay(100) // Minimal delay for UI stability
             val hasBatteryExemption = BatteryOptimizationHelper.isExempted(context)
             val batteryPromptDismissed = BatteryOptimizationHelper.isBatteryPromptDismissed(context)
-            // Kurzschluss: solange die Akku-Ausnahme noch aussteht, ist der Unused-App-Check
-            // ohnehin irrelevant (Battery-Gate kommt zuerst) - erspart den unnoetigen Async-Call.
-            val needsUnusedAppRestrictionsPrompt = hasBatteryExemption &&
+            // Kurzschluss nur, solange das Akku-Gate noch OFFEN ist - dann kommt es zuerst und der
+            // Unused-App-Check waere ein unnoetiger Async-Call. Erledigt ist es aber auch dann,
+            // wenn der Nutzer "Spaeter" getippt hat: `hasBatteryExemption` allein als Bedingung
+            // liess den Unused-App-Schritt fuer jeden Nutzer, der die Akku-Ausnahme abgelehnt hat,
+            // dauerhaft ausfallen (siehe handleAuthenticationSuccess).
+            val batteryGateResolved = hasBatteryExemption || batteryPromptDismissed
+            val needsUnusedAppRestrictionsPrompt = batteryGateResolved &&
                 UnusedAppRestrictionsHelper.isRestricted(context) &&
                 !UnusedAppRestrictionsHelper.isDismissed(context)
             // Gleiche Pruefung wie proceedPastGates() (siehe oben) - dort nur erreichbar,

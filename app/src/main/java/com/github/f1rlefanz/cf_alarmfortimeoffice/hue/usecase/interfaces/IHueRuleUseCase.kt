@@ -92,7 +92,59 @@ interface IHueRuleUseCase {
      * lights/color, or — for a sunrise rule — runs a shortened, observable warm→cool ramp.
      */
     suspend fun executeRuleNow(rule: HueSchedule): Result<RuleExecutionResult>
+
+    /**
+     * Gleicht die Ziele aller gespeicherten Regeln gegen die Lampen/Gruppen von [targets] ab:
+     * schreibt bridge-lokale IDs, die auf DIESER Bridge nicht mehr gelten, ueber den gespeicherten
+     * Zielnamen um und meldet zurueck, was sich nicht zuordnen liess.
+     *
+     * NUR MIT EINER ANTWORT DER BRIDGE AUFRUFEN. [targets] muss aus einem ERFOLGREICHEN
+     * `getAllLightTargets()` stammen - eine nicht erreichbare Bridge darf niemals dazu fuehren,
+     * dass Regeln umgeschrieben oder als "unbekannt" markiert werden.
+     *
+     * Idempotent: nach einem erfolgreichen Lauf findet der naechste alle IDs vor und schreibt
+     * nichts mehr.
+     */
+    suspend fun reconcileTargets(targets: LightTargets): Result<TargetReconcileResult>
 }
+
+/** Warum ein Regel-Ziel auf der aktuellen Bridge nicht zuzuordnen war. */
+enum class UnresolvedReason {
+    /** Kein gespeicherter Zielname - es gibt keinen Anker, an dem sich etwas wiederfinden liesse. */
+    NO_NAME,
+
+    /** Name gespeichert, aber auf dieser Bridge gibt es kein Ziel dieser Art mit diesem Namen. */
+    NOT_FOUND,
+
+    /** Mehrere Ziele tragen denselben Namen - lieber nicht zuordnen als falsch zuordnen. */
+    AMBIGUOUS
+}
+
+/**
+ * Ein Regel-Ziel, das auf der aktuellen Bridge ins Leere zeigt. Wird NICHT persistiert: es ergibt
+ * sich bei jedem Abgleich neu. Ein gespeichertes "unbekannt"-Kennzeichen wuerde veralten, sobald
+ * die richtige Bridge wieder da ist.
+ */
+data class UnresolvedRuleTarget(
+    val ruleId: String,
+    val ruleName: String,
+    val targetId: String,
+    val targetName: String?,
+    val isGroup: Boolean,
+    val reason: UnresolvedReason
+) {
+    /** Beschriftung fuer die Oberflaeche: der Name, wenn es einen gibt, sonst die rohe ID. */
+    val label: String
+        get() = targetName?.takeIf { it.isNotBlank() }
+            ?: "${if (isGroup) "Gruppe" else "Licht"} $targetId"
+}
+
+/** Ergebnis eines Ziel-Abgleichs. */
+data class TargetReconcileResult(
+    /** Anzahl der Aktionen, die eine neue, auf dieser Bridge gueltige ID bekommen haben. */
+    val remapped: Int,
+    val unresolved: List<UnresolvedRuleTarget>
+)
 
 /**
  * Result of rule execution for alarm

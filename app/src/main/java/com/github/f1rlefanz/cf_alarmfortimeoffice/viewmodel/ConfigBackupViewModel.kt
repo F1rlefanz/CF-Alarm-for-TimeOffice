@@ -98,6 +98,17 @@ class ConfigBackupViewModel @Inject constructor(
                         result = buildString {
                             append("Importiert: ${summary.shiftDefinitions} Schichtdefinitionen, ")
                             append("${summary.settingsKeys} Einstellungen, ${summary.hueKeys} Hue-Werte.")
+                            // Bridge-lokale Lampen-IDs reisen in der Datei mit und zeigen auf
+                            // einer anderen Bridge ins Leere. `null` heisst "nicht geprueft" -
+                            // das wird gesagt, nicht als "in Ordnung" ausgegeben.
+                            summary.unresolvedHueTargets?.let { unresolved ->
+                                if (unresolved > 0) {
+                                    append("\n\n$unresolved Hue-Regel-Ziel(e) gibt es auf deiner ")
+                                    append("Bridge nicht — im Hue-Bereich neu auswählen. ")
+                                    append("Was sich über den Lampennamen wiederfinden ließ, ")
+                                    append("wurde bereits zugeordnet.")
+                                }
+                            }
                             if (summary.rejectedKeys.isNotEmpty()) {
                                 append("\n\nNicht übernommen (gehört zum Gerät oder ist ein Laufzeitwert): ")
                                 append(summary.rejectedKeys.joinToString(", "))

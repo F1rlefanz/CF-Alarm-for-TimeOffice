@@ -239,16 +239,29 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
         needsUnusedAppRestrictionsPrompt: Boolean,
         needsTimeOfficeHealthPrompt: Boolean
     ) {
+        // Die Gates sind eine KETTE, und weitergehen darf sie, sobald das Akku-Gate ERLEDIGT ist -
+        // erledigt heisst: Ausnahme erteilt ODER vom Nutzer mit "Spaeter" abgelehnt.
+        //
+        // Vorher verlangten die Zweige 3 und 4 beide `hasBatteryExemption`. Wer "Spaeter" tippte
+        // (ein ausdruecklich vorgesehener, persistierter Weg), fiel damit aus JEDEM Zweig heraus:
+        // Zweig 2 war durch das Dismissed-Flag aus, Zweig 3 und 4 durch die fehlende Ausnahme -
+        // und `proceedPastGates()` erreicht diesen Nutzer nie wieder. Der Schritt "App bei
+        // Nichtnutzung pausieren" wurde ihm dadurch NIE angeboten, obwohl genau dieser
+        // Android-Schalter die App am 20.07.2026 nachweislich force-gestoppt und dabei alle
+        // AlarmManager-Alarme geloescht hat. Das Akku-Gate abzulehnen ist eine Aussage ueber die
+        // Akku-Ausnahme, keine ueber die beiden davon unabhaengigen Gates dahinter.
+        val batteryGateResolved = hasBatteryExemption || batteryPromptDismissed
+
         if (!hasSelectedCalendars && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
             navigateToCalendarSelection()
-        } else if (hasSelectedCalendars && !hasBatteryExemption && !batteryPromptDismissed && _navigationState.value.isMainContent()) {
+        } else if (hasSelectedCalendars && !batteryGateResolved && _navigationState.value.isMainContent()) {
             Logger.i(LogTags.NAVIGATION, "Auto-navigation: Calendars selected but no battery exemption")
             navigateToBatteryExemption()
-        } else if (hasSelectedCalendars && hasBatteryExemption && needsUnusedAppRestrictionsPrompt && _navigationState.value.isMainContent()) {
-            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery exempted but unused-app restrictions still active")
+        } else if (hasSelectedCalendars && batteryGateResolved && needsUnusedAppRestrictionsPrompt && _navigationState.value.isMainContent()) {
+            Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery gate resolved but unused-app restrictions still active")
             navigateToUnusedAppRestrictions()
-        } else if (hasSelectedCalendars && hasBatteryExemption && !needsUnusedAppRestrictionsPrompt && needsTimeOfficeHealthPrompt && _navigationState.value.isMainContent()) {
+        } else if (hasSelectedCalendars && batteryGateResolved && !needsUnusedAppRestrictionsPrompt && needsTimeOfficeHealthPrompt && _navigationState.value.isMainContent()) {
             // Vierter/letzter Gate-Zweig: dieselbe Pruefung, die proceedPastGates() (MainScreen)
             // beim Zurueckkehren von den vorherigen Gates ohnehin anstellt - hier zusaetzlich
             // fuer Nutzer noetig, die die drei vorherigen Gates schon VOR diesem Feature

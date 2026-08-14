@@ -17,6 +17,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -31,7 +33,16 @@ data class ImportSummary(
     val settingsKeys: Int,
     val hueKeys: Int,
     /** Schluessel aus der Datei, die der Filter abgelehnt hat - benannt statt verschwiegen. */
-    val rejectedKeys: List<String>
+    val rejectedKeys: List<String>,
+    /**
+     * Wie viele Hue-Regel-Ziele auf der GERADE VERBUNDENEN Bridge nicht zuzuordnen waren.
+     *
+     * `null` heisst NICHT "alles in Ordnung", sondern "nicht geprueft" - keine Bridge gekoppelt
+     * oder sie hat nicht geantwortet. Der Unterschied gehoert in die Rueckmeldung: ein "0
+     * unbekannt" fuer eine Pruefung, die gar nicht stattgefunden hat, waere genau die stille
+     * Erfolgsmeldung, gegen die dieser Import sonst ueberall verteidigt.
+     */
+    val unresolvedHueTargets: Int? = null
 )
 
 /**
@@ -63,7 +74,12 @@ class ConfigBackupUseCase @Inject constructor(
     // Weckzeiten - der Import waere bis zum Ablauf der Cache-Gueltigkeit wirkungslos gewesen.
     private val shiftUseCase: IShiftUseCase,
     private val dimSchedule: DimScheduleUseCase,
-    private val dndSchedule: DndScheduleUseCase
+    private val dndSchedule: DndScheduleUseCase,
+    // Nur fuer den Ziel-Abgleich der importierten Hue-Regeln (siehe
+    // reconcileImportedHueTargets). Beide werden ausschliesslich im Import benutzt und beruehren
+    // die Bridge nur, wenn sie erreichbar ist.
+    private val hueLightUseCase: IHueLightUseCase,
+    private val hueRuleUseCase: IHueRuleUseCase
 ) {
 
     private val json = Json {
@@ -170,13 +186,34 @@ class ConfigBackupUseCase @Inject constructor(
         runCatching { dndSchedule.enable() }
             .onFailure { Logger.w(LogTags.DND, "⚠️ IMPORT: DND-Kette nicht armiert", it) }
 
+        val unresolvedHueTargets = reconcileImportedHueTargets()
+
         Logger.business(
             LogTags.APP,
             "📥 IMPORT: $definitions Schichtdefinitionen, $settingsWritten Einstellungen, " +
                 "$hueWritten Hue-Werte" +
                 if (rejected.isEmpty()) "" else ", ${rejected.size} Schluessel abgelehnt: ${rejected.joinToString()}"
         )
-        ImportSummary(definitions, settingsWritten, hueWritten, rejected)
+        ImportSummary(definitions, settingsWritten, hueWritten, rejected, unresolvedHueTargets)
+    }
+
+    /**
+     * Die importierten Hue-Regeln tragen die LAMPEN-IDS DES QUELLGERAETS - bridge-lokale Nummern,
+     * die auf einer anderen Bridge ins Leere zeigen. Ist gerade eine Bridge erreichbar, wird das
+     * hier sofort abgeglichen (ueber den gespeicherten Zielnamen) und der Rest gezaehlt.
+     *
+     * ZUGABE, KEIN ERSATZ. Der typische Import laeuft auf einem frisch eingerichteten Geraet, BEVOR
+     * die Bridge gekoppelt ist - dann ist hier nichts zu holen, und der eigentliche Abgleich
+     * passiert spaeter beim ersten Bridge-Kontakt (`HueViewModel.reconcileRuleTargets`). Deshalb
+     * best-effort und `null` bei jedem Zweifel: ein "0 unbekannt" darf nur dastehen, wenn wirklich
+     * geprueft wurde.
+     */
+    private suspend fun reconcileImportedHueTargets(): Int? = runCatching {
+        val targets = hueLightUseCase.getAllLightTargets().getOrNull() ?: return@runCatching null
+        hueRuleUseCase.reconcileTargets(targets).getOrNull()?.unresolved?.size
+    }.getOrElse { error ->
+        Logger.w(LogTags.HUE_USECASE, "⚠️ IMPORT: Hue-Ziele nicht abgeglichen", error)
+        null
     }
 
     private suspend fun exportableValues(store: DataStore<Preferences>): Map<String, StoredValue> =

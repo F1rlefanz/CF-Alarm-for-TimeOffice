@@ -1515,6 +1515,24 @@ Wecker gekostet:**
   „complete" meldete. Dasselbe gilt für `AlarmRepository.getAllAlarms()`/`isPersistenceBlocked()`:
   eine Cancellation aus `awaitInitialLoad()` sagt nichts über den Bestand und darf nicht als
   „Persistenz gesperrt" gedeutet werden.
+- **„Kein Token vorhanden" landet als `UnknownError` im Log — und das umzubiegen wäre ein Fehler.**
+  `CalendarUseCase` wirft für alle `TokenException`-Fälle ein generisches `Exception(text)`
+  (bei `getCalendarEventsWithStatus`); `toAppError()` hat dafür keinen Zweig und klassifiziert im
+  `else` als `AppError.UnknownError` (Severity CRITICAL, Nutzertext „Ein unerwarteter Fehler ist
+  aufgetreten"). Im Log steht deshalb „❓❌ Unknown Error … Calendar events require authorization"
+  samt vollem Stacktrace auf ERROR — am Emulator im Boot-Pfad gesehen (14.08.2026), wenn der
+  `BootReceiver` läuft, bevor eine Anmeldung besteht. Für die Log-Auswertung ist das Rauschen, denn
+  Release-Logs enthalten WARN+.
+  **Die naheliegende „Korrektur" — auf `AppError.AuthenticationError` abbilden — ist trotzdem
+  falsch und darf nicht gemacht werden.** An genau diesem Typ hängt
+  `CalendarUseCase.invalidateTokenIfRejectedByGoogle()`, und der ist bewusst NUR für den
+  401-Fall gedacht (Google lehnt ein vorhandenes Token ab → Token samt
+  Play-Services-Cache verwerfen). „Lokal gar kein Token" ist der andere Fall: da gibt es nichts zu
+  invalidieren, und der Aufruf würde den GMS-Cache ohne Anlass leeren. Wer hier aufräumen will,
+  braucht eine EIGENE Klassifizierung — nicht die vorhandene. Das eigentliche Verhalten ist
+  korrekt: der Fehler wird geworfen und NICHT zur leeren Eventliste degradiert, die Wartung bricht
+  ab („Token refresh failed, aborting maintenance"), und die bestehenden Alarme bleiben armiert
+  (am Gerät gegengeprüft: nach einer Abmeldung lagen die 8 Alarme unverändert im AlarmManager).
 
 ### Kalender-Datenfluss
 

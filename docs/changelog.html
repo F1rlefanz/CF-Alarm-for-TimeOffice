@@ -46,7 +46,25 @@
         </div>
 
         <div class="content-card">
-            <h3>🆕 Version 1.24.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.25.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Hue-Regeln überleben jetzt einen Bridge-Wechsel: nach einem Konfigurations-Import oder einer neuen Bridge finden sie ihre Lampen über den Namen selbst wieder – und was übrig bleibt, wird benannt statt verschwiegen.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Hue-Regeln zeigten nach einem Wechsel der Bridge ins Leere:</strong> Eine Regel merkt sich ihre Lampen über eine Nummer, die nur auf <em>der einen</em> Bridge gilt. Nach einem Konfigurations-Import oder mit einer neuen Bridge sah die Regel vollständig aus, schaltete aber nichts oder die falsche Lampe – und das merkt man erst morgens. Jetzt merkt sich jede Regel zusätzlich den <strong>Namen</strong> der Lampe bzw. Gruppe und ordnet sich beim ersten Kontakt mit der Bridge automatisch wieder zu.</li>
+            </ul>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Sichtbarer Hinweis auf unbekannte Ziele:</strong> Was sich nicht eindeutig wiederfinden lässt – etwa weil eine Lampe umbenannt wurde oder zwei gleich heißen –, wird im Hue-Bereich, in der Regel-Liste und im Regel-Editor namentlich angezeigt, statt still zu scheitern. Die App ordnet dabei bewusst <em>nichts</em> auf Verdacht zu: eine falsch zugeordnete Lampe wäre schlimmer als eine, die man selbst neu auswählt.</li>
+                <li><strong>Rückmeldung beim Import:</strong> Ist beim Einlesen einer Konfigurationsdatei bereits eine Bridge verbunden, steht direkt in der Erfolgsmeldung, wie viele Ziele auf diesem Gerät unbekannt sind.</li>
+                <li>Ist die Bridge gerade nicht erreichbar (unterwegs, fremdes WLAN), passiert <strong>nichts</strong>: keine Regel wird umgeschrieben und keine als fehlerhaft markiert.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.24.2</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Wartungsversion ohne sichtbare Änderung. Der Weck-Bildschirm ist jetzt zusätzlich automatisch abgesichert.</em></p>
 

@@ -1009,8 +1009,10 @@ Wecker gekostet:**
 - **Leere Fensterliste = Unterdrückung dieser Nacht** (die Nachtdienst-Ausnahme), NICHT „keine
   Regel". `windows.isEmpty()` ist bewusst bedeutungstragend — nicht wegoptimieren.
 - **CLOCK↔CLOCK = lückenlos jede Kalendernacht** (unabhängig von Schicht/frei); ALARM/SHIFT_END sind
-  schicht-relativ und brauchen einen Alarm an dem Datum. Wer CLOCK↔CLOCK wieder schicht-relativ
-  macht, reißt „immer 22–7 außer ND" wieder auf. `DimWindowResolverTest` hält das Kern-Szenario fest.
+  schicht-relativ und brauchen eine **Schichtspanne** an dem Datum (bis v1.25.1 stand hier „einen
+  Alarm" — seither speist `DimScheduleUseCase` diese Slots aus `ShiftSpanStore`, weil ein Alarm die
+  Weckzeit nicht überlebt). Wer CLOCK↔CLOCK wieder schicht-relativ macht, reißt „immer 22–7 außer
+  ND" wieder auf. `DimWindowResolverTest` hält das Kern-Szenario fest.
 - **Zeitrechnung: echte Wanduhrzeit + Datums-Arithmetik, niemals „Mitternacht-Instant + Minuten" und
   niemals fixe 24h-Millis.** An den DST-Umstellungstagen ist ein Kalendertag 23 h bzw. 25 h lang — aus
   22:00 wurde 23:00 bzw. 21:00, und Dimmen UND DND-Modus 1 (rechnet über dieselben Fenster)
@@ -1031,7 +1033,8 @@ Wecker gekostet:**
   die übrigen `syncAlarms()`-Aufrufer armieren Dimmer/DND nicht nach: nach einer Urlaubswoche ohne
   Schichten blieb „Während der Dienstzeit" bis zum nächsten Reboot wirkungslos. Deshalb ein
   Keep-alive-Tick (6 h), solange überhaupt eine Quelle AN ist, plus ein kurzer Retry-Tick (15 min)
-  nach einem **Lesefehler des Alarm-Bestands**. Die BEDEUTUNG einer leeren Fensterliste
+  nach einem **Lesefehler der Fenster-Grundlage** (Alarm-Bestand für Wellness, Schichtspannen für
+  Regeln/Nacht-Standard und für den gesamten DND-Pfad). Die BEDEUTUNG einer leeren Fensterliste
   (Nachtdienst-Unterdrückung) bleibt unverändert — es wird nur später noch einmal nachgesehen.
 - **Nacht-Standard (`DimWindowResolver.buildDefaultNightSpans`, seit v1.17.0) ist eine DRITTE,
   eigenständige Fenster-Quelle** neben Regeln — dimmt ab fester Uhrzeit bis zum nächsten Wecker,
@@ -1151,9 +1154,10 @@ Wecker gekostet:**
   einem transienten Lesefehler des Alarm-Bestands blieb DND-Modus 1 bis zu 6 h ohne „Nicht stören",
   obwohl der Dimmer sich planmäßig nach 15 min erholte und die Nacht dimmte: der Fehler passiert
   INNERHALB von `DimScheduleUseCase.computeWindows()` und kam bei DND als ununterscheidbar leere
-  Fensterliste an, sein eigenes `alarmReadFailed` blieb `false` (der eigene `getAllAlarms()`-Zweig
-  wird bei nur-Modus-1 nie betreten) und `fallbackTick()` plante den 6-Stunden-Keep-alive statt des
-  15-Minuten-Retry. Wer den Status wieder wegoptimiert, holt genau das zurück.
+  Fensterliste an, sein eigenes `alarmReadFailed` blieb `false` (der eigene Spannen-Zweig — bis
+  v1.25.1 `getAllAlarms()`, seither `shiftSpanStore.spansNow()` — wird bei nur-Modus-1 nie
+  betreten) und `fallbackTick()` plante den 6-Stunden-Keep-alive statt des 15-Minuten-Retry. Wer
+  den Status wieder wegoptimiert, holt genau das zurück.
 - **Modus 2 braucht `AlarmInfo.shiftStartTime`**, nicht `triggerTime` (Weckzeit, meist vor
   Schichtbeginn wegen Anfahrt) und nicht nur `shiftEndTime`. Gesetzt in
   `AlarmUseCase.createAlarmFromShiftMatch` aus `shiftMatch.calendarEvent.startTime` — exakt

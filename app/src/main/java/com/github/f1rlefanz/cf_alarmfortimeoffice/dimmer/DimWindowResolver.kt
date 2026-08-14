@@ -93,7 +93,18 @@ object DimWindowResolver {
         spans.filter { now >= it.range.first && now < it.range.last }
             .maxWithOrNull(compareBy({ it.strength }, { it.warmth }))
 
-    /** Minimal-Info eines Alarms für die Fenster-Berechnung (entkoppelt von AlarmInfo/Android). */
+    /**
+     * Minimal-Info einer Schicht für die Fenster-Berechnung (entkoppelt von Android).
+     *
+     * Name historisch: `DimScheduleUseCase` füllt das seit v1.25.2 aus `ShiftSpan`, damit
+     * SHIFT_END-verankerte Fenster nicht verschwinden, sobald der Wecker geklingelt hat. Die
+     * **Wellness**-Quelle daneben liest weiterhin den echten Alarm-Bestand — sie dimmt vor der
+     * Weckzeit, ihr Fenster ist danach ohnehin vorbei.
+     *
+     * **[triggerTime] ist der Tages-Anker**, nicht nur der ALARM-Anker: `buildRuleSpans` und
+     * `buildDefaultNightSpans` leiten den Kalendertag daraus ab. Ein Platzhalter (0) datiert den
+     * Slot auf 1970 und zerstört die Tagesverankerung aller Fenster.
+     */
     data class AlarmSlot(val triggerTime: Long, val shiftName: String, val shiftEndTime: Long)
 
     /**

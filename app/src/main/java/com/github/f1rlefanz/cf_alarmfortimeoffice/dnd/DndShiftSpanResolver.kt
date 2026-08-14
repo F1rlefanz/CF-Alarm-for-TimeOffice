@@ -9,7 +9,13 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dnd
  */
 object DndShiftSpanResolver {
 
-    /** Minimal-Info eines Alarms fuer die Spannen-Berechnung (entkoppelt von AlarmInfo/Android). */
+    /**
+     * Minimal-Info einer Schicht fuer die Spannen-Berechnung (entkoppelt von Android).
+     *
+     * Der Name ist historisch: gefuellt wird das seit v1.25.2 aus `ShiftSpan` und NICHT mehr aus
+     * `AlarmInfo`. Wer hier wieder den Alarm-Bestand anzapft, baut den Fehler zurueck, dass das
+     * Dienstzeit-Fenster verschwindet, sobald der Wecker geklingelt hat - siehe `ShiftSpanStore`.
+     */
     data class AlarmSlot(val shiftName: String, val shiftStartTime: Long, val shiftEndTime: Long)
 
     /**

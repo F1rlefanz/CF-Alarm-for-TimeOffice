@@ -11,6 +11,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
@@ -172,7 +173,8 @@ class AlarmUseCaseSkipAndResilienceTest {
             notifier,
             mock<MasterPausePrefs>().also {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(masterPaused) }
-            }
+            },
+            mock<ShiftSpanStore>()
         )
 
     private fun mockManager(): AlarmManagerService {
@@ -396,7 +398,8 @@ class AlarmUseCaseSkipAndResilienceTest {
             FakeShiftChangeNotifier(),
             mock<MasterPausePrefs>().also {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(true) }
-            }
+            },
+            mock<ShiftSpanStore>()
         )
 
         useCase.syncAlarms(listOf(futureEvent("evA", "F", 1)), config)

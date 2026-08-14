@@ -12,6 +12,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftCo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
@@ -180,7 +182,8 @@ class AlarmUseCaseDeltaSyncTest {
         config: ShiftConfig,
         skipUseCase: IAlarmSkipUseCase = FakeSkipUseCase(),
         notifier: FakeShiftChangeNotifier = FakeShiftChangeNotifier(),
-        masterPaused: Boolean = false
+        masterPaused: Boolean = false,
+        spanStore: ShiftSpanStore = mock<ShiftSpanStore>()
     ): AlarmUseCase =
         AlarmUseCase(
             repo,
@@ -191,7 +194,8 @@ class AlarmUseCaseDeltaSyncTest {
             notifier,
             mock<MasterPausePrefs>().also {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(masterPaused) }
-            }
+            },
+            spanStore
         )
 
     private fun mockManager(): AlarmManagerService {
@@ -505,6 +509,85 @@ class AlarmUseCaseDeltaSyncTest {
 
         assertEquals(1, notifier.deletedCount)
         assertEquals(0, notifier.createdCount)
+    }
+
+    // --- Verstrichene Weckzeit ist KEINE entfernte Schicht (v1.25.2) ---
+
+    /**
+     * Ein Termin, der HEUTE laeuft, dessen Weckzeit aber schon vorbei ist - der Normalfall an
+     * jedem Schichtmorgen, sobald der Wecker geklingelt hat.
+     */
+    private fun startedTodayEvent(id: String, title: String) = CalendarEvent(
+        id = id,
+        title = title,
+        startTime = LocalDateTime.now().minusHours(2),
+        endTime = LocalDateTime.now().plusHours(6),
+        calendarId = "test"
+    )
+
+    @Test
+    fun `Verstrichene Weckzeit meldet KEINE entfernte Schicht`() = runTest {
+        // Realer Ablauf: der Wecker hat morgens geklingelt, die Schicht laeuft. Der naechste Sync
+        // raeumt den abgelaufenen Alarm - das ist richtig, denn ein vergangener Alarm gehoert nicht
+        // in den Bestand. Er darf daraus aber KEINE "Schicht entfernt"-Meldung machen: der Nutzer
+        // bekam die bis v1.25.1 an jedem Schichtmorgen fuer den Dienst, den er gerade antrat.
+        val ev = startedTodayEvent("evHeute", "F")
+        val repo = FakeAlarmRepository(listOf(existingAlarm(id = ev.id.hashCode(), eventId = "evHeute")))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val notifier = FakeShiftChangeNotifier()
+
+        useCase(repo, manager, config, notifier = notifier).syncAlarms(listOf(ev), config)
+
+        assertEquals(
+            "Der Termin laeuft weiter - nur die Weckzeit ist vorbei. Das ist keine Aenderung " +
+                "des Dienstplans und darf nicht gemeldet werden.",
+            0,
+            notifier.deletedCount
+        )
+        assertTrue("Der abgelaufene Alarm gehoert trotzdem nicht mehr in den Bestand", repo.current.isEmpty())
+    }
+
+    @Test
+    fun `Die Schichtspanne ueberlebt die verstrichene Weckzeit`() = runTest {
+        // Der eigentliche Zweck des Fixes: Dimmer und "Nicht stoeren" beziehen ihre Dienstzeit-
+        // Fenster aus den Spannen. Verschwaende die Spanne zusammen mit dem Alarm, waere DND
+        // mitten in der Dienstzeit aus - am Emulator so gemessen (20.08. 08:00, zen_mode=0).
+        val ev = startedTodayEvent("evHeute", "F")
+        val repo = FakeAlarmRepository(listOf(existingAlarm(id = ev.id.hashCode(), eventId = "evHeute")))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val spanStore = mock<ShiftSpanStore>()
+
+        useCase(repo, manager, config, spanStore = spanStore).syncAlarms(listOf(ev), config)
+
+        val captor = argumentCaptor<List<ShiftSpan>>()
+        verify(spanStore).replaceAll(captor.capture(), any())
+        assertEquals(
+            "Die laufende Schicht muss als Spanne erhalten bleiben, obwohl ihr Alarm geraeumt wurde",
+            listOf("Frueh"),
+            captor.firstValue.map { it.shiftName }
+        )
+    }
+
+    @Test
+    fun `Ein wirklich entferntes Event meldet weiterhin - Regressionswaechter`() = runTest {
+        // Gegenprobe zum Test darueber: die echte Loeschmeldung darf dabei nicht miterschlagen
+        // werden. Sie ist der Grund, warum es das Feature ueberhaupt gibt.
+        val evA = futureEvent("evA", "F", 1)
+        val repo = FakeAlarmRepository(
+            listOf(
+                existingAlarm(id = evA.id.hashCode(), eventId = "evA"),
+                existingAlarm(id = 4242, eventId = "evWeg")
+            )
+        )
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val notifier = FakeShiftChangeNotifier()
+
+        useCase(repo, manager, config, notifier = notifier).syncAlarms(listOf(evA), config)
+
+        assertEquals(1, notifier.deletedCount)
     }
 
     @Test

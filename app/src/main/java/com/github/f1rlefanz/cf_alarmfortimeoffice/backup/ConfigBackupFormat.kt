@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
 import kotlinx.serialization.Serializable
 
@@ -91,6 +92,11 @@ object ConfigBackupFilter {
         // Die persistierte Alarmliste. Sie leitet sich aus DIESEM Kalender ab; importiert wuerde sie
         // fremde Alarme mit fremden IDs in das Repository und in den Direct-Boot-Spiegel schreiben.
         "active_alarms",
+        // Die erkannten Schichtspannen (ShiftSpanStore). Wie active_alarms aus DIESEM Kalender
+        // abgeleitet und jederzeit vom naechsten Sync neu erzeugt. Importiert wuerden sie fremde
+        // Dienstzeiten mitbringen und "Nicht stoeren" sowie den Dimmer auf einem anderen Geraet zu
+        // falschen Zeiten schalten - bis der erste eigene Sync sie ueberschreibt.
+        ShiftSpanStore.KEY_SHIFT_SPANS_NAME,
         // Zeitstempel der Hintergrundarbeit
         "last_maintenance_time",
         "last_event_load_time",

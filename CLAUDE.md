@@ -457,7 +457,11 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
 - **`TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`.** Ohne das Flag kehrte der
   angestoßene Lauf im Normalbetrieb zurück, ohne den Kalender anzufassen — der Receiver war
   wirkungslos. Ein bloßes Re-Arming wäre kein Ersatz: es rechnet die gespeicherten Millis mit
-  derselben Zone hin und zurück.
+  derselben Zone hin und zurück. **Am Gerät belegt (14.08.2026):** der Emulator zog eine
+  stehengebliebene Uhr nach (GMT → Europe/Berlin), der Receiver feuerte („Zeitzonen-Wechsel erkannt
+  - erzwinge Wartungslauf"), und alle Weckzeiten wurden NEU BERECHNET — `triggerTime` −2 h bei
+  unveränderter Wanduhrzeit 05:30. Die Weckzeit ist eine Wanduhrzeit auf dem Kalendertag; ein
+  Re-Arming hätte 07:30 ergeben.
 - **Das "Nächsten Alarm überspringen"-Flag läuft zeitbasiert ab, nicht per ID-Match.**
   `AlarmSkipUseCase.skipNextAlarm()` löscht den System-Alarm SOFORT (SKIP-IMMEDIATE-UX) — damit
   feuert er nie wieder, und der eigentlich vorgesehene Rücksetz-Pfad
@@ -987,7 +991,10 @@ Wecker gekostet:**
   `finally` unter `NonCancellable`, und ein zweiter Tipp lässt die laufende Vorschau per
   `cancelAndJoin()` ZUERST aufräumen (sonst schaltet deren `finally` die gerade neu eingeschaltete
   sofort wieder aus). Vorbild ist `HueLightUseCase.followUpScope`. Diese Scopes werden bewusst
-  **nicht** in `onCleared()` gecancelt — genau das wäre der Bug.
+  **nicht** in `onCleared()` gecancelt — genau das wäre der Bug. **Am Gerät belegt (14.08.2026):**
+  `dim_overlay_on` vorher `false` → während der Vorschau `true` → App nach ~1,5 s verlassen → 8 s
+  später wieder `false`. Nachweis NICHT über die Layer-Anwesenheit führen: `render(false)` fährt nur
+  das Alpha auf 0 und lässt `CFAlarmDimLayer` stehen.
 
 - **Pro Kalendertag GENAU eine Regel** (`DimWindowResolver.buildRuleSpans`): Schicht-Tag →
   `findRuleForShift` (exakter Schichtname → sonst UNIVERSAL), freier Tag → `findRuleForFreeDay`
@@ -1065,7 +1072,9 @@ Wecker gekostet:**
   über den sichtbaren Bereich hinaus, und ein einzelnes Heller danach zeigt keine Wirkung, weil
   `effectiveStrength` trotzdem noch gedeckelt bleibt (adversarial gefunden/gefixt: Klemmbereich ist
   `-active.strength..(STRENGTH_MAX - active.strength)`, nicht `[0, STRENGTH_MAX]` auf den Delta
-  selbst). Das Read-Modify-Write auf die Override-Prefs läuft außerdem hinter einem `Mutex`
+  selbst). **Am Gerät nachgemessen (14.08.2026):** Basis 55 %, sechsmal „Dunkler" wäre +60 — der
+  Delta klemmt bei **30**, Render bei 85 %, und ein einziges „Heller" wirkt sofort (85 → 75). Ohne
+  die Klemme stünde der Delta bei 60 und dieser Tipp bliebe sichtbar wirkungslos. Das Read-Modify-Write auf die Override-Prefs läuft außerdem hinter einem `Mutex`
   (`DimOverlayPrefs.withOverrideLock`, ein Singleton-Feld — **nicht** ein lokales Feld in
   `DimNotificationService`) — ohne ihn verlieren zwei rasch aufeinanderfolgende Button-Taps
   (Doppel-Tap) eine der beiden Änderungen beim Zurückschreiben. Ein rein lokaler Mutex in
@@ -1084,7 +1093,9 @@ Wecker gekostet:**
   beim rollenden Tick (Fenstergrenzen) oder eben einem `enable()`-Aufruf neu. Ein **mitten** im
   laufenden Fenster umgelegter Toggle blieb dadurch bis zum nächsten Tick wirkungslos — und dieser
   nächste Tick ist typischerweise das Fenster-ENDE, das die Notification sofort wieder wegräumt. Der
-  Nutzer sah sie für das gerade laufende Fenster praktisch nie. Real gemeldet (05.08.2026). Wer einen
+  Nutzer sah sie für das gerade laufende Fenster praktisch nie. Real gemeldet (05.08.2026), Fix **am
+  Gerät belegt (14.08.2026)**: Toggle mitten im laufenden Fenster umgelegt → `id=2101,
+  channel=dim_correction` binnen Sekunden gepostet. Wer einen
   neuen Dimmer-Prefs-Setter ergänzt, ohne `enable()` hinterherzurufen, baut dieselbe Falle neu.
   **Und zwar unentprellt.** Die vier Darstellungs-Regler hatten kurzzeitig eine 300-ms-Entprellung
   („die Regler feuern pro Frame") — durch den UI-Umbau auf `CommitOnReleaseSlider`

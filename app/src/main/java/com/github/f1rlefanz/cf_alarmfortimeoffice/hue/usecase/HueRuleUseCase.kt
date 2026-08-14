@@ -6,7 +6,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.AutoOffTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleExecutionResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.TargetReconcileResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.RuleValidationResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
@@ -693,6 +695,47 @@ class HueRuleUseCase @Inject constructor(
             Logger.e(LogTags.HUE_USECASE, "Failed to execute rule now", e)
             Result.failure(e)
         }
+    }
+
+    /**
+     * Ziel-Abgleich nach einem Bridge-Wechsel (Konfigurations-Import, neue Bridge, Neuinstallation
+     * mit Android-Backup). Rechenweg und Haltung stecken vollstaendig in [HueTargetReconciler];
+     * hier liegen nur Transaktion und Protokoll.
+     *
+     * Der Abgleich laeuft INNERHALB der Schreib-Transaktion auf dem frisch gelesenen Bestand -
+     * eine gleichzeitige Nutzer-Aenderung geht dadurch nicht verloren (siehe
+     * [IHueConfigRepository.updateScheduleRules]).
+     */
+    override suspend fun reconcileTargets(targets: LightTargets): Result<TargetReconcileResult> {
+        var outcome: HueTargetReconciler.Outcome? = null
+
+        val write = configRepository.updateScheduleRules { current ->
+            HueTargetReconciler.reconcile(current, targets).also { outcome = it }.rules
+        }
+
+        write.exceptionOrNull()?.let { error ->
+            Logger.w(LogTags.HUE_USECASE, "Ziel-Abgleich nicht moeglich - Regeln bleiben unveraendert", error)
+            return Result.failure(error)
+        }
+
+        val result = outcome ?: return Result.success(TargetReconcileResult(0, emptyList()))
+
+        if (result.remapped > 0 || result.unresolved.isNotEmpty()) {
+            // WARN, nicht DEBUG: Ein Ziel, das ins Leere zeigt, ist Licht, das am Wecktag nicht
+            // angeht - und Release-Logs enthalten nur WARN+.
+            Logger.w(
+                LogTags.HUE_USECASE,
+                "🔗 Ziel-Abgleich: ${result.remapped} Ziel(e) ueber den Namen neu zugeordnet, " +
+                    "${result.namesRefreshed} Name(n) aktualisiert, " +
+                    "${result.unresolved.size} nicht zuordenbar" +
+                    if (result.unresolved.isEmpty()) "" else
+                        " (${result.unresolved.joinToString { "${it.ruleName}/${it.label}: ${it.reason}" }})"
+            )
+        } else {
+            Logger.d(LogTags.HUE_USECASE, "🔗 Ziel-Abgleich: alle Regel-Ziele auf dieser Bridge bekannt")
+        }
+
+        return Result.success(TargetReconcileResult(result.remapped, result.unresolved))
     }
 
     /**

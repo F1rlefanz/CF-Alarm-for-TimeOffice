@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -301,7 +302,10 @@ class HueViewModel @Inject constructor(
                             isLoading = false,
                             bridgeConnectionInfo = BridgeConnectionInfo(isConnected = false),
                             discoveredBridges = emptyList(),
-                            lightTargets = LightTargets()
+                            lightTargets = LightTargets(),
+                            // Ohne Bridge gibt es keine Aussage darueber, welche Ziele es gibt -
+                            // eine stehengebliebene "unbekannt"-Markierung waere jetzt geraten.
+                            unresolvedTargets = emptyList()
                         )
                     }
                     Logger.i(LogTags.HUE_VIEWMODEL, "Bridge connection forgotten successfully")
@@ -334,6 +338,7 @@ class HueViewModel @Inject constructor(
                     val lightTargets = result.getOrNull() ?: LightTargets()
                     _uiState.update { it.copy(lightTargets = lightTargets) }
                     Logger.d(LogTags.HUE_VIEWMODEL, "Light targets refreshed: ${lightTargets.lights.size} lights, ${lightTargets.groups.size} groups")
+                    reconcileRuleTargets(lightTargets)
                 } else {
                     Logger.w(LogTags.HUE_VIEWMODEL, "Failed to refresh light targets", result.exceptionOrNull())
                 }
@@ -343,6 +348,47 @@ class HueViewModel @Inject constructor(
         }
     }
     
+    /**
+     * DER EINE Aufhaengepunkt des Ziel-Abgleichs: eine erfolgreiche Antwort der Bridge.
+     *
+     * Damit laeuft er genau dann, wenn er etwas aussagen kann - beim Oeffnen des Hue-Bereichs,
+     * nach einer bestaetigten Verbindung, nach "Lichter aktualisieren". Bewusst NICHT im
+     * Weckpfad: der Hue-Zweig im `AlarmReceiver` ist auf 20 s gedeckelt, weil dahinter
+     * `pendingResult.finish()` kommt.
+     *
+     * ist ein Regel-Editor offen, wird NICHT abgeglichen. Das Formular haelt einen Schnappschuss
+     * der Regel; wuerde der Bestand darunter umgeschrieben, machte der naechste "Speichern" die
+     * Zuordnung kommentarlos wieder rueckgaengig. Der Abgleich holt das nach, sobald der Editor
+     * zu ist - die Markierung im Formular stammt aus dem Lauf davor.
+     *
+     * Ein Fehlschlag bleibt folgenlos: [uiState].unresolvedTargets wird dann NICHT angefasst,
+     * damit eine misslungene Abfrage keine Regel als "unbekannt" erscheinen laesst.
+     */
+    private suspend fun reconcileRuleTargets(lightTargets: LightTargets) {
+        if (_uiState.value.editingRule != null) {
+            Logger.d(LogTags.HUE_VIEWMODEL, "Ziel-Abgleich uebersprungen: Regel-Editor offen")
+            return
+        }
+
+        try {
+            val result = hueRuleUseCase.reconcileTargets(lightTargets).getOrElse { error ->
+                Logger.w(LogTags.HUE_VIEWMODEL, "Ziel-Abgleich fehlgeschlagen", error)
+                return
+            }
+
+            _uiState.update { it.copy(unresolvedTargets = result.unresolved) }
+
+            if (result.remapped > 0) {
+                // Die Regeln im Zustand tragen noch die alten IDs - und die vorgeplanten
+                // Hue-Jobs (Sonnenaufgang, Auto-Aus) ebenfalls.
+                refreshRules()
+                recalculateHueSchedule()
+            }
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_VIEWMODEL, "Ziel-Abgleich mit Ausnahme abgebrochen", e)
+        }
+    }
+
     fun executeLightAction(action: LightAction) {
         Logger.i(LogTags.HUE_VIEWMODEL, "Executing light action for ${action.targetId}")
         
@@ -639,7 +685,15 @@ data class HueUiState(
 
     // Rule Management
     val scheduleRules: List<HueSchedule> = emptyList(),
-    val editingRule: HueSchedule? = null
+    val editingRule: HueSchedule? = null,
+
+    /**
+     * Regel-Ziele, die auf der GERADE VERBUNDENEN Bridge ins Leere zeigen (typisch nach einem
+     * Konfigurations-Import oder Bridge-Tausch). Abgeleiteter Zustand, nicht persistiert: er
+     * entsteht bei jedem erfolgreichen Ziel-Abgleich neu und bleibt leer, solange die Bridge
+     * nichts gesagt hat - eine unerreichbare Bridge darf keine Regel als kaputt erscheinen lassen.
+     */
+    val unresolvedTargets: List<UnresolvedRuleTarget> = emptyList()
 )
 
 /**

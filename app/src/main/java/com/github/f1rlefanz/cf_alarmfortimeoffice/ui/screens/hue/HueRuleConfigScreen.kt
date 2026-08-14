@@ -244,7 +244,22 @@ fun HueRuleConfigScreen(
     // up "on" (its ramp reaches the configured end brightness/temperature), so it can equally
     // be auto-switched-off again afterwards. Only color/brightness stay sunrise-exclusive
     // (the SunriseConfig owns those), the `duration` field does not.
+    //
+    // ZIELNAME WIRD MITGESCHRIEBEN: `targetId` ist eine BRIDGE-LOKALE Nummer. Sie steht so in der
+    // Exportdatei und im Android-Backup und zeigt auf einer anderen Bridge ins Leere. Der Name ist
+    // der einzige Anker, an dem sich eine Aktion dort wiederfinden laesst
+    // (`HueTargetReconciler`). Der Rueckfall auf den bereits gespeicherten Namen ist kein Beiwerk:
+    // Beim Bearbeiten einer Regel, deren IDs auf DIESER Bridge unbekannt sind, liefert die
+    // Bridge-Liste keinen Namen - ein blosses `bridgeName` wuerde beim Speichern genau den Anker
+    // loeschen, der die Regel noch retten kann.
     fun buildActions(): List<HueLightAction> {
+        val lightNames = uiState.lightTargets.lights.associate { it.id to it.name }
+        val groupNames = uiState.lightTargets.groups.associate { it.id to it.name }
+        val storedNames = uiState.editingRule?.lightActions
+            ?.mapNotNull { action -> action.targetName?.let { action.targetId to it } }
+            ?.toMap()
+            .orEmpty()
+
         val colorTemp: Int? = if (!sunriseEnabled && targetOn && colorMode == ColorMode.WHITE) {
             HueColorConverter.kelvinToHueMireds(colorKelvin)
         } else null
@@ -260,6 +275,7 @@ fun HueRuleConfigScreen(
                 HueLightAction(
                     targetType = type,
                     targetId = id,
+                    targetName = (if (isGroup) groupNames[id] else lightNames[id]) ?: storedNames[id],
                     actionType = if (effectiveOn) ActionType.TURN_ON else ActionType.TURN_OFF,
                     on = if (sunriseEnabled) true else targetOn,
                     brightness = if (sunriseEnabled || !targetOn) null else targetBrightness,
@@ -378,7 +394,10 @@ fun HueRuleConfigScreen(
                     onLightSelectionChange = { selectedLightIds = it },
                     onGroupSelectionChange = { selectedGroupIds = it },
                     onRefreshTargets = { hueViewModel.refreshLightTargets() },
-                    showValidationErrors = showValidationErrors
+                    showValidationErrors = showValidationErrors,
+                    // Nur die Ziele DIESER Regel. Bei einer neuen Regel gibt es keine.
+                    unresolvedTargets = if (ruleId == null) emptyList()
+                    else uiState.unresolvedTargets.filter { it.ruleId == ruleId }
                 )
             }
 

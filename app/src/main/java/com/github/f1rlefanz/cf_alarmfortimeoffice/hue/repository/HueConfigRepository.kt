@@ -155,6 +155,36 @@ class HueConfigRepository @Inject constructor(
         // Update is the same as save - it will replace existing rule with same ID
         return saveScheduleRule(rule)
     }
+
+    override suspend fun updateScheduleRules(
+        transform: (List<HueSchedule>) -> List<HueSchedule>
+    ): Result<Unit> {
+        return try {
+            dataStore.edit { preferences ->
+                val currentRulesJson = preferences[SCHEDULE_RULES_KEY] ?: "[]"
+                // Bewusst OHNE try/catch um das Dekodieren: ein unlesbarer Bestand muss den
+                // ganzen Aufruf scheitern lassen. Der Rueckfall auf eine leere Liste, den
+                // getConfiguration() fuer die ANZEIGE macht, waere hier Datenverlust - er wuerde
+                // als "keine Regeln" zurueckgeschrieben.
+                val currentRules = json.decodeFromString<List<HueSchedule>>(currentRulesJson)
+
+                val updatedRules = transform(currentRules)
+                if (updatedRules == currentRules) {
+                    Logger.d(LogTags.HUE_CONFIG, "Schedule rules unchanged - kein Schreibvorgang")
+                    return@edit
+                }
+
+                preferences[SCHEDULE_RULES_KEY] = json.encodeToString(updatedRules)
+                Logger.i(LogTags.HUE_CONFIG, "Successfully updated ${updatedRules.size} schedule rules in one transaction")
+            }
+
+            Result.success(Unit)
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_CONFIG, "Failed to update schedule rules", e)
+            Result.failure(e)
+        }
+    }
     
     override suspend fun clearConfiguration(): Result<Unit> {
         return try {

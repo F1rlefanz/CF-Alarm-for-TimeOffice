@@ -137,10 +137,20 @@ data class AutoOffTarget(
 
 /**
  * Combined light targets for UI
+ *
+ * [lightsFailed]/[groupsFailed] halten fest, dass eine der beiden Abfragen NICHT durchkam,
+ * die andere aber schon (der Teilerfolg-Zweig in [IHueLightUseCase.getAllLightTargets]). Ohne
+ * diese Unterscheidung ist "keine Gruppen" von "Gruppen nicht abrufbar" nicht zu trennen - eine
+ * Bridge ganz ohne Gruppen ist normal, eine abgelehnte Abfrage ist ein Fehler. Der
+ * Ziel-Abgleich ([com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueTargetReconciler])
+ * haengt daran: er darf Ziele einer Art, deren Abfrage gescheitert ist, weder umschreiben noch
+ * als "auf dieser Bridge unbekannt" melden.
  */
 data class LightTargets(
     val lights: List<HueLight> = emptyList(),
-    val groups: List<HueGroup> = emptyList()
+    val groups: List<HueGroup> = emptyList(),
+    val lightsFailed: Boolean = false,
+    val groupsFailed: Boolean = false
 )
 
 /**

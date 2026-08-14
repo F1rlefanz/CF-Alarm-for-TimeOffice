@@ -197,6 +197,21 @@ fun HueTabContent(
         // Connected Features & Next Steps (show first when connected)
         uiState.bridgeConnectionInfo?.let { connectionInfo ->
             if (connectionInfo.isConnected) {
+                // Regel-Ziele, die auf DIESER Bridge nicht existieren (Konfigurations-Import,
+                // Bridge-Tausch). Der Tab ist der Einstieg in den Hue-Bereich; stuende der Hinweis
+                // nur in der Regel-Liste, muesste der Nutzer erst dorthin finden, um von einem
+                // Problem zu erfahren, das er nicht vermutet. Erscheint nur nach einer echten
+                // Antwort der Bridge.
+                if (uiState.unresolvedTargets.isNotEmpty()) {
+                    item {
+                        UnresolvedTargetsCard(
+                            affectedRules = uiState.unresolvedTargets.map { it.ruleName }.distinct(),
+                            targetCount = uiState.unresolvedTargets.size,
+                            onNavigateToSettings = onNavigateToSettings
+                        )
+                    }
+                }
+
                 // Show appropriate interface based on rules
                 if (uiState.scheduleRules.isNotEmpty()) {
                     // Rules exist: Show management overview instead of auto-navigating
@@ -321,6 +336,51 @@ fun HueTabContent(
         // Add some bottom padding for better UX
         item {
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun UnresolvedTargetsCard(
+    affectedRules: List<String>,
+    targetCount: Int,
+    onNavigateToSettings: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // dekorativ: die Ueberschrift daneben sagt den Zustand aus
+                Icon(
+                    Icons.Default.Error,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "$targetCount Regel-Ziel(e) auf dieser Bridge unbekannt",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                "Betroffen: ${affectedRules.joinToString()}. Die Lampen stammen von einer anderen " +
+                    "Bridge – diese Regeln schalten dafür nichts. Was sich über den Namen " +
+                    "wiederfinden ließ, wurde bereits automatisch zugeordnet.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Button(onClick = onNavigateToSettings, modifier = Modifier.fillMaxWidth()) {
+                Text("Regeln prüfen")
+            }
         }
     }
 }

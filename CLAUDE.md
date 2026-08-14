@@ -739,6 +739,30 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
   Sonnenaufgangs-Versatz). **Die frühere Begründung „findApplicableRules matcht auch über Keywords"
   war veraltet** — sie verleitete dazu, das Keyword-Matching „wiederherzustellen", also genau die
   S-auf-S2-Fehlerfamilie neu zu bauen (siehe „Schichterkennung & Musterabgleich").
+- **`HueLightAction.targetId` ist BRIDGE-LOKAL — der Anker über Geräte hinweg ist `targetName`**
+  (seit v1.25.0). Die ID reist im Konfigurations-Export (`hue_schedule_rules`) und im
+  Android-Backup mit und zeigt auf einer anderen Bridge ins Leere: die Regel sieht vollständig aus
+  und schaltet am Wecktag nichts oder die falsche Lampe — bemerkt wird das erst morgens. Drei
+  Teile, die zusammengehören: `HueRuleConfigScreen.buildActions()` **schreibt** den Namen mit
+  (bis v1.24.2 war das Feld deklariert, aber von niemandem gesetzt und von niemandem gelesen —
+  totes Kapital, das wie ein vorhandener Anker aussah); `HueTargetReconciler` (rein, testbar)
+  ordnet über den Namen neu zu; `HueViewModel.refreshLightTargets()` ist der EINE Aufhängepunkt.
+  Die Haltungen sind nicht verhandelbar: bei **Mehrdeutigkeit lieber nicht zuordnen als falsch**
+  (dieselbe Haltung wie `ShiftCodeSuggester`), **Lampen- und Gruppen-Namensraum bleiben getrennt**
+  (real gemessen: „Deckenlampe", „Diele", „Ecklampe" existieren auf der Bridge des Nutzers als
+  Gruppe UND als Lampe — maßgeblich ist `isGroup`, weil genau das über /lights/ vs. /groups/
+  entscheidet), und eine **gescheiterte Abfrage ändert und meldet NICHTS**. Dafür führt
+  `LightTargets` seit v1.25.0 `lightsFailed`/`groupsFailed` mit: der Teilerfolg-Zweig von
+  `getAllLightTargets()` machte „Gruppen nicht abrufbar" sonst ununterscheidbar von „Bridge hat
+  keine Gruppen" — und das hätte Regeln wegen eines fremden WLANs als kaputt markiert. Das
+  Zurückschreiben läuft INNERHALB einer `dataStore.edit{}`-Transaktion
+  (`IHueConfigRepository.updateScheduleRules`), damit eine gleichzeitige Nutzeränderung nicht
+  verlorengeht. **Bei offenem Regel-Editor wird NICHT abgeglichen**: das Formular hält einen
+  Schnappschuss, der nächste „Speichern" machte die Zuordnung sonst kommentarlos rückgängig. Und
+  der Abgleich gehört NICHT in den Weckpfad — der Hue-Zweig im `AlarmReceiver` ist auf 20 s
+  gedeckelt. Am Emulator gegen die echte Bridge belegt (14.08.2026): ID künstlich verbogen →
+  „Deckenlampe" landete auf **Lampe 4**, nicht auf der gleichnamigen **Gruppe 10**; Bridge offline
+  → Bestand unangetastet, keine Markierung.
 - **`UNIVERSAL_SHIFT_PATTERN = "ALL"` ist seit v1.24.0 über den Regel-Editor erreichbar**
   (Eintrag „Alle Schichten" in `ShiftPatternCard`). Davor wertete der UseCase das Muster zwar aus,
   aber keine Oberfläche konnte es setzen — ein funktionierender Codepfad ohne Zugang. Drei Dinge

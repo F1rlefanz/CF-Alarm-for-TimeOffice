@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.MIN_TOUCH_TARGET
 
 /** Auswahl der Lampen/Gruppen, die eine Hue-Regel steuert. Aus `HueRuleConfigScreen` ausgelagert. */
@@ -41,7 +42,8 @@ internal fun TargetSelectionCard(
     onLightSelectionChange: (Set<String>) -> Unit,
     onGroupSelectionChange: (Set<String>) -> Unit,
     onRefreshTargets: () -> Unit,
-    showValidationErrors: Boolean
+    showValidationErrors: Boolean,
+    unresolvedTargets: List<UnresolvedRuleTarget> = emptyList()
 ) {
     Card {
         Column(
@@ -66,6 +68,19 @@ internal fun TargetSelectionCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Ein Ziel aus einer FREMDEN Bridge (Konfigurations-Import, Bridge-Tausch) taucht in
+            // keiner der beiden Listen auf - ohne diesen Hinweis waere es schlicht unsichtbar:
+            // die Regel ist gespeichert, aber nichts ist angehakt, und nichts sagt warum.
+            if (unresolvedTargets.isNotEmpty()) {
+                Text(
+                    "Auf dieser Bridge unbekannt: ${unresolvedTargets.joinToString { it.label }}. " +
+                        "Diese Ziele stammen von einer anderen Bridge und sind unten nicht " +
+                        "angehakt – bitte neu auswählen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
             // Ebenfalls saveable: Der Reiter gehoert zum Formular. Bliebe er bei `remember`, sprang
             // eine Rotation zurueck auf "Gruppen", obwohl die Auswahl selbst erhalten ist - der

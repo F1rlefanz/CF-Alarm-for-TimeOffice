@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
@@ -162,6 +164,7 @@ fun HueSettingsScreen(
                 items(uiState.scheduleRules) { rule ->
                     RuleCard(
                         rule = rule,
+                        unresolvedTargets = uiState.unresolvedTargets.filter { it.ruleId == rule.id },
                         onEdit = { onEditRule(rule.id) },
                         onToggle = { hueViewModel.updateRule(rule.copy(enabled = !rule.enabled)) },
                         onDelete = { hueViewModel.deleteRule(rule.id) },
@@ -357,6 +360,7 @@ private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
 @Composable
 private fun RuleCard(
     rule: HueSchedule,
+    unresolvedTargets: List<UnresolvedRuleTarget>,
     onEdit: () -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit,
@@ -401,7 +405,32 @@ private fun RuleCard(
                 }
                 Switch(checked = rule.enabled, onCheckedChange = { onToggle() })
             }
-            
+
+            // Ein Ziel, das auf DIESER Bridge nicht existiert, macht die Regel nicht kaputt - sie
+            // schaltet nur nichts. Ohne diesen Hinweis sieht sie vollstaendig aus, und der Nutzer
+            // merkt es erst morgens. Erscheint nur, wenn die Bridge geantwortet hat (siehe
+            // HueUiState.unresolvedTargets) - ein fremdes WLAN loest das hier NICHT aus.
+            if (unresolvedTargets.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.Top) {
+                    // dekorativ: der Text daneben sagt es aus
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "${unresolvedTargets.size} Ziel(e) auf dieser Bridge unbekannt: " +
+                            "${unresolvedTargets.joinToString { it.label }}. " +
+                            "Diese Regel schaltet dafür nichts – bitte in \"Bearbeiten\" neu auswählen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+
             // Hier war "Bearbeiten" zu "Bea/rbei/ten" zerfallen: zwei weight(1f)-Buttons plus
             // IconButton lassen je ~116dp, davon gehen 48dp allein für den Material3-Innenabstand
             // ab. CompactOutlinedButton nimmt den zurück und lässt nur eine Zeile zu.

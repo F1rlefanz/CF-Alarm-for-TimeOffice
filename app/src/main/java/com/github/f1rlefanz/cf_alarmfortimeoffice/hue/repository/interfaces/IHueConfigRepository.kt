@@ -40,6 +40,21 @@ interface IHueConfigRepository {
     suspend fun updateScheduleRule(rule: HueSchedule): Result<Unit>
     
     /**
+     * Read-Modify-Write ueber den GESAMTEN Regelbestand, INNERHALB einer einzigen
+     * `dataStore.edit{}`-Transaktion (dasselbe Muster wie [saveScheduleRule]/[deleteScheduleRule]).
+     *
+     * WARUM NICHT "Liste rein, Liste raus": der Aufrufer (Ziel-Abgleich nach einem Bridge-Wechsel)
+     * braucht eine Weile fuer seine Bridge-Abfrage. Wuerde er die vorher gelesene Liste
+     * zurueckschreiben, ginge eine zwischenzeitliche Nutzer-Aenderung verloren. [transform] laeuft
+     * deshalb auf dem FRISCH gelesenen Bestand innerhalb der Transaktion.
+     *
+     * Ist der gespeicherte Wert nicht dekodierbar, scheitert der Aufruf - es wird NICHTS
+     * geschrieben. Ein Rueckfall auf "keine Regeln" wuerde den Bestand endgueltig loeschen.
+     * Liefert [transform] eine unveraenderte Liste, wird ebenfalls nicht geschrieben.
+     */
+    suspend fun updateScheduleRules(transform: (List<HueSchedule>) -> List<HueSchedule>): Result<Unit>
+
+    /**
      * Clear all configuration (for reset/logout)
      */
     suspend fun clearConfiguration(): Result<Unit>

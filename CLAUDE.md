@@ -1158,6 +1158,37 @@ Wecker gekostet:**
   Schichtbeginn wegen Anfahrt) und nicht nur `shiftEndTime`. Gesetzt in
   `AlarmUseCase.createAlarmFromShiftMatch` aus `shiftMatch.calendarEvent.startTime` — exakt
   daneben, wo `shiftEndTime` aus `calendarEvent.endTime` gesetzt wird.
+- **Ein Alarm ist ein Weckzeitpunkt, eine `ShiftSpan` ist ein DIENST — die Dienstzeit-Fenster
+  kommen seit v1.25.2 aus `ShiftSpanStore`, NICHT mehr aus dem Alarm-Bestand.** Der überlebt die
+  Weckzeit nicht, und das ist richtig so: `AlarmRepository` verwirft abgelaufene Alarme in BEIDEN
+  Ladepfaden und lehnt das Speichern eines vergangenen Alarms ab — ein abgelaufener Alarm wäre
+  genau die verwaiste, armierte Leiche, gegen die die übrigen Zusicherungen geschrieben sind. Bis
+  v1.25.1 hing `DndShiftSpanResolver` aber genau daran: der erste `syncAlarms()` nach dem
+  Klingeln räumte den Alarm, und mit ihm das Fenster der Schicht, die GERADE LÄUFT. Am Emulator
+  gemessen (14.08.2026): 20.08. 08:00, mitten in der Frühschicht (Termin 06:00–14:12, Alarm
+  05:30 bereits gefeuert) → `zen_mode=0`, Regel `STATE_FALSE`; nach dem Fix `zen_mode=1`,
+  `STATE_TRUE`. Drei Dinge gehören zusammen: die Spannen werden in `syncAlarms()` **vor** dem
+  Vergangenheits-Filter geschrieben (genau die Schichten, die der Alarm-Bestand nicht mehr
+  hergibt), **auch in den beiden Leer-Zweigen** („keine Events" / „keine passende Schicht" —
+  ohne das hält eine alte Spanne DND dauerhaft an, während die App „kein Dienst" anzeigt), und
+  der Schreibvorgang ist **nicht-fatal gekapselt** (ein Nebenschauplatz darf den Alarm-Sync nie
+  abbrechen). Eine Spanne kennt bewusst **kein `isActive` und kein „übersprungen"**: ein
+  deaktivierter oder übersprungener Wecker ändert nichts daran, dass der Dienst stattfindet.
+- **`ShiftSpan.alarmTriggerTime` ist NICHT redundant.** `DimWindowResolver` leitet den
+  **Kalendertag** eines Slots aus der Weckzeit ab (`buildRuleSpans`/`buildDefaultNightSpans`,
+  `Instant.ofEpochMilli(a.triggerTime)`). Wer die Spanne ohne diesen Wert baut und einen
+  Platzhalter einsetzt, datiert den Slot auf 1970 und zerstört die Tagesverankerung ALLER
+  Dimm-Fenster — dieselbe Fehlerklasse, die schon einmal falsche Dimm-Nächte erzeugt hat. Der
+  Dimmer zieht deshalb Regel- und Nacht-Standard-Slots aus den Spannen, die **Wellness**-Quelle
+  aber weiterhin aus dem echten Alarm-Bestand: sie dimmt VOR der Weckzeit, ihr Fenster ist nach
+  dem Klingeln ohnehin vorbei.
+- **Verstrichene Weckzeit ist KEINE entfernte Schicht.** Der Löschzweig des Delta-Syncs meldete
+  jeden Schichtmorgen „Schicht entfernt" für den Dienst, den der Nutzer gerade antrat — beide
+  Fälle landen im selben Zweig (`!newAlarmsMap.containsKey(eventId)`), aber nur einer ist eine
+  Änderung des Dienstplans. `expiredEventIds` trennt sie: der Alarm wird weiterhin gecancelt und
+  gelöscht (in dieser Reihenfolge), nur `notifyDeleted()` unterbleibt und das Log sagt „Weckzeit
+  verstrichen, Termin läuft weiter". `AlarmUseCaseDeltaSyncTest` hält BEIDE Richtungen fest —
+  der Regressionswächter für die echte Löschmeldung ist der wichtigere Teil.
 - **`AutomaticZenRule`, nicht rohes `NotificationManager.setInterruptionFilter()`.** Der
   rohe Filter überschreibt kommentarlos das manuelle DND des Nutzers und jede fremde
   Automatisierung (Bixby/Tasker/System-Zeitplan) — kein Owner-Konzept, letzter Schreiber gewinnt.

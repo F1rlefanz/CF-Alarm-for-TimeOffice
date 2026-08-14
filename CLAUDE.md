@@ -611,7 +611,9 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
   `ShiftViewModel.triggerAlarmCreationFromConfigUpdate()`, `CalendarPreAlarmRefreshWorker`. Wer
   einen sechsten hinzufügt, muss sich um Master-Pause-Gating NICHT mehr einzeln kümmern (siehe
   Backstop oben) — aber genau diese Liste zeigt, wie leicht ein Aufrufer beim manuellen Gaten
-  übersehen wird.
+  übersehen wird. **Um die VOLLSTÄNDIGKEIT seiner Eventliste muss er sich dagegen selbst kümmern**
+  (siehe „Kalender-Datenfluss"): dafür gibt es keinen Backstop in `syncAlarms()`, weil die Funktion
+  einer Liste nicht ansehen kann, ob sie ein Ausschnitt ist.
 - **`DimScheduleUseCase.disable()`/`DndScheduleUseCase.disable()` rühren KEINE persistierten
   Toggles an** (`wellnessEnabled`/`rulesEnabled`/`nightDefaultEnabled` bzw. die DND-Trigger) — nur
   den Laufzeitzustand (aktives Overlay/Zen-Regel-Zustand) und den rollenden Tick-Alarm. Ein
@@ -809,6 +811,17 @@ Tab-based navigation via `NavigationViewModel` and `MainTab` enum (`HOME, WECKER
   (Android-Konvention fuer Bottom-Navigation). Auf dem Home-Tab bleibt der Handler bewusst **aus**
   — dort ist Zurueck wirklich „App verlassen", und der Systemdefault kann das inkl.
   Predictive-Back besser.
+- **„Später" beim Akku-Gate heißt ERLEDIGT, nicht abgebrochen.** Die Gate-Kette in
+  `handleAuthenticationSuccess()` geht weiter, sobald das Akku-Gate **aufgelöst** ist —
+  Ausnahme erteilt ODER vom Nutzer abgelehnt (`batteryGateResolved`). Vorher verlangten die Zweige
+  3 und 4 beide `hasBatteryExemption`: wer „Später" tippte (ein ausdrücklich vorgesehener,
+  persistierter Weg), fiel aus JEDEM Zweig heraus — Zweig 2 durch das Dismissed-Flag, Zweig 3/4
+  durch die fehlende Ausnahme —, und `proceedPastGates()` erreicht diesen Nutzer nie wieder. Der
+  Schritt „App bei Nichtnutzung pausieren" wurde ihm damit NIE angeboten, obwohl genau dieser
+  Schalter am 20.07.2026 die App force-gestoppt und dabei alle AlarmManager-Alarme gelöscht hat.
+  Der Kurzschluss in `MainScreen` (spart den Async-Call, solange das Gate noch offen ist) rechnet
+  mit demselben `batteryGateResolved`. Eine Ablehnung des Akku-Gates ist eine Aussage über die
+  Akku-Ausnahme, keine über die davon unabhängigen Gates dahinter.
 - **`NavigationState.HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`, nicht nur
   `returnToTab`.** `HueRuleConfig` ist auf zwei Wegen erreichbar (direkt vom **HUE-Tab** „Neue
   Regel" ODER über `HueSettings` „Bearbeiten"), und der System-Back (`BackHandler`) UND der
@@ -1263,6 +1276,17 @@ Wecker gekostet:**
   jetzt **hinter** dem `.map` (dann sieht das `map` den degradierten Zustand nie und kann nichts
   cachen) und **invalidiert zusätzlich den Cache**. Die Anzeige darf degradieren, die
   SCHREIBWAHRHEIT nicht. Wer das `.catch` wieder nach oben zieht, baut den Bug zurück.
+- **Die Preferences-Reads der Onboarding-/Gate-Kette gehen über `readOrEmpty()`**
+  (`util/SafePreferencesRead.kt`, gemeinsamer Pfad für `BatteryOptimizationHelper`,
+  `UnusedAppRestrictionsHelper`, `TimeOfficeHealthHelper`). Vorher waren es blanke `data.first()`:
+  der `ReplaceFileCorruptionHandler` fängt nur `CorruptionException`, eine IOException auf
+  `settings.preferences_pb` reicht DataStore durch — und drei dieser Reads stehen direkt im
+  `LaunchedEffect` von `MainScreen`, die Exception hätte die App beim Erreichen des Hauptbereichs
+  beendet, reboot-fest solange der Lesefehler besteht. Degradiert wird auf leere Preferences, also
+  auf `false` = NICHT abgelehnt: **der Hinweis wird im Zweifel GEZEIGT.** Dieselbe Abwägung wie beim
+  `DeviceLocalFlagsGuard` — ein überzähliger Hinweis ist harmlos, ein unterdrückter kostet die
+  Akku-Ausnahme bzw. die Ausnahme von „App bei Nichtnutzung pausieren". Für SCHREIBWAHRHEITEN ist
+  der Helfer ausdrücklich nicht gedacht (siehe den Punkt darunter).
 - **Bei der Master-Pause ist die RICHTUNG der Degradation die eigentliche Entscheidung.**
   `MasterPausePrefs.paused` hatte kein `.catch` (v1.24.0 ergänzt, Vorbild `auth_prefs`) — betroffen
   waren der zentrale Backstop in `AlarmUseCase.syncAlarms()`, die Gates von
@@ -1445,6 +1469,25 @@ Wecker gekostet:**
 - **Abmelden heißt: nichts bleibt zurück.** `AuthUseCase.signOut()` verwirft Auth-Daten UND Token
   (inkl. GMS-Cache). `CredentialAuthManager.signOutLocally()` ist nur eine Log-Zeile — sich darauf
   zu verlassen war der Fehler.
+- **Eine frische Neu-Autorisierung ist KEIN Kettenbruch** (`TokenData.isLegitimateSuccessorOf`, das
+  vollständige Urteil von `refresh()`). Drei legitime Fälle: identisch, direkt rotiert — und ein per
+  `authorize()` geholtes Token. Das rotiert nicht, sondern beginnt eine NEUE Kette
+  (`previousRotationId = null`, `rotationCount = 0`) und stammt damit zwangsläufig nicht vom
+  bisherigen ab. Landete dieser Write zwischen dem Lesen des alten Tokens und der Prüfung — realistisch,
+  weil dieser `@Singleton` keinen Mutex hat und Wartungslauf, Pre-Alarm-Worker und UI unabhängig
+  refreshen —, galt er als Diebstahl und `clear()` löschte ausgerechnet das Token, das der Nutzer
+  sich soeben per „Kalender-Zugriff erneuern" geholt hatte. Die Oberfläche zeigte danach weiter
+  „angemeldet", während jeder Wartungslauf ohne Token abbrach. Der Diebstahls-Zweig bleibt: ein
+  fremdes Token, das ÄLTER ist als der bekannte Stand, ist weiterhin ein Bruch (`TokenDataTest`).
+- **`DataStoreTokenRepository.observe()` nutzt `retryWhen`, und der Fehlerfall emittiert NICHTS.**
+  Zwei Fehler in einem: Ein `.catch { emit(emptyPreferences()) }` **beendet den Flow** (fängt,
+  emittiert, schließt normal ab) — der Token-Verlust-Wächter war danach für die ganze
+  Prozesslaufzeit tot, ein SPÄTERER echter Verlust wurde nie bemerkt (dieselbe Fehlerklasse wie
+  beim `CalendarSelectionRepository`-Collector). Und das emittierte „kein Token" ist ein FALSCHES
+  NEGATIVSIGNAL: der einzige Konsument (`AuthViewModel.observeTokenLoss`) wertet ausschließlich
+  dieses aus und hätte einem Nutzer mit intaktem Token nach einem einmaligen IO-Fehler eine
+  Zwangs-Neuanmeldung aufgedrängt. Richtung deshalb: **kein Signal statt falsches Signal** — der
+  Wecker hängt nicht an diesem Flow, die Notlage-Neuanmeldung schon.
 - **`OAuth2TokenManager.refresh()`s Rotation-Chain-Check muss den NEUEN Token gegen die ID des
   ALTEN prüfen, nicht zwei „previous"-Zeiger gegeneinander.** `TokenData.validateRotation(id)` ist
   `this.previousRotationId == id` — der korrekte Aufruf ist also
@@ -1493,12 +1536,41 @@ Wecker gekostet:**
   Direct-Boot-Prozess (der `BootReceiver` injiziert dieses Repository) ist der Fehler garantiert:
   CE-Store nicht lesbar. Nach dem Entsperren wäre er lesbar, deshalb 10 Versuche mit wachsendem
   Abstand statt endgültigem Aus.
+- **Eine unvollständige Eventliste ist KEINE Löschgrundlage — und „unvollständig" hat zwei
+  Quellen.** `syncAlarms()` entfernt im Delta-Sync jeden bestehenden Alarm, dessen `eventId` in der
+  übergebenen Liste fehlt; „Termin gelöscht" und „Termin fehlt in diesem Ausschnitt" sind auf der
+  reinen Liste **nicht unterscheidbar**. Die zwei Quellen:
+  1. **Teilerfolg**: `getCalendarEventsWithCache()` liefert bei einem Ausfall EINZELNER Kalender
+     bewusst `Result.success` mit den Events der überlebenden. Für die Anzeige richtig — als
+     Löschgrundlage tödlich: fällt der Dienstplan-Feed aus, während der private Kalender antwortet,
+     findet KEIN Schicht-Alarm mehr seinen Treffer.
+  2. **Lazy-Präfix**: der Vordergrund-Ladevorgang holt pro Kalender nur die ersten **10** Events
+     (`observeCalendarSelection` → `initialPageSize = 10`), während `totalEvents` den vollen
+     14-Tage-Bestand zählt. Bei mehr als zehn Schichten in 14 Tagen — für einen Schichtplan der
+     Normalfall — löschte jedes App-Öffnen die spätesten Wecker samt „Schicht entfällt"-Meldung.
+
+  Deshalb: **jeder löschende Konsument geht über `getCalendarEventsWithStatus()` und prüft
+  `CalendarFetchOutcome.isComplete`** (Vorbild `previewTimelineWithStatus()` — die Unvollständigkeit
+  muss über die Grenze kommen, sonst ist sie beim Leser eine ununterscheidbar kurze Liste).
+  Betroffen und umgestellt: `BootReceiver` (Validierung nur bei vollständigem Abruf),
+  `AlarmMaintenanceService`, `CalendarPreAlarmRefreshWorker` (der gefährlichste — er läuft **3 h vor
+  der Weckzeit**) und `CalendarViewModel` (fordert bei gekürzter Anzeige die vollständige Liste
+  nach, `isEventListCompleteForAlarmSync` als reine Funktion daneben).
+  **Auch der `CalendarStateHolder` trägt die Vollständigkeit mit** (`eventsComplete`): sein Leser
+  `ShiftViewModel.triggerAlarmCreationFromConfigUpdate()` gibt die Liste an `syncAlarms()` weiter,
+  bekam aber genau das Lazy-Präfix. Das Flag steht bewusst an der GRENZE statt als Prüfung im
+  einzelnen Leser — ein künftiger dritter Leser erbt die Falle sonst erneut (gleiche Überlegung wie
+  beim zentralen Master-Pause-Backstop). `clearEvents()` setzt es auf `false`: leer UND „vollständig"
+  wäre die gefährlichste Kombination. **Wer einen neuen `syncAlarms()`-Aufrufer ergänzt, muss diese
+  Frage beantworten** — die Zwillinge sind hier zweimal übersehen worden, beide Male erst beim
+  eigenen Nachlesen gefunden, nicht durch eine Prüfrunde.
 - **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — für eine Wecker-App ist „leer" die
   gefährlichste Lüge, und `syncAlarms()` deutet eine leere Eventliste als „keine Schichten" und
   löscht ALLE Alarme (System, Repository, Direct-Boot-Spiegel). Vier Stellen sind deshalb festgelegt:
   `CalendarUseCase.getCalendarEventsWithCache()` wirft bei **Totalausfall** aller angefragten
-  Kalender den ersten Fehler (Teilerfolg bleibt bewusst Erfolg — gleiche Abgrenzung wie
-  `CalendarViewModel.resolveCalendarAuthorizationOutcome()`); `CalendarPreAlarmRefreshWorker` und
+  Kalender den ersten Fehler (Teilerfolg bleibt Erfolg — gleiche Abgrenzung wie
+  `CalendarViewModel.resolveCalendarAuthorizationOutcome()`; für löschende Konsumenten reicht das
+  aber NICHT, siehe den Punkt darüber); `CalendarPreAlarmRefreshWorker` und
   `AlarmMaintenanceService` haben zusätzlich je ein eigenes Leerlisten-Gate (zweite
   Verteidigungslinie, weil jeder künftige Aufrufer dieselbe Falle erbt);
   `CalendarSelectionRepository.getCurrentSelectedCalendarIds()` liest den **DataStore**, nicht den im

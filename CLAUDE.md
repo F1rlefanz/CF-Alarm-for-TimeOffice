@@ -1249,10 +1249,16 @@ Wecker gekostet:**
   (29.07.2026) nach dem Policy-Fix:** `adb shell dumpsys notification --noredact` zeigt die
   tatsächlich registrierte Regel mit `alarms=allow, media=allow, calls=disallow, messages=disallow,
   repeatCallers=allow` — exakt die neuen Defaults, `updateAutomaticZenRule()` nachweislich beim
-  Tick aufgerufen. **Noch offen:** ein echter wiederholter Testanruf, der die Anrufer-Ausnahme
-  (`allowRepeatCallers`) tatsächlich prüft, und der Modus „Während der Dienstzeit" mit real
-  synchronisierten Alarmen (bestehende Alarme vor diesem Feature haben `shiftStartTime = 0`, siehe
-  unten).
+  Tick aufgerufen. **Dritter Lauf (14.08.2026, Emulator): beide zuvor offenen Punkte belegt.**
+  „Während der Dienstzeit" mit echten Kalenderzeiten: am AD1-Tag um 04:00 `zen_mode=1`/
+  `STATE_TRUE`, um 05:30 `zen_mode=0`/`STATE_FALSE` — der Rufbereitschaft-Cutoff kappt, obwohl
+  der Termin bis 24:00 läuft und der Alarm noch steht. Und die Anrufer-Ausnahme
+  (`allowRepeatCallers`) per simuliertem Anruf (`adb emu gsm call`): erster Anruf
+  `SKIP_RINGING (Inaudible: isVolumeOverZero=true, shouldRingForContact=false)` im
+  Telecom-Log — also von UNSERER Regel unterdrückt, nicht von der Lautstärke —, der
+  Wiederholungsanruf derselben Nummer 34 s später `START_RINGER` + `START_VIBRATOR`.
+  Einschränkung: simulierte Telefonie, aber die Entscheidung fällt in Androids
+  `matchesCallFilter` gegen die registrierte Regel, also im identischen Codepfad.
 - **Logcat-Fallstrick beim Debuggen, kein Bug:** `W/System.err` mit `java.lang.Exception: Stack
   trace` + `Thread.dumpStack()` rund um `setAutomaticZenRuleState()` ist Androids eigenes internes
   Aufruf-Tracing für Zen-Änderungen — sieht wie ein Crash aus, ist keiner. Der direkt folgende

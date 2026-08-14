@@ -60,8 +60,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 37
-        versionCode = 90
-        versionName = "1.25.0"
+        versionCode = 91
+        versionName = "1.25.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

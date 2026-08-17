@@ -1,12 +1,8 @@
-# TimeOffice-Abhängigkeit
+# TimeOffice-Abhaengigkeit — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
-
----
-
-### TimeOffice-Abhängigkeit
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
 - **CFAlarms gesamte Funktion hängt an einer Kette außerhalb dieser App**: TimeOffice
   (`de.pradtke.timeoffice`) schreibt den Dienstplan (inkl. Krankschreibungen) lokal in einen

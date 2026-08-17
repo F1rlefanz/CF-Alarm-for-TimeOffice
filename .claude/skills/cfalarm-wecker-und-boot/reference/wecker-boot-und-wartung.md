@@ -1,20 +1,50 @@
-# Alarme, Boot & Hintergrunddienste
+# Wecker, Vollbild, Snooze, Boot und 6h-Wartung — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+
+## Inhalt
+
+- Zwei Scopes rufen bewusst NIE `.cancel()`
+- `WakeLockManager`/`IWakeLockManager` sind ENTFERNT
+- Eine Instanz besitzt den Wecker
+- `AlarmSoundService`: `stopSelf(startId)` und `START_REDELIVER_INTENT`
+- Vollbild: Dismiss und Snooze teilen eine Einweg-Sperre (`OneShotAlarmHandoff.claim()`, am Anfang
+- `AlarmFullScreenActivity` braucht `onNewIntent()` mit `setIntent()`
+- `visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS
+- Alle drei `setAlarmClock()`-Aufrufstellen behandeln eine entzogene Exact-Alarm-Berechtigung gleich
+- Ein schwebender Snooze ist abbrechbar (`cancelSnooze`/`cancelAllSnoozes`) — aber nur auf
+- Blockierte Benachrichtigungen sind ein WECKER OHNE OBERFLAECHE — und das muss sowohl sichtbar
+- Löschen heißt IMMER: erst `cancelSystemAlarm()`, dann `deleteAlarm()`
+- Der `isPersistenceBlocked()`-Wächter in `clearInternalAlarms()` unterscheidet, WARUM geräumt
+- Ein manueller Alarm lässt sich nicht anlegen, während „Automatische Alarme" aus ist
+- Der Snooze-Merker ist serialisiert (`snoozeRegistryLock`) und schreibt mit `commit()`
+- Die datengetriebenen Räumzweige von `syncAlarms()` schonen MANUELLE Alarme
+- `clearInternalAlarms()` fragt ZUERST `alarmRepository.isPersistenceBlocked()` und scheitert
+- Die Hue-Regelausführung im `AlarmReceiver` ist gedeckelt (`withTimeoutOrNull`,
+- Kein `startActivity()` aus dem AlarmReceiver
+- `_alarmActive = true` VOR `startForeground()`
+- Snooze braucht `snoozeAlarmAction(id)`
+- Ein schwebender Snooze muss einen Reboot überleben
+- NICHTS am Application-Graphen darf WorkManager (oder CE-Storage) beim BAUEN anfassen
+- Kein `getSharedPreferences()` und kein CE-Zugriff in einem Property-Initializer einer Klasse am
+- Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
+- `AlarmMaintenanceService`: `stopSelf(startId)`, niemals blankes `stopSelf()`
+- Die 6h-Wartungskette hat GENAU einen Planer: `scheduleNext()`, auf genau einem Request-Code
+- Dieser `finally`-Block läuft in `withContext(NonCancellable)` und fängt den
+- Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Lade-/Sync-Entscheidung
+- `BootReceiver` liest die Kalenderauswahl über den DataStore und entscheidet nicht auf einem
+- `TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`
+- Das "Nächsten Alarm überspringen"-Flag läuft zeitbasiert ab, nicht per ID-Match
+- Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft
+- Stille Schicht (`ShiftDefinition.isSilent`/`AlarmInfo.isSilent`, seit v1.20.0) ist KEIN Ersatz
+- „Deine Schicht beginnt um" (Notification + Vollbild) muss `AlarmInfo.shiftStartTime` zeigen,
+- `ShiftConfig.autoAlarmEnabled = false` ist eine ECHTE, sofortige Pause
+- `AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst — nicht die
 
 ---
 
-## Bekannt und so gewollt
-
-- **`res/mipmap-anydpi-v26` bleibt, obwohl Lint den `-v26`-Qualifier bei `minSdk 26` als
-  überflüssig meldet (`ObsoleteSdkInt`).** Gemessen, nicht vermutet (v1.24.0): nach dem Umzug nach
-  `mipmap-anydpi` meldet Lint **zwei `IconXmlAndPng`-WARNUNGEN** — im qualifierlosen Bucket verdeckt
-  die Adaptive-Icon-XML die `ic_launcher*.webp` der Dichte-Ordner. Der Umzug tauscht also einen
-  kosmetischen Hinweis gegen zwei Warnungen und weicht zusätzlich von der
-  Android-Studio-Standardstruktur ab. Die verdeckten Bitmaps stattdessen zu löschen wäre ein
-  sichtbares Risiko am App-Icon ohne Gegenwert. Der eine verbleibende Hinweis ist Absicht.
 - **Zwei Scopes rufen bewusst NIE `.cancel()`** — beide sind seit v1.24.0 an Ort und Stelle
   begründet, weil jede Prüfrunde sie erneut als „vergessenes Aufräumen" gemeldet hat:
   `AlarmReceiver.receiverScope` (das System erzeugt pro Broadcast eine frische Receiver-Instanz,
@@ -26,16 +56,6 @@
   `HueBridgeConnectionManager.cleanup()`). Gegenstück: `HueLightUseCase.followUpScope` ist
   ebenfalls Absicht, dort wäre ein `.cancel()` die Regression.
 
-- **`Logger.business()` loggt auf INFO** → PII (E-Mail, Kalendertitel) landet in Debug-Builds im
-  Datei-Log (`Logger.business`, `util/Logger.kt`). Bewusst: Release-Logs enthalten nur WARN+.
-- **Regel speichern navigiert sofort weg** (`HueRuleConfigScreen`: `createRule()` ist
-  fire-and-forget, `onSaveComplete()` folgt unmittelbar). Ein Fehler landet dadurch erst auf dem
-  `HueSettingsScreen` statt im Formular. Seit v1.10.4 kann die Validierung tatsächlich ablehnen —
-  bisher nur theoretisch, weil die UI-Validierung dieselben Bedingungen vorher abfängt. Wird das
-  je unangenehm: auf das Result warten, bevor navigiert wird.
-- **Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log.** Die Rohdaten liegen als
-  `shift_config_broken` gesichert, der Sync wird ausgelassen, bestehende Alarme bleiben — aber ein
-  sichtbarer Hinweis samt Angebot, die Sicherung zu verwerfen, fehlt noch. Bewusst offengelassen.
 - **`WakeLockManager`/`IWakeLockManager` sind ENTFERNT** (v1.23.1, Klasse + Interface + der ungenutzte
   Konstruktor-Parameter von `AlarmManagerService` + zwei Provider in `ServiceModule`). Sie hatten
   keinen Aufrufer; die Wake-Locks des echten Weckvorgangs liegen direkt in `AlarmReceiver` (PARTIAL,
@@ -200,27 +220,11 @@
   überspringt sich mit WARN, wenn er nicht verfügbar ist. **Kein Unit-Test kann das fangen** (auch
   `ColdStartSmokeTest` nicht: er läuft im entsperrten Prozess) — die Prüfung ist ein echter
   `adb reboot` mit gefülltem Direct-Boot-Spiegel, Ablauf im HANDOFF.
-- **Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen** — er hat den ersten Anlauf
-  dieses Fixes fälschlich als „am Gerät verifiziert" aussehen lassen. Ohne Credential gilt der
-  Nutzer beim `LOCKED_BOOT_COMPLETED` bereits als entsperrend/entsperrt
-  (`ContextImpl.isUserUnlockingOrUnlocked()`), CE-Storage ist lesbar und die Exception bleibt aus;
-  mit PIN ist der Nutzer `RUNNING_LOCKED` und sie kommt. **Vor jedem Direct-Boot-Test deshalb
-  `adb shell locksettings set-pin 1234` setzen und nach dem Reboot NICHT entsperren.** Damit wurde
-  die zweite Fundstelle (`BackgroundServiceManager`, CE-`SharedPreferences` im Property-Initializer
-  des ERSTEN Application-Feldes) erst reproduzierbar: `SharedPreferences in credential encrypted
-  storage are not available until after user (id 0) is unlocked` → 0 wiederhergestellte Alarme.
-  Praktischer Nebeneffekt derselben Sperre: `run-as` kommt an das CE-Verzeichnis nur im entsperrten
-  Zustand — Testdaten also VOR dem Reboot schreiben.
 - **Kein `getSharedPreferences()` und kein CE-Zugriff in einem Property-Initializer einer Klasse am
   Application-Graphen** (`BackgroundServiceManager`, `HueBridgePinningStore`: beide `by lazy`). Der
   Zugriff selbst ist harmlos, der ZEITPUNKT ist es nicht. Wer daraus wieder einen sofortigen
   Initializer macht, baut einen Absturz, den weder ein Unit-Test noch ein Emulator ohne
   Bildschirmsperre zeigt.
-- **`HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`.** Vorher
-  stand die Zuweisung davor: warf `initialize()` (siehe oben), blieb ein halb initialisiertes
-  Singleton zurück, das `getInstance()` für den ganzen Prozess kommentarlos weiter herausgab —
-  jeder WorkManager-Zugriff darauf scheiterte, heilbar nur durch Prozess-Neustart. Dieselbe
-  Fehlerklasse wie `cleanup()` auf Prozess-Singletons.
 - **Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
   Ausloeser** (Vollbild-Button, Notification-Button) — nicht zwei getrennte Werte. Gelöst NICHT
   durch einen DataStore-Read in einem der beiden Ausloeser selbst: `AlarmSoundService.
@@ -346,35 +350,6 @@
   `!autoAlarmEnabled` zusätzlich direkt `alarmUseCase.deleteAllAlarms()`, unabhängig vom
   `CalendarStateHolder`-Cache-Zustand — sonst wirkt „Ausschalten" nicht, wenn gerade keine
   Kalender-Events geladen sind (realer Fall direkt nach App-Start).
-- **`ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter einer Volatile-Referenz,
-  Prüfung UND Veröffentlichung hinter `recognitionMutex`, PLUS eine Epochen-Kennung.** Der frühere
-  Mehrfeld-Cache veröffentlichte seinen Schlüssel VOR dem Ergebnis (`lastRecognitionHash`/
-  `lastCacheTime` vor, `cachedMatches` nach `performRecognition()`); dazwischen liegt eine echte
-  Suspend-Phase, und ein nebenläufiger Aufrufer mit gleichem Event-Hash traf die Cache-Bedingung und
-  bekam den alten Stand — im frischen Prozess eine **leere** Liste. `syncAlarms()` liest „leer" als
-  „keine Schichten" und ruft `clearInternalAlarms()`: alle System-Alarme gecancelt, Repository und
-  Direct-Boot-Spiegel geleert. Genau das Symptom „0 Alarme trotz korrekt erkannter Schichten"
-  (v1.21.0 am Fairphone). **Der Mutex allein reicht nicht:** `clearRecognitionCache()` läuft aus
-  synchronem Kontext und kann ihn nicht nehmen — es zählt die Epoche hoch und nullt DANACH den
-  Stand; ein Lauf, dessen Grundlage inzwischen invalidiert wurde, veröffentlicht seinen Stand nicht
-  mehr als frisch. Das ersetzt das alte `recognitionInProgress` mit 200-ms-Polling-Timeout, das nach
-  Ablauf „sicherheitshalber" genau den halbfertigen Zustand las, den es verhindern sollte.
-  `ShiftViewModel.processCalendarEvents` bleibt `suspend` (kein fire-and-forget `launch`) — das war
-  der v1.21.0-Teilfix und ist weiterhin richtig, deckt aber nur einen der Aufrufer ab.
-- **`ShiftDefinition.isEnabled` wird in `performRecognition()` respektiert.** Der Schalter
-  „Schichtdefinition aktiviert" war eine Attrappe: gelesen hat ihn nur die Auswahl-UI, die Erkennung
-  lief über ALLE Definitionen — eine deaktivierte Schicht verschwand aus den Listen, klingelte aber
-  weiter. Gefiltert wird EINMAL, mit Log, wie viele übersprungen wurden. Bewusst **nicht** in
-  `ShiftConfig.findDefinitionFor()`: dort wird ein BESTEHENDER Alarm einer Definition zugeordnet, ein
-  Filter würde einem Alarm aus der Zeit vor dem Deaktivieren seine Hue-Regeln und das
-  `isSilent`-Flag entziehen.
-- **Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden.**
-  `performRecognition()` las `getOrNull()?.definitions ?: emptyList()` — der Repository-Pfad für eine
-  vorhandene, aber nicht dekodierbare Konfiguration liefert ein `Result.failure`, keine Exception.
-  Aus „ich kann die Konfiguration nicht lesen" wurden lautlos 0 Definitionen → 0 erkannte Schichten
-  → `syncAlarms()` löscht ALLE Alarme. Jetzt `getOrThrow()`: der Fehler kommt beim Aufrufer an, der
-  Cache-Schlüssel bleibt unangetastet, der nächste Versuch läuft frisch.
-
 - **`AlarmMaintenanceService.start()` fängt den abgelehnten Vordergrund-Start selbst — nicht die
   Aufrufer.** `startForegroundService()` wirft ab Android 12 eine
   `ForegroundServiceStartNotAllowedException`, wenn die App im Hintergrund ist und der Anlass nicht
@@ -389,3 +364,10 @@
   zweiter Planer. Dazu reicht `AlarmMaintenanceBroadcastReceiver` das `forceSync`-Extra weiter —
   ohne das liefe der nachgeholte Lauf ohne Erzwingen zurück, also wirkungslos.
 
+
+- **Full-Screen-Intent bei ENTSPERRTEM Gerät ist KEIN Bug.** Die Doku sagt: „While the user is
+  using the device, the system UI might display a heads-up notification instead of launching your
+  full-screen intent." Das Vollbild ist für das GESPERRTE Gerät gedacht — ein Test mit entsperrtem
+  Handy in der Hand beweist nichts. Seit Android 14 entzieht der Play Store zusätzlich
+  `USE_FULL_SCREEN_INTENT`, wenn er die App nicht als Wecker-App einstuft; dafür gibt es die
+  Status-Karte mit `canUseFullScreenIntent()`.

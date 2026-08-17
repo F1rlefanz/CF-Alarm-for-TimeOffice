@@ -1,12 +1,27 @@
-# Schichterkennung & Musterabgleich
+# Schichterkennung und Musterabgleich — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+
+## Inhalt
+
+- `ShiftConfig.findDefinitionFor(shiftName)`
+- `ShiftDefinition.matchesKeywords(eventTitle)`
+- Wortgrenzen über Unicode-Kategorien, NICHT `\b`
+- Die einbuchstabigen Standard-Keywords „F"/"S"/"N" gehören in die Vorgaben
+- Jede Standard-Definition hat neben dem Stationskürzel ein generisches, mehrbuchstabiges
+- Geraten wird nicht mehr — vorgeschlagen wird
+- Kein stiller Default-Überschreiber der Schicht-Konfiguration — es gab DREI Schreibstellen
+- „Auf Standardwerte zurücksetzen" rührt `autoAlarmEnabled` nicht an
+- `ShiftViewModel` beobachtet `IShiftUseCase.shiftConfig` und zieht Anzeige, Erkennung UND Alarme
+- `ShiftUseCase.add/update/deleteShiftDefinition` sind ENTFERNT
+- `ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter einer Volatile-Referenz,
+- `ShiftDefinition.isEnabled` wird in `performRecognition()` respektiert
+- Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden
+- Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log
 
 ---
-
-### Schichterkennung & Musterabgleich
 
 **Zwei verschiedene Funktionen, zwei verschiedene Regeln — die Verwechslung hat schon zweimal
 Wecker gekostet:**
@@ -103,3 +118,35 @@ Wecker gekostet:**
   `ShiftViewModel.updateShiftConfig(config)`, weil nur dort `triggerAlarmCreationFromConfigUpdate()`
   → `AlarmUseCase.syncAlarms()` dranhängt.
 
+- **`ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter einer Volatile-Referenz,
+  Prüfung UND Veröffentlichung hinter `recognitionMutex`, PLUS eine Epochen-Kennung.** Der frühere
+  Mehrfeld-Cache veröffentlichte seinen Schlüssel VOR dem Ergebnis (`lastRecognitionHash`/
+  `lastCacheTime` vor, `cachedMatches` nach `performRecognition()`); dazwischen liegt eine echte
+  Suspend-Phase, und ein nebenläufiger Aufrufer mit gleichem Event-Hash traf die Cache-Bedingung und
+  bekam den alten Stand — im frischen Prozess eine **leere** Liste. `syncAlarms()` liest „leer" als
+  „keine Schichten" und ruft `clearInternalAlarms()`: alle System-Alarme gecancelt, Repository und
+  Direct-Boot-Spiegel geleert. Genau das Symptom „0 Alarme trotz korrekt erkannter Schichten"
+  (v1.21.0 am Fairphone). **Der Mutex allein reicht nicht:** `clearRecognitionCache()` läuft aus
+  synchronem Kontext und kann ihn nicht nehmen — es zählt die Epoche hoch und nullt DANACH den
+  Stand; ein Lauf, dessen Grundlage inzwischen invalidiert wurde, veröffentlicht seinen Stand nicht
+  mehr als frisch. Das ersetzt das alte `recognitionInProgress` mit 200-ms-Polling-Timeout, das nach
+  Ablauf „sicherheitshalber" genau den halbfertigen Zustand las, den es verhindern sollte.
+  `ShiftViewModel.processCalendarEvents` bleibt `suspend` (kein fire-and-forget `launch`) — das war
+  der v1.21.0-Teilfix und ist weiterhin richtig, deckt aber nur einen der Aufrufer ab.
+- **`ShiftDefinition.isEnabled` wird in `performRecognition()` respektiert.** Der Schalter
+  „Schichtdefinition aktiviert" war eine Attrappe: gelesen hat ihn nur die Auswahl-UI, die Erkennung
+  lief über ALLE Definitionen — eine deaktivierte Schicht verschwand aus den Listen, klingelte aber
+  weiter. Gefiltert wird EINMAL, mit Log, wie viele übersprungen wurden. Bewusst **nicht** in
+  `ShiftConfig.findDefinitionFor()`: dort wird ein BESTEHENDER Alarm einer Definition zugeordnet, ein
+  Filter würde einem Alarm aus der Zeit vor dem Deaktivieren seine Hue-Regeln und das
+  `isSilent`-Flag entziehen.
+- **Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden.**
+  `performRecognition()` las `getOrNull()?.definitions ?: emptyList()` — der Repository-Pfad für eine
+  vorhandene, aber nicht dekodierbare Konfiguration liefert ein `Result.failure`, keine Exception.
+  Aus „ich kann die Konfiguration nicht lesen" wurden lautlos 0 Definitionen → 0 erkannte Schichten
+  → `syncAlarms()` löscht ALLE Alarme. Jetzt `getOrThrow()`: der Fehler kommt beim Aufrufer an, der
+  Cache-Schlüssel bleibt unangetastet, der nächste Versuch läuft frisch.
+
+- **Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log.** Die Rohdaten liegen als
+  `shift_config_broken` gesichert, der Sync wird ausgelassen, bestehende Alarme bleiben — aber ein
+  sichtbarer Hinweis samt Angebot, die Sicherung zu verwerfen, fehlt noch. Bewusst offengelassen.

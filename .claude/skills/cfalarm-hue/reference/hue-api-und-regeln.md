@@ -1,12 +1,34 @@
-# Philips Hue
+# Philips Hue: API-Semantik, Regeln, Verbindung — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+
+## Inhalt
+
+- Das Auto-Aus gehört der BRIDGE, nicht dem Handy
+- Die V1-API antwortet auch bei ABLEHNUNG mit HTTP 200
+- Ein Fehlschlag der Bridge darf nicht zur leeren Liste degradieren
+- `getBridgeConfig` prüft die Antwort (`bridgeid` oder `mac` müssen da sein), statt sie nur zu
+- Der gesamte Hue-Pfad ist IPv4-only
+- Die Subnetz-Prüfung ist ein HINWEIS auf das Timeout, NIEMALS ein Veto
+- `healthCheckScope` braucht einen `CoroutineExceptionHandler` — der `SupervisorJob` reicht
+- Eine im Direct-Boot übersprungene Hue-Planung wird NACHGEHOLT
+- `cleanup()` auf Prozess-Singletons cancelt NUR Kinder
+- Das 90-Zeichen-Limit für `command` aus der offiziellen Doku greift nicht
+- Timer (`PT00:30:00`), nicht absolute Zeit
+- Auf der Bridge liegen fremde Zeitpläne
+- `autoOffTargetsOf()` filtert bewusst NICHT nach Schichtnamen
+- `HueLightAction.targetId` ist BRIDGE-LOKAL — der Anker über Geräte hinweg ist `targetName`
+- `UNIVERSAL_SHIFT_PATTERN = "ALL"` ist seit v1.24.0 über den Regel-Editor erreichbar
+- `HueBridgeConnectionManager.initialize()` muss idempotent bleiben
+- `Result<RuleValidationResult>` hat zwei Ebenen
+- `MIN_RULE_NAME_LENGTH = 1`, nicht mehr
+- „Bridge eingerichtet" und „Bridge verbunden" sind zwei Fragen
+- `HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`
+- Regel speichern navigiert sofort weg
 
 ---
-
-### Hue
 
 - **Das Auto-Aus gehört der BRIDGE, nicht dem Handy** (seit v1.11.0). `executeRulesForAlarm()`
   legt es im selben Atemzug mit dem Einschalten als Bridge-Zeitplan ab. Der frühere
@@ -116,7 +138,7 @@
   Funktion besitzt nur den Rechenweg (welche Ziele, welche Verzögerung inkl.
   Sonnenaufgangs-Versatz). **Die frühere Begründung „findApplicableRules matcht auch über Keywords"
   war veraltet** — sie verleitete dazu, das Keyword-Matching „wiederherzustellen", also genau die
-  S-auf-S2-Fehlerfamilie neu zu bauen (siehe „Schichterkennung & Musterabgleich").
+  S-auf-S2-Fehlerfamilie neu zu bauen (siehe Skill `cfalarm-kalender-und-schichten`).
 - **`HueLightAction.targetId` ist BRIDGE-LOKAL — der Anker über Geräte hinweg ist `targetName`**
   (seit v1.25.0). Die ID reist im Konfigurations-Export (`hue_schedule_rules`) und im
   Android-Backup mit und zeigt auf einer anderen Bridge ins Leere: die Regel sieht vollständig aus
@@ -138,7 +160,7 @@
   verlorengeht. **Bei offenem Regel-Editor wird NICHT abgeglichen**: das Formular hält einen
   Schnappschuss, der nächste „Speichern" machte die Zuordnung sonst kommentarlos rückgängig. Und
   der Abgleich gehört NICHT in den Weckpfad — der Hue-Zweig im `AlarmReceiver` ist gedeckelt
-  (`HUE_EXECUTION_BUDGET_MS`, 45 s; siehe `alarme.md`). Am Emulator gegen die echte Bridge belegt (14.08.2026): ID künstlich verbogen →
+  (`HUE_EXECUTION_BUDGET_MS`, 45 s; Hergang im Skill `cfalarm-wecker-und-boot`). Am Emulator gegen die echte Bridge belegt (14.08.2026): ID künstlich verbogen →
   „Deckenlampe" landete auf **Lampe 4**, nicht auf der gleichnamigen **Gruppe 10**; Bridge offline
   → Bestand unangetastet, keine Markierung.
 - **`UNIVERSAL_SHIFT_PATTERN = "ALL"` ist seit v1.24.0 über den Regel-Editor erreichbar**
@@ -169,3 +191,22 @@
   `CONNECTED` etwas, fällt nach einem misslungenen Health-Check auf `ERROR` — und dann würde die
   App genau die Pre-Alarm-Checks abschalten, die der Weg zurück sind.
 
+- **`HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`.** Vorher
+  stand die Zuweisung davor: warf `initialize()` (das kann es — es löste früher eager
+  `WorkManager.getInstance()` auf, siehe Skill `cfalarm-wecker-und-boot`), blieb ein halb initialisiertes
+  Singleton zurück, das `getInstance()` für den ganzen Prozess kommentarlos weiter herausgab —
+  jeder WorkManager-Zugriff darauf scheiterte, heilbar nur durch Prozess-Neustart. Dieselbe
+  Fehlerklasse wie `cleanup()` auf Prozess-Singletons.
+- **Regel speichern navigiert sofort weg** (`HueRuleConfigScreen`: `createRule()` ist
+  fire-and-forget, `onSaveComplete()` folgt unmittelbar). Ein Fehler landet dadurch erst auf dem
+  `HueSettingsScreen` statt im Formular. Seit v1.10.4 kann die Validierung tatsächlich ablehnen —
+  bisher nur theoretisch, weil die UI-Validierung dieselben Bedingungen vorher abfängt. Wird das
+  je unangenehm: auf das Result warten, bevor navigiert wird.
+
+- **Der Import-Pfad des Ziel-Abgleichs ist am Gerät belegt** (14.08.2026,
+  `ConfigBackupUseCase.reconcileImportedHueTargets()` — vorher nur durch Unit-Tests gedeckt):
+  echter Export über SAF, die Datei außerhalb der App zur „fremden Bridge" verbogen (ein Ziel mit
+  gültigem Namen, eines mit erfundenem), dann importiert → „Wohnzimmer" wurde SOFORT beim Import
+  von der ungültigen ID 8 auf 1 zurückgeordnet, „Gaestebad" blieb unangetastet und stand
+  **namentlich** im Fertig-Dialog („1 Hue-Regel-Ziel(e) gibt es auf deiner Bridge nicht"). Der
+  Export trägt `targetName` mit — ohne das wäre der Abgleich auf einer anderen Bridge unmöglich.

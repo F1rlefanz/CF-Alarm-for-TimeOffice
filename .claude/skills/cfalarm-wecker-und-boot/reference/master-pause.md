@@ -1,12 +1,8 @@
-# Master-Pause (Hintergrunddienste pausieren)
+# Master-Pause — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
-
----
-
-### Hintergrunddienste pausieren (Master-Pause, seit v1.21.0)
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
 - **Eigenständig neben `autoAlarmEnabled`, keine Kombination der beiden.** `MasterPauseUseCase.
   pause()`/`resume()` (Settings-Tab, `masterpause/`-Package) rührt `ShiftConfig.autoAlarmEnabled`
@@ -51,14 +47,14 @@
 - **Die Master-Pause überlebt weder einen Gerätewechsel noch einen Konfigurations-Import** — beides
   Absicht: sie ist maßgeblicher Zustand, der (anders als die übrigen Laufzeitwerte im
   `settings`-Store) nicht neu abgeleitet wird, und mitgebracht bliebe der Wecker auf dem neuen Gerät
-  STILL. Details in „Gerätewechsel & Konfigurations-Datei".
+  STILL. Details im Skill `cfalarm-persistenz-und-auth`.
 - **Fünf bekannte `syncAlarms()`-Aufrufer** (Stand v1.21.0): `BootReceiver`,
   `AlarmMaintenanceService`, `CalendarViewModel.createAlarmsFromLoadedEvents()`,
   `ShiftViewModel.triggerAlarmCreationFromConfigUpdate()`, `CalendarPreAlarmRefreshWorker`. Wer
   einen sechsten hinzufügt, muss sich um Master-Pause-Gating NICHT mehr einzeln kümmern (siehe
   Backstop oben) — aber genau diese Liste zeigt, wie leicht ein Aufrufer beim manuellen Gaten
   übersehen wird. **Um die VOLLSTÄNDIGKEIT seiner Eventliste muss er sich dagegen selbst kümmern**
-  (siehe „Kalender-Datenfluss"): dafür gibt es keinen Backstop in `syncAlarms()`, weil die Funktion
+  (siehe Skill `cfalarm-kalender-und-schichten`): dafür gibt es keinen Backstop in `syncAlarms()`, weil die Funktion
   einer Liste nicht ansehen kann, ob sie ein Ausschnitt ist.
 - **`DimScheduleUseCase.disable()`/`DndScheduleUseCase.disable()` rühren KEINE persistierten
   Toggles an** (`wellnessEnabled`/`rulesEnabled`/`nightDefaultEnabled` bzw. die DND-Trigger) — nur

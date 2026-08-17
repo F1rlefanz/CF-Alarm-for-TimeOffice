@@ -1,0 +1,809 @@
+# Changelog
+
+Alle nennenswerten Änderungen an CF Alarm for Time Office — in der Sprache der
+Nutzerinnen und Nutzer, nicht in Entwickler-Prosa. Format angelehnt an
+[Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
+
+**Diese Datei ist die Quelle für die öffentliche Changelog-Seite**
+(`docs/changelog.html`). Die Seite wird daraus erzeugt:
+
+```
+python tools/changelog/build_changelog.py            # Seite neu schreiben
+python tools/changelog/build_changelog.py --pruefen  # nur prüfen, ob sie passt
+```
+
+Das HTML zwischen `<!-- CHANGELOG:BEGIN -->` und `<!-- CHANGELOG:END -->` wird
+dabei vollständig ersetzt — **niemals dort von Hand editieren**, die Änderung
+wäre beim nächsten Lauf weg. Alles außerhalb der Marker bleibt unangetastet.
+
+Schreibkonventionen (der Generator verlässt sich darauf):
+
+- `## Version 1.2.3 (Zusatz)` — ein Klammerzusatz am Ende der Überschrift wird
+  zu `<small>(Zusatz)</small>`.
+- `**Stand:** August 2026` — die Datumszeile.
+- `_Ein Satz._` — die kursive Zusammenfassung unter der Überschrift. Der
+  Unterstrich klammert den ganzen Absatz, damit ein *kursives* Wort darin
+  eindeutig bleibt.
+- `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
+- `- **Kurzfassung:** Erklärung` — ein Eintrag.
+
+## 🆕 Version 1.25.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_„Nicht stören" hält jetzt wirklich die ganze Dienstzeit durch – und der Schichtbeginn wird nicht mehr als „Schicht entfernt" gemeldet._
+
+### 🐛 Behoben
+
+- **„Während der Dienstzeit" schaltete sich zum Dienstbeginn wieder ab:** Die Dienstzeit-Fenster wurden aus den gestellten Weckern abgeleitet – und ein Wecker verschwindet, sobald er geklingelt hat. Damit war „Nicht stören" ausgerechnet während der Schicht aus. Am Emulator nachgemessen: mitten in der Frühschicht (Termin 06:00–14:12, Wecker 05:30) war „Nicht stören" um 08:00 abgeschaltet. Die Dienstzeiten werden jetzt eigenständig gemerkt und überleben das Klingeln.
+- **Jeden Schichtmorgen eine falsche „Schicht entfernt"-Meldung:** Sobald die Weckzeit vorbei war, meldete die App den Dienst, den man gerade antrat, als aus dem Dienstplan entfernt. Die Meldung kommt jetzt nur noch, wenn der Termin wirklich verschwunden ist.
+- **Dasselbe beim Schicht-Dimmer:** Dimm-Fenster, die am *Schichtende* hängen, verschwanden aus demselben Grund mitten in der Schicht. Auch sie stützen sich jetzt auf die gemerkten Dienstzeiten.
+
+## Version 1.25.1
+
+**Stand:** August 2026
+
+_Ein Wecker verschwindet nicht mehr, nur weil die App gerade nicht alle Termine geladen hatte._
+
+### 🐛 Behoben
+
+- **Die spätesten Wecker konnten verschwinden:** Beim Öffnen lädt die App zunächst nur die nächsten Termine und den Rest beim Weiterblättern. Wurde in diesem Moment die Schicht-Konfiguration gespeichert, hielt die App die noch nicht geladenen Termine für abgesagt und löschte deren Wecker – bei einem Dienstplan mit mehr als zehn Terminen in zwei Wochen der Normalfall. Am Emulator mit einem echten Dienstplan nachgestellt: aus acht Weckern wurden sechs. Jetzt wird nur noch abgeglichen, wenn der vollständige Terminbestand vorliegt.
+- **Vorab-Abgleich drei Stunden vor dem Wecken:** Antwortete dabei einer von mehreren Kalendern nicht – etwa der Dienstplan-Feed bei schlechter Verbindung –, wurden dessen Wecker als „abgesagt" entfernt, ausgerechnet kurz vor dem Klingeln. Der Abgleich wird jetzt ausgelassen, bis wieder alle Kalender antworten; bestehende Wecker bleiben unverändert stehen.
+
+## Version 1.25.0
+
+**Stand:** August 2026
+
+_Hue-Regeln überleben jetzt einen Bridge-Wechsel: nach einem Konfigurations-Import oder einer neuen Bridge finden sie ihre Lampen über den Namen selbst wieder – und was übrig bleibt, wird benannt statt verschwiegen._
+
+### 🐛 Behoben
+
+- **Hue-Regeln zeigten nach einem Wechsel der Bridge ins Leere:** Eine Regel merkt sich ihre Lampen über eine Nummer, die nur auf *der einen* Bridge gilt. Nach einem Konfigurations-Import oder mit einer neuen Bridge sah die Regel vollständig aus, schaltete aber nichts oder die falsche Lampe – und das merkt man erst morgens. Jetzt merkt sich jede Regel zusätzlich den **Namen** der Lampe bzw. Gruppe und ordnet sich beim ersten Kontakt mit der Bridge automatisch wieder zu.
+
+### ✨ Neu
+
+- **Sichtbarer Hinweis auf unbekannte Ziele:** Was sich nicht eindeutig wiederfinden lässt – etwa weil eine Lampe umbenannt wurde oder zwei gleich heißen –, wird im Hue-Bereich, in der Regel-Liste und im Regel-Editor namentlich angezeigt, statt still zu scheitern. Die App ordnet dabei bewusst *nichts* auf Verdacht zu: eine falsch zugeordnete Lampe wäre schlimmer als eine, die man selbst neu auswählt.
+- **Rückmeldung beim Import:** Ist beim Einlesen einer Konfigurationsdatei bereits eine Bridge verbunden, steht direkt in der Erfolgsmeldung, wie viele Ziele auf diesem Gerät unbekannt sind.
+- Ist die Bridge gerade nicht erreichbar (unterwegs, fremdes WLAN), passiert **nichts**: keine Regel wird umgeschrieben und keine als fehlerhaft markiert.
+
+## Version 1.24.2
+
+**Stand:** August 2026
+
+_Wartungsversion ohne sichtbare Änderung. Der Weck-Bildschirm ist jetzt zusätzlich automatisch abgesichert._
+
+### 🔧 Unter der Haube
+
+- Eine Android-Grundbibliothek aktualisiert, an der ausgerechnet der Weck-Bildschirm hängt. Damit so ein Update nicht unbemerkt am Wecken vorbeigeht, prüft ein automatischer Test jetzt bei jeder Änderung, dass der Weck-Bildschirm erscheint, seine Farben trägt und beide Schaltflächen – „Alarm stoppen“ und „Schlummern“ – da und bedienbar sind, auch bei gesperrtem Bildschirm.
+
+## Version 1.24.1
+
+**Stand:** August 2026
+
+_Kleine Nachlese zu 1.24.0: ein Fehler, der die Verbindung zur Hue-Bridge in manchen Heimnetzen von vornherein verhindert hat, plus die üblichen Aktualisierungen im Unterbau._
+
+### 🐛 Behoben
+
+- **Die Hue-Bridge wurde in manchen Netzen abgelehnt, obwohl sie erreichbar war:** Die App hat vorab geschätzt, ob sich Handy und Bridge im selben Netzabschnitt befinden – und bei Zweifeln gar nicht erst gefragt. In einem Gast-WLAN, einem getrennten Netz, hinter einem Mesh-Repeater mit eigenem Adressbereich oder bei doppeltem Router traf die Schätzung nicht zu, und das Einrichten schlug fehl, obwohl die Bridge geantwortet hätte. Jetzt entscheidet der tatsächliche Verbindungsversuch; die Schätzung bestimmt nur noch, wie lange gewartet wird.
+
+### 🔧 Unter der Haube
+
+- Oberflächen-Bibliothek (Jetpack Compose) und das Build-Werkzeug aktualisiert. Keine sichtbare Änderung an der App – geprüft wurde, dass Größe, Start und Anzeige unverändert sind.
+
+## Version 1.24.0
+
+**Stand:** August 2026
+
+_Aufräum-Runde mit einer kleinen, lang überfälligen Neuerung. Die Prüfung am Ende lief bewusst über Code, an dem in dieser Runde *nichts* geändert wurde – und fand dabei vier echte Fehler, die alle schon länger drinsteckten._
+
+### ✨ Neu
+
+- **Lichtregeln für „Alle Schichten" (Hue-Tab → Regel anlegen):** Bisher musste jede Lichtregel an einen bestimmten Schichttyp gebunden werden. Jetzt gibt es die Auswahl „Alle Schichten“ – die Regel gilt dann für jeden erkannten Dienst. Praktisch für „Licht an, egal welche Schicht“. Die Funktion war intern längst vorhanden, ließ sich aber über keine Ansicht einstellen.
+
+### 🐛 Behoben
+
+- **Ein Lesefehler an den Schichttypen konnte die Weckzeiten auf die Vorgabewerte zurückwerfen:** Ließ sich die gespeicherte Konfiguration einmal nicht lesen, war das für die App nicht von „noch nichts eingerichtet“ zu unterscheiden. Sie arbeitete dann eine halbe Minute lang mit den Standard-Weckzeiten weiter – und Schichten mit eigenen Erkennungsmustern wurden in dieser Zeit nicht mehr erkannt und ihre Wecker gelöscht.
+- **Nach einem Neustart konnte die gesamte Wiederherstellung ausfallen:** Ein einzelner fehlgeschlagener Lesezugriff direkt nach dem Hochfahren beendete die App, bevor sie Wecker, 6-Stunden-Wartung, Dimmer und „Nicht stören“ wieder in Gang setzen konnte.
+- **Ein Lesefehler an den Dimmer-Einstellungen konnte die App beenden** – also ausgerechnet die App, die den Wecker hält.
+- **Der Bildschirm konnte nach der Dimmer-Vorschau dauerhaft abgedunkelt bleiben:** Wer die App innerhalb der fünf Sekunden verließ, behielt eine geräteweite Verdunkelung, die sich von selbst unter Umständen gar nicht mehr löste. Betraf beide Vorschau-Knöpfe (Dimmer-Tab und „Regel testen“).
+- **Ein Schlummer-Wecker konnte beim Neustart aus der Merkliste fallen** und war danach weder abbrechbar noch wiederherstellbar.
+
+### 🔧 Unter der Haube
+
+- Bedienungshilfen verbessert: Alle Symbole wurden einzeln daraufhin geprüft, ob ein Screenreader sie vorlesen muss – bedienbare Schaltflächen haben jetzt eine Beschriftung, rein dekorative bleiben bewusst stumm, damit nicht alles doppelt vorgelesen wird.
+- Der Hue-Regel-Editor und die interne Sonnenaufgangs-Steuerung wurden entflochten; Bildschirme aktualisieren sich jetzt nur noch, solange sie sichtbar sind (schont den Akku).
+
+## Version 1.23.1
+
+**Stand:** August 2026
+
+_Reine Zuverlässigkeits-Runde. Zwei Fehler haben nach einem nächtlichen Neustart verhindert, dass die Wecker vor dem ersten Entsperren zurückkamen — beide waren nur mit gesetzter Bildschirmsperre überhaupt sichtbar._
+
+### 🐛 Behoben
+
+- **Nach einem Neustart kamen die Wecker erst zurück, wenn das Handy entsperrt wurde:** Beim Start vor der ersten Entsperrung stürzte die App unbemerkt ab, noch bevor sie die gespeicherten Wecker wiederherstellen konnte. Startet das Gerät nachts neu (Systemupdate, leerer Akku am Ladegerät) und niemand entsperrt es, klingelte am Morgen nichts. Zwei unabhängige Ursachen, beide behoben und am Testgerät mit PIN nachgewiesen.
+- **Die App konnte „keine Wecker" für wahr halten, obwohl Wecker gespeichert waren:** Vor der ersten Entsperrung ist der gespeicherte Bestand nicht lesbar — das sah für die App aber aus wie „es gibt keine". Der nächste Abgleich hielt daraufhin jede Schicht für neu und überschrieb den Bestand; ein selbst gestellter Wecker war damit weg. Der Bestand wird jetzt nach dem Entsperren nachgeladen, statt die Leere zu glauben.
+- **Ein selbst gestellter Wecker konnte bei „keine passende Schicht" mitgelöscht werden** — obwohl er nichts mit dem Kalender zu tun hat. Er bleibt jetzt erhalten; nur ausdrückliches Ausschalten (Master-Pause, „Automatische Alarme aus") räumt weiterhin alles.
+- **„Automatische Alarme" aus: ein manuell gestellter Wecker verschwand stillschweigend wieder.** Jetzt sagt die App beim Anlegen, dass in diesem Zustand alle Wecker gelöscht werden.
+- **Ein Zeitzonenwechsel im Hintergrund konnte die App beenden** — und damit ausgerechnet die Neuberechnung der Weckzeiten verhindern, für die dieser Mechanismus existiert.
+- **Ein Fehler beim Lichtsteuerungs-Zugriff konnte die App beenden.** Für eine Wecker-App die falsche Reihenfolge der Wichtigkeit: das ist jetzt abgefangen, und die selbstständige Wiederverbindung zur Hue-Bridge überlebt einen einzelnen Fehlversuch.
+- **Der Schlummer-Wecker war nach einem Neustart nicht immer wiederherstellbar** (der Merker konnte bei gleichzeitigen Zugriffen verloren gehen), und das Start-Protokoll behauptete Wiederherstellungen, die nicht stattgefunden hatten.
+- **Anzeigen, die etwas anderes behaupteten als die App tut:** ein ausgeschalteter Schichttyp zeigte weiter eine Weckzeit an (obwohl er nie einen Wecker stellt), die Startseite meldete „Schichttypen werden noch geladen" für einen dauerhaft gescheiterten Ladeversuch und „Zeige 5 von N Terminen" auf einer Karte, die überhaupt keine Termine listet, und die Dimmer-Karte meldete einen „aktiven Fehler", obwohl der Dimmer nie eingeschaltet war.
+- **Im Kürzel-Zuordnungsdialog war die letzte Schicht auf schmalen Geräten nicht antippbar** — und der Dialog ist der einzige Weg, ein Kürzel zuzuordnen.
+
+## Version 1.23.0
+
+**Stand:** August 2026
+
+_Der größte Zuverlässigkeits-Durchgang bisher: der Wecker fällt in einer Reihe von Situationen nicht mehr aus, in denen er es vorher konnte. Dazu zwei Dinge, die die Einrichtung deutlich einfacher machen – die Kürzel deines echten Dienstplans werden vorgeschlagen, und die Konfiguration lässt sich als Datei sichern._
+
+### ✨ Neu
+
+- **Kürzel aus deinem Kalender werden vorgeschlagen (Wecker-Tab → „Schichttypen verwalten"):** Ganz oben steht jetzt die Karte „Diese Kürzel stehen in deinem Kalender" – sie zeigt die Termin-Kürzel, die von keinem Erkennungsmuster getroffen werden, nach Häufigkeit sortiert. Antippen, Schicht auswählen, und das Kürzel wird als Muster ergänzt. Bisher musste man raten, welche Muster die Vorgaben mitbringen; auf einer anderen Station als der, für die sie gedacht waren, hätte man ohne diesen Schritt *nie* einen Wecker bekommen. Zugeordnet wird nur, was du selbst zuordnest – eine falsche Automatik würde einen Wecker auf die falsche Uhrzeit stellen.
+- **Konfiguration exportieren und importieren (Einstellungen-Tab → „Konfiguration"):** Sichert Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören" als Datei – überlebt eine Neuinstallation, funktioniert auch auf demselben Gerät und lässt sich an Kolleginnen und Kollegen weitergeben. Anmeldung, Kalenderauswahl und die Hue-Bridge-Zugangsdaten sind bewusst *nicht* in der Datei; die richtet man auf jedem Gerät selbst ein. Der Import fragt vorher nach, überschreibt den aktuellen Stand und setzt die Wecker sofort neu.
+- **Schichterkennung nicht mehr an eine Station gebunden:** Jeder vorgegebene Schichttyp hat jetzt neben dem Stationskürzel eine allgemeine Bezeichnung, und der Name des Schichttyps zählt selbst als Erkennungsmuster (ab zwei Zeichen). An bestehenden Konfigurationen ändert sich nichts, solange du nicht auf Standardwerte zurücksetzt.
+- **Rückfrage vor destruktiven Aktionen:** „Auf Standardwerte zurücksetzen" und das Löschen eines Schichttyps fragen jetzt nach – beides wirkte sofort auf die gesetzten Wecker und ließ sich nicht rückgängig machen.
+- **Die App ist deutlich kleiner:** rund 10,9 statt 19,8 MB.
+
+### 🐛 Behoben
+
+- **Deaktivierte Schichttypen weckten trotzdem:** Der Schalter „Schichtdefinition aktiviert" nahm den Typ nur aus den Auswahllisten, die Erkennung lief unverändert weiter und stellte weiter Wecker.
+- **Ein fehlgeschlagener Kalenderabruf konnte ALLE Wecker löschen:** Eine leere Terminliste war von „du hast frei" nicht zu unterscheiden – ein Netzfehler oder ein Lesefehler wurde damit als „keine Schichten" verstanden und räumte die gesetzten Wecker ab. An mehreren Stellen behoben, unter anderem auch in der Prüfung 3 Stunden vor dem Wecker.
+- **Die 6-Stunden-Wartung erkannte verschobene und gestrichene Schichten nicht:** Solange der Dienstplan weit im Voraus gepflegt war, sah sie den Kalender praktisch nie an. Der Wecker klingelte dann zur alten Zeit oder für eine Schicht, die es nicht mehr gab – bei einer Krankschreibung Ende Juli rund vier Tage lang unbemerkt.
+- **Ein gestellter Schlummer-Wecker war durch nichts abzubrechen:** Er klingelte durch „Automatische Alarme aus" und durch „Hintergrunddienste pausieren" hindurch – also mitten in einer gerade eingeschalteten Pause.
+- **Der Wecker fiel ganz aus, wenn die Berechtigung für exakte Alarme entzogen war** – während die App weiterhin „Alarme aktiv" anzeigte. Jetzt wird in diesem Fall ungenau geplant (ein paar Minuten Abweichung) statt gar nicht.
+- **„Wecker aus" und „5 Min später" gleichzeitig getroffen** (die Knöpfe liegen dicht übereinander) stoppte den Wecker *und* stellte zusätzlich einen Schlummer.
+- **Ganztägige Kalendertermine wurden um Stunden verrechnet:** „Deine Schicht beginnt um 02:00", Nicht-stören-Fenster ab 02:00, und in einer Konstellation ein Wecker einen ganzen Tag zu früh.
+- **„Mehr laden" in der Terminliste zeigte Termine doppelt, ließ einen Block dazwischen aus und konnte beim Scrollen abstürzen** – bei mehr als einem ausgewählten Kalender. Dadurch erschienen auch Schichten doppelt auf der Startseite.
+- **Schicht-Dimmer und „Nicht stören" verpassten ganze Nächte:** An den Zeitumstellungstagen verschoben sich die Fenster um eine Stunde; ein über Mitternacht laufendes Fenster wurde nach 00:00 fälschlich für beendet gehalten und abgeschaltet; und nach einer Woche ohne Schichten blieb „Während der Dienstzeit" bis zum nächsten Geräte-Neustart wirkungslos.
+- **Verdunkelung und Wärme wirkten erst am nächsten Morgen:** Ein mitten in der Nacht verstellter Regler änderte am laufenden Dimmen nichts.
+- **Hue: die Bridge meldet auch eine Ablehnung als Erfolg** – die App hielt daraufhin Licht für eingeschaltet, das nie anging, legte trotzdem das Auto-Aus an, zeigte „Keine Lampen gefunden" statt eines Hinweises auf die nötige Neukopplung, und die Sonnenaufgangs-Rampe konnte komplett ausfallen. Die Antworten der Bridge werden jetzt wirklich ausgewertet.
+- **Beschädigte gespeicherte Daten überschrieben stillschweigend echte Einstellungen:** Ein Lesefehler galt als „leer" bzw. „Standardwerte", und der nächste Speichervorgang machte das dauerhaft – betraf Schichtkonfiguration, Weckerliste und Anmeldedaten. Jetzt wird der Fehler gemeldet, der ursprüngliche Stand gesichert und nicht überschrieben.
+- **„Auf Standardwerte zurücksetzen" hob die ausgeschaltete Wecker-Automatik auf** – wer nur seine Schichttypen aufräumte, hatte im selben Moment wieder Wecker für alle erkannten Termine. Der Automatik-Schalter bleibt jetzt unangetastet. Außerdem war der Knopf bei fünf Schichttypen aus dem Bildschirm geschoben und dadurch nicht erreichbar.
+- **Nach einer Wiederherstellung auf einem neuen Gerät fragte die App nie wieder nach der Akku-Ausnahme und „App bei Nichtnutzung pausieren"** – obwohl auf dem neuen Gerät naturgemäß keine erteilt war; genau die zwei Einstellungen, die in diesem Projekt nachweislich Wecker verschluckt haben. Ebenso wird ein aktives „Hintergrunddienste pausieren" nicht mehr auf das neue Gerät mitgeschleppt, wo es den Wecker stumm gehalten hätte.
+- **Ein Neustart des Geräts während des Schlummerns ließ den Wecker verschwinden:** Android verliert bei einem Neustart alle gestellten Wecker, und der ursprüngliche Wecker war zu dem Zeitpunkt schon abgelaufen — wer schlummerte und dessen Handy in den Minuten danach neu startete (Systemupdate, leerer Akku am Kabel), wurde nie wieder geweckt. Der Schlummer wird jetzt beim Start wiederhergestellt, auch schon vor der ersten Entsperrung.
+- **Ein Kürzel einer ausgeschalteten Schicht zuzuordnen tat garantiert nichts:** Die Erkennung beachtet nur eingeschaltete Schichttypen. Die Zuordnung schaltet den Typ jetzt mit ein und entfernt das Kürzel bei allen anderen Schichten — sonst hätte die Reihenfolge der Liste darüber entschieden, wann geweckt wird.
+- **Eine beschädigte oder von Hand bearbeitete Konfigurationsdatei wird beim Import nicht mehr blind übernommen:** Unsinnige Werte (etwa eine Schlummer-Dauer von 0 Minuten — der Wecker hätte sich nicht mehr wegdrücken lassen) und unlesbare Regelwerke werden benannt abgelehnt, statt still als „keine Regeln" durchzugehen.
+- **Hinweistexte, die etwas anderes behaupteten als die App tut,** sind richtiggestellt – unter anderem der Erkennungs-Hinweis in der Schicht-Konfiguration und der Weg zurück zum Kalender-Zugriff.
+
+## Version 1.22.1
+
+**Stand:** August 2026
+
+_Die Dimmer-Korrektur-Benachrichtigung erschien praktisch nie, obwohl sie eingeschaltet war._
+
+### 🐛 Behoben
+
+- **Der Schalter für die Dimmer-Korrektur-Benachrichtigung wirkte erst beim nächsten Fensterwechsel:** Wer ihn mitten in einer laufenden Dimm-Phase einschaltete, sah die Benachrichtigung für genau diese Phase nicht mehr – der nächste Wechsel ist üblicherweise das Ende des Fensters am Morgen. Jetzt wirkt der Schalter sofort.
+- **Ohne erteilte Benachrichtigungs-Berechtigung blieb die Korrektur-Benachrichtigung lautlos aus**, ohne jeden Hinweis.
+
+## Version 1.22.0
+
+**Stand:** August 2026
+
+_Schlummer-Dauer ist jetzt einstellbar, dazu ein größerer Rundum-Check mit mehreren behobenen Rand- und Fehlerfällen._
+
+### ✨ Neu
+
+- **Schlummer-Dauer einstellbar (Wecker-Tab):** Bisher fest 5 Minuten – jetzt per Dropdown wählbar (3/5/10/15 Minuten), gilt gleichermaßen für den Vollbild- und den Benachrichtigungs-Schlummer-Knopf.
+
+### 🐛 Behoben
+
+- **Zwei Schichten mit gleichem Namen konnten die Schicht-Verwaltung zum Absturz bringen** oder beim Bearbeiten leise zu einer einzigen Schicht verschmelzen.
+- **Ein beschädigtes Anmelde-Datenpaket konnte die App bei jedem Start abstürzen lassen** – erholt sich jetzt selbstständig, statt in einer Absturzschleife hängenzubleiben.
+- **In seltenen Fällen forderte dich die App unnötig zur erneuten Google-Anmeldung auf**, obwohl die Sitzung eigentlich noch gültig war (passierte, wenn z. B. Wartung und ein manuelles Aktualisieren gleichzeitig liefen).
+- **Eine beschädigte Kalenderauswahl-Datei ließ die Auswahl dauerhaft leer erscheinen**, statt sich zurückzusetzen.
+- **Zurück-Knopf und Speichern in der Hue-/Dimmer-Regelbearbeitung führten je nachdem, wie man den Bildschirm geöffnet hatte, an unterschiedliche Stellen zurück.**
+- **Der Hinweis zur TimeOffice-Synchronisation erschien nicht automatisch**, wenn du die App schon vor diesem Feature eingerichtet hattest.
+- **Schnelles Doppel-Antippen zweier Ausnahme-Chips beim Dimmer-Nacht-Standard konnte eine der beiden Auswahlen stillschweigend verwerfen.**
+- **Sehr schnell aufeinanderfolgende Kalender-Aktualisierungen** (z. B. Auswahl ändern und sofort „Aktualisieren" tippen) **konnten die ältere, überholte Kalenderliste die neuere überschreiben lassen.**
+- **Neu angelegte oder umbenannte Schichten tauchten in der Dimmer-Regel-Bearbeitung erst nach einem App-Neustart auf.**
+
+## Version 1.21.1
+
+**Stand:** August 2026
+
+_Dimmer und Nicht-stören konnten in einer seltenen Kalenderkonstellation eine ganze Nacht überspringen._
+
+### 🐛 Behoben
+
+- **Nacht-Standard übersprang eine ganze Nacht:** Folgte auf einen Arbeitstag mit Wecker am Nachmittag/Abend ein Tag ganz ohne Kalendertermin, blieben Dimmer und „Nicht stören" für die dazwischenliegende Nacht komplett aus – auch wenn danach wieder ein normaler Frühwecker anstand.
+
+## Version 1.21.0
+
+**Stand:** August 2026
+
+_Ein eigener Wecker-Tab bündelt, was bisher verstreut war, und ein neuer Schalter pausiert bei Bedarf wirklich alles._
+
+### ✨ Neu
+
+- **Neuer Wecker-Tab:** Der Schalter „Automatische Alarme", die Liste der aktiven Wecker samt „Nächsten Alarm überspringen" und die Verwaltung der Schichttypen leben jetzt gemeinsam an einem Ort in der Tableiste – vorher verteilt auf Start, Status und Einstellungen.
+- **„Hintergrunddienste pausieren" (neuer Bereich unten in den Einstellungen):** Ein einziger Schalter für längere Abwesenheit – legt Wecker, Dimmer, Nicht-stören und Hue-Automatik gemeinsam mit der 6-Stunden-Wartung selbst still, inklusive über einen Neustart des Geräts hinweg. Beim Wiedereinschalten läuft alles automatisch wieder an.
+
+### 🐛 Behoben
+
+- **„Automatische Alarme" ausschalten löschte bereits gesetzte Wecker nicht:** Der Schalter verhinderte bisher nur neue Wecker – ein schon gestellter klingelte trotzdem. Aus- und Wiedereinschalten wirkt jetzt sofort in beide Richtungen.
+
+## Version 1.20.1
+
+**Stand:** August 2026
+
+_Die Wecker-Anzeige zeigte die falsche Uhrzeit für den Schichtbeginn._
+
+### 🐛 Behoben
+
+- **Vollbild-Wecker und Benachrichtigung zeigten die Weckzeit statt des tatsächlichen Schichtbeginns:** Bei „Deine Schicht beginnt um …" stand bisher die Uhrzeit, zu der der Wecker klingelt (z. B. wegen Anfahrtszeit früher als die Schicht) – nicht die laut Kalender tatsächliche Startzeit der Schicht. Betraf auch das erneute Klingeln nach „5 Min später".
+
+## Version 1.20.0
+
+**Stand:** August 2026
+
+_Rufbereitschaft bekommt eine eigene Nicht-stören-Schiene, Schichten können jetzt "still" sein, und du erfährst per Benachrichtigung, wenn sich eine Schicht ändert oder der Schicht-Dimmer korrigiert werden soll._
+
+### ✨ Neu
+
+- **Rufbereitschaft in „Nicht stören" (neue Karte „Rufbereitschaft"):** Du markierst bestimmte Schichten als Rufbereitschaft und legst eine feste Uhrzeit fest, ab der du erreichbar sein musst – Nicht-stören endet an diesen Tagen automatisch spätestens zu dieser Uhrzeit, unabhängig davon, wie lange dein reguläres Schlaf-Fenster sonst laufen würde.
+- **Stille Schicht (neuer Schalter in der Schicht-Konfiguration):** Für Schichten wie Rufbereitschaft, bei denen du keinen lauten Wecker brauchst – Ton, Vibration und Vollbild-Wecker bleiben aus, die Weckzeit dient weiterhin als Anker für Nicht-stören/Dimmer.
+- **Benachrichtigung bei Schichtänderung (neuer Bereich „Benachrichtigungen" in den Einstellungen, standardmäßig an):** Ändert, entfernt oder ergänzt TimeOffice eine Schicht, bekommst du das jetzt direkt gemeldet, statt es erst beim Blick in die App zu bemerken. Zusätzlich prüft die App ab jetzt automatisch noch einmal 3 Stunden vor jedem Wecker, ob sich am Dienstplan etwas geändert hat.
+- **Dimmer-Korrektur-Benachrichtigung (abschaltbar in den Einstellungen, standardmäßig aus):** Erscheint, solange der Schicht-Dimmer aktiv ist, mit Heller/Dunkler/Pause – für den Fall, dass er zu früh oder zu stark dimmt.
+
+## Version 1.19.1
+
+**Stand:** Juli 2026
+
+_Mehrere Status-Karten führen jetzt direkt zur Lösung statt nur ein Problem zu melden._
+
+### ✨ Neu
+
+- **Direkter Sprung zur Lösung im Status-Tab:** Die Karten „Kalender" (kein Kalender gewählt bzw. Autorisierung verloren) und „Schicht-Konfiguration" (keine Konfiguration verfügbar) bieten jetzt einen Knopf, der direkt zur passenden Aktion führt. Die Karte „Letzter Sync" bekommt bei langer Pause einen „Jetzt synchronisieren"-Knopf.
+
+## Version 1.19.0
+
+**Stand:** Juli 2026
+
+_Neu: eine Status-Karte behält jetzt auch im Blick, ob TimeOffice selbst zuverlässig im Hintergrund läuft._
+
+### ✨ Neu
+
+- **TimeOffice-Zuverlässigkeit im Status-Tab:** CFAlarms Alarme hängen an einem Kalender, den die TimeOffice-App liefert. Wird TimeOffice selbst von Android im Hintergrund eingeschränkt, bleibt der Dienstplan-Sync stehen, ohne dass CFAlarm selbst etwas davon merkt. Eine neue Karte zeigt den Akku-Optimierungs-Status von TimeOffice und verlinkt direkt auf dessen Einstellungen. Erscheint einmalig auch als Hinweis bei der Ersteinrichtung, falls TimeOffice installiert ist.
+
+## Version 1.18.2
+
+**Stand:** Juli 2026
+
+_Der Hinweis „Nächsten Alarm überspringen" konnte tagelang hängen bleiben, auch wenn der übersprungene Alarm längst vorbei war._
+
+### 🐛 Behoben
+
+- **„Aufheben"-Zustand blieb stehen, obwohl der übersprungene Alarm längst vorbei war:** Nach einem einmaligen „Nächsten Alarm überspringen" sollte die Karte automatisch wieder in den normalen Zustand (grünes Symbol, „Überspringen") zurückkehren, sobald dieser Zeitpunkt verstrichen ist. Stattdessen blieb sie im „Aufheben"-Zustand (bräunliches Symbol) hängen, bis man selbst manuell auf „Aufheben" tippte – teils über mehrere Tage, obwohl der eigentliche Wecker in der Zwischenzeit ganz normal geklingelt hat. Die App setzt den Hinweis jetzt von selbst zurück, sobald der übersprungene Zeitpunkt vorbei ist.
+
+## Version 1.18.1
+
+**Stand:** Juli 2026
+
+_Neu: Android's „Nicht stören" lässt sich jetzt automatisch nach Schicht steuern – und du bestimmst selbst, was davon betroffen ist._
+
+### ✨ Neu
+
+- **Nicht stören automatisch schalten (neuer Bereich in den Einstellungen):** Zwei unabhängig zuschaltbare Auslöser – „Schlaf-Fenster folgt dem Dimmer" (Nicht stören ist an, während der Schicht-Dimmer dimmt, ohne eigene Zeiten pflegen zu müssen) und „Während der Dienstzeit" (Nicht stören ist an von Schichtbeginn bis Schichtende, laut Kalender-Termin). Einzelne Schichten lassen sich von „Während der Dienstzeit" ausnehmen, z. B. Rufbereitschaft.
+- **Was genau stummgeschaltet wird, entscheidest du:** eigene Schalter für Anrufe, Nachrichten, Gespräche, Erinnerungen, Termine, System-Töne, Medien und Wecker anderer Apps. Medien (Musik/Podcasts) und fremde Wecker sind standardmäßig ausgenommen – eine laufende Wiedergabe bleibt unangetastet, außer du schaltest das bewusst ein.
+- **Dein eigener Wecker klingelt immer** – unabhängig von all diesen Einstellungen.
+- **Erreichbar bleiben im Notfall:** Wiederholte Anrufer (ein zweiter Anruf kurz nacheinander) kommen auch bei aktivem Nicht-stören durch.
+- **Transparent statt überschreibend:** Die App legt eine eigene, für dich sichtbare Regel unter Einstellungen → Ton → Nicht stören → Zeitpläne an, statt deine manuellen Nicht-stören-Einstellungen stillschweigend zu überschreiben.
+- Benötigt Android 11 oder neuer sowie eine einmalige Freigabe (Benachrichtigungszugriff), auf die beim ersten Aktivieren hingewiesen wird.
+
+## Version 1.17.0 / 1.17.1
+
+**Stand:** Juli 2026
+
+_Nacht-Dimmen ohne eigene Regel, eine Vorschau-Zeitleiste für den Schicht-Dimmer und eine Hue-Bridge, die sich nach Netzwerkverlust von selbst wieder verbindet._
+
+### ✨ Neu
+
+- **Nacht-Standard (Schicht-Dimmer):** Dimmt ab einer festen Uhrzeit bis zum nächsten Wecker – ganz ohne dass dafür eine Schicht-Regel angelegt werden muss. Einzelne Schichten lassen sich per Antippen direkt an dieser Karte von der Nacht-Dimmung ausnehmen (z. B. Nachtdienst), ohne Umweg über eine leere Regel. Verdunkelung und Wärme sind für den Nacht-Standard eigens einstellbar, unabhängig von Wellness.
+- **Dimm-Vorschau:** Ein neuer Vorschau-Bildschirm zeigt für die nächsten Tage konkret, wann tatsächlich gedimmt wird – berechnet aus der echten Konfiguration, keine Simulation im Kopf mehr nötig.
+- **Vorschau-Knopf im Regel-Editor:** zeigt Stärke/Wärme einer Regel kurz an, auch bevor sie gespeichert ist.
+
+### 🐛 Behoben
+
+- **Hue-Bridge verband sich nach Netzwerkverlust nicht von selbst wieder:** War die Bridge unterwegs nicht erreichbar, zeigte die App das korrekt an – aber auch nach der Rückkehr ins Heim-WLAN blieb die Meldung stehen, bis manuell „Erneut versuchen" gedrückt wurde. Die App erkennt eine Netzwerk-Wiederherstellung jetzt selbst und verbindet sich automatisch neu.
+- **Zurück-Pfeil im Dimmer- und im Hue-Regel-Editor** führte zum jeweiligen Haupt-Tab statt zurück zur Regel-Liste.
+
+## Version 1.16.2
+
+**Stand:** Juli 2026
+
+_Neu: der Schicht-Dimmer – dunkelt den Bildschirm rund um deine Schichten automatisch ab, damit du leichter herunterfährst._
+
+### ✨ Neu
+
+- **Schicht-Dimmer (neuer Reiter „Dimmen"):** Legt vor deiner nächsten Schicht eine sanfte, warme Verdunkelung über den Bildschirm und blendet sie zur Weckzeit wieder auf – als Herunterfahr-Hilfe. Verdunkelung und Wärme (Amber, weniger Blaulicht) sind einstellbar. *Nutzt einen Android-Bedienungshilfen-Dienst ausschließlich zum Abdunkeln – er liest keine Bildschirminhalte und erfasst keine Eingaben; du aktivierst ihn selbst und kannst ihn jederzeit wieder abschalten.*
+- **Zwei unabhängige Modi:** „Wellness" dunkelt eine einstellbare Weile vor jeder Weckzeit ab – ganz ohne Regeln. „Schicht-Regeln" dimmt nach frei definierbaren, an deine erkannten Schichten gekoppelten Regeln.
+- **Regeln, die deine Schichten kennen:** Du kannst z. B. „jede Nacht von 22 bis 7 Uhr dimmen, außer in Nachtdienst-Nächten" einstellen – lückenlos jede Kalendernacht, und die Arbeitsnächte deiner Nachtdienste werden automatisch ausgenommen. Etwas, das ein gewöhnlicher Bildschirmdimmer ohne Kalenderwissen nicht kann. Jede Regel gilt für eine bestimmte Schicht (oder für freie Tage bzw. alle Schichten) und hat ein oder mehrere Zeitfenster.
+- **Flexible Zeitfenster:** Fenster-Grenzen wahlweise als feste Uhrzeit, relativ zur Weckzeit oder relativ zum Schichtende (z. B. „ab Schichtende + 1 Stunde" für den Tagschlaf nach einer Nachtschicht). Verdunkelung und Wärme lassen sich zusätzlich pro Regel festlegen.
+- **Dienst-Status im Status-Tab:** Eine neue Karte zeigt, ob der Bedienungshilfen-Dienst aktiv ist, und aktiviert ihn auf Wunsch.
+
+## Version 1.15.2 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Ein irreführender Log-Eintrag beim Verlassen des Status-Tabs ist verschwunden._
+
+### 🐛 Behoben
+
+- **Falscher Fehler-Log beim „Nicht verwendete Apps"-Check:** Verließ man den Status-Tab, während im Hintergrund geprüft wurde, ob die Android-Einschränkung aktiv ist, wurde der dabei normale Abbruch der Prüfung fälschlich als Fehler geloggt (samt zweier Compose-interner Stacktraces). Funktional ohne Auswirkung – die App verhielt sich schon vorher korrekt –, aber im Log sah es nach einem echten Problem aus. Jetzt wird ein Abbruch als das erkannt, was er ist.
+
+## Version 1.15.1
+
+**Stand:** Juli 2026
+
+_Der WLAN-Check vor dem Hue-Bridge-Zugriff erkennt jetzt auch ein falsches WLAN._
+
+### 🐛 Behoben
+
+- **Verbindungsversuch zur Hue-Bridge trotz falschem WLAN:** Der bestehende Schutz (v1.9.5) prüfte nur, ob überhaupt ein WLAN aktiv ist – in einem fremden WLAN (Arbeit, Hotspot, Gäste-Netz) galt das fälschlich als „erreichbar", und die App versuchte trotzdem, die Bridge zu kontaktieren und wartete den vollen 10-Sekunden-Timeout aus. Der Check vergleicht jetzt die tatsächliche Subnetzzugehörigkeit statt nur den Verbindungstyp.
+- **Derselbe blinde Fleck bestand auch beim Wecker selbst:** Bei einer bereits zwischengespeicherten Bridge-Verbindung (der Normalfall dank 30-Minuten-Cache) griff der WLAN-Check bisher gar nicht – jetzt wird auch dort vorab geprüft, bevor ein echter Netzwerkzugriff versucht wird.
+
+## Version 1.15.0
+
+**Stand:** Juli 2026
+
+_Zeitzonen-Fix, ein einheitlicher Herstellerhinweis und ein Aufräumen-Button für Debug-Logs._
+
+### ✨ Neu
+
+- **Alarme überleben jetzt einen Zeitzonen-Wechsel:** Bisher wurde die Weckzeit beim Stellen fest in der damals aktiven Zeitzone verankert – nach einem Zeitzonenwechsel (z. B. auf Reisen) klingelte der Wecker zur falschen Uhrzeit. Die App erkennt den Wechsel jetzt und berechnet die Alarme automatisch neu.
+- **„Alte Logs löschen"-Button im Status-Tab:** löscht auf Wunsch alle Debug-Log-Dateien außer der von heute – die noch aktive, heutige Datei bleibt dabei immer erhalten.
+- **App-Version steht jetzt direkt im Log:** jede neue Tagesdatei beginnt mit einer Kopfzeile, die App-Version und -Code festhält – auch wenn man die Datei ohne den „Senden"-Weg abruft.
+
+### 🐛 Behoben
+
+- **„Später" bei der Akku-Freigabe hielt nicht über einen Neustart:** Nach jedem App-Neustart kam derselbe Hinweis erneut, obwohl man ihn schon einmal übersprungen hatte.
+- **Herstellerhinweis (Xiaomi/OnePlus/Huawei/…) kam an bis zu vier verschiedenen Stellen**, teils wiederholt, teils mit unterschiedlichem (mal generischem, mal konkretem) Text. Jetzt gibt es genau einen Hinweis, mit den echten, herstellerspezifischen Schritten, einmalig pro Gerätetyp.
+- **Eine Weckzeit knapp nach Schichtbeginn** konnte fälschlich einen Tag zu früh wecken (die Logik für Nachtschichten kannte keine Obergrenze). Betraf in der Praxis nur ungewöhnlich knapp konfigurierte Schichten.
+- Aufräumen der Debug-Logs lief bisher nur beim App-Kaltstart – bei durchgehend laufender App griff das kaum. Läuft jetzt zusätzlich alle 6 Stunden mit.
+
+## Version 1.14.0
+
+**Stand:** Juli 2026
+
+_Neuer Onboarding-Schritt gegen einen Android-Mechanismus, der Wecker lautlos löschen kann._
+
+### ✨ Neu
+
+- **Hinweis auf „App bei Nichtnutzung pausieren":** Android kann Apps, die eine Weile nicht geöffnet wurden, per Force-Stop pausieren – dabei gehen alle bereits gesetzten Wecker-Alarme verloren, ohne jeden Hinweis. Für eine App, die bewusst nicht täglich geöffnet werden muss, ist genau das ein reales Risiko: live nachgewiesen als Ursache eines ausgebliebenen Weckers. Die App führt jetzt beim Einrichten aktiv zu der passenden Einstellung, genau wie schon bei der Akku-Ausnahme.
+- **Neue Statuskarte „Nicht verwendete Apps":** im Status-Tab, direkt neben der Akku-Ausnahme – zeigt jederzeit, ob der Schalter aktuell ein Risiko darstellt, mit direktem Sprung zur Einstellung.
+
+## Version 1.13.2
+
+**Stand:** Juli 2026
+
+_Der Hue-Tab sagt nicht mehr dreimal dasselbe, wenn die Bridge nicht erreichbar ist._
+
+### 🐛 Behoben
+
+- **Dreifacher Warnhinweis bei nicht erreichbarer Bridge:** Warst du unterwegs oder außerhalb deines WLANs, stapelten sich im Hue-Tab ein Warnbanner und die Statuskarte mit derselben Aussage – samt drei Warnsymbolen übereinander. Jetzt steht es einmal da: „Nicht verbunden", mit der IP-Adresse und dem Hinweis, dass Lichtaktionen für Alarme ausfallen könnten.
+- **„Prüfen" war da, wo es nichts zu prüfen gab:** Der Knopf zum erneuten Verbindungsversuch erschien nur bei bereits verbundener Bridge – ausgerechnet bei „Nicht verbunden" fehlte er. Jetzt ist er immer erreichbar, sobald eine Bridge eingerichtet ist.
+- **Statusanzeige aktualisiert sich von selbst:** Verlierst du bei geöffnetem Hue-Tab die Verbindung zur Bridge (z. B. beim Verlassen des WLANs), zeigt die Karte das jetzt sofort an, statt auf „Verbunden" stehen zu bleiben.
+
+## Version 1.13.1 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Der Weck-Bildschirm soll bei gesperrtem Gerät jetzt zuverlässig oben bleiben._
+
+### 🐛 Behoben
+
+- **Vollbild-Wecker verschwand bei gesperrtem Gerät sofort wieder:** Auf dem gesperrten, dunklen Gerät kam der Weck-Bildschirm zwar hoch, wurde aber einen Sekundenbruchteil später wieder verdeckt – der Ton lief weiter, aber der Bildschirm ging nicht richtig an bzw. dozte gleich zurück. Ursache: Die App hielt zwar die CPU wach, aber nicht den Bildschirm selbst. Jetzt hält der Weckvorgang den Bildschirm aktiv hell, damit das Vollbild oben bleibt. (Falls der Weck-Bildschirm auf deinem Gerät weiterhin nicht dauerhaft erscheint, hilft ein Blick auf die „Vollbild-Wecker"-Karte im Status-Tab.)
+
+## Version 1.13.0 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Schlummern geht jetzt auch direkt aus der Benachrichtigung – und der Weck-Bildschirm ist ruhiger gestaltet._
+
+### ✨ Neu
+
+- **„5 Min später" direkt in der Benachrichtigung:** Bisher gab es das Schlummern nur auf dem großen Weck-Bildschirm. Kommt der auf manchen Geräten am Sperrbildschirm nicht von selbst hoch, blieb als einziger Knopf „Wecker aus". Jetzt hat die Wecker-Benachrichtigung selbst zwei Knöpfe – „5 Min später" und „Wecker aus" – sodass du auch dann schlummern kannst, wenn nur die Benachrichtigung erscheint. Beide Wege legen denselben Schlummer-Wecker an.
+
+### 🎨 Verbessert
+
+- **Ruhigerer Weck-Bildschirm:** Der Vollbild-Wecker war komplett rot – das wirkte beim Aufwachen etwas alarmierend („als ob die Welt untergeht"). Jetzt ist der Hintergrund hell mit roten Akzenten: Wecker-Symbol, Schicht und der „Alarm stoppen"-Knopf bleiben klar rot, aber ohne die geflutete rote Fläche. Genauso eindeutig als Wecker erkennbar, nur angenehmer für die Augen um 5 Uhr früh.
+
+## Version 1.12.0 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Der Status-Tab zeigt jetzt auf einen Blick, ob die App im Hintergrund laufen darf._
+
+### ✨ Neu
+
+- **Statuskarte „Akku-Ausnahme":** Damit die App auch nach Tagen ohne Öffnen zuverlässig weckt, muss Android sie von der Akku-Optimierung ausnehmen – sonst darf das System sie einfrieren, und dann werden keine neuen Schichten mehr abgeholt. Ob diese Ausnahme aktiv ist, stand bisher nur an einer Stelle, die verschwand, sobald alles in Ordnung war. Der Status-Tab zeigt es jetzt dauerhaft – grün mit Haken, wenn alles passt (direkt neben dem „Vollbild-Wecker"), und rot mit einem Knopf „Ausnahme erlauben", falls nicht. So siehst du den einen wirklich kritischen Punkt für die Dauer-Zuverlässigkeit jederzeit auf einen Blick, ohne in die Android-Einstellungen zu müssen.
+
+## Version 1.11.6 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Beim Öffnen zeigt der Startbildschirm jetzt „Wird geladen …“ statt kurz „nichts gefunden“._
+
+### ✨ Verbessert
+
+- **Kein irritierendes Aufblitzen mehr beim Öffnen:** Die App gleicht bei jedem Öffnen deinen Kalender frisch mit Google ab. In dem Sekundenbruchteil, bis die Termine da sind, stand auf der Startseite unter „Nächste Schicht“ und „Alarm-Status“ kurz ein leerer bzw. warnend wirkender Zustand – obwohl nichts fehlte, die Daten waren nur noch unterwegs. Jetzt steht dort während dieser kurzen Zeit ein neutrales „Wird geladen …“, das sich dann in die erkannte Schicht und die aktiven Wecker auflöst. Rein optisch – an den Weckern selbst ändert sich nichts.
+
+## Version 1.11.5 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Das Regel-Formular ist aufgeräumter, und die Bridge-Suche zeigt sich nicht mehr doppelt._
+
+### ✨ Verbessert
+
+- **Einschalten und Sonnenaufgang stehen jetzt gleichrangig nebeneinander:** Im Regel-Formular überschrieb ein Titel „Aktionskonfiguration“ die Karte fürs normale Einschalten – während der Sonnenaufgangs-Lichtwecker als eigene Karte daneben stand. Das wirkte, als sei das eine der Oberbegriff und das andere ein Anhängsel, obwohl es zwei gleichwertige Wege sind, wie eine Regel das Licht ansteuert. Jetzt sind es zwei schlichte, gleichrangige Karten: „Einschalten“ und „Sunrise-Lichtwecker“. Schaltest du den Sonnenaufgang ein, verschwindet die Einschalt-Karte ganz (er bestimmt dann Farbe und Helligkeit selbst), statt als leere Hinweiskarte stehen zu bleiben.
+- **Die Bridge-Suche erscheint während des Suchens nicht mehr doppelt:** Solange die App nach einer Hue-Bridge suchte, zeigte sie den laufenden „Netzwerk-Scan“ – und direkt darunter trotzdem noch die Karte „Bridge-Suche“ mit dem Knopf zum Starten einer Suche. Einen zweiten Suchlauf anzustoßen, während der erste läuft, ergibt keinen Sinn. Die Start-Karte blendet sich jetzt aus, solange gesucht wird, und kommt zurück, sobald der Lauf fertig ist – bei einem Treffer mit der gefundenen Bridge, ohne Treffer mit dem Knopf für einen neuen Versuch.
+
+## Version 1.11.4 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Das automatische Ausschalten hat jetzt einen eigenen, klaren Platz im Regel-Formular._
+
+### ✨ Verbessert
+
+- **„Automatisch ausschalten“ ist jetzt eine eigene Einstellung:** Bisher steckte der Schalter mitten in der Karte fürs normale Einschalten – dabei gilt das Ausschalten genauso für den Sonnenaufgangs-Lichtwecker. Das war missverständlich: Es sah aus, als gehörte es nur zum einfachen Anschalten. Jetzt steht „Automatisch ausschalten“ als eigener Abschnitt unter beiden Möglichkeiten und gilt sichtbar für beide – egal ob die Regel das Licht direkt anschaltet oder sanft hochdimmt. Ein kurzer Hinweis sagt außerdem, ab wann die Zeit läuft (ab der Weckzeit bzw. ab dem Ende des Sonnenaufgangs).
+
+## Version 1.11.2 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Der Lampentest reagiert jetzt sofort – und blinkt kurz statt eine gefühlte Ewigkeit._
+
+### 🐛 Behoben
+
+- **Der erste Klick auf „Test“ tat nichts:** Direkt nach dem Verbinden mit der Bridge passierte beim ersten Antippen des Test-Knopfes gar nichts – erst der zweite Klick ließ die Lampen blinken. Grund: Die App stieß das Laden der Lampenliste an, wartete aber nicht darauf und schaute sofort in die noch leere Liste. Der erste Klick lud also nur nach, ohne etwas zu tun. Jetzt wartet der Test auf die Liste und blinkt schon beim ersten Antippen.
+- **Der Lampentest blinkt jetzt kurz statt 15 Sekunden:** Das Blinksignal der Bridge läuft von sich aus eine Viertelminute – deutlich zu lang für eine Rückmeldung, auf die man wartet. Der Test beendet es jetzt nach etwa vier Sekunden von selbst.
+- **Wirklich nur ein Blinken pro Lampe:** In 1.11.1 war der doppelte Blitz nur halb behoben. Lampen können gleichzeitig in mehreren Gruppen liegen (eine Deckenlampe etwa in „Wohnzimmer“, „Deckenlampe“ und „Zuhause“) – über die Gruppen zu blinken traf dieselbe Lampe daher mehrfach. Der Test spricht jetzt direkt die Lampen an, wodurch jede genau ein Signal bekommt, egal wie die Gruppen geschnitten sind.
+
+## Version 1.11.1 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Die Zurück-Taste tut endlich das, was sie überall sonst tut – und drei Merkwürdigkeiten im Hue-Bereich sind weg._
+
+### 🐛 Behoben
+
+- **Die Zurück-Taste führt zurück, statt die App zu schließen:** Wer in den Kalender-Events, der Kalender-Auswahl oder der Schicht-Konfiguration die Zurück-Taste drückte, landete unvermittelt auf dem Android-Startbildschirm – die App war zu. Der Pfeil oben links war der einzige Weg zurück. Jetzt führt Zurück eine Ebene höher: aus einem Unterbildschirm zurück in den Bereich, aus dem du gekommen bist, und aus Status, Einstellungen oder Hue zurück auf Home. Nur auf Home schließt Zurück weiterhin die App – so wie man es erwartet.
+- **Der Lampentest blinkt jetzt in einem Stück:** Der Test ließ die Lampen kurz aufleuchten, dann kam eine Pause, und ein, zwei Sekunden später fing das Blinken an. Der Grund: Die App sprach jede Lampe doppelt an – einmal über ihre Gruppe und dann noch einmal einzeln. Da jeder Befehl einzeln zur Bridge geht, kamen die Signale zeitversetzt an. Jetzt wird jede Lampe genau einmal angesprochen, und sie blinken gemeinsam für ein paar Sekunden.
+- **Die Regel-Vorschau lässt das Licht nicht mehr an:** Der „Regel testen“-Knopf schaltete das Licht ein – und ließ es an, wenn die Regel kein automatisches Ausschalten eingestellt hatte (bei einer neuen Regel ist das der Normalfall). Ausschalten ging dann nur noch über die Hue-App. Die Vorschau räumt jetzt immer hinter sich auf: Licht an, kurz hinschauen, Licht wieder aus. Der Hinweis auf dem Bildschirm sagt dazu, ob das Ausschalten zur Regel gehört oder nur zum Test – deine echte Regel bleibt unverändert.
+- **Sonnenaufgang in der Vorschau wird nicht mehr abgewürgt:** Beim Testen einer Sonnenaufgangs-Regel ging das Licht mitten im Aufblenden wieder aus, statt die Rampe zu Ende laufen zu lassen.
+- **Weniger Wiederholung bei der Bridge-Suche:** Über der laufenden Bridge-Suche stand weiterhin „Noch keine Bridge eingerichtet – suche unten nach deiner Hue-Bridge“, obwohl genau das gerade passierte. Die Karte verschwindet jetzt, sobald die Suche losgeht, und die gefundene Bridge steht im Mittelpunkt. War schon einmal eine Bridge verbunden, bleibt der Status sichtbar – dann ist „nicht verbunden“ eine echte Information.
+
+## Version 1.11.0 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Das Auto-Aus fürs Licht liegt jetzt auf der Hue Bridge – es funktioniert damit auch dann, wenn du längst aus dem Haus bist._
+
+### ✨ Neu
+
+- **Die Lampen gehen auch aus, wenn du nicht da bist:** Bisher musste das Handy das Ausschalten selbst erledigen – und erreichte die Bridge nur aus dem heimischen WLAN. Wer nach dem Wecken direkt zur Arbeit ging, nahm das Handy mit, und die Lampen brannten weiter. Jetzt bekommt die Bridge zur Weckzeit den Auftrag „in 30 Minuten ausschalten“ direkt mitgeteilt und führt ihn selbst aus. Wo das Handy dann ist, spielt keine Rolle mehr.
+- **Kein verspätetes Ausschalten mehr:** Der frühere Notbehelf versuchte es bis zu zweieinhalb Stunden lang immer wieder – im ungünstigen Fall gingen die Lampen erst mittags aus, während jemand im Raum saß. Das entfällt: Die Bridge schaltet zur richtigen Zeit oder gar nicht.
+
+### 🐛 Behoben
+
+- **Regel-Formular: die ganze Zeile ist antippbar:** Beim Anlegen einer Licht-Regel reagierte nur der kleine Auswahlkreis links – ein Tipp auf „S2“ oder auf einen Gruppennamen tat schlicht nichts. Jetzt trifft die ganze Zeile, und Screenreader lesen sie als ein zusammenhängendes Bedienelement statt als namenlosen Knopf neben losem Text.
+- **Licht-Regeln liefen für die falsche Schicht – oder gar nicht:** Beim Wecken suchte die App die passende Schicht anhand ihrer Kürzel und nahm den ersten Treffer. Weil die Spätschicht das Kürzel „S“ trägt und dieser eine Buchstabe in fast jedem Schichtnamen steckt („S2“, „Nacht*s*chicht“, „Zwi*s*chendienst“), gewann die Spätschicht praktisch immer. Eine Regel für S2 wurde also nie ausgeführt, und eine Regel für die Spätschicht schaltete bei jeder dieser Schichten das Licht an – die falschen Lampen zur falschen Zeit. Zuverlässig war nur die Frühschicht, und das auch nur, weil sie zufällig an erster Stelle steht. Die Schicht wird jetzt exakt zugeordnet.
+
+## Version 1.10.5 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Der Akku-Hinweis beim Einrichten erklärte einen Ablauf, den es gar nicht gibt._
+
+### 🐛 Behoben
+
+- **Akku-Hinweis beschrieb den falschen Weg:** Der Bildschirm zeigte eine vierstufige Anleitung („Einstellungen öffnen sich“ → „CF Alarm in Liste finden“ → „App antippen“ → „Uneingeschränkt wählen“) und einen Knopf „Zu Einstellungen“. Tatsächlich öffnen sich gar keine Einstellungen – Android stellt schlicht eine Frage, die man mit einem Tipp beantwortet. Der Ablauf war also nie zu sehen. Der Bildschirm sagt jetzt, was wirklich passiert; der Weg selbst bleibt der bequeme Ein-Tipp-Weg.
+- **Weniger Erklärung, dafür die richtige:** Der Kernpunkt stand nirgends und wurde stattdessen dreifach umschrieben. Jetzt steht er einmal und deutlich: Ohne die Freigabe darf Android die App einfrieren – dann werden keine neuen Schichten mehr abgeholt und der Wecker bleibt still. Wer mehr wissen will, tippt auf „Warum ist das nötig?“.
+- **Kein Dialog-Stapel mehr auf OEM-Geräten:** Wer den Hersteller-Hinweis (OnePlus, Xiaomi & Co.) wegtippte, bekam sofort den nächsten Erklär-Dialog vorgesetzt.
+
+## Version 1.10.4 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Zwei stille Fehler aus dem Geräte-Log: doppelte Arbeit beim App-Start, und eine Regel-Prüfung, die nie etwas geprüft hat._
+
+### 🐛 Behoben
+
+- **Hue-Verwaltung startete doppelt:** Beim App-Start richtete sich die Bridge-Verwaltung zweimal ein und verwarf dabei die gerade angelegten Hintergrund-Aufträge, um sie sofort neu anzulegen – vier Licht-Prüfungen wurden binnen zwei Sekunden dreimal umgeplant. Kein sichtbarer Schaden, aber unnötige Arbeit und unnötiger Akkuverbrauch bei jedem Start. Jetzt richtet sie sich genau einmal ein.
+- **Regel-Prüfung ließ ungültige Regeln durch:** Beim Speichern einer Hue-Regel meldete die Prüfung intern „ungültig“, die Regel wurde aber trotzdem gespeichert – die Abfrage sah an der falschen Stelle nach. Die Prüfung greift jetzt wirklich, und wenn sie ablehnt, steht auch der Grund dabei statt eines nichtssagenden „Validation failed“.
+- **Kurze Regelnamen sind ausdrücklich erlaubt:** Intern galt eine Mindestlänge von drei Zeichen, die nie wirksam war. Mit der reparierten Prüfung hätte sie schlagartig gegriffen – und bestehende Regeln mit kurzen Namen wie „FS“ wären weder speicher- noch bearbeitbar gewesen. Die Bedingung lautet jetzt schlicht: Der Name darf nicht leer sein.
+
+## Version 1.10.3 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Die Hintergrund-Wartung startete nach dem Anmelden doppelt und kam sich dabei selbst in die Quere._
+
+### 🐛 Behoben
+
+- **Wartung lief nach dem Anmelden doppelt:** Die Rückmeldung der Kalender-Freigabe wurde zweimal ausgelöst, wodurch der Wartungsdienst zweimal startete. Zwei Durchläufe liefen dann gleichzeitig – und der erste, der fertig wurde, beendete den Dienst und brach den anderen mitten in der Arbeit ab. Diesmal folgenlos, weil gerade nichts zu tun war; hätte der abgebrochene Durchlauf gerade Alarme gesetzt, wären sie verloren gewesen. Die Rückmeldung kommt jetzt genau einmal, und der Dienst räumt sich erst ab, wenn wirklich alle Durchläufe fertig sind.
+
+## Version 1.10.2 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_„Wiederholen“ und „Aktualisieren“ tun jetzt wirklich etwas Sichtbares._
+
+### 🐛 Behoben
+
+- **„Wiederholen“ nach einem Ladefehler blieb wirkungslos:** Der Knopf in der Fehlermeldung lud die Termine zwar neu, aktualisierte aber eine andere Stelle als die, die der Start-Bildschirm anzeigt – dort änderte sich nichts. Schlug der zweite Versuch ebenfalls fehl, wurde das nicht einmal gemeldet: Man landete stumm im selben Zustand wie vorher.
+- **Der „Aktualisieren“-Knopf auf dem Start-Bildschirm ebenfalls:** Gleiche Ursache. Er lud im Hintergrund tatsächlich Termine (die Schichterkennung bekam sie auch), zeigte aber weder Ladeanzeige noch die neue Terminliste noch einen Fehler – er wirkte schlicht tot.
+
+## Version 1.10.1 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Aufgeräumte Hue-Oberfläche: keine zerrissenen Wörter und keine Schalter mehr am Kartenrand. Und „Abmelden“ meldet jetzt wirklich ab._
+
+### 🐛 Behoben
+
+- **„Abmelden“ ließ den Kalender-Zugriff zurück:** Beim Abmelden wurden zwar die Anmeldedaten gelöscht, die Kalender-Freigabe selbst blieb aber bestehen. Die App konnte dadurch im Hintergrund weiter den Kalender des abgemeldeten Kontos lesen – und wer sich danach mit einem *anderen* Google-Konto anmeldete, wurde kurzzeitig noch mit den Daten des alten Kontos bedient. Abmelden räumt jetzt beides ab.
+- **Schalter klebten am Text und verschwanden hinter dem Kartenrand:** Betraf mehrere Stellen in den Hue-Regeln (u. a. „Regel aktivieren“, „Einschalten“, „Automatisch ausschalten“, „Sunrise-Lichtwecker“). Die Beschreibungstexte beanspruchten die gesamte Breite und drängten den Schalter aus dem Bild.
+- **Zerrissene Beschriftungen:** „Bearbeiten“ wurde zu „Bea/rbei/ten“, „Einstellungen“ zu „Einstell/ungen“, „Farbe“ zu „Farb/e“, und „Erste Hue-Regel erstellen“ sowie „Regel testen“ brachen unnötig um. Die Knöpfe hatten schlicht zu wenig Platz für ihre eigene Schrift.
+- **Farbauswahl lief über den Rand:** Die Farbfelder waren fest auf vier pro Zeile eingestellt – zu viele für die verfügbare Breite. Sie ordnen sich jetzt nach dem tatsächlich vorhandenen Platz und passen sich auch großer Systemschrift an.
+
+### ✨ Neu & Verbessert
+
+- **Kein Fehler-Rot mehr vor der Ersteinrichtung:** Der Hue-Tab meldete „Nicht verbunden“ mit rotem Fehlersymbol, bevor man überhaupt die Gelegenheit hatte, eine Bridge einzurichten. Jetzt steht dort neutral, dass noch keine Bridge eingerichtet ist – samt Hinweis, was als Nächstes zu tun ist. Rot bleibt echten Problemen vorbehalten.
+- **Klarere Bridge-Suche:** Vor der Suche gibt es genau eine Schaltfläche. Ist eine Bridge gefunden, steht sie im Mittelpunkt und die Suche rückt als „Erneut suchen“ in den Hintergrund. Der frühere „Löschen“-Knopf ist entfallen – er warf nur die Trefferliste weg, was eine neue Suche ohnehin tut, klang aber, als würde er die Bridge oder die Regeln entfernen.
+
+## Version 1.10.0 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Verliert die App den Kalender-Zugriff, meldet sie sich von selbst zurück – statt still darauf zu warten, dass du es merkst._
+
+### ✨ Neu & Verbessert
+
+- **Kalender-Zugriff meldet sich von selbst zurück:** Entzieht Google der App den Zugriff (z. B. weil die Freigabe abgelaufen ist), fragt die App jetzt von sich aus nach der Zustimmung – der Dialog kommt automatisch. Bisher warf sie die tote Freigabe zwar korrekt weg, sagte aber nichts: Der Wecker-Bildschirm sah normal aus, während im Hintergrund keine Schichten mehr gelesen werden konnten. Den Weg zurück musste man selbst finden und antippen.
+- **Passiert der Verlust, während die App zu ist,** wartet die Nachfrage, bis du die App das nächste Mal öffnest – sie geht nicht verloren.
+- **Du behältst die Kontrolle:** Brichst du den Zustimmungsdialog ab, landest du auf dem Bildschirm „Kalender-Zugriff erforderlich“ und entscheidest per Knopf selbst, wann du es erneut versuchst. Die App fragt nicht in einer Schleife nach.
+
+## Version 1.9.8 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Großer Aufräumer beim Wecken: nur noch ein Weckton statt zwei, ein einziger Stopp-Weg, laufende Medien pausieren, und die Lampen gehen endlich wieder aus._
+
+### 🐛 Behoben
+
+- **Nur noch ein Wecker statt zwei:** Der Alarm klingelte doppelt und belegte zwei Einträge in der Benachrichtigungsleiste. Grund: Zwei unabhängige Tonquellen liefen parallel. Es gibt jetzt genau eine Benachrichtigung und einen Ton.
+- **„Deine Schicht beginnt um …“ ist wieder vollständig:** Die Uhrzeit fehlte in der Benachrichtigung komplett, weil sie unter einem anderen Namen abgelegt als abgeholt wurde.
+- **Wecker nur noch einmal stoppen:** Bisher musste man ihn zweimal ausschalten – einmal in der Benachrichtigung, danach noch einmal im Weck-Bildschirm. Der Weck-Bildschirm schließt sich jetzt von selbst, sobald der Wecker aus ist.
+- **Podcast und Musik pausieren während des Weckers:** Laufende Medien redeten bisher einfach über den Wecker hinweg. Sie werden jetzt pausiert und laufen nach dem Ausschalten oder Schlummern automatisch weiter.
+- **Lampen gehen nach dem Wecken wieder aus:** Bisher blieben sie an – teils den ganzen Tag. Zwei Ursachen: Der Ausschalt-Auftrag galt schon nach einem einzigen Versuch als erledigt (auch wenn die Bridge gar nicht erreichbar war, etwa unterwegs), und er wurde außerdem versehentlich gelöscht, sobald der Wecker geklingelt hatte. Beides behoben; bei unerreichbarer Bridge wird jetzt rund 2,5 Stunden lang erneut versucht.
+- **Erneute Anmeldung funktioniert wieder:** Wer der App im Google-Konto den Zugriff entzogen hatte, kam nicht mehr zurück – die App verlangte eine Neuanmeldung, bot aber keinen Weg dorthin. Half nur noch eine Neuinstallation. Jetzt führt die App sauber in den Anmelde-Vorgang zurück.
+- **Kalender-Zugriff erholt sich selbst:** Lehnte Google den Zugriff ab (abgelaufene Freigabe oder fehlende Kalender-Berechtigung), blieb die App daran hängen und lud endlos nach. Sie erkennt beide Fälle jetzt, verwirft die alte Freigabe und fragt sauber neu nach. Hintergrund: Ein Teil der Anmeldedaten liegt in den Google-Play-Diensten und überlebt sogar eine Neuinstallation der App – deshalb half selbst das Neuinstallieren nicht.
+- **Falsche Meldung „Kein Google-Konto gefunden“:** Beim ersten Anmeldeversuch nach einer Neuinstallation behauptete die App, es sei kein Google-Konto vorhanden – ein zweiter Tipp fand es dann sofort. Der erste Versuch wird jetzt automatisch wiederholt.
+- **Bestätigung für übersprungene Alarme erscheint wieder:** Sie wurde bisher stillschweigend verworfen und war nie zu sehen.
+- **Schlummern ist zuverlässiger:** Ein geschlummerter Wecker konnte im Hintergrund abgeräumt werden, ohne je wieder zu klingeln.
+- **Hue-Bridge wird jetzt zuverlässig gefunden:** Die App fand die Bridge im eigenen WLAN oft nicht, obwohl sie erreichbar war – ein interner Fehler bei der lokalen Suche warf jeden Fund weg. Betroffen war insbesondere, wer den Online-Suchdienst von Philips nicht erreichen konnte (z. B. durch Netzwerk-/DNS-Einstellungen).
+- **Veraltete Hintergrund-Aufträge werden jetzt korrekt aufgeräumt:** Nach Änderungen an den Alarmen blieben teils überzählige Hue-Prüfaufträge im Hintergrund aktiv, statt gelöscht zu werden.
+
+### ✨ Neu & Verbessert
+
+- **Hue-Bridge-Suche deutlich schneller:** Von bis zu 20 Sekunden auf rund 1–2 Sekunden, indem zuerst im eigenen Netzwerk gesucht wird statt zuerst online.
+- **Weck-Bildschirm im Corporate Design:** Er war als einziger Bildschirm der App noch im alten Standard-Blau. Jetzt passt er zum Rest.
+- **Warnung „Vollbild-Wecker nicht erlaubt“:** Neue Status-Karte, die meldet, wenn Android der App die Vollbild-Anzeige entzogen hat – dann erscheint der Wecker nämlich nur als Banner und der Weck-Bildschirm kommt nicht von selbst hoch. Ein Knopf führt direkt in die passende Systemeinstellung. *Hinweis: Solange das Handy entsperrt und in Benutzung ist, zeigt Android absichtlich nur ein Banner – das ist normal. Der Vollbild-Wecker ist für das gesperrte Gerät gedacht.*
+- **Weck-Bildschirm zeigt die Systemleisten korrekt aus:** Ein interner Fehler verhinderte das bisher bei jedem Alarm.
+
+## Version 1.9.7 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Zuverlässigerer Kalender-Login und ein frisches App-Logo._
+
+### 🐛 Behoben
+
+- **Kalenderfreigabe schließt jetzt zuverlässig ab:** Nach dem Erteilen der Kalender-Berechtigung wird der Zugriff jetzt korrekt hergestellt und gespeichert. Vorher konnte es passieren, dass die Freigabe zwar bestätigt war, die App danach aber keinen gültigen Zugriff hatte („No token available").
+
+### ✨ Neu
+
+- **App-Logo im Anmelde-Bildschirm.**
+
+## Version 1.9.5 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Optimierung der Hintergrundprozesse: Zuverlässigere Hue-Anbindung im heimischen WLAN, verbesserte Warnungen bei fehlender Kalender-Erlaubnis und ein neues, langfristiges Protokollsystem für die Fehleranalyse._
+
+### ✨ Verbessert
+
+- **Batterieschonende Hue-Verbindung:** Die App prüft nun im Hintergrund zuerst, ob du dich in einem WLAN befindest, bevor sie versucht, die Hue-Bridge zu erreichen. Unterwegs im Mobilfunknetz wird der Versuch sofort übersprungen, was Akku spart und unnötige Fehlermeldungen reduziert.
+- **Erweiterte Diagnose-Protokolle (8 Tage):** Die App speichert Fehlerprotokolle jetzt tagesweise und hebt diese für eine volle Woche (8 Tage) auf, bevor sie automatisch bereinigt werden. Beim Versand an den Support werden automatisch alle Protokolle der letzten Woche angehängt. So können Hintergrundfehler über längere Zeiträume sauber nachvollzogen werden.
+- **Aktualisierte Status-Warnungen:** Falls im Hintergrund festgestellt wird, dass keine Kalender ausgewählt sind, wird dies nun übersichtlicher in den Protokollen festgehalten.
+
+## Version 1.9.4 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Aufgeräumte Oberfläche: Status- und Einstellungs-Bereich neu sortiert, der manuelle Wecker wandert in ein aufklappbares Fenster, und die Sync-Anzeige stimmt jetzt._
+
+### ✨ Verbessert
+
+- **Manueller Wecker aufgeräumt:** Der manuelle Wecker liegt nicht mehr fest auf der Startseite, sondern öffnet sich über den „＋ Manueller Alarm"-Knopf unten rechts in einem eigenen Fenster. Die Startseite bleibt so auf das Wesentliche fokussiert (nächste Schicht, Wecker-Status, Termine).
+- **„Letzter Sync" stimmt jetzt:** Die Anzeige im Status-Bereich zeigt jetzt den tatsächlich letzten Abgleich – auch wenn du die App nur geöffnet/aktualisiert hast, nicht nur die 6-Stunden-Hintergrundprüfung. Ein alter Wert bleibt weiterhin ein ehrliches Warnsignal, falls länger gar nichts synchronisiert wurde.
+- **Übersichtlicher Status-Bereich:** „Letzter Sync" und das Senden von Diagnose-Protokollen sind jetzt gebündelt im Status-Bereich (vorher teils doppelt und in den Einstellungen).
+- **Kleinere Feinschliffe:** Reiter-Beschriftungen brechen nicht mehr um; der neue Knopf verdeckt keine Inhalte mehr.
+
+### 🔒 Datenschutz
+
+- Beim Senden von Diagnose-Protokollen erscheint jetzt ein kurzer Hinweis, dass die Protokolle Diagnosedaten enthalten; die E-Mail ist an die offizielle Support-Adresse (cfischer@csj.de) vorausgefüllt, alternativ lässt sich jede andere App wählen.
+
+## Version 1.9.3 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Stabilitäts- und Wartungs-Release: die Wecker-Synchronisation läuft jetzt über einen einzigen, gegen gleichzeitige Zugriffe abgesicherten Pfad. Dazu ein großer interner Aufräumschritt und mehr automatische Tests. Keine sichtbaren Funktionsänderungen._
+
+### 🐛 Verbessert
+
+- **Zuverlässigere Wecker-Synchronisation:** Kalender-Aktualisierung, Hintergrund-Wartung und Schicht-Änderungen laufen jetzt durch ein und denselben, gegen gleichzeitige Zugriffe abgesicherten Sync-Vorgang. Das beseitigt Wettlauf-Situationen und doppeltes Setzen von Alarmen und macht das Erstellen, Aktualisieren und Löschen von Weckern robuster.
+
+### 🧰 Intern
+
+- Großer Aufräumschritt: nicht erreichbarer Code entfernt (u. a. ein totes Lifecycle-Cleanup, ein ungenutzter Anmelde-Datenkanal, ein komplettes ungenutztes Hue-Lichtdauer-Modul und toter Kalender-Zwischenzustand).
+- Technik vereinheitlicht: zentrale Hue-Komponenten werden nun einheitlich über die Dependency-Injection bezogen.
+- Neue automatische Tests für die Wecker-Überspringen-Logik und die Wecker-Speicherung.
+
+## Version 1.9.2 (interne Alpha)
+
+**Stand:** Juli 2026
+
+### 🐛 Verbessert
+
+- **Benachrichtigungs-Abfrage zum richtigen Zeitpunkt:** Die Nachfrage nach der Benachrichtigungs-Berechtigung erscheint jetzt erst, wenn du im Hauptbereich der App angekommen bist – nicht mehr direkt beim allerersten Start vor der Anmeldung.
+- **Datenschutzerklärung präzisiert:** Angaben zur Speicherung von Kalenderdaten an das tatsächliche Verhalten der App angeglichen (nur kurzzeitiger Zwischenspeicher; dauerhaft gespeichert werden nur die Weckzeiten, nicht die Termininhalte).
+
+## Version 1.9.1 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Kleine Verbesserungen für die Testphase: sichtbare Fehlermeldungen, flüssigeres Onboarding, mehr Datenschutz in den Protokollen._
+
+### 🐛 Behoben & verbessert
+
+- **Fehler werden jetzt angezeigt statt verschluckt:** Probleme beim Laden von Kalender, Schichten oder Weckern erscheinen als kurze Einblendung (mit „Wiederholen") – vorher blieb der Bildschirm kommentarlos leer.
+- **Akku-Freigabe überspringbar:** Im Einrichtungs-Assistenten lässt sich der Akku-Schritt jetzt mit „Später" überspringen – man kommt nicht mehr in einer Sackgasse fest. Der Hinweis bleibt in den Einstellungen erhalten.
+- **Mehr Datenschutz in den Protokollen:** In der veröffentlichten App landen keine sensiblen Inhalte (E-Mail-Adresse, Termintitel) mehr in der Log-Datei – nur noch Warnungen und Fehler für die Diagnose.
+
+### 🧰 Intern
+
+- Automatische Qualitätsprüfung (Tests, Lint, Build) bei jeder Änderung eingerichtet.
+
+## Version 1.9.0 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Design-Release: Die App erscheint jetzt durchgängig im Corporate Design – klare weiße Karten, Markenrot als Akzent, einheitliche Status-Farben._
+
+### ✨ Neu
+
+- **Neues Erscheinungsbild (Corporate Design):** Durchgängige Marken-Farbwelt (Rot / Off-White / Anthrazit) statt der bisherigen Standard-Optik. Überschriften in der Hausschrift „Mulish", Fließtext in Roboto.
+- **Klar abgesetzte weiße Karten:** Inhalte stehen als eigenständige, weiße Karten auf ruhigem Hintergrund – übersichtlicher als die bisherigen getönten Flächen.
+- **Einheitliche Status-Farben (Ampel-Logik):** Grün = alles in Ordnung, Rot = Fehler, dezente Akzente für Hinweise. Der Status-Bildschirm markiert nicht mehr fälschlich alles als Warnung.
+- **Alarm-Vollbild in Markenrot:** Der Weckbildschirm ist dringlich und zugleich wiedererkennbar.
+
+### 🎨 Feinschliff
+
+- Kopfzeile, Navigation und Einstellungen an das neue Design angepasst.
+- Philips-Hue-Bereich (inkl. „Erfolgreich verbunden") auf den neuen Karten-Stil umgestellt.
+
+## Version 1.8.0 (interne Alpha)
+
+**Stand:** Juli 2026
+
+_Zuverlässigkeits-Release: Der Wecker klingelt jetzt auch in kritischen Situationen rund um Neustart, Sperrbildschirm und Bedienung._
+
+### ✨ Neu
+
+- **Wecker nach Neustart – auch im gesperrten Zustand:** Startet das Handy nachts neu (System-Update, Absturz, leerer Akku) und wird nicht mehr entsperrt, klingelt der Wecker trotzdem. Die Weckzeiten werden dafür in einem geschützten Speicher vorgehalten, der schon vor dem ersten Entsperren verfügbar ist.
+
+### 🐛 Behoben (Zuverlässigkeit)
+
+- **Wecker überlebt Neustart & App-Update zuverlässig:** Ein Fehler in der Neustart-Erkennung konnte dazu führen, dass nach einem Reboot oder Update keine Wecker wiederhergestellt wurden.
+- **Weckton lässt sich nicht mehr versehentlich abwürgen:** Ein Druck auf die Power-Taste, ein eingehender Anruf oder das Wegwischen aus den letzten Apps beenden den Wecker nicht mehr – er läuft, bis bewusst „Stoppen" oder „Snooze" gewählt wird. Neuer „Wecker aus"-Knopf direkt in der Benachrichtigung.
+- **Bestehende Wecker gehen nicht mehr verloren:** Beim automatischen Hintergrund-Abgleich und beim Öffnen des Kalenders konnten andere – auch manuell angelegte – Wecker gelöscht werden.
+- **Kein Wecker-Verlust ohne Internet nach Neustart:** Ließen sich die Kalenderdaten direkt nach dem Neustart nicht laden, wurden gespeicherte Wecker fälschlich gelöscht statt wiederhergestellt.
+
+### 🧰 Für Tester / Aufräumen
+
+- Nicht genutzte Berechtigungen entfernt („Über anderen Apps einblenden", „Sperrbildschirm deaktivieren") – schlanker und Play-Store-freundlicher.
+- Veralteten UI-Test entfernt.
+
+## Version 1.7.0 (interne Alpha)
+
+**Stand:** Juli 2026
+
+### ✨ Neu
+
+- **Philips Hue – Sicherheit:** Bridge-ID-Pinning (Trust-On-First-Use) zusätzlich zur TLS-Validierung
+- **Philips Hue – Bedienung:** „Test" lässt die Lampen kurz blinken; „Verbindung trennen / Bridge vergessen"; Warn-Banner bei Verbindungsverlust
+- **Regel-Test:** Vorschau führt Auto-Aus und Sonnenaufgang verkürzt vor (mit Hinweis); Auto-Aus jetzt auch für Sonnenaufgangs-Regeln
+- **Datenspeicherung:** interne Konsolidierung auf DataStore
+
+### 🐛 Behoben
+
+- „Erfolgreich verbunden"-Karte zeigte fälschlich gleichzeitig ein Fehler-Banner
+- Diagnose-Protokolle: keine sensiblen Daten (E-Mail/Token) mehr in Release-Logs
+
+### 🧰 Für Tester
+
+- Neuer Absturz-Handler + „Logs senden / Problem melden" in den Einstellungen
+
+## Version 1.6.1
+
+**Stand:** 2026
+
+### ✨ Wesentliche Änderungen seit 1.0.x
+
+- **Architektur:** Migration auf Hilt Dependency Injection (Clean Architecture + MVVM)
+- **Zuverlässigkeit:** Exact-Alarm-basierte 6-Stunden-Wartung, gehärteter AlarmReceiver
+- **Sicherheit:** Verschlüsselte Token-Speicherung (AES-256-GCM via Android Keystore / Tink)
+- **Philips Hue:** Sonnenaufgangs-Simulation an echte Weckzeiten gekoppelt
+- **Vorbereitung des internen Alpha-Tests**
+
+_Hinweis: Die folgenden Einträge (1.0.x) dokumentieren frühe Entwicklungsstände._
+
+## Version 1.0.4
+
+**Release Datum:** August 2025
+
+### ✨ Neue Features
+
+- **Verbesserte UI:** Material Design 3 Integration
+- **Philips Hue:** Erweiterte Szenen-Unterstützung
+- **Sicherheit:** Enhanced OAuth 2.0 Implementation
+
+### 🐛 Bug Fixes
+
+- **Calendar Sync:** Bessere Fehlerbehandlung bei Netzwerkproblemen
+- **Alarm Logic:** Korrektur der Zeitzonenbehandlung
+- **Performance:** Reduzierter Batterieverbrauch
+
+### 🔒 Sicherheit
+
+- **Encryption:** Upgrade auf AES-256-GCM
+- **API Security:** Certificate Pinning implementiert
+
+## 🆕 Version 1.0.3
+
+**Release Datum:** Juli 2025
+
+### ✨ Neue Features
+
+- **Smart Scheduling:** KI-basierte Alarm-Optimierung
+- **Multi-Calendar:** Unterstützung mehrerer Google Kalender
+
+### 🐛 Bug Fixes
+
+- **Notification:** Bessere Android 14 Kompatibilität
+- **Background Tasks:** Stabilere WorkManager Implementation
+
+## 🆕 Version 1.0.2
+
+**Release Datum:** Juni 2025
+
+### ✨ Neue Features
+
+- **Hue Integration:** Erste Philips Hue Bridge Unterstützung
+- **Erweiterte Einstellungen:** Benutzerdefinierte Vorlaufzeiten
+
+## 🆕 Version 1.0.1
+
+**Release Datum:** Mai 2025
+
+### 🐛 Bug Fixes
+
+- **Initial Release:** Erste öffentliche Version
+- **Google Calendar:** Basic Integration implementiert
+- **Alarm System:** Grundfunktionalität

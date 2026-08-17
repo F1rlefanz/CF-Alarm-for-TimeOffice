@@ -1,12 +1,8 @@
-# Fehlerbehandlung
+# Fehlerbehandlung — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
-
----
-
-### Fehlerbehandlung
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
 - **`SafeExecutor.safeExecute()` wirft `CancellationException` WEITER, statt sie in einen `AppError`
   zu verpacken.** Eine Cancellation ist kein Fehler des Aufrufs, sondern die Ansage, dass die

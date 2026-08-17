@@ -1,12 +1,21 @@
-# Persistenz (DataStore)
+# Persistenz (DataStore) — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+
+## Inhalt
+
+- Die REIHENFOLGE von `.catch` und `.map` in einem Preferences-Flow ist tragend
+- Die Preferences-Reads der Onboarding-/Gate-Kette gehen über `readOrEmpty()`
+- Bei der Master-Pause ist die RICHTUNG der Degradation die eigentliche Entscheidung
+- `DimOverlayPrefs` schützt seine 13 Lese-Flows über EINEN gemeinsamen `safeData`-Quell-Flow
+- Stille Degradierung darf nie zur Schreibwahrheit werden
+- Ein CE-DataStore-Read VOR der ersten Entsperrung wirft NICHT — er liefert still leere
+- Der Direct-Boot-Spiegel wird bei JEDEM erfolgreichen Load abgeglichen
+- `TinkEncryptionException` wird in `EncryptedDataStoreFactory` als `CorruptionException`
 
 ---
-
-### Persistenz (DataStore)
 
 - **Die REIHENFOLGE von `.catch` und `.map` in einem Preferences-Flow ist tragend** (v1.24.0).
   `ShiftConfigRepository.shiftConfig` hatte `.catch { emit(emptyPreferences()) }` **vor** dem `.map`.
@@ -106,4 +115,3 @@
   übersetzt** (nur die fängt DataStores Selbstheilung), plus `ReplaceFileCorruptionHandler`. Abwägung:
   ein nicht entschlüsselbarer Token ist ohnehin wertlos — EINE Neuanmeldung ist das kleinere Übel
   gegenüber einer App, die nie wieder einen Token speichern kann (Endlos-Re-Auth, keine Alarme).
-

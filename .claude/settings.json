@@ -12,6 +12,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python tools/doku/pruefe_budget.py --hook",
+            "timeout": 20,
+            "statusMessage": "Pruefe Doku-Budget..."
+          }
+        ]
+      }
     ]
   }
 }

@@ -25,8 +25,17 @@ erst bei Bedarf.
 *was*, der Skill sagt *warum* — und ohne das Warum baut man dieselbe Falle in neuer Form nach.
 
 **Pflege:** Neue Erkenntnisse mit Hergang gehören in den Skill, hierher nur die normative Zeile —
-und auch die nur, wenn ihr Bruch den Wecker kostet. Diese Datei war einmal 165 k Zeichen und hat
-damit den Kontext verdrängt, den sie schützen sollte.
+und auch die nur, wenn ihr Bruch den Wecker kostet.
+
+**Diese Datei hat ein Budget, und es wird gemessen.** Sie wuchs vom 22.07. bis 14.08.2026 von
+24.763 auf **149.571 Zeichen — 429 unter dem Limit der Harness**, ohne dass es jemand bemerkte;
+am 11.08. allein kamen 53 k dazu. Das war kein Schlamperei-Problem: jede Zeile stammte aus einem
+echten Bug, jede Ergänzung war für sich berechtigt. Gefehlt hat, dass **niemand die Summe angesehen
+hat** — und die Regel dagegen war reine Prosa. Deshalb jetzt `tools/doku/pruefe_budget.py`:
+Warnung ab 30 k, CI-Fehlschlag ab 40 k, plus ein `SessionStart`-Hook, der sich beim Überschreiten
+von allein meldet. Gegen die echte Historie geprüft — hätte am 03.08. angeschlagen.
+**Wenn die Meldung kommt, ist Verschieben in einen Skill die Antwort, nicht das Anheben der
+Schwelle.** Dort kostet Wissen erst beim Lesen etwas; `reference/*.md` darf deshalb wachsen.
 
 **Ein `: ` in einer `description` MUSS gequotet werden.** Ein unquotierter YAML-Skalar endet am
 ersten Doppelpunkt-mit-Leerzeichen; das Frontmatter wird dann unlesbar, und die Oberfläche zeigt

@@ -40,6 +40,23 @@ jobs:
           # Cache nur auf main schreiben, PRs lesen nur -> kein Cache-Thrashing.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      # DOKU-GATES. Beide brauchen kein Gradle und laufen in Sekunden - sie stehen deshalb
+      # VOR den teuren Schritten, damit ein Doku-Fehler nicht erst nach 20 Minuten auffaellt.
+      #
+      # Warum ueberhaupt: am 17.08.2026 hatten drei von acht SKILL.md ein unquotiertes ': ' in
+      # der `description`. Die Dateien lagen richtig, jede eigene Pruefung war gruen - aber YAML
+      # bricht an dieser Stelle, und die Oberflaeche zeigte statt der Beschreibung die
+      # H1-Ueberschrift. Damit war genau der Trigger weg, fuer den die Beschreibung existiert:
+      # der Skill war vorhanden und sprang praktisch nicht mehr an. Aufgefallen ist es nur durch
+      # Zufall beim Blick in die geladene Skill-Liste. Das darf nicht vom Zufall abhaengen.
+      - name: Skill-Frontmatter pruefen (Trigger duerfen nicht stumm ausfallen)
+        run: python3 tools/skills/pruefe_skills.py .claude/skills
+
+      # Faengt den Fall, dass CHANGELOG.md geaendert und die erzeugte Seite vergessen wurde -
+      # oder umgekehrt jemand docs/changelog.html von Hand editiert hat.
+      - name: Changelog-Seite gegen CHANGELOG.md pruefen
+        run: python3 tools/changelog/build_changelog.py --pruefen
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

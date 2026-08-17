@@ -1,6 +1,6 @@
 ---
 name: cfalarm-hue
-description: Zusicherungen fuer die Philips-Hue-Anbindung der CFAlarm-Wecker-App: die V1-API-Semantik (HTTP 200 auch bei Ablehnung, das Urteil steht im Body), Bridge-Verbindung und Erreichbarkeitsheuristik, Regelabgleich ueber Lampennamen statt bridge-lokaler IDs, das Auto-Aus als Bridge-Zeitplan sowie Vorschau und Lampentest. Zu verwenden bei Arbeit an HueApiClient, HueV1Envelope, HueBridgeConnectionManager, HueLightUseCase, HueRuleUseCase, HueSmartScheduler, HueTargetReconciler, HueViewModel oder HueRuleConfigScreen — und immer dann, wenn Licht am Wecktag nicht angeht, nicht wieder ausgeht, die falsche Lampe schaltet, die Bridge als nicht erreichbar gilt oder der Lampentest mehrfach blinkt.
+description: "Zusicherungen fuer die Philips-Hue-Anbindung der CFAlarm-Wecker-App: die V1-API-Semantik (HTTP 200 auch bei Ablehnung, das Urteil steht im Body), Bridge-Verbindung und Erreichbarkeitsheuristik, Regelabgleich ueber Lampennamen statt bridge-lokaler IDs, das Auto-Aus als Bridge-Zeitplan sowie Vorschau und Lampentest. Zu verwenden bei Arbeit an HueApiClient, HueV1Envelope, HueBridgeConnectionManager, HueLightUseCase, HueRuleUseCase, HueSmartScheduler, HueTargetReconciler, HueViewModel oder HueRuleConfigScreen — und immer dann, wenn Licht am Wecktag nicht angeht, nicht wieder ausgeht, die falsche Lampe schaltet, die Bridge als nicht erreichbar gilt oder der Lampentest mehrfach blinkt."
 ---
 
 # Philips Hue

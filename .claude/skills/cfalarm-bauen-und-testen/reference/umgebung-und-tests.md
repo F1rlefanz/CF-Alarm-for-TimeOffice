@@ -1,23 +1,41 @@
-# Umgebung & Arbeitsweise
+# Umgebung, Build-Eigenheiten und Testverfahren — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+
+## Inhalt
+
+- Gradle UND der Emulator sind in dieser Umgebung erreichbar
+- „Warnungen plötzlich weg" ist kein Fortschritt
+- Built-in Kotlin: migriert (v1.24.x)
+- Debug-Build
+- Die CI baut auch den Release-Pfad
+- Grüne Unit-Tests sind kein Startbeweis
+- `AlarmFullScreenSmokeTest` (`app/src/androidTest/`) startet den Weck-Bildschirm ÜBER DEN
+- Gegen zwei angesteckte Geräte hilft `installDebug`/`connectedDebugAndroidTest` nicht
+- Debug-SHA-1 ist in der Google Cloud Console eingetragen (verifiziert 14.07.)
+- Getestet wird auf einem echten Gerät 
+- Agenten committen nicht selbst in einen gemeinsamen Baum
+- Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen
+- `res/mipmap-anydpi-v26` bleibt, obwohl Lint den `-v26`-Qualifier bei `minSdk 26` als
+- `Logger.business()` loggt auf INFO
+- Die tragfähigsten Funde kamen aus Gerätelogs, nicht aus Code-Inspektion
+- CI-Fallstrick, nicht als roten Lauf missdeuten
+- Der Emulator muss vor Instrumentationstests wach sein
 
 ---
-
-## Umgebung / Arbeitsweise
 
 - **Gradle UND der Emulator sind in dieser Umgebung erreichbar** (verifiziert 15.07.2026 über
   `./gradlew --offline installDebug` → echter Build + Install auf `emulator-5554`, exit 0, ~40s).
   `--offline` nutzen — der Cache ist durch lokale Builds des Nutzers warm; **Ausnahmen:
-  `assembleRelease` und `connectedDebugAndroidTest` brauchen Netz** (siehe „Build & Development
+  `assembleRelease` und `connectedDebugAndroidTest` brauchen Netz** (siehe `CLAUDE.md`, „Build & Development
   Commands"). Selbst bauen, installieren, messen, A/B-testen statt nur durch Inspektion zu
   verifizieren. `emulator`-Binary
   ist nicht auf PATH:
   `C:\Users\Christoph\AppData\Local\Android\Sdk\emulator\emulator.exe`. Bibliotheks-Quelltext bei
   Bedarf trotzdem direkt lesbar: `~/.gradle/caches/modules-2/files-2.1/<group>/…-sources.jar`.
-  Details siehe Memory `env-local-build-and-emulator`.
+  Details im Memory `env_gradle_loopback` (dort steht auch der Emulator-Pfad).
 - **„Warnungen plötzlich weg" ist kein Fortschritt.** `org.gradle.configuration-cache=true`
   (in `gradle.properties`): Die Deprecation-Warnungen entstehen in der Konfigurationsphase. Wird
   der Konfigurations-Cache wiederverwendet, erscheinen sie schlicht nicht neu. Nach jeder Änderung
@@ -76,3 +94,38 @@
   unkommittierten Dateien eines fremden Pakets mitgenommen (der Commit
   „fix(persistenz): stille Degradierung…" enthält deshalb auch das Paket „Erkennungs-Engine und
   Musterabgleich"). Künftig: entweder committet der Orchestrator EINMAL nach Abschluss aller Agenten,
+- **Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen** — er hat den ersten Anlauf
+  dieses Fixes fälschlich als „am Gerät verifiziert" aussehen lassen. Ohne Credential gilt der
+  Nutzer beim `LOCKED_BOOT_COMPLETED` bereits als entsperrend/entsperrt
+  (`ContextImpl.isUserUnlockingOrUnlocked()`), CE-Storage ist lesbar und die Exception bleibt aus;
+  mit PIN ist der Nutzer `RUNNING_LOCKED` und sie kommt. **Vor jedem Direct-Boot-Test deshalb
+  `adb shell locksettings set-pin 1234` setzen und nach dem Reboot NICHT entsperren.** Damit wurde
+  die zweite Fundstelle (`BackgroundServiceManager`, CE-`SharedPreferences` im Property-Initializer
+  des ERSTEN Application-Feldes) erst reproduzierbar: `SharedPreferences in credential encrypted
+  storage are not available until after user (id 0) is unlocked` → 0 wiederhergestellte Alarme.
+  Praktischer Nebeneffekt derselben Sperre: `run-as` kommt an das CE-Verzeichnis nur im entsperrten
+  Zustand — Testdaten also VOR dem Reboot schreiben.
+- **`res/mipmap-anydpi-v26` bleibt, obwohl Lint den `-v26`-Qualifier bei `minSdk 26` als
+  überflüssig meldet (`ObsoleteSdkInt`).** Gemessen, nicht vermutet (v1.24.0): nach dem Umzug nach
+  `mipmap-anydpi` meldet Lint **zwei `IconXmlAndPng`-WARNUNGEN** — im qualifierlosen Bucket verdeckt
+  die Adaptive-Icon-XML die `ic_launcher*.webp` der Dichte-Ordner. Der Umzug tauscht also einen
+  kosmetischen Hinweis gegen zwei Warnungen und weicht zusätzlich von der
+  Android-Studio-Standardstruktur ab. Die verdeckten Bitmaps stattdessen zu löschen wäre ein
+  sichtbares Risiko am App-Icon ohne Gegenwert. Der eine verbleibende Hinweis ist Absicht.
+- **`Logger.business()` loggt auf INFO** → PII (E-Mail, Kalendertitel) landet in Debug-Builds im
+  Datei-Log (`Logger.business`, `util/Logger.kt`). Bewusst: Release-Logs enthalten nur WARN+.
+
+- **Die tragfähigsten Funde kamen aus Gerätelogs, nicht aus Code-Inspektion.** Am 14.07. fanden sich
+  doppelter Auth-Callback, doppelte Bridge-Init, stummer Retry und ein lügender Akku-Screen
+  ausschließlich über Logcat und Screenshots. Muster, die sich wiederholt gelohnt haben:
+  Initialisierungs-Zeilen, die ZWEIMAL erscheinen; WorkManager-Job-IDs, die in Sekunden hochzählen;
+  `JobCancellationException` als ERROR; WARN für Normalfälle. Nach einem Debug-Build plus Logcat zu
+  fragen lohnt in diesem Projekt fast immer.
+- **CI-Fallstrick, nicht als roten Lauf missdeuten:** ein Push kann ZWEI Runs auslösen; die
+  `concurrency`-Gruppe (`ci-${{ github.ref }}`, `cancel-in-progress: true`) bricht den ersten mit
+  „Canceling since a higher priority waiting request exists" ab, während der zweite grün
+  durchläuft. `gh run list --limit 1` erwischt dabei den ABGEBROCHENEN — beim Prüfen immer ALLE
+  Runs zum Commit ansehen, sonst hält man einen grünen Stand für rot (am 14.08.2026 genau so
+  passiert).
+- **Der Emulator muss vor Instrumentationstests wach sein.** `mWakefulness=Asleep` heißt: die
+  Activity bleibt bei CREATED und der Test misst nichts — kein App-Bug. Vorher aufwecken.

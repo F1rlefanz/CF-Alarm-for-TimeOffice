@@ -324,7 +324,7 @@ class HueRuleUseCase @Inject constructor(
      * den Kommentar dort und `HueSunriseExecutor.matchingPreAlarmSunriseRules`. Die Entscheidung
      * "kein zweiter Filter" war richtig, nur die Begruendung war veraltet - und eine veraltete Begruendung
      * verleitet dazu, das Keyword-Matching "wiederherzustellen", also genau die Fehlerfamilie
-     * neu zu bauen, die CLAUDE.md unter "Schicht -> Regel" festhaelt.)
+     * neu zu bauen, die der Skill cfalarm-kalender-und-schichten festhaelt.)
      */
     private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {

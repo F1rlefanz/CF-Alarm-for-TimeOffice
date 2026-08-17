@@ -1,12 +1,26 @@
-# Kalender-Datenfluss & Schicht-Änderungen
+# Kalender-Datenfluss und Schicht-Aenderungen — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
+
+## Inhalt
+
+- `CalendarStateHolder` ist eine Einbahnstraße
+- Laden gehört ausschließlich dem `CalendarViewModel`
+- Endlosschleifen-Bremse im Kalender-`LaunchedEffect` von `MainScreen`
+- Der Collector der Kalenderauswahl nimmt sich wieder auf (`retryWhen`)
+- Eine unvollständige Eventliste ist KEINE Löschgrundlage — und „unvollständig" hat zwei
+- Kein Fehler darf als leeres Erfolgsergebnis durchrutschen
+- Ganztägige Termine gehen durch `CalendarEventConverter`
+- Nachgeladen wird immer ein PRÄFIX, nie eine Seite ab Offset
+- `loadEventsForSelectedCalendars()` braucht einen Generation-Counter, kein einfaches
+- Neue Properties in `CalendarViewModel` (und jedem anderen ViewModel mit `init{}`-Block)
+- Kein echtes Push möglich, bewusst nicht versucht
+- Die Notification-Entscheidung lebt INNERHALB von `AlarmUseCase.syncAlarms()`, nicht bei dessen
+- Der allererste Sync (z. B. nach Neuinstallation) flutet nicht
 
 ---
-
-### Kalender-Datenfluss
 
 - **`CalendarStateHolder` ist eine Einbahnstraße**: `CalendarViewModel` schreibt hinein, liest nie
   daraus; einziger Leser ist `ShiftViewModel`. Wer Events lädt und nur dorthin schreibt,
@@ -152,3 +166,9 @@
   `notifyUpdated()` hat eine eigene Schwelle (Zeit-Delta ≥10min ODER Schichtname geändert), damit
   Rundungsrauschen nicht flutet.
 
+
+- **Die Schicht-Änderungs-Notification feuert auch nach einer reinen DEFINITIONS-Änderung**, nicht
+  nur bei einer echten Dienstplan-Änderung in TimeOffice — live ausgelöst am 14.08.2026 („AD1:
+  06:30 → 05:00, Wecker angepasst"). Das ist folgerichtig (der Sync sieht eine geänderte Weckzeit
+  und kann die Ursache nicht unterscheiden), aber beim Deuten von Nutzer-Meldungen wissenswert:
+  eine solche Meldung heißt nicht zwingend, dass sich der Dienstplan geändert hat.

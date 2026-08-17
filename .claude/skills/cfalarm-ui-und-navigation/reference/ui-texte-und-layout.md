@@ -1,12 +1,8 @@
-# UI-Texte & Compose-Layout
+# UI-Texte und Compose-Layout — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
-
----
-
-### UI-Texte
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
 - **Der Akku-Onboarding-Screen darf keine Einstellungen versprechen.** `MainScreen` feuert
   `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` mit `package:`-Data — das ist Androids
@@ -67,7 +63,7 @@
   eingebaute `minimumInteractiveComponentSize()` nicht mehr mit. Ohne die Klemme schrumpft die
   Reihe auf ~32dp: breiter als vorher, aber flacher als Materials Minimum. Am Emulator
   nachgemessen (Density 420: 48dp = 126px). Konstante: `MIN_TOUCH_TARGET` in
-  `HueRuleConfigScreen`.
+  `ui/screens/hue/HueRuleConfigHelpers.kt`.
 - **Chip-Reihen als `FlowRow`**, nicht `Row` mit `chunked(n)`. `FlowRow` ist seit Compose 1.11.4
   stabil (nur die deprecated Überladung mit `overflow` ist `@ExperimentalLayoutApi`) → kein
   `@OptIn` nötig.

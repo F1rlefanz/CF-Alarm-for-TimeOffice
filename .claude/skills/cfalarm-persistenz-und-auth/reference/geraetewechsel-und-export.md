@@ -1,12 +1,8 @@
-# Gerätewechsel & Konfigurations-Datei
+# Geraetewechsel und Konfigurations-Datei — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
-
----
-
-### Gerätewechsel & Konfigurations-Datei (seit v1.23.0)
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
 - **`DeviceLocalFlagsGuard` (erster Schritt in `initializeApp()`, best-effort) setzt beim erkannten
   Gerätewechsel gerätelokale Flags zurück.** Der `settings`-Store liegt richtigerweise im

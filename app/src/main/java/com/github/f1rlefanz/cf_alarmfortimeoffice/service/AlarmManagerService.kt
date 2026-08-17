@@ -733,7 +733,7 @@ class AlarmManagerService(
 
         // Lint-Befund ApplySharedPref ("nimm apply()") wird hier bewusst NICHT befolgt: der
         // synchrone commit() ist eine Entscheidung, kein Versehen - siehe Kommentar am Write unten
-        // und CLAUDE.md, Abschnitt "Alarm System" ("Der Snooze-Merker ist serialisiert
+        // und Skill cfalarm-wecker-und-boot ("Der Snooze-Merker ist serialisiert
         // (snoozeRegistryLock) und schreibt mit commit()"). apply() schreibt asynchron und verloere
         // denselben Eintrag bei einem Prozess-Tod unmittelbar danach; der Snooze waere dann im
         // AlarmManager scharf, aber der App unbekannt - weder abbrechbar noch nach einem Reboot
@@ -770,7 +770,7 @@ class AlarmManagerService(
         }
 
         // Lint-Befund ApplySharedPref ("nimm apply()") wird hier bewusst NICHT befolgt - dieselbe
-        // Begruendung wie bei [rememberPendingSnooze] und CLAUDE.md, Abschnitt "Alarm System":
+        // Begruendung wie bei [rememberPendingSnooze] und im Skill cfalarm-wecker-und-boot:
         // der Merker ist die einzige Spur eines schwebenden Snooze, und ein asynchroner Write kann
         // bei einem Prozess-Tod unmittelbar danach verloren gehen. Beim Vergessen ist die Richtung
         // gespiegelt, aber genauso wenig hinnehmbar: ein bereits abgebrochener Snooze bliebe im

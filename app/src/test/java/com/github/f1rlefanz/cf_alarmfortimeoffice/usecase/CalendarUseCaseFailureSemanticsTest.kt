@@ -19,7 +19,7 @@ import java.time.LocalDateTime
 /**
  * Fixiert die Fehler-Semantik von [CalendarUseCase.getCalendarEventsWithCache].
  *
- * Kernpunkt (CLAUDE.md, Abschnitt Auth): fuer eine Wecker-App ist "leer" die gefaehrlichste Luege -
+ * Kernpunkt (CLAUDE.md, "Kalender und Schichterkennung"): fuer eine Wecker-App ist "leer" die gefaehrlichste Luege -
  * nicht von "du hast frei" zu unterscheiden. `AlarmUseCase.syncAlarms()` deutet eine leere
  * Eventliste als "keine Schichten" und LOESCHT daraufhin alle Alarme. Scheitern also ALLE
  * angefragten Kalender (beim Nutzer ist typischerweise genau einer ausgewaehlt), darf das Ergebnis

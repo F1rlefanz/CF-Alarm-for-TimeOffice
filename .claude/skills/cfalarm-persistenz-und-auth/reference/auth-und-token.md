@@ -1,12 +1,8 @@
-# Auth & Token
+# Auth und Token-Rotation — Hergang
 
-> Ausgelagert aus `CLAUDE.md` (17.08.2026). Dort steht die Kurzregel, hier der Hergang:
-> warum die Regel existiert, welcher Bug sie erzwungen hat, welche Messung sie belegt.
-> **Vor Änderungen in diesem Bereich lesen.**
-
----
-
-### Auth
+> Hergang zu den Kurzregeln in `CLAUDE.md` und in der `SKILL.md` daneben: welcher Bug die
+> Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
+> Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.** Für eine Wecker-App ist
   „leer" die gefährlichste Lüge — nicht von „du hast frei" zu unterscheiden.
@@ -64,3 +60,17 @@
   löste bei jedem Treffer `tokenRepository.clear()` + Zwangs-Re-Login aus, obwohl der erste Refresh
   längst erfolgreich war. `TokenDataTest` hält die Rotationsketten-Semantik jetzt fest.
 
+
+- **`repeatOnLifecycle(RESUMED)`, nicht STARTED.** Ein Activity-Start aus dem Hintergrund verwirft
+  Android still; CONFLATED puffert das Signal, bis die App vorne ist. Deckt den Verlust im
+  Maintenance-Service mit ab. Der Auto-Dialog ist **nur für den Laufzeit-Verlust** gedacht, nicht
+  für den Kaltstart — dort landet der Nutzer bewusst auf dem `CalendarAuthorizationScreen` und
+  tippt selbst, statt beim Öffnen von einem Dialog überfallen zu werden (ausdrückliche
+  Nutzer-Entscheidung).
+- **`calendarAuthorizationValid` nie bedingungslos `true` setzen** — daran hängt der einzige Weg
+  zurück („Kalender-Zugriff erneuern"). Gleiche Fehlerklasse wie `getOrElse { emptyList() }`.
+- **Der GMS-Token-Cache meldet sich als 401 „Invalid Credentials" oder 403
+  `ACCESS_TOKEN_SCOPE_INSUFFICIENT`** — für ein Token, das GMS ohne Consent-Dialog herausgibt.
+  `getValidToken()` prüft nur die LOKALE Ablaufzeit und merkt davon nichts. Nur
+  `GoogleAuthUtil.clearToken()` räumt den Cache ab; er liegt außerhalb des App-Speichers und
+  überlebt die Deinstallation.

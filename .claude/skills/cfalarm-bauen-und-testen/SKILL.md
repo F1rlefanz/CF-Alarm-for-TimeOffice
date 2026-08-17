@@ -40,10 +40,23 @@ das baut man dieselbe Falle in neuer Form nach.
   Ersetzt trotzdem keinen Gerätetest.
 - **Agenten committen nicht selbst in einen gemeinsamen Baum** — entweder committet der Orchestrator
   einmal am Ende, oder jeder Agent bekommt einen eigenen `git worktree`.
+- **Der Direct-Boot-Test ist ein Befehl, kein Ritual**: `python tools/geraet/pruefe_direct_boot.py`.
+  Er prüft Vorbedingungen, rebootet, wartet auf `RUNNING_LOCKED`, zählt die wieder armierten
+  Wecker und wertet das Boot-Log aus. **Er verweigert jedes Ziel, das nicht `emulator-*` heißt** —
+  er rebootet, und auf dem Fairphone wäre das der echte Wecker des Nutzers; einen
+  Umgehungsschalter gibt es bewusst nicht. Am 17.08.2026 hat er beim ERSTEN Lauf einen echten
+  Befund geliefert (CE-Zugriff in `BackgroundServiceManager` vor der Entsperrung, ERROR mit
+  Stacktrace im Release-Log).
 - **Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen** — ohne Credential gilt der
   Nutzer beim `LOCKED_BOOT_COMPLETED` schon als entsperrt, die Exception bleibt aus und der Test
-  belegt nichts. Vor jedem Direct-Boot-Test `adb shell locksettings set-pin 1234`, nach dem Reboot
-  NICHT entsperren; Testdaten VORHER schreiben (`run-as` kommt nur entsperrt an das CE-Verzeichnis).
+  belegt nichts. Deshalb bricht das Skript ohne gesetzte Sperre ab. Testdaten VORHER schreiben
+  (`run-as` kommt nur entsperrt an das CE-Verzeichnis).
+- **Nicht jede Meldung im gesperrten Boot-Log ist ein Defekt.** `WorkManager is not initialized`
+  (WARN) ist die vorgesehene Degradation — `HueSmartScheduler` löst ihn erst beim Gebrauch auf und
+  überspringt sich. CE-Datei-/DataStore-Zugriffe auf WARN sind vor der Entsperrung erwartbar.
+  **Tödlich ist genau eines: `Unable to create application`** — dann stirbt der Prozess, und der
+  Restore läuft nie. Das Skript trennt beides; wer die Hinweise zu Fehlschlägen macht, baut einen
+  Wächter, der bei jedem Lauf schreit und deshalb ignoriert wird.
 - **`Logger.business()` loggt auf INFO** → PII (E-Mail, Kalendertitel) landet in Debug-Builds im
   Datei-Log. Bewusst; Release-Logs enthalten nur WARN+.
 - **`res/mipmap-anydpi-v26` bleibt**, obwohl Lint den Qualifier bei `minSdk 26` als überflüssig

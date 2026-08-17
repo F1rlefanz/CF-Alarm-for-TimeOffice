@@ -235,7 +235,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 
 - **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.** Der Graph
   wird auch im Direct-Boot-Prozess aufgebaut; ein Wurf dort tötet den Prozess, und die
-  Wiederherstellung der Alarme läuft NIE. **Kein Unit-Test fängt das** — nur ein echter `adb reboot`.
+  Wiederherstellung der Alarme läuft NIE. **Kein Unit-Test fängt das** — die Prüfung ist ein echter Reboot ohne Entsperrung:
+  `python tools/geraet/pruefe_direct_boot.py` (nur Emulator, verweigert jedes andere Ziel).
 - **Kein `getSharedPreferences()`/CE-Zugriff in einem Property-Initializer** einer Klasse am
   Application-Graphen. Der Zugriff ist harmlos, der ZEITPUNKT nicht.
 - **Die 6h-Wartungskette hat GENAU einen Planer** (`scheduleNext()`, ein Request-Code). Wer

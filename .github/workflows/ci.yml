@@ -65,6 +65,15 @@ jobs:
       - name: Doku-Budget pruefen (Kontext, der in JEDER Session geladen wird)
         run: python3 tools/doku/pruefe_budget.py --ci
 
+      # Fuenf Code-Invarianten, deren Bruch einen stummen oder verwaisten Wecker erzeugt und
+      # die bisher NUR in CLAUDE.md bzw. einem Skill als Prosa standen. Alle halten beim
+      # Anlegen (17.08.2026) - das ist Absicht, ein Rauchmelder wird auch nicht erst montiert,
+      # wenn es brennt. Jede Pruefung ist gegen eine absichtlich eingebaute Verletzung getestet.
+      # Was hier NICHT geht: Direct Boot. Dafuer gibt es tools/geraet/pruefe_direct_boot.py,
+      # das ein Geraet braucht und deshalb vor einem Release von Hand laeuft.
+      - name: Code-Invarianten pruefen (Wecker-Killer)
+        run: python3 tools/invarianten/pruefe_code.py
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

@@ -62,12 +62,27 @@ class BackgroundServiceManager @Inject constructor(
      * PIN (Fairphone) nicht. Wer hier wieder einen sofortigen Initializer hinschreibt, baut
      * einen Absturz, den kein Emulator ohne Bildschirmsperre und kein Unit-Test zeigt.
      *
-     * Alle Zugriffe liegen in Funktionen, die erst nach dem Entsperren laufen - `by lazy`
-     * aendert das Verhalten also nicht, es verschiebt nur den Zeitpunkt.
+     * ACHTUNG - hier stand bis zum 17.08.2026 "Alle Zugriffe liegen in Funktionen, die erst
+     * nach dem Entsperren laufen". Das ist WIDERLEGT: `tools/geraet/pruefe_direct_boot.py` hat
+     * am Emulator MIT PIN gemessen, dass [initializeBackgroundServices] sehr wohl vor der
+     * Entsperrung laeuft - `CFAlarmApplication.initializeApp()` ruft es im Direct-Boot-Prozess.
+     * `by lazy` rettet also den Prozessstart (die Feld-Injektion wirft nicht mehr), aber der
+     * ZUGRIFF scheitert weiterhin, sobald jemand die Prefs vor dem Entsperren anfasst. Deshalb
+     * fragt jeder Zugriff zusaetzlich [userUnlocked].
      */
     private val preferences by lazy {
         context.getSharedPreferences("background_services", Context.MODE_PRIVATE)
     }
+
+    /**
+     * Ist der Nutzer entsperrt, also CREDENTIAL-ENCRYPTED Storage lesbar?
+     *
+     * Gleiche Umsetzung wie in `AlarmRepository`, inklusive Fehlerrichtung: im Zweifel `true`.
+     * Ein ueberfluessiger Versuch landet im vorhandenen try/catch; ein faelschlich
+     * uebersprungener Schreibvorgang waere stiller Datenverlust.
+     */
+    private val userUnlocked: Boolean
+        get() = context.getSystemService(android.os.UserManager::class.java)?.isUserUnlocked ?: true
 
     /**
      * Initializes background services - PHASE 1 MIGRATION
@@ -78,6 +93,23 @@ class BackgroundServiceManager @Inject constructor(
             LogTags.TOKEN,
             "🚀 Initializing background services (Phase 1 Migration - Worker removed)"
         )
+
+        // Vor der ersten Entsperrung ist CE-Storage nicht lesbar. Hier stehen ausschliesslich
+        // DIAGNOSE-Werte - die Wartungskette haengt nicht daran (die startet ueber
+        // AuthViewModel bzw. den Wartungs-Anker des BootReceivers). Ohne dieses Gate warf der
+        // Schreibvorgang im Direct-Boot-Prozess und landete als ERROR MIT STACKTRACE im Log;
+        // Release-Logs enthalten WARN+, also war es dort sichtbar. Genau solches Rauschen macht
+        // den naechsten echten Vorfall unauswertbar, und die Meldung "Failed to initialize
+        // background services" liest sich dramatischer, als der Sachverhalt ist.
+        // Gemessen am Emulator mit PIN via tools/geraet/pruefe_direct_boot.py (17.08.2026).
+        if (!userUnlocked) {
+            Logger.d(
+                LogTags.TOKEN,
+                "⏭️ Direct Boot: Diagnose-Werte uebersprungen (CE-Storage noch nicht lesbar). " +
+                    "Kein Funktionsverlust - die Wartungskette haengt nicht daran."
+            )
+            return
+        }
 
         try {
             // Mark services as started

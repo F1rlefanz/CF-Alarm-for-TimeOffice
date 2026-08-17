@@ -138,6 +138,24 @@ def pruefe(verzeichnis):
             if not os.path.exists(os.path.join(os.path.dirname(pfad), ref)):
                 meld(kurz, f"verweist auf nicht existierende Datei {ref}")
 
+        # Querverweise auf ANDERE Skills muessen einen existierenden Skill nennen. Beim Umbau
+        # am 17.08.2026 zeigten mehrere Verweise auf Dateinamen der aufgeloesten Zwischenablage
+        # (".claude/invarianten/alarme.md") bzw. per "siehe oben" ueber eine Dateigrenze hinweg -
+        # alle von Hand gefunden. Das soll kein zweites Mal von Hand passieren muessen.
+        vorhandene = {os.path.basename(os.path.dirname(p))
+                      for p in glob.glob(os.path.join(os.path.dirname(os.path.dirname(pfad)),
+                                                      "*", "SKILL.md"))}
+        # SKILL.md UND alle reference/-Dateien: die Verweise, die beim Umbau tot waren,
+        # standen ueberwiegend in den reference/-Dateien, nicht in der SKILL.md.
+        zu_pruefen = [(kurz, text)] + [
+            (f"{kurz}/reference/{os.path.basename(r)}", io.open(r, encoding="utf-8").read())
+            for r in sorted(glob.glob(os.path.join(os.path.dirname(pfad), "reference", "*.md")))]
+        for ort, inhalt in zu_pruefen:
+            for genannt in re.findall(r"Skill\s+`([a-z0-9-]+)`", inhalt):
+                if genannt not in vorhandene:
+                    meld(ort, f"verweist auf Skill `{genannt}`, den es nicht gibt "
+                              f"({len(vorhandene)} Skills liegen unter .claude/skills/)")
+
         for ref in sorted(glob.glob(os.path.join(os.path.dirname(pfad), "reference", "*.md"))):
             rtext = io.open(ref, encoding="utf-8").read()
             rzeilen = rtext.count("\n") + 1
@@ -151,7 +169,17 @@ def pruefe(verzeichnis):
     return fehler
 
 
-SKILL_VERZEICHNIS = ".claude/skills"
+def projektwurzel():
+    """Die Wurzel aus dem SKRIPTPFAD ableiten, nicht aus dem Arbeitsverzeichnis.
+
+    Der PostToolUse-Hook laeuft im Verzeichnis der bearbeiteten Datei, nicht in der
+    Projektwurzel - ein relativer Pfad scheitert dort. Am 17.08.2026 genau so passiert,
+    beim ersten Edit einer .kt-Datei tief im Baum.
+    """
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+SKILL_VERZEICHNIS = os.path.join(projektwurzel(), ".claude", "skills")
 
 
 def als_hook():

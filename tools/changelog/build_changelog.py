@@ -40,8 +40,20 @@ EINZUG_KARTE = " " * 8
 EINZUG_BLOCK = " " * 12
 EINZUG_LISTENEINTRAG = " " * 16
 
-# Die Seite ist durchgaengig mit CRLF gespeichert; das bleibt so.
-ZEILENENDE = "\r\n"
+# Das Zeilenende wird aus der BESTEHENDEN Seite abgeleitet, nicht festgeschrieben.
+#
+# Hier stand bis zum 17.08.2026 ZEILENENDE = "\r\n" mit der Begruendung "die Seite ist
+# durchgaengig mit CRLF gespeichert". Das galt fuer die Windows-ARBEITSKOPIE - in Git liegt
+# die Datei mit LF, und der Linux-CI-Runner checkt sie so aus. Der Generator erzeugte dort
+# CRLF-Karten in einer LF-Seite, `--pruefen` schlug fehl, und die CI war drei Commits lang
+# rot, waehrend die Pruefung lokal gruen lief. Ein Wert, der plattformabhaengig ist, gehoert
+# nicht in eine Konstante.
+ZEILENENDE_VORGABE = "\r\n"
+
+
+def zeilenende_von(seite: str) -> str:
+    """Nimmt das Zeilenende, das die Seite tatsaechlich verwendet."""
+    return "\r\n" if "\r\n" in seite else "\n"
 
 PROJEKT_WURZEL = Path(__file__).resolve().parents[2]
 QUELLE_MD = PROJEKT_WURZEL / "CHANGELOG.md"
@@ -101,7 +113,7 @@ def absatz_nach_html(zeile: str) -> str:
     return f"<p>{inline_nach_html(zeile)}</p>"
 
 
-def markdown_nach_karten(markdown: str) -> str:
+def markdown_nach_karten(markdown: str, zeilenende: str = ZEILENENDE_VORGABE) -> str:
     """Erzeugt die Folge von <div class="content-card">-Bloecken."""
     zeilen = markdown.splitlines()
     karten: list[list[str]] = []
@@ -153,8 +165,8 @@ def markdown_nach_karten(markdown: str) -> str:
     for karte in karten:
         karte.append(EINZUG_KARTE + "</div>")
 
-    bloecke = [ZEILENENDE.join(karte) for karte in karten]
-    return (ZEILENENDE * 2).join(bloecke)
+    bloecke = [zeilenende.join(karte) for karte in karten]
+    return (zeilenende * 2).join(bloecke)
 
 
 # --- Seite schreiben ---------------------------------------------------------
@@ -172,7 +184,8 @@ def neue_seite(seite: str, karten_html: str) -> str:
     kopf = seite[: anfang + len(MARKER_ANFANG)]
     fuss = seite[ende:]
     # Leerzeile zwischen letzter Karte und Endmarker, wie zwischen den Karten.
-    return kopf + ZEILENENDE + karten_html + (ZEILENENDE * 2) + EINZUG_KARTE + fuss
+    ze = zeilenende_von(seite)
+    return kopf + ze + karten_html + (ze * 2) + EINZUG_KARTE + fuss
 
 
 def main(argv: list[str]) -> int:
@@ -191,7 +204,7 @@ def main(argv: list[str]) -> int:
     # Parameter erst ab Python 3.13, deshalb open()).
     with open(ZIEL_HTML, encoding="utf-8", newline="") as datei:
         seite = datei.read()
-    ergebnis = neue_seite(seite, markdown_nach_karten(markdown))
+    ergebnis = neue_seite(seite, markdown_nach_karten(markdown, zeilenende_von(seite)))
 
     versionen = len(re.findall(r"^## ", markdown, re.M))
 

@@ -83,7 +83,8 @@ das baut man dieselbe Falle in neuer Form nach.
   kein Ersatz (es rechnet dieselben Millis hin und zurück).
 - **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.** Der Graph
   wird auch im Direct-Boot-Prozess aufgebaut. Deshalb `MasterPauseUseCase` als `dagger.Lazy` und
-  WorkManager-Auflösung erst beim Gebrauch. **Kein Unit-Test fängt das** — nur ein echter `adb reboot`.
+  WorkManager-Auflösung erst beim Gebrauch. **Kein Unit-Test fängt das** — die Prüfung ist ein echter Reboot ohne Entsperrung:
+  `python tools/geraet/pruefe_direct_boot.py` (nur Emulator, verweigert jedes andere Ziel).
 - **Kein `getSharedPreferences()`/CE-Zugriff in einem Property-Initializer** einer Klasse am
   Application-Graphen (`BackgroundServiceManager`, `HueBridgePinningStore`: beide `by lazy`).
 - **Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen.** Vor jedem Direct-Boot-Test

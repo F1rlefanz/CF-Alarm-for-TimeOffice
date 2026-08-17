@@ -170,6 +170,16 @@ def main():
         print(f"  {n:>8,}  {bezeichnung}" if ok else f"  {'?':>8}  {bezeichnung} (nicht gefunden)")
     print(f"  {'-'*8}")
     print(f"  {summe:>8,}  Summe" + (f"   (hartes Limit {HARTES_LIMIT:,})" if not nur_repo else ""))
+
+    if not nur_repo:
+        # HANDOFF.md zaehlt NICHT ins Budget - sie wird nur bei Bedarf gelesen. Sie steht hier
+        # trotzdem, weil sie schon einmal unbemerkt auf 45.357 Zeichen gewachsen ist, obwohl
+        # ihre eigene Zeile 3 sagt: "Erledigtes wird geloescht". Sichtbarkeit statt Schwelle.
+        h = zeichen(os.path.join("..Projektdateien", "claudes mds", "HANDOFF.md"))
+        if h is not None:
+            hinweis = "  (waechst wieder zu - sie soll nur OFFENE Punkte fuehren)" if h > 30_000 else ""
+            print(f"\n  Nachrichtlich, NICHT im Budget (wird nur bei Bedarf gelesen):")
+            print(f"  {h:>8,}  HANDOFF.md{hinweis}")
     if unvollstaendig:
         print(f"\n  Nicht mitgezaehlt: {', '.join(unvollstaendig)}")
     print()

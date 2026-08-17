@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python tools/skills/pruefe_skills.py --hook",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && python tools/skills/pruefe_skills.py --hook",
             "timeout": 30,
             "statusMessage": "Pruefe Skill-Frontmatter..."
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python tools/doku/pruefe_budget.py --hook",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && python tools/doku/pruefe_budget.py --hook",
             "timeout": 20,
             "statusMessage": "Pruefe Doku-Budget..."
           }

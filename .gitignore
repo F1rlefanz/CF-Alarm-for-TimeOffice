@@ -63,6 +63,10 @@ EMERGENCY_SECURITY_BREACH.md
 *.log
 *.tmp
 
+# Python-Bytecode der Werkzeuge unter tools/ (entsteht beim Importieren, z.B. in Tests)
+__pycache__/
+*.pyc
+
 # Backup and temp directories (lokaler Krempel, nie committen)
 /Logcatexporte/
 /Project*Problems*/

@@ -24,6 +24,14 @@ das baut man dieselbe Falle in neuer Form nach.
   `assembleRelease`/`connectedDebugAndroidTest`. Selbst bauen, installieren, messen, A/B-testen statt
   nur durch Inspektion zu verifizieren. `emulator`-Binary:
   `C:\Users\Christoph\AppData\Local\Android\Sdk\emulator\emulator.exe`.
+- **Die Arbeitskopie lügt bei Zeilenenden.** Windows checkt CRLF aus, in Git liegt LF, und der
+  Linux-CI-Runner sieht LF. Ein Werkzeug, das Dateiinhalt byteweise vergleicht oder erzeugt, kann
+  deshalb lokal grün und in der CI rot sein — genau so am 17.08.2026 passiert: der
+  Changelog-Generator hatte `ZEILENENDE = "\r\n"` fest verdrahtet, die CI war drei Commits lang
+  rot, und lokal lief `--pruefen` sauber durch. **Für alles Format-Empfindliche gegen
+  `git show HEAD:<datei>` testen, nicht gegen die Arbeitskopie** — das ist die Form, die der
+  Runner bekommt. Und: plattformabhängige Werte gehören nicht in eine Konstante, sondern werden
+  aus dem vorgefundenen Inhalt abgeleitet.
 - **„Warnungen plötzlich weg" ist kein Fortschritt** — der Konfigurations-Cache
   (`org.gradle.configuration-cache=true`) verschluckt sie. Nach Änderungen an
   `build.gradle.kts`/`gradle.properties` sind sie wieder da.

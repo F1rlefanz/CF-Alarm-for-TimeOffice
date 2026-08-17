@@ -57,6 +57,14 @@ jobs:
       - name: Changelog-Seite gegen CHANGELOG.md pruefen
         run: python3 tools/changelog/build_changelog.py --pruefen
 
+      # CLAUDE.md wuchs vom 22.07. bis 14.08.2026 von 24.763 auf 149.571 Zeichen - 429 unter
+      # dem 150k-Limit der Harness, ohne dass es jemand bemerkte. Jede einzelne Zeile war
+      # berechtigt; niemand hat die SUMME angesehen. Dieser Schritt sieht sie an.
+      # Gegen die echte Historie geprueft: haette am 03.08. (46k) angeschlagen, also vor
+      # dem Sprung auf 133k. Nur die Repo-Anteile - die CI sieht ~/.claude nicht.
+      - name: Doku-Budget pruefen (Kontext, der in JEDER Session geladen wird)
+        run: python3 tools/doku/pruefe_budget.py --ci
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

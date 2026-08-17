@@ -28,6 +28,19 @@ erst bei Bedarf.
 und auch die nur, wenn ihr Bruch den Wecker kostet. Diese Datei war einmal 165 k Zeichen und hat
 damit den Kontext verdrängt, den sie schützen sollte.
 
+**Ein `: ` in einer `description` MUSS gequotet werden.** Ein unquotierter YAML-Skalar endet am
+ersten Doppelpunkt-mit-Leerzeichen; das Frontmatter wird dann unlesbar, und die Oberfläche zeigt
+statt der Beschreibung die H1-Überschrift — der Skill existiert, triggert aber praktisch nicht mehr.
+Am 17.08.2026 traf das drei von acht Skills, und aufgefallen ist es nur zufällig beim Blick in die
+geladene Liste. Dagegen stehen jetzt zwei Netze: `python tools/skills/pruefe_skills.py .claude/skills`
+läuft in der CI, und ein `PostToolUse`-Hook (`.claude/settings.json`) prüft nach jedem Schreiben an
+einer `SKILL.md`. Wer einen Skill ergänzt, braucht dafür nichts zu tun — außer die Meldung zu
+beachten, wenn sie kommt.
+
+**Ein neues Skill-Verzeichnis wird erst nach `/reload-skills` geladen.** Claude Code beobachtet nur
+Verzeichnisse, die beim Sessionstart existierten. Ein neu angelegtes `.claude/skills/` erscheint
+also nicht von selbst — Änderungen an bestehenden `SKILL.md` dagegen schon.
+
 ## Git & GitHub Workflow
 
 Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:

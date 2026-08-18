@@ -20,7 +20,6 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
-import org.mockito.kotlin.eq
 import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.stub
@@ -33,7 +32,7 @@ import java.util.concurrent.TimeUnit
  * Haelt fest, dass die Dimm-VORSCHAU immer hinter sich aufraeumt - auch dann, wenn der Nutzer
  * waehrend der 5 Sekunden die App verlaesst.
  *
- * Der Fehler, den das verhindert: `previewDim()` schrieb mit `setActiveOverlay(true, …)` einen
+ * Der Fehler, den das verhindert: `previewDim()` schrieb mit `setPreviewOverlay(…)` einen
  * PERSISTENTEN Zustand und stellte den regulaeren erst NACH `delay()` wieder her - alles im
  * `viewModelScope`. Zweimal Zurueck oder Wegwischen aus den Recents cancelte das `delay()`,
  * `applyCurrentState()` lief nie, und `DimAccessibilityService` (voellig unabhaengige Lebensdauer,
@@ -88,10 +87,10 @@ class DimmerViewModelPreviewCleanupTest {
         whenever(prefs.nightDefaultStrength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
         whenever(prefs.nightDefaultWarmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
         // PFLICHT, nicht Kuer: previewDim() liest die beiden Werte als SUSPEND-Funktionen
-        // (`setActiveOverlay(true, prefs.strengthNow(), prefs.warmthNow())`) - nicht ueber die
+        // (`setPreviewOverlay(prefs.strengthNow(), prefs.warmthNow(), …)`) - nicht ueber die
         // gleichnamigen Flows darueber. Unstubbed liefert Mockito fuer eine suspend-Funktion
         // `null`, was beim Entpacken nach `Int` eine NPE wirft; die faengt seit dem Fix der
-        // CoroutineExceptionHandler des previewScope ab, und `setActiveOverlay` wird nie
+        // CoroutineExceptionHandler des previewScope ab, und `setPreviewOverlay` wird nie
         // erreicht - der Test scheitert dann an der ersten Zusicherung und sieht aus, als sei
         // das Aufraeumen kaputt, obwohl nur der Stub fehlt.
         prefs.stub {
@@ -112,10 +111,10 @@ class DimmerViewModelPreviewCleanupTest {
     fun `Vorschau raeumt auf, auch wenn der viewModelScope waehrenddessen gecancelt wird`() {
         val prefs = mockPrefs()
         val overlayOn = CountDownLatch(1)
-        // setActiveOverlay() gibt das Preferences-Objekt von DataStore.edit() zurueck; die Vorschau
+        // setPreviewOverlay() gibt das Preferences-Objekt von DataStore.edit() zurueck; die Vorschau
         // wertet es nicht aus, deshalb genuegt null als Antwort.
         prefs.stub {
-            onBlocking { setActiveOverlay(any(), any(), any()) } doAnswer {
+            onBlocking { setPreviewOverlay(any(), any(), any()) } doAnswer {
                 overlayOn.countDown()
                 null
             }
@@ -139,7 +138,7 @@ class DimmerViewModelPreviewCleanupTest {
             "Ohne Zuruecksetzen bleibt der Bildschirm systemweit verdunkelt - der alte Fehler",
             cleanedUp.await(10, TimeUnit.SECONDS)
         )
-        runBlocking { verify(prefs).setActiveOverlay(eq(true), any(), any()) }
+        runBlocking { verify(prefs).setPreviewOverlay(any(), any(), any()) }
     }
 
     /**
@@ -153,7 +152,7 @@ class DimmerViewModelPreviewCleanupTest {
         val prefs = mockPrefs()
         val firstOverlayOn = CountDownLatch(1)
         prefs.stub {
-            onBlocking { setActiveOverlay(any(), any(), any()) } doAnswer {
+            onBlocking { setPreviewOverlay(any(), any(), any()) } doAnswer {
                 firstOverlayOn.countDown()
                 null
             }
@@ -178,9 +177,9 @@ class DimmerViewModelPreviewCleanupTest {
         )
         runBlocking {
             val order = inOrder(prefs, dimSchedule)
-            order.verify(prefs).setActiveOverlay(eq(true), any(), any())
+            order.verify(prefs).setPreviewOverlay(any(), any(), any())
             order.verify(dimSchedule).applyCurrentState()
-            order.verify(prefs).setActiveOverlay(eq(true), any(), any())
+            order.verify(prefs).setPreviewOverlay(any(), any(), any())
             order.verify(dimSchedule).applyCurrentState()
         }
     }

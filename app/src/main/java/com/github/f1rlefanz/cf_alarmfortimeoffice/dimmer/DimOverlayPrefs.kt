@@ -12,8 +12,11 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -43,6 +46,11 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_RULES_ON = booleanPreferencesKey("dim_rules_enabled")
         private val KEY_NIGHT_DEFAULT_ON = booleanPreferencesKey("dim_night_default_enabled")
         private val KEY_OVERLAY_ON = booleanPreferencesKey("dim_overlay_on")
+
+        // Ablaufzeitpunkt einer VORSCHAU (Wanduhr-Millis). Nur von setPreviewOverlay gesetzt, von
+        // jedem setActiveOverlay wieder entfernt - siehe setPreviewOverlay fuer den Ablauf, der
+        // ohne diesen Schluessel kaputt ging.
+        private val KEY_OVERLAY_PREVIEW_UNTIL = longPreferencesKey("dim_overlay_preview_until")
         private val KEY_STRENGTH = intPreferencesKey("dim_strength")
         private val KEY_WARMTH = intPreferencesKey("dim_warmth")
         private val KEY_WINDDOWN_MIN = intPreferencesKey("dim_winddown_min")
@@ -68,6 +76,16 @@ class DimOverlayPrefs @Inject constructor(
         // die „Darstellung"-Slider sich nicht überschreiben. Fällt zurück auf die globalen Werte.
         private val KEY_RENDER_STRENGTH = intPreferencesKey("dim_render_strength")
         private val KEY_RENDER_WARMTH = intPreferencesKey("dim_render_warmth")
+
+        /**
+         * Zuschlag auf die Vorschau-Dauer, mit dem der Ablaufzeitpunkt auf Platte geschrieben wird.
+         *
+         * Im Normalfall soll das prozessinterne Aufraeumen (`finally` -> `applyCurrentState()`)
+         * gewinnen, weil nur DAS den regulaeren Zustand kennt (ein gerade aktives Dimm-Fenster
+         * bleibt dann an). Der Ablaufzeitpunkt ist der Auffangpfad fuer den Fall, dass es diesen
+         * Aufruf nie gibt - er darf deshalb nicht schon waehrend der laufenden Vorschau greifen.
+         */
+        const val PREVIEW_EXPIRY_GRACE_MS = 2_000L
 
         const val STRENGTH_MAX = 85
         const val WARMTH_MAX = 100
@@ -153,12 +171,59 @@ class DimOverlayPrefs @Inject constructor(
             emit(emptyPreferences())
         }
 
-    val renderState: Flow<RenderState> = safeData.map { p ->
-        RenderState(
-            overlayOn = p[KEY_OVERLAY_ON] ?: false,
-            strength = (p[KEY_RENDER_STRENGTH] ?: p[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX),
-            warmth = (p[KEY_RENDER_WARMTH] ?: p[KEY_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
-        )
+    /**
+     * Was der Dienst rendern soll - inklusive der SELBSTDURCHSETZUNG eines abgelaufenen
+     * Vorschau-Zustands.
+     *
+     * Der Ablauf, der ohne diese Auswertung kaputt ging: die Vorschau schaltet mit
+     * [setPreviewOverlay] persistent EIN, zurueckgenommen wurde sie aber ausschliesslich von einem
+     * Timer IM PROZESS (`delay()` + `finally`). Stirbt der Prozess in diesem Fenster (Absturz,
+     * "Beenden erzwingen", App-Update, OEM-Task-Killer), laeuft kein `finally` - `NonCancellable`
+     * deckt nur Coroutine-Cancellation ab. Android bindet den [DimAccessibilityService] danach neu,
+     * der liest hier `overlayOn = true` und baut das Overlay wieder auf: der Bildschirm ist
+     * SYSTEMWEIT bis zu 85 % verdunkelt, in jeder App, und in Screenshots nicht einmal sichtbar.
+     * Geheilt haette das erst der naechste `applyCurrentState()`-Aufruf - und wer die Vorschau zum
+     * Ausprobieren nutzt, hat typischerweise noch keine Fenster-Quelle an, also auch keinen
+     * rollenden Tick; bis zum 6h-Wartungslauf konnten so Stunden vergehen.
+     *
+     * Deshalb traegt die Vorschau ihren Ablaufzeitpunkt MIT AUF DIE PLATTE, und jeder spaetere
+     * Leser setzt ihn von allein durch: abgelaufen heisst hier `overlayOn = false`, ganz ohne
+     * Schreibzugriff und ohne dass irgendjemand den Prozesstod bemerken muesste. Ist der Zeitpunkt
+     * noch in der Zukunft, wird er hier abgewartet und danach das Aus nachgereicht - sonst bliebe
+     * ein Dienst, der eine Sekunde nach dem Prozesstod neu bindet, mit einem noch gueltigen
+     * Vorschau-Zustand haengen, ohne dass je wieder ein Wert nachkaeme.
+     *
+     * Der persistierte `true` bleibt dabei bewusst stehen: geraeumt wird er beim naechsten
+     * [setActiveOverlay] durch den Scheduler, der als Einziger den regulaeren Zustand kennt.
+     */
+    val renderState: Flow<RenderState> = channelFlow {
+        // collectLatest, nicht collect: das Warten auf den Ablauf darf den Upstream nicht
+        // blockieren - kommt waehrenddessen ein neuer Zustand (z. B. das regulaere Aufraeumen),
+        // muss der ihn sofort abloesen.
+        safeData.collectLatest { p ->
+            val strength = (p[KEY_RENDER_STRENGTH] ?: p[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX)
+            val warmth = (p[KEY_RENDER_WARMTH] ?: p[KEY_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
+            val on = p[KEY_OVERLAY_ON] ?: false
+            val previewUntil = p[KEY_OVERLAY_PREVIEW_UNTIL] ?: 0L
+
+            if (!on || previewUntil <= 0L) {
+                send(RenderState(on, strength, warmth))
+                return@collectLatest
+            }
+
+            val remaining = previewUntil - System.currentTimeMillis()
+            if (remaining > 0L) {
+                send(RenderState(true, strength, warmth))
+                delay(remaining)
+            } else {
+                Logger.w(
+                    LogTags.DIMMER,
+                    "Vorschau-Overlay war abgelaufen (seit ${-remaining} ms) und wird nicht gerendert - " +
+                        "vermutlich starb der Prozess waehrend der Vorschau"
+                )
+            }
+            send(RenderState(false, strength, warmth))
+        }
     }
 
     val toggles: Flow<Toggles> = safeData.map { p ->
@@ -246,6 +311,32 @@ class DimOverlayPrefs @Inject constructor(
         it[KEY_OVERLAY_ON] = on
         it[KEY_RENDER_STRENGTH] = strength.coerceIn(0, STRENGTH_MAX)
         it[KEY_RENDER_WARMTH] = warmth.coerceIn(0, WARMTH_MAX)
+        // Der Scheduler ist die Wahrheit ueber den regulaeren Zustand: sein Schreibvorgang beendet
+        // jede Vorschau. Bliebe der Ablaufzeitpunkt stehen, wuerde [renderState] ein voellig
+        // regulaeres, gerade eingeschaltetes Dimm-Fenster faelschlich als abgelaufene Vorschau
+        // abschalten.
+        it.remove(KEY_OVERLAY_PREVIEW_UNTIL)
+    }
+
+    /**
+     * Schaltet das Overlay fuer eine VORSCHAU ein - mit einem Ablaufzeitpunkt, der MIT auf die
+     * Platte geht.
+     *
+     * Getrennt von [setActiveOverlay], weil die beiden gegensaetzliche Zusicherungen tragen: der
+     * Scheduler stellt einen Zustand her, der bis zu seinem naechsten Lauf gilt, die Vorschau einen,
+     * der von allein enden MUSS. Ohne den persistierten Ablauf endete sie nur, solange der Prozess
+     * lebt (siehe [renderState]) - ein Prozesstod im Vorschau-Fenster liess den Bildschirm
+     * systemweit verdunkelt zurueck.
+     *
+     * @param expiresAtMillis Wanduhr-Zeitpunkt, ab dem das Overlay als erloschen GILT, auch wenn
+     *        niemand mehr schreibt. Der Aufrufer schlaegt [PREVIEW_EXPIRY_GRACE_MS] auf die
+     *        Vorschaudauer auf, damit im Normalfall das prozessinterne Aufraeumen gewinnt.
+     */
+    suspend fun setPreviewOverlay(strength: Int, warmth: Int, expiresAtMillis: Long) = dataStore.edit {
+        it[KEY_OVERLAY_ON] = true
+        it[KEY_RENDER_STRENGTH] = strength.coerceIn(0, STRENGTH_MAX)
+        it[KEY_RENDER_WARMTH] = warmth.coerceIn(0, WARMTH_MAX)
+        it[KEY_OVERLAY_PREVIEW_UNTIL] = expiresAtMillis
     }
     suspend fun setStrength(v: Int) = dataStore.edit { it[KEY_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
     suspend fun setWarmth(v: Int) = dataStore.edit { it[KEY_WARMTH] = v.coerceIn(0, WARMTH_MAX) }

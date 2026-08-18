@@ -6,139 +6,131 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 
 /**
- * Cache-System für Kalenderereignisse mit intelligenter Invalidierung
- * 
- * ARCHITECTURE (Briefing 4.0):
- * ✅ 6h TTL (aligned with maintenance interval)
- * ✅ Online-First strategy (no stale cache fallback)
- * ✅ Coroutine-Mutex for thread-safe operations
- * ✅ Memory-efficient caching based on calendar ID and time range
- * ✅ Automatic cache invalidation
+ * Kurzlebiger Cache fuer Kalender-Events, geschluesselt AUSSCHLIESSLICH nach Kalender-ID.
+ *
+ * WARUM KEINE UHRZEIT IM SCHLUESSEL (bis v1.27.0 stand sie darin):
+ * Der Schluessel bestand aus Kalender-ID UND `LocalDateTime.now().truncatedTo(HOURS)`. Geschrieben
+ * wurde unter der Schreibstunde, gelesen unter der Lesestunde - ab der naechsten vollen Stunde war
+ * ein Eintrag unter keinem gelesenen Schluessel mehr auffindbar. Damit war die im Kommentar
+ * zugesicherte "6h TTL" reine Behauptung (effektiv 0-60 Minuten), die Ablauf-Zweige unten konnten
+ * NIE greifen (ein gefundener Eintrag war zwangslaeufig juenger als eine Stunde), die
+ * Cache-Statistik meldete strukturell immer "0 expired", und Eintraege vergangener Stunden blieben
+ * bis zur Groessenverdraengung unauffindbar liegen.
+ *
+ * WARUM DIE TTL DEUTLICH UNTER DEM WARTUNGSINTERVALL BLEIBEN MUSS:
+ * Die 6h-Wartungskette ruft `getCalendarEventsWithCache` im Normallauf OHNE `forceRefresh`. Laege
+ * die TTL bei den frueher behaupteten 6 Stunden, liefe genau dieser Lauf systematisch in einen
+ * Cache-Treffer und saehe Dienstplan-Aenderungen und -Streichungen gar nicht mehr - der Cache
+ * waere dann die Wahrheit, aus der `syncAlarms()` loescht. Die TTL darf deshalb nur denselben
+ * Bedienvorgang zusammenfassen (mehrere Bildschirme kurz hintereinander), niemals einen
+ * Wartungslauf ueberbruecken.
+ *
+ * KEIN ETAG MEHR: Die Klasse hielt zusaetzlich einen ETag fuer bedingte Abrufe vor. Dieser Pfad
+ * war durch den Stunden-Schluessel nachweislich nie gelaufen und haette bei blosser
+ * Schluesselreparatur eine unerprobte Falle scharf geschaltet: der ETag gehoert zu einer Abfrage
+ * mit `timeMin = jetzt` / `timeMax = jetzt + 14 Tage`, also zu einem MITWANDERNDEN Fenster. Ein
+ * "304 Not Modified" haette damit die Unveraendertheit eines ANDEREN Zeitfensters bescheinigt und
+ * eine veraltete Liste als aktuell ausgeliefert - genau die Verwechslung, die in v1.26.2 schon
+ * einmal Weckzeiten mit falschem Zonenversatz erzeugt hat.
  */
-class CalendarEventCache {
-    
-    private data class CacheKey(
-        val calendarId: String,
-        val baseTime: LocalDateTime // Zur nächsten Stunde gerundet für bessere Cache-Hits
-    ) {
-        companion object {
-            fun create(calendarId: String): CacheKey {
-                // Runde auf nächste Stunde für bessere Cache-Wiederverwendung
-                val roundedTime = LocalDateTime.now()
-                    .truncatedTo(ChronoUnit.HOURS)
+class CalendarEventCache(
+    /**
+     * Zeitquelle - einzige Test-Naht der Klasse. Ohne sie liesse sich weder ein Stundenwechsel
+     * noch ein Ablauf pruefen, ohne im Test wirklich zu warten.
+     */
+    private val now: () -> LocalDateTime = { LocalDateTime.now() }
+) {
 
-                return CacheKey(
-                    calendarId = calendarId,
-                    baseTime = roundedTime
-                )
-            }
-        }
-    }
-    
     private data class CacheEntry(
         val events: List<CalendarEvent>,
-        val timestamp: LocalDateTime,
-        val etag: String? = null // For ETag-based change detection (future)
+        val timestamp: LocalDateTime
     ) {
-        fun isExpired(): Boolean {
-            // 6 hours TTL - aligned with maintenance interval
-            return timestamp.plusMinutes(360).isBefore(LocalDateTime.now())
-        }
+        fun isExpired(reference: LocalDateTime): Boolean =
+            timestamp.plusMinutes(CalendarEventCache.TTL_MINUTES).isBefore(reference)
     }
-    
-    // Coroutine-Mutex für bessere Performance als @Synchronized
+
+    // Coroutine-Mutex fuer bessere Performance als @Synchronized
     private val cacheMutex = Mutex()
-    private val cache = mutableMapOf<CacheKey, CacheEntry>()
-    private val maxCacheSize = 20 // Prevent memory bloat
-    
+    private val cache = mutableMapOf<String, CacheEntry>()
+
     /**
-     * Checks if valid cache entry exists for given calendar
-     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
+     * Prueft, ob ein gueltiger Cache-Eintrag fuer den Kalender existiert.
      */
     suspend fun isCached(calendarId: String): Boolean = cacheMutex.withLock {
-        val key = CacheKey.create(calendarId)
-        val entry = cache[key]
-        
-        if (entry != null && !entry.isExpired()) {
+        val entry = cache[calendarId]
+
+        if (entry != null && !entry.isExpired(now())) {
             Logger.cache(LogTags.CALENDAR_CACHE, "HIT", "calendar ${calendarId.take(8)}...")
             return@withLock true
         }
-        
-        if (entry != null && entry.isExpired()) {
+
+        if (entry != null) {
             Logger.d(LogTags.CALENDAR_CACHE, "Cache EXPIRED for calendar ${calendarId.take(8)}..., removing entry")
-            cache.remove(key)
+            cache.remove(calendarId)
         }
-        
+
         Logger.cache(LogTags.CALENDAR_CACHE, "MISS", "calendar ${calendarId.take(8)}...")
         return@withLock false
     }
-    
+
     /**
-     * Retrieves events from cache
-     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
+     * Liefert die gecachten Events - oder null, wenn kein gueltiger Eintrag vorliegt.
      */
     suspend fun get(calendarId: String): List<CalendarEvent>? = cacheMutex.withLock {
-        val key = CacheKey.create(calendarId)
-        val entry = cache[key]
-        
-        return@withLock if (entry != null && !entry.isExpired()) {
+        val entry = cache[calendarId]
+
+        return@withLock if (entry != null && !entry.isExpired(now())) {
             Logger.d(LogTags.CALENDAR_CACHE, "Returning ${entry.events.size} cached events")
             entry.events
         } else {
             if (entry != null) {
-                cache.remove(key)
+                cache.remove(calendarId)
                 Logger.d(LogTags.CALENDAR_CACHE, "Removed expired cache entry")
             }
             null
         }
     }
-    
+
     /**
-     * Stores events in cache
-     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
+     * Legt die Events des Kalenders ab.
+     *
+     * Es gehoert IMMER die vollstaendige Liste des 14-Tage-Fensters hier hinein, nie eine
+     * einzelne Seite: Leser dieses Caches geben den Inhalt als vollstaendige Liste weiter, und
+     * "vollstaendig" ist fuer die loeschenden Konsumenten die Erlaubnis, Alarme zu entfernen.
      */
     suspend fun put(
-        calendarId: String, 
-        events: List<CalendarEvent>, 
-        etag: String? = null
+        calendarId: String,
+        events: List<CalendarEvent>
     ) = cacheMutex.withLock {
         // Limit cache size - remove oldest entries
-        if (cache.size >= maxCacheSize) {
+        if (cache.size >= MAX_CACHE_SIZE && !cache.containsKey(calendarId)) {
             val entriesToRemove = cache.entries
                 .sortedBy { it.value.timestamp }
-                .take(cache.size - maxCacheSize + 1)
-            
-            entriesToRemove.forEach { (key, _) ->
-                cache.remove(key)
-            }
-            
+                .take(cache.size - MAX_CACHE_SIZE + 1)
+                .map { it.key }
+
+            entriesToRemove.forEach { cache.remove(it) }
+
             Logger.d(LogTags.CALENDAR_CACHE, "Removed ${entriesToRemove.size} cache entries to make space")
         }
-        
-        val key = CacheKey.create(calendarId)
-        val entry = CacheEntry(
-            events = events,
-            timestamp = LocalDateTime.now(),
-            etag = etag
-        )
 
-        cache[key] = entry
-        Logger.cache(LogTags.CALENDAR_CACHE, "STORED", "${events.size} events (TTL: 6h)")
+        cache[calendarId] = CacheEntry(
+            events = events,
+            timestamp = now()
+        )
+        Logger.cache(LogTags.CALENDAR_CACHE, "STORED", "${events.size} events (TTL: ${TTL_MINUTES}min)")
     }
-    
 
     /**
-     * Invalidiert alle Cache-Einträge für einen Kalender
+     * Invalidiert den Cache-Eintrag eines Kalenders
      */
     suspend fun invalidateCalendar(calendarId: String) = cacheMutex.withLock {
-        val keysToRemove = cache.keys.filter { it.calendarId == calendarId }
-        keysToRemove.forEach { cache.remove(it) }
-        Logger.i(LogTags.CALENDAR_CACHE, "Invalidated all cache entries (${keysToRemove.size} entries)")
+        val removed = cache.remove(calendarId) != null
+        Logger.i(LogTags.CALENDAR_CACHE, "Invalidated cache entry for calendar (found: $removed)")
     }
-    
+
     /**
      * Leert den kompletten Cache
      */
@@ -147,24 +139,28 @@ class CalendarEventCache {
         cache.clear()
         Logger.i(LogTags.CALENDAR_CACHE, "Cleared complete event cache ($size entries)")
     }
-    
-    /**
-     * Holt ETag für Change Detection
-     * PHASE 2 CLEANUP: daysAhead removed - always 14 days per PROJEKT-BRIEFING 4.0
-     */
-    suspend fun getETag(calendarId: String): String? = cacheMutex.withLock {
-        val key = CacheKey.create(calendarId)
-        return@withLock cache[key]?.etag
-    }
-    
+
     /**
      * Cache statistics for debugging
      */
     suspend fun getCacheStats(): String = cacheMutex.withLock {
+        val reference = now()
         val totalEntries = cache.size
-        val expiredEntries = cache.values.count { it.isExpired() }
+        val expiredEntries = cache.values.count { it.isExpired(reference) }
         val validEntries = totalEntries - expiredEntries
-        
+
         return@withLock "Cache Stats: $validEntries valid, $expiredEntries expired, $totalEntries total"
+    }
+
+    companion object {
+        /**
+         * Lebensdauer eines Eintrags in Minuten.
+         *
+         * MUSS deutlich unter dem 6h-Wartungsintervall bleiben - siehe Klassenkommentar.
+         */
+        const val TTL_MINUTES = 15L
+
+        /** Obergrenze der Eintraege (ein Eintrag je Kalender) - Schutz vor Speicherwucherung. */
+        const val MAX_CACHE_SIZE = 20
     }
 }

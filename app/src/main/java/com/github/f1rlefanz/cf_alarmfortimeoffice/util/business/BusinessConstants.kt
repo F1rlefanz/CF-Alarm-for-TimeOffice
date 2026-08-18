@@ -11,8 +11,36 @@ object CalendarConstants {
     /** Standard-Vorausschau für Kalender-Events in Tagen - FIXED at 14 days as per Briefing 4.0 */
     const val DEFAULT_DAYS_AHEAD = 14
 
-    /** Maximale Anzahl von Events pro Kalendar-Abfrage */
+    /**
+     * Standard-Groesse des CLIENT-seitigen Lazy-Ausschnitts (`getCalendarEventsLazy`).
+     *
+     * ACHTUNG - das ist KEINE Obergrenze des API-Abrufs mehr. Bis v1.27.0 stand genau dieser Wert
+     * als `setMaxResults` an der Google-Abfrage: der Abruf war damit bei 50 Treffern still
+     * abgeschnitten, galt aber ueber `CalendarFetchOutcome.isComplete` als VOLLSTAENDIG - und
+     * "vollstaendig" ist in dieser App die Erlaubnis zu loeschen. Die Abfrage laeuft jetzt ueber
+     * alle Seiten ([EVENTS_PER_API_PAGE] / [MAX_EVENT_PAGES_PER_CALENDAR]); hier bleibt nur der
+     * Ausschnitt, den die Oberflaeche zeigt.
+     */
     const val MAX_EVENTS_PER_QUERY = 50
+
+    /**
+     * Seitengroesse der Google-Calendar-Event-Abfrage (Google-Default 250, Maximum 2500).
+     *
+     * Gross genug, damit ein Dienstplan-Fenster von 14 Tagen praktisch immer in EINER Antwort
+     * liegt - die Seitenschleife ist die Absicherung, nicht der Normalfall.
+     */
+    const val EVENTS_PER_API_PAGE = 250
+
+    /**
+     * Obergrenze der Seiten je Kalender und Abruf (Notbremse gegen eine endlose Seitenkette).
+     *
+     * Wird sie erreicht, waere die Liste abgeschnitten - dann meldet der Abruf einen FEHLER,
+     * statt eine gekuerzte Liste als vollstaendig auszugeben. Siehe `collectAllPages`.
+     */
+    const val MAX_EVENT_PAGES_PER_CALENDAR = 10
+
+    /** Obergrenze der Seiten beim Abruf der Kalenderliste (Seitengroesse dort: Google-Default 100). */
+    const val MAX_CALENDAR_LIST_PAGES = 10
 
     /** Standard Event-Dauer in Millisekunden (1 Stunde) */
     const val DEFAULT_EVENT_DURATION_MS = 3600000L

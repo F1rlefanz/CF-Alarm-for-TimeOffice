@@ -135,8 +135,8 @@ class DimmerViewModel @Inject constructor(
     // Verdunkelung/Waerme aendern keine FENSTERGRENZEN - aber sehr wohl die Darstellung des gerade
     // laufenden Fensters, und die faerbt der Dienst NICHT von allein reaktiv nach: er beobachtet
     // ausschliesslich DimOverlayPrefs.renderState, und das liest KEY_RENDER_STRENGTH/-WARMTH mit den
-    // globalen Slidern nur als FALLBACK. Die Render-Keys schreibt einzig setActiveOverlay(), also
-    // nur applyCurrentState()/die Vorschau - nach dem ersten Scheduler-Lauf greift der Fallback
+    // globalen Slidern nur als FALLBACK. Die Render-Keys schreiben einzig setActiveOverlay() und
+    // setPreviewOverlay(), also nur applyCurrentState()/die Vorschau - nach dem ersten Lauf greift der Fallback
     // nie mehr. Ohne enable() blieb ein mitten in der Nacht verstellter Regler bis zur naechsten
     // Fenstergrenze (typischerweise das Fenster-ENDE am Morgen) wirkungslos - dieselbe Falle wie
     // beim Korrektur-Notification-Toggle (v1.22.1). Siehe Invariante in CLAUDE.md:
@@ -199,7 +199,7 @@ class DimmerViewModel @Inject constructor(
      * Zeigt das Overlay kurz mit den aktuellen Werten – zum Ausprobieren OHNE Schicht/Alarm.
      * Der Bedienungshilfen-Dienst muss aktiv sein. Danach regulären Zustand wiederherstellen.
      *
-     * Laeuft bewusst NICHT im [viewModelScope]: `setActiveOverlay(true, …)` schreibt einen
+     * Laeuft bewusst NICHT im [viewModelScope]: `setPreviewOverlay(…)` schreibt einen
      * PERSISTENTEN Zustand, den `DimAccessibilityService` beobachtet - und der Dienst hat eine vom
      * ViewModel voellig unabhaengige Lebensdauer. Hing das Zuruecksetzen am viewModelScope, dann
      * genuegte es, die App waehrend der 5 Sekunden zu verlassen (zweimal Zurueck / aus den Recents
@@ -215,15 +215,27 @@ class DimmerViewModel @Inject constructor(
      * Schalter umgelegt. Ein zweiter Tipp laesst zuerst das Aufraeumen der laufenden Vorschau zu
      * Ende laufen (`cancelAndJoin`), sonst schaltete deren `finally` die gerade neu eingeschaltete
      * Vorschau sofort wieder aus.
+     *
+     * Diese drei decken aber nur Coroutine-CANCELLATION ab. Stirbt der PROZESS im Vorschau-Fenster
+     * (Absturz, "Beenden erzwingen", App-Update), laeuft kein `finally` - und Android bindet den
+     * `DimAccessibilityService` danach neu, der den persistierten `overlayOn = true` vorfindet und
+     * sofort wieder verdunkelt. Deshalb geht der Ablaufzeitpunkt ueber
+     * [DimOverlayPrefs.setPreviewOverlay] MIT auf die Platte: jeder spaetere Leser setzt das Ende
+     * der Vorschau von allein durch, auch wenn hier nie wieder etwas laeuft.
      */
     fun previewDim(seconds: Int = 5): Job {
         val running = previewJob
         val job = previewScope.launch {
             running?.cancelAndJoin()
+            val durationMs = seconds * 1000L
             try {
                 // Vorschau zeigt die GLOBALEN Darstellungswerte (die Slider, die der Nutzer gerade sieht).
-                prefs.setActiveOverlay(true, prefs.strengthNow(), prefs.warmthNow())
-                delay(seconds * 1000L)
+                prefs.setPreviewOverlay(
+                    prefs.strengthNow(),
+                    prefs.warmthNow(),
+                    System.currentTimeMillis() + durationMs + DimOverlayPrefs.PREVIEW_EXPIRY_GRACE_MS
+                )
+                delay(durationMs)
             } finally {
                 withContext(NonCancellable) { dimSchedule.applyCurrentState() }
             }

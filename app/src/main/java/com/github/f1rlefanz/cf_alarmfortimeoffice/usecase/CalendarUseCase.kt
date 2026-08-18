@@ -281,6 +281,15 @@ class CalendarUseCase @Inject constructor(
                                 // die restlichen Kalender in denselben Fehler und der naechste
                                 // Sync gleich mit.
                                 invalidateTokenIfRejectedByGoogle(error)
+                                // HIER LANDET AUCH EINE ABGESCHNITTENE LISTE.
+                                //
+                                // Seit v1.27.1 meldet der Abruf einen FEHLER, wenn die Seitenkette
+                                // eines Kalenders nicht zu Ende gelesen werden konnte
+                                // (CalendarRepository.collectAllPages). Das ist Absicht: eine
+                                // gekuerzte Liste als Erfolg zurueckzugeben hiesse
+                                // isComplete == true, und das ist in dieser App die Erlaubnis zu
+                                // loeschen. Ueber failedCalendarIds wird daraus ein sichtbarer,
+                                // benannter Teilausfall statt eines stillen Alarm-Verlusts.
                                 failedCalendarIds += calendarId
                                 if (firstError == null) firstError = error
                                 processedCount++

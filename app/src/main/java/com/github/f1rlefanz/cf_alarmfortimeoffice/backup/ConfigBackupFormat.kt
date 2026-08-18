@@ -105,6 +105,14 @@ object ConfigBackupFilter {
         "dim_overlay_on",
         "dim_render_strength",
         "dim_render_warmth",
+        // Ablaufzeitpunkt einer laufenden Dimm-VORSCHAU (Wanduhr-Millis dieses Geraets). Ohne
+        // diesen Eintrag ging folgender Ablauf kaputt: Geraet A exportiert waehrend einer
+        // Vorschau, Geraet B importiert den laengst vergangenen Zeitpunkt. Laeuft auf B gerade
+        // ein regulaeres Dimm-Fenster (dim_overlay_on wird nicht importiert, steht dort also
+        // eigenstaendig auf true), liest DimOverlayPrefs.renderState die Kombination als
+        // "abgelaufene Vorschau" und schickt RenderState(false) an den Overlay-Dienst - der
+        // Bildschirm bleibt hell, bis das Fenster wechselt.
+        "dim_overlay_preview_until",
         // Die Heller/Dunkler-Korrektur haengt an EINEM konkreten Fenster (windowEnd + windowStrength)
         "dim_override_strength_delta",
         "dim_override_paused",
@@ -117,7 +125,12 @@ object ConfigBackupFilter {
         "skip_activated_at",
         "skip_reason",
         "skipped_alarm_id",
-        "skipped_alarm_trigger_time"
+        "skipped_alarm_trigger_time",
+        // Der gesicherte Stand des uebersprungenen MANUELLEN Weckers - derselbe Vorgang wie die
+        // fuenf Zeilen darueber, nur spaeter dazugekommen und beim Nachtragen vergessen. Er
+        // beschreibt genau einen Wecker DIESES Geraets; importiert wuerde "Aufheben" auf dem
+        // neuen Geraet einen fremden Wecker stellen.
+        "skipped_manual_alarm"
     )
 
     /**

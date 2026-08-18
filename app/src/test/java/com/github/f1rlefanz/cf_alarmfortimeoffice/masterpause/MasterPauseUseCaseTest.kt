@@ -100,9 +100,16 @@ class MasterPauseUseCaseTest {
         verify(f.dndSchedule, times(1)).disable()
         verify(f.hueSmartScheduler, times(1)).cleanup()
         verify(f.calendarPreAlarmRefreshScheduler, times(1)).cancelAll()
-        // Stellvertretend fuer AlarmMaintenanceService.cancelNext(context): genau ein Cancel auf
-        // dem AlarmManager, den es sich ueber getSystemService(ALARM_SERVICE) besorgt.
-        verify(f.alarmManager, times(1)).cancel(anyOrNull<PendingIntent>())
+        // Stellvertretend fuer AlarmMaintenanceService.cancelNext(context): ZWEI Cancel auf dem
+        // AlarmManager, den es sich ueber getSystemService(ALARM_SERVICE) besorgt - der regulaere
+        // 6h-Slot UND der Wiederanlauf-Wachhund.
+        //
+        // Die Zahl ist tragend, nicht kosmetisch: der Wachhund zieht die Kette aus sich heraus
+        // wieder auf (sein Empfaenger ruft scheduleNext()). Bliebe er stehen, kaeme die pausierte
+        // Wartung 30 Minuten nach dem Pausieren von selbst zurueck - und genau das soll pause()
+        // verhindern. Bis Pruefrunde 6 stand hier times(1); der Wachhund war damals der einzige
+        // Slot ohne Absicherung.
+        verify(f.alarmManager, times(2)).cancel(anyOrNull<PendingIntent>())
     }
 
     @Test

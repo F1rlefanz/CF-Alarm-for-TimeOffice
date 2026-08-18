@@ -246,7 +246,16 @@ class AlarmUseCaseSkipAndResilienceTest {
         val result = useCase(repo, manager, config, skipUseCase = FakeSkipUseCase(skippedState(77)))
             .scheduleSystemAlarm(alarm)
 
-        assertTrue(result.isSuccess)
+        // GEAENDERTE ZUSICHERUNG (Pruefrunde 6): frueher stand hier `assertTrue(result.isSuccess)`.
+        // Genau das hat einen Wecker gekostet - "abgewiesen" war fuer den Aufrufer nicht von
+        // "armiert" zu unterscheiden, und createManualAlarm() meldete deshalb Erfolg fuer einen
+        // Wecker, den es im AlarmManager nie gab.
+        assertTrue(result.isFailure)
+        assertTrue(
+            "Der Aufrufer muss 'wegen Ueberspringen abgewiesen' von einem echten Fehler " +
+                "unterscheiden koennen",
+            result.exceptionOrNull() is SkippedAlarmNotArmedException
+        )
         verify(manager, never()).setAlarmFromShiftMatch(any(), any(), any())
     }
 

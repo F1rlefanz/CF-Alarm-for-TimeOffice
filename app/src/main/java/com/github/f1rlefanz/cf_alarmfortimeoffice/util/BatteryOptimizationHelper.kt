@@ -50,8 +50,16 @@ object BatteryOptimizationHelper {
     private const val KEY_OEM_HINT_SHOWN_PREFIX = "oem_hint_shown"
     private val KEY_BATTERY_PROMPT_DISMISSED = booleanPreferencesKey("battery_prompt_dismissed")
 
-    // Request code for battery exemption activity result
-    const val REQUEST_CODE_BATTERY_EXEMPTION = 1001
+    // Request code for battery exemption activity result.
+    //
+    // WARUM NICHT 1001: das war zahlengleich mit
+    // OAuth2TokenManager.REQUEST_CODE_CALENDAR_AUTHORIZATION. Beide starten ueber
+    // startActivityForResult DERSELBEN MainActivity, deren einzige Verzweigung auf den
+    // Kalender-Code prueft. Die Rueckkehr aus dem Akku-Dialog lief dadurch in
+    // handlePermissionResult() und meldete dem Nutzer "Kalenderzugriff wurde verweigert" -
+    // direkt nachdem er die Akku-Ausnahme erteilt hatte - und verwarf dabei den Merker einer
+    // tatsaechlich schwebenden Kalender-Autorisierung.
+    const val REQUEST_CODE_BATTERY_EXEMPTION = 1002
 
     /**
      * Resolves the Hilt-managed @MainDataStore via [BatteryOptimizationHelperEntryPoint].

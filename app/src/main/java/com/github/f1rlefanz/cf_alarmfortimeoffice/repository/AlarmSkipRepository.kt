@@ -10,9 +10,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmSkipRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,7 +28,16 @@ class AlarmSkipRepository @Inject constructor(
     @param:MainDataStore private val dataStore: DataStore<Preferences>
 ) : IAlarmSkipRepository {
     
-    override val skipStatusFlow: Flow<AlarmSkipState> = dataStore.data.map { preferences ->
+    /**
+     * ROH, absichtlich OHNE `.catch`: die punktuellen Abfragen ([getSkipStatus], [isAlarmSkipped])
+     * MUESSEN einen Lesefehler als Fehler sehen.
+     *
+     * Sie tragen den gesicherten manuellen Wecker: `AlarmViewModel.cancelSkip()` bricht bei
+     * `Result.failure` ausdruecklich ab, statt Flag UND Schnappschuss abzuraeumen, die es gerade
+     * nicht lesen konnte. Wuerde hier auf "nicht uebersprungen" degradiert, waere dieser Schutz
+     * still ausgehebelt - der Wecker verschwaende wortlos.
+     */
+    private val rohSkipStatusFlow: Flow<AlarmSkipState> = dataStore.data.map { preferences ->
         AlarmSkipState(
             isNextAlarmSkipped = preferences[AlarmSkipPreferences.IS_NEXT_ALARM_SKIPPED] ?: false,
             skippedAlarmId = preferences[AlarmSkipPreferences.SKIPPED_ALARM_ID],
@@ -35,6 +47,57 @@ class AlarmSkipRepository @Inject constructor(
             skippedManualAlarm = preferences[AlarmSkipPreferences.SKIPPED_MANUAL_ALARM]
         )
     }
+
+    /**
+     * Der beobachtete Zustand fuer die Oberflaeche - `retryWhen` und `.catch` HINTER dem `.map`
+     * (die Reihenfolge ist tragend, siehe CLAUDE.md "Persistenz"; so faengt der Retry auch ein
+     * Scheitern der Abbildung und abonniert den Store wirklich neu).
+     *
+     * WELCHER ABLAUF GING KAPUTT: Der `ReplaceFileCorruptionHandler` des `settings`-Stores faengt
+     * nur Korruption; eine IOException (voller Speicher, EACCES, transienter Lesefehler) reicht
+     * DataStore in den Flow durch, und dieser Flow ENDETE daran dauerhaft - die Skip-Karte fror
+     * bis zum Prozessneustart auf ihrem letzten Stand ein.
+     *
+     * WARUM `retryWhen` UND NICHT `.catch { emit(...) }`: `Flow.catch` faengt, emittiert einmal
+     * und laesst den Flow danach NORMAL ABSCHLIESSEN - es abonniert nichts neu. Die Terminierung
+     * blieb damit bestehen, nur der eingefrorene WERT waere ein anderer geworden. Genau das steht
+     * im Haus schon zweimal aufgeschrieben (`DataStoreTokenRepository.observe()`,
+     * `CalendarSelectionRepository`): ein transienter Fehler heilt sich selbst, wenn man erneut
+     * abonniert.
+     *
+     * WARUM DER LETZTE FANG NICHTS EMITTIERT: Die Skip-Karte samt "Aufheben"-Knopf zeigt
+     * `WeckerTabContent` nur bei `hasActiveAlarms || isNextAlarmSkipped` - und beim Ueberspringen
+     * eines MANUELLEN Weckers ist der Alarm vorher aus dem Repository geloescht worden, es gibt
+     * also typischerweise keinen aktiven Alarm mehr. Eine Degradierung auf "nicht uebersprungen"
+     * nimmt damit den Knopf weg, der als einziger an den gesicherten `skippedManualAlarm`
+     * heranfuehrt; das Flag laeuft erst NACH der Weckzeit ab, ein Nachholer existiert nicht. Kein
+     * Signal ist hier also richtiger als ein falsches (gleiche Ueberlegung wie beim
+     * Token-Verlust-Waechter) - die Ausloesung selbst haengt ohnehin am ROHEN Flow.
+     */
+    override val skipStatusFlow: Flow<AlarmSkipState> = rohSkipStatusFlow
+        .retryWhen { cause, attempt ->
+            if (attempt >= OBSERVE_RETRY_ATTEMPTS) {
+                Logger.e(
+                    LogTags.ALARM_SKIP,
+                    "Skip-Zustand nach $attempt Versuchen nicht lesbar - die Anzeige bleibt auf " +
+                        "ihrem letzten Stand stehen (der 'Aufheben'-Knopf bleibt damit erreichbar)",
+                    cause
+                )
+                false
+            } else {
+                Logger.w(
+                    LogTags.ALARM_SKIP,
+                    "Skip-Zustand nicht lesbar (Versuch ${attempt + 1}/$OBSERVE_RETRY_ATTEMPTS) - neuer Versuch",
+                    cause
+                )
+                delay(OBSERVE_RETRY_BASE_DELAY_MS * (attempt + 1))
+                true
+            }
+        }
+        .catch { e ->
+            // Letzte Verteidigungslinie gegen den Absturz im Collector - bewusst OHNE emit.
+            Logger.e(LogTags.ALARM_SKIP, "Skip-Zustand endgueltig nicht lesbar", e)
+        }
 
     override suspend fun setNextAlarmSkipped(
         alarmId: Int,
@@ -77,14 +140,22 @@ class AlarmSkipRepository @Inject constructor(
             Logger.business(LogTags.ALARM_SKIP, "Skip status cleared")
         }
     
-    override suspend fun isAlarmSkipped(alarmId: Int): Result<Boolean> = 
+    override suspend fun isAlarmSkipped(alarmId: Int): Result<Boolean> =
         SafeExecutor.safeExecute("AlarmSkipRepository.isAlarmSkipped") {
-            val skipState = skipStatusFlow.first()
+            // Bewusst der ROHE Flow: ein Lesefehler muss hier ein Result.failure werden, siehe
+            // [rohSkipStatusFlow].
+            val skipState = rohSkipStatusFlow.first()
             skipState.isNextAlarmSkipped && skipState.skippedAlarmId == alarmId
         }
-    
-    override suspend fun getSkipStatus(): Result<AlarmSkipState> = 
+
+    override suspend fun getSkipStatus(): Result<AlarmSkipState> =
         SafeExecutor.safeExecute("AlarmSkipRepository.getSkipStatus") {
-            skipStatusFlow.first()
+            rohSkipStatusFlow.first()
         }
+
+    companion object {
+        /** Wie in `DataStoreTokenRepository` und `CalendarSelectionRepository` - ein Muster, eine Zahl. */
+        internal const val OBSERVE_RETRY_ATTEMPTS = 5L
+        internal const val OBSERVE_RETRY_BASE_DELAY_MS = 500L
+    }
 }

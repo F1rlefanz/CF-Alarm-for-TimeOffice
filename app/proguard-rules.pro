@@ -25,6 +25,36 @@
 -renamesourcefileattribute SourceFile
 
 # ==============================
+# KEINE UMBENENNUNG - SHRINKING JA, OBFUSKATION NEIN
+# ==============================
+#
+# WELCHER ABLAUF SONST KAPUTT GEHT: Bis v1.27.0 standen weiter unten zwei Regeln der Form
+# `-keep class * { ... }`. Die Klassenspezifikation `*` machte JEDE uebersetzte Klasse zur
+# Keep-Wurzel, R8 hat also seit dem Einschalten am 10.08.2026 nichts entfernt und NICHTS
+# umbenannt (nachgemessen: 1828 mapping.txt-Eintraege des eigenen Pakets, kein einziger
+# verschleiert). Mit der Korrektur auf `-keepclasseswithmembers`/`-keepclassmembers` faellt diese
+# Wurzelwirkung weg - der Release-Build wuerde ab sofort ZUM ERSTEN MAL den gesamten App-Code
+# umbenennen.
+#
+# Das kollidiert frontal mit der einzigen Diagnosequelle dieser App: Absturzprotokolle und
+# WARN/ERROR-Zeilen, die ein Alpha-Tester per "Logs senden" schickt (last_crash.txt bzw. der
+# SimpleFileTree). Dafuer haelt die Zeile oben ausdruecklich SourceFile und LineNumberTable - die
+# Zeilennummern blieben also, Klassen- und Methodennamen aber nicht, und
+# `-renamesourcefileattribute` ersetzt zusaetzlich den Dateinamen. Uebrig bliebe `a.b.c(SourceFile:412)`.
+# Zurueckuebersetzen liesse sich das nur mit der mapping.txt DIESES Builds - und die wird nirgends
+# archiviert (weder ci.yml noch build.gradle.kts sichern app/build/outputs/mapping/release/).
+#
+# Das Shrinking bleibt eingeschaltet und ist der eigentliche Gewinn (Groesse); das Umbenennen
+# bringt hier fast nichts und kostet die Fehlersuche. Ausserdem hat noch nie ein Release-Build mit
+# wirksamem Shrinking auf einem Geraet gelaufen - eine Umbenennung obendrauf waere in derselben
+# Version die zweite unerprobte Aenderung, und reflexionsbedingte Ausfaelle sieht die CI nicht
+# (sie baut die Release-APK, fuehrt sie aber nicht aus).
+#
+# WANN DIESE ZEILE WEG DARF: sobald die mapping.txt je Release archiviert wird (CI-Artefakt oder
+# Play-Console-Upload) UND ein Release-Build am Geraet durchgespielt wurde. Vorher nicht.
+-dontobfuscate
+
+# ==============================
 # CRASH REPORTING & DEBUGGING
 # ==============================
 
@@ -92,8 +122,25 @@
 
 # Compose Compiler
 -dontwarn androidx.compose.**
--keep @androidx.compose.runtime.Composable class * { *; }
--keep class * {
+
+# WARUM hier kein `-keep @androidx.compose.runtime.Composable class * { *; }` mehr steht:
+# `@Composable` traegt `@Target(FUNCTION, TYPE, TYPE_PARAMETER, PROPERTY_GETTER)` -
+# `AnnotationTarget.CLASS` fehlt (androidx.compose.runtime 1.12.0, Composable.kt:34-58). Der
+# Kotlin-Compiler laesst eine `@Composable`-Klassendeklaration also gar nicht erst zu; die Regel
+# konnte seit dem Initial Commit nichts treffen. Verifiziert: in app/src/main gibt es keine
+# einzige Klassen-, Objekt- oder Interface-Deklaration mit dieser Annotation.
+#
+# WARUM `-keepclasseswithmembers` statt `-keep`: bis v1.27.0 stand hier `-keep class * { ... }`.
+# Die Klassenspezifikation `*` trifft JEDE Klasse, und `-keep` macht die getroffene Klasse zur
+# Shrink- UND Obfuskations-Wurzel - unabhaengig davon, ob sie die genannten Member ueberhaupt
+# besitzt. Damit war jede uebersetzte Klasse eine Wurzel: R8 hat seit dem Einschalten am
+# 10.08.2026 nur noch MEMBER entfernt, keine einzige Klasse, und nichts obfuskiert. Nachgemessen
+# am Release-Build vom 14.08.2026: mapping/release/seeds.txt fuehrte 37.511 Klassen als Wurzeln,
+# darunter `kotlin.internal.InlineOnly` und `okhttp3.internal.**`, die keine andere keep-Regel im
+# gemergten Regelsatz trifft. `-keepclasseswithmembers` haelt nur die Klassen, die tatsaechlich
+# `@Composable`-Methoden HABEN - genau das, was gemeint war. Dieselbe korrekte Form benutzt die
+# Datei weiter unten beim `@javax.inject.Inject`-Block bereits.
+-keepclasseswithmembers class * {
     @androidx.compose.runtime.Composable <methods>;
 }
 
@@ -327,8 +374,17 @@
 -dontwarn libcore.io.AshmemPinning
 -dontwarn android.os.PinningHelperHooks
 
-# Obfuscate ashmem-related method calls to prevent deprecation warnings
--keep,allowobfuscation class * {
+# WARUM `-keepclassmembers` statt `-keep`: bis v1.27.0 stand hier `-keep,allowobfuscation class *`.
+# `allowobfuscation` erlaubt lediglich das Umbenennen, es hebt die Wurzel-Wirkung von `-keep` nicht
+# auf - die Klassenspezifikation `*` machte also auch hier JEDE Klasse des Programms un-entfernbar,
+# voellig unabhaengig davon, ob sie pin/unpin/setPinned besitzt. Zusammen mit der Compose-Regel
+# oben war das der zweite Grund, warum R8 keine einzige Klasse entfernt hat.
+# Die Regel bleibt in der Member-Form stehen statt ersatzlos zu verschwinden, weil ihr erklaerter
+# Zweck (die pin/unpin-Methoden nicht festnageln) davon unberuehrt bleibt. Wirkung hat sie
+# vermutlich keine: im eigenen Code existiert keine solche Methode, und die Meldung
+# "Pinning is deprecated since Android Q" kommt aus der Plattform, nicht aus App-Code - dagegen
+# helfen die -dontwarn-Zeilen darueber, kein Keep.
+-keepclassmembers,allowobfuscation class * {
     *** pin(...);
     *** unpin(...);
     *** setPinned(...);
@@ -347,6 +403,16 @@
 #                Attrappe - R8 laeuft, entfernt aber nichts. Siehe build.gradle.kts.
 # -dontoptimize  AUS seit 10.08.2026 (war "Temporarily disabled for stability").
 #                Am Geraet verifiziert: Release-APK mit vollem Happy Path lauffaehig.
+#
+# ACHTUNG, gelernt in Pruefrunde 6: Diese beiden Zeilen sind NICHT die einzige Tuer zur Attrappe.
+# Vom 10.08. bis 18.08.2026 war Minify trotz auskommentiertem `-dontshrink` auf Klassenebene
+# wirkungslos - nicht wegen einer Global-Direktive, sondern wegen zweier `-keep class *`-Regeln
+# (Compose-Block und ashmem-Block, beide weiter oben), die jede Klasse zur Wurzel machten. Wer die
+# Wirksamkeit von R8 pruefen will, prueft deshalb das ARTEFAKT, nicht die Konfiguration:
+#   mapping/release/seeds.txt darf nicht annaehernd so viele Klassen fuehren wie mapping.txt.
+# NICHT mehr ueber Umbenennungen pruefen: seit `-dontobfuscate` (siehe Begruendung ganz oben)
+# benennt R8 bewusst nichts mehr um - eine mapping.txt ohne verschleierte Namen ist hier also
+# der SOLL-Zustand und kein Hinweis auf eine Attrappe.
 
 # Enable R8 full mode optimizations in gradle
 # android.enableR8.fullMode=true

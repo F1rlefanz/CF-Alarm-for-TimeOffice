@@ -20,6 +20,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.CalendarPermissionOutcome
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
@@ -233,28 +234,60 @@ class MainActivity : ComponentActivity() {
         if (requestCode == OAuth2TokenManager.REQUEST_CODE_CALENDAR_AUTHORIZATION) {
             lifecycleScope.launch {
                 try {
-                    val success = oauth2TokenManager.handlePermissionResult(
-                        requestCode,
-                        resultCode
-                    )
-                    
-                    if (success) {
-                        Logger.business(LogTags.AUTH, "✅ PERMISSION-FIXED: Calendar permission granted successfully")
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Kalenderzugriff wurde erteilt!",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        
-                        // Trigger calendar reload after successful authorization
-                        calendarViewModel.loadAvailableCalendars()
-                    } else {
-                        Logger.w(LogTags.AUTH, "⚠️ PERMISSION-FIXED: Calendar permission denied by user")
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Kalenderzugriff wurde verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
-                            Toast.LENGTH_LONG
-                        ).show()
+                    // DREI ERGEBNISSE, DREI AUSSAGEN: frueher war alles ausser Erfolg eine
+                    // "Verweigerung" - auch der Fall, in dem der Prozess waehrend des
+                    // Zustimmungsdialogs starb und die App den Merker der schwebenden
+                    // Autorisierung verlor. Der Nutzer bekam dann nach seiner ZUSTIMMUNG die
+                    // Aufforderung, die Berechtigung doch in den Einstellungen zu erteilen.
+                    when (oauth2TokenManager.handlePermissionResult(requestCode, resultCode)) {
+                        CalendarPermissionOutcome.GRANTED -> {
+                            Logger.business(LogTags.AUTH, "✅ PERMISSION-FIXED: Calendar permission granted successfully")
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Kalenderzugriff wurde erteilt!",
+                                Toast.LENGTH_SHORT
+                            ).show()
+
+                            // Trigger calendar reload after successful authorization
+                            calendarViewModel.loadAvailableCalendars()
+                        }
+
+                        CalendarPermissionOutcome.GRANTED_AFTER_RESTART -> {
+                            // Der wartende Callback ist mit dem alten Prozess gestorben; an ihm
+                            // haengen hasValidToken, der Kalender-Reload und der Start der
+                            // Wartungskette. Deshalb hier bewusst OHNE Activity nachziehen: die
+                            // Zustimmung liegt vor, der Weg laeuft ohne Dialog durch und setzt
+                            // den Auth-Zustand - ein erneuter Dialogstart aus einer gerade erst
+                            // wiederhergestellten Activity waere dagegen riskant.
+                            Logger.business(LogTags.AUTH, "✅ PERMISSION-FIXED: Zustimmung nach Prozesstod erkannt - Auth-Zustand wird nachgezogen")
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Kalenderzugriff wurde erteilt!",
+                                Toast.LENGTH_SHORT
+                            ).show()
+
+                            authViewModel.requestCalendarAuthorization()
+                        }
+
+                        CalendarPermissionOutcome.DENIED -> {
+                            Logger.w(LogTags.AUTH, "⚠️ PERMISSION-FIXED: Calendar permission denied by user")
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Kalenderzugriff wurde verweigert. Bitte erteile die Berechtigung in den Einstellungen.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+
+                        CalendarPermissionOutcome.UNKNOWN -> {
+                            // Weder Zustimmung noch Ablehnung nachweisbar - also auch keine der
+                            // beiden Aussagen treffen, sondern um einen erneuten Versuch bitten.
+                            Logger.w(LogTags.AUTH, "⚠️ PERMISSION-FIXED: Ergebnis der Kalender-Autorisierung nicht zuordenbar")
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Kalenderzugriff konnte nicht abgeschlossen werden. Bitte versuche es noch einmal.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 } catch (e: Exception) {
                     Logger.e(LogTags.AUTH, "❌ PERMISSION-FIXED: Error handling permission result", e)

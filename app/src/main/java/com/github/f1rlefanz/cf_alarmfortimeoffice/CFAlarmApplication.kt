@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 /**
@@ -116,6 +117,12 @@ class CFAlarmApplication : Application() {
     /** Sorgt dafuer, dass der geraetelokale Startblock je Prozess hoechstens EINMAL laeuft. */
     private val startupGate = DeviceLocalStartupGate()
 
+    /**
+     * Merker fuer den Datei-Log-Baum - siehe [plantFileLogTree] fuer den Ablauf, der ohne ihn
+     * kaputt ging. Reines In-Prozess-Flag, kein Zugriff auf irgendetwas beim Bauen des Graphen.
+     */
+    private val fileLogTree = FileLogTreeInstaller()
+
     /** Schuetzt das Paar aus [unlockReceiver] und [unlockActivityWatcher] gegen zwei Melder. */
     private val unlockWatcherLock = Any()
 
@@ -135,39 +142,79 @@ class CFAlarmApplication : Application() {
         installCrashHandler()
         
         // ✅ WICHTIG: File-Logging IMMER aktivieren (DEBUG + RELEASE)
-        // ROBUST gegen Direct Boot: Wird der Prozess durch LOCKED_BOOT_COMPLETED (vor der ersten
-        // Entsperrung) gestartet, ist External Storage ggf. nicht gemountet (getExternalFilesDir
-        // == null / Schreibfehler). Ein Fehler hier darf onCreate NICHT crashen - sonst liefe der
-        // Direct-Boot-Alarm-Restore im BootReceiver nie.
-        try {
-            val logDir = getExternalFilesDir(null)
-            // PII-Schutz: In Release nur WARN+ ins Datei-Log (INFO/business enthalten E-Mail/
-            // Kalendertitel); in Debug weiterhin alles fuer die Entwicklung.
-            val fileLogMinPriority = if (BuildConfig.DEBUG) android.util.Log.VERBOSE else android.util.Log.WARN
-            if (logDir != null) {
-                Timber.plant(SimpleFileTree(logDir, minPriority = fileLogMinPriority))
-                Logger.i(LogTags.APP, "🗂️ Logs werden (8 Tage) gespeichert in: ${logDir.absolutePath}")
-            }
-
-            if (BuildConfig.DEBUG) {
-                Timber.plant(Timber.DebugTree())
-                Logger.d(LogTags.APP, "Timber initialized in DEBUG mode with file logging")
-            } else {
-                Logger.i(LogTags.APP, "Timber initialized in RELEASE mode with file logging")
-            }
-        } catch (e: Exception) {
-            // Direct Boot / fehlender External Storage: File-Logging ueberspringen, nicht crashen.
-            if (BuildConfig.DEBUG) {
-                try { Timber.plant(Timber.DebugTree()) } catch (_: Exception) { /* ignore */ }
-            }
+        // Der Logcat-Baum steht ZUERST und unabhaengig vom Datei-Baum: er braucht kein
+        // Verzeichnis und darf deshalb nicht mit dem Datei-Log zusammen ausfallen.
+        if (BuildConfig.DEBUG) {
+            try { Timber.plant(Timber.DebugTree()) } catch (_: Exception) { /* ignore */ }
+            Logger.d(LogTags.APP, "Timber initialized in DEBUG mode with file logging")
+        } else {
+            Logger.i(LogTags.APP, "Timber initialized in RELEASE mode with file logging")
         }
-        
+        plantFileLogTree("Kaltstart")
+
         // Initialize app components
         initializeApp()
         
         Logger.i(LogTags.APP, "✅ CFAlarmApplication initialized with Hilt DI - Modern and reliable!")
     }
     
+    /**
+     * Richtet das Datei-Log ein, sobald das Verzeichnis wirklich da ist - und darf dafuer
+     * MEHRFACH gerufen werden.
+     *
+     * WELCHER ABLAUF OHNE DAS KAPUTT GING: Startet der Prozess durch `LOCKED_BOOT_COMPLETED` vor
+     * der ersten Entsperrung - also genau in dem Ablauf, in dem der `BootReceiver` die Alarme aus
+     * dem Direct-Boot-Spiegel wiederherstellt -, ist External Storage noch nicht gemountet und
+     * `getExternalFilesDir(null)` liefert `null`. Frueher blieb es fuer die GESAMTE Lebensdauer
+     * dieses Prozesses dabei, denn gepflanzt wurde genau einmal in `onCreate()`. Im Release ist
+     * der [SimpleFileTree] die einzige Senke (dort steht bewusst kein `DebugTree`), und Timber
+     * verwirft ohne gepflanzten Baum ALLES still - auch `Logger.e`/`Logger.w`. Der Prozess
+     * ueberlebt die Entsperrung aber und bedient danach die App: ausgerechnet nach einem Neustart
+     * gab es damit kein einziges Beweismittel - kein WARN aus `visibilitySnapshot()`, keine
+     * Meldung des Alarm-Restores, und die Datei, die der Nutzer per "Logs senden" schickt, endet
+     * am Vortag. Im Debug faellt das nie auf, weil dort ein `DebugTree` steht.
+     *
+     * DESHALB WIRD NACH DEM ENTSPERREN ERNEUT ANGEKLOPFT ([onUnlockOpportunity],
+     * [runDeviceLocalStartupChecks]) - dasselbe Muster, das `AlarmMaintenanceService` fuer die
+     * Log-Bereinigung schon faehrt: das Verzeichnis erst dann aufloesen, wenn es da sein KANN.
+     * Nicht vorgezogen: hier wird nur ein Context-Pfad abgefragt, kein WorkManager und kein
+     * CE-DataStore - die Regel "nichts am Application-Graphen fasst beim Bauen WorkManager oder
+     * CE-Storage an" bleibt unangetastet.
+     *
+     * Die Erfolgsmeldung ist bewusst WARN und nicht INFO: im Release schreibt der Baum nur WARN+,
+     * eine INFO-Zeile stuende also nie in der Datei, die sie ankuendigt. Genau diese Zeile sagt
+     * spaeter, ob der Baum beim Kaltstart oder erst nach dem Entsperren hochkam. Sie enthaelt
+     * keine PII (nur einen Pfad).
+     */
+    private fun plantFileLogTree(anlass: String) {
+        try {
+            val gepflanzt = fileLogTree.install(
+                resolveLogDir = { getExternalFilesDir(null) },
+                plant = { logDir ->
+                    // PII-Schutz: In Release nur WARN+ ins Datei-Log (INFO/business enthalten
+                    // E-Mail/Kalendertitel); in Debug weiterhin alles fuer die Entwicklung.
+                    val fileLogMinPriority =
+                        if (BuildConfig.DEBUG) android.util.Log.VERBOSE else android.util.Log.WARN
+                    Timber.plant(SimpleFileTree(logDir, minPriority = fileLogMinPriority))
+                    Logger.w(
+                        LogTags.APP,
+                        "🗂️ Datei-Log aktiv ($anlass) - Aufbewahrung 8 Tage in: ${logDir.absolutePath}"
+                    )
+                }
+            )
+            if (!gepflanzt && !fileLogTree.isPlanted) {
+                // Kein Verzeichnis. Kein Fehlerfall: vor der ersten Entsperrung erwartbar, und
+                // der naechste Anlass versucht es erneut.
+                Logger.d(LogTags.APP, "Datei-Log noch nicht moeglich ($anlass) - wird nachgeholt")
+            }
+        } catch (e: Exception) {
+            // Ein Fehler hier darf onCreate NICHT crashen - sonst liefe der Direct-Boot-Restore
+            // der Alarme im BootReceiver nie. Der Merker ist bereits zurueckgenommen, der
+            // naechste Anlass versucht es erneut.
+            Logger.w(LogTags.APP, "Datei-Log konnte nicht eingerichtet werden ($anlass)", e)
+        }
+    }
+
     private fun initializeApp() {
         applicationScope.launch {
             try {
@@ -277,6 +324,11 @@ class CFAlarmApplication : Application() {
      * Best-effort: ein Fehler hier darf den Start nicht aufhalten.
      */
     private suspend fun runDeviceLocalStartupChecks() {
+        // Zweiter Anlass fuers Nachruesten des Datei-Logs: dieser Block laeuft ausschliesslich
+        // bei entsperrtem Nutzer - also genau dann, wenn External Storage verfuegbar geworden ist.
+        // Steht VOR dem Gate, damit auch der Lauf, der das Gate verliert, noch anklopft.
+        plantFileLogTree("geraetelokaler Startblock")
+
         // Egal ueber welchen Anlass wir hier landen: die Wartekonstruktion wird nicht mehr
         // gebraucht. Steht VOR dem Gate, damit auch der verlierende zweite Anlass aufraeumt -
         // ein haengender Receiver bzw. ein haengender Lifecycle-Callback ist ein Leck.
@@ -419,18 +471,33 @@ class CFAlarmApplication : Application() {
      * Prozesslaufzeit - siehe [runDeviceLocalStartupChecks].
      */
     private fun onUnlockOpportunity(anlass: String) {
-        if (startupGate.hasRun) {
-            disarmUnlockWatchers()
-            return
-        }
-        if (!userUnlocked) return
-        Logger.i(
-            LogTags.APP,
-            "🔓 Nutzer entsperrt ($anlass) - geraetelokale Startpruefungen werden nachgeholt"
+        handleUnlockOpportunity(
+            isUserUnlocked = { userUnlocked },
+            // NICHT synchron: `plantFileLogTree` macht echtes Platten-I/O -
+            // `getExternalFilesDir(null)` prueft den Mount-Zustand und legt Verzeichnisse an, und
+            // der `SimpleFileTree`-Konstruktor raeumt in seinem `init` alte Logdateien weg
+            // (`listFiles()` + `delete()`). Beide Anlaesse dieses Aufrufs liegen auf dem
+            // Hauptthread: der `ACTION_USER_UNLOCKED`-Empfaenger (10-Sekunden-Budget von
+            // `onReceive`) und die Activity-Lifecycle-Rueckrufe - und sie treffen genau den
+            // Moment mit der hoechsten I/O-Last, die erste Entsperrung nach einem Neustart.
+            // Derselbe Aufruf aus `runDeviceLocalStartupChecks()` liegt laengst im
+            // `applicationScope` (Dispatchers.IO); das hier war die einzige Ausnahme.
+            // Die Reihenfolge bleibt: angestossen wird VOR dem Gate-Check, nur eben nebenlaeufig.
+            // `FileLogTreeInstaller` sichert das Pflanzen per CAS ab, mehrere Anlaesse
+            // gleichzeitig sind also unbedenklich.
+            ensureFileLog = { applicationScope.launch { plantFileLogTree("entsperrt: $anlass") } },
+            startupAlreadyRan = { startupGate.hasRun },
+            disarmWatchers = { disarmUnlockWatchers() },
+            runChecks = {
+                Logger.i(
+                    LogTags.APP,
+                    "🔓 Nutzer entsperrt ($anlass) - geraetelokale Startpruefungen werden nachgeholt"
+                )
+                // Abgemeldet wird in runDeviceLocalStartupChecks(), damit auch der Fall aufraeumt,
+                // in dem ein anderer Anlass den Lauf bereits beansprucht hat.
+                applicationScope.launch { runDeviceLocalStartupChecks() }
+            }
         )
-        // Abgemeldet wird in runDeviceLocalStartupChecks(), damit auch der Fall aufraeumt, in dem
-        // ein anderer Anlass den Lauf bereits beansprucht hat.
-        applicationScope.launch { runDeviceLocalStartupChecks() }
     }
 
     /** Meldet beide Netze ab. Mehrfach aufrufbar; nach dem ersten Mal ein No-op. */
@@ -521,5 +588,77 @@ internal suspend fun ensureDeviceLocalStartupRuns(
         armUnlockWatchers()
     } finally {
         if (isUserUnlocked()) runChecks()
+    }
+}
+
+/**
+ * Was bei einem Entsperr-ANLASS zu tun ist - herausgezogen, weil hier zwei verschiedene Dinge
+ * nachgeholt werden, die NICHT dieselbe Bedingung haben.
+ *
+ * DER UNTERSCHIED, der die Reihenfolge traegt: der geraetelokale Startblock laeuft je Prozess
+ * hoechstens einmal und ist danach fuer immer erledigt (Gate). Das Datei-Log haengt dagegen an
+ * `getExternalFilesDir()` und kann auch dann noch fehlen, wenn der Startblock ueber einen anderen
+ * Anlass laengst gelaufen ist. Stuende das Nachruesten des Logs hinter dem Gate-Check, faende ein
+ * Direct-Boot-Prozess nie mehr zu einer Log-Senke - genau der Zustand, den
+ * [CFAlarmApplication.plantFileLogTree] beschreibt.
+ *
+ * Im gesperrten Zustand passiert weiterhin NICHTS: External Storage ist dann ohnehin nicht da,
+ * und ein Lauf des Startblocks waere teurer als ein verpasster (vergifteter DataStore-Cache).
+ */
+internal fun handleUnlockOpportunity(
+    isUserUnlocked: () -> Boolean,
+    ensureFileLog: () -> Unit,
+    startupAlreadyRan: () -> Boolean,
+    disarmWatchers: () -> Unit,
+    runChecks: () -> Unit
+) {
+    val entsperrt = isUserUnlocked()
+    if (entsperrt) ensureFileLog()
+    if (startupAlreadyRan()) {
+        disarmWatchers()
+        return
+    }
+    if (!entsperrt) return
+    runChecks()
+}
+
+/**
+ * Pflanzt den Datei-Log-Baum genau EINMAL je Prozess - und wertet einen Fehlversuch ausdruecklich
+ * NICHT als erledigt.
+ *
+ * WARUM DAS DER KERN DES FIXES IST: die alte Fassung pflanzte einmalig in `onCreate()`. Lieferte
+ * `getExternalFilesDir(null)` dort `null` - der Normalfall im Direct-Boot-Prozess, weil External
+ * Storage vor der ersten Entsperrung nicht gemountet ist -, gab es nie einen zweiten Versuch. Der
+ * Release-Prozess lief dann fuer den Rest seines Lebens ohne jede Log-Senke, obwohl er die
+ * Entsperrung ueberlebt und danach die App bedient. Deshalb wird der Merker erst gesetzt, wenn ein
+ * Verzeichnis WIRKLICH vorlag, und bei einem Wurf des Pflanzens wieder zurueckgenommen.
+ */
+internal class FileLogTreeInstaller {
+
+    private val planted = AtomicBoolean(false)
+
+    /** Steht der Baum? Nur wahr, wenn tatsaechlich gepflanzt wurde. */
+    val isPlanted: Boolean get() = planted.get()
+
+    /**
+     * @param resolveLogDir liefert das Log-Verzeichnis - oder `null`, solange es (noch) fehlt.
+     * @param plant pflanzt den Baum. Ein Wurf wird weitergereicht, der Merker bleibt offen.
+     * @return `true`, wenn in genau diesem Aufruf gepflanzt wurde.
+     */
+    fun install(resolveLogDir: () -> File?, plant: (File) -> Unit): Boolean {
+        if (planted.get()) return false
+        // Das Aufloesen steht VOR dem Merker: "kein Verzeichnis" heisst "spaeter nochmal",
+        // nicht "erledigt".
+        val logDir = resolveLogDir() ?: return false
+        if (!planted.compareAndSet(false, true)) return false
+        try {
+            plant(logDir)
+        } catch (e: Throwable) {
+            // Ein gescheitertes Pflanzen ist kein erledigtes Pflanzen - sonst bliebe der Prozess
+            // dauerhaft stumm, obwohl der naechste Anlass Erfolg haette.
+            planted.set(false)
+            throw e
+        }
+        return true
     }
 }

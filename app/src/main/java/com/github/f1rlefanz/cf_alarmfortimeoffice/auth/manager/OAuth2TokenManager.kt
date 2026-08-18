@@ -2,6 +2,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager
 
 import android.app.Activity
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.annotation.VisibleForTesting
+import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenProvider
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
@@ -28,10 +31,17 @@ import kotlinx.coroutines.withContext
  */
 class OAuth2TokenManager(
     private val context: Context,
-    private val tokenRepository: TokenRepository
+    private val tokenRepository: TokenRepository,
+    private val pendingAuthStore: PendingAuthStore = SharedPrefsPendingAuthStore(context)
 ) {
     
     companion object {
+        // WARUM DIESE ZAHL EXKLUSIV SEIN MUSS: BatteryOptimizationHelper.
+        // REQUEST_CODE_BATTERY_EXEMPTION war zahlengleich (1001). Beide starten ueber
+        // startActivityForResult DERSELBEN MainActivity, und deren einzige Verzweigung prueft
+        // genau auf diesen Code - die Rueckkehr aus dem Akku-Ausnahme-Dialog landete deshalb in
+        // handlePermissionResult() und wurde als abgelehnte Kalender-Autorisierung gemeldet.
+        // Ein neuer Legacy-Request-Code im Modul muss gegen beide Konstanten geprueft werden.
         const val REQUEST_CODE_CALENDAR_AUTHORIZATION = 1001
     }
     
@@ -40,6 +50,11 @@ class OAuth2TokenManager(
 
     // Email der schwebenden Autorisierung: nötig, um nach erteilter Zustimmung den Token
     // per erneutem getToken()-Aufruf tatsächlich abzuholen (siehe handlePermissionResult).
+    //
+    // NUR DER SCHNELLE WEG: Waehrend der Zustimmungsdialog vorne steht, ist CF-Alarm im
+    // Hintergrund und darf beendet werden. Android stellt Activity und Activity-Result danach
+    // im NEUEN Prozess zu - dieses Feld ist dann null. Die Wahrheit liegt deshalb zusaetzlich
+    // in [pendingAuthStore]; gelesen wird ueber [consumePendingAuthEmail].
     @Volatile
     private var pendingAuthEmail: String? = null
     
@@ -105,7 +120,7 @@ class OAuth2TokenManager(
                 if (activity != null) {
                     Logger.i(LogTags.TOKEN, "🚀 Launching permission dialog...")
                     pendingAuthCallback = onResult
-                    pendingAuthEmail = userEmail
+                    rememberPendingAuth(userEmail)
 
                     withContext(Dispatchers.Main) {
                         activity.startActivityForResult(
@@ -343,42 +358,175 @@ class OAuth2TokenManager(
      * damit kein weiterer Dialog aufpoppen kann) und melden Erfolg erst, wenn der Token wirklich
      * abgeholt und gespeichert wurde. Ohne diesen zweiten Aufruf bliebe der Token-Store leer und
      * jeder folgende getValidToken() scheiterte mit "No token available".
+     *
+     * DREI ERGEBNISSE STATT EINES BOOLEAN (siehe [CalendarPermissionOutcome]): frueher hiess
+     * "nicht erfolgreich" fuer den Aufrufer immer "der Nutzer hat abgelehnt". Nach einem
+     * Prozesstod waehrend des Zustimmungsdialogs ist der Merker aber nur verloren - die App weiss
+     * dann nichts. "Unbekannt" heisst deshalb: nachsehen, ob ein Token da ist, und weder Erfolg
+     * noch Ablehnung behaupten.
      */
-    suspend fun handlePermissionResult(requestCode: Int, resultCode: Int): Boolean {
+    suspend fun handlePermissionResult(requestCode: Int, resultCode: Int): CalendarPermissionOutcome {
         if (requestCode != REQUEST_CODE_CALENDAR_AUTHORIZATION) {
-            return false
+            // Fremdes Ergebnis: NICHTS anfassen, insbesondere keinen Merker verbrauchen.
+            return CalendarPermissionOutcome.UNKNOWN
         }
 
         val callback = pendingAuthCallback
-        val email = pendingAuthEmail
         pendingAuthCallback = null
-        pendingAuthEmail = null
+        val email = withContext(Dispatchers.IO) { consumePendingAuthEmail() }
 
         if (resultCode != Activity.RESULT_OK) {
             Logger.i(LogTags.TOKEN, "Permission result: DENIED")
             callback?.invoke(false)
-            return false
+            return CalendarPermissionOutcome.DENIED
         }
 
         if (email.isNullOrBlank()) {
-            Logger.e(LogTags.TOKEN, "❌ Permission granted, aber keine pending-Email gecached – Token kann nicht abgeholt werden")
-            callback?.invoke(false)
-            return false
+            // UNBEKANNT IST KEINE ABLEHNUNG: der Merker fehlt in beiden Ablagen (z.B. weil der
+            // Prozess starb, bevor er geschrieben werden konnte). Statt eine Verweigerung zu
+            // behaupten, die niemand ausgesprochen hat, wird die nachpruefbare Quelle befragt -
+            // liegt ein gueltiges Token vor, ist die Zustimmung erteilt.
+            val existingToken = runCatching { tokenRepository.get() }.getOrNull()
+            return if (existingToken != null && existingToken.isValid()) {
+                Logger.i(LogTags.TOKEN, "Permission result: kein Merker, aber gueltiges Token vorhanden")
+                callback?.invoke(true)
+                grantedOutcome(callback)
+            } else {
+                Logger.w(LogTags.TOKEN, "Permission result: UNBEKANNT - weder Merker noch gueltiges Token")
+                callback?.invoke(false)
+                CalendarPermissionOutcome.UNKNOWN
+            }
         }
 
         Logger.i(LogTags.TOKEN, "Permission result: GRANTED – Token wird mit erteilter Zustimmung abgeholt")
 
         // Zustimmung liegt jetzt vor → dieser Aufruf erreicht den Save-Pfad statt erneut zu werfen.
         val tokenResult = authorize(userEmail = email, activity = null, onResult = null)
-        val success = tokenResult.isSuccess
-
-        if (success) {
-            Logger.i(LogTags.TOKEN, "✅ Token nach Zustimmung erhalten und gespeichert")
-        } else {
+        if (tokenResult.isFailure) {
+            // Zugestimmt, aber der Abruf scheiterte (Netz, Storage): das ist KEINE Ablehnung.
+            // Wer es als solche meldet, fordert den Nutzer auf, eine Berechtigung zu erteilen,
+            // die er gerade erteilt hat.
             Logger.e(LogTags.TOKEN, "❌ Token-Abruf nach erteilter Zustimmung fehlgeschlagen", tokenResult.exceptionOrNull())
+            callback?.invoke(false)
+            return CalendarPermissionOutcome.UNKNOWN
         }
 
-        callback?.invoke(success)
-        return success
+        Logger.i(LogTags.TOKEN, "✅ Token nach Zustimmung erhalten und gespeichert")
+        callback?.invoke(true)
+        return grantedOutcome(callback)
+    }
+
+    /**
+     * Fehlt der Callback, hat er den Prozesstod nicht ueberlebt. `hasValidToken` im AuthViewModel
+     * haengt ausschliesslich an ihm - der Aufrufer muss den UI-Zustand dann selbst nachziehen.
+     */
+    private fun grantedOutcome(callback: ((Boolean) -> Unit)?): CalendarPermissionOutcome =
+        if (callback == null) {
+            CalendarPermissionOutcome.GRANTED_AFTER_RESTART
+        } else {
+            CalendarPermissionOutcome.GRANTED
+        }
+
+    /** Merkt die schwebende Autorisierung im Speicher UND persistent (Prozesstod-fest). */
+    private fun rememberPendingAuth(email: String) {
+        pendingAuthEmail = email
+        pendingAuthStore.remember(email)
+    }
+
+    /**
+     * Liest den Merker und loescht ihn in BEIDEN Ablagen - auch wenn der Speicherwert noch da war,
+     * damit kein verwaister persistenter Rest den naechsten Durchlauf faelschlich beantwortet.
+     *
+     * `internal` + [VisibleForTesting] statt `private`: die Wiederaufnahme nach Prozesstod ist die
+     * eigentliche Zusicherung dieser Klasse und laesst sich sonst nur ueber GoogleAuthUtil pruefen,
+     * das im JVM-Test nicht erreichbar ist.
+     */
+    @VisibleForTesting
+    internal fun consumePendingAuthEmail(): String? {
+        val fromMemory = pendingAuthEmail
+        pendingAuthEmail = null
+        val persisted = pendingAuthStore.consume()
+        return fromMemory?.takeIf { it.isNotBlank() } ?: persisted?.takeIf { it.isNotBlank() }
+    }
+}
+
+/**
+ * Ergebnis der Rueckkehr aus dem Kalender-Zustimmungsdialog.
+ *
+ * WARUM KEIN BOOLEAN MEHR: "nicht erfolgreich" wurde pauschal als "der Nutzer hat abgelehnt"
+ * gemeldet - samt Toast und der Aufforderung, die Berechtigung in den Einstellungen zu erteilen.
+ * Nach einem Prozesstod waehrend des Zustimmungsdialogs WEISS die App aber nichts, und
+ * "unbekannt" darf weder als Ablehnung noch als Erfolg ausgegeben werden.
+ */
+enum class CalendarPermissionOutcome {
+    /** Zustimmung erteilt, Token abgeholt; der wartende Callback wurde bedient. */
+    GRANTED,
+
+    /**
+     * Zustimmung erteilt und Token vorhanden, aber der wartende Callback ist mit dem alten
+     * Prozess gestorben. Der Aufrufer muss den Auth-Zustand der Oberflaeche nachziehen.
+     */
+    GRANTED_AFTER_RESTART,
+
+    /** Der Nutzer hat abgelehnt oder abgebrochen (resultCode != RESULT_OK). */
+    DENIED,
+
+    /**
+     * Nicht zuordenbar: kein Merker und kein gueltiges Token (oder ein fremder Request-Code).
+     * Ausdruecklich KEINE Aussage ueber Zustimmung oder Ablehnung.
+     */
+    UNKNOWN
+}
+
+/**
+ * Merker der schwebenden Kalender-Autorisierung. Muss den Prozesstod ueberleben: waehrend der
+ * Zustimmungsdialog der Play Services vorne steht, ist CF-Alarm im Hintergrund und regulaer
+ * killbar - Android stellt Activity und Activity-Result danach im neuen Prozess zu.
+ */
+interface PendingAuthStore {
+    fun remember(email: String)
+
+    /** Liefert den Merker und loescht ihn. Ein zweiter Aufruf liefert null. */
+    fun consume(): String?
+}
+
+/**
+ * SharedPreferences-Umsetzung. Der Zugriff liegt bewusst in den Methoden und NICHT in einem
+ * Property-Initializer: OAuth2TokenManager haengt als @Singleton am Application-Graphen, und
+ * CE-Storage ist vor der ersten Entsperrung nicht da.
+ */
+class SharedPrefsPendingAuthStore(private val context: Context) : PendingAuthStore {
+
+    private fun prefs(): SharedPreferences? = try {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    } catch (e: Exception) {
+        Logger.w(LogTags.TOKEN, "Merker der schwebenden Autorisierung nicht erreichbar", e)
+        null
+    }
+
+    override fun remember(email: String) {
+        try {
+            // commit(), nicht apply(): unmittelbar nach dieser Zeile startet der Zustimmungsdialog,
+            // ab da darf der Prozess sterben. Ein noch nicht geschriebenes apply() waere verloren -
+            // dieselbe Ueberlegung wie beim Snooze-Merker.
+            prefs()?.edit(commit = true) { putString(KEY_EMAIL, email) }
+        } catch (e: Exception) {
+            Logger.w(LogTags.TOKEN, "Merker der schwebenden Autorisierung konnte nicht gesichert werden", e)
+        }
+    }
+
+    override fun consume(): String? = try {
+        val prefs = prefs()
+        val email = prefs?.getString(KEY_EMAIL, null)
+        prefs?.edit(commit = true) { remove(KEY_EMAIL) }
+        email
+    } catch (e: Exception) {
+        Logger.w(LogTags.TOKEN, "Merker der schwebenden Autorisierung nicht lesbar", e)
+        null
+    }
+
+    private companion object {
+        const val PREFS_NAME = "oauth2_pending_auth"
+        const val KEY_EMAIL = "pending_auth_email"
     }
 }

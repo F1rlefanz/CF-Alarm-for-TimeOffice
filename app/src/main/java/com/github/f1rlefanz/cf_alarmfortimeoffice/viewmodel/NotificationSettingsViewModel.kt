@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailablePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotificationPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
@@ -23,27 +24,41 @@ import javax.inject.Inject
 @HiltViewModel
 class NotificationSettingsViewModel @Inject constructor(
     private val shiftChangeNotificationPrefs: ShiftChangeNotificationPrefs,
+    private val calendarUnavailablePrefs: CalendarUnavailablePrefs,
     private val dimOverlayPrefs: DimOverlayPrefs,
     private val dimSchedule: DimScheduleUseCase
 ) : ViewModel() {
 
     data class NotificationSettingsUiState(
         val shiftChangeNotificationEnabled: Boolean = true,
+        val calendarUnavailableNotificationEnabled: Boolean = true,
         val dimCorrectionNotificationEnabled: Boolean = false
     )
 
     val uiState: StateFlow<NotificationSettingsUiState> = combine(
         shiftChangeNotificationPrefs.enabled,
+        calendarUnavailablePrefs.enabled,
         dimOverlayPrefs.correctionNotificationEnabled
-    ) { shiftChangeEnabled, dimCorrectionEnabled ->
+    ) { shiftChangeEnabled, calendarUnavailableEnabled, dimCorrectionEnabled ->
         NotificationSettingsUiState(
             shiftChangeNotificationEnabled = shiftChangeEnabled,
+            calendarUnavailableNotificationEnabled = calendarUnavailableEnabled,
             dimCorrectionNotificationEnabled = dimCorrectionEnabled
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotificationSettingsUiState())
 
     fun setShiftChangeNotificationEnabled(enabled: Boolean) {
         viewModelScope.launch { shiftChangeNotificationPrefs.setEnabled(enabled) }
+    }
+
+    /**
+     * Bewusst ein EIGENER Schalter neben der Schicht-Aenderung: das sind zwei verschiedene
+     * Aussagen - "dein Dienstplan hat sich geaendert" gegen "deine Datenquelle ist kaputt". Wer
+     * das taegliche Aenderungs-Rauschen abstellt, will die Warnung ueber versiegende Wecker nicht
+     * mitverlieren.
+     */
+    fun setCalendarUnavailableNotificationEnabled(enabled: Boolean) {
+        viewModelScope.launch { calendarUnavailablePrefs.setEnabled(enabled) }
     }
 
     fun setDimCorrectionNotificationEnabled(enabled: Boolean) {

@@ -316,6 +316,28 @@ fun SettingsTabContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
+                            "Kalender nicht abrufbar",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Warnt, wenn ein gewählter Kalender dauerhaft nicht mehr antwortet — " +
+                                "dann entstehen keine neuen Wecker mehr",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = notificationState.calendarUnavailableNotificationEnabled,
+                        onCheckedChange = { notificationSettingsViewModel.setCalendarUnavailableNotificationEnabled(it) }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
                             "Dimmer-Korrektur",
                             style = MaterialTheme.typography.titleMedium
                         )

@@ -181,6 +181,9 @@ class AlarmMaintenanceService : Service() {
     @Inject
     lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 
+    @Inject
+    lateinit var calendarUnavailableNotifier: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -731,6 +734,29 @@ class AlarmMaintenanceService : Service() {
         val fetchOutcome = eventsResult.getOrThrow()
         val events = fetchOutcome.events
         Logger.d(LogTags.MAINTENANCE, "Loaded ${events.size} events")
+
+        // AUCH BEI LEERER MENGE aufrufen, und ZWINGEND VOR der isComplete-Sperre unten: die
+        // Entprellung braucht jeden Lauf, um "beharrlich" von "Aussetzer" zu unterscheiden - und
+        // sie muss ausserdem mitbekommen, wenn sich ein Kalender wieder erholt hat. Stuende der
+        // Aufruf hinter dem `return`, saehe der Notifier ausschliesslich Stoerungen und wuerde
+        // nach der ersten nie wieder verstummen.
+        //
+        // Das ist der EINZIGE Weg, auf dem der Nutzer von diesem Zustand erfaehrt, ohne die App zu
+        // oeffnen - und genau das ist der Fehlerfall: die App laeuft ja scheinbar, waehrend die
+        // Wecker einer nach dem anderen auslaufen.
+        try {
+            calendarUnavailableNotifier.onFetchOutcome(fetchOutcome.failedCalendarIds)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // KEIN runCatching hier: das faengt Throwable und damit auch die CancellationException,
+            // was der Projekt-Invariante "eine Cancellation laeuft weiter" widerspricht. Wird die
+            // Wartung abgebrochen, muss der Abbruch durchschlagen und nicht als "Benachrichtigung
+            // fehlgeschlagen" weggeloggt werden.
+            throw e
+        } catch (e: Exception) {
+            // Die Wartungskette darf an einer Benachrichtigung NIEMALS scheitern - sie ist
+            // Diagnostik, der Sync darunter ist die eigentliche Aufgabe.
+            Logger.e(LogTags.MAINTENANCE, "Kalender-Warnung fehlgeschlagen - Wartung laeuft weiter", e)
+        }
 
         // FAIL-SAFE, zweiter Teil: NICHT synchronisieren, wenn nur ein TEIL der Kalender
         // geantwortet hat. Ein Teilerfolg ist bewusst Result.success (siehe

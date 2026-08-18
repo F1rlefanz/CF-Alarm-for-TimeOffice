@@ -112,6 +112,40 @@ class CalendarUnavailableNotifierTest {
     }
 
     @Test
+    fun `abgeschaltete Meldung darf den Bereits-gemeldet-Merker nicht fuellen`() {
+        // Der Befund der Pruefrunde vom 18.08.2026: Bis v1.26.2 schrieb onFetchOutcome() den
+        // Merker UNBEDINGT - noch vor der Toggle-Pruefung. Wer die Meldung abgeschaltet hatte,
+        // sammelte damit stumm "bereits gemeldet"-Eintraege an; nach dem Wiedereinschalten kam die
+        // Warnung fuer denselben, weiterhin scheiternden Kalender NIE, weil er per intersect nie
+        // wieder aus dem Merker fiel.
+        //
+        // Die reine Entscheidungsfunktion kennt den Toggle nicht - sie liefert korrekt zuMelden.
+        // Dieser Test haelt fest, was der AUFRUFER daraus machen muss: bei abgeschalteter Meldung
+        // darf bereitsGemeldet nur aufgeraeumt, nie erweitert werden.
+        val e = entscheideBenachrichtigung(
+            jetztGescheitert = setOf("dienstplan"),
+            zuletztGescheitert = setOf("dienstplan"),
+            bereitsGemeldet = emptySet()
+        )
+        assertEquals("Die Funktion selbst meldet weiterhin", setOf("dienstplan"), e.zuMelden)
+
+        // Das ist der Zweig, den onFetchOutcome() im abgeschalteten Fall nimmt:
+        val bereitsGemeldetOhneMeldung = emptySet<String>() intersect setOf("dienstplan")
+        assertTrue(
+            "Ohne gezeigte Meldung darf nichts als gemeldet gelten",
+            bereitsGemeldetOhneMeldung.isEmpty()
+        )
+
+        // Und nach dem Wiedereinschalten muss die Warnung deshalb kommen:
+        val nachWiedereinschalten = entscheideBenachrichtigung(
+            jetztGescheitert = setOf("dienstplan"),
+            zuletztGescheitert = setOf("dienstplan"),
+            bereitsGemeldet = bereitsGemeldetOhneMeldung
+        )
+        assertEquals(setOf("dienstplan"), nachWiedereinschalten.zuMelden)
+    }
+
+    @Test
     fun `laeuft alles, wird nichts gemeldet und nichts gemerkt`() {
         val e = entscheideBenachrichtigung(
             jetztGescheitert = emptySet(),

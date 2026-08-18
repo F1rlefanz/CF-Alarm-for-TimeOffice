@@ -51,7 +51,22 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.26.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.26.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>„Überspringen" lässt sich jetzt wirklich rückgängig machen – und vier weitere Wege, auf denen der Wecker still danebenlag.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>„Überspringen" war endgültig:</strong> Der Knopf „Aufheben" hob nur eine Markierung auf, holte den Wecker aber nicht zurück – und war der übersprungene der einzige Wecker, verschwand der Knopf sogar ganz aus der Anzeige. Ein Antippen von „Überspringen" löschte den Wecker damit unwiderruflich. Jetzt wird der Wecker beim Aufheben aus dem aktuellen Dienstplan neu erstellt (hat sich die Schicht inzwischen verschoben, bekommst du die neue Zeit), und der Knopf bleibt sichtbar, solange etwas zum Aufheben da ist.</li>
+                <li><strong>Nach „Später" im Einrichtungs-Assistenten lief die Hintergrund-Aktualisierung nicht an:</strong> Wer beim Akku-Hinweis auf „Später" tippte oder zurückging, bekam die 6-Stunden-Aktualisierung nie gestellt. Neue Schichten wurden dann nur noch beim Öffnen der App zu Weckern – genau das, was die App eigentlich abnehmen soll. Erst ein Neustart des Handys reparierte es.</li>
+                <li><strong>Nach einem Zeitzonen-Wechsel blieb der Wecker auf der alten Zeit:</strong> Die App holt in diesem Fall bewusst frische Termine, fragte den Server aber trotzdem „hat sich was geändert?" – und weil sich am Kalender nichts geändert hatte, bekam sie die alten Zeiten zurück. Der Wecker ging danach um den vollen Zeitunterschied falsch.</li>
+                <li><strong>Zweimal im Jahr lag die Hue-Lichtrampe eine Stunde daneben:</strong> An den Umstellungstagen auf Sommer- bzw. Winterzeit startete der Sonnenaufgang zu früh oder erst nach dem Klingeln. Auch die Bridge-Prüfung vor dem Wecker lief an diesen Tagen zur falschen Zeit.</li>
+                <li><strong>Zwei Lesefehler-Lücken geschlossen:</strong> Ein Fehler beim Lesen der Einstellung „Schicht-Änderung" konnte mitten in der Wecker-Erstellung abbrechen. Und die neue Warnung „Kalender nicht abrufbar" kam nach dem Aus- und Wiedereinschalten nicht mehr.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.26.1</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Aufräumen unter der Haube – für dich ändert sich nichts.</em></p>
 

@@ -384,11 +384,34 @@ class AlarmViewModel @Inject constructor(
         }
     }
 
-    fun cancelSkip() {
+    /**
+     * Hebt das Ueberspringen auf UND stellt den Alarm wieder her.
+     *
+     * [onSkipCleared] laeuft ERST NACH dem erfolgreichen Loeschen des Flags und stoesst den
+     * Wiederaufbau aus dem Kalenderstand an - die Reihenfolge ist tragend, ein Sync vor dem
+     * Loeschen wuerde am Skip-Gate in syncAlarms() haengenbleiben und den Alarm sofort wieder
+     * verwerfen.
+     *
+     * WARUM ES DEN WIEDERAUFBAU BRAUCHT: skipNextAlarm() loescht den Alarm hart - System-Alarm
+     * gecancelt UND AlarmInfo aus dem Repository entfernt (SKIP-IMMEDIATE-UX, damit er sofort aus
+     * der Statusleiste verschwindet). cancelSkip() raeumte bis v1.26.2 nur das Flag weg und stellte
+     * nichts wieder her: "Ueberspringen" war damit unumkehrbar, obwohl die Oberflaeche ein
+     * "Aufheben" anbietet. Fuer eine Wecker-App heisst das ein stillschweigend geloeschter Wecker.
+     *
+     * Der Wiederaufbau geht bewusst ueber den regulaeren Kalender-Sync statt ueber einen
+     * gesicherten AlarmInfo-Schnappschuss: der Kalenderstand ist die Wahrheit, aus der alle Alarme
+     * entstehen. Hat sich die Schicht inzwischen verschoben, kommt die AKTUELLE Weckzeit zurueck,
+     * nicht die alte - dieselbe Konsistenz wie beim Wiedereinschalten der automatischen Alarme.
+     */
+    fun cancelSkip(onSkipCleared: () -> Unit = {}) {
         viewModelScope.launch {
             alarmSkipUseCase.cancelSkip()
                 .onSuccess {
-                    Logger.business(LogTags.ALARM_SKIP, "✅ Skip cancelled by user")
+                    Logger.business(
+                        LogTags.ALARM_SKIP,
+                        "✅ Skip cancelled by user - Wiederaufbau aus dem Kalenderstand wird angestossen"
+                    )
+                    onSkipCleared()
                     // State wird automatisch über skipStatusFlow aktualisiert
                 }
                 .onFailure { error ->

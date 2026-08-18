@@ -99,13 +99,31 @@ open class CalendarUnavailableNotifier @Inject constructor(
             bereitsGemeldet = zustand.bereitsGemeldet
         )
 
+        // Der Beharrlichkeits-Merker wird IMMER fortgeschrieben - die Entprellung braucht jeden
+        // Lauf, auch die stillen, um "dauerhaft" von "Aussetzer" zu unterscheiden und um zu
+        // erkennen, dass sich ein Kalender erholt hat.
+        //
+        // Der "habe ich schon gesagt"-Merker dagegen NUR, wenn tatsaechlich etwas gesagt wurde.
+        // Bis v1.26.2 wurde er unbedingt geschrieben, noch VOR der Toggle-Pruefung: wer die
+        // Meldung abgeschaltet hatte, sammelte damit stumm "bereits gemeldet"-Eintraege an - und
+        // nach dem Wiedereinschalten kam die Warnung fuer denselben, weiterhin scheiternden
+        // Kalender NIE, weil er per intersect nie wieder aus dem Merker fiel. Das kehrte die
+        // ausdrueckliche Degradationsrichtung dieser Klasse um ("im Zweifel warnen").
+        val darfMelden = entscheidung.zuMelden.isNotEmpty() && prefs.enabledNow()
+
         prefs.setZustand(
             zuletztGescheitert = entscheidung.neuerZuletztGescheitert,
-            bereitsGemeldet = entscheidung.neuerBereitsGemeldet
+            bereitsGemeldet = if (darfMelden) {
+                entscheidung.neuerBereitsGemeldet
+            } else {
+                // Nur aufraeumen, nichts hinzufuegen: erholte Kalender fallen raus, aber kein
+                // ungemeldeter kommt hinein.
+                zustand.bereitsGemeldet intersect gescheiterteKalenderIds
+            }
         )
 
         if (entscheidung.zuMelden.isEmpty()) return
-        if (!prefs.enabledNow()) {
+        if (!darfMelden) {
             Logger.d(LogTags.CALENDAR, "Kalender-Warnung unterdrueckt (vom Nutzer abgeschaltet)")
             return
         }

@@ -236,7 +236,13 @@ fun MainContentScreen(
                         snoozeMinutes = snoozeMinutes,
                         onUpdateShiftConfig = shiftViewModel::updateShiftConfig,
                         onSkipNextAlarm = alarmViewModel::skipNextAlarm,
-                        onCancelSkip = alarmViewModel::cancelSkip,
+                        // Nach dem Aufheben MUSS der Alarm-Bestand neu aus dem Kalender
+                        // aufgebaut werden - skipNextAlarm() hat ihn geloescht. refreshData()
+                        // ist der bereits erprobte Weg dorthin (inkl. Vollstaendigkeits-Sperre
+                        // und Race-Guard); der Callback laeuft erst, wenn das Flag weg ist.
+                        onCancelSkip = {
+                            alarmViewModel.cancelSkip { calendarViewModel?.refreshData() }
+                        },
                         onShowShiftConfig = onShowShiftConfig,
                         onSnoozeMinutesChange = alarmViewModel::setSnoozeMinutes
                     )

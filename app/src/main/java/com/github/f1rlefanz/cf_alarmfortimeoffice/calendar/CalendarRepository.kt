@@ -144,7 +144,19 @@ class CalendarRepository @Inject constructor(
                     .toString()
 
                 // ETag-Support: Get cached ETag for conditional request
-                val cachedEtag = eventCache.getETag(calendarId)
+                //
+                // BEI forceRefresh KEIN ETag - sonst laeuft der erzwungene Lauf genau in den
+                // Cache, den er umgehen soll. Bis v1.26.2 uebersprang forceRefresh nur den
+                // Cache-READ oben; der ETag ging trotzdem mit, Google antwortete mit 304, und der
+                // 304-Zweig unten lieferte eben doch die gecachten Events zurueck.
+                //
+                // Das ist kein Schoenheitsfehler: CalendarEvent haelt start/end als LocalDateTime,
+                // also eingefroren in der Zone, die beim Abruf galt. Genau deshalb erzwingt
+                // TimezoneChangeReceiver einen Lauf mit forceSync -> forceRefresh. Der Inhalt des
+                // Kalenders hat sich durch den Zonenwechsel aber NICHT geaendert, der ETag passt
+                // also weiterhin - und der Wecker behielt die alten Wanduhrzeiten, um den vollen
+                // Zonenversatz daneben. Ausgerechnet auf dem Pfad, der den Fehler beheben sollte.
+                val cachedEtag = if (forceRefresh) null else eventCache.getETag(calendarId)
 
                 val request = service.events().list(calendarId)
                     .setTimeMin(com.google.api.client.util.DateTime(timeMin))

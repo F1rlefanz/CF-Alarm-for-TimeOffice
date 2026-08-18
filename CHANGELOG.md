@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.26.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.26.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_„Überspringen" lässt sich jetzt wirklich rückgängig machen – und vier weitere Wege, auf denen der Wecker still danebenlag._
+
+### 🐛 Behoben
+
+- **„Überspringen" war endgültig:** Der Knopf „Aufheben" hob nur eine Markierung auf, holte den Wecker aber nicht zurück – und war der übersprungene der einzige Wecker, verschwand der Knopf sogar ganz aus der Anzeige. Ein Antippen von „Überspringen" löschte den Wecker damit unwiderruflich. Jetzt wird der Wecker beim Aufheben aus dem aktuellen Dienstplan neu erstellt (hat sich die Schicht inzwischen verschoben, bekommst du die neue Zeit), und der Knopf bleibt sichtbar, solange etwas zum Aufheben da ist.
+- **Nach „Später" im Einrichtungs-Assistenten lief die Hintergrund-Aktualisierung nicht an:** Wer beim Akku-Hinweis auf „Später" tippte oder zurückging, bekam die 6-Stunden-Aktualisierung nie gestellt. Neue Schichten wurden dann nur noch beim Öffnen der App zu Weckern – genau das, was die App eigentlich abnehmen soll. Erst ein Neustart des Handys reparierte es.
+- **Nach einem Zeitzonen-Wechsel blieb der Wecker auf der alten Zeit:** Die App holt in diesem Fall bewusst frische Termine, fragte den Server aber trotzdem „hat sich was geändert?" – und weil sich am Kalender nichts geändert hatte, bekam sie die alten Zeiten zurück. Der Wecker ging danach um den vollen Zeitunterschied falsch.
+- **Zweimal im Jahr lag die Hue-Lichtrampe eine Stunde daneben:** An den Umstellungstagen auf Sommer- bzw. Winterzeit startete der Sonnenaufgang zu früh oder erst nach dem Klingeln. Auch die Bridge-Prüfung vor dem Wecker lief an diesen Tagen zur falschen Zeit.
+- **Zwei Lesefehler-Lücken geschlossen:** Ein Fehler beim Lesen der Einstellung „Schicht-Änderung" konnte mitten in der Wecker-Erstellung abbrechen. Und die neue Warnung „Kalender nicht abrufbar" kam nach dem Aus- und Wiedereinschalten nicht mehr.
+
+## Version 1.26.1
 
 **Stand:** August 2026
 

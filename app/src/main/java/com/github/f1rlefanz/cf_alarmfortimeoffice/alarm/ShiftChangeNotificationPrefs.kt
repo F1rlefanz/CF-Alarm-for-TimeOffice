@@ -5,7 +5,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
+import androidx.datastore.preferences.core.emptyPreferences
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -28,7 +32,29 @@ class ShiftChangeNotificationPrefs @Inject constructor(
         private val KEY_ENABLED = booleanPreferencesKey("shift_change_notification_enabled")
     }
 
-    val enabled: Flow<Boolean> = dataStore.data.map { it[KEY_ENABLED] ?: true }
+    /**
+     * Das `.catch` umschliesst den Store-Read selbst - es war bis v1.26.2 die einzige der drei
+     * Notification-Prefs OHNE eines (CalendarUnavailablePrefs und DimOverlayPrefs haben es).
+     *
+     * Der Weg des Wurfs: [enabledNow] ist ein `first()` hierauf, `ShiftChangeNotifier.notifyX()`
+     * ruft es als erste Anweisung, und die drei notify-Methoden laufen MITTEN IN
+     * `AlarmUseCase.syncAlarms()`. Eine IOException (der corruptionHandler faengt nur Korruption)
+     * haette also nicht nur die Benachrichtigung verhindert, sondern den laufenden Alarm-Sync
+     * abgebrochen - mit halb angelegten Alarmen.
+     *
+     * Degradiert wird auf `true`, also "im Zweifel benachrichtigen": eine ueberfluessige Meldung
+     * ist harmlos, eine verschwiegene Dienstplan-Aenderung nicht.
+     */
+    val enabled: Flow<Boolean> = dataStore.data
+        .map { it[KEY_ENABLED] ?: true }
+        .catch { e ->
+            Logger.e(
+                LogTags.ALARM,
+                "Schicht-Aenderungs-Einstellung nicht lesbar - degradiert auf AN (im Zweifel melden)",
+                e
+            )
+            emit(true)
+        }
 
     suspend fun enabledNow(): Boolean = enabled.first()
 

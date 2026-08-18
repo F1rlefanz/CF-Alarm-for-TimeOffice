@@ -593,6 +593,27 @@ fun MainScreen(
 
             is NavigationState.MainContent -> {
                 val mainContentState = navigationState as NavigationState.MainContent
+
+                // DIE 6h-WARTUNGSKETTE WIRD HIER GESTELLT, NICHT AN DEN GATE-AUSGAENGEN.
+                //
+                // Bis v1.26.2 stand scheduleNext() nur in zwei der Ausgaenge (proceedPastGates()
+                // und finishOnboarding()). Wer ein Gate mit "Spaeter" oder Zurueck verliess - ein
+                // ausdruecklich vorgesehener, persistierter Weg - bekam die Kette NIE gestellt.
+                // Danach entstanden Alarme nur noch, solange der Nutzer die App selbst oeffnete;
+                // neue Schichten aus dem Dienstplan wurden nicht verweckert, und erst ein Reboot
+                // reparierte den Zustand. Genau der Betriebsfall, den diese App nicht verlangt.
+                //
+                // An den Ausgaengen einzeln nachzuziehen waere die fragile Loesung gewesen: der
+                // naechste neue Ausgang vergisst es wieder. Hier kommt JEDER Weg vorbei, und
+                // scheduleNext() ist idempotent (ein Request-Code, ein PendingIntent) - ein
+                // zweiter Aufruf ersetzt den bestehenden Alarm nur. Der Schluessel `Unit` laesst
+                // es genau einmal je Eintritt in den Hauptbereich laufen, nicht bei jeder
+                // Rekomposition.
+                LaunchedEffect(Unit) {
+                    AlarmMaintenanceService.scheduleNext(context)
+                    Logger.d(LogTags.NAVIGATION, "6h-Wartungskette beim Eintritt in den Hauptbereich gestellt")
+                }
+
                 MainContentScreen(
                     authViewModel = authViewModel,
                     calendarViewModel = calendarViewModel,

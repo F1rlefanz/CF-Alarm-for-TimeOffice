@@ -121,6 +121,31 @@ class HueSmartScheduler private constructor() {
         private val PRE_ALARM_CHECK_WINDOW = 10.minutes
         private const val MAX_LOOKAHEAD_DAYS = 7
         private val ALARM_CHANGE_DEBOUNCE = 1500.milliseconds
+
+        /**
+         * Echte verstrichene Dauer zwischen zwei LOKALEN Zeiten - ueber die Zeitachse, nicht ueber
+         * die Wanduhr.
+         *
+         * `JavaDuration.between()` auf zwei LocalDateTime rechnet auf der lokalen Zeitachse und
+         * kennt den DST-Sprung nicht; `setInitialDelay()` erwartet aber real verstreichende
+         * Millisekunden. Bis v1.26.2 stand hier genau diese Rechnung, und zweimal im Jahr lag sie
+         * eine Stunde daneben: im Maerz startete der Worker eine Stunde ZU FRUEH, im Oktober eine
+         * Stunde ZU SPAET - im Herbstfall also NACH der Weckzeit, womit der Sonnenaufgang
+         * wirkungslos blieb und der Pre-Alarm-Health-Check die Bridge zu spaet prueft.
+         *
+         * Die Schwesterklasse `CalendarPreAlarmRefreshScheduler` rechnet seit jeher in
+         * Epoch-Millis - hier ist jetzt dieselbe Bauart.
+         *
+         * WARUM IM COMPANION UND `internal`: die Klasse hat einen privaten Konstruktor, ein Test
+         * kommt also an keine Instanz. Als Instanzmethode hing diese Rechnung an keinem einzigen
+         * Test - und am Geraet ist der DST-Fall nicht erreichbar, ohne die Systemuhr um Monate zu
+         * verstellen (was die OAuth-Sitzung zerlegt). Hier ist sie ohne Android pruefbar.
+         */
+        internal fun realeVerzoegerungMillis(von: LocalDateTime, bis: LocalDateTime): Long {
+            val zone = ZoneId.systemDefault()
+            return bis.atZone(zone).toInstant().toEpochMilli() -
+                von.atZone(zone).toInstant().toEpochMilli()
+        }
     }
 
     /**
@@ -689,25 +714,6 @@ class HueSmartScheduler private constructor() {
             workManager.cancelUniqueWork(DAILY_SCHEDULE_WORK)
             Logger.d(LogTags.HUE_BRIDGE, "🧹 SMART-SCHEDULER: Cleanup completed")
         }
-    }
-
-    /**
-     * Echte verstrichene Dauer zwischen zwei LOKALEN Zeiten - ueber die Zeitachse, nicht ueber die
-     * Wanduhr.
-     *
-     * `JavaDuration.between()` auf zwei LocalDateTime rechnet auf der lokalen Zeitachse und kennt
-     * den DST-Sprung nicht; `setInitialDelay()` erwartet aber real verstreichende Millisekunden.
-     * Bis v1.26.2 stand hier genau diese Rechnung, und zweimal im Jahr lag sie eine Stunde daneben:
-     * im Maerz startete der Worker eine Stunde ZU FRUEH, im Oktober eine Stunde ZU SPAET - im
-     * Herbstfall also NACH der Weckzeit, womit der Sonnenaufgang wirkungslos blieb und der
-     * Pre-Alarm-Health-Check die Bridge zu spaet prueft.
-     *
-     * Die Schwesterklasse `CalendarPreAlarmRefreshScheduler` rechnet seit jeher in Epoch-Millis -
-     * hier ist jetzt dieselbe Bauart.
-     */
-    private fun realeVerzoegerungMillis(von: LocalDateTime, bis: LocalDateTime): Long {
-        val zone = ZoneId.systemDefault()
-        return bis.atZone(zone).toInstant().toEpochMilli() - von.atZone(zone).toInstant().toEpochMilli()
     }
 
 }

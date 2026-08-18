@@ -8,6 +8,7 @@ import androidx.core.app.NotificationCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,7 +36,8 @@ import javax.inject.Singleton
  * Vordergrunddienstes: andere Dringlichkeit, und der Nutzer soll ihn getrennt abschalten koennen.
  *
  * [zeige] ist `open`, damit Tests eine Fake-Unterklasse bilden koennen, die nur mitzaehlt -
- * dasselbe Muster wie bei [ShiftChangeNotifier].
+ * dasselbe Muster wie bei [ShiftChangeNotifier]. Sie gibt zurueck, ob die Meldung wirklich
+ * abgesetzt wurde; daran haengt der "bereits gemeldet"-Merker.
  */
 @Singleton
 open class CalendarUnavailableNotifier @Inject constructor(
@@ -99,46 +101,66 @@ open class CalendarUnavailableNotifier @Inject constructor(
             bereitsGemeldet = zustand.bereitsGemeldet
         )
 
-        // Der Beharrlichkeits-Merker wird IMMER fortgeschrieben - die Entprellung braucht jeden
-        // Lauf, auch die stillen, um "dauerhaft" von "Aussetzer" zu unterscheiden und um zu
-        // erkennen, dass sich ein Kalender erholt hat.
-        //
-        // Der "habe ich schon gesagt"-Merker dagegen NUR, wenn tatsaechlich etwas gesagt wurde.
-        // Bis v1.26.2 wurde er unbedingt geschrieben, noch VOR der Toggle-Pruefung: wer die
-        // Meldung abgeschaltet hatte, sammelte damit stumm "bereits gemeldet"-Eintraege an - und
-        // nach dem Wiedereinschalten kam die Warnung fuer denselben, weiterhin scheiternden
-        // Kalender NIE, weil er per intersect nie wieder aus dem Merker fiel. Das kehrte die
+        // Der "habe ich schon gesagt"-Merker darf NUR wachsen, wenn tatsaechlich etwas gesagt
+        // wurde. Zwei Wege haben das schon gebrochen:
+        //  - bis v1.26.2 wurde er unbedingt geschrieben, noch VOR der Toggle-Pruefung: wer die
+        //    Meldung abgeschaltet hatte, sammelte stumm "bereits gemeldet"-Eintraege an;
+        //  - bis v1.26.3 stand er auch dann, wenn notify() die Warnung verschluckte, weil
+        //    Benachrichtigungen der App ODER dieser Kanal blockiert waren - zeige() pruefte gar
+        //    nichts und meldete nichts zurueck.
+        // In beiden Faellen fiel die ID per intersect nie wieder aus dem Merker, solange der
+        // Kalender scheiterte: nach dem Wiedereinschalten kam die Warnung NIE. Das kehrte die
         // ausdrueckliche Degradationsrichtung dieser Klasse um ("im Zweifel warnen").
+        //
+        // Deshalb wird JETZT ERST gemeldet und DANACH gemerkt - nur der bestaetigte Post zaehlt.
         val darfMelden = entscheidung.zuMelden.isNotEmpty() && prefs.enabledNow()
-
-        prefs.setZustand(
-            zuletztGescheitert = entscheidung.neuerZuletztGescheitert,
-            bereitsGemeldet = if (darfMelden) {
-                entscheidung.neuerBereitsGemeldet
-            } else {
-                // Nur aufraeumen, nichts hinzufuegen: erholte Kalender fallen raus, aber kein
-                // ungemeldeter kommt hinein.
-                zustand.bereitsGemeldet intersect gescheiterteKalenderIds
-            }
-        )
-
-        if (entscheidung.zuMelden.isEmpty()) return
-        if (!darfMelden) {
-            Logger.d(LogTags.CALENDAR, "Kalender-Warnung unterdrueckt (vom Nutzer abgeschaltet)")
-            return
-        }
-
         val anzahl = entscheidung.zuMelden.size
-        zeige(
+        val wurdeGemeldet = darfMelden && zeige(
             title = if (anzahl == 1) "Ein Kalender ist nicht mehr abrufbar" else "$anzahl Kalender sind nicht mehr abrufbar",
             text = "Solange legt CF-Alarm keine neuen Wecker an; die bereits gestellten bleiben. " +
                 "Im Status-Tab unter \"Kalender\" steht, welcher betroffen ist — dort lässt er " +
                 "sich auch aus der Auswahl entfernen."
         )
+
+        // Der Beharrlichkeits-Merker wird dagegen IMMER fortgeschrieben - die Entprellung braucht
+        // jeden Lauf, auch die stillen, um "dauerhaft" von "Aussetzer" zu unterscheiden und um zu
+        // erkennen, dass sich ein Kalender erholt hat. Er darf sich durch die Zustell-Frage NICHT
+        // mitaendern.
+        prefs.setZustand(
+            zuletztGescheitert = entscheidung.neuerZuletztGescheitert,
+            bereitsGemeldet = if (wurdeGemeldet) {
+                entscheidung.neuerBereitsGemeldet
+            } else {
+                // Nur aufraeumen, nichts hinzufuegen: erholte Kalender fallen raus, aber kein
+                // ungemeldeter kommt hinein - beim naechsten Anlass wird erneut versucht.
+                zustand.bereitsGemeldet intersect gescheiterteKalenderIds
+            }
+        )
+
+        if (entscheidung.zuMelden.isNotEmpty() && !darfMelden) {
+            Logger.d(LogTags.CALENDAR, "Kalender-Warnung unterdrueckt (vom Nutzer abgeschaltet)")
+        }
     }
 
-    protected open fun zeige(title: String, text: String) {
+    /**
+     * @return `true`, wenn die Meldung nachweislich abgesetzt wurde. Nur dann darf der
+     *   "bereits gemeldet"-Merker wachsen (siehe [onFetchOutcome]).
+     */
+    protected open fun zeige(title: String, text: String): Boolean {
         createNotificationChannelIfNeeded()
+
+        // Erst NACH dem Anlegen pruefen: vorher gaebe es den Kanal beim allerersten Lauf noch
+        // gar nicht. Ein bereits vom Nutzer abgeschalteter Kanal bleibt abgeschaltet, auch wenn
+        // createNotificationChannel() erneut laeuft - die Pruefung sieht also die Wahrheit.
+        val zustellbarkeit = NotificationDeliverability.bestimme(context, CHANNEL_ID)
+        if (!zustellbarkeit.erreicht) {
+            Logger.w(
+                LogTags.CALENDAR,
+                "⚠️ Kalender-Warnung nicht zustellbar ($zustellbarkeit) - sie wird beim naechsten " +
+                    "Wartungslauf erneut versucht"
+            )
+            return false
+        }
 
         val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
         val pendingIntent = launchIntent?.let {
@@ -160,9 +182,17 @@ open class CalendarUnavailableNotifier @Inject constructor(
             .apply { pendingIntent?.let { setContentIntent(it) } }
             .build()
 
-        context.getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, notification)
-        Logger.business(LogTags.CALENDAR, "📵 Kalender-Warnung gezeigt: $title")
+        // notify() kann werfen (z.B. Kontingent ueberschritten, defekter RemoteViews-Zustand).
+        // Ein Wurf hier duerfte weder den Wartungslauf abbrechen noch als "gemeldet" gelten.
+        return try {
+            context.getSystemService(NotificationManager::class.java)
+                .notify(NOTIFICATION_ID, notification)
+            Logger.business(LogTags.CALENDAR, "📵 Kalender-Warnung gezeigt: $title")
+            true
+        } catch (e: Exception) {
+            Logger.w(LogTags.CALENDAR, "⚠️ Kalender-Warnung konnte nicht gepostet werden: ${e.message}")
+            false
+        }
     }
 
     /** Idempotent, sicher bei jedem [zeige]-Aufruf erneut aufzurufen. */

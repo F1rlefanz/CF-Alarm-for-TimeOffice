@@ -183,6 +183,19 @@ private fun EnhancedAlarmStatusCard(
             // Header Row (bestehend)
             AlarmStatusHeader(alarmState = alarmState, skipState = skipState)
 
+            // Ausgang des letzten "Aufheben", falls der uebersprungene MANUELLE Wecker NICHT
+            // zurueckkam: Weckzeit inzwischen verstrichen, gesicherter Stand unlesbar, oder das
+            // Speichern/Stellen schlug fehl. Steht bewusst AUSSERHALB des Blocks unten: nach so
+            // einem Ausgang gibt es womoeglich weder einen aktiven Alarm noch ein aktives
+            // Ueberspringen - der Block waere dann ausgeblendet und die Meldung damit unsichtbar.
+            skipState.restoreNotice?.let { notice ->
+                Text(
+                    notice,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.warning
+                )
+            }
+
             // Sichtbar, sobald es etwas zu bedienen gibt: entweder ein Alarm zum Ueberspringen
             // ODER ein aktives Ueberspringen zum Aufheben.
             //

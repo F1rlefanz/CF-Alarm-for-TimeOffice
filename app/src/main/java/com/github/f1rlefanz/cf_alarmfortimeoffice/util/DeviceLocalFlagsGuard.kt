@@ -6,6 +6,32 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.first
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * EINWEG-SPERRE fuer den Startblock, der [DeviceLocalFlagsGuard.resetIfDeviceChanged] und den
+ * Abgleich des Pausen-Spiegels ausfuehrt.
+ *
+ * Gebraucht, weil dieser Block seit dem Direct-Boot-Fix ZWEI Anlaesse hat: den regulaeren
+ * Prozessstart (Nutzer bereits entsperrt) und das Nachholen nach `ACTION_USER_UNLOCKED`, wenn der
+ * Prozess vor der ersten Entsperrung hochkam. Beide duerfen sich ueberschneiden, ohne dass der
+ * Block zweimal laeuft: ein zweiter Lauf wuerde erneut `resume()` und
+ * `reconcileDirectBootMirror()` ausloesen, also einen gerade hergestellten Zustand nochmals
+ * anfassen.
+ *
+ * `compareAndSet` statt `if (!done) { done = true }`: die beiden Anlaesse laufen auf
+ * verschiedenen Threads (Application-Scope auf Dispatchers.IO bzw. Receiver-Thread).
+ */
+internal class DeviceLocalStartupGate {
+
+    private val done = AtomicBoolean(false)
+
+    /** Liefert GENAU EINMAL je Instanz `true`; jeder weitere Aufruf `false`. */
+    fun claimRun(): Boolean = done.compareAndSet(false, true)
+
+    /** Nur fuer Diagnose/Tests: ist der Lauf bereits beansprucht? */
+    val hasRun: Boolean get() = done.get()
+}
 
 /**
  * Setzt GERAETELOKALE Onboarding-Flags zurueck, wenn die App auf einem anderen Geraet aufwacht.
@@ -83,6 +109,15 @@ object DeviceLocalFlagsGuard {
     /**
      * Wird beim App-Start aufgerufen. Best-effort: ein Fehler hier darf den Start nicht
      * beeintraechtigen, deshalb faengt der Aufrufer.
+     *
+     * NUR BEI ENTSPERRTEM NUTZER AUFRUFEN. Der uebergebene Store ist der CE-`settings`-Store; ein
+     * Read daraus VOR der ersten Entsperrung wirft nicht, sondern liefert still leere Preferences -
+     * und DataStore legt genau dieses leere Ergebnis fuer die restliche PROZESSLAUFZEIT in seinen
+     * In-Memory-Cache (die Version steigt nur bei einem erfolgreichen Write, der im gesperrten
+     * CE-Storage scheitert). Der Prozess saehe den Store danach dauerhaft leer. Deshalb fragt
+     * [com.github.f1rlefanz.cf_alarmfortimeoffice.CFAlarmApplication] vorher den `UserManager` und
+     * holt den Aufruf nach `ACTION_USER_UNLOCKED` nach - abgesichert gegen Doppellauf ueber
+     * [DeviceLocalStartupGate].
      *
      * @return true, wenn ein Geraetewechsel erkannt wurde. Der Aufrufer muss daraufhin auch die
      *         Master-Pause aufheben - und zwar ueber [com.github.f1rlefanz.cf_alarmfortimeoffice

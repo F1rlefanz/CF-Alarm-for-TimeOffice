@@ -40,6 +40,22 @@ private val Context.calendarSelectionDataStore: DataStore<Preferences> by prefer
 )
 
 /**
+ * REINE FUNKTION (deshalb top-level + `internal`: direkt testbar).
+ *
+ * Darf das Ergebnis eines Reads als Wahrheit in den StateFlow?
+ *
+ * Eine LEERE Auswahl ist nur dann eine Aussage, wenn der Store ueberhaupt lesbar war. Vor der
+ * ersten Entsperrung liefert ein CE-Read still `emptyPreferences()` und meldet Erfolg - "keine
+ * Kalender ausgewaehlt" ist dann eine Erfindung, und jeder Wartungslauf bricht mit "No calendars
+ * selected" ab, ohne dass irgendwo ein Fehler entstuende.
+ *
+ * Ein NICHT leeres Ergebnis dagegen kann aus einem gesperrten Store gar nicht stammen und wird
+ * immer akzeptiert - so bleibt die Regel auch dann richtig, wenn der `UserManager` sich irrt.
+ */
+internal fun shouldAcceptSelectionRead(userUnlocked: Boolean, ids: Set<String>): Boolean =
+    userUnlocked || ids.isNotEmpty()
+
+/**
  * CalendarSelectionRepository - Persistente Speicherung der ausgewählten Kalender
  * 
  * SINGLE SOURCE OF TRUTH IMPLEMENTATION:
@@ -62,6 +78,21 @@ class CalendarSelectionRepository @Inject constructor(
 
     private val dataStore = context.calendarSelectionDataStore
     private val selectedCalendarIdsKey = stringSetPreferencesKey("selected_calendar_ids")
+
+    /**
+     * Ist der Nutzer entsperrt, also CREDENTIAL-ENCRYPTED Storage lesbar?
+     *
+     * Gleiche Umsetzung und gleiche Fehlerrichtung wie in `AlarmRepository` und
+     * `BackgroundServiceManager`: im Zweifel `true`. Ein falsch-positives "gesperrt" wuerde die
+     * Kalenderauswahl dauerhaft als unlesbar melden.
+     */
+    private val userUnlocked: Boolean
+        get() = try {
+            context.getSystemService(android.os.UserManager::class.java)?.isUserUnlocked ?: true
+        } catch (e: Exception) {
+            Logger.w(LogTags.CALENDAR, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
+            true
+        }
     
     /**
      * Repository-eigener CoroutineScope für DataStore-Synchronisation.
@@ -75,11 +106,10 @@ class CalendarSelectionRepository @Inject constructor(
      * in `HueBridgeConnectionManager.cleanup()` (siehe CLAUDE.md) — dort wurde daraus
      * `cancelChildren()`.
      *
-     * Konkret hinge hier der `retryWhen`-Collector der Kalenderauswahl daran. Der ist die
-     * einzige Verteidigung gegen den Direct-Boot-Fall (CE-Store vor der ersten Entsperrung
-     * nicht lesbar): Stirbt er, steht `_selectedCalendarIds` dauerhaft auf `emptySet()`,
-     * obwohl Kalender ausgewählt sind — und eine leere Auswahl liest `syncAlarms()` als
-     * "keine Schichten". Für eine Wecker-App ist das die gefährlichste Leere.
+     * Konkret hinge hier der Collector der Kalenderauswahl daran — inklusive des Wartens auf die
+     * erste Entsperrung (`awaitUserUnlocked`). Stirbt er, steht `_selectedCalendarIds` dauerhaft
+     * auf `emptySet()`, obwohl Kalender ausgewählt sind — und eine leere Auswahl liest
+     * `syncAlarms()` als "keine Schichten". Für eine Wecker-App ist das die gefährlichste Leere.
      */
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
@@ -109,6 +139,20 @@ class CalendarSelectionRepository @Inject constructor(
      */
     private fun initializeFromDataStore() {
         repositoryScope.launch {
+            // ZUERST WARTEN, DANN LESEN - der Read darf im gesperrten Zustand gar nicht passieren.
+            //
+            // Der frueher hier stehende Kommentar behauptete, der Read werfe bei Direct Boot und
+            // das `retryWhen` unten fange das auf. Das ist nachweislich falsch: ein CE-Read vor der
+            // ersten Entsperrung wirft NICHT, er liefert still leere Preferences und meldet
+            // Erfolg. Das `retryWhen` feuerte also nie - und schlimmer: DataStore legt dieses leere
+            // Ergebnis in seinen In-Memory-Cache und gibt es fuer die restliche PROZESSLAUFZEIT
+            // unveraendert zurueck (die Version steigt nur bei einem erfolgreichen Write, der im
+            // gesperrten CE-Storage scheitert). Ein einziger zu frueher Read machte die
+            // Kalenderauswahl also prozessweit leer, und jeder Wartungslauf brach mit "No calendars
+            // selected" ab - ohne Fehler, ohne Signal. Gemessen relevant, weil der directBootAware
+            // BootReceiver dieses Repository injiziert.
+            awaitUserUnlocked()
+
             // WIEDERAUFNAHME statt endgueltigem Aus.
             //
             // Vorher lag das `collect` in einem try/catch: der ERSTE Fehler aus dem Upstream
@@ -118,11 +162,8 @@ class CalendarSelectionRepository @Inject constructor(
             // Wecker-App ist genau das die gefaehrliche Luege, die diese Klasse an anderer Stelle
             // ausdruecklich bekaempft ("leer" ist von "nichts ausgewaehlt" nicht zu unterscheiden).
             //
-            // Der Fehler ist nicht hypothetisch: entsteht dieses Repository in einem Prozess, der
-            // VOR der ersten Entsperrung startet (der directBootAware BootReceiver injiziert es),
-            // ist der CE-DataStore garantiert nicht lesbar. Nach dem Entsperren waere er es -
-            // deshalb wird es erneut versucht, mit wachsendem Abstand und einer Obergrenze, damit
-            // ein dauerhaft defekter Store keine Endlosschleife erzeugt.
+            // Das `retryWhen` bleibt trotzdem: es deckt echte Lesefehler ab (IOException auf einer
+            // beschaedigten Datei), die sehr wohl werfen.
             dataStore.data
                 .map { preferences -> preferences[selectedCalendarIdsKey] ?: emptySet() }
                 .distinctUntilChanged()
@@ -139,7 +180,7 @@ class CalendarSelectionRepository @Inject constructor(
                     }
                     Logger.w(
                         LogTags.CALENDAR,
-                        "⚠️ Kalenderauswahl nicht lesbar (Versuch ${attempt + 1}, evtl. Direct Boot) - " +
+                        "⚠️ Kalenderauswahl nicht lesbar (Versuch ${attempt + 1}) - " +
                             "neuer Versuch in ${SYNC_RETRY_DELAY_MS * (attempt + 1)}ms",
                         cause
                     )
@@ -147,16 +188,59 @@ class CalendarSelectionRepository @Inject constructor(
                     true
                 }
                 .collect { ids ->
+                    // Zweites Netz zum Warten oben: irrt sich der UserManager (oder faellt der
+                    // Zustand zurueck), darf eine LEERE Liste aus einem gesperrten Store nicht in
+                    // den StateFlow. Sie waere von "der Nutzer hat nichts ausgewaehlt" nicht zu
+                    // unterscheiden und liest sich fuer syncAlarms() als "keine Schichten".
+                    if (!shouldAcceptSelectionRead(userUnlocked, ids)) {
+                        Logger.w(
+                            LogTags.CALENDAR,
+                            "🔒 Leere Kalenderauswahl aus gesperrtem Storage verworfen - der " +
+                                "StateFlow behaelt seinen Stand"
+                        )
+                        return@collect
+                    }
                     _selectedCalendarIds.value = ids
                     Logger.d(LogTags.CALENDAR, "Calendar selection synced from DataStore: ${ids.size} calendars")
                 }
         }
     }
 
+    /**
+     * Blockiert die Coroutine, bis der CREDENTIAL-ENCRYPTED Storage lesbar ist.
+     *
+     * Bewusst eine Abfrage im Abstand statt eines Broadcast-Empfaengers: das Repository ist ein
+     * `@Singleton` am Application-Graphen, und dort etwas Neues zu registrieren ist genau die
+     * Falle, die dieser Fix schliesst. Die Abfrage kostet nur einen `UserManager`-Aufruf und
+     * fasst KEINEN Speicher an.
+     *
+     * Ohne Obergrenze - mit wachsendem, gedeckeltem Abstand: ein Neustart nachts kann Stunden vor
+     * der ersten Entsperrung liegen. Eine Obergrenze haette genau den Zustand wiederhergestellt,
+     * den diese Funktion verhindert (Auswahl bleibt prozessweit leer). Der gesperrte Prozess ist
+     * ohnehin kurzlebig.
+     */
+    private suspend fun awaitUserUnlocked() {
+        if (userUnlocked) return
+        Logger.i(
+            LogTags.CALENDAR,
+            "🔒 Kalenderauswahl wird erst nach der ersten Entsperrung gelesen (Direct Boot)"
+        )
+        var attempt = 0
+        while (!userUnlocked) {
+            attempt++
+            delay(minOf(UNLOCK_POLL_START_MS * attempt, UNLOCK_POLL_MAX_MS))
+        }
+        Logger.i(LogTags.CALENDAR, "🔓 Nutzer entsperrt - Kalenderauswahl wird jetzt geladen")
+    }
+
     private companion object {
-        /** 10 Versuche mit wachsendem Abstand deckt die Zeit bis zur ersten Entsperrung ab. */
+        /** 10 Versuche mit wachsendem Abstand decken echte Lesefehler ab. */
         const val MAX_SYNC_RETRIES = 10L
         const val SYNC_RETRY_DELAY_MS = 3_000L
+
+        /** Abstand der Entsperr-Abfrage: startet kurz, waechst auf hoechstens eine Minute. */
+        const val UNLOCK_POLL_START_MS = 1_000L
+        const val UNLOCK_POLL_MAX_MS = 60_000L
     }
 
     /**
@@ -191,6 +275,20 @@ class CalendarSelectionRepository @Inject constructor(
             // Diese Funktion ist bereits `suspend`; der DataStore-Read ist der einzige Weg, der
             // die Hydrierung garantiert abwartet. Der StateFlow bleibt unveraendert die Quelle
             // fuer reaktive Beobachter (UI/ViewModels).
+            //
+            // ABER NICHT VOR DER ERSTEN ENTSPERRUNG: dort liefert der Read still `emptySet()` als
+            // Erfolg UND vergiftet den DataStore-Cache fuer die restliche Prozesslaufzeit (siehe
+            // initializeFromDataStore). Ein FEHLER ist hier die einzige ehrliche Antwort - die
+            // Aufrufer (AlarmMaintenanceService, CalendarPreAlarmRefreshWorker, BootReceiver)
+            // brechen den Lauf damit ab, statt ihn als "keine Kalender ausgewaehlt" zu verbrauchen
+            // und Alarme zu loeschen.
+            if (!userUnlocked) {
+                throw AppError.DataStoreError(
+                    message = "Kalenderauswahl vor der ersten Entsperrung nicht lesbar " +
+                        "(CREDENTIAL-ENCRYPTED Storage) - es wird KEINE leere Auswahl gemeldet"
+                )
+            }
+
             dataStore.data
                 .map { preferences -> preferences[selectedCalendarIdsKey] ?: emptySet() }
                 .first()
@@ -232,8 +330,18 @@ class CalendarSelectionRepository @Inject constructor(
             Logger.i(LogTags.CALENDAR, "Calendar selection cleared")
         }
 
-    override suspend fun hasSelectedCalendars(): Result<Boolean> = 
+    override suspend fun hasSelectedCalendars(): Result<Boolean> =
         SafeExecutor.safeExecute("CalendarSelectionRepository.hasSelectedCalendars") {
-            _selectedCalendarIds.value.isNotEmpty()
+            val ids = _selectedCalendarIds.value
+            // "leer" ist nur eine Aussage, wenn der Store lesbar war - im gesperrten Zustand ist
+            // der StateFlow noch gar nicht befuellt (der Collector wartet). Ein `false` waere
+            // hier eine Erfindung, die als "Onboarding laeuft noch" gelesen wird.
+            if (!shouldAcceptSelectionRead(userUnlocked, ids)) {
+                throw AppError.DataStoreError(
+                    message = "Kalenderauswahl vor der ersten Entsperrung unbekannt " +
+                        "(CREDENTIAL-ENCRYPTED Storage) - es wird KEIN 'nichts ausgewaehlt' gemeldet"
+                )
+            }
+            ids.isNotEmpty()
         }
 }

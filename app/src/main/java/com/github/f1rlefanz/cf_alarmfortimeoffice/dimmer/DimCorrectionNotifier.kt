@@ -6,9 +6,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,6 +36,13 @@ class DimCorrectionNotifier @Inject constructor(
         private const val CHANNEL_ID = "dim_correction"
         private const val NOTIFICATION_ID = 2101
     }
+
+    /**
+     * Welche Sperre zuletzt geloggt wurde - gegen WARN-Spam bei jedem Dimmer-Tick. `null` heisst
+     * "zuletzt zustellbar", die naechste Sperre loggt also wieder.
+     */
+    @Volatile
+    private var zuletztGemeldeteSperre: NotificationDeliverability.Zustellbarkeit? = null
 
     fun show(strength: Int, warmth: Int, paused: Boolean) {
         createNotificationChannelIfNeeded()
@@ -70,21 +77,42 @@ class DimCorrectionNotifier @Inject constructor(
             )
             .build()
 
-        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-            // notify() wuerde hier sonst lautlos verschlucken - kein Log, keine Exception. Ohne
-            // diesen Check sieht eine fehlende POST_NOTIFICATIONS-Berechtigung im Logcat exakt
-            // gleich aus wie der (gefixte) Bug "Toggle loest keine Neubewertung aus".
-            Logger.w(LogTags.DIMMER, "Dimmer-Korrektur-Notification unterdrueckt: Benachrichtigungen fuer die App sind deaktiviert")
+        // notify() wuerde sonst lautlos verschlucken - kein Log, keine Exception. Ohne diesen
+        // Check sieht eine fehlende POST_NOTIFICATIONS-Berechtigung im Logcat exakt gleich aus wie
+        // der (gefixte) Bug "Toggle loest keine Neubewertung aus".
+        //
+        // Geprueft wird die App-Ebene UND dieser Kanal: die drei Aktionsknoepfe sind der einzige
+        // Korrektur-Zugriff auf den laufenden Dimmer, und Android laesst den Nutzer einen
+        // einzelnen Kanal mit zwei Tipps abschalten - areNotificationsEnabled() bleibt dabei true.
+        val zustellbarkeit = NotificationDeliverability.bestimme(context, CHANNEL_ID)
+        if (!zustellbarkeit.erreicht) {
+            // Einmal pro Anlass: show() laeuft bei jedem Dimmer-Tick erneut, ein WARN je Durchlauf
+            // waere reines Rauschen. Erst ein Zustandswechsel loggt wieder.
+            if (zuletztGemeldeteSperre != zustellbarkeit) {
+                zuletztGemeldeteSperre = zustellbarkeit
+                Logger.w(
+                    LogTags.DIMMER,
+                    "Dimmer-Korrektur-Notification unterdrueckt ($zustellbarkeit) - Heller/Dunkler/Pause sind fuer den Nutzer nicht erreichbar"
+                )
+            }
             return
         }
+        zuletztGemeldeteSperre = null
 
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        try {
+            val notificationManager = context.getSystemService(NotificationManager::class.java)
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            // Der Dimmer selbst laeuft weiter; nur die Korrektur-Oberflaeche fehlt.
+            Logger.w(LogTags.DIMMER, "Dimmer-Korrektur-Notification konnte nicht gepostet werden: ${e.message}")
+        }
     }
 
     fun cancel() {
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         notificationManager.cancel(NOTIFICATION_ID)
+        // Naechste Sperre gilt als neuer Anlass und darf wieder einmal loggen.
+        zuletztGemeldeteSperre = null
     }
 
     private fun actionIntent(action: String, requestCode: Int): PendingIntent =

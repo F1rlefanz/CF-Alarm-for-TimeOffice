@@ -46,17 +46,32 @@ class DimNotificationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * Siehe [ServiceRunTracker]: erst der zuletzt endende Lauf raeumt den Service ab.
+     *
+     * Hier ist es realistisch - ein Doppel-Tap auf "Dunkler" startet zwei Laeufe auf demselben
+     * Scope, und wird der zweite zuerst fertig (er wartet z.B. kuerzer auf withOverrideLock),
+     * traf sein stopSelf(startId) die zuletzt vergebene startId: onDestroy -> scope.cancel()
+     * schnitt den ersten Lauf mitten im Read-Modify-Write ab, der Tap ging verloren.
+     */
+    private val runTracker =
+        com.github.f1rlefanz.cf_alarmfortimeoffice.service.ServiceRunTracker()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
+        // Anmelden VOR dem launch (Main-Thread), damit ein gleichzeitig endender Lauf den Zaehler
+        // nicht auf 0 sieht, waehrend dieser Start schon quittiert ist.
+        runTracker.onStart(startId)
         scope.launch {
             try {
                 handleAction(action)
             } catch (t: Throwable) {
                 Logger.e(LogTags.DIMMER, "Dimmer-Korrektur-Aktion fehlgeschlagen: $action", t)
             } finally {
-                stopSelf(startId)
+                // finally, damit auch Ausnahme- und Abbruchpfad den Zaehler senken.
+                runTracker.onFinish()?.let { stopSelf(it) }
             }
         }
         return START_NOT_STICKY

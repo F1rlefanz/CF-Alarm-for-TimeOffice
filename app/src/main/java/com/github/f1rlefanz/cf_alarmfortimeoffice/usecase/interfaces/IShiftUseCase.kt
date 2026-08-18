@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
 import kotlinx.coroutines.flow.Flow
 

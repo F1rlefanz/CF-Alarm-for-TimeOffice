@@ -271,6 +271,11 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   Kalender und das Lazy-Präfix (10 Events pro Kalender). **Jeder löschende Konsument geht über
   `getCalendarEventsWithStatus()` und prüft `isComplete`**; der `CalendarStateHolder` trägt
   `eventsComplete` mit. Wer einen neuen `syncAlarms()`-Aufrufer ergänzt, muss das beantworten.
+- **Ein Zustand, der den Alarm-Sync DAUERHAFT anhält, muss sichtbar sein.** Die
+  `isComplete`-Sperren verhindern nicht nur das Löschen, sondern auch jedes Anlegen; bleibt ein
+  Kalender dauerhaft unerreichbar, versiegen die Wecker lautlos. Deshalb trägt
+  `CalendarFetchOutcome` die `failedCalendarIds` (nicht nur ihre Zahl), die Status-Karte zeigt sie
+  mit Folge und Ausweg, und ab dem ZWEITEN Wartungslauf in Folge warnt eine Benachrichtigung.
 - **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — „leer" ist für eine Wecker-App die
   gefährlichste Lüge und löscht ALLE Alarme.
 - **Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden**

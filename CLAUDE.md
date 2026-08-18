@@ -63,6 +63,8 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
   `git add .` / `commit -a`, kein `git stash`.
 - **Handoff-Notizen gehören AUSSCHLIESSLICH in `..Projektdateien/claudes mds/HANDOFF.md`** (lokal,
   gitignored). **Keine getrackte Handoff-Datei anlegen** — `docs/` ist GitHub Pages (öffentlich).
+  Die Datei führt **nur offene ToDos und offene Nebenbefunde**; Zweck, Abgrenzung und wohin alles
+  Übrige gehört, stehen in ihrem Kopf — vor dem Schreiben lesen. Sie ist zweimal zugewachsen.
 
 ## Build & Development Commands
 

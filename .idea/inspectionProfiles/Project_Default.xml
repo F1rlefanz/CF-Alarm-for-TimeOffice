@@ -62,5 +62,29 @@
       <option name="processLiterals" value="true" />
       <option name="processComments" value="true" />
     </inspection_tool>
+    <!--
+      Zwei Inspektionen auf einen Geltungsbereich begrenzt, statt sie abzuschalten. Grundlage ist
+      ein vollstaendiger Projekt-Scan vom 18.08.2026 (344 Befunde zu totem Code, jeder einzeln
+      beurteilt): 97 davon waren strukturelle Fehlalarme, und sie verteilten sich auf genau zwei
+      Muster.
+
+      unused (Parameter): 76 der 97 kamen aus Test-Doubles in app/src/test - handgeschriebene
+      Fakes, die eine Interface-Signatur erfuellen und deren Parameter deshalb gar nicht benutzt
+      werden KOENNEN. Die 7 Treffer im Produktivcode waren dagegen brauchbar, deshalb wird die
+      Inspektion dort weiter ausgefuehrt.
+
+      UnusedSymbol: Hilt-Module sind fuer die IDE unsichtbar - @Module/@Binds/@Provides werden
+      ausschliesslich von generiertem Code aufgerufen. RepositoryModule und bindAlarmRepository
+      wurden deshalb als "never used" gemeldet, obwohl ohne sie nichts laeuft.
+
+      Wer das aufweicht, bekommt beim naechsten Scan wieder ~97 Fehlalarme, die jemand von Hand
+      aussortieren muss - und in denen die echten Funde untergehen.
+    -->
+    <inspection_tool class="unused" enabled="true" level="WARNING" enabled_by_default="false">
+      <scope name="CFAlarm_Produktivcode" level="WARNING" enabled="true" />
+    </inspection_tool>
+    <inspection_tool class="UnusedSymbol" enabled="true" level="WARNING" enabled_by_default="false">
+      <scope name="CFAlarm_OhneHiltModule" level="WARNING" enabled="true" />
+    </inspection_tool>
   </profile>
 </component>

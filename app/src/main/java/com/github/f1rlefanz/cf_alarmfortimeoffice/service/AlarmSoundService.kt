@@ -511,6 +511,13 @@ class AlarmSoundService : Service() {
             
             // Enhanced vibration pattern for alarm (in milliseconds)
             // Pattern: [delay, vibrate, pause, vibrate, pause, ...]
+            //
+            // DAS HIER IST DAS EINZIGE ECHTE MUSTER - bitte keine Konstante daraus machen, ohne
+            // sie auch zu benutzen. Bis v1.26.1 gab es ZWEI ungenutzte `ALARM_VIBRATION_PATTERN`
+            // (in util/timing/TimingConstants.kt und util/theme/UIConstants.kt, unterschiedlich
+            // lang) - beide las niemand, weil der Dienst schon immer dieses Muster inline
+            // aufbaute. Wer eine der Konstanten "korrigiert" haette, haette am Wecker nichts
+            // veraendert und es erst am Geraet gemerkt.
             val alarmVibrationPattern = longArrayOf(
                 0,    // Start immediately
                 1000, // Vibrate for 1 second

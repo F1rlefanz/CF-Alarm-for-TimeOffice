@@ -30,7 +30,6 @@ object UIConstants {
     const val UI_STABILITY_DELAY_MS = 300L
     
     /** Vibrations-Pattern für Alarme */
-    val ALARM_VIBRATION_PATTERN = longArrayOf(0, 1000, 500, 1000, 500, 1000, 500)
 }
 
 // ============================

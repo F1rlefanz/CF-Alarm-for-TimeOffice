@@ -514,14 +514,47 @@ class AlarmUseCaseDeltaSyncTest {
     // --- Verstrichene Weckzeit ist KEINE entfernte Schicht (v1.25.2) ---
 
     /**
-     * Ein Termin, der HEUTE laeuft, dessen Weckzeit aber schon vorbei ist - der Normalfall an
-     * jedem Schichtmorgen, sobald der Wecker geklingelt hat.
+     * Beginn eines Termins, der HEUTE laeuft und dessen Weckzeit schon vorbei ist - der Normalfall
+     * an jedem Schichtmorgen, sobald der Wecker geklingelt hat.
+     *
+     * EINMAL berechnet und mit [abgelaufeneWeckzeitShift] geteilt. Das ist der ganze Punkt: die
+     * Schichtdefinition darunter leitet ihre Weckzeit aus GENAU DIESEM Zeitpunkt ab, statt eine
+     * feste Uhrzeit zu setzen.
      */
+    private val verstrichenerSchichtbeginn: LocalDateTime = LocalDateTime.now().minusHours(2)
+
+    /**
+     * Frueh-Schicht, deren Weckzeit garantiert VERSTRICHEN ist - unabhaengig davon, wann der Test
+     * laeuft.
+     *
+     * Die beiden Tests darunter benutzten bis zum 18.08.2026 [earlyShift] mit fixer Weckzeit
+     * 05:30, waehrend der Termin auf `now().minusHours(2)` lag.
+     * `ShiftRecognitionEngine.calculateAlarmTime()` verankert die Weckzeit aber auf dem
+     * KALENDERTAG des Termins - die Praemisse "die Weckzeit ist vorbei" galt damit nur, wenn der
+     * Test nach 05:30 ORTSZEIT lief. Die CI lief am 18.08.2026 um 05:26 UTC, und genau dieser
+     * Test wurde rot: 05:30 lag noch in der Zukunft, der Alarm war nicht abgelaufen, der Sync nahm
+     * einen anderen Zweig. Kein Produktionsfehler - ein Fixture-Fehler, der die CI aber jede Nacht
+     * zwischen 00:00 und 05:30 UTC zuverlaessig gekippt haette. Lokal faellt so etwas nie auf:
+     * hier ist es zur Arbeitszeit immer nach 05:30.
+     *
+     * Jetzt IST die Weckzeit die Uhrzeit des Schichtbeginns. Die Verankerung auf dessen
+     * Kalendertag ergibt damit exakt [verstrichenerSchichtbeginn], also immer zwei Stunden in der
+     * Vergangenheit - auch ueber Mitternacht, weil beide Werte aus demselben Zeitpunkt stammen.
+     * Der Nachtschicht-Rueckrechnungs-Zweig greift nicht: der verlangt eine Weckzeit NACH dem
+     * Schichtbeginn, hier sind beide gleich.
+     */
+    private val abgelaufeneWeckzeitShift = ShiftDefinition(
+        id = "early",
+        name = "Frueh",
+        keywords = listOf("F"),
+        alarmTime = verstrichenerSchichtbeginn.toLocalTime()
+    )
+
     private fun startedTodayEvent(id: String, title: String) = CalendarEvent(
         id = id,
         title = title,
-        startTime = LocalDateTime.now().minusHours(2),
-        endTime = LocalDateTime.now().plusHours(6),
+        startTime = verstrichenerSchichtbeginn,
+        endTime = verstrichenerSchichtbeginn.plusHours(8),
         calendarId = "test"
     )
 
@@ -534,7 +567,7 @@ class AlarmUseCaseDeltaSyncTest {
         val ev = startedTodayEvent("evHeute", "F")
         val repo = FakeAlarmRepository(listOf(existingAlarm(id = ev.id.hashCode(), eventId = "evHeute")))
         val manager = mockManager()
-        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(abgelaufeneWeckzeitShift))
         val notifier = FakeShiftChangeNotifier()
 
         useCase(repo, manager, config, notifier = notifier).syncAlarms(listOf(ev), config)
@@ -556,7 +589,7 @@ class AlarmUseCaseDeltaSyncTest {
         val ev = startedTodayEvent("evHeute", "F")
         val repo = FakeAlarmRepository(listOf(existingAlarm(id = ev.id.hashCode(), eventId = "evHeute")))
         val manager = mockManager()
-        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(abgelaufeneWeckzeitShift))
         val spanStore = mock<ShiftSpanStore>()
 
         useCase(repo, manager, config, spanStore = spanStore).syncAlarms(listOf(ev), config)

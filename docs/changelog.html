@@ -51,7 +51,33 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.27.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.28.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Der Rat der App selbst führte in einen Wecker, der angezeigt wurde und trotzdem nicht klingelte — das und zehn weitere Wege, auf denen der Wecker still danebenlag.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Ein Wecker, der angezeigt wurde und trotzdem nicht klingelte:</strong> Ließ sich „Aufheben" nicht ausführen, riet die App selbst dazu, den übersprungenen Wecker „einfach neu anzulegen". Der neu angelegte Wecker galt dem System aber weiterhin als übersprungen — die App meldete „Wecker gestellt" samt Uhrzeit, gestellt war er nicht. Wer denselben Wecker neu anlegt, will ihn: das Überspringen wird jetzt aufgehoben. Und wenn ein Wecker nicht gestellt werden kann, verschwindet er wieder, statt als Karteileiche mit Anzeige stehen zu bleiben.</li>
+                <li><strong>Ein Schalter in den Systemeinstellungen konnte die App dauerhaft stilllegen:</strong> Auf Android 12 löscht das Abschalten von „Alarme &amp; Erinnerungen" alle gestellten Wecker — auch den einen, an dem die 6-Stunden-Aktualisierung hängt. Danach lief nichts mehr an, ohne Hinweis und ohne Rückweg. Die App merkt es jetzt, sagt es im Status-Tab, kommt von allein zurück und stellt beim Wiedereinschalten die Wecker sofort neu.</li>
+                <li><strong>Fehlte die Berechtigung für exakte Wecker, wäre der Wecker stumm geblieben statt nur verspätet:</strong> Der Ausweichweg durfte den Weckdienst gar nicht starten. Jetzt gibt es einen zweiten Weckweg, der ohne diesen Dienst auskommt.</li>
+                <li><strong>Kalender mit vielen Terminen:</strong> Ab dem 51. Termin in den nächsten zwei Wochen sah die App den Rest der Liste nicht — und hielt die abgeschnittene Liste für vollständig. Für Schichten im nicht gesehenen Teil meldete sie „Schicht entfernt" und löschte den Wecker. Sie liest die Liste jetzt vollständig.</li>
+                <li><strong>Die Dimm-Vorschau konnte den Bildschirm dauerhaft verdunkelt lassen:</strong> Beendete Android die App im Vorschau-Fenster, blieb die systemweite Verdunkelung stehen — bis zu sechs Stunden, in jeder App. Das Ende der Vorschau ist jetzt fest hinterlegt und wird auch dann durchgesetzt.</li>
+                <li><strong>Erteilte Kalender-Freigabe wurde als Ablehnung gemeldet:</strong> Beendete Android die App, während der Google-Zustimmungsdialog offen war, meldete sie danach „Zugriff verweigert" — mit dem Rat, es in den Einstellungen zu ändern, wo es dafür nichts gibt.</li>
+                <li><strong>Nach dem Erteilen der Akku-Ausnahme meldete die App „Kalenderzugriff wurde verweigert":</strong> Zwei verschiedene Systemdialoge trugen dieselbe Kennung, die Antwort des einen wurde dem anderen zugeordnet.</li>
+                <li><strong>Nach einem Neustart schrieb die App kein Fehlerprotokoll mehr:</strong> Und zwar so lange, bis sie das nächste Mal von Grund auf neu startete — ausgerechnet nach dem Ablauf, in dem die Wecker wiederhergestellt werden. Genau dort fehlten damit die Angaben, mit denen sich ein ausbleibender Wecker überhaupt aufklären lässt.</li>
+                <li><strong>Beim Wecker-Abgleich wurde in einem Fall gelöscht, bevor abgestellt wurde:</strong> Endete die App genau dazwischen, blieb ein gestellter Wecker zurück, den die App selbst nicht mehr kannte.</li>
+                <li><strong>Jeder Kalender-Abruf lud alles neu:</strong> Die eingebaute Zwischenspeicherung konnte nie greifen, weil ihr Schlüssel die Uhrzeit enthielt. Das kostete bei jedem Lauf unnötig Daten und Akku.</li>
+                <li><strong>Sicherung und Übertragung auf ein neues Gerät:</strong> Zwei Werte, die nur auf das jeweilige Gerät gehören, wanderten mit — darunter der gesicherte Stand eines übersprungenen Weckers, der auf dem neuen Gerät einen fremden Wecker gestellt hätte.</li>
+            </ul>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Die App ist kleiner geworden:</strong> 10,1 statt 11,0 MB — zwei Regeln hatten die Verkleinerung bisher praktisch aufgehoben.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.27.0</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Nach einem nächtlichen Neustart, bei dem das Handy gesperrt blieb, konnte die App den Rest des Tages mit leeren Einstellungen weiterlaufen — das ist der Kern dieser Version.</em></p>
 

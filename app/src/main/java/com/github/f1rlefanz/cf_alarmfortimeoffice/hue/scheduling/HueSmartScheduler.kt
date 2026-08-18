@@ -33,12 +33,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.toJavaDuration
 import java.time.Duration as JavaDuration
+import java.time.ZoneId
 
 /**
  * Hilt EntryPoint that lets the manually-constructed [HueSmartScheduler] singleton
@@ -506,7 +506,7 @@ class HueSmartScheduler private constructor() {
             return
         }
 
-        val delayMillis = JavaDuration.between(now, checkTime).toMillis()
+        val delayMillis = realeVerzoegerungMillis(now, checkTime)
 
         val workRequest = OneTimeWorkRequestBuilder<PreAlarmHealthCheckWorker>()
             .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
@@ -588,7 +588,7 @@ class HueSmartScheduler private constructor() {
                 return@forEachIndexed
             }
 
-            val delayMillis = JavaDuration.between(now, sunriseStart).toMillis()
+            val delayMillis = realeVerzoegerungMillis(now, sunriseStart)
 
             val workRequest = OneTimeWorkRequestBuilder<SunriseStartWorker>()
                 .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
@@ -690,4 +690,24 @@ class HueSmartScheduler private constructor() {
             Logger.d(LogTags.HUE_BRIDGE, "🧹 SMART-SCHEDULER: Cleanup completed")
         }
     }
+
+    /**
+     * Echte verstrichene Dauer zwischen zwei LOKALEN Zeiten - ueber die Zeitachse, nicht ueber die
+     * Wanduhr.
+     *
+     * `JavaDuration.between()` auf zwei LocalDateTime rechnet auf der lokalen Zeitachse und kennt
+     * den DST-Sprung nicht; `setInitialDelay()` erwartet aber real verstreichende Millisekunden.
+     * Bis v1.26.2 stand hier genau diese Rechnung, und zweimal im Jahr lag sie eine Stunde daneben:
+     * im Maerz startete der Worker eine Stunde ZU FRUEH, im Oktober eine Stunde ZU SPAET - im
+     * Herbstfall also NACH der Weckzeit, womit der Sonnenaufgang wirkungslos blieb und der
+     * Pre-Alarm-Health-Check die Bridge zu spaet prueft.
+     *
+     * Die Schwesterklasse `CalendarPreAlarmRefreshScheduler` rechnet seit jeher in Epoch-Millis -
+     * hier ist jetzt dieselbe Bauart.
+     */
+    private fun realeVerzoegerungMillis(von: LocalDateTime, bis: LocalDateTime): Long {
+        val zone = ZoneId.systemDefault()
+        return bis.atZone(zone).toInstant().toEpochMilli() - von.atZone(zone).toInstant().toEpochMilli()
+    }
+
 }

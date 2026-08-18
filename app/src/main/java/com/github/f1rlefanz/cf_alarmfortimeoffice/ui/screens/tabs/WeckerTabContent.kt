@@ -183,8 +183,16 @@ private fun EnhancedAlarmStatusCard(
             // Header Row (bestehend)
             AlarmStatusHeader(alarmState = alarmState, skipState = skipState)
 
-            // Skip-Funktionalität (nur wenn Alarme vorhanden)
-            if (alarmState.hasActiveAlarms) {
+            // Sichtbar, sobald es etwas zu bedienen gibt: entweder ein Alarm zum Ueberspringen
+            // ODER ein aktives Ueberspringen zum Aufheben.
+            //
+            // Das `|| skipState.isNextAlarmSkipped` ist tragend und fehlte bis v1.26.2. Da
+            // skipNextAlarm() den Alarm SOFORT aus dem Repository loescht (SKIP-IMMEDIATE-UX),
+            // wird hasActiveAlarms `false`, sobald der uebersprungene Alarm der einzige war - und
+            // damit verschwand der gesamte Block INKLUSIVE des einzigen "Aufheben"-Knopfes. Der
+            // Nutzer hatte dann keinen Weg mehr zurueck, obwohl der Zustand ausdruecklich als
+            // umkehrbar angeboten wird.
+            if (alarmState.hasActiveAlarms || skipState.isNextAlarmSkipped) {
                 HorizontalDivider()
 
                 Row(

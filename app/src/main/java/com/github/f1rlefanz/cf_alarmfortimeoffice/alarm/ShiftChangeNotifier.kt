@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.Instant
@@ -112,9 +113,30 @@ open class ShiftChangeNotifier @Inject constructor(
             .apply { pendingIntent?.let { setContentIntent(it) } }
             .build()
 
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
-        notificationManager.notify(NOTIFICATION_ID, notification)
-        Logger.d(LogTags.ALARM, "Schicht-Aenderungs-Notification gezeigt: $title")
+        // Erst NACH dem Anlegen des Kanals pruefen (vorher gaebe es ihn beim ersten Lauf nicht):
+        // schaltet der Nutzer diesen EINZELNEN Kanal ab, liefert areNotificationsEnabled()
+        // weiterhin true - die Meldung verschwaende dann lautlos in notify(). Hier geht nur die
+        // einzelne Meldung verloren (kein Merker wie beim CalendarUnavailableNotifier), aber im
+        // Log war der Fall bisher nicht von "gar nicht erst aufgerufen" zu unterscheiden.
+        // Ein WARN pro Anlass, kein Dauerspam: show() laeuft nur bei echten Schichtaenderungen.
+        val zustellbarkeit = NotificationDeliverability.bestimme(context, CHANNEL_ID)
+        if (!zustellbarkeit.erreicht) {
+            Logger.w(
+                LogTags.ALARM,
+                "⚠️ Schicht-Aenderungs-Notification nicht zustellbar ($zustellbarkeit): \"$title\" erreicht den Nutzer nicht"
+            )
+            return
+        }
+
+        try {
+            val notificationManager = context.getSystemService(NotificationManager::class.java)
+            notificationManager.notify(NOTIFICATION_ID, notification)
+            Logger.d(LogTags.ALARM, "Schicht-Aenderungs-Notification gezeigt: $title")
+        } catch (e: Exception) {
+            // Ein Wurf hier darf den laufenden Alarm-Sync nicht mitreissen - die Notification ist
+            // Beiwerk, die Wecker sind die Hauptsache.
+            Logger.w(LogTags.ALARM, "⚠️ Schicht-Aenderungs-Notification konnte nicht gepostet werden: ${e.message}")
+        }
     }
 
     /** Idempotent, sicher bei jedem [show]-Aufruf erneut aufzurufen. */

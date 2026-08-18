@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api.HueApiClient
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridgeConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.discovery.OfficialHueDiscoveryService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -56,6 +58,21 @@ interface HueBridgeConnectionManagerEntryPoint {
 }
 
 /**
+ * Der Ausschnitt des [HueSmartScheduler], den dieser Manager wirklich braucht.
+ *
+ * Zweck ist NICHT Abstraktion um ihrer selbst willen: der echte Scheduler ist ein Singleton, das
+ * sich an WorkManager und den Hilt-Graphen haengt und in einem reinen Unit-Test nicht existieren
+ * kann. Ueber diese Naht laesst sich pruefen, dass nach "Bridge vergessen" + Neu-Koppeln wirklich
+ * wieder GEPLANT wird (siehe [HueBridgeConnectionManager.setConnection]) - genau das war jahrelang
+ * kaputt und von aussen unsichtbar.
+ */
+internal interface SmartSchedulerHandle {
+    fun initializeSmartScheduling()
+    fun retrySkippedSchedulingIfNeeded()
+    fun cleanup()
+}
+
+/**
  * OPTIMIZED Hue Bridge Connection Manager
  * 
  * EFFICIENCY IMPROVEMENTS:
@@ -72,7 +89,10 @@ class HueBridgeConnectionManager private constructor(
     context: Context,
     private val networkMonitor: com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor,
     private val apiClient: HueApiClient,
-    private val testHueDataStore: DataStore<Preferences>? = null
+    private val testHueDataStore: DataStore<Preferences>? = null,
+    private val testSmartScheduler: SmartSchedulerHandle? = null,
+    /** Test-Naht fuer die Neusuche der Bridge-Adresse - liefert Kandidaten-IPs. */
+    private val testBridgeDiscovery: (suspend () -> List<String>)? = null
 ) {
     companion object {
         @Volatile
@@ -97,8 +117,17 @@ class HueBridgeConnectionManager private constructor(
             context: Context,
             networkMonitor: com.github.f1rlefanz.cf_alarmfortimeoffice.util.NetworkStateMonitor,
             apiClient: HueApiClient,
-            testHueDataStore: DataStore<Preferences>? = null
-        ): HueBridgeConnectionManager = HueBridgeConnectionManager(context, networkMonitor, apiClient, testHueDataStore)
+            testHueDataStore: DataStore<Preferences>? = null,
+            testSmartScheduler: SmartSchedulerHandle? = null,
+            testBridgeDiscovery: (suspend () -> List<String>)? = null
+        ): HueBridgeConnectionManager = HueBridgeConnectionManager(
+            context,
+            networkMonitor,
+            apiClient,
+            testHueDataStore,
+            testSmartScheduler,
+            testBridgeDiscovery
+        )
 
         // Configuration constants
         // CONSOLIDATION: moved off the standalone "hue_bridge_connection" SharedPreferences
@@ -109,6 +138,13 @@ class HueBridgeConnectionManager private constructor(
         private val KEY_USERNAME = stringPreferencesKey("username")
         private val KEY_LAST_SUCCESS = longPreferencesKey("last_success_timestamp")
         private val KEY_CONNECTION_VALIDATED = booleanPreferencesKey("connection_validated")
+
+        /**
+         * Die geraeteunabhaengige Kennung der Bridge. Wird opportunistisch mitgeschrieben, sobald
+         * eine Antwort sie hergibt - aeltere Installationen haben sie NICHT, deshalb darf sich
+         * nichts darauf verlassen, dass sie da ist (siehe [rediscoverBridgeAddress]).
+         */
+        private val KEY_BRIDGE_ID = stringPreferencesKey("bridge_id")
         
         // OPTIMIZED: Event-driven health check intervals
         private val CRITICAL_RECOVERY_TIMEOUT = 10.seconds
@@ -122,15 +158,52 @@ class HueBridgeConnectionManager private constructor(
          * warten - aber eine Bridge hinter einem Router antwortet in Bruchteilen davon.
          */
         private val OFF_SUBNET_PROBE_TIMEOUT = 3.seconds
+
+        /**
+         * Deckel fuer eine komplette Neusuche der Bridge-Adresse (Discovery + Pruefen aller
+         * Kandidaten). Sie laeuft ausschliesslich in der Erholungs-/Netzwechsel-Kette, NIE im
+         * Weckpfad - der hat sein eigenes, viel engeres Budget (HUE_EXECUTION_BUDGET_MS im
+         * AlarmReceiver). Trotzdem hier gedeckelt: mDNS kann sich lange hinziehen, und ein
+         * haengender Versuch wuerde den Single-Flight-Waechter blockieren.
+         */
+        private val REDISCOVERY_BUDGET = 30.seconds
+
+        /**
+         * Mindestabstand zwischen zwei Neusuchen. Der Netzwerk-Beobachter feuert bei jedem
+         * WLAN-Wechsel, jedem Wechsel Mobilfunk<->WLAN und jedem kurzen Aussetzer; ohne diese
+         * Entprellung liefe eine (teure) Discovery im Minutentakt.
+         *
+         * **Sie daempft nur die Discovery, sie verhindert keinen Versuch.** Der billige Teil -
+         * ein echter Request gegen die GESPEICHERTE Adresse ([recoverConnection]) - laeuft bei
+         * JEDEM Anlauf, weil [attemptRecoveryIfDisconnected] den Zustand nach einem Fehlschlag
+         * ehrlich hinterlaesst. Sackgasse und Dauerfeuer sind damit beide ausgeschlossen.
+         */
+        private val REDISCOVERY_MIN_INTERVAL = 15.minutes
     }
     
     // Use WeakReference to prevent memory leaks
     private val contextRef = java.lang.ref.WeakReference(context.applicationContext)
 
-    // PHASE 2: Smart Scheduler integration
-    private val smartScheduler by lazy {
-        contextRef.get()?.let { HueSmartScheduler.getInstance(it) }
+    // PHASE 2: Smart Scheduler integration (ueber [SmartSchedulerHandle], damit die Kopplung
+    // testbar ist - der echte Scheduler braucht WorkManager und den Hilt-Graphen).
+    private val smartScheduler: SmartSchedulerHandle? by lazy {
+        testSmartScheduler ?: contextRef.get()?.let { context ->
+            val real = HueSmartScheduler.getInstance(context)
+            object : SmartSchedulerHandle {
+                override fun initializeSmartScheduling() = real.initializeSmartScheduling()
+                override fun retrySkippedSchedulingIfNeeded() = real.retrySkippedSchedulingIfNeeded()
+                override fun cleanup() = real.cleanup()
+            }
+        }
     }
+
+    /**
+     * Zeitpunkt der letzten Neusuche der Bridge-Adresse (Entprellung, siehe
+     * [REDISCOVERY_MIN_INTERVAL]). `@Volatile`: geschrieben/gelesen aus verschiedenen
+     * healthCheckScope-Coroutinen.
+     */
+    @Volatile
+    private var lastRediscoveryAttempt = 0L
 
     // Genau eine Initialisierung pro Prozess - siehe initialize().
     private val initialized = AtomicBoolean(false)
@@ -375,10 +448,11 @@ class HueBridgeConnectionManager private constructor(
             
             updateConnectionState(ConnectionState.CONNECTING)
             
-            // Validate the new connection
-            val isValid = validateConnectionCredentials(bridgeIp, username)
+            // Validate the new connection. Ueber [probeBridge], damit die Bridge-Kennung aus
+            // DERSELBEN Antwort mitgeschrieben werden kann - kein zusaetzlicher Request.
+            val probe = probeBridge(bridgeIp, username)
 
-            if (isValid) {
+            if (probe.reachable) {
                 // Store in persistent storage (@HueDataStore)
                 val dataStore = resolveHueDataStore()
                 if (dataStore == null) {
@@ -392,15 +466,38 @@ class HueBridgeConnectionManager private constructor(
                     mutablePrefs[KEY_USERNAME] = username
                     mutablePrefs[KEY_LAST_SUCCESS] = System.currentTimeMillis()
                     mutablePrefs[KEY_CONNECTION_VALIDATED] = true
+                    // Nur setzen, wenn die Antwort sie hergab - ein vorhandener Wert darf nicht
+                    // durch null ersetzt werden.
+                    probe.bridgeId?.let { mutablePrefs[KEY_BRIDGE_ID] = it }
                 }
 
                 val connectionState = ConnectionState.CONNECTED(bridgeIp, username)
                 updateConnectionState(connectionState)
                 
                 Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Bridge connection set and validated")
-                
-                // PHASE 2: Trigger smart schedule recalculation after successful connection
-                smartScheduler?.recalculateSchedule()
+
+                // PHASE 2: VOLLE Neuinitialisierung, nicht nur recalculateSchedule().
+                //
+                // WARUM: "Bridge vergessen" ruft smartScheduler.cleanup() - das cancelt die Kinder
+                // des Scheduler-Scope (und damit den Alarm-Beobachter) und nullt alarmObserverJob.
+                // Aufgebaut werden taegliche Planung UND Alarm-Beobachter aber AUSSCHLIESSLICH in
+                // initializeSmartScheduling(), und das lief pro Prozess genau einmal beim
+                // App-Start. Nach dem Neu-Koppeln plante ein blosses recalculateSchedule() daher
+                // nur EINMALIG fuer den gerade bekannten Alarmbestand: fuer jede spaeter angelegte
+                // Schicht entstand kein SunriseStartWorker und kein Pre-Alarm-Health-Check mehr -
+                // bis der Prozess starb.
+                //
+                // initializeSmartScheduling() ist fuer den Normalfall (erstes Koppeln) kein
+                // Doppelaufbau: observeAlarmChanges() steigt bei aktivem Beobachter sofort aus, die
+                // Tagesplanung wird per ExistingPeriodicWorkPolicy.KEEP eingereiht, und die
+                // Neuberechnung des Zeitplans macht es ohnehin selbst.
+                //
+                // Bewusst NICHT stattdessen das initialized-Flag dieses Managers in
+                // forgetConnection() zuruecksetzen: forgetConnection() cancelt die Kinder des
+                // healthCheckScope NICHT, ein spaeteres initialize() wuerde also einen ZWEITEN
+                // Netzwerk-Beobachter starten (startNetworkRecoveryMonitoring() hat keinen
+                // Waechter) - ein zweiter Bug statt eines Fixes.
+                smartScheduler?.initializeSmartScheduling()
                 
                 Result.success(Unit)
             } else {
@@ -442,7 +539,10 @@ class HueBridgeConnectionManager private constructor(
 
             updateConnectionState(ConnectionState.DISCONNECTED)
 
-            // Stop any scheduled sunrise/auto-off/health-check jobs tied to the old bridge.
+            // Stoppt alle geplanten Sunrise-/Auto-Aus-/Health-Check-Jobs der alten Bridge -
+            // inklusive Tagesplanung und Alarm-Beobachter. Der Wiederaufbau haengt am
+            // Neu-Koppeln: setConnection() ruft dafuer initializeSmartScheduling() (Begruendung
+            // dort). Wer hier etwas aendert, muss diese Paarung mitdenken.
             smartScheduler?.cleanup()
 
             Logger.i(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Bridge connection forgotten")
@@ -649,7 +749,24 @@ class HueBridgeConnectionManager private constructor(
      * kein langer Hänger, wenn man tatsächlich außer Haus ist — ohne eine erreichbare Bridge
      * auszusperren.
      */
-    private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean {
+    private suspend fun validateConnectionCredentials(bridgeIp: String, username: String): Boolean =
+        probeBridge(bridgeIp, username).reachable
+
+    /**
+     * Ergebnis eines echten Bridge-Kontakts: hat sie geantwortet, und wenn ja, mit welcher
+     * Bridge-Kennung? Die Kennung faellt beim Pruefen ohnehin ab - getrennt abzufragen waere ein
+     * zweiter Request.
+     */
+    private data class BridgeProbe(val reachable: Boolean, val bridgeId: String?)
+
+    /**
+     * Der eigentliche Versuch hinter [validateConnectionCredentials] - Begruendung der
+     * Timeout-Logik siehe dort.
+     *
+     * Das Urteil faellt [HueApiClient.getBridgeConfig]: die V1-API antwortet auch bei ABLEHNUNG
+     * mit HTTP 200, deshalb prueft sie den BODY (Fehlerhuelle, sowie bridgeid/mac) und wirft.
+     */
+    private suspend fun probeBridge(bridgeIp: String, username: String): BridgeProbe {
         val sameSubnet = isBridgeReachableNow(bridgeIp)
         if (!sameSubnet) {
             Logger.w(
@@ -660,26 +777,26 @@ class HueBridgeConnectionManager private constructor(
         }
         return try {
             if (sameSubnet) {
-                apiClient.getBridgeConfig(bridgeIp, username)
+                val config: HueBridgeConfig? = apiClient.getBridgeConfig(bridgeIp, username)
                 Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Connection validation successful")
-                true
+                BridgeProbe(true, config?.bridgeid?.takeIf { it.isNotBlank() })
             } else {
                 // withTimeoutOrNull statt withTimeout: ein Ablauf ist hier ein normales
                 // Ergebnis ("nicht erreichbar"), kein Fehler.
                 val ok = withTimeoutOrNull(OFF_SUBNET_PROBE_TIMEOUT) {
-                    apiClient.getBridgeConfig(bridgeIp, username)
-                    true
+                    val config: HueBridgeConfig? = apiClient.getBridgeConfig(bridgeIp, username)
+                    BridgeProbe(true, config?.bridgeid?.takeIf { it.isNotBlank() })
                 }
-                if (ok == true) {
+                if (ok != null) {
                     Logger.i(
                         LogTags.HUE_BRIDGE,
                         "✅ BRIDGE-MANAGER: Bridge trotz fremden Subnetzes erreichbar - die Heuristik lag falsch, " +
                             "der echte Request entscheidet"
                     )
-                    true
+                    ok
                 } else {
                     Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: $bridgeIp auch im Kurzversuch nicht erreichbar")
-                    false
+                    BridgeProbe(false, null)
                 }
             }
         } catch (e: CancellationException) {
@@ -688,7 +805,7 @@ class HueBridgeConnectionManager private constructor(
             throw e
         } catch (e: Exception) {
             Logger.d(LogTags.HUE_BRIDGE, "❌ BRIDGE-MANAGER: Connection validation failed: ${e.message}")
-            false
+            BridgeProbe(false, null)
         }
     }
 
@@ -792,6 +909,21 @@ class HueBridgeConnectionManager private constructor(
      * validiert ihn live gegen die Bridge). No-op, wenn schon verbunden (der periodische
      * Health-Check deckt das ab) oder wenn ueberhaupt keine Bridge eingerichtet ist.
      *
+     * **Der Zustand muss am Ende die Wahrheit sagen.** [restoreConnectionFromStorage] setzt
+     * CONNECTED, sobald IP/Username/`connection_validated` im Store stehen - also BEVOR
+     * irgendetwas validiert wurde. Genau das braucht [recoverConnection], das seine Zugangsdaten
+     * aus [getCurrentConnectionInfo] zieht; die optimistische Zwischenstufe bleibt deshalb, wo
+     * sie ist. Wird der Versuch danach aber NICHT wahr gemacht, muss sie hier zurueckgenommen
+     * werden - sonst steht der Manager nach EINEM Fehlversuch dauerhaft auf CONNECTED, und die
+     * erste Zeile dieser Funktion laesst jeden weiteren Anlauf (jedes Netzwerkereignis, jedes
+     * [onAppForeground]) sofort umkehren. Die autonome Wiederverbindung waere dann ein
+     * Einmal-pro-Prozess-Ereignis, und die Oberflaeche behauptete obendrein "verbunden".
+     *
+     * Zurueckgenommen wird auf ERROR, nicht auf DISCONNECTED: die Bridge ist weiterhin
+     * EINGERICHTET, nur gerade nicht erreichbar - dieselbe Unterscheidung, die
+     * [hasStoredBridge] und die Statuskarte treffen (deren "Bridge gespeichert" haengt am
+     * persistierten Wert, nicht an diesem Zustand).
+     *
      * `internal` + [VisibleForTesting] statt `private`: ein reflektiver Aufruf einer privaten
      * suspend fun ist fragil (der zugehoerige Continuation-Parameter aus dem Kotlin-Compiler
      * lässt sich zwar per Reflection treffen, aber ein synchron durchlaufender Aufruf ruft
@@ -819,13 +951,173 @@ class HueBridgeConnectionManager private constructor(
             Logger.d(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Wiederverbindung bereits im Gange - ueberspringe")
             return
         }
+        var recovered = false
+        var optimistisch: ConnectionState? = null
         try {
             Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Netzwerk verfuegbar, versuche automatische Wiederverbindung")
             restoreConnectionFromStorage()
-            recoverConnection()
+            // GENAU DIESE Instanz ist das optimistische CONNECTED dieses Durchlaufs. Sie zu merken
+            // ist der Unterschied zwischen "mein eigener Versuch ist gescheitert" und "irgendwer
+            // ist gerade verbunden" - siehe die Begruendung am finally.
+            optimistisch = currentConnectionState.get()
+            recovered = if (recoverConnection() != null) {
+                true
+            } else {
+                // Die gespeicherte IP fuehrt ins Leere - der haeufigste Alltagsfall dafuer ist ein
+                // neuer DHCP-Lease nach einem Routerneustart. Siehe [rediscoverBridgeAddress].
+                rediscoverBridgeAddress()
+            }
         } finally {
+            // Im finally, damit auch ein Wurf (z.B. aus der Discovery) keinen luegenden
+            // CONNECTED-Zustand hinterlaesst.
+            //
+            // ABER NUR DER EIGENE: herabgestuft wird ausschliesslich die Zustandsinstanz, die
+            // [restoreConnectionFromStorage] in DIESEM Durchlauf gesetzt hat. Eine reine
+            // `is CONNECTED`-Pruefung wuerde auch eine Verbindung treffen, die inzwischen jemand
+            // anders hergestellt hat - und dieses Fenster ist gross: CRITICAL_RECOVERY_TIMEOUT
+            // (10 s) plus REDISCOVERY_BUDGET (30 s). Genau darin passt, dass der Nutzer im
+            // Hue-Tab von Hand koppelt (setConnection()); der wuerde sonst unmittelbar nach der
+            // erfolgreichen Kopplung ein ERROR sehen und erneut koppeln. `recoveryInFlight`
+            // schuetzt nur gegen einen zweiten Recovery-Lauf, nicht gegen setConnection().
+            //
+            // compareAndSet statt Pruefen-dann-Setzen: sonst bliebe genau zwischen beiden
+            // Schritten dasselbe Rennen in klein bestehen.
+            val eigenerZustand = optimistisch
+            if (!recovered && eigenerZustand is ConnectionState.CONNECTED) {
+                val ehrlich = ConnectionState.ERROR(
+                    "Bridge nicht erreichbar - automatische Wiederverbindung fehlgeschlagen",
+                    null
+                )
+                if (currentConnectionState.compareAndSet(eigenerZustand, ehrlich)) {
+                    _connectionStatus.value = ehrlich
+                    Logger.w(
+                        LogTags.HUE_BRIDGE,
+                        "⚠️ BRIDGE-MANAGER: Wiederverbindung fehlgeschlagen - Zustand wird ehrlich auf " +
+                            "'nicht verbunden' zurueckgesetzt, damit der naechste Anlauf ueberhaupt startet"
+                    )
+                } else {
+                    Logger.d(
+                        LogTags.HUE_BRIDGE,
+                        "🔄 BRIDGE-MANAGER: Wiederverbindung fehlgeschlagen, aber der Zustand gehoert " +
+                            "inzwischen einem anderen Weg (z.B. Kopplung von Hand) - unveraendert gelassen"
+                    )
+                }
+            }
             recoveryInFlight.set(false)
         }
+    }
+
+    /**
+     * Sucht die BEKANNTE Bridge unter einer NEUEN Adresse - der fehlende zweite Schritt der
+     * autonomen Wiederverbindung.
+     *
+     * **Das Problem:** Die einzige automatische Wiederverbindung ist
+     * [attemptRecoveryIfDisconnected], und die validiert ausschliesslich die GESPEICHERTE IP.
+     * Vergibt der Router nach einem Neustart eine andere Adresse, ist der Hue-Pfad dauerhaft tot:
+     * die Subnetz-Heuristik sagt weiterhin "erreichbar" (das Geraet haengt ja im selben Subnetz),
+     * der volle Versuch laeuft gegen eine tote Adresse, und der einzige Discovery-Einstieg der App
+     * ist ein Nutzertipp im Hue-Tab. Repariert werden musste das von Hand samt Link-Button -
+     * obwohl der Whitelist-Key auf der Bridge GUELTIG BLEIBT. Genau das widerspricht der
+     * zugesagten "autonomen Wiederverbindung nach Netzwerkverlust".
+     *
+     * **Der Weg:** vorhandene Discovery laufen lassen und fuer jeden Fund den GESPEICHERTEN
+     * Username pruefen - derselbe Aufruf, den [recoverConnection] gegen die alte IP macht.
+     * Antwortet ein Kandidat positiv, ist es dieselbe Bridge. Kein `createUser()`, kein
+     * Link-Button. Ist eine [KEY_BRIDGE_ID] gespeichert, muss sie zusaetzlich passen; fehlt sie
+     * (Bestandsinstallationen haben sie nicht), reicht die erfolgreiche Authentifizierung - und
+     * sie wird bei dieser Gelegenheit nachgetragen.
+     *
+     * **Was hier bewusst NICHT passiert:** nichts wird geloescht. Schlaegt die Suche fehl, bleiben
+     * IP, Username und Regeln unangetastet - ein Fehlschlag darf niemals wie "keine Bridge
+     * eingerichtet" oder wie eine leere Lampenliste aussehen.
+     *
+     * **Wo das laeuft:** ausschliesslich in der Erholungs-/Netzwechsel-Kette (Netzwerk zurueck,
+     * App in den Vordergrund), niemals in der Regelausfuehrung am Weckmorgen - deren Budget
+     * (HUE_EXECUTION_BUDGET_MS) bleibt unberuehrt. Zusaetzlich gedeckelt ([REDISCOVERY_BUDGET])
+     * und entprellt ([REDISCOVERY_MIN_INTERVAL]); der Single-Flight-Schutz kommt vom Aufrufer.
+     */
+    private suspend fun rediscoverBridgeAddress(): Boolean {
+        val dataStore = resolveHueDataStore() ?: return false
+        val prefs = dataStore.data.first()
+        val storedIp = prefs[KEY_BRIDGE_IP]
+        // Ohne den Whitelist-Key nuetzt eine neue Adresse nichts - das waere ein echtes
+        // Neu-Koppeln mit Link-Button, und das gehoert dem Nutzer, nicht dem Hintergrund.
+        val username = prefs[KEY_USERNAME] ?: return false
+        val storedBridgeId = prefs[KEY_BRIDGE_ID]
+
+        val now = System.currentTimeMillis()
+        if (now - lastRediscoveryAttempt < REDISCOVERY_MIN_INTERVAL.inWholeMilliseconds) {
+            Logger.d(LogTags.HUE_BRIDGE, "🔎 BRIDGE-MANAGER: Neusuche entprellt - zuletzt vor weniger als ${REDISCOVERY_MIN_INTERVAL.inWholeMinutes} min versucht")
+            return false
+        }
+        lastRediscoveryAttempt = now
+
+        Logger.i(LogTags.HUE_BRIDGE, "🔎 BRIDGE-MANAGER: Gespeicherte Adresse antwortet nicht - suche die bekannte Bridge unter einer neuen Adresse")
+
+        val found: Pair<String, BridgeProbe>? = withTimeoutOrNull(REDISCOVERY_BUDGET) {
+            val candidates = try {
+                discoverBridgeCandidates()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Discovery fuer die Neusuche fehlgeschlagen", e)
+                emptyList()
+            }
+
+            candidates
+                .filter { it.isNotBlank() && it != storedIp }
+                .distinct()
+                .firstNotNullOfOrNull { candidateIp ->
+                    val probe = probeBridge(candidateIp, username)
+                    when {
+                        !probe.reachable -> null
+                        // Kennung bekannt UND abweichend: das ist eine FREMDE Bridge (z.B. beim
+                        // Nachbarn/im Buero), die unseren Key zufaellig nicht ablehnt - nicht nehmen.
+                        storedBridgeId != null && probe.bridgeId != null &&
+                            !probe.bridgeId.equals(storedBridgeId, ignoreCase = true) -> {
+                            Logger.d(LogTags.HUE_BRIDGE, "🔎 BRIDGE-MANAGER: Kandidat $candidateIp gehoert zu einer anderen Bridge - uebersprungen")
+                            null
+                        }
+                        else -> candidateIp to probe
+                    }
+                }
+        }
+
+        if (found == null) {
+            // KEIN Loeschen, kein Zustandswechsel auf DISCONNECTED: die Bridge ist weiterhin
+            // eingerichtet, nur gerade nicht auffindbar.
+            Logger.w(LogTags.HUE_BRIDGE, "⚠️ BRIDGE-MANAGER: Neusuche ohne Treffer - gespeicherte Konfiguration bleibt unveraendert")
+            return false
+        }
+
+        val (newIp, probe) = found
+        dataStore.edit { mutablePrefs ->
+            mutablePrefs[KEY_BRIDGE_IP] = newIp
+            mutablePrefs[KEY_USERNAME] = username
+            mutablePrefs[KEY_LAST_SUCCESS] = System.currentTimeMillis()
+            mutablePrefs[KEY_CONNECTION_VALIDATED] = true
+            probe.bridgeId?.let { mutablePrefs[KEY_BRIDGE_ID] = it }
+        }
+        updateConnectionState(ConnectionState.CONNECTED(newIp, username))
+        Logger.business(
+            LogTags.HUE_BRIDGE,
+            "✅ BRIDGE-MANAGER: Bekannte Bridge unter neuer Adresse gefunden - Verbindung ohne Neu-Koppeln wiederhergestellt"
+        )
+        return true
+    }
+
+    /**
+     * Kandidaten-IPs aus der vorhandenen Discovery (mDNS zuerst, Cloud-Fallback). Ein Fehlschlag
+     * ist eine leere Liste, kein Wurf - der Aufrufer behandelt "nichts gefunden" ohnehin folgenlos.
+     */
+    private suspend fun discoverBridgeCandidates(): List<String> {
+        testBridgeDiscovery?.let { return it() }
+        val appContext = contextRef.get() ?: return emptyList()
+        return OfficialHueDiscoveryService(appContext)
+            .discoverBridges()
+            .getOrNull()
+            ?.map { it.ipAddress }
+            ?: emptyList()
     }
 
     /**

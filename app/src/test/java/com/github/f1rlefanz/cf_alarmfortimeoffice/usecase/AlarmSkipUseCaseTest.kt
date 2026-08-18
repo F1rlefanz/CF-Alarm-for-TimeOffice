@@ -86,14 +86,20 @@ class AlarmSkipUseCaseTest {
         var setSkippedTriggerTime: Long? = null
         var clearCalled = false
 
-        override suspend fun setNextAlarmSkipped(alarmId: Int, triggerTime: Long, reason: String): Result<Unit> {
+        override suspend fun setNextAlarmSkipped(
+            alarmId: Int,
+            triggerTime: Long,
+            reason: String,
+            manualAlarmSnapshot: String?
+        ): Result<Unit> {
             setSkippedFor = alarmId
             setSkippedTriggerTime = triggerTime
             state = state.copy(
                 isNextAlarmSkipped = true,
                 skippedAlarmId = alarmId,
                 skippedAlarmTriggerTime = triggerTime,
-                skipReason = reason
+                skipReason = reason,
+                skippedManualAlarm = manualAlarmSnapshot
             )
             return Result.success(Unit)
         }

@@ -1,6 +1,15 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
+import android.app.Activity
 import android.app.Application
+import android.app.Application.ActivityLifecycleCallbacks
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Bundle
+import android.os.UserManager
+import androidx.core.content.ContextCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
@@ -11,6 +20,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPauseUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalStartupGate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.SimpleFileTree
@@ -87,6 +97,34 @@ class CFAlarmApplication : Application() {
     @Inject
     lateinit var masterPauseUseCase: dagger.Lazy<MasterPauseUseCase>
 
+    /**
+     * Ist der Nutzer entsperrt, also CREDENTIAL-ENCRYPTED Storage lesbar?
+     *
+     * Gleiche Umsetzung und gleiche Fehlerrichtung wie in `AlarmRepository` und
+     * `BackgroundServiceManager`: im Zweifel `true`. Ein faelschlich als "gesperrt" gewerteter
+     * Zustand wuerde den Startblock dauerhaft verschieben; der Nachhol-Weg ueber
+     * `ACTION_USER_UNLOCKED` feuert dann nicht mehr, weil das Entsperren laengst passiert ist.
+     */
+    private val userUnlocked: Boolean
+        get() = try {
+            getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+        } catch (e: Exception) {
+            Logger.w(LogTags.APP, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
+            true
+        }
+
+    /** Sorgt dafuer, dass der geraetelokale Startblock je Prozess hoechstens EINMAL laeuft. */
+    private val startupGate = DeviceLocalStartupGate()
+
+    /** Schuetzt das Paar aus [unlockReceiver] und [unlockActivityWatcher] gegen zwei Melder. */
+    private val unlockWatcherLock = Any()
+
+    /** Nur gesetzt, solange auf `ACTION_USER_UNLOCKED` gewartet wird. */
+    private var unlockReceiver: BroadcastReceiver? = null
+
+    /** Zweites Netz - nur gesetzt, solange auf das Entsperren gewartet wird. */
+    private var unlockActivityWatcher: ActivityLifecycleCallbacks? = null
+
     override fun onCreate() {
         super.onCreate()
         
@@ -133,37 +171,18 @@ class CFAlarmApplication : Application() {
     private fun initializeApp() {
         applicationScope.launch {
             try {
-                // ZUERST: geraetelokale Onboarding-Flags pruefen. Muss VOR allem anderen laufen,
-                // damit die Onboarding-Gates (Akku-Ausnahme, "Pause bei Nichtnutzung") auf einem
-                // per Backup wiederhergestellten Geraet wieder greifen. Best-effort - ein Fehler
-                // hier darf den Start nicht aufhalten.
+                // ZUERST: geraetelokale Onboarding-Flags pruefen und den Pausen-Spiegel abgleichen.
+                // Muss VOR allem anderen laufen, damit die Onboarding-Gates (Akku-Ausnahme, "Pause
+                // bei Nichtnutzung") auf einem per Backup wiederhergestellten Geraet wieder
+                // greifen - aber NUR bei entsperrtem Nutzer, siehe runDeviceLocalStartupChecks().
                 try {
-                    val deviceChanged = DeviceLocalFlagsGuard.resetIfDeviceChanged(mainDataStore)
-                    // `.get()` erst NACH dem erfolgreichen CE-Read und nur bei erkanntem Wechsel -
-                    // siehe die Begruendung am Feld: die Konstruktion zieht WorkManager in den
-                    // Graphen und darf in einem Direct-Boot-Prozess nicht passieren.
-                    if (deviceChanged && masterPauseUseCase.get().paused.first()) {
-                        // Eine Master-Pause darf einen Geraetewechsel nicht ueberleben (sonst bleibt
-                        // der Wecker auf dem neuen Geraet still). Aufgehoben wird sie ueber
-                        // resume() und NICHT durch Loeschen des Flags: pause() schreibt auch den
-                        // Device-Protected-Spiegel, den der BootReceiver vor der ersten Entsperrung
-                        // liest, und reisst 6h-Wartung, Dimmer-/DND-Tick, Hue-Planung und
-                        // Pre-Alarm-Refresh ab. Nur resume() baut das alles wieder auf.
-                        Logger.w(
-                            LogTags.MASTER_PAUSE,
-                            "🔄 GERAETEWECHSEL: aktive Master-Pause wird aufgehoben - sie gilt fuer " +
-                                "das alte Geraet. Hintergrundketten werden neu aufgebaut."
-                        )
-                        masterPauseUseCase.get().resume()
-                    }
-
-                    // Spiegel und CE-Wahrheit des Pausenzustands abgleichen. Steht hier, weil der
-                    // erfolgreiche DeviceLocalFlagsGuard-Read oben belegt, dass der CE-Storage
-                    // lesbar ist (also entsperrt) - in einem Direct-Boot-Prozess kommt dieser Zweig
-                    // gar nicht so weit.
-                    masterPauseUseCase.get().reconcileDirectBootMirror()
+                    ensureDeviceLocalStartupRuns(
+                        isUserUnlocked = { userUnlocked },
+                        armUnlockWatchers = { armUnlockWatchers() },
+                        runChecks = { runDeviceLocalStartupChecks() }
+                    )
                 } catch (e: Exception) {
-                    Logger.w(LogTags.APP, "⚠️ STARTUP: Geraete-Marker konnte nicht geprueft werden", e)
+                    Logger.e(LogTags.APP, "❌ STARTUP: Entsperr-Ueberwachung konnte nicht aufgebaut werden", e)
                 }
 
                 // CRITICAL: Initialize Hue Bridge Connection Manager first
@@ -189,8 +208,19 @@ class CFAlarmApplication : Application() {
                 Logger.d(LogTags.SHIFT_CONFIG, "🔄 STARTUP: Initializing ShiftConfig early to prevent timing issues")
                 launch {
                     try {
+                        if (!userUnlocked) {
+                            // Vor der ersten Entsperrung liegt shift_prefs im nicht lesbaren
+                            // CE-Storage. Ein Read dort liefert still "leer" und vergiftet den
+                            // DataStore-Cache fuer die restliche Prozesslaufzeit - dieses
+                            // Vorwaermen hat also nichts zu gewinnen und alles zu verlieren.
+                            Logger.i(
+                                LogTags.SHIFT_CONFIG,
+                                "🔒 STARTUP: Schicht-Konfiguration wird im gesperrten Zustand nicht gelesen"
+                            )
+                            return@launch
+                        }
                         val currentConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-                        
+
                         if (currentConfig != null) {
                             Logger.business(LogTags.SHIFT_CONFIG, "✅ STARTUP: ShiftConfig loaded successfully - autoAlarm=${currentConfig.autoAlarmEnabled}")
                         } else {
@@ -227,6 +257,205 @@ class CFAlarmApplication : Application() {
         }
     }
     /**
+     * Der geraetelokale Startblock: Geraetewechsel erkennen, eine mitgesicherte Master-Pause
+     * aufheben, den Direct-Boot-Spiegel des Pausenzustands abgleichen.
+     *
+     * WARUM ER EIN GATE BRAUCHT (der Grund fuer diese Funktion):
+     * Alles hier liest oder schreibt CREDENTIAL-ENCRYPTED Storage. Ein CE-Read VOR der ersten
+     * Entsperrung wirft NICHT - er liefert still leere Preferences und meldet Erfolg. DataStore
+     * legt dieses leere Ergebnis in seinen In-Memory-Cache und gibt es fuer die restliche
+     * PROZESSLAUFZEIT unveraendert zurueck (die Version steigt nur bei einem erfolgreichen Write,
+     * der im gesperrten CE-Storage scheitert). Ein Prozess, den das System vor der ersten
+     * Entsperrung fuer den directBootAware BootReceiver startet, saehe den `settings`-Store danach
+     * dauerhaft leer - inklusive aller spaeteren Leser.
+     *
+     * Deshalb laeuft dieser Block ausschliesslich bei entsperrtem Nutzer; im gesperrten Fall holen
+     * ihn die beiden Netze aus [armUnlockWatchers] nach, plus die Nachpruefung in
+     * [ensureDeviceLocalStartupRuns] fuer das Fenster dazwischen. [startupGate] stellt sicher,
+     * dass er trotz dieser drei Anlaesse hoechstens einmal laeuft.
+     *
+     * Best-effort: ein Fehler hier darf den Start nicht aufhalten.
+     */
+    private suspend fun runDeviceLocalStartupChecks() {
+        // Egal ueber welchen Anlass wir hier landen: die Wartekonstruktion wird nicht mehr
+        // gebraucht. Steht VOR dem Gate, damit auch der verlierende zweite Anlass aufraeumt -
+        // ein haengender Receiver bzw. ein haengender Lifecycle-Callback ist ein Leck.
+        disarmUnlockWatchers()
+        if (!startupGate.claimRun()) {
+            Logger.d(LogTags.APP, "STARTUP: geraetelokale Pruefungen liefen bereits - kein zweiter Lauf")
+            return
+        }
+        try {
+            val deviceChanged = DeviceLocalFlagsGuard.resetIfDeviceChanged(mainDataStore)
+            // `.get()` erst hier - siehe die Begruendung am Feld: die Konstruktion zieht
+            // WorkManager in den Graphen und darf in einem Direct-Boot-Prozess nicht passieren.
+            // Das Gate oben ist die Zusicherung dafuer.
+            if (deviceChanged && masterPauseUseCase.get().paused.first()) {
+                // Eine Master-Pause darf einen Geraetewechsel nicht ueberleben (sonst bleibt
+                // der Wecker auf dem neuen Geraet still). Aufgehoben wird sie ueber
+                // resume() und NICHT durch Loeschen des Flags: pause() schreibt auch den
+                // Device-Protected-Spiegel, den der BootReceiver vor der ersten Entsperrung
+                // liest, und reisst 6h-Wartung, Dimmer-/DND-Tick, Hue-Planung und
+                // Pre-Alarm-Refresh ab. Nur resume() baut das alles wieder auf.
+                Logger.w(
+                    LogTags.MASTER_PAUSE,
+                    "🔄 GERAETEWECHSEL: aktive Master-Pause wird aufgehoben - sie gilt fuer " +
+                        "das alte Geraet. Hintergrundketten werden neu aufgebaut."
+                )
+                masterPauseUseCase.get().resume()
+            }
+
+            // Spiegel und CE-Wahrheit des Pausenzustands abgleichen. Steht INNERHALB des
+            // Entsperrt-Gates, nicht daneben: im gesperrten Prozess liest die CE-Wahrheit still
+            // "nicht pausiert" und der Abgleich wuerde einen AKTIVEN Pausen-Spiegel auf false
+            // setzen - also genau die Information zerstoeren, die der BootReceiver vor der ersten
+            // Entsperrung braucht. Frueher rettete das nur der Zufall, dass der Marker-Write
+            // darueber im gesperrten Storage warf und dieser Aufruf gar nicht erreicht wurde.
+            masterPauseUseCase.get().reconcileDirectBootMirror()
+        } catch (e: Exception) {
+            Logger.w(LogTags.APP, "⚠️ STARTUP: Geraete-Marker konnte nicht geprueft werden", e)
+        }
+    }
+
+    /**
+     * Baut die Wartekonstruktion fuer das Entsperren auf - ZWEI unabhaengige Netze.
+     *
+     * Warum zwei: `ACTION_USER_UNLOCKED` ist KEIN sticky Broadcast. Wer ihn verpasst, bekommt ihn
+     * nie nachgeliefert, und dann liefe [runDeviceLocalStartupChecks] in diesem Prozess NIE -
+     * waehrend der Prozess als ganz normaler App-Prozess weiterlebt. Damit fiele der
+     * Geraetewechsel-Check aus (eine mitgesicherte Master-Pause bliebe aktiv) und vor allem der
+     * Abgleich des Direct-Boot-Spiegels.
+     */
+    private fun armUnlockWatchers() {
+        Logger.w(
+            LogTags.APP,
+            "🔒 STARTUP im gesperrten Zustand (Direct Boot): geraetelokale Pruefungen werden " +
+                "ausgelassen und nach dem Entsperren nachgeholt."
+        )
+        registerUnlockReceiver()
+        registerActivityUnlockWatcher()
+    }
+
+    /**
+     * Netz 1: [runDeviceLocalStartupChecks] nachholen, sobald `ACTION_USER_UNLOCKED` eintrifft.
+     *
+     * BEWUSST DYNAMISCH REGISTRIERT und nicht im Manifest: der Nachholbedarf betrifft nur einen
+     * Prozess, der VOR der Entsperrung hochkam. Ein Manifest-Receiver wuerde die App bei jedem
+     * Entsperren eines beliebigen Nutzerprofils starten, ohne dass es etwas zu tun gaebe.
+     *
+     * `ACTION_USER_UNLOCKED` ist ein geschuetzter System-Broadcast; `RECEIVER_NOT_EXPORTED` ist
+     * die richtige Angabe fuer die ab Android 14 erzwungene Export-Kennzeichnung.
+     */
+    private fun registerUnlockReceiver() {
+        synchronized(unlockWatcherLock) {
+            if (unlockReceiver != null) return
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent?.action != Intent.ACTION_USER_UNLOCKED) return
+                    onUnlockOpportunity("ACTION_USER_UNLOCKED")
+                }
+            }
+            unlockReceiver = receiver
+            try {
+                ContextCompat.registerReceiver(
+                    this,
+                    receiver,
+                    IntentFilter(Intent.ACTION_USER_UNLOCKED),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+            } catch (e: Exception) {
+                unlockReceiver = null
+                // Nichts weiter zu tun - Netz 2 und die Nachpruefung in
+                // ensureDeviceLocalStartupRuns() tragen den Fall.
+                Logger.e(LogTags.APP, "❌ Entsperr-Empfaenger konnte nicht registriert werden", e)
+            }
+        }
+    }
+
+    /**
+     * Netz 2: der billigste Anlass, der nach dem Entsperren ohnehin eintritt - eine Activity.
+     *
+     * `registerActivityLifecycleCallbacks` ist eine reine In-Prozess-Liste: kein WorkManager, kein
+     * CE-Zugriff, keine neue Kante im Application-Graphen, kein Timer, kein Polling. Eine Activity
+     * ist KEIN Beweis fuer "entsperrt" - `AlarmFullScreenActivity` laeuft ausdruecklich ueber dem
+     * Sperrbildschirm - deshalb ist sie hier nur der ANLASS, nachzusehen; entschieden wird in
+     * [onUnlockOpportunity] weiterhin ueber den `UserManager`.
+     */
+    private fun registerActivityUnlockWatcher() {
+        synchronized(unlockWatcherLock) {
+            if (unlockActivityWatcher != null) return
+            val watcher = object : ActivityLifecycleCallbacks {
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                    onUnlockOpportunity("Activity-Start")
+                }
+
+                override fun onActivityResumed(activity: Activity) {
+                    onUnlockOpportunity("Activity-Resume")
+                }
+
+                override fun onActivityStarted(activity: Activity) {}
+                override fun onActivityPaused(activity: Activity) {}
+                override fun onActivityStopped(activity: Activity) {}
+                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+                override fun onActivityDestroyed(activity: Activity) {}
+            }
+            unlockActivityWatcher = watcher
+            try {
+                registerActivityLifecycleCallbacks(watcher)
+            } catch (e: Exception) {
+                unlockActivityWatcher = null
+                Logger.e(LogTags.APP, "❌ Activity-Entsperrwaechter konnte nicht registriert werden", e)
+            }
+        }
+    }
+
+    /**
+     * Ein Anlass, bei dem das Entsperren passiert sein KANN. Entschieden wird ueber den
+     * `UserManager`, nicht ueber den Anlass selbst.
+     *
+     * Meldet der `UserManager` weiterhin "gesperrt", bleiben beide Netze scharf und es passiert
+     * NICHTS: ein Lauf im gesperrten Zustand waere teurer als ein verpasster: er liest den
+     * `settings`-Store still leer und vergiftet damit den DataStore-Cache fuer die restliche
+     * Prozesslaufzeit - siehe [runDeviceLocalStartupChecks].
+     */
+    private fun onUnlockOpportunity(anlass: String) {
+        if (startupGate.hasRun) {
+            disarmUnlockWatchers()
+            return
+        }
+        if (!userUnlocked) return
+        Logger.i(
+            LogTags.APP,
+            "🔓 Nutzer entsperrt ($anlass) - geraetelokale Startpruefungen werden nachgeholt"
+        )
+        // Abgemeldet wird in runDeviceLocalStartupChecks(), damit auch der Fall aufraeumt, in dem
+        // ein anderer Anlass den Lauf bereits beansprucht hat.
+        applicationScope.launch { runDeviceLocalStartupChecks() }
+    }
+
+    /** Meldet beide Netze ab. Mehrfach aufrufbar; nach dem ersten Mal ein No-op. */
+    private fun disarmUnlockWatchers() {
+        synchronized(unlockWatcherLock) {
+            unlockReceiver?.let { receiver ->
+                unlockReceiver = null
+                try {
+                    unregisterReceiver(receiver)
+                } catch (e: IllegalArgumentException) {
+                    // Bereits abgemeldet - kein Fehlerfall.
+                }
+            }
+            unlockActivityWatcher?.let { watcher ->
+                unlockActivityWatcher = null
+                try {
+                    unregisterActivityLifecycleCallbacks(watcher)
+                } catch (e: Exception) {
+                    Logger.w(LogTags.APP, "Activity-Entsperrwaechter liess sich nicht abmelden", e)
+                }
+            }
+        }
+    }
+
+    /**
      * Installiert einen einfachen Uncaught-Exception-Handler, der den letzten
      * Absturz (Stacktrace + Zeit + App-Version) in last_crash.txt schreibt.
      * Ermöglicht Alpha-Testern, Abstürze per "Logs senden" zu melden – ohne Cloud-SDK.
@@ -259,4 +488,38 @@ class CFAlarmApplication : Application() {
 
     // onTerminate() removed - it only runs in emulator and causes pthread_mutex crashes
     // Android handles all cleanup automatically when the app terminates
+}
+
+/**
+ * Entscheidet, ob der geraetelokale Startblock SOFORT laeuft oder auf das Entsperren wartet -
+ * und schliesst dabei das Fenster zwischen Abfrage und Wartekonstruktion.
+ *
+ * DER GRUND FUER DIE NACHPRUEFUNG (und fuer das `finally`):
+ * Die Abfrage `isUserUnlocked()` und das Aufsetzen der Netze liegen zeitlich auseinander - der
+ * ganze Block laeuft asynchron im Application-Scope. Entsperrt der Nutzer genau dazwischen, ist
+ * `ACTION_USER_UNLOCKED` bereits verschickt; der Broadcast ist NICHT sticky und wird nicht
+ * nachgeliefert. Ohne die zweite Abfrage liefe [runChecks] in diesem Prozess dann NIE, waehrend
+ * der Prozess als normaler App-Prozess weiterlebt: kein Geraetewechsel-Check (eine mitgesicherte
+ * Master-Pause bliebe aktiv) und vor allem kein Abgleich des Direct-Boot-Spiegels.
+ *
+ * Dasselbe gilt, wenn [armUnlockWatchers] scheitert - deshalb steht die Nachpruefung im
+ * `finally`: Nichtstun waere die schlechteste Antwort. Gegen einen doppelten Lauf schuetzt
+ * ausschliesslich das Gate in [runChecks]
+ * ([com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalStartupGate], ein
+ * `compareAndSet`) - hier wird bewusst nicht zusaetzlich gezaehlt.
+ */
+internal suspend fun ensureDeviceLocalStartupRuns(
+    isUserUnlocked: () -> Boolean,
+    armUnlockWatchers: () -> Unit,
+    runChecks: suspend () -> Unit
+) {
+    if (isUserUnlocked()) {
+        runChecks()
+        return
+    }
+    try {
+        armUnlockWatchers()
+    } finally {
+        if (isUserUnlocked()) runChecks()
+    }
 }

@@ -47,13 +47,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
-import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.TimeOfficeHealthHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -93,6 +93,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
  * Deshalb die Karte, und deshalb steht sie VOR der Vollbild-Karte: ohne Benachrichtigungen ist
  * deren Aussage bedeutungslos.
  *
+ * DIE KARTE PRUEFT NICHT NUR DIE APP-EBENE: Android bietet dem Nutzer direkt aus einer
+ * Benachrichtigung heraus einen Zwei-Tipp-Weg, den EINZELNEN Wecker-Kanal abzuschalten oder auf
+ * "Lautlos" herunterzustufen. Der Wecker-Kanal braucht aber IMPORTANCE_HIGH, sonst ignoriert das
+ * System den Full-Screen-Intent (siehe `AlarmSoundService.createNotificationChannel`). Bis v1.26.3
+ * fragte diese Karte nur `areNotificationsEnabled()` - das bleibt in beiden Faellen `true`, und die
+ * Karte meldete weiter "Erlaubt", waehrend der Weck-Bildschirm nicht mehr kam.
+ *
  * Wie die Karten daneben wird der Zustand bei jedem ON_RESUME frisch gelesen - der Nutzer kann ihn
  * ausserhalb der App aendern, und danach muss die Karte stimmen.
  */
@@ -101,14 +108,16 @@ internal fun NotificationsEnabledCard() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var enabled by remember {
-        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
-    }
+    var zustand by remember { mutableStateOf(weckerZustellbarkeit(context)) }
+    val enabled = zustand.erreicht
+    // Wortgleich mit dem, was in den Systemeinstellungen steht - der Text darf keine Bezeichnung
+    // erfinden, die der Nutzer dort nicht findet.
+    val weckerKanalName = stringResource(R.string.alarm_channel_name)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+                zustand = weckerZustellbarkeit(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -148,11 +157,31 @@ internal fun NotificationsEnabledCard() {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    if (enabled) {
-                        "Erlaubt — Weck-Bildschirm und Wecker-Knöpfe können erscheinen"
-                    } else {
-                        "⚠️ Blockiert — der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm " +
-                            "und ohne Knöpfe zum Stoppen oder Schlummern"
+                    // Jeder Fall benennt AUSDRUECKLICH, was abgeschaltet ist - "blockiert" allein
+                    // schickt den Nutzer in die falschen Einstellungen, wenn nur der eine Kanal
+                    // betroffen ist.
+                    when (zustand) {
+                        NotificationDeliverability.Zustellbarkeit.ERREICHBAR ->
+                            "Erlaubt — Weck-Bildschirm und Wecker-Knöpfe können erscheinen"
+
+                        NotificationDeliverability.Zustellbarkeit.APP_BLOCKIERT ->
+                            "⚠️ Blockiert — der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm " +
+                                "und ohne Knöpfe zum Stoppen oder Schlummern"
+
+                        NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT ->
+                            "⚠️ Die Kategorie \"$weckerKanalName\" ist abgeschaltet — der Wecker " +
+                                "klingelt dann zwar, aber ohne Weck-Bildschirm und ohne Knöpfe zum " +
+                                "Stoppen oder Schlummern. Sie muss wieder eingeschaltet werden."
+
+                        NotificationDeliverability.Zustellbarkeit.GRUPPE_BLOCKIERT ->
+                            "⚠️ Die Gruppe, in der \"$weckerKanalName\" liegt, ist abgeschaltet — " +
+                                "der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm und ohne " +
+                                "Knöpfe zum Stoppen oder Schlummern."
+
+                        NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
+                            "⚠️ Die Kategorie \"$weckerKanalName\" steht auf \"Lautlos\" — dann " +
+                                "kommt der Weck-Bildschirm nicht mehr von selbst hoch. Sie muss auf " +
+                                "\"Standard\" oder höher stehen."
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -160,7 +189,22 @@ internal fun NotificationsEnabledCard() {
                 if (!enabled) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
                     SettingsLinkButton(
-                        onClick = { openAppNotificationSettings(context) },
+                        // Bei einem Kanal-Problem direkt in dessen Einstellungen: die App-Ebene
+                        // ist dort in Ordnung, und der Nutzer muesste sich sonst selbst durch die
+                        // Kategorienliste suchen. Bei APP_BLOCKIERT/GRUPPE_BLOCKIERT bleibt es bei
+                        // der App-Uebersicht - dort liegen beide Schalter.
+                        onClick = {
+                            when (zustand) {
+                                NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT,
+                                NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
+                                    openChannelNotificationSettings(
+                                        context,
+                                        NotificationDeliverability.WECKER_KANAL_ID
+                                    )
+
+                                else -> openAppNotificationSettings(context)
+                            }
+                        },
                         text = "Einstellung öffnen"
                     )
                 }
@@ -766,6 +810,42 @@ private fun checkFullScreenIntentAllowed(context: android.content.Context): Bool
         // < API 34: Die Berechtigung wird mit der Installation gewaehrt und nicht entzogen.
         true
     }
+
+/**
+ * Zustellbarkeit der WECKER-Benachrichtigung: App-Ebene, Kanal und Kanalgruppe in einem Urteil.
+ *
+ * [NotificationDeliverability.WICHTIGKEIT_HOCH] als Mindestmass ist kein Schoenheitswunsch: das
+ * System ignoriert den Full-Screen-Intent, wenn der Kanal darunter liegt (siehe
+ * `AlarmSoundService.createNotificationChannel`) - der Wecker klingelt dann ohne Weck-Bildschirm.
+ */
+private fun weckerZustellbarkeit(context: android.content.Context): NotificationDeliverability.Zustellbarkeit =
+    NotificationDeliverability.bestimme(
+        context = context,
+        kanalId = NotificationDeliverability.WECKER_KANAL_ID,
+        mindestwichtigkeit = NotificationDeliverability.WICHTIGKEIT_HOCH
+    )
+
+/**
+ * Fuehrt direkt in die Einstellungen EINES Kanals. Nur sinnvoll, wenn die App-Ebene in Ordnung
+ * ist - sonst zeigt Android die Kanalseite ausgegraut. Scheitert der Absprung (OEM ohne diese
+ * Activity), bleibt die App-Uebersicht der Rueckfallweg.
+ */
+private fun openChannelNotificationSettings(context: android.content.Context, channelId: String) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        openAppNotificationSettings(context)
+        return
+    }
+    try {
+        context.startActivity(
+            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                .putExtra(Settings.EXTRA_CHANNEL_ID, channelId)
+        )
+    } catch (e: Exception) {
+        Logger.e(LogTags.UI, "❌ Kanal-Einstellungen nicht erreichbar, fallback auf App-Ebene", e)
+        openAppNotificationSettings(context)
+    }
+}
 
 /**
  * Fuehrt auf die Benachrichtigungs-Einstellungen DIESER App. Bewusst nicht die

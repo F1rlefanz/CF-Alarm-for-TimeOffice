@@ -137,6 +137,63 @@ internal object MaintenanceLoadDecision {
 }
 
 /**
+ * Zaehlt die gleichzeitig laufenden Zyklen eines Service, der pro `onStartCommand` eine Coroutine
+ * auf einem GETEILTEN Scope startet, und sagt, WANN mit WELCHER startId abgeraeumt werden darf.
+ *
+ * WARUM ES DAS GIBT: `stopSelf(startId)` stoppt genau dann, wenn `startId` der zuletzt vergebene
+ * ist. Das schuetzt nur den Fall "der FRUEHERE Lauf wird zuerst fertig". Wird der SPAETERE zuerst
+ * fertig — und das ist der wahrscheinliche Fall, weil ein erzwungener Lauf (Zeitzone, Boot,
+ * Master-Pause-resume, Re-Login) im Netz haengt, waehrend der regulaere 6h-Lauf ueber
+ * [MaintenanceLoadDecision.shouldLoadEvents] in Millisekunden mit "Puffer reicht" zurueckkehrt —
+ * traf sein `stopSelf` den aktuellsten startId, Android zerstoerte den Service, `onDestroy` cancelte
+ * den geteilten Scope und riss den noch laufenden frueheren Lauf mitten in `syncAlarms()` ab.
+ * Zwischen `deleteAlarm()` und dem folgenden `saveAlarm()`/`scheduleSystemAlarm()` abgeschnitten
+ * heisst: fuer diese Schicht existiert bis zum naechsten Wartungslauf KEIN Wecker — und gemeldet
+ * haette es niemand, weil der andere Lauf "erfolgreich (uebersprungen)" loggte.
+ *
+ * Deshalb raeumt erst der ZULETZT endende Lauf ab, und zwar mit dem HOECHSTEN bis dahin gesehenen
+ * startId (dem, den Android als "letzten Start" kennt).
+ *
+ * Bewusst ein eigenes, Android-freies Top-Level-Objekt (wie [MaintenanceLoadDecision]), damit
+ * Unit-Tests es ohne das Laden einer `android.app.Service`-Ableitung pruefen koennen. Es wird auch
+ * vom `DimNotificationService` benutzt, der exakt dasselbe Muster faehrt.
+ *
+ * Thread-Sicherheit: `onStart` kommt vom Main-Thread (onStartCommand), `onFinish` aus beliebigen
+ * Coroutine-Threads. Zaehler und startId muessen GEMEINSAM konsistent sein (zwei Atomics reichen
+ * nicht), deshalb ein Monitor statt `AtomicInteger`.
+ */
+internal class ServiceRunTracker {
+
+    private val lock = Any()
+    private var activeRuns = 0
+    private var latestStartId = 0
+
+    /** Meldet einen begonnenen Lauf an. Auf dem Main-Thread aufzurufen (onStartCommand). */
+    fun onStart(startId: Int) = synchronized(lock) {
+        activeRuns++
+        // max() statt blindem Zuweisen: Android vergibt startIds aufsteigend, aber der Vergleich
+        // macht die Invariante explizit — abgeraeumt wird mit dem hoechsten je gesehenen Start.
+        if (startId > latestStartId) latestStartId = startId
+    }
+
+    /**
+     * Meldet einen beendeten Lauf ab — MUSS aus einem `finally` kommen, damit auch der
+     * Ausnahme- und der Abbruchpfad den Zaehler senken. Ein dauerhaft haengender Lauf haelt den
+     * Service offen; das ist unveraendert zur Lage vor dieser Klasse (auch `stopSelf` stand schon
+     * immer im `finally`) und wird von Androids eigenem Foreground-Service-Timeout gedeckelt.
+     *
+     * @return die startId fuer `stopSelf(...)`, oder `null`, wenn noch ein Lauf arbeitet.
+     */
+    fun onFinish(): Int? = synchronized(lock) {
+        if (activeRuns > 0) activeRuns--
+        if (activeRuns == 0) latestStartId else null
+    }
+
+    /** Nur fuer Tests/Diagnose: Anzahl der aktuell laufenden Zyklen. */
+    fun activeRunCount(): Int = synchronized(lock) { activeRuns }
+}
+
+/**
  * AlarmMaintenanceService - Short-Lived Foreground Service
  *
  * ARCHITECTURE (Briefing 4.0):
@@ -185,6 +242,9 @@ class AlarmMaintenanceService : Service() {
     lateinit var calendarUnavailableNotifier: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Siehe [ServiceRunTracker]: erst der zuletzt endende Zyklus darf den Service abraeumen. */
+    private val runTracker = ServiceRunTracker()
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "alarm_maintenance"
@@ -460,6 +520,11 @@ class AlarmMaintenanceService : Service() {
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
 
+        // VOR dem launch und auf dem Main-Thread: sonst koennte ein bereits laufender Zyklus
+        // zwischen startForeground() und dem Anmelden dieses Laufs fertig werden, den Zaehler auf
+        // 0 sehen und den Service abraeumen, waehrend dieser Start schon quittiert ist.
+        runTracker.onStart(startId)
+
         // Perform maintenance in background
         serviceScope.launch {
             try {
@@ -513,15 +578,24 @@ class AlarmMaintenanceService : Service() {
                     // der finally-Block ist die einzige Stelle, die jeden Pfad abdeckt.
                     rescheduleSideChannels(paused)
 
-                    // stopSelf(startId) statt stopSelf(): Android stoppt damit nur, wenn seit diesem
-                    // Start kein weiterer kam. Wird der Service zweimal gestartet (z.B. der 6h-Alarm
-                    // faellt mit einem Start nach der Autorisierung zusammen), laufen zwei Zyklen auf
-                    // demselben serviceScope. Das blanke stopSelf() des ERSTEN, der fertig wurde,
-                    // loeste onDestroy() -> serviceScope.cancel() aus und riss den zweiten mitten in
-                    // der Arbeit ab (JobCancellationException, Log 14.07. 22:07:30). Fuer eine
-                    // Wecker-App ist das gefaehrlich: der abgeschnittene Zyklus koennte gerade
-                    // Alarme angelegt haben. Mit startId raeumt erst der letzte Zyklus den Service ab.
-                    stopSelf(startId)
+                    // Abraeumen erst, wenn KEIN Zyklus mehr arbeitet - siehe [ServiceRunTracker].
+                    //
+                    // Wird der Service zweimal gestartet (z.B. der 6h-Alarm faellt mit einem Start
+                    // nach der Autorisierung oder einem Zeitzonen-Wechsel zusammen), laufen zwei
+                    // Zyklen auf demselben serviceScope. Das blanke stopSelf() des ERSTEN, der
+                    // fertig wurde, loeste onDestroy() -> serviceScope.cancel() aus und riss den
+                    // zweiten mitten in der Arbeit ab (JobCancellationException, Log 14.07.
+                    // 22:07:30). Fuer eine Wecker-App ist das gefaehrlich: der abgeschnittene
+                    // Zyklus koennte gerade zwischen deleteAlarm() und saveAlarm() stehen.
+                    //
+                    // Das damals eingesetzte stopSelf(startId) deckte davon nur eine Richtung ab -
+                    // "der FRUEHERE Lauf wird zuerst fertig". Wird der SPAETERE zuerst fertig
+                    // (regulaerer Lauf kehrt sofort mit "Puffer reicht" zurueck, waehrend ein
+                    // forceSync-Lauf im Netz haengt), IST seine startId die zuletzt vergebene -
+                    // Android zerstoerte den Service, und derselbe Abriss passierte doch. Deshalb
+                    // entscheidet jetzt der Zaehler, und nur der zuletzt endende Zyklus ruft
+                    // stopSelf - weiterhin mit startId, nie blank.
+                    runTracker.onFinish()?.let { stopSelf(it) }
                 }
             }
         }

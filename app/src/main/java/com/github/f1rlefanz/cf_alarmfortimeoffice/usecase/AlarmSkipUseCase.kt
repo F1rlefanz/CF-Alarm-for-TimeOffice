@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmSk
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ManualAlarmSnapshot
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -17,17 +18,39 @@ import javax.inject.Inject
 /**
  * Use case implementation for alarm skip functionality.
  * Handles business logic for skipping alarms.
- * 
+ *
  * CRITICAL FIX: Ensures system alarm is cancelled when alarm is skipped
  * ✅ Prevents "ghost alarms" that trigger despite being skipped
  * ✅ Properly cleans up both DataStore state AND Android AlarmManager
+ *
+ * EIN UEBERSPRUNGENER ALARM IST WEG - fuer JEDE Alarmart (siehe [skipNextAlarm]). Damit
+ * "Aufheben" trotzdem umkehrbar bleibt, wird ein MANUELLER Wecker vorher als
+ * [ManualAlarmSnapshot] im Skip-Zustand gesichert; ein kalenderbasierter braucht das nicht, er
+ * entsteht aus dem Kalenderstand neu.
  */
 class AlarmSkipUseCase @Inject constructor(
     private val alarmSkipRepository: IAlarmSkipRepository,
     private val alarmRepository: IAlarmRepository,
     private val alarmManagerService: AlarmManagerService
 ) : IAlarmSkipUseCase {
-    
+
+    companion object {
+        /**
+         * Praefix der `shiftId` eines von Hand gestellten Weckers.
+         *
+         * Quelle des Werts ist `AlarmViewModel.ManualAlarmConstants.MANUAL_SHIFT_ID_PREFIX`; hier
+         * bewusst als eigene Konstante gefuehrt, weil ein UseCase nicht auf ein ViewModel
+         * zugreifen darf. Damit daraus keine zweite Wahrheit wird, haelt
+         * `AlarmSkipManualAlarmTest` beide Werte gegeneinander fest - laufen sie auseinander,
+         * faellt der Test um, nicht der Wecker.
+         */
+        internal const val MANUAL_SHIFT_ID_PREFIX = "manual_"
+
+        /** Nur ein manueller Alarm braucht den Schnappschuss - siehe [skipNextAlarm]. */
+        internal fun isManualAlarm(alarmInfo: AlarmInfo): Boolean =
+            alarmInfo.shiftId.startsWith(MANUAL_SHIFT_ID_PREFIX)
+    }
+
     override val skipStatusFlow: Flow<AlarmSkipState> = alarmSkipRepository.skipStatusFlow
     
     override suspend fun skipNextAlarm(): Result<AlarmSkipResult> = 
@@ -36,8 +59,23 @@ class AlarmSkipUseCase @Inject constructor(
             val nextAlarm = findNextAlarm()
                 ?: throw IllegalStateException("Kein aktiver Alarm gefunden")
             
-            // 2. Skip-Status setzen
-            alarmSkipRepository.setNextAlarmSkipped(nextAlarm.id, nextAlarm.triggerTime).getOrThrow()
+            // 2. Skip-Status setzen - MIT Schnappschuss, falls es ein manueller Wecker ist.
+            //
+            // Die Sicherung passiert VOR dem Loeschen und ist der einzige Schritt hier, dessen
+            // Fehlschlag den ganzen Vorgang abbricht (getOrThrow): laesst sich der Zustand nicht
+            // schreiben, bleibt der Wecker unangetastet stehen und klingelt - das ist die
+            // richtige Richtung. Umgekehrt (erst loeschen, dann sichern) waere ein Absturz
+            // dazwischen ein spurlos verschwundener Wecker.
+            val manualSnapshot = if (isManualAlarm(nextAlarm)) {
+                ManualAlarmSnapshot.encode(nextAlarm)
+            } else {
+                null
+            }
+            alarmSkipRepository.setNextAlarmSkipped(
+                alarmId = nextAlarm.id,
+                triggerTime = nextAlarm.triggerTime,
+                manualAlarmSnapshot = manualSnapshot
+            ).getOrThrow()
             
             // 3. ✅ UX-FIX: Systemalarm SOFORT löschen für direktes User-Feedback
             // User erwartet dass der Alarm aus der Statusleiste verschwindet wenn er "überspringen" drückt
@@ -49,14 +87,23 @@ class AlarmSkipUseCase @Inject constructor(
                 Logger.e(LogTags.ALARM_SKIP, "❌ SKIP-IMMEDIATE: Failed to cancel system alarm", e)
             }
             
-            // 4. Alarm aus Repository löschen
+            // 4. Alarm aus Repository loeschen - IMMER, fuer jede Alarmart.
+            //
+            // Die Reihenfolge (erst cancelSystemAlarm, dann deleteAlarm) ist Pflicht, und dass
+            // hier nichts stehenbleibt, ebenfalls: mehrere unabhaengige Stellen der App lesen den
+            // Alarm-Bestand OHNE Skip-Filter - der Direct-Boot-Spiegel, aus dem der BootReceiver
+            // jeden Zukunfts-Eintrag direkt wieder armiert (am Skip-Backstop vorbei), und die
+            // Hue-Tagesplanung, die daraus ihre Sonnenaufgangs-Starts baut. Ein "uebersprungener"
+            // Eintrag, der liegenbleibt, klingelt nach einem naechtlichen Neustart trotzdem und
+            // schaltet am uebersprungenen Morgen das Licht ein. Die Umkehrbarkeit fuer manuelle
+            // Wecker traegt der Schnappschuss oben, nicht ein geschonter Eintrag.
             try {
                 alarmRepository.deleteAlarm(nextAlarm.id).getOrThrow()
                 Logger.business(LogTags.ALARM_SKIP, "✅ SKIP-IMMEDIATE: Alarm deleted from repository")
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_SKIP, "❌ SKIP-IMMEDIATE: Failed to delete alarm from repository", e)
             }
-            
+
             // 5. Result erstellen
             AlarmSkipResult(
                 alarmId = nextAlarm.id,

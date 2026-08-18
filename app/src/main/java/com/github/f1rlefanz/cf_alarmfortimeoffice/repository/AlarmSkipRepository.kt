@@ -31,11 +31,17 @@ class AlarmSkipRepository @Inject constructor(
             skippedAlarmId = preferences[AlarmSkipPreferences.SKIPPED_ALARM_ID],
             skipActivatedAt = preferences[AlarmSkipPreferences.SKIP_ACTIVATED_AT] ?: 0L,
             skipReason = preferences[AlarmSkipPreferences.SKIP_REASON] ?: "Manuell übersprungen",
-            skippedAlarmTriggerTime = preferences[AlarmSkipPreferences.SKIPPED_ALARM_TRIGGER_TIME] ?: 0L
+            skippedAlarmTriggerTime = preferences[AlarmSkipPreferences.SKIPPED_ALARM_TRIGGER_TIME] ?: 0L,
+            skippedManualAlarm = preferences[AlarmSkipPreferences.SKIPPED_MANUAL_ALARM]
         )
     }
 
-    override suspend fun setNextAlarmSkipped(alarmId: Int, triggerTime: Long, reason: String): Result<Unit> =
+    override suspend fun setNextAlarmSkipped(
+        alarmId: Int,
+        triggerTime: Long,
+        reason: String,
+        manualAlarmSnapshot: String?
+    ): Result<Unit> =
         SafeExecutor.safeExecute("AlarmSkipRepository.setNextAlarmSkipped") {
             dataStore.edit { preferences ->
                 preferences[AlarmSkipPreferences.IS_NEXT_ALARM_SKIPPED] = true
@@ -43,8 +49,19 @@ class AlarmSkipRepository @Inject constructor(
                 preferences[AlarmSkipPreferences.SKIP_ACTIVATED_AT] = System.currentTimeMillis()
                 preferences[AlarmSkipPreferences.SKIP_REASON] = reason
                 preferences[AlarmSkipPreferences.SKIPPED_ALARM_TRIGGER_TIME] = triggerTime
+                // Ohne das `remove` im else-Zweig ueberlebte der Schnappschuss eines FRUEHEREN
+                // manuellen Skips einen neuen Skip auf einen kalenderbasierten Alarm - und
+                // "Aufheben" haette einen laengst erledigten Wecker wieder gestellt.
+                if (manualAlarmSnapshot != null) {
+                    preferences[AlarmSkipPreferences.SKIPPED_MANUAL_ALARM] = manualAlarmSnapshot
+                } else {
+                    preferences.remove(AlarmSkipPreferences.SKIPPED_MANUAL_ALARM)
+                }
             }
-            Logger.business(LogTags.ALARM_SKIP, "Skip activated for alarm $alarmId")
+            Logger.business(
+                LogTags.ALARM_SKIP,
+                "Skip activated for alarm $alarmId (manueller Schnappschuss gesichert: ${manualAlarmSnapshot != null})"
+            )
         }
 
     override suspend fun clearSkipStatus(): Result<Unit> =
@@ -55,6 +72,7 @@ class AlarmSkipRepository @Inject constructor(
                 preferences.remove(AlarmSkipPreferences.SKIP_ACTIVATED_AT)
                 preferences.remove(AlarmSkipPreferences.SKIP_REASON)
                 preferences.remove(AlarmSkipPreferences.SKIPPED_ALARM_TRIGGER_TIME)
+                preferences.remove(AlarmSkipPreferences.SKIPPED_MANUAL_ALARM)
             }
             Logger.business(LogTags.ALARM_SKIP, "Skip status cleared")
         }

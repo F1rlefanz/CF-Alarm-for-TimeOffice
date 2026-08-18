@@ -15,4 +15,17 @@ object AlarmSkipPreferences {
     val SKIP_ACTIVATED_AT = longPreferencesKey("skip_activated_at")
     val SKIP_REASON = stringPreferencesKey("skip_reason")
     val SKIPPED_ALARM_TRIGGER_TIME = longPreferencesKey("skipped_alarm_trigger_time")
+
+    /**
+     * Vollstaendiger Schnappschuss eines uebersprungenen MANUELLEN Weckers (JSON, Format
+     * `AlarmInfoData` - dasselbe wie im Alarm-Bestand). Nur fuer manuelle Wecker gesetzt; ein
+     * kalenderbasierter wird beim "Aufheben" aus dem Kalenderstand rekonstruiert und braucht
+     * keinen.
+     *
+     * Liegt bewusst in DIESER Schluesselgruppe: `clearSkipStatus()` raeumt sie geschlossen ab,
+     * und alle drei Enden eines Skips (aufgehoben, zeitbasiert abgelaufen, Alarm ausgeloest)
+     * laufen dort hindurch. Ein eigener Merker mit eigenem Lebenszyklus waere die naechste
+     * Fehlerquelle.
+     */
+    val SKIPPED_MANUAL_ALARM = stringPreferencesKey("skipped_manual_alarm")
 }

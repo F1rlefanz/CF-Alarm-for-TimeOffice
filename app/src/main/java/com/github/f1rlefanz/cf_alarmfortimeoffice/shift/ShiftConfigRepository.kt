@@ -46,6 +46,19 @@ internal sealed interface ShiftConfigDecodeResult {
     data class Ok(val config: ShiftConfig) : ShiftConfigDecodeResult
     data object NotConfigured : ShiftConfigDecodeResult
     data class Broken(val raw: String, val cause: Throwable) : ShiftConfigDecodeResult
+
+    /**
+     * "Nichts da" AUS EINEM GESPERRTEN CE-STORAGE - also gar keine Aussage ueber die
+     * Konfiguration.
+     *
+     * Der dritte Fall musste dazu, weil er sonst als [NotConfigured] gilt und damit die
+     * Standardkonfiguration ALS ERFOLG liefert. Vor der ersten Entsperrung wirft ein CE-Read
+     * nicht, er liefert still leere Preferences - der Store sieht exakt aus wie "noch nie
+     * konfiguriert". Bearbeitet der Nutzer danach seine Schichten, schreibt `saveShiftConfig`
+     * den Default ueber die echte Konfiguration. Genau die Datenverlust-Stelle, die die
+     * Trennung Ok/NotConfigured/Broken schon einmal geschlossen hat.
+     */
+    data object LockedStorage : ShiftConfigDecodeResult
 }
 
 /**
@@ -54,9 +67,21 @@ internal sealed interface ShiftConfigDecodeResult {
  * Faengt bewusst [Exception], nicht nur [SerializationException]: der projekteigene
  * `LocalTimeSerializer` wirft bei einem nicht parsbaren `HH:mm`-Wert eine `DateTimeParseException`
  * (eine `RuntimeException`), die sonst ungefangen aus dem Flow herauslaufen wuerde.
+ *
+ * @param userUnlocked ob der CE-Storage ueberhaupt lesbar war. Nur bei `true` darf ein fehlender
+ *        Eintrag als [ShiftConfigDecodeResult.NotConfigured] gelten; sonst ist er
+ *        [ShiftConfigDecodeResult.LockedStorage]. Default `true`, damit reine Dekodier-Aufrufer
+ *        (und die Tests der Dekodierung) unveraendert bleiben.
  */
-internal fun decodeShiftConfig(json: Json, raw: String?): ShiftConfigDecodeResult {
-    if (raw == null) return ShiftConfigDecodeResult.NotConfigured
+internal fun decodeShiftConfig(
+    json: Json,
+    raw: String?,
+    userUnlocked: Boolean = true
+): ShiftConfigDecodeResult {
+    if (raw == null) {
+        return if (userUnlocked) ShiftConfigDecodeResult.NotConfigured
+        else ShiftConfigDecodeResult.LockedStorage
+    }
     return try {
         ShiftConfigDecodeResult.Ok(json.decodeFromString<ShiftConfig>(raw))
     } catch (e: Exception) {
@@ -83,6 +108,21 @@ class ShiftConfigRepository @Inject constructor(
 
     private val dataStore = context.shiftDataStore
     private val shiftConfigKey = stringPreferencesKey("shift_config")
+
+    /**
+     * Ist der Nutzer entsperrt, also CREDENTIAL-ENCRYPTED Storage lesbar?
+     *
+     * Gleiche Umsetzung und gleiche Fehlerrichtung wie in `AlarmRepository` und
+     * `BackgroundServiceManager`: im Zweifel `true`. Ein falsch-positives "gesperrt" wuerde die
+     * Konfiguration dauerhaft als unlesbar melden.
+     */
+    private val userUnlocked: Boolean
+        get() = try {
+            context.getSystemService(android.os.UserManager::class.java)?.isUserUnlocked ?: true
+        } catch (e: Exception) {
+            Logger.w(LogTags.SHIFT_CONFIG, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
+            true
+        }
 
     /** Sicherung der rohen, nicht dekodierbaren Konfiguration - siehe [backupBrokenConfig]. */
     private val brokenConfigKey = stringPreferencesKey(BROKEN_CONFIG_KEY_NAME)
@@ -157,7 +197,7 @@ class ShiftConfigRepository @Inject constructor(
      */
     override val shiftConfig: Flow<ShiftConfig> = dataStore.data
         .map { preferences ->
-            when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey])) {
+            when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey], userUnlocked)) {
                 is ShiftConfigDecodeResult.Ok -> {
                     // Update cache when config flows change
                     cachedConfig = decoded.config
@@ -180,6 +220,19 @@ class ShiftConfigRepository @Inject constructor(
                     cachedConfig = defaultConfig
                     cacheTimestamp = System.currentTimeMillis()
                     defaultConfig
+                }
+
+                ShiftConfigDecodeResult.LockedStorage -> {
+                    // Wie im Broken-Zweig: die ANZEIGE darf degradieren, der CACHE nicht. Ein
+                    // Cache-Eintrag hier wuerde `getCurrentShiftConfig()` fuer 30 s die
+                    // Standardkonfiguration als ERFOLG liefern lassen - und der naechste
+                    // Bearbeitungsschritt schriebe sie ueber die echte Konfiguration.
+                    Logger.w(
+                        LogTags.SHIFT_CONFIG,
+                        "🔒 shift_prefs vor der ersten Entsperrung gelesen - Anzeige zeigt " +
+                            "Standardwerte, die echte Konfiguration wird NICHT ueberschrieben"
+                    )
+                    ShiftConfig.getDefaultConfig()
                 }
             }
         }
@@ -274,11 +327,27 @@ class ShiftConfigRepository @Inject constructor(
                 }
             }
             
+            // KEIN READ IM GESPERRTEN ZUSTAND - und zwar VOR dem Zugriff, nicht erst bei der
+            // Auswertung. Ein CE-Read vor der ersten Entsperrung wirft nicht, er liefert still
+            // leere Preferences; DataStore legt genau dieses leere Ergebnis in seinen
+            // In-Memory-Cache und gibt es fuer die restliche PROZESSLAUFZEIT zurueck (die Version
+            // steigt nur bei einem erfolgreichen Write, der im gesperrten CE-Storage scheitert).
+            // Ein einziger Read hier wuerde also auch jeden spaeteren, laengst entsperrten
+            // Aufrufer dieses Prozesses "noch nie konfiguriert" sehen lassen - und das heisst
+            // Standardkonfiguration als Erfolg, Wecker zu Standardzeiten und beim naechsten
+            // Bearbeiten den Default ueber die echte Konfiguration.
+            if (!userUnlocked) {
+                throw AppError.DataStoreError(
+                    message = "Schicht-Konfiguration vor der ersten Entsperrung nicht lesbar " +
+                        "(CREDENTIAL-ENCRYPTED Storage) - es wird KEIN Default gemeldet"
+                )
+            }
+
             configLoadInProgress = true
-            
+
             try {
                 val preferences = dataStore.data.first()
-                val config = when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey])) {
+                val config = when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey], userUnlocked)) {
                     is ShiftConfigDecodeResult.Ok -> decoded.config
 
                     // KEIN stiller Default: eine vorhandene, aber unlesbare Konfiguration wird als
@@ -295,6 +364,14 @@ class ShiftConfigRepository @Inject constructor(
                     }
 
                     ShiftConfigDecodeResult.NotConfigured -> ShiftConfig.getDefaultConfig()
+
+                    // Zweites Netz zum Gate oben: gaebe der UserManager zwischen Gate und Read
+                    // "gesperrt" zurueck, waere "leer" wieder keine Aussage. Auch hier KEIN
+                    // Default als Erfolg.
+                    ShiftConfigDecodeResult.LockedStorage -> throw AppError.DataStoreError(
+                        message = "Schicht-Konfiguration vor der ersten Entsperrung nicht lesbar " +
+                            "(CREDENTIAL-ENCRYPTED Storage) - es wird KEIN Default gemeldet"
+                    )
                 }
 
                 // SINGLETON PATTERN: Update cache with fresh data

@@ -158,6 +158,11 @@ class AlarmManagerService(
         // Dieselbe Fehlerklasse behandeln Snooze und Direct-Boot-Restore laengst zweistufig -
         // ein inexakt geplanter Wecker (Minuten Verzug) ist unvergleichlich besser als keiner.
         // Alle drei Aufrufstellen gehen deshalb jetzt ueber [setExactOrInexact].
+        //
+        // "Besser als keiner" traegt allerdings erst, seit AlarmReceiver einen Notausgang hat:
+        // das Feuern eines INEXAKTEN Alarms erlaubt keinen Vordergrunddienst-Start (Begruendung
+        // an [setExactOrInexact]), der Weckton-Dienst kann also abgelehnt werden. Wer den
+        // Notausgang dort entfernt, macht diesen Satz hier wieder zur Falschaussage.
         if (!permissionStatus.canScheduleExactAlarms) {
             Logger.w(
                 LogTags.ALARM_MANAGER,
@@ -468,11 +473,23 @@ class AlarmManagerService(
                 return true
             }
 
-            // WARN, damit es im Release-Log steht (dort landet nur WARN+): "der Wecker kann sich um
-            // Minuten verzoegern" ist genau die Information, die man spaeter im Log braucht.
+            // WARN, damit es im Release-Log steht (dort landet nur WARN+).
+            //
+            // Der Verzug ist dabei NICHT die einzige Folge, und die zweite ist die schwerere:
+            // ein per setAndAllowWhileIdle gestellter Alarm traegt beim Feuern KEINE
+            // Vordergrunddienst-Startfreigabe. Die AlarmManager-Doku nennt den Satz "Alarms
+            // scheduled via this API will be allowed to start a foreground service even if the app
+            // is in the background" ausdruecklich nur bei setAlarmClock und
+            // setExactAndAllowWhileIdle - AlarmMaintenanceService.start() haelt dieselbe Grenze
+            // bereits als geltend fest. Der AlarmSoundService kann in diesem Zustand also
+            // abgelehnt werden; deshalb hat AlarmReceiver seit dieser Runde den Notausgang
+            // (Benachrichtigung mit Full-Screen-Intent, siehe AlarmReceiver.posteWeckNotausgang).
+            // Ohne den waere "inexakt" nicht verzoegert, sondern stumm gewesen.
             Logger.w(
                 LogTags.ALARM_MANAGER,
-                "⚠️ Keine Exact-Alarm-Berechtigung - $logContext wird inexakt geplant (kann sich um Minuten verzoegern)"
+                "⚠️ Keine Exact-Alarm-Berechtigung - $logContext wird inexakt geplant (Verzug um " +
+                    "Minuten; zusaetzlich kann der Vordergrund-Start des Wecktons abgelehnt " +
+                    "werden, dann weckt nur der Notausgang)"
             )
             alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             return false

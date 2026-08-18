@@ -1,9 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
@@ -37,9 +40,14 @@ import javax.inject.Inject
  *
  * Der Receiver prueft den Skip-Status, startet den [AlarmSoundService] und stoesst die
  * Hue-Regeln an. Ton, Vibration, Audio-Fokus, Notification und Full-Screen-Intent gehoeren
- * vollstaendig dem Service. Der Receiver postet bewusst KEINE eigene Notification (das war die
- * Quelle des zweiten Klingeltons) und startet die Activity NICHT direkt (das ist seit
+ * vollstaendig dem Service. Der Receiver postet im Normalfall bewusst KEINE eigene Notification
+ * (das war die Quelle des zweiten Klingeltons) und startet die Activity NICHT direkt (das ist seit
  * Android 10 kein erlaubter Background-Activity-Start und wird stillschweigend verworfen).
+ *
+ * ZWEI dokumentierte Ausnahmen von "keine eigene Notification": die stille Skip-Bestaetigung
+ * (ID 9999) und der WECK-NOTAUSGANG (ID 2003, siehe [posteWeckNotausgang]). Letzterer greift nur,
+ * wenn das System den Vordergrund-Start des [AlarmSoundService] abgelehnt hat - dann gibt es
+ * keinen Wecker-Besitzer, den man doppeln koennte, und ohne ihn bliebe der Wecker komplett stumm.
  *
  * CORE FEATURES:
  * - Reliable wake lock management
@@ -125,6 +133,79 @@ class AlarmReceiver : BroadcastReceiver() {
         private const val SKIP_CHANNEL_ID = "skip_channel"
         private const val WAKE_LOCK_TAG = "CFAlarm:WakeLock"
         private const val WAKE_LOCK_TIMEOUT = 60000L // 1 Minute
+
+        /**
+         * Channel und ID des WECK-NOTAUSGANGS — bewusst getrennt von Channel und ID (2002) des
+         * [AlarmSoundService].
+         *
+         * Die Invariante "eine Instanz besitzt den Wecker" bleibt damit unangetastet: dieser
+         * Channel wird NUR bespielt, wenn der Vordergrund-Start des Dienstes nachweislich
+         * abgelehnt wurde — es gibt in diesem Moment also gar keinen Besitzer, den man doppeln
+         * koennte. Genau deshalb darf (und muss) er im Gegensatz zum stummen Service-Channel
+         * einen eigenen Ton tragen.
+         */
+        private const val NOTAUSGANG_CHANNEL_ID = "alarm_notausgang"
+        private const val NOTAUSGANG_NOTIFICATION_ID = 2003
+
+        /** Offset gegen [AlarmSoundService]s eigenen Vollbild-PendingIntent (dort: requestCode = alarmId). */
+        private const val NOTAUSGANG_REQUEST_CODE_OFFSET = 20000
+
+        internal const val MELDUNG_DIENST_ABGELEHNT =
+            "⚠️ WECKER: Vordergrund-Start des AlarmSoundService abgelehnt - Ton, Vibration und " +
+                "die Wecker-Notification koennen so nicht laufen. Notausgang greift: " +
+                "Weckton-Benachrichtigung direkt aus dem Receiver."
+
+        internal const val MELDUNG_NOTAUSGANG_GESCHEITERT =
+            "❌ WECKER: auch der Notausgang scheiterte - dieser Wecker bleibt stumm."
+
+        /**
+         * Startet den Weckton-Dienst und faellt bei Ablehnung auf den Notausgang zurueck.
+         *
+         * WELCHER ABLAUF GING KAPUTT: Wird ein Wecker inexakt gestellt (das tut
+         * `AlarmManagerService.setExactOrInexact()`, wenn auf API 31/32 die Berechtigung
+         * "Alarme & Erinnerungen" fehlt), traegt sein Feuern NICHT die Vordergrunddienst-Freigabe,
+         * die exakte Alarme mitbringen: die AlarmManager-Doku sagt den Satz "Alarms scheduled via
+         * this API will be allowed to start a foreground service even if the app is in the
+         * background" ausdruecklich nur bei `setAlarmClock` und `setExactAndAllowWhileIdle`, nicht
+         * bei `setAndAllowWhileIdle` — und diese Datei haelt dieselbe Grenze in
+         * `AlarmMaintenanceService.start()` bereits als geltend fest. `startForegroundService()`
+         * wirft dann eine `ForegroundServiceStartNotAllowedException`. Vorher wurde die nur
+         * geloggt: der Wecker war damit nicht "um Minuten verzoegert", sondern vollstaendig stumm —
+         * kein Ton, keine Vibration, keine Benachrichtigung, kein Vollbild. Der Aufrufer loggte
+         * unmittelbar danach trotzdem "triggered successfully".
+         *
+         * Der Notausgang ist eine Benachrichtigung mit eigenem Weckton. Eine Benachrichtigung
+         * unterliegt den Vordergrunddienst-Startbeschraenkungen NICHT — sie ist der einzige
+         * Weckweg, der in diesem Zustand ueberhaupt noch offensteht (Details und die bewusst
+         * offene Restluecke an [posteWeckNotausgang]).
+         *
+         * Reine Funktion ohne Android-Typen, damit die Verzweigung pruefbar bleibt; die beiden
+         * Seiteneffekte kommen als Lambda herein.
+         *
+         * @return true, wenn der Vordergrunddienst wirklich gestartet wurde.
+         */
+        internal fun starteWeckerMitNotausgang(
+            starteDienst: () -> Unit,
+            notausgang: () -> Unit,
+            melde: (String, Throwable?) -> Unit
+        ): Boolean {
+            try {
+                starteDienst()
+                return true
+            } catch (e: Exception) {
+                melde(MELDUNG_DIENST_ABGELEHNT, e)
+            }
+
+            // Eigenes try/catch: der Notausgang ist der letzte Weckweg, aber sein Scheitern darf
+            // nicht als Exception aus onReceive() herauslaufen - das reisst den Prozess mit und
+            // verhindert auch noch pendingResult.finish().
+            try {
+                notausgang()
+            } catch (e: Exception) {
+                melde(MELDUNG_NOTAUSGANG_GESCHEITERT, e)
+            }
+            return false
+        }
     }
 
     // Coroutine Scope für die asynchrone onReceive-Verarbeitung (goAsync)
@@ -260,12 +341,30 @@ class AlarmReceiver : BroadcastReceiver() {
                     //   erlaubter Background-Activity-Start (AlarmManager-Broadcasts stehen NICHT
                     //   auf der Ausnahmeliste) und wird stillschweigend verworfen. Der einzige
                     //   sanktionierte Weg ist der vom System gesendete Full-Screen-PendingIntent.
-                    startAlarmSoundService(context, shiftName, shiftStartTime, alarmId, userUnlocked)
-
-                    Logger.business(
-                        LogTags.ALARM_RECEIVER,
-                        "✅ Alarm $alarmId for $shiftName triggered successfully!"
+                    // AUSNAHME: lehnt das System den Vordergrund-Start des Dienstes ab, postet der
+                    //   Receiver den Notausgang (ID 2003) - siehe posteWeckNotausgang(). Dann gibt
+                    //   es keinen Dienst, der doppeln koennte, und es waere sonst gar kein Wecker.
+                    val dienstLaeuft = startAlarmSoundService(
+                        context, shiftName, shiftStartTime, alarmId, userUnlocked
                     )
+
+                    // Die Erfolgsmeldung haengt am tatsaechlichen Ausgang. Vorher stand sie
+                    // unbedingt hier, waehrend startAlarmSoundService() den abgelehnten
+                    // Vordergrund-Start intern wegfing: im Log standen dann eine Fehlerzeile und
+                    // "triggered successfully" nebeneinander - unauswertbar genau in dem Fall, in
+                    // dem der Nutzer nicht geweckt wurde.
+                    if (dienstLaeuft) {
+                        Logger.business(
+                            LogTags.ALARM_RECEIVER,
+                            "✅ Alarm $alarmId for $shiftName triggered successfully!"
+                        )
+                    } else {
+                        Logger.w(
+                            LogTags.ALARM_RECEIVER,
+                            "⚠️ Alarm $alarmId for $shiftName: Weckton-Dienst kam nicht hoch - " +
+                                "es weckt nur der Notausgang"
+                        )
+                    }
 
                     // 🎨 HUE INTEGRATION - Execute matching light rules
                     // Läuft NACH dem Alarm-Start, damit ein langsamer Netzwerkaufruf
@@ -504,6 +603,9 @@ class AlarmReceiver : BroadcastReceiver() {
      * true - sonst waere ein CE-Storage-Read hier fatal statt bloss uebersprungen: der try/catch
      * darunter haette eine Exception (oder ein Haengen) abgefangen, ohne dass startForegroundService()
      * je erreicht wird - der Wecker bliebe nach einem Reboot vor der ersten Entsperrung stumm.
+     *
+     * @return true, wenn der Vordergrunddienst wirklich gestartet wurde; false, wenn nur der
+     *   Notausgang greift (siehe [starteWeckerMitNotausgang]).
      */
     private suspend fun startAlarmSoundService(
         context: Context,
@@ -511,30 +613,155 @@ class AlarmReceiver : BroadcastReceiver() {
         shiftStartTime: String,
         alarmId: Int,
         userUnlocked: Boolean
-    ) {
-        try {
-            val snoozeMinutes = if (userUnlocked) {
+    ): Boolean {
+        // Eigenes try/catch um den DataStore-Read: ein Lesefehler darf nicht den ganzen Weckvorgang
+        // kosten. Vorher lag er im selben try wie der Dienst-Start - warf er, wurde nur geloggt und
+        // startForegroundService() nie erreicht.
+        val snoozeMinutes = if (userUnlocked) {
+            try {
                 alarmPrefs.snoozeMinutesNow()
-            } else {
+            } catch (e: Exception) {
+                Logger.w(
+                    LogTags.ALARM_RECEIVER,
+                    "⚠️ Schlummer-Dauer nicht lesbar - Wecker laeuft mit dem Standardwert weiter",
+                    e
+                )
                 AlarmPrefs.DEFAULT_SNOOZE_MINUTES
             }
-            val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
-                action = AlarmSoundService.ACTION_START_ALARM
-                putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
-                putExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME, shiftStartTime)
-                putExtra(AlarmSoundService.EXTRA_ALARM_ID, alarmId)
-                putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, snoozeMinutes)
-            }
+        } else {
+            AlarmPrefs.DEFAULT_SNOOZE_MINUTES
+        }
 
+        val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
+            action = AlarmSoundService.ACTION_START_ALARM
+            putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
+            putExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME, shiftStartTime)
+            putExtra(AlarmSoundService.EXTRA_ALARM_ID, alarmId)
+            putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, snoozeMinutes)
+        }
+
+        val gestartet = starteWeckerMitNotausgang(
             // minSdk = 26, startForegroundService ist immer verfuegbar.
-            context.startForegroundService(serviceIntent)
+            starteDienst = { context.startForegroundService(serviceIntent) },
+            notausgang = { posteWeckNotausgang(context, shiftName, shiftStartTime, alarmId) },
+            melde = { text, fehler -> Logger.w(LogTags.ALARM_RECEIVER, text, fehler) }
+        )
+
+        if (gestartet) {
             Logger.business(
                 LogTags.ALARM_RECEIVER,
                 "✅ AlarmSoundService started as foreground service (API ${Build.VERSION.SDK_INT})"
             )
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM_RECEIVER, "❌ Failed to start AlarmSoundService", e)
         }
+        return gestartet
+    }
+
+    /**
+     * DER NOTAUSGANG: weckt ohne Vordergrunddienst.
+     *
+     * Warum das kein zweiter Wecker-Besitzer ist: diese Funktion laeuft ausschliesslich, nachdem
+     * [starteWeckerMitNotausgang] den Vordergrund-Start als abgelehnt gesehen hat - der
+     * [AlarmSoundService] laeuft in diesem Moment nachweislich NICHT, es gibt also nichts zu
+     * doppeln. Eigener Channel, eigene ID (2003), damit der Dienst seinen Slot 2002 unveraendert
+     * behaelt, falls er auf einem anderen Weg doch noch hochkommt.
+     *
+     * BEWUSST OHNE FULL-SCREEN-INTENT AUF [AlarmFullScreenActivity], und das ist kein Versehen:
+     * die Activity beobachtet `AlarmSoundService.alarmActive` und schliesst sich, sobald der Wert
+     * false ist (observeAlarmState dort). Genau das ist er hier - der Dienst
+     * ist ja nicht gestartet. Ein Full-Screen-Intent haette den Weck-Bildschirm also aufblitzen
+     * und im selben Moment wieder verschwinden lassen; ein Vollbild, das sich selbst schliesst,
+     * ist der Fehler, den dieses Projekt schon einmal tagelang gesucht hat. Es bleibt die
+     * Heads-up-Benachrichtigung auf einem IMPORTANCE_HIGH-Channel mit Weckton (USAGE_ALARM,
+     * kommt damit auch durch "Nicht stoeren") und Vibration - laut, sichtbar auf dem
+     * Sperrbildschirm, und ohne den Ausschalt-Knopf zu verlieren.
+     *
+     * BEWUSST OHNE FLAG_INSISTENT (Dauerklingeln): abschalten liesse sich das nur ueber genau
+     * diese Benachrichtigung, und der Nutzer sucht den Ausschalter im Weck-Bildschirm. Ein
+     * Wecker, den man nicht ausbekommt, ist schlimmer als einer, der einmal laut wird.
+     *
+     * RESTLUECKE, bewusst und benannt: der Weck-BILDSCHIRM kommt in diesem Zweig nicht. Ihn hier
+     * ebenfalls hochzuziehen, hiesse den "Wecker laeuft"-Zustand ohne den Dienst herstellen zu
+     * koennen - ein Umbau an [AlarmSoundService]/[AlarmFullScreenActivity], nicht an dieser Datei.
+     */
+    private fun posteWeckNotausgang(
+        context: Context,
+        shiftName: String,
+        shiftStartTime: String,
+        alarmId: Int
+    ) {
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // Channel MUSS vor dem Posten existieren (siehe showSkipNotification), und er MUSS
+        // IMPORTANCE_HIGH tragen: darunter ignoriert das System den Full-Screen-Intent - und der
+        // ist hier der einzige verbliebene Weckweg.
+        notificationManager.createNotificationChannel(
+            android.app.NotificationChannel(
+                NOTAUSGANG_CHANNEL_ID,
+                "Wecker-Notausgang",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description =
+                    "Weckt, wenn der Weckton-Dienst vom System nicht gestartet werden durfte"
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                        ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 800, 400, 800, 400, 800)
+                setBypassDnd(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+        )
+
+        val oeffneApp = PendingIntent.getActivity(
+            context,
+            // Eigener Slot: AlarmSoundService benutzt fuer seinen Vollbild-PendingIntent
+            // requestCode = alarmId. Derselbe Code plus FLAG_UPDATE_CURRENT wuerde dessen Intent
+            // ueberschreiben, sobald der Dienst spaeter doch noch startet.
+            alarmId + NOTAUSGANG_REQUEST_CODE_OFFSET,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_ALARM_ID, alarmId)
+                putExtra(EXTRA_SHIFT_NAME, shiftName)
+                setPackage(context.packageName)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Leere Uhrzeit sauber abfangen statt "Deine Schicht beginnt um " anzuzeigen - gleiche
+        // Behandlung wie in AlarmSoundService.
+        val text = if (shiftStartTime.isBlank()) {
+            context.getString(R.string.alarm_notification_text_no_time)
+        } else {
+            context.getString(R.string.alarm_notification_text, shiftStartTime)
+        }
+
+        val notification = NotificationCompat.Builder(context, NOTAUSGANG_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(context.getString(R.string.alarm_notification_title, shiftName))
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setContentIntent(oeffneApp)
+            .build()
+
+        notificationManager.notify(NOTAUSGANG_NOTIFICATION_ID, notification)
+
+        // WARN, damit die Zeile im Release-Log steht (dort landet nur WARN+): ohne sie waere
+        // spaeter nicht unterscheidbar, ob der Wecker gar nicht feuerte oder ob er feuerte und
+        // nur der Vordergrunddienst abgelehnt wurde.
+        Logger.w(
+            LogTags.ALARM_RECEIVER,
+            "⚠️ WECKER: Notausgang gestellt (Weckton-Benachrichtigung) fuer Alarm " +
+                "$alarmId/$shiftName - kein Dauerton und kein Weck-Bildschirm, weil der " +
+                "AlarmSoundService nicht starten durfte"
+        )
     }
 }

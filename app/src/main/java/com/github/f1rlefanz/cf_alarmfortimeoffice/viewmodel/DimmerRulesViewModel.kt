@@ -90,7 +90,7 @@ class DimmerRulesViewModel @Inject constructor(
      * Der Bedienungshilfen-Dienst muss aktiv sein. Danach den regulären Zustand wiederherstellen.
      *
      * **Das Aufräumen darf NICHT am `viewModelScope` hängen** — exakt dieselbe Falle wie in
-     * [DimmerViewModel.previewDim], hier ein zweites Mal. `setActiveOverlay(true, …)` schreibt
+     * [DimmerViewModel.previewDim], hier ein zweites Mal. `setPreviewOverlay(…)` schreibt
      * einen PERSISTENTEN Zustand; `DimAccessibilityService` beobachtet nur
      * `DimOverlayPrefs.renderState` und hat eine vom ViewModel völlig unabhängige Lebensdauer.
      * Wird der `viewModelScope` während des `delay()` gecancelt (Nutzer verlässt die App
@@ -103,6 +103,12 @@ class DimmerRulesViewModel @Inject constructor(
      * `finally` (greift auch bei Exception und Cancellation) und dort `NonCancellable`.
      * Vorbild ist `HueLightUseCase.followUpScope` — auch dort muss das Aufräumen feuern, wenn
      * der auslösende Bildschirm längst verlassen wurde.
+     *
+     * Und ebenfalls wie nebenan: die drei decken nur Coroutine-Cancellation ab. Ein PROZESSTOD im
+     * Vorschau-Fenster führt kein `finally` aus, der neu gebundene `DimAccessibilityService` liest
+     * den persistierten `overlayOn = true` und verdunkelt weiter. Deshalb schreibt
+     * [DimOverlayPrefs.setPreviewOverlay] den Ablaufzeitpunkt mit auf die Platte — jeder spätere
+     * Leser setzt das Ende der Vorschau dann von allein durch.
      */
     fun previewRule(strength: Int, warmth: Int, seconds: Int = 5): Job {
         val running = previewJob
@@ -110,9 +116,14 @@ class DimmerRulesViewModel @Inject constructor(
             // Eine noch laufende Vorschau ZUERST zu Ende aufräumen lassen: sonst schaltet deren
             // finally die gerade neu eingeschaltete Vorschau sofort wieder aus.
             running?.cancelAndJoin()
+            val durationMs = seconds * 1000L
             try {
-                prefs.setActiveOverlay(true, strength, warmth)
-                delay(seconds * 1000L)
+                prefs.setPreviewOverlay(
+                    strength,
+                    warmth,
+                    System.currentTimeMillis() + durationMs + DimOverlayPrefs.PREVIEW_EXPIRY_GRACE_MS
+                )
+                delay(durationMs)
             } finally {
                 withContext(NonCancellable) { dimSchedule.applyCurrentState() }
             }

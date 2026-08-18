@@ -30,10 +30,83 @@ import javax.inject.Singleton
 data class CalendarItem(val id: String, val displayName: String)
 
 /**
+ * Eine Antwortseite der Google-Calendar-API: ihre Eintraege und der Token auf die naechste Seite.
+ */
+internal data class ApiPage<T>(
+    val items: List<T>,
+    val nextPageToken: String?
+)
+
+/**
+ * Holt ALLE Seiten einer Google-Calendar-Abfrage und gibt sie in Antwortreihenfolge zurueck.
+ *
+ * WARUM DAS KEIN EFFIZIENZTHEMA IST, SONDERN EINE ZUSICHERUNG:
+ * Bis v1.27.0 fragte der Event-Abruf genau EINE Seite mit `maxResults = 50` ab und forderte
+ * `nextPageToken` nicht einmal an. Eine abgeschnittene Liste war damit von einer vollstaendigen
+ * nicht zu unterscheiden - und sie erreichte ueber `CalendarFetchOutcome.isComplete == true` die
+ * loeschenden Konsumenten. Dort heisst "kein Event mit dieser id" gleichbedeutend "Termin
+ * geloescht": `syncAlarms()` cancelt den Systemalarm, loescht ihn aus Repository und
+ * Direct-Boot-Spiegel und meldet "Schicht entfernt". Die Regel der CLAUDE.md - eine unvollstaendige
+ * Eventliste ist KEINE Loeschgrundlage - kannte bis dahin nur zwei Quellen der Unvollstaendigkeit
+ * (Teilerfolg einzelner Kalender, Lazy-Praefix); die Kappung bei 50 Treffern war eine dritte, die
+ * keine der Sperren sehen konnte.
+ *
+ * WARUM DER ABBRUCH WIRFT STATT ZU KUERZEN:
+ * Ist nach [maxPages] Seiten noch ein Token offen, waere das Ergebnis wieder eine still gekuerzte
+ * Liste. Der Wurf laeuft stattdessen als Fehler DIESES Kalenders in
+ * `CalendarUseCase.getCalendarEventsWithStatus()`, landet dort in `failedCalendarIds` und macht
+ * `isComplete` zu false - die vorhandenen Sperren greifen, es wird nichts geloescht, und die
+ * Status-Karte nennt den betroffenen Kalender namentlich. Genau der Kanal, den die App fuer
+ * "unvollstaendig" schon hat.
+ */
+internal suspend fun <T> collectAllPages(
+    maxPages: Int,
+    label: String,
+    fetchPage: suspend (pageToken: String?) -> ApiPage<T>
+): List<T> {
+    require(maxPages > 0) { "maxPages muss mindestens 1 sein" }
+
+    val collected = mutableListOf<T>()
+    var pageToken: String? = null
+    var pagesFetched = 0
+
+    while (true) {
+        val page = fetchPage(pageToken)
+        collected.addAll(page.items)
+        pagesFetched++
+
+        // Ein leerer Token ist kein Token: Google liefert das Feld bei der letzten Seite gar
+        // nicht - eine leere Zeichenkette waere eine Endlosschleife auf derselben Seite.
+        pageToken = page.nextPageToken?.takeIf { it.isNotBlank() }
+
+        if (pageToken == null) break
+
+        if (pagesFetched >= maxPages) {
+            throw AppError.CalendarAccessError(
+                "$label: nach $pagesFetched Seiten sind weitere Eintraege offen - der Abruf waere " +
+                    "abgeschnitten und darf deshalb nicht als vollstaendig gelten"
+            )
+        }
+    }
+
+    if (pagesFetched > 1) {
+        Logger.i(
+            LogTags.CALENDAR_API,
+            "$label: ${collected.size} Eintraege ueber $pagesFetched Seiten geladen"
+        )
+    }
+
+    return collected
+}
+
+/**
  * CalendarRepository implementiert ICalendarRepository Interface
- * mit ETag-basiertem Event-Caching für die Google-Calendar-Anbindung.
- * 
- * Event-Caching reduziert unnötige Google-Calendar-API-Aufrufe.
+ * für die Google-Calendar-Anbindung.
+ *
+ * Der kurzlebige [CalendarEventCache] fasst nur Abrufe DESSELBEN Bedienvorgangs zusammen; jeder
+ * Abruf, der wirklich an die API geht, holt ALLE Seiten des 14-Tage-Fensters ([collectAllPages]).
+ * Beides hängt zusammen: was dieses Repository zurückgibt, gilt weiter oben als vollständige Liste
+ * und ist damit eine Löschgrundlage für `syncAlarms()`.
  */
 @Singleton
 class CalendarRepository @Inject constructor(
@@ -59,30 +132,36 @@ class CalendarRepository @Inject constructor(
             val service = getCalendarService(accessToken)
 
             try {
-                val calendarList: CalendarList = service.calendarList().list()
-                    .setFields("items(id,summary,primary,accessRole)")
-                    .setMinAccessRole("reader")
-                    .execute()
-
-                Logger.d(LogTags.CALENDAR_API, "Calendar API response received: ${calendarList.items?.size ?: 0} items")
-                
-                if (calendarList.items.isNullOrEmpty()) {
-                    Logger.w(LogTags.CALENDAR_API, "No calendars found in Google Calendar API response")
-                    Logger.d(LogTags.CALENDAR_API, "Full API response: $calendarList")
-                    Logger.i(LogTags.CALENDAR_API, "DIAGNOSTIC: User account appears to have no calendars or calendar access is restricted")
-                    
-                    // Enhanced diagnostic logging
-                    Logger.d(LogTags.CALENDAR_API, "DIAGNOSTIC: API Response Details:")
-                    Logger.d(LogTags.CALENDAR_API, "  - ETag: ${calendarList.etag}")
-                    Logger.d(LogTags.CALENDAR_API, "  - Kind: ${calendarList.kind}")
-                    Logger.d(LogTags.CALENDAR_API, "  - NextPageToken: ${calendarList.nextPageToken}")
-                    Logger.d(LogTags.CALENDAR_API, "  - NextSyncToken: ${calendarList.nextSyncToken}")
-                } else {
-                    Logger.d(LogTags.CALENDAR_API, "Found calendars: ${calendarList.items.map { "${it.summary} (${it.id})" }}")
-                    Logger.i(LogTags.CALENDAR_API, "DIAGNOSTIC: Successfully loaded ${calendarList.items.size} calendars")
+                // ALLE SEITEN, nicht nur die erste: `calendarList().list()` liefert ohne
+                // Seitenschleife nur die Google-Standardseite (100 Eintraege), und `nextPageToken`
+                // fehlte bis v1.27.0 sogar in der Feldmaske - die Diagnose-Ausgabe darunter loggte
+                // also einen Wert, der garantiert null war und eine Kuerzung nie anzeigen konnte.
+                // Ein so verschluckter Kalender fehlt in der Auswahl, ohne jeden Hinweis.
+                val calendarEntries = collectAllPages(
+                    maxPages = CalendarConstants.MAX_CALENDAR_LIST_PAGES,
+                    label = "Kalenderliste"
+                ) { pageToken ->
+                    val request = service.calendarList().list()
+                        .setFields("items(id,summary,primary,accessRole),nextPageToken")
+                        .setMinAccessRole("reader")
+                    if (pageToken != null) {
+                        request.setPageToken(pageToken)
+                    }
+                    val page: CalendarList = request.execute()
+                    ApiPage(page.items ?: emptyList(), page.nextPageToken)
                 }
 
-                val calendars = calendarList.items?.mapNotNull { calendarEntry ->
+                Logger.d(LogTags.CALENDAR_API, "Calendar API response received: ${calendarEntries.size} items")
+
+                if (calendarEntries.isEmpty()) {
+                    Logger.w(LogTags.CALENDAR_API, "No calendars found in Google Calendar API response")
+                    Logger.i(LogTags.CALENDAR_API, "DIAGNOSTIC: User account appears to have no calendars or calendar access is restricted")
+                } else {
+                    Logger.d(LogTags.CALENDAR_API, "Found calendars: ${calendarEntries.map { "${it.summary} (${it.id})" }}")
+                    Logger.i(LogTags.CALENDAR_API, "DIAGNOSTIC: Successfully loaded ${calendarEntries.size} calendars")
+                }
+
+                val calendars = calendarEntries.mapNotNull { calendarEntry ->
                     try {
                         CalendarItem(
                             id = calendarEntry.id ?: return@mapNotNull null,
@@ -92,7 +171,7 @@ class CalendarRepository @Inject constructor(
                         Logger.w(LogTags.CALENDAR_API, "Failed to parse calendar entry", e)
                         null
                     }
-                } ?: emptyList()
+                }
 
                 Logger.i(LogTags.CALENDAR_API, "${calendars.size} calendars loaded successfully")
                 calendars
@@ -143,68 +222,46 @@ class CalendarRepository @Inject constructor(
                     .toInstant()
                     .toString()
 
-                // ETag-Support: Get cached ETag for conditional request
+                // DIESE LISTE MUSS VOLLSTAENDIG SEIN - sie ist eine Loeschgrundlage.
                 //
-                // BEI forceRefresh KEIN ETag - sonst laeuft der erzwungene Lauf genau in den
-                // Cache, den er umgehen soll. Bis v1.26.2 uebersprang forceRefresh nur den
-                // Cache-READ oben; der ETag ging trotzdem mit, Google antwortete mit 304, und der
-                // 304-Zweig unten lieferte eben doch die gecachten Events zurueck.
-                //
-                // Das ist kein Schoenheitsfehler: CalendarEvent haelt start/end als LocalDateTime,
-                // also eingefroren in der Zone, die beim Abruf galt. Genau deshalb erzwingt
-                // TimezoneChangeReceiver einen Lauf mit forceSync -> forceRefresh. Der Inhalt des
-                // Kalenders hat sich durch den Zonenwechsel aber NICHT geaendert, der ETag passt
-                // also weiterhin - und der Wecker behielt die alten Wanduhrzeiten, um den vollen
-                // Zonenversatz daneben. Ausgerechnet auf dem Pfad, der den Fehler beheben sollte.
-                val cachedEtag = if (forceRefresh) null else eventCache.getETag(calendarId)
+                // Bis v1.27.0 stand hier eine EINZELNE Abfrage mit `setMaxResults(50)`, und
+                // `nextPageToken` fehlte in der Feldmaske: eine bei 50 Treffern abgeschnittene
+                // Liste war von einer vollstaendigen nicht zu unterscheiden. Sie wanderte
+                // unveraendert in `CalendarFetchOutcome`, dessen `isComplete` nur nach
+                // fehlgeschlagenen Kalendern fragt - der gekappte Abruf galt also als
+                // VOLLSTAENDIG. Genau das ist in dieser App die Erlaubnis zu loeschen:
+                // `syncAlarms()` entfernt jeden Alarm, dessen eventId in der Liste fehlt, cancelt
+                // den Systemalarm, raeumt den Direct-Boot-Spiegel und meldet dem Nutzer "Schicht
+                // entfernt" - obwohl der Termin unveraendert im Kalender steht. Ein Kalender mit
+                // mehr als 50 Terminen in 14 Tagen (Dienstplan plus private Eintraege) reicht.
+                val rawEvents = collectAllPages(
+                    maxPages = CalendarConstants.MAX_EVENT_PAGES_PER_CALENDAR,
+                    label = "Events von Kalender ${calendarId.take(8)}..."
+                ) { pageToken ->
+                    val request = service.events().list(calendarId)
+                        .setTimeMin(com.google.api.client.util.DateTime(timeMin))
+                        .setTimeMax(com.google.api.client.util.DateTime(timeMax))
+                        .setOrderBy("startTime")
+                        .setSingleEvents(true)
+                        .setMaxResults(CalendarConstants.EVENTS_PER_API_PAGE)
+                        .setFields("items(id,summary,start,end),nextPageToken")
 
-                val request = service.events().list(calendarId)
-                    .setTimeMin(com.google.api.client.util.DateTime(timeMin))
-                    .setTimeMax(com.google.api.client.util.DateTime(timeMax))
-                    .setOrderBy("startTime")
-                    .setSingleEvents(true)
-                    .setMaxResults(CalendarConstants.MAX_EVENTS_PER_QUERY)
-                    .setFields("items(id,summary,start,end),etag")
-
-                // Add If-None-Match header if we have a cached ETag
-                if (cachedEtag != null) {
-                    request.requestHeaders.set("If-None-Match", cachedEtag)
-                    Logger.d(LogTags.CALENDAR_API, "Using ETag for conditional request: ${cachedEtag.take(20)}...")
-                }
-
-                val result: Events = try {
-                    request.execute()
-                } catch (e: GoogleJsonResponseException) {
-                    // Handle 304 Not Modified response
-                    if (e.statusCode == 304) {
-                        Logger.i(LogTags.CALENDAR_API, "304 Not Modified - using cached data")
-                        val cachedEvents = eventCache.get(calendarId)
-                        if (cachedEvents != null) {
-                            return@safeExecute cachedEvents
-                        }
-                        // Fallback if cache was cleared - re-fetch without ETag
-                        Logger.w(LogTags.CALENDAR_API, "Cache miss despite 304 - refetching without ETag")
-                        request.requestHeaders.remove("If-None-Match")
-                        request.execute()
-                    } else {
-                        throw e
+                    if (pageToken != null) {
+                        request.setPageToken(pageToken)
                     }
+
+                    val page: Events = request.execute()
+                    ApiPage(page.items ?: emptyList(), page.nextPageToken)
                 }
 
-                val events = result.items ?: emptyList()
-                Logger.i(LogTags.CALENDAR_API, "${events.size} events loaded for next $daysAhead days")
+                Logger.i(LogTags.CALENDAR_API, "${rawEvents.size} events loaded for next $daysAhead days")
 
                 // PERFORMANCE: Use optimized event processing
-                val calendarEvents = processEventsWithOptimization(events, calendarId)
-                
-                // Store events with ETag for future conditional requests
-                val newEtag = result.etag
-                if (newEtag != null) {
-                    Logger.d(LogTags.CALENDAR_API, "Received new ETag: ${newEtag.take(20)}...")
-                }
-                eventCache.put(calendarId, calendarEvents, newEtag)
-                Logger.d(LogTags.CALENDAR_CACHE, "${calendarEvents.size} events cached with ETag for future requests")
-                
+                val calendarEvents = processEventsWithOptimization(rawEvents, calendarId)
+
+                eventCache.put(calendarId, calendarEvents)
+                Logger.d(LogTags.CALENDAR_CACHE, "${calendarEvents.size} events cached for follow-up requests")
+
                 calendarEvents
             } catch (e: Exception) {
                 throw mapCalendarException(e)
@@ -238,41 +295,13 @@ class CalendarRepository @Inject constructor(
                     .setOrderBy("startTime")
                     .setSingleEvents(true)
                     .setMaxResults(maxResults)
-                    .setFields("items(id,summary,start,end),nextPageToken,etag")
+                    .setFields("items(id,summary,start,end),nextPageToken")
 
                 if (pageToken != null) {
                     eventsRequest.pageToken = pageToken
                 }
-                
-                // ETag-Support for pagination requests
-                val cachedEtag = eventCache.getETag(calendarId)
-                if (cachedEtag != null && pageToken == null) { // Only use ETag on first page
-                    eventsRequest.requestHeaders.set("If-None-Match", cachedEtag)
-                    Logger.d(LogTags.CALENDAR_API, "Using ETag for conditional pagination request: ${cachedEtag.take(20)}...")
-                }
 
-                val result = try {
-                    eventsRequest.execute()
-                } catch (e: GoogleJsonResponseException) {
-                    // Handle 304 Not Modified response
-                    if (e.statusCode == 304) {
-                        Logger.i(LogTags.CALENDAR_API, "304 Not Modified - using cached data for pagination")
-                        val cachedEvents = eventCache.get(calendarId)
-                        if (cachedEvents != null) {
-                            return@safeExecute EventsPage(
-                                events = cachedEvents,
-                                nextPageToken = null,
-                                hasMorePages = false
-                            )
-                        }
-                        // Fallback if cache was cleared - re-fetch without ETag
-                        Logger.w(LogTags.CALENDAR_API, "Cache miss despite 304 - refetching without ETag")
-                        eventsRequest.requestHeaders.remove("If-None-Match")
-                        eventsRequest.execute()
-                    } else {
-                        throw e
-                    }
-                }
+                val result = eventsRequest.execute()
                 val events = result.items ?: emptyList()
                 val nextPageToken = result.nextPageToken
 
@@ -280,13 +309,16 @@ class CalendarRepository @Inject constructor(
 
                 // PERFORMANCE: Use optimized event processing
                 val calendarEvents = processEventsWithOptimization(events, calendarId)
-                
-                // Store first page with ETag for future conditional requests
-                if (pageToken == null && result.etag != null) {
-                    Logger.d(LogTags.CALENDAR_API, "Caching first page with ETag: ${result.etag.take(20)}...")
-                    eventCache.put(calendarId, calendarEvents, result.etag)
-                }
-                
+
+                // BEWUSST KEIN eventCache.put HIER.
+                //
+                // Diese Funktion liefert eine SEITE, der Cache aber beantwortet die Frage "alle
+                // Events der naechsten 14 Tage". Bis v1.27.0 legte die erste Seite ihr Ergebnis
+                // unter demselben Schluessel ab, aus dem getCalendarEventsWithCache liest - eine
+                // bewusst partielle Seite waere dort zur vollstaendigen Liste geworden und damit
+                // zur Loeschgrundlage fuer syncAlarms(). Aktuell hat die Funktion keinen
+                // Produktivaufrufer; wer sie verdrahtet, soll die Falle nicht miterben.
+
                 EventsPage(
                     events = calendarEvents,
                     nextPageToken = nextPageToken,
@@ -362,6 +394,11 @@ class CalendarRepository @Inject constructor(
     private fun mapCalendarException(e: Exception): AppError {
         Logger.e(LogTags.CALENDAR_API, "Calendar API error", e)
         return when (e) {
+            // Ein bereits klassifizierter Fehler bleibt, was er ist. Ohne diesen Zweig landete
+            // z.B. der Abbruch von collectAllPages ("Liste waere abgeschnitten") im else-Fall und
+            // wurde zu einem nichtssagenden UnknownError - die Meldung an den Nutzer haette dann
+            // nicht mehr gesagt, WELCHER Kalender warum nicht vollstaendig gelesen werden konnte.
+            is AppError -> e
             is GoogleJsonResponseException -> {
                 when {
                     e.statusCode == 401 -> AppError.AuthenticationError("Google Calendar authentication failed")

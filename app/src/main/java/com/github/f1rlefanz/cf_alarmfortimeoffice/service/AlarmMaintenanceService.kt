@@ -16,6 +16,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
@@ -56,6 +57,14 @@ import javax.inject.Inject
 interface AlarmMaintenanceEntryPoint {
     @MainDataStore
     fun mainDataStore(): DataStore<Preferences>
+
+    /**
+     * Der Device-Protected-Spiegel der Master-Pause — synchron lesbar und damit der einzige Weg,
+     * den Pausenzustand in einem `onReceive()` zu pruefen (`MasterPausePrefs` liegt im
+     * CE-Storage und ist nur suspendierend lesbar). Gebraucht vom
+     * [AlarmMaintenanceBroadcastReceiver], wenn der Wiederanlauf-Wachhund feuert.
+     */
+    fun directBootAlarmStore(): DirectBootAlarmStore
 }
 
 /**
@@ -134,6 +143,128 @@ internal object MaintenanceLoadDecision {
      * gar keiner).
      */
     fun shouldSyncAfterLoad(loadedEventCount: Int): Boolean = loadedEventCount > 0
+}
+
+/**
+ * Die Slots und Zeitpunkte der 6h-Wartungskette — Android-frei und als eigenes Top-Level-Objekt,
+ * aus demselben Grund wie [MaintenanceLoadDecision]: pruefbar ohne das Laden einer
+ * `android.app.Service`-Ableitung.
+ */
+internal object WartungsKettenPlanung {
+
+    /**
+     * Request-Code der 6h-Wartungskette. EINE Kette, EIN Slot — siehe
+     * [AlarmMaintenanceService.scheduleNext].
+     *
+     * 0 ist der Wert, den BootReceiver, BackgroundServiceManager und MainScreen schon immer
+     * benutzt haben; die zweite Kette lief auf 9999 und ist weg.
+     */
+    const val REGULAER_REQUEST_CODE = 0
+
+    /**
+     * EIGENER Slot fuer den Nachhol-Alarm aus [AlarmMaintenanceService.start], bewusst NICHT
+     * [REGULAER_REQUEST_CODE].
+     *
+     * Das ist kein zweiter Planer der 6h-Kette (die Invariante dazu in CLAUDE.md gilt weiter):
+     * dieser Alarm ist EINMALIG, plant sich nicht selbst nach und traegt deshalb einen eigenen
+     * Code, damit er den einzigen Slot der rollierenden Kette nicht ueberschreibt. Wuerde er
+     * Code 0 benutzen, ersetzte er den geplanten naechsten Wartungslauf - der Nachhol-Versuch
+     * wuerde die Kette also um Stunden nach vorn ziehen und damit still veraendern.
+     */
+    const val NACHHOL_REQUEST_CODE = 8801
+
+    /**
+     * EIGENER Slot fuer den Wiederanlauf-Wachhund — er haelt die Kette am Leben, wenn dem Geraet
+     * ihr einziger Alarm unter den Haenden geloescht wurde.
+     *
+     * WELCHER ABLAUF GING KAPUTT: Entzieht der Nutzer auf API 31/32 die Berechtigung
+     * "Alarme & Erinnerungen" (dort haengt sie an SCHEDULE_EXACT_ALARM und ist jederzeit
+     * entziehbar; ab API 33 traegt die App USE_EXACT_ALARM und der Fall existiert nicht), dann
+     * loescht das System laut AlarmManager-Doku ALLE mit setExact, setExactAndAllowWhileIdle und
+     * setAlarmClock gestellten Alarme — also auch den EINEN auf [REGULAER_REQUEST_CODE], an dem
+     * die gesamte Kette haengt. Einen Broadcast gibt es dabei nicht ("This broadcast will *not* be
+     * sent when the user revokes the permission"), und alle Aufrufer von
+     * [AlarmMaintenanceService.start]/[AlarmMaintenanceService.scheduleNext] setzen Boot,
+     * Zeitzonenwechsel oder ein Oeffnen der App voraus. Ohne diesen Wachhund war die Wartung bis
+     * zum naechsten Neustart tot: keine neuen Wecker, kein Kalender-Sync, kein Dimmer-/DND-Tick —
+     * und nichts davon sichtbar.
+     *
+     * WARUM DAS KEIN ZWEITER PLANER IST (die CLAUDE.md-Invariante gilt weiter): der Wachhund wird
+     * ausschliesslich in [AlarmMaintenanceService.scheduleNext] gestellt, liegt IMMER
+     * [WACHHUND_KARENZ_MINUTEN] HINTER dem regulaeren Lauf und wird von jedem erfolgreichen Lauf
+     * mitverschoben. Feuert der regulaere Alarm, ist der Wachhund laengst wieder in der Zukunft,
+     * bevor er drankaeme — zwei parallele Zyklen koennen so nicht entstehen. Er feuert nur, wenn
+     * der regulaere Alarm gar nicht mehr da ist.
+     *
+     * WARUM INEXAKT GESTELLT: genau darum. `setAndAllowWhileIdle` steht NICHT auf der Loeschliste
+     * des Berechtigungsentzugs — ein exakt gestellter Wachhund waere mit demselben Handgriff
+     * mitgeloescht worden und damit wertlos.
+     *
+     * WAS ER LEISTET UND WAS NICHT (hier stand vorher zu viel): Ein inexakt gestellter Alarm
+     * traegt beim Feuern KEINE Vordergrunddienst-Startfreigabe — nur ein EXAKTER Alarm steht auf
+     * Androids Ausnahmeliste (dieselbe Grenze begruendet den Weck-Notausgang in `AlarmReceiver`
+     * und den Fallback in `AlarmManagerService`). Im Zielzustand des Wachhunds ist die
+     * Exact-Alarm-Berechtigung aber gerade entzogen. Sein Feuern kann den Wartungslauf also NICHT
+     * erzwingen; abgewiesen wuerde er mit `ForegroundServiceStartNotAllowedException`.
+     *
+     * Was er tut, ist das, was aus dem Hintergrund immer erlaubt ist: er zieht die Kette wieder
+     * auf ([AlarmMaintenanceService.scheduleNext] ist reine AlarmManager-Arbeit). Damit ist der
+     * Slot kein Einweg-Slot mehr, und in dem Moment, in dem die Berechtigung zurueckkommt, stellt
+     * derselbe Weg wieder EXAKTE Alarme — und deren Feuern darf den Dienst dann auch starten. Den
+     * sofortigen Wiederanlauf im Vordergrund leistet die Statuskarte
+     * (`ui/screens/tabs/StatusPermissionCards.kt`), nicht dieser Wachhund.
+     */
+    const val WACHHUND_REQUEST_CODE = 8802
+
+    const val INTERVALL_STUNDEN = 6L
+
+    /**
+     * Abstand des Wachhunds zum regulaeren Lauf.
+     *
+     * Nicht kleiner: ein normaler Wartungslauf (Token-Refresh -> Kalender -> Alarme) muss fertig
+     * werden und in seinem `finally` [AlarmMaintenanceService.scheduleNext] erreicht haben, bevor
+     * der Wachhund drankaeme — sonst startet er den Service ein zweites Mal.
+     */
+    const val WACHHUND_KARENZ_MINUTEN = 30L
+
+    /**
+     * Die beiden Zeitpunkte EINER Runde. Faellt der Abstand auf null, feuert der Wachhund zusammen
+     * mit dem regulaeren Lauf und erzeugt genau die zwei parallelen Zyklen, gegen die die
+     * Ein-Planer-Invariante existiert.
+     */
+    data class Zeitpunkte(val regulaer: Long, val wiederanlauf: Long)
+
+    fun zeitpunkte(jetzt: Long): Zeitpunkte {
+        val regulaer = jetzt + TimeUnit.HOURS.toMillis(INTERVALL_STUNDEN)
+        return Zeitpunkte(
+            regulaer = regulaer,
+            wiederanlauf = regulaer + TimeUnit.MINUTES.toMillis(WACHHUND_KARENZ_MINUTEN)
+        )
+    }
+
+    /** Obergrenze fuer die Nachholversuche aus [AlarmMaintenanceService.start]. */
+    const val MAX_NACHHOLVERSUCHE = 2
+
+    /**
+     * Darf ein abgelehnter Vordergrund-Start per Alarm nachgeholt werden?
+     *
+     * WELCHER ABLAUF OHNE DIESE BREMSE ENTSTAND: Der Nachholversuch war der Rueckfallpfad von
+     * [AlarmMaintenanceService.start] und wurde OHNE Zaehler und OHNE Bedingung gestellt — bei
+     * fehlender Exact-Alarm-Berechtigung eben inexakt. Nur traegt ein inexakt gestellter Alarm
+     * beim Feuern KEINE Vordergrunddienst-Startfreigabe (siehe [WACHHUND_REQUEST_CODE]). Der
+     * nachgeholte Start wurde also erneut abgewiesen, stellte den naechsten Nachholversuch, wurde
+     * abgewiesen ... — eine sich selbst erhaltende RTC_WAKEUP-Schleife, die das Geraet dauerhaft
+     * weckt, ohne je Erfolg zu haben. Aus "Wartung steht still" wurde "Wartung steht still UND
+     * der Akku laeuft leer".
+     *
+     * Deshalb zwei Bedingungen: nachgeholt wird nur, was EXAKT gestellt werden kann (nur das
+     * traegt die Freigabe) — und hoechstens [MAX_NACHHOLVERSUCHE] Mal, falls der Start aus einem
+     * anderen Grund dauerhaft scheitert. Ohne Berechtigung ist die Wartung fuer diesen Anlass
+     * verloren; zurueck kommt sie ueber den Wachhund und die Statuskarte, nicht ueber Wecken im
+     * 10-Sekunden-Takt.
+     */
+    fun darfNachholen(bisherigeVersuche: Int, kannExakteAlarme: Boolean): Boolean =
+        kannExakteAlarme && bisherigeVersuche < MAX_NACHHOLVERSUCHE
 }
 
 /**
@@ -250,29 +381,11 @@ class AlarmMaintenanceService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "alarm_maintenance"
         private const val NOTIFICATION_ID = 1001
 
-        /**
-         * Request-Code der 6h-Wartungskette. EINE Kette, EIN Slot — siehe [scheduleNext].
-         *
-         * 0 ist der Wert, den BootReceiver, BackgroundServiceManager und MainScreen schon immer
-         * benutzt haben; die zweite Kette lief auf 9999 und ist weg.
-         */
-        private const val MAINTENANCE_ALARM_REQUEST_CODE = 0
-
-        /**
-         * EIGENER Slot fuer den Nachhol-Alarm aus [start], bewusst NICHT
-         * [MAINTENANCE_ALARM_REQUEST_CODE].
-         *
-         * Das ist kein zweiter Planer der 6h-Kette (die Invariante dazu in CLAUDE.md gilt weiter):
-         * dieser Alarm ist EINMALIG, plant sich nicht selbst nach und traegt deshalb einen eigenen
-         * Code, damit er den einzigen Slot der rollierenden Kette nicht ueberschreibt. Wuerde er
-         * Code 0 benutzen, ersetzte er den geplanten naechsten Wartungslauf - der Nachhol-Versuch
-         * wuerde die Kette also um Stunden nach vorn ziehen und damit still veraendern.
-         */
-        private const val MAINTENANCE_CATCHUP_REQUEST_CODE = 8801
+        // Slots, Intervall und Karenz der Kette liegen in WartungsKettenPlanung - Android-frei und
+        // damit pruefbar. Der Wachhund-Slot dort traegt die Begruendung, warum es ihn gibt.
 
         /** Kurz, aber nicht sofort: der Wurf kommt aus dem Hintergrund, ein Alarm darf das. */
         private const val CATCHUP_DELAY_MS = 10_000L
-        private const val MAINTENANCE_INTERVAL_HOURS = 6L
 
         /**
          * Erzwingt einen vollen Lauf (Kalender laden + synchronisieren), auch wenn der Puffer
@@ -281,6 +394,19 @@ class AlarmMaintenanceService : Service() {
          * MUESSEN, nicht nur "koennten".
          */
         const val EXTRA_FORCE_SYNC = "force_sync"
+
+        /**
+         * Zaehler der bereits unternommenen Nachholversuche — reist im Intent des Nachhol-Alarms
+         * mit, damit [WartungsKettenPlanung.darfNachholen] eine Obergrenze durchsetzen kann. Ohne
+         * ihn haette ein dauerhaft abgelehnter Vordergrund-Start sich selbst endlos nachgestellt.
+         */
+        const val EXTRA_NACHHOLVERSUCHE = "nachholversuche"
+
+        /**
+         * Markiert den Broadcast des Wiederanlauf-Wachhunds. Nur er zieht die Kette im Empfaenger
+         * selbst wieder auf — der regulaere Lauf tut das in seinem eigenen `finally`.
+         */
+        const val EXTRA_WACHHUND = "wachhund"
 
         // CONSOLIDATION: moved off the standalone "cf_alarm_prefs" SharedPreferences file
         // and into the existing Hilt @MainDataStore.
@@ -329,13 +455,6 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Starts the maintenance service.
-         *
-         * @param forceSync ueberspringt das Lade-Gate ([MaintenanceLoadDecision.shouldLoadEvents])
-         *   und erzwingt Kalender-Abfrage + Delta-Sync. Default false — die regulaere 6h-Kette
-         *   und alle Bestandsaufrufer verhalten sich unveraendert.
-         */
-        /**
          * Startet den Wartungslauf. FAENGT den Fehlschlag - und zwar HIER, nicht bei den Aufrufern.
          *
          * `startForegroundService()` wirft ab Android 12 eine
@@ -352,11 +471,21 @@ class AlarmMaintenanceService : Service() {
          * ab, statt sich darauf zu verlassen, dass jeder von ihnen daran denkt - dieselbe
          * Ueberlegung wie beim Master-Pause-Backstop in `syncAlarms()`.
          *
-         * Statt es dabei zu belassen, wird EINMALIG per Exact-Alarm nachgeholt: das Feuern eines
+         * Statt es dabei zu belassen, wird per EXAKTEM Alarm nachgeholt: das Feuern eines exakten
          * Alarms IST ein erlaubter Anlass, der Lauf kommt also ~10 s spaeter doch zustande. Ohne
          * das waere die Zeitzonen-Korrektur bis zum naechsten regulaeren 6h-Lauf verzoegert.
+         *
+         * "EXAKT" ist dabei die tragende Bedingung und keine Feinheit — ein inexakt gestellter
+         * Nachholversuch traegt die Freigabe NICHT und wuerde sich endlos selbst nachstellen.
+         * Deshalb entscheidet [WartungsKettenPlanung.darfNachholen], ob ueberhaupt nachgeholt wird.
+         *
+         * @param forceSync ueberspringt das Lade-Gate ([MaintenanceLoadDecision.shouldLoadEvents])
+         *   und erzwingt Kalender-Abfrage + Delta-Sync. Default false — die regulaere 6h-Kette
+         *   und alle Bestandsaufrufer verhalten sich unveraendert.
+         * @param nachholVersuche wie viele Nachholversuche dieser Anlass schon hinter sich hat.
+         *   Setzt nur der [AlarmMaintenanceBroadcastReceiver] aus dem Intent des Nachhol-Alarms.
          */
-        fun start(context: Context, forceSync: Boolean = false) {
+        fun start(context: Context, forceSync: Boolean = false, nachholVersuche: Int = 0) {
             val intent = Intent(context, AlarmMaintenanceService::class.java)
                 .putExtra(EXTRA_FORCE_SYNC, forceSync)
             try {
@@ -365,47 +494,56 @@ class AlarmMaintenanceService : Service() {
                 Logger.w(
                     LogTags.MAINTENANCE,
                     "⚠️ WARTUNG: Vordergrund-Start abgelehnt (App im Hintergrund, Anlass nicht " +
-                        "ausgenommen) - wird per Alarm in ${CATCHUP_DELAY_MS / 1000}s nachgeholt",
+                        "ausgenommen) - Nachholversuch wird geprueft",
                     e
                 )
-                scheduleCatchUp(context, forceSync)
+                scheduleCatchUp(context, forceSync, nachholVersuche)
             }
         }
 
         /**
-         * Einmaliger Nachhol-Alarm fuer [start]. Selbst wieder in try/catch: eine entzogene
-         * Exact-Alarm-Berechtigung darf aus dem Fehlerpfad keinen zweiten Absturz machen.
+         * Nachhol-Alarm fuer [start] — gedeckelt, siehe [WartungsKettenPlanung.darfNachholen].
+         *
+         * Selbst wieder in try/catch: eine entzogene Exact-Alarm-Berechtigung darf aus dem
+         * Fehlerpfad keinen zweiten Absturz machen.
          */
-        private fun scheduleCatchUp(context: Context, forceSync: Boolean) {
+        private fun scheduleCatchUp(context: Context, forceSync: Boolean, bisherigeVersuche: Int) {
             try {
                 val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
-                val pendingIntent = PendingIntent.getBroadcast(
-                    context,
-                    MAINTENANCE_CATCHUP_REQUEST_CODE,
-                    Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
-                        .putExtra(EXTRA_FORCE_SYNC, forceSync),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                // Dieselbe Absicherung wie in scheduleNext() direkt darunter: ohne
-                // SCHEDULE_EXACT_ALARM wirft setExactAndAllowWhileIdle() auf API 31/32 eine
-                // SecurityException - im Fehlerpfad einen zweiten Fehler zu erzeugen waere die
-                // schlechteste Stelle dafuer. Ein um Minuten verzoegerter Nachholversuch ist
-                // besser als keiner.
-                val triggerAt = System.currentTimeMillis() + CATCHUP_DELAY_MS
                 val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     alarmManager.canScheduleExactAlarms()
                 } else {
                     true
                 }
-                if (canBeExact) {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-                } else {
+
+                // NUR exakt und nur gedeckelt. Ein inexakt gestellter Nachholversuch traegt beim
+                // Feuern keine Vordergrunddienst-Startfreigabe und wuerde sich selbst endlos
+                // nachstellen - die Begruendung steht vollstaendig an darfNachholen().
+                if (!WartungsKettenPlanung.darfNachholen(bisherigeVersuche, canBeExact)) {
                     Logger.w(
                         LogTags.MAINTENANCE,
-                        "⚠️ WARTUNG: Exact-Alarm-Berechtigung fehlt - Nachholversuch wird inexakt geplant"
+                        "⚠️ WARTUNG: kein Nachholversuch (Versuche=$bisherigeVersuche, " +
+                            "exakteAlarme=$canBeExact) - dieser Anlass faellt aus. Zurueck kommt " +
+                            "die Kette ueber den Wiederanlauf-Wachhund bzw. die Statuskarte."
                     )
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                    return
                 }
+
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    WartungsKettenPlanung.NACHHOL_REQUEST_CODE,
+                    Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
+                        .putExtra(EXTRA_FORCE_SYNC, forceSync)
+                        .putExtra(EXTRA_NACHHOLVERSUCHE, bisherigeVersuche + 1),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val triggerAt = System.currentTimeMillis() + CATCHUP_DELAY_MS
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                Logger.w(
+                    LogTags.MAINTENANCE,
+                    "⚠️ WARTUNG: Nachholversuch ${bisherigeVersuche + 1}/" +
+                        "${WartungsKettenPlanung.MAX_NACHHOLVERSUCHE} in ${CATCHUP_DELAY_MS / 1000}s geplant"
+                )
             } catch (e: Exception) {
                 Logger.e(LogTags.MAINTENANCE, "❌ WARTUNG: auch der Nachhol-Alarm scheiterte", e)
             }
@@ -427,20 +565,17 @@ class AlarmMaintenanceService : Service() {
          * Ab API 33 traegt die App USE_EXACT_ALARM (bei Installation erteilt, nicht entziehbar),
          * auf 31/32 greift nur SCHEDULE_EXACT_ALARM — und das darf der Nutzer abschalten. Vorher
          * stand hier ein ungeprueftes setExactAndAllowWhileIdle().
+         *
+         * Seit dieser Runde stellt dieselbe Funktion zusaetzlich den Wiederanlauf-Wachhund
+         * ([armiereWiederanlauf]). Das bleibt EIN Planer: beide Alarme entstehen hier und nur
+         * hier, der Wachhund liegt immer hinter dem regulaeren Lauf und wird von jedem Lauf
+         * mitverschoben. Warum es ihn braucht, steht an [WartungsKettenPlanung.WACHHUND_REQUEST_CODE].
          */
         fun scheduleNext(context: Context) {
             val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
 
-            val triggerTime = System.currentTimeMillis() +
-                TimeUnit.HOURS.toMillis(MAINTENANCE_INTERVAL_HOURS)
-
-            val intent = Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                MAINTENANCE_ALARM_REQUEST_CODE,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+            val zeitpunkte = WartungsKettenPlanung.zeitpunkte(System.currentTimeMillis())
+            val pendingIntent = wartungsPendingIntent(context, WartungsKettenPlanung.REGULAER_REQUEST_CODE)
 
             // Explizite SDK_INT-Verzweigung (nicht als ||-Kurzschluss): minSdk ist 26,
             // canScheduleExactAlarms() gibt es erst ab 31 - diese Form versteht der Lint sicher.
@@ -453,7 +588,7 @@ class AlarmMaintenanceService : Service() {
             if (canBeExact) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
-                    triggerTime,
+                    zeitpunkte.regulaer,
                     pendingIntent
                 )
             } else {
@@ -463,41 +598,119 @@ class AlarmMaintenanceService : Service() {
                 )
                 alarmManager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
-                    triggerTime,
+                    zeitpunkte.regulaer,
                     pendingIntent
                 )
             }
 
+            armiereWiederanlauf(context, alarmManager, zeitpunkte.wiederanlauf)
+
             Logger.business(
                 LogTags.MAINTENANCE,
-                "⏰ Next maintenance scheduled for ${Date(triggerTime)}"
+                "⏰ Next maintenance scheduled for ${Date(zeitpunkte.regulaer)} " +
+                    "(Wiederanlauf-Wachhund ${Date(zeitpunkte.wiederanlauf)})"
             )
+        }
+
+        /**
+         * EINE Stelle fuer den PendingIntent der Kette. Setzen und Abbrechen MUESSEN denselben
+         * Request-Code, dieselbe Ziel-Komponente und dieselben Flags benutzen, sonst trifft
+         * `alarmManager.cancel()` einen zweiten, unabhaengigen PendingIntent statt des gesetzten
+         * Alarms — und die Master-Pause haette die Kette nur scheinbar gekappt.
+         *
+         * Das EXTRA gehoert bewusst nicht zu dieser Aufzaehlung: `Intent.filterEquals()` (und
+         * damit das Zuordnen eines PendingIntent) vergleicht Action, Daten, Typ, Paket, Komponente
+         * und Kategorien — nicht die Extras. Der Wachhund-Marker unterscheidet die beiden Alarme
+         * also NICHT; das leistet allein der Request-Code. Er reist nur mit, damit der Empfaenger
+         * weiss, wer ihn geweckt hat.
+         */
+        /*
+         * KEIN expliziter Rueckgabetyp - der inferierte PLATTFORMTYP ist hier Absicht, und die
+         * Zeile darf nicht "aufgeraeumt" werden. Mit `: PendingIntent` erzeugt Kotlin eine
+         * Intrinsics-Null-Pruefung; im Unit-Test-Modus (isReturnDefaultValues -> die statische
+         * Android-Methode liefert null) wirft die. Der Wurf lief in MasterPauseUseCase.pause() in
+         * das per-Abhaengigkeit-try/catch und verschluckte dort BEIDE cancel()-Aufrufe der
+         * Wartungskette: der Test sah "null Interaktionen" statt einer falschen Anzahl, also genau
+         * die Zusicherung nicht mehr, die die Master-Pause traegt. Am Geraet ist es folgenlos
+         * (getBroadcast liefert mit FLAG_UPDATE_CURRENT nie null), im Test verdeckt es alles.
+         * `: PendingIntent?` ist keine Alternative - AlarmManager.cancel/setExact* sind @NonNull.
+         */
+        private fun wartungsPendingIntent(
+            context: Context,
+            requestCode: Int,
+            istWachhund: Boolean = false
+        ) =
+            PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
+                    .putExtra(EXTRA_WACHHUND, istWachhund),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+        /**
+         * Stellt den Wiederanlauf-Wachhund — siehe [WartungsKettenPlanung.WACHHUND_REQUEST_CODE] fuer den
+         * Ablauf, der ohne ihn kaputt ging.
+         *
+         * Bewusst IMMER inexakt, auch wenn die Berechtigung gerade da ist: exakt gestellt waere
+         * er beim Entzug mitgeloescht worden und damit genau in dem Fall weg, fuer den er
+         * existiert. Der Wurf wird gefangen: der Wachhund ist eine Zusatzsicherung, sein
+         * Scheitern darf den regulaeren Lauf oben nicht mit umreissen.
+         */
+        private fun armiereWiederanlauf(
+            context: Context,
+            alarmManager: AlarmManager,
+            triggerAt: Long
+        ) {
+            try {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt,
+                    wartungsPendingIntent(
+                        context,
+                        WartungsKettenPlanung.WACHHUND_REQUEST_CODE,
+                        istWachhund = true
+                    )
+                )
+            } catch (e: Exception) {
+                Logger.w(
+                    LogTags.MAINTENANCE,
+                    "⚠️ WARTUNG: Wiederanlauf-Wachhund konnte nicht gestellt werden - ein " +
+                        "Berechtigungsentzug bliebe bis zum naechsten Neustart unbemerkt",
+                    e
+                )
+            }
         }
 
         /**
          * Kappt die 6h-Wartungskette (Master-Pause).
          *
          * Baut denselben Intent/PendingIntent wie [scheduleNext] (gleicher Request-Code
-         * [MAINTENANCE_ALARM_REQUEST_CODE], gleiche Flags) — das ist Pflicht, damit
+         * [WartungsKettenPlanung.REGULAER_REQUEST_CODE], gleiche Flags) — das ist Pflicht, damit
          * alarmManager.cancel() wirklich den Alarm trifft, den scheduleNext zuletzt gesetzt hat,
          * statt einen zweiten, unabhaengigen PendingIntent zu erzeugen.
          */
         fun cancelNext(context: Context) {
             val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
 
-            val intent = Intent(context, AlarmMaintenanceBroadcastReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                MAINTENANCE_ALARM_REQUEST_CODE,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+            alarmManager.cancel(wartungsPendingIntent(context, WartungsKettenPlanung.REGULAER_REQUEST_CODE))
 
-            alarmManager.cancel(pendingIntent)
+            // Der Wachhund MUSS mit weg: er startet die Kette aus sich heraus neu, und ein
+            // Wiederanlauf trotz Master-Pause waere genau der Zustand, den pause() herstellen
+            // soll. Vergisst man ihn, kaeme die pausierte Wartung 30 Minuten spaeter von selbst
+            // zurueck.
+            alarmManager.cancel(
+                wartungsPendingIntent(
+                    context,
+                    WartungsKettenPlanung.WACHHUND_REQUEST_CODE,
+                    istWachhund = true
+                )
+            )
 
             Logger.business(
                 LogTags.MAINTENANCE,
-                "⏸️ Wartungskette pausiert (Master-Pause aktiv)"
+                "⏸️ Wartungskette pausiert (Master-Pause aktiv) - regulaerer Lauf und " +
+                    "Wiederanlauf-Wachhund abgebrochen"
             )
         }
     }

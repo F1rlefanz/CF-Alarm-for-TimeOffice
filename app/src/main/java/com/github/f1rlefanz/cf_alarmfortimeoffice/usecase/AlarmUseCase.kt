@@ -36,6 +36,26 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Meldet dem Aufrufer, dass [AlarmUseCase.scheduleSystemAlarm] den Alarm NICHT armiert hat, weil
+ * er als "naechsten Alarm ueberspringen" markiert ist.
+ *
+ * WARUM EIN FEHLER UND KEIN ERFOLG: Der Skip-Backstop kehrte frueher einfach zurueck, der Aufrufer
+ * bekam `Result.success(Unit)` - "abgewiesen" sah aus wie "armiert". Wer daraufhin eine
+ * Erfolgsmeldung anzeigt, behauptet einen Wecker, den es im AlarmManager nicht gibt. Genau das ist
+ * ueber die manuellen Wecker passiert, deren ID ein reiner Hash aus Datum und Schicht ist.
+ *
+ * Aufrufer, die ein Re-Arming ueber den GESAMTEN Bestand fahren (BootReceiver, Delta-Sync), werten
+ * das Ergebnis entweder gar nicht aus oder haben ein vorgelagertes Skip-Gate - fuer sie aendert
+ * sich nichts ausser einem ehrlicheren Log.
+ */
+class SkippedAlarmNotArmedException(
+    val alarmId: Int,
+    val shiftName: String
+) : Exception(
+    "Alarm $alarmId ($shiftName) ist als uebersprungen markiert und wurde deshalb nicht gestellt"
+)
+
+/**
  * UseCase für alle Alarm-bezogenen Operationen - implementiert IAlarmUseCase
  *
  * REFACTORED:
@@ -296,10 +316,19 @@ class AlarmUseCase @Inject constructor(
                             // Alarm-Daten geaendert → aktualisieren
                             Logger.business(LogTags.ALARM, "🔄 SYNC: Updating changed alarm: ${newAlarm.shiftName} (eventId: $eventId)")
                             
-                            // Delete old
-                            alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
+                            // Delete old - ERST cancellen, DANN loeschen, genau wie im
+                            // Loeschzweig oben und an jeder anderen Loeschstelle. Umgekehrt gab
+                            // es hier ein Fenster: nach `deleteAlarm()` kennen weder Repository
+                            // noch Direct-Boot-Spiegel den Alarm, waehrend er im AlarmManager
+                            // noch scharf steht. Stirbt der Prozess dort (Low-Memory-Kill des
+                            // kurzlebigen Wartungs-Service, Force-Stop, Akku leer), erreicht ihn
+                            // kein Cancel-Weg mehr - alle iterieren ueber den Repository-Bestand.
+                            // Wird der Termin danach aus dem Kalender gestrichen, vergibt der
+                            // Sync die ID nie wieder, und der Waise klingelt an einem freien Tag
+                            // bis zum naechsten Geraete-Neustart.
                             alarmManagerService.cancelSystemAlarm(existingAlarm.id)
-                            
+                            alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
+
                             // Create new with updated data
                             alarmRepository.saveAlarm(newAlarm).getOrThrow()
                             scheduleSystemAlarm(newAlarm).getOrThrow()
@@ -551,24 +580,34 @@ class AlarmUseCase @Inject constructor(
             }
         }
     
-    override suspend fun scheduleSystemAlarm(alarmInfo: AlarmInfo): Result<Unit> =
-        SafeExecutor.safeExecute("AlarmUseCase.scheduleSystemAlarm") {
-            // Zentraler Backstop fuer "Naechsten Alarm ueberspringen": diese Funktion ist der EINZIGE
-            // Weg, auf dem ein Alarm (neu, geaendert, unveraendert-re-armed, Boot-Restore) im
-            // AlarmManager landet. Ein Gate pro Aufrufer waere genauso fehleranfaellig wie beim
-            // Master-Pause-Backstop in syncAlarms() - BootReceiver re-armt z.B. alle gespeicherten
-            // Alarme direkt hierueber.
-            // Fail-safe: schlaegt der Lesevorgang fehl (getOrNull = null), gilt der Alarm als NICHT
-            // uebersprungen und wird gestellt. Im Zweifel wecken.
-            val skipState = alarmSkipUseCase.getSkipStatus().getOrNull()
-            if (skipState?.isNextAlarmSkipped == true && skipState.skippedAlarmId == alarmInfo.id) {
-                Logger.business(
-                    LogTags.ALARM,
-                    "⏭️ SCHEDULE: Alarm ${alarmInfo.id} (${alarmInfo.shiftName}) ist als uebersprungen markiert - kein System-Alarm"
-                )
-                return@safeExecute
-            }
+    override suspend fun scheduleSystemAlarm(alarmInfo: AlarmInfo): Result<Unit> {
+        // Zentraler Backstop fuer "Naechsten Alarm ueberspringen": diese Funktion ist der EINZIGE
+        // Weg, auf dem ein Alarm (neu, geaendert, unveraendert-re-armed, Boot-Restore) im
+        // AlarmManager landet. Ein Gate pro Aufrufer waere genauso fehleranfaellig wie beim
+        // Master-Pause-Backstop in syncAlarms() - BootReceiver re-armt z.B. alle gespeicherten
+        // Alarme direkt hierueber.
+        // Fail-safe: schlaegt der Lesevorgang fehl (getOrNull = null), gilt der Alarm als NICHT
+        // uebersprungen und wird gestellt. Im Zweifel wecken.
+        //
+        // WARUM DER BACKSTOP AUSSERHALB VON safeExecute STEHT UND EINEN FEHLER MELDET:
+        // Frueher verliess er den Block per `return@safeExecute` und lieferte damit
+        // `Result.success(Unit)` - "abgewiesen" war fuer den Aufrufer nicht von "armiert" zu
+        // unterscheiden. Das kostete real einen Wecker: die ID eines manuellen Weckers ist ein
+        // reiner Hash aus Datum und Schicht, wer denselben Wecker nach dem Ueberspringen neu
+        // anlegt, trifft exakt den Skip-Merker. Der Eintrag wurde gespeichert, die Karte meldete
+        // "Manueller Alarm aktiv" mit Uhrzeit - im AlarmManager stand nichts. Ein stummer Wecker
+        // MIT Anzeige ist die gefaehrlichste Variante, also muss der Aufrufer das sehen koennen.
+        // Der Skip-Merker selbst bleibt unangetastet: er laeuft weiterhin ZEITBASIERT ab.
+        val skipState = alarmSkipUseCase.getSkipStatus().getOrNull()
+        if (skipState?.isNextAlarmSkipped == true && skipState.skippedAlarmId == alarmInfo.id) {
+            Logger.business(
+                LogTags.ALARM,
+                "⏭️ SCHEDULE: Alarm ${alarmInfo.id} (${alarmInfo.shiftName}) ist als uebersprungen markiert - kein System-Alarm"
+            )
+            return Result.failure(SkippedAlarmNotArmedException(alarmInfo.id, alarmInfo.shiftName))
+        }
 
+        return SafeExecutor.safeExecute("AlarmUseCase.scheduleSystemAlarm") {
             // Create dummy ShiftMatch for AlarmManagerService compatibility
             val shiftDefinition = ShiftDefinition(
                 id = alarmInfo.shiftId,
@@ -614,8 +653,9 @@ class AlarmUseCase @Inject constructor(
             val config = shiftConfigRepository.getCurrentShiftConfig().getOrThrow()
             alarmManagerService.setAlarmFromShiftMatch(shiftMatch, config.autoAlarmEnabled, alarmInfo.id)
         }
-    
-    override suspend fun cancelSystemAlarm(alarmId: Int): Result<Unit> = 
+    }
+
+    override suspend fun cancelSystemAlarm(alarmId: Int): Result<Unit> =
         SafeExecutor.safeExecute("AlarmUseCase.cancelSystemAlarm") {
             alarmManagerService.cancelSystemAlarm(alarmId)
         }

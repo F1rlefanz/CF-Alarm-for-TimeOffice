@@ -18,6 +18,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -593,8 +595,24 @@ class AlarmViewModel @Inject constructor(
                 "erneut auf „Aufheben“ tippen."
         }
 
-        val autoAlarmEnabled =
-            shiftUseCase.getCurrentShiftConfig().getOrNull()?.autoAlarmEnabled ?: true
+        // KEIN `getOrNull() ?: true`: ein nicht lesbarer Konfigurationsstand ist etwas anderes
+        // als "Automatische Alarme sind an". Wer beides gleich behandelt, laesst den Waechter
+        // gruenes Licht geben, cancelSkip() raeumt Flag UND Schnappschuss ab - und wenn die
+        // Abschaltung doch aktiv war, loescht der naechste syncAlarms()-Lauf den gerade
+        // wiederhergestellten Wecker wortlos. Ein Lesefehler ist genau das BEHEBBARE Hindernis,
+        // fuer das es diese Funktion gibt.
+        val konfiguration = shiftUseCase.getCurrentShiftConfig()
+        if (konfiguration.isFailure) {
+            Logger.e(
+                LogTags.ALARM_SKIP,
+                "❌ Schicht-Konfiguration beim Aufheben nicht lesbar - Aufheben zurueckgestellt",
+                konfiguration.exceptionOrNull()
+            )
+            return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann gerade " +
+                "nicht zurückkehren: die Einstellungen ließen sich nicht lesen. Das Überspringen " +
+                "bleibt bestehen, damit nichts verloren geht – bitte gleich noch einmal versuchen."
+        }
+        val autoAlarmEnabled = konfiguration.getOrThrow().autoAlarmEnabled
         if (!autoAlarmEnabled) {
             return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann gerade " +
                 "nicht zurückkehren: „Automatische Alarme“ ist ausgeschaltet, und solange das so " +
@@ -609,18 +627,54 @@ class AlarmViewModel @Inject constructor(
         // die Karte zeigt nur einen, der "Loeschen"-Knopf trifft nur den gezeigten, und
         // syncAlarms() schont manuelle Alarme ausdruecklich - der andere waere ein armierter
         // Wecker ohne Bedienoberflaeche. Der zuletzt vom Nutzer angelegte gewinnt.
-        val bestehenderManueller = alarmUseCase.getAllAlarms().getOrNull()
-            ?.firstOrNull { ManualAlarmConstants.isManualAlarm(it) && it.id != alarm.id }
+        //
+        // AUCH HIER KEIN getOrNull(): ein nicht lesbarer Alarm-Bestand wuerde zu "es gibt keinen
+        // anderen manuellen Wecker" degradieren - dieselbe stille Degradierung, die den
+        // Schnappschuss vernichtet, den diese Funktion schuetzen soll. Ein Lesefehler ist
+        // voruebergehend und damit behebbar; der Skip bleibt so lange stehen.
+        val bestand = alarmUseCase.getAllAlarms()
+        if (bestand.isFailure) {
+            Logger.e(
+                LogTags.ALARM_SKIP,
+                "❌ Alarm-Bestand beim Aufheben nicht lesbar - Aufheben zurueckgestellt",
+                bestand.exceptionOrNull()
+            )
+            return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann gerade " +
+                "nicht zurückkehren: die gespeicherten Wecker ließen sich nicht lesen. Das " +
+                "Überspringen bleibt bestehen, damit nichts verloren geht – bitte gleich noch " +
+                "einmal versuchen."
+        }
+        val bestehenderManueller = bestand.getOrThrow()
+            .firstOrNull { ManualAlarmConstants.isManualAlarm(it) && it.id != alarm.id }
         if (bestehenderManueller != null) {
+            // KEIN "einfach neu anlegen" mehr in diesem Text: die ID eines manuellen Weckers ist
+            // ein reiner Hash aus Datum und Schicht, der Neuanlegeweg trifft also exakt den noch
+            // stehenden Skip-Merker. Dass er trotzdem funktioniert, stellt createManualAlarm()
+            // sicher (es hebt einen kollidierenden Skip auf) - empfohlen wird hier aber der
+            // Weg, der Schnappschuss und Wecker sauber zusammenfuehrt.
             return "Der übersprungene manuelle Wecker für ${alarm.formattedTime} kann nicht " +
                 "zurückkehren, solange ein anderer manueller Wecker " +
                 "(${bestehenderManueller.formattedTime}) gestellt ist – es kann immer nur einen " +
-                "geben. Das Überspringen bleibt bestehen: bitte den anderen löschen und erneut " +
-                "auf „Aufheben“ tippen, oder den übersprungenen einfach neu anlegen."
+                "geben. Das Überspringen bleibt bestehen: bitte den anderen löschen und dann " +
+                "erneut auf „Aufheben“ tippen."
         }
 
         return null
     }
+
+    /**
+     * Nimmt einen gerade angelegten, aber nicht armierbaren Alarm zurueck — die einzige Stelle
+     * dafuer, weil beide Aufrufer denselben Fehlerfall haben.
+     *
+     * @see nimmAlarmZurueck fuer den Ablauf, der ohne `NonCancellable` kaputt ging.
+     */
+    private suspend fun nimmAlarmZurueckUeberUseCase(alarmId: Int, logTag: String): Unit =
+        nimmAlarmZurueck(
+            alarmId = alarmId,
+            logTag = logTag,
+            cancelSystemAlarm = { alarmUseCase.cancelSystemAlarm(it) },
+            deleteAlarm = { alarmUseCase.deleteAlarm(it) }
+        )
 
     private suspend fun restoreSkippedManualAlarm(alarm: AlarmInfo?) {
         if (alarm == null) return
@@ -666,10 +720,7 @@ class AlarmViewModel @Inject constructor(
             // trotzdem als "Naechster Alarm" ankuendigen - ein stummer Wecker mit Anzeige ist
             // die gefaehrlichste Variante.
             // Reihenfolge wie ueberall: erst cancelSystemAlarm(), dann deleteAlarm().
-            runCatching { alarmUseCase.cancelSystemAlarm(alarm.id) }
-                .onFailure { Logger.e(LogTags.ALARM_SKIP, "Ruecknahme: cancelSystemAlarm fehlgeschlagen", it) }
-            runCatching { alarmUseCase.deleteAlarm(alarm.id) }
-                .onFailure { Logger.e(LogTags.ALARM_SKIP, "Ruecknahme: deleteAlarm fehlgeschlagen", it) }
+            nimmAlarmZurueckUeberUseCase(alarm.id, LogTags.ALARM_SKIP)
 
             _skipState.value = _skipState.value.copy(
                 restoreNotice = "Der manuelle Wecker für ${alarm.formattedTime} ließ sich nicht " +
@@ -952,6 +1003,52 @@ class AlarmViewModel @Inject constructor(
                 val manualShiftId =
                     ManualAlarmConstants.createManualShiftId(selectedShift.id, selectedDate)
 
+                // SKIP-KOLLISION AUFLOESEN, BEVOR gespeichert wird.
+                //
+                // Die ID eines manuellen Weckers ist ein reiner Hash aus Datum und Schicht. Wer
+                // denselben Wecker nach dem Ueberspringen noch einmal anlegt - und genau dazu hat
+                // die App beim blockierten "Aufheben" auch geraten - trifft damit exakt die ID im
+                // Skip-Merker. Der Backstop in scheduleSystemAlarm() weist ihn dann ab, waehrend
+                // Eintrag und Karte ihn als gestellt zeigen: stummer Wecker MIT Anzeige. Der
+                // Merker laeuft zeitbasiert erst NACH der Weckzeit ab, ein Nachholer existiert
+                // nicht (syncAlarms schont manuelle Alarme nur, es armiert sie nicht neu).
+                //
+                // Wer denselben Wecker neu anlegt, will ihn - also ist das Aufheben des
+                // Ueberspringens die richtige Antwort, keine Fehlermeldung. Der Schnappschuss darf
+                // dabei mitfallen: er beschreibt genau den Wecker, der hier gerade neu entsteht.
+                //
+                // Ein nicht lesbarer Skip-Zustand blockiert das Anlegen NICHT (im Zweifel wecken) -
+                // dagegen steht die Ruecknahme weiter unten, falls der Backstop doch greift.
+                val kollidierenderSkip = alarmSkipUseCase.getSkipStatus().getOrNull()
+                    ?.takeIf { it.isNextAlarmSkipped && it.skippedAlarmId == manualAlarmId }
+                if (kollidierenderSkip != null) {
+                    val aufgehoben = alarmSkipUseCase.cancelSkip()
+                    if (aufgehoben.isFailure) {
+                        // Nicht weitermachen: der Merker steht noch, der Wecker wuerde gespeichert
+                        // und angezeigt, aber nie armiert.
+                        Logger.e(
+                            LogTags.ALARM_SKIP,
+                            "❌ Kollidierendes Ueberspringen fuer Alarm $manualAlarmId liess sich " +
+                                "nicht aufheben - manueller Wecker wird NICHT angelegt",
+                            aufgehoben.exceptionOrNull()
+                        )
+                        _manualAlarmState.value = _manualAlarmState.value.copy(
+                            isCreating = false,
+                            error = AppErrorState.validationError(
+                                "Dieser Wecker ist gerade als übersprungen markiert, und das " +
+                                    "ließ sich nicht aufheben. Er wurde deshalb NICHT gestellt – " +
+                                    "bitte gleich noch einmal versuchen."
+                            )
+                        )
+                        return@launch
+                    }
+                    Logger.business(
+                        LogTags.ALARM_SKIP,
+                        "↩️ Ueberspringen fuer Alarm $manualAlarmId aufgehoben - derselbe Wecker " +
+                            "wird gerade neu angelegt"
+                    )
+                }
+
                 val alarmInfo = AlarmInfo(
                     id = manualAlarmId,
                     shiftId = manualShiftId,
@@ -977,10 +1074,24 @@ class AlarmViewModel @Inject constructor(
                                 )
                             }
                             .onFailure { error ->
+                                // ZURUECKROLLEN, nicht liegenlassen - dieselbe Begruendung wie in
+                                // restoreSkippedManualAlarm(): ein Eintrag im Bestand (und im
+                                // Direct-Boot-Spiegel), den kein System-Alarm traegt, ist ein
+                                // stummer Wecker MIT Anzeige. Ein manueller Wecker wird genau
+                                // einmal armiert, syncAlarms() schont ihn nur - es kaeme also
+                                // kein Nachholer, waehrend die Karte "Manueller Alarm aktiv" mit
+                                // Uhrzeit zeigt.
+                                // Reihenfolge wie ueberall: erst cancelSystemAlarm(), dann
+                                // deleteAlarm().
+                                nimmAlarmZurueckUeberUseCase(alarmInfo.id, LogTags.ALARM)
+
                                 _manualAlarmState.value = _manualAlarmState.value.copy(
                                     isCreating = false,
                                     error = AppErrorState.networkError(
-                                        error.message ?: "Fehler beim Schedulen des Alarms"
+                                        "Der Wecker ließ sich nicht stellen und wurde deshalb " +
+                                            "NICHT in die Liste aufgenommen – so kündigt keine " +
+                                            "Anzeige einen Wecker an, der stumm bliebe. Bitte " +
+                                            "erneut versuchen. (${error.message ?: "unbekannter Fehler"})"
                                     )
                                 )
                                 Logger.e(LogTags.ALARM, "❌ Failed to schedule manual alarm", error)
@@ -1078,4 +1189,39 @@ class AlarmViewModel @Inject constructor(
         // Note: ViewModelScope automatically cancels all remaining coroutines
     }
 
+}
+
+/**
+ * Die kompensierende Ruecknahme eines Alarms, der gespeichert, aber nicht armiert werden konnte —
+ * bewusst als Top-Level-Funktion, damit sie ohne ViewModel pruefbar ist.
+ *
+ * WELCHER ABLAUF GING KAPUTT: Die Ruecknahme stand als blankes `runCatching { ... }` direkt im
+ * `viewModelScope`. `SafeExecutor.safeExecute` wirft `CancellationException` ausdruecklich WEITER
+ * (statt sie in ein `Result.failure` zu verwandeln), und `runCatching` faengt `Throwable` — also
+ * auch genau diese. Verlaesst der Nutzer die App in dem Moment, in dem das Stellen scheitert
+ * (Activity wird abgeraeumt, `viewModelScope` gecancelt), warf `cancelSystemAlarm()` am ersten
+ * Suspensionspunkt, `runCatching` schluckte es, und dieselbe Zeile darunter schluckte auch das
+ * `deleteAlarm()`. Zurueck blieb der Alarm im Repository UND im Direct-Boot-Spiegel, ohne dass je
+ * ein System-Alarm dazu existierte: ein manueller Wecker wird genau einmal armiert (`syncAlarms()`
+ * SCHONT ihn per `keepManualAlarms` nur, es armiert ihn nicht nach), ein Nachholer kommt also
+ * nicht. Die Karte haette "Manueller Alarm aktiv" mit Uhrzeit gezeigt, waehrend der Fehlertext
+ * zusichert, der Wecker sei NICHT aufgenommen worden — der stumme Wecker MIT Anzeige, gegen den
+ * diese Ruecknahme ueberhaupt existiert.
+ *
+ * Deshalb `withContext(NonCancellable)`: eine Ruecknahme STELLT einen Zustand HER, genau wie
+ * `MasterPauseUseCase.pause()` oder das Aufraeumen der Dimm-Vorschau. Die Reihenfolge bleibt die
+ * projektweite: erst `cancelSystemAlarm()`, dann `deleteAlarm()`.
+ */
+internal suspend fun nimmAlarmZurueck(
+    alarmId: Int,
+    logTag: String,
+    cancelSystemAlarm: suspend (Int) -> Result<Unit>,
+    deleteAlarm: suspend (Int) -> Result<Unit>
+) {
+    withContext(NonCancellable) {
+        runCatching { cancelSystemAlarm(alarmId) }
+            .onFailure { Logger.e(logTag, "Ruecknahme: cancelSystemAlarm fehlgeschlagen", it) }
+        runCatching { deleteAlarm(alarmId) }
+            .onFailure { Logger.e(logTag, "Ruecknahme: deleteAlarm fehlgeschlagen", it) }
+    }
 }

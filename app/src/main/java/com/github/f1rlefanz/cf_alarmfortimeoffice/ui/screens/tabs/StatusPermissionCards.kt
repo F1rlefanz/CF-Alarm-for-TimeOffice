@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -47,6 +48,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceEntryPoint
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
@@ -57,6 +61,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverabilit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.TimeOfficeHealthHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
+import dagger.hilt.android.EntryPointAccessors
 
 /**
  * Die BERECHTIGUNGS- UND ZUSTANDSKARTEN des Status-Tabs.
@@ -302,6 +307,256 @@ internal fun FullScreenIntentCard() {
 }
 
 /**
+ * Was die Exact-Alarm-Karte anzeigen soll.
+ *
+ * [AUSGEBLENDET] heisst: die Berechtigung ist da UND kann auf dieser Android-Version gar nicht
+ * fehlen — eine dauerhaft gruene Karte waere dort reines Rauschen.
+ */
+internal enum class ExaktAlarmKartenZustand { AUSGEBLENDET, ERTEILT, ENTZOGEN }
+
+/**
+ * Reine Entscheidung, damit sie ohne Android pruefbar ist.
+ *
+ * WELCHER ABLAUF GING KAPUTT: Auf API 31/32 haengt das Stellen exakter Alarme an
+ * SCHEDULE_EXACT_ALARM ("Alarme & Erinnerungen"), und der Nutzer - oder ein
+ * Hersteller-"Akku-Assistent" - darf das jederzeit abschalten. Das System loescht in dem Moment
+ * ALLE exakt gestellten Alarme (setAlarmClock, setExact, setExactAndAllowWhileIdle): jeden
+ * Schicht-Wecker, jeden schwebenden
+ * Snooze und den einen Alarm, an dem die 6h-Wartung haengt. Einen Broadcast gibt es dabei nicht.
+ * Bis zu dieser Runde war das der einzige weckerkritische Zustand ohne Karte und ohne
+ * Onboarding-Gate: die App zeigte weiter ihre Alarmliste aus dem Repository und sah gesund aus.
+ *
+ * DIE REIHENFOLGE DER ZWEIGE IST TRAGEND: "fehlt" wird auf JEDER API-Stufe gezeigt, nicht nur
+ * auf 31/32. Ab API 33 traegt die App USE_EXACT_ALARM, das bei Installation erteilt und nicht
+ * entziehbar ist - aber genau dasselbe galt fuer USE_FULL_SCREEN_INTENT, bis der Play Store es
+ * ab Android 14 nachtraeglich wieder entzog. Eine fehlende Berechtigung wegzublenden, weil sie
+ * "nicht fehlen kann", ist die Annahme, die diese App schon einmal einen Weck-Bildschirm gekostet
+ * hat.
+ */
+internal fun exaktAlarmKartenZustand(
+    sdkInt: Int,
+    darfExakteAlarme: Boolean
+): ExaktAlarmKartenZustand = when {
+    !darfExakteAlarme -> ExaktAlarmKartenZustand.ENTZOGEN
+    // Nur dort, wo der Zustand kippen KANN, ist er dauerhaft ablesbar (gleiche Haltung wie bei
+    // der Akku-Karte darunter).
+    sdkInt >= Build.VERSION_CODES.S && sdkInt < Build.VERSION_CODES.TIRAMISU ->
+        ExaktAlarmKartenZustand.ERTEILT
+    else -> ExaktAlarmKartenZustand.AUSGEBLENDET
+}
+
+/**
+ * Muss die Wartungskette neu angestossen werden?
+ *
+ * Der Entzug loescht den Alarm, an dem die Kette haengt; die Wieder-Erteilung stellt ihn NICHT
+ * wieder her, und Androids Erteilungs-Broadcast wird beim Entzug ausdruecklich nicht gesendet.
+ * Diese Karte ist damit einer der wenigen Orte, die den Uebergang "war weg, ist wieder da"
+ * ueberhaupt sehen - und sie sieht ihn im Vordergrund, wo ein Vordergrunddienst starten darf.
+ *
+ * Bewusst NUR beim Uebergang: bei jedem ON_RESUME einen Wartungslauf zu starten waere ein
+ * Dauer-Anstoss ohne Anlass.
+ */
+internal fun brauchtWiederanlaufNachErteilung(
+    vorher: ExaktAlarmKartenZustand,
+    nachher: ExaktAlarmKartenZustand
+): Boolean = vorher == ExaktAlarmKartenZustand.ENTZOGEN && nachher != ExaktAlarmKartenZustand.ENTZOGEN
+
+/**
+ * Laeuft gerade eine Master-Pause?
+ *
+ * Der Wiederanlauf stellt Wecker HER - waehrend einer Pause waere das genau der Zustand, den
+ * `pause()` beseitigt hat. Der `BootReceiver` gated seine Wiederherstellung (inklusive
+ * `restorePendingSnoozes()`) aus demselben Grund und ueber denselben Spiegel: `MasterPausePrefs`
+ * liegt im CE-Storage und ist nur suspendierend lesbar, der Device-Protected-Spiegel liefert
+ * denselben Zustand synchron. Bei einem Lesefehler meldet er "nicht pausiert" - im Zweifel wecken.
+ */
+private fun masterPauseAktiv(context: Context): Boolean = try {
+    EntryPointAccessors
+        .fromApplication(context.applicationContext, AlarmMaintenanceEntryPoint::class.java)
+        .directBootAlarmStore()
+        .isPausedNow()
+} catch (e: Exception) {
+    Logger.w(LogTags.MAINTENANCE, "Pausen-Spiegel nicht lesbar - Wiederanlauf laeuft trotzdem", e)
+    false
+}
+
+private fun darfExakteAlarme(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+    } else {
+        true
+    }
+
+/**
+ * Meldet, ob die App exakte Alarme stellen darf — siehe [exaktAlarmKartenZustand] fuer den
+ * Ablauf, der ohne diese Karte unsichtbar blieb.
+ *
+ * Wie die Karten daneben wird der Zustand bei jedem ON_RESUME frisch gelesen. Der Uebergang
+ * "wieder erteilt" stellt zusaetzlich her, was der Entzug geloescht hat, und zwar genau in dem
+ * Umfang, den der Kartentext verspricht: einen ERZWUNGENEN Wartungslauf (nur der erreicht
+ * `syncAlarms()` und armiert die Schicht-Wecker erneut) und `restorePendingSnoozes()` fuer einen
+ * schwebenden Schlummer. Ein manueller Wecker laesst sich nirgends rekonstruieren - er steht
+ * deshalb im Text als Aufgabe des Nutzers.
+ */
+@Composable
+internal fun ExactAlarmPermissionCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var zustand by remember {
+        mutableStateOf(exaktAlarmKartenZustand(Build.VERSION.SDK_INT, darfExakteAlarme(context)))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val neu = exaktAlarmKartenZustand(
+                    Build.VERSION.SDK_INT,
+                    darfExakteAlarme(context)
+                )
+                if (brauchtWiederanlaufNachErteilung(zustand, neu) && !masterPauseAktiv(context)) {
+                    Logger.w(
+                        LogTags.MAINTENANCE,
+                        "⚠️ Exact-Alarm-Berechtigung wieder erteilt - Wartungskette und " +
+                            "schwebende Schlummer werden wiederhergestellt (der Entzug hatte " +
+                            "beide geloescht)"
+                    )
+                    // forceSync = true ist hier PFLICHT, nicht Geschmack: der Entzug loescht nur
+                    // die AlarmManager-Eintraege, der Repository-Bestand bleibt stehen. Das
+                    // regulaere Lade-Gate (MaintenanceLoadDecision.shouldLoadEvents) saehe also
+                    // Zukunftsalarme, frische Daten und einen ausreichenden Puffer - es
+                    // uebersprang das Laden, der Lauf endete VOR syncAlarms(), und genau
+                    // syncAlarms() ist der einzige Ort, der Bestandsalarme wieder armiert. Die
+                    // beiden Schwesterstellen mit demselben Zweck (BootReceiver,
+                    // TimezoneChangeReceiver) uebergeben aus demselben Grund true.
+                    AlarmMaintenanceService.start(context, forceSync = true)
+
+                    // Der schwebende Schlummer haengt an einem EIGENEN Merker und an keinem
+                    // Kalender-Event; syncAlarms() kennt ihn nicht. Ohne diesen Aufruf kam er
+                    // ueberhaupt nur durch einen Geraeteneustart zurueck (einziger Aufrufer war
+                    // der BootReceiver) - der Kartentext haette also einen Wecker versprochen,
+                    // den es nicht gibt. Bewusst synchron: die Funktion liest einen kleinen
+                    // Device-Protected-Merker und stellt hoechstens eine Handvoll Alarme; ein
+                    // ausgelagerter Aufruf haenge am Lebenszyklus dieser Karte und koennte
+                    // mitten in der Wiederherstellung abgebrochen werden.
+                    val schlummer = AlarmManagerService.restorePendingSnoozes(context)
+                    if (schlummer > 0) {
+                        Logger.w(
+                            LogTags.MAINTENANCE,
+                            "😴 $schlummer schwebende(r) Schlummer nach Wieder-Erteilung wiederhergestellt"
+                        )
+                    }
+                }
+                zustand = neu
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (zustand == ExaktAlarmKartenZustand.AUSGEBLENDET) return
+
+    val erteilt = zustand == ExaktAlarmKartenZustand.ERTEILT
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (erteilt) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = if (erteilt) {
+                    MaterialTheme.colorScheme.success
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Alarme & Erinnerungen",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (erteilt) {
+                        "Wecker werden auf die Minute genau gestellt"
+                    } else {
+                        // Der Text nennt genau das, was die Wieder-Erteilung wirklich ausloest —
+                        // Schicht-Wecker ueber einen erzwungenen Wartungslauf, den Schlummer
+                        // ueber restorePendingSnoozes(). Ein MANUELL angelegter Wecker wird
+                        // nirgends nachgestellt (syncAlarms schont ihn nur), deshalb steht er
+                        // ausdruecklich als Aufgabe des Nutzers da: eine Anzeige, die einen
+                        // Wecker ankuendigt, den es nicht gibt, ist die gefaehrlichste Variante.
+                        "⚠️ Android hat beim Abschalten ALLE gestellten Wecker geloescht — auch " +
+                            "einen laufenden Schlummer und die Hintergrund-Wartung. Erlaube die " +
+                            "Berechtigung wieder: Schicht-Wecker und Schlummer holt die App dann " +
+                            "umgehend zurück (für die Schicht-Wecker braucht sie kurz Netz). " +
+                            "Einen manuell angelegten Wecker musst du selbst neu stellen."
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (!erteilt) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    SettingsLinkButton(
+                        onClick = { oeffneExactAlarmEinstellung(context) },
+                        text = "Einstellung öffnen"
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Fuehrt in die zustaendige Systemeinstellung.
+ *
+ * Der Sonderbildschirm ACTION_REQUEST_SCHEDULE_EXACT_ALARM existiert erst ab API 31; faellt er
+ * aus (manche Hersteller-ROMs kennen ihn nicht), bleibt der App-Detailbildschirm als Weg. Ein
+ * Knopf, der ins Leere fuehrt, waere schlimmer als keiner - deshalb beide Stufen in try/catch.
+ */
+private fun oeffneExactAlarmEinstellung(context: Context) {
+    val ziele = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            add(
+                Intent(
+                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    "package:${context.packageName}".toUri()
+                )
+            )
+        }
+        add(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                "package:${context.packageName}".toUri()
+            )
+        )
+    }
+
+    for (intent in ziele) {
+        try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        } catch (e: Exception) {
+            Logger.w(LogTags.MAINTENANCE, "Einstellungsbildschirm nicht erreichbar: ${intent.action}", e)
+        }
+    }
+}
+
+/**
  * Meldet, ob die App von der Akku-Optimierung ausgenommen ist — die Grundvoraussetzung dafuer,
  * dass die 6h-Wartung UND die exakten Wecker-Alarme im Hintergrund ueberhaupt feuern duerfen.
  *
@@ -318,6 +573,15 @@ internal fun FullScreenIntentCard() {
  */
 @Composable
 internal fun BatteryOptimizationCard() {
+    // ZWEI Karten aus diesem Aufruf, und das ist kein Versehen: die Exact-Alarm-Berechtigung ist
+    // der Zwilling der Akku-Ausnahme, nicht ein beliebiger Nachbar. Auf API 31/32 ersetzt die
+    // Akku-Ausnahme die Berechtigung sogar ("unless the app is exempt from battery restrictions",
+    // AlarmManager-Doku), und AlarmManagerService.checkAlarmPermissions() bewertet beide zusammen
+    // zu EINEM AlarmPermissionLevel. Sie gehoeren nebeneinander. Die Exact-Alarm-Karte rendert
+    // ausserdem nichts, wo die Berechtigung strukturell nie fehlen kann - dort entsteht also
+    // nicht einmal ein Abstand.
+    ExactAlarmPermissionCard()
+
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 

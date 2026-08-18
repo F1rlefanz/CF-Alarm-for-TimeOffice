@@ -358,11 +358,29 @@
   `onReceive()` reißt den Prozess mit — ausgefallen wäre damit genau die Neuberechnung, für die
   dieser Receiver als einzige Verteidigungslinie existiert. Der Fang steht deshalb in `start()`
   selbst (deckt jeden künftigen Aufrufer ab, gleiche Überlegung wie der Master-Pause-Backstop) plus
-  ein EINMALIGER Nachhol-Alarm auf **eigenem** Request-Code (`MAINTENANCE_CATCHUP_REQUEST_CODE`,
-  +10 s) — das Feuern eines Alarms IST ein erlaubter Anlass. Eigener Code, weil Code 0 der einzige
-  Slot der rollierenden 6h-Kette ist; der Nachhol-Alarm plant sich nicht selbst nach, ist also kein
-  zweiter Planer. Dazu reicht `AlarmMaintenanceBroadcastReceiver` das `forceSync`-Extra weiter —
-  ohne das liefe der nachgeholte Lauf ohne Erzwingen zurück, also wirkungslos.
+  ein Nachhol-Alarm auf **eigenem** Request-Code (`WartungsKettenPlanung.NACHHOL_REQUEST_CODE`,
+  +10 s). Eigener Code, weil Code 0 der einzige Slot der rollierenden 6h-Kette ist; der
+  Nachhol-Alarm plant sich nicht selbst nach, ist also kein zweiter Planer. Dazu reicht
+  `AlarmMaintenanceBroadcastReceiver` das `forceSync`-Extra weiter — ohne das liefe der nachgeholte
+  Lauf ohne Erzwingen zurück, also wirkungslos.
+- **Nur ein EXAKTER Alarm ist ein erlaubter Anlass — der Nachholversuch ist deshalb gedeckelt.**
+  Hier stand bis Prüfrunde 6 „das Feuern eines Alarms IST ein erlaubter Anlass"; das ist zu
+  weit. Androids Ausnahme gilt für exakte Alarme (dieselbe Grenze, die den Weck-Notausgang im
+  `AlarmReceiver` erzwingt). Ein ohne `SCHEDULE_EXACT_ALARM` **inexakt** gestellter Nachholversuch
+  wird beim Feuern also erneut abgewiesen und stellt sich selbst wieder — eine endlose
+  RTC_WAKEUP-Schleife im 10-Sekunden- bzw. Doze-Takt, aus „Wartung steht still" wird „Wartung steht
+  still UND der Akku ist leer". `WartungsKettenPlanung.darfNachholen()` lässt deshalb nur nachholen,
+  was exakt gestellt werden kann, und höchstens `MAX_NACHHOLVERSUCHE` mal (Zähler im Intent).
+- **Der Wiederanlauf-Wachhund (Slot 8802) zieht die Kette wieder auf — er erzwingt keinen Lauf.**
+  Er ist bewusst inexakt gestellt (sonst löschte ihn der Entzug von SCHEDULE_EXACT_ALARM mit) und
+  darf aus demselben Grund keinen Vordergrunddienst starten. Seine erste Fassung tat genau das und
+  nichts sonst: der Start wurde abgewiesen, `scheduleNext()` (das im `finally` des Dienstlaufs
+  steht) lief nie, der Slot war nach einmaligem Feuern verbraucht — die Kette blieb tot, also genau
+  der Zustand, gegen den er gebaut wurde. Deshalb ruft `AlarmMaintenanceBroadcastReceiver` beim
+  Wachhund-Broadcast (Extra `EXTRA_WACHHUND`) zuerst `scheduleNext()` — reine AlarmManager-Arbeit,
+  aus dem Hintergrund immer erlaubt — und prüft davor den Master-Pause-Spiegel, damit ein im selben
+  Moment abgeschickter Wachhund eine frische Pause nicht aushebelt. Den sofortigen Wiederanlauf im
+  Vordergrund leistet die Exact-Alarm-Statuskarte, nicht der Wachhund.
 
 
 - **Full-Screen-Intent bei ENTSPERRTEM Gerät ist KEIN Bug.** Die Doku sagt: „While the user is

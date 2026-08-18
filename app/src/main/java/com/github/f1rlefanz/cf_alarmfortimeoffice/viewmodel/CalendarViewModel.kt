@@ -81,7 +81,23 @@ data class CalendarUiState(
     val hasMoreEvents: Boolean = false,
     val isLoadingMoreEvents: Boolean = false,
     val eventOffset: Int = 0,
-    val totalEvents: Int = 0
+    val totalEvents: Int = 0,
+    /**
+     * Kalender, die beim letzten Ladevorgang NICHT geantwortet haben, waehrend mindestens einer
+     * geantwortet hat - der TEILERFOLG.
+     *
+     * Warum das ein eigener Zustand sein muss: eine unvollstaendige Eventliste ist zu Recht keine
+     * Loeschgrundlage, alle vier `isComplete`-Sperren steigen deshalb aus. Sie verhindern damit
+     * aber auch, dass jemals wieder ein Alarm ANGELEGT wird. Bleibt ein Kalender dauerhaft
+     * unerreichbar (geloescht, Freigabe entzogen, Feed abgeschaltet), laufen die bestehenden
+     * Wecker der Reihe nach aus und nichts waechst nach - bis v1.25.3 ohne jedes Anzeichen, weil
+     * die Zahl der gescheiterten Kalender ausschliesslich im Log und in den Sperren stand.
+     *
+     * AUSDRUECKLICH LEER, wenn ALLE Kalender gescheitert sind: dieser Fall gehoert
+     * [calendarAuthorizationValid] und hat seine eigene Anzeige ("Kalender-Autorisierung
+     * verloren"). Zwei Warnungen fuer dieselbe Lage waeren schlechter als eine.
+     */
+    val unavailableCalendarIds: Set<String> = emptySet()
 )
 
 /**
@@ -577,7 +593,7 @@ class CalendarViewModel @Inject constructor(
                 // Ohne das galt der Ladevorgang selbst dann als geglueckt, wenn JEDER
                 // Kalender an einem toten Token gescheitert war - siehe unten.
                 var firstFailure: Throwable? = null
-                var failedCalendars = 0
+                val failedCalendarIds = mutableSetOf<String>()
                 
                 // PERFORMANCE OPTIMIZATION: Process calendars sequentially but with proper async handling
                 selectedIds.forEach { calendarId ->
@@ -642,14 +658,14 @@ class CalendarViewModel @Inject constructor(
                         }.onFailure { error ->
                             Logger.e(LogTags.CALENDAR, "Failed to load events for calendar ${calendarId.take(8)}...", error)
                             if (firstFailure == null) firstFailure = error
-                            failedCalendars++
+                            failedCalendarIds += calendarId
                             processedCalendars++
                         }
 
                     } catch (e: Exception) {
                         Logger.e(LogTags.CALENDAR, "Exception loading calendar ${calendarId.take(8)}...", e)
                         if (firstFailure == null) firstFailure = e
-                        failedCalendars++
+                        failedCalendarIds += calendarId
                         processedCalendars++
                     }
                 }
@@ -692,7 +708,7 @@ class CalendarViewModel @Inject constructor(
                 // unbemerkt zurueckkehren kann. Siehe CalendarViewModelTest.
                 val failure = firstFailure
                 val (everythingFailed, authStillValid) = resolveCalendarAuthorizationOutcome(
-                    failedCalendars = failedCalendars,
+                    failedCalendars = failedCalendarIds.size,
                     totalSelectedCalendars = selectedIds.size
                 )
 
@@ -706,7 +722,7 @@ class CalendarViewModel @Inject constructor(
                 if (everythingFailed) {
                     Logger.e(
                         LogTags.CALENDAR,
-                        "❌ Alle $failedCalendars Kalender fehlgeschlagen - Autorisierung wird als ungueltig gemeldet"
+                        "❌ Alle ${failedCalendarIds.size} Kalender fehlgeschlagen - Autorisierung wird als ungueltig gemeldet"
                     )
                 }
 
@@ -732,7 +748,10 @@ class CalendarViewModel @Inject constructor(
                         hasMoreEvents = finalHasMore,
                         calendarAuthorizationValid = authStillValid,
                         lastAuthorizationCheck = System.currentTimeMillis(),
-                        error = failureMessage ?: state.error
+                        error = failureMessage ?: state.error,
+                        // Nur der TEILERFOLG. Bei everythingFailed uebernimmt
+                        // calendarAuthorizationValid oben die Anzeige - siehe Feld-Kommentar.
+                        unavailableCalendarIds = if (everythingFailed) emptySet() else failedCalendarIds
                     )
                 }
                 
@@ -742,7 +761,7 @@ class CalendarViewModel @Inject constructor(
                 val displayedListIsComplete = isEventListCompleteForAlarmSync(
                     loadedEventCount = finalSortedEvents.size,
                     totalEventCount = totalEventCount,
-                    failedCalendars = failedCalendars,
+                    failedCalendars = failedCalendarIds.size,
                     loadAll = loadAll
                 )
 
@@ -770,7 +789,7 @@ class CalendarViewModel @Inject constructor(
                         Logger.d(
                             LogTags.CALENDAR,
                             "Angezeigte Liste ist ein Praefix (${finalSortedEvents.size}/$totalEventCount, " +
-                                "$failedCalendars Kalender fehlgeschlagen) - vollstaendige Liste fuer den Alarm-Sync nachfordern"
+                                "${failedCalendarIds.size} Kalender fehlgeschlagen) - vollstaendige Liste fuer den Alarm-Sync nachfordern"
                         )
                         val completeFetch = calendarUseCase
                             .getCalendarEventsWithStatus(calendarIds = selectedIds, forceRefresh = false)
@@ -844,6 +863,50 @@ class CalendarViewModel @Inject constructor(
                 calendarSelectionRepository.removeCalendarId(calendarId)
             } else {
                 calendarSelectionRepository.addCalendarId(calendarId)
+            }
+        }
+    }
+
+    /**
+     * Entfernt die Kalender aus der Auswahl, die beim letzten Ladevorgang nicht geantwortet haben
+     * ([CalendarUiState.unavailableCalendarIds]).
+     *
+     * AUSSCHLIESSLICH auf Tastendruck des Nutzers - die App tut das NIE von allein. Der Grund
+     * steht am Feld: die Kalenderliste ist paginiert, "ID nicht in `availableCalendars`" ist also
+     * kein Beweis dafuer, dass der Kalender geloescht wurde. Eine selbsttaetige Bereinigung wuerde
+     * bei einem laengeren Ausfall (Freigabe kurzzeitig weg, Server-Stoerung) die Auswahl des
+     * Nutzers stillschweigend abraeumen - und danach faende die App den Dienstplan nie wieder,
+     * ohne dass irgendwo stuende, warum.
+     *
+     * Umkehrbar: der Kalender laesst sich in der Kalenderauswahl jederzeit wieder anhaken. Deshalb
+     * bewusst ohne Bestaetigungsdialog.
+     *
+     * Der Zustand wird hier NICHT selbst geleert - `observeCalendarSelection()` stoesst nach der
+     * Aenderung einen neuen Ladevorgang an, und der schreibt [CalendarUiState.unavailableCalendarIds]
+     * ohnehin frisch. Ihn hier vorab zu leeren hiesse, ein Ergebnis zu behaupten, das noch niemand
+     * gemessen hat.
+     */
+    fun removeUnavailableCalendarsFromSelection() {
+        viewModelScope.launch {
+            val betroffen = uiState.value.unavailableCalendarIds
+            if (betroffen.isEmpty()) {
+                Logger.d(LogTags.CALENDAR, "Kein nicht abrufbarer Kalender in der Auswahl - nichts zu entfernen")
+                return@launch
+            }
+
+            Logger.business(
+                LogTags.CALENDAR,
+                "🧹 Nutzer entfernt ${betroffen.size} nicht abrufbare(n) Kalender aus der Auswahl"
+            )
+            betroffen.forEach { calendarId ->
+                calendarSelectionRepository.removeCalendarId(calendarId)
+                    .onFailure { e ->
+                        Logger.e(
+                            LogTags.CALENDAR,
+                            "Kalender ${calendarId.take(8)}... liess sich nicht aus der Auswahl entfernen",
+                            e
+                        )
+                    }
             }
         }
     }

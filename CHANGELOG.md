@@ -27,7 +27,23 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.25.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.26.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Wenn ein Kalender dauerhaft ausfällt, sagt die App es jetzt – vorher versiegten die Wecker stillschweigend._
+
+### ✨ Neu
+
+- **Warnung, wenn ein gewählter Kalender nicht mehr antwortet:** Hast du mehrere Kalender ausgewählt und einer davon verschwindet dauerhaft (gelöscht, Freigabe zurückgezogen, abonnierter Feed abgeschaltet), legt die App aus Sicherheitsgründen keine neuen Wecker mehr an – sie kann dann nämlich nicht mehr unterscheiden, ob eine Schicht wirklich gestrichen wurde oder nur der Kalender fehlt. Bisher passierte das *lautlos*: die gestellten Wecker klingelten der Reihe nach ab, es kam nichts nach, und nach etwa zwei Wochen war der Wecker weg, ohne dass irgendwo etwas stand. Jetzt zeigt die Status-Karte „Kalender", welcher Kalender betroffen ist und was das bedeutet – mit einem Knopf, um ihn aus der Auswahl zu entfernen. Danach läuft alles sofort wieder normal.
+- **Und eine Benachrichtigung dazu**, denn genau in diesem Fall öffnet man die App ja gerade nicht. Sie kommt erst, wenn derselbe Kalender zweimal hintereinander nicht antwortet – ein einzelner Aussetzer im Funkloch löst also keinen Fehlalarm aus. In den Einstellungen unter „Benachrichtigungen" lässt sie sich getrennt von der Schicht-Änderungs-Meldung abschalten.
+
+### 🔎 Gut zu wissen
+
+- **Deine bereits gestellten Wecker bleiben in dieser Lage unangetastet** – das war schon vorher so und bleibt so. Neu ist nur, dass du davon erfährst.
+- Die App entfernt einen Kalender **nie von selbst** aus deiner Auswahl. Ein vorübergehend nicht erreichbarer Kalender sieht für die App genauso aus wie ein gelöschter, und deine Auswahl stillschweigend zu ändern wäre der schlechtere Fehler.
+
+## Version 1.25.3
 
 **Stand:** August 2026
 

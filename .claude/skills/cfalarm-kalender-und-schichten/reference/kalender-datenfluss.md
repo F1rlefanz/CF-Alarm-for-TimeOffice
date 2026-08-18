@@ -172,3 +172,54 @@
   06:30 → 05:00, Wecker angepasst"). Das ist folgerichtig (der Sync sieht eine geänderte Weckzeit
   und kann die Ursache nicht unterscheiden), aber beim Deuten von Nutzer-Meldungen wissenswert:
   eine solche Meldung heißt nicht zwingend, dass sich der Dienstplan geändert hat.
+
+## Der Teilerfolg: richtig gesperrt, aber unsichtbar (v1.26.0)
+
+Die Sperren oben sind richtig — und genau deshalb war dieser Fall so schwer zu sehen.
+
+Sind mehrere Kalender ausgewählt (privat + TimeOffice-Dienstplan) und **einer** davon dauerhaft
+unerreichbar (gelöscht, Freigabe entzogen, Feed-Quelle abgeschaltet), ist jede Eventliste
+unvollständig. Alle vier `isComplete`-Sperren greifen und verhindern das Löschen. Sie verhindern
+damit aber auch, dass **jemals wieder etwas angelegt** wird: `AlarmMaintenanceService`,
+`CalendarPreAlarmRefreshWorker` und `BootReceiver` kehren zurück, bevor `syncAlarms()` läuft. Die
+bestehenden Wecker klingeln der Reihe nach und laufen aus, nichts wächst nach — nach etwa zwei
+Wochen ist der Bestand leer, ohne eine einzige Meldung.
+
+Gefunden in der Prüfrunde vom 18.08.2026. Bis dahin stand `failedCalendars` ausschließlich im Log
+und in den Sperren selbst.
+
+**Was daraus folgt, und was ausdrücklich NICHT:**
+
+- **Nur der Teilerfolg ist neu.** Fallen ALLE Kalender aus, ist das der Autorisierungsfall
+  (`resolveCalendarAuthorizationOutcome()` → `calendarAuthorizationValid = false`) mit eigener,
+  handlungsfähiger Meldung. `CalendarUiState.unavailableCalendarIds` bleibt dann bewusst leer —
+  zwei Warnungen für dieselbe Lage sind schlechter als eine.
+- **Die IDs, nicht die Anzahl.** „Irgendein Kalender ist nicht abrufbar" lässt sich nicht abwählen.
+  `failedCalendars` ist deshalb nur noch eine abgeleitete Property von `failedCalendarIds`.
+- **Der Name kann fehlen, und das ist in Ordnung.** `availableCalendars` lädt seitenweise (20 pro
+  Seite); ein ausgewählter Kalender kann noch gar nicht darin stehen. Dann nennt der Text die
+  Anzahl statt eines geratenen Namens. Sind zwei betroffen und nur einer auflösbar, wird KEINER
+  genannt — sonst wählt der Nutzer einen ab und wundert sich, dass die Meldung bleibt.
+- **Die App entfernt nie selbst.** Aus demselben Grund: „ID fehlt in `availableCalendars`" ist kein
+  Beweis für „gelöscht". Eine selbsttätige Bereinigung wäre bei einer vorübergehenden Störung genau
+  die „leer ist die gefährlichste Lüge"-Falle, nur auf der Auswahl statt auf den Events. Es gibt
+  einen Knopf, und der gehört dem Nutzer.
+- **Vorübergehend ≠ dauerhaft.** Ein Funkloch während des Abrufs erzeugt dieselben
+  `failedCalendarIds`. Die Karte zeigt das sofort (sie ist ohnehin nur sichtbar, wenn jemand
+  hinsieht), die BENACHRICHTIGUNG erst, wenn dieselbe ID zwei aufeinanderfolgende Wartungsläufe
+  scheitert. Eine Wecker-App, die grundlos warnt, wird stumm geschaltet — und dann fehlt auch die
+  echte Warnung.
+- **Der Notifier wird VOR der `isComplete`-Sperre und AUCH mit leerer Menge aufgerufen.** Stünde er
+  dahinter, sähe er ausschließlich Störungen und verstummte nach der ersten nie wieder; ohne die
+  leeren Läufe erführe er nie, dass sich ein Kalender erholt hat.
+
+**Am Emulator durchgemessen (18.08.2026)**, mit einer nicht existierenden Kalender-ID in der echten
+Auswahl — die API antwortet darauf mit 404, also genau wie bei einem gelöschten Kalender:
+Teilerfolg erzeugt (`1/2 Kalender nicht abrufbar`), die 8 bestehenden Wecker blieben unangetastet,
+Karte zeigte Text und Knopf, Lauf 1 schwieg, **Lauf 2 meldete**, Lauf 3 wiederholte nicht, und nach
+dem Tippen auf „Aus Auswahl entfernen" lief der Sync sofort wieder an (8 → 9 Alarme).
+
+**Bekannte Kleinigkeit:** Die Entprellungs-Merker werden erst vom nächsten WARTUNGSLAUF geräumt,
+nicht schon beim Entfernen des Kalenders. Wer denselben Kalender innerhalb dieses Fensters (max.
+6 h) wieder hinzufügt, während er noch kaputt ist, bekommt keine erneute Benachrichtigung — die
+Karte zeigt ihn trotzdem. Bewusst nicht behoben: der Aufwand stünde in keinem Verhältnis.

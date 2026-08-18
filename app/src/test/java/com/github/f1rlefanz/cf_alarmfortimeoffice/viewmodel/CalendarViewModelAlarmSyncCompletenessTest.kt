@@ -87,11 +87,11 @@ class CalendarViewModelAlarmSyncCompletenessTest {
     @Test
     fun `CalendarFetchOutcome ist genau dann vollstaendig, wenn kein Kalender gescheitert ist`() {
         assertTrue(
-            CalendarFetchOutcome(emptyList(), requestedCalendars = 2, failedCalendars = 0).isComplete
+            CalendarFetchOutcome(emptyList(), requestedCalendars = 2).isComplete
         )
         assertFalse(
             "Teilerfolg ist bewusst Result.success - aber NICHT vollstaendig",
-            CalendarFetchOutcome(emptyList(), requestedCalendars = 2, failedCalendars = 1).isComplete
+            CalendarFetchOutcome(emptyList(), requestedCalendars = 2, failedCalendarIds = setOf("kaputt")).isComplete
         )
     }
 }

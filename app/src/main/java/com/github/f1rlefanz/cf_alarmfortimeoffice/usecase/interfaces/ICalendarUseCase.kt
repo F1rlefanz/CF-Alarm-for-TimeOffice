@@ -35,9 +35,23 @@ data class EventPage(
 data class CalendarFetchOutcome(
     val events: List<CalendarEvent>,
     val requestedCalendars: Int,
-    val failedCalendars: Int
+    /**
+     * Die IDs der Kalender, die NICHT geantwortet haben - nicht bloss ihre Anzahl.
+     *
+     * Bis v1.25.3 stand hier ein blosses `failedCalendars: Int`, und genau das war die Luecke:
+     * die Sperren unten wussten, DASS etwas fehlt, konnten dem Nutzer aber nicht sagen, WAS. Ein
+     * dauerhaft nicht abrufbarer Kalender (geloescht, Freigabe entzogen, Feed-Quelle
+     * abgeschaltet) haelt den Alarm-Sync unbefristet an - und ohne den Namen ist die Meldung
+     * darueber nicht handlungsfaehig ("irgendein Kalender" laesst sich nicht abwaehlen).
+     *
+     * [failedCalendars] bleibt als ABGELEITETE Property bestehen: eine Wahrheit, kein zweites
+     * Feld, das auseinanderlaufen kann.
+     */
+    val failedCalendarIds: Set<String> = emptySet()
 ) {
-    val isComplete: Boolean get() = failedCalendars == 0
+    val failedCalendars: Int get() = failedCalendarIds.size
+
+    val isComplete: Boolean get() = failedCalendarIds.isEmpty()
 }
 
 /**

@@ -243,7 +243,7 @@ class CalendarUseCase @Inject constructor(
             
             if (calendarIds.isEmpty()) {
                 Logger.w(LogTags.CALENDAR, "No calendar IDs provided")
-                CalendarFetchOutcome(emptyList(), requestedCalendars = 0, failedCalendars = 0)
+                CalendarFetchOutcome(emptyList(), requestedCalendars = 0)
             } else {
                 if (forceRefresh) {
                     Logger.i(LogTags.CALENDAR, "Force refresh requested - loading events from API for ${calendarIds.size} calendars")
@@ -253,7 +253,7 @@ class CalendarUseCase @Inject constructor(
                 
                 // PROGRESSIVE LOADING: Single calendar at a time to prevent UI blocking
                 val allEvents = mutableListOf<CalendarEvent>()
-                var failedCount = 0
+                val failedCalendarIds = mutableSetOf<String>()
                 var firstError: Throwable? = null
                 var processedCount = 0
                 
@@ -281,7 +281,7 @@ class CalendarUseCase @Inject constructor(
                                 // die restlichen Kalender in denselben Fehler und der naechste
                                 // Sync gleich mit.
                                 invalidateTokenIfRejectedByGoogle(error)
-                                failedCount++
+                                failedCalendarIds += calendarId
                                 if (firstError == null) firstError = error
                                 processedCount++
                                 // Continue with other calendars instead of failing completely
@@ -290,7 +290,7 @@ class CalendarUseCase @Inject constructor(
 
                     } catch (e: Exception) {
                         Logger.e(LogTags.CALENDAR_API, "Exception loading events for calendar ${calendarId.take(8)}...", e)
-                        failedCount++
+                        failedCalendarIds += calendarId
                         if (firstError == null) firstError = e
                         processedCount++
                     }
@@ -310,12 +310,12 @@ class CalendarUseCase @Inject constructor(
                 // Der Wurf landet im umgebenden SafeExecutor.safeExecute und wird dort zu
                 // Result.failure - Aufrufer, die bereits isFailure pruefen (BootReceiver,
                 // AlarmMaintenanceService, CalendarPreAlarmRefreshWorker), profitieren sofort.
-                if (failedCount > 0 && failedCount == calendarIds.size) {
+                if (failedCalendarIds.isNotEmpty() && failedCalendarIds.size == calendarIds.size) {
                     val error = firstError
                         ?: AppError.UnknownError("Alle Kalender-Abrufe sind fehlgeschlagen")
                     Logger.e(
                         LogTags.CALENDAR,
-                        "❌ ALLE $failedCount Kalender-Abrufe fehlgeschlagen - kein Teilergebnis, meldet Fehler statt leerer Liste",
+                        "❌ ALLE ${failedCalendarIds.size} Kalender-Abrufe fehlgeschlagen - kein Teilergebnis, meldet Fehler statt leerer Liste",
                         error
                     )
                     throw error
@@ -330,7 +330,7 @@ class CalendarUseCase @Inject constructor(
                 // damit ausgerechnet im Fehlerfall weg, dem einzigen, in dem er bei der Diagnose
                 // gebraucht wird.
                 val logSuffix = buildString {
-                    if (failedCount > 0) append(" (with some errors: $failedCount/${calendarIds.size} calendars failed)")
+                    if (failedCalendarIds.isNotEmpty()) append(" (with some errors: ${failedCalendarIds.size}/${calendarIds.size} calendars failed)")
                     if (forceRefresh) append(" (force refreshed)")
                 }
                 Logger.i(
@@ -341,7 +341,7 @@ class CalendarUseCase @Inject constructor(
                 CalendarFetchOutcome(
                     events = sortedEvents,
                     requestedCalendars = calendarIds.size,
-                    failedCalendars = failedCount
+                    failedCalendarIds = failedCalendarIds
                 )
             }
         }

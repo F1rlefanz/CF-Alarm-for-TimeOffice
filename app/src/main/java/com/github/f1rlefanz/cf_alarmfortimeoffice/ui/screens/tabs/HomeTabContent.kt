@@ -51,6 +51,7 @@ import java.time.format.DateTimeFormatter
 internal enum class NoShiftReason {
     NO_CALENDAR_SELECTED,
     AUTHORIZATION_LOST,
+    CALENDAR_PARTIALLY_UNAVAILABLE,
     LOAD_ERROR,
     NO_EVENTS,
     SHIFT_CONFIG_NOT_LOADED,
@@ -70,6 +71,7 @@ internal enum class NoShiftReason {
 internal fun noShiftReason(
     hasSelectedCalendars: Boolean,
     calendarAuthorizationValid: Boolean,
+    unavailableCalendarCount: Int,
     errorMessage: String?,
     eventCount: Int,
     shiftConfigLoaded: Boolean,
@@ -78,6 +80,11 @@ internal fun noShiftReason(
 ): NoShiftReason = when {
     !hasSelectedCalendars -> NoShiftReason.NO_CALENDAR_SELECTED
     !calendarAuthorizationValid -> NoShiftReason.AUTHORIZATION_LOST
+    // NACH der Autorisierung, VOR allem Weiteren: ist ein Kalender nicht abrufbar, halten die
+    // Vollstaendigkeits-Sperren jeden Alarm-Sync an. Jede Ursache darunter (keine Termine, kein
+    // Muster) waere dann eine Folge davon, keine eigene Erklaerung - und wuerde den Nutzer an der
+    // falschen Stelle suchen lassen.
+    unavailableCalendarCount > 0 -> NoShiftReason.CALENDAR_PARTIALLY_UNAVAILABLE
     !errorMessage.isNullOrBlank() -> NoShiftReason.LOAD_ERROR
     eventCount == 0 -> NoShiftReason.NO_EVENTS
     !shiftConfigLoaded -> NoShiftReason.SHIFT_CONFIG_NOT_LOADED
@@ -115,6 +122,12 @@ internal fun noShiftExplanation(
             // die im Screen wirklich steht (Karte "Kalender-Events", Knopf darin).
             "Kalender-Zugriff abgelaufen — in der Karte \"Kalender-Events\" auf " +
                 "\"Kalender-Zugriff erneuern\" tippen."
+        NoShiftReason.CALENDAR_PARTIALLY_UNAVAILABLE ->
+            // Verweist auf die Karte, die den Namen des Kalenders UND den Entfernen-Knopf hat -
+            // hier stehen die IDs nicht zur Verfuegung, und ein halber Hinweis waere schlechter
+            // als der Weg zur vollstaendigen Auskunft.
+            "Ein ausgewählter Kalender ist nicht abrufbar — solange werden keine neuen Wecker " +
+                "angelegt. Näheres im Status-Tab unter \"Kalender\"."
         NoShiftReason.LOAD_ERROR ->
             "Termine konnten nicht geladen werden: ${errorMessage?.takeIf { it.isNotBlank() } ?: "unbekannter Fehler"}"
         NoShiftReason.NO_EVENTS ->
@@ -248,6 +261,7 @@ fun HomeTabContent(
                         val reason = noShiftReason(
                             hasSelectedCalendars = calendarState.selectedCalendarIds.isNotEmpty(),
                             calendarAuthorizationValid = calendarState.calendarAuthorizationValid,
+                            unavailableCalendarCount = calendarState.unavailableCalendarIds.size,
                             errorMessage = calendarState.error ?: shiftState.error,
                             eventCount = calendarState.events.size,
                             shiftConfigLoaded = shiftConfig != null,

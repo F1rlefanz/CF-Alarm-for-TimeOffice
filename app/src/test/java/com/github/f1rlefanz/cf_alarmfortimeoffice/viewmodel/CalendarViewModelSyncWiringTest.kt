@@ -163,7 +163,7 @@ class CalendarViewModelSyncWiringTest {
         buildViewModel(
             pageEvents = complete.take(10),
             totalEvents = 13,
-            completeFetch = CalendarFetchOutcome(complete, requestedCalendars = 1, failedCalendars = 0),
+            completeFetch = CalendarFetchOutcome(complete, requestedCalendars = 1),
             alarmUseCase = alarmUseCase
         )
 
@@ -182,7 +182,7 @@ class CalendarViewModelSyncWiringTest {
             pageEvents = partial.take(10),
             totalEvents = 13,
             // Ein Kalender hat nicht geantwortet - die Liste sieht vollstaendig aus, ist es aber nicht.
-            completeFetch = CalendarFetchOutcome(partial, requestedCalendars = 2, failedCalendars = 1),
+            completeFetch = CalendarFetchOutcome(partial, requestedCalendars = 2, failedCalendarIds = setOf("kaputt")),
             alarmUseCase = alarmUseCase
         )
 

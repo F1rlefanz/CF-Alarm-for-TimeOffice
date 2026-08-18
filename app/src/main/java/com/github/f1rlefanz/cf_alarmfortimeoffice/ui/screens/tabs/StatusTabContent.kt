@@ -99,10 +99,17 @@ fun StatusTabContent(
             }
         )
 
-        // Kalender Status: zwei echte, unterscheidbare Fehlerzustaende - je einer bekommt seine
+        // Kalender Status: drei echte, unterscheidbare Fehlerzustaende - je einer bekommt seine
         // eigene Aktion (nicht gleichzeitig moeglich, siehe Bedingungen unten). "Keine Kalender
         // verfuegbar" (leeres Google-Konto) bleibt ohne Button - nichts, wohin man von hier aus
         // springen koennte.
+        //
+        // Der dritte Zustand (Teilerfolg) kam in v1.26.0 dazu und ist der stillste: die
+        // Autorisierung ist gueltig, Termine kommen an, nur EIN Kalender antwortet nicht. Die
+        // Vollstaendigkeits-Sperren halten dann jeden Alarm-Sync an - richtig, aber ohne diese
+        // Karte unsichtbar. Er steht bewusst NACH der Autorisierungs-Pruefung: fallen ALLE
+        // Kalender aus, ist das kein Teilerfolg, sondern der Autorisierungsfall darueber.
+        val teilerfolg = calendarState.unavailableCalendarIds.isNotEmpty()
         val calendarActionLabel: String?
         val onCalendarAction: (() -> Unit)?
         when {
@@ -116,6 +123,10 @@ fun StatusTabContent(
                 calendarActionLabel = "Kalender wählen"
                 onCalendarAction = onShowCalendarSelection
             }
+            teilerfolg && calendarViewModel != null -> {
+                calendarActionLabel = "Aus Auswahl entfernen"
+                onCalendarAction = { calendarViewModel.removeUnavailableCalendarsFromSelection() }
+            }
             else -> {
                 calendarActionLabel = null
                 onCalendarAction = null
@@ -123,11 +134,17 @@ fun StatusTabContent(
         }
         StatusCard(
             title = "Kalender",
-            isOk = calendarState.selectedCalendarIds.isNotEmpty() && calendarState.calendarAuthorizationValid,
+            isOk = calendarState.selectedCalendarIds.isNotEmpty() &&
+                calendarState.calendarAuthorizationValid &&
+                !teilerfolg,
             details = when {
                 !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() ->
                     "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
                 calendarState.selectedCalendarIds.isEmpty() -> "Kein Kalender ausgewählt"
+                teilerfolg -> unavailableCalendarDetails(
+                    unavailableIds = calendarState.unavailableCalendarIds,
+                    namesById = calendarState.availableCalendars.associate { it.id to it.name }
+                )
                 calendarState.availableCalendars.isEmpty() -> "Keine Kalender verfügbar"
                 else -> "${calendarState.selectedCalendarIds.size} Kalender ausgewählt, API-Zugriff OK"
             },
@@ -189,6 +206,40 @@ fun StatusTabContent(
     }
 }
 
+
+
+/**
+ * PURE, TESTBAR: formuliert den Teilerfolg fuer die Kalender-Karte.
+ *
+ * Zwei Dinge muessen darin stehen, sonst ist die Meldung wertlos:
+ *  - WELCHER Kalender. "Ein Kalender ist nicht abrufbar" laesst sich nicht abwaehlen. Der Name
+ *    kommt aus [namesById]; die Kalenderliste ist paginiert, der Eintrag kann also fehlen - dann
+ *    bleibt nur die Anzahl, und das ist ehrlicher als ein geratener Name.
+ *  - Die FOLGE. Der Zustand selbst sagt dem Nutzer nichts; dass deswegen keine neuen Wecker mehr
+ *    entstehen, ist die eigentliche Nachricht. Und der Zusatz "bestehende bleiben" gehoert
+ *    dazu - sonst liest sich die Karte, als seien die Wecker schon weg.
+ */
+internal fun unavailableCalendarDetails(
+    unavailableIds: Set<String>,
+    namesById: Map<String, String>
+): String {
+    val folge = " — solange werden keine neuen Wecker angelegt (bestehende bleiben). " +
+        "Ist der Kalender dauerhaft weg, hier aus der Auswahl entfernen."
+
+    val namen = unavailableIds.mapNotNull { namesById[it] }.sorted()
+
+    val wer = when {
+        namen.size == unavailableIds.size && namen.size == 1 ->
+            "⚠️ \"${namen.first()}\" ist zurzeit nicht abrufbar"
+        namen.size == unavailableIds.size ->
+            "⚠️ ${unavailableIds.size} Kalender sind zurzeit nicht abrufbar (${namen.joinToString(", ") { "\"$it\"" }})"
+        unavailableIds.size == 1 ->
+            "⚠️ Ein ausgewählter Kalender ist zurzeit nicht abrufbar"
+        else ->
+            "⚠️ ${unavailableIds.size} ausgewählte Kalender sind zurzeit nicht abrufbar"
+    }
+    return wer + folge
+}
 
 @Composable
 private fun StatusCard(

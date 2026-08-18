@@ -23,6 +23,12 @@
 - Die tragfähigsten Funde kamen aus Gerätelogs, nicht aus Code-Inspektion
 - CI-Fallstrick, nicht als roten Lauf missdeuten
 - Der Emulator muss vor Instrumentationstests wach sein
+- Dependabot: Vorgehen für Bumps
+- `cmd app_hibernation set-state` KOSTET den OAuth-Token
+- Eine Neuinstallation schaltet den Dimm-Dienst AB
+- Volles `/data` sieht wie ein Build-Fehler aus
+- Drei Verdrahtungen sind bewusst ohne JVM-Test
+- Die Gate-Kette ist am Emulator nicht end-to-end prüfbar
 
 ---
 
@@ -129,3 +135,44 @@
   passiert).
 - **Der Emulator muss vor Instrumentationstests wach sein.** `mWakefulness=Asleep` heißt: die
   Activity bleibt bei CREATED und der Test misst nichts — kein App-Bug. Vorher aufwecken.
+
+- **Dependabot: Vorgehen für Bumps.** `.github/dependabot.yml` ignoriert bewusst AGP /
+  `org.jetbrains.kotlin*` / KSP, damit der Bot die drei nie einzeln bumpt — das so lassen.
+  Dependabot-Branches stehen typischerweise auf altem Stand: **`main` in den Branch mergen,
+  nicht rebasen** (kein Force-Push nötig, die PR bleibt erhalten). Für alles, was den Build
+  anfasst, gilt die Verifikationsliste: `testDebugUnitTest lintDebug` · `assembleRelease` +
+  `lintVitalRelease` **mit Netz** (R8 ist an) · APK-Größe gegen **10,96 MB** vergleichen ·
+  `installDebug` und die App **wirklich starten** (grüne Tests haben hier schon einen
+  Crash-on-Launch durchgelassen) · Logcat auf App-`WARN` · CI grün.
+- **`cmd app_hibernation set-state <pkg> true` KOSTET den OAuth-Token.** Das Einfrieren ist genau
+  dafür gebaut, Berechtigungen zurückzusetzen — danach stand die App auf „Kalender-Zugriff
+  erforderlich", der verschlüsselte Token-Store war auf 33 Bytes (leer) zurückgesetzt. Kein
+  Defekt: ein Tipp auf „Kalender-Zugriff erlauben" holte den Token ohne weiteren Dialog zurück
+  (Googles Consent stand noch). Wer das Kommando benutzt, weiß jetzt, dass er hinterher einmal
+  antippen muss.
+- **Eine Neuinstallation schaltet den Dimm-Dienst AB** (gemessen 14.08.2026). Nach einem Update
+  stand `enabled_accessibility_services` auf `null` und `accessibility_enabled` auf `0` — der
+  `DimAccessibilityService` war nicht mehr gebunden. Der Dimmer rendert dann **gar nichts**, ohne
+  Fehlermeldung und ohne einen einzigen Log-Eintrag. Nach jeder Installation prüfen und
+  wiederherstellen: `adb shell settings put secure enabled_accessibility_services
+  <pkg>/<pkg>.dimmer.DimAccessibilityService` plus `settings put secure accessibility_enabled 1`,
+  Gegenprobe `dumpsys accessibility | grep 'CF-Alarm Schicht-Dimmer'`. NICHT dasselbe wie der
+  ECM-Fall (dort steht der Dienst auf „An" und bindet trotzdem nicht).
+- **Volles `/data` sieht wie ein Build-Fehler aus.** Ein Install schlägt dann mit
+  `INSTALL_FAILED_INSUFFICIENT_STORAGE` fehl, Gradle meldet aber nur „BUILD FAILED".
+  Deinstallieren + `adb install -r` reicht als Notbehelf; wer mehr Luft braucht, vergrößert das
+  AVD-Image.
+- **Drei Verdrahtungen sind bewusst ohne JVM-Test:** `BootReceiver`, `BackgroundServiceManager`
+  und `CalendarPreAlarmRefreshWorker` — Android-Receiver bzw. Hilt-EntryPoints ohne sinnvollen
+  Harnisch. Getestet ist jeweils die herausgezogene Entscheidungslogik
+  (`CalendarFetchOutcome.isComplete`, `isEventListCompleteForAlarmSync`). Wer dort etwas ändert,
+  prüft am Gerät nach — die Prüfrunde vom 18.08.2026 fand in genau diesem ungetesteten
+  `BootReceiver`-Pfad einen Wecker-Verlust, den 662 grüne Tests nicht sahen.
+- **Die Gate-Kette ist am Emulator nicht end-to-end prüfbar** (Umgebung, nicht Code).
+  Nachgemessen: `cmd app_hibernation get-state --global` meldet dort **false** (die
+  Unused-App-Einschränkung ist gar nicht aktiv, `isRestricted()` also immer false), und
+  TimeOffice ist nicht installiert — Gate 3 und Gate 4 können dort nie feuern, mit oder ohne Fix.
+  Der halbe Weg ist belegt (Akku-Ausnahme per `cmd deviceidle whitelist -<pkg>` entziehen → Gate
+  erscheint → „Später" → Home). Die Kettenlogik hält stattdessen `NavigationViewModelTest` fest;
+  per Mutationsprobe belegt: mit der alten Bedingung fallen **drei** Tests um. Echt prüfbar nur
+  am Fairphone, und nur solange „Pause bei Nichtnutzung" dort aktiv ist.

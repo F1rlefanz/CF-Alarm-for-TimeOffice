@@ -174,3 +174,20 @@
   `V/Settings: ZEN_MODE change value to X` sowie der eigene Erfolgs-Log bestätigen den echten
   Aufrufausgang.
 
+
+## Verifikationsregel: einen alarmabgeleiteten Trigger IMMER nach dem Klingeln messen
+
+Die Zusicherung „Die Dienstzeit-Fenster kommen aus `ShiftSpanStore`, nicht aus dem Alarm-Bestand"
+stammt aus einem Nachweis, der **unvollständig war und deshalb einen echten Bug durchgelassen**
+hat — das ist der lehrreiche Teil, nicht der Fix.
+
+Geprüft worden war nur ein AD1-Tag, an dem der Wecker noch NICHT gefeuert hatte; dort sah alles
+richtig aus. Am 20.08. um 08:00, mitten in der Frühschicht (Termin 06:00–14:12, Wecker 05:30
+bereits gelaufen), war „Nicht stören" AUS: `zen_mode=0`, Regel `STATE_FALSE`. Ursache: die
+Fenster kamen aus dem Alarm-Bestand, und ein Alarm überlebt seine Weckzeit nicht. Der Code war
+seit v1.18.0 unverändert und hatte mehrere Code-Sweeps überstanden — im Code sah die Kopplung
+plausibel aus. Aufgefallen ist sie erst beim Messen zum richtigen Zeitpunkt.
+
+**Regel daraus:** Jeden Trigger, der aus dem Alarm-Bestand abgeleitet ist, mindestens einmal NACH
+dem Feuern des Alarms messen — vorher misst man nur den halben Tag. Und: eine Code-Prüfrunde
+ersetzt die Geräteverifikation nicht; das ist inzwischen der dritte Beleg dafür.

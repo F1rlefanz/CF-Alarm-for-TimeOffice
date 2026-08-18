@@ -1,3 +1,5 @@
+@file:Suppress("UnusedImport") // encodeToString/decodeFromString werden reified genutzt
+
 package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig

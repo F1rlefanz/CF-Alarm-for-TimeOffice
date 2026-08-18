@@ -85,6 +85,29 @@ sealed class AppError(
  */
 fun Throwable.toAppError(): AppError = when (this) {
     is AppError -> this
+
+    // DIE REIHENFOLGE IST TRAGEND: beide Netzwerk-Ausnahmen erben von IOException und muessen
+    // deshalb VOR dem IOException-Zweig stehen.
+    //
+    // Bis zum 18.08.2026 standen sie darunter, und Android Studio meldete sie zu Recht als
+    // "'when' branch is never reachable" - toter Code mit Nebenwirkung. Jeder Verbindungsabbruch
+    // und jedes Timeout landete im IOException-Zweig und wurde zu einem FileSystemError. Das hat
+    // zweierlei gekostet:
+    //  - Der Nutzer las eine falsche Meldung. "Keine Internetverbindung. Bitte ueberpruefen Sie
+    //    Ihre Verbindung" ist genau der Hinweis, der hier haette kommen muessen.
+    //  - Das Log stufte es hoch: NetworkError geht als WARN in den Netz-Tag (Severity LOW, weil
+    //    erwartbar und behebbar), der Speicher-Zweig als ERROR. Ein Handy im Funkloch produzierte
+    //    also Datei-ERRORs - Rauschen an der Stelle, die den naechsten echten Vorfall auswertbar
+    //    halten soll.
+    is java.net.UnknownHostException -> AppError.NetworkError(
+        message = "No internet connection",
+        cause = this
+    )
+    is java.net.SocketTimeoutException -> AppError.NetworkError(
+        message = "Request timed out",
+        cause = this
+    )
+
     is java.io.IOException -> when {
         message?.contains("ENOENT") == true || 
         message?.contains("No such file") == true -> 
@@ -104,14 +127,6 @@ fun Throwable.toAppError(): AppError = when (this) {
     }
     is SecurityException -> AppError.PermissionError(
         message = message ?: "Security permission denied",
-        cause = this
-    )
-    is java.net.UnknownHostException -> AppError.NetworkError(
-        message = "No internet connection",
-        cause = this
-    )
-    is java.net.SocketTimeoutException -> AppError.NetworkError(
-        message = "Request timed out",
         cause = this
     )
     else -> AppError.UnknownError(

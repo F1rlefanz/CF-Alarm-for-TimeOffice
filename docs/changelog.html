@@ -51,7 +51,22 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.25.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.25.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Fünf Wege, auf denen der Wecker still hätte ausfallen können – gefunden, bevor sie jemanden getroffen haben.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Nach einem Neustart konnten die Wecker verschwinden, wenn ein Kalender gerade nicht antwortete:</strong> Direkt nach dem Hochfahren ist der Dienstplan-Kalender manchmal noch nicht erreichbar. Die App stellte die gespeicherten Wecker dann zwar korrekt wieder her – räumte sie im selben Durchgang aber gleich wieder ab, weil sie die halbe Terminliste für die ganze hielt. Jetzt wird in dieser Lage gar nicht aufgeräumt.</li>
+                <li><strong>Ein Lesefehler in den Einstellungen konnte den Wecker komplett stumm schalten:</strong> Beim Klingeln liest die App die eingestellte Schlummerdauer. Ließ sich der Wert einmal nicht lesen (voller Speicher, kurzzeitiger Dateifehler), brach der ganze Weckvorgang ab – kein Ton, keine Anzeige. Jetzt wird in dem Fall einfach die Standard-Schlummerdauer verwendet und der Wecker klingelt.</li>
+                <li><strong>„Nicht stören" konnte stundenlang hängen bleiben:</strong> Derselbe Fehlertyp beim Lesen der DND-Einstellungen ließ die Zeitsteuerung stehen – „Nicht stören" blieb dann bis zu sechs Stunden über das Fensterende hinaus an oder eine Nacht lang aus. Die Kette läuft jetzt auch bei einem Lesefehler weiter.</li>
+                <li><strong>Dasselbe beim Schicht-Dimmer:</strong> Auch die Dimm-Regeln konnten beim Lesen einen Fehler durchreichen. Jetzt wird in dem Fall schlicht nicht gedimmt, statt die Zeitsteuerung abreißen zu lassen.</li>
+                <li><strong>Der Weck-Bildschirm zeigte nach dem Schlummern die falsche Schicht:</strong> Klingelte der Schlummer-Wecker, während der Weck-Bildschirm noch im Hintergrund lag, standen dort weiterhin Name und Beginn der <em>vorherigen</em> Schicht – während Ton und Knöpfe längst zum neuen Wecker gehörten. Wer im Halbschlaf die falsche Uhrzeit liest, legt sich womöglich wieder hin. Anzeige und Bildschirm-Wachhaltung werden jetzt mitgezogen.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.25.2</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>„Nicht stören" hält jetzt wirklich die ganze Dienstzeit durch – und der Schichtbeginn wird nicht mehr als „Schicht entfernt" gemeldet.</em></p>
 

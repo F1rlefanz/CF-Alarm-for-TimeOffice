@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.26.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.26.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Aufräumen unter der Haube – für dich ändert sich nichts._
+
+### 🧹 Aufgeräumt
+
+- **Irreführende Code-Reste entfernt:** Ein projektweiter Prüflauf hat 344 ungenutzte Stellen im Code gefunden. Beseitigt wurden die drei, die im Fehlerfall echte Zeit gekostet hätten – darunter eine Datei, die eine Wecker-Überwachung beschrieb, die es gar nicht gibt, und zwei Vibrationsmuster, die niemand gelesen hat (der Wecker vibriert nach einem dritten). Keine Funktion ändert sich, aber die nächste Fehlersuche läuft nicht mehr in Sackgassen.
+
+## Version 1.26.0
 
 **Stand:** August 2026
 

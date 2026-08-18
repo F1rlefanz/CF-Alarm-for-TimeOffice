@@ -38,10 +38,21 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
      * raeumt ihn also nicht mit weg, und die App versucht danach weiter, mit einem toten
      * Token zu refreshen.
      *
-     * [intent] ist der von [UserRecoverableAuthException] mitgelieferte Recovery-Intent. Er
-     * fuehrt zum Zustimmungsdialog und ist der einzige Weg zurueck in einen gueltigen Zustand.
-     * Frueher wurde diese Exception als generisches RefreshFailed weitergeworfen und der Intent
-     * verworfen - die App landete in einer Sackgasse ohne Ausweg.
+     * [intent] ist der von [UserRecoverableAuthException] mitgelieferte Recovery-Intent, der zum
+     * Zustimmungsdialog fuehren wuerde. **Er wird derzeit von NIEMANDEM gelesen**, und das ist
+     * Absicht - der Satz "der einzige Weg zurueck in einen gueltigen Zustand" stand hier bis zum
+     * 18.08.2026 und war zu diesem Zeitpunkt bereits widerlegt.
+     *
+     * Der Weg zurueck ist stattdessen der regulaere Sign-in: `OAuth2TokenManager` faengt diese
+     * Exception ab, wirft das tote Token per `invalidate()` weg und laesst `getValidToken()`
+     * sauber `NoTokenAvailable` melden. Das MUSS so sein - bliebe das Token liegen, liefe jeder
+     * weitere Aufruf erneut in canRefresh() -> refresh() -> dieselbe Exception, eine
+     * Endlosschleife ohne Ausweg. Am Emulator ist dieser Pfad belegt: nach entzogenem Zugriff
+     * genuegte ein Tipp auf "Kalender-Zugriff erlauben".
+     *
+     * Der Intent bleibt trotzdem am Feld, statt ihn zu loeschen: er ist die Grundlage, falls der
+     * Zustimmungsdialog einmal direkt angeboten werden soll (ein Dialog ist angenehmer als eine
+     * Neuanmeldung). Wer ihn verwendet, korrigiert bitte diesen Absatz mit.
      */
     class ConsentRequired(message: String, val intent: Intent? = null) : TokenException(message)
     

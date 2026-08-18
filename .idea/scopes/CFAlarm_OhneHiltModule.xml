@@ -1,0 +1,3 @@
+<component name="DependencyValidationManager">
+  <scope name="CFAlarm_OhneHiltModule" pattern="file:app/src/main//*&amp;&amp;!file:app/src/main/java/com/github/f1rlefanz/cf_alarmfortimeoffice/di/modules//*" />
+</component>

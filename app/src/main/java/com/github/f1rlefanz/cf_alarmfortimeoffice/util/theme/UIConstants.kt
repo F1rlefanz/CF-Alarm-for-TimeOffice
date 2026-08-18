@@ -183,7 +183,6 @@ object UIConstants {
     const val ANIMATION_DURATION_LONG = 1000
     
     /** Vibration pattern for alarms: [delay, vibrate, pause, vibrate, pause, vibrate] */
-    val ALARM_VIBRATION_PATTERN = longArrayOf(0, 1000, 500, 1000, 500, 1000)
     
     /** Standard animation delays */
     const val STANDARD_DELAY = 16L // 60fps

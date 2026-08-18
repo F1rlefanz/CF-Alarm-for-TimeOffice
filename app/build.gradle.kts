@@ -28,7 +28,7 @@ android {
     // SIGNIERUNG NUR, WENN DER SCHLUESSEL DA IST. Ohne das scheitert `assembleRelease` in der CI am
     // fehlenden Keystore - und genau deshalb hat die CI den Release-Pfad bisher gar nicht gebaut,
     // obwohl dort das eigentliche Risiko liegt (R8, lintVitalRelease). Fehlt der Schluessel, entsteht
-    // eine UNSIGNIERTE Release-APK: die laesst sich weder installieren noch hochladen, der Fehler
+    // eine UNSIGNIERTE Release-APK: Die laesst sich weder installieren noch hochladen, der Fehler
     // kann also nicht unbemerkt durchrutschen. Lokal existiert keystore.properties immer
     // (Voraussetzung laut CLAUDE.md), dort wird wie bisher signiert.
     val releaseSigningAvailable =
@@ -37,7 +37,7 @@ android {
     signingConfigs {
         create("release") {
             // Secure production signing - NO hardcoded passwords!
-            storeFile = file(keystoreProperties["storeFile"] as String? ?: "../cf-alarm-release.keystore")
+            storeFile = project.file(keystoreProperties["storeFile"] as String? ?: "../cf-alarm-release.keystore")
             storePassword = keystoreProperties["storePassword"] as String? ?: System.getenv("KEYSTORE_PASSWORD")
             keyAlias = keystoreProperties["keyAlias"] as String? ?: "cf-alarm-key"
             keyPassword = keystoreProperties["keyPassword"] as String? ?: System.getenv("KEY_PASSWORD")
@@ -120,7 +120,7 @@ android {
             // "Re-enable after AGP upgrade fixes R8 9.2.14 NPE bug (core:1.19.0 + compileSdk 37)".
             // Der NPE tritt mit AGP 9.3.1 nicht mehr auf; nachgemessen und am Geraet verifiziert:
             //  - `assembleRelease` laeuft durch, `minifyReleaseWithR8` ohne Fehler
-            //  - APK 19,8 MB -> 10,9 MB (-45%)
+            //  - APK 19,8 MB → 10,9 MB (-45%)
             //  - Release-APK auf dem Emulator (Android 16) durch den vollen Happy Path: Anmeldung
             //    ueber Google, Kalenderliste, Kalenderauswahl speichern, 5 Schichten erkannt,
             //    5 Alarme gesetzt, alle sechs Tabs gerendert - kein ClassNotFoundException,
@@ -131,12 +131,12 @@ android {
             // typ-prueft und als unerreichbar gilt - eine transitive Abhaengigkeit des
             // Google-HTTP-Clients, die die App nie benutzt. Harmlos.
             //
-            // WICHTIG, falls das je wieder abgeschaltet wird: dann MUESSEN auch `-dontshrink` und
+            // WICHTIG, falls das je wieder abgeschaltet wird: Dann MUESSEN auch `-dontshrink` und
             // `-dontoptimize` in proguard-rules.pro wieder aktiviert werden - oder eben nicht.
-            // Beides halb ist der schlechteste Zustand: mit gesetztem `-dontshrink` waere
+            // Beides halb ist der schlechteste Zustand: Mit gesetztem `-dontshrink` waere
             // `isMinifyEnabled = true` eine Attrappe, die Bauzeit kostet und nichts bringt.
             //
-            // `assembleRelease` braucht NETZ: die nur mit Minify laufende Task
+            // `assembleRelease` braucht NETZ: Die nur mit Minify laufende Task
             // `produceReleaseComposeMapping` zieht eine Abhaengigkeit, die nicht im Offline-Cache
             // liegt. `--offline` scheitert daran mit einem irrefuehrenden
             // "Configuration cache state could not be cached" - kein R8-Problem.
@@ -208,11 +208,6 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
 
     buildFeatures {
         compose = true
@@ -226,9 +221,9 @@ android {
         checkReleaseBuilds = true
 
         // Use our custom lint configuration
-        lintConfig = file("lint.xml")
+        lintConfig = project.file("lint.xml")
 
-        // BEWUSST KEINE Baseline: es gibt keine lint-baseline.xml mehr (August 2026 gelöscht).
+        // BEWUSST KEINE Baseline: Es gibt keine lint-baseline.xml mehr (August 2026 gelöscht).
         // Die alte enthielt nur 27 FullBackupContent-Einträge zu <exclude>-Zeilen, die es in
         // den Backup-Regeln längst nicht mehr gab, und wurde durch diese auskommentierte Zeile
         // ohnehin nie gelesen - halb verdrahteter toter Ballast. Wer eine Baseline will:
@@ -258,8 +253,19 @@ android {
     }
 }
 
-// Unit-Tests laufen über den Standard-JUnit-4-Runner (junit:junit:4.13.2).
-// Kein useJUnitPlatform: es ist bewusst keine JUnit-5-Engine eingebunden,
+// `kotlin { }` ist eine Extension auf PROJECT, nicht auf ApplicationExtension. Bis zum
+// 18.08.2026 stand dieser Block INNERHALB von `android { }` - er wirkte trotzdem, weil Kotlin
+// stillschweigend auf den aeusseren Project-Receiver auswich. Android Studio meldet das als
+// "Suspicious receiver type": es las sich wie eine AGP-Einstellung, war aber immer eine
+// projektweite. Hier steht es dort, wo es hingehoert.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+// Unit-Tests laufen über den Standard-JUnit-4-Runner (JUnit 4.13.2).
+// Kein useJUnitPlatform: Es ist bewusst keine JUnit-5-Engine eingebunden,
 // sonst würde der Test-Task 0 Tests ausführen (stiller No-Op).
 
 dependencies {
@@ -340,6 +346,16 @@ dependencies {
     testImplementation(libs.androidx.work.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // Android Studio meldet hier "Dependency 'platform(libs.androidx.compose.bom)' is declared
+    // multiple times" - das ist ein FEHLALARM, die Zeile muss bleiben.
+    // `androidTestImplementation` erbt NICHT von `implementation`, die BOM aus dem Block oben gilt
+    // hier also nicht. Und `androidx-ui-test-junit4` / `androidx-ui-test-manifest` stehen im
+    // Version-Catalog bewusst OHNE eigene Version - sie beziehen sie ausschliesslich von der BOM.
+    // Nachgemessen am 18.08.2026:
+    //   ./gradlew app:dependencies --configuration debugAndroidTestCompileClasspath
+    //   -> androidx.compose.ui:ui-test-junit4 -> 1.12.0   (aufgeloest ueber compose-bom:2026.08.00)
+    // Ohne diese Zeile bliebe die Abhaengigkeit unversioniert und der Instrumentationstest-Build
+    // scheitert. Wer der IDE-Warnung folgt, macht die Tests kaputt, nicht den Build sauberer.
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
 

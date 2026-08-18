@@ -10,6 +10,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataSto
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -74,6 +75,17 @@ class DataStoreTokenRepository @Inject constructor(
                     }
                 }
                 .first()
+        } catch (e: CancellationException) {
+            // Muss VOR dem generischen Fang stehen. CancellationException erbt von Exception, ein
+            // blosses `catch (e: Exception)` verschluckt sie also und macht aus einem abgebrochenen
+            // Aufruf ein inhaltliches Ergebnis. Das widerspricht der Projekt-Invariante "eine
+            // Cancellation laeuft weiter" (SafeExecutor, AlarmRepository) und setzte hier konkret
+            // das eigene `catch (e: CancellationException) { throw e }` in `getValidToken()` ausser
+            // Kraft, das dadurch nie erreicht wurde. Kein bekannter Schaden - `getValidToken()`
+            // steht in `withContext(Dispatchers.IO)`, das die Cancellation beim Verlassen ohnehin
+            // wirft -, aber die Absicherung darf nicht davon abhaengen, dass ein Aufrufer sie
+            // zufaellig nachholt.
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "Error reading token from DataStore", e)
             null
@@ -88,6 +100,8 @@ class DataStoreTokenRepository @Inject constructor(
             }
             Logger.d(LogTags.TOKEN, "🔐 Token encrypted and saved to DataStore: ${token.toLogString()}")
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e   // siehe get(): darf nicht im generischen Fang landen
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Error saving token to DataStore", e)
             Result.failure(e)
@@ -101,6 +115,8 @@ class DataStoreTokenRepository @Inject constructor(
             }
             Logger.d(LogTags.TOKEN, "✅ Token cleared from DataStore")
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e   // siehe get(): darf nicht im generischen Fang landen
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Error clearing token from DataStore", e)
             Result.failure(e)

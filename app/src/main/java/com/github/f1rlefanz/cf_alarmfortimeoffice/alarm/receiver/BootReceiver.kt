@@ -777,7 +777,22 @@ class BootReceiver : BroadcastReceiver() {
             )
 
             // 4. If few alarms restored, try to create new ones from calendar
-            if (restoredCount < 3 && currentEvents.isNotEmpty()) {
+            //
+            // `!fetchIncomplete` ist hier tragend und war bis zum 18.08.2026 vergessen: Schritt 3
+            // ueberspringt bei unvollstaendiger Eventliste zwar die Validierung und stellt die
+            // Alarme ausdruecklich "unveraendert" wieder her - direkt danach lief aber
+            // syncAlarms() mit genau derselben Teilliste, und das ist ein LOESCHENDER Konsument.
+            // Bei zwei ausgewaehlten Kalendern (privat + Dienstplanfeed) und einem Timeout des
+            // Dienstplanfeeds kurz nach dem Boot fand getAllMatchingShifts() dort keine Schicht,
+            // clearInternalAlarms(keepManualAlarms = true) raeumte auf, und persistShiftSpans
+            // (emptyList()) nahm Dimmer und "Nicht stoeren" die laufende Schicht gleich mit.
+            // Der Wecker war nach dem Neustart weg - lautlos, im selben Durchgang, der zwei
+            // Zeilen darueber seine Erhaltung protokolliert hatte.
+            //
+            // Damit gilt die Zusicherung aus CLAUDE.md ("Jeder loeschende Konsument geht ueber
+            // getCalendarEventsWithStatus() und prueft isComplete") jetzt an ALLEN sechs
+            // syncAlarms()-Aufrufstellen; die anderen fuenf hatten ihr Gate bereits.
+            if (restoredCount < 3 && currentEvents.isNotEmpty() && !fetchIncomplete) {
                 Logger.d(
                     LogTags.MAINTENANCE_L4,
                     "🔄 LEVEL 4: Low alarm count, attempting calendar-based recovery"

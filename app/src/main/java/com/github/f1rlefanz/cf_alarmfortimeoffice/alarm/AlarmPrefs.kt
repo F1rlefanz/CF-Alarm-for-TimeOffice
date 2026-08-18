@@ -5,7 +5,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -51,10 +54,42 @@ class AlarmPrefs @Inject constructor(
         const val MAX_SNOOZE_MINUTES = 120
     }
 
-    val snoozeMinutes: Flow<Int> = dataStore.data.map {
-        (it[KEY_SNOOZE_MINUTES] ?: DEFAULT_SNOOZE_MINUTES)
-            .coerceIn(MIN_SNOOZE_MINUTES, MAX_SNOOZE_MINUTES)
-    }
+    /**
+     * Das `.catch` steht HINTER dem `.map` (die Reihenfolge ist tragend, siehe CLAUDE.md,
+     * "Persistenz") und ist der einzige Grund, warum ein Lesefehler hier keinen stummen Wecker
+     * mehr erzeugt.
+     *
+     * Der Hergang, gefunden in der Pruefrunde vom 18.08.2026: [snoozeMinutesNow] ist ein
+     * `first()` auf diesem Flow, und `AlarmReceiver.startAlarmSoundService()` liest den Wert als
+     * ERSTE Anweisung in demselben `try`, das auch `startForegroundService()` umschliesst. Der
+     * `ReplaceFileCorruptionHandler` des `settings`-Stores faengt nur Korruption; eine
+     * IOException (voller Speicher, EACCES, transienter Lesefehler) reicht DataStore in den Flow
+     * durch. Sie flog also aus dem Read heraus, das `catch` darunter loggte sie - und
+     * `startForegroundService()` wurde nie erreicht: kein Ton, keine Vibration, keine
+     * Notification, kein Vollbild. Bei jedem Alarm, bis "App-Daten loeschen".
+     *
+     * Die Direct-Boot-Ursache derselben Stelle war bereits per `userUnlocked`-Gate geschlossen
+     * (Kommentar in `AlarmReceiver`), die IO-Ursache blieb offen - dasselbe Ergebnis, anderer
+     * Weg.
+     *
+     * Degradiert wird auf [DEFAULT_SNOOZE_MINUTES], nicht auf "gar nicht wecken". Die Richtung
+     * ist bewusst gewaehlt: ein Wecker mit der Standard-Schlummerdauer ist ein winziger Fehler,
+     * ein Wecker, der nicht klingelt, der schwerste denkbare. Im Zweifel klingeln.
+     */
+    val snoozeMinutes: Flow<Int> = dataStore.data
+        .map {
+            (it[KEY_SNOOZE_MINUTES] ?: DEFAULT_SNOOZE_MINUTES)
+                .coerceIn(MIN_SNOOZE_MINUTES, MAX_SNOOZE_MINUTES)
+        }
+        .catch { e ->
+            Logger.e(
+                LogTags.ALARM,
+                "Schlummerdauer nicht lesbar - degradiert auf $DEFAULT_SNOOZE_MINUTES Minuten, " +
+                    "der Wecker klingelt trotzdem",
+                e
+            )
+            emit(DEFAULT_SNOOZE_MINUTES)
+        }
 
     suspend fun snoozeMinutesNow(): Int = snoozeMinutes.first()
 

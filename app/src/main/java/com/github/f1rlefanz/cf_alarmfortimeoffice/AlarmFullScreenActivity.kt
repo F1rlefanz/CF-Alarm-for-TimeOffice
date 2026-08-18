@@ -32,6 +32,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -118,6 +121,18 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     /**
+     * Schichtname und Schichtbeginn als Compose-State, NICHT als lokale `val` in onCreate.
+     *
+     * Das ist der Unterschied zwischen "der Weck-Bildschirm zeigt den Alarm, der gerade klingelt"
+     * und "er zeigt den, der als Erstes geklingelt hat": bei `launchMode="singleTask"` kommt eine
+     * zweite Zustellung als onNewIntent an derselben Instanz an, und ohne State gibt es nichts,
+     * was rekomponieren koennte. Wer das hier wieder zu einem `val` in onCreate macht, baut den
+     * Fehler zurueck - siehe [readShiftFromIntent].
+     */
+    private var shiftName by mutableStateOf("")
+    private var shiftStartTime by mutableStateOf("")
+
+    /**
      * Einweg-Sperre gegen Doppelauslösung von Dismiss/Snooze — siehe [OneShotAlarmHandoff].
      * Dient zusätzlich dem alarmActive-Observer als "wurde hier schon bewusst gehandelt?".
      */
@@ -135,9 +150,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         acquireWakeLock()
         setupBackButtonHandling()
 
-        val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME)
-            ?: getString(R.string.alarm_unknown_shift)
-        val shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
+        readShiftFromIntent()
 
         setContent {
             CFAlarmForTimeOfficeTheme {
@@ -178,7 +191,37 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+
+        // setIntent() allein reichte NICHT, gefunden in der Pruefrunde vom 18.08.2026: Schicht und
+        // Schichtbeginn wurden in onCreate als lokale `val` gelesen und in den setContent-Block
+        // eingeschlossen. Ohne State gab es nichts, was rekomponieren koennte - das Vollbild zeigte
+        // bei einer Wiederzustellung weiter Namen und Beginn des VORHERIGEN Alarms, waehrend Ton,
+        // Snooze und Dismiss (die `intent` lesen) bereits zum neuen gehoerten. Wer im Halbschlaf
+        // "Fruehschicht 06:00" liest, obwohl der Wecker fuer die Spaetschicht klingelt, legt sich
+        // wieder hin. Kein stummer Wecker, aber eine falsche Aussage an der einen Stelle, an der
+        // die App keine zweite Chance bekommt.
+        readShiftFromIntent()
+
+        // Derselbe Grund fuer den Wake-Lock: er wurde ausschliesslich in onCreate erworben und
+        // laeuft nach WAKE_LOCK_TIMEOUT aus. Eine Wiederzustellung nach Ablauf (Snooze-Refire an
+        // einer noch lebenden, gestoppten Instanz) haette den Bildschirm nicht mehr hell gehalten -
+        // genau der Effekt, gegen den acquireWakeLock() ueberhaupt existiert. Erst freigeben, dann
+        // neu erwerben: newWakeLock() legt jedes Mal ein neues Objekt an, ein blosses Nach-Erwerben
+        // wuerde das alte verlieren, ohne es je zu releasen.
+        releaseWakeLock()
+        acquireWakeLock()
+
         Logger.i(LogTags.ALARM, "🔎 FSI-DIAG onNewIntent (singleTask-Wiederzustellung): ${visibilitySnapshot()}")
+    }
+
+    /**
+     * Liest Schichtname und Schichtbeginn aus dem AKTUELLEN `intent` in den Compose-State.
+     * Aufgerufen aus onCreate UND onNewIntent - beide Wege muessen dieselbe Anzeige ergeben.
+     */
+    private fun readShiftFromIntent() {
+        shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME)
+            ?: getString(R.string.alarm_unknown_shift)
+        shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
     }
 
     override fun onStart() {

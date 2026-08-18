@@ -10,6 +10,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.decodeFromString
@@ -64,6 +65,22 @@ class DimRuleRepository @Inject constructor(
         encodeDefaults = true
     }
 
+    /**
+     * Das `runCatching` weiter unten umfasst NUR `decodeFromString`, nicht den Store-Read davor -
+     * das war bis zum 18.08.2026 die Luecke. Eine IOException aus `dataStore.data` (voller
+     * Speicher, EACCES, transienter Lesefehler; der `ReplaceFileCorruptionHandler` faengt nur
+     * Korruption) flog ungebremst durch `getRules()` und damit durch `DimRuleUseCase
+     * .getAllRules()` in `DimScheduleUseCase.computeWindows()` - also mitten in den Dimm-Tick.
+     *
+     * Deshalb hier zusaetzlich ein `.catch` auf dem LESE-Flow, gleiche Richtung wie der
+     * Dekodier-Fehler darunter: leere Regelliste. Fuer den Dimmer heisst das "diese Nacht kein
+     * Dimmen" - dieselbe fail-safe Richtung, die [DimOverlayPrefs.safeData] mit ausfuehrlicher
+     * Begruendung waehlt (ein unerwartet dunkler Bildschirm ist schlimmer als ein heller).
+     *
+     * Der SCHREIB-Pfad bleibt davon unberuehrt: `editRules()` liest in seinem eigenen
+     * `dataStore.edit{}` erneut und stuetzt sich nie auf diesen Flow. Genau deshalb darf er
+     * degradieren, ohne dass die Notlage-Leere zur Schreibwahrheit wird.
+     */
     val rules: Flow<List<DimRule>> = dataStore.data.map { prefs ->
         prefs[KEY_RULES]?.let { raw ->
             runCatching { json.decodeFromString<List<DimRule>>(raw) }
@@ -80,6 +97,14 @@ class DimRuleRepository @Inject constructor(
                 }
         } ?: emptyList()
     }
+        .catch { e ->
+            Logger.e(
+                LogTags.DIMMER,
+                "Dimm-Regeln nicht lesbar - degradiert auf leere Liste (kein Dimmen)",
+                e
+            )
+            emit(emptyList())
+        }
 
     suspend fun getRules(): List<DimRule> = rules.first()
 

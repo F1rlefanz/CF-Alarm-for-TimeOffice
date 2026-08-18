@@ -7,8 +7,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import androidx.datastore.preferences.core.emptyPreferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -79,14 +83,54 @@ class DndPrefs @Inject constructor(
         val blockAlarms: Boolean = false
     )
 
-    val toggles: Flow<Toggles> = dataStore.data.map { p ->
+    /**
+     * ALLE Lese-Flows dieser Klasse gehen hierueber, keiner mehr direkt auf `dataStore.data` -
+     * dasselbe Muster wie [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs]
+     * auf demselben Store, und aus demselben Grund.
+     *
+     * Bis zum 18.08.2026 war jeder der sechs Flows hier ein blankes `dataStore.data.map{}` ohne
+     * ein einziges `.catch`; die Klasse importierte `catch` nicht einmal. Der
+     * `ReplaceFileCorruptionHandler` des `settings`-Stores faengt nur Korruption, eine
+     * IOException (voller Speicher, EACCES, transienter Lesefehler) reicht DataStore in den Flow
+     * durch - und alle sechs `*Now()`-Accessoren sind `first()` genau darauf. Der Wurf traf
+     * damit zwei Stellen:
+     *
+     * 1. Den DND-Tick: `computeWindows()` kam nicht bis zu seinem Rueckgabewert, also wurde
+     *    weder `setAutomaticZenRuleState()` gerufen noch der naechste Tick armiert. Die
+     *    vorhandene Retry-Mechanik greift dort nicht - sie deckt Lesefehler ab, die als `Result`
+     *    zurueckkommen, nicht solche, die geworfen werden. "Nicht stoeren" blieb im alten
+     *    Zustand haengen, bis die 6h-Wartung die Kette neu armierte: bis zu sechs Stunden
+     *    stummgeschaltetes Telefon - oder eine Nacht ganz ohne. Das bricht die Zusicherung
+     *    "Die Tick-Kette darf nicht abreissen".
+     * 2. Die Oberflaeche: derselbe Wurf beim Oeffnen des DND-Tabs.
+     *
+     * Degradiert wird auf LEERE Preferences, also auf die Defaults jedes einzelnen Flows -
+     * beide Toggles `false`, "Nicht stoeren" also AUS. Das ist die fail-safe Richtung: ein
+     * unerwartet stummgeschaltetes Telefon ist schlimmer als ein unerwartet klingelndes, und die
+     * Regel dieser App lautet im Zweifel klingeln.
+     *
+     * Und die Notlage-Leere wird nicht zur Schreibwahrheit (CLAUDE.md, "Persistenz"): jeder
+     * Setter unten geht ueber `dataStore.edit{}` mit eigenem Read, keiner speist einen dieser
+     * Flows zurueck.
+     */
+    private val safeData: Flow<Preferences> = dataStore.data
+        .catch { e ->
+            Logger.e(
+                LogTags.DND,
+                "DND-Einstellungen nicht lesbar - degradiert auf Defaults (\"Nicht stoeren\" aus)",
+                e
+            )
+            emit(emptyPreferences())
+        }
+
+    val toggles: Flow<Toggles> = safeData.map { p ->
         Toggles(
             followDimmerEnabled = p[KEY_FOLLOW_DIMMER] ?: false,
             duringShiftEnabled = p[KEY_DURING_SHIFT] ?: false
         )
     }
 
-    val policy: Flow<Policy> = dataStore.data.map { p ->
+    val policy: Flow<Policy> = safeData.map { p ->
         Policy(
             blockCalls = p[KEY_BLOCK_CALLS] ?: true,
             allowRepeatCallers = p[KEY_ALLOW_REPEAT_CALLERS] ?: true,
@@ -101,12 +145,12 @@ class DndPrefs @Inject constructor(
     }
 
     /** Schichtnamen, fuer die "Waehrend der Dienstzeit" NICHT gilt (z. B. Rufbereitschaft). */
-    val shiftExcludedShifts: Flow<Set<String>> = dataStore.data.map {
+    val shiftExcludedShifts: Flow<Set<String>> = safeData.map {
         it[KEY_SHIFT_EXCLUDED_SHIFTS] ?: emptySet()
     }
 
     /** Schichtnamen, die als Rufbereitschaft gelten (z. B. "AD1") - siehe [DndOnCallCutoffResolver]. */
-    val onCallShifts: Flow<Set<String>> = dataStore.data.map { it[KEY_ONCALL_SHIFTS] ?: emptySet() }
+    val onCallShifts: Flow<Set<String>> = safeData.map { it[KEY_ONCALL_SHIFTS] ?: emptySet() }
 
     /** Cutoff-Uhrzeit an Rufbereitschafts-Tagen, in Minuten seit Mitternacht. Default 05:00. */
     /**
@@ -116,12 +160,12 @@ class DndPrefs @Inject constructor(
      * liegt im `settings`-Store, kommt also auch aus dem Android-Backup und der
      * Konfigurationsdatei, nicht nur aus der eigenen UI.
      */
-    val onCallCutoffMinutes: Flow<Int> = dataStore.data.map {
+    val onCallCutoffMinutes: Flow<Int> = safeData.map {
         (it[KEY_ONCALL_CUTOFF_MIN] ?: DEFAULT_ONCALL_CUTOFF_MIN).coerceIn(0, 24 * 60 - 1)
     }
 
     /** Die einmal registrierte [android.app.AutomaticZenRule]-ID; leer = noch nicht registriert. */
-    val zenRuleId: Flow<String> = dataStore.data.map { it[KEY_ZEN_RULE_ID] ?: "" }
+    val zenRuleId: Flow<String> = safeData.map { it[KEY_ZEN_RULE_ID] ?: "" }
 
     suspend fun togglesNow(): Toggles = toggles.first()
     suspend fun policyNow(): Policy = policy.first()

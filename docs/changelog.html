@@ -51,7 +51,29 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.26.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.27.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Nach einem nächtlichen Neustart, bei dem das Handy gesperrt blieb, konnte die App den Rest des Tages mit leeren Einstellungen weiterlaufen — das ist der Kern dieser Version.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Neustart in der Nacht, gesperrtes Handy:</strong> Startete das Handy neu, ohne dass jemand es entsperrte, konnte die App danach ihre eigenen Einstellungen nicht mehr sehen — und zwar dauerhaft, bis sie das nächste Mal komplett neu startete. Sie hielt dann die Kalenderauswahl für leer, legte keine neuen Wecker mehr an und arbeitete mit Standard-Schichtzeiten statt mit den eingestellten. Wer an so einem Tag seine Schichten bearbeitete, überschrieb sich die echten Einstellungen. Behoben — die App wartet jetzt, bis das Gerät entsperrt ist, und holt alles nach.</li>
+                <li><strong>Abgeschalteter Benachrichtigungs-Kanal blieb unbemerkt:</strong> Android erlaubt es, einzelne Benachrichtigungsarten mit zwei Tipps abzuschalten oder leiser zu stellen. Traf das den Wecker-Kanal, erschien der Weckbildschirm nicht mehr — die App meldete im Status-Tab aber weiterhin „Erlaubt". Sie schaut jetzt genau hin und sagt, was abgeschaltet ist und wo man es wieder einschaltet.</li>
+                <li><strong>Warnung „Kalender nicht abrufbar" kam nur einmal — auch wenn sie niemand gesehen hat:</strong> Waren Benachrichtigungen blockiert, merkte sich die App die Warnung trotzdem als „schon gesagt". Sie kam danach nie wieder, auch nicht nach dem Wiedereinschalten. Jetzt gilt sie erst als gesagt, wenn sie wirklich ankommen konnte.</li>
+                <li><strong>„Bridge vergessen" legte die Hue-Planung still lahm:</strong> Nach dem Trennen und erneuten Verbinden der Bridge wurden für später angelegte Schichten kein Lichtstart und keine Vorab-Prüfung mehr geplant — bis die App das nächste Mal komplett neu startete.</li>
+                <li><strong>Zwei gleichzeitige Wartungsläufe konnten sich gegenseitig abwürgen:</strong> Läuft ein erzwungener Abgleich (etwa nach einem Zeitzonenwechsel) noch, während der regelmäßige Lauf schnell fertig ist, brach der erzwungene mittendrin ab — im ungünstigsten Moment zwischen dem Löschen und dem Neusetzen eines Weckers.</li>
+                <li><strong>„Aufheben" holte einen von Hand gestellten Wecker nicht zurück:</strong> Wer einen manuell gestellten Wecker übersprang und es sich anders überlegte, bekam ihn nicht wieder — im Gegensatz zu Weckern aus dem Dienstplan ließ er sich aus nichts wiederherstellen. Jetzt wird er beim Überspringen gesichert und kommt zurück. Geht das gerade nicht (Pause aktiv, ein anderer manueller Wecker steht, Weckzeit verstrichen), bleibt das Überspringen bestehen und die App sagt, woran es liegt — statt den Wecker stillschweigend zu verlieren.</li>
+            </ul>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Die Hue-Bridge wird wiedergefunden, wenn der Router ihr eine neue Adresse gibt:</strong> Bisher war die Lichtsteuerung nach einem Routerneustart dauerhaft tot und musste von Hand samt Knopfdruck an der Bridge neu verbunden werden. Die App sucht die bekannte Bridge jetzt selbständig unter ihrer neuen Adresse — ohne Knopfdruck, die bestehende Freigabe bleibt gültig.</li>
+                <li><strong>Ein gescheiterter Verbindungsversuch blockiert nicht mehr alle weiteren:</strong> Bisher hielt sich die App nach einem Fehlversuch für verbunden und probierte es bis zum nächsten App-Start kein zweites Mal.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.26.2</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>„Überspringen" lässt sich jetzt wirklich rückgängig machen – und vier weitere Wege, auf denen der Wecker still danebenlag.</em></p>
 

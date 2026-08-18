@@ -241,7 +241,13 @@ fun MainContentScreen(
                         // ist der bereits erprobte Weg dorthin (inkl. Vollstaendigkeits-Sperre
                         // und Race-Guard); der Callback laeuft erst, wenn das Flag weg ist.
                         onCancelSkip = {
-                            alarmViewModel.cancelSkip { calendarViewModel?.refreshData() }
+                            // forceRefresh = true ist PFLICHT, nicht Vorsicht: refreshData(false)
+                            // macht ausschliesslich einen checkTokenValidity() und laedt weder
+                            // Events noch synchronisiert es. Am Emulator gemessen (18.08.2026) -
+                            // der Merker verschwand, der geloeschte Wecker kam aber nicht zurueck.
+                            alarmViewModel.cancelSkip {
+                                calendarViewModel?.refreshData(forceRefresh = true)
+                            }
                         },
                         onShowShiftConfig = onShowShiftConfig,
                         onSnoozeMinutesChange = alarmViewModel::setSnoozeMinutes

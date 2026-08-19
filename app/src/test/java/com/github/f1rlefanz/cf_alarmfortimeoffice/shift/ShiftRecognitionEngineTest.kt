@@ -9,10 +9,13 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
@@ -81,6 +84,22 @@ class ShiftRecognitionEngineTest {
         override suspend fun hasValidConfig(): Result<Boolean> = Result.success(true)
     }
 
+    /**
+     * Engine mit einem Dispatcher, der im virtuellen Zeitplan dieses Tests bleibt.
+     *
+     * WARUM (Pruefrunde 7): [ShiftRecognitionEngine] wechselt fuer die Erkennung inzwischen auf
+     * [kotlinx.coroutines.Dispatchers.Default], damit sie nicht mehr auf dem Hauptthread rechnet.
+     * Die Nebenlaeufigkeits-Tests hier steuern die Reihenfolge zweier Aufrufer aber ueber
+     * `runCurrent()`/`advanceUntilIdle()` — echte Worker-Threads waeren fuer den Testplaner
+     * unsichtbar und die Reihenfolge damit zufaellig. Der `UnconfinedTestDispatcher` fuehrt den
+     * Rumpf inline auf dem aufrufenden Thread aus, das Verhalten ist also exakt das von vor dem
+     * Wechsel — und die Zusicherungen zu Mutex und Epoche werden weiter genau so geprueft wie
+     * bisher. Dass die Vorgabe im Produktivbetrieb wirklich vom Aufrufer-Thread wegfuehrt, prueft
+     * `Erkennung rechnet nicht auf dem Thread des Aufrufers` mit dem echten Standard-Dispatcher.
+     */
+    private fun TestScope.newEngine(repository: IShiftConfigRepository) =
+        ShiftRecognitionEngine(repository, UnconfinedTestDispatcher(testScheduler))
+
     private fun event(title: String, day: Int = 10) = CalendarEvent(
         id = "e$day-$title",
         title = title,
@@ -115,7 +134,7 @@ class ShiftRecognitionEngineTest {
             autoAlarmEnabled = true,
             definitions = listOf(definition("Fruehschicht", listOf("FS"), enabled = false))
         )
-        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+        val engine = newEngine(GatedShiftConfigRepository(config))
 
         val matches = engine.getAllMatchingShifts(listOf(event("FS")))
 
@@ -133,7 +152,7 @@ class ShiftRecognitionEngineTest {
             autoAlarmEnabled = true,
             definitions = listOf(definition("Fruehschicht", listOf("FS"), enabled = true))
         )
-        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+        val engine = newEngine(GatedShiftConfigRepository(config))
 
         val matches = engine.getAllMatchingShifts(listOf(event("FS")))
 
@@ -163,7 +182,7 @@ class ShiftRecognitionEngineTest {
             autoAlarmEnabled = true,
             definitions = listOf(definition("Fruehschicht", listOf("FS")))
         )
-        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config, gate))
+        val engine = newEngine(GatedShiftConfigRepository(config, gate))
         val events = listOf(event("FS"))
 
         // Aufrufer A startet und haengt mitten in performRecognition() an der Schleuse.
@@ -198,7 +217,7 @@ class ShiftRecognitionEngineTest {
             definitions = listOf(definition("Fruehschicht", listOf("FS")))
         )
         val repo = GatedShiftConfigRepository(config)
-        val engine = ShiftRecognitionEngine(repo)
+        val engine = newEngine(repo)
         val events = listOf(event("FS"))
 
         val firstRun = engine.getAllMatchingShifts(events)
@@ -224,7 +243,7 @@ class ShiftRecognitionEngineTest {
                 definition("Fruehschicht", listOf("FS"), enabled = true)
             )
         )
-        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+        val engine = newEngine(GatedShiftConfigRepository(config))
 
         val matches = engine.getAllMatchingShifts(listOf(event("FS")))
 
@@ -247,7 +266,7 @@ class ShiftRecognitionEngineTest {
             definitions = listOf(definition("Fruehschicht", listOf("FS")))
         )
         val repo = FailingOnceShiftConfigRepository(config)
-        val engine = ShiftRecognitionEngine(repo)
+        val engine = newEngine(repo)
         val events = listOf(event("FS"))
 
         try {
@@ -280,7 +299,7 @@ class ShiftRecognitionEngineTest {
             definitions = listOf(definition("Fruehschicht", listOf("FS")))
         )
         val repo = GatedShiftConfigRepository(config, gate)
-        val engine = ShiftRecognitionEngine(repo)
+        val engine = newEngine(repo)
         val events = listOf(event("FS"))
 
         val first = async { engine.getAllMatchingShifts(events) }
@@ -320,7 +339,7 @@ class ShiftRecognitionEngineTest {
             definitions = listOf(definition("Fruehschicht", listOf("FS")))
         )
         val repo = GatedShiftConfigRepository(config, gate)
-        val engine = ShiftRecognitionEngine(repo)
+        val engine = newEngine(repo)
         val events = listOf(event("FS"))
 
         // (1) Lauf A haengt mitten in performRecognition().
@@ -357,7 +376,7 @@ class ShiftRecognitionEngineTest {
             definitions = listOf(definition("Fruehschicht", listOf("FS")))
         )
         val repo = GatedShiftConfigRepository(config)
-        val engine = ShiftRecognitionEngine(repo)
+        val engine = newEngine(repo)
         val events = listOf(event("FS"))
 
         engine.getAllMatchingShifts(events)
@@ -397,7 +416,7 @@ class ShiftRecognitionEngineTest {
      */
     @Test
     fun `gescheiterter Konfigurations-Read wird nicht zu einer leeren Trefferliste`() = runTest {
-        val engine = ShiftRecognitionEngine(FailingResultShiftConfigRepository())
+        val engine = newEngine(FailingResultShiftConfigRepository())
 
         var thrown: Throwable? = null
         val matches = try {
@@ -448,7 +467,7 @@ class ShiftRecognitionEngineTest {
                 )
             )
         )
-        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+        val engine = newEngine(GatedShiftConfigRepository(config))
 
         val matches = engine.getAllMatchingShifts(listOf(allDay))
 
@@ -486,7 +505,7 @@ class ShiftRecognitionEngineTest {
                 )
             )
         )
-        val engine = ShiftRecognitionEngine(GatedShiftConfigRepository(config))
+        val engine = newEngine(GatedShiftConfigRepository(config))
 
         val matches = engine.getAllMatchingShifts(listOf(nightShift))
 
@@ -495,6 +514,64 @@ class ShiftRecognitionEngineTest {
             "Echte Nachtschicht: Weckzeit 23:30 gehoert auf den Vortag",
             LocalDateTime.of(2026, 8, 9, 23, 30),
             matches.first().calculatedAlarmTime
+        )
+    }
+
+    /**
+     * Repository, das festhaelt, auf welchem Thread die Erkennung wirklich rechnet. Der Read der
+     * Konfiguration ist die erste Anweisung von `performRecognition()` und liegt damit innerhalb
+     * des Abschnitts, um den es geht.
+     */
+    private class ThreadRecordingRepository(
+        private val config: ShiftConfig
+    ) : IShiftConfigRepository {
+        @Volatile
+        var recognitionThread: String? = null
+            private set
+
+        override val shiftConfig: Flow<ShiftConfig> = flowOf(config)
+
+        override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> {
+            recognitionThread = Thread.currentThread().name
+            return Result.success(config)
+        }
+
+        override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
+        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
+        override suspend fun hasValidConfig(): Result<Boolean> = Result.success(true)
+    }
+
+    /**
+     * DIE ERKENNUNG DARF NICHT AUF DEM THREAD DES AUFRUFERS RECHNEN (Pruefrunde 7).
+     *
+     * Drei Aufrufer kamen ueber [com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel]
+     * und damit auf `Dispatchers.Main.immediate` an, und auf der ganzen Kette
+     * (ViewModel -> ShiftUseCase -> Engine) gab es keinen einzigen Dispatcher-Wechsel. Die
+     * verschachtelte Schleife ueber Termine x Definitionen x Muster lief also auf dem UI-Thread -
+     * bei 14 Tagen Dienstplan sichtbar als Ruckeln bzw. blockierte Eingaben, waehrend die
+     * Schichtliste sich aktualisiert.
+     *
+     * Bewusst OHNE [newEngine]: hier wird genau die Produktiv-Vorgabe geprueft, also der echte
+     * [kotlinx.coroutines.Dispatchers.Default].
+     */
+    @Test
+    fun `Erkennung rechnet nicht auf dem Thread des Aufrufers`() = runTest {
+        val config = ShiftConfig(
+            autoAlarmEnabled = true,
+            definitions = listOf(definition("Fruehschicht", listOf("FS")))
+        )
+        val repo = ThreadRecordingRepository(config)
+        val engine = ShiftRecognitionEngine(repo)
+        val callerThread = Thread.currentThread().name
+
+        val matches = engine.getAllMatchingShifts(listOf(event("FS")))
+
+        assertEquals("Der Wechsel darf am Ergebnis nichts aendern", 1, matches.size)
+        assertNotNull("Die Erkennung muss gelaufen sein", repo.recognitionThread)
+        assertTrue(
+            "Die Erkennung muss auf dem Standard-Pool rechnen, lief aber auf '" +
+                repo.recognitionThread + "' (Aufrufer: '" + callerThread + "')",
+            repo.recognitionThread!!.startsWith("DefaultDispatcher-worker")
         )
     }
 }

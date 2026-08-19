@@ -133,6 +133,17 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     private var shiftStartTime by mutableStateOf("")
 
     /**
+     * Die Schlummer-Dauer dieses Weckers - Beschriftung UND Wirkung lesen sie aus DIESEM Feld.
+     *
+     * Bis v1.29.0 trug der Knopf den festen Text "5 MIN SPAETER", waehrend [snoozeAlarm] die
+     * tatsaechlich eingestellte Dauer (3/5/10/15) aus dem Intent nahm. Bei 15 Minuten stand also
+     * "5" auf dem Knopf, der 15 Minuten schlummert - an dem einen Bildschirm, den ein halb wacher
+     * Mensch bedient. Zwei Quellen fuer denselben Wert sind hier keine Redundanz, sondern eine
+     * Luege mit Verzoegerung.
+     */
+    private var snoozeMinutes by mutableStateOf(AlarmManagerService.SNOOZE_MINUTES.toInt())
+
+    /**
      * Einweg-Sperre gegen Doppelauslösung von Dismiss/Snooze — siehe [OneShotAlarmHandoff].
      * Dient zusätzlich dem alarmActive-Observer als "wurde hier schon bewusst gehandelt?".
      */
@@ -147,7 +158,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // das Fenster sichtbar wird.
         setupLockScreenFlags()
 
-        acquireWakeLock()
+        // Der Wake-Lock wird NICHT hier erworben, sondern in onStart - siehe dort.
         setupBackButtonHandling()
 
         readShiftFromIntent()
@@ -157,6 +168,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                 AlarmScreen(
                     shiftName = shiftName,
                     shiftStartTime = shiftStartTime,
+                    snoozeMinutes = snoozeMinutes,
                     onDismiss = ::dismissAlarm,
                     onSnooze = ::snoozeAlarm
                 )
@@ -202,13 +214,11 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // die App keine zweite Chance bekommt.
         readShiftFromIntent()
 
-        // Derselbe Grund fuer den Wake-Lock: er wurde ausschliesslich in onCreate erworben und
-        // laeuft nach WAKE_LOCK_TIMEOUT aus. Eine Wiederzustellung nach Ablauf (Snooze-Refire an
-        // einer noch lebenden, gestoppten Instanz) haette den Bildschirm nicht mehr hell gehalten -
-        // genau der Effekt, gegen den acquireWakeLock() ueberhaupt existiert. Erst freigeben, dann
-        // neu erwerben: newWakeLock() legt jedes Mal ein neues Objekt an, ein blosses Nach-Erwerben
-        // wuerde das alte verlieren, ohne es je zu releasen.
-        releaseWakeLock()
+        // Derselbe Grund fuer den Wake-Lock: er laeuft nach WAKE_LOCK_TIMEOUT aus. Eine
+        // Wiederzustellung an eine noch RESUMED laufende Instanz (Snooze-Refire, waehrend das
+        // Vollbild sichtbar ist) durchlaeuft onStart NICHT - ohne diesen Aufruf bliebe es beim
+        // alten, ggf. schon abgelaufenen Lock. acquireWakeLock() gibt einen vorhandenen selbst
+        // zuerst frei, ein doppelter Erwerb ist damit ausgeschlossen.
         acquireWakeLock()
 
         Logger.i(LogTags.ALARM, "🔎 FSI-DIAG onNewIntent (singleTask-Wiederzustellung): ${visibilitySnapshot()}")
@@ -222,10 +232,36 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME)
             ?: getString(R.string.alarm_unknown_shift)
         shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
+        // Fallback-Default matters: aeltere/Direct-Boot-Pfade koennten das Extra nicht mitfuehren.
+        // Er steht hier nur EINMAL, damit Knopfbeschriftung und geplanter Schlummer auch im
+        // Fallback denselben Wert zeigen.
+        snoozeMinutes = intent.getIntExtra(
+            AlarmSoundService.EXTRA_SNOOZE_MINUTES,
+            AlarmManagerService.SNOOZE_MINUTES.toInt()
+        )
     }
 
+    /**
+     * Der Wake-Lock wird HIER erworben, nicht in onCreate - das ist die Gegenseite zum Release in
+     * [onStop].
+     *
+     * WARUM: onStop gibt ihn frei (Bildschirm aus per Power-Taste, Anruf, fremdes Fenster), aber
+     * erworben wurde er bis v1.29.0 ausschliesslich in onCreate und onNewIntent. Nach einem
+     * Bildschirm-aus/-an lief das Vollbild also ohne jeden Wake-Lock weiter - genau der Zustand,
+     * gegen den [acquireWakeLock] ueberhaupt existiert (FLAG_KEEP_SCREEN_ON blieb zwar, reicht auf
+     * echten Geraeten aber nachweislich nicht, siehe dort).
+     *
+     * onCreate -> onStart folgt immer, der Ersterwerb geht dadurch nicht verloren. Gated auf einen
+     * tatsaechlich laufenden Wecker: ohne ihn schliesst sich diese Activity ohnehin sofort
+     * ([observeAlarmState]), und ein bildschirmhaltender Lock waere dann falsch. Dass der Zustand
+     * beim Start ueber den Full-Screen-Intent bereits `true` ist, sichert AlarmSoundService zu
+     * (alarmActive VOR startForeground).
+     */
     override fun onStart() {
         super.onStart()
+        if (AlarmSoundService.alarmActive.value) {
+            acquireWakeLock()
+        }
         Logger.d(LogTags.ALARM, "▶️ AlarmFullScreenActivity STARTED: ${visibilitySnapshot()}")
     }
 
@@ -402,8 +438,17 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Erwirbt den bildschirmhaltenden Wake-Lock - und gibt einen vorhandenen zuvor frei.
+     *
+     * Das Freigeben gehoert HIER hinein, nicht zu den Aufrufern: `newWakeLock()` legt jedes Mal
+     * ein NEUES Objekt an, ein blosses Nach-Erwerben wuerde das alte verlieren, ohne es je zu
+     * releasen. Weil die Freigabe in dieser Funktion steckt, ist jeder Aufruf gefahrlos
+     * wiederholbar und ein doppelter Erwerb unmoeglich.
+     */
     private fun acquireWakeLock() {
         try {
+            releaseWakeLock()
             val powerManager = getSystemService(POWER_SERVICE) as PowerManager
             // SCREEN_BRIGHT statt PARTIAL: Ein PARTIAL_WAKE_LOCK haelt nur die CPU wach, NICHT den
             // Bildschirm. setTurnScreenOn() weckt den Screen zwar initial an - aber ohne einen
@@ -502,11 +547,8 @@ class AlarmFullScreenActivity : AppCompatActivity() {
             Logger.w(LogTags.ALARM, "🚫 Snooze ignoriert — Wecker wurde in dieser Activity schon behandelt")
             return
         }
-        // Fallback-Default matters: aeltere/Direct-Boot-Pfade koennten das Extra nicht mitfuehren.
-        val snoozeMinutes = intent.getIntExtra(
-            AlarmSoundService.EXTRA_SNOOZE_MINUTES,
-            AlarmManagerService.SNOOZE_MINUTES.toInt()
-        )
+        // Bewusst KEIN erneuter Intent-Read: der Wert steht in [snoozeMinutes], und genau der
+        // steht auch auf dem Knopf, den der Nutzer gerade gedrueckt hat.
         Logger.i(LogTags.ALARM, "😴 User snoozed alarm for $snoozeMinutes minutes")
 
         try {
@@ -548,6 +590,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
 private fun AlarmScreen(
     shiftName: String,
     shiftStartTime: String,
+    snoozeMinutes: Int,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit
 ) {
@@ -635,7 +678,10 @@ private fun AlarmScreen(
                     )
                 ) {
                     Text(
-                        text = stringResource(R.string.alarm_snooze_button),
+                        // Die Zahl kommt aus derselben Variablen, die snoozeAlarm() in
+                        // scheduleSnooze() reicht - der Knopf kann nicht mehr etwas anderes
+                        // behaupten, als er tut.
+                        text = stringResource(R.string.alarm_snooze_button, snoozeMinutes),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(vertical = 8.dp)
                     )

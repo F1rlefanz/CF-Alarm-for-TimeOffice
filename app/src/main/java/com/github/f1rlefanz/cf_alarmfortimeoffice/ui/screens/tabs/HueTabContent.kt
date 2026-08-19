@@ -32,19 +32,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import android.content.pm.PackageManager
-import android.os.Build
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -58,17 +51,21 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.AnimatedDiscoveryCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import kotlinx.coroutines.launch
 
 /**
- * Aktionen des Hue-Tabs, die den lokalen Netzwerkzugriff brauchen (ab Android 16 /
- * ACCESS_LOCAL_NETWORK). Bewusst ein Enum und kein Lambda: Nur so ueberlebt die gemerkte Absicht
- * einen Activity-Neuaufbau, waehrend der Berechtigungsdialog offen steht (siehe Kommentar an
- * `pendingAction` in [HueTabContent]).
+ * Aktionen des Hue-Tabs, die den lokalen Netzwerkzugriff brauchen (ACCESS_LOCAL_NETWORK, ab
+ * API 37 erzwungen). Bewusst ein Enum und kein Lambda: Nur so ueberlebt die gemerkte Absicht
+ * einen Activity-Neuaufbau, waehrend der Berechtigungsdialog offen steht (siehe
+ * [rememberLocalNetworkPermissionGate]).
+ *
+ * LIGHT_TEST gehoert dazu, seit der Lampentest ueber dasselbe Tor laeuft: Er sass zweimal in
+ * dieser Datei direkt am ViewModel und blieb deshalb als einziger Knopf des Tabs ungegatet.
  */
-private enum class PendingHueAction { VALIDATE, DISCOVER, PAIR }
+private enum class PendingHueAction { VALIDATE, DISCOVER, PAIR, LIGHT_TEST }
 
 /**
  * Fixed Hue Tab Content with proper scrolling and layout
@@ -93,29 +90,27 @@ fun HueTabContent(
     val discoveryStatus by hueViewModel.discoveryStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // Die nach Erteilung von ACCESS_LOCAL_NETWORK auszufuehrende Aktion als SPEICHERBARE Absicht,
-    // nicht als Lambda in `remember`: Waehrend der System-Berechtigungsdialog offen steht, kann die
-    // Activity neu aufgebaut werden (Rotation - MainActivity hat weder screenOrientation noch
-    // configChanges). Ein gemerktes Lambda ist danach weg, und "Zulassen" fuehrte zu einem stillen
-    // No-op: Berechtigung da, aber die Suche startete nicht und es kam keine Meldung. Enum + Bridge-Id
-    // ueberleben den Neuaufbau in rememberSaveable; die Bridge selbst wird ueber ihre Id wieder aus
-    // uiState.discoveredBridges geholt (das ViewModel ueberlebt die Rotation ohnehin).
-    var pendingAction by rememberSaveable { mutableStateOf<PendingHueAction?>(null) }
-    var pendingBridgeId by rememberSaveable { mutableStateOf<String?>(null) }
-
     LaunchedEffect(hueViewModel) {
         hueViewModel.userMessages.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
 
-    // EINE Abbildung Absicht -> ViewModel-Aufruf, genutzt von beiden Wegen (Berechtigung liegt schon
-    // vor ODER wurde gerade im Dialog erteilt) - damit koennen die beiden Wege nicht auseinanderlaufen.
-    fun executeHueAction(action: PendingHueAction, bridgeId: String?) {
+    // EINE Abbildung Absicht -> ViewModel-Aufruf, hinter dem gemeinsamen Berechtigungstor: beide
+    // Wege (Berechtigung liegt schon vor ODER wurde gerade im Dialog erteilt) laufen durch
+    // dieselbe Stelle und koennen deshalb nicht auseinanderlaufen.
+    val gate = rememberLocalNetworkPermissionGate<PendingHueAction>(
+        onMessage = { hueViewModel.setError(it) }
+    ) { action, bridgeId ->
         when (action) {
             PendingHueAction.VALIDATE -> hueViewModel.validateBridgeConnection()
             PendingHueAction.DISCOVER -> hueViewModel.discoverBridges()
+            PendingHueAction.LIGHT_TEST -> hueViewModel.runLightTest()
             PendingHueAction.PAIR -> {
+                // Die Bridge wird ueber ihre Id wieder aus der Trefferliste geholt - das ViewModel
+                // ueberlebt einen Activity-Neuaufbau waehrend des Dialogs ohnehin. Ist sie
+                // inzwischen weg, sagen wir das; ein stilles No-op waere hier die schlechtere
+                // Antwort.
                 val bridge = uiState.discoveredBridges.firstOrNull { it.id == bridgeId }
                 if (bridge != null) {
                     hueViewModel.setupBridge(bridge)
@@ -125,40 +120,6 @@ fun HueTabContent(
                     )
                 }
             }
-        }
-    }
-
-    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            val action = pendingAction
-            if (action != null) {
-                executeHueAction(action, pendingBridgeId)
-            } else {
-                // Kein stiller No-op: Ohne gemerkte Absicht (z. B. Prozesstod waehrend des Dialogs)
-                // muss der Nutzer erfahren, dass die Berechtigung da ist und er nur nochmal tippen muss.
-                hueViewModel.setError(
-                    "Netzwerkzugriff erteilt. Bitte die gewünschte Aktion noch einmal antippen."
-                )
-            }
-        } else {
-            hueViewModel.setError("Lokaler Netzwerkzugriff verweigert. Bitte in den Android-Einstellungen erteilen.")
-        }
-        pendingAction = null
-        pendingBridgeId = null
-    }
-
-    fun requireLocalNetworkPermission(action: PendingHueAction, bridgeId: String? = null) {
-        if (Build.VERSION.SDK_INT >= 37 &&
-            context.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK")
-                != PackageManager.PERMISSION_GRANTED
-        ) {
-            pendingAction = action
-            pendingBridgeId = bridgeId
-            localNetworkPermissionLauncher.launch("android.permission.ACCESS_LOCAL_NETWORK")
-        } else {
-            executeHueAction(action, bridgeId)
         }
     }
 
@@ -222,7 +183,7 @@ fun HueTabContent(
                             lightsCount = uiState.lightTargets.lights.size,
                             onNavigateToRuleConfig = onNavigateToRuleConfig,
                             onNavigateToSettings = onNavigateToSettings,
-                            onTestConnection = { hueViewModel.runLightTest() }
+                            onTestConnection = { gate(PendingHueAction.LIGHT_TEST) }
                         )
                     }
                 } else {
@@ -263,7 +224,7 @@ fun HueTabContent(
                                 onTestConnection = {
                                     // Meaningful test: flashes the lights + shows a Toast,
                                     // instead of a silent light-list refresh.
-                                    hueViewModel.runLightTest()
+                                    gate(PendingHueAction.LIGHT_TEST)
                                 }
                             )
                         }
@@ -306,7 +267,7 @@ fun HueTabContent(
             item {
                 BridgeConnectionStatusCard(
                     connectionInfo = uiState.bridgeConnectionInfo,
-                    onValidateConnection = { requireLocalNetworkPermission(PendingHueAction.VALIDATE) }
+                    onValidateConnection = { gate(PendingHueAction.VALIDATE) }
                 )
             }
         }
@@ -325,9 +286,9 @@ fun HueTabContent(
             item {
                 BridgeDiscoveryCard(
                     discoveredBridges = uiState.discoveredBridges,
-                    onDiscoverBridges = { requireLocalNetworkPermission(PendingHueAction.DISCOVER) },
+                    onDiscoverBridges = { gate(PendingHueAction.DISCOVER) },
                     onConnectToBridge = { bridge ->
-                        requireLocalNetworkPermission(PendingHueAction.PAIR, bridge.id)
+                        gate(PendingHueAction.PAIR, bridge.id)
                     }
                 )
             }

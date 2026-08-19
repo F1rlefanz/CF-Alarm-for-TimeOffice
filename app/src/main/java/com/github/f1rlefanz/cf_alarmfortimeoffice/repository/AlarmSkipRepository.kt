@@ -73,6 +73,16 @@ class AlarmSkipRepository @Inject constructor(
      * heranfuehrt; das Flag laeuft erst NACH der Weckzeit ab, ein Nachholer existiert nicht. Kein
      * Signal ist hier also richtiger als ein falsches (gleiche Ueberlegung wie beim
      * Token-Verlust-Waechter) - die Ausloesung selbst haengt ohnehin am ROHEN Flow.
+     *
+     * DASS DER FLOW DANACH ENDET, DARF DIE BEDIENUNG ABER NICHT SPERREN. Genau das tat es bis
+     * v1.28.0, und zwar andersherum als der Absatz zuvor verspricht: `AlarmViewModel` setzte
+     * `isLoading` ausschliesslich in diesem Collector zurueck, `skipNextAlarm()` schaltete es vor
+     * dem Schreiben ein - blieb die Emission aus, waren "Ueberspringen" UND "Aufheben" fuer den
+     * Rest der Prozesslaufzeit ausgegraut (beide haengen an `!isLoading`). Der Collector loest
+     * den Ladezustand deshalb jetzt auch beim Ende des Flows, abonniert begrenzt neu
+     * (WIEDERAUFNAHME statt endgueltigem Aus, wie in `CalendarSelectionRepository`), und
+     * `skipNextAlarm()`/`cancelSkip()` uebernehmen den gerade BESTAETIGT geschriebenen Zustand
+     * selbst, statt auf die naechste Emission zu warten.
      */
     override val skipStatusFlow: Flow<AlarmSkipState> = rohSkipStatusFlow
         .retryWhen { cause, attempt ->

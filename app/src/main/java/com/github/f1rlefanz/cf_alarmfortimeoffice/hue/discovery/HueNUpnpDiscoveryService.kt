@@ -58,19 +58,23 @@ class HueNUpnpDiscoveryService {
                 .get()
                 .build()
             
-            val response = httpClient.newCall(request).execute()
-            
-            if (!response.isSuccessful) {
-                val errorMessage = when (response.code) {
-                    404 -> "Discovery service unavailable (404). Bridge may not be registered with meethue.com"
-                    503 -> "Discovery service temporarily unavailable (503)"
-                    else -> "Discovery service error: ${response.code}"
+            // .use { }: Der Fehlerzweig wirft, ohne den Body zu lesen - ohne use bliebe die
+            // Antwort samt Verbindung offen, bis der GC sie einsammelt. Betrifft genau den Fall,
+            // der bei diesem Dienst am haeufigsten eintritt (404/503 bei nicht registrierter
+            // Bridge).
+            val responseBody = httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorMessage = when (response.code) {
+                        404 -> "Discovery service unavailable (404). Bridge may not be registered with meethue.com"
+                        503 -> "Discovery service temporarily unavailable (503)"
+                        else -> "Discovery service error: ${response.code}"
+                    }
+                    Logger.w(LogTags.HUE_DISCOVERY, errorMessage)
+                    throw IOException(errorMessage)
                 }
-                Logger.w(LogTags.HUE_DISCOVERY, errorMessage)
-                throw IOException(errorMessage)
+                response.body.string()
             }
-            
-            val responseBody = response.body.string()
+
             if (responseBody.isBlank()) {
                 Logger.w(LogTags.HUE_DISCOVERY, "Empty response from discovery service")
                 return@withContext Result.success(emptyList())

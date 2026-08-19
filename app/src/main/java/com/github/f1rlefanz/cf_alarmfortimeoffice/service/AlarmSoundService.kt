@@ -97,7 +97,24 @@ class AlarmSoundService : Service() {
         // (ID 2001) mit eigenem Channel-Sound - das ergab zwei Klingeltoene und zwei Eintraege
         // in der Leiste. Ton + Sichtbarkeit haengen jetzt an genau diesem Service.
         const val NOTIFICATION_ID = 2002
-        private const val CHANNEL_ID = "alarm_sound_service"
+
+        // VERSIONIERTE Kanal-ID, und das "_v2" ist kein Schoenheitsfehler: Android aendert an einem
+        // BESTEHENDEN Kanal die Importance nur nach UNTEN und ignoriert alle uebrigen Felder
+        // ("All other fields are ignored for channels that already exist",
+        // NotificationManager.createNotificationChannel). Bis v1.9.7 wurde dieser Kanal mit
+        // IMPORTANCE_LOW angelegt; die spaetere Anhebung auf IMPORTANCE_HIGH samt setBypassDnd und
+        // VISIBILITY_PUBLIC lief unter derselben ID und blieb auf jedem Bestandsgeraet wirkungslos -
+        // dort stand der Wecker-Kanal weiter auf LOW, das System verwarf den Full-Screen-Intent, und
+        // der Wecker klingelte ohne Weck-Bildschirm und ohne Stopp-/Schlummer-Knopf.
+        // Loeschen und unter derselben ID neu anlegen hilft NICHT: Android holt einen geloeschten
+        // Kanal mit genau seinen alten Einstellungen zurueck. Nur eine neue ID entkommt.
+        // Beim Umbenennen mitziehen: NotificationDeliverability.WECKER_KANAL_ID (der Test
+        // NotificationDeliverabilityTest haelt beide zusammen).
+        private const val CHANNEL_ID = "alarm_sound_service_v2"
+
+        // Der abgeloeste Kanal. Wird nur noch geloescht, damit in den Systemeinstellungen kein
+        // toter Zwilling "Schicht-Wecker" neben dem lebenden steht.
+        private const val ALTER_CHANNEL_ID = "alarm_sound_service"
 
         /**
          * Laeuft gerade ein Wecker? Die [AlarmFullScreenActivity] beobachtet das und schliesst
@@ -564,10 +581,24 @@ class AlarmSoundService : Service() {
     }
     
     /**
-     * Creates notification channel for foreground service
-     * This is idempotent - safe to call multiple times
+     * Legt den Wecker-Kanal an. Idempotent, darf beliebig oft laufen.
      */
     private fun createNotificationChannel() {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+
+        // Den Altbestand raeumen, BEVOR der neue Kanal entsteht: auf Geraeten, die vor v1.9.7
+        // einmal geweckt haben, liegt unter der alten ID ein Kanal auf IMPORTANCE_LOW, den keine
+        // Neuanlage mehr anheben kann (Android aendert die Importance eines bestehenden Kanals nur
+        // nach unten). Er wird nicht mehr bespielt, wuerde ohne dieses Loeschen aber weiter als
+        // zweiter, stummer "Schicht-Wecker" in den Systemeinstellungen stehen und den Nutzer bei
+        // jeder Reparatur in die falsche Kategorie schicken.
+        try {
+            notificationManager.deleteNotificationChannel(ALTER_CHANNEL_ID)
+        } catch (e: Exception) {
+            // Nie kritisch: der neue Kanal entsteht gleich darunter unabhaengig davon.
+            Logger.w(LogTags.ALARM, "⚠️ Alter Wecker-Kanal nicht loeschbar: ${e.message}")
+        }
+
         // IMPORTANCE_HIGH ist Pflicht: Ein Full-Screen-Intent wird vom System ignoriert, wenn der
         // Channel darunter liegt. Der Channel bleibt aber bewusst STUMM und vibrationsfrei -
         // Ton und Vibration kommen ausschliesslich vom MediaPlayer bzw. startVibration().
@@ -585,7 +616,6 @@ class AlarmSoundService : Service() {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
 
-        val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(channel)
 
         Logger.d(LogTags.ALARM, "📢 Notification channel created: $CHANNEL_ID")
@@ -663,7 +693,10 @@ class AlarmSoundService : Service() {
             .setFullScreenIntent(fullScreenIntent, true)
             .addAction(
                 android.R.drawable.ic_menu_recent_history,
-                getString(R.string.alarm_notification_snooze),
+                // Die Beschriftung traegt DIESELBE Variable, die gleich in scheduleSnooze() geht -
+                // vorher stand fest "5 Min spaeter" auf dem Knopf, waehrend die eingestellte Dauer
+                // 3, 10 oder 15 Minuten betragen konnte.
+                getString(R.string.alarm_notification_snooze, snoozeMinutes),
                 snoozeIntent
             )
             .addAction(

@@ -109,8 +109,57 @@ data class ShiftDefinition(
     private fun matchesAsWholeWord(lowercaseTitle: String, pattern: String): Boolean {
         val needle = pattern.trim().lowercase()
         if (needle.isEmpty()) return false
-        return "$WORD_START${Regex.escape(needle)}$WORD_END".toRegex()
-            .containsMatchIn(lowercaseTitle)
+        return WordBoundaryPatterns.forNeedle(needle).containsMatchIn(lowercaseTitle)
+    }
+}
+
+/**
+ * Zwischenspeicher fuer die kompilierten Wortgrenzen-Muster.
+ *
+ * WARUM (Pruefrunde 7): [ShiftDefinition.matchesAsWholeWord] baute den Ausdruck bei JEDEM Aufruf
+ * neu (`"...".toRegex()` kompiliert ein frisches [java.util.regex.Pattern]). Aufgerufen wird die
+ * Funktion in der verschachtelten Schleife von
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine] - einmal pro
+ * Termin x Definition x Muster - und direkt danach ein zweites Mal fuer dieselben Muster aus
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester]. Bei 14 Tagen Dienstplan
+ * und einer Handvoll Definitionen sind das mehrere hundert Kompilate pro Durchlauf, und der
+ * Durchlauf hing bis zur selben Pruefrunde am Hauptthread.
+ *
+ * Die Muster stammen ausschliesslich aus der Schicht-Konfiguration des Nutzers (Keywords und
+ * Definitionsnamen), nie aus Termintiteln - der Schluesselraum ist also klein und begrenzt.
+ * [MAX_ENTRIES] ist trotzdem da, damit eine absurd grosse Konfiguration den Speicher nicht
+ * unbegrenzt fuellt; ueberschreitet der Vorrat die Grenze, wird er komplett verworfen und baut
+ * sich neu auf (nur ein Kostenthema, nie ein Korrektheitsthema).
+ *
+ * NEBENLAEUFIGKEIT: [Regex] ist unveraenderlich und erzeugt pro Suche einen eigenen Matcher, ist
+ * also zwischen Threads teilbar. Zwei Threads koennen dasselbe Muster gleichzeitig kompilieren -
+ * das kostet einmalig doppelt und ergibt zwei gleichwertige Objekte, aber nie ein falsches
+ * Ergebnis. Deshalb bewusst kein Lock im heissen Pfad.
+ */
+internal object WordBoundaryPatterns {
+
+    private const val MAX_ENTRIES = 256
+
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
+    /** Nur Diagnose bzw. Test: wie oft wirklich kompiliert wurde. */
+    private val compilations = java.util.concurrent.atomic.AtomicInteger()
+
+    val compilationCount: Int get() = compilations.get()
+
+    fun forNeedle(needle: String): Regex {
+        cache[needle]?.let { return it }
+        if (cache.size >= MAX_ENTRIES) cache.clear()
+        val compiled = "$WORD_START${Regex.escape(needle)}$WORD_END".toRegex()
+        compilations.incrementAndGet()
+        cache[needle] = compiled
+        return compiled
+    }
+
+    /** Setzt Vorrat und Zaehler zurueck - ausschliesslich fuer Tests. */
+    internal fun resetForTest() {
+        cache.clear()
+        compilations.set(0)
     }
 }
 

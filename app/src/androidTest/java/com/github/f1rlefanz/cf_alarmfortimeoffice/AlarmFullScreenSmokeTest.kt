@@ -78,7 +78,10 @@ class AlarmFullScreenSmokeTest {
                 // Nutzersicht nicht abstellbar - der schlimmste Zustand, den diese App haben kann.
                 compose.onNodeWithText(context.getString(R.string.alarm_dismiss_button))
                     .assertIsDisplayed().assertHasClickAction()
-                compose.onNodeWithText(context.getString(R.string.alarm_snooze_button))
+                // Die Schlummer-Dauer MUSS auf dem Knopf stehen, und zwar die, die der Intent
+                // traegt - bis v1.29.0 stand dort fest "5", auch wenn 15 Minuten eingestellt
+                // waren. SNOOZE_MIN ist bewusst NICHT 5, sonst faellt eine feste 5 nicht auf.
+                compose.onNodeWithText(context.getString(R.string.alarm_snooze_button, SNOOZE_MIN))
                     .assertIsDisplayed().assertHasClickAction()
             }
         } finally {
@@ -177,7 +180,7 @@ class AlarmFullScreenSmokeTest {
             putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, SHIFT_NAME)
             putExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME, SHIFT_START)
             putExtra(AlarmSoundService.EXTRA_ALARM_ID, ALARM_ID)
-            putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, 5)
+            putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, SNOOZE_MIN)
         }
 
     private fun starteWeckton() {
@@ -188,7 +191,7 @@ class AlarmFullScreenSmokeTest {
                 putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, SHIFT_NAME)
                 putExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME, SHIFT_START)
                 putExtra(AlarmSoundService.EXTRA_ALARM_ID, ALARM_ID)
-                putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, 5)
+                putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, SNOOZE_MIN)
             }
         )
         warteBis("Wecker wurde nicht aktiv") { AlarmSoundService.alarmActive.value }
@@ -218,6 +221,9 @@ class AlarmFullScreenSmokeTest {
         const val ZWEITE_SHIFT_NAME = "Spaetdienst"
         const val ZWEITE_SHIFT_START = "14:00"
         const val ALARM_ID = 987654
+
+        /** Bewusst NICHT der Default 5 - sonst bliebe eine fest verdrahtete 5 unentdeckt. */
+        const val SNOOZE_MIN = 15
         const val WAIT_TIMEOUT_MS = 10_000L
         const val POLL_MS = 100L
     }

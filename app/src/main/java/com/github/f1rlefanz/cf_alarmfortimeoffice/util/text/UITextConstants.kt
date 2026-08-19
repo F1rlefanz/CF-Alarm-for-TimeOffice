@@ -31,6 +31,9 @@ object UIText {
     const val GOOGLE_SIGN_IN = "Mit Google anmelden"
     const val PERMISSION_EXPLANATION = "Diese App benötigt Zugriff auf Ihren Google Kalender, " +
             "um Schichten zu erkennen und Alarme zu setzen."
+
+    /** Sprung in die Android-Kontoverwaltung, neben der Anmelde-Fehlermeldung. */
+    const val ADD_GOOGLE_ACCOUNT = "Google-Konto in den Einstellungen hinzufügen"
     
     // Status-bezogene Texte
     const val SYSTEM_STATUS = "System Status"

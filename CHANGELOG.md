@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.29.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.29.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Wenn die Anmeldung scheitert, sagt die App jetzt, was zu tun ist – statt „bitte noch einmal versuchen"._
+
+### 🐛 Behoben
+
+- **Anmelde-Fehlermeldung ohne Aussagekraft:** Scheiterte die Anmeldung, stand dort nur „Anmeldung gerade nicht möglich. Bitte noch einmal versuchen." Auf einem Gerät, auf dem gar kein Google-Konto eingerichtet ist, hätte wiederholtes Antippen aber nie geholfen – und genau das war der häufigste Fall. Android liefert für beide Ursachen dieselbe Rückmeldung, die App kann sie also nicht unterscheiden. Die Meldung nennt jetzt beide möglichen Gründe und darunter steht ein Knopf, der direkt in die Konto-Einstellungen springt.
+
+## Version 1.29.0
 
 **Stand:** August 2026
 

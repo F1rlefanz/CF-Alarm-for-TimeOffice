@@ -39,6 +39,34 @@ class CredentialAuthManager(context: Context) {
     companion object {
         /** Kurze Pause vor dem einzigen Wiederholungsversuch - siehe getCredentialWithRetry(). */
         private const val NO_CREDENTIAL_RETRY_DELAY_MS = 500L
+
+        /**
+         * Der Text fuer `NoCredentialException` - die einzige Meldung, die BEIDE moeglichen
+         * Ursachen nennen MUSS, weil die App sie nicht auseinanderhalten kann.
+         *
+         * WARUM NICHT EINE URSACHE BEHAUPTEN: Bis v1.9.x stand hier "Kein Google-Konto gefunden.
+         * Bitte fuegen Sie eines hinzu" - nachweislich falsch, im Log vom 14.07.2026 kam dieselbe
+         * Exception, waehrend das Konto laengst auf dem Geraet war (der zweite Klick meldete es
+         * Sekunden spaeter an). Danach stand hier "Anmeldung gerade nicht moeglich. Bitte noch
+         * einmal versuchen" - richtig, aber nutzlos: am 19.08.2026 am frischen Emulator gemessen,
+         * wo GAR KEIN Konto eingerichtet war, sagte genau dieser Satz dem Nutzer nichts darueber,
+         * dass er ein Konto anlegen muss. Zweimal wiederholtes Antippen haette dort nie geholfen.
+         *
+         * `NoCredentialException` heisst nur "der Credential Manager hat gerade nichts geliefert".
+         * Die Unterscheidung ist auch nicht nachtraeglich zu ermitteln: `AccountManager` zeigt
+         * fremde Konten seit Android 8 nur mit ausdruecklicher Sichtbarkeitsfreigabe, ein "0 Konten"
+         * von dort waere also selbst wieder eine moegliche Luege. Deshalb nennt der Text beide
+         * Wege und ueberlaesst dem Nutzer die Entscheidung, statt zu raten.
+         *
+         * `LoginScreen` vergleicht gegen genau diese Konstante, um daneben den Sprung in die
+         * Konto-Einstellungen anzubieten - deshalb ist der Text hier zentral und nicht dort.
+         */
+        const val FEHLER_KEIN_CREDENTIAL: String =
+            "Die Anmeldung hat nicht geklappt: Android hat kein Google-Konto geliefert. " +
+                "Dafür gibt es zwei mögliche Gründe. Entweder ist auf diesem Gerät noch kein " +
+                "Google-Konto eingerichtet – dann füge es unten in den Android-Einstellungen " +
+                "hinzu. Oder die Google-Dienste brauchten nach einer Neuinstallation nur einen " +
+                "Moment – dann genügt ein zweiter Tipp auf „Mit Google anmelden“."
     }
 
     private val credentialManager = CredentialManager.create(context)
@@ -79,12 +107,9 @@ class CredentialAuthManager(context: Context) {
                 e.message?.contains("Developer console") == true -> {
                     "Google Sign-In Konfigurationsfehler. Bitte überprüfen Sie die SHA-1 Fingerprints in der Google Cloud Console."
                 }
-                // BEWUSST NICHT MEHR "Kein Google-Konto gefunden. Bitte fuegen Sie eines hinzu":
-                // Diese Meldung war nachweislich falsch. Im Log vom 14.07. schlug der erste
-                // Versuch mit NoCredentialException fehl, der zweite Klick lieferte Sekunden
-                // spaeter dasselbe, laengst vorhandene Konto. NoCredentialException heisst
-                // "Credential Manager konnte gerade nichts liefern" - nicht "es gibt kein Konto".
-                else -> "Anmeldung gerade nicht möglich. Bitte noch einmal versuchen."
+                // Beide Ursachen sind moeglich und nicht unterscheidbar - der Text nennt
+                // deshalb beide, siehe FEHLER_KEIN_CREDENTIAL.
+                else -> FEHLER_KEIN_CREDENTIAL
             }
             SignInResult(success = false, error = detailedError, exception = e)
         } catch (e: GetCredentialException) {

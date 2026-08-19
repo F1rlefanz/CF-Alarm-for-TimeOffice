@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,15 +18,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.InlineErrorCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingIconButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.UIText
@@ -101,6 +107,32 @@ fun LoginScreen(
             authState.errors.error?.let { error ->
                 Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
                 InlineErrorCard(message = error)
+
+                // Der Weg zur Behebung, direkt neben der Meldung: Ohne ihn muesste der Nutzer
+                // selbst darauf kommen, dass "Android hat kein Google-Konto geliefert" ein
+                // Konto in den SYSTEM-Einstellungen meint - und danach suchen.
+                //
+                // Nur bei genau dieser Meldung (Vergleich gegen die Konstante, kein Textsuchen),
+                // denn nur sie kann ein fehlendes Konto bedeuten; bei "Anmeldung wurde
+                // abgebrochen" waere der Knopf eine Fehlleitung.
+                //
+                // UND nur, wenn das Geraet den Sprung wirklich anbietet: `resolveActivity` wird
+                // VOR dem Anzeigen gefragt, weil kein Knopf einen Ablauf behaupten darf, den es
+                // nicht gibt. Auf einem Geraet ohne diese Einstellungsseite bleibt der Text
+                // stehen - er nennt den Weg ja auch in Worten.
+                if (error == CredentialAuthManager.FEHLER_KEIN_CREDENTIAL) {
+                    val context = LocalContext.current
+                    val kontoIntent = remember {
+                        Intent(Settings.ACTION_ADD_ACCOUNT)
+                            .putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
+                            .takeIf { it.resolveActivity(context.packageManager) != null }
+                    }
+                    if (kontoIntent != null) {
+                        TextButton(onClick = { context.startActivity(kontoIntent) }) {
+                            Text(UIText.ADD_GOOGLE_ACCOUNT)
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXL))

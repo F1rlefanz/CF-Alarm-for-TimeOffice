@@ -384,6 +384,15 @@ class ShiftViewModel @Inject constructor(
                 // Konfiguration beide vor, und die Erkennung ist gerade gelaufen - was jetzt keinen
                 // Treffer hatte, ist genau der Kandidat, den der Nutzer zuordnen soll. Rein
                 // rechnerisch, kein Netz, kein DataStore.
+                //
+                // BLEIBT BEWUSST AUF DEM AUFRUFER-THREAD (Pruefrunde 7): die teure Haelfte dieses
+                // Durchgangs - die Schichterkennung - wechselt inzwischen selbst auf
+                // `Dispatchers.Default` (siehe ShiftRecognitionEngine.getAllMatchingShifts). Was
+                // hier uebrig bleibt, ist eine Schleife ueber Termine x aktivierte Definitionen mit
+                // VORKOMPILIERTEN Mustern (WordBoundaryPatterns) - genau dieselben Muster, die die
+                // Erkennung eben benutzt hat, also garantiert bereits im Vorrat. Ein eigener
+                // Dispatcher-Wechsel wuerde hier nur einen zweiten Thread-Wechsel pro
+                // Kalender-Aktualisierung kosten.
                 val suggestions = _uiState.value.currentShiftConfig?.let { config ->
                     ShiftCodeSuggester.suggest(events, config)
                 } ?: ShiftCodeSuggester.SuggestionResult(emptyList(), 0)

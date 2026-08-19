@@ -150,16 +150,20 @@ class HueApiClient(context: Context? = null) {
                 "DELETE" -> requestBuilder.delete()
             }
             
-            val response = client.newCall(requestBuilder.build()).execute()
-            
-            if (response.isSuccessful) {
-                val responseBody = response.body.string()
-                Logger.i(LogTags.HUE_NETWORK, "✅ Secure HTTPS request successful: ${response.code}")
-                Result.success(responseBody)
-            } else {
-                val error = "HTTPS ${response.code}: ${response.message}"
-                Logger.w(LogTags.HUE_NETWORK, "HTTPS request failed: $error")
-                Result.failure(IOException(error))
+            // .use { }: Auf dem Erfolgspfad schliesst `body.string()` die Antwort selbst - auf
+            // dem Fehlerpfad liest hier aber NIEMAND den Body, und eine ungelesene Antwort haelt
+            // ihre Verbindung im Pool fest, bis der GC sie einsammelt. Genau dieser Pfad wird bei
+            // einer zickenden Bridge oft durchlaufen (jede 6h-Wartung, jeder Weckvorgang).
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (response.isSuccessful) {
+                    val responseBody = response.body.string()
+                    Logger.i(LogTags.HUE_NETWORK, "✅ Secure HTTPS request successful: ${response.code}")
+                    Result.success(responseBody)
+                } else {
+                    val error = "HTTPS ${response.code}: ${response.message}"
+                    Logger.w(LogTags.HUE_NETWORK, "HTTPS request failed: $error")
+                    Result.failure(IOException(error))
+                }
             }
             
         } catch (e: Exception) {
@@ -204,20 +208,23 @@ class HueApiClient(context: Context? = null) {
                     .get()
                     .build()
 
-                val response = client.newCall(request).execute()
+                // .use { }: Der else-Zweig wirft, ohne den Body zu lesen - ohne use bliebe die
+                // Antwort offen. Das `return@withContext` aus dem Block heraus ist zulaessig, use
+                // schliesst trotzdem (finally).
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val responseBody = response.body.string().ifBlank { "[]" }
+                        val type = object : TypeToken<List<BridgeDiscoveryResponse>>() {}.type
+                        val bridges = gson.fromJson<List<BridgeDiscoveryResponse>>(responseBody, type)
 
-                if (response.isSuccessful) {
-                    val responseBody = response.body.string().ifBlank { "[]" }
-                    val type = object : TypeToken<List<BridgeDiscoveryResponse>>() {}.type
-                    val bridges = gson.fromJson<List<BridgeDiscoveryResponse>>(responseBody, type)
-
-                    Logger.i(
-                        LogTags.HUE_DISCOVERY,
-                        "Online discovery successful: ${bridges.size} bridges"
-                    )
-                    return@withContext bridges
-                } else {
-                    throw IOException("Discovery service unavailable: ${response.code}")
+                        Logger.i(
+                            LogTags.HUE_DISCOVERY,
+                            "Online discovery successful: ${bridges.size} bridges"
+                        )
+                        return@withContext bridges
+                    } else {
+                        throw IOException("Discovery service unavailable: ${response.code}")
+                    }
                 }
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_DISCOVERY, "Online discovery failed", e)

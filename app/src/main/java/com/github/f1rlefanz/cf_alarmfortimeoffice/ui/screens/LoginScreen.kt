@@ -2,12 +2,17 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,69 +41,77 @@ fun LoginScreen(
     // ist also folgenlos - der Anmeldevorgang selbst laeuft im ViewModel weiter.
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(SpacingConstants.SPACING_EXTRA_LARGE),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        // Echtes App-Logo (skaliert aus Icon.png -> res/drawable-nodpi/ic_app_logo.png)
-        Image(
-            painter = painterResource(id = R.drawable.ic_app_logo),
-            contentDescription = UIText.APP_TITLE,
-            modifier = Modifier
-                .size(SpacingConstants.APP_ICON_SIZE)
-                .clip(MaterialTheme.shapes.large)
-        )
+    // SCROLL-AUSWEG: Logo, Titel, Anmeldeknopf, eine moegliche Fehlerkarte und der
+    // Datenschutzhinweis passen bei grosser Schriftskalierung nicht mehr auf einen Bildschirm -
+    // ohne Scrollweg waere der Anmeldeknopf dann nicht erreichbar und die App unbenutzbar.
+    // `heightIn(min = maxHeight)` haelt die vertikale Zentrierung, solange alles passt.
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = maxHeight)
+                    .verticalScroll(rememberScrollState())
+                    .padding(SpacingConstants.SPACING_EXTRA_LARGE),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+            // Echtes App-Logo (skaliert aus Icon.png -> res/drawable-nodpi/ic_app_logo.png)
+            Image(
+                painter = painterResource(id = R.drawable.ic_app_logo),
+                contentDescription = UIText.APP_TITLE,
+                modifier = Modifier
+                    .size(SpacingConstants.APP_ICON_SIZE)
+                    .clip(MaterialTheme.shapes.large)
+            )
 
-        Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXL))
+            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXL))
 
-        Text(
-            text = UIText.APP_TITLE,
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
-        )
+            Text(
+                text = UIText.APP_TITLE,
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center
+            )
 
-        Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
+            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_SMALL))
 
-        Text(
-            text = UIText.APP_SUBTITLE,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+            Text(
+                text = UIText.APP_SUBTITLE,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-        Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXXL))
+            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXXL))
 
-        LoadingIconButton(
-            loading = authState.calendarOps.calendarsLoading,
-            text = "Mit Google anmelden",
-            onClick = onSignIn,
-            icon = {
-                // Modern credential icon
-                Icon(
-                    painter = painterResource(id = android.R.drawable.ic_partial_secure),
-                    // dekorativ: die Knopfbeschriftung "Mit Google anmelden" sagt es bereits
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
-                )
+            LoadingIconButton(
+                loading = authState.calendarOps.calendarsLoading,
+                text = "Mit Google anmelden",
+                onClick = onSignIn,
+                icon = {
+                    // Modern credential icon
+                    Icon(
+                        painter = painterResource(id = android.R.drawable.ic_partial_secure),
+                        // dekorativ: die Knopfbeschriftung "Mit Google anmelden" sagt es bereits
+                        contentDescription = null,
+                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD)
+                    )
+                }
+            )
+
+            authState.errors.error?.let { error ->
+                Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
+                InlineErrorCard(message = error)
             }
-        )
 
-        authState.errors.error?.let { error ->
-            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_LARGE))
-            InlineErrorCard(message = error)
+            Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXL))
+
+            Text(
+                text = UIText.PERMISSION_EXPLANATION,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = SpacingConstants.SPACING_XXL)
+            )
         }
-
-        Spacer(modifier = Modifier.height(SpacingConstants.SPACING_XXL))
-
-        Text(
-            text = UIText.PERMISSION_EXPLANATION,
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = SpacingConstants.SPACING_XXL)
-        )
     }
 }

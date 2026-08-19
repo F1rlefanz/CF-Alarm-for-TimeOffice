@@ -40,6 +40,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.TargetType
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ActionConfigCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.AutoOffCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RuleBasicInfoCard
@@ -61,6 +62,13 @@ private val StringSetSaver = listSaver<Set<String>, String>(
     save = { it.toList() },
     restore = { it.toSet() }
 )
+
+/**
+ * Die einzige netzbeduerftige Aktion dieses Bildschirms: "Regel testen" schaltet echte Lampen.
+ * Enum statt Lambda, damit die Absicht einen Activity-Neuaufbau waehrend des offenen
+ * Berechtigungsdialogs ueberlebt - siehe [rememberLocalNetworkPermissionGate].
+ */
+internal enum class HueRuleConfigNetzAktion { RULE_TEST }
 
 /**
  * Hue Regel-Konfiguration Screen - Deutsche Version
@@ -313,6 +321,19 @@ fun HueRuleConfigScreen(
         )
     }
 
+    // Der Regeltest schaltet echte Lampen und braucht deshalb ab Android 17 den lokalen
+    // Netzwerkzugriff. Ohne dieses Tor scheiterte er mit einer generischen Netzwerkmeldung, ohne
+    // dass je der Systemdialog erschien. Die Testregel wird bewusst ERST HIER gebaut, aus dem
+    // aktuellen Formularzustand: Der ist rememberSaveable, ueberlebt also den Activity-Neuaufbau
+    // waehrend des Dialogs - eine vorher gebaute Regel waere danach weg.
+    val gate = rememberLocalNetworkPermissionGate<HueRuleConfigNetzAktion>(
+        onMessage = { hueViewModel.setError(it) }
+    ) { _, _ ->
+        val testRule = buildRule("test_${System.currentTimeMillis()}")
+            .copy(name = ruleName.ifBlank { "Test-Regel" })
+        hueViewModel.testRuleExecution(testRule)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -475,11 +496,7 @@ fun HueRuleConfigScreen(
                     sunriseEnabled = sunriseEnabled,
                     sunriseDurationMinutes = sunriseDurationMinutes,
                     sunriseStartBeforeAlarm = sunriseStartBeforeAlarm,
-                    onTestRule = {
-                        val testRule = buildRule("test_${System.currentTimeMillis()}")
-                            .copy(name = ruleName.ifBlank { "Test-Regel" })
-                        hueViewModel.testRuleExecution(testRule)
-                    }
+                    onTestRule = { gate(HueRuleConfigNetzAktion.RULE_TEST) }
                 )
             }
         }

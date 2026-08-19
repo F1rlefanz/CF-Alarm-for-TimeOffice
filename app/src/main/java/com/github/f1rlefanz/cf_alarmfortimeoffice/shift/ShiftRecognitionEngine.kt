@@ -5,13 +5,23 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.LocalDateTime
 
+/**
+ * @param recognitionDispatcher der Dispatcher, auf dem die Erkennung wirklich rechnet - siehe
+ *        [getAllMatchingShifts]. Per Vorgabe [Dispatchers.Default]; der Parameter existiert, damit
+ *        Tests die Erkennung im virtuellen Zeitplan halten koennen (die Nebenlaeufigkeits-Tests um
+ *        Mutex und Epoche brauchen eine deterministische Reihenfolge).
+ */
 class ShiftRecognitionEngine(
-    private val shiftConfigRepository: IShiftConfigRepository
+    private val shiftConfigRepository: IShiftConfigRepository,
+    private val recognitionDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
     
     /**
@@ -152,56 +162,73 @@ class ShiftRecognitionEngine(
         // PERFORMANCE: Calculate hash of input to prevent duplicate processing
         val eventsHash = events.hashCode()
 
+        // WARUM DER DISPATCHER-WECHSEL HIER UND NICHT BEI DEN AUFRUFERN (Pruefrunde 7): drei der
+        // Aufrufer dieser Engine kamen ueber `ShiftViewModel` und damit auf `Dispatchers.Main` an -
+        // auf der ganzen Kette (ViewModel -> ShiftUseCase -> Engine) gab es keinen einzigen
+        // Wechsel, und `SafeExecutor` ist reines try/catch. Die Erkennung ist aber reine
+        // Rechenarbeit ueber Termine x Definitionen x Muster und lief damit auf dem UI-Thread.
+        // Hier gesetzt, weil es die einzige Stelle ist, durch die ALLE Aufrufer muessen; die
+        // beiden bereits auf IO laufenden (AlarmUseCase.syncAlarms, AlarmMaintenanceService)
+        // wechseln damit nur von IO auf Default, was fuer CPU-Arbeit ohnehin der richtige Pool ist.
+        //
+        // WICHTIG FUER DIE CACHE-INVARIANTE: der Wechsel liegt AUSSERHALB des Mutex, der kritische
+        // Abschnitt bleibt unveraendert EIN Block. Pruefung und Veroeffentlichung liegen weiterhin
+        // gemeinsam darin, `epochAtStart` wird weiterhin innerhalb des Locks genommen. Ein Mutex
+        // ist dispatcher-unabhaengig - die Reihenfolge der Wartenden aendert sich nicht dadurch,
+        // auf welchem Thread sie warten.
+        //
         // Cache-Pruefung und -Veroeffentlichung liegen bewusst BEIDE im selben kritischen
         // Abschnitt - siehe Kommentar an `recognitionMutex`. Ein nebenlaeufiger Aufrufer wartet
         // hier auf das FERTIGE Ergebnis des ersten und bekommt es danach als Cache-Treffer,
         // statt einen halbfertigen Zwischenzustand zu lesen.
-        return recognitionMutex.withLock {
-            // Die Epoche, unter der DIESER Lauf arbeitet - festgehalten, BEVOR die Erkennung
-            // beginnt. Ein zwischenzeitliches clearRecognitionCache() macht sie ungueltig.
-            val epochAtStart = cacheEpoch
+        return withContext(recognitionDispatcher) {
+            recognitionMutex.withLock {
+                // Die Epoche, unter der DIESER Lauf arbeitet - festgehalten, BEVOR die Erkennung
+                // beginnt. Ein zwischenzeitliches clearRecognitionCache() macht sie ungueltig.
+                val epochAtStart = cacheEpoch
 
-            // ADAPTIVE CACHE: Check cache validity with dynamic expiration
-            val snapshot = cache
-            if (snapshot != null && snapshot.epoch == epochAtStart && snapshot.eventsHash == eventsHash) {
-                val adaptiveCacheValidity = getAdaptiveCacheValidity()
-                val cacheAge = System.currentTimeMillis() - snapshot.publishedAt
+                // ADAPTIVE CACHE: Check cache validity with dynamic expiration
+                val snapshot = cache
+                if (snapshot != null && snapshot.epoch == epochAtStart && snapshot.eventsHash == eventsHash) {
+                    val adaptiveCacheValidity = getAdaptiveCacheValidity()
+                    val cacheAge = System.currentTimeMillis() - snapshot.publishedAt
 
-                if (cacheAge < adaptiveCacheValidity) {
-                    cacheHitCount++
-                    Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${snapshot.matches.size} matches (hit #$cacheHitCount)")
-                    return@withLock snapshot.matches
-                } else {
-                    Logger.d(LogTags.SHIFT_RECOGNITION, "⏰ ADAPTIVE-CACHE-EXPIRED: Cache is ${cacheAge}ms old (validity=${adaptiveCacheValidity}ms), needs refresh")
+                    if (cacheAge < adaptiveCacheValidity) {
+                        cacheHitCount++
+                        Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-CACHE-HIT: Same events processed recently (${cacheAge}ms ago, validity=${adaptiveCacheValidity}ms), returning cached ${snapshot.matches.size} matches (hit #$cacheHitCount)")
+                        return@withLock snapshot.matches
+                    } else {
+                        Logger.d(LogTags.SHIFT_RECOGNITION, "⏰ ADAPTIVE-CACHE-EXPIRED: Cache is ${cacheAge}ms old (validity=${adaptiveCacheValidity}ms), needs refresh")
+                    }
                 }
+
+                val matches = performRecognition(events)
+
+                // ERST JETZT veroeffentlichen - Ergebnis und Cache-Schluessel gemeinsam als EIN
+                // Objekt, nachdem die Erkennung wirklich fertig ist. Schlaegt `performRecognition`
+                // mit einer Exception fehl, bleibt der alte Stand stehen und der naechste Aufruf
+                // versucht es erneut, statt ein Fehlergebnis zu cachen.
+                //
+                // Der Stand traegt `epochAtStart` - lief zwischendurch ein clearRecognitionCache(),
+                // ist er damit als ueberholt erkennbar und wird von jedem Leser verworfen. Das
+                // ERGEBNIS geht trotzdem an den Aufrufer zurueck: es ist zwar auf einer inzwischen
+                // ersetzten Konfiguration entstanden, aber real erkannt - eine leere Liste
+                // zurueckzugeben waere die gefaehrlichere Luege (syncAlarms loescht darauf alle
+                // Alarme), und der Aufrufer, der gerade gespeichert hat, loest ohnehin einen neuen
+                // Lauf aus.
+                cache = RecognitionCache(
+                    eventsHash = eventsHash,
+                    matches = matches,
+                    publishedAt = System.currentTimeMillis(),
+                    epoch = epochAtStart
+                )
+                if (cacheEpoch != epochAtStart) {
+                    Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-STALE: Konfiguration wurde waehrend der Erkennung geaendert (Epoche $epochAtStart -> $cacheEpoch), Ergebnis wird nicht als frisch gecacht")
+                }
+
+                Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${matches.size} matches (cache validity: ${getAdaptiveCacheValidity()}ms)")
+                matches
             }
-
-            val matches = performRecognition(events)
-
-            // ERST JETZT veroeffentlichen - Ergebnis und Cache-Schluessel gemeinsam als EIN Objekt,
-            // nachdem die Erkennung wirklich fertig ist. Schlaegt `performRecognition` mit einer
-            // Exception fehl, bleibt der alte Stand stehen und der naechste Aufruf versucht es
-            // erneut, statt ein Fehlergebnis zu cachen.
-            //
-            // Der Stand traegt `epochAtStart` - lief zwischendurch ein clearRecognitionCache(),
-            // ist er damit als ueberholt erkennbar und wird von jedem Leser verworfen. Das
-            // ERGEBNIS geht trotzdem an den Aufrufer zurueck: es ist zwar auf einer inzwischen
-            // ersetzten Konfiguration entstanden, aber real erkannt - eine leere Liste
-            // zurueckzugeben waere die gefaehrlichere Luege (syncAlarms loescht darauf alle
-            // Alarme), und der Aufrufer, der gerade gespeichert hat, loest ohnehin einen neuen
-            // Lauf aus.
-            cache = RecognitionCache(
-                eventsHash = eventsHash,
-                matches = matches,
-                publishedAt = System.currentTimeMillis(),
-                epoch = epochAtStart
-            )
-            if (cacheEpoch != epochAtStart) {
-                Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-STALE: Konfiguration wurde waehrend der Erkennung geaendert (Epoche $epochAtStart -> $cacheEpoch), Ergebnis wird nicht als frisch gecacht")
-            }
-
-            Logger.d(LogTags.SHIFT_RECOGNITION, "✅ ADAPTIVE-RECOGNITION: Completed with ${matches.size} matches (cache validity: ${getAdaptiveCacheValidity()}ms)")
-            matches
         }
     }
     
@@ -234,12 +261,15 @@ class ShiftRecognitionEngine(
 
         Logger.d(LogTags.SHIFT_RECOGNITION, "Starting shift recognition with ${shiftDefinitions.size} definitions and ${events.size} events")
         
+        // KEIN Logging INNERHALB dieser beiden Schleifen (Pruefrunde 7). Hier standen drei
+        // `Logger.d` - eines pro Termin, zwei pro Termin x Definition. `Logger.d` prueft
+        // `BuildConfig.DEBUG` erst INNERHALB der Funktion; die Zeichenketten samt Ausgabe der
+        // Keyword-Liste wurden als Argument also in JEDEM Build gebaut, auch im Release, wo sie
+        // anschliessend verworfen wurden. Bei 14 Tagen Dienstplan und einer Handvoll Definitionen
+        // sind das mehrere hundert weggeworfene Zeichenketten pro Durchlauf. Was wirklich
+        // gebraucht wird, steht ohnehin im Treffer-Log und in der Zusammenfassung darunter.
         for (event in events) {
-            Logger.d(LogTags.SHIFT_RECOGNITION, "Checking event: '${event.title}' at ${event.startTime}")
-            
             for (definition in shiftDefinitions) {
-                Logger.d(LogTags.SHIFT_RECOGNITION, "Testing definition '${definition.name}' with keywords: ${definition.keywords}")
-                
                 if (definition.matchesKeywords(event.title)) {
                     val alarmTime = calculateAlarmTime(event, definition)
                     matches.add(
@@ -251,12 +281,10 @@ class ShiftRecognitionEngine(
                     )
                     Logger.i(LogTags.SHIFT_RECOGNITION, "✅ MATCH found: '${event.title}' matches '${definition.name}' with keywords ${definition.keywords}")
                     break // Only match first matching definition per event
-                } else {
-                    Logger.d(LogTags.SHIFT_RECOGNITION, "❌ No match: '${event.title}' doesn't contain any of ${definition.keywords}")
                 }
             }
         }
-        
+
         Logger.i(LogTags.SHIFT_RECOGNITION, "Recognition complete: Found ${matches.size} shifts")
         return matches.sortedBy { it.calculatedAlarmTime }
     }

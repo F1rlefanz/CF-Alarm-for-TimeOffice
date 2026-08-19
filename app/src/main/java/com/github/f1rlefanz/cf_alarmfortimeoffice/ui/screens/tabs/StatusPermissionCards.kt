@@ -118,6 +118,16 @@ internal fun NotificationsEnabledCard() {
     // Wortgleich mit dem, was in den Systemeinstellungen steht - der Text darf keine Bezeichnung
     // erfinden, die der Nutzer dort nicht findet.
     val weckerKanalName = stringResource(R.string.alarm_channel_name)
+    // Die Reparaturanweisung wird ABGELEITET, nicht hingeschrieben - und sie nennt eine WIRKUNG
+    // statt eines Stufennamens: bis v1.29.0 stand hier fest "Standard oder hoeher", danach kurz
+    // ein aus einer eigenen Tabelle geholtes "Hoch". Beides schickte den Nutzer auf
+    // IMPORTANCE_DEFAULT - in der deutschen Liste von Android 8/9 heisst "Hoch" genau dieser Wert,
+    // den dieselbe Karte als zu niedrig verwirft, und auf neueren Versionen gibt es den Eintrag
+    // gar nicht. Wer der Anweisung folgte, sah unveraendert das Warndreieck und wurde weiter ohne
+    // Weck-Bildschirm geweckt.
+    val geforderteStufe = NotificationDeliverability.mindeststufeBeschreibung(
+        NotificationDeliverability.WICHTIGKEIT_HOCH
+    )
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -184,9 +194,9 @@ internal fun NotificationsEnabledCard() {
                                 "Knöpfe zum Stoppen oder Schlummern."
 
                         NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
-                            "⚠️ Die Kategorie \"$weckerKanalName\" steht auf \"Lautlos\" — dann " +
-                                "kommt der Weck-Bildschirm nicht mehr von selbst hoch. Sie muss auf " +
-                                "\"Standard\" oder höher stehen."
+                            "⚠️ Die Kategorie \"$weckerKanalName\" steht zu niedrig — dann kommt " +
+                                "der Weck-Bildschirm nicht mehr von selbst hoch. Sie muss " +
+                                "$geforderteStufe."
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )

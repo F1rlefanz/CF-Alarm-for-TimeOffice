@@ -61,7 +61,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
+
+/**
+ * Aktionen dieses Bildschirms, die den lokalen Netzwerkzugriff brauchen (ACCESS_LOCAL_NETWORK,
+ * ab API 37 erzwungen). Enum statt Lambda, damit die Absicht einen Activity-Neuaufbau waehrend
+ * des offenen Berechtigungsdialogs ueberlebt - siehe [rememberLocalNetworkPermissionGate].
+ */
+internal enum class HueSettingsNetzAktion { VALIDATE, LIGHT_TEST, RULE_TEST }
 
 /**
  * Hue Settings Screen - Bridge and Rules Management
@@ -91,6 +99,31 @@ fun HueSettingsScreen(
     LaunchedEffect(hueViewModel) {
         hueViewModel.userMessages.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Alle drei netzbeduerftigen Knoepfe dieses Bildschirms (Verbindung pruefen, Lampentest,
+    // Regeltest je Karte) laufen durch dasselbe Tor wie der Hue-Tab. Ohne das scheiterten sie ab
+    // Android 17 mit einer generischen Netzwerkmeldung, ohne dass je der Systemdialog erschien.
+    val gate = rememberLocalNetworkPermissionGate<HueSettingsNetzAktion>(
+        onMessage = { hueViewModel.setError(it) }
+    ) { action, ruleId ->
+        when (action) {
+            HueSettingsNetzAktion.VALIDATE -> hueViewModel.validateBridgeConnection()
+            HueSettingsNetzAktion.LIGHT_TEST -> hueViewModel.runLightTest()
+            HueSettingsNetzAktion.RULE_TEST -> {
+                // Die Regel wird ueber ihre Id neu aus dem Zustand geholt: Waehrend der Dialog
+                // offen stand, kann die Activity neu aufgebaut worden sein. Ist die Regel weg,
+                // sagen wir das, statt still nichts zu tun.
+                val rule = uiState.scheduleRules.firstOrNull { it.id == ruleId }
+                if (rule != null) {
+                    hueViewModel.testRuleExecution(rule)
+                } else {
+                    hueViewModel.setError(
+                        "Die Regel steht nicht mehr in der Liste. Bitte den Test erneut starten."
+                    )
+                }
+            }
         }
     }
 
@@ -133,8 +166,8 @@ fun HueSettingsScreen(
             item {
                 BridgeStatusCard(
                     connectionInfo = uiState.bridgeConnectionInfo,
-                    onValidate = { hueViewModel.validateBridgeConnection() },
-                    onTest = { hueViewModel.runLightTest() },
+                    onValidate = { gate(HueSettingsNetzAktion.VALIDATE) },
+                    onTest = { gate(HueSettingsNetzAktion.LIGHT_TEST) },
                     onForgetBridge = { hueViewModel.forgetBridge() }
                 )
             }
@@ -168,7 +201,7 @@ fun HueSettingsScreen(
                         onEdit = { onEditRule(rule.id) },
                         onToggle = { hueViewModel.updateRule(rule.copy(enabled = !rule.enabled)) },
                         onDelete = { hueViewModel.deleteRule(rule.id) },
-                        onTest = { hueViewModel.testRuleExecution(rule) }
+                        onTest = { gate(HueSettingsNetzAktion.RULE_TEST, rule.id) }
                     )
                 }
             }

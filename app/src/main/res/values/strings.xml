@@ -6,7 +6,10 @@
     <!-- AlarmFullScreenActivity strings -->
     <string name="alarm_title">⏰ CF-ALARM</string>
     <string name="alarm_dismiss_button">ALARM STOPPEN</string>
-    <string name="alarm_snooze_button">5 MIN SPÄTER</string>
+    <!-- Platzhalter statt fester 5: die Schlummer-Dauer ist einstellbar (3/5/10/15), und beide
+         Knoepfe trugen bis v1.29.0 unabhaengig davon "5". Wer 15 Minuten eingestellt hatte, las
+         am Weck-Bildschirm die falsche Zahl. -->
+    <string name="alarm_snooze_button">%1$d MIN SPÄTER</string>
     <string name="alarm_shift_start">Beginn: %1$s</string>
     <string name="alarm_unknown_shift">Unbekannte Schicht</string>
 
@@ -15,7 +18,7 @@
     <string name="alarm_notification_text">Deine Schicht beginnt um %1$s</string>
     <string name="alarm_notification_text_no_time">Zeit aufzustehen</string>
     <string name="alarm_notification_stop">Wecker aus</string>
-    <string name="alarm_notification_snooze">5 Min später</string>
+    <string name="alarm_notification_snooze">%1$d Min später</string>
     <string name="alarm_channel_name">Schicht-Wecker</string>
     <string name="alarm_channel_description">Der Wecker für deine Schicht</string>
 

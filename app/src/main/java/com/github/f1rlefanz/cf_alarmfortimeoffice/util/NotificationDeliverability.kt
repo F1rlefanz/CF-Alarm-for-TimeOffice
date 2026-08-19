@@ -32,17 +32,57 @@ import androidx.core.app.NotificationManagerCompat
 object NotificationDeliverability {
 
     /**
-     * Kanal-ID des Wecker-Vordergrunddienstes.
+     * Kanal-ID des Wecker-Vordergrunddienstes - VERSIONIERT, und das ist der ganze Witz daran.
+     *
+     * WARUM DAS "_v2" DRANHAENGT: Bis v1.9.7 legte `AlarmSoundService` seinen Kanal mit
+     * IMPORTANCE_LOW an. Der Umstieg auf IMPORTANCE_HIGH samt `setBypassDnd(true)` und
+     * `VISIBILITY_PUBLIC` geschah unter DERSELBEN ID - und lief damit ins Leere: laut
+     * `NotificationManager.createNotificationChannel` wird die Importance eines BESTEHENDEN Kanals
+     * "only be changed if the new importance is lower than the current value", und "all other
+     * fields are ignored for channels that already exist". Auf jeder Installation, die vor v1.9.7
+     * einmal geweckt hat, stand der Wecker-Kanal deshalb bis v1.29.0 weiter auf LOW - das System
+     * ignoriert den Full-Screen-Intent, der Wecker klingelt ohne Weck-Bildschirm und ohne Stopp-
+     * und Schlummer-Knopf.
+     *
+     * WARUM NICHT LOESCHEN UND UNTER DERSELBEN ID NEU ANLEGEN: Android stellt einen geloeschten
+     * Kanal bei Wiederanlage mit genau seinen alten Einstellungen wieder her
+     * ("the deleted channel will be un-deleted with all of the same settings it had before").
+     * Nur eine NEUE ID entkommt dem Altbestand. Die alte wird zusaetzlich einmalig geloescht,
+     * damit in den Systemeinstellungen kein toter Zwilling stehenbleibt - siehe
+     * [ALTE_WECKER_KANAL_ID].
      *
      * ACHTUNG, ZWEITE STELLE: `AlarmSoundService` haelt dieselbe ID als privates `CHANNEL_ID`.
      * Sie laesst sich von dort nicht lesen (private companion const), deshalb steht sie hier
      * erneut - und deshalb prueft `NotificationDeliverabilityTest` die Quelldatei des Service auf
      * genau diesen Literal. Wer die ID dort aendert, faellt im Test auf, nicht am Wecktag.
      */
-    const val WECKER_KANAL_ID = "alarm_sound_service"
+    const val WECKER_KANAL_ID = "alarm_sound_service_v2"
+
+    /**
+     * Die abgeloeste, unversionierte Kanal-ID. Sie wird nur noch geloescht, nie wieder bespielt.
+     *
+     * Dieselbe Falle steht unversioniert weiterhin an fuenf anderen Stellen: `alarm_notausgang`
+     * (`AlarmReceiver`), die beiden Kanaele in `AlarmMaintenanceService`, sowie
+     * `CalendarUnavailableNotifier` und `ShiftChangeNotifier`. Heute unschaedlich, weil sie jung
+     * sind und nie mit niedrigerer Importance ausgeliefert wurden - aber JEDE kuenftige Aenderung
+     * an deren Importance oder Sichtbarkeit verpufft auf Bestandsgeraeten still. Wer dort etwas
+     * anfasst, versioniert die ID gleich mit.
+     */
+    const val ALTE_WECKER_KANAL_ID = "alarm_sound_service"
 
     /** Entspricht `NotificationManager.IMPORTANCE_NONE` - hier ohne Android-Bezug, s. [beurteile]. */
     const val WICHTIGKEIT_KEINE = 0
+
+    /** Entspricht `NotificationManager.IMPORTANCE_LOW` - lautlos, kein Heads-up, kein Vollbild. */
+    const val WICHTIGKEIT_NIEDRIG = 2
+
+    /**
+     * Entspricht `NotificationManager.IMPORTANCE_DEFAULT` - macht ein Geraeusch, blendet aber
+     * nichts ein und traegt damit KEINEN Full-Screen-Intent. Hier keinen Oberflaechennamen
+     * anschreiben: welchen Namen die Stufe traegt, wechselt mit der Android-Version (auf 8/9
+     * heisst genau dieser Wert "Hoch"), siehe [mindeststufeBeschreibung].
+     */
+    const val WICHTIGKEIT_STANDARD = 3
 
     /** Entspricht `NotificationManager.IMPORTANCE_HIGH`: Voraussetzung fuer Heads-up und Vollbild. */
     const val WICHTIGKEIT_HOCH = 4
@@ -100,6 +140,45 @@ object NotificationDeliverability {
         gruppeGesperrt -> Zustellbarkeit.GRUPPE_BLOCKIERT
         kanalWichtigkeit < mindestwichtigkeit -> Zustellbarkeit.KANAL_LEISE
         else -> Zustellbarkeit.ERREICHBAR
+    }
+
+    /**
+     * Die Anweisung fuer den Fall, dass der Kanal Heads-up und Vollbild tragen muss.
+     *
+     * Bewusst als WIRKUNG formuliert und nur mit hedgenden Namensbeispielen: welchen Namen die
+     * oberste Stufe traegt, entscheidet die Android-Version - "oberste Stufe der Liste" gilt
+     * ueberall, ein Name nicht.
+     */
+    const val BESCHREIBUNG_OBERSTE_STUFE: String =
+        "auf der obersten Stufe der Wichtigkeit stehen — der, bei der die Meldung auf dem " +
+            "Bildschirm eingeblendet wird (je nach Android-Version heißt sie \"Dringend\"; auf " +
+            "manchen Geräten ist es stattdessen der Schalter \"Auf dem Bildschirm einblenden\")"
+
+    /** Die Anweisung fuer alle uebrigen Kanaele: dort genuegt "ueberhaupt an". */
+    const val BESCHREIBUNG_EINGESCHALTET: String = "überhaupt eingeschaltet sein"
+
+    /**
+     * Was der Nutzer einstellen muss, damit [beurteile] mit dieser Mindestwichtigkeit durchlaesst.
+     *
+     * WARUM EINE WIRKUNG STATT EINES STUFENNAMENS: Bis v1.29.0 stand hier eine handgeschriebene
+     * Namenstabelle (2 -> "Lautlos", 3 -> "Standard", 4 -> "Hoch"). Die Zahl kam zwar aus dem
+     * Praedikat, der NAME aber aus dem Nichts - und er war falsch: In der deutschen
+     * Wichtigkeitsliste von Android 8/9 heisst "Hoch" genau IMPORTANCE_DEFAULT, also der Wert,
+     * den dieselbe Karte als zu niedrig verwirft; auf neueren Versionen gibt es den Eintrag gar
+     * nicht. Wer der Anweisung folgte, blieb in [Zustellbarkeit.KANAL_LEISE] und sah unveraendert
+     * das Warndreieck - der Wecker klingelt dann ohne Weck-Bildschirm. Die Verzweigung faellt
+     * weiterhin aus [beurteile], nur der Text beschreibt jetzt das, was der Nutzer in JEDER
+     * Android-Version wiederfindet.
+     */
+    fun mindeststufeBeschreibung(mindestwichtigkeit: Int): String {
+        val standardGenuegt = beurteile(
+            appErlaubt = true,
+            kanaeleUnterstuetzt = true,
+            kanalWichtigkeit = WICHTIGKEIT_STANDARD,
+            gruppeGesperrt = false,
+            mindestwichtigkeit = mindestwichtigkeit
+        ).erreicht
+        return if (standardGenuegt) BESCHREIBUNG_EINGESCHALTET else BESCHREIBUNG_OBERSTE_STUFE
     }
 
     /**

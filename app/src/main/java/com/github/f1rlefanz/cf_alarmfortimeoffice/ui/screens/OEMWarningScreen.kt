@@ -1,15 +1,19 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
@@ -46,126 +50,136 @@ fun OEMWarningScreen(
     val oemName = BatteryOptimizationHelper.getOEMDisplayName(oemType)
     val aggressiveness = BatteryOptimizationHelper.getOEMAggressivenessDescription(oemType)
     
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        // Header
+    // SCROLL-AUSWEG: Der einzige Weiterweg dieses Bildschirms ist der Knopf "Verstanden" ganz
+    // unten - ohne Scrollmoeglichkeit war er bei kleinem Display oder grosser Schriftskalierung
+    // schlicht nicht erreichbar, und der Erststart endete hier. `heightIn(min = maxHeight)`
+    // haelt dabei die bisherige Aufteilung (Kopf oben, Knoepfe unten) bei, solange der Inhalt
+    // passt, und gibt erst darueber hinaus Scrollweg frei.
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(top = 32.dp)
-        ) {
-            Icon(
-                Icons.Default.Warning,
-                // dekorativ: Ueberschrift ("<Hersteller>-Geraet erkannt") und die Zeile darunter
-                // ("Sehr aggressives Energiemanagement") sagen bereits BEIDES - worum es geht und
-                // wie ernst es ist. Das Warnsymbol traegt hier keine eigene Information.
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.tertiary
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Text(
-                "$oemName-Gerät erkannt",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                aggressiveness,
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        // Info card
-        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
-                .padding(vertical = 24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                .heightIn(min = maxHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
+            // Header
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 32.dp)
             ) {
-                Text(
-                    "Für maximale Zuverlässigkeit:",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                Icon(
+                    Icons.Default.Warning,
+                    // dekorativ: Ueberschrift ("<Hersteller>-Geraet erkannt") und die Zeile darunter
+                    // ("Sehr aggressives Energiemanagement") sagen bereits BEIDES - worum es geht und
+                    // wie ernst es ist. Das Warnsymbol traegt hier keine eigene Information.
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.tertiary
                 )
-                
-                // OEM-specific steps
-                when (oemType) {
-                    BatteryOptimizationHelper.OEMType.XIAOMI -> {
-                        OEMStep("Auto-Start erlauben", "Einstellungen → Apps → CF Alarm → Auto-Start")
-                        OEMStep("Akku-Sparmodus", "Keine Einschränkungen für CF Alarm")
-                        OEMStep("MIUI Optimization", "Optional deaktivieren für Apps")
-                    }
-                    BatteryOptimizationHelper.OEMType.ONEPLUS -> {
-                        OEMStep("Auto-Start", "CF Alarm in Auto-Start erlauben")
-                        OEMStep("Akku-Optimierung", "Nicht optimieren für CF Alarm")
-                        OEMStep("Deep Optimization", "Optional deaktivieren")
-                    }
-                    BatteryOptimizationHelper.OEMType.HUAWEI -> {
-                        OEMStep("Launch", "Manuelles Management für CF Alarm")
-                        OEMStep("App Launch", "Automatischer Start erlauben")
-                        OEMStep("Akku", "Auf Whitelist setzen")
-                    }
-                    else -> {
-                        OEMStep("Background Apps", "CF Alarm erlauben")
-                        OEMStep("Akku-Management", "Keine Einschränkungen")
-                    }
-                }
-                
-                HorizontalDivider()
-                
+            
+                Spacer(modifier = Modifier.height(16.dp))
+            
                 Text(
-                    "Die App-Berechtigung alleine reicht möglicherweise nicht aus.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
+                    "$oemName-Gerät erkannt",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            
+                Spacer(modifier = Modifier.height(8.dp))
+            
+                Text(
+                    aggressiveness,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
         
-        // Buttons
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = { BatteryOptimizationHelper.openOEMHelpUrl(context, oemType) },
-                modifier = Modifier.fillMaxWidth()
+            // Info card
+            // Kein `weight(1f)` mehr: in einer scrollbaren Column gibt es keinen verteilbaren
+            // Restplatz, das waere ein Absturz beim Messen.
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                // dekorativ: die Knopfbeschriftung "Detaillierte Anleitung" sagt es bereits
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Detaillierte Anleitung")
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        "Für maximale Zuverlässigkeit:",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                
+                    // OEM-specific steps
+                    when (oemType) {
+                        BatteryOptimizationHelper.OEMType.XIAOMI -> {
+                            OEMStep("Auto-Start erlauben", "Einstellungen → Apps → CF Alarm → Auto-Start")
+                            OEMStep("Akku-Sparmodus", "Keine Einschränkungen für CF Alarm")
+                            OEMStep("MIUI Optimization", "Optional deaktivieren für Apps")
+                        }
+                        BatteryOptimizationHelper.OEMType.ONEPLUS -> {
+                            OEMStep("Auto-Start", "CF Alarm in Auto-Start erlauben")
+                            OEMStep("Akku-Optimierung", "Nicht optimieren für CF Alarm")
+                            OEMStep("Deep Optimization", "Optional deaktivieren")
+                        }
+                        BatteryOptimizationHelper.OEMType.HUAWEI -> {
+                            OEMStep("Launch", "Manuelles Management für CF Alarm")
+                            OEMStep("App Launch", "Automatischer Start erlauben")
+                            OEMStep("Akku", "Auf Whitelist setzen")
+                        }
+                        else -> {
+                            OEMStep("Background Apps", "CF Alarm erlauben")
+                            OEMStep("Akku-Management", "Keine Einschränkungen")
+                        }
+                    }
+                
+                    HorizontalDivider()
+                
+                    Text(
+                        "Die App-Berechtigung alleine reicht möglicherweise nicht aus.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
+        
+            // Buttons
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = { BatteryOptimizationHelper.openOEMHelpUrl(context, oemType) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // dekorativ: die Knopfbeschriftung "Detaillierte Anleitung" sagt es bereits
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Detaillierte Anleitung")
+                }
             
-            TextButton(
-                onClick = onComplete,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Verstanden")
+                TextButton(
+                    onClick = onComplete,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Verstanden")
+                }
             }
-        }
+    }
     }
 }
 

@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.SkipRolledBackException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -18,6 +19,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -51,13 +54,17 @@ data class AlarmSkipUiState(
     val isLoading: Boolean = false,
     val error: AppErrorState? = null,
     /**
-     * Nutzertext zum Ausgang von "Aufheben", sofern der uebersprungene MANUELLE Wecker NICHT
-     * einfach zurueckkam: Weckzeit inzwischen verstrichen, gesicherter Stand unlesbar, oder das
-     * Speichern/Stellen schlug fehl.
+     * Nutzertext zum Ausgang des letzten Skip-Vorgangs, sofern er NICHT einfach aufging:
      *
-     * Ohne diesen Text waere der schlechteste Fall stumm: der Nutzer drueckt "Aufheben", die
-     * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. Wird beim naechsten
-     * Ueberspringen bzw. Aufheben wieder geleert.
+     * - "Aufheben": der uebersprungene MANUELLE Wecker kam nicht zurueck (Weckzeit verstrichen,
+     *   gesicherter Stand unlesbar, Speichern/Stellen fehlgeschlagen).
+     * - "Ueberspringen": der Vorgang musste mitten drin zurueckgenommen werden, weil sich der
+     *   Alarm nicht loeschen liess (siehe `SkipRolledBackException`).
+     *
+     * Ohne diesen Text waere der schlechteste Fall stumm: der Nutzer drueckt einen Knopf, die
+     * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. `error` taugt dafuer nicht,
+     * das zeigt die Oberflaeche nirgends an. Wird beim naechsten Ueberspringen bzw. Aufheben
+     * wieder geleert.
      */
     val restoreNotice: String? = null
 )
@@ -120,6 +127,24 @@ class AlarmViewModel @Inject constructor(
 
     // MEMORY LEAK FIX: Track Flow collection job for proper cleanup
     private var alarmObservationJob: Job? = null
+
+    /**
+     * Laeuft gerade ein Skip-Vorgang ("Ueberspringen" oder "Aufheben")?
+     *
+     * DIE EINZIGE Wiedereintrittssperre der beiden Knoepfe. Ihr `isLoading` reicht dafuer NICHT:
+     * die Wiederaufnahme-Schleife in [observeSkipStatus] loest den Ladezustand, sobald der
+     * Skip-Flow endet - und der endet nach fuenf vergeblichen Leseversuchen endgueltig, also
+     * moeglicherweise mitten in einem laufenden Vorgang. Beide Knoepfe waeren damit wieder
+     * bedienbar, waehrend noch geschrieben wird: der zweite Lauf faende denselben, noch nicht
+     * geloeschten Alarm, cancelte dessen Systemalarm ein zweites Mal, und scheiterte einer von
+     * beiden, raeumte dessen Ruecknahme den Merker weg, den der andere gerade gesetzt hat.
+     * Endstand: kein Merker, kein Systemalarm - ein stumm geloeschter Wecker.
+     *
+     * Nur vom Main-Dispatcher aus angefasst (beide Aufrufer setzen sie VOR `launch`, damit auch
+     * zwei Druecker vor dem ersten Coroutine-Start nicht durchrutschen), deshalb genuegt ein
+     * schlichtes Feld ohne Synchronisierung.
+     */
+    private var skipVorgangLaeuft = false
 
     /**
      * SINGLE SOURCE OF TRUTH: Shared upstream for active alarms.
@@ -252,34 +277,91 @@ class AlarmViewModel @Inject constructor(
             ?.formattedTime
     }
 
+    /**
+     * Uebernimmt einen Skip-Zustand in die Oberflaeche und loest dabei IMMER den Ladezustand.
+     *
+     * Der Ladezustand ist der Grund, warum es diese Stelle gibt: "Ueberspringen" und "Aufheben"
+     * sind beide auf `!isLoading` geschaltet. Wer ihn nur in der Flow-Emission zuruecksetzt,
+     * sperrt beide Knoepfe fuer den Rest der Prozesslaufzeit, sobald der Flow einmal endet -
+     * und `skipStatusFlow` endet nach fuenf vergeblichen Leseversuchen bewusst endgueltig
+     * (Begruendung in `AlarmSkipRepository`).
+     */
+    private fun applySkipState(isNextAlarmSkipped: Boolean, skippedAlarmId: Int?) {
+        _skipState.value = _skipState.value.copy(
+            isNextAlarmSkipped = isNextAlarmSkipped,
+            skippedAlarmId = skippedAlarmId,
+            isLoading = false
+        )
+        // "Naechster Alarm" haengt auch am Skip-Zustand: bleibt der uebersprungene Eintrag
+        // ausnahmsweise im Bestand stehen (siehe computeNextAlarmTime), ist er NICHT armiert und
+        // darf nicht als naechster Wecker angekuendigt werden. Beide Flows koennen in beliebiger
+        // Reihenfolge emittieren, deshalb wird hier nachgerechnet.
+        _uiState.value = _uiState.value.copy(
+            nextAlarmTime = computeNextAlarmTime(_uiState.value.activeAlarms)
+        )
+    }
+
+    /**
+     * WIEDERAUFNAHME STATT ENDGUELTIGEM AUS - dieselbe Antwort wie in
+     * `CalendarSelectionRepository`, aus demselben Grund: diese Funktion laeuft genau einmal aus
+     * `init{}`, es gibt keinen zweiten Aufrufer. Endete der Flow (fuenf vergebliche Leseversuche,
+     * danach bewusst ohne Ersatzwert), stand die Skip-Anzeige bis zum Prozessende still - und
+     * schlimmer: ein zwischenzeitliches `skipNextAlarm()` liess `isLoading` auf `true` zurueck,
+     * womit "Ueberspringen" UND "Aufheben" dauerhaft ausgegraut blieben. Der Nutzer kam an einen
+     * uebersprungenen Wecker nicht mehr heran.
+     *
+     * Deshalb: Ladezustand beim Ende des Flows loesen und begrenzt neu abonnieren. Der Zaehler
+     * wird bewusst NICHT bei einer Emission zurueckgesetzt - ein Flow, der emittiert UND
+     * abschliesst, drehte sonst endlos durch diese Schleife. Die Obergrenze ist verkraftbar,
+     * weil die Bedienbarkeit ohnehin nicht mehr am Flow allein haengt (siehe [applySkipState]).
+     */
     private fun observeSkipStatus() {
         viewModelScope.launch {
-            try {
-                alarmSkipUseCase.skipStatusFlow
-                    .catch { error ->
-                        Logger.e(LogTags.ALARM_SKIP, "Error observing skip state", error)
-                    }
-                    .collect { skipState ->
-                        _skipState.value = _skipState.value.copy(
-                            isNextAlarmSkipped = skipState.isNextAlarmSkipped,
-                            skippedAlarmId = skipState.skippedAlarmId,
-                            isLoading = false
-                        )
-                        // "Naechster Alarm" haengt auch am Skip-Zustand: bleibt der
-                        // uebersprungene Eintrag ausnahmsweise im Bestand stehen (siehe
-                        // computeNextAlarmTime), ist er NICHT armiert und darf nicht als
-                        // naechster Wecker angekuendigt werden. Beide Flows koennen in
-                        // beliebiger Reihenfolge emittieren, deshalb wird hier nachgerechnet.
-                        _uiState.value = _uiState.value.copy(
-                            nextAlarmTime = computeNextAlarmTime(_uiState.value.activeAlarms)
-                        )
-                    }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                // Rethrow for proper structured concurrency
-                Logger.d(LogTags.ALARM_SKIP, "Skip status observation cancelled (app lifecycle)")
-                throw e
-            } catch (e: Exception) {
-                Logger.e(LogTags.ALARM_SKIP, "Error in skip status observation", e)
+            var versuch = 0
+            while (true) {
+                try {
+                    alarmSkipUseCase.skipStatusFlow
+                        .catch { error ->
+                            Logger.e(LogTags.ALARM_SKIP, "Error observing skip state", error)
+                        }
+                        .collect { skipState ->
+                            applySkipState(skipState.isNextAlarmSkipped, skipState.skippedAlarmId)
+                        }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // Rethrow for proper structured concurrency
+                    Logger.d(LogTags.ALARM_SKIP, "Skip status observation cancelled (app lifecycle)")
+                    throw e
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM_SKIP, "Error in skip status observation", e)
+                }
+
+                // Hier steht der Flow still - normal endet er nie. Den Spinner sofort loesen,
+                // damit die Knoepfe bedienbar bleiben; der zuletzt bekannte Skip-Zustand bleibt
+                // bewusst stehen (kein Signal ist besser als ein falsches).
+                //
+                // NICHT waehrend eines laufenden Skip-Vorgangs: der Spinner ist dann keine
+                // Altlast, sondern die Anzeige eines Schreibvorgangs, der noch laeuft (siehe
+                // [skipVorgangLaeuft]). Er wird ohnehin von jedem Ausgang des Vorgangs geloest.
+                if (!skipVorgangLaeuft) {
+                    _skipState.value = _skipState.value.copy(isLoading = false)
+                }
+
+                if (versuch >= SKIP_OBSERVE_RESUBSCRIBE_ATTEMPTS) {
+                    Logger.e(
+                        LogTags.ALARM_SKIP,
+                        "❌ Skip-Zustand auch nach $versuch neuen Anlaeufen nicht beobachtbar - " +
+                            "die Anzeige bleibt auf ihrem letzten Stand; Ueberspringen und " +
+                            "Aufheben funktionieren weiter"
+                    )
+                    return@launch
+                }
+                versuch++
+                Logger.w(
+                    LogTags.ALARM_SKIP,
+                    "⚠️ Skip-Zustand endete - neuer Anlauf $versuch/$SKIP_OBSERVE_RESUBSCRIBE_ATTEMPTS " +
+                        "in ${SKIP_OBSERVE_RESUBSCRIBE_DELAY_MS / 1000}s"
+                )
+                delay(SKIP_OBSERVE_RESUBSCRIBE_DELAY_MS)
             }
         }
     }
@@ -400,27 +482,140 @@ class AlarmViewModel @Inject constructor(
     }
 
     fun skipNextAlarm() {
+        // Zweiter Druck auf einen noch laufenden Vorgang: nichts tun. Der zweite Lauf faende
+        // denselben, noch nicht geloeschten Alarm - Begruendung an [skipVorgangLaeuft].
+        if (skipVorgangLaeuft) {
+            Logger.w(
+                LogTags.ALARM_SKIP,
+                "⏳ Ueberspringen ignoriert - es laeuft bereits ein Skip-Vorgang"
+            )
+            return
+        }
+        skipVorgangLaeuft = true
         viewModelScope.launch {
-            // restoreNotice gehoert zum VORIGEN Aufheben-Vorgang - beim neuen Ueberspringen weg.
-            _skipState.value = _skipState.value.copy(isLoading = true, restoreNotice = null)
+            try {
+                // restoreNotice gehoert zum VORIGEN Aufheben-Vorgang - beim neuen Ueberspringen weg.
+                _skipState.value = _skipState.value.copy(isLoading = true, restoreNotice = null)
 
-            alarmSkipUseCase.skipNextAlarm()
-                .onSuccess { result ->
-                    Logger.business(
-                        LogTags.ALARM_SKIP,
-                        "✅ Next alarm skip activated: ${result.alarmName}"
-                    )
-                    // State wird automatisch über skipStatusFlow aktualisiert
-                }
-                .onFailure { error ->
-                    _skipState.value = _skipState.value.copy(
-                        isLoading = false,
-                        error = AppErrorState.validationError(
-                            error.message ?: "Failed to skip alarm"
+                alarmSkipUseCase.skipNextAlarm()
+                    .onSuccess { result ->
+                        Logger.business(
+                            LogTags.ALARM_SKIP,
+                            "✅ Next alarm skip activated: ${result.alarmName}"
                         )
-                    )
-                    Logger.e(LogTags.ALARM_SKIP, "❌ Failed to skip next alarm", error)
-                }
+                        // Den gerade BESTAETIGT geschriebenen Zustand selbst uebernehmen, statt auf
+                        // die naechste Emission zu warten: der Flow kann geendet sein, und dann bliebe
+                        // der Spinner ewig stehen - samt gesperrtem "Aufheben" (siehe
+                        // [applySkipState]). Eine Vermutung ist das nicht, das Schreiben ist durch.
+                        applySkipState(isNextAlarmSkipped = true, skippedAlarmId = result.alarmId)
+                    }
+                    .onFailure { error ->
+                        Logger.e(LogTags.ALARM_SKIP, "❌ Failed to skip next alarm", error)
+                        // Ein halb durchgefuehrtes Ueberspringen muss der Nutzer SEHEN: skipState.error
+                        // zeigt die Oberflaeche nirgends an, restoreNotice schon (und zwar auch dann,
+                        // wenn es gerade weder aktiven Alarm noch aktives Ueberspringen gibt).
+                        //
+                        // DER TEXT ENTSTEHT VOR DER ZUWEISUNG, und die laeuft ueber `update {}`:
+                        // stelleNachAbgebrochenemSkipWiederHer() suspendiert (DataStore-Lesen und
+                        // AlarmManager), und genau in dieser Zeit traegt der Collector aus
+                        // observeSkipStatus() den vom UseCase bereits geraeumten Merker in den Zustand.
+                        // Stand der Aufruf als Argument in einem `copy()` auf `_skipState.value`, war
+                        // der Empfaenger schon VOR der Suspendierung gelesen - die Zuweisung machte die
+                        // Emission wieder rueckgaengig. Die Oberflaeche zeigte danach "Nächster Alarm
+                        // wird übersprungen" samt "Aufheben" fuer ein Ueberspringen, das es nicht mehr
+                        // gibt, und blendete den gerade wieder armierten Wecker ueber skippedAlarmId
+                        // aus "Nächster Alarm" aus.
+                        val hinweis = if (error is SkipRolledBackException) {
+                            // NICHT ABBRECHBAR - dieselbe Begruendung wie bei pause()/resume()
+                            // der Master-Pause: hier wird ein Zustand HERGESTELLT, nicht bloss
+                            // gelesen. Der UseCase haelt seine eigenen Schritte bereits per
+                            // withContext(NonCancellable) zusammen und liefert die Ruecknahme
+                            // danach als Ergebnis - der Systemalarm ist zu diesem Zeitpunkt
+                            // gecancelt, der Eintrag aber noch im Bestand. Ist der
+                            // viewModelScope inzwischen tot (Activity endgueltig beendet,
+                            // ViewModel geraeumt), starb das Re-Armieren am ersten
+                            // Suspensionspunkt - zurueck blieb der sichtbare, stumme Wecker.
+                            // Ein Nachholer traegt das nicht zuverlaessig: syncAlarms() re-armt
+                            // nur kalenderbasierte Alarme, ein MANUELLER Wecker (den der Sync
+                            // per keepManualAlarms nur schont) bliebe bis zum naechsten
+                            // Neustart stumm.
+                            withContext(NonCancellable) {
+                                stelleNachAbgebrochenemSkipWiederHer(error)
+                            }
+                        } else {
+                            "Das Überspringen hat nicht geklappt – am Wecker hat sich nichts " +
+                                "geändert. Bitte noch einmal versuchen."
+                        }
+                        _skipState.update {
+                            it.copy(
+                                isLoading = false,
+                                error = AppErrorState.validationError(
+                                    error.message ?: "Failed to skip alarm"
+                                ),
+                                restoreNotice = hinweis
+                            )
+                        }
+                    }
+            } finally {
+                // Auch bei Abbruch (ViewModel wird geraeumt) freigeben - sonst bliebe die Sperre
+                // fuer die Restlaufzeit der Instanz haengen und beide Knoepfe waeren tot.
+                skipVorgangLaeuft = false
+            }
+        }
+    }
+
+    /**
+     * Behebt den Zwischenzustand, den ein abgebrochenes Ueberspringen hinterlaesst, und sagt dem
+     * Nutzer, was nun gilt.
+     *
+     * Der Ausgangspunkt ist die schlimmste Klasse ueberhaupt: der Wecker steht sichtbar in der
+     * Liste, sein Systemalarm ist aber schon gecancelt - ein stummer Wecker mit Anzeige. Der
+     * UseCase kann ihn nicht selbst wieder stellen (`AlarmUseCase` haengt fuer den Skip-Backstop
+     * bereits an ihm, die Gegenrichtung waere ein DI-Zyklus), deshalb tut es diese Stelle.
+     *
+     * Jeder Rueckgabetext beschreibt nur, was wirklich passiert ist - "klingelt wie geplant" darf
+     * hier ausschliesslich stehen, wenn das Armieren tatsaechlich gelungen ist.
+     */
+    private suspend fun stelleNachAbgebrochenemSkipWiederHer(fehler: SkipRolledBackException): String {
+        if (!fehler.skipFlagCleared) {
+            // Merker noch gesetzt: ein Re-Arming wuerde der Skip-Backstop in
+            // scheduleSystemAlarm() abweisen. Der Wecker kommt trotzdem zurueck - spaetestens
+            // beim naechsten Neustart armiert der BootReceiver ihn ungefiltert -, aber
+            // versprechen laesst sich das dem Nutzer nicht.
+            Logger.e(
+                LogTags.ALARM_SKIP,
+                "❌ Skip fuer Alarm ${fehler.alarmId} abgebrochen, Merker liess sich nicht raeumen - kein Re-Arming moeglich"
+            )
+            return "Das Überspringen hat nicht geklappt und ließ sich nicht sauber zurücknehmen. " +
+                "Bitte im Wecker-Tab prüfen, ob der Wecker noch steht."
+        }
+
+        val alarm = alarmUseCase.getAllAlarms().getOrNull()?.find { it.id == fehler.alarmId }
+        if (alarm == null) {
+            Logger.w(
+                LogTags.ALARM_SKIP,
+                "⚠️ Abgebrochener Skip: Alarm ${fehler.alarmId} ist nicht mehr im Bestand - kein Re-Arming"
+            )
+            return "Das Überspringen hat nicht geklappt. Der Wecker ist nicht mehr in der Liste – " +
+                "bitte im Wecker-Tab prüfen und gegebenenfalls neu stellen."
+        }
+
+        val armiert = alarmUseCase.scheduleSystemAlarm(alarm)
+        return if (armiert.isSuccess) {
+            Logger.business(
+                LogTags.ALARM_SKIP,
+                "✅ Abgebrochener Skip zurueckgenommen - Alarm ${alarm.id} wieder armiert"
+            )
+            "Das Überspringen hat nicht geklappt und wurde zurückgenommen. Der Wecker um " +
+                "${alarm.formattedTime} klingelt wie geplant."
+        } else {
+            Logger.e(
+                LogTags.ALARM_SKIP,
+                "❌ Abgebrochener Skip: Alarm ${alarm.id} konnte nicht wieder armiert werden",
+                armiert.exceptionOrNull()
+            )
+            "Das Überspringen hat nicht geklappt. Der Wecker um ${alarm.formattedTime} konnte " +
+                "nicht wieder gestellt werden – bitte im Wecker-Tab prüfen."
         }
     }
 
@@ -451,99 +646,127 @@ class AlarmViewModel @Inject constructor(
      * Hue-Tagesplanung ungefiltert weiterverwenden.
      */
     fun cancelSkip(onSkipCleared: () -> Unit = {}) {
+        // Dieselbe Wiedereintrittssperre wie beim Ueberspringen: waehrend hier Merker,
+        // Schnappschuss und Wecker auseinandergefaedelt werden, darf kein zweiter Vorgang
+        // denselben Stand anfassen (Begruendung an [skipVorgangLaeuft]). Besonders hier: ein
+        // Aufheben mitten in einem laufenden Ueberspringen raeumte den Merker weg, den jenes
+        // gerade setzt - Endstand waere ein geloeschter Wecker ohne Merker und ohne Systemalarm.
+        if (skipVorgangLaeuft) {
+            Logger.w(
+                LogTags.ALARM_SKIP,
+                "⏳ Aufheben ignoriert - es laeuft bereits ein Skip-Vorgang"
+            )
+            return
+        }
+        skipVorgangLaeuft = true
         viewModelScope.launch {
-            // Den Skip-Zustand VOR dem Aufheben lesen: cancelSkip() raeumt die ganze
-            // Schluesselgruppe ab, danach ist der gesicherte manuelle Wecker weg.
-            //
-            // KEINE stille Degradierung auf null: ein Lesefehler ist etwas ANDERES als "es gab
-            // keinen gesicherten Wecker". Wuerden beide gleich behandelt, raeumte "Aufheben" das
-            // Flag weg und der manuelle Wecker verschwaende wortlos - der Nutzer haette einen
-            // Wecker, den die Oberflaeche nicht mehr als uebersprungen zeigt und den niemand
-            // stellt. Der Fehler wird deshalb bis zur Oberflaeche durchgereicht (restoreNotice).
-            _skipState.value = _skipState.value.copy(restoreNotice = null)
+            try {
+                // Den Skip-Zustand VOR dem Aufheben lesen: cancelSkip() raeumt die ganze
+                // Schluesselgruppe ab, danach ist der gesicherte manuelle Wecker weg.
+                //
+                // KEINE stille Degradierung auf null: ein Lesefehler ist etwas ANDERES als "es gab
+                // keinen gesicherten Wecker". Wuerden beide gleich behandelt, raeumte "Aufheben" das
+                // Flag weg und der manuelle Wecker verschwaende wortlos - der Nutzer haette einen
+                // Wecker, den die Oberflaeche nicht mehr als uebersprungen zeigt und den niemand
+                // stellt. Der Fehler wird deshalb bis zur Oberflaeche durchgereicht (restoreNotice).
+                //
+                // isLoading traegt hier zweierlei: den Spinner im "Aufheben"-Knopf und - zusammen
+                // mit [skipVorgangLaeuft] - dessen Sperre, solange geschrieben wird.
+                _skipState.value = _skipState.value.copy(restoreNotice = null, isLoading = true)
 
-            val status = alarmSkipUseCase.getSkipStatus()
-            if (status.isFailure) {
-                // NICHT aufheben. Der Skip-Zustand traegt den gesicherten manuellen Wecker, und
-                // cancelSkip() raeumt die ganze Schluesselgruppe ab - wer hier weitermacht,
-                // vernichtet einen Wecker, den er nicht einmal lesen konnte. Ein Lesefehler ist
-                // typischerweise voruebergehend; der Skip bleibt bestehen und der naechste Versuch
-                // hat wieder alles. Andere Wecker kostet das nichts: das Skip-Gate ist auf
-                // skippedAlarmId gemuenzt (AlarmUseCase.kt:279) und betrifft nur diesen einen.
-                Logger.e(
-                    LogTags.ALARM_SKIP,
-                    "❌ Skip-Zustand beim Aufheben nicht lesbar - Aufheben abgebrochen, damit ein " +
-                        "gesicherter manueller Wecker nicht mit abgeraeumt wird",
-                    status.exceptionOrNull()
-                )
-                _skipState.value = _skipState.value.copy(
-                    restoreNotice = "Der gespeicherte Stand ließ sich gerade nicht lesen – das " +
-                        "Überspringen wurde deshalb NICHT aufgehoben, damit nichts verloren geht. " +
-                        "Bitte gleich noch einmal versuchen."
-                )
-                return@launch
-            }
-
-            val skipStatus = status.getOrThrow()
-            val entschluesselt =
-                if (!skipStatus.isNextAlarmSkipped) {
-                    Result.success(null)
-                } else {
-                    ManualAlarmSnapshot.decode(skipStatus.skippedManualAlarm)
-                }
-            val manualAlarm = entschluesselt.getOrNull()
-
-            // VOR dem Aufheben pruefen, ob der gesicherte manuelle Wecker ueberhaupt zurueckkann.
-            // Der Grund fuer diese Reihenfolge: cancelSkip() loescht Flag UND Schnappschuss in
-            // einem Zug. Wer erst aufhebt und dann feststellt, dass gerade eine Master-Pause laeuft,
-            // hat den Wecker endgueltig verloren - obwohl das Hindernis in einer Stunde weg sein
-            // kann. Deshalb: bei einem BEHEBBAREN Hindernis bleibt alles, wie es ist, und der
-            // Nutzer erfaehrt, was zu tun ist.
-            if (manualAlarm != null) {
-                val hindernis = behebbaresRestoreHindernis(manualAlarm)
-                if (hindernis != null) {
-                    Logger.w(
+                val status = alarmSkipUseCase.getSkipStatus()
+                if (status.isFailure) {
+                    // NICHT aufheben. Der Skip-Zustand traegt den gesicherten manuellen Wecker, und
+                    // cancelSkip() raeumt die ganze Schluesselgruppe ab - wer hier weitermacht,
+                    // vernichtet einen Wecker, den er nicht einmal lesen konnte. Ein Lesefehler ist
+                    // typischerweise voruebergehend; der Skip bleibt bestehen und der naechste Versuch
+                    // hat wieder alles. Andere Wecker kostet das nichts: das Skip-Gate ist auf
+                    // skippedAlarmId gemuenzt (AlarmUseCase.kt:279) und betrifft nur diesen einen.
+                    Logger.e(
                         LogTags.ALARM_SKIP,
-                        "⏸️ Aufheben abgebrochen - manueller Wecker ${manualAlarm.id} koennte jetzt " +
-                            "nicht zurueckkehren; Skip und Schnappschuss bleiben erhalten"
+                        "❌ Skip-Zustand beim Aufheben nicht lesbar - Aufheben abgebrochen, damit ein " +
+                            "gesicherter manueller Wecker nicht mit abgeraeumt wird",
+                        status.exceptionOrNull()
                     )
-                    _skipState.value = _skipState.value.copy(restoreNotice = hindernis)
+                    _skipState.value = _skipState.value.copy(
+                        restoreNotice = "Der gespeicherte Stand ließ sich gerade nicht lesen – das " +
+                            "Überspringen wurde deshalb NICHT aufgehoben, damit nichts verloren geht. " +
+                            "Bitte gleich noch einmal versuchen."
+                    )
                     return@launch
                 }
-            }
 
-            alarmSkipUseCase.cancelSkip()
-                .onSuccess {
-                    Logger.business(
-                        LogTags.ALARM_SKIP,
-                        "✅ Skip cancelled by user - Wiederaufbau aus dem Kalenderstand wird angestossen"
-                    )
-                    // Erst der manuelle Zweig (braucht das bereits geloeschte Flag, sonst weist
-                    // der Skip-Backstop in scheduleSystemAlarm() das Re-Arming ab), dann der
-                    // kalenderbasierte Wiederaufbau des Aufrufers.
-                    if (entschluesselt.isFailure) {
-                        // Anders als ein Lesefehler oben ist ein kaputter Schnappschuss DAUERHAFT
-                        // kaputt - ihn zu behalten wuerde das Aufheben fuer immer blockieren.
-                        // Also aufheben, aber sagen, was verloren ist.
-                        Logger.e(
-                            LogTags.ALARM_SKIP,
-                            "❌ Gesicherter manueller Wecker nicht entschluesselbar - er ist verloren",
-                            entschluesselt.exceptionOrNull()
-                        )
-                        _skipState.value = _skipState.value.copy(
-                            restoreNotice = "Das Überspringen wurde aufgehoben, aber der gesicherte " +
-                                "Stand war beschädigt. Falls es ein manuell gestellter Wecker war, " +
-                                "bitte im Wecker-Tab neu anlegen."
-                        )
+                val skipStatus = status.getOrThrow()
+                val entschluesselt =
+                    if (!skipStatus.isNextAlarmSkipped) {
+                        Result.success(null)
                     } else {
-                        restoreSkippedManualAlarm(manualAlarm)
+                        ManualAlarmSnapshot.decode(skipStatus.skippedManualAlarm)
                     }
-                    onSkipCleared()
-                    // State wird automatisch über skipStatusFlow aktualisiert
+                val manualAlarm = entschluesselt.getOrNull()
+
+                // VOR dem Aufheben pruefen, ob der gesicherte manuelle Wecker ueberhaupt zurueckkann.
+                // Der Grund fuer diese Reihenfolge: cancelSkip() loescht Flag UND Schnappschuss in
+                // einem Zug. Wer erst aufhebt und dann feststellt, dass gerade eine Master-Pause laeuft,
+                // hat den Wecker endgueltig verloren - obwohl das Hindernis in einer Stunde weg sein
+                // kann. Deshalb: bei einem BEHEBBAREN Hindernis bleibt alles, wie es ist, und der
+                // Nutzer erfaehrt, was zu tun ist.
+                if (manualAlarm != null) {
+                    val hindernis = behebbaresRestoreHindernis(manualAlarm)
+                    if (hindernis != null) {
+                        Logger.w(
+                            LogTags.ALARM_SKIP,
+                            "⏸️ Aufheben abgebrochen - manueller Wecker ${manualAlarm.id} koennte jetzt " +
+                                "nicht zurueckkehren; Skip und Schnappschuss bleiben erhalten"
+                        )
+                        _skipState.value = _skipState.value.copy(restoreNotice = hindernis)
+                        return@launch
+                    }
                 }
-                .onFailure { error ->
-                    Logger.e(LogTags.ALARM_SKIP, "❌ Failed to cancel skip", error)
-                }
+
+                alarmSkipUseCase.cancelSkip()
+                    .onSuccess {
+                        Logger.business(
+                            LogTags.ALARM_SKIP,
+                            "✅ Skip cancelled by user - Wiederaufbau aus dem Kalenderstand wird angestossen"
+                        )
+                        // Das Loeschen des Merkers ist bestaetigt - also selbst uebernehmen, statt auf
+                        // die naechste Emission zu warten. Ist der Flow geendet, zeigte die
+                        // Oberflaeche sonst weiter "Nächster Alarm wird übersprungen" samt
+                        // "Aufheben"-Knopf fuer ein Ueberspringen, das es nicht mehr gibt.
+                        applySkipState(isNextAlarmSkipped = false, skippedAlarmId = null)
+                        // Erst der manuelle Zweig (braucht das bereits geloeschte Flag, sonst weist
+                        // der Skip-Backstop in scheduleSystemAlarm() das Re-Arming ab), dann der
+                        // kalenderbasierte Wiederaufbau des Aufrufers.
+                        if (entschluesselt.isFailure) {
+                            // Anders als ein Lesefehler oben ist ein kaputter Schnappschuss DAUERHAFT
+                            // kaputt - ihn zu behalten wuerde das Aufheben fuer immer blockieren.
+                            // Also aufheben, aber sagen, was verloren ist.
+                            Logger.e(
+                                LogTags.ALARM_SKIP,
+                                "❌ Gesicherter manueller Wecker nicht entschluesselbar - er ist verloren",
+                                entschluesselt.exceptionOrNull()
+                            )
+                            _skipState.value = _skipState.value.copy(
+                                restoreNotice = "Das Überspringen wurde aufgehoben, aber der gesicherte " +
+                                    "Stand war beschädigt. Falls es ein manuell gestellter Wecker war, " +
+                                    "bitte im Wecker-Tab neu anlegen."
+                            )
+                        } else {
+                            restoreSkippedManualAlarm(manualAlarm)
+                        }
+                        onSkipCleared()
+                        // State wird automatisch über skipStatusFlow aktualisiert
+                    }
+                    .onFailure { error ->
+                        Logger.e(LogTags.ALARM_SKIP, "❌ Failed to cancel skip", error)
+                    }
+            } finally {
+                skipVorgangLaeuft = false
+                // Der Ladezustand gehoert an dieselbe Klammer wie die Sperre - sonst bliebe der
+                // Spinner an einem der frueh abbrechenden Zweige stehen.
+                _skipState.update { it.copy(isLoading = false) }
+            }
         }
     }
 
@@ -740,6 +963,12 @@ class AlarmViewModel @Inject constructor(
     // ========================================
     // MANUAL ALARM FUNCTIONALITY
     // ========================================
+
+    private companion object {
+        /** Neue Anlaeufe fuer [observeSkipStatus], nachdem der Skip-Flow geendet ist. */
+        const val SKIP_OBSERVE_RESUBSCRIBE_ATTEMPTS = 3
+        const val SKIP_OBSERVE_RESUBSCRIBE_DELAY_MS = 30_000L
+    }
 
     /**
      * Manual Alarm Constants - simplified approach using existing patterns

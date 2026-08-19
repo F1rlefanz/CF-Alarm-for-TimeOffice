@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.29.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.29.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Ein ausgeschalteter Schichttyp gilt jetzt als zugeordnet – und die App sagt endlich, was „ausgeschaltet" wirklich abschaltet._
+
+### 🐛 Behoben
+
+- **Karte verlangte eine Zuordnung, die es längst gab:** Wer ein Kürzel als Schichttyp angelegt und den Schichttyp danach ausgeschaltet hat, bekam es weiterhin unter „Diese Kürzel stehen in deinem Kalender" angeboten – mit dem Hinweis, es gebe dafür noch kein Erkennungsmuster. Das stimmte nicht, und ein Tipp darauf hätte den Schichttyp wieder eingeschaltet. Zugeordnet ist jetzt zugeordnet, auch wenn der Schichttyp aus ist.
+
+### 🎨 Feinschliff
+
+- **„Ausgeschaltet" sagt jetzt, was es kostet:** In der Schichttypen-Liste stand nur „kein Wecker". Tatsächlich wird eine ausgeschaltete Schicht überhaupt nicht mehr erkannt – damit entfallen auch das Dimmer- und das „Nicht stören"-Zeitfenster. Genau das ist der Unterschied zur „Stillen Schicht", die weiterhin erkannt wird und nur nicht klingelt. Der Schalter im Bearbeiten-Dialog erklärt das jetzt, und wer Rufbereitschaft ohne Wecker, aber mit „Nicht stören" möchte, wird zur richtigen Einstellung geführt.
+
+## Version 1.29.1
 
 **Stand:** August 2026
 

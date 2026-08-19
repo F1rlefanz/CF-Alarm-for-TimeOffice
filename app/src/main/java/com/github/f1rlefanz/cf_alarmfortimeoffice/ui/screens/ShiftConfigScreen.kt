@@ -633,11 +633,19 @@ private fun ShiftDefinitionCard(
                     // zeigte trotzdem unveraendert "Alarm: 05:30" in der Akzentfarbe, ohne jeden
                     // Hinweis. Wer sich darauf verlaesst, verschlaeft. Das Gegenstueck `isSilent`
                     // hat aus demselben Grund ein eigenes Icon.
+                    //
+                    // Und der Text sagt seit v1.29.2, was "ausgeschaltet" WIRKLICH kostet: nicht
+                    // nur den Wecker, sondern die ganze Erkennung - damit auch die Schichtspanne,
+                    // aus der Dimmer und DND ihre Fenster ziehen. Am 19.08.2026 ist genau diese
+                    // Verwechslung passiert: eine Rufbereitschaft wurde ausgeschaltet angelegt,
+                    // damit sie nicht klingelt, und sollte trotzdem DND steuern - was sie so nie
+                    // konnte. Der Schalter dafuer heisst "Stille Schicht".
                     Text(
                         if (definition.isEnabled) {
                             "Alarm: ${definition.getAlarmTimeFormatted()}"
                         } else {
-                            "Ausgeschaltet — kein Wecker (${definition.getAlarmTimeFormatted()})"
+                            "Ausgeschaltet — wird nicht erkannt: kein Wecker, kein Dimmer- " +
+                                "und kein DND-Fenster (${definition.getAlarmTimeFormatted()})"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (definition.isEnabled) {

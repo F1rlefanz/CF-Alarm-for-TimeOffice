@@ -78,12 +78,26 @@ class ShiftCodeSuggesterTest {
     }
 
     /**
-     * Eine DEAKTIVIERTE Definition erkennt nichts (`performRecognition` filtert sie heraus). Ihre
-     * Muster duerfen deshalb auch keinen Kandidaten unterdruecken - sonst verschweigt die App ein
-     * Kuerzel, fuer das gerade KEIN Wecker gestellt wird.
+     * UMGEKEHRTE ENTSCHEIDUNG (v1.29.2) - vorher stand hier das Gegenteil, mit dieser Begruendung:
+     * "Eine deaktivierte Definition erkennt nichts, ihre Muster duerfen deshalb auch keinen
+     * Kandidaten unterdruecken - sonst verschweigt die App ein Kuerzel, fuer das gerade KEIN
+     * Wecker gestellt wird." Das Argument ist ernst zu nehmen, traegt aber nicht:
+     *
+     *  1. Der Kartentext war dabei schlicht FALSCH. Er lautet "Fuer sie gibt es noch kein
+     *     Erkennungsmuster" - fuer ein Kuerzel mit ausgeschalteter Definition existiert das
+     *     Muster aber.
+     *  2. Die angebotene Handlung widerspricht einer bewussten Nutzereinstellung: ein Tipp auf den
+     *     Vorschlag ordnet nicht nur zu, sondern "aktiviert die Schicht (falls sie ausgeschaltet
+     *     war)". Die Karte draengt den Nutzer also dazu, genau das rueckgaengig zu machen, was er
+     *     absichtlich eingestellt hat - am 19.08.2026 real passiert (Rufbereitschaft "AD1",
+     *     bewusst ohne Wecker angelegt).
+     *  3. Verschwiegen wird nichts: die Schichttypen-Liste zeigt jede ausgeschaltete Definition in
+     *     der Fehlerfarbe und benennt seither ausdruecklich, was das kostet (kein Wecker, kein
+     *     Dimmer- und kein DND-Fenster). Dorthin gehoert der Zustand, nicht in eine Karte, die
+     *     eine andere Frage beantwortet.
      */
     @Test
-    fun `Muster einer deaktivierten Definition unterdruecken keinen Vorschlag`() {
+    fun `Muster einer deaktivierten Definition unterdruecken den Vorschlag`() {
         val config = ShiftConfig(
             autoAlarmEnabled = true,
             definitions = listOf(definition("Fruehschicht", listOf("F"), enabled = false))
@@ -91,7 +105,12 @@ class ShiftCodeSuggesterTest {
 
         val result = ShiftCodeSuggester.suggest(listOf(event("F", 10)), config)
 
-        assertEquals(listOf("F"), result.suggestions.map { it.code })
+        assertEquals(
+            "Zugeordnet ist zugeordnet - auch ausgeschaltet. Sonst fordert die Karte zu einer " +
+                "Zuordnung auf, die es gibt, und ihr Text behauptet ein fehlendes Muster, das existiert.",
+            emptyList<String>(),
+            result.suggestions.map { it.code }
+        )
     }
 
     /**

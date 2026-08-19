@@ -229,6 +229,15 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   liegt im CE-Storage, ungegatet bleibt der Wecker bei Direct Boot komplett stumm.
 - **Stille Schicht (`isSilent`) gated NUR die Auslösung.** Fail-safe: Lookup-Fehler = NICHT still.
 - **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.**
+- **Wer die Wichtigkeit eines Notification-Kanals anhebt, braucht eine NEUE Kanal-ID.** Android
+  ändert die Importance eines bestehenden Kanals nur nach UNTEN und ignoriert alle übrigen Felder;
+  ein unter derselben ID neu angelegter Kanal kommt mit seinen ALTEN Einstellungen zurück. Der
+  Weckerkanal stand deshalb auf jeder Installation von vor v1.9.7 bis v1.29.0 unbemerkt auf
+  `IMPORTANCE_LOW` — Wecker ohne Vollbild, ohne Knöpfe, ohne DND-Durchgriff. Ein frisch
+  installiertes Gerät zeigt das NIE.
+- **Die Schlummer-Beschriftung kommt aus derselben Variablen wie `scheduleSnooze()`**, nie aus
+  einem festen Text — sonst verspricht der Knopf am Weckbildschirm eine andere Dauer, als er
+  schlummert.
 - **Blockierte Benachrichtigungen sind ein Wecker ohne Oberfläche** — deshalb die Status-Karte davor
   und ein WARN direkt nach `startForeground()`.
 - **`visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS** (WARN).

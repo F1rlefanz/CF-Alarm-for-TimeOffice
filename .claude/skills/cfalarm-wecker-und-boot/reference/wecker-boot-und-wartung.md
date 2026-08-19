@@ -389,3 +389,37 @@
   Handy in der Hand beweist nichts. Seit Android 14 entzieht der Play Store zusätzlich
   `USE_FULL_SCREEN_INTENT`, wenn er die App nicht als Wecker-App einstuft; dafür gibt es die
   Status-Karte mit `canUseFullScreenIntent()`.
+
+## Notification-Kanäle: warum eine Anhebung eine neue ID braucht (19.08.2026, Runde 7)
+
+Der Weckerkanal `alarm_sound_service` wurde von der Ersteinführung bis v1.9.7 mit
+`IMPORTANCE_LOW` angelegt. Commit `74f1f08` hob ihn auf `IMPORTANCE_HIGH` und ergänzte
+`setBypassDnd(true)` sowie `lockscreenVisibility = VISIBILITY_PUBLIC` — **unter derselben ID**.
+Aus der SDK-Quelle (`NotificationManager.createNotificationChannel`, KDoc):
+
+> The importance of an existing channel will only be changed if the new importance is **lower**
+> than the current value […] All other fields are ignored for channels that already exist.
+
+Und für den naheliegenden Ausweg „löschen und neu anlegen" gilt im selben Dokument: ein
+gelöschter Kanal wird bei Wiederanlage unter derselben ID *un-deleted with all of the same
+settings it had before*. Deshalb ist der einzige tragfähige Weg eine **versionierte ID**
+(`alarm_sound_service_v2`) plus einmaliges `deleteNotificationChannel()` der alten, damit in den
+Systemeinstellungen kein toter Zwilling stehenbleibt.
+
+**Warum es sieben Prüfrunden überlebt hat:** ein frisch installiertes Gerät zeigt den Fehler nie,
+und ein Emulator nach `clear_app_data` ebenso wenig. Sichtbar wird er ausschließlich auf einer
+Installation, die den Kanal schon vor der Anhebung angelegt hatte — also genau auf dem Gerät des
+Nutzers. Die Frage, die ihn gefunden hat, lautete: *„Was passiert bei einem Update auf einer
+Installation, die es schon gibt?"*
+
+**Unversioniert und damit derselben Falle ausgesetzt, falls dort je etwas angehoben wird:**
+`alarm_notausgang` (`AlarmReceiver`), `alarm_maintenance` und `alarm_maintenance_alerts`
+(`AlarmMaintenanceService`), `calendar_unavailable_alerts` (`CalendarUnavailableNotifier`),
+`shift_change_alerts` (`ShiftChangeNotifier`). Heute unschädlich, weil sie nie angehoben wurden.
+
+**Und der Text daneben darf keinen Stufennamen behaupten.** Die Reparaturanweisung der
+Status-Karte nannte erst „Standard oder höher", dann „Hoch" — beides schickte den Nutzer auf
+`IMPORTANCE_DEFAULT`, den dieselbe Karte als zu niedrig verwirft; in der deutschen Liste von
+Android 8/9 heißt „Hoch" genau diesen Wert, auf neueren Versionen gibt es den Eintrag gar nicht.
+Der Text beschreibt seither die **Wirkung** („die oberste Stufe, bei der die Meldung auf dem
+Bildschirm eingeblendet wird"), abgeleitet aus demselben Prädikat, das auch urteilt.

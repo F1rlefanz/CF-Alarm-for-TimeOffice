@@ -176,3 +176,34 @@
   erscheint → „Später" → Home). Die Kettenlogik hält stattdessen `NavigationViewModelTest` fest;
   per Mutationsprobe belegt: mit der alten Bedingung fallen **drei** Tests um. Echt prüfbar nur
   am Fairphone, und nur solange „Pause bei Nichtnutzung" dort aktiv ist.
+
+## „[Hilt] @HiltAndroidApp base class must extend Application" — ein KSP-Fehler, kein Hilt-Fehler
+
+**Symptom:** `./gradlew testDebugUnitTest` bricht in `hiltJavaCompileDebugUnitTest` ab mit
+
+```
+Fehler: [Hilt] @HiltAndroidApp base class must extend Application.
+        Found: com.github.f1rlefanz.cf_alarmfortimeoffice.Hilt_CFAlarmApplication
+```
+
+**Die Meldung zeigt auf die falsche Datei.** `CFAlarmApplication.kt` ist völlig in Ordnung
+(`class CFAlarmApplication : Application()`), und `assembleDebug` läuft weiter grün — nur die
+**Unit-Tests** lassen sich nicht mehr übersetzen. Es hilft nicht: `clean`, das Löschen von
+`app/build`, ein frischer Daemon, `--no-configuration-cache`. Mit
+`hilt { enableAggregatingTask = false }` bricht stattdessen `kspDebugKotlin` ab, und dort steht
+die eigentliche Ursache: `[ksp] Access to invalid … KotlinAlwaysAccessibleLifetimeToken: PSI has
+changed since creation`.
+
+**Auslöser (19.08.2026 eingegrenzt):** ein **top-level `private enum`**, das als Typargument in
+eine generische Funktion einer anderen Datei geht (hier die Aktions-Enums der Hue-Bildschirme in
+`rememberLocalNetworkPermissionGate<A : Enum<A>>`). `internal` statt `private` behebt es
+vollständig. Bemerkenswert: von drei strukturgleichen Dateien löste nur EINE den Fehler aus —
+verlass dich also nicht darauf, dass „die anderen gehen doch auch" etwas beweist.
+
+**Wie es gefunden wurde, falls es wiederkommt:** Halbieren des Diffs über acht saubere Builds,
+jedes Mal mit `rm -rf app/build`. Entscheidend war die Gegenprobe in einem **eigenen
+`git worktree` auf `main`** — sie hat bewiesen, dass die Umgebung heil ist und der Fehler im
+eigenen Diff liegt, statt weiter am Werkzeug zu suchen. Vorsicht dabei: mehrfaches
+`git checkout` einzelner Dateien hin und her erzeugt Folgefehler
+(`CFAlarmApplication_ComponentTreeDeps konnte nicht gefunden werden`), die wie ein neues Problem
+aussehen — nach jedem Teil-Revert das Build-Verzeichnis löschen.

@@ -27,7 +27,27 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.28.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.29.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Der Weckbildschirm kommt jetzt auch auf Geräten zurück, die die App schon lange nutzen — und die Schlummer-Knöpfe sagen endlich die Wahrheit über ihre Dauer._
+
+### 🐛 Behoben
+
+- **Weckbildschirm blieb auf langjährigen Installationen aus:** Wer die App seit dem Frühjahr nutzt, bekam beim Klingeln womöglich nur eine leise Benachrichtigung statt des großen Weckbildschirms mit den Knöpfen „Stopp" und „Schlummern" — und der Wecker durchbrach „Nicht stören" nicht. Grund war eine Einstellung der Weckmeldung, die Android einmal angelegt und danach nie wieder angehoben hat, egal wie oft aktualisiert wurde. Die App legt die Weckmeldung jetzt neu an, damit sie wieder die höchste Stufe bekommt.
+- **„5 Min später" schlummerte in Wirklichkeit anders lang:** Die beiden Schlummer-Knöpfe waren fest mit „5 Min" beschriftet, obwohl 3, 10 oder 15 Minuten einstellbar sind — geschlummert wurde die eingestellte Dauer. Die Knöpfe zeigen jetzt genau den Wert, mit dem auch wirklich geplant wird.
+- **Die Reparaturhilfe im Status schickte in die Irre:** Der Hinweis nannte eine Stufe, die die eigene Prüfung gar nicht bestanden hätte — wer ihm folgte, sah weiter das Warndreieck. Der Text beschreibt jetzt die Wirkung statt einer Bezeichnung, die je nach Android-Version und Hersteller anders heißt.
+- **Knöpfe unter der Navigationsleiste:** Auf Geräten mit den drei Navigationsknöpfen konnten der „Später"-Knopf der Einrichtungsschritte und der „Verstanden"-Knopf der Hersteller-Warnung ganz oder teilweise unerreichbar sein. Alle Bildschirme halten jetzt Abstand zu den Systemleisten, und die betroffenen lassen sich zusätzlich scrollen.
+- **Hue-Aktionen scheiterten stumm:** Bridge prüfen, Lampentest und Regeltest fragten außerhalb des Hue-Tabs nie nach der Netzwerk-Freigabe, die Android 17 verlangt — sie meldeten nur einen allgemeinen Netzwerkfehler, ohne dass je der Systemdialog erschien. Alle diese Knöpfe laufen jetzt über dieselbe Abfrage.
+- **Übersprungener Wecker konnte trotzdem klingeln:** Ließ sich der Wecker beim Überspringen nicht aus der Liste entfernen, meldete die App trotzdem „übersprungen" — nach einem nächtlichen Neustart klingelte er dann doch. Ein solcher Fehlschlag führt jetzt nicht mehr stillschweigend zu „übersprungen".
+- **Skip-Anzeige konnte einfrieren:** Nach einem Lesefehler blieben die Knöpfe „Überspringen" und „Aufheben" bis zum Neustart der App ausgegraut. Die Anzeige nimmt den Betrieb jetzt von selbst wieder auf.
+
+### 🎨 Feinschliff
+
+- Die Schichterkennung rechnet nicht mehr auf der Anzeige-Ebene: Beim Laden vieler Termine und nach dem Speichern der Schicht-Einstellungen ruckelt die Oberfläche nicht mehr.
+
+## Version 1.28.0
 
 **Stand:** August 2026
 

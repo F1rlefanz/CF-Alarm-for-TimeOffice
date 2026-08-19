@@ -1,5 +1,15 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue
 
+/*
+ * WERKZEUG-FALLE, teuer bezahlt am 19.08.2026: Die Aktions-Enums der aufrufenden Bildschirme
+ * muessen `internal` sein, nicht `private`. Mit einem top-level `private enum` als Typargument
+ * dieser generischen Funktion bricht `hiltJavaCompileDebugUnitTest` mit der irrefuehrenden
+ * Meldung "[Hilt] @HiltAndroidApp base class must extend Application. Found:
+ * Hilt_CFAlarmApplication" ab - die App selbst baut weiter, nur die Unit-Tests lassen sich nicht
+ * mehr uebersetzen. Ein KSP-Fehler ("PSI has changed since creation") liegt darunter, kein
+ * Fehler dieses Projekts. Eingegrenzt wurde es durch Halbieren des Diffs ueber acht saubere
+ * Builds; `clean` und ein frischer Daemon halfen nicht.
+ */
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult

@@ -69,7 +69,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
  * ab API 37 erzwungen). Enum statt Lambda, damit die Absicht einen Activity-Neuaufbau waehrend
  * des offenen Berechtigungsdialogs ueberlebt - siehe [rememberLocalNetworkPermissionGate].
  */
-private enum class HueSettingsNetzAktion { VALIDATE, LIGHT_TEST, RULE_TEST }
+internal enum class HueSettingsNetzAktion { VALIDATE, LIGHT_TEST, RULE_TEST }
 
 /**
  * Hue Settings Screen - Bridge and Rules Management

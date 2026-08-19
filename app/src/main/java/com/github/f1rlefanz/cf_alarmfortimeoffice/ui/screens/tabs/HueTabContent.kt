@@ -65,7 +65,7 @@ import kotlinx.coroutines.launch
  * LIGHT_TEST gehoert dazu, seit der Lampentest ueber dasselbe Tor laeuft: Er sass zweimal in
  * dieser Datei direkt am ViewModel und blieb deshalb als einziger Knopf des Tabs ungegatet.
  */
-private enum class PendingHueAction { VALIDATE, DISCOVER, PAIR, LIGHT_TEST }
+internal enum class PendingHueAction { VALIDATE, DISCOVER, PAIR, LIGHT_TEST }
 
 /**
  * Fixed Hue Tab Content with proper scrolling and layout

@@ -68,7 +68,7 @@ private val StringSetSaver = listSaver<Set<String>, String>(
  * Enum statt Lambda, damit die Absicht einen Activity-Neuaufbau waehrend des offenen
  * Berechtigungsdialogs ueberlebt - siehe [rememberLocalNetworkPermissionGate].
  */
-private enum class HueRuleConfigNetzAktion { RULE_TEST }
+internal enum class HueRuleConfigNetzAktion { RULE_TEST }
 
 /**
  * Hue Regel-Konfiguration Screen - Deutsche Version

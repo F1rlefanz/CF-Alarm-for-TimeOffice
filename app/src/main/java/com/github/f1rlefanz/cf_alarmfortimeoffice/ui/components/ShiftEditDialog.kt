@@ -276,11 +276,26 @@ fun ShiftEditDialog(
                             // weight(1f): ohne das nimmt sich der Text bei großer Systemschrift die
                             // ganze (ohnehin schmale) Dialogbreite und schiebt den Schalter aus dem
                             // Bild - dieselbe Falle wie zuvor in den Hue-Karten.
-                            Text(
-                                text = "Schichtdefinition aktiviert",
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f)
-                            )
+                            // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
+                            // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
+                            // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
+                            // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
+                            // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
+                            // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
+                            // Zeitfenster" will, braucht "Stille Schicht" daruber.
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Schichtdefinition aktiviert",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Text(
+                                    text = "Aus heißt: wird gar nicht erkannt — kein Wecker, aber " +
+                                        "auch kein Dimmer- und kein DND-Fenster. Für „kein Wecker, " +
+                                        "Zeitfenster trotzdem“ ist „Stille Schicht“ der richtige Schalter.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Switch(
                                 checked = isEnabled,
                                 onCheckedChange = { isEnabled = it }

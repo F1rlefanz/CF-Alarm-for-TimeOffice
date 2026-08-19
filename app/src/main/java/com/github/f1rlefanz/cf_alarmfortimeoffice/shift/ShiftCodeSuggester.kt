@@ -63,8 +63,9 @@ object ShiftCodeSuggester {
 
     /**
      * @param events die geladenen Kalendertermine
-     * @param config die aktuelle Schichtkonfiguration - Titel, die schon getroffen werden, sind
-     *        keine Kandidaten
+     * @param config die aktuelle Schichtkonfiguration - Titel, die von IRGENDEINER Definition
+     *        getroffen werden, sind keine Kandidaten (auch von einer ausgeschalteten: sie ist
+     *        eine Zuordnung, nur eben eine wirkungslose - das gehoert in die Schichttypen-Liste)
      * @param maxSuggestions Deckelung, per Parameter nur fuer Tests
      */
     fun suggest(
@@ -72,13 +73,27 @@ object ShiftCodeSuggester {
         config: ShiftConfig,
         maxSuggestions: Int = MAX_SUGGESTIONS
     ): SuggestionResult {
-        val enabledDefinitions = config.definitions.filter { it.isEnabled }
+        // ALLE Definitionen zaehlen, auch ausgeschaltete - NICHT nur die aktivierten.
+        //
+        // WARUM: Diese Karte beantwortet genau eine Frage - "zu welchem Kuerzel in deinem Kalender
+        // gibt es noch keine Zuordnung?". Eine ausgeschaltete Definition IST eine Zuordnung. Bis
+        // v1.29.1 filterte diese Zeile auf `isEnabled`, und die Karte forderte den Nutzer deshalb
+        // auf, ein Kuerzel zuzuordnen, das er laengst zugeordnet hatte - am 19.08.2026 am echten
+        // Kalender aufgefallen ("AD1" als Abrufdienst angelegt, aber ausgeschaltet). Der
+        // Kartentext behauptete dabei woertlich "Fuer sie gibt es noch kein Erkennungsmuster",
+        // und das war schlicht falsch.
+        //
+        // Der Zustand einer Definition gehoert in die Schichttypen-Liste, nicht hierher: dort
+        // steht bei jeder ausgeschalteten Definition, was das kostet. Diese Karte still zu halten
+        // ist deshalb kein Verschweigen, sondern die richtige Arbeitsteilung - und ein Vorschlag,
+        // der beim Antippen nur wiederholt, was schon existiert, ist eine Sackgasse.
+        val zugeordneteDefinitionen = config.definitions
 
         val candidates = events
             .asSequence()
             .mapNotNull { event -> normalizeCode(event.title)?.let { it to event } }
             // Schon getroffene Titel sind kein Problem, das der Nutzer loesen muesste.
-            .filterNot { (code, _) -> enabledDefinitions.any { it.matchesKeywords(code) } }
+            .filterNot { (code, _) -> zugeordneteDefinitionen.any { it.matchesKeywords(code) } }
             .groupBy({ it.first }, { it.second })
 
         val ranked = candidates

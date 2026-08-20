@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -166,7 +167,8 @@ class Pruefrunde6SkipSyncOrderTest {
             mock<MasterPausePrefs>().also {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(false) }
             },
-            mock<ShiftSpanStore>()
+            mock<ShiftSpanStore>(),
+            FakeSyncHorizonStore()
         )
 
         val result = useCase.syncAlarms(listOf(futureEvent("evChanged", "F", 1)), config)

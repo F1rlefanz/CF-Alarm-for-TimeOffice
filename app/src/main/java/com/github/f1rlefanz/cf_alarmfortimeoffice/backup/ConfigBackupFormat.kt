@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -103,6 +104,13 @@ object ConfigBackupFilter {
         // keine Einstellung - und importiert wuerde er auf dem neuen Geraet einen Raeumlauf
         // anstossen, den dort nie jemand ausgeloest hat.
         PendingDeselectionCleanupStore.KEY_PENDING_SINCE_NAME,
+        // Der Bezugspunkt fuer "war diese Schicht beim letzten Sync schon sichtbar?"
+        // (SyncHorizonStore). Er beschreibt, wann auf DIESEM Geraet zuletzt ein vollstaendiger
+        // Sync lief - reiner Laufzeitzustand. Die gefaehrliche Richtung ist ein ALTER importierter
+        // Zeitpunkt (ein Geraet, das lange nicht synchronisiert hat): er setzt den Vergleichspunkt
+        // zurueck, und das neue Geraet verschweigt dann echte Dienstplan-Aenderungen als blosse
+        // Horizont-Eintritte. Ein frischerer Wert waere umgekehrt nur zu gespraechig.
+        SyncHorizonStore.KEY_LAST_SYNC_NAME,
         // Zeitstempel der Hintergrundarbeit
         "last_maintenance_time",
         "last_event_load_time",

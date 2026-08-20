@@ -1,9 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
@@ -81,8 +83,62 @@ class AlarmUseCase @Inject constructor(
     // Interface bleibt unveraendert, und jeder kuenftige syncAlarms()-Aufrufer schreibt die
     // Spannen automatisch mit, ohne selbst etwas tun zu muessen (gleiche Ueberlegung wie beim
     // ShiftChangeNotifier und beim Master-Pause-Backstop).
-    private val shiftSpanStore: ShiftSpanStore
+    private val shiftSpanStore: ShiftSpanStore,
+    // Bezugspunkt fuer "war diese Schicht beim letzten Sync ueberhaupt sichtbar?" - siehe
+    // SyncHorizonStore. Aus demselben Grund wie die drei Abhaengigkeiten darueber bewusst auf der
+    // Implementierung statt auf IAlarmUseCase.
+    private val syncHorizonStore: SyncHorizonStore
 ) : IAlarmUseCase {
+
+    companion object {
+        /**
+         * Ist [alarm] der Wecker, den der Nutzer ueberspringen wollte?
+         *
+         * ZWEI KRITERIEN, UND DAS ZWEITE IST DAS TRAGENDE:
+         *  (a) gleiche `AlarmInfo.id` - das bisherige Verhalten. Bleibt drin, damit ein Merker,
+         *      der VOR dieser Aenderung gesetzt wurde, weiter greift, und weil ein manuell
+         *      gestellter Wecker seine id aus Datum und Schicht ableitet (stabil).
+         *  (b) gleicher WECKZEITPUNKT. Der Grund: `AlarmSkipUseCase.skipNextAlarm()` LOESCHT den
+         *      Eintrag aus dem Repository - "immer, fuer jede Alarmart". Beim naechsten Sync gibt
+         *      es also gar keinen bestehenden Alarm, den die Paarung wiedererkennen koennte; hat
+         *      der abonnierte Feed inzwischen neue Kennungen vergeben, baut der Sync den Wecker
+         *      mit einer NEUEN id aus der neuen Kennung neu auf. Ein reiner id-Vergleich griffe
+         *      dann ins Leere - der Nutzer drueckt abends "Ueberspringen", der Feed rotiert
+         *      nachts, und am freien Morgen klingelt der Wecker doch. Genau das ist am Geraet
+         *      belegt (11 Wecker in einem Lauf mit neuen Kennungen). Die id ist historienabhaengig,
+         *      der Weckzeitpunkt ist der stabile Anker.
+         *
+         * WAS NICHT GEPRUEFT WIRD, UND WARUM NICHT: die Schicht. [AlarmSkipState] traegt sie nicht
+         * (nur id, Weckzeitpunkt und - bei manuellen Weckern - einen Schnappschuss), und sie hier
+         * nachzureichen hiesse, das Zustandsmodell samt Persistenz zu erweitern. Das Restrisiko
+         * ist ein ZWEITER kalenderbasierter Wecker auf dieselbe Millisekunde: der bliebe
+         * mit-uebersprungen. Es ist eng begrenzt (genau ein Weckzeitpunkt, und der Merker laeuft
+         * mit ihm zeitbasiert ab, siehe `clearExpiredSkip`) und praktisch nur bei einer Doppelung
+         * im Feed erreichbar - beide Wecker meinten dann denselben Moment.
+         *
+         * MANUELLE WECKER NEHMEN AM KRITERIUM (b) NICHT TEIL (`eventId.isEmpty()`). Sie sind von
+         * der Kennungsrotation gar nicht betroffen, ihre id ist stabil, und ein von Hand auf
+         * dieselbe Minute gestellter Wecker soll durch das Ueberspringen einer Schicht nicht
+         * stumm werden. Fuer sie bleibt es beim id-Vergleich.
+         *
+         * `null` oder ein nicht gesetztes Flag heisst NICHT uebersprungen - fail-safe, im Zweifel
+         * wecken. Der Lesefehler wird von den Aufrufern zu `null` degradiert (getOrNull), bewusst
+         * in diese Richtung.
+         */
+        internal fun istUebersprungen(skipState: AlarmSkipState?, alarm: AlarmInfo): Boolean {
+            if (skipState == null || !skipState.isNextAlarmSkipped) return false
+            if (skipState.skippedAlarmId == alarm.id) return true
+            // BEIDE Seiten muessen kalenderbasiert sein. Der gepruefte Alarm (`eventId`), und
+            // der UEBERSPRUNGENE: `skippedManualAlarm != null` heisst, der Nutzer hat seinen von
+            // Hand gestellten Wecker abgeschaltet. Dessen id ist stabil, er braucht (b) gar nicht -
+            // und ohne diese Bedingung wuerde er eine Schicht mit derselben Weckzeit
+            // mit-abschalten. Beide liegen auf vollen Minuten; die Kollision ist keine Exotik.
+            return alarm.eventId.isNotEmpty() &&
+                skipState.skippedManualAlarm == null &&
+                skipState.skippedAlarmTriggerTime > 0L &&
+                skipState.skippedAlarmTriggerTime == alarm.triggerTime
+        }
+    }
     
     /**
      * REACTIVE OPTIMIZATION: Direct repository StateFlow for immediate UI updates
@@ -131,6 +187,12 @@ class AlarmUseCase @Inject constructor(
             alarmSkipUseCase.clearExpiredSkip()
 
             SafeExecutor.safeExecute("AlarmUseCase.syncAlarms") {
+                // So frueh wie moeglich gelesen: dieser Zeitpunkt wird am Ende eines
+                // VOLLSTAENDIGEN Laufs als neuer Bezugspunkt festgehalten und beschreibt, bis
+                // wohin das Abruf-Fenster reichte (siehe SyncHorizonStore). Je frueher, desto
+                // naeher liegt er am tatsaechlichen Abruf.
+                val syncStartedAt = System.currentTimeMillis()
+
                 // Master-Pause: zentraler Backstop, NICHT nur an den (aktuell fuenf) bekannten
                 // Aufrufstellen (BootReceiver, AlarmMaintenanceService, CalendarViewModel,
                 // ShiftViewModel, CalendarPreAlarmRefreshWorker) einzeln gaten. syncAlarms() ist
@@ -166,11 +228,55 @@ class AlarmUseCase @Inject constructor(
                 Logger.business(LogTags.ALARM, "🔄 SYNC: Starting intelligent alarm synchronization for ${events.size} events")
                 
                 // 🔧 SYNC-FIX: INTELLIGENT SYNCHRONIZATION statt blind clearing
-                val existingAlarms = alarmRepository.getAllAlarms().getOrNull() ?: emptyList()
+                //
+                // Ein nicht lesbarer Bestand ist keine leere Liste - und `getAllAlarms()` sagt
+                // einem das NICHT: es liefert immer `Result.success(_activeAlarms.value)`, im
+                // Notfall eben die Leere. Der einzige ehrliche Zeuge ist `isPersistenceBlocked()`
+                // (dieselbe Frage stellt `clearInternalAlarms()`, aus demselben Grund). Ein
+                // `getOrThrow()` allein waere hier Theater gewesen.
+                //
+                // WARUM DAS SEIT DER ID-UEBERNAHME KRITISCH IST: Frueher war
+                // `id = eventId.hashCode()` eine reine Funktion des Events - ein auf leerem
+                // Bestand neu angelegter Alarm ueberschrieb den gespeicherten Eintrag punktgenau,
+                // der Lesefehler heilte sich selbst. Jetzt ist die id historienabhaengig (sie
+                // wandert vom gepaarten Vorgaenger mit). Derselbe Lesefehler erzeugt damit einen
+                // ZWEITEN Eintrag mit eigener id und einen zweiten armierten Systemwecker: der
+                // Wecker feuert doppelt, und der naechste Sync raeumt den Waisen mit einer sachlich
+                // falschen "Schicht entfernt"-Meldung ab.
+                //
+                // Das ist die Hausregel "kein Fehler darf als leeres Erfolgsergebnis
+                // durchrutschen" - fuer eine Wecker-App ist "leer" die gefaehrlichste Luege.
+                if (alarmRepository.isPersistenceBlocked()) {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "⛔ SYNC abgebrochen: der Alarm-Bestand ist in diesem Prozess nicht lesbar. " +
+                            "Auf der erfundenen Leere weiterzurechnen wuerde jede Schicht neu anlegen " +
+                            "und - seit die id vom gepaarten Vorgaenger mitwandert - einen ZWEITEN " +
+                            "armierten Wecker pro Schicht erzeugen."
+                    )
+                    throw IllegalStateException(
+                        "Alarm-Bestand nicht lesbar - Sync abgebrochen, bestehende Wecker bleiben unangetastet"
+                    )
+                }
+                val existingAlarms = alarmRepository.getAllAlarms().getOrThrow()
                 // Feature B: die allererste Befuellung (z.B. nach Neuinstallation/komplettem
                 // Zuruecksetzen) soll nicht fuer jeden neuen Alarm eine "Neue Schicht erkannt"-Flut
                 // ausloesen - siehe notifyCreated-Aufruf unten.
                 val isFirstSync = existingAlarms.isEmpty()
+
+                // Bis wohin reichte das Abruf-Fenster beim LETZTEN vollstaendigen Sync? Alles, was
+                // dahinter beginnt, ist erst jetzt ueberhaupt sichtbar geworden - der wandernde
+                // 14-Tage-Horizont, keine Dienstplan-Aenderung. Der Alarm dafuer wird trotzdem ganz
+                // normal angelegt und gestellt; NUR die Meldung unterbleibt.
+                //
+                // getOrNull() fasst hier zwei Faelle zusammen, und das ist Absicht: "es gab noch
+                // keinen Sync" und "der Merker ist nicht lesbar" fuehren beide zu null und damit zu
+                // MELDEN (istHorizontEintritt gibt fuer null false zurueck). Eine ueberfluessige
+                // Meldung ist laestig, eine verschwiegene echte Aenderung kostet Vertrauen - die
+                // Richtung ist bewusst so gewaehlt und im SyncHorizonStore begruendet. Den
+                // Unterschied haelt der Store selbst im Log fest.
+                val letzterVollstaendigerSync = syncHorizonStore.letzterVollstaendigerSync().getOrNull()
+
                 val shiftMatches = shiftRecognitionEngine.getAllMatchingShifts(events)
                 
                 if (shiftMatches.isEmpty()) {
@@ -198,90 +304,132 @@ class AlarmUseCase @Inject constructor(
                     event.id to calculateEventChecksum(event)
                 }
                 
-                // Build map of new alarms we want to create
-                val newAlarmsMap = mutableMapOf<String, AlarmInfo>()  // eventId -> AlarmInfo
-                // Events, deren Termin WEITER EXISTIERT und deren Weckzeit lediglich verstrichen
-                // ist. Ohne diese Unterscheidung meldet der Loeschzweig unten sie als "Event was
-                // deleted from calendar" - der Nutzer bekam dadurch an JEDEM Schichtmorgen eine
-                // sachlich falsche "Schicht entfernt"-Benachrichtigung fuer den Dienst, den er
-                // gerade antritt.
-                val expiredEventIds = mutableSetOf<String>()
+                // Kandidaten der aktuellen Kalenderlesung - pro erkannter Schicht einer.
+                // ABSICHTLICH AUCH DIE ABGELAUFENEN (neuerAlarm = null): sie werden fuer die
+                // Paarung unten gebraucht. Sonst gilt ein Termin, dessen Weckzeit heute frueh
+                // verstrichen ist, als "entfernt", sobald der Feed ihm eine neue Kennung gegeben
+                // hat - und der Nutzer bekaeme eine "Schicht entfernt"-Meldung fuer den Dienst,
+                // den er gerade antritt.
+                val kandidaten = mutableListOf<SyncKandidat>()
                 val now = LocalDateTime.now()
 
                 for (shiftMatch in shiftMatches) {
                     try {
+                        val eventId = shiftMatch.calendarEvent.id
+                        val triggerTime = shiftMatch.calculatedAlarmTime
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli()
+
                         if (shiftMatch.calculatedAlarmTime.isBefore(now)) {
                             Logger.w(LogTags.ALARM, "⏰ SYNC: Skipping alarm in the past: ${shiftMatch.shiftDefinition.name}")
-                            expiredEventIds += shiftMatch.calendarEvent.id
+                            kandidaten += SyncKandidat(
+                                eventId = eventId,
+                                triggerTime = triggerTime,
+                                shiftId = shiftMatch.shiftDefinition.id,
+                                neuerAlarm = null
+                            )
                             continue
                         }
 
-                        val eventId = shiftMatch.calendarEvent.id
                         val checksum = eventChecksumMap[eventId] ?: ""
-                        val alarmInfo = createAlarmFromShiftMatch(shiftMatch, eventId, checksum)
-                        newAlarmsMap[eventId] = alarmInfo
+                        kandidaten += SyncKandidat(
+                            eventId = eventId,
+                            triggerTime = triggerTime,
+                            shiftId = shiftMatch.shiftDefinition.id,
+                            neuerAlarm = createAlarmFromShiftMatch(shiftMatch, eventId, checksum)
+                        )
                     } catch (e: Exception) {
                         Logger.e(LogTags.ALARM, "❌ SYNC: Error processing shift: ${shiftMatch.shiftDefinition.name}", e)
                     }
                 }
-                
-                // 🔧 SYNC-FIX Step 1: Delete alarms for events that no longer exist
+
+                // Zwei Treffer auf dieselbe Event-ID lassen sich nicht getrennt behandeln - wie
+                // bisher (`newAlarmsMap[eventId] = alarmInfo`) gewinnt der letzte.
+                val eindeutigeKandidaten = kandidaten.associateBy { it.eventId }.values.toList()
+
+                // ERST PAAREN, DANN ENTSCHEIDEN. Die Paarung MUSS vor dem Loeschzweig stehen:
+                // sonst loescht Schritt 1 genau die Wecker, die Schritt 2 wiedererkennen wuerde.
+                // Siehe [paareBestehendeAlarme] fuer das Warum und die Reihenfolge.
+                val paarung = paareBestehendeAlarme(existingAlarms, eindeutigeKandidaten)
+                val kandidatJeEventId = eindeutigeKandidaten.associateBy { it.eventId }
+                val kandidatJeAlarmId: Map<Int, SyncKandidat> = paarung.entries.associate { (eventId, alarm) ->
+                    alarm.id to kandidatJeEventId.getValue(eventId)
+                }
+
+                // 🔧 SYNC-FIX Step 1: Alarme loeschen, fuer die es keinen Kandidaten mehr gibt
                 var deletedCount = 0
                 for (existingAlarm in existingAlarms) {
-                    if (existingAlarm.eventId.isNotEmpty() && !newAlarmsMap.containsKey(existingAlarm.eventId)) {
-                        // ZWEI verschiedene Gruende, hier zu landen - und nur EINER davon ist eine
-                        // entfernte Schicht:
-                        //  1. Der Termin ist wirklich aus dem Kalender verschwunden.
-                        //  2. Der Termin laeuft weiter, nur die WECKZEIT ist verstrichen (der
-                        //     Wecker hat heute frueh geklingelt). Der Alarm wird trotzdem geraeumt
-                        //     - ein abgelaufener Alarm gehoert nicht in den Bestand - aber es ist
-                        //     KEINE Aenderung des Dienstplans, also gibt es dafuer auch keine
-                        //     Meldung. Die Schichtspanne bleibt davon unberuehrt erhalten, damit
-                        //     Dimmer und "Nicht stoeren" die laufende Schicht weiter kennen.
-                        val onlyExpired = existingAlarm.eventId in expiredEventIds
-                        if (onlyExpired) {
-                            Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
-                        } else {
-                            Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
-                        }
-                        // ERST cancellen, DANN loeschen - wie an allen anderen Loeschstellen
-                        // (`deleteAlarm()`, `clearInternalAlarms()` Step 1, `AlarmSkipUseCase`).
-                        // Umgekehrt gab es ein Fenster, in dem der Alarm im AlarmManager noch
-                        // armiert war, aber weder Repository noch Direct-Boot-Spiegel ihn kannten:
-                        // ALLE Cancel-Wege der App iterieren ueber den Repository-Bestand, es gibt
-                        // also keinen zweiten Anker. Bricht die Sequenz dort ab (Prozess-Tod,
-                        // DataStore-Fehler), ist der Wecker unsichtbar UND unabbrechbar - er feuert
-                        // bis zum naechsten Geraete-Neustart, und ein Handy laeuft Wochen.
-                        alarmManagerService.cancelSystemAlarm(existingAlarm.id)
-                        alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
-                        deletedCount++
-                        // Feature B: eigenes try/catch - eine fehlgeschlagene Notification darf die
-                        // eigentlich kritische Alarm-Loeschung nie mit rueckgaengig machen.
-                        if (!onlyExpired) {
-                            try {
-                                shiftChangeNotifier.notifyDeleted(existingAlarm)
-                            } catch (e: Exception) {
-                                Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Delete) fehlgeschlagen", e)
-                            }
+                    // Manuelle Alarme (leere eventId) bleiben unberuehrt - sie sind die einzigen,
+                    // die sich nicht aus dem Kalender rekonstruieren lassen.
+                    if (existingAlarm.eventId.isEmpty()) continue
+
+                    val kandidat = kandidatJeAlarmId[existingAlarm.id]
+                    if (kandidat?.neuerAlarm != null) {
+                        // Gepaart UND weiterhin in der Zukunft: dieser Alarm wird in Schritt 2
+                        // weiterverwendet - ggf. nur mit neuer Kalender-Kennung. Nichts loeschen,
+                        // nichts cancellen, nichts melden.
+                        continue
+                    }
+
+                    // ZWEI verschiedene Gruende, hier zu landen - und nur EINER davon ist eine
+                    // entfernte Schicht:
+                    //  1. Der Termin ist wirklich aus dem Kalender verschwunden (keine Paarung).
+                    //  2. Der Termin laeuft weiter, nur die WECKZEIT ist verstrichen (der Wecker
+                    //     hat heute frueh geklingelt) - erkennbar daran, dass die Paarung einen
+                    //     Kandidaten OHNE neuen Alarm gefunden hat. Der Alarm wird trotzdem
+                    //     geraeumt - ein abgelaufener Alarm gehoert nicht in den Bestand - aber es
+                    //     ist KEINE Aenderung des Dienstplans, also gibt es dafuer auch keine
+                    //     Meldung. Die Schichtspanne bleibt davon unberuehrt erhalten, damit
+                    //     Dimmer und "Nicht stoeren" die laufende Schicht weiter kennen.
+                    val onlyExpired = kandidat != null
+                    if (onlyExpired) {
+                        Logger.business(LogTags.ALARM, "⌛ SYNC: Weckzeit verstrichen, Termin laeuft weiter: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                    } else {
+                        Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
+                    }
+                    // ERST cancellen, DANN loeschen - wie an allen anderen Loeschstellen
+                    // (`deleteAlarm()`, `clearInternalAlarms()` Step 1, `AlarmSkipUseCase`).
+                    // Umgekehrt gab es ein Fenster, in dem der Alarm im AlarmManager noch
+                    // armiert war, aber weder Repository noch Direct-Boot-Spiegel ihn kannten:
+                    // ALLE Cancel-Wege der App iterieren ueber den Repository-Bestand, es gibt
+                    // also keinen zweiten Anker. Bricht die Sequenz dort ab (Prozess-Tod,
+                    // DataStore-Fehler), ist der Wecker unsichtbar UND unabbrechbar - er feuert
+                    // bis zum naechsten Geraete-Neustart, und ein Handy laeuft Wochen.
+                    alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                    alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
+                    deletedCount++
+                    // Feature B: eigenes try/catch - eine fehlgeschlagene Notification darf die
+                    // eigentlich kritische Alarm-Loeschung nie mit rueckgaengig machen.
+                    if (!onlyExpired) {
+                        try {
+                            shiftChangeNotifier.notifyDeleted(existingAlarm)
+                        } catch (e: Exception) {
+                            Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Delete) fehlgeschlagen", e)
                         }
                     }
                 }
-                
+
                 // 🔧 SYNC-FIX Step 2: Update changed alarms & create new ones
                 var updatedCount = 0
                 var createdCount = 0
                 var skippedCount = 0
+                // Wecker, die eine neue Kalender-Kennung bekommen haben (Paarung ueber
+                // Weckzeit+Schicht) - unabhaengig davon, ob daneben noch etwas Echtes anders war.
+                // Muss sichtbar bleiben - siehe die WARN-Zeile unten.
+                var neueKennungCount = 0
                 val resultAlarms = mutableListOf<AlarmInfo>()
 
                 // "Naechsten Alarm ueberspringen": EINMAL pro Sync lesen. Fail-safe wie der
                 // Silent-/Skip-Check im AlarmReceiver - schlaegt der Lesevorgang fehl (getOrNull =
                 // null), gilt NICHTS als uebersprungen und der Alarm wird ganz normal gestellt.
                 // Im Zweifel wecken.
-                val skippedAlarmId = alarmSkipUseCase.getSkipStatus().getOrNull()
-                    ?.takeIf { it.isNextAlarmSkipped }
-                    ?.skippedAlarmId
+                val skipState = alarmSkipUseCase.getSkipStatus().getOrNull()
 
-                for ((eventId, newAlarm) in newAlarmsMap) {
+                for (kandidat in eindeutigeKandidaten) {
+                  // Abgelaufene Kandidaten hat Schritt 1 bereits abschliessend behandelt.
+                  val frischerAlarm = kandidat.neuerAlarm ?: continue
+                  val eventId = kandidat.eventId
                   // Pro Event ein eigenes try/catch: ein einzelner abgelehnter Alarm (z.B.
                   // AlarmRepository.saveAlarm lehnt eine inzwischen verstrichene Weckzeit ab, weil
                   // `now` einmal oben gelesen wurde und die DataStore-Schreibvorgaenge der vorherigen
@@ -289,6 +437,36 @@ class AlarmUseCase @Inject constructor(
                   // schon geloeschte Alarm blieb geloescht und alle noch nicht abgearbeiteten
                   // Eintraege der (unsortierten) Map wurden weder erstellt noch re-armed.
                   try {
+                    val existingAlarm = paarung[eventId]
+
+                    // DIE `AlarmInfo.id` DES BESTEHENDEN ALARMS WIRD BEIBEHALTEN.
+                    //
+                    // `createAlarmFromShiftMatch` leitet die id aus `calendarEvent.id.hashCode()`
+                    // ab. Der Dienstplan kommt aber aus einem ABONNIERTEN Kalender (TimeOffice-ICS):
+                    // Google liest den Feed alle paar Tage neu ein und vergibt dabei ALLEN Terminen
+                    // neue Event-IDs, ohne dass sich an Schicht oder Weckzeit irgendetwas aendert
+                    // (am Fairphone belegt: 11 Alarme geloescht und 11 neu angelegt in EINEM Lauf,
+                    // Schnittmenge der Event-IDs vorher/nachher = null).
+                    //
+                    // An der id haengen der Request-Code des System-Alarms, der Direct-Boot-Spiegel,
+                    // die Notification-ID und der Skip-Merker. Eine neue id waere also genau die
+                    // Unruhe, die hier abgestellt werden soll: alle Systemwecker abbrechen und neu
+                    // stellen (stirbt der kurzlebige Wartungs-Service mitten in der Sequenz, fehlen
+                    // Wecker), und ein uebersprungener Wecker verliert seinen Bezug.
+                    //
+                    // Gilt auch fuer die Paarung ueber die Event-ID: der bestehende Alarm kann aus
+                    // einem frueheren Kennungswechsel eine id tragen, die NICHT dem Hash seiner
+                    // jetzigen eventId entspricht. Wuerde hier der Hash gewinnen, finge die
+                    // ID-Wanderung beim naechsten Lauf von vorne an.
+                    val newAlarm = if (existingAlarm != null) {
+                        frischerAlarm.copy(id = existingAlarm.id)
+                    } else {
+                        frischerAlarm
+                    }
+                    // Nur die Kennung hat gewechselt - Weckzeit und Schicht sind laut Paarung
+                    // gleich (siehe [paareBestehendeAlarme]).
+                    val nurNeueKennung = existingAlarm != null && existingAlarm.eventId != newAlarm.eventId
+
                     // SKIP-IMMEDIATE-UX: Der uebersprungene Alarm darf hier NICHT wieder auftauchen.
                     // AlarmSkipUseCase.skipNextAlarm() cancelt den System-Alarm sofort und loescht den
                     // Alarm aus dem Repository - fuer den naechsten Sync sah dessen Kalender-Event
@@ -296,26 +474,92 @@ class AlarmUseCase @Inject constructor(
                     // "Neue Schicht erkannt"-Notification, obwohl der Nutzer den Wecker gerade
                     // abgeschaltet hatte. Das Flag laeuft weiterhin ZEITBASIERT ab
                     // (clearExpiredSkip oben), nicht ueber diesen Zweig.
-                    if (skippedAlarmId != null && newAlarm.id == skippedAlarmId) {
+                    //
+                    // DIE ERKENNUNG DARF NICHT AN DER id ALLEIN HAENGEN - siehe [istUebersprungen].
+                    // Weil skipNextAlarm() den Eintrag LOESCHT, gibt es beim naechsten Sync gar
+                    // keinen bestehenden Alarm zum Paaren; nach einem Kennungswechsel traegt der
+                    // neu gebaute Alarm also eine neue id, und ein reiner id-Vergleich griffe ins
+                    // Leere. Der Weckzeitpunkt ist der stabile Anker.
+                    if (istUebersprungen(skipState, newAlarm)) {
                         Logger.business(
                             LogTags.ALARM,
-                            "⏭️ SYNC: Uebersprungener Alarm wird nicht neu gestellt: ${newAlarm.shiftName} (id=${newAlarm.id})"
+                            "⏭️ SYNC: Uebersprungener Alarm wird nicht neu gestellt: ${newAlarm.shiftName} " +
+                                "(id=${newAlarm.id}, Weckzeit=${newAlarm.formattedTime})"
                         )
                         continue
                     }
 
-                    val existingAlarm = existingAlarms.find { it.eventId == eventId }
-
                     if (existingAlarm != null) {
-                        // Alarm exists - check if anything about it changed. Voller Vergleich statt
-                        // nur eventChecksum/triggerTime: sonst bleibt newAlarm (frisch aus der
-                        // aktuellen ShiftDefinition berechnet, z.B. isSilent/shiftName) unpersistiert,
-                        // wenn sich nur ein reines ShiftDefinition-Feld aendert, aber das zugrunde
-                        // liegende Kalender-Event gleich bleibt (Checksum+Weckzeit identisch).
-                        if (existingAlarm != newAlarm) {
-                            // Alarm-Daten geaendert → aktualisieren
+                        // VERGLEICHSBASIS FUER "hat sich etwas geaendert?".
+                        //
+                        // Die stille Uebernahme deckt GENAU zwei Felder ab, und zwar als
+                        // ausdrueckliche Positivliste, nicht als "alles ausser dem, was ich hier
+                        // aufzaehle": die Kalender-Kennung selbst und die daraus mitgezogene
+                        // Pruefsumme. Ein kuenftig ergaenztes AlarmInfo-Feld faellt damit NICHT
+                        // automatisch unter die Stille - es bleibt im Vergleich und schlaegt als
+                        // Aenderung durch, bis jemand bewusst entscheidet, es hier aufzunehmen.
+                        //
+                        // eventChecksum gehoert dazu, weil sie aus Titel und Zeiten des Termins
+                        // gerechnet wird: alles daran, was den Wecker betrifft, steht ohnehin
+                        // einzeln im AlarmInfo (shiftName, triggerTime, shiftStartTime,
+                        // shiftEndTime). Weicht NUR die Pruefsumme ab, hat sich am Wecker nichts
+                        // geaendert - dafuer saemtliche Systemwecker abzubrechen und neu zu
+                        // stellen waere genau die Unruhe, gegen die die Paarung gebaut ist.
+                        //
+                        // ALLES UEBRIGE WIRD WEITER VERGLICHEN. Frueher stand `nurNeueKennung` als
+                        // erster Zweig VOR diesem Vergleich und verschluckte damit jede weitere
+                        // Abweichung - faellt eine Umbenennung mit einem Feed-Neueinlesen zusammen,
+                        // verschwand sie lautlos und wurde auch spaeter nie gemeldet, obwohl der
+                        // ShiftChangeNotifier eine Namensaenderung ausdruecklich als meldepflichtig
+                        // fuehrt. Was meldepflichtig ist, entscheidet weiterhin der Notifier.
+                        val vergleichsbasis = if (nurNeueKennung) {
+                            existingAlarm.copy(
+                                eventId = newAlarm.eventId,
+                                eventChecksum = newAlarm.eventChecksum
+                            )
+                        } else {
+                            existingAlarm
+                        }
+
+                        if (vergleichsbasis == newAlarm && nurNeueKennung) {
+                            // STILL UEBERNEHMEN: kein Loeschen, kein Neuanlegen, kein cancel+neu,
+                            // keine Meldung. Fuer den Nutzer hat sich nichts geaendert - derselbe
+                            // Dienst zur selben Weckzeit, der Kalender hat ihm nur eine neue
+                            // Kennung gegeben.
+                            //
+                            // saveAlarm() ueberschreibt den Datensatz mit derselben id an Ort und
+                            // Stelle (AlarmRepository.saveAlarm: indexOfFirst { it.id == ... }),
+                            // deshalb braucht es hier KEIN deleteAlarm() davor - und genau deshalb
+                            // auch kein cancelSystemAlarm().
+                            //
+                            // Das scheduleSystemAlarm() darunter ist das IDEMPOTENTE Re-Armen aus
+                            // dem Unveraendert-Zweig (gleicher Request-Code, gleiche Weckzeit,
+                            // FLAG_UPDATE_CURRENT) - es ersetzt die Extras des bestehenden
+                            // PendingIntents, statt den Wecker abzubrechen und neu zu stellen.
+                            Logger.d(
+                                LogTags.ALARM,
+                                "🔀 SYNC: Neue Kalender-Kennung fuer ${newAlarm.shiftName} " +
+                                    "(id=${newAlarm.id}, ${existingAlarm.eventId} -> ${newAlarm.eventId}) - " +
+                                    "Weckzeit und Schicht unveraendert"
+                            )
+                            alarmRepository.saveAlarm(newAlarm).getOrThrow()
+                            scheduleSystemAlarm(newAlarm).getOrThrow()
+                            resultAlarms.add(newAlarm)
+                            neueKennungCount++
+                        } else if (vergleichsbasis != newAlarm) {
+                            // Alarm exists - check if anything about it changed. Voller Vergleich statt
+                            // nur eventChecksum/triggerTime: sonst bleibt newAlarm (frisch aus der
+                            // aktuellen ShiftDefinition berechnet, z.B. isSilent/shiftName) unpersistiert,
+                            // wenn sich nur ein reines ShiftDefinition-Feld aendert, aber das zugrunde
+                            // liegende Kalender-Event gleich bleibt (Checksum+Weckzeit identisch).
+                            // Alarm-Daten geaendert -> aktualisieren
                             Logger.business(LogTags.ALARM, "🔄 SYNC: Updating changed alarm: ${newAlarm.shiftName} (eventId: $eventId)")
-                            
+                            // Kennungswechsel UND echte Aenderung zugleich (Feed neu eingelesen und
+                            // der Chef hat etwas umbenannt/verschoben): zaehlt fuer die WARN-Zeile
+                            // unten mit, sonst untertreibt die Feed-Diagnose ausgerechnet dann,
+                            // wenn zwei Dinge gleichzeitig passieren.
+                            if (nurNeueKennung) neueKennungCount++
+
                             // Delete old - ERST cancellen, DANN loeschen, genau wie im
                             // Loeschzweig oben und an jeder anderen Loeschstelle. Umgekehrt gab
                             // es hier ein Fenster: nach `deleteAlarm()` kennen weder Repository
@@ -351,20 +595,51 @@ class AlarmUseCase @Inject constructor(
                             resultAlarms.add(existingAlarm)
                         }
                     } else {
-                        // New event → create alarm
+                        // New event -> create alarm
                         Logger.business(LogTags.ALARM, "➕ SYNC: Creating alarm for new event: ${newAlarm.shiftName} (eventId: $eventId)")
                         alarmRepository.saveAlarm(newAlarm).getOrThrow()
                         scheduleSystemAlarm(newAlarm).getOrThrow()
                         resultAlarms.add(newAlarm)
                         createdCount++
-                        // Feature B: erster Sync ueberhaupt (existingAlarms war leer) flutet nicht -
-                        // eigenes try/catch, eine fehlgeschlagene Notification darf die eigentlich
-                        // kritische Alarm-Erstellung nie beeintraechtigen.
+                        // ZWEI Gruende, einen neu erstellten Alarm NICHT zu melden:
+                        //  1. isFirstSync - erster Sync ueberhaupt (existingAlarms war leer), sonst
+                        //     flutet jede Neuinstallation.
+                        //  2. Horizont-Eintritt - der Termin ist lediglich neu in das taeglich
+                        //     wandernde 14-Tage-Fenster gerutscht und war beim letzten Sync noch gar
+                        //     nicht abrufbar. Das ist keine Aenderung des Dienstplans, sondern ein
+                        //     Artefakt der Abfrage. Genau das hat dem Nutzer tagelang jeden Morgen
+                        //     "Neue Schicht erkannt" fuer den jeweils neuen Randtag gezeigt (siehe
+                        //     SyncHorizonStore). Eine Schicht INNERHALB des bereits abgedeckten
+                        //     Zeitraums bleibt eine echte Aenderung und wird weiterhin gemeldet.
+                        //
+                        // Verglichen wird der SCHICHTBEGINN, denn danach filtert die Kalender-
+                        // Abfrage (timeMin/timeMax), nicht nach der Weckzeit. shiftStartTime <= 0
+                        // heisst "unbekannt" (wie in scheduleSystemAlarm) - dann die Weckzeit.
                         if (!isFirstSync) {
-                            try {
-                                shiftChangeNotifier.notifyCreated(newAlarm)
-                            } catch (e: Exception) {
-                                Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Create) fehlgeschlagen", e)
+                            val schichtBeginn = newAlarm.shiftStartTime.takeIf { it > 0 } ?: newAlarm.triggerTime
+                            // syncStartedAt statt "jetzt": innerhalb EINES Laufs muss dieselbe
+                            // Frage fuer alle Events denselben Bezugszeitpunkt haben - sonst
+                            // entscheidet ein Lauf, der die Altersgrenze des Merkers gerade
+                            // ueberschreitet, fuer die ersten Events anders als fuer die letzten.
+                            if (SyncHorizonStore.istHorizontEintritt(
+                                    letzterVollstaendigerSync,
+                                    schichtBeginn,
+                                    syncStartedAt
+                                )
+                            ) {
+                                Logger.business(
+                                    LogTags.ALARM,
+                                    "🗓️ SYNC: ${newAlarm.shiftName} ist neu in den ${CalendarConstants.DEFAULT_DAYS_AHEAD}-Tage-Horizont " +
+                                        "gerutscht - Wecker gestellt, aber keine Aenderungsmeldung"
+                                )
+                            } else {
+                                // Eigenes try/catch - eine fehlgeschlagene Notification darf die
+                                // eigentlich kritische Alarm-Erstellung nie beeintraechtigen.
+                                try {
+                                    shiftChangeNotifier.notifyCreated(newAlarm)
+                                } catch (e: Exception) {
+                                    Logger.w(LogTags.ALARM, "Schicht-Aenderungs-Notification (Create) fehlgeschlagen", e)
+                                }
                             }
                         }
                     }
@@ -384,10 +659,25 @@ class AlarmUseCase @Inject constructor(
                     skippedCount++
                     Logger.e(
                         LogTags.ALARM,
-                        "❌ SYNC: Alarm fuer Event $eventId (${newAlarm.shiftName}) uebersprungen - Rest des Syncs laeuft weiter",
+                        "❌ SYNC: Alarm fuer Event $eventId (${frischerAlarm.shiftName}) uebersprungen - Rest des Syncs laeuft weiter",
                         e
                     )
                   }
+                }
+
+                // SICHTBAR BLEIBEN: ein neu eingelesener Feed vergibt allen Terminen neue Kennungen.
+                // Die Wecker bleiben davon unberuehrt (genau dafuer ist die Paarung da) und der
+                // Nutzer bekommt keine Meldung - aber ein DEFEKTER Feed saehe von aussen genauso
+                // aus. WARN, damit die Zeile auch im Release-Log landet: ohne sie verschwindet ein
+                // Feed-Defekt lautlos, und beim naechsten Mal sucht niemand mehr danach.
+                if (neueKennungCount > 0) {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "🔀 SYNC: $neueKennungCount Wecker haben eine neue Kalender-Kennung bekommen " +
+                            "(Kalender-Feed neu eingelesen) - ihre Wecker-Identitaet (id) bleibt " +
+                            "erhalten. Ob daneben etwas Echtes anders war, sagen die Update-Zeilen " +
+                            "darueber; ohne solche gab es weder ein Neustellen noch eine Meldung"
+                    )
                 }
 
                 // "complete" nur, wenn wirklich alles durchlief - sonst behauptet die Abschlusszeile
@@ -401,9 +691,24 @@ class AlarmUseCase @Inject constructor(
                         "⚠️ SYNC: Intelligent synchronization UNVOLLSTAENDIG ($skippedCount Event(s) uebersprungen) - "
                     }) +
                     "Created: $createdCount, Updated: $updatedCount, Deleted: $deletedCount, " +
-                    "Total: ${resultAlarms.size} alarms"
+                    "Neue-Kennung: $neueKennungCount, Total: ${resultAlarms.size} alarms"
                 )
-                
+
+                // Bezugspunkt NUR nach einem vollstaendigen Lauf fortschreiben. Wurde auch nur ein
+                // Event uebersprungen (oder hat die Schleife per Exception/Cancellation
+                // abgebrochen - dann kommt der Code hier gar nicht an), bleibt der alte Wert
+                // stehen. Der Merker ist eine BEHAUPTUNG ("bis hierhin haben wir alles gesehen und
+                // verarbeitet"), und die darf ein unfertiger Lauf nicht aufstellen: sonst gilt ein
+                // Horizont als abgearbeitet, dessen Events nie verarbeitet wurden.
+                //
+                // Die Folge eines stehen gebliebenen Merkers ist ein FRUEHERER Vergleichspunkt,
+                // also eher "Horizont-Eintritt" - genau dieselbe Lage wie "die App war eine Woche
+                // nicht dran", die laut Anforderung still bleiben soll. Sie bleibt eng begrenzt,
+                // weil der naechste vollstaendige Lauf sie sofort aufloest.
+                if (skippedCount == 0) {
+                    persistSyncHorizon(syncStartedAt)
+                }
+
                 resultAlarms
             }
         }
@@ -607,11 +912,17 @@ class AlarmUseCase @Inject constructor(
         // "Manueller Alarm aktiv" mit Uhrzeit - im AlarmManager stand nichts. Ein stummer Wecker
         // MIT Anzeige ist die gefaehrlichste Variante, also muss der Aufrufer das sehen koennen.
         // Der Skip-Merker selbst bleibt unangetastet: er laeuft weiterhin ZEITBASIERT ab.
+        //
+        // Erkennung ueber [istUebersprungen] - DIESELBE wie das Gate in syncAlarms(). Beide
+        // muessen denselben Wecker erkennen, sonst haelt nur die Haelfte: das Gate liesse ihn
+        // durch und dieser Backstop wuerde ihn abweisen (oder umgekehrt), und der Nutzer bekaeme
+        // je nach Weg einen stummen oder einen doch klingelnden Wecker.
         val skipState = alarmSkipUseCase.getSkipStatus().getOrNull()
-        if (skipState?.isNextAlarmSkipped == true && skipState.skippedAlarmId == alarmInfo.id) {
+        if (istUebersprungen(skipState, alarmInfo)) {
             Logger.business(
                 LogTags.ALARM,
-                "⏭️ SCHEDULE: Alarm ${alarmInfo.id} (${alarmInfo.shiftName}) ist als uebersprungen markiert - kein System-Alarm"
+                "⏭️ SCHEDULE: Alarm ${alarmInfo.id} (${alarmInfo.shiftName}, ${alarmInfo.formattedTime}) " +
+                    "ist als uebersprungen markiert - kein System-Alarm"
             )
             return Result.failure(SkippedAlarmNotArmedException(alarmInfo.id, alarmInfo.shiftName))
         }
@@ -697,6 +1008,109 @@ class AlarmUseCase @Inject constructor(
         } catch (e: Exception) {
             Logger.w(LogTags.ALARM, "Schichtspannen konnten nicht gespeichert werden - Dimmer/DND behalten den letzten Stand", e)
         }
+    }
+
+    /**
+     * Schreibt den Bezugspunkt fuer die Horizont-Unterscheidung fort ([SyncHorizonStore]).
+     *
+     * **Eigenes try/catch, bewusst nicht-fatal** - dieselbe Haltung wie bei [persistShiftSpans] und
+     * den [ShiftChangeNotifier]-Aufrufen: ein Nebenschauplatz darf die kritische
+     * Alarm-Synchronisation nie abbrechen oder rueckgaengig machen. Scheitert das Schreiben, bleibt
+     * der alte Bezugspunkt stehen; Folge ist hoechstens eine ueberfluessige Meldung beim naechsten
+     * Randtag - nie eine verschwiegene Aenderung.
+     *
+     * [CancellationException] wird weitergeworfen (kein Schreibfehler, sondern das Ende der
+     * umgebenden Coroutine).
+     */
+    private suspend fun persistSyncHorizon(syncStartedAt: Long) {
+        try {
+            syncHorizonStore.merkeVollstaendigenSync(syncStartedAt)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.ALARM, "Sync-Horizont konnte nicht fortgeschrieben werden", e)
+        }
+    }
+
+    /**
+     * Ein Termin der AKTUELLEN Kalenderlesung, so wie ihn der Delta-Sync braucht.
+     *
+     * [neuerAlarm] ist `null`, wenn die Weckzeit dieses Termins bereits verstrichen ist. Solche
+     * Kandidaten werden trotzdem gefuehrt, weil die Paarung sie braucht: sonst gilt ein Termin,
+     * dessen Wecker heute frueh geklingelt hat, als "aus dem Kalender entfernt", sobald der Feed
+     * ihm eine neue Kennung gegeben hat.
+     */
+    private data class SyncKandidat(
+        val eventId: String,
+        val triggerTime: Long,
+        val shiftId: String,
+        val neuerAlarm: AlarmInfo?
+    )
+
+    /**
+     * Ordnet jedem Kandidaten der aktuellen Lesung hoechstens EINEN bestehenden Alarm zu.
+     *
+     * WARUM ES DIESE FUNKTION GIBT: `AlarmInfo.id` wird aus `calendarEvent.id.hashCode()`
+     * abgeleitet, und der Delta-Sync paarte bisher ausschliesslich ueber `eventId`. Der Dienstplan
+     * kommt aber aus einem ABONNIERTEN Kalender (TimeOffice-ICS-Feed): Google liest den alle paar
+     * Tage neu ein und vergibt dabei ALLEN Terminen neue Event-IDs. Am Geraet belegt (neun Tage
+     * Datei-Log): am 17.08. "Created 9 / Deleted 8", am 20.08. "Created 11 / Deleted 11", die
+     * Schnittmenge der Event-IDs vorher/nachher jeweils LEER - bei voellig unveraenderten
+     * Schichten, Namen und Weckzeiten. Folge waren 11 falsche "Schicht entfernt"- und 11 falsche
+     * "Neue Schicht erkannt"-Meldungen in EINEM Lauf, und - schwerer - ein Abbrechen und
+     * Neustellen saemtlicher Systemwecker: stirbt der kurzlebige Wartungs-Service mitten in dieser
+     * Sequenz (Low-Memory-Kill, Akku leer), fehlen Wecker.
+     *
+     * REIHENFOLGE, UND WARUM SIE ZWEI GETRENNTE RUNDEN BRAUCHT:
+     *  (a) gleiche Kalender-Kennung (`eventId`) - das bisherige Verhalten, unveraendert.
+     *  (b) sonst gleiche Weckzeit UND gleiche Schicht - "derselbe Wecker, neue Kennung".
+     *
+     * Runde (a) MUSS komplett durchlaufen, bevor Runde (b) beginnt. Sonst koennte ein frueher
+     * einsortierter Kandidat ueber (b) genau den Alarm greifen, den ein spaeterer Kandidat exakt
+     * ueber seine Kennung getroffen haette - und die Kennungs-Zuordnung, die eindeutig IST, waere
+     * einer blossen Aehnlichkeit geopfert.
+     *
+     * Jeder bestehende Alarm wird HOECHSTENS EINMAL vergeben (`offen.remove`). Liegen zwei gleiche
+     * Schichten mit gleicher Weckzeit im Bestand (Doppelung im Feed), bekommt jeder Kandidat einen
+     * eigenen - keiner geht verloren, keiner wird doppelt gepaart.
+     *
+     * MANUELLE ALARME (leere `eventId`) NEHMEN NIE TEIL. Sie sind die einzigen, die sich nicht aus
+     * dem Kalender rekonstruieren lassen; ein Kalender-Termin darf sie sich nicht aneignen.
+     *
+     * @return Kandidaten-`eventId` -> bestehender Alarm.
+     */
+    private fun paareBestehendeAlarme(
+        existingAlarms: List<AlarmInfo>,
+        kandidaten: List<SyncKandidat>
+    ): Map<String, AlarmInfo> {
+        val offen = existingAlarms.filter { it.eventId.isNotEmpty() }.toMutableList()
+        val ergebnis = mutableMapOf<String, AlarmInfo>()
+
+        // Runde (a): gleiche Kalender-Kennung.
+        for (kandidat in kandidaten) {
+            val treffer = offen.firstOrNull { it.eventId == kandidat.eventId } ?: continue
+            offen.remove(treffer)
+            ergebnis[kandidat.eventId] = treffer
+        }
+
+        // Runde (b): gleiche Weckzeit UND gleiche Schicht.
+        // Kandidaten mit einem noch bevorstehenden Wecker zuerst: haetten ein abgelaufener und ein
+        // lebender Kandidat dieselbe Weckzeit und dieselbe Schicht, waere es Verschwendung, den
+        // einzigen passenden Alarm an den abgelaufenen zu geben (der ihn nur abraeumen wuerde),
+        // waehrend der lebende ihn neu anlegen muesste. `sortedBy` ist stabil, die uebrige
+        // Reihenfolge bleibt also die der Schichterkennung.
+        val nochOffeneKandidaten = kandidaten
+            .filter { it.eventId !in ergebnis }
+            .sortedBy { if (it.neuerAlarm != null) 0 else 1 }
+        for (kandidat in nochOffeneKandidaten) {
+            val treffer = offen.firstOrNull {
+                it.triggerTime == kandidat.triggerTime && it.shiftId == kandidat.shiftId
+            } ?: continue
+            offen.remove(treffer)
+            ergebnis[kandidat.eventId] = treffer
+        }
+
+        return ergebnis
     }
 
     private fun createAlarmFromShiftMatch(shiftMatch: ShiftMatch, eventId: String, eventChecksum: String): AlarmInfo {

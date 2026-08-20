@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -100,7 +101,8 @@ class Pruefrunde8SignaltrennungTest {
             mock<IAlarmSkipUseCase>(),
             mock<ShiftChangeNotifier>(),
             mock<MasterPausePrefs>(),
-            mock<ShiftSpanStore>()
+            mock<ShiftSpanStore>(),
+            FakeSyncHorizonStore()
         )
     }
 

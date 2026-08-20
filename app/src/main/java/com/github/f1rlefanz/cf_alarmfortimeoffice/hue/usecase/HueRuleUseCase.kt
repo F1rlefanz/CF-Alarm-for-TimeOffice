@@ -739,6 +739,110 @@ class HueRuleUseCase @Inject constructor(
     }
 
     /**
+     * Zieht die Regeln einer UMBENANNTEN Schichtdefinition auf den neuen Namen nach.
+     * Liefert die Anzahl der geänderten Regeln, oder einen Fehlschlag.
+     *
+     * WARUM ES DAS GEBEN MUSS (Prüfrunde 8, Befund 2): [HueSchedule.shiftPattern] bindet über den
+     * NAMEN der Definition (siehe den Kommentar in [findApplicableRules]), nicht über deren
+     * stabile `id` — der Schichtname ist aber frei änderbar, `ShiftEditDialog` behält dabei die
+     * `id`. Eine reine Beschriftungsänderung ("AD1" → "Abrufdienst") legte damit die Hue-Regel
+     * dieser Schicht lautlos still: [findApplicableRules] vergleicht gegen
+     * `shift.shiftDefinition.name` und findet nichts mehr, das Licht geht zur Weckzeit nicht an —
+     * während die Regelliste das Muster unverändert als aktiv anzeigt. Der
+     * Sonnenaufgangs-Zweig ([HueSunriseExecutor]) hängt am selben Vergleich und bricht mit.
+     *
+     * DAS UNIVERSALMUSTER BLEIBT UNBERÜHRT: [UNIVERSAL_SHIFT_PATTERN] meint „alle Schichten",
+     * keinen Namen. Mitziehen würde eine Regel, die für jede Schicht gilt, auf genau eine
+     * einschränken — der Nutzer verlöre das Licht bei allen übrigen. Deshalb der Ausschluss in
+     * [betrifftSchicht]. (Denselben Weg zu Ende gedacht: eine Schicht, die neu „ALL" heißen soll,
+     * wird gar nicht erst zum Nachziehen angemeldet — siehe `planeSchichtUmbenennungen` im ShiftViewModel.)
+     *
+     * `ignoreCase` genau wie beim Suchen — der Vergleich dort ist groß-/kleinschreibungsblind.
+     *
+     * IDEMPOTENT: Liefert die Transformation eine unveränderte Liste, schreibt
+     * `updateScheduleRules` nichts (siehe [IHueConfigRepository.updateScheduleRules]).
+     *
+     * BEWUSST NICHT IN [IHueRuleUseCase]: Der Aufrufer ist der Schicht-Editor, nicht der
+     * Hue-Bereich. Wandert der Nachzug später an eine zweite Stelle, gehört die Signatur ins
+     * Interface — solange es genau einen Aufrufer gibt, wäre das nur zusätzliche Fläche.
+     */
+    suspend fun renameShiftPattern(oldName: String, newName: String): Result<Int> {
+        if (oldName.isBlank() || newName.isBlank()) {
+            return Result.failure(
+                IllegalArgumentException(
+                    "Leerer Schichtname - Hue-Regelmuster wird NICHT nachgezogen ('$oldName' -> '$newName')"
+                )
+            )
+        }
+        // Rein groß-/kleinschreibungsbedingte Änderungen brechen das Matching nicht.
+        if (oldName.equals(newName, ignoreCase = true)) return Result.success(0)
+
+        var migrated = 0
+        val write = configRepository.updateScheduleRules { current ->
+            // Zurücksetzen, falls die Transaktion den Block je erneut ausführt - sonst zählte
+            // ein Wiederholungslauf doppelt.
+            migrated = 0
+            current.map { rule ->
+                if (rule.betrifftSchicht(oldName)) {
+                    migrated++
+                    rule.copy(shiftPattern = newName)
+                } else {
+                    rule
+                }
+            }
+        }
+
+        write.exceptionOrNull()?.let { error ->
+            // WARN+ landet auch im Release-Log: eine nicht nachgezogene Regel ist Licht, das am
+            // Wecktag nicht mehr angeht.
+            Logger.e(
+                LogTags.HUE_USECASE,
+                "❌ Hue-Regelmuster konnte nicht von '$oldName' auf '$newName' nachgezogen werden - " +
+                    "Regeln bleiben unveraendert",
+                error
+            )
+            return Result.failure(error)
+        }
+
+        if (migrated == 0) return Result.success(0)
+
+        // NACHPRÜFEN statt annehmen: `updateScheduleRules` schreibt in EINER Transaktion, aber der
+        // Erfolg sagt nur "geschrieben". Bleibt danach noch ein Altname stehen, hat der Nachzug
+        // nicht gegriffen, und die Umbenennung darf sich nicht als vollständig ausgeben.
+        val nachher = getAllRules().getOrElse { error ->
+            Logger.e(
+                LogTags.HUE_USECASE,
+                "❌ Hue-Regeln nach dem Nachziehen nicht lesbar - Ergebnis unbestaetigt ('$oldName' -> '$newName')",
+                error
+            )
+            return Result.failure(error)
+        }
+        val nochAlt = nachher.count { it.betrifftSchicht(oldName) }
+        if (nochAlt > 0) {
+            val fehler = IllegalStateException(
+                "Hue-Regelmuster NICHT vollstaendig nachgezogen ('$oldName' -> '$newName'): " +
+                    "$nochAlt Regel(n) tragen weiter den Altnamen"
+            )
+            Logger.e(LogTags.HUE_USECASE, fehler.message ?: "", fehler)
+            return Result.failure(fehler)
+        }
+
+        Logger.business(
+            LogTags.HUE_USECASE,
+            "🔁 $migrated Hue-Regel(n) von '$oldName' auf '$newName' nachgezogen"
+        )
+        return Result.success(migrated)
+    }
+
+    /**
+     * Trägt diese Regel den Schichtnamen [shiftName]? Das Universalmuster zählt bewusst NIE mit -
+     * es meint keinen Namen (siehe [renameShiftPattern]).
+     */
+    private fun HueSchedule.betrifftSchicht(shiftName: String): Boolean =
+        !shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true) &&
+            shiftPattern.equals(shiftName, ignoreCase = true)
+
+    /**
      * Generates a unique rule ID
      */
     private fun generateRuleId(): String {

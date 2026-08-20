@@ -67,6 +67,16 @@ fun ShiftEditDialog(
     var isEnabled by remember { mutableStateOf(shift?.isEnabled ?: true) }
     var isSilent by remember { mutableStateOf(shift?.isSilent ?: false) }
 
+    /**
+     * Wird hier gerade eine BESTEHENDE Schicht umbenannt? Massstab ist der Vergleich, den die
+     * Regelsuche selbst anlegt (`equals(ignoreCase = true)`) - eine reine Schreibweisenaenderung
+     * bricht dort nichts und braucht deshalb auch keinen Hinweis. Getrimmt, weil genau das
+     * gespeichert wird.
+     */
+    val istUmbenennung = shift != null &&
+        name.trim().isNotBlank() &&
+        !name.trim().equals(shift.name, ignoreCase = true)
+
     // Time formatter (siehe Hinweis oben: ANZEIGE-Format, nicht das Persistenzformat)
     val timeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
     
@@ -114,7 +124,28 @@ fun ShiftEditDialog(
                             label = { Text("Schichtname") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            isError = name.isBlank()
+                            isError = name.isBlank(),
+                            // Umbenennen ist keine reine Beschriftungsaenderung: Dimmer- und
+                            // Hue-Regeln merken sich die Schicht ueber ihren NAMEN. Bis
+                            // Pruefrunde 8 legte eine Umbenennung beide lautlos stumm - das
+                            // Licht ging zur Weckzeit nicht mehr an, das Dimm-Fenster fiel weg,
+                            // waehrend die Regellisten sie weiter als aktiv zeigten. Jetzt
+                            // werden sie beim Speichern mitgezogen; dieser Hinweis sagt es an
+                            // der Stelle, an der es passiert. Scheitert der Nachzug, meldet die
+                            // App das anschliessend ausdruecklich (ShiftViewModel).
+                            supportingText = if (istUmbenennung) {
+                                {
+                                    Text(
+                                        text = "Dimmer- und Hue-Regeln, die auf \"${shift?.name}\" " +
+                                            "zeigen, werden beim Speichern auf den neuen Namen " +
+                                            "mitgezogen.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                null
+                            }
                         )
                     }
                     

@@ -301,9 +301,14 @@ class DimScheduleUseCase @Inject constructor(
             }
         }
 
-        // 2. Regeln: pro Kalendertag die passende Regel (Anker-Semantik in
+        // 2. Regeln: pro Kalendertag GENAU eine Regel (Anker-Semantik in
         //    DimWindowResolver.buildRuleSpans). CLOCK↔CLOCK = jede Nacht (lückenlos, ermöglicht
         //    „immer 22–7 außer ND"), ALARM/SHIFT_END = schicht-relativ, leere Fensterliste = ND-Ausnahme.
+        //    Welche Regel das ist, entscheidet der Resolver seit Pruefrunde 8 aus ALLEN Schichten
+        //    des Tages: `ruleForShift` wird pro Schicht gefragt (an einem Tag mit Fruehdienst UND
+        //    Rufbereitschaft wurde die zweite Regel vorher nie gefragt). Unterdrueckung schlaegt
+        //    dabei alles, und zwei widerspruechliche spezifische Regeln unterdruecken ebenfalls -
+        //    nicht dimmen ist die harmlose Richtung.
         val rules = if (toggles.rulesEnabled) dimRuleUseCase.getAllRules() else emptyList()
         val rulesActive = toggles.rulesEnabled && rules.any { it.enabled }
         // `triggerTime` MUSS hier die urspruenglich berechnete Weckzeit sein, auch wenn sie
@@ -327,6 +332,9 @@ class DimScheduleUseCase @Inject constructor(
         //    Regel angelegt werden muss. Ausgeschlossen sind: explizit vom Nutzer markierte
         //    Schichten (Toggle an der Karte) UND - falls "Regeln" aktiv ist - jeder Tag, den Punkt 2
         //    ohnehin schon abdeckt (rulesActive steuert dieselbe Ausschliesslichkeit wie dort).
+        //    Dieses Praedikat wird vom Resolver seit Pruefrunde 8 fuer JEDE Schicht des Tages
+        //    aufgerufen; ein Treffer schliesst den ganzen Tag aus. Die Signatur bleibt bewusst
+        //    "ein Name je Aufruf" - die Buendelung gehoert in den Resolver, nicht hierher.
         if (toggles.nightDefaultEnabled) {
             val excludedShifts = prefs.nightDefaultExcludedShiftsNow()
             out += DimWindowResolver.buildDefaultNightSpans(

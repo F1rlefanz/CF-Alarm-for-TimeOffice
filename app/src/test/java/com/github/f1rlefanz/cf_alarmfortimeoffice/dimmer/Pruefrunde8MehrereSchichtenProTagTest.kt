@@ -1,0 +1,249 @@
+package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+
+/**
+ * Prüfrunde 8: **Dimmer und DND kannten pro Kalendertag nur EINE Schicht.**
+ *
+ * [DimWindowResolver.buildRuleSpans] und [DimWindowResolver.buildDefaultNightSpans] falteten die
+ * Schichtliste zuvor mit einer `HashMap<LocalDate, AlarmSlot>` („first wins") auf höchstens einen
+ * Eintrag je Kalendertag zusammen. Weil die Eingabe nach Weckzeit sortiert ankommt (der
+ * `ShiftSpanStore` erbt die Reihenfolge aus `ShiftRecognitionEngine.performRecognition()`), gewann
+ * immer die früheste Schicht — jede weitere existierte für Regelauswahl und Nacht-Ausnahme nicht.
+ *
+ * Praxisfall: Frühdienst plus anschließende Rufbereitschaft am selben Tag. Die für die
+ * Rufbereitschaft angelegte Dimm-Regel bzw. der an der Nacht-Standard-Karte gesetzte Ausschluss
+ * wurde nie gefragt — die Oberfläche zeigte beides als aktiv, gewirkt hat es nicht. Über
+ * DND-Modus „folgt dem Dimmer" schaltete zusätzlich „Nicht stören" in genau der Nacht ein, in der
+ * Erreichbarkeit der Zweck des Dienstes ist.
+ *
+ * Deterministisch gegen UTC, wie [DimWindowResolverTest].
+ */
+class Pruefrunde8MehrereSchichtenProTagTest {
+
+    private val zone: ZoneId = ZoneId.of("UTC")
+
+    private fun ep(y: Int, mo: Int, d: Int, h: Int, mi: Int): Long =
+        LocalDateTime.of(y, mo, d, h, mi).atZone(zone).toInstant().toEpochMilli()
+
+    /** Regelauswahl exakt wie `DimRuleUseCase.findRuleForShift` (erster Treffer, sonst UNIVERSAL). */
+    private fun forShift(rules: List<DimRule>): (String) -> DimRule? = { name ->
+        val en = rules.filter { it.enabled }
+        en.firstOrNull { it.shiftPattern.equals(name, ignoreCase = true) }
+            ?: en.firstOrNull { it.shiftPattern == DimRule.SHIFT_UNIVERSAL }
+    }
+
+    /** Regelauswahl exakt wie `DimRuleUseCase.findRuleForFreeDay`. */
+    private fun forFree(rules: List<DimRule>): () -> DimRule? = {
+        val en = rules.filter { it.enabled }
+        en.firstOrNull { it.shiftPattern == DimRule.SHIFT_FREE }
+            ?: en.firstOrNull { it.shiftPattern == DimRule.SHIFT_UNIVERSAL }
+    }
+
+    private fun nachtfenster(von: Int, bis: Int) = DimWindow(
+        startAnchor = DimAnchor.CLOCK, startClockMinutes = von * 60,
+        endAnchor = DimAnchor.CLOCK, endClockMinutes = bis * 60
+    )
+
+    // --- buildRuleSpans ---
+
+    @Test
+    fun `Regel der ZWEITEN Schicht des Tages wird gefunden und an IHRER Weckzeit verankert`() {
+        // Nur die Rufbereitschaft hat eine Regel, kein UNIVERSAL. Vor dem Fix gewann der frühere
+        // Frühdienst-Slot, `ruleForShift("Fruehdienst")` lieferte null - es entstand KEIN Fenster.
+        val ruf = DimRule(
+            id = "ruf", name = "Rufbereitschaft", shiftPattern = "Rufbereitschaft", enabled = true,
+            windows = listOf(
+                DimWindow(
+                    startAnchor = DimAnchor.ALARM, startOffsetMinutes = -120,
+                    endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0
+                )
+            ),
+            strength = 70, warmth = 30
+        )
+        val rules = listOf(ruf)
+        val today = LocalDate.of(2026, 1, 13)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", ep(2026, 1, 13, 14, 0)),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", ep(2026, 1, 13, 22, 0))
+        )
+
+        val spans = DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+
+        assertEquals(1, spans.size)
+        // Verankert an der Rufbereitschaft (16:00), nicht am Frühdienst - die Anker einer Regel
+        // meinen die Schicht, zu der die Regel gehört.
+        assertEquals(ep(2026, 1, 13, 14, 0), spans[0].range.first)
+        assertEquals(ep(2026, 1, 13, 16, 0), spans[0].range.last)
+        assertEquals(70, spans[0].strength)
+    }
+
+    @Test
+    fun `Unterdrueckung durch die zweite Schicht schlaegt die UNIVERSAL-Nacht`() {
+        // "immer 22-7 dimmen, außer wenn ich erreichbar sein muss": UNIVERSAL trägt jede Nacht,
+        // die leere Fensterliste der Rufbereitschaft nimmt diesen Tag heraus. Vor dem Fix gewann
+        // der Frühdienst und damit UNIVERSAL - es wurde ausgerechnet in der Bereitschaftsnacht
+        // gedimmt (und in DND-Modus 1 zusätzlich "Nicht stören" gesetzt).
+        val universal = DimRule(
+            id = "u", name = "Nacht", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
+            windows = listOf(nachtfenster(22, 7))
+        )
+        val ruf = DimRule(
+            id = "r", name = "Rufbereitschaft frei", shiftPattern = "Rufbereitschaft",
+            enabled = true, windows = emptyList()
+        )
+        val rules = listOf(universal, ruf)
+        val today = LocalDate.of(2026, 1, 13)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", 0)
+        )
+
+        val spans = DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+
+        // Die Nacht des 13.01. bleibt hell.
+        assertTrue(spans.none { ep(2026, 1, 13, 23, 30) in it.range })
+    }
+
+    @Test
+    fun `Zwei verschiedene spezifische Regeln an einem Tag dimmen NICHT`() {
+        // Widerspruch: beide Fensterlisten zu vereinigen wäre additiv und bräche die Zusicherung
+        // "pro Kalendertag GENAU eine Regel"; eine davon still zu wählen ist genau der behobene
+        // Fehler. Also die harmlose Richtung - hell.
+        val frueh = DimRule(
+            id = "f", name = "Frühdienst", shiftPattern = "Fruehdienst", enabled = true,
+            windows = listOf(nachtfenster(22, 7))
+        )
+        val ruf = DimRule(
+            id = "r", name = "Rufbereitschaft", shiftPattern = "Rufbereitschaft", enabled = true,
+            windows = listOf(nachtfenster(20, 23))
+        )
+        val rules = listOf(frueh, ruf)
+        val today = LocalDate.of(2026, 1, 13)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", 0)
+        )
+
+        val spans = DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+
+        assertTrue(spans.none { ep(2026, 1, 13, 22, 30) in it.range })
+        assertTrue(spans.none { ep(2026, 1, 13, 21, 0) in it.range })
+    }
+
+    @Test
+    fun `Die Eingabereihenfolge der Spannen aendert das Ergebnis nicht mehr`() {
+        // Die Reihenfolge kam bisher aus der Sortierung nach Weckzeit und entschied still darüber,
+        // welche Schicht überlebt. Sie darf keine Rolle mehr spielen: der Resolver sortiert selbst.
+        val universal = DimRule(
+            id = "u", name = "Nacht", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
+            windows = listOf(nachtfenster(22, 7))
+        )
+        val ruf = DimRule(
+            id = "r", name = "Rufbereitschaft", shiftPattern = "Rufbereitschaft", enabled = true,
+            windows = listOf(nachtfenster(20, 23)), strength = 80
+        )
+        val rules = listOf(universal, ruf)
+        val today = LocalDate.of(2026, 1, 13)
+        val frueh = DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0)
+        val bereit = DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", 0)
+
+        val vorwaerts = DimWindowResolver.buildRuleSpans(
+            alarms = listOf(frueh, bereit), horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+        val rueckwaerts = DimWindowResolver.buildRuleSpans(
+            alarms = listOf(bereit, frueh), horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+
+        assertEquals(vorwaerts, rueckwaerts)
+        // Und zwar auf der spezifischen Regel: sie überschreibt UNIVERSAL komplett.
+        assertTrue(vorwaerts.any { it.strength == 80 && ep(2026, 1, 13, 21, 0) in it.range })
+    }
+
+    @Test
+    fun `Ein Tag mit nur EINER Schicht verhaelt sich unveraendert`() {
+        // Regressionsschutz: der Fix darf den Normalfall nicht anfassen.
+        val universal = DimRule(
+            id = "u", name = "Nacht", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
+            windows = listOf(nachtfenster(22, 7))
+        )
+        val rules = listOf(universal)
+        val today = LocalDate.of(2026, 1, 13)
+        val alarms = listOf(DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0))
+
+        val spans = DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+
+        assertTrue(spans.any { ep(2026, 1, 13, 23, 30) in it.range })
+    }
+
+    // --- buildDefaultNightSpans ---
+
+    @Test
+    fun `Ausschluss der zweiten Schicht nimmt den ganzen Kalendertag vom Nacht-Standard aus`() {
+        // Der Nutzer hat an der Nacht-Standard-Karte "Rufbereitschaft" ausgeschlossen. Vor dem Fix
+        // gewann der frühere Frühdienst-Slot, isExcluded("Fruehdienst") war false - der Ausschluss
+        // blieb wirkungslos, obwohl die Karte ihn als gesetzt anzeigte.
+        val today = LocalDate.of(2026, 1, 12)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", 0)
+        )
+
+        val spans = DimWindowResolver.buildDefaultNightSpans(
+            alarms = alarms, horizonDays = 2, today = today, zone = zone,
+            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
+            strength = 60, warmth = 40,
+            isExcluded = { name -> name == "Rufbereitschaft" }
+        )
+
+        // Der Abend des Bereitschaftstags bleibt hell - das ist der Kern des Ausschlusses.
+        assertTrue(spans.none { ep(2026, 1, 13, 23, 0) in it.range })
+        // Und die Nacht DAVOR deckt der Vorabend als freier Tag ab (bis zur festen Morgenuhrzeit,
+        // nicht mehr bis zur Weckzeit der ausgeschlossenen Schicht): dieselbe Mechanik, mit der der
+        // Resolver schon bisher "freier Tag vor ausgeschlossener Schicht" abfängt.
+        assertTrue(spans.any { ep(2026, 1, 13, 6, 0) in it.range })
+    }
+
+    @Test
+    fun `Nacht-Standard ohne Ausschluss endet weiterhin an der FRUEHESTEN Weckzeit des Tages`() {
+        // Die Nacht davor endet am ersten Wecken, nicht am zweiten - unverändert, jetzt aber als
+        // ausdrücklich sortierte Wahl statt als Nebeneffekt der Eingabereihenfolge.
+        val today = LocalDate.of(2026, 1, 12)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", 0),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0)
+        )
+
+        val spans = DimWindowResolver.buildDefaultNightSpans(
+            alarms = alarms, horizonDays = 2, today = today, zone = zone,
+            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
+            strength = 60, warmth = 40,
+            isExcluded = { false }
+        )
+
+        val rueckwaerts = spans.filter { it.range.last == ep(2026, 1, 13, 5, 0) }
+        assertEquals(1, rueckwaerts.size)
+        assertEquals(ep(2026, 1, 12, 22, 0), rueckwaerts[0].range.first)
+        // Kein zweites, an der späteren Schicht verankertes Fenster - nicht stapeln.
+        assertTrue(spans.none { it.range.last == ep(2026, 1, 13, 16, 0) })
+    }
+}

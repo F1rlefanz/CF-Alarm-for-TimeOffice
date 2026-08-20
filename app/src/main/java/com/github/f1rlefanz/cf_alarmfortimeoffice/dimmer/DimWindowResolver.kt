@@ -119,6 +119,35 @@ object DimWindowResolver {
      *   Arbeitsnächte heraus.
      * - **ALARM/SHIFT_END** = schicht-relativ (Wind-down / ND-Tagschlaf) → braucht einen Alarm an
      *   diesem Datum, sonst übersprungen.
+     *
+     * **ALLE Schichten eines Kalendertags werden ausgewertet, nicht nur die frueheste** (Fix
+     * Pruefrunde 8). Bis dahin faltete eine `HashMap<LocalDate, AlarmSlot>` mit "first wins" den
+     * Tag auf einen einzigen Slot zusammen; weil die Eingabeliste nach Weckzeit sortiert ankommt,
+     * gewann immer die frueheste Schicht. An einem Tag mit Fruehdienst UND anschliessender
+     * Rufbereitschaft - im Pflege-/Klinikbetrieb der Regelfall - wurde die Rufbereitschaft-Regel
+     * dadurch NIE gefragt: die Regelliste zeigte sie als aktiv, gewirkt hat sie nicht, und ueber
+     * DND-Modus "folgt dem Dimmer" schaltete zusaetzlich "Nicht stoeren" in genau der Nacht ein,
+     * in der Erreichbarkeit der Zweck des Dienstes ist. Auswahl unter mehreren Schichten:
+     *
+     * 1. **Unterdrueckung gewinnt.** Findet auch nur EINE Schicht des Tages eine Regel mit leerer
+     *    Fensterliste, wird an diesem Tag nicht gedimmt (Nachtdienst-Ausnahme). Nicht zu dimmen
+     *    ist die harmlose Richtung - "im Zweifel klingeln und hell".
+     * 2. **Spezifisch schlaegt UNIVERSAL** - unveraendert die Invariante "eine spezifische Regel
+     *    ueberschreibt UNIVERSAL komplett, nicht additiv", nur jetzt ueber alle Schichten des
+     *    Tages gebildet statt ueber eine zufaellig ausgewaehlte.
+     * 3. **Widersprechen sich zwei VERSCHIEDENE spezifische Regeln an einem Tag, wird ebenfalls
+     *    nicht gedimmt.** Beide Fensterlisten zu vereinigen wuerde die Invariante "pro Kalendertag
+     *    GENAU eine Regel" aufweichen (eine spezifische Regel ueberschreibt, sie ergaenzt nicht);
+     *    stillschweigend eine der beiden zu waehlen waere genau der Fehler, der hier behoben wird.
+     * 4. Die gewaehlte Regel wird an der Schicht VERANKERT, zu der sie gehoert - ihre ALARM-/
+     *    SHIFT_END-Anker meinen diese Schicht, nicht irgendeine andere des Tages. Treffen mehrere
+     *    Schichten dieselbe Regel, gilt die mit der fruehesten Weckzeit: ausdruecklich sortiert
+     *    (siehe [slotsByDate]), nicht mehr als stiller Nebeneffekt der Eingabereihenfolge.
+     *
+     * Die Fenster-IDENTITAET (`range.last` + `strength`, siehe [isOverrideStale]) bleibt damit
+     * stabil: pro Kalendertag entsteht weiterhin genau EINE Regel-Quelle, und ihre Auswahl haengt
+     * nur an Daten, nicht an der Listenreihenfolge - ein laufendes Fenster kippt also nicht mitten
+     * in der Nacht auf einen anderen Anker oder wird doppelt erzeugt.
      */
     fun buildRuleSpans(
         alarms: List<AlarmSlot>,
@@ -128,21 +157,48 @@ object DimWindowResolver {
         ruleForShift: (String) -> DimRule?,
         ruleForFreeDay: () -> DimRule?,
     ): List<DimSpan> {
-        val alarmByDate = HashMap<LocalDate, AlarmSlot>()
-        for (a in alarms) {
-            val d = Instant.ofEpochMilli(a.triggerTime).atZone(zone).toLocalDate()
-            if (!alarmByDate.containsKey(d)) alarmByDate[d] = a
-        }
+        val byDate = slotsByDate(alarms, zone)
         val out = mutableListOf<DimSpan>()
         // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): ein CLOCK<->CLOCK-Fenster
         // vom Vorabend gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
         for (i in -LOOKBACK_DAYS until horizonDays.toLong()) {
             val date = today.plusDays(i)
-            val alarm = alarmByDate[date]
-            val rule = if (alarm != null) ruleForShift(alarm.shiftName) else ruleForFreeDay()
-            rule ?: continue
+            val shifts = byDate[date].orEmpty()
+
+            if (shifts.isEmpty()) {
+                // Freier Tag - unveraendert: FREI schlaegt UNIVERSAL, sonst nichts.
+                val freeRule = ruleForFreeDay() ?: continue
+                for (w in freeRule.windows) {
+                    resolveWindowForDate(w, date, null, zone)?.let { out += DimSpan(it, freeRule.strength, freeRule.warmth) }
+                }
+                continue
+            }
+
+            // JEDE Schicht des Tages wird gefragt (siehe KDoc Punkt 1-4), nicht nur die frueheste.
+            val treffer: List<Pair<AlarmSlot, DimRule>> =
+                shifts.mapNotNull { slot -> ruleForShift(slot.shiftName)?.let { slot to it } }
+
+            // (1) Eine gefundene Regel OHNE Fenster ist die Nachtdienst-Ausnahme und gilt fuer den
+            // ganzen Tag. Sie muss auch dann greifen, wenn eine ANDERE Schicht desselben Tages eine
+            // dimmende Regel traegt - sonst dimmt ausgerechnet die Nacht, in der der Nutzer
+            // ausdruecklich wach sein will. Nicht dimmen ist die harmlose Richtung.
+            if (treffer.any { (_, r) -> r.windows.isEmpty() }) continue
+
+            // (2) Spezifische Regeln verdraengen UNIVERSAL komplett (bestehende Invariante).
+            val spezifisch = treffer.filter { (_, r) -> r.shiftPattern != DimRule.SHIFT_UNIVERSAL }
+            val massgeblich = spezifisch.ifEmpty { treffer }
+            if (massgeblich.isEmpty()) continue
+
+            // (3) Zwei VERSCHIEDENE spezifische Regeln an einem Tag: nicht dimmen. Ein Zusammenlegen
+            // waere additiv und damit ein Bruch der Zusicherung "pro Kalendertag GENAU eine Regel";
+            // eine davon still zu waehlen ist genau der behobene Fehler.
+            if (massgeblich.distinctBy { (_, r) -> r.id }.size > 1) continue
+
+            // (4) Anker = die Schicht, zu der die gewaehlte Regel gehoert; bei mehreren Schichten
+            // mit derselben Regel die mit der fruehesten Weckzeit (deterministisch vorsortiert).
+            val (anker, rule) = massgeblich.first()
             for (w in rule.windows) {
-                resolveWindowForDate(w, date, alarm, zone)?.let { out += DimSpan(it, rule.strength, rule.warmth) }
+                resolveWindowForDate(w, date, anker, zone)?.let { out += DimSpan(it, rule.strength, rule.warmth) }
             }
         }
         return out
@@ -182,6 +238,21 @@ object DimWindowResolver {
      * spaeter ueber den Ausschluss-Pfad zurueck (freier Tag vor einer ausgeschlossenen Schicht),
      * seither deckt Punkt 2 auch diesen Fall ab. Siehe `DimWindowResolverTest` fuer beide
      * Regressionsfaelle.
+     *
+     * **[isExcluded] wird ueber ALLE Schichten des Kalendertags gefragt, nicht nur ueber die
+     * fruehesten** (Fix Pruefrunde 8, dieselbe Ursache wie in [buildRuleSpans]): der Ausschluss
+     * ist von jeher TAGES-granular - er nimmt sowohl das Rueckwaerts- als auch das
+     * Vorwaerts-Fenster dieses Datums heraus. Solange nur die frueheste Schicht gefragt wurde, war
+     * ein an der Nacht-Standard-Karte gesetzter Ausschluss fuer die ZWEITE Schicht des Tages
+     * (typisch: Rufbereitschaft nach dem Fruehdienst) wirkungslos, obwohl die Oberflaeche ihn als
+     * gesetzt anzeigte. Deshalb gilt jetzt: **ein Ausschluss irgendeiner Schicht des Tages
+     * schliesst den ganzen Tag aus** - Ausschluss heisst "hier nicht dimmen", und nicht zu dimmen
+     * ist die harmlose Richtung. Dieselbe Antwort gilt fuer [nextDayCoversTonight] weiter unten:
+     * der Folgetag deckt den heutigen Abend nur ab, wenn er ueberhaupt eine Schicht hat UND als
+     * Tag nicht ausgeschlossen ist - sonst faellt die gemeinsame Nacht durch beide Raster.
+     * Das Rueckwaerts-Fenster verankert weiterhin an der FRUEHESTEN Weckzeit des Tages: die Nacht
+     * davor endet am ersten Wecken, nicht am zweiten. Neu ist nur, dass diese Wahl ausdruecklich
+     * sortiert getroffen wird ([slotsByDate]) statt als Nebeneffekt der Eingabereihenfolge.
      */
     fun buildDefaultNightSpans(
         alarms: List<AlarmSlot>,
@@ -194,20 +265,17 @@ object DimWindowResolver {
         warmth: Int,
         isExcluded: (shiftName: String?) -> Boolean,
     ): List<DimSpan> {
-        val alarmByDate = HashMap<LocalDate, AlarmSlot>()
-        for (a in alarms) {
-            val d = Instant.ofEpochMilli(a.triggerTime).atZone(zone).toLocalDate()
-            if (!alarmByDate.containsKey(d)) alarmByDate[d] = a
-        }
+        val byDate = slotsByDate(alarms, zone)
         val out = mutableListOf<DimSpan>()
         // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): das Vorwaerts-Fenster des
         // Vorabends gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
         for (i in -LOOKBACK_DAYS until horizonDays.toLong()) {
             val date = today.plusDays(i)
-            val alarm = alarmByDate[date]
-            if (isExcluded(alarm?.shiftName)) continue
+            val shifts = byDate[date].orEmpty()
+            if (istTagAusgeschlossen(shifts, isExcluded)) continue
 
-            // Rueckwaerts: Nacht VOR dem heutigen Wecker, falls einer existiert.
+            // Rueckwaerts: Nacht VOR dem ERSTEN Wecker des Tages, falls einer existiert.
+            val alarm = shifts.firstOrNull()
             if (alarm != null) {
                 val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0)
                 resolveWindowForDate(window, date, alarm, zone)?.let { out += DimSpan(it, strength, warmth) }
@@ -219,8 +287,8 @@ object DimWindowResolver {
             // Schleifen-Iteration weiter oben ihr Rueckwaerts-Fenster komplett - dann muss dieser Tag
             // die gemeinsame Nacht selbst abdecken, sonst faellt sie ganz durch (Regression, real
             // reproduziert: freier Tag vor einer ausgeschlossenen Nachtdienst-Schicht).
-            val nextDayAlarm = alarmByDate[date.plusDays(1)]
-            val nextDayCoversTonight = nextDayAlarm != null && !isExcluded(nextDayAlarm.shiftName)
+            val nextDayShifts = byDate[date.plusDays(1)].orEmpty()
+            val nextDayCoversTonight = nextDayShifts.isNotEmpty() && !istTagAusgeschlossen(nextDayShifts, isExcluded)
             if (!nextDayCoversTonight) {
                 val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.CLOCK, endClockMinutes = freeDayEndClockMinutes)
                 resolveWindowForDate(window, date, null, zone)?.let { out += DimSpan(it, strength, warmth) }
@@ -281,6 +349,32 @@ object DimWindowResolver {
         }
         return out
     }
+
+    /**
+     * Alle Schichten je Kalendertag, chronologisch sortiert - die gemeinsame Grundlage von
+     * [buildRuleSpans] und [buildDefaultNightSpans].
+     *
+     * Ersetzt die fruehere `HashMap<LocalDate, AlarmSlot>` mit "first wins", die pro Tag alles
+     * ausser der ersten Schicht verwarf (Pruefrunde 8). Die Sortierung nach `triggerTime` und -
+     * bei gleicher Weckzeit - nach `shiftName` ist ausdruecklich Teil der Zusicherung: die Wahl
+     * "frueheste Schicht des Tages" soll eine bewusste Entscheidung sein und nicht stillschweigend
+     * daran haengen, in welcher Reihenfolge der ShiftSpanStore seine Spannen liefert. Die
+     * Fenster-Berechnung wird dadurch reihenfolge-unabhaengig und damit ueber aufeinanderfolgende
+     * Ticks stabil - ein laufendes Fenster darf seine Identitaet nicht wechseln.
+     */
+    private fun slotsByDate(alarms: List<AlarmSlot>, zone: ZoneId): Map<LocalDate, List<AlarmSlot>> =
+        alarms.groupBy { Instant.ofEpochMilli(it.triggerTime).atZone(zone).toLocalDate() }
+            .mapValues { (_, slots) -> slots.sortedWith(compareBy({ it.triggerTime }, { it.shiftName })) }
+
+    /**
+     * Ist dieser Kalendertag vom Nacht-Standard ausgenommen? Ein Ausschluss IRGENDEINER Schicht
+     * des Tages schliesst den ganzen Tag aus - der Ausschluss ist tages-granular (er nimmt beide
+     * Fenster dieses Datums heraus), und "nicht dimmen" ist die harmlose Richtung. Ein Tag ohne
+     * Schicht fragt weiterhin mit `null` (freier Tag), damit die Aufrufer-Semantik in
+     * [DimScheduleUseCase] unveraendert bleibt.
+     */
+    private fun istTagAusgeschlossen(shifts: List<AlarmSlot>, isExcluded: (String?) -> Boolean): Boolean =
+        if (shifts.isEmpty()) isExcluded(null) else shifts.any { isExcluded(it.shiftName) }
 
     /** CLOCK↔CLOCK = jede Nacht des Datums; sonst schicht-relativ (nur mit Alarm auflösbar). */
     private fun resolveWindowForDate(w: DimWindow, date: LocalDate, alarm: AlarmSlot?, zone: ZoneId): LongRange? =

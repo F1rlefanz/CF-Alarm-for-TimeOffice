@@ -14,6 +14,8 @@
 - Ein CE-DataStore-Read VOR der ersten Entsperrung wirft NICHT — er liefert still leere
 - Der Direct-Boot-Spiegel wird bei JEDEM erfolgreichen Load abgeglichen
 - `TinkEncryptionException` wird in `EncryptedDataStoreFactory` als `CorruptionException`
+- `isPersistenceBlocked()` heisst NUR "der Bestand ist in diesem Prozess unlesbar"
+- `saveAlarm()` meldete Erfolg, obwohl nichts geschrieben wurde
 
 ---
 
@@ -115,3 +117,36 @@
   übersetzt** (nur die fängt DataStores Selbstheilung), plus `ReplaceFileCorruptionHandler`. Abwägung:
   ein nicht entschlüsselbarer Token ist ohnehin wertlos — EINE Neuanmeldung ist das kleinere Übel
   gegenüber einer App, die nie wieder einen Token speichern kann (Endlos-Re-Auth, keine Alarme).
+
+- **`isPersistenceBlocked()` heißt „der Alarm-Bestand ist in diesem Prozess nicht lesbar" — und
+  nichts sonst** (Prüfrunde 8). Es gibt einen ZWEITEN Weg in den reinen Arbeitsspeicher: nicht der
+  Init-Load, sondern der SCHREIBweg scheitert (voller Speicher, IOException, beschädigte
+  `preferences_pb`). `AlarmRepository.persistToDataStore()` fängt das bewusst — der Alarm wird
+  trotzdem armiert und klingelt —, setzt aber die Sperre absichtlich NICHT (der nächste Versuch soll
+  wieder schreiben dürfen). Dafür gibt es jetzt den eigenen Merker
+  `istLetzterSchreibvorgangGescheitert()`. Die zweite Fixwelle hatte ihn in `isPersistenceBlocked()`
+  mit `persistenceBlocked` **verodert** — naheliegend, weil beides „nicht dauerhaft" bedeutet, und
+  genau das war der Fehler: `AlarmUseCase.clearInternalAlarms()` deutet dieses Signal als „unlesbar"
+  und überspringt dann bei einer ausdrücklichen Abschaltung (Master-Pause, „Automatische Alarme
+  aus", `deleteAllAlarms`) bewusst die gesamte `cancelSystemAlarm()`-Schleife. Ein EINZIGER
+  fehlgeschlagener Write hätte gereicht: die Master-Pause hätte Repository und Direct-Boot-Spiegel
+  geleert und jeden System-Alarm scharf zurückgelassen — die in `CLAUDE.md` verbotene Kombination
+  „Räumen ohne Cancellen", und ohne Bestandsliste ist so ein Alarm durch nichts mehr abbrechbar.
+  Nach einem geworfenen Write ist der Bestand im Speicher dagegen VOLLSTÄNDIG lesbar, die Schleife
+  MUSS also laufen. Deshalb: **wer Dauerhaftigkeit anzeigen will, fragt beide Signale; wer
+  entscheidet, ob geräumt werden darf, fragt ausschließlich `isPersistenceBlocked()`.** Und
+  allgemein: **wer ein bestehendes Signal um eine zweite Bedeutung erweitert, muss JEDE Leserstelle
+  einzeln daraufhin ansehen** — im Zweifel ein eigenes Signal.
+- **`saveAlarm()` meldete Erfolg, obwohl nichts geschrieben wurde** (Prüfrunde 8, Befund 11 — gefunden
+  beim eigenen Nachlesen im Zwillings-Feld eines widerlegten Befunds). `persistToDataStore()` kehrt
+  bei gesperrter Persistenz still zurück und fängt außerdem jede Exception ab; `saveAlarm()` gab
+  danach bedingungslos `Result.success` zurück. Der Wecker lag dann nur im Arbeitsspeicher — kein
+  Preferences-Eintrag, kein Direct-Boot-Spiegel, nach Prozesstod oder Neustart spurlos weg, und beim
+  MANUELLEN Wecker unwiederbringlich (er lässt sich aus keinem Kalender rekonstruieren). Die
+  naheliegende Antwort `Result.failure` ist erprobt und verworfen: sie bräche die Zusicherung der
+  Sperre („die System-Alarme werden trotzdem gesetzt") und machte den Kalender-Sync schlechter —
+  `syncAlarms()` ruft `saveAlarm(...).getOrThrow()` VOR `scheduleSystemAlarm(...)`, ein Wurf ließe
+  den Alarm also im Cache stehen, ohne ihn je zu armieren („stummer Wecker MIT Anzeige"). Stattdessen:
+  ein WARN direkt an der Stelle (landet im Release-Log), der getrennte Schreibfehler-Merker, und die
+  Stellen, die Dauerhaftigkeit wirklich brauchen, fragen NACH dem Speichern nach
+  (`AlarmViewModel.createManualAlarm()`, `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()`).

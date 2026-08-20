@@ -21,9 +21,23 @@ das baut man dieselbe Falle in neuer Form nach.
 
 ## Kurzregeln
 
-- **Pro Kalendertag GENAU eine Regel**; eine spezifische Regel **überschreibt** UNIVERSAL komplett,
+- **Ein Kalendertag kann ZWEI Schichten haben.** `buildRuleSpans` und `buildDefaultNightSpans`
+  fragen JEDE Schicht des Tages (`slotsByDate`), nie nur die früheste. Wirksam wird trotzdem
+  **pro Kalendertag GENAU eine Regel**; eine spezifische Regel **überschreibt** UNIVERSAL komplett,
   nicht additiv. UNIVERSAL heißt „alle **Tage**", nicht „alle Schichten".
+- **Konflikt zweier VERSCHIEDENER spezifischer Regeln an einem Tag: es gewinnt die Regel der
+  FRÜHESTEN Schicht** — plus WARN im Release-Log UND ein Hinweis an der verdrängten Regel in der
+  Regelliste. Den Tag stattdessen auszulassen ist verboten (schaltet das Dimmen dort komplett ab,
+  samt Nacht-Standard), die Fenster zu vereinigen ebenfalls (additiv).
+- **Wirkung und Anzeige des Konflikts teilen EINE Funktion** (`regelFuerTag`, benutzt von
+  `buildRuleSpans` und `findRuleConflicts`) — zwei Implementierungen würden auseinanderdriften.
+- **Ein Ausschluss IRGENDEINER Schicht des Tages nimmt den GANZEN Tag aus dem Nacht-Standard**
+  (`istTagAusgeschlossen`), und `nextDayCoversTonight` gilt nur für einen nicht ausgeschlossenen
+  Folgetag mit Schicht.
 - **`findRuleForShift` nimmt den ERSTEN Treffer** — zwei Regeln auf demselben Muster: die zweite ist tot.
+- **Dimmer-Regeln binden über den NAMEN der Schichtdefinition** (`shiftPattern`), der frei änderbar
+  ist — jedes Umbenennen zieht sie über `DimRuleUseCase.renameShiftPattern()` mit (Hergang im Skill
+  `cfalarm-kalender-und-schichten`).
 - **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel". Nicht wegoptimieren.
 - **CLOCK↔CLOCK = lückenlos jede Kalendernacht**; ALARM/SHIFT_END brauchen eine **Schichtspanne**.
 - **Zeitrechnung: echte Wanduhrzeit + Datums-Arithmetik**, niemals „Mitternacht-Instant + Minuten"

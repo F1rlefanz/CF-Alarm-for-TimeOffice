@@ -33,6 +33,20 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — „leer" ist für eine Wecker-App die
   gefährlichste Lüge. Totalausfall wirft; Teilerfolg bleibt Erfolg; Worker und Wartung haben je ein
   eigenes Leerlisten-Gate; `getCurrentSelectedCalendarIds()` liest den DataStore, nicht den `StateFlow`.
+- **Die AUSNAHME davon ist die ausdrückliche leere AUSWAHL, nie ein leeres Ladeergebnis.** Wählt der
+  Nutzer den letzten Kalender ab, räumt `clearAlarmsAfterCalendarDeselection()` über
+  `syncAlarms(emptyList(), config)` — abgesichert durch den Übergangs-Merker `hasSeenNonEmptySelection`
+  UND eine Rückfrage bei `getCurrentSelectedCalendarIds()` (nicht lesbar = NICHT räumen). Manuelle
+  Wecker überleben (`keepManualAlarms`).
+- **Dieser Räumauftrag ist prozessfest** (`PendingDeselectionCleanupStore`: gesetzt VOR dem Räumen,
+  gelöscht erst nach belegtem Erfolg, abgearbeitet von der 6h-Wartung) — und **die 6h-Wartung liest
+  die Auswahl selbst erneut und verwirft ihn als hinfällig.** Ohne diese Gegenfrage wird ein
+  dauerhafter Auftrag zur veralteten Absicht, die später Wecker löscht.
+- **Der Auftrag wird NICHT schon aufgelöst, wenn wieder ein Kalender ausgewählt ist** — erst nach
+  einem gelungenen Sync über nachweislich vollständiger Eventliste.
+- **„Nicht abrufbare Kalender entfernen" kann die Auswahl leeren** und löst dann dieselbe
+  Kompletträumung aus; deshalb die Rückfrage (`entfernenWuerdeAuswahlLeeren()`), bevor der letzte
+  Kalender fällt.
 - **Endlosschleifen-Bremse im Kalender-`LaunchedEffect`** (`availableCalendars.isEmpty() && error == null`)
   — nicht entfernen.
 - **Der Collector der Kalenderauswahl nimmt sich wieder auf (`retryWhen`)**, statt beim ersten
@@ -75,15 +89,31 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter Volatile-Referenz, Prüfung UND
   Veröffentlichung hinter `recognitionMutex`, PLUS eine Epochen-Kennung** (der Mutex allein reicht
   nicht — `clearRecognitionCache()` läuft synchron).
-- **`ShiftViewModel` beobachtet `IShiftUseCase.shiftConfig`** und zieht Anzeige, Erkennung UND Alarme
-  nach; eigene Änderungen per Gleichheitsvergleich übersprungen.
+- **`ShiftViewModel.observeExternalConfigChanges()` ist der zentrale Einstieg für FREMDE Schreiber**
+  (Konfigurations-Import, Backup, Gerätewechsel) und zieht Anzeige, Erkennung, Alarme **und die
+  Dimmer-/Hue-Regelmuster** nach. Eigene Änderungen erkennt er am VOR dem Write gesetzten Merker
+  `selfWrittenConfig` (ein Vergleich nur gegen `currentShiftConfig` verliert das Rennen gegen den
+  DataStore und ließ alles doppelt und nebenläufig laufen).
+- **Der Degradierungs-Filter in diesem Beobachter („die vierte Tür") darf nicht kippen**: der Flow
+  `shiftConfig` degradiert bei unlesbarer Konfiguration auf die Standardwerte; maßgeblich ist
+  `getCurrentShiftConfig()`, das im Defektfall SCHEITERT. Nur ein Erfolg gilt als echte Änderung.
+- **Dimmer- und Hue-Regeln binden über den NAMEN** (`shiftPattern`), der Name ist aber bei
+  gleichbleibender `id` frei änderbar — deshalb `zieheRegelmusterNach()` bei jeder Umbenennung,
+  in `withContext(NonCancellable)`, Fehlschläge sichtbar über `regelNachzugHinweis`. **Das
+  Universalmuster wird nie mitgezogen** (Sentinel „ALL").
 - **Geraten wird nicht mehr — vorgeschlagen wird** (`ShiftCodeSuggester`). Die App ordnet NICHTS selbst zu.
+- **Der manuelle Wecker liest die Schichtliste REAKTIV** (`observeAvailableShifts()`) und löst die
+  Definition kurz vor dem Armieren frisch auf (`getCurrentShiftConfig()`), statt einen Snapshot aus
+  dem `init{}`-Block zu benutzen.
 - **`ShiftUseCase.add/update/deleteShiftDefinition` sind ENTFERNT** — sie speicherten, ohne die
   System-Alarme anzufassen. Einziger richtiger Weg: `ShiftViewModel.updateShiftConfig(config)`.
 - **`withCodeAssignedTo()` macht DREI Dinge zusammen**: Muster ergänzen, Zieldefinition aktivieren,
   Kürzel bei allen anderen entfernen. Jedes einzeln wäre wirkungslos oder gefährlich.
-- **Fünf bekannte `syncAlarms()`-Aufrufer**; ein sechster erbt das Master-Pause-Gating automatisch,
-  **muss sich aber selbst um die Vollständigkeit seiner Eventliste kümmern**.
+- **Fünf bekannte `syncAlarms()`-Aufrufer** (Boot, Wartung, Pre-Alarm-Worker, `CalendarViewModel`,
+  `ShiftViewModel`); ein sechster erbt das Master-Pause-Gating automatisch, **muss sich aber selbst
+  um die Vollständigkeit seiner Eventliste kümmern**. Zwei davon haben zusätzlich eine **absichtlich
+  leere** Aufrufstelle für die Kalender-Abwahl (`CalendarViewModel`, `AlarmMaintenanceService`) —
+  das ist keine übersehene Leerlisten-Lücke, siehe die Regeln oben.
 
 ## TimeOffice — Kurzregeln
 

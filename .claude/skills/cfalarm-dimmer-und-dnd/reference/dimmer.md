@@ -7,6 +7,9 @@
 ## Inhalt
 
 - Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen
+- Ein Kalendertag kann ZWEI Schichten haben (Prüfrunde 8)
+- Der Regelkonflikt an einem solchen Tag wird entschieden, nicht aufgelöst (Prüfrunde 8)
+- Dimmer-Regeln binden über den Namen der Schichtdefinition (Prüfrunde 8)
 - Pro Kalendertag GENAU eine Regel
 - `findRuleForShift` nimmt den ERSTEN Treffer
 - Leere Fensterliste = Unterdrückung dieser Nacht
@@ -43,11 +46,71 @@
   später wieder `false`. Nachweis NICHT über die Layer-Anwesenheit führen: `render(false)` fährt nur
   das Alpha auf 0 und lässt `CFAlarmDimLayer` stehen.
 
+- **Ein Kalendertag kann ZWEI Schichten haben** (Prüfrunde 8, v1.30.0). `buildRuleSpans` und
+  `buildDefaultNightSpans` bauten sich beide eine `HashMap<LocalDate, AlarmSlot>` mit „first wins";
+  weil die Slots nach Weckzeit sortiert ankamen, gewann immer die früheste Schicht, und **jede
+  weitere Schicht desselben Tages existierte für Regelauswahl und Nacht-Ausnahme nicht**. Getroffen
+  hat das genau den Alltagsfall, für den die App gebaut ist: Frühdienst plus anschließende
+  Rufbereitschaft — derselbe Fall, für den `DndPrefs.onCallShifts` und der
+  `DndOnCallCutoffResolver` eigens existieren. Folge: der an der Nacht-Standard-Karte
+  ausdrücklich gesetzte Ausschluss der Rufbereitschaft wirkte nicht, der Bildschirm dimmte
+  mitten im Dienst, und über DND-Modus 1 („Schlaf-Fenster folgt dem Dimmer") schaltete „Nicht
+  stören" in genau der Nacht ein, in der Erreichbarkeit der Zweck des Dienstes ist. Beide
+  Funktionen gehen jetzt über `slotsByDate()` (`groupBy` + explizite Sortierung nach
+  `triggerTime`, bei Gleichstand `shiftName`). **Die Sortierung ist Teil der Zusicherung, nicht
+  Kosmetik:** „früheste Schicht des Tages" darf nicht stillschweigend an der Lieferreihenfolge des
+  `ShiftSpanStore` hängen — sonst kippt ein laufendes Fenster zwischen zwei Ticks auf einen anderen
+  Anker, und die Fenster-Identität (`range.last` + `strength`, siehe `isOverrideStale`) wird
+  instabil. Für den Nacht-Standard gilt zusätzlich `istTagAusgeschlossen()`: **ein Ausschluss
+  IRGENDEINER Schicht des Tages nimmt den ganzen Tag heraus** (der Ausschluss war immer
+  tages-granular — er entfernt Rückwärts- UND Vorwärts-Fenster dieses Datums), und
+  `nextDayCoversTonight` verlangt einen Folgetag, der eine Schicht hat UND nicht ausgeschlossen ist;
+  sonst fällt die gemeinsame Nacht durch beide Raster. Das Rückwärts-Fenster verankert weiterhin an
+  der ERSTEN Weckzeit des Tages. Festgehalten in `Pruefrunde8MehrereSchichtenProTagTest`.
+
+- **Der Regelkonflikt an einem solchen Tag wird ENTSCHIEDEN, nicht aufgelöst** — und das Entscheiden
+  muss sichtbar sein. Der erste Wurf des Fixes ließ einen Tag, an dem zwei Schichten zwei
+  VERSCHIEDENE spezifische Regeln treffen, kommentarlos ganz aus. Das war schlimmer als der Bug:
+  weil spezifische Regeln UNIVERSAL verdrängen **und** ein regelbelegter Tag ohnehin aus dem
+  Nacht-Standard fällt (Punkt 3 in `DimScheduleUseCase`), blieb der Tag **komplett ohne
+  Dimm-Quelle** — während die Regelliste beide Regeln unverändert als aktiv zeigte. Also dieselbe
+  Fehlerklasse „aktiv angezeigt, wirkt nicht", gegen die der Fix gebaut wurde, plus ein Bruch von
+  „ein Zustand, der eine Funktion dauerhaft anhält, muss sichtbar sein". Heute gilt: **die Regel der
+  frühesten Schicht gewinnt**, der Fall geht als **WARN** ins Release-Log (eine Zeile je Berechnung,
+  nicht je Tag — die Schleife läuft bei jedem Tick; bewusst nur Datum und Regel-IDs, Regel- und
+  Schichtnamen sind Nutzertexte), und die Regelliste trägt an der verdrängten Regel einen Hinweis
+  mit Wirkung, Grund in Alltagssprache und Ausweg (`DimmerRulesViewModel.verdraengteRegeln` →
+  `DimmerSettingsScreen`). Ein Log allein wäre wieder „angezeigt, wirkt nicht" — niemand liest
+  Logcat. **Wirkung und Anzeige teilen eine einzige Funktion** (`regelFuerTag`, aufgerufen von
+  `buildRuleSpans` und von `findRuleConflicts`) — zwei Implementierungen würden auseinanderdriften,
+  und eine Anzeige, die von der Wirkung abweicht, ist schlechter als gar keine. **Verworfene
+  Alternative: die Fenster beider Regeln vereinigen.** Das wäre additiv (Bruch von „pro Kalendertag
+  GENAU eine Regel"), dimmte mehr als jede der beiden Regeln für sich, und bei widersprechenden
+  Parametern für dieselbe Minute entstünde eine dritte, von niemandem konfigurierte Einstellung.
+  **Bewusst offen (NICHT als neuen Bug melden):** der Konflikt wird entschieden, nicht aufgelöst —
+  die unterlegene Regel wirkt an einem solchen Tag nicht, sie sagt es nur. Zwei Randfälle sind
+  bewusst KEIN Konflikt: eine getroffene Regel mit leerer Fensterliste unterdrückt den ganzen Tag
+  (ausdrückliche Nutzerentscheidung, Ergebnis „bleibt hell" ist das Bestellte), und
+  `findRuleConflicts` schweigt, wenn die Regel-Quelle ganz aus ist oder die Schichtspannen nicht
+  lesbar sind — lieber kein Hinweis als ein falscher. `DimWindowResolver.KONFLIKT_HORIZONT_TAGE`
+  muss dem privaten `HORIZON_DAYS` von `DimScheduleUseCase` entsprechen, sonst behauptet die
+  Oberfläche einen Zeitraum, den der Scheduler gar nicht plant.
+
+- **Dimmer-Regeln binden über den NAMEN der Schichtdefinition** (`DimRule.shiftPattern`), und der
+  Name ist bei gleichbleibender `id` frei änderbar. Eine reine Umbenennung legte die Regel deshalb
+  lautlos still — das Dimm-Fenster verschwand, in DND-Modus 1 fiel das DND-Fenster gleich mit weg,
+  und die Regelliste zeigte die Regel durchgehend als aktiv (Prüfrunde 8). Jedes Umbenennen zieht
+  die Regeln jetzt über `DimRuleUseCase.renameShiftPattern(alt, neu)` mit; der Nachzug hängt am
+  zentralen Beobachter, nicht am Aufrufer-Gate. Hergang und die verbleibende Lücke (ein verwaistes
+  `shiftPattern` aus Import/Backup) stehen im Skill `cfalarm-kalender-und-schichten` — die
+  Hue-Regeln haben dieselbe Bindung und dieselbe Migration.
+
 - **Pro Kalendertag GENAU eine Regel** (`DimWindowResolver.buildRuleSpans`): Schicht-Tag →
-  `findRuleForShift` (exakter Schichtname → sonst UNIVERSAL), freier Tag → `findRuleForFreeDay`
-  (FREI → sonst UNIVERSAL). Eine spezifische Regel **überschreibt** UNIVERSAL für dieses Datum
-  komplett — nicht additiv. Deshalb ist UNIVERSAL „alle **Tage**" (Schicht + frei + Urlaub), nicht
-  „alle Schichten" — das UI-Label heißt entsprechend „Alle Tage (Universal)".
+  `findRuleForShift` je Schicht (exakter Schichtname → sonst UNIVERSAL), freier Tag →
+  `findRuleForFreeDay` (FREI → sonst UNIVERSAL). Eine spezifische Regel **überschreibt** UNIVERSAL
+  für dieses Datum komplett — nicht additiv. Deshalb ist UNIVERSAL „alle **Tage**" (Schicht + frei +
+  Urlaub), nicht „alle Schichten" — das UI-Label heißt entsprechend „Alle Tage (Universal)".
+  Welche Regel bei mehreren Schichten des Tages gewinnt, steht in den beiden Punkten oben.
 - **`findRuleForShift` nimmt den ERSTEN Treffer.** Zwei aktivierte Regeln auf denselben
   `shiftPattern` → die zweite ist tot. „ND-Nacht unterdrücken UND Tagschlaf dimmen" ist darum EINE
   Nachtschicht-Regel mit nur dem Tag-Fenster (unterdrückt die Nacht, weil sie UNIVERSAL überschreibt
@@ -86,7 +149,10 @@
 - **Nacht-Standard (`DimWindowResolver.buildDefaultNightSpans`, seit v1.17.0) ist eine DRITTE,
   eigenständige Fenster-Quelle** neben Regeln — dimmt ab fester Uhrzeit bis zum nächsten Wecker,
   ganz ohne dass dafür eine `DimRule` existieren muss. Wirkt NUR an Tagen, die `isExcluded` nicht
-  ausschließt — dieses Prädikat bündelt zwei unabhängige Wege: eine explizit vom Nutzer markierte
+  ausschließt — **gefragt über ALLE Schichten des Tages** (`istTagAusgeschlossen`, siehe den Punkt
+  „Ein Kalendertag kann ZWEI Schichten haben" oben; bis v1.29.2 wurde nur die früheste gefragt, ein
+  Ausschluss an der zweiten Schicht war wirkungslos). Das Prädikat bündelt zwei unabhängige Wege:
+  eine explizit vom Nutzer markierte
   Schicht (`DimOverlayPrefs.nightDefaultExcludedShifts`, Toggle direkt an der Karte) ODER eine
   vorhandene `DimRule`, die den Tag ohnehin schon abdeckt (dieselbe Ausschließlichkeit wie oben).
   **Pro Tag laufen ZWEI unabhängige Fenster-Prüfungen, nicht eine exklusive** (Fix v1.21.1): ein

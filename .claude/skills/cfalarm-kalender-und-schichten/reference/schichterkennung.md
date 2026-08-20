@@ -15,6 +15,8 @@
 - Kein stiller Default-Überschreiber der Schicht-Konfiguration — es gab DREI Schreibstellen
 - „Auf Standardwerte zurücksetzen" rührt `autoAlarmEnabled` nicht an
 - `ShiftViewModel` beobachtet `IShiftUseCase.shiftConfig` und zieht Anzeige, Erkennung UND Alarme
+- Umbenennen einer Definition legte Dimmer- und Hue-Regeln lautlos still
+- Der manuelle Wecker liest die Schichtliste reaktiv
 - `ShiftUseCase.add/update/deleteShiftDefinition` sind ENTFERNT
 - `ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter einer Volatile-Referenz,
 - `ShiftDefinition.isEnabled` wird in `performRecognition()` respektiert
@@ -108,8 +110,21 @@ Wecker gekostet:**
   importierte Konfiguration hätte bis zur nächsten 6h-Wartung die ALTEN Zeiten weitergeweckt.
   Bewusst ein Beobachter am gemeinsamen Datenfluss statt eines Aufrufs im Import — dieselbe Lehre wie
   beim Master-Pause-Backstop: ein zentraler Punkt deckt jeden heutigen und künftigen Schreiber ab.
-  Eigene Änderungen werden per Gleichheitsvergleich übersprungen, sonst laufen Erkennung und Sync bei
-  jeder Nutzeränderung zweimal — und zwar nebenläufig auf derselben Engine-Instanz.
+  Eigene Änderungen werden übersprungen, sonst laufen Erkennung und Sync bei jeder Nutzeränderung
+  zweimal — und zwar nebenläufig auf derselben Engine-Instanz. **Erkannt werden sie am Merker
+  `selfWrittenConfig`, der VOR dem Write gesetzt wird; ein Vergleich nur gegen den UI-State
+  `currentShiftConfig` reichte nicht** — DataStore veröffentlicht den neuen Wert typischerweise,
+  bevor `edit{}` zurückkehrt, also bevor `onSuccess` den UI-State aktualisiert hat. Der Beobachter
+  hielt die eigene Änderung deshalb für eine fremde und löste genau den doppelten, nebenläufigen
+  Lauf aus, den er vermeiden sollte.
+  **DIE VIERTE TÜR, die dieser Beobachter selbst geöffnet hatte:** Der Flow `shiftConfig` degradiert
+  bei einer vorhandenen, aber unlesbaren Konfiguration bewusst auf die Standardwerte (damit die
+  Dimmer-/DND-Screens nicht abstürzen). Ungefiltert las der Collector das als „externe Änderung",
+  schrieb die Standardwerte in den UI-State und stieß einen Alarm-Sync mit ihnen an — also genau der
+  stille Default-Überschreiber, der in `CalendarViewModel`, `ShiftViewModel` und
+  `CFAlarmApplication` gerade abgeschafft worden war. Maßgeblich ist deshalb
+  `getCurrentShiftConfig()`, das im Defektfall SCHEITERT; nur ein Erfolg gilt als echte Änderung.
+  Dieser Filter darf nicht kippen — er ist auch die Vorbedingung des Regelnachzugs unten.
 - **`ShiftUseCase.add/update/deleteShiftDefinition` sind ENTFERNT** (v1.23.1, samt
   `IShiftUseCase`-Deklarationen). Sie hatten keinen Aufrufer und waren eine Falle: der Name klang
   passend („eine Schicht hinzufügen"), aber der Pfad speicherte die Konfiguration und invalidierte
@@ -150,3 +165,52 @@ Wecker gekostet:**
 - **Eine defekte Schicht-Konfiguration erfährt der Nutzer nur über das Log.** Die Rohdaten liegen als
   `shift_config_broken` gesichert, der Sync wird ausgelassen, bestehende Alarme bleiben — aber ein
   sichtbarer Hinweis samt Angebot, die Sicherung zu verwerfen, fehlt noch. Bewusst offengelassen.
+
+
+## Umbenennen einer Definition legte Dimmer- und Hue-Regeln lautlos still (Prüfrunde 8)
+
+Dimmer- und Hue-Regeln binden über den **Namen** der Schichtdefinition (`shiftPattern`), der Name
+ist aber bei gleichbleibender `id` frei änderbar. Eine reine Umbenennung („AD1" → „Frühdienst
+AD1") legte damit beide Regelarten still: das Licht ging zur Weckzeit nicht mehr an, das
+Dimm-Fenster verschwand, und im Modus „Schlaf-Fenster folgt dem Dimmer" fiel auch das DND-Fenster
+weg. **Und die Oberfläche bestätigte den Gegenzustand:** die Regelliste zeigte die Regel durchgehend
+als aktiv, der Hue-Editor gleichzeitig „kein Muster gewählt" und „Bei <Altname>-Schicht".
+
+Nachgezogen wird über `zieheRegelmusterNach()` (`planeSchichtUmbenennungen()` bestimmt aus dem Stand
+VOR und NACH der Änderung, welche `id` einen neuen Namen hat, dann
+`Dim-/HueRuleUseCase.renameShiftPattern()`). Was daran tragend ist:
+
+- **Der Aufruf hängt am ZENTRALEN Beobachter `observeExternalConfigChanges()`, nicht nur am
+  Aufrufer-Gate `updateShiftConfig()`.** Eine Rücksicherung oder ein Gerätewechsel bringt dieselbe
+  Definition (gleiche `id`) unter anderem Namen zurück, und genau dieser Fall kommt ausschließlich
+  über den Beobachter herein — er hätte die Migration sonst umgangen. Dieselbe Lehre wie beim
+  zentralen Master-Pause-Backstop.
+- **Der Degradierungs-Filter davor („die vierte Tür") ist Vorbedingung.** Käme die
+  Notlage-Standardkonfiguration durch, zöge die Migration jede Regel auf einen Standardnamen um —
+  ein Datenverlust, den kein Nutzer verursacht hat.
+- **Das Universalmuster wird nie mitgezogen.** Es ist ein Sentinel (`"ALL"`), kein Definitionsname;
+  eingesetzt ergäbe es eine Regel, die plötzlich nur noch eine Schicht trifft.
+- **`withContext(NonCancellable)`**, weil hier ein konsistenter Zustand HERgestellt wird — bricht
+  der `viewModelScope` mittendrin ab (der Nutzer verlässt den Screen), wäre sonst der Dimmer
+  nachgezogen und Hue nicht, und niemand erführe davon. Nach einer geänderten Dimm-Regel werden
+  `DimScheduleUseCase.enable()` und `DndScheduleUseCase.enable()` neu armiert (best-effort, einzeln
+  gefangen): die Fenster werden aus den Regeln berechnet, der nächste Tick stand also noch auf dem
+  ALTEN Plan.
+- **Fehlschläge werden gemeldet, nicht geschluckt** (`ShiftUiState.regelNachzugHinweis`) — eine
+  nicht nachgezogene Regel ist eine Funktion, die der Nutzer bewusst eingerichtet hat und die ab
+  jetzt nichts mehr tut.
+
+**Bewusst offen:** Zeigt ein gespeichertes `shiftPattern` aus einem Import auf einen Namen, den es
+nicht mehr gibt, steht im Regeleditor kein Optionsfeld ausgewählt, während daneben „Bei
+<Altname>-Schicht" steht. Die Migration verkleinert den Fall, beseitigt ihn nicht.
+
+## Der manuelle Wecker liest die Schichtliste reaktiv (Prüfrunde 8)
+
+`AlarmViewModel` fror die verfügbaren Schichtdefinitionen in einem Snapshot aus dem `init{}`-Block
+ein. Eine soeben geänderte Weckzeit kam dort nie an — und die Karte **bestätigte die alte
+ausdrücklich** („Weckzeit: 05:00"), der manuelle Wecker wurde dann auch mit ihr armiert. Der
+Kalender-Sync repariert das nicht: er schont manuelle Alarme (`keepManualAlarms`). Jetzt zwei
+Stufen: `observeAvailableShifts()` hält die Liste reaktiv (bei gleicher `id` wird das FRISCHE Objekt
+übernommen, die angezeigte Weckzeit immer nachgerechnet), und unmittelbar vor dem Armieren wird die
+Definition über `getCurrentShiftConfig()` frisch aufgelöst — die armierte Zeit stammt aus dieser
+Lesung, nicht aus dem Anzeigezustand.

@@ -32,14 +32,31 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`_alarmActive = true` VOR `startForeground()`** — sonst schließt sich das Vollbild sofort.
 - **Kein `startActivity()` aus dem `AlarmReceiver`** — einziger Weg ist `setFullScreenIntent()`.
 - **Vollbild-Dismiss und -Snooze teilen eine Einweg-Sperre** (`OneShotAlarmHandoff.claim()`, am
-  Anfang BEIDER Handler). Der Notausgang `stopAndClose()` fragt sie bewusst NICHT.
+  Anfang BEIDER Handler). Der Notausgang `stopAndClose()` fragt sie bewusst NICHT. Die Sperre
+  gehört dem WECKVORGANG, nicht der Activity-Instanz.
 - **`AlarmFullScreenActivity` braucht `onNewIntent()` mit `setIntent()`** (`launchMode="singleTask"`).
+- **In `onNewIntent()` wird ERARBEITETER Zustand nur bei einem ANDEREN Weckvorgang verworfen**
+  (`Weckvorgang.istAnderer`, Vergleich über die Alarm-Kennung; fehlende Kennung = derselbe
+  Vorgang). Aus dem Intent abgeleitete Werte dagegen immer frisch lesen. Die Wecker-Notification
+  trägt denselben PendingIntent auch als `setContentIntent()` — ein Tipp darauf ist DERSELBE
+  Wecker und darf den Schlummer-Fehlerhinweis nicht wegwischen.
 - **`visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS** (WARN). Herabstufen macht
   den nächsten Vorfall unauswertbar. Die Ursache des verschwindenden Vollbilds ist weiterhin unbelegt.
 - **Alle `setAlarmClock()`-Aufrufstellen behandeln eine entzogene Exact-Alarm-Berechtigung gleich**
   (`AlarmManagerService.setExactOrInexact`: try/catch + inexakter Fallback).
   `requestExactAlarmPermission()` gehört NICHT in diesen Pfad.
 - **Snooze braucht `snoozeAlarmAction(id)`**, nicht `enhancedAlarmAction(id)`.
+- **Jedes Armieren eines Schlummers geht durch `SchlummerEntscheidung.armiere()`** — dort sitzt der
+  Master-Pause-Backstop (zentral, nicht je Auslöser), und dort gilt die Reihenfolge erst `plane`,
+  dann `merke`.
+- **Ein AUFGEGEBENER Armierungsversuch hinterlässt nichts Scharfes**: scheitert das Vormerken nach
+  dem Planen, räumt `gibAuf()` den Alarm ab, BEVOR der Fehlschlag gemeldet wird. Drei Ausgänge
+  (`ABGERAEUMT`/`MISSLUNGEN`/`BEWUSST_BEHALTEN`) — der Wiederherstellungslauf nach einem Neustart
+  räumt NICHT zurück, dort ist der Merker die Vorlage.
+- **Ein gescheitertes Schlummern muss unterscheidbar sein**: `armSnooze()`-Ergebnis auswerten, erst
+  planen und dann den Ton stoppen, Activity im Fehlerfall offen lassen. Der Titel gehört zum
+  Ergebnis (`TITEL_PAUSE`/`TITEL_FEHLER`/`TITEL_UNKLAR`), nicht zur Renderstelle — eingeklappt am
+  Sperrbildschirm ist er die einzige vollständig gelesene Zeile.
 - **Ein schwebender Snooze ist abbrechbar, aber nur auf ausdrücklichen Nutzer-Willen** — nicht in
   datengetriebenen Aufräumzweigen und nicht an `deleteAlarm(id)`.
 - **Ein schwebender Snooze muss einen Reboot überleben** (`restorePendingSnoozes()` im `BootReceiver`).
@@ -111,6 +128,8 @@ das baut man dieselbe Falle in neuer Form nach.
   zusätzlich (sparen unnötige Fetches), sind aber nicht mehr die einzige Verteidigungslinie.
 - **Denselben Backstop haben `DimScheduleUseCase.enable()` und `DndScheduleUseCase.enable()`.**
   `disable()` bleibt bewusst ungegatet, sonst kommt `pause()` nicht mehr durch.
+- **`pause()` stoppt auch einen gerade KLINGELNDEN Wecker** (`ACTION_STOP_ALARM` an den
+  `AlarmSoundService`, unbedingt und nicht auf `alarmActive` gegated, eigenes try/catch).
 - **`pause()`/`resume()` laufen in `withContext(NonCancellable)`** — beide stellen einen Zustand HER,
   und der Schalter wird als erstes geschrieben.
 - **Der Pausen-Spiegel wird beim App-Start mit der CE-Wahrheit abgeglichen**

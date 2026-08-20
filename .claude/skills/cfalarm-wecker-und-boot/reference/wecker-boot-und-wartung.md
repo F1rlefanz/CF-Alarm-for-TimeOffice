@@ -36,6 +36,8 @@
 - Die 6h-Wartung MUSS Änderungen und Streichungen sehen können — die Lade-/Sync-Entscheidung
 - `BootReceiver` liest die Kalenderauswahl über den DataStore und entscheidet nicht auf einem
 - `TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`
+- Schlummern, Runde 8: der aufgegebene Armierungsversuch, der unterscheidbare Fehlschlag und der
+  Instanzzustand des Vollbilds (eigener Abschnitt unten)
 - Das "Nächsten Alarm überspringen"-Flag läuft zeitbasiert ab, nicht per ID-Match
 - Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft
 - Stille Schicht (`ShiftDefinition.isSilent`/`AlarmInfo.isSilent`, seit v1.20.0) ist KEIN Ersatz
@@ -80,9 +82,15 @@
   eigenen Klick, und die zwei bildschirmbreiten Knöpfe liegen 12 dp übereinander; „Alarm stoppen"
   plante also zusätzlich einen Schlummer-Wecker. Der Notausgang `stopAndClose()` fragt die Sperre
   bewusst NICHT (sonst blockiert sie den Fehlerpfad des Snooze). `AlarmFullScreenHandoffTest`.
+  Seit Runde 8 gehört die Sperre dem **Weckvorgang**, nicht der Activity-Instanz (`var
+  alarmHandoff`, zurückgesetzt nur bei einer ANDEREN Alarm-Kennung) — Hergang im Abschnitt
+  „Schlummern (Runde 8)".
 - **`AlarmFullScreenActivity` braucht `onNewIntent()` mit `setIntent()`.** `launchMode="singleTask"`
   liefert eine zweite Zustellung desselben Full-Screen-Intents als `onNewIntent`, nicht als
   `onCreate` — ohne Überschreiben las `snoozeAlarm()` Schicht/ID/Snooze-Dauer aus dem VORHERIGEN Alarm.
+  **`setIntent()` allein reicht nicht:** aus dem Intent abgeleitete Werte gehören immer frisch
+  gelesen, ERARBEITETER Zustand (Schlummer-Fehlerhinweis, Einweg-Sperre) dagegen nur verworfen,
+  wenn wirklich ein anderer Weckvorgang zugestellt wird — siehe Abschnitt „Schlummern (Runde 8)".
 - **`visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS.** Sie protokolliert
   `interactive`/`display`/`keyguardLocked`/`deviceSecure`/`wakeLockHeld` an `onCreate`/`onStart`/
   `onStop` und bei jedem Fensterfokus-Wechsel — stoppt die Activity, während der Wecker läuft, als
@@ -146,7 +154,9 @@
   wiederherstellbar. `apply()` schreibt asynchron und verlöre denselben Eintrag bei einem
   Prozess-Tod unmittelbar danach. `armSnooze()` gibt seinen Erfolg zurück, und
   `restorePendingSnoozes()` zählt ECHTE Erfolge — vorher behauptete das Boot-Log eine
-  Wiederherstellung, die nicht stattgefunden hatte.
+  Wiederherstellung, die nicht stattgefunden hatte. **Der Rückgabewert muss auch am
+  Nutzer-Pfad ausgewertet werden**; `scheduleSnooze()` verwarf ihn bis Runde 8 (Abschnitt
+  „Schlummern (Runde 8)").
 - **Die datengetriebenen Räumzweige von `syncAlarms()` schonen MANUELLE Alarme**
   (`clearInternalAlarms(keepManualAlarms = true)` bei „keine Events" und „keine passende Schicht").
   Der Delta-Sync tat das immer (`eventId.isNotEmpty()`), die beiden Abkürzungs-Zweige davor
@@ -423,3 +433,52 @@ Status-Karte nannte erst „Standard oder höher", dann „Hoch" — beides schi
 Android 8/9 heißt „Hoch" genau diesen Wert, auf neueren Versionen gibt es den Eintrag gar nicht.
 Der Text beschreibt seither die **Wirkung** („die oberste Stufe, bei der die Meldung auf dem
 Bildschirm eingeblendet wird"), abgeleitet aus demselben Prädikat, das auch urteilt.
+
+## Schlummern (Runde 8, 20.08.2026): aufgegebener Versuch, ehrlicher Fehlschlag, Instanzzustand
+
+**Der aufgegebene Armierungsversuch.** `SchlummerEntscheidung.armiere()` (Top-Level-Objekt in
+`AlarmManagerService.kt`, Android-frei testbar) plant erst (`plane`) und merkt danach vor
+(`merke` → `rememberPendingSnooze`, schreibt in `AlarmPrefs`, also CE-Storage). Warf NUR das
+Vormerken, meldete die Funktion `FEHLGESCHLAGEN` und ließ den Alarm stehen — scharf im
+AlarmManager, während beide Aufrufer (Vollbild und Notification) dem Nutzer ausdrücklich sagen
+„Es ist KEIN weiterer Weckruf geplant — stelle dir bitte selbst einen". Ohne Merker — laut
+eigenem KDoc „die einzige Spur" — erreichte ihn danach weder die Master-Pause noch
+`deleteAllAlarms()` noch das Abmelden: er feuert später unerwartet und ist durch nichts mehr
+abzuräumen. **Der Kommentar an dieser Stelle BENANNTE die Gefahr und nahm sie in Kauf** — genau
+der Fall, für den die Regel aus Runde 7 gilt: ein Kommentar, der die Gefahr benennt, ist kein
+Schutz. Jetzt räumt `gibAuf()` zurück, BEVOR der Fehlschlag gemeldet wird (dieselbe Regel wie
+beim Löschen von Alarmen, nur rückwärts angewandt).
+
+**Warum der Rückbau drei unterscheidbare Ausgänge hat** (`RueckbauErgebnis.ABGERAEUMT /
+MISSLUNGEN / BEWUSST_BEHALTEN`) und als Funktion hereingereicht wird: `restorePendingSnoozes()`
+benutzt DIESELBE `armiere()`. Dort ist der Merkereintrag die **Vorlage** des Laufs, nicht sein
+Ergebnis — `merke` zieht ihn nur nach. Ein Rückbau, der dort abbräche, löschte über
+`forgetPendingSnooze()` die einzige Spur, aus der der Schlummer nach jedem weiteren Neustart
+wieder auftauchen könnte: aus einem Schreibfehler würde ein endgültig verlorener Weckruf.
+Deshalb bleibt dort alles stehen, und `MELDUNG_ALARM_BLEIBT` klingt bewusst harmloser als
+`MELDUNG_RUECKBAU_FEHLER` — sonst schickt die Zeile „durch nichts mehr abzuräumen" eine spätere
+Fehlersuche in die falsche Richtung. Alles außer `ABGERAEUMT` führt zu `FEHLGESCHLAGEN_UNKLAR`;
+dessen Nutzertext verspricht NICHTS (weder „kein Weckruf" noch „es klingelt") und sagt nur die
+Wirkung plus den Ausweg.
+
+**Ein gescheitertes Schlummern muss unterscheidbar sein.** `armSnooze()` liefert bewusst einen
+Boolean — `scheduleSnooze()` verwarf ihn. Im Vollbild kam dazu, dass ZUERST der Ton gestoppt und
+erst danach geplant wurde, umgekehrt zum Schwesterpfad im `AlarmSoundService`, der genau diese
+Reihenfolge begründet. Der Bildschirm schloss sich bei Fehlschlag exakt wie bei Erfolg: kein
+Systemalarm, kein Merker, keine Rückmeldung, und der Nutzer legt sich hin. Reihenfolge jetzt
+angeglichen (erst planen, dann Ton stoppen), das Ergebnis wird ausgewertet, und die Activity
+bleibt im Fehlerfall offen. **Der TITEL gehört zum Ergebnis, nicht zur Renderstelle**
+(`TITEL_PAUSE` / `TITEL_FEHLER` / `TITEL_UNKLAR`): ein gemeinsamer Titel „Kein Schlummer-Wecker
+gestellt" stand auch über `HINWEIS_UNKLAR` und holte die Lüge eine Zeile höher zurück — am
+Sperrbildschirm ist der Titel im eingeklappten Zustand die einzige vollständig gelesene Zeile.
+Jeder Titel nennt deshalb kurz die WIRKUNG, nicht die Ursache.
+
+**Instanzzustand des Vollbilds.** Bis Runde 8 endete `snoozeAlarm()` immer in `finish()`, die
+Activity überlebte keinen Schlummerversuch — mit dem neuen Fehlerpfad bleibt sie offen, und
+`onNewIntent()` setzte daraufhin bei JEDER Zustellung `schlummerHinweis` und die Einweg-Sperre
+zurück. Die Wecker-Notification trägt denselben PendingIntent aber auch als `setContentIntent()`:
+ein Tipp auf die laufende Benachrichtigung ist DERSELBE Wecker und löschte den Hinweis „kein
+weiterer Weckruf". Unterschieden wird jetzt über die Alarm-Kennung (`Weckvorgang.istAnderer`);
+**bei fehlender Kennung gilt „derselbe Vorgang"**, weil nur der umgekehrte Irrtum einen Wecker
+kostet: hält man einen neuen Wecker fälschlich für denselben, steht eine überflüssige Warnung
+über einem laut klingelnden Wecker, den man weiterhin stoppen kann.

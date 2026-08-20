@@ -4,6 +4,21 @@
 > Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
 > Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
+## Inhalt
+
+- Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen
+- GMS-Token-Cache liegt ausserhalb des App-Speichers
+- `auth_prefs` braucht `corruptionHandler` UND `.catch{}`
+- `onResult` gehoert `OAuth2TokenManager.authorize()`
+- `observeTokenLoss()` nimmt nur das NEGATIVE Signal, `signOutInProgress` nicht wegoptimieren
+- Abmelden: was zurueckblieb, die Reihenfolge, das `NonCancellable`, die offene Prozesstod-Luecke
+- Eine frische Neu-Autorisierung ist KEIN Kettenbruch
+- `DataStoreTokenRepository.observe()`: kein Signal statt falschem Signal
+- Der Rotation-Chain-Check von `refresh()`
+- `repeatOnLifecycle(RESUMED)` und der Weg zurueck ueber `calendarAuthorizationValid`
+
+---
+
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.** Für eine Wecker-App ist
   „leer" die gefährlichste Lüge — nicht von „du hast frei" zu unterscheiden.
 - **GMS-Token-Cache liegt außerhalb des App-Speichers** und überlebt die Deinstallation. Nur
@@ -24,9 +39,46 @@
   ohne das Flag stieße `observeTokenLoss()` direkt danach einen Zustimmungsdialog an. `isSignedIn`
   allein reicht **nicht** — die DataStore-Emission trifft asynchron ein, `observeAuthState` ist
   zusätzlich 200ms entprellt.
-- **Abmelden heißt: nichts bleibt zurück.** `AuthUseCase.signOut()` verwirft Auth-Daten UND Token
-  (inkl. GMS-Cache). `CredentialAuthManager.signOutLocally()` ist nur eine Log-Zeile — sich darauf
-  zu verlassen war der Fehler.
+- **Abmelden heißt: nichts bleibt zurück — und „nichts“ schließt die gestellten Wecker ein.**
+  `AuthUseCase.signOut()` verwirft Auth-Daten UND Token (inkl. GMS-Cache);
+  `CredentialAuthManager.signOutLocally()` ist nur eine Log-Zeile — sich darauf zu verlassen war der
+  erste Fehler. Der zweite (Prüfrunde 8, im Code als "Befund 3" zitiert): Wecker blieben im AlarmManager, im Repository und
+  im Direct-Boot-Spiegel stehen, während die App nur noch den Anmeldebildschirm zeigte — also weder
+  Wecker-Tab noch Master-Pause, über die sich das hätte abstellen lassen, und der `BootReceiver`
+  machte sie nach jedem Neustart erneut scharf. Geräumt wird jetzt in `AuthViewModel.signOut()`
+  (`stopScheduledWorkForSignOut()`: Wecker, Schichtspannen, 6h-Wartung, Dimmer-/DND-Tick,
+  Hue-Planung, Pre-Alarm-Refresh), in BEIDEN Zweigen. Wer `signOut()` von einer neuen Stelle aus
+  ruft, ohne dort ebenfalls aufzuräumen, stellt den Befund wieder her.
+- **Die Reihenfolge ist: erst abmelden, dann aufräumen — und sie ist erprobt, nicht geraten.** Die
+  umgekehrte Reihenfolge erzeugt den Zustand „angemeldet, aber alle Wecker weg“, den die App
+  vollständig selbst wieder auflösen müsste. Der Versuch, ihn mit einem Rückbau zu heilen, hat in
+  drei aufeinanderfolgenden Reviews je einen NEUEN Fehler produziert: der Wiederaufbau holte den
+  manuellen Wecker nie zurück (er steht in keiner Terminliste); der `ShiftSpanStore` blieb leer,
+  Dimmer und DND liefen also ohne Dienstzeiten weiter; und der Knopf „Erneut abmelden“ auf der
+  Warnkarte löschte die Warnung selbst, weil der zweite Versuch einen Bestand von 0 vorfindet.
+  Das Umdrehen der Reihenfolge ließ den ganzen Apparat ersatzlos entfallen. Merksatz: **wenn ein Fix
+  ringsum nachgerüstet werden muss, ist der Schnitt falsch.**
+- **Ein `Result.failure` aus `signOut()` heißt NICHT „es ist nichts passiert“**, sondern „Token weg,
+  Auth-Daten noch da“: die einzige Fehlerquelle ist `clearAuthData()`, `invalidate()` lief davor.
+  Der Nutzer gilt dann weiter als angemeldet, kommt aber an keinen Kalender mehr — die 6h-Wartung
+  fällt in ihre fail-safe-Zweige, für neue Schichten entstehen keine Wecker. Deshalb behandelt der
+  Aufrufer den Fehlerzweig genauso wie den Erfolgszweig (Prüfrunde 8, Welle 5).
+- **Der gesamte Block ab dem Verwerfen des Tokens liegt in EINEM `withContext(NonCancellable)`** —
+  nicht nur das Aufräumen. Der Punkt ohne Wiederkehr liegt früher als gedacht: `signOut()` ruft über
+  `invalidate()` `GoogleAuthUtil.clearToken()`, einen NETZaufruf, der ohne Netz bis zum Timeout
+  hängt. Vorher lag die Sperre allein um das Aufräumen, erreicht wurde sie also erst danach: ein
+  Wegwischen der App genau in diesem Fenster ließ Token weg und Wecker armiert zurück.
+- **Bewusst offene Restlücke: Prozesstod im Abmelde-Fenster.** `NonCancellable` schützt gegen Abbruch,
+  nicht gegen Prozesstod; stirbt der Prozess zwischen dem Verwerfen der Anmeldung und dem Ende des
+  Aufräumens, bleiben Wecker armiert. **Kein neuer Bug — nicht erneut melden.** Ausweg für den
+  Nutzer: erneut anmelden (der nächste Sync räumt auf) oder das Abmelden wiederholen. Ein
+  dauerhafter Merker dagegen war gebaut und wurde nach Messung VERWORFEN (Begründung im KDoc von
+  `signOut()`): er wurde bei einer Neuanmeldung nirgends gelöscht, sperrte danach bei JEDEM Neustart
+  die Wiederherstellung und ließ die Wartung alle Wecker des NEUEN Kontos löschen — gefährlicher als
+  die enge Lücke, die er schließen sollte. Der Unterschied zum gleich gebauten, aber richtigen
+  Räumauftrag der Kalender-Abwahl: **ein dauerhafter Auftrag braucht eine Gegenfrage.** Die Wartung
+  kann die Kalenderauswahl erneut lesen und den Auftrag als hinfällig verwerfen; der Abmelde-Auftrag
+  wusste nur „ein Abmelden ist unfertig“, nie „der Nutzer ist noch abgemeldet“.
 - **Eine frische Neu-Autorisierung ist KEIN Kettenbruch** (`TokenData.isLegitimateSuccessorOf`, das
   vollständige Urteil von `refresh()`). Drei legitime Fälle: identisch, direkt rotiert — und ein per
   `authorize()` geholtes Token. Das rotiert nicht, sondern beginnt eine NEUE Kette

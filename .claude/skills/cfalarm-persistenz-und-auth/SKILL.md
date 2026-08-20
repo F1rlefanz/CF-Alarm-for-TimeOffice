@@ -31,6 +31,16 @@ das baut man dieselbe Falle in neuer Form nach.
     unter `active_alarms_broken` sichern. Bereit-Signal (`CompletableDeferred`) + gemeinsamer Mutex
     für alle Ganzlisten-Schreibpfade. `clearInternalAlarms` liest über `getAllAlarms()`.
     `deleteAllAlarms()` räumt bewusst trotzdem (force).
+- **`isPersistenceBlocked()` bedeutet NUR „der Alarm-Bestand ist in diesem Prozess nicht lesbar“.**
+  Ein gescheiterter SCHREIBvorgang hat sein eigenes Signal (`istLetzterSchreibvorgangGescheitert()`),
+  und die beiden dürfen nie verodert werden: `clearInternalAlarms()` liest das erste als „unlesbar“
+  und überspringt dann die `cancelSystemAlarm()`-Schleife — nach einem Schreibfehler wäre das
+  „Räumen ohne Cancellen“. Anzeigen fragt beide, Räumen fragt ausschließlich `isPersistenceBlocked()`.
+  Allgemein: **ein bestehendes Signal um eine zweite Bedeutung erweitern heißt, JEDE Leserstelle
+  einzeln daraufhin anzusehen** — im Zweifel ein eigenes Signal.
+- **`saveAlarm()` darf einen nur im Arbeitsspeicher liegenden Wecker nicht als Erfolg verschweigen.**
+  `Result.failure` ist bewusst NICHT die Antwort (siehe Hergang); stattdessen WARN im Release-Log,
+  der getrennte Schreibfehler-Merker, und wer Dauerhaftigkeit braucht, fragt NACH dem Speichern nach.
   - **`EncryptedPreferencesSerializer.readFrom()`** wirft weiter, statt `defaultValue` zu liefern —
     und deutet den Fehler **nicht** als `CorruptionException` um. `writeTo()` schreibt einen leeren
     Zustand als 0-Byte-Datei.
@@ -80,7 +90,17 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`onResult` gehört `OAuth2TokenManager.authorize()`** — es feuert auf jedem Weg genau einmal.
 - **`observeTokenLoss()` nimmt nur das NEGATIVE Signal**; `drop(1)` ist Pflicht.
 - **`signOutInProgress` nicht wegoptimieren** — `isSignedIn` allein reicht nicht.
-- **Abmelden heißt: nichts bleibt zurück** (Auth-Daten UND Token inkl. GMS-Cache).
+- **Abmelden heißt: nichts bleibt zurück** (Auth-Daten UND Token inkl. GMS-Cache) — und
+  „nichts“ schließt die gestellten Wecker ein: `AuthViewModel.signOut()` räumt sie in BEIDEN
+  Zweigen weg (`stopScheduledWorkForSignOut()`).
+- **Reihenfolge: erst abmelden, dann aufräumen** — umgekehrt entsteht „angemeldet, aber alle Wecker
+  weg“, und der Rückbau dagegen ist dreimal gescheitert. Nicht wieder umdrehen.
+- **Der ganze Block ab dem Verwerfen des Tokens liegt in EINEM `withContext(NonCancellable)`** —
+  `GoogleAuthUtil.clearToken()` ist ein Netzaufruf und hängt ohne Netz bis zum Timeout.
+- **Ein Failure aus `signOut()` heißt „Token weg, Auth-Daten noch da“**, nicht „nichts passiert“ —
+  der Aufrufer behandelt den Fehlerzweig wie den Erfolgszweig.
+- **Prozesstod im Abmelde-Fenster ist eine BEWUSST offene Lücke** (dauerhafter Merker nach Messung
+  verworfen) — nicht als neuen Bug melden.
 - **Eine frische Neu-Autorisierung ist KEIN Kettenbruch** (`isLegitimateSuccessorOf`: identisch,
   direkt rotiert, oder per `authorize()` geholt). Der Diebstahls-Zweig bleibt für ältere Tokens.
 - **`refresh()` prüft den NEUEN Token gegen die ID des ALTEN**

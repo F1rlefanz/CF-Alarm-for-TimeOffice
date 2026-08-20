@@ -220,8 +220,18 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **`AlarmSoundService`: `stopSelf(startId)` und `START_REDELIVER_INTENT`** — nie blankes
   `stopSelf()`/`START_STICKY` (stummer Zombie-Service bei sonst normal aussehendem Log).
 - **Vollbild-Dismiss und -Snooze teilen eine Einweg-Sperre** (`OneShotAlarmHandoff.claim()`).
+- **In `onNewIntent()` wird ERARBEITETER Zustand nur bei einem ANDEREN Weckvorgang verworfen.**
+  Aus dem Intent abgeleitete Werte werden immer frisch gelesen; ein Fehlerhinweis und die
+  Einweg-Sperre gehoeren dagegen zum laufenden Vorgang. Die Wecker-Notification traegt denselben
+  PendingIntent auch als `setContentIntent()` — ein Tipp darauf ist DERSELBE Wecker und darf einen
+  Schlummer-Fehlerhinweis nicht wegwischen. Vergleich ueber die Alarm-Kennung.
 - **`AlarmFullScreenActivity` braucht `onNewIntent()` mit `setIntent()`** (`launchMode="singleTask"`).
 - **Snooze braucht `snoozeAlarmAction(id)`**, nicht `enhancedAlarmAction(id)`.
+- **Ein AUFGEGEBENER Armierungsversuch hinterlaesst nichts Scharfes.** Scheitert das Vormerken
+  NACH dem Planen, wird der bereits gestellte Alarm abgebrochen, bevor der Fehlschlag gemeldet
+  wird — sonst steht er scharf im AlarmManager, waehrend die App „kein weiterer Weckruf" sagt, und
+  ohne Merker kann ihn niemand mehr abbrechen. Der WIEDERHERSTELLUNGS-Lauf nach einem Neustart
+  raeumt dabei nichts weg: dort ist der Merker die Vorlage, nicht das Ergebnis.
 - **Ein schwebender Snooze muss einen Reboot überleben** (`restorePendingSnoozes()`), und beide
   Anlässe armieren über dasselbe `armSnooze()` — sonst trifft ein späterer Abbruch ihn nicht mehr.
 - **Der Snooze-Merker ist serialisiert und schreibt mit `commit()`**, nicht `apply()`.
@@ -278,7 +288,9 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 
 - **Eine unvollständige Eventliste ist KEINE Löschgrundlage.** Zwei Quellen: Teilerfolg einzelner
   Kalender und das Lazy-Präfix (10 Events pro Kalender). **Jeder löschende Konsument geht über
-  `getCalendarEventsWithStatus()` und prüft `isComplete`**; der `CalendarStateHolder` trägt
+  `getCalendarEventsWithStatus()` und prüft `isComplete`** — einzige Ausnahme ist die
+  ausdrückliche Kalender-ABWAHL (leere Auswahl aus dem Speicher rückgelesen, nicht leeres
+  Ladeergebnis); Einzelheiten im Kalender-Skill; der `CalendarStateHolder` trägt
   `eventsComplete` mit. Wer einen neuen `syncAlarms()`-Aufrufer ergänzt, muss das beantworten.
 - **Ein Zustand, der den Alarm-Sync DAUERHAFT anhält, muss sichtbar sein.** Die
   `isComplete`-Sperren verhindern nicht nur das Löschen, sondern auch jedes Anlegen; bleibt ein
@@ -304,6 +316,12 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 
 ### Persistenz
 
+- **`isPersistenceBlocked()` heisst „der Bestand ist unlesbar", NICHT „der letzte Schreibvorgang
+  ging schief".** Die beiden Lagen zu einem Signal zu verodern klingt sparsam und ist toedlich:
+  `clearInternalAlarms()` ueberspringt bei „unlesbar" bewusst die ganze `cancelSystemAlarm()`-
+  Schleife — nach einem einzigen fehlgeschlagenen Write raeumte die Master-Pause dann den Bestand
+  und liesse jeden Systemalarm scharf zurueck. Ein Schreibfehler bekommt einen eigenen Weg zu
+  seinem einzigen Konsumenten.
 - **Stille Degradierung darf nie zur Schreibwahrheit werden.** DataStore liest vor jedem Write
   erneut; wer einen Lesefehler auf „leer"/„Default" degradiert, speist die Notlage-Leere in den
   nächsten Read-Modify-Write und überschreibt echte Nutzerdaten.

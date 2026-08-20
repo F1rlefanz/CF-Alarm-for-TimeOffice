@@ -24,6 +24,20 @@
   Fangnetz-Punkt für JEDEN aktuellen UND künftigen Aufrufer; die einzelnen Gates an den Aufrufstellen
   bleiben zusätzlich bestehen (vermeiden unnötige Arbeit wie Kalender-Fetches), sind aber NICHT mehr
   die einzige Verteidigungslinie.
+- **Auch das SCHLUMMERN hat den Backstop — es war der einzige Armierungspfad ohne** (Runde 8).
+  Er sitzt zentral in `SchlummerEntscheidung.armiere()`, nicht je Aufrufer: das Schlummern hat
+  zwei gleichwertige Auslöser (Vollbild und Notification), ein Gate pro Aufrufer hätte denselben
+  Fehler nur auf zwei Stellen verteilt (dieselbe Überlegung wie beim Skip-Backstop in
+  `AlarmUseCase.scheduleSystemAlarm()`). Ein hier armierter Wecker klingelte mitten in der Pause
+  und wäre durch nichts mehr abzuräumen — die 6h-Kette ist beim Pausieren gerade gekappt worden.
+- **`pause()` beendet zusätzlich einen gerade KLINGELNDEN Wecker** (Runde 8). Bis dahin räumte es
+  nur die Planung ab: der Wecker klingelte weiter, während die Oberfläche „pausiert" zeigte, und
+  seine Notification blieb mitsamt Schlummer-Knopf stehen — ein Druck darauf war der Anlass, aus
+  dem der Backstop oben überhaupt nötig wurde. Der `ACTION_STOP_ALARM`-Intent an den
+  `AlarmSoundService` geht **unbedingt** raus, nicht auf `alarmActive` gegated: läuft gar kein
+  Wecker, beendet sich der Dienst sofort wieder; wäre der Zustandsmerker dagegen veraltet, bliebe
+  der Wecker laut. Eigenes try/catch wie jeder Schritt — ein aus dem Hintergrund abgelehnter
+  `startService()` darf die Pause nicht zerreißen.
 - **Denselben Backstop haben `DimScheduleUseCase.enable()` und `DndScheduleUseCase.enable()`**
   (Vorbild `syncAlarms()`): jeder ViewModel-Setter ruft `enable()` ungegatet, und die rollende
   Tick-Kette plant sich selbst nach — eine einzige Einstellungsänderung während der Pause weckte

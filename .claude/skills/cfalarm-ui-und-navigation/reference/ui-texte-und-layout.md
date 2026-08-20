@@ -4,6 +4,19 @@
 > Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
 > Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
+## Inhalt
+
+- Der Akku-Onboarding-Screen darf keine Einstellungen versprechen
+- Kernpunkt einmal, konkret, mit dem echten Einsatz
+- Beschriftung wortgleich, nie eine Position — und die Handlungsrichtung muss stimmen
+- Beispiele in Hinweistexten aus deklarierten, getesteten Listen
+- Kein Text behauptet eine Anzeige, die es nicht gibt (deaktivierte Definition ohne Weckzeit)
+- Scrollbare Dialoge, tote `UITextConstants`
+- Compose-Layout: `weight(1f)` neben Switch und um `LazyColumn`, 24dp-ContentPadding,
+  48dp-Touchziele, `FlowRow`
+- Wahrheit der Anzeige (Prüfrunde 8): Master-Pause sichtbar machen, Meldeweg im richtigen Zustand,
+  kein `SnackbarDuration.Indefinite`, Handlungsrichtung, kein Default für `masterPausePaused`
+
 - **Der Akku-Onboarding-Screen darf keine Einstellungen versprechen.** `MainScreen` feuert
   `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` mit `package:`-Data — das ist Androids
   **Systemdialog** („Zulassen, dass die App immer im Hintergrund läuft?"), ein Tipp, keine Liste.
@@ -15,7 +28,8 @@
 - **Ein Hinweistext nennt Karten- und Knopfbeschriftung wortgleich mit der UI, NIE eine Position.**
   „die Karte darunter" im AUTHORIZATION_LOST-Text zeigte auf die Alarm-Status-Karte; der Knopf
   „Kalender-Zugriff erneuern" sitzt eine Karte weiter. Positionen verschieben sich beim nächsten
-  Layout-Umbau lautlos, Beschriftungen fallen beim Umbenennen auf.
+  Layout-Umbau lautlos, Beschriftungen fallen beim Umbenennen auf. **Wortgleichheit allein reicht
+  nicht** — sie sagt nichts über die Handlungsrichtung; siehe „Wahrheit der Anzeige" unten.
 - **Beispiele in Hinweistexten aus deklarierten Listen zusammenführen, die ein Test gegen die echte
   Standardkonfiguration prüft** (`ShiftConfigScreenTextTest`) — der Konfigurations-Hinweis nannte
   Muster („IMCF, IMCS, IMCN, IMCZ") und behauptete „erkannt wird über die Muster, nicht über den
@@ -68,3 +82,61 @@
   stabil (nur die deprecated Überladung mit `overflow` ist `@ExperimentalLayoutApi`) → kein
   `@OptIn` nötig.
 
+
+### Wahrheit der Anzeige — Prüfrunde 8 (v1.30.0)
+
+**Eine angekündigte Weckzeit, an der nichts klingelt, ist die gefährlichste Anzeige dieser App.**
+`computeNextAlarmTime()` filterte nur nach Zeit und Skip-Merker, nie nach `AlarmInfo.isSilent` — die
+Karte „Nächster Alarm" konnte also eine **stille Schicht** nennen, bei der `AlarmReceiver` per
+Konstruktion stumm aussteigt. Der Nutzer las eine Zusage, stellte keinen eigenen Wecker und
+verschlief; zusätzlich verdeckte der stille Eintrag den nächsten, der wirklich klingelt. Der
+`ShiftConfigScreen` hatte für den Zwilling `isEnabled` schon eine Warnung in Großbuchstaben im Code
+stehen — ausgerechnet die Karte, die den NÄCHSTEN Wecker behauptet, hatte keine. Heute ist der
+stille Eintrag gekennzeichnet, die Zählung „N aktive Alarme" unterscheidet, und der nächste hörbare
+Wecker steht daneben. **Merke: eine Bedingung, die die AUSLÖSUNG gated, muss auch die ANZEIGE
+gaten — sonst sagt die App etwas zu, das sie nicht hält.**
+
+
+Fünf Regeln aus einer Runde, und sie hängen zusammen: eine Meldung nützt nichts, wenn sie im
+falschen Zustand, am falschen Ort, in der falschen Richtung oder gar nicht gerendert wird.
+
+- **Ein Zustand, der die App dauerhaft nicht wecken lässt, MUSS dort stehen, wo der Nutzer
+  nachsieht.** Die Master-Pause ist der umfassendste Sync-Stopp der App (löscht alle Alarme, stoppt
+  Wartung, Dimmer, DND, Hue, Pre-Alarm-Refresh) — angezeigt wurde sie an genau einer Stelle: dem
+  Schalter ganz unten im Einstellungen-Tab. Der Wecker-Tab behauptete derweil „Automatische Alarme:
+  an" samt „Deaktivieren löscht sofort alle Wecker" (sie waren längst gelöscht), der Alarm-Status
+  zeigte ein grundloses „Keine aktiven Alarme", und der Home-Tab nannte brav die nächste Schicht,
+  weil die Schichterkennung unabhängig weiterläuft. Wer nach dem Urlaub Home und Wecker prüfte, sah
+  nichts Auffälliges und verschlief jede Schicht — die App läuft aus diesem Zustand NIE von allein
+  heraus. Jetzt: Karte im Status-Tab mit Folge und zwei Auswegen, Grund im Alarm-Status, korrigierte
+  Schalterbeschreibung, Schalter während der Pause gesperrt. **Die Pause hat Vorrang vor „N aktive
+  Alarme"** (`alarmStatusZustand` in `AlarmStatusHeader.kt`): ein nach `pause()` stehengebliebener
+  Bestand verspricht eine Weckzeit, die nie gestellt wird. Und **höchstens EIN Zusatz-Hinweis**
+  gleichzeitig (`noShiftExplanation`), sonst bleibt offen, welcher der wirksame ist.
+- **Eine Meldung erreicht ihren Nutzer nur, wenn sie in GENAU dem Zustand gerendert wird, in dem sie
+  gesetzt wird.** Vier Fälle in dieser Runde: die Warnung „nicht dauerhaft gespeichert" stand im
+  `else`-Zweig der Karte und war ausgerechnet dann unsichtbar, wenn ein manueller Wecker existierte;
+  die Meldung über einen gescheiterten Regel-Nachzug wurde 200 ms später von `copy(error = null)`
+  gelöscht und nur in `MainContentScreen` gerendert, während der Nutzer im `ShiftConfigScreen`
+  stand; der Hinweis nach gescheitertem Abmelden lag im `LoginScreen`, der in genau diesem Zustand
+  (angemeldet geblieben) nicht komponiert ist; und eine Karte im Status-Tab erreicht niemanden, der
+  im Einstellungen-Tab steht. **Bei jedem neuen Meldungsfeld per grep die Renderstelle UND den
+  Zustand prüfen**, in dem sie greift.
+- **`SnackbarDuration.Indefinite` blockiert den ganzen Host.** `SnackbarHostState.showSnackbar`
+  serialisiert über einen Mutex: die eine unbefristete Snackbar (Hinweis auf stehengebliebene
+  Wecker nach Kalender-Abwahl) ließ ALLE übrigen Kanäle desselben Hosts suspendieren — samt der
+  `clearError()`-Aufrufe dahinter, sodass Kalender-, Schicht- und Wecker-Fehler weder erschienen
+  noch geleert wurden. Ein Zustand, der BLEIBEN soll, gehört als Karte in den Status-Tab (so wie
+  Kalender-Teilerfolg, fehlende Berechtigungen, Akku-Ausnahme). Ein Test hält fest, dass
+  `MainContentScreen` keinen `Indefinite`-Aufruf mehr enthält.
+- **Ein Nutzertext muss auch die RICHTUNG stimmen haben, nicht nur die Beschriftung.** „Wieder
+  einschalten im Einstellungen-Tab unter ‚Hintergrunddienste pausieren'" schickte den Nutzer an
+  einen Schalter, der bereits AN war und AUS gehört — der Text nannte den Namen des Schalters
+  statt der nötigen Handlung. Das fiel erst der Prüfung über dem Fix auf, weil der Test nur
+  `contains(...)` auf den Namen prüft: die Wortgleichheits-Regel oben ist notwendig, nicht
+  hinreichend.
+- **Ein neuer Compose-Parameter für einen sicherheitsrelevanten Zustand bekommt KEINEN Default.**
+  `masterPausePaused: Boolean = false` hätte einen künftigen Aufrufer wortlos in den alten Fehler
+  (Pause unsichtbar) zurückfallen lassen, ohne dass Compiler oder Test anschlagen. Auf dem
+  Anzeigepfad (`AlarmStatusHeader`, `WeckerTabContent`, `StatusTabContent`) ist der Parameter
+  deshalb pflichtig.

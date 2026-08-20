@@ -35,11 +35,23 @@ das baut man dieselbe Falle in neuer Form nach.
 
 - **Der Akku-Onboarding-Screen darf keine Einstellungen versprechen** — es erscheint Androids
   Systemdialog, keine Liste. Ablauf und Text ändern sich gemeinsam.
-- **Ein Hinweistext nennt Karten- und Knopfbeschriftung wortgleich, NIE eine Position.**
+- **Ein Hinweistext nennt Karten- und Knopfbeschriftung wortgleich, NIE eine Position — und muss
+  auch die HANDLUNGSRICHTUNG stimmen haben** („ausschalten", nicht der bloße Schaltername).
 - **Beispiele in Hinweistexten aus deklarierten Listen zusammenführen**, die ein Test gegen die echte
   Standardkonfiguration prüft — Drift muss auffallen.
 - **Kein Text darf eine Anzeige behaupten, die es nicht gibt, und kein Zustand darf sich als anderer
   ausgeben.** Insbesondere: **eine deaktivierte Schichtdefinition darf keine Weckzeit anzeigen.**
+- **Ein Zustand, der die App dauerhaft nicht wecken lässt, MUSS dort stehen, wo der Nutzer
+  nachsieht** — nicht nur an seinem Schalter. Die Master-Pause hat dabei **Vorrang vor „N aktive
+  Alarme"**, und es steht höchstens EIN Zusatz-Hinweis gleichzeitig.
+- **Eine Meldung erreicht ihren Nutzer nur, wenn sie in GENAU dem Zustand gerendert wird, in dem sie
+  gesetzt wird** — Renderstelle UND Zustand bei jedem neuen Meldungsfeld per grep prüfen.
+- **Kein `SnackbarDuration.Indefinite`**: es blockiert über den Mutex des `SnackbarHostState` alle
+  übrigen Meldungen samt ihrer `clearError()`-Aufrufe. Bleibende Zustände sind Karten im Status-Tab.
+- **Auf dem ANZEIGEPFAD bekommt ein sicherheitsrelevanter Compose-Parameter KEINEN Default**
+  (`masterPausePaused` in `AlarmStatusHeader`, `WeckerTabContent`, `StatusTabContent`) — sonst
+  fällt ein künftiger Aufrufer wortlos in den alten Fehler zurück. Reine Textfunktionen wie
+  `noShiftExplanation()` dürfen einen Default haben; dort ist der Wert ein Zusatz, keine Zusage.
 - **Deutsche Nutzer-Texte in `UITextConstants` ohne Aufrufer löschen, nicht liegen lassen.**
 - **`Row(SpaceBetween) { Column { … }; Switch }` braucht `weight(1f)` am Column.**
 - **`ButtonDefaults.ContentPadding` = 24dp pro Seite** — für schmale, geteilte Buttons gibt es

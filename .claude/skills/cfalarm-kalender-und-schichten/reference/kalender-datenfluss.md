@@ -19,6 +19,7 @@
 - Kein echtes Push möglich, bewusst nicht versucht
 - Die Notification-Entscheidung lebt INNERHALB von `AlarmUseCase.syncAlarms()`, nicht bei dessen
 - Der allererste Sync (z. B. nach Neuinstallation) flutet nicht
+- Den letzten Kalender abwählen IST eine Löschgrundlage — ein leeres Ladeergebnis nicht
 
 ---
 
@@ -204,6 +205,17 @@ und in den Sperren selbst.
   Beweis für „gelöscht". Eine selbsttätige Bereinigung wäre bei einer vorübergehenden Störung genau
   die „leer ist die gefährlichste Lüge"-Falle, nur auf der Auswahl statt auf den Events. Es gibt
   einen Knopf, und der gehört dem Nutzer.
+- **Dieser Knopf hat seit v1.30.0 eine zweite Wirkung, und deshalb eine Rückfrage.** Trifft
+  „Aus Auswahl entfernen" den LETZTEN ausgewählten Kalender, ist es keine Bereinigung mehr, sondern
+  eine Abwahl — und die räumt alle kalenderbasierten Wecker der nächsten zwei Wochen samt der
+  Dienstzeit-Fenster für Dimmer und DND (siehe den Abschnitt unten). Der Anlass ist dabei häufig
+  vorübergehend (Server- oder Freigabestörung), also etwas, das von allein vergeht. Deshalb prüft
+  `entfernenWuerdeAuswahlLeeren()` gegen die AKTUELL ausgewählten IDs (nicht gegen eine gemerkte
+  Anzahl — die Liste der nicht abrufbaren stammt aus dem letzten Ladevorgang) und stellt vorher die
+  Frage; der harmlose Ausweg ist der hervorgehobene Knopf, „Trotzdem entfernen" der unauffällige.
+  Die Texte sind Konstanten, damit ein Test sie festhalten kann: der Text IST hier die Zusicherung —
+  er muss die Folge benennen („alle Wecker der nächsten zwei Wochen", „selbst gestellte bleiben")
+  und das Abwarten anbieten.
 - **Vorübergehend ≠ dauerhaft.** Ein Funkloch während des Abrufs erzeugt dieselben
   `failedCalendarIds`. Die Karte zeigt das sofort (sie ist ohnehin nur sichtbar, wenn jemand
   hinsieht), die BENACHRICHTIGUNG erst, wenn dieselbe ID zwei aufeinanderfolgende Wartungsläufe
@@ -223,3 +235,81 @@ dem Tippen auf „Aus Auswahl entfernen" lief der Sync sofort wieder an (8 → 9
 nicht schon beim Entfernen des Kalenders. Wer denselben Kalender innerhalb dieses Fensters (max.
 6 h) wieder hinzufügt, während er noch kaputt ist, bekommt keine erneute Benachrichtigung — die
 Karte zeigt ihn trotzdem. Bewusst nicht behoben: der Aufwand stünde in keinem Verhältnis.
+
+
+## Den letzten Kalender abwählen IST eine Löschgrundlage — ein leeres Ladeergebnis nicht (v1.30.0)
+
+Der `else`-Zweig von `observeCalendarSelection()` leerte beim Abwählen des LETZTEN Kalenders nur
+Eventliste und `CalendarStateHolder` — **ohne jeden Alarm-Sync**. Das Abwählen EINES von mehreren
+Kalendern räumte dessen Wecker korrekt ab (der Delta-Sync des nächsten Ladevorgangs entfernt jeden
+Alarm, dessen `eventId` fehlt); beim letzten gab es diesen nächsten Ladevorgang nicht mehr. Und
+danach war **kein Pfad mehr zuständig**: 6h-Wartung, `CalendarPreAlarmRefreshWorker` und der
+`ShiftViewModel`-Pfad steigen bei leerer Auswahl bzw. leerer Eventliste alle VOR `syncAlarms()` aus,
+und der `BootReceiver` armiert die gespeicherten Alarme sogar aktiv neu. Folge: Die Oberfläche zeigte
+„kein Kalender ausgewählt" und null Termine, während das Gerät **bis zu 14 Tage weiter nach dem
+entfernten Dienstplan weckte** und zu dessen Dienstzeiten dimmte. Abstellen ließ sich das nur durch
+Einzellöschung jedes Weckers oder die Master-Pause.
+
+**Warum das hier erlaubt ist, obwohl „leer" sonst die gefährlichste Lüge ist:** Diese Leere stammt
+nicht aus einem Abruf, sondern aus einer ausdrücklichen Nutzeraktion. Ein gescheiterter Abruf kann
+den Pfad gar nicht erreichen — er ist doppelt abgesichert:
+1. `hasSeenNonEmptySelection` — es muss ein Übergang „war ausgewählt → ist es nicht mehr" sein, nicht
+   der leere Startwert des noch nicht hydrierten `StateFlow`.
+2. Eine Rückfrage direkt beim DataStore über `getCurrentSelectedCalendarIds()`. Sie unterscheidet
+   „wirklich leer" von „nicht lesbar" (`Result.failure`) — bei Zweifel wird NICHT geräumt, und der
+   Widerspruch (Oberfläche sagt „kein Kalender", Wecker stehen weiter) wird gemeldet.
+
+Geräumt wird über `syncAlarms(emptyList(), config)` statt über eigenes Löschen: dessen Leerlisten-
+Zweig ist genau der schonende — er schreibt `persistShiftSpans(emptyList())` (sonst dimmen Dimmer und
+DND weiter nach dem alten Dienstplan; `syncAlarms()` ist der EINZIGE Schreiber des `ShiftSpanStore`),
+räumt mit `keepManualAlarms = true` (ein manueller Wecker stammt nicht aus dem Kalender) und hält die
+Löschreihenfolge ein (erst `cancelSystemAlarm()`, dann `deleteAlarm()`). Das Abwählen zieht außerdem
+eine neue `eventLoadGeneration` — sonst überholt ein noch laufender Ladevorgang das Leeren und legt
+Wecker aus genau den Terminen an, die der Nutzer soeben entfernt hat.
+
+### Der dauerhafte Räumauftrag — und warum er eine Gegenfrage braucht
+
+`NonCancellable` schützt gegen den Abbruch der Coroutine, **nicht gegen den Prozesstod** — und beim
+nächsten App-Start ist die leere Auswahl der Ausgangszustand, der Übergang also nicht mehr erkennbar
+(`hasSeenNonEmptySelection` ist per Konstruktion falsch). Die naheliegendste Geste, Abwählen und die
+App sofort wegwischen, trifft genau dieses Fenster. Deshalb der `PendingDeselectionCleanupStore`:
+gesetzt **VOR** dem Räumen (danach bliebe genau die Lücke offen, die er schließen soll), gelöscht
+erst nach nachweislichem Erfolg, abgearbeitet von der 6h-Wartung (`AbwahlRaeumauftrag`) — ganz ohne
+die App. Scheitert das Festhalten selbst, wird trotzdem geräumt: dann ist der Auftrag nur nicht
+prozessfest, also so gut wie vorher, aber nicht schlechter.
+
+**Die Gegenfrage ist der Kern:** Die Wartung liest die Kalenderauswahl **selbst erneut** und verwirft
+einen hinfällig gewordenen Auftrag. Ohne diese Gegenfrage wird ein dauerhafter Auftrag zur veralteten
+Absicht, die später Wecker löscht — genau daran ist der baugleiche Merker für das Abmelden
+gescheitert: er wusste nur „ein Abmelden ist unfertig", nie „der Nutzer ist noch abgemeldet",
+sperrte deshalb nach einer Neuanmeldung bei JEDEM Neustart die Wiederherstellung und ließ die
+Wartung alle Wecker des neuen Kontos löschen. Er wurde deshalb ersatzlos zurückgebaut.
+
+**Die Gegenrichtung, ebenso bewusst:** Der Auftrag wird **nicht** schon aufgelöst, sobald wieder ein
+Kalender ausgewählt ist. Bis v1.29.2 geschah genau das, begründet damit, dass der Sync des folgenden
+Ladevorgangs jeden verwaisten Alarm entferne. Dieser Sync läuft aber nicht in jedem Fall: er sitzt
+hinter der Prüfung „Eventliste nicht leer" und steigt zusätzlich fail-safe aus, wenn die Liste nicht
+nachweislich vollständig ist. Liefert der neu gewählte Kalender null Termine, passiert gar nichts —
+und mit dem gelöschten Auftrag fängt es auch die Wartung nicht mehr auf. Aufgelöst wird deshalb erst,
+wo es BELEGT ist: nach einem gelungenen Sync über einer nachweislich vollständigen Eventliste.
+
+**Ausdrücklich offen gelassen:** Ist die Master-Pause aktiv, steht ohnehin kein Wecker — der Auftrag
+ist dann gegenstandslos und wird gelöscht, ohne zu syncen (ein Sync während der Pause würde über den
+zentralen Backstop zusätzlich einen schwebenden Snooze abbrechen, was eine Kalender-Abwahl nicht tun
+soll).
+
+## Eine feste Notification-ID für n Meldungen eines Laufs (v1.30.0)
+
+`ShiftChangeNotifier` postete alle drei Meldungsarten unter der konstanten ID **2202**. Die Aufrufer
+in `syncAlarms()` sind aber Schleifen über den GESAMTEN Bestand (`notifyDeleted` je entferntem,
+`notifyUpdated`/`notifyCreated` je neuem Alarm): `notify()` mit gleicher ID ERSETZT die stehende
+Meldung, von n Meldungen eines Sync-Laufs überlebte also nur die letzte — auch quer über die Arten
+hinweg. Ausgerechnet „Schicht entfernt", die Meldung, die dem Nutzer den WEGFALL eines Weckers sagt,
+verschwand damit am ehesten, weil ein später verarbeitetes „Neue Schicht erkannt" sie überschrieb.
+Ein Dienstplanwechsel, der mehrere Tage auf einmal ändert, ist der Normalfall, nicht der Ausnahmefall.
+
+Gelöst als **sammelnde Meldung** (Anzahl plus Einzelposten) statt pro-Alarm abgeleiteter IDs: Letztere
+hätten bei einem großen Wechsel die Leiste überschwemmt und mussten gegen die übrigen vergebenen IDs
+abgegrenzt werden (2002 ist der Wecker). Die Sammlung wird pro Lauf zurückgesetzt und darf über
+Prozessgrenzen hinweg nicht lügen; der Notifier darf den Sync weder ausbremsen noch werfen — er läuft
+mitten in der Alarm-Erzeugung.

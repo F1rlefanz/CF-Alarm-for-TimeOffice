@@ -412,8 +412,12 @@ class AlarmRepository @Inject constructor(
      *
      * @param force überschreibt die [persistenceBlocked]-Sperre. NUR für ein ausdrückliches Räumen
      *   (siehe [deleteAllAlarms]) - dort ist "nichts" der gewollte Zustand, nicht eine Notlage.
+     * @return `true`, wenn Preferences-Datei UND Direct-Boot-Spiegel wirklich geschrieben wurden.
+     *   `false` heißt: der Bestand lebt für diesen Prozess nur noch im Arbeitsspeicher. Beide
+     *   Fälle sind bewusst KEINE Exception (siehe [saveAlarm]), aber sie dürfen sich auch nicht
+     *   gleich anfühlen - deshalb dieser Rückgabewert statt eines reinen Log-Eintrags.
      */
-    private suspend fun persistToDataStore(alarms: List<AlarmInfo>, force: Boolean = false) {
+    private suspend fun persistToDataStore(alarms: List<AlarmInfo>, force: Boolean = false): Boolean {
         if (persistenceBlocked && !force) {
             Logger.w(
                 LogTags.ALARM,
@@ -421,7 +425,7 @@ class AlarmRepository @Inject constructor(
                     "ist gescheitert, der vorhandene Bestand und der Direct-Boot-Spiegel bleiben " +
                     "unangetastet (Sicherung: '$BROKEN_ALARMS_KEY_NAME')"
             )
-            return
+            return false
         }
         try {
             val alarmsData = alarms.map { it.toAlarmInfoData() }
@@ -442,11 +446,37 @@ class AlarmRepository @Inject constructor(
             )
 
             Logger.d(LogTags.ALARM, "💾 PERSISTENCE: Saved ${alarms.size} alarms to DataStore (+ Direct-Boot-Spiegel)")
+            return true
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Error saving alarms to DataStore", e)
+            return false
         }
     }
 
+    /**
+     * WARUM DIESE FUNKTION AUCH DANN `success` MELDET, WENN NICHTS GESCHRIEBEN WURDE.
+     *
+     * Bei gesperrter Persistenz kehrt [persistToDataStore] ohne zu schreiben und ohne zu werfen
+     * zurück - der Alarm liegt dann nur im Arbeitsspeicher, ohne Preferences-Eintrag und ohne
+     * Direct-Boot-Spiegel, und ist nach einem Prozesstod weg. Das als `Result.failure`
+     * herauszureichen wäre die naheliegende, aber falsche Antwort, und zwar aus zwei Gründen:
+     *
+     * 1. Es bräche die ausdrückliche Zusicherung der Sperre (siehe [persistenceBlocked]): "Die
+     *    System-Alarme werden trotzdem gesetzt (der Wecker klingelt), nur die Persistenz bleibt
+     *    für diesen Prozess außen vor."
+     * 2. Es machte den Kalender-Sync SCHLECHTER, nicht besser. `AlarmUseCase.syncAlarms()` ruft
+     *    `saveAlarm(...).getOrThrow()` und erst DANACH `scheduleSystemAlarm(...)`. Ein Wurf hier
+     *    landet zwar im Pro-Event-`try/catch` (der Sync bricht also nicht ab), lässt den Alarm
+     *    aber im Cache stehen, ohne ihn je zu armieren - genau die Kombination "stummer Wecker MIT
+     *    Anzeige", gegen die anderswo im Projekt eigens zurückgerollt wird. Und ein Rollback des
+     *    Cache-Eintrags hier würde in diesem Prozess ALLE Wecker verhindern, statt sie wenigstens
+     *    klingeln zu lassen.
+     *
+     * Wer Dauerhaftigkeit braucht, fragt deshalb NACH dem Speichern [isPersistenceBlocked] - so
+     * wie `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()` für das Löschen und der manuelle
+     * Wecker in `AlarmViewModel.createManualAlarm()` für das Anlegen. Für den Rest bleibt das WARN
+     * unten die Spur; es landet auch im Release-Log.
+     */
     override suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit> {
         return try {
             // VALIDATION: Check if alarm is in the future
@@ -478,7 +508,16 @@ class AlarmRepository @Inject constructor(
                 _activeAlarms.value = currentAlarms
 
                 // PERSIST to DataStore
-                persistToDataStore(currentAlarms)
+                val dauerhaft = persistToDataStore(currentAlarms)
+                if (!dauerhaft) {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "⚠️ PERSISTENCE: Alarm ${alarmInfo.id} (${alarmInfo.formattedTime}) liegt NUR " +
+                            "im Arbeitsspeicher - nicht in der Preferences-Datei und nicht im " +
+                            "Direct-Boot-Spiegel. Er klingelt in diesem Prozess, ist aber nach " +
+                            "Prozesstod oder Neustart weg (siehe isPersistenceBlocked)"
+                    )
+                }
 
                 // CLEANUP: Trigger cleanup after save
                 cleanupExpiredAlarms()

@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.SkipRolledBackException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -45,6 +46,28 @@ data class AlarmUiState(
     val activeAlarms: List<AlarmInfo> = emptyList(),
     val hasActiveAlarms: Boolean = false,
     val nextAlarmTime: String? = null,
+    /**
+     * Ist der unter [nextAlarmTime] angekuendigte Eintrag eine STILLE Schicht?
+     *
+     * Dann bleibt die App zu diesem Zeitpunkt per Konstruktion stumm (AlarmReceiver steigt bei
+     * `isSilent` vor Ton, Vibration, Vollbild und Hue aus) - die Karte darf ihn also nicht wie
+     * einen klingelnden Wecker anzeigen. Bewusst KEIN Herausfiltern: der Zeitpunkt ist der Anker
+     * fuer Dimmer und DND, der Nutzer muss ihn weiterhin sehen koennen. Und der Knopf
+     * "Ueberspringen" haengt ueber `enabled = nextAlarmTime != null` an genau diesem Eintrag
+     * (`AlarmSkipUseCase.findNextAlarm()` waehlt ebenfalls nur nach Zeit) - wer hier filterte,
+     * zeigte etwas anderes an, als der Knopf ueberspringt. Also: kennzeichnen, nicht verstecken.
+     */
+    val nextAlarmIsSilent: Boolean = false,
+    /**
+     * Der naechste Eintrag, der wirklich klingelt - `null`, wenn keiner ansteht.
+     *
+     * Nur dann interessant, wenn [nextAlarmIsSilent] gilt: sonst verdeckt der stille Eintrag den
+     * echten Wecker, und der Nutzer kann aus der Oberflaeche nicht ablesen, wann er das naechste
+     * Mal geweckt wird.
+     */
+    val nextRingingAlarmTime: String? = null,
+    /** Wie viele der [activeAlarms] stumm sind - damit "N aktive Alarme" nicht laut behauptet. */
+    val silentAlarmCount: Int = 0,
     val error: String? = null
 )
 
@@ -108,7 +131,16 @@ class AlarmViewModel @Inject constructor(
     private val shiftUseCase: IShiftUseCase,
     private val errorHandler: ErrorHandler,
     private val masterPausePrefs: MasterPausePrefs,
-    private val alarmPrefs: AlarmPrefs
+    private val alarmPrefs: AlarmPrefs,
+    /**
+     * NUR fuer die Dauerhaftigkeits-Nachfrage nach dem Speichern eines MANUELLEN Weckers
+     * ([createManualAlarm]) - siehe die Begruendung dort. `IAlarmUseCase` reicht die Frage nicht
+     * durch, und `AlarmRepository.saveAlarm()` darf sie aus gutem Grund nicht in seinem `Result`
+     * beantworten (das wuerde den Kalender-Sync verschlechtern, Begruendung ebenfalls dort).
+     * Ein Repository-Interface direkt im ViewModel ist im Projekt etabliert (AuthViewModel,
+     * CalendarViewModel, MainViewModel halten es genauso).
+     */
+    private val alarmRepository: IAlarmRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlarmUiState())
@@ -167,7 +199,7 @@ class AlarmViewModel @Inject constructor(
     init {
         observeAlarmStatus()
         observeSkipStatus()
-        loadAvailableShifts()
+        observeAvailableShifts()
         observeManualAlarms()
         // CLEANUP: Clean expired alarms on startup
         cleanupExpiredAlarmsOnStartup()
@@ -225,11 +257,7 @@ class AlarmViewModel @Inject constructor(
                         val currentTime = System.currentTimeMillis()
                         val futureAlarms = alarms.filter { it.triggerTime > currentTime }
 
-                        _uiState.value = _uiState.value.copy(
-                            activeAlarms = alarms, // Show all alarms for debugging
-                            hasActiveAlarms = alarms.isNotEmpty(),
-                            nextAlarmTime = computeNextAlarmTime(alarms)
-                        )
+                        _uiState.value = uebernehmeAlarmAnzeige(_uiState.value, alarms)
 
                         Logger.d(
                             LogTags.ALARM,
@@ -259,7 +287,7 @@ class AlarmViewModel @Inject constructor(
     }
 
     /**
-     * Fruehester Alarm in der Zukunft, der auch wirklich klingeln wird - als fertiger Anzeigetext.
+     * Schreibt Bestand UND die daraus abgeleitete Wecker-Anzeige in einem Zug in den Zustand.
      *
      * Der aktuell uebersprungene Alarm ist ausgenommen. Im Normalfall ist er ohnehin geloescht,
      * aber genau darauf ist kein Verlass: `AlarmSkipUseCase.skipNextAlarm()` schluckt einen
@@ -267,14 +295,24 @@ class AlarmViewModel @Inject constructor(
      * `AlarmUseCase.scheduleSystemAlarm()` fuehrt aus demselben Grund einen Skip-Backstop.
      * Bleibt ein Eintrag zurueck, ist er NICHT armiert - als "Nächster Alarm" angekuendigt
      * waere er eine Anzeige, die nicht eintritt.
+     *
+     * Die stille Schicht wird dagegen NICHT herausgefiltert, sondern gekennzeichnet - warum,
+     * steht bei [AlarmUiState.nextAlarmIsSilent].
      */
-    private fun computeNextAlarmTime(alarms: List<AlarmInfo>): String? {
-        val currentTime = System.currentTimeMillis()
+    private fun uebernehmeAlarmAnzeige(
+        bisher: AlarmUiState,
+        alarms: List<AlarmInfo>
+    ): AlarmUiState {
         val skippedAlarmId = _skipState.value.takeIf { it.isNextAlarmSkipped }?.skippedAlarmId
-        return alarms
-            .filter { it.triggerTime > currentTime && it.id != skippedAlarmId }
-            .minByOrNull { it.triggerTime }
-            ?.formattedTime
+        val anzeige = berechneWeckerAnzeige(alarms, skippedAlarmId, System.currentTimeMillis())
+        return bisher.copy(
+            activeAlarms = alarms, // Show all alarms for debugging
+            hasActiveAlarms = alarms.isNotEmpty(),
+            nextAlarmTime = anzeige.naechsterEintrag,
+            nextAlarmIsSilent = anzeige.naechsterEintragIstStumm,
+            nextRingingAlarmTime = anzeige.naechsterKlingelnder,
+            silentAlarmCount = anzeige.stummeAlarme
+        )
     }
 
     /**
@@ -293,12 +331,12 @@ class AlarmViewModel @Inject constructor(
             isLoading = false
         )
         // "Naechster Alarm" haengt auch am Skip-Zustand: bleibt der uebersprungene Eintrag
-        // ausnahmsweise im Bestand stehen (siehe computeNextAlarmTime), ist er NICHT armiert und
+        // ausnahmsweise im Bestand stehen (siehe uebernehmeAlarmAnzeige), ist er NICHT armiert und
         // darf nicht als naechster Wecker angekuendigt werden. Beide Flows koennen in beliebiger
-        // Reihenfolge emittieren, deshalb wird hier nachgerechnet.
-        _uiState.value = _uiState.value.copy(
-            nextAlarmTime = computeNextAlarmTime(_uiState.value.activeAlarms)
-        )
+        // Reihenfolge emittieren, deshalb wird hier nachgerechnet. Und zwar der GANZE Block:
+        // faellt der uebersprungene Eintrag weg, aendert sich auch, ob der naechste Eintrag stumm
+        // ist und wann der naechste klingelnde Wecker kommt.
+        _uiState.value = uebernehmeAlarmAnzeige(_uiState.value, _uiState.value.activeAlarms)
     }
 
     /**
@@ -993,76 +1031,92 @@ class AlarmViewModel @Inject constructor(
         }
     }
 
-    private fun loadAvailableShifts() {
+    /**
+     * Haelt die Schichtauswahl des MANUELLEN Weckers am reaktiven Konfigurations-Flow.
+     *
+     * WELCHER FEHLER: die Liste wurde genau einmal aus `init{}` per Schnappschuss geladen
+     * (`getCurrentShiftConfig()`) und mitsamt den kompletten `ShiftDefinition`-Objekten in den
+     * Zustand gelegt. Der `AlarmViewModel` haengt an der Activity und ueberlebt Tabwechsel,
+     * Unterscreens und Rotation - die Liste stand damit bis zum naechsten App-Start still. Wer die
+     * Weckzeit eines Schichttyps aenderte (05:00 -> 04:15) und danach OHNE App-Neustart einen
+     * manuellen Wecker fuer genau diese Schicht anlegte, bekam die ALTE Zeit angelegt, und die
+     * Karte bestaetigte sie ausdruecklich ("Weckzeit: 05:00"). Ein frisch angelegter Schichttyp
+     * fehlte in der Auswahl komplett, ein geloeschter wurde weiter angeboten. Der Kalender-Sync
+     * repariert das nicht: er schont manuelle Alarme (`keepManualAlarms`).
+     *
+     * Vorbild ist `DimmerRulesViewModel.shiftNames` ("Reaktiv statt Einmal-Snapshot - eine
+     * Schicht-Umbenennung/-Neuanlage ohne App-Neustart muss sofort sichtbar werden"); von den
+     * fuenf ViewModels, die die Schicht-Konfiguration anzeigen, war dieses das einzige mit
+     * Einmal-Read.
+     *
+     * Der Flow degradiert bei unlesbarer Konfiguration bewusst auf die Standardwerte und wirft
+     * nicht (`ShiftConfigRepository.shiftConfig`) - der frueher hier eingebaute
+     * Default-Fallback-Zweig ist damit hinfaellig und ersatzlos entfallen. Das `catch` bleibt
+     * trotzdem: es faengt Fehler aus dem Collector-Rumpf, und ein Abbruch dieser Sammlung wuerde
+     * die Auswahl wieder einfrieren.
+     */
+    private fun observeAvailableShifts() {
         viewModelScope.launch {
             try {
-                // 🔍 CRITICAL DEBUG: Überprüfen was getCurrentShiftConfig() wirklich zurückgibt
-                val shiftConfigResult = shiftUseCase.getCurrentShiftConfig()
-                Logger.business(
-                    LogTags.ALARM,
-                    "🔍 SHIFT CONFIG RESULT: success=${shiftConfigResult.isSuccess}"
-                )
-
-                shiftConfigResult.getOrNull()?.let { shiftConfig ->
-                    // 🔍 DEBUG: Loaded shift config validation
-                    Logger.business(
-                        LogTags.ALARM,
-                        "🔍 CONFIG LOADED: ${shiftConfig.definitions.size} definitions"
-                    )
-
-                    Logger.business(
-                        LogTags.ALARM,
-                        "🔍 LOADED CONFIG has ${shiftConfig.definitions.size} definitions:"
-                    )
-                    shiftConfig.definitions.forEach { def ->
-                        Logger.business(
-                            LogTags.ALARM,
-                            "   ${def.id}: ${def.name} -> ${def.alarmTime} (${def.getAlarmTimeFormatted()})"
-                        )
+                shiftUseCase.shiftConfig
+                    .collect { shiftConfig ->
+                        uebernehmeSchichtdefinitionen(shiftConfig.definitions.filter { it.isEnabled })
                     }
-
-                    val availableShifts = shiftConfig.definitions.filter { it.isEnabled }
-
-                    // 🔍 LOG: Available shifts for manual alarm creation
-
-                    _manualAlarmState.value = _manualAlarmState.value.copy(
-                        availableShifts = availableShifts,
-                        selectedShift = availableShifts.firstOrNull() // Erste verfügbare Schicht
-                    )
-
-                    // Update calculated alarm time
-                    updateCalculatedAlarmTime()
-
-                    Logger.d(
-                        LogTags.ALARM,
-                        "Loaded ${availableShifts.size} user-configured shift definitions"
-                    )
-                } ?: run {
-                    Logger.e(LogTags.ALARM, "🚨 CRITICAL: getCurrentShiftConfig() returned null!")
-
-                    // FALLBACK: Versuche direkt die Default-Config zu laden
-                    val defaultConfig =
-                        com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig.getDefaultConfig()
-                    Logger.w(
-                        LogTags.ALARM,
-                        "🔄 FALLBACK: Using default config with ${defaultConfig.definitions.size} definitions"
-                    )
-
-                    val availableShifts = defaultConfig.definitions.filter { it.isEnabled }
-                    _manualAlarmState.value = _manualAlarmState.value.copy(
-                        availableShifts = availableShifts,
-                        selectedShift = availableShifts.firstOrNull(),
-                        error = AppErrorState.validationError("Warnung: Default-Konfiguration wird verwendet")
-                    )
-                    updateCalculatedAlarmTime()
-                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Logger.e(LogTags.ALARM, "🚨 ERROR loading shift definitions", e)
+                Logger.e(LogTags.ALARM, "Schicht-Definitionen fuer den manuellen Wecker nicht lesbar", e)
                 _manualAlarmState.value = _manualAlarmState.value.copy(
                     error = AppErrorState.validationError("Fehler beim Laden: ${e.message}")
                 )
             }
         }
+    }
+
+    /**
+     * Zieht die Auswahl auf eine neue Definitionsliste nach - ueber die stabile `id`, nicht ueber
+     * die Position.
+     *
+     * DIE FALLE beim Reaktiv-Machen: der alte Code setzte bei jedem Laden
+     * `selectedShift = availableShifts.firstOrNull()`. Bei jeder Aenderung an IRGENDEINER
+     * Definition waere die Auswahl des Nutzers auf die erste Schicht zurueckgesprungen - und weil
+     * die Karte die berechnete Weckzeit direkt daneben zeigt, haette dort still die Zeit einer
+     * ANDEREN Schicht gestanden. Deshalb:
+     *
+     * - Auswahl weiterhin vorhanden -> dasselbe `id`, aber das FRISCHE Objekt (neue Weckzeit).
+     * - Noch keine Auswahl getroffen -> erste verfuegbare Schicht als Vorbelegung.
+     * - Auswahl weggefallen (geloescht oder ausgeschaltet) -> KEINE stille Ersatzwahl, sondern
+     *   Auswahl leeren und es sagen. Ein lautlos ausgetauschter Schichttyp waere eine Weckzeit,
+     *   die der Nutzer nie gewaehlt hat; ohne Auswahl ist der Anlegen-Knopf ohnehin gesperrt.
+     */
+    private fun uebernehmeSchichtdefinitionen(verfuegbar: List<ShiftDefinition>) {
+        val bisher = _manualAlarmState.value
+        val bisherigeAuswahl = bisher.selectedShift
+        val nachgezogen = bisherigeAuswahl?.let { alt -> verfuegbar.firstOrNull { it.id == alt.id } }
+        val weggefallen = if (nachgezogen == null) bisherigeAuswahl else null
+
+        _manualAlarmState.value = bisher.copy(
+            availableShifts = verfuegbar,
+            selectedShift = nachgezogen ?: if (bisherigeAuswahl == null) verfuegbar.firstOrNull() else null,
+            error = if (weggefallen != null) {
+                AppErrorState.validationError(
+                    "Der gewählte Schichttyp „${weggefallen.name}“ steht nicht mehr zur " +
+                        "Verfügung – bitte einen anderen auswählen."
+                )
+            } else {
+                bisher.error
+            }
+        )
+
+        // Weckzeit IMMER nachrechnen: sie steht in der Karte und stammt jetzt aus dem frischen
+        // Definitionsobjekt. Ohne diesen Aufruf bliebe der alte Text stehen.
+        updateCalculatedAlarmTime()
+
+        Logger.business(
+            LogTags.ALARM,
+            "Schicht-Definitionen fuer manuellen Wecker aktualisiert: ${verfuegbar.size} verfuegbar" +
+                (if (weggefallen != null) ", bisherige Auswahl entfallen" else "")
+        )
     }
 
     private fun observeManualAlarms() {
@@ -1166,8 +1220,8 @@ class AlarmViewModel @Inject constructor(
             // "Ich habe einen Wecker gestellt und er ist stillschweigend verschwunden" ist fuer
             // eine Wecker-App der schlechteste denkbare Ausgang. Bei der Master-Pause daneben ist
             // dieser Widerspruch schon geschlossen; hier fehlte er.
-            val autoAlarmEnabled =
-                shiftUseCase.getCurrentShiftConfig().getOrNull()?.autoAlarmEnabled ?: true
+            val frischeKonfiguration = shiftUseCase.getCurrentShiftConfig().getOrNull()
+            val autoAlarmEnabled = frischeKonfiguration?.autoAlarmEnabled ?: true
             if (!autoAlarmEnabled) {
                 _manualAlarmState.value = state.copy(
                     error = AppErrorState.validationError(
@@ -1186,11 +1240,51 @@ class AlarmViewModel @Inject constructor(
                 return@launch
             }
 
+            // DIE ARMIERTE ZEIT KOMMT AUS DER FRISCH GELESENEN DEFINITION, nicht aus dem
+            // Zustandsobjekt. Die Liste haengt zwar seit observeAvailableShifts() am reaktiven
+            // Flow, aber genau hier entsteht die Zeit, die spaeter klingelt - und zwischen der
+            // letzten Emission und diesem Moment liegen mehrere suspendierende Aufrufe. Ein
+            // gescheiterter Konfigurations-Read (`null`) degradiert bewusst NICHT auf "geht nicht",
+            // sondern auf das bekannte Objekt: im Zweifel wecken, so wie der autoAlarmEnabled-Check
+            // darueber.
+            val schicht = if (frischeKonfiguration != null) {
+                val gefunden = frischeKonfiguration.definitions
+                    .firstOrNull { it.id == selectedShift.id && it.isEnabled }
+                if (gefunden == null) {
+                    // Die Definition ist weg oder ausgeschaltet. Nicht mit dem alten Objekt
+                    // weitermachen: der Wecker traege eine shiftId, die es nicht mehr gibt, und
+                    // eine Weckzeit, die niemand mehr pflegt.
+                    _manualAlarmState.value = state.copy(
+                        error = AppErrorState.validationError(
+                            "Der Schichttyp „${selectedShift.name}“ steht nicht mehr zur " +
+                                "Verfügung – es wurde kein Wecker gestellt."
+                        )
+                    )
+                    return@launch
+                }
+                if (gefunden.alarmTime != selectedShift.alarmTime) {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "Manueller Wecker: Weckzeit der Definition ${gefunden.id} hat sich seit der " +
+                            "Auswahl geaendert (${selectedShift.alarmTime} -> ${gefunden.alarmTime}) - " +
+                            "es gilt die frisch gelesene"
+                    )
+                }
+                gefunden
+            } else {
+                Logger.w(
+                    LogTags.ALARM,
+                    "Manueller Wecker: Schicht-Konfiguration nicht lesbar - es gilt die zuletzt " +
+                        "angezeigte Definition ${selectedShift.id}"
+                )
+                selectedShift
+            }
+
             _manualAlarmState.value = state.copy(isCreating = true, error = null)
 
             try {
                 // Berechne Alarm-Zeit - ✅ OHNE bescheuerten Offset
-                val alarmDateTime = selectedDate.atTime(selectedShift.alarmTime)
+                val alarmDateTime = selectedDate.atTime(schicht.alarmTime)
                 val alarmTimeMillis = alarmDateTime
                     .atZone(ZoneId.systemDefault())
                     .toInstant()
@@ -1228,9 +1322,9 @@ class AlarmViewModel @Inject constructor(
 
                 // Erstelle AlarmInfo
                 val manualAlarmId =
-                    ManualAlarmConstants.createManualAlarmId(selectedDate, selectedShift.id)
+                    ManualAlarmConstants.createManualAlarmId(selectedDate, schicht.id)
                 val manualShiftId =
-                    ManualAlarmConstants.createManualShiftId(selectedShift.id, selectedDate)
+                    ManualAlarmConstants.createManualShiftId(schicht.id, selectedDate)
 
                 // SKIP-KOLLISION AUFLOESEN, BEVOR gespeichert wird.
                 //
@@ -1281,7 +1375,7 @@ class AlarmViewModel @Inject constructor(
                 val alarmInfo = AlarmInfo(
                     id = manualAlarmId,
                     shiftId = manualShiftId,
-                    shiftName = "${selectedShift.name} (Manuell)",
+                    shiftName = "${schicht.name} (Manuell)",
                     triggerTime = alarmTimeMillis,
                     formattedTime = alarmDateTime.format(
                         DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
@@ -1294,12 +1388,65 @@ class AlarmViewModel @Inject constructor(
                         // Schedule System Alarm
                         alarmUseCase.scheduleSystemAlarm(alarmInfo)
                             .onSuccess {
+                                // DAUERHAFTIGKEIT NACHFRAGEN - dasselbe Muster wie
+                                // `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()`.
+                                //
+                                // `saveAlarm()` meldet auch dann Erfolg, wenn nur der
+                                // Arbeitsspeicher beschrieben wurde: bei gesperrter Persistenz
+                                // (gescheiterter Init-Load, oder ein Read vor der ersten
+                                // Entsperrung, der still "leer" lieferte) kehrt
+                                // `persistToDataStore()` ohne zu schreiben und ohne zu werfen
+                                // zurueck. Der Wecker ist dann zwar armiert und klingelt in
+                                // diesem Prozess - aber er steht weder in der Preferences-Datei
+                                // noch im Direct-Boot-Spiegel. Nach Prozesstod oder Neustart ist
+                                // er spurlos weg, und fuer einen MANUELLEN Wecker endgueltig:
+                                // kein Kalender-Sync kann ihn rekonstruieren.
+                                //
+                                // Bewusst KEINE Ruecknahme: der Wecker funktioniert hier und
+                                // jetzt, ihn zu loeschen waere schlechter als ihn zu behalten.
+                                // Aber er darf sich nicht als normal angelegt ausgeben.
+                                // KEIN runCatching: das faengt Throwable und damit auch die
+                                // CancellationException, die `isPersistenceBlocked()` bewusst
+                                // weiterwirft (sie sagt nichts ueber den Bestand aus, nur ueber
+                                // die abgeraeumte Coroutine).
+                                val nurImArbeitsspeicher = try {
+                                    alarmRepository.isPersistenceBlocked()
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    Logger.w(
+                                        LogTags.ALARM,
+                                        "Dauerhaftigkeit des manuellen Weckers nicht pruefbar",
+                                        e
+                                    )
+                                    false // im Zweifel nicht beunruhigen - der Wecker steht
+                                }
                                 _manualAlarmState.value = _manualAlarmState.value.copy(
-                                    isCreating = false
+                                    isCreating = false,
+                                    error = if (nurImArbeitsspeicher) {
+                                        AppErrorState.validationError(
+                                            "Der Wecker ist gestellt und klingelt – aber er ließ " +
+                                                "sich nicht dauerhaft speichern. Startet das " +
+                                                "Handy neu oder beendet das System die App, ist " +
+                                                "er weg. Bitte die App einmal vollständig " +
+                                                "schließen, neu öffnen und den Wecker erneut " +
+                                                "stellen."
+                                        )
+                                    } else {
+                                        null
+                                    }
                                 )
+                                if (nurImArbeitsspeicher) {
+                                    Logger.w(
+                                        LogTags.ALARM,
+                                        "⚠️ Manueller Wecker ${alarmInfo.id} liegt NUR im " +
+                                            "Arbeitsspeicher - Persistenz ist in diesem Prozess " +
+                                            "gesperrt, kein Direct-Boot-Spiegel"
+                                    )
+                                }
                                 Logger.business(
                                     LogTags.ALARM,
-                                    "✅ Manual alarm created: ${selectedShift.name} for $selectedDate"
+                                    "✅ Manual alarm created: ${schicht.name} for $selectedDate"
                                 )
                             }
                             .onFailure { error ->
@@ -1418,6 +1565,62 @@ class AlarmViewModel @Inject constructor(
         // Note: ViewModelScope automatically cancels all remaining coroutines
     }
 
+}
+
+/**
+ * Was die Alarm-Status-Karte ueber den naechsten Wecker sagen darf - siehe [berechneWeckerAnzeige].
+ */
+internal data class WeckerAnzeige(
+    val naechsterEintrag: String?,
+    val naechsterEintragIstStumm: Boolean,
+    val naechsterKlingelnder: String?,
+    val stummeAlarme: Int
+)
+
+/**
+ * Leitet aus dem Alarm-Bestand ab, was die Karte behaupten darf — bewusst als Top-Level-Funktion,
+ * damit sie ohne ViewModel pruefbar ist.
+ *
+ * WELCHE ANZEIGE WAR FALSCH: "Nächster Alarm: 05:30" stand fuer den fruehesten Eintrag in der
+ * Zukunft, egal ob er klingelt. Eine STILLE Schicht (Rufbereitschaft; `AlarmInfo.isSilent`) ist
+ * aber genau der Fall, in dem die App zur angezeigten Zeit per Konstruktion stumm bleibt: der
+ * `AlarmReceiver` steigt bei `isSilent` aus, bevor Ton, Vibration, Vollbild oder Hue ueberhaupt
+ * angestossen werden. Wer die Zeile las und darauf vertraute, verschlief - ohne Icon, ohne Text,
+ * ohne abweichende Faerbung. Dasselbe galt fuer "N aktive Alarme": bei genau einer stillen Schicht
+ * stand dort in Gruen "1 aktive Alarme", obwohl kein einziger klingelt. Das Projekt hat denselben
+ * Fehlertyp fuer `isEnabled` bereits behandelt (ShiftConfigScreen: "EINE ANGEZEIGTE WECKZEIT, DIE
+ * NIE GESTELLT WIRD, IST DIE GEFAEHRLICHSTE ANZEIGE, DIE EINE WECKER-APP HABEN KANN") - nur eben
+ * nicht in der Karte, die den naechsten Wecker behauptet.
+ *
+ * WARUM KENNZEICHNEN UND NICHT FILTERN: der stille Eintrag ist der Zeitanker fuer Dimmer und DND,
+ * der Nutzer muss ihn weiterhin sehen. Und der Knopf "Ueberspringen" haengt an genau derselben
+ * Auswahl (`AlarmSkipUseCase.findNextAlarm()` filtert ebenfalls nur nach `triggerTime`) - ein
+ * gefilterter [naechsterEintrag] waere eine NEUE Anzeigeluege: die Karte zeigte den lauten Wecker,
+ * waehrend der Knopf den stillen loescht. Deshalb bleibt [naechsterEintrag] die unveraenderte
+ * Auswahl, sie wird nur als stumm ausgewiesen, und [naechsterKlingelnder] nennt zusaetzlich den
+ * naechsten echten Wecker.
+ *
+ * @param jetzt Vergleichszeitpunkt (Epoch-Millis) - als Parameter, damit der Test ihn setzen kann.
+ */
+internal fun berechneWeckerAnzeige(
+    alarms: List<AlarmInfo>,
+    skippedAlarmId: Int?,
+    jetzt: Long
+): WeckerAnzeige {
+    val anstehend = alarms.filter { it.triggerTime > jetzt && it.id != skippedAlarmId }
+    val naechster = anstehend.minByOrNull { it.triggerTime }
+    return WeckerAnzeige(
+        naechsterEintrag = naechster?.formattedTime,
+        naechsterEintragIstStumm = naechster?.isSilent == true,
+        naechsterKlingelnder = anstehend
+            .filterNot { it.isSilent }
+            .minByOrNull { it.triggerTime }
+            ?.formattedTime,
+        // Bezugsgroesse ist bewusst die GANZE Liste: die Karte zaehlt daneben `activeAlarms.size`,
+        // und zwei Zahlen aus verschiedenen Grundmengen waeren wieder eine Anzeige, die nicht
+        // stimmt.
+        stummeAlarme = alarms.count { it.isSilent }
+    )
 }
 
 /**

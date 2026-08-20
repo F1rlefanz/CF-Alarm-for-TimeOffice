@@ -29,17 +29,51 @@ import java.time.format.DateTimeFormatter
  * bitgenau aus wie ein erfolgreiches — Ton aus, Bildschirm zu, kein Wecker, kein Merker, nur eine
  * Zeile im Log. Wer "15 Min spaeter" gedrueckt hat, verschlief ohne jeden Hinweis.
  *
- * Zwei Fehlschlaege sind zu unterscheiden, weil sie verschiedene Antworten verlangen:
+ * Drei Lagen sind zu unterscheiden, weil sie verschiedene Antworten verlangen - und jede traegt
+ * ihre EIGENE Ueberschrift (siehe [SchlummerEntscheidung.TITEL_PAUSE]):
  * - [ABGELEHNT_PAUSE]: die Master-Pause laeuft. Das ist KEIN Defekt, sondern der gewollte
  *   Zustand — aber der Nutzer muss erfahren, dass er nicht wieder geweckt wird.
  * - [FEHLGESCHLAGEN]: die Planung selbst ist gescheitert (entzogene Exact-Alarm-Berechtigung auf
  *   API 31/32, Alarm-Obergrenze, DeadSystemException). Hier ist Weiterklingeln die richtige
  *   Antwort: ein Wecker, der laut bleibt, ist besser als einer, der lautlos verschwindet.
+ * - [FEHLGESCHLAGEN_UNKLAR]: der Versuch ist gescheitert, NACHDEM der Alarm bereits armiert war,
+ *   und der Rueckbau hat ihn nicht abgeraeumt - entweder weil er misslang oder weil er ihn
+ *   bewusst stehen laesst (Wiederherstellung nach Neustart). Dann steht moeglicherweise doch ein
+ *   Weckruf - und der Nutzertext muss das sagen duerfen, statt "es ist KEIN weiterer Weckruf
+ *   geplant" zu behaupten. Ein falsches Versprechen in die andere Richtung waere genauso eine
+ *   Luege, nur eine bequemere.
  */
 enum class SnoozeErgebnis {
     GEPLANT,
     ABGELEHNT_PAUSE,
-    FEHLGESCHLAGEN
+    FEHLGESCHLAGEN,
+    FEHLGESCHLAGEN_UNKLAR
+}
+
+/**
+ * Was der Rueckbau eines aufgegebenen Armierungsversuchs erreicht hat.
+ *
+ * WARUM DREI WERTE UND NICHT `Boolean`: Der Rueckbau darf nur wegraeumen, was DERSELBE Vorgang
+ * gerade angelegt hat — und das ist je nach Anlass verschieden. Beim frischen Schlummern hat der
+ * Vorgang den Alarm angelegt (also weg damit), bei der Wiederherstellung nach einem Neustart hat
+ * er nur einen Alarm zu einem Merker-Eintrag nachgezogen, der schon vorher da war (also stehen
+ * lassen). "Nicht abgeraeumt" und "bewusst behalten" sehen als `false` gleich aus, verlangen aber
+ * verschiedene Log-Zeilen — und die eine Zeile ist der einzige Hinweis, den ein Vorfall spaeter
+ * hinterlaesst.
+ */
+internal enum class RueckbauErgebnis {
+    /** Der Alarm ist wieder weg; es steht nichts Scharfes mehr. */
+    ABGERAEUMT,
+
+    /** Der Rueckbau hat nicht funktioniert - der Alarm steht moeglicherweise noch. */
+    MISSLUNGEN,
+
+    /**
+     * Es wurde bewusst nichts angeruehrt: der Alarm bleibt armiert und bleibt ueber den schon
+     * vorher vorhandenen Merker abbrechbar. Fuer eine Wecker-App die richtige Richtung — er
+     * klingelt.
+     */
+    BEWUSST_BEHALTEN
 }
 
 /**
@@ -55,8 +89,24 @@ internal object SchlummerEntscheidung {
             "Wecker klingelte mitten in einer Pause und waere durch nichts mehr abzuraeumen " +
             "(die 6h-Kette ist beim Pausieren gekappt)."
 
-    /** Titel des Hinweises an den Nutzer - gilt fuer BEIDE Fehlschlagsarten. */
-    const val HINWEIS_TITEL = "Kein Schlummer-Wecker gestellt"
+    /**
+     * Die Ueberschriften - eine je Fehlschlagsart, NICHT eine gemeinsame.
+     *
+     * WARUM JE ERGEBNIS EINE (Pruefrunde 8, Folgebefund zum unklaren Ausgang): Es gab einen
+     * einzigen Titel "Kein Schlummer-Wecker gestellt", und er stand auch ueber [HINWEIS_UNKLAR].
+     * Damit war die Luege wieder da, gegen die [SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR] ueberhaupt
+     * eingefuehrt wurde - nur eine Zeile hoeher. Und sie stand ausgerechnet an der Stelle, die am
+     * Sperrbildschirm im eingeklappten Zustand als EINZIGE gelesen wird, waehrend der Fliesstext
+     * gekuerzt ist. Der Titel gehoert deshalb zum Ergebnis, nicht zur Renderstelle.
+     *
+     * KURZ HALTEN: eingeklappt bleibt nur rund eine Zeile stehen. Jeder Titel nennt die WIRKUNG
+     * (weckt nicht / kein Weckruf / ungewiss), nicht die Ursache.
+     */
+    const val TITEL_PAUSE = "Pausiert - kein Weckruf mehr"
+
+    const val TITEL_FEHLER = "Kein Schlummer-Wecker gestellt"
+
+    const val TITEL_UNKLAR = "Schlummer-Wecker ungewiss"
 
     /**
      * Nutzertexte beschreiben die WIRKUNG, nicht den Namen einer Systemeinstellung — die
@@ -71,6 +121,33 @@ internal object SchlummerEntscheidung {
             "stelle dir bitte selbst einen."
 
     /**
+     * Der ehrliche Text fuer den Fall, dass der Rueckbau des schon armierten Alarms misslungen ist.
+     *
+     * Er verspricht NICHTS - weder "kein Weckruf" (dann klingelte es unerwartet) noch "es klingelt"
+     * (dann verliesse sich jemand darauf). Er sagt die Wirkung und was zu tun ist.
+     */
+    const val HINWEIS_UNKLAR =
+        "Der Schlummer-Wecker liess sich nicht zuverlaessig stellen. Moeglicherweise klingelt es " +
+            "spaeter trotzdem noch einmal - verlass dich nicht darauf und stelle dir bitte selbst " +
+            "einen Wecker."
+
+    /** Loggt den misslungenen Rueckbau eines bereits armierten Schlummer-Weckers. */
+    const val MELDUNG_RUECKBAU_FEHLER =
+        "⚠️ Der bereits armierte Schlummer-Wecker liess sich nicht wieder abbrechen - er kann " +
+            "spaeter unerwartet feuern und ist ohne Merker durch nichts mehr abzuraeumen."
+
+    /**
+     * Loggt den bewusst stehen gelassenen Alarm eines Wiederherstellungslaufs.
+     *
+     * Klingt harmloser als [MELDUNG_RUECKBAU_FEHLER] und ist es auch: der Alarm steht, der Merker
+     * steht, beides passt zusammen. Nur das Nachziehen des Merkers ist misslungen.
+     */
+    const val MELDUNG_ALARM_BLEIBT =
+        "⚠️ Der Snooze-Merker liess sich beim Wiederherstellen nicht neu schreiben. Der Alarm " +
+            "bleibt armiert und ueber den bestehenden Eintrag abbrechbar - er klingelt, aber die " +
+            "Anzeigedaten koennen veraltet sein."
+
+    /**
      * Der gemeinsame Kern jedes Armierens: erst der Master-Pause-Backstop, dann planen, dann
      * vormerken.
      *
@@ -83,31 +160,104 @@ internal object SchlummerEntscheidung {
      * REIHENFOLGE ist tragend: [merke] laeuft erst NACH [plane]. Der Merker ist die einzige Spur,
      * ueber die ein schwebender Schlummer spaeter abgebrochen oder nach einem Neustart
      * wiederhergestellt werden kann — ein Eintrag ohne Alarm waere eine Luege im Boot-Log.
+     *
+     * EIN AUFGEGEBENER VERSUCH HINTERLAESST NICHTS SCHARFES ([baueZurueck]): Scheitert erst das
+     * Vormerken, ist der Alarm bereits armiert. Bis zur adversarialen Review der Pruefrunde 8
+     * meldete diese Funktion dann schlicht [SnoozeErgebnis.FEHLGESCHLAGEN] und liess ihn stehen -
+     * beide Aufrufer sagen dem Nutzer daraufhin ausdruecklich "Es ist KEIN weiterer Weckruf
+     * geplant", waehrend der Schlummer scharf steht. Er feuert spaeter unerwartet, und weder
+     * Master-Pause noch `deleteAllAlarms` noch das Abmelden erreichen ihn, weil genau der Merker
+     * fehlt, ueber den sie ihn finden wuerden. Der Kommentar an dieser Stelle benannte die Gefahr
+     * sogar - ein Kommentar, der die Gefahr benennt, ist kein Schutz. Deshalb laeuft [baueZurueck],
+     * BEVOR der Fehlschlag gemeldet wird: dieselbe Regel wie beim Loeschen von Alarmen ("erst
+     * cancelSystemAlarm, dann verwerfen"), nur rueckwaerts angewandt. Was der Rueckbau dabei tut,
+     * haengt am Anlass - siehe naechster Absatz.
+     *
+     * NUR WEGRAEUMEN, WAS DERSELBE VORGANG ANGELEGT HAT: [baueZurueck] kommt als Funktion herein -
+     * wie [plane] und [merke] -, damit dieses Objekt Android-frei testbar bleibt UND damit jeder
+     * Anlass seinen eigenen, passenden Rueckbau mitbringt. Das ist keine Feinheit, sondern der
+     * Unterschied zwischen zwei Datenlagen:
+     * - **Frisch schlummern** (`scheduleSnooze`): Der Merker-Eintrag ist gerade NICHT entstanden,
+     *   der Alarm schon. Ohne Merker ist er durch nichts mehr abzuraeumen - also abbrechen.
+     * - **Nach Neustart wiederherstellen** (`restorePendingSnoozes`): Der Merker-Eintrag steht
+     *   BEREITS, er ist ja die Vorlage des Laufs; [merke] zieht ihn nur nach. Ein Rueckbau, der
+     *   hier abbricht, wuerde ueber `forgetPendingSnooze()` genau die einzige Spur loeschen, aus
+     *   der der Schlummer nach jedem weiteren Neustart wieder auftauchen koennte - aus einem
+     *   Schreibfehler wuerde ein endgueltig verlorener Weckruf. Deshalb bleibt dort alles stehen
+     *   ([RueckbauErgebnis.BEWUSST_BEHALTEN]): der Alarm klingelt, und das ist fuer eine
+     *   Wecker-App die richtige Richtung.
+     *
+     * Alles ausser [RueckbauErgebnis.ABGERAEUMT] fuehrt zu [SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR] -
+     * der Nutzertext hoert dann auf, etwas zu versprechen.
      */
     fun armiere(
         pausiert: Boolean,
         plane: () -> Unit,
         merke: () -> Unit,
+        baueZurueck: () -> RueckbauErgebnis,
         melde: (String, Throwable?) -> Unit
     ): SnoozeErgebnis {
         if (pausiert) {
             melde(MELDUNG_PAUSIERT, null)
             return SnoozeErgebnis.ABGELEHNT_PAUSE
         }
+        // Merkt sich, ob im AlarmManager wirklich schon etwas steht. Nur dann ist ein Rueckbau
+        // noetig - und nur dann waere ein blosses "FEHLGESCHLAGEN" eine Luege.
+        var scharf = false
         return try {
             plane()
-            // Scheitert das Vormerken, gilt der Schlummer als NICHT verlaesslich gestellt: er
-            // waere zwar im AlarmManager scharf, aber weder abbrechbar noch reboot-fest. Lieber
-            // klingelt der Wecker weiter, als dem Nutzer einen Zustand zuzusagen, den die App
-            // nicht mehr in der Hand hat.
+            scharf = true
+            // Scheitert das Vormerken, gilt der Schlummer als NICHT verlaesslich gestellt: der
+            // Merker ist frisch nicht geschrieben, der Alarm damit (je nach Anlass) nicht
+            // abbrechbar oder nicht reboot-fest. Lieber klingelt der Wecker weiter, als dem
+            // Nutzer einen Zustand zuzusagen, den die App nicht mehr in der Hand hat.
             merke()
             SnoozeErgebnis.GEPLANT
         } catch (e: SecurityException) {
             melde("❌ Schlummern konnte nicht geplant werden - Alarm-Berechtigung verweigert", e)
-            SnoozeErgebnis.FEHLGESCHLAGEN
+            gibAuf(scharf, baueZurueck, melde)
         } catch (e: Exception) {
             melde("❌ Schlummern konnte nicht geplant werden", e)
-            SnoozeErgebnis.FEHLGESCHLAGEN
+            gibAuf(scharf, baueZurueck, melde)
+        }
+    }
+
+    /**
+     * Raeumt einen bereits armierten Alarm ab, bevor der Fehlschlag gemeldet wird.
+     *
+     * War noch nichts armiert ([scharf] == false), gibt es nichts abzuraeumen - dann ist
+     * [SnoozeErgebnis.FEHLGESCHLAGEN] die wahre Aussage. Wirft der Rueckbau selbst, gilt er als
+     * misslungen: ein Wurf hier darf den Fehlerpfad nicht ersetzen, sonst kaeme statt einer
+     * ehrlichen Meldung gar keine.
+     */
+    private fun gibAuf(
+        scharf: Boolean,
+        baueZurueck: () -> RueckbauErgebnis,
+        melde: (String, Throwable?) -> Unit
+    ): SnoozeErgebnis {
+        if (!scharf) return SnoozeErgebnis.FEHLGESCHLAGEN
+        val rueckbau = try {
+            baueZurueck()
+        } catch (e: Exception) {
+            // Frueh heraus, damit die Meldung genau EINMAL faellt - eine doppelte Zeile im Log
+            // liest sich wie zwei Vorfaelle.
+            melde(MELDUNG_RUECKBAU_FEHLER, e)
+            return SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR
+        }
+        return when (rueckbau) {
+            RueckbauErgebnis.ABGERAEUMT -> SnoozeErgebnis.FEHLGESCHLAGEN
+            RueckbauErgebnis.MISSLUNGEN -> {
+                melde(MELDUNG_RUECKBAU_FEHLER, null)
+                SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR
+            }
+            // Eigene Meldung: hier ist NICHTS kaputtgegangen, was der Nutzer suchen muesste - der
+            // Alarm steht und bleibt abbrechbar. Die Zeile von MELDUNG_RUECKBAU_FEHLER ("durch
+            // nichts mehr abzuraeumen") waere an dieser Stelle schlicht falsch und schickte eine
+            // spaetere Fehlersuche in die falsche Richtung.
+            RueckbauErgebnis.BEWUSST_BEHALTEN -> {
+                melde(MELDUNG_ALARM_BLEIBT, null)
+                SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR
+            }
         }
     }
 
@@ -121,8 +271,40 @@ internal object SchlummerEntscheidung {
         SnoozeErgebnis.GEPLANT -> null
         SnoozeErgebnis.ABGELEHNT_PAUSE -> HINWEIS_PAUSE
         SnoozeErgebnis.FEHLGESCHLAGEN -> HINWEIS_FEHLER
+        SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR -> HINWEIS_UNKLAR
+    }
+
+    /**
+     * Die Ueberschrift ueber [hinweisText] — `null` genau dann, wenn auch der Text `null` ist.
+     *
+     * Getrennt von [hinweisText] abrufbar, weil die Benachrichtigung beides in verschiedene Felder
+     * setzt (`setContentTitle` / `setContentText`).
+     */
+    fun hinweisTitel(ergebnis: SnoozeErgebnis): String? = when (ergebnis) {
+        SnoozeErgebnis.GEPLANT -> null
+        SnoozeErgebnis.ABGELEHNT_PAUSE -> TITEL_PAUSE
+        SnoozeErgebnis.FEHLGESCHLAGEN -> TITEL_FEHLER
+        SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR -> TITEL_UNKLAR
+    }
+
+    /**
+     * Titel und Text als EIN Wert - damit an einer Renderstelle nicht die Ueberschrift des einen
+     * Ergebnisses ueber dem Text eines anderen landen kann. Genau diese Vermischung war der
+     * Befund, siehe [TITEL_PAUSE].
+     */
+    fun hinweis(ergebnis: SnoozeErgebnis): SchlummerMeldung? {
+        val text = hinweisText(ergebnis) ?: return null
+        val titel = hinweisTitel(ergebnis) ?: return null
+        return SchlummerMeldung(titel, text)
     }
 }
+
+/**
+ * Eine vollstaendige Meldung an den Nutzer: Ueberschrift plus Fliesstext, unzertrennlich.
+ *
+ * Erzeugt ausschliesslich ueber [SchlummerEntscheidung.hinweis].
+ */
+internal data class SchlummerMeldung(val titel: String, val text: String)
 
 /**
  * Enhanced AlarmManager service with maximum reliability and doze mode compatibility.
@@ -675,7 +857,21 @@ class AlarmManagerService(
                 triggerTime = triggerTime,
                 shiftName = shiftName,
                 shiftStartTimeFormatted = shiftStartTimeFormatted,
-                logContext = "Snooze-Alarm gesetzt: $shiftName in $minutes Min"
+                logContext = "Snooze-Alarm gesetzt: $shiftName in $minutes Min",
+                // FRISCH SCHLUMMERN: Der Merker-Eintrag zu dieser ID ist gerade NICHT entstanden
+                // (sonst waeren wir nicht im Rueckbau). Ein Alarm ohne Merker ist durch nichts
+                // mehr abzuraeumen - weder durch die Master-Pause noch durch `deleteAllAlarms`
+                // noch durch das Abmelden -, also muss er weg. [cancelSnooze] baut denselben
+                // PendingIntent-Slot zeichengleich nach und ist damit die exakte Gegenoperation.
+                // Das darin enthaltene `forgetPendingSnooze()` laeuft ins Leere bzw. raeumt einen
+                // Alt-Eintrag derselben ID mit weg - hier beides richtig.
+                baueZurueck = {
+                    if (cancelSnooze(context, alarmId)) {
+                        RueckbauErgebnis.ABGERAEUMT
+                    } else {
+                        RueckbauErgebnis.MISSLUNGEN
+                    }
+                }
             )
         }
 
@@ -696,6 +892,14 @@ class AlarmManagerService(
          * nichts mehr abraeumte (die 6h-Kette ist gekappt, `syncAlarms()` laeuft nur bei
          * App-Interaktion) - waehrend die Oberflaeche "Hintergrunddienste pausiert" zeigte. Der
          * Backstop deckt beide Ausloeser (Vollbild, Notification) UND jeden kuenftigen Aufrufer.
+         *
+         * [baueZurueck] IST DER EINZIGE UNTERSCHIED zwischen den beiden Anlaessen und kommt
+         * deshalb vom Aufrufer, nicht aus einem Flag hier drin: Scheitert das Vormerken, ist der
+         * Alarm schon armiert, und was dann zu tun ist, haengt daran, ob der Merker-Eintrag
+         * gerade erst entstehen sollte (frisch schlummern -> Alarm abbrechen) oder ob er schon
+         * vorher da war (Wiederherstellung -> nichts anfassen, sonst loescht der Rueckbau die
+         * einzige Spur des Schlummers und der Weckruf ist endgueltig verloren). Details in
+         * [SchlummerEntscheidung.armiere].
          */
         private fun armSnooze(
             context: Context,
@@ -703,7 +907,8 @@ class AlarmManagerService(
             triggerTime: Long,
             shiftName: String,
             shiftStartTimeFormatted: String,
-            logContext: String
+            logContext: String,
+            baueZurueck: () -> RueckbauErgebnis
         ): SnoozeErgebnis {
             val ergebnis = SchlummerEntscheidung.armiere(
                 // ZUERST der Backstop: waehrend einer Master-Pause entsteht hier gar nichts, auch
@@ -753,6 +958,9 @@ class AlarmManagerService(
                 merke = {
                     rememberPendingSnooze(context, alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
                 },
+                // Durchgereicht vom Aufrufer - siehe KDoc: frisch schlummern raeumt ab,
+                // Wiederherstellen laesst stehen.
+                baueZurueck = baueZurueck,
                 melde = { text, fehler ->
                     if (fehler == null) {
                         Logger.w(LogTags.ALARM_MANAGER, "$text (id=$alarmId)")
@@ -936,6 +1144,16 @@ class AlarmManagerService(
                 }
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze-Merker konnte nicht geschrieben werden", e)
+                // WEITERWERFEN, nicht schlucken: Dieser Merker ist die einzige Spur des
+                // schwebenden Snooze. Wer den Fehler hier begraebt, meldet dem Aufrufer
+                // "GEPLANT" fuer einen Wecker, den die App danach weder abbrechen noch nach
+                // einem Neustart wiederherstellen kann - ein Fehler, der als Erfolg durchgeht,
+                // ist genau die Luege, gegen die [SnoozeErgebnis] ueberhaupt eingefuehrt wurde.
+                // Der einzige Aufrufer ist die `merke`-Funktion in [armSnooze]; dort raeumt
+                // [SchlummerEntscheidung.armiere] den bereits armierten Alarm daraufhin wieder ab
+                // und sagt dem Nutzer, woran er ist. Der CE-Storage ist vor der ersten
+                // Entsperrung nicht beschreibbar - dieser Zweig ist real erreichbar.
+                throw e
             }
         }
 
@@ -963,9 +1181,16 @@ class AlarmManagerService(
          * Bricht den schwebenden Snooze-Alarm zu [alarmId] ab. Baut denselben PendingIntent wie
          * [scheduleSnooze] (requestCode = alarmId, action = [snoozeAlarmAction]) - nur so trifft
          * der Cancel den richtigen Slot.
+         *
+         * RUECKGABE: `true` nur, wenn der Abbruch wirklich durchlief. Die Funktion faengt ihren
+         * Fehler weiterhin selbst (kein Aufrufer darf daran sterben), verschweigt ihn aber nicht
+         * mehr - [SchlummerEntscheidung.armiere] braucht die Antwort, um beim Aufgeben eines
+         * Armierungsversuchs zwischen "nichts steht mehr scharf" und "moeglicherweise doch"
+         * unterscheiden zu koennen. Aufrufer, die den Wert nicht auswerten, bleiben unveraendert
+         * richtig.
          */
-        fun cancelSnooze(context: Context, alarmId: Int) {
-            try {
+        fun cancelSnooze(context: Context, alarmId: Int): Boolean {
+            return try {
                 val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
                 val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
                     setPackage(context.packageName)
@@ -979,8 +1204,10 @@ class AlarmManagerService(
                 pendingIntent.cancel()
                 forgetPendingSnooze(context, alarmId)
                 Logger.business(LogTags.ALARM_MANAGER, "🚫 Schwebender Snooze abgebrochen (id=$alarmId)")
+                true
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze konnte nicht abgebrochen werden (id=$alarmId)", e)
+                false
             }
         }
 
@@ -1078,7 +1305,15 @@ class AlarmManagerService(
                     triggerTime = entry.triggerTime,
                     shiftName = entry.shiftName,
                     shiftStartTimeFormatted = entry.shiftStartTimeFormatted,
-                    logContext = "Schwebender Snooze nach Neustart wiederhergestellt"
+                    logContext = "Schwebender Snooze nach Neustart wiederhergestellt",
+                    // WIEDERHERSTELLEN RAEUMT NICHT AB: Der Merker-Eintrag zu dieser ID steht
+                    // schon - er ist die Vorlage dieses Laufs, `rememberPendingSnooze()` zieht ihn
+                    // nur nach. Ein Cancel wuerde ueber `forgetPendingSnooze()` genau diesen
+                    // Eintrag loeschen: Alarm gecancelt, einzige Spur weg, auch bei jedem weiteren
+                    // Neustart nicht mehr wiederherstellbar. Aus einem Schreibfehler wuerde ein
+                    // endgueltig verlorener Weckruf. Also stehen lassen - der Alarm klingelt und
+                    // bleibt ueber den bestehenden Eintrag abbrechbar.
+                    baueZurueck = { RueckbauErgebnis.BEWUSST_BEHALTEN }
                 )
                 when (ergebnis) {
                     SnoozeErgebnis.GEPLANT -> restored++
@@ -1087,7 +1322,12 @@ class AlarmManagerService(
                     // duerfte nur als ZWEITE Schicht ueberhaupt greifen; als Fehlschlag gezaehlt
                     // wuerde sie im Boot-Log einen Ausfall behaupten, den es nicht gibt.
                     SnoozeErgebnis.ABGELEHNT_PAUSE -> pausiert++
-                    SnoozeErgebnis.FEHLGESCHLAGEN -> failed++
+                    // Auch der unklare Ausgang zaehlt nicht als Erfolg: der Snooze steht nicht
+                    // verlaesslich (beim Wiederherstellen: Alarm ja, frisch geschriebener Merker
+                    // nein), und ein `restored++` behauptete im Boot-Log eine saubere
+                    // Wiederherstellung, die es nicht gab.
+                    SnoozeErgebnis.FEHLGESCHLAGEN,
+                    SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR -> failed++
                 }
             }
             if (pausiert > 0) {
@@ -1100,8 +1340,11 @@ class AlarmManagerService(
             if (failed > 0) {
                 Logger.w(
                     LogTags.ALARM_MANAGER,
-                    "⚠️ $failed schwebende(r) Snooze konnte NICHT wiederhergestellt werden - " +
-                        "diese Weckvorgaenge fallen aus"
+                    // "koennen ausfallen", nicht "fallen aus": der unklare Ausgang laesst den
+                    // Alarm bewusst armiert. Eine Zeile, die den Ausfall behauptet, waere in
+                    // diesem Fall genauso falsch wie eine, die den Erfolg behauptet.
+                    "⚠️ $failed schwebende(r) Snooze konnte NICHT verlaesslich wiederhergestellt " +
+                        "werden - diese Weckvorgaenge koennen ausfallen"
                 )
             }
             return restored

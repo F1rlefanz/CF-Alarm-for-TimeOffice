@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -97,7 +98,36 @@ data class CalendarUiState(
      * [calendarAuthorizationValid] und hat seine eigene Anzeige ("Kalender-Autorisierung
      * verloren"). Zwei Warnungen fuer dieselbe Lage waeren schlechter als eine.
      */
-    val unavailableCalendarIds: Set<String> = emptySet()
+    val unavailableCalendarIds: Set<String> = emptySet(),
+
+    /**
+     * Zahl der bisher gescheiterten Anlaeufe, nach einer Kalender-Abwahl die kalenderbasierten
+     * Wecker zu raeumen. `0` heisst: alles in Ordnung.
+     *
+     * WARUM EIN EIGENES FELD UND KEIN [error]-TEXT: `error` ist ein Meldungspuffer - er wird in
+     * MainContentScreen als Snackbar gezeigt und unmittelbar danach mit `clearError()` geleert.
+     * Was hier gemeldet werden muss, ist aber kein Ereignis, sondern ein ZUSTAND: die Oberflaeche
+     * zeigt "kein Kalender ausgewaehlt", waehrend bis zu 14 Tage lang Wecker des entfernten
+     * Dienstplans klingeln. Ueber `error` sah der Nutzer das genau eine Snackbar-Laenge lang, und
+     * danach war der Hinweis endgueltig weg, obwohl der Zustand unveraendert weiterbestand. Als
+     * Zustandsfeld bleibt er stehen, bis er wirklich behoben ist, und traegt die Wiedervorlage
+     * gleich mit: jeder weitere Fehlschlag erhoeht die Zahl.
+     *
+     * ANGEZEIGT wird er als bleibende Karte GANZ OBEN im Status-Tab
+     * (`StatusTabContent.VerwaisteWeckerNachAbwahlCard`) - nicht als Snackbar in
+     * MainContentScreen: die lief als einziger `Indefinite`-Aufruf der App auf dem gemeinsamen
+     * SnackbarHostState und blockierte, solange sie stand, jede andere Meldung.
+     *
+     * ER IST NICHT DER EINZIGE WIEDEREINSTIEG, und darf es auch nicht sein: dieses Feld lebt im
+     * Arbeitsspeicher und stirbt mit dem Prozess. Der Auftrag selbst liegt dauerhaft im
+     * [PendingDeselectionCleanupStore] und wird auch ohne die App abgearbeitet (6h-Wartung).
+     *
+     * Zurueckgesetzt wird ausschliesslich, wenn der Zustand aufgeloest ist - geraeumt, Automatik
+     * aus, Master-Pause oder ein gelungener Alarm-Sync ueber einer nachweislich vollstaendigen
+     * Eventliste (siehe `resolveDeselectionCleanupFailure`). Nicht vom Anzeigen, und ausdruecklich
+     * NICHT schon davon, dass wieder ein Kalender ausgewaehlt ist.
+     */
+    val deselectionCleanupFailures: Int = 0
 )
 
 /**
@@ -127,7 +157,8 @@ class CalendarViewModel @Inject constructor(
     private val errorHandler: ErrorHandler,
     private val shiftUseCase: IShiftUseCase,
     private val alarmUseCase: IAlarmUseCase,
-    private val masterPausePrefs: MasterPausePrefs
+    private val masterPausePrefs: MasterPausePrefs,
+    private val pendingDeselectionCleanupStore: PendingDeselectionCleanupStore
 ) : ViewModel() {
 
     private val _localUiState = MutableStateFlow(CalendarUiState())
@@ -343,6 +374,26 @@ class CalendarViewModel @Inject constructor(
                     // LAZY LOADING: Auto-load events with lazy loading when selection changes
                     if (selectedIds.isNotEmpty()) {
                         hasSeenNonEmptySelection = true
+                        // HIER WIRD NICHTS AUFGELOEST - weder der Hinweis noch der dauerhafte
+                        // Raeumauftrag. Bis v1.29.2 geschah beides an dieser Stelle, begruendet
+                        // damit, dass der Delta-Sync des gleich folgenden Ladevorgangs jeden
+                        // Alarm raeumt, dessen Termin fehlt. Dieser Sync laeuft aber NICHT in
+                        // jedem Fall: er sitzt hinter der Pruefung "Eventliste nicht leer" und
+                        // steigt zusaetzlich fail-safe aus, wenn die Liste nicht nachweislich
+                        // vollstaendig ist. Liefert der neu gewaehlte Kalender null Termine
+                        // (anderer Kalender, Dienstplan-Feed gerade leer), passiert gar nichts -
+                        // und mit dem geloeschten Auftrag faengt es auch die 6h-Wartung nicht
+                        // mehr auf: die Wecker des abgewaehlten Dienstplans klingeln bis zu
+                        // 14 Tage weiter, ohne Hinweis und ohne Wiedereinstieg.
+                        //
+                        // Aufgeloest wird deshalb erst, wo es BELEGT ist: nach einem gelungenen
+                        // Sync ueber einer nachweislich vollstaendigen Eventliste
+                        // (siehe createAlarmsFromLoadedEvents).
+                        //
+                        // GEGENRICHTUNG: Der Auftrag bleibt dadurch nicht ewig stehen und kann
+                        // auch keine wieder gewollten Wecker loeschen - die 6h-Wartung prueft die
+                        // Auswahl selbst erneut und verwirft ihn als hinfaellig, sobald wieder
+                        // ein Kalender ausgewaehlt ist (AlarmMaintenanceService, AbwahlRaeumauftrag).
                         loadEventsForSelectedCalendars(
                             loadAll = false, // LAZY LOADING: Start with lazy loading
                             initialPageSize = 10 // LAZY LOADING: Load only 10 events initially
@@ -420,19 +471,32 @@ class CalendarViewModel @Inject constructor(
      * Weg ueber `syncAlarms()` haelt zugleich die Loeschreihenfolge ein (erst `cancelSystemAlarm()`,
      * dann `deleteAlarm()`), die ein eigenes Loeschen hier neu haette nachbauen muessen.
      *
+     * DER AUFTRAG UEBERLEBT DEN PROZESSTOD: Sobald die Rueckfrage beim Speicher die Abwahl belegt
+     * hat, wird sie im [PendingDeselectionCleanupStore] festgehalten - VOR dem Raeumen - und erst
+     * nach nachweislichem Erfolg wieder geloescht. `NonCancellable` schuetzt nur gegen den Abbruch
+     * der Coroutine; wird der Prozess getoetet (App weggewischt, Force-Stop, "App bei Nichtnutzung
+     * pausieren"), war der Auftrag bis dahin restlos weg: der Fehlerzustand lag im
+     * Arbeitsspeicher, und der Uebergangs-Merker [hasSeenNonEmptySelection] ist beim naechsten
+     * App-Start per Konstruktion falsch, weil die Auswahl dann von Anfang an leer ist.
+     * Abgearbeitet wird der Auftrag danach von der 6h-Wartung, ganz ohne die App.
+     *
      * @param deselectGeneration Die beim Abwaehlen gezogene Generation. Waehlt der Nutzer waehrend
      *   der Rueckfragen oben schon wieder einen Kalender an, hat dessen Ladevorgang eine hoehere
      *   Nummer - dann ist dieses Raeumen ueberholt und wuerde die frisch angelegten Wecker sofort
-     *   wieder loeschen.
+     *   wieder loeschen. `null` fuer den zweiten Anlauf auf Nutzerwunsch: dort gibt es keine
+     *   Abwahl-Generation, und eine neue wird erst gezogen, wenn wirklich geraeumt wird (siehe
+     *   [retryDeselectionCleanup]).
      */
-    private fun clearAlarmsAfterCalendarDeselection(deselectGeneration: Long) {
+    private fun clearAlarmsAfterCalendarDeselection(deselectGeneration: Long?) {
         viewModelScope.launch {
             // NonCancellable: Das hier stellt einen Zustand HER ("die Wecker der entfernten Quelle
             // sind weg"). Verlaesst der Nutzer die App unmittelbar nach dem Abwaehlen, wird der
             // viewModelScope gecancelt - ein auf halbem Weg abgebrochener Lauf liesse den
-            // Wecker-Bestand verwaist zurueck, und es gibt keinen zweiten Anlauf: beim naechsten
-            // App-Start ist die Auswahl von Anfang an leer, also greift der Uebergangs-Merker
-            // nicht mehr.
+            // Wecker-Bestand verwaist zurueck, und dieses ViewModel selbst holt das nie nach: beim
+            // naechsten App-Start ist die Auswahl von Anfang an leer, also greift der
+            // Uebergangs-Merker nicht mehr. Gegen den TOD DES PROZESSES hilft NonCancellable
+            // dagegen nicht - dafuer gibt es den dauerhaften Auftrag im
+            // [PendingDeselectionCleanupStore] weiter unten.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 try {
                     // 1) Rueckfrage an die QUELLE, nicht an den StateFlow: unterscheidet
@@ -445,6 +509,11 @@ class CalendarViewModel @Inject constructor(
                                     "bestehende Wecker bleiben (fail-safe)",
                                 error
                             )
+                            // Fail-safe heisst hier NICHT stillschweigend: die Wecker der
+                            // entfernten Quelle bleiben stehen, waehrend die Oberflaeche
+                            // "kein Kalender ausgewaehlt" zeigt. Genau dieser Widerspruch muss
+                            // beim Nutzer ankommen (siehe reportDeselectionCleanupFailure).
+                            reportDeselectionCleanupFailure()
                             return@withContext
                         }
 
@@ -454,8 +523,26 @@ class CalendarViewModel @Inject constructor(
                             "Abwahl-Aufraeumen uebersprungen: der Speicher meldet weiterhin " +
                                 "${persistedSelection.size} ausgewaehlte Kalender"
                         )
+                        // Es ist wieder ein Kalender ausgewaehlt - hier wird deshalb NICHT
+                        // geraeumt. Aufgeloest wird aber auch nichts: "wieder ausgewaehlt" ist
+                        // kein Beleg dafuer, dass die Wecker des alten Dienstplans weg sind
+                        // (dazu muss der Sync des Ladevorgangs wirklich gelaufen sein - siehe
+                        // observeCalendarSelection). Hinweis und Auftrag bleiben stehen, bis
+                        // genau das belegt ist.
                         return@withContext
                     }
+
+                    // AB HIER ist die Abwahl belegt: der Speicher meldet LESBAR "nichts
+                    // ausgewaehlt". Erst dieser Nachweis darf den dauerhaften Auftrag setzen -
+                    // ein leeres LADEERGEBNIS erreicht diese Zeile nie, und genau das ist der
+                    // Unterschied zwischen "der Nutzer hat abgewaehlt" und "leer ist die
+                    // gefaehrlichste Luege".
+                    //
+                    // VOR jedem Raeumen, nicht danach: sonst bleibt genau das Fenster offen, das
+                    // dieser Merker schliessen soll. Scheitert das Festhalten selbst, wird
+                    // trotzdem weitergeraeumt - der Auftrag ist dann nur nicht prozessfest, also
+                    // so gut wie vorher, aber nicht schlechter.
+                    pendingDeselectionCleanupStore.markPending()
 
                     // 2) Master-Pause: dort ist der Bestand ohnehin geraeumt. Ein Sync waehrend der
                     //    Pause wuerde ueber den zentralen Backstop zusaetzlich einen schwebenden
@@ -465,6 +552,10 @@ class CalendarViewModel @Inject constructor(
                             LogTags.ALARM,
                             "⏸️ Master-Pause aktiv - Abwahl-Aufraeumen nicht noetig, es sind keine Wecker gesetzt"
                         )
+                        // Es steht ohnehin kein Wecker - nichts ist verwaist, der Hinweis faellt,
+                        // und der eben festgehaltene Auftrag ist gegenstandslos.
+                        resolveDeselectionCleanupFailure()
+                        pendingDeselectionCleanupStore.clearIfPending()
                         return@withContext
                     }
 
@@ -478,6 +569,7 @@ class CalendarViewModel @Inject constructor(
                             "❌ Abwahl-Aufraeumen uebersprungen: ShiftConfig nicht lesbar - " +
                                 "bestehende Wecker bleiben unveraendert"
                         )
+                        reportDeselectionCleanupFailure()
                         return@withContext
                     }
 
@@ -491,17 +583,38 @@ class CalendarViewModel @Inject constructor(
                             "Abwahl-Aufraeumen uebersprungen: Automatik ist aus, es gibt keine " +
                                 "kalenderbasierten Wecker"
                         )
+                        // Ohne Automatik gibt es keine kalenderbasierten Wecker, die verwaisen
+                        // koennten (das Abschalten selbst raeumt sie) - der Hinweis faellt, und
+                        // der Auftrag ist gegenstandslos. Er darf hier NICHT stehenbleiben: die
+                        // Wartung wuerde ihn spaeter genauso ablehnen, aber ein liegengebliebener
+                        // Auftrag ist ein Versprechen, das niemand mehr einloest.
+                        resolveDeselectionCleanupFailure()
+                        pendingDeselectionCleanupStore.clearIfPending()
                         return@withContext
                     }
 
                     // 4) RACE-GUARD unmittelbar vor dem einzigen schreibenden Aufruf.
-                    if (deselectGeneration != eventLoadGeneration.get()) {
+                    if (deselectGeneration != null && deselectGeneration != eventLoadGeneration.get()) {
                         Logger.d(
                             LogTags.CALENDAR,
                             "Abwahl-Aufraeumen uebersprungen: Abwahl $deselectGeneration inzwischen " +
                                 "ueberholt (${eventLoadGeneration.get()})"
                         )
+                        // Der Auftrag bleibt bewusst stehen: ueberholt heisst, dass gerade wieder
+                        // geladen wird - ob dessen Auswahl wirklich nicht leer ist, entscheidet
+                        // der naechste Durchgang (hier oder in der Wartung), nicht dieser Abbruch.
                         return@withContext
+                    }
+
+                    // ZWEITER ANLAUF (deselectGeneration == null): Die Generation wird ERST HIER
+                    // gezogen - wenn feststeht, dass wirklich geraeumt wird. Vorher stand sie am
+                    // Anfang von retryDeselectionCleanup(), also VOR jeder Pruefung: lief in dem
+                    // Moment ein Ladevorgang (der Nutzer hat inzwischen wieder einen Kalender
+                    // ausgewaehlt, die Karte stand aber noch), erklaerte die Erhoehung ihn fuer
+                    // ueberholt - er verwarf danach alle Ergebnisse, und es gab weder Termine noch
+                    // Wecker noch einen zweiten Anlauf.
+                    if (deselectGeneration == null) {
+                        eventLoadGeneration.incrementAndGet()
                     }
 
                     Logger.business(
@@ -515,10 +628,34 @@ class CalendarViewModel @Inject constructor(
                                 LogTags.ALARM,
                                 "✅ ABWAHL: aufgeraeumt - ${remaining.size} Wecker verbleiben (manuelle)"
                             )
-                            AlarmMaintenanceService.recordSyncTime(appContext)
+                            // Der Zustand ist behoben - auch wenn er aus einem frueheren
+                            // Fehlschlag stammte und der Nutzer den zweiten Anlauf angestossen hat.
+                            resolveDeselectionCleanupFailure()
+                            // Erst JETZT faellt der dauerhafte Auftrag: nachweislich geraeumt.
+                            pendingDeselectionCleanupStore.clearIfPending()
+                            // Eigenes try: der Zeitstempel ist reine Buchhaltung fuer die
+                            // 6h-Wartung. Scheitert ER, sind die Wecker trotzdem weg - dann darf
+                            // dem Nutzer nicht das Gegenteil gemeldet werden (der aeussere
+                            // catch-Zweig setzt die Fehlermeldung).
+                            try {
+                                AlarmMaintenanceService.recordSyncTime(appContext)
+                            } catch (e: java.util.concurrent.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Logger.w(
+                                    LogTags.ALARM,
+                                    "ABWAHL: aufgeraeumt, aber der Zeitstempel der Wartung liess " +
+                                        "sich nicht schreiben",
+                                    e
+                                )
+                            }
                         }
                         .onFailure { error ->
                             Logger.e(LogTags.ALARM, "❌ ABWAHL: Aufraeumen fehlgeschlagen", error)
+                            // Der dauerhafte Auftrag bleibt ausdruecklich stehen - er ist der
+                            // Wiedereinstieg fuer die 6h-Wartung, falls der Nutzer die App nach
+                            // dem Fehlschlag nie wieder oeffnet.
+                            reportDeselectionCleanupFailure()
                         }
                 } catch (e: java.util.concurrent.CancellationException) {
                     // Eine Abbruch-Ausnahme darf nie als Fehler geschluckt werden - sie gehoert
@@ -526,9 +663,107 @@ class CalendarViewModel @Inject constructor(
                     throw e
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM, "❌ ABWAHL: Ausnahme beim Aufraeumen", e)
+                    reportDeselectionCleanupFailure()
                 }
             }
         }
+    }
+
+    /**
+     * Meldet dem Nutzer, dass das Aufraeumen nach der Kalender-Abwahl NICHT durchgekommen ist.
+     *
+     * WARUM DAS SEIN MUSS: Jeder fail-safe-Abbruch in [clearAlarmsAfterCalendarDeselection] laesst
+     * bewusst die bestehenden Wecker stehen - das ist richtig (ein Lesefehler darf keine Wecker
+     * kosten), aber es stellt genau den Zustand wieder her, gegen den die Funktion gebaut wurde:
+     * die Oberflaeche zeigt "kein Kalender ausgewaehlt", waehrend bis zu 14 Tage lang Wecker des
+     * entfernten Dienstplans klingeln. Stuende das nur im Log, waere der Fehler fuer den Nutzer
+     * unsichtbar - und ein Zustand, der eine Funktion dauerhaft anhaelt, muss sichtbar sein.
+     *
+     * IN DIESEM ViewModel gibt es keinen automatischen zweiten Anlauf: beim naechsten App-Start ist
+     * die Auswahl von Anfang an leer, der Uebergangs-Merker [hasSeenNonEmptySelection] greift also
+     * nicht mehr. Deshalb ist die Meldung ein bleibender ZUSTAND
+     * ([CalendarUiState.deselectionCleanupFailures]) und kein fluechtiger Hinweis, und deshalb
+     * bietet sie mit [retryDeselectionCleanup] einen Knopf an, der den Anlauf wirklich wiederholt.
+     *
+     * Der Auftrag selbst haengt allerdings NICHT mehr an dieser Meldung: er liegt dauerhaft im
+     * [PendingDeselectionCleanupStore] und wird von der 6h-Wartung abgearbeitet, auch wenn der
+     * Nutzer die App nie wieder oeffnet. Diese Meldung bleibt trotzdem noetig - sie ist das
+     * einzige, was der Nutzer sieht, solange die Wecker noch klingeln koennen.
+     */
+    private fun reportDeselectionCleanupFailure() {
+        updateDeselectionCleanupFailures { it + 1 }
+    }
+
+    /**
+     * Der Gegenpart zu [reportDeselectionCleanupFailure]: der Zustand ist aufgeloest.
+     *
+     * Das ist NICHT nur der gelungene Raeum-Lauf. Aufgeloest ist er auch, wenn es gar nichts (mehr)
+     * zu raeumen gibt: bei abgeschalteter Automatik und waehrend der Master-Pause steht kein
+     * kalenderbasierter Wecker. Ein stehengebliebener Hinweis waere dann eine Falschmeldung - der
+     * Nutzer suchte Wecker, die es nicht mehr gibt.
+     *
+     * NICHT AUFGELOEST wird dagegen, sobald wieder ein Kalender ausgewaehlt ist. Das war bis
+     * v1.29.2 so und war falsch: gedeckt sind die alten Wecker erst, wenn der Delta-Sync des
+     * Ladevorgangs wirklich gelaufen ist - und der laeuft bei leerer oder unvollstaendiger
+     * Eventliste gerade nicht. Der Beleg liegt deshalb im `onSuccess` von
+     * [createAlarmsFromLoadedEvents].
+     */
+    private fun resolveDeselectionCleanupFailure() {
+        updateDeselectionCleanupFailures { 0 }
+    }
+
+    /**
+     * Schreibt den Zaehler - und schont dabei ein noch nicht ausgeliefertes Batch-Update.
+     *
+     * `updateLocalStateImmediate` statt `updateLocalState`: Letzteres schiebt das Schreiben in
+     * einen `viewModelScope.launch`-Batch. Der meldende Pfad laeuft aber gerade dann, wenn der
+     * Nutzer die App verlassen haben kann (NonCancellable) - im abgeraeumten Scope kaeme der Batch
+     * nie an, und die Meldung ginge verloren.
+     *
+     * FALLE: updateLocalStateImmediate verwirft dafuer ein noch offenes Batch-Update
+     * (pendingStateUpdate) und rechnet auf `_localUiState.value` weiter. Unmittelbar vor dem
+     * meldenden Pfad wurde aber genau so ein Batch geplant - das Leeren der Terminliste im
+     * else-Zweig von [observeCalendarSelection]. Ohne die Uebernahme unten kaeme die Meldung an,
+     * waehrend die Termine des abgewaehlten Kalenders weiter angezeigt wuerden.
+     */
+    private fun updateDeselectionCleanupFailures(transform: (Int) -> Int) {
+        val pending = pendingStateUpdate
+        val base = pending ?: _localUiState.value
+        val next = transform(base.deselectionCleanupFailures)
+        // Aendert sich der Zaehler nicht, wird hier gar nichts angefasst. Sonst risse ein
+        // wirkungsloses Zuruecksetzen - und das laeuft bei JEDER Kalenderauswahl - den gerade
+        // geplanten Batch vorzeitig durch die Sofort-Zustellung.
+        if (next == base.deselectionCleanupFailures) return
+        updateLocalStateImmediate { base.copy(deselectionCleanupFailures = next) }
+    }
+
+    /**
+     * Zweiter Anlauf fuer das Aufraeumen nach einer Kalender-Abwahl - der Knopf an der Meldung.
+     *
+     * WARUM DER UEBERGANGS-MERKER HIER BEWUSST NICHT GILT: [hasSeenNonEmptySelection] beschreibt
+     * einen Uebergang, der beim Scheitern laengst vorbei ist; er ist im else-Zweig von
+     * [observeCalendarSelection] sogar schon zurueckgesetzt. Ein Retry, der ihn abfragte, taete
+     * nichts - genau das war der Fehler der ersten Fassung, in der der angebotene Knopf
+     * `refreshData()` rief und die verwaisten Wecker nicht anfasste.
+     *
+     * DIE REGEL "leer ist keine Loeschgrundlage" bleibt dabei unangetastet: die zweite, eigentliche
+     * Sicherung steckt in [clearAlarmsAfterCalendarDeselection] selbst - sie fragt den Speicher
+     * ueber `getCurrentSelectedCalendarIds()` und raeumt nur, wenn der LESBAR "nichts ausgewaehlt"
+     * meldet. Aus einem gescheiterten Lesevorgang wird also weiterhin nie "leer" geschlossen. Und
+     * die Rechtfertigung ist dieselbe wie bei der Abwahl selbst: eine ausdrueckliche Nutzeraktion,
+     * kein Abrufergebnis.
+     *
+     * KEINE GENERATION IM VORAUS: Der Aufruf uebergibt bewusst `null`. Frueher stand hier
+     * `eventLoadGeneration.incrementAndGet()` - also VOR jeder Pruefung, ob ueberhaupt noch etwas
+     * zu raeumen ist. Lief in dem Moment ein Ladevorgang (der Nutzer hatte inzwischen wieder einen
+     * Kalender ausgewaehlt, die Karte stand aber noch), galt dieser Lauf ab sofort als ueberholt
+     * und verwarf am Ende alle seine Ergebnisse: keine Termine, keine Wecker, und weil das
+     * Aufraeumen selbst am "der Speicher meldet weiterhin Kalender"-Zweig ausstieg, auch kein
+     * zweiter Anlauf. Die Generation wird jetzt erst gezogen, wenn wirklich geraeumt wird.
+     */
+    fun retryDeselectionCleanup() {
+        Logger.business(LogTags.ALARM, "🔁 ABWAHL: zweiter Anlauf auf Nutzerwunsch")
+        clearAlarmsAfterCalendarDeselection(deselectGeneration = null)
     }
 
     /**
@@ -1002,6 +1237,11 @@ class CalendarViewModel @Inject constructor(
                             // syncAlarms() weiter und braucht deshalb den ganzen Bestand, nicht
                             // das Anzeige-Praefix.
                             calendarStateHolder.updateEvents(eventsForAlarmSync, complete = true)
+                            // DIES IST DIE EINZIGE AUFRUFSTELLE, und sie erreicht diesen Zweig
+                            // nur mit einer nachweislich VOLLSTAENDIGEN, nicht leeren Liste.
+                            // Darauf beruht, dass ein gelungener Sync dort den Raeumauftrag nach
+                            // einer Kalender-Abwahl loeschen darf. Wer hier einen zweiten
+                            // Aufrufer ergaenzt, muss diese Zusicherung mitbringen.
                             createAlarmsFromLoadedEvents(eventsForAlarmSync)
                         }
                     }
@@ -1056,7 +1296,16 @@ class CalendarViewModel @Inject constructor(
      * ohne dass irgendwo stuende, warum.
      *
      * Umkehrbar: der Kalender laesst sich in der Kalenderauswahl jederzeit wieder anhaken. Deshalb
-     * bewusst ohne Bestaetigungsdialog.
+     * im Regelfall bewusst ohne Bestaetigungsdialog.
+     *
+     * EINE AUSNAHME, und sie ist keine Formsache: Bliebe danach KEIN Kalender uebrig, ist das
+     * keine Bereinigung mehr, sondern eine Abwahl - und die raeumt seit v1.29.3 alle Wecker der
+     * naechsten zwei Wochen samt der Dienstzeit-Fenster fuer Dimmer und "Nicht stoeren"
+     * (`clearAlarmsAfterCalendarDeselection`). Ausgeloest wird der Zustand oft durch eine
+     * voruebergehende Server- oder Freigabestoerung, also durch etwas, das von allein vergeht.
+     * Deshalb fragt die Oberflaeche in genau diesem Fall vorher nach und bietet zuerst den
+     * harmlosen Weg an (siehe `StatusTabContent.entfernenWuerdeAuswahlLeeren`). Diese Funktion
+     * fuehrt aus, was der Nutzer dort entschieden hat - sie entscheidet nicht selbst.
      *
      * Der Zustand wird hier NICHT selbst geleert - `observeCalendarSelection()` stoesst nach der
      * Aenderung einen neuen Ladevorgang an, und der schreibt [CalendarUiState.unavailableCalendarIds]
@@ -1075,6 +1324,16 @@ class CalendarViewModel @Inject constructor(
                 LogTags.CALENDAR,
                 "🧹 Nutzer entfernt ${betroffen.size} nicht abrufbare(n) Kalender aus der Auswahl"
             )
+            // WARN, damit im Release-Log (nur WARN+) nachvollziehbar bleibt, warum kurz darauf
+            // saemtliche kalenderbasierten Wecker verschwinden - sonst sieht der Verlauf nach
+            // einer spontanen Raeumung aus.
+            if (betroffen.containsAll(uiState.value.selectedCalendarIds)) {
+                Logger.w(
+                    LogTags.CALENDAR,
+                    "⚠️ Nach dem Entfernen bleibt KEIN Kalender ausgewaehlt - das raeumt die " +
+                        "kalenderbasierten Wecker und die Dienstzeit-Fenster (vom Nutzer bestaetigt)"
+                )
+            }
             betroffen.forEach { calendarId ->
                 calendarSelectionRepository.removeCalendarId(calendarId)
                     .onFailure { e ->
@@ -1281,6 +1540,10 @@ class CalendarViewModel @Inject constructor(
     /**
      * 🚨 CRITICAL FIX: Automatically create alarms from loaded events
      * CRITICAL FIX: Only create alarms if events actually exist
+     *
+     * @param events MUSS eine nachweislich VOLLSTAENDIGE Eventliste sein - die einzige
+     *   Aufrufstelle in [loadEventsForSelectedCalendars] stellt das sicher. Nur deshalb darf der
+     *   gelungene Sync hier den offenen Raeumauftrag nach einer Kalender-Abwahl loeschen.
      */
     private fun createAlarmsFromLoadedEvents(events: List<CalendarEvent>) {
         viewModelScope.launch {
@@ -1363,6 +1626,17 @@ class CalendarViewModel @Inject constructor(
                     alarmUseCase.syncAlarms(events, shiftConfig)
                         .onSuccess { syncedAlarms ->
                             Logger.business(LogTags.ALARM, "✅ AUTO-ALARM: Alarm-Sync erfolgreich - ${syncedAlarms.size} Alarme aktiv")
+                            // HIER, und nur hier, ist "nichts ist mehr verwaist" BELEGT: der
+                            // Delta-Sync ist ueber einer nachweislich VOLLSTAENDIGEN Eventliste
+                            // durchgelaufen (die einzige Aufrufstelle uebergibt nur eine solche)
+                            // und hat damit jeden Alarm entfernt, dessen Termin fehlt - auch die
+                            // des zuvor abgewaehlten Dienstplans. Ein blosses "es ist wieder ein
+                            // Kalender ausgewaehlt" ist dieser Beleg NICHT: laeuft der Sync nicht
+                            // (leere oder unvollstaendige Liste), bleiben die alten Wecker
+                            // armiert. Deshalb faellt der dauerhafte Raeumauftrag erst an dieser
+                            // Stelle - und mit ihm der Hinweis in der Oberflaeche.
+                            resolveDeselectionCleanupFailure()
+                            pendingDeselectionCleanupStore.clearIfPending()
                             // "Letzter Sync"-Zeitstempel auch im Vordergrund setzen, damit die
                             // Status-Anzeige den tatsaechlich letzten Sync widerspiegelt (nicht nur die 6h-Wartung).
                             AlarmMaintenanceService.recordSyncTime(appContext)
@@ -1480,6 +1754,36 @@ class CalendarViewModel @Inject constructor(
     }
 
     companion object {
+        /**
+         * Nutzertext, wenn das Aufraeumen nach der Kalender-Abwahl gescheitert ist.
+         *
+         * Aufbau bewusst dreiteilig - WAS ist passiert, welche FOLGE hat das, welcher AUSWEG
+         * bleibt. Ohne die Folge klaenge es nach einer Kleinigkeit, dabei klingelt das Geraet
+         * weiter nach einem Dienstplan, den der Nutzer gerade entfernt hat. Kein Begriff aus dem
+         * Code (kein Sync, kein Speicher, keine Konfiguration): der Nutzer kann mit keinem davon
+         * etwas anfangen, und keiner sagt ihm, was zu tun ist.
+         *
+         * DER AUSWEG MUSS ZUM ANGEBOTENEN KNOPF PASSEN: die erste Fassung nannte zwei ganz andere
+         * Wege ("noch einmal aus- und abwaehlen"), waehrend der Knopf daneben `refreshData()` rief
+         * und die verwaisten Wecker gar nicht anfasste. Jetzt ist der erste genannte Weg genau der
+         * Knopf ([DESELECTION_CLEANUP_RETRY_ACTION]); die Einzelloeschung bleibt als Notausweg
+         * daneben stehen, falls auch der zweite Anlauf scheitert.
+         *
+         * Als Konstante und nicht inline, damit der Test genau diesen Text festhalten kann.
+         */
+        internal const val DESELECTION_CLEANUP_FAILED_MESSAGE: String =
+            "Die Wecker des abgewählten Kalenders konnten nicht entfernt werden. " +
+                "Es können weiterhin Wecker aus diesem Dienstplan klingeln – bis zu zwei Wochen " +
+                "im Voraus. Tippe auf \"Erneut versuchen\"; hilft das nicht, lösche sie im Tab " +
+                "\"Wecker\" einzeln."
+
+        /**
+         * Beschriftung des Knopfes an der Meldung. Muss woertlich in
+         * [DESELECTION_CLEANUP_FAILED_MESSAGE] vorkommen - ein Text, der auf einen anders
+         * beschrifteten Knopf verweist, schickt den Nutzer ins Leere.
+         */
+        internal const val DESELECTION_CLEANUP_RETRY_ACTION: String = "Erneut versuchen"
+
         /**
          * PURE, TESTBAR: Entscheidet anhand der Kalender-Ladeergebnisse, ob die
          * Google-Autorisierung noch als gueltig gilt.

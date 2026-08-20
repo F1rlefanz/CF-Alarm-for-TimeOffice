@@ -108,7 +108,10 @@ class Pruefrunde7SkipAnzeigeTest {
             masterPausePrefs = masterPausePrefs,
             alarmPrefs = alarmPrefs,
             alarmRepository = mock<IAlarmRepository>().apply {
-                stub { onBlocking { isPersistenceBlocked() } doReturn false }
+                stub {
+                    onBlocking { isPersistenceBlocked() } doReturn false
+                    onBlocking { istLetzterSchreibvorgangGescheitert() } doReturn false
+                }
             }
         )
     }

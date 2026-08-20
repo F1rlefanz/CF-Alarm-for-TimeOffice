@@ -1,18 +1,25 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.AlarmRepoTestContext
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.AlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -30,11 +37,13 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -51,10 +60,11 @@ import java.time.ZoneId
  * Kalender-Sync repariert das nicht, er schont manuelle Alarme (`keepManualAlarms`).
  *
  * BEFUND 11 - SCHEINBAR ERFOLGREICHES SPEICHERN: `AlarmRepository.saveAlarm()` meldet auch dann
- * Erfolg, wenn `persistToDataStore()` bei gesperrter Persistenz still zurueckkehrt. Der Wecker
- * klingelt dann in diesem Prozess, steht aber weder in der Preferences-Datei noch im
- * Direct-Boot-Spiegel - nach Prozesstod oder Neustart ist er spurlos weg, und fuer einen
- * manuellen Wecker endgueltig. Der Nutzer muss das erfahren.
+ * Erfolg, wenn nur der Arbeitsspeicher beschrieben wurde. Zwei Wege fuehren dorthin: die Sperre
+ * nach einem gescheiterten Init-Load - und ein geworfener Schreibvorgang (voller Speicher,
+ * IOException, beschaedigte Datei). Der Wecker klingelt dann in diesem Prozess, steht aber weder
+ * in der Preferences-Datei noch im Direct-Boot-Spiegel - nach Prozesstod oder Neustart ist er
+ * spurlos weg, und fuer einen manuellen Wecker endgueltig. Der Nutzer muss das erfahren.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain, advanceUntilIdle
 class Pruefrunde8ManuellerWeckerTest {
@@ -93,17 +103,27 @@ class Pruefrunde8ManuellerWeckerTest {
     private lateinit var alarmRepository: IAlarmRepository
     private lateinit var shiftUseCase: IShiftUseCase
 
+    /**
+     * @param repositorium standardmaessig eine Attrappe mit heiler Persistenz. Die BEFUND-11-Tests
+     *   reichen hier den ECHTEN [AlarmRepository] herein - siehe die Begruendung dort.
+     */
     private fun buildViewModel(
         start: ShiftConfig,
-        persistenzGesperrt: Boolean = false
+        repositorium: IAlarmRepository = heilesRepositorium()
     ): AlarmViewModel {
         konfiguration = MutableStateFlow(start)
+        alarmRepository = repositorium
 
         alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.activeAlarms).thenReturn(flowOf(emptyList()))
         alarmUseCase.stub {
             onBlocking { getAllAlarms() } doReturn Result.success(emptyList())
-            onBlocking { saveAlarm(any()) } doReturn Result.success(Unit)
+            // DURCHREICHEN statt festverdrahtetem Erfolg: `AlarmUseCase.saveAlarm()` tut im
+            // Original genau das (eine Zeile Delegation). Nur so entsteht der Fehlschlag im Test
+            // dort, wo er auch in der App entsteht - im Schreibweg des Repositoriums.
+            onBlocking { saveAlarm(any()) } doSuspendableAnswer { aufruf ->
+                alarmRepository.saveAlarm(aufruf.getArgument<AlarmInfo>(0))
+            }
             onBlocking { scheduleSystemAlarm(any()) } doReturn Result.success(Unit)
             onBlocking { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
             onBlocking { deleteAlarm(any()) } doReturn Result.success(Unit)
@@ -127,11 +147,6 @@ class Pruefrunde8ManuellerWeckerTest {
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub { onBlocking { pausedNow() } doReturn false }
 
-        alarmRepository = mock<IAlarmRepository>()
-        alarmRepository.stub {
-            onBlocking { isPersistenceBlocked() } doReturn persistenzGesperrt
-        }
-
         return AlarmViewModel(
             alarmUseCase = alarmUseCase,
             alarmSkipUseCase = skipUseCase,
@@ -141,6 +156,47 @@ class Pruefrunde8ManuellerWeckerTest {
             alarmPrefs = alarmPrefs,
             alarmRepository = alarmRepository
         )
+    }
+
+    /** Attrappe fuer alle Tests, die mit der Persistenz nichts zu tun haben. */
+    private fun heilesRepositorium(): IAlarmRepository = mock<IAlarmRepository>().apply {
+        stub {
+            onBlocking { isPersistenceBlocked() } doReturn false
+            onBlocking { istLetzterSchreibvorgangGescheitert() } doReturn false
+            onBlocking { saveAlarm(any()) } doReturn Result.success(Unit)
+        }
+    }
+
+    /**
+     * Das ECHTE Repositorium gegen einen Speicher, der wirklich wirft oder wirklich defekt ist.
+     *
+     * Der Init-Load wird hier gleich abgewartet (`getAllAlarms()`), damit danach alles auf dem
+     * Test-Dispatcher laeuft - das Repositorium laedt sonst nebenlaeufig auf `Dispatchers.IO`,
+     * und `advanceUntilIdle()` wuesste davon nichts.
+     */
+    private suspend fun echtesRepositorium(store: DataStore<Preferences>): IAlarmRepository {
+        val repo = AlarmRepository(store, mock<DirectBootAlarmStore>(), AlarmRepoTestContext.unlocked())
+        repo.getAllAlarms()
+        return repo
+    }
+
+    /** Lesen geht, JEDER Schreibversuch wirft - so sieht ein voller Speicher aus. */
+    private class NurLesbarerSpeicher : DataStore<Preferences> {
+        private val flow = MutableStateFlow<Preferences>(mutablePreferencesOf())
+        override val data: Flow<Preferences> = flow
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+            throw IOException("kein Platz auf dem Geraet")
+    }
+
+    /** Schreiben UND Lesen gehen - die Gegenprobe. */
+    private class HeilerSpeicher : DataStore<Preferences> {
+        private val flow = MutableStateFlow<Preferences>(mutablePreferencesOf())
+        override val data: Flow<Preferences> = flow
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+            val neu = transform(flow.value)
+            flow.value = neu
+            return neu
+        }
     }
 
     /**
@@ -281,13 +337,27 @@ class Pruefrunde8ManuellerWeckerTest {
 
     // --- BEFUND 11 ---
 
+    /**
+     * WARUM DIESER TEST NEU GESCHRIEBEN WURDE.
+     *
+     * Sein erster Wurf stellte einer Attrappe `isPersistenceBlocked() = true` ein und pruefte dann
+     * nach, dass die Karte einen Fehler zeigt - also genau die Frage, die der Fix stellt. Er war
+     * damit tautologisch und hat den eigentlichen Defekt zementiert: `persistToDataStore()`
+     * scheitert in ZWEI Faellen, aber nur der erste setzte die Sperre. Ein geworfener
+     * Schreibvorgang (voller Speicher, IOException, beschaedigte Datei) blieb stumm, obwohl
+     * `saveAlarm()` unmittelbar davor "liegt NUR im Arbeitsspeicher" geloggt hat - die Attrappe
+     * konnte das gar nicht zeigen, weil sie den Schreibweg nicht hatte.
+     *
+     * Deshalb laeuft hier jetzt der ECHTE [AlarmRepository] gegen einen Speicher, dessen
+     * Schreibvorgang wirklich wirft.
+     */
     @Test
-    fun `ein nur im Arbeitsspeicher gelandeter Wecker wird als solcher gemeldet`() = runTest {
+    fun `ein am Schreibfehler gescheiterter Wecker wird als nicht dauerhaft gemeldet`() = runTest {
         // OHNE DEN FIX: saveAlarm meldet Erfolg, die Karte zeigt den Wecker, und nach dem
         // naechsten Prozesstod ist er weg - ohne dass je ein Text darauf hingewiesen haette.
         val viewModel = buildViewModel(
             ShiftConfig(definitions = listOf(fruehAlt)),
-            persistenzGesperrt = true
+            repositorium = echtesRepositorium(NurLesbarerSpeicher())
         )
         advanceUntilIdle()
         viewModel.selectManualAlarmDate(zukunftstag)
@@ -314,7 +384,12 @@ class Pruefrunde8ManuellerWeckerTest {
 
     @Test
     fun `bei intakter Persistenz bleibt die Karte ohne Fehlertext`() = runTest {
-        val viewModel = buildViewModel(ShiftConfig(definitions = listOf(fruehAlt)))
+        // Gegenprobe mit demselben echten Repositorium - sonst erschiene die Warnung bei JEDEM
+        // manuellen Wecker und wuerde von niemandem mehr ernst genommen.
+        val viewModel = buildViewModel(
+            ShiftConfig(definitions = listOf(fruehAlt)),
+            repositorium = echtesRepositorium(HeilerSpeicher())
+        )
         advanceUntilIdle()
         viewModel.selectManualAlarmDate(zukunftstag)
         viewModel.selectManualAlarmShift(fruehAlt)

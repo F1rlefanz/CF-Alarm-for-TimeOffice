@@ -77,7 +77,6 @@ fun SettingsTabContent(
     val notificationState by notificationSettingsViewModel.uiState.collectAsStateWithLifecycle()
     val masterPauseViewModel: MasterPauseViewModel = hiltViewModel()
     val masterPausePaused by masterPauseViewModel.paused.collectAsStateWithLifecycle()
-
     // Rueckfrage vor dem Abmelden. WARUM (Pruefrunde 8, Befund 3): Abmelden ist nicht mehr nur
     // "Konto weg" - es entfernt dabei alle gestellten Wecker. Vorher loeste ein einzelner
     // Fehltipper auf dieser Karte das ohne jede Rueckfrage aus, und danach ist ausschliesslich

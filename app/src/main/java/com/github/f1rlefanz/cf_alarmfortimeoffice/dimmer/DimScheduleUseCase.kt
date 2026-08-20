@@ -307,8 +307,12 @@ class DimScheduleUseCase @Inject constructor(
         //    Welche Regel das ist, entscheidet der Resolver seit Pruefrunde 8 aus ALLEN Schichten
         //    des Tages: `ruleForShift` wird pro Schicht gefragt (an einem Tag mit Fruehdienst UND
         //    Rufbereitschaft wurde die zweite Regel vorher nie gefragt). Unterdrueckung schlaegt
-        //    dabei alles, und zwei widerspruechliche spezifische Regeln unterdruecken ebenfalls -
-        //    nicht dimmen ist die harmlose Richtung.
+        //    dabei alles (leere Fensterliste = ausdrueckliche Nutzerentscheidung); bei zwei
+        //    widersprechenden spezifischen Regeln gewinnt die Regel der fruehesten Schicht, und der
+        //    Konflikt geht als WARN ins Log. Wichtig fuer diese Stelle: den Tag in so einem Fall
+        //    einfach auszulassen waere KEIN "nur nicht dimmen" - Punkt 3 unten nimmt jeden von einer
+        //    Regel getroffenen Tag aus dem Nacht-Standard heraus, der Tag bliebe also ganz ohne
+        //    Dimm-Quelle, obwohl die Oberflaeche beide Regeln als aktiv zeigt.
         val rules = if (toggles.rulesEnabled) dimRuleUseCase.getAllRules() else emptyList()
         val rulesActive = toggles.rulesEnabled && rules.any { it.enabled }
         // `triggerTime` MUSS hier die urspruenglich berechnete Weckzeit sein, auch wenn sie

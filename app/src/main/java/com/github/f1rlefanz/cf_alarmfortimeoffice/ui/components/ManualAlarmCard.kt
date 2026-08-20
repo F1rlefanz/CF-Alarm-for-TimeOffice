@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ManualAlarmUiState
 import java.time.LocalDate
@@ -141,6 +142,16 @@ fun ManualAlarmCard(
                         }
                     }
                 }
+
+                // AUCH HIER, nicht nur im Anlege-Zweig: die beiden wichtigsten Meldungen der Karte
+                // entstehen GENAU in diesem Zustand. Der Hinweis "gestellt, aber nicht dauerhaft
+                // gespeichert" wird gesetzt, nachdem der Wecker im Bestand liegt - die Karte zeigte
+                // daneben unbeirrt "Manueller Alarm aktiv" mit Uhrzeit, und die Warnung war
+                // unsichtbar. Dasselbe galt fuer einen fehlgeschlagenen Loeschversuch: der Wecker
+                // bleibt bestehen, der Knopf federt zurueck, und niemand sagte warum.
+                manualAlarmState.error?.let { error ->
+                    ManualAlarmFehlerHinweis(error = error, onClearError = onClearError)
+                }
             } else {
                 // Alarm Erstellung UI
                 HorizontalDivider()
@@ -234,40 +245,9 @@ fun ManualAlarmCard(
                 
                 // Error Display
                 manualAlarmState.error?.let { error ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = error.error ?: "Unbekannter Fehler",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(
-                                onClick = onClearError,
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                    contentDescription = "Fehler schließen"
-                                )
-                            }
-                        }
-                    }
+                    ManualAlarmFehlerHinweis(error = error, onClearError = onClearError)
                 }
-                
+
                 // Erstellen Button
                 Button(
                     onClick = onCreate,
@@ -323,6 +303,52 @@ fun ManualAlarmCard(
             onDismiss = { showShiftSelector = false },
             onNavigateToSettings = onNavigateToSettings
         )
+    }
+}
+
+/**
+ * Der Fehlerteil der Karte - EINE Darstellung fuer BEIDE Zustaende.
+ *
+ * Bewusst ausgelagert statt zweimal geschrieben: solange der Block nur im Anlege-Zweig stand, war
+ * jede Meldung unsichtbar, die entsteht, waehrend ein manueller Wecker existiert. Wer ihn kopiert,
+ * baut die Falle in neuer Form nach.
+ */
+@Composable
+private fun ManualAlarmFehlerHinweis(
+    error: AppErrorState,
+    onClearError: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = error.error ?: "Unbekannter Fehler",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = onClearError,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    contentDescription = "Fehler schließen"
+                )
+            }
+        }
     }
 }
 

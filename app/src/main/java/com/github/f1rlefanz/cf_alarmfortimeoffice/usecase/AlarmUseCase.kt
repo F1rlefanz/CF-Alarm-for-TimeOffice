@@ -480,6 +480,15 @@ class AlarmUseCase @Inject constructor(
         // schreibt. Ergebnis war exakt die Kombination, die hier ausgeschlossen sein sollte:
         // verwaiste, armierte System-Alarme, von denen die App nichts mehr weiss - bei aktiver
         // Master-Pause klingelt der Wecker dann trotz Pause.
+        // GENAU EINE BEDEUTUNG WIRD HIER GEBRAUCHT: "der Bestand ist in diesem Prozess nicht
+        // lesbar". Nur dann ist die Cancel-Schleife weiter unten wirkungslos, und nur dann ist das
+        // Ueberspringen unten vertretbar. Ein gescheiterter SCHREIBvorgang (voller Speicher,
+        // IOException) gehoert ausdruecklich NICHT hierher - der Bestand ist dabei vollstaendig
+        // lesbar, die Schleife MUSS laufen. Diese beiden Lagen waren einmal zu einem Signal
+        // verodert; die Master-Pause leerte dann Repository und Direct-Boot-Spiegel und liess alle
+        // System-Alarme armiert zurueck, wo sie trotz Pause feuerten und ohne Bestandsliste durch
+        // nichts mehr abbrechbar waren. Wer hier eine weitere Bedingung ergaenzen will, muss zuerst
+        // beantworten, ob sie den Bestand UNLESBAR macht.
         if (alarmRepository.isPersistenceBlocked()) {
             // GESPERRT - aber die Reaktion haengt davon ab, WARUM geraeumt wird.
             //

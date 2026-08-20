@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -14,12 +15,16 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCa
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -29,6 +34,7 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.time.LocalDateTime
@@ -90,7 +96,20 @@ class CalendarViewModelDeselectionCleanupTest {
         alarmUseCase: IAlarmUseCase = mock(),
         shiftConfig: ShiftConfig = ShiftConfig(),
         masterPaused: Boolean = false,
-        stateHolder: CalendarStateHolder = CalendarStateHolder()
+        stateHolder: CalendarStateHolder = CalendarStateHolder(),
+        /** Simuliert einen defekten Konfigurations-Store (nicht: eine leere Konfiguration). */
+        shiftConfigReadFails: Boolean = false,
+        /**
+         * Der dauerhafte Merker fuer einen offenen Raeumauftrag. Default: ein Mock, der jeden
+         * Zugriff gelingen laesst - die Tests, die IHN pruefen, reichen einen eigenen herein.
+         */
+        pendingCleanupStore: PendingDeselectionCleanupStore = mock<PendingDeselectionCleanupStore>().apply {
+            stub {
+                onBlocking { pendingSince() } doReturn Result.success(null)
+                onBlocking { markPending(any()) } doReturn Result.success(Unit)
+                onBlocking { clearIfPending() } doReturn Result.success(Unit)
+            }
+        }
     ): CalendarViewModel {
         val calendarUseCase = mock<ICalendarUseCase>()
         calendarUseCase.stub {
@@ -124,9 +143,14 @@ class CalendarViewModelDeselectionCleanupTest {
             }
         }
 
+        val shiftConfigResult = if (shiftConfigReadFails) {
+            Result.failure(IllegalStateException("Konfiguration unlesbar"))
+        } else {
+            Result.success(shiftConfig)
+        }
         val shiftUseCase = mock<IShiftUseCase>()
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(shiftConfig)
+            onBlocking { getCurrentShiftConfig() } doReturn shiftConfigResult
         }
 
         val masterPausePrefs = mock<MasterPausePrefs>()
@@ -142,7 +166,8 @@ class CalendarViewModelDeselectionCleanupTest {
             errorHandler = mock<ErrorHandler>(),
             shiftUseCase = shiftUseCase,
             alarmUseCase = alarmUseCase,
-            masterPausePrefs = masterPausePrefs
+            masterPausePrefs = masterPausePrefs,
+            pendingDeselectionCleanupStore = pendingCleanupStore
         )
     }
 
@@ -283,5 +308,315 @@ class CalendarViewModelDeselectionCleanupTest {
         advanceUntilIdle()
 
         verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // REGRESSION (Review ueber Pruefrunde 8): Jeder fail-safe-Abbruch des Aufraeumens stellt genau
+    // den Zustand wieder her, gegen den der Fix gebaut wurde - die Oberflaeche zeigt "kein
+    // Kalender ausgewaehlt", waehrend bis zu 14 Tage lang Wecker des entfernten Dienstplans
+    // klingeln. Bis hierher stand das ausschliesslich im Log. Ein Zustand, der eine Funktion
+    // dauerhaft anhaelt, muss sichtbar sein, und es gibt keinen automatischen zweiten Anlauf:
+    // beim naechsten App-Start ist die Auswahl von Anfang an leer, der Uebergangs-Merker greift
+    // also nicht mehr.
+    //
+    // ERSTE FASSUNG UND IHRE WIDERLEGUNG: Die Meldung lief zunaechst ueber CalendarUiState.error -
+    // "den EINZIGEN Fehlerkanal, den dieses ViewModel hat". Das Nachreview hat das widerlegt:
+    // `error` ist ein Meldungspuffer, den MainContentScreen nach dem Anzeigen unbedingt mit
+    // clearError() leert. Der Nutzer sah den Hinweis eine Snackbar-Laenge lang, danach war er
+    // endgueltig weg - obwohl der Zustand unveraendert weiterbestand. Und der Knopf daneben
+    // ("Wiederholen" -> refreshData()) laedt Kalender und Termine neu, ruehrt die verwaisten
+    // Wecker aber nicht an, weil das Aufraeumen am Uebergangs-Merker haengt. Ein Zustand, der
+    // Wecker verwaist zuruecklaesst, muss aber sichtbar BLEIBEN, und ein angebotener Knopf muss
+    // wirken. Deshalb pruefen die Tests unten jetzt das Zustandsfeld
+    // CalendarUiState.deselectionCleanupFailures und den zweiten Anlauf retryDeselectionCleanup().
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * Der uiState ist ein `stateIn(SharingStarted.Lazily)` - ohne Sammler bleibt sein `value` auf
+     * dem Initialwert stehen. Deshalb haengt sich der Test einen an, bevor er liest.
+     */
+    private fun kotlinx.coroutines.test.TestScope.observeUiState(viewModel: CalendarViewModel) {
+        backgroundScope.launch { viewModel.uiState.collect { } }
+    }
+
+    @Test
+    fun `bei nicht lesbarer Kalenderauswahl erfaehrt der Nutzer, dass Wecker klingeln koennen`() =
+        runTest(dispatcher) {
+            val alarmUseCase = mock<IAlarmUseCase>()
+            alarmUseCase.stub {
+                onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+            }
+            val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
+            observeUiState(viewModel)
+
+            selectedIds.value = setOf("cal-a")
+            advanceUntilIdle()
+
+            selectionReadFails = true
+            selectedIds.value = emptySet()
+            advanceUntilIdle()
+
+            assertEquals(
+                "Der uebersprungene Aufraeum-Lauf muss beim Nutzer ankommen, nicht nur im Log",
+                1,
+                viewModel.uiState.value.deselectionCleanupFailures
+            )
+            // Der fluechtige Fehlerkanal wird dafuer NICHT mehr benutzt - er wird nach dem
+            // Anzeigen geleert und koennte den Zustand nicht tragen.
+            assertNull(viewModel.uiState.value.error)
+        }
+
+    @Test
+    fun `bei nicht lesbarer Schicht-Konfiguration erfaehrt der Nutzer es`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+        }
+        val viewModel = buildViewModel(alarmUseCase = alarmUseCase, shiftConfigReadFails = true)
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+
+        // Nicht geraeumt (fail-safe, richtig so) - aber eben nicht stillschweigend.
+        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        assertEquals(1, viewModel.uiState.value.deselectionCleanupFailures)
+    }
+
+    @Test
+    fun `ein fehlgeschlagenes Aufraeumen wird gemeldet, nicht nur geloggt`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            // Nur das Raeumen scheitert; das erste Anlegen aus den Events gelingt, sonst haenge
+            // die Meldung womoeglich am falschen Vorgang.
+            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+                @Suppress("UNCHECKED_CAST")
+                val passedEvents = invocation.arguments[0] as List<CalendarEvent>
+                if (passedEvents.isEmpty()) {
+                    Result.failure(IllegalStateException("Alarm liess sich nicht abbrechen"))
+                } else {
+                    Result.success(emptyList())
+                }
+            }
+        }
+        val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        assertEquals(
+            "Vorbedingung: bis hierher ist nichts schiefgegangen",
+            0,
+            viewModel.uiState.value.deselectionCleanupFailures
+        )
+
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.deselectionCleanupFailures)
+        // Die Fehlermeldung darf das unmittelbar davor geplante Leeren der Terminliste nicht
+        // verschlucken (updateLocalStateImmediate verwirft ein noch offenes Batch-Update) - sonst
+        // stuenden die Termine des abgewaehlten Kalenders weiter auf dem Schirm.
+        assertTrue(
+            "Die Terminliste des abgewaehlten Kalenders muss geleert bleiben",
+            viewModel.uiState.value.events.isEmpty()
+        )
+    }
+
+    /**
+     * Die Gegenprobe: eine Falschmeldung waere fast so schlimm wie gar keine - der Nutzer wuerde
+     * Wecker suchen, die es nicht mehr gibt.
+     */
+    @Test
+    fun `ein gelungenes Aufraeumen meldet keinen Fehler`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+        }
+        val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+
+        verify(alarmUseCase).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        // Haelt zugleich fest, dass der Zeitstempel-Schreiber (AlarmMaintenanceService, hier mit
+        // einem Context-Mock nicht erreichbar) den Erfolg NICHT in eine Fehlermeldung verwandelt:
+        // die Wecker sind geraeumt, egal ob die Buchhaltung dahinter gelingt.
+        assertNull(viewModel.uiState.value.error)
+        assertEquals(0, viewModel.uiState.value.deselectionCleanupFailures)
+    }
+
+    /**
+     * Der Text ist die eigentliche Zusicherung: er muss die FOLGE benennen und einen AUSWEG - und
+     * keinen Begriff aus dem Code enthalten, mit dem ein Nutzer nichts anfangen kann.
+     */
+    @Test
+    fun `die Meldung nennt Folge und Ausweg und keinen Systemnamen`() {
+        val text = CalendarViewModel.DESELECTION_CLEANUP_FAILED_MESSAGE
+        assertTrue("Folge fehlt", text.contains("klingeln"))
+        assertTrue("Ausweg 'einzeln loeschen' fehlt", text.contains("einzeln"))
+        listOf("Sync", "DataStore", "ShiftConfig", "Alarm-Sync", "Repository", "null").forEach {
+            assertTrue("Systemname im Nutzertext: $it", !text.contains(it))
+        }
+    }
+
+    /**
+     * WIDERLEGTE FRUEHERE FASSUNG: Der Text nannte als Auswege "im Tab Wecker einzeln loeschen"
+     * und "den Kalender noch einmal aus- und danach erneut abwaehlen" - waehrend der einzige
+     * Knopf daneben "Wiederholen" hiess und `refreshData()` rief. Ein Text, der auf einen anders
+     * beschrifteten Knopf verweist (oder auf gar keinen), schickt den Nutzer ins Leere.
+     */
+    @Test
+    fun `der Text verweist woertlich auf die Beschriftung des angebotenen Knopfes`() {
+        assertTrue(
+            "Der genannte Weg muss die Knopfbeschriftung sein",
+            CalendarViewModel.DESELECTION_CLEANUP_FAILED_MESSAGE
+                .contains(CalendarViewModel.DESELECTION_CLEANUP_RETRY_ACTION)
+        )
+    }
+
+    /**
+     * DER KERN DES NACHREVIEWS: Der angebotene Knopf muss das Problem wirklich beheben.
+     *
+     * Ohne [CalendarViewModel.retryDeselectionCleanup] gab es fuer den Nutzer keinen zweiten
+     * Anlauf - `refreshData()` laedt Kalender und Termine neu, das Aufraeumen haengt aber am
+     * Uebergangs-Merker `hasSeenNonEmptySelection`, der im else-Zweig laengst zurueckgesetzt ist.
+     */
+    @Test
+    fun `der zweite Anlauf raeumt die Wecker wirklich`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        var raeumenScheitert = true
+        alarmUseCase.stub {
+            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+                @Suppress("UNCHECKED_CAST")
+                val passedEvents = invocation.arguments[0] as List<CalendarEvent>
+                when {
+                    passedEvents.isNotEmpty() -> Result.success(emptyList())
+                    raeumenScheitert -> Result.failure(IllegalStateException("Alarm liess sich nicht abbrechen"))
+                    else -> Result.success(emptyList())
+                }
+            }
+        }
+        val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+        assertEquals(
+            "Vorbedingung: der erste Anlauf ist gescheitert",
+            1,
+            viewModel.uiState.value.deselectionCleanupFailures
+        )
+
+        // Der Nutzer tippt auf den Knopf an der Meldung.
+        raeumenScheitert = false
+        viewModel.retryDeselectionCleanup()
+        advanceUntilIdle()
+
+        // Zweimal geraeumt - der Retry hat den Lauf wirklich noch einmal angestossen.
+        verify(alarmUseCase, times(2))
+            .syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        assertEquals(
+            "Nach dem gelungenen zweiten Anlauf ist der Zustand behoben",
+            0,
+            viewModel.uiState.value.deselectionCleanupFailures
+        )
+    }
+
+    /**
+     * Scheitert auch der zweite Anlauf, darf die Meldung nicht verstummen. Der Zaehler steigt -
+     * genau daran haengt in MainContentScreen das erneute Anzeigen.
+     */
+    @Test
+    fun `ein gescheiterter zweiter Anlauf meldet sich erneut`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+                @Suppress("UNCHECKED_CAST")
+                val passedEvents = invocation.arguments[0] as List<CalendarEvent>
+                if (passedEvents.isEmpty()) {
+                    Result.failure(IllegalStateException("Alarm liess sich nicht abbrechen"))
+                } else {
+                    Result.success(emptyList())
+                }
+            }
+        }
+        val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+
+        viewModel.retryDeselectionCleanup()
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.deselectionCleanupFailures)
+    }
+
+    /**
+     * DIE GEGENPROBE ZUM RETRY: Er umgeht den Uebergangs-Merker, NICHT die Regel "leer ist keine
+     * Loeschgrundlage". Ist die Auswahl gerade nicht lesbar, wird auch auf Knopfdruck nicht
+     * geraeumt - sonst waere der Knopf ein Weg, Wecker aufgrund eines Lesefehlers zu loeschen.
+     */
+    @Test
+    fun `der zweite Anlauf raeumt NICHT, wenn die Auswahl nicht lesbar ist`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        selectionReadFails = true
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+
+        viewModel.retryDeselectionCleanup()
+        advanceUntilIdle()
+
+        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        assertEquals(2, viewModel.uiState.value.deselectionCleanupFailures)
+    }
+
+    /**
+     * Waehlt der Nutzer wieder einen Kalender an, sind die Wecker gedeckt (der Delta-Sync des
+     * Ladevorgangs raeumt jeden Alarm ohne Termin). Ein stehengebliebener Hinweis waere dann eine
+     * Falschmeldung - fast so schlimm wie gar keine.
+     */
+    @Test
+    fun `eine neue Kalenderauswahl loest den Hinweis auf`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        alarmUseCase.stub {
+            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+                @Suppress("UNCHECKED_CAST")
+                val passedEvents = invocation.arguments[0] as List<CalendarEvent>
+                if (passedEvents.isEmpty()) {
+                    Result.failure(IllegalStateException("Alarm liess sich nicht abbrechen"))
+                } else {
+                    Result.success(emptyList())
+                }
+            }
+        }
+        val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.deselectionCleanupFailures)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.deselectionCleanupFailures)
     }
 }

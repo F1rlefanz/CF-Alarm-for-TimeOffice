@@ -33,14 +33,17 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doSuspendableAnswer
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -58,6 +61,23 @@ import java.io.IOException
  * klingelten also Wecker eines Kontos, das die App nicht mehr kennt, ohne dass der Nutzer sie
  * noch abstellen konnte. Ein Neustart machte es schlimmer: der `BootReceiver` armiert den
  * Bestand aus dem Direct-Boot-Spiegel ungegatet erneut.
+ *
+ * DIE REIHENFOLGE IST DER EIGENTLICHE GEGENSTAND DIESER TESTS - und sie ist einmal umgedreht
+ * worden. Die erste Fassung raeumte VOR dem Abmelden und erfand damit einen Zustand, den es
+ * sonst nirgends gibt: "angemeldet, aber saemtliche Wecker geloescht". Ihn wieder aufzuloesen
+ * verlangte einen Rueckbau, und der scheiterte in drei aufeinanderfolgenden Reviews an je einer
+ * neuen Luecke - der manuelle Wecker steht in keiner Terminliste und kam nie zurueck, der
+ * ShiftSpanStore blieb leer (Dimmer und DND liefen ohne Dienstzeiten weiter), und der Knopf
+ * "Erneut abmelden" auf der Warnkarte loeschte die Warnung selbst. Jetzt gilt: erst abmelden,
+ * dann raeumen - und damit entfallen Rueckbau, Verlustpruefung, Merker und Warnkarte.
+ *
+ * DER PUNKT OHNE WIEDERKEHR IST DAS VERWERFEN DES TOKENS (Welle 5, Befunde A und B). Die erste
+ * Fassung dieser Datei behauptete hier noch, ein gescheitertes Abmelden habe NICHTS angefasst.
+ * Das stimmte nie: `AuthUseCase.signOut()` verwirft ZUERST das Kalender-Token und loescht erst
+ * danach die Auth-Daten - nur Letzteres kann scheitern. Zwei Tests halten die Folgerungen fest:
+ * geraeumt wird in BEIDEN Zweigen, und der ganze Block (Abmelden UND Aufraeumen) laeuft
+ * unabbrechbar, weil das Token-Verwerfen ueber `GoogleAuthUtil.clearToken()` einen Netzaufruf
+ * enthaelt, in dessen Timeout-Fenster der Nutzer die App typischerweise verlaesst.
  *
  * WARUM DIE TESTS HIER UND NICHT AM AuthUseCase HAENGEN: Das Aufraeumen orchestriert das
  * ViewModel, weil sein Ergebnis den Nutzer erreichen muss, ohne die Bedeutung von
@@ -93,10 +113,12 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
 
     private fun buildFixture(
         abmeldenErgebnis: Result<Unit> = Result.success(Unit),
-        weckerLoeschErgebnis: Result<Unit> = Result.success(Unit)
+        weckerLoeschErgebnis: Result<Unit> = Result.success(Unit),
+        /** Der einzige Wurf VOR dem Punkt ohne Wiederkehr - danach wurde wirklich nichts angefasst. */
+        signOutLocallyWirft: Boolean = false
     ): Fixture {
         val authDataStoreRepository = mock<IAuthDataStoreRepository>()
-        // Leerer Flow: die drei Beobachter im init{} sollen keine Zustaende einspielen, die die
+        // Leerer Flow: die Beobachter im init{} sollen keine Zustaende einspielen, die die
         // Zusicherungen dieser Tests ueberschreiben.
         whenever(authDataStoreRepository.authData).thenReturn(emptyFlow<AuthData>())
 
@@ -114,6 +136,11 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
         alarmUseCase.stub { onBlocking { deleteAllAlarms() } doReturn weckerLoeschErgebnis }
 
         val credentialAuthManager = mock<CredentialAuthManager>()
+        if (signOutLocallyWirft) {
+            // doThrow-Form und nicht whenever(...): signOutLocally() liefert Unit und damit im
+            // Bytecode void - darauf laesst sich kein when() setzen.
+            doThrow(RuntimeException("boom")).whenever(credentialAuthManager).signOutLocally()
+        }
         val errorHandler = mock<ErrorHandler>()
         whenever(errorHandler.getErrorMessage(any())).thenReturn("Fehler")
         val backgroundServiceManager = mock<BackgroundServiceManager>()
@@ -124,7 +151,6 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
         val dndSchedule = mock<DndScheduleUseCase>()
         val hueSmartScheduler = mock<HueSmartScheduler>()
         val calendarPreAlarmRefreshScheduler = mock<CalendarPreAlarmRefreshScheduler>()
-
         val alarmManager = mock<AlarmManager>()
         val context = mock<Context>()
         // AlarmMaintenanceService.cancelNext() castet das Ergebnis auf AlarmManager - ohne diesen
@@ -186,24 +212,121 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
 
         // Und das Abmelden selbst ist trotzdem passiert.
         verify(f.authUseCase, times(1)).signOut()
-        assertFalse("nach dem Abmelden darf niemand mehr angemeldet sein", f.viewModel.authState.value.isSignedIn)
-        assertNull("ohne Fehler beim Aufraeumen gibt es keinen Hinweis", f.viewModel.authState.value.error)
+        assertFalse(
+            "nach dem Abmelden darf niemand mehr angemeldet sein",
+            f.viewModel.authState.value.isSignedIn
+        )
+        assertNull(
+            "ohne Fehler beim Aufraeumen gibt es keinen Hinweis",
+            f.viewModel.authState.value.error
+        )
     }
 
     @Test
-    fun `abmelden raeumt VOR dem Verwerfen der Anmeldedaten auf`() = runTest {
+    fun `abmelden verwirft ZUERST die Anmeldung und raeumt erst danach auf`() = runTest {
         val f = buildFixture()
 
         f.viewModel.signOut()
         advanceUntilIdle()
 
-        // Die Reihenfolge ist tragend: nach dem Verwerfen zeigt die App nur noch den
-        // Anmeldebildschirm - ein erst dann gescheitertes Aufraeumen waere von keiner
-        // Oberflaeche mehr aus nachholbar.
-        inOrder(f.alarmUseCase, f.authUseCase) {
-            verify(f.alarmUseCase).deleteAllAlarms()
+        // WIDERLEGTE ANNAHME (die Reihenfolge dieses Tests war einmal genau umgekehrt): Die
+        // erste Fassung raeumte VOR dem Abmelden, um armierte Wecker ohne Bedienoberflaeche zu
+        // vermeiden. Das erkaufte sich den Zustand "angemeldet, aber alle Wecker geloescht" -
+        // einen Zustand, den die App vollstaendig selbst wieder aufloesen muss und an dem drei
+        // Reviews hintereinander je eine neue Luecke gefunden haben (manueller Wecker, leerer
+        // ShiftSpanStore, sich selbst loeschende Warnkarte). Diese Richtung kennt ihn nicht:
+        // scheitert das Abmelden, ist nichts geraeumt.
+        inOrder(f.authUseCase, f.alarmUseCase) {
             verify(f.authUseCase).signOut()
+            verify(f.alarmUseCase).deleteAllAlarms()
         }
+    }
+
+    @Test
+    fun `scheitert das Abmelden, wird trotzdem geraeumt - das Token ist dann schon weg`() = runTest {
+        val f = buildFixture(abmeldenErgebnis = Result.failure(IOException("Auth-Store kaputt")))
+
+        f.viewModel.signOut()
+        advanceUntilIdle()
+
+        // WIDERLEGTE ANNAHME (Pruefrunde 8 / Welle 5, Befund B): Dieser Test verlangte frueher
+        // das Gegenteil - "scheitert das Abmelden, wurde NICHTS angefasst". Das stimmte nie.
+        // `AuthUseCase.signOut()` hat genau eine Fehlerquelle, `clearAuthData()`, und die liegt
+        // NACH `oauth2TokenManager.invalidate()`. Ein Failure heisst also nicht "nichts
+        // passiert", sondern "Token weg, Auth-Daten noch da": der Nutzer gilt weiter als
+        // angemeldet, kommt aber an keinen Kalender mehr, die 6h-Wartung faellt in ihre
+        // fail-safe-Zweige, und fuer neue Schichten entstehen keine Wecker. Ihn mit einem vollen
+        // Weckbestand fuer ein totes Konto stehen zu lassen waere die schlechtere Haelfte.
+        verify(f.alarmUseCase, times(1)).deleteAllAlarms()
+        verify(f.shiftSpanStore, times(1)).replaceAll(any(), any())
+        verify(f.dimSchedule, times(1)).disable()
+        verify(f.dndSchedule, times(1)).disable()
+        verify(f.hueSmartScheduler, times(1)).cleanup()
+        verify(f.calendarPreAlarmRefreshScheduler, times(1)).cancelAll()
+
+        // Kein Rueckbau: die Ketten bleiben gestoppt, bis sich der Nutzer neu anmeldet. Genau
+        // der Rueckbau war es, an dem die umgekehrte Reihenfolge dreimal gescheitert ist.
+        verify(f.backgroundServiceManager, never()).initializeMaintenanceService()
+        verify(f.dimSchedule, never()).enable()
+        verify(f.dndSchedule, never()).enable()
+
+        // Und der Nutzer erfaehrt, dass er nur halb abgemeldet ist - nicht die generische
+        // Fehlermeldung, die ihn als "angemeldet und alles in Ordnung" zuruecklassen wuerde.
+        assertEquals(
+            AuthViewModel.FEHLER_ABMELDEN_UNVOLLSTAENDIG,
+            f.viewModel.authState.value.error
+        )
+    }
+
+    @Test
+    fun `ein Abbruch WAEHREND des Abmeldens raeumt trotzdem zu Ende`() = runTest {
+        // BEFUND A (Pruefrunde 8 / Welle 5): Der Punkt ohne Wiederkehr ist das Verwerfen des
+        // Tokens, nicht das Ende von `authUseCase.signOut()`. `invalidate()` ruft
+        // GoogleAuthUtil.clearToken() - einen Netzaufruf, der ohne Netz bis zum Timeout haengt.
+        // Solange die Sperre erst um `stopScheduledWorkForSignOut()` lag, war die Coroutine in
+        // genau diesem Fenster voll abbrechbar; wischt der Nutzer die App dort weg (das
+        // wahrscheinlichste Verhalten direkt nach "Abmelden"), war das Token verworfen und kein
+        // einziger Wecker abgeraeumt - Befund 3 ueber den Abbruchweg.
+        val f = buildFixture()
+        f.authUseCase.stub {
+            onBlocking { signOut() } doSuspendableAnswer {
+                f.viewModel.viewModelScope.cancel()
+                // Echter Suspensionspunkt NACH dem Abbruch, stellvertretend fuer den
+                // Netzaufruf: nur daran kann sich eine Cancellation bemerkbar machen
+                // (gemockte suspend-Aufrufe suspendieren nicht).
+                delay(1)
+                Result.success(Unit)
+            }
+        }
+
+        f.viewModel.signOut()
+        advanceUntilIdle()
+
+        verify(f.alarmUseCase, times(1)).deleteAllAlarms()
+        verify(f.shiftSpanStore, times(1)).replaceAll(any(), any())
+        verify(f.dimSchedule, times(1)).disable()
+        verify(f.dndSchedule, times(1)).disable()
+        verify(f.hueSmartScheduler, times(1)).cleanup()
+        verify(f.calendarPreAlarmRefreshScheduler, times(1)).cancelAll()
+    }
+
+    @Test
+    fun `scheitern Abmelden UND Aufraeumen, nennt der Text beides`() = runTest {
+        val f = buildFixture(
+            abmeldenErgebnis = Result.failure(IOException("Auth-Store kaputt")),
+            weckerLoeschErgebnis = Result.failure(IOException("Bestand nicht lesbar"))
+        )
+
+        f.viewModel.signOut()
+        advanceUntilIdle()
+
+        // Der doppelte Fehlschlag ist der einzige Fall, in dem Wecker zurueckbleiben KOENNEN,
+        // waehrend der Nutzer noch als angemeldet gilt. Er ist damit nicht ohne Oberflaeche -
+        // deshalb verweist der Text auf den Schalter, der in dieser Lage erreichbar ist.
+        assertEquals(
+            AuthViewModel.FEHLER_ABMELDEN_UNVOLLSTAENDIG_WECKER_GEBLIEBEN,
+            f.viewModel.authState.value.error
+        )
     }
 
     @Test
@@ -274,19 +397,112 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
     }
 
     @Test
-    fun `scheitert das Abmelden selbst, faehrt die gestoppte Automatik wieder hoch`() = runTest {
+    fun `der Hinweistext nennt die Folge und einen Ausweg`() = runTest {
+        val text = AuthViewModel.FEHLER_ABMELDEN_WECKER_GEBLIEBEN
+
+        // Die verbleibende Fehlerklasse der gewaehlten Reihenfolge: abgemeldet, aber es koennen
+        // Wecker stehengeblieben sein. Sie darf nicht stumm sein - und der genannte Ausweg muss
+        // in dieser App wirklich existieren (der Schalter in den Einstellungen raeumt ueber
+        // dieselbe zentrale Operation).
+        assertTrue("Die Folge fuer die Wecker fehlt", text.contains("klingeln"))
+        assertTrue(
+            "Ohne Ausweg ist die Meldung eine Sackgasse",
+            text.contains("Hintergrunddienste pausieren")
+        )
+    }
+
+    @Test
+    fun `die Texte der halben Abmeldung nennen die Folge und einen erreichbaren Ausweg`() = runTest {
+        // Halbe Abmeldung, Wecker geraeumt: Der Nutzer sieht sich als angemeldet, hat aber
+        // keinen Kalender-Zugriff mehr. Der Text darf das nicht verschweigen - "angemeldet und
+        // alles in Ordnung" ist genau die Luege, die Befund B beschreibt.
+        val halb = AuthViewModel.FEHLER_ABMELDEN_UNVOLLSTAENDIG
+        assertTrue(
+            "Der entzogene Kalender-Zugriff fehlt",
+            halb.contains("Kalender-Zugriff")
+        )
+        assertTrue(
+            // KORRIGIERT (Welle 6, Befund B): Frueher stand hier "Abmelden" - der Knopf aus den
+            // Einstellungen. Seit dieser Zweig `hasValidToken = false` setzt, landet der Nutzer
+            // auf dem Kalender-Autorisierungsbildschirm, und dort heisst der Knopf, der genau
+            // dasselbe tut, "Mit anderem Konto anmelden". Die Einstellungen sind von dort NICHT
+            // erreichbar - der alte Text waere ab da eine Sackgasse.
+            "Ohne Ausweg ist die Meldung eine Sackgasse - hier: die Abmeldung abschliessen",
+            halb.contains("Mit anderem Konto anmelden")
+        )
+        assertTrue(
+            "Der einzige unwiederbringliche Verlust ist der von Hand gestellte Wecker",
+            halb.contains("von Hand gestellten")
+        )
+
+        // Doppelter Fehlschlag: hier koennen Wecker zurueckbleiben. Der Ausweg ist derselbe
+        // Knopf und leistet beides auf einmal - ein zweiter signOut() schliesst die Abmeldung ab
+        // UND laesst das Aufraeumen noch einmal laufen. Der frueher hier genannte Schalter
+        // "Hintergrunddienste pausieren" liegt in den Einstellungen und ist vom
+        // Autorisierungsbildschirm aus nicht erreichbar.
+        val doppelt = AuthViewModel.FEHLER_ABMELDEN_UNVOLLSTAENDIG_WECKER_GEBLIEBEN
+        assertTrue("Die Folge fuer die Wecker fehlt", doppelt.contains("klingeln"))
+        assertTrue(
+            "Ohne Ausweg ist die Meldung eine Sackgasse",
+            doppelt.contains("Mit anderem Konto anmelden")
+        )
+    }
+
+    /**
+     * DER EINZIGE WURF VOR DEM PUNKT OHNE WIEDERKEHR: `signOutLocally()`. Danach ist wirklich
+     * nichts angefasst - weder das Kalender-Token noch die Auth-Daten -, also darf hier auch
+     * nicht geraeumt werden. Sonst stuende ein weiterhin angemeldeter Nutzer ohne Wecker da.
+     */
+    @Test
+    fun `wirft schon signOutLocally, wird weder abgemeldet noch geraeumt`() = runTest {
+        val f = buildFixture(signOutLocallyWirft = true)
+
+        f.viewModel.signOut()
+        advanceUntilIdle()
+
+        verify(f.authUseCase, never()).signOut()
+        verify(f.alarmUseCase, never()).deleteAllAlarms()
+    }
+
+    // ---- WELLE 6, BEFUND B: Oberflaeche und Weckbestand muessen zusammenpassen ----------------
+
+    /**
+     * DER ZUSTAND, DEN DIESER TEST AUSSCHLIESST: `authUseCase.signOut()` scheitert (nur
+     * `clearAuthData()` kann werfen, das Token ist da schon verworfen). Der Nutzer gilt weiter
+     * als angemeldet - aber `stopScheduledWorkForSignOut()` ist trotzdem gelaufen: alle Wecker
+     * weg, Schichtspannen leer, 6h-Kette abbestellt. Neu angestossen wird die Kette nur bei
+     * Anmeldung, Boot oder Master-Pause-resume, NICHT beim naechsten App-Start.
+     *
+     * Ohne diese Korrektur blieb `hasValidToken` auf `true`, und die `MainActivity` zeigte die
+     * normale Haupt-Oberflaeche: eine App, die normal aussieht und nie wieder einen Wecker
+     * stellt. Mit `hasValidToken = false` fuehrt dasselbe Gate auf den
+     * Kalender-Autorisierungsbildschirm - was schlicht die Wahrheit ist, denn das Token IST weg -
+     * und der bietet beide Auswege an: neu autorisieren (das startet ueber
+     * `requestCalendarAuthorization()` auch die Wartung wieder) oder die Abmeldung abschliessen.
+     */
+    @Test
+    fun `scheitert das Abmelden, verlangt die Oberflaeche eine neue Autorisierung`() = runTest {
         val f = buildFixture(abmeldenErgebnis = Result.failure(IOException("Auth-Store kaputt")))
 
         f.viewModel.signOut()
         advanceUntilIdle()
 
-        // Der Nutzer BLEIBT angemeldet - dann darf er nicht ohne Wecker und ohne die Kette
-        // dastehen, die sie neu anlegt. Der Wartungslauf plant sich selbst wieder ein und baut
-        // die Wecker aus dem Kalender neu auf.
-        verify(f.backgroundServiceManager, times(1)).initializeMaintenanceService()
-        verify(f.dimSchedule, times(1)).enable()
-        verify(f.dndSchedule, times(1)).enable()
-        verify(f.hueSmartScheduler, times(1)).initializeSmartScheduling()
-        verify(f.calendarPreAlarmRefreshScheduler, times(1)).reschedule()
+        // Der Ausgangszustand dieser Fixture ist tokenChecked=false (die init-Beobachter spielen
+        // ueber die leeren Flows nichts ein) - die beiden unteren Zusicherungen sind deshalb die
+        // unterscheidenden: ohne die Korrektur bleibt tokenChecked false, und das Gate faende
+        // gar keine Aussage vor.
+        val calendarOps = f.viewModel.authState.value.calendarOps
+        assertFalse(
+            "Das Token ist verworfen - die Oberflaeche darf nichts anderes behaupten",
+            calendarOps.hasValidToken
+        )
+        assertTrue(
+            "Ohne tokenChecked haengt das Gate im Ladebildschirm",
+            calendarOps.tokenChecked
+        )
+        assertTrue(
+            "Der Nutzer muss auf den Autorisierungsbildschirm - dort stehen beide Auswege",
+            calendarOps.needsCalendarAuthorization
+        )
     }
 }

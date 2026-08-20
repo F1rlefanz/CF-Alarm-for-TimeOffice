@@ -38,9 +38,31 @@ interface IAlarmRepository {
      * liefert den degradierten Stand als Erfolg). Wer sich darauf verlaesst, cancelt keinen
      * einzigen System-Alarm, leert aber Store und Direct-Boot-Spiegel - und laesst genau die
      * verwaisten, armierten Alarme zurueck, von denen die App danach nichts mehr weiss.
+     *
+     * ANTWORTET NICHT auf "war der letzte Schreibvorgang erfolgreich?" - dafuer gibt es
+     * [istLetzterSchreibvorgangGescheitert]. Die beiden Lagen duerfen nicht zu einem Signal
+     * verschmelzen (siehe die Begruendung dort).
      */
     suspend fun isPersistenceBlocked(): Boolean
-    
+
+    /**
+     * Ist der zuletzt geschriebene Stand moeglicherweise NUR im Arbeitsspeicher gelandet?
+     *
+     * Der zweite Weg dorthin: der Schreibweg selbst wirft (voller Speicher, IOException,
+     * beschaedigte Datei). [saveAlarm] meldet trotzdem Erfolg - der Alarm wird armiert und
+     * klingelt in diesem Prozess -, aber er steht weder in der Preferences-Datei noch im
+     * Direct-Boot-Spiegel und ist nach Prozesstod oder Neustart weg.
+     *
+     * NUR FUER ANZEIGE UND WARNUNG: einziger Konsument ist der manuelle Wecker
+     * (`AlarmViewModel.createManualAlarm()`), weil ausgerechnet der sich nicht aus dem Kalender
+     * rekonstruieren laesst. Diese Antwort darf NIE einen Raeum- oder Cancel-Weg anhalten - der
+     * Bestand ist hier vollstaendig lesbar, und ein uebersprungenes `cancelSystemAlarm()` liesse
+     * armierte Alarme zurueck, die niemand mehr abbrechen kann.
+     *
+     * Beschreibt den LETZTEN Versuch: ein gelungener Schreibvorgang hebt die Antwort wieder auf.
+     */
+    suspend fun istLetzterSchreibvorgangGescheitert(): Boolean
+
     /**
      * Lädt alle gespeicherten Alarm-Informationen
      * 

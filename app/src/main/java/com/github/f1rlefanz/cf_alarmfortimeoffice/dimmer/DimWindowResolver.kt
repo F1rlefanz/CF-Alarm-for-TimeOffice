@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -11,9 +13,24 @@ import java.time.ZoneId
  *
  * Die [ZoneId] wird stets hereingereicht (statt intern `systemDefault()` zu ziehen), damit Tests
  * deterministisch gegen eine feste Zeitzone laufen.
+ *
+ * Einzige Ausnahme von "ohne Android-Abhaengigkeiten" ist [Logger] (Timber, reines JVM) fuer die
+ * WARN-Zeile beim Regelkonflikt in [buildRuleSpans]: eine Entscheidung, die eine vom Nutzer als
+ * aktiv gesehene Regel wirkungslos macht, darf nicht unsichtbar bleiben. Ohne geplanten Timber-Tree
+ * ist der Aufruf ein No-op, Unit-Tests bleiben davon unberuehrt.
  */
 object DimWindowResolver {
     private const val MIN_MS = 60_000L
+
+    /**
+     * Horizont der Konflikt-Auskunft für die Regelliste ([findRuleConflicts]) in Kalendertagen.
+     *
+     * Muss dem `HORIZON_DAYS` von `DimScheduleUseCase` entsprechen — die Oberfläche darf keinen
+     * Zeitraum behaupten, den der Scheduler gar nicht plant. Die Konstante liegt hier statt dort,
+     * weil sie der Aufrufer der Konflikt-Auskunft (das ViewModel der Regelliste) braucht und
+     * `DimScheduleUseCase.HORIZON_DAYS` privat ist; der Zahlenwert steht deshalb an zwei Stellen.
+     */
+    const val KONFLIKT_HORIZONT_TAGE = 14
 
     /**
      * Wie viele Kalendertage VOR [today] die Fenster-Schleifen zusaetzlich mitrechnen. Ohne diesen
@@ -135,10 +152,16 @@ object DimWindowResolver {
      * 2. **Spezifisch schlaegt UNIVERSAL** - unveraendert die Invariante "eine spezifische Regel
      *    ueberschreibt UNIVERSAL komplett, nicht additiv", nur jetzt ueber alle Schichten des
      *    Tages gebildet statt ueber eine zufaellig ausgewaehlte.
-     * 3. **Widersprechen sich zwei VERSCHIEDENE spezifische Regeln an einem Tag, wird ebenfalls
-     *    nicht gedimmt.** Beide Fensterlisten zu vereinigen wuerde die Invariante "pro Kalendertag
-     *    GENAU eine Regel" aufweichen (eine spezifische Regel ueberschreibt, sie ergaenzt nicht);
-     *    stillschweigend eine der beiden zu waehlen waere genau der Fehler, der hier behoben wird.
+     * 3. **Widersprechen sich zwei VERSCHIEDENE spezifische Regeln an einem Tag, gilt die Regel der
+     *    Schicht, die als erste weckt** - der Fall wird als WARN protokolliert UND ueber
+     *    [findRuleConflicts] in der Regelliste angezeigt (das Log allein waere wieder "angezeigt,
+     *    wirkt nicht" - der Nutzer liest kein Logcat). Der erste Wurf
+     *    dieses Fixes liess den Tag stattdessen kommentarlos ganz aus; das schaltete das Dimmen fuer
+     *    diesen Kalendertag KOMPLETT ab (samt Nacht-Standard, den Punkt 3 in [DimScheduleUseCase]
+     *    fuer regelbelegte Tage ohnehin ausschliesst), waehrend die Regelliste beide Regeln weiter
+     *    als aktiv zeigte - "angezeigt, wirkt nicht", genau die Fehlerklasse, gegen die dieser Fix
+     *    gebaut wurde. Die Fenster zu vereinigen ist keine Alternative: das waere additiv (Bruch von
+     *    "pro Kalendertag GENAU eine Regel") und dimmte mehr als jede Regel fuer sich.
      * 4. Die gewaehlte Regel wird an der Schicht VERANKERT, zu der sie gehoert - ihre ALARM-/
      *    SHIFT_END-Anker meinen diese Schicht, nicht irgendeine andere des Tages. Treffen mehrere
      *    Schichten dieselbe Regel, gilt die mit der fruehesten Weckzeit: ausdruecklich sortiert
@@ -159,6 +182,7 @@ object DimWindowResolver {
     ): List<DimSpan> {
         val byDate = slotsByDate(alarms, zone)
         val out = mutableListOf<DimSpan>()
+        val konflikte = mutableListOf<String>()
         // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): ein CLOCK<->CLOCK-Fenster
         // vom Vorabend gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
         for (i in -LOOKBACK_DAYS until horizonDays.toLong()) {
@@ -175,33 +199,136 @@ object DimWindowResolver {
             }
 
             // JEDE Schicht des Tages wird gefragt (siehe KDoc Punkt 1-4), nicht nur die frueheste.
-            val treffer: List<Pair<AlarmSlot, DimRule>> =
-                shifts.mapNotNull { slot -> ruleForShift(slot.shiftName)?.let { slot to it } }
+            // Die Auswahl selbst steckt in [regelFuerTag] - dieselbe Funktion beantwortet auch
+            // [findRuleConflicts] fuer die Oberflaeche, damit Anzeige und Wirkung nicht
+            // auseinanderlaufen koennen.
+            val wahl = regelFuerTag(shifts, ruleForShift) ?: continue
 
-            // (1) Eine gefundene Regel OHNE Fenster ist die Nachtdienst-Ausnahme und gilt fuer den
-            // ganzen Tag. Sie muss auch dann greifen, wenn eine ANDERE Schicht desselben Tages eine
-            // dimmende Regel traegt - sonst dimmt ausgerechnet die Nacht, in der der Nutzer
-            // ausdruecklich wach sein will. Nicht dimmen ist die harmlose Richtung.
-            if (treffer.any { (_, r) -> r.windows.isEmpty() }) continue
-
-            // (2) Spezifische Regeln verdraengen UNIVERSAL komplett (bestehende Invariante).
-            val spezifisch = treffer.filter { (_, r) -> r.shiftPattern != DimRule.SHIFT_UNIVERSAL }
-            val massgeblich = spezifisch.ifEmpty { treffer }
-            if (massgeblich.isEmpty()) continue
-
-            // (3) Zwei VERSCHIEDENE spezifische Regeln an einem Tag: nicht dimmen. Ein Zusammenlegen
-            // waere additiv und damit ein Bruch der Zusicherung "pro Kalendertag GENAU eine Regel";
-            // eine davon still zu waehlen ist genau der behobene Fehler.
-            if (massgeblich.distinctBy { (_, r) -> r.id }.size > 1) continue
-
-            // (4) Anker = die Schicht, zu der die gewaehlte Regel gehoert; bei mehreren Schichten
-            // mit derselben Regel die mit der fruehesten Weckzeit (deterministisch vorsortiert).
-            val (anker, rule) = massgeblich.first()
-            for (w in rule.windows) {
-                resolveWindowForDate(w, date, anker, zone)?.let { out += DimSpan(it, rule.strength, rule.warmth) }
+            // Gesammelt statt sofort geloggt: diese Schleife laeuft ueber den ganzen Horizont und
+            // bei JEDEM Tick sowie nach jedem Setter erneut - eine Zeile je Konflikttag waere
+            // Log-Spam. Eine Zeile je Berechnung genuegt, um den Fall im Release-Log zu sehen.
+            if (wahl.verdraengteRegelIds.isNotEmpty()) {
+                konflikte += "$date->${wahl.rule.id} statt ${wahl.verdraengteRegelIds}"
+            }
+            for (w in wahl.rule.windows) {
+                resolveWindowForDate(w, date, wahl.anker, zone)
+                    ?.let { out += DimSpan(it, wahl.rule.strength, wahl.rule.warmth) }
             }
         }
+        if (konflikte.isNotEmpty()) {
+            // WARN, damit es im Release-Log landet (dort steht nur WARN+). Das Log ist hier NUR
+            // die Diagnose-Spur - die Auskunft an den Nutzer laeuft ueber [findRuleConflicts] und
+            // die Regelliste; ein Konflikt, den ausschliesslich das Log kennt, waere wieder
+            // "angezeigt, wirkt nicht". Bewusst nur Datum und Regel-IDs - Regel- und Schichtnamen
+            // sind Nutzertexte und gehoeren nicht ins Log.
+            Logger.w(
+                LogTags.DIMMER,
+                "Dimm-Regelkonflikt an ${konflikte.size} Tag(en): mehrere Schichten eines Tages " +
+                    "treffen verschiedene Regeln. Es gilt jeweils die Regel der fruehesten " +
+                    "Schicht, die uebrigen wirken an diesem Tag nicht. $konflikte"
+            )
+        }
         return out
+    }
+
+    /**
+     * Ein Kalendertag, an dem mehrere Schichten VERSCHIEDENE Regeln treffen: [winningRuleId] wirkt,
+     * [shadowedRuleIds] wirken an diesem Tag nicht.
+     */
+    data class RuleConflict(
+        val date: LocalDate,
+        val winningRuleId: String,
+        val shadowedRuleIds: List<String>
+    )
+
+    /**
+     * Auskunft fuer die Regelliste: an welchen Kalendertagen wird welche Regel von einer anderen
+     * verdraengt?
+     *
+     * **Warum es das geben muss:** [buildRuleSpans] entscheidet den Konflikt zweier spezifischer
+     * Regeln an einem Tag zugunsten der fruehesten Schicht. Die unterlegene Regel steht in der
+     * Regelliste weiter als aktiv, wirkt an diesem Tag aber nicht - und ueber DND-Modus "folgt dem
+     * Dimmer" haengt daran auch "Nicht stoeren". Solange das nur eine Logzeile war, war es genau
+     * die Fehlerklasse "angezeigt, wirkt nicht", gegen die die Konfliktaufloesung gebaut wurde.
+     * Deshalb dieselbe Auswahl ([regelFuerTag]) noch einmal als reine Auskunft - nicht als zweite
+     * Kopie der Logik, sondern als zweiter Aufrufer derselben Funktion. Waeren es zwei
+     * Implementierungen, koennte die Anzeige von der Wirkung abdriften, und das waere schlimmer
+     * als gar keine Anzeige.
+     *
+     * **Warum die Fenster NICHT vereinigt werden** (die Alternative, die den Hinweis erspart
+     * haette): eine Vereinigung waere additiv, braeche die Zusicherung "pro Kalendertag GENAU eine
+     * Regel" und dimmte MEHR als jede der beiden Regeln fuer sich - "im Zweifel klingeln und hell"
+     * zeigt in die andere Richtung. Bei widersprechenden Parametern (zwei Verdunkelungsstufen fuer
+     * dieselbe Minute) gaebe es ohnehin keine saubere Antwort, sondern nur eine dritte, von
+     * niemandem konfigurierte.
+     *
+     * Der Horizont beginnt bei [today] und NICHT - anders als in [buildRuleSpans] - einen Tag
+     * davor: der Rueckblick dort haelt eine ueber Mitternacht laufende Nacht am Leben, fuer eine
+     * Auskunft ueber "die naechsten Tage" waere der Vortag dagegen Rauschen. Reine Anzeige-Funktion
+     * ohne Seiteneffekt; sie erzeugt insbesondere keine Logzeile (das tut [buildRuleSpans] bei
+     * jeder echten Berechnung ohnehin).
+     *
+     * Unterdrueckungstage (eine getroffene Regel mit leerer Fensterliste) sind BEWUSST kein
+     * Konflikt: "an diesem Tag nicht dimmen" ist die ausdrueckliche Nutzerentscheidung hinter der
+     * leeren Fensterliste, und ihr Ergebnis - es bleibt hell - ist genau das, was der Nutzer dort
+     * bestellt hat.
+     */
+    fun findRuleConflicts(
+        alarms: List<AlarmSlot>,
+        horizonDays: Int,
+        today: LocalDate,
+        zone: ZoneId,
+        ruleForShift: (String) -> DimRule?,
+    ): List<RuleConflict> {
+        val byDate = slotsByDate(alarms, zone)
+        val out = mutableListOf<RuleConflict>()
+        for (i in 0 until horizonDays.toLong()) {
+            val date = today.plusDays(i)
+            val shifts = byDate[date].orEmpty()
+            if (shifts.isEmpty()) continue
+            val wahl = regelFuerTag(shifts, ruleForShift) ?: continue
+            if (wahl.verdraengteRegelIds.isEmpty()) continue
+            out += RuleConflict(date, wahl.rule.id, wahl.verdraengteRegelIds)
+        }
+        return out
+    }
+
+    /**
+     * Die fuer einen Kalendertag massgebliche Regel samt ihrem Anker und den an diesem Tag
+     * verdraengten Regeln. `null` = an diesem Tag greift keine Regel (keine gefunden, oder
+     * Unterdrueckung durch eine leere Fensterliste).
+     */
+    private data class Tagesregel(
+        val anker: AlarmSlot,
+        val rule: DimRule,
+        val verdraengteRegelIds: List<String>
+    )
+
+    /**
+     * Die Auswahl "welche Regel gilt an diesem Kalendertag" - die EINE Wahrheit, die sowohl
+     * [buildRuleSpans] (Wirkung) als auch [findRuleConflicts] (Anzeige) benutzen. Siehe die
+     * Punkte 1-4 im KDoc von [buildRuleSpans] fuer die Begruendung jedes Schritts.
+     */
+    private fun regelFuerTag(shifts: List<AlarmSlot>, ruleForShift: (String) -> DimRule?): Tagesregel? {
+        val treffer: List<Pair<AlarmSlot, DimRule>> =
+            shifts.mapNotNull { slot -> ruleForShift(slot.shiftName)?.let { slot to it } }
+
+        // (1) Eine gefundene Regel OHNE Fenster ist die Nachtdienst-Ausnahme und gilt fuer den
+        // ganzen Tag. Sie muss auch dann greifen, wenn eine ANDERE Schicht desselben Tages eine
+        // dimmende Regel traegt - sonst dimmt ausgerechnet die Nacht, in der der Nutzer
+        // ausdruecklich wach sein will. Nicht dimmen ist die harmlose Richtung.
+        if (treffer.any { (_, r) -> r.windows.isEmpty() }) return null
+
+        // (2) Spezifische Regeln verdraengen UNIVERSAL komplett (bestehende Invariante).
+        val spezifisch = treffer.filter { (_, r) -> r.shiftPattern != DimRule.SHIFT_UNIVERSAL }
+        val massgeblich = spezifisch.ifEmpty { treffer }
+        if (massgeblich.isEmpty()) return null
+
+        // (3)+(4) Anker und Regel = die Schicht, die als ERSTE weckt (deterministisch vorsortiert,
+        // siehe [slotsByDate]); jede andere getroffene Regel des Tages ist verdraengt.
+        val (anker, rule) = massgeblich.first()
+        val verdraengt = massgeblich.map { (_, r) -> r.id }.distinct().filter { it != rule.id }
+        return Tagesregel(anker, rule, verdraengt)
     }
 
     /**

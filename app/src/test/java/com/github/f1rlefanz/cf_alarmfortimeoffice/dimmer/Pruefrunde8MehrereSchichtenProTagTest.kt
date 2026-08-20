@@ -117,17 +117,28 @@ class Pruefrunde8MehrereSchichtenProTagTest {
     }
 
     @Test
-    fun `Zwei verschiedene spezifische Regeln an einem Tag dimmen NICHT`() {
-        // Widerspruch: beide Fensterlisten zu vereinigen wäre additiv und bräche die Zusicherung
-        // "pro Kalendertag GENAU eine Regel"; eine davon still zu wählen ist genau der behobene
-        // Fehler. Also die harmlose Richtung - hell.
+    fun `Zwei verschiedene spezifische Regeln an einem Tag - die frueheste Schicht entscheidet`() {
+        // ALTE BEGRÜNDUNG dieses Tests (widerlegt, absichtlich stehengelassen):
+        //   "Widerspruch: beide Fensterlisten zu vereinigen wäre additiv und bräche die Zusicherung
+        //    'pro Kalendertag GENAU eine Regel'; eine davon still zu wählen ist genau der behobene
+        //    Fehler. Also die harmlose Richtung - hell."
+        //   Der Test verlangte deshalb, dass an so einem Tag GAR NICHT gedimmt wird.
+        // WIDERLEGT (adversariale Review über Prüfrunde 8): "hell" ist hier nicht die harmlose
+        // Richtung, sondern eine stille Abschaltung. Der Abbruch nahm dem Tag JEDE Dimm-Quelle -
+        // auch den Nacht-Standard, weil `DimScheduleUseCase` jeden regelbelegten Tag von diesem
+        // ausschließt -, während die Regelliste beide Regeln unverändert als aktiv anzeigte:
+        // "angezeigt, wirkt nicht", genau die Fehlerklasse, gegen die Prüfrunde 8 gebaut wurde.
+        // Richtig bleibt nur die Ablehnung der VEREINIGUNG (additiv, dimmt mehr als jede Regel für
+        // sich). Der Konflikt wird deshalb entschieden statt vermieden: es gilt die Regel der
+        // Schicht, die als erste weckt (datengetrieben, deterministisch vorsortiert, erklärbar) -
+        // und der Fall geht als WARN ins Log.
         val frueh = DimRule(
             id = "f", name = "Frühdienst", shiftPattern = "Fruehdienst", enabled = true,
-            windows = listOf(nachtfenster(22, 7))
+            windows = listOf(nachtfenster(22, 7)), strength = 65
         )
         val ruf = DimRule(
             id = "r", name = "Rufbereitschaft", shiftPattern = "Rufbereitschaft", enabled = true,
-            windows = listOf(nachtfenster(20, 23))
+            windows = listOf(nachtfenster(20, 23)), strength = 80
         )
         val rules = listOf(frueh, ruf)
         val today = LocalDate.of(2026, 1, 13)
@@ -141,8 +152,77 @@ class Pruefrunde8MehrereSchichtenProTagTest {
             ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
         )
 
-        assertTrue(spans.none { ep(2026, 1, 13, 22, 30) in it.range })
+        // Die Regel der frühesten Schicht (Frühdienst, 22-7) wirkt - der Tag steht nicht ohne
+        // Dimmen da.
+        val nacht = spans.filter { ep(2026, 1, 13, 23, 30) in it.range }
+        assertEquals(1, nacht.size)
+        assertEquals(65, nacht[0].strength)
+        assertEquals(ep(2026, 1, 13, 22, 0), nacht[0].range.first)
+        assertEquals(ep(2026, 1, 14, 7, 0), nacht[0].range.last)
+        // Und NICHT additiv: das 20-23-Fenster der unterlegenen Regel entsteht nicht.
+        assertTrue(spans.none { it.strength == 80 })
         assertTrue(spans.none { ep(2026, 1, 13, 21, 0) in it.range })
+    }
+
+    @Test
+    fun `Unterdrueckung schlaegt auch die Regel der fruehesten Schicht`() {
+        // Die Auswahl "früheste Schicht gewinnt" darf die Nachtdienst-Ausnahme nicht aushebeln:
+        // eine leere Fensterliste ist eine ausdrückliche Nutzerentscheidung ("in dieser Nacht nicht
+        // dimmen") und wird VOR der Konfliktauflösung geprüft. Ohne diese Reihenfolge gewänne hier
+        // der Frühdienst und dimmte die Bereitschaftsnacht.
+        val frueh = DimRule(
+            id = "f", name = "Frühdienst", shiftPattern = "Fruehdienst", enabled = true,
+            windows = listOf(nachtfenster(22, 7)), strength = 65
+        )
+        val ruf = DimRule(
+            id = "r", name = "Rufbereitschaft frei", shiftPattern = "Rufbereitschaft",
+            enabled = true, windows = emptyList()
+        )
+        val rules = listOf(frueh, ruf)
+        val today = LocalDate.of(2026, 1, 13)
+        val alarms = listOf(
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0),
+            DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", 0)
+        )
+
+        val spans = DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+
+        assertTrue(spans.none { ep(2026, 1, 13, 23, 30) in it.range })
+    }
+
+    @Test
+    fun `Der Konflikt wird reihenfolge-unabhaengig gleich entschieden`() {
+        // Die Fenster-Identität (range.last + strength) muss über aufeinanderfolgende Ticks stabil
+        // bleiben - ein laufendes Fenster darf nicht auf einen anderen Anker kippen, nur weil die
+        // Spannen in anderer Reihenfolge geliefert werden.
+        val frueh = DimRule(
+            id = "f", name = "Frühdienst", shiftPattern = "Fruehdienst", enabled = true,
+            windows = listOf(nachtfenster(22, 7)), strength = 65
+        )
+        val ruf = DimRule(
+            id = "r", name = "Rufbereitschaft", shiftPattern = "Rufbereitschaft", enabled = true,
+            windows = listOf(nachtfenster(20, 23)), strength = 80
+        )
+        val rules = listOf(frueh, ruf)
+        val today = LocalDate.of(2026, 1, 13)
+        val a = DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0)
+        val b = DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 16, 0), "Rufbereitschaft", 0)
+
+        val vorwaerts = DimWindowResolver.buildRuleSpans(
+            alarms = listOf(a, b), horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+        val rueckwaerts = DimWindowResolver.buildRuleSpans(
+            alarms = listOf(b, a), horizonDays = 1, today = today, zone = zone,
+            ruleForShift = forShift(rules), ruleForFreeDay = forFree(rules)
+        )
+
+        assertEquals(vorwaerts, rueckwaerts)
+        assertEquals(1, vorwaerts.size)
+        assertEquals(65, vorwaerts[0].strength)
     }
 
     @Test

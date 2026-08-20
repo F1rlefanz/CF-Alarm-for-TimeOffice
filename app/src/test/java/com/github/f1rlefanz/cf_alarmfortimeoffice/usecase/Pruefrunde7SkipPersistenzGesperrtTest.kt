@@ -61,6 +61,9 @@ class Pruefrunde7SkipPersistenzGesperrtTest {
         var deleteVersuche = 0
 
         override suspend fun isPersistenceBlocked(): Boolean = gesperrt
+        // Der zweite Merker bleibt heil: dieser Test prueft die UNLESBARKEIT des Bestands,
+        // nicht den Schreibfehler - die beiden sind bewusst getrennte Signale.
+        override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean = false
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         override suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit> {
             state.value = state.value.filterNot { it.id == alarmInfo.id } + alarmInfo

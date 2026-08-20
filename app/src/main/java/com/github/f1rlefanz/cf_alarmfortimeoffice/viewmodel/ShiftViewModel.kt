@@ -36,6 +36,24 @@ data class ShiftUiState(
     val upcomingShift: ShiftInfo? = null,
     val error: String? = null,
     /**
+     * Hinweis zum Regel-Nachzug beim UMBENENNEN einer Schicht - bewusst ein EIGENER Kanal neben
+     * [error].
+     *
+     * WARUM NICHT [error] (Regression aus Pruefrunde 8): Diese Meldung sagt "gespeichert, aber
+     * eine von dir eingerichtete Funktion wirkt nicht mehr" - etwas anderes als ein gescheiterter
+     * Lade- oder Speichervorgang. Und vor allem: [error] wird von [processCalendarEvents] bei
+     * JEDEM Durchgang auf `null` gesetzt, und genau so ein Durchgang folgt unmittelbar auf das
+     * Speichern (`delay(200)`, sobald Events vorliegen - im Normalbetrieb also immer). Die Meldung
+     * war damit gesetzt und Sekundenbruchteile spaeter wieder weg, bevor sie irgendwo ankam.
+     *
+     * Dieses Feld ueberlebt den folgenden Ladevorgang und wird ausschliesslich vom Nutzer
+     * ([clearRegelNachzugHinweis]) bzw. nach dem Anzeigen geloescht. Gerendert wird es im
+     * `ShiftConfigScreen` (dort steht der Nutzer beim Umbenennen) als bleibende Karte und im
+     * `MainContentScreen` als Snackbar (dort steht er beim Konfigurations-Import). Beide Screens
+     * schliessen sich gegenseitig aus, es zeigt also immer genau einer.
+     */
+    val regelNachzugHinweis: String? = null,
+    /**
      * Kuerzel, die im Kalender des Nutzers vorkommen, aber von keinem Erkennungsmuster getroffen
      * werden - siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester].
      * Bewusst nur Vorschlaege: zugeordnet wird von Hand.
@@ -176,12 +194,25 @@ class ShiftViewModel @Inject constructor(
                     if (authoritative == _uiState.value.currentShiftConfig) return@collect
                     val config = authoritative
 
+                    // Der Stand VOR dem Uebernehmen - die einzige Gelegenheit, eine Umbenennung
+                    // zu erkennen. Muss vor dem Schreiben an `_uiState` gelesen werden.
+                    val vorherigeConfig = _uiState.value.currentShiftConfig
+
                     Logger.business(
                         LogTags.SHIFT_CONFIG,
                         "🔄 EXTERNE KONFIGURATIONSAENDERUNG erkannt (${config.definitions.size} " +
                             "Definitionen) - Anzeige, Erkennung und Alarme werden nachgezogen"
                     )
                     _uiState.value = _uiState.value.copy(currentShiftConfig = config)
+
+                    // Dimmer-/Hue-Regelmuster mitziehen - HIER, am geteilten Einstieg, statt nur
+                    // in `updateShiftConfig()`. Eine Ruecksicherung oder ein Geraetewechsel bringt
+                    // dieselbe Definition (gleiche `id`) unter anderem Namen zurueck; genau dieser
+                    // Fall kommt nur ueber diesen Weg herein und haette die Migration sonst
+                    // umgangen. Die Notlage-Standardkonfiguration ist oben bereits ausgefiltert
+                    // ("DIE VIERTE TUER") - sie erreicht diese Zeile nicht und kann deshalb keine
+                    // Regel auf einen Standardnamen umziehen.
+                    zieheRegelmusterNach(vorherigeConfig, config)
 
                     // Erkennung neu laufen lassen (aktualisiert auch die Kuerzel-Vorschlaege) und
                     // die Alarme an die neuen Weckzeiten anpassen.
@@ -389,7 +420,16 @@ class ShiftViewModel @Inject constructor(
      * nachgezogen, Hue nicht - und niemand erfuehre davon.
      *
      * FEHLER WERDEN GEMELDET, nicht geschluckt: eine nicht nachgezogene Regel ist eine Funktion,
-     * die der Nutzer bewusst eingerichtet hat und die ab jetzt nichts mehr tut.
+     * die der Nutzer bewusst eingerichtet hat und die ab jetzt nichts mehr tut. Die Meldung geht
+     * ueber [ShiftUiState.regelNachzugHinweis] - NICHT ueber `error`; warum, steht dort.
+     *
+     * Aufgerufen aus [updateShiftConfig] UND aus [observeExternalConfigChanges]. Letzteres ist der
+     * zentrale Einstieg fuer FREMDE Schreiber (Konfigurations-Import, also auch die
+     * Backup-Ruecksicherung und der Geraetewechsel) - genau dort kommt eine Definition mit
+     * gleicher `id` und anderem Namen an, und ohne diesen zweiten Aufruf umginge ausgerechnet
+     * dieser Fall die Migration. Doppelt laeuft dadurch nichts: eigene Schreibvorgaenge erkennt
+     * der Beobachter am Merker `selfWrittenConfig` bzw. am Vergleich mit `currentShiftConfig` und
+     * steigt vorher aus.
      */
     private suspend fun zieheRegelmusterNach(vorher: ShiftConfig?, nachher: ShiftConfig) {
         val plan = planeSchichtUmbenennungen(vorher, nachher)
@@ -457,7 +497,10 @@ class ShiftViewModel @Inject constructor(
             else -> null
         }
         if (meldung != null) {
-            _uiState.value = _uiState.value.copy(error = meldung)
+            // EIGENES Feld, nicht `error`: die unmittelbar folgende `processCalendarEvents()`
+            // setzt `error` auf null (siehe [ShiftUiState.regelNachzugHinweis]) - die Meldung war
+            // weg, bevor sie jemand lesen konnte.
+            _uiState.value = _uiState.value.copy(regelNachzugHinweis = meldung)
         }
     }
 
@@ -612,6 +655,17 @@ class ShiftViewModel @Inject constructor(
     
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    /**
+     * Bestaetigt den Hinweis zum Regel-Nachzug ([ShiftUiState.regelNachzugHinweis]).
+     *
+     * Nur der Nutzer raeumt ihn weg - kein Ladevorgang, kein Folgezustand. Er beschreibt eine
+     * Funktion, die ab jetzt nicht mehr tut, was sie soll; sie wegzuwischen, weil gerade Events
+     * nachgeladen wurden, war genau der Fehler, den dieses Feld behebt.
+     */
+    fun clearRegelNachzugHinweis() {
+        _uiState.value = _uiState.value.copy(regelNachzugHinweis = null)
     }
     
     /**

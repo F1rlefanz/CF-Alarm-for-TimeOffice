@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +29,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
 
@@ -37,6 +39,35 @@ internal fun dimPatternLabel(pattern: String): String = when (pattern) {
     DimRule.SHIFT_FREE -> stringResource(R.string.dimmer_pattern_free)
     DimRule.SHIFT_UNIVERSAL -> stringResource(R.string.dimmer_pattern_universal)
     else -> pattern
+}
+
+/**
+ * Der Hinweis an einer Regel, die an einzelnen Tagen hinter einer anderen zurueckstehen muss.
+ *
+ * WARUM ES DEN TEXT GEBEN MUSS: An einem Tag mit mehreren Diensten (Fruehdienst + anschliessende
+ * Rufbereitschaft) gilt genau EINE Regel - die des Dienstes, der als erster weckt. Die uebrigen
+ * standen bis dahin unveraendert als aktiv in dieser Liste und wirkten trotzdem nicht; sichtbar
+ * war das nur im Logcat, das kein Nutzer liest. Der Text nennt deshalb die WIRKUNG ("wirkt an
+ * diesen Tagen nicht"), den Grund in Alltagssprache (ein anderer Dienst beginnt frueher) und einen
+ * Ausweg, den es wirklich gibt: die konkurrierende Regel ausschalten.
+ *
+ * Kein Fachbegriff, keine Datumsliste - die Zahl der Tage genuegt fuer die Frage "betrifft mich
+ * das ueberhaupt", und die Vorschau ("Naechste Abschnitte") zeigt anschliessend den echten Verlauf.
+ */
+@Composable
+private fun verdraengtHinweis(info: DimmerRulesViewModel.RegelVerdraengt): String {
+    val unbenannt = stringResource(R.string.dimmer_rule_unnamed)
+    val gewinner = info.gewinnerNamen
+        .map { name -> "»${name.ifBlank { unbenannt }}«" }
+        .let { if (it.isEmpty()) unbenannt else it.joinToString(" bzw. ") }
+    val tage = if (info.tage == 1) {
+        "an einem der nächsten ${DimWindowResolver.KONFLIKT_HORIZONT_TAGE} Tage"
+    } else {
+        "an ${info.tage} der nächsten ${DimWindowResolver.KONFLIKT_HORIZONT_TAGE} Tage"
+    }
+    return "Wirkt $tage nicht: dort beginnt ein anderer Dienst früher, und pro Tag gilt nur eine " +
+        "Regel - dann greift $gewinner. Soll an diesen Tagen diese Regel gelten, schalte " +
+        "$gewinner aus."
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +81,12 @@ fun DimmerSettingsScreen(
     // collectAsStateWithLifecycle, nicht collectAsState: reine Listen-Anzeige ohne Seiteneffekt -
     // das Abo darf unterhalb von STARTED ruhen (Speichern/Loeschen laeuft ueber das ViewModel).
     val rules by viewModel.rules.collectAsStateWithLifecycle()
+
+    // Welche Regel an welchen Tagen hinter einer anderen zurueckstehen muss. Neu gerechnet, sobald
+    // sich die Regeln aendern (Anlegen/Bearbeiten/Loeschen/Ein-Aus) - sonst zeigte die Karte nach
+    // einer Aenderung den Stand von davor. Reine Auskunft, kein Seiteneffekt auf den Scheduler.
+    val verdraengt by viewModel.verdraengteRegeln.collectAsStateWithLifecycle()
+    LaunchedEffect(rules) { viewModel.refreshVerdraengteRegeln() }
 
     Scaffold(
         topBar = {
@@ -106,6 +143,15 @@ fun DimmerSettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            // Nur wenn die Regel wirklich verdraengt wird - die Renderstelle und
+                            // der Zustand dahinter existieren ausschliesslich fuereinander.
+                            verdraengt[rule.id]?.let { info ->
+                                Text(
+                                    text = verdraengtHinweis(info),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                         if (!rule.enabled) {
                             Text(

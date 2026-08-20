@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
@@ -97,6 +98,11 @@ object ConfigBackupFilter {
         // Dienstzeiten mitbringen und "Nicht stoeren" sowie den Dimmer auf einem anderen Geraet zu
         // falschen Zeiten schalten - bis der erste eigene Sync sie ueberschreibt.
         ShiftSpanStore.KEY_SHIFT_SPANS_NAME,
+        // Der offene Raeumauftrag nach einer Kalender-Abwahl. Er beschreibt einen unfertigen
+        // Vorgang auf DIESEM Geraet ("hier stehen noch Wecker eines abgewaehlten Dienstplans"),
+        // keine Einstellung - und importiert wuerde er auf dem neuen Geraet einen Raeumlauf
+        // anstossen, den dort nie jemand ausgeloest hat.
+        PendingDeselectionCleanupStore.KEY_PENDING_SINCE_NAME,
         // Zeitstempel der Hintergrundarbeit
         "last_maintenance_time",
         "last_event_load_time",

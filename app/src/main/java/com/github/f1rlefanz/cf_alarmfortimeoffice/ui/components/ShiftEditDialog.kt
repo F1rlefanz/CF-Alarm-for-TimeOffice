@@ -131,14 +131,25 @@ fun ShiftEditDialog(
                             // Licht ging zur Weckzeit nicht mehr an, das Dimm-Fenster fiel weg,
                             // waehrend die Regellisten sie weiter als aktiv zeigten. Jetzt
                             // werden sie beim Speichern mitgezogen; dieser Hinweis sagt es an
-                            // der Stelle, an der es passiert. Scheitert der Nachzug, meldet die
-                            // App das anschliessend ausdruecklich (ShiftViewModel).
+                            // der Stelle, an der es passiert.
+                            //
+                            // BEWUSST KEINE UNBEDINGTE ZUSAGE: `planeSchichtUmbenennungen()`
+                            // blockiert den Nachzug in vier Faellen (reserviertes Regelmuster,
+                            // doppelter neuer Name, vergebener alter Name, Namenstausch) - dort
+                            // waere Umschreiben schlimmer als Stehenlassen. Der Dialog kennt die
+                            // uebrigen Definitionen nicht und kann das hier nicht entscheiden,
+                            // also verspricht er es auch nicht. Was wirklich passiert ist, meldet
+                            // die App direkt nach dem Speichern (ShiftUiState.regelNachzugHinweis,
+                            // sichtbar als Karte auf dem Schicht-Bildschirm).
                             supportingText = if (istUmbenennung) {
                                 {
                                     Text(
                                         text = "Dimmer- und Hue-Regeln, die auf \"${shift?.name}\" " +
-                                            "zeigen, werden beim Speichern auf den neuen Namen " +
-                                            "mitgezogen.",
+                                            "zeigen, werden beim Speichern nach Möglichkeit auf " +
+                                            "den neuen Namen umgestellt. Klappt das nicht – etwa " +
+                                            "weil der neue Name schon vergeben ist –, sagt die " +
+                                            "App es dir; dann wählst du die Schicht in der " +
+                                            "betroffenen Regel neu aus.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

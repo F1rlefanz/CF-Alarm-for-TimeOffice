@@ -1392,11 +1392,24 @@ class AlarmViewModel @Inject constructor(
                                 // `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()`.
                                 //
                                 // `saveAlarm()` meldet auch dann Erfolg, wenn nur der
-                                // Arbeitsspeicher beschrieben wurde: bei gesperrter Persistenz
-                                // (gescheiterter Init-Load, oder ein Read vor der ersten
-                                // Entsperrung, der still "leer" lieferte) kehrt
-                                // `persistToDataStore()` ohne zu schreiben und ohne zu werfen
-                                // zurueck. Der Wecker ist dann zwar armiert und klingelt in
+                                // Arbeitsspeicher beschrieben wurde - und zwar aus ZWEI Gruenden:
+                                // bei gesperrter Persistenz (gescheiterter Init-Load, oder ein
+                                // Read vor der ersten Entsperrung, der still "leer" lieferte)
+                                // kehrt `persistToDataStore()` ohne zu schreiben und ohne zu
+                                // werfen zurueck, und wirft der Schreibweg selbst (voller
+                                // Speicher, IOException, beschaedigte Datei), faengt es das
+                                // ebenfalls.
+                                //
+                                // DESHALB WERDEN HIER ZWEI SIGNALE GEFRAGT, und die Veroderung
+                                // steht bewusst AN DIESER STELLE statt im Repository: sie ist die
+                                // Frage DIESER Anzeige ("ueberlebt der Wecker einen Neustart?"),
+                                // nicht die Frage der uebrigen Aufrufer. `isPersistenceBlocked()`
+                                // bedeutet "der Bestand ist unlesbar" und entscheidet anderswo
+                                // darueber, ob geraeumt werden DARF - waere der Schreibfehler
+                                // dort mit hineinverodert, uebersprungen die Master-Pause und
+                                // "Automatische Alarme aus" die `cancelSystemAlarm`-Schleife und
+                                // liessen armierte, unabbrechbare System-Alarme zurueck.
+                                // Der Wecker ist dann zwar armiert und klingelt in
                                 // diesem Prozess - aber er steht weder in der Preferences-Datei
                                 // noch im Direct-Boot-Spiegel. Nach Prozesstod oder Neustart ist
                                 // er spurlos weg, und fuer einen MANUELLEN Wecker endgueltig:
@@ -1409,8 +1422,15 @@ class AlarmViewModel @Inject constructor(
                                 // CancellationException, die `isPersistenceBlocked()` bewusst
                                 // weiterwirft (sie sagt nichts ueber den Bestand aus, nur ueber
                                 // die abgeraeumte Coroutine).
+                                // Beide Antworten festhalten, nicht nur ihre Veroderung: nur so
+                                // kann das WARN unten sagen, WELCHE der zwei Lagen vorlag.
+                                var bestandUnlesbar = false
+                                var schreibfehler = false
                                 val nurImArbeitsspeicher = try {
-                                    alarmRepository.isPersistenceBlocked()
+                                    bestandUnlesbar = alarmRepository.isPersistenceBlocked()
+                                    schreibfehler =
+                                        alarmRepository.istLetzterSchreibvorgangGescheitert()
+                                    bestandUnlesbar || schreibfehler
                                 } catch (e: kotlinx.coroutines.CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
@@ -1428,7 +1448,8 @@ class AlarmViewModel @Inject constructor(
                                             "Der Wecker ist gestellt und klingelt – aber er ließ " +
                                                 "sich nicht dauerhaft speichern. Startet das " +
                                                 "Handy neu oder beendet das System die App, ist " +
-                                                "er weg. Bitte die App einmal vollständig " +
+                                                "er weg. Bitte prüfen, ob noch Speicherplatz " +
+                                                "frei ist, dann die App einmal vollständig " +
                                                 "schließen, neu öffnen und den Wecker erneut " +
                                                 "stellen."
                                         )
@@ -1439,9 +1460,14 @@ class AlarmViewModel @Inject constructor(
                                 if (nurImArbeitsspeicher) {
                                     Logger.w(
                                         LogTags.ALARM,
+                                        // Beide Lagen benennen, statt eine zu behaupten: das Log
+                                        // ist die einzige Spur, an der sich hinterher
+                                        // unterscheiden laesst, ob der Bestand unlesbar war oder
+                                        // der Speicher voll.
                                         "⚠️ Manueller Wecker ${alarmInfo.id} liegt NUR im " +
-                                            "Arbeitsspeicher - Persistenz ist in diesem Prozess " +
-                                            "gesperrt, kein Direct-Boot-Spiegel"
+                                            "Arbeitsspeicher (kein Direct-Boot-Spiegel) - " +
+                                            "Bestand unlesbar: $bestandUnlesbar, letzter " +
+                                            "Schreibvorgang gescheitert: $schreibfehler"
                                     )
                                 }
                                 Logger.business(

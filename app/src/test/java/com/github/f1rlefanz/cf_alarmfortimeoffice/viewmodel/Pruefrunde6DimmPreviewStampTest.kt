@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -136,7 +137,7 @@ class Pruefrunde6DimmPreviewStampTest {
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         val ruleUseCase = mock<DimRuleUseCase>()
         whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList<DimRule>()))
-        val viewModel = DimmerRulesViewModel(ruleUseCase, shiftUseCase, mock<DimScheduleUseCase>(), prefs)
+        val viewModel = DimmerRulesViewModel(ruleUseCase, shiftUseCase, mock<DimScheduleUseCase>(), prefs, mock<ShiftSpanStore>())
 
         val startedAt = System.currentTimeMillis()
         viewModel.previewRule(strength = 60, warmth = 30, seconds = 5)

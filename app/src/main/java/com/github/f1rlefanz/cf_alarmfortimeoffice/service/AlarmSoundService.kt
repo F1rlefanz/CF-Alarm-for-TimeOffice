@@ -133,31 +133,41 @@ class AlarmSoundService : Service() {
         private const val HINWEIS_NOTIFICATION_ID = 2004
 
         /**
-         * Sagt dem Nutzer, dass sein Schlummern KEINEN neuen Weckruf gestellt hat.
+         * Sagt dem Nutzer, dass sein Schlummern keinen VERLAESSLICHEN Weckruf gestellt hat.
          *
          * WARUM ES DAS GIBT (Pruefrunde 8): Ein gescheitertes Schlummern war von einem
          * erfolgreichen nicht zu unterscheiden - Ton aus, Vollbild zu, kein Wecker, nur eine Zeile
          * im Log. Wer "15 Min spaeter" gedrueckt hatte, verschlief ohne jeden Hinweis.
          *
          * Gemeinsam genutzt von beiden Schlummer-Ausloesern (Notification-Knopf hier im Dienst,
-         * Vollbild-Knopf in der [AlarmFullScreenActivity]) - eine Meldung, ein Text, ein Ort.
+         * Vollbild-Knopf in der [AlarmFullScreenActivity]) - eine Meldung, ein Ort. Titel UND Text
+         * kommen dabei aus [SchlummerEntscheidung.hinweis], also je Ergebnis verschieden: die drei
+         * Lagen (pausiert / verlaesslich nicht gestellt / ungewiss) sagen Verschiedenes, und ein
+         * gemeinsamer Titel hat genau das schon einmal ueberschrieben.
          *
          * Bewusst STUMM ([NotificationCompat.Builder.setSilent]): daneben klingelt in der Regel
          * noch der Wecker weiter, ein zweiter Ton waere reine Verwirrung. IMPORTANCE_HIGH bleibt
          * trotzdem noetig, damit die Meldung nicht unbemerkt in der Leiste versinkt.
          */
         fun posteSchlummerHinweis(context: Context, ergebnis: SnoozeErgebnis) {
-            val text = SchlummerEntscheidung.hinweisText(ergebnis) ?: return
+            val meldung = SchlummerEntscheidung.hinweis(ergebnis) ?: return
+            val text = meldung.text
             try {
                 val notificationManager = context.getSystemService(NotificationManager::class.java)
-                // Idempotent - erneutes Anlegen desselben Kanals ist ein No-op.
+                // Gefahrlos wiederholbar: bei einem schon vorhandenen Kanal zieht Android nur
+                // Name und Beschreibung nach, nie die Wichtigkeit (die geht ohne NEUE Kanal-ID
+                // nur nach unten - siehe die Weckerkanal-Falle in CLAUDE.md).
                 notificationManager.createNotificationChannel(
                     NotificationChannel(
                         HINWEIS_CHANNEL_ID,
                         "Schlummer-Hinweise",
                         NotificationManager.IMPORTANCE_HIGH
                     ).apply {
-                        description = "Meldet, wenn ein Schlummern keinen neuen Weckruf gestellt hat"
+                        // "verlaesslich": der unklare Ausgang stellt moeglicherweise doch einen
+                        // Weckruf - eine Kanalbeschreibung, die das Gegenteil behauptet, waere
+                        // dieselbe Luege wie der frueher gemeinsame Titel.
+                        description =
+                            "Meldet, wenn ein Schlummern keinen verlaesslichen Weckruf gestellt hat"
                         setSound(null, null)
                         enableVibration(false)
                         lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
@@ -177,7 +187,10 @@ class AlarmSoundService : Service() {
                 )
 
                 val hinweis = NotificationCompat.Builder(context, HINWEIS_CHANNEL_ID)
-                    .setContentTitle(SchlummerEntscheidung.HINWEIS_TITEL)
+                    // Titel aus DERSELBEN Meldung wie der Text: eingeklappt am Sperrbildschirm
+                    // ist diese Zeile die einzige, die vollstaendig gelesen wird - eine
+                    // Ueberschrift, die dem Text widerspricht, ist dort die ganze Nachricht.
+                    .setContentTitle(meldung.titel)
                     .setContentText(text)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
@@ -192,7 +205,7 @@ class AlarmSoundService : Service() {
                 notificationManager.notify(HINWEIS_NOTIFICATION_ID, hinweis)
                 Logger.w(
                     LogTags.ALARM,
-                    "⚠️ Hinweis gepostet: kein Schlummer-Wecker gestellt ($ergebnis)"
+                    "⚠️ Schlummer-Hinweis gepostet: ${meldung.titel} ($ergebnis)"
                 )
             } catch (e: Exception) {
                 // Der Hinweis ist die Zweitmeldung; der Wecker selbst laeuft davon unberuehrt

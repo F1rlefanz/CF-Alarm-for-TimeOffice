@@ -3,22 +3,32 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +41,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -59,8 +70,32 @@ class AuthViewModel @Inject constructor(
     private val authUseCase: IAuthUseCase,
     private val calendarSelectionRepository: ICalendarSelectionRepository,
     private val backgroundServiceManager: BackgroundServiceManager,
-    private val tokenRepository: TokenRepository
+    private val tokenRepository: TokenRepository,
+    // ---- Abmelde-Aufraeumen (Pruefrunde 8, Befund 3) -------------------------------------------
+    // Alles ab hier wird AUSSCHLIESSLICH von [stopScheduledWorkForSignOut] gebraucht. Warum es
+    // hier im ViewModel haengt und nicht im AuthUseCase, steht dort im KDoc von `signOut()`.
+    private val alarmUseCase: IAlarmUseCase,
+    private val shiftSpanStore: ShiftSpanStore,
+    private val dimSchedule: DimScheduleUseCase,
+    private val dndSchedule: DndScheduleUseCase,
+    private val hueSmartScheduler: HueSmartScheduler,
+    private val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
+    @param:ApplicationContext private val appContext: Context
 ) : ViewModel() {
+
+    companion object {
+        /**
+         * Nutzertext fuer den Fall, dass beim Abmelden nicht alle Wecker weggeraeumt werden
+         * konnten. Beschreibt die WIRKUNG und einen Ausweg, den es in der App wirklich gibt
+         * (der Schalter in den Einstellungen raeumt ueber dieselbe zentrale Operation) - und
+         * nennt bewusst keine Systemeinstellung, deren Name sich zwischen Android-Versionen
+         * verschiebt.
+         */
+        const val FEHLER_ABMELDEN_WECKER_GEBLIEBEN: String =
+            "Du bist abgemeldet, aber es liessen sich nicht alle gestellten Wecker entfernen - " +
+                "einzelne koennten noch klingeln. Melde dich kurz wieder an und lege in den " +
+                "Einstellungen den Schalter \"Hintergrunddienste pausieren\" um; das raeumt sie weg."
+    }
 
     // CONSOLIDATED STATE: Ein einziger State statt AuthState + AuthUiState
     private val _authState = MutableStateFlow(AuthState.EMPTY)
@@ -523,7 +558,125 @@ class AuthViewModel @Inject constructor(
     }
 
     /**
-     * Meldet den Nutzer ab und verwirft alle Anmeldedaten - inklusive Kalender-Token.
+     * Raeumt beim Abmelden alles weg, was den Abmeldevorgang sonst ueberleben wuerde: die
+     * gestellten Wecker, die Schichtspannen (aus denen Dimmer und "Nicht stoeren" ihre
+     * Dienstzeit-Fenster ziehen), die 6h-Wartungskette, die Hue-Planung und den
+     * Pre-Alarm-Refresh.
+     *
+     * WELCHER FEHLER DAHINTER STECKT (Pruefrunde 8, Befund 3): `signOut()` verwarf bis v1.29.2 nur
+     * Token und Auth-Daten. Die Wecker blieben im AlarmManager armiert, im Repository und im
+     * Direct-Boot-Spiegel stehen - und direkt danach zeigt die App ausschliesslich den
+     * Anmeldebildschirm (`MainActivity`: `!authState.isSignedIn -> "login"`), also weder
+     * Wecker-Tab noch Master-Pause noch den Schalter "Automatische Alarme". Bis zu 14 Tage lang
+     * klingelten Wecker fuer die Schichten eines Kontos, das die App gar nicht mehr kennt, ohne
+     * dass der Nutzer sie noch abstellen konnte; ein Neustart machte es schlimmer, weil der
+     * `BootReceiver` den Bestand aus dem Direct-Boot-Spiegel ungegatet erneut armiert. Die
+     * 6h-Wartung raeumt ihn ebenfalls nicht: sie faellt ohne Token in ihre fail-safe-Zweige, die
+     * bestehende Alarme ausdruecklich stehen lassen.
+     *
+     * REIHENFOLGE BEIM LOESCHEN: [IAlarmUseCase.deleteAllAlarms] ist der dafuer vorgesehene
+     * zentrale Weg und haelt die einzige erlaubte Richtung ein - es bricht ueber
+     * `clearInternalAlarms()` erst die System-Alarme (und schwebende Snoozes) ab und loescht
+     * danach den Bestand, wobei der Direct-Boot-Spiegel mitgeleert wird. Umgekehrt bliebe ein
+     * armierter Wecker zurueck, den weder Repository noch Spiegel kennen - unsichtbar UND
+     * unabbrechbar bis zum naechsten Neustart.
+     *
+     * WARUM DER SHIFTSPANSTORE MIT MUSS: Dimmer und "Nicht stoeren" beziehen ihre Fenster NICHT
+     * aus dem Alarm-Bestand, sondern aus [ShiftSpanStore] (ein Alarm ueberlebt die Weckzeit
+     * nicht, ein Dienst schon). Wer nur die Alarme loescht, dimmt und schaltet danach weiter
+     * fuer die Schichten des abgemeldeten Kontos - und zwar ohne jede Benachrichtigung, die es
+     * verraten wuerde.
+     *
+     * NICHT ABBRECHBAR: Die Sequenz stellt einen Zustand HER, statt nur ein Flag umzulegen -
+     * dieselbe Begruendung wie bei `MasterPauseUseCase.pause()`. Beim Abmelden ist der Abbruch
+     * sogar besonders wahrscheinlich, weil der Nutzer die App unmittelbar danach verlaesst
+     * (Activity beendet, Task weggewischt -> `viewModelScope` stirbt). Genau der halb geraeumte
+     * Zustand ist der, den das hier verhindern soll.
+     *
+     * JEDER SCHRITT EIGENES try/catch (Vorbild: `MasterPauseUseCase.pause()`): sonst reisst ein
+     * einzelner Fehlschlag alle NACHFOLGENDEN Schritte mit ab. Gemerkt wird der ERSTE Fehler und
+     * an den Aufrufer zurueckgegeben - "abgemeldet, aber es klingelt weiter" darf nicht still
+     * passieren.
+     */
+    private suspend fun stopScheduledWorkForSignOut(): Result<Unit> = withContext(NonCancellable) {
+        var ersterFehler: Throwable? = null
+
+        // Ein Schritt, der scheitern darf, ohne die NACHFOLGENDEN mitzureissen. Die
+        // CancellationException geht bewusst durch: sie ist kein Fehlschlag dieses Schritts,
+        // sondern die Ansage, dass die umgebende Coroutine endet - sie zu schlucken wuerde die
+        // Struktur zerstoeren und einen Abbruch als "alles geraeumt" verkaufen.
+        suspend fun schritt(name: String, block: suspend () -> Unit) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w(LogTags.AUTH, "Abmelden: $name fehlgeschlagen", e)
+                if (ersterFehler == null) ersterFehler = e
+            }
+        }
+
+        schritt("Wecker abbrechen und loeschen") {
+            alarmUseCase.deleteAllAlarms()
+                .onSuccess {
+                    Logger.business(
+                        LogTags.AUTH,
+                        "Abmelden: gestellte Wecker abgebrochen und geloescht"
+                    )
+                }
+                .onFailure { throw it }
+        }
+        schritt("Schichtspannen leeren") { shiftSpanStore.replaceAll(emptyList()) }
+        schritt("6h-Wartung abbestellen") { AlarmMaintenanceService.cancelNext(appContext) }
+        schritt("Dimmer stoppen") { dimSchedule.disable() }
+        schritt("Nicht-stoeren stoppen") { dndSchedule.disable() }
+        schritt("Hue-Planung stoppen") { hueSmartScheduler.cleanup() }
+        schritt("Pre-Alarm-Refresh abbestellen") { calendarPreAlarmRefreshScheduler.cancelAll() }
+
+        ersterFehler?.let { Result.failure(it) } ?: Result.success(Unit)
+    }
+
+    /**
+     * Faehrt wieder hoch, was [stopScheduledWorkForSignOut] gestoppt hat - fuer den Fall, dass das
+     * Abmelden DANACH scheitert und der Nutzer angemeldet BLEIBT.
+     *
+     * WARUM ES DAS GEBEN MUSS: Das Aufraeumen laeuft bewusst VOR dem Verwerfen der Auth-Daten.
+     * Scheitert `authUseCase.signOut()`, bleibt der Nutzer in der Haupt-Oberflaeche stehen - mit
+     * geloeschten Weckern und abbestellter 6h-Wartung, also ohne die Kette, die sie von selbst
+     * wieder anlegen wuerde. Das waere ein STUMMER Wecker ohne jeden Hinweis und damit schlimmer
+     * als der Befund, gegen den das Aufraeumen gebaut ist. Der Wartungslauf legt die Wecker aus
+     * dem Kalender neu an und plant sich selbst wieder ein.
+     *
+     * Nicht abbrechbar und Schritt fuer Schritt gefangen - gleiche Begruendung wie oben.
+     */
+    private suspend fun restoreScheduledWorkAfterFailedSignOut() = withContext(NonCancellable) {
+        suspend fun schritt(name: String, block: suspend () -> Unit) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w(LogTags.AUTH, "Abmelden fehlgeschlagen: $name nicht wieder angelaufen", e)
+            }
+        }
+
+        // Startet den Wartungslauf, der sich selbst neu einplant UND die Wecker (samt
+        // Schichtspannen) aus dem Kalender wieder aufbaut.
+        schritt("6h-Wartung") { backgroundServiceManager.initializeMaintenanceService() }
+        schritt("Dimmer") { dimSchedule.enable() }
+        schritt("Nicht-stoeren") { dndSchedule.enable() }
+        schritt("Hue-Planung") { hueSmartScheduler.initializeSmartScheduling() }
+        schritt("Pre-Alarm-Refresh") { calendarPreAlarmRefreshScheduler.reschedule() }
+    }
+
+    /**
+     * Meldet den Nutzer ab und verwirft alle Anmeldedaten - inklusive Kalender-Token. Raeumt
+     * VORHER alles weg, was sonst weiterliefe (siehe [stopScheduledWorkForSignOut]).
+     *
+     * DIES IST DER EINZIGE ABMELDEPFAD DER APP: die Einstellungskarte ("Abmelden") und der
+     * Knopf "Mit anderem Konto anmelden" auf dem Kalender-Autorisierungsbildschirm laufen beide
+     * hier durch. Wer einen dritten Weg ergaenzt, muss ihn ebenfalls hier durchleiten - sonst
+     * bleibt der geraeumte Zustand ein Zufall.
      */
     fun signOut(context: Context? = null) {
         viewModelScope.launch {
@@ -539,6 +692,11 @@ class AuthViewModel @Inject constructor(
             }
 
             try {
+                // ERST raeumen, DANN die Anmeldung verwerfen. Nach dem Verwerfen zeigt die App
+                // nur noch den Anmeldebildschirm; ein erst danach gescheiterter Raeumversuch
+                // waere von keiner Oberflaeche mehr aus nachholbar.
+                val aufraeumen = stopScheduledWorkForSignOut()
+
                 // Local sign-out using CredentialAuthManager
                 credentialAuthManager.signOutLocally()
 
@@ -554,12 +712,37 @@ class AuthViewModel @Inject constructor(
                         // existiert nicht mehr (toter Code, Audit); der Auth-Zustand wird von
                         // authUseCase.signOut() oben zurueckgesetzt.
                         Logger.business(LogTags.AUTH, "Sign-out successful")
+
+                        // NACH AuthState.EMPTY, sonst wischt das den Hinweis gleich wieder weg.
+                        // Abgemeldet ist der Nutzer trotzdem - aber er muss erfahren, dass
+                        // moeglicherweise noch Wecker gestellt sind, und was er dagegen tun kann.
+                        // Der Text erscheint auf dem Anmeldebildschirm (LoginScreen zeigt
+                        // authState.errors.error), also genau dort, wo der Nutzer danach landet.
+                        aufraeumen.onFailure { error ->
+                            Logger.e(
+                                LogTags.AUTH,
+                                "Abmelden: Aufraeumen der gestellten Wecker fehlgeschlagen - " +
+                                    "es koennen armierte Wecker zurueckgeblieben sein",
+                                error
+                            )
+                            updateAuthState { currentState ->
+                                currentState.copy(
+                                    errors = AppErrorState.authenticationError(
+                                        FEHLER_ABMELDEN_WECKER_GEBLIEBEN
+                                    )
+                                )
+                            }
+                        }
                     }
                     .onFailure { error ->
                         // Abmelden misslungen -> der Nutzer bleibt angemeldet. Die Sperre muss
                         // wieder weg, sonst bliebe die Re-Autorisierung dauerhaft stumm, falls
                         // das Token spaeter tatsaechlich entzogen wird.
                         signOutInProgress = false
+                        // Und die oben gestoppten Ketten muessen zurueck - sonst sitzt ein
+                        // angemeldeter Nutzer ohne Wecker und ohne Wartung da, die sie neu
+                        // anlegen wuerde.
+                        restoreScheduledWorkAfterFailedSignOut()
                         updateAuthState { currentState ->
                             currentState.copy(
                                 calendarOps = currentState.calendarOps.copy(calendarsLoading = false),
@@ -574,6 +757,8 @@ class AuthViewModel @Inject constructor(
 
             } catch (e: Exception) {
                 signOutInProgress = false
+                // Gleiche Lage wie im onFailure-Zweig: angemeldet geblieben, Ketten aber gestoppt.
+                restoreScheduledWorkAfterFailedSignOut()
                 updateAuthState { currentState ->
                     currentState.copy(
                         calendarOps = currentState.calendarOps.copy(calendarsLoading = false),

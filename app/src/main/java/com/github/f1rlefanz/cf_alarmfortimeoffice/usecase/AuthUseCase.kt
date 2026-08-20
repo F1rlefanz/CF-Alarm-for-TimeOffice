@@ -181,6 +181,22 @@ class AuthUseCase @Inject constructor(
      * Scheitert das Verwerfen (z.B. kein Netz für den GMS-Teil), wird das nur geloggt: die
      * Abmeldung MUSS trotzdem durchlaufen. Ein Nutzer, der auf "Abmelden" tippt, darf nicht
      * angemeldet bleiben, weil ein Cache-Aufruf schiefging.
+     *
+     * DIESE FUNKTION ALLEIN IST KEIN VOLLSTAENDIGES ABMELDEN. Sie verwirft die Anmeldung -
+     * gestellte Wecker, Schichtspannen, 6h-Wartung, Dimmer-/DND-Tick, Hue-Planung und
+     * Pre-Alarm-Refresh raeumt `AuthViewModel.signOut()` weg, und zwar VOR diesem Aufruf
+     * (`stopScheduledWorkForSignOut()`, Pruefrunde 8 / Befund 3). Wer `signOut()` von einer
+     * neuen Stelle aus ruft, ohne dort ebenfalls aufzuraeumen, stellt genau den Befund wieder
+     * her: armierte Wecker eines abgemeldeten Kontos, die der `BootReceiver` nach jedem Neustart
+     * erneut scharf macht - und die App zeigt danach nur noch den Anmeldebildschirm, also keine
+     * Oberflaeche mehr, ueber die sich das abstellen liesse.
+     *
+     * WARUM DAS AUFRAEUMEN NICHT HIER LIEGT: Sein Ergebnis muss den Nutzer erreichen ("es
+     * koennen Wecker zurueckgeblieben sein"), ohne die Bedeutung des Rueckgabewerts zu
+     * verbiegen. `Result<Unit>` aus [IAuthUseCase.signOut] heisst "die Abmeldung selbst ist
+     * gelungen"; ein gescheitertes Aufraeumen darf daraus KEIN Failure machen, denn dann bliebe
+     * der Nutzer laut Aufrufer angemeldet. Ein zweites Ergebnis passt nicht in diese Signatur -
+     * also orchestriert die Schicht, die ohnehin den Fehlerzustand der Oberflaeche haelt.
      */
     override suspend fun signOut(): Result<Unit> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("AuthUseCase.signOut") {

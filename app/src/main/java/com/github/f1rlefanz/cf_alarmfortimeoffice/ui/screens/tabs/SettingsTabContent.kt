@@ -78,6 +78,12 @@ fun SettingsTabContent(
     val masterPauseViewModel: MasterPauseViewModel = hiltViewModel()
     val masterPausePaused by masterPauseViewModel.paused.collectAsStateWithLifecycle()
 
+    // Rueckfrage vor dem Abmelden. WARUM (Pruefrunde 8, Befund 3): Abmelden ist nicht mehr nur
+    // "Konto weg" - es entfernt dabei alle gestellten Wecker. Vorher loeste ein einzelner
+    // Fehltipper auf dieser Karte das ohne jede Rueckfrage aus, und danach ist ausschliesslich
+    // der Anmeldebildschirm sichtbar: kein Weg zurueck, ohne sich wieder anzumelden.
+    var showSignOutConfirmation by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -490,7 +496,9 @@ fun SettingsTabContent(
         // Abmelden
         Card(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { authViewModel.signOut() }, // MEMORY LEAK FIX: No context parameter needed
+            // Kein direktes signOut() mehr: erst die Rueckfrage, die sagt, was dabei
+            // verschwindet (siehe showSignOutConfirmation oben).
+            onClick = { showSignOutConfirmation = true },
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer
             )
@@ -549,6 +557,37 @@ fun SettingsTabContent(
                 )
             }
         }
+    }
+
+    if (showSignOutConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showSignOutConfirmation = false },
+            title = { Text("Abmelden?") },
+            // Beschreibt die WIRKUNG, nicht den Namen einer Systemeinstellung. Und nur, was der
+            // Code auch wirklich tut: Wecker abbrechen und loeschen, Dimmen und "Nicht stoeren"
+            // fuer die Schichten beenden. Die Schichttypen, Regeln und die Kalenderauswahl
+            // bleiben gespeichert - deshalb legt eine erneute Anmeldung die Wecker aus dem
+            // Dienstplan wieder an.
+            text = {
+                Text(
+                    "Dabei werden alle gestellten Wecker entfernt - auch die für die kommenden " +
+                        "Tage. Das Dimmen und \"Nicht stören\" für deine Schichten hören ebenfalls " +
+                        "auf. Deine Schichttypen und Regeln bleiben gespeichert: Meldest du dich " +
+                        "wieder an, legt die App die Wecker aus deinem Dienstplan neu an."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSignOutConfirmation = false
+                        authViewModel.signOut()
+                    }
+                ) { Text("Abmelden") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutConfirmation = false }) { Text("Abbrechen") }
+            }
+        )
     }
 }
 

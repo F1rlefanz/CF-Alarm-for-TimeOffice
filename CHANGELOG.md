@@ -27,7 +27,31 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.29.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.30.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Die App sagt jetzt, wenn sie gerade nicht weckt — und das Abmelden nimmt seine Wecker mit._
+
+### 🐛 Behoben
+
+- **Abmelden ließ die Wecker weiterlaufen:** Wer sich abmeldete, wurde die gestellten Wecker nicht los — sie klingelten bis zu zwei Wochen weiter, auch nach einem Neustart, und die App zeigte danach nur noch den Anmeldebildschirm: keine Weckerliste, kein Pausenschalter, also kein Weg, sie abzustellen. Das Abmelden fragt jetzt vorher nach und entfernt die gestellten Wecker mit.
+- **Angekündigte Weckzeit, die nie klingelt:** In der Karte „Nächster Alarm" konnte eine stille Schicht stehen — also eine, bei der die App bewusst nicht klingelt. Sie sah aus wie ein gewöhnlicher Wecker und verdeckte zusätzlich den nächsten, der wirklich klingelt. Stille Schichten sind jetzt als solche erkennbar, und der nächste hörbare Wecker steht daneben.
+- **Pausiert, ohne es zu zeigen:** Waren die Hintergrunddienste pausiert, sagte das nur ein Schalter ganz unten in den Einstellungen. Der Wecker-Tab behauptete weiter „Automatische Alarme: an", der Home-Tab nannte die nächste Schicht, und beim Alarm-Status stand ein grundloses „Keine aktiven Alarme". Wer nach dem Urlaub kurz nachsah, hielt alles für in Ordnung. Der Zustand steht jetzt im Status-Tab mit einem Knopf zum Fortsetzen, und die anderen Bildschirme nennen ihn als Grund.
+- **Den letzten Kalender abzuwählen ließ seine Wecker stehen:** Wurde der einzige ausgewählte Kalender abgewählt, verschwanden zwar Termine und Anzeige, die Wecker daraus blieben aber gestellt — und kein Hintergrundlauf hat sie je aufgeräumt. Sie werden jetzt entfernt, und der Auftrag dazu überlebt es sogar, wenn die App direkt danach geschlossen wird.
+- **Umbenannter Schichttyp legte Dimmer und Licht still:** Wer einen Schichttyp umbenannte, verlor dafür lautlos seine Dimm- und Hue-Regeln: sie zeigten weiter auf den alten Namen, standen in der Liste aber unverändert als aktiv. Beim Umbenennen ziehen die Regeln jetzt mit.
+- **Zwei Dienste an einem Tag: eine Regel fiel aus:** Standen an einem Tag zwei Schichten im Plan — etwa Frühdienst und anschließende Rufbereitschaft —, wertete die App nur die erste aus. Ein eigens gesetzter Dimm-Ausschluss für die zweite wirkte nicht, der Bildschirm wurde trotzdem dunkel und „Nicht stören" schaltete in einer Nacht ein, in der Erreichbarkeit der Zweck ist.
+- **Mehrere Dienstplan-Änderungen überschrieben sich:** Brachte ein Abgleich mehrere Änderungen auf einmal, blieb nur die letzte Meldung übrig — ausgerechnet der Hinweis „Schicht entfernt" verschwand dabei am ehesten. Alle Änderungen eines Laufs sind jetzt gemeinsam ablesbar.
+- **Schlummern konnte stillschweigend misslingen:** Ließ sich der Schlummer-Wecker nicht stellen, schloss sich der Weckbildschirm genauso, als hätte es geklappt — kein Ton, kein neuer Wecker, kein Hinweis. Jetzt sagt die App es, und der Wecker bleibt lieber laut, als lautlos zu verschwinden.
+- **Schlummern trotz Pause:** Der Schlummer-Knopf stellte auch dann einen neuen Weckruf, wenn alle Hintergrunddienste pausiert waren — mitten in einer Pause klingelte es also doch. Außerdem lief ein gerade klingelnder Wecker weiter, wenn man die Pause währenddessen einschaltete.
+- **Veraltete Weckzeit beim selbst gestellten Wecker:** Wer die Weckzeit eines Schichttyps änderte und danach — ohne die App zu schließen — einen Wecker von Hand stellte, bekam die alte Zeit; die Karte bestätigte sie sogar. Ein neu angelegter Schichttyp fehlte dort umgekehrt ganz.
+- **Gespeichert gemeldet, aber nicht gespeichert:** Konnte die App ihre Weckerliste gerade nicht dauerhaft ablegen, meldete sie den Wecker trotzdem als angelegt. Nach einem Neustart war er weg — bei einem von Hand gestellten unwiederbringlich. Sie sagt es jetzt.
+
+### 🔧 Unter der Haube
+
+- **1045 automatische Tests** (vorher 867). Die Prüfrunde hat 74 Verdachtsfälle untersucht, zehn davon bestätigt und behoben; die anschließende Gegenprüfung der eigenen Korrekturen fand über fünf Runden weitere Fehler, darunter zwei, die schwerer wogen als das ursprüngliche Problem — einer davon wurde deshalb wieder zurückgebaut.
+
+## Version 1.29.2
 
 **Stand:** August 2026
 

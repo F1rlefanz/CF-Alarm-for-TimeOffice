@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
+import java.time.ZoneId
 import javax.inject.Inject
 
 /**
@@ -41,7 +43,11 @@ internal object BootAlarmValidation {
      * EINMAL oben, holt danach Kalender-Events (Sekunden) und entscheidet erst dann pro Alarm.
      *
      * Der teure Fall: der Anker korrigiert in diesem Fenster einen verschobenen Alarm (gleiche
-     * `id`, denn `id = calendarEvent.id.hashCode()` ist pro Event stabil; neuer `triggerTime` +
+     * `id` — sie bleibt beim Aktualisieren erhalten; frueher stand hier "denn
+     * `id = calendarEvent.id.hashCode()` ist pro Event stabil", das gilt seit der stabilen
+     * Wecker-Identitaet nicht mehr: wechselt der Kalender-Feed seine Kennungen, wandert die id
+     * des gepaarten Vorgaengers mit, statt neu aus der Kennung berechnet zu werden. Fuer diesen
+     * Absatz aendert das nichts, die id bleibt so oder so gleich; neuer `triggerTime` +
      * neuer `eventChecksum`) und stellt den System-Alarm korrekt. Die Recovery vergleicht danach
      * ihre VERALTETE Kopie gegen den frischen Event-Checksum, sieht einen Mismatch und loescht den
      * gerade korrigierten Alarm — ohne ihn neu anzulegen (`continue`).
@@ -51,6 +57,78 @@ internal object BootAlarmValidation {
      */
     fun snapshotStillCurrent(snapshotChecksum: String, freshChecksum: String?): Boolean =
         freshChecksum != null && freshChecksum == snapshotChecksum
+
+    /**
+     * Ein Weckpunkt der AKTUELLEN Kalenderlesung: dieselbe Schicht zur selben Weckzeit — ohne die
+     * Kalender-Kennung, die genau das Fluechtige an der Sache ist.
+     */
+    internal data class Weckpunkt(val triggerTime: Long, val shiftId: String)
+
+    /** Was mit einem gespeicherten Alarm beim Boot geschehen soll. */
+    internal enum class AlarmUrteil {
+        /** Unveraendert wiederherstellen (Termin da, nichts geaendert). */
+        WIEDERHERSTELLEN,
+
+        /** Termin da, aber unter neuer Kalender-Kennung - wiederherstellen, nichts loeschen. */
+        NUR_NEUE_KENNUNG,
+
+        /** Der Termin ist wirklich weg. */
+        LOESCHEN_TERMIN_WEG,
+
+        /** Termin da, aber inhaltlich geaendert - der naechste Sync legt ihn neu an. */
+        LOESCHEN_TERMIN_GEAENDERT
+    }
+
+    /**
+     * Urteil ueber EINEN gespeicherten Alarm anhand der aktuellen Kalenderlesung.
+     *
+     * WARUM [NUR_NEUE_KENNUNG] EXISTIEREN MUSS: Der Dienstplan kommt aus einem ABONNIERTEN
+     * Kalender (TimeOffice-ICS-Feed). Google liest den alle paar Tage neu ein und vergibt dabei
+     * ALLEN Terminen neue Event-IDs, ohne dass sich an Schicht oder Weckzeit irgendetwas aendert
+     * (am Geraet belegt: am 20.08.2026 11 Wecker geloescht und 11 neu angelegt in EINEM Lauf,
+     * Schnittmenge der Event-IDs vorher/nachher leer). Zwischen so einem Neueinlesen und dem
+     * naechsten vollstaendigen Sync (bis zu 6 h) tragen ALLE gespeicherten Alarme Kennungen, die es
+     * im Kalender nicht mehr gibt. Diese Stelle kannte bis dahin nur "Kennung nicht gefunden =
+     * Termin geloescht" und raeumte in so einem Fenster bei einem Neustart den GESAMTEN Bestand
+     * samt Systemweckern ab - ohne Neuanlage. Zurueck kam er nur, wenn der Sync im selben
+     * Boot-Ablauf durchlief; ohne Netz nach dem Neustart oder bei unvollstaendiger Kalenderliste
+     * stand der Nutzer ohne Wecker da.
+     *
+     * FUEHRENDE STELLE DER REGEL IST `AlarmUseCase.paareBestehendeAlarme()` - dort lebt "gleiche
+     * Weckzeit + gleiche Schicht = derselbe Wecker" fuer den Delta-Sync, mit zweistufiger
+     * Reihenfolge (erst Kennung, dann Aehnlichkeit) und Eins-zu-eins-Vergabe. Hier steht bewusst
+     * nur die MINIMALE Variante, und sie ist bewusst grosszuegiger: es wird nur "behalten oder
+     * loeschen" entschieden und nichts einander zugeordnet, also braucht es keine
+     * Eins-zu-eins-Vergabe. Liegen zwei Alarme auf demselben Weckpunkt, bleiben beide stehen (sie
+     * tragen verschiedene `id`, teilen sich also keinen PendingIntent) und der naechste
+     * vollstaendige Sync raeumt den ueberzaehligen auf. Die Richtung im Zweifel ist die
+     * Projektregel "im Zweifel wecken": ein Wecker zu viel klingelt hoerbar und wird abgestellt,
+     * ein geloeschter Bestand ist still.
+     *
+     * @param terminChecksum Checksum des Termins mit DIESER `eventId` in der aktuellen Lesung,
+     *   oder `null`, wenn die Kennung dort nicht mehr vorkommt.
+     * @param weckpunkte Weckpunkte der aktuellen Lesung, oder `null`, wenn sie sich nicht
+     *   ermitteln liessen (Schichterkennung fehlgeschlagen). `null` heisst: wegen einer fehlenden
+     *   Kennung wird NIE geloescht.
+     */
+    fun beurteile(
+        alarmTriggerTime: Long,
+        alarmShiftId: String,
+        alarmChecksum: String,
+        terminChecksum: String?,
+        weckpunkte: Set<Weckpunkt>?
+    ): AlarmUrteil = when {
+        terminChecksum == null ->
+            if (weckpunkte != null && Weckpunkt(alarmTriggerTime, alarmShiftId) !in weckpunkte) {
+                AlarmUrteil.LOESCHEN_TERMIN_WEG
+            } else {
+                AlarmUrteil.NUR_NEUE_KENNUNG
+            }
+
+        terminChecksum != alarmChecksum -> AlarmUrteil.LOESCHEN_TERMIN_GEAENDERT
+
+        else -> AlarmUrteil.WIEDERHERSTELLEN
+    }
 }
 
 /**
@@ -602,8 +680,9 @@ class BootReceiver : BroadcastReceiver() {
      * 
      * 🔧 SYNC-FIX: Validiert Alarme gegen aktuelle Calendar Events bevor sie restored werden
      * ✅ Verhindert: "Alter Alarm klingelt für gelöschtes/geändertes Event"
-     * ✅ Löscht: Alarme für nicht-existierende Events
-     * ✅ Updated: Alarme für geänderte Events
+     * ✅ Löscht: Alarme, deren Termin wirklich weg ist - NICHT solche, deren Kalender-Kennung nur
+     *    gewechselt hat (siehe [BootAlarmValidation.beurteile])
+     * ✅ Löscht: Alarme für geänderte Events (der nächste Sync legt sie neu an)
      * 
      * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
@@ -625,6 +704,11 @@ class BootReceiver : BroadcastReceiver() {
             var validatedCount = 0
             var deletedCount = 0
             var concurrentlyChangedCount = 0
+            // Wecker, die NUR eine neue Kalender-Kennung bekommen haben. Muss sichtbar bleiben:
+            // ein grosser Wert hier ist der Fingerabdruck eines Feed-Neueinlesens - genau der
+            // Vorgang, der bis v1.29.x den ganzen Bestand geloescht hat.
+            var neueKennungCount = 0
+            var nichtArmiertCount = 0
 
             // Get current calendar events for validation
             // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
@@ -695,6 +779,11 @@ class BootReceiver : BroadcastReceiver() {
             // Build event ID map for quick lookup
             val currentEventMap = currentEvents.associateBy { it.id }
 
+            // Weckpunkte der aktuellen Lesung (Weckzeit + Schicht, ohne Kalender-Kennung). Nur
+            // noetig, wenn ueberhaupt validiert wird - siehe
+            // [BootAlarmValidation.beurteile] fuer das Warum.
+            val weckpunkte = if (validationPossible) ermittleWeckpunkte(currentEvents) else null
+
             // 3. Validate and restore alarms
             for (alarm in futureAlarms) {
                 try {
@@ -721,46 +810,85 @@ class BootReceiver : BroadcastReceiver() {
                         }
 
                         val currentEvent = currentEventMap[alarm.eventId]
-                        
-                        if (currentEvent == null) {
-                            // Event was deleted from calendar → delete alarm
-                            Logger.business(
-                                LogTags.MAINTENANCE_L4,
-                                "🗑️ LEVEL 4: Event deleted, removing alarm: ${alarm.shiftName} (eventId: ${alarm.eventId})"
-                            )
-                            alarmUseCase.deleteAlarm(alarm.id)
-                            deletedCount++
-                            continue
-                        }
-                        
-                        // Calculate current event checksum
-                        val currentChecksum = calculateEventChecksum(currentEvent)
-                        
-                        if (alarm.eventChecksum != currentChecksum) {
-                            // Event changed → delete old alarm (will be recreated by WorkManager/manual sync)
-                            Logger.business(
-                                LogTags.MAINTENANCE_L4,
-                                "🔄 LEVEL 4: Event changed, removing outdated alarm: ${alarm.shiftName} (eventId: ${alarm.eventId})"
-                            )
-                            alarmUseCase.deleteAlarm(alarm.id)
-                            deletedCount++
-                            continue
-                        }
-                        
-                        validatedCount++
-                        Logger.d(
-                            LogTags.MAINTENANCE_L4,
-                            "✅ LEVEL 4: Alarm validated against event: ${alarm.shiftName}"
+
+                        // KENNUNG WEG HEISST NICHT TERMIN WEG. Details und Beleg in
+                        // [BootAlarmValidation.beurteile]; fuehrende Stelle der Regel ist
+                        // AlarmUseCase.paareBestehendeAlarme().
+                        val urteil = BootAlarmValidation.beurteile(
+                            alarmTriggerTime = alarm.triggerTime,
+                            alarmShiftId = alarm.shiftId,
+                            alarmChecksum = alarm.eventChecksum,
+                            terminChecksum = currentEvent?.let { calculateEventChecksum(it) },
+                            weckpunkte = weckpunkte
                         )
+
+                        when (urteil) {
+                            BootAlarmValidation.AlarmUrteil.LOESCHEN_TERMIN_WEG -> {
+                                Logger.business(
+                                    LogTags.MAINTENANCE_L4,
+                                    "🗑️ LEVEL 4: Event deleted, removing alarm: ${alarm.shiftName} (eventId: ${alarm.eventId})"
+                                )
+                                alarmUseCase.deleteAlarm(alarm.id)
+                                deletedCount++
+                                continue
+                            }
+
+                            BootAlarmValidation.AlarmUrteil.LOESCHEN_TERMIN_GEAENDERT -> {
+                                // Der naechste Sync legt ihn neu an (Wartungs-Anker laeuft bereits).
+                                Logger.business(
+                                    LogTags.MAINTENANCE_L4,
+                                    "🔄 LEVEL 4: Event changed, removing outdated alarm: ${alarm.shiftName} (eventId: ${alarm.eventId})"
+                                )
+                                alarmUseCase.deleteAlarm(alarm.id)
+                                deletedCount++
+                                continue
+                            }
+
+                            BootAlarmValidation.AlarmUrteil.NUR_NEUE_KENNUNG -> {
+                                // Kein Loeschen, kein Neuanlegen: derselbe Dienst zur selben
+                                // Weckzeit. Der Alarm faellt unten in scheduleSystemAlarm und wird
+                                // unveraendert re-armed; seine jetzt veraltete eventId/Checksum
+                                // richtet der naechste vollstaendige Sync.
+                                Logger.business(
+                                    LogTags.MAINTENANCE_L4,
+                                    "🆔 LEVEL 4: Nur die Kalender-Kennung hat gewechselt - Wecker bleibt: ${alarm.shiftName} (eventId: ${alarm.eventId})"
+                                )
+                                neueKennungCount++
+                            }
+
+                            BootAlarmValidation.AlarmUrteil.WIEDERHERSTELLEN -> {
+                                validatedCount++
+                                Logger.d(
+                                    LogTags.MAINTENANCE_L4,
+                                    "✅ LEVEL 4: Alarm validated against event: ${alarm.shiftName}"
+                                )
+                            }
+                        }
                     }
                     
-                    // Restore validated alarm
+                    // Restore validated alarm.
+                    //
+                    // DAS ERGEBNIS WIRD AUSGEWERTET: `scheduleSystemAlarm()` weist einen
+                    // uebersprungenen Wecker bewusst ab (`Result.failure`), damit der Aufrufer es
+                    // SEHEN kann - genau dafuer gibt es die Rueckgabe. Wer sie verwirft und
+                    // trotzdem `restoredCount++` zaehlt, meldet einen Wecker als wiederhergestellt,
+                    // der im AlarmManager gar nicht steht: sichtbar in der Liste, stumm am Morgen.
+                    // Das ist die gefaehrlichste Klasse, die diese App kennt.
                     alarmUseCase.scheduleSystemAlarm(alarm)
-                    restoredCount++
-                    Logger.d(
-                        LogTags.MAINTENANCE_L4,
-                        "✅ LEVEL 4: Restored alarm: ${alarm.shiftName}"
-                    )
+                        .onSuccess {
+                            restoredCount++
+                            Logger.d(
+                                LogTags.MAINTENANCE_L4,
+                                "✅ LEVEL 4: Restored alarm: ${alarm.shiftName}"
+                            )
+                        }
+                        .onFailure { fehler ->
+                            nichtArmiertCount++
+                            Logger.w(
+                                LogTags.MAINTENANCE_L4,
+                                "⚠️ LEVEL 4: Wecker NICHT armiert: ${alarm.shiftName} - ${fehler.message}"
+                            )
+                        }
                 } catch (e: Exception) {
                     Logger.e(
                         LogTags.MAINTENANCE_L4,
@@ -773,7 +901,9 @@ class BootReceiver : BroadcastReceiver() {
             Logger.business(
                 LogTags.MAINTENANCE_L4,
                 "📊 LEVEL 4: Alarm recovery stats - Restored: $restoredCount, Validated: $validatedCount, " +
-                    "Deleted: $deletedCount, parallel geaendert: $concurrentlyChangedCount"
+                    "Deleted: $deletedCount, neue Kennung: $neueKennungCount, " +
+                    "NICHT armiert: $nichtArmiertCount, " +
+                    "parallel geaendert: $concurrentlyChangedCount"
             )
 
             // 4. If few alarms restored, try to create new ones from calendar
@@ -823,7 +953,8 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             "Restored $restoredCount alarms (Validated: $validatedCount, Deleted: $deletedCount, " +
-                "parallel geaendert: $concurrentlyChangedCount) from ${storedAlarms.size} stored"
+                "neue Kennung: $neueKennungCount, parallel geaendert: $concurrentlyChangedCount) " +
+                "from ${storedAlarms.size} stored"
 
         } catch (e: Exception) {
             Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Alarm recovery failed", e)
@@ -831,6 +962,54 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
     
+    /**
+     * Weckpunkte (Weckzeit + Schicht) der aktuellen Kalenderlesung.
+     *
+     * Die Weckzeit wird GENAU SO gerechnet wie im Delta-Sync
+     * (`AlarmUseCase`: `calculatedAlarmTime.atZone(systemDefault).toInstant().toEpochMilli()`) -
+     * jede Abweichung hier wuerde die Gleichheit zufaellig machen und damit genau die Loeschungen
+     * zurueckbringen, die verhindert werden sollen.
+     *
+     * FAIL-SAFE: Scheitert die Schichterkennung (Konfiguration nicht lesbar, Wurf), gibt es `null`
+     * statt einer leeren Menge - und `null` heisst "kein Urteil moeglich, nichts loeschen". Eine
+     * leere Menge waere die gefaehrliche Luege ("keine einzige Schicht erkannt" = alles loeschen),
+     * gegen die dieselbe Projektregel steht wie bei der leeren Eventliste.
+     */
+    private suspend fun ermittleWeckpunkte(
+        events: List<com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent>
+    ): Set<BootAlarmValidation.Weckpunkt>? = try {
+        shiftUseCase.recognizeShiftsInEvents(events).fold(
+            onSuccess = { matches ->
+                matches.map { match ->
+                    BootAlarmValidation.Weckpunkt(
+                        triggerTime = match.calculatedAlarmTime
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli(),
+                        shiftId = match.shiftDefinition.id
+                    )
+                }.toSet()
+            },
+            onFailure = { error ->
+                Logger.w(
+                    LogTags.MAINTENANCE_L4,
+                    "⚠️ LEVEL 4: Schichterkennung fuer die Kennungs-Pruefung fehlgeschlagen - es wird kein Alarm wegen fehlender Kennung geloescht",
+                    error
+                )
+                null
+            }
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Logger.w(
+            LogTags.MAINTENANCE_L4,
+            "⚠️ LEVEL 4: Schichterkennung fuer die Kennungs-Pruefung geworfen - es wird kein Alarm wegen fehlender Kennung geloescht",
+            e
+        )
+        null
+    }
+
     /**
      * 🔧 SYNC-FIX: Calculate event checksum for validation
      */

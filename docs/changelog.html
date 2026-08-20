@@ -51,7 +51,26 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.30.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.30.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Schluss mit „Neue Schicht erkannt" für Dienste, die sich gar nicht geändert haben.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Immer wieder dieselbe Meldung über denselben Dienst:</strong> Google liest einen abonnierten Dienstplan-Kalender alle paar Tage neu ein und vergibt dabei allen Terminen intern neue Kennungen. Die App erkannte ihre Wecker nur an genau dieser Kennung — für sie war dann schlagartig der ganze Dienstplan neu: sie meldete Änderungen, die es nicht gab, und stellte dabei jeden einzelnen Wecker ab und neu. Ein Wecker gilt jetzt als derselbe, wenn er dieselbe Schicht zur selben Weckzeit meint; wechselt nur die Kennung, passiert im Hintergrund nichts weiter. Echte Änderungen — andere Weckzeit, andere Schicht, gestrichener Dienst — werden weiterhin gemeldet.</li>
+                <li><strong>Ein Neustart zur falschen Zeit konnte alle Wecker löschen:</strong> Auch die Wiederherstellung nach einem Geräteneustart erkannte Wecker nur an der Kalender-Kennung. Fiel der Neustart in das Zeitfenster nach einem solchen Neueinlesen, hielt sie sämtliche Wecker für gelöschte Termine und räumte sie ab.</li>
+                <li><strong>Übersprungener Wecker klingelte trotzdem:</strong> Wurde der Dienstplan zwischen „Nächsten Wecker überspringen" und dem nächsten Abgleich neu eingelesen, verlor die App den Bezug zum übersprungenen Wecker und stellte ihn wieder — geweckt am freien Morgen. Erkannt wird er jetzt an der Weckzeit.</li>
+                <li><strong>Täglich eine Meldung für den neuen Randtag:</strong> Die App schaut 14 Tage voraus, und dieses Fenster wandert täglich weiter. Die Schicht am neu hinzugekommenen Tag galt jedes Mal als „neue Schicht". Ein Termin, der nur ins Blickfeld rutscht, meldet jetzt nichts mehr.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li><strong>1076 automatische Tests</strong> (vorher 1045). Gefunden wurde das alles nicht durch eine Prüfrunde, sondern durch die Rückmeldung aus dem täglichen Gebrauch — und belegt am Gerät anhand von neun Tagen App-Protokoll.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.30.0</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Die App sagt jetzt, wenn sie gerade nicht weckt — und das Abmelden nimmt seine Wecker mit.</em></p>
 

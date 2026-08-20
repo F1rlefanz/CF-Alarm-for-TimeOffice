@@ -27,7 +27,24 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.30.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.30.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Schluss mit „Neue Schicht erkannt" für Dienste, die sich gar nicht geändert haben._
+
+### 🐛 Behoben
+
+- **Immer wieder dieselbe Meldung über denselben Dienst:** Google liest einen abonnierten Dienstplan-Kalender alle paar Tage neu ein und vergibt dabei allen Terminen intern neue Kennungen. Die App erkannte ihre Wecker nur an genau dieser Kennung — für sie war dann schlagartig der ganze Dienstplan neu: sie meldete Änderungen, die es nicht gab, und stellte dabei jeden einzelnen Wecker ab und neu. Ein Wecker gilt jetzt als derselbe, wenn er dieselbe Schicht zur selben Weckzeit meint; wechselt nur die Kennung, passiert im Hintergrund nichts weiter. Echte Änderungen — andere Weckzeit, andere Schicht, gestrichener Dienst — werden weiterhin gemeldet.
+- **Ein Neustart zur falschen Zeit konnte alle Wecker löschen:** Auch die Wiederherstellung nach einem Geräteneustart erkannte Wecker nur an der Kalender-Kennung. Fiel der Neustart in das Zeitfenster nach einem solchen Neueinlesen, hielt sie sämtliche Wecker für gelöschte Termine und räumte sie ab.
+- **Übersprungener Wecker klingelte trotzdem:** Wurde der Dienstplan zwischen „Nächsten Wecker überspringen" und dem nächsten Abgleich neu eingelesen, verlor die App den Bezug zum übersprungenen Wecker und stellte ihn wieder — geweckt am freien Morgen. Erkannt wird er jetzt an der Weckzeit.
+- **Täglich eine Meldung für den neuen Randtag:** Die App schaut 14 Tage voraus, und dieses Fenster wandert täglich weiter. Die Schicht am neu hinzugekommenen Tag galt jedes Mal als „neue Schicht". Ein Termin, der nur ins Blickfeld rutscht, meldet jetzt nichts mehr.
+
+### 🔧 Unter der Haube
+
+- **1076 automatische Tests** (vorher 1045). Gefunden wurde das alles nicht durch eine Prüfrunde, sondern durch die Rückmeldung aus dem täglichen Gebrauch — und belegt am Gerät anhand von neun Tagen App-Protokoll.
+
+## Version 1.30.0
 
 **Stand:** August 2026
 

@@ -218,6 +218,25 @@ class CalendarViewModel @Inject constructor(
     @Volatile
     private var lastCalendarLoadTime = 0L
 
+    /**
+     * Merker: hat dieser Collector schon einmal eine NICHT leere Kalenderauswahl gesehen?
+     *
+     * Unterscheidet die EINE legitime Leere ("der Nutzer hat den letzten Kalender abgewaehlt")
+     * von der gefaehrlichen ("die Auswahl ist noch nicht geladen"). Der StateFlow des
+     * Repositories startet auf `emptySet()` und wird erst durch einen unabgewarteten Collector
+     * befuellt - der allererste Wert, den `observeCalendarSelection()` sieht, ist bei JEDEM
+     * App-Start leer. Wuerde schon dieser Wert als Abwahl gelten, raeumte jeder App-Start
+     * saemtliche kalenderbasierten Wecker weg, bevor die Auswahl ueberhaupt gelesen ist - genau
+     * die "leer ist die gefaehrlichste Luege"-Falle, gegen die diese App an mehreren Stellen
+     * abgesichert ist.
+     *
+     * MUSS - wie die beiden Felder darueber - TEXTUELL VOR dem init{}-Block stehen: init{}
+     * startet den Collector, der dieses Feld noch waehrend der Objekt-Konstruktion liest und
+     * schreibt (siehe eventLoadGeneration).
+     */
+    @Volatile
+    private var hasSeenNonEmptySelection = false
+
     init {
         checkTokenValidity()
         observeCalendarSelection()
@@ -323,11 +342,17 @@ class CalendarViewModel @Inject constructor(
                     
                     // LAZY LOADING: Auto-load events with lazy loading when selection changes
                     if (selectedIds.isNotEmpty()) {
+                        hasSeenNonEmptySelection = true
                         loadEventsForSelectedCalendars(
                             loadAll = false, // LAZY LOADING: Start with lazy loading
                             initialPageSize = 10 // LAZY LOADING: Load only 10 events initially
                         )
                     } else {
+                        // Nur ein Uebergang "es WAR etwas ausgewaehlt -> jetzt nichts mehr" ist
+                        // eine Abwahl. Der Startwert emptySet() ist es nicht (siehe
+                        // hasSeenNonEmptySelection).
+                        val wasDeselection = hasSeenNonEmptySelection
+                        hasSeenNonEmptySelection = false
                         // RACE-GUARD: Auch das Abwaehlen ALLER Kalender ist ein Ereignis, das
                         // laufende Ladevorgaenge ueberholt - es muss deshalb genauso eine neue
                         // Generation ziehen wie ein neuer Ladevorgang. Ohne das bestand ein noch
@@ -336,7 +361,7 @@ class CalendarViewModel @Inject constructor(
                         // legte ueber syncAlarms() Wecker aus den Terminen genau der Kalender an,
                         // die der Nutzer soeben abgewaehlt hatte - waehrend die Oberflaeche
                         // korrekt "kein Kalender ausgewaehlt" zeigte.
-                        eventLoadGeneration.incrementAndGet()
+                        val deselectGeneration = eventLoadGeneration.incrementAndGet()
 
                         // Clear events und reset pagination wenn keine Kalender ausgewählt
                         updateLocalState {
@@ -349,8 +374,160 @@ class CalendarViewModel @Inject constructor(
                         }
                         // CRITICAL: Update CalendarStateHolder when clearing events
                         calendarStateHolder.clearEvents()
+
+                        if (wasDeselection) {
+                            // Der Collector selbst darf hier nicht warten (er muss fuer die
+                            // naechste Auswahl-Aenderung sofort wieder bereit sein) - die
+                            // Reihenfolge sichert stattdessen die Generation ab.
+                            clearAlarmsAfterCalendarDeselection(deselectGeneration)
+                        }
                     }
                 }
+        }
+    }
+
+    /**
+     * Raeumt die kalenderbasierten Wecker, nachdem der Nutzer den LETZTEN Kalender abgewaehlt hat.
+     *
+     * DER FEHLER, den das schliesst: Der else-Zweig von [observeCalendarSelection] leerte bisher
+     * nur Anzeige und [CalendarStateHolder] - ohne jeden Alarm-Sync. Das Abwaehlen EINES von
+     * mehreren Kalendern raeumte dessen Wecker korrekt ab (der Delta-Sync des naechsten
+     * Ladevorgangs entfernt jeden Alarm, dessen eventId fehlt), das Abwaehlen des LETZTEN dagegen
+     * nicht. Danach gab es auch keinen nachholenden Pfad mehr: die 6h-Wartung, der
+     * Pre-Alarm-Worker und der ShiftViewModel-Pfad steigen bei leerer Auswahl bzw. leerer
+     * Eventliste alle VOR `syncAlarms()` aus, und der `BootReceiver` armiert die gespeicherten
+     * Alarme sogar aktiv neu. Folge: Die Oberflaeche zeigte "kein Kalender ausgewaehlt" und null
+     * Termine, waehrend das Geraet bis zu 14 Tage lang weiter nach dem entfernten Dienstplan
+     * weckte und der Bildschirm zu dessen Dienstzeiten gedimmt wurde. Abstellen liess sich das nur
+     * durch Einzelloeschung jedes Weckers oder die Master-Pause.
+     *
+     * WARUM DAS HIER AUSDRUECKLICH ERLAUBT IST, obwohl "leer" fuer diese App sonst die
+     * gefaehrlichste Luege ist: Diese Leere stammt nicht aus einem Abruf, sondern aus einer
+     * ausdruecklichen Nutzeraktion. Die `isComplete`-/Leerlisten-Sperren der uebrigen Aufrufer
+     * bleiben davon unberuehrt - sie schuetzen gegen einen GESCHEITERTEN Abruf, und ein
+     * gescheiterter Abruf kann diesen Pfad nicht ausloesen. Abgesichert ist das doppelt:
+     *  1. [hasSeenNonEmptySelection] - es muss ein Uebergang "war ausgewaehlt -> ist es nicht mehr"
+     *     sein, nicht der leere Startwert des noch nicht hydrierten StateFlows.
+     *  2. Eine Rueckfrage direkt beim DataStore ueber `getCurrentSelectedCalendarIds()`. Sie
+     *     unterscheidet "wirklich leer" von "nicht lesbar" (Result.failure) - bei Zweifel wird
+     *     NICHT geraeumt.
+     *
+     * Geraeumt wird ueber `syncAlarms(emptyList(), config)`, nicht ueber ein eigenes Loeschen:
+     * dessen Leerlisten-Zweig ist genau der schonende - er schreibt `persistShiftSpans(emptyList())`
+     * (sonst dimmen Dimmer und DND weiter nach dem alten Dienstplan, denn `syncAlarms()` ist der
+     * EINZIGE Schreiber des `ShiftSpanStore`) und raeumt mit `keepManualAlarms = true`. Manuelle
+     * Wecker stammen nicht aus dem Kalender und duerfen eine Kalender-Abwahl ueberleben. Und der
+     * Weg ueber `syncAlarms()` haelt zugleich die Loeschreihenfolge ein (erst `cancelSystemAlarm()`,
+     * dann `deleteAlarm()`), die ein eigenes Loeschen hier neu haette nachbauen muessen.
+     *
+     * @param deselectGeneration Die beim Abwaehlen gezogene Generation. Waehlt der Nutzer waehrend
+     *   der Rueckfragen oben schon wieder einen Kalender an, hat dessen Ladevorgang eine hoehere
+     *   Nummer - dann ist dieses Raeumen ueberholt und wuerde die frisch angelegten Wecker sofort
+     *   wieder loeschen.
+     */
+    private fun clearAlarmsAfterCalendarDeselection(deselectGeneration: Long) {
+        viewModelScope.launch {
+            // NonCancellable: Das hier stellt einen Zustand HER ("die Wecker der entfernten Quelle
+            // sind weg"). Verlaesst der Nutzer die App unmittelbar nach dem Abwaehlen, wird der
+            // viewModelScope gecancelt - ein auf halbem Weg abgebrochener Lauf liesse den
+            // Wecker-Bestand verwaist zurueck, und es gibt keinen zweiten Anlauf: beim naechsten
+            // App-Start ist die Auswahl von Anfang an leer, also greift der Uebergangs-Merker
+            // nicht mehr.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    // 1) Rueckfrage an die QUELLE, nicht an den StateFlow: unterscheidet
+                    //    "wirklich nichts mehr ausgewaehlt" von "nicht lesbar".
+                    val persistedSelection = calendarSelectionRepository.getCurrentSelectedCalendarIds()
+                        .getOrElse { error ->
+                            Logger.w(
+                                LogTags.CALENDAR,
+                                "Abwahl-Aufraeumen uebersprungen: Kalenderauswahl nicht lesbar - " +
+                                    "bestehende Wecker bleiben (fail-safe)",
+                                error
+                            )
+                            return@withContext
+                        }
+
+                    if (persistedSelection.isNotEmpty()) {
+                        Logger.d(
+                            LogTags.CALENDAR,
+                            "Abwahl-Aufraeumen uebersprungen: der Speicher meldet weiterhin " +
+                                "${persistedSelection.size} ausgewaehlte Kalender"
+                        )
+                        return@withContext
+                    }
+
+                    // 2) Master-Pause: dort ist der Bestand ohnehin geraeumt. Ein Sync waehrend der
+                    //    Pause wuerde ueber den zentralen Backstop zusaetzlich einen schwebenden
+                    //    Snooze abbrechen - eine Nebenwirkung, die eine Kalender-Abwahl nicht haben soll.
+                    if (masterPausePrefs.pausedNow()) {
+                        Logger.business(
+                            LogTags.ALARM,
+                            "⏸️ Master-Pause aktiv - Abwahl-Aufraeumen nicht noetig, es sind keine Wecker gesetzt"
+                        )
+                        return@withContext
+                    }
+
+                    // 3) ShiftConfig. Ist sie nicht lesbar, wird NICHT geraeumt (fail-safe, wie in
+                    //    createAlarmsFromLoadedEvents): ein Defekt im Konfigurations-Store darf
+                    //    keine Wecker kosten.
+                    val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
+                    if (shiftConfig == null) {
+                        Logger.e(
+                            LogTags.ALARM,
+                            "❌ Abwahl-Aufraeumen uebersprungen: ShiftConfig nicht lesbar - " +
+                                "bestehende Wecker bleiben unveraendert"
+                        )
+                        return@withContext
+                    }
+
+                    // Bei abgeschalteter Automatik gibt es keine kalenderbasierten Wecker mehr
+                    // (das Abschalten selbst raeumt sie). syncAlarms() wuerde in diesem Zweig
+                    // zusaetzlich MANUELLE Wecker loeschen - die haben mit dem Kalender nichts zu
+                    // tun und ueberleben eine Abwahl.
+                    if (!shiftConfig.autoAlarmEnabled) {
+                        Logger.d(
+                            LogTags.ALARM,
+                            "Abwahl-Aufraeumen uebersprungen: Automatik ist aus, es gibt keine " +
+                                "kalenderbasierten Wecker"
+                        )
+                        return@withContext
+                    }
+
+                    // 4) RACE-GUARD unmittelbar vor dem einzigen schreibenden Aufruf.
+                    if (deselectGeneration != eventLoadGeneration.get()) {
+                        Logger.d(
+                            LogTags.CALENDAR,
+                            "Abwahl-Aufraeumen uebersprungen: Abwahl $deselectGeneration inzwischen " +
+                                "ueberholt (${eventLoadGeneration.get()})"
+                        )
+                        return@withContext
+                    }
+
+                    Logger.business(
+                        LogTags.ALARM,
+                        "🗑️ ABWAHL: letzter Kalender abgewaehlt - kalenderbasierte Wecker und " +
+                            "Schichtspannen werden geraeumt (manuelle Wecker bleiben)"
+                    )
+                    alarmUseCase.syncAlarms(emptyList(), shiftConfig)
+                        .onSuccess { remaining ->
+                            Logger.business(
+                                LogTags.ALARM,
+                                "✅ ABWAHL: aufgeraeumt - ${remaining.size} Wecker verbleiben (manuelle)"
+                            )
+                            AlarmMaintenanceService.recordSyncTime(appContext)
+                        }
+                        .onFailure { error ->
+                            Logger.e(LogTags.ALARM, "❌ ABWAHL: Aufraeumen fehlgeschlagen", error)
+                        }
+                } catch (e: java.util.concurrent.CancellationException) {
+                    // Eine Abbruch-Ausnahme darf nie als Fehler geschluckt werden - sie gehoert
+                    // weitergereicht (CancellationException ist in kotlinx.coroutines genau diese Klasse).
+                    throw e
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM, "❌ ABWAHL: Ausnahme beim Aufraeumen", e)
+                }
+            }
         }
     }
 

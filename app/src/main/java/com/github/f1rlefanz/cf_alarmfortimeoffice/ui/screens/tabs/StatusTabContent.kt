@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -67,7 +68,9 @@ fun StatusTabContent(
     shiftState: ShiftUiState,
     calendarViewModel: CalendarViewModel?,
     authViewModel: AuthViewModel,
-    onShowCalendarSelection: () -> Unit
+    onShowCalendarSelection: () -> Unit,
+    masterPausePaused: Boolean,
+    onResumeMasterPause: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -91,6 +94,16 @@ fun StatusTabContent(
             fehlversuche = calendarState.deselectionCleanupFailures,
             onErneutVersuchen = { calendarViewModel?.retryDeselectionCleanup() },
             erneutVersuchenMoeglich = calendarViewModel != null
+        )
+
+        // Direkt danach und vor allen Einzel-Diagnosen: Ist alles pausiert, sind saemtliche
+        // Karten darunter belanglos - selbst wenn Anmeldung, Kalender und Schichterkennung gruen
+        // melden, entsteht kein einziger Wecker. Jede andere dauerhaft sync-anhaltende Ursache
+        // hat hier eine Karte; diese fehlte, und sie ist die einzige, aus der die App NIE von
+        // allein herauslaeuft (die 6h-Wartung ist mit abgeschaltet).
+        AllesPausiertCard(
+            pausiert = masterPausePaused,
+            onWiederAktivieren = onResumeMasterPause
         )
 
         // Auth Status. Bewusst OHNE Aktions-Button: "Nicht angemeldet" ist hier ein
@@ -311,6 +324,91 @@ private fun VerwaisteWeckerNachAbwahlCard(
                 text = CalendarViewModel.DESELECTION_CLEANUP_RETRY_ACTION,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = erneutVersuchenMoeglich
+            )
+        }
+    }
+}
+
+/**
+ * Nutzertexte der Master-Pause-Karte. Als Konstanten, damit ein Test genau sie festhalten kann -
+ * der Text IST hier die Zusicherung: er muss die FOLGE benennen (kein Wecker klingelt) und den
+ * AUSWEG, und beides ohne Fachbegriff.
+ */
+internal const val ALLES_PAUSIERT_TITEL: String = "Alles pausiert"
+
+/**
+ * Warum der Satz ueber die weiterlaufende Schichtanzeige darin steht: genau daran ist der Zustand
+ * bisher unbemerkt geblieben. Die Schichterkennung laeuft unabhaengig weiter, Home zeigt also
+ * brav die naechste Schicht - und der Nutzer schliesst daraus, der Wecker dazu stehe auch.
+ */
+internal const val ALLES_PAUSIERT_TEXT: String =
+    "Du hast alle Hintergrunddienste pausiert. Es wird kein Wecker gestellt und keiner klingelt — " +
+        "auch nicht für Schichten, die die App weiterhin anzeigt. Dimmen, \"Nicht stören\" und " +
+        "die Hue-Automatik ruhen ebenfalls. Das bleibt so, bis du hier auf " +
+        "\"Alles wieder aktivieren\" tippst oder im Einstellungen-Tab den Schalter " +
+        "\"Hintergrunddienste pausieren\" ausschaltest."
+
+internal const val ALLES_PAUSIERT_AKTION: String = "Alles wieder aktivieren"
+
+/**
+ * Zeigt an, dass die Master-Pause laeuft - und hebt sie auf Wunsch gleich hier auf.
+ *
+ * WARUM MIT KNOPF UND NICHT NUR ALS HINWEIS: Der Nutzer kommt in diesen Tab, WEIL er sucht,
+ * warum kein Wecker kommt. Ihn dann in einen anderen Tab zu schicken, ist ein unnoetiger Schritt
+ * in genau dem Moment, in dem er die Antwort gefunden hat. Der Weg ueber den Schalter in den
+ * Einstellungen bleibt daneben bestehen und wird im Text benannt - beide fuehren ueber dasselbe
+ * `MasterPauseViewModel.setPaused(false)`.
+ *
+ * DIE KARTE SELBST SCHREIBT NICHTS. Sie rendert nur; erst der ausdrueckliche Tap loest
+ * `resume()` aus.
+ */
+@Composable
+private fun AllesPausiertCard(
+    pausiert: Boolean,
+    onWiederAktivieren: () -> Unit
+) {
+    if (!pausiert) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PauseCircle,
+                    // dekorativ: der Titel daneben benennt den Zustand in Worten
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    ALLES_PAUSIERT_TITEL,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+
+            Text(
+                ALLES_PAUSIERT_TEXT,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+
+            CompactButton(
+                onClick = onWiederAktivieren,
+                text = ALLES_PAUSIERT_AKTION,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

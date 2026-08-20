@@ -94,6 +94,14 @@ internal fun noShiftReason(
 }
 
 /**
+ * Der Zusatz fuer die Master-Pause. Bewusst kurz und ohne den Weg zurueck: den nennt die
+ * Alarm-Status-Karte unmittelbar darunter (`ALARM_STATUS_PAUSIERT_AUSWEG`) - derselbe Zustand
+ * soll nicht zweimal ausfuehrlich auf demselben Bildschirm stehen.
+ */
+internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
+    "Hinweis: Alles ist pausiert — es wird kein Wecker gestellt."
+
+/**
  * PURE, TESTBAR: Formuliert Grund + Handlungsschritt.
  *
  * Bei [NoShiftReason.NO_PATTERN_MATCH] werden die tatsaechlich geladenen Termintitel genannt - das
@@ -103,12 +111,19 @@ internal fun noShiftReason(
  * Der Hinweis auf ausgeschaltete Automatik-Alarme ist bewusst ein ZUSATZ und kein eigener Grund:
  * Die Schichterkennung laeuft unabhaengig von `autoAlarmEnabled` weiter (ShiftViewModel
  * .observeCalendarEvents), der Schalter erklaert also nie, warum keine Schicht erkannt wurde.
+ * Genauso die Master-Pause: auch sie haelt die Erkennung nicht an, sondern nur alles, was danach
+ * kaeme.
+ *
+ * ES STEHT IMMER HOECHSTENS EIN ZUSATZ DA, und die Master-Pause hat Vorrang: sie ist der
+ * umfassendere Zustand (sie schaltet zusaetzlich Dimmer, "Nicht stoeren", Hue und die 6h-Wartung
+ * ab), und zwei Hinweise nebeneinander liessen offen, welcher der wirksame ist.
  */
 internal fun noShiftExplanation(
     reason: NoShiftReason,
     errorMessage: String? = null,
     sampleEventTitles: List<String> = emptyList(),
-    autoAlarmEnabled: Boolean = true
+    autoAlarmEnabled: Boolean = true,
+    masterPausePaused: Boolean = false
 ): String {
     val core = when (reason) {
         NoShiftReason.NO_CALENDAR_SELECTED ->
@@ -154,10 +169,10 @@ internal fun noShiftExplanation(
         NoShiftReason.ONLY_PAST_SHIFTS ->
             "Alle erkannten Schichten liegen bereits in der Vergangenheit."
     }
-    return if (autoAlarmEnabled) {
-        core
-    } else {
-        "$core\nHinweis: Automatische Alarme sind derzeit ausgeschaltet."
+    return when {
+        masterPausePaused -> "$core\n$NO_SHIFT_HINWEIS_PAUSIERT"
+        !autoAlarmEnabled -> "$core\nHinweis: Automatische Alarme sind derzeit ausgeschaltet."
+        else -> core
     }
 }
 
@@ -167,6 +182,7 @@ fun HomeTabContent(
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
+    masterPausePaused: Boolean,
     onRefresh: () -> Unit,
     onNavigateToWecker: () -> Unit,
     onShowEventList: (() -> Unit)? = null,
@@ -283,7 +299,8 @@ fun HomeTabContent(
                                     .map { it.title }
                                     .distinct()
                                     .take(3),
-                                autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false
+                                autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
+                                masterPausePaused = masterPausePaused
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -305,6 +322,7 @@ fun HomeTabContent(
             AlarmStatusHeader(
                 alarmState = alarmState,
                 skipState = skipState,
+                masterPausePaused = masterPausePaused,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(SpacingConstants.PADDING_CARD),

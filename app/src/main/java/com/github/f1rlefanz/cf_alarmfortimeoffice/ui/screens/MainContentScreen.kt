@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
@@ -48,6 +49,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MasterPauseViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 
 /**
@@ -101,6 +103,19 @@ fun MainContentScreen(
     val skipState by alarmViewModel.skipState.collectAsStateWithLifecycle()
     val manualAlarmState by alarmViewModel.manualAlarmState.collectAsStateWithLifecycle() // NEU
     val snoozeMinutes by alarmViewModel.snoozeMinutes.collectAsStateWithLifecycle()
+    // EINE Sammelstelle fuer die Master-Pause, von hier an drei Tabs verteilt (Home, Wecker,
+    // Status). WARUM UEBERHAUPT: Die Pause loescht alle Wecker, stoppt die 6h-Wartung, Dimmer,
+    // "Nicht stoeren" und Hue - und war bis dahin ausschliesslich am Schalter ganz unten im
+    // Einstellungen-Tab abzulesen. Wer nach dem Urlaub Home und Wecker prueft, sah dort "Keine
+    // aktiven Alarme" ohne Grund und "Automatische Alarme: an" - und schloss daraus, die Wecker
+    // entstuenden noch. Aus diesem Zustand laeuft die App NIE von allein heraus.
+    //
+    // Hier oben und nicht in den Tabs: derselbe Flow wuerde sonst mehrfach abonniert, und die
+    // Tab-Inhalte bleiben reine Zustandsempfaenger (testbar ohne Hilt).
+    // collectAsStateWithLifecycle aus demselben Grund wie oben - der Flow ist
+    // stateIn(WhileSubscribed(5_000)) auf den DataStore.
+    val masterPauseViewModel: MasterPauseViewModel = hiltViewModel()
+    val masterPausePaused by masterPauseViewModel.paused.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -259,6 +274,7 @@ fun MainContentScreen(
                         shiftState = shiftState,
                         alarmState = alarmState,
                         skipState = skipState,
+                        masterPausePaused = masterPausePaused,
                         onRefresh = {
                             // Gleicher Grund wie beim Snackbar-Retry oben: der frueher hier
                             // gerufene mainViewModel.forceRefreshCalendarEvents() schrieb nur in
@@ -285,6 +301,7 @@ fun MainContentScreen(
                         alarmState = alarmState,
                         skipState = skipState,
                         snoozeMinutes = snoozeMinutes,
+                        masterPausePaused = masterPausePaused,
                         onUpdateShiftConfig = shiftViewModel::updateShiftConfig,
                         onSkipNextAlarm = alarmViewModel::skipNextAlarm,
                         // Nach dem Aufheben MUSS der Alarm-Bestand neu aus dem Kalender
@@ -311,7 +328,10 @@ fun MainContentScreen(
                         shiftState = shiftState,
                         calendarViewModel = calendarViewModel,
                         authViewModel = authViewModel,
-                        onShowCalendarSelection = onShowCalendarSelection
+                        onShowCalendarSelection = onShowCalendarSelection,
+                        masterPausePaused = masterPausePaused,
+                        // Der Tap ist der ausdrueckliche Nutzerwille - erst er schreibt.
+                        onResumeMasterPause = { masterPauseViewModel.setPaused(false) }
                     )
                 }
                 MainTab.SETTINGS -> {

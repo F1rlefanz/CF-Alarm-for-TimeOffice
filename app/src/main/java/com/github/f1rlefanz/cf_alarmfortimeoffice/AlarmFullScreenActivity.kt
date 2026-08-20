@@ -48,6 +48,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SchlummerEntscheidung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SnoozeErgebnis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CFAlarmForTimeOfficeTheme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -149,6 +151,17 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      */
     private val alarmHandoff = OneShotAlarmHandoff()
 
+    /**
+     * Grund, warum das Schlummern KEINEN neuen Weckruf gestellt hat — `null` im Normalfall.
+     *
+     * Gefunden in Pruefrunde 8: [snoozeAlarm] stoppte den Ton, verwarf das Ergebnis der Planung und
+     * schloss den Bildschirm. Ein gescheiterter Schlummer sah damit bitgenau aus wie ein
+     * erfolgreicher — der Nutzer legte sich hin und wurde nie geweckt. Ist dieses Feld gesetzt,
+     * bleibt der Wecker laut und der Bildschirm offen, und statt des Schlummer-Knopfes steht hier
+     * der Grund.
+     */
+    private var schlummerHinweis by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -169,7 +182,8 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                     shiftName = shiftName,
                     shiftStartTime = shiftStartTime,
                     snoozeMinutes = snoozeMinutes,
-                    onDismiss = ::dismissAlarm,
+                    schlummerHinweis = schlummerHinweis,
+                    onDismiss = ::weckerBeenden,
                     onSnooze = ::snoozeAlarm
                 )
             }
@@ -537,10 +551,22 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     /**
-     * Snoozed den Wecker: stoppt den Ton und legt ueber den gemeinsamen
-     * [AlarmManagerService.scheduleSnooze] einen neuen Alarm an - denselben Weg nutzt der
-     * Snooze-Button der Benachrichtigung. Die Planungslogik (snoozeAlarmAction, requestCode,
+     * Snoozed den Wecker: plant ueber den gemeinsamen [AlarmManagerService.scheduleSnooze] einen
+     * neuen Alarm und stoppt den Ton ERST, wenn dieser Wecker wirklich steht - denselben Weg nutzt
+     * der Snooze-Button der Benachrichtigung. Die Planungslogik (snoozeAlarmAction, requestCode,
      * setAlarmClock) liegt bewusst nur dort, damit es EINE Wahrheit bleibt.
+     *
+     * REIHENFOLGE (geaendert in Pruefrunde 8): erst planen, dann stoppen. Vorher stand hier
+     * "Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races)" - der Nutzer hatte
+     * also schon Ruhe, BEVOR ueberhaupt versucht wurde zu planen, und der Schwesterpfad im
+     * [AlarmSoundService] machte es mit ausdruecklicher Begruendung genau andersherum. Die
+     * MediaPlayer-Race ist damit nicht zurueck: [stopAlarmSoundService] ist ein Intent an den
+     * Dienst, kein direkter Zugriff auf den Player, und [AlarmManagerService.scheduleSnooze] ist
+     * synchron und kurz.
+     *
+     * ERGEBNIS AUSWERTEN: Steht kein neuer Weckruf, darf sich dieser Bildschirm NICHT so
+     * schliessen, als sei alles gut. Dann bleibt der Wecker laut, der Bildschirm offen und traegt
+     * den Grund - siehe [schlummerHinweis].
      */
     private fun snoozeAlarm() {
         if (!alarmHandoff.claim()) {
@@ -551,10 +577,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // steht auch auf dem Knopf, den der Nutzer gerade gedrueckt hat.
         Logger.i(LogTags.ALARM, "😴 User snoozed alarm for $snoozeMinutes minutes")
 
-        try {
-            // Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races).
-            stopAlarmSoundService()
-
+        val ergebnis = try {
             val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME) ?: "Snooze"
             val alarmId = intent.getIntExtra(AlarmSoundService.EXTRA_ALARM_ID, -1)
             val shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
@@ -563,15 +586,45 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                 this, alarmId, shiftName, shiftStartTime,
                 minutes = snoozeMinutes.toLong()
             )
+        } catch (e: Exception) {
+            // scheduleSnooze schluckt seine eigenen Fehler; hier landet nur, was DAVOR schiefgeht
+            // (Intent-Read). Der Zweig bleibt trotzdem: er darf nie wieder still zu einem
+            // "sieht aus wie Erfolg" werden.
+            Logger.e(LogTags.ALARM, "❌ Failed to snooze alarm", e)
+            SnoozeErgebnis.FEHLGESCHLAGEN
+        }
 
+        if (ergebnis == SnoozeErgebnis.GEPLANT) {
+            stopAlarmSoundService()
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(AlarmSoundService.NOTIFICATION_ID)
             finish()
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "❌ Failed to snooze alarm", e)
-            stopAndClose()
+            return
         }
+
+        // Kein Wecker gestellt: Ton bleibt an, Bildschirm bleibt offen, Grund wird angezeigt.
+        // Zusaetzlich die Benachrichtigung, damit die Meldung auch dann noch da ist, wenn der
+        // Nutzer den Wecker gleich beendet.
+        Logger.w(
+            LogTags.ALARM,
+            "⚠️ Schlummern nicht ausgefuehrt ($ergebnis) - Vollbild bleibt offen, Wecker laeuft weiter"
+        )
+        AlarmSoundService.posteSchlummerHinweis(this, ergebnis)
+        schlummerHinweis = SchlummerEntscheidung.hinweisText(ergebnis)
+    }
+
+    /**
+     * Der einzige Knopf, der im Fehlerzustand noch etwas tut.
+     *
+     * Die Einweg-Sperre [alarmHandoff] ist nach einem gescheiterten Schlummer bereits beansprucht -
+     * [dismissAlarm] wuerde also wirkungslos abprallen und den Nutzer auf einem Bildschirm mit
+     * lautem Wecker und zwei toten Knoepfen zuruecklassen. Deshalb geht der Fehlerzustand direkt
+     * auf [stopAndClose], das die Sperre bewusst NICHT fragt (siehe dessen KDoc). Die Sperre bleibt
+     * damit unangetastet: sie schuetzt weiterhin gegen die gleichzeitige Doppelauslösung, sperrt
+     * aber niemanden aus.
+     */
+    private fun weckerBeenden() {
+        if (schlummerHinweis != null) stopAndClose() else dismissAlarm()
     }
 }
 
@@ -591,6 +644,7 @@ private fun AlarmScreen(
     shiftName: String,
     shiftStartTime: String,
     snoozeMinutes: Int,
+    schlummerHinweis: String?,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit
 ) {
@@ -646,6 +700,26 @@ private fun AlarmScreen(
                         textAlign = TextAlign.Center
                     )
                 }
+
+                // Der Grund steht dort, wo der Nutzer gerade hinsieht - nicht nur in einer
+                // Benachrichtigung, die er im Halbschlaf nicht aufzieht. Ohne diese Zeile war ein
+                // gescheitertes Schlummern von einem erfolgreichen nicht zu unterscheiden.
+                if (schlummerHinweis != null) {
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        text = SchlummerEntscheidung.HINWEIS_TITEL,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = schlummerHinweis,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
 
             Column(
@@ -668,23 +742,30 @@ private fun AlarmScreen(
                     )
                 }
 
-                Spacer(Modifier.height(12.dp))
+                // Der Schlummer-Knopf verschwindet, sobald ein Schlummer-Versuch KEINEN Weckruf
+                // gestellt hat: ein zweiter Druck liefe in die bereits beanspruchte Einweg-Sperre
+                // und taete sichtbar nichts - ein Knopf, der nichts tut, ist an diesem Bildschirm
+                // schlimmer als kein Knopf. Uebrig bleibt "Alarm stoppen", und der wirkt (er geht
+                // im Fehlerzustand ueber stopAndClose an der Sperre vorbei).
+                if (schlummerHinweis == null) {
+                    Spacer(Modifier.height(12.dp))
 
-                OutlinedButton(
-                    onClick = onSnooze,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(
-                        // Die Zahl kommt aus derselben Variablen, die snoozeAlarm() in
-                        // scheduleSnooze() reicht - der Knopf kann nicht mehr etwas anderes
-                        // behaupten, als er tut.
-                        text = stringResource(R.string.alarm_snooze_button, snoozeMinutes),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
+                    OutlinedButton(
+                        onClick = onSnooze,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(
+                            // Die Zahl kommt aus derselben Variablen, die snoozeAlarm() in
+                            // scheduleSnooze() reicht - der Knopf kann nicht mehr etwas anderes
+                            // behaupten, als er tut.
+                            text = stringResource(R.string.alarm_snooze_button, snoozeMinutes),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }

@@ -16,8 +16,113 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import dagger.hilt.android.EntryPointAccessors
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+/**
+ * Ergebnis eines Schlummer-Versuchs — bewusst DREI Zustaende statt eines Boolean.
+ *
+ * WARUM: Bis zur Pruefrunde 8 gab [AlarmManagerService.armSnooze] ein `Boolean` zurueck, und
+ * `scheduleSnooze()` verwarf es ersatzlos. Beide Nutzerpfade (Vollbild-Knopf und
+ * Notification-Knopf) beendeten den Wecker danach UNBEDINGT: ein gescheitertes Schlummern sah
+ * bitgenau aus wie ein erfolgreiches — Ton aus, Bildschirm zu, kein Wecker, kein Merker, nur eine
+ * Zeile im Log. Wer "15 Min spaeter" gedrueckt hat, verschlief ohne jeden Hinweis.
+ *
+ * Zwei Fehlschlaege sind zu unterscheiden, weil sie verschiedene Antworten verlangen:
+ * - [ABGELEHNT_PAUSE]: die Master-Pause laeuft. Das ist KEIN Defekt, sondern der gewollte
+ *   Zustand — aber der Nutzer muss erfahren, dass er nicht wieder geweckt wird.
+ * - [FEHLGESCHLAGEN]: die Planung selbst ist gescheitert (entzogene Exact-Alarm-Berechtigung auf
+ *   API 31/32, Alarm-Obergrenze, DeadSystemException). Hier ist Weiterklingeln die richtige
+ *   Antwort: ein Wecker, der laut bleibt, ist besser als einer, der lautlos verschwindet.
+ */
+enum class SnoozeErgebnis {
+    GEPLANT,
+    ABGELEHNT_PAUSE,
+    FEHLGESCHLAGEN
+}
+
+/**
+ * Reine, Android-freie Entscheidungslogik des Schlummerns — bewusst als eigenes Top-Level-Objekt
+ * (Vorbild: `MaintenanceLoadDecision`), damit Unit-Tests den Master-Pause-Backstop und die
+ * Fehlerbehandlung ohne AlarmManager/PendingIntent pruefen koennen.
+ */
+internal object SchlummerEntscheidung {
+
+    /** Loggt [AlarmManagerService.armSnooze], wenn die Master-Pause das Schlummern abweist. */
+    const val MELDUNG_PAUSIERT =
+        "⏸️ Schlummern abgelehnt - die Hintergrunddienste sind pausiert. Ein hier armierter " +
+            "Wecker klingelte mitten in einer Pause und waere durch nichts mehr abzuraeumen " +
+            "(die 6h-Kette ist beim Pausieren gekappt)."
+
+    /** Titel des Hinweises an den Nutzer - gilt fuer BEIDE Fehlschlagsarten. */
+    const val HINWEIS_TITEL = "Kein Schlummer-Wecker gestellt"
+
+    /**
+     * Nutzertexte beschreiben die WIRKUNG, nicht den Namen einer Systemeinstellung — die
+     * verschieben sich zwischen Android-Versionen.
+     */
+    const val HINWEIS_PAUSE =
+        "Die Hintergrunddienste sind pausiert - solange weckt diese App nicht. Setze sie in der " +
+            "App fort, wenn du wieder geweckt werden willst."
+
+    const val HINWEIS_FEHLER =
+        "Der Schlummer-Wecker liess sich nicht stellen. Es ist KEIN weiterer Weckruf geplant - " +
+            "stelle dir bitte selbst einen."
+
+    /**
+     * Der gemeinsame Kern jedes Armierens: erst der Master-Pause-Backstop, dann planen, dann
+     * vormerken.
+     *
+     * ZENTRAL statt ein Gate je Aufrufer: das Schlummern war der EINZIGE Armierungspfad ohne
+     * Master-Pause-Pruefung (jeder andere hat sie nachgeruestet), und es hat zwei gleichwertige
+     * Ausloeser (Vollbild und Notification). Ein Gate pro Aufrufer haette denselben Fehler nur auf
+     * zwei Stellen verteilt — dieselbe Ueberlegung wie beim Skip-Backstop in
+     * `AlarmUseCase.scheduleSystemAlarm()`.
+     *
+     * REIHENFOLGE ist tragend: [merke] laeuft erst NACH [plane]. Der Merker ist die einzige Spur,
+     * ueber die ein schwebender Schlummer spaeter abgebrochen oder nach einem Neustart
+     * wiederhergestellt werden kann — ein Eintrag ohne Alarm waere eine Luege im Boot-Log.
+     */
+    fun armiere(
+        pausiert: Boolean,
+        plane: () -> Unit,
+        merke: () -> Unit,
+        melde: (String, Throwable?) -> Unit
+    ): SnoozeErgebnis {
+        if (pausiert) {
+            melde(MELDUNG_PAUSIERT, null)
+            return SnoozeErgebnis.ABGELEHNT_PAUSE
+        }
+        return try {
+            plane()
+            // Scheitert das Vormerken, gilt der Schlummer als NICHT verlaesslich gestellt: er
+            // waere zwar im AlarmManager scharf, aber weder abbrechbar noch reboot-fest. Lieber
+            // klingelt der Wecker weiter, als dem Nutzer einen Zustand zuzusagen, den die App
+            // nicht mehr in der Hand hat.
+            merke()
+            SnoozeErgebnis.GEPLANT
+        } catch (e: SecurityException) {
+            melde("❌ Schlummern konnte nicht geplant werden - Alarm-Berechtigung verweigert", e)
+            SnoozeErgebnis.FEHLGESCHLAGEN
+        } catch (e: Exception) {
+            melde("❌ Schlummern konnte nicht geplant werden", e)
+            SnoozeErgebnis.FEHLGESCHLAGEN
+        }
+    }
+
+    /**
+     * Der Text, den der Nutzer sehen MUSS — `null` nur im Erfolgsfall.
+     *
+     * Ein stilles Nichts ist genau der Fehler, den die Pruefrunde 8 gefunden hat: der Wecker war
+     * weg, der Bildschirm zu, und nichts sagte, dass kein neuer Weckruf steht.
+     */
+    fun hinweisText(ergebnis: SnoozeErgebnis): String? = when (ergebnis) {
+        SnoozeErgebnis.GEPLANT -> null
+        SnoozeErgebnis.ABGELEHNT_PAUSE -> HINWEIS_PAUSE
+        SnoozeErgebnis.FEHLGESCHLAGEN -> HINWEIS_FEHLER
+    }
+}
 
 /**
  * Enhanced AlarmManager service with maximum reliability and doze mode compatibility.
@@ -548,6 +653,13 @@ class AlarmManagerService(
          * der Wecker sofort, sobald jemand die Wecker-Affordance antippt). Gleiche
          * requestCode-Konvention (alarmId + 10000) wie [createShowAlarmIntent] und
          * [rescheduleFromDirectBoot].
+         *
+         * RUECKGABE AUSWERTEN, IMMER: bis zur Pruefrunde 8 war diese Funktion `Unit` und verwarf
+         * das Ergebnis von [armSnooze] — ein gescheiterter Schlummer war von einem erfolgreichen
+         * nicht zu unterscheiden, beide Aufrufer beendeten den Wecker danach unbedingt. Wer den
+         * Rueckgabewert wieder ignoriert, baut genau diesen stillen Ausfall zurueck.
+         *
+         * @return [SnoozeErgebnis.GEPLANT] nur, wenn der Wecker WIRKLICH steht und vorgemerkt ist.
          */
         fun scheduleSnooze(
             context: Context,
@@ -555,9 +667,9 @@ class AlarmManagerService(
             shiftName: String,
             shiftStartTimeFormatted: String,
             minutes: Long = SNOOZE_MINUTES
-        ) {
+        ): SnoozeErgebnis {
             val triggerTime = System.currentTimeMillis() + minutes * 60 * 1000L
-            armSnooze(
+            return armSnooze(
                 context = context,
                 alarmId = alarmId,
                 triggerTime = triggerTime,
@@ -577,6 +689,13 @@ class AlarmManagerService(
          * nicht mehr - und ein Snooze, der sich nicht abbrechen laesst, klingelt mitten in einer
          * Pause, die der Nutzer eingeschaltet hat. Zwei getrennte Kopien dieses Intents waeren genau
          * die Doppelung, die im Projekt schon einmal zu zwei Wartungsketten gefuehrt hat.
+         *
+         * MASTER-PAUSE-BACKSTOP: Genau HIER, nicht bei den Aufrufern. Das Schlummern war der
+         * einzige Armierungspfad ohne Pausen-Pruefung; der Ablauf "Wecker klingelt -> Nutzer
+         * schaltet die Pause ein -> Nutzer drueckt schlummern" armierte einen Wecker, den danach
+         * nichts mehr abraeumte (die 6h-Kette ist gekappt, `syncAlarms()` laeuft nur bei
+         * App-Interaktion) - waehrend die Oberflaeche "Hintergrunddienste pausiert" zeigte. Der
+         * Backstop deckt beide Ausloeser (Vollbild, Notification) UND jeden kuenftigen Aufrufer.
          */
         private fun armSnooze(
             context: Context,
@@ -585,60 +704,94 @@ class AlarmManagerService(
             shiftName: String,
             shiftStartTimeFormatted: String,
             logContext: String
-        ): Boolean {
-            val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
-                putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
-                putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
-                // Der Schichtbeginn aendert sich durchs Schlummern nicht - unveraendert
-                // aus dem urspruenglichen Alarm durchreichen statt hier neu ("jetzt +
-                // Minuten") zu berechnen.
-                putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, shiftStartTimeFormatted)
-                setPackage(context.packageName)
-                action = snoozeAlarmAction(alarmId)
-            }
+        ): SnoozeErgebnis {
+            val ergebnis = SchlummerEntscheidung.armiere(
+                // ZUERST der Backstop: waehrend einer Master-Pause entsteht hier gar nichts, auch
+                // kein PendingIntent (FLAG_UPDATE_CURRENT schriebe sonst einen Slot fort, den
+                // niemand mehr braucht).
+                pausiert = masterPauseLaeuft(context),
+                plane = {
+                    val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
+                        putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
+                        putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
+                        // Der Schichtbeginn aendert sich durchs Schlummern nicht - unveraendert
+                        // aus dem urspruenglichen Alarm durchreichen statt hier neu ("jetzt +
+                        // Minuten") zu berechnen.
+                        putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, shiftStartTimeFormatted)
+                        setPackage(context.packageName)
+                        action = snoozeAlarmAction(alarmId)
+                    }
 
-            val pendingIntent = PendingIntent.getBroadcast(
-                context, alarmId, alarmIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+                    val pendingIntent = PendingIntent.getBroadcast(
+                        context, alarmId, alarmIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
 
-            val showIntent = Intent(context, MainActivity::class.java).apply {
-                putExtra("alarm_id", alarmId)
-                putExtra("shift_name", shiftName)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                setPackage(context.packageName)
-            }
-            val showPendingIntent = PendingIntent.getActivity(
-                context, alarmId + 10000, showIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+                    val showIntent = Intent(context, MainActivity::class.java).apply {
+                        putExtra("alarm_id", alarmId)
+                        putExtra("shift_name", shiftName)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        setPackage(context.packageName)
+                    }
+                    val showPendingIntent = PendingIntent.getActivity(
+                        context, alarmId + 10000, showIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
 
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-            try {
-                setExactOrInexact(
-                    alarmManager = alarmManager,
-                    triggerTime = triggerTime,
-                    showPendingIntent = showPendingIntent,
-                    pendingIntent = pendingIntent,
-                    logContext = "Snooze id=$alarmId"
-                )
+                    setExactOrInexact(
+                        alarmManager = alarmManager,
+                        triggerTime = triggerTime,
+                        showPendingIntent = showPendingIntent,
+                        pendingIntent = pendingIntent,
+                        logContext = "Snooze id=$alarmId"
+                    )
+                },
                 // Erst NACH erfolgreicher Planung vormerken: der Eintrag ist die einzige Spur, ueber
                 // die ein schwebender Snooze spaeter noch abgebrochen werden kann.
-                rememberPendingSnooze(context, alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
-
+                merke = {
+                    rememberPendingSnooze(context, alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
+                },
+                melde = { text, fehler ->
+                    if (fehler == null) {
+                        Logger.w(LogTags.ALARM_MANAGER, "$text (id=$alarmId)")
+                    } else {
+                        Logger.e(LogTags.ALARM_MANAGER, "$text (id=$alarmId)", fehler)
+                    }
+                }
+            )
+            if (ergebnis == SnoozeErgebnis.GEPLANT) {
                 Logger.business(LogTags.ALARM_MANAGER, "😴 $logContext (id=$alarmId)")
-                return true
-            } catch (e: SecurityException) {
-                Logger.e(
-                    LogTags.ALARM_MANAGER,
-                    "❌ Snooze konnte nicht geplant werden - Alarm-Berechtigung verweigert (id=$alarmId)",
-                    e
-                )
-            } catch (e: Exception) {
-                Logger.e(LogTags.ALARM_MANAGER, "❌ Snooze konnte nicht geplant werden (id=$alarmId)", e)
             }
-            return false
+            return ergebnis
+        }
+
+        /**
+         * Laeuft gerade eine Master-Pause? Synchron lesbar, weil beide Schlummer-Ausloeser
+         * synchron sind (Vollbild-Knopf, Notification-Notausgang) und der Snooze auch im
+         * Boot-Fenster wiederhergestellt wird.
+         *
+         * BEWUSST der Device-Protected-Spiegel statt `MasterPausePrefs`: Letzteres liegt im
+         * CE-Storage und ist nur suspendierend UND erst nach der ersten Entsperrung lesbar -
+         * derselbe Grund und derselbe Weg wie im `BootReceiver`, im
+         * `AlarmMaintenanceBroadcastReceiver` und in `StatusPermissionCards.masterPauseAktiv()`.
+         *
+         * RICHTUNG DER DEGRADATION: Bei einem Lesefehler "nicht pausiert" - im Zweifel wecken.
+         * Ein verschluckter Schlummer waere der schwerere Schaden.
+         */
+        private fun masterPauseLaeuft(context: Context): Boolean = try {
+            EntryPointAccessors
+                .fromApplication(context.applicationContext, AlarmMaintenanceEntryPoint::class.java)
+                .directBootAlarmStore()
+                .isPausedNow()
+        } catch (e: Exception) {
+            Logger.w(
+                LogTags.ALARM_MANAGER,
+                "Pausen-Spiegel nicht lesbar - der Schlummer wird trotzdem gestellt (im Zweifel wecken)",
+                e
+            )
+            false
         }
 
         // ---------------------------------------------------------------------------------------
@@ -917,8 +1070,9 @@ class AlarmManagerService(
             // waere alles in Ordnung.
             var restored = 0
             var failed = 0
+            var pausiert = 0
             alive.mapNotNull { parseSnoozeEntry(it) }.forEach { entry ->
-                val ok = armSnooze(
+                val ergebnis = armSnooze(
                     context = context,
                     alarmId = entry.id,
                     triggerTime = entry.triggerTime,
@@ -926,7 +1080,22 @@ class AlarmManagerService(
                     shiftStartTimeFormatted = entry.shiftStartTimeFormatted,
                     logContext = "Schwebender Snooze nach Neustart wiederhergestellt"
                 )
-                if (ok) restored++ else failed++
+                when (ergebnis) {
+                    SnoozeErgebnis.GEPLANT -> restored++
+                    // Die Ablehnung wegen Master-Pause ist KEIN Ausfall, sondern der gewollte
+                    // Zustand - beide Aufrufer dieser Funktion gaten ohnehin schon davor. Sie
+                    // duerfte nur als ZWEITE Schicht ueberhaupt greifen; als Fehlschlag gezaehlt
+                    // wuerde sie im Boot-Log einen Ausfall behaupten, den es nicht gibt.
+                    SnoozeErgebnis.ABGELEHNT_PAUSE -> pausiert++
+                    SnoozeErgebnis.FEHLGESCHLAGEN -> failed++
+                }
+            }
+            if (pausiert > 0) {
+                Logger.w(
+                    LogTags.ALARM_MANAGER,
+                    "⏸️ $pausiert schwebende(r) Snooze NICHT wiederhergestellt - die " +
+                        "Hintergrunddienste sind pausiert (gewollt, kein Ausfall)"
+                )
             }
             if (failed > 0) {
                 Logger.w(

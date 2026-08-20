@@ -19,6 +19,7 @@ import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity
+import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -123,6 +124,82 @@ class AlarmSoundService : Service() {
          */
         private val _alarmActive = MutableStateFlow(false)
         val alarmActive: StateFlow<Boolean> = _alarmActive.asStateFlow()
+
+        // Eigener Kanal und eigene ID fuer den Schlummer-Hinweis. NICHT die Wecker-Notification
+        // (2002) umtexten: die gehoert dem laufenden Wecker und traegt den Full-Screen-Intent -
+        // wer sie ueberschreibt, nimmt dem Nutzer im selben Moment den Stop-Knopf. 2003 ist der
+        // Wecker-Notausgang des AlarmReceivers, deshalb 2004.
+        private const val HINWEIS_CHANNEL_ID = "snooze_hinweis_v1"
+        private const val HINWEIS_NOTIFICATION_ID = 2004
+
+        /**
+         * Sagt dem Nutzer, dass sein Schlummern KEINEN neuen Weckruf gestellt hat.
+         *
+         * WARUM ES DAS GIBT (Pruefrunde 8): Ein gescheitertes Schlummern war von einem
+         * erfolgreichen nicht zu unterscheiden - Ton aus, Vollbild zu, kein Wecker, nur eine Zeile
+         * im Log. Wer "15 Min spaeter" gedrueckt hatte, verschlief ohne jeden Hinweis.
+         *
+         * Gemeinsam genutzt von beiden Schlummer-Ausloesern (Notification-Knopf hier im Dienst,
+         * Vollbild-Knopf in der [AlarmFullScreenActivity]) - eine Meldung, ein Text, ein Ort.
+         *
+         * Bewusst STUMM ([NotificationCompat.Builder.setSilent]): daneben klingelt in der Regel
+         * noch der Wecker weiter, ein zweiter Ton waere reine Verwirrung. IMPORTANCE_HIGH bleibt
+         * trotzdem noetig, damit die Meldung nicht unbemerkt in der Leiste versinkt.
+         */
+        fun posteSchlummerHinweis(context: Context, ergebnis: SnoozeErgebnis) {
+            val text = SchlummerEntscheidung.hinweisText(ergebnis) ?: return
+            try {
+                val notificationManager = context.getSystemService(NotificationManager::class.java)
+                // Idempotent - erneutes Anlegen desselben Kanals ist ein No-op.
+                notificationManager.createNotificationChannel(
+                    NotificationChannel(
+                        HINWEIS_CHANNEL_ID,
+                        "Schlummer-Hinweise",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "Meldet, wenn ein Schlummern keinen neuen Weckruf gestellt hat"
+                        setSound(null, null)
+                        enableVibration(false)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                )
+
+                // Tippen oeffnet die App - der Weg, auf dem der Nutzer die Pause beenden oder
+                // seinen Wecker von Hand stellen kann. Eine Meldung ohne Ausweg waere nur halb.
+                val oeffneApp = PendingIntent.getActivity(
+                    context,
+                    HINWEIS_NOTIFICATION_ID,
+                    Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        setPackage(context.packageName)
+                    },
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+
+                val hinweis = NotificationCompat.Builder(context, HINWEIS_CHANNEL_ID)
+                    .setContentTitle(SchlummerEntscheidung.HINWEIS_TITEL)
+                    .setContentText(text)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setCategory(NotificationCompat.CATEGORY_ERROR)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .setAutoCancel(true)
+                    .setSilent(true)
+                    .setContentIntent(oeffneApp)
+                    .build()
+
+                notificationManager.notify(HINWEIS_NOTIFICATION_ID, hinweis)
+                Logger.w(
+                    LogTags.ALARM,
+                    "⚠️ Hinweis gepostet: kein Schlummer-Wecker gestellt ($ergebnis)"
+                )
+            } catch (e: Exception) {
+                // Der Hinweis ist die Zweitmeldung; der Wecker selbst laeuft davon unberuehrt
+                // weiter. Ein Wurf hier duerfte niemals den Weckpfad mitreissen.
+                Logger.w(LogTags.ALARM, "⚠️ Schlummer-Hinweis konnte nicht gepostet werden", e)
+            }
+        }
     }
     
     // Audio Management
@@ -237,15 +314,34 @@ class AlarmSoundService : Service() {
                 // API 31/32) darf diesen Service NIEMALS mit in den Absturz ziehen - sonst stirbt der
                 // Prozess, stopAlarmAndService() wird nie erreicht und der Nutzer steht ohne Snooze
                 // UND ohne jede Rueckmeldung da.
-                try {
+                val ergebnis = try {
                     AlarmManagerService.scheduleSnooze(
                         applicationContext, alarmId, shiftName, shiftStartTime,
                         minutes = snoozeMinutes.toLong()
                     )
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM, "❌ Snooze konnte nicht geplant werden (id=$alarmId)", e)
+                    SnoozeErgebnis.FEHLGESCHLAGEN
                 }
-                stopAlarmAndService(startId)
+
+                // DAS ERGEBNIS ENTSCHEIDET, ob der Wecker aufhoeren darf. Bis zur Pruefrunde 8 lief
+                // hier unbedingt stopAlarmAndService(): ein gescheiterter Schlummer sah aus wie ein
+                // erfolgreicher - Ton aus, keine Meldung, kein Wecker. Wer schlummert, verschlief.
+                //
+                // Steht KEIN neuer Weckruf, klingelt der aktuelle weiter: dieser Dienst haelt die
+                // einzige Wecker-Notification, ueber deren Stop-Knopf der Nutzer jederzeit
+                // herauskommt. Ein lauter Wecker ist der kleinere Schaden als ein lautlos
+                // verschwundener. Der Hinweis daneben sagt, WARUM nicht geschlummert wurde.
+                if (ergebnis == SnoozeErgebnis.GEPLANT) {
+                    stopAlarmAndService(startId)
+                } else {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "⚠️ Schlummern nicht ausgefuehrt ($ergebnis) - der Wecker laeuft weiter, " +
+                            "damit der Nutzer es merkt (id=$alarmId)"
+                    )
+                    posteSchlummerHinweis(this, ergebnis)
+                }
             }
 
             ACTION_STOP_ALARM -> {

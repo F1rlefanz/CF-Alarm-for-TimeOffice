@@ -50,12 +50,51 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 /** Auswahlmoeglichkeiten fuer die Schlummer-Dauer-Dropdown - deckt die ueblichen Werte ab. */
 private val SNOOZE_MINUTES_OPTIONS = listOf(3, 5, 10, 15)
 
+/** Beschreibung des Schalters im Normalfall - beschreibt, was ein Umlegen wirklich tut. */
+internal const val AUTO_ALARM_BESCHREIBUNG_NORMAL: String =
+    "Deaktivieren löscht sofort alle bereits gesetzten Wecker. Aktivieren erstellt sie aus dem " +
+        "letzten bekannten Kalenderstand neu."
+
+/**
+ * Beschreibung waehrend der Master-Pause.
+ *
+ * WARUM SIE SEIN MUSS: Der Satz oben ist in diesem Zustand schlicht FALSCH - geloescht sind die
+ * Wecker laengst, und "Aktivieren erstellt sie neu" verspricht etwas, das der Master-Pause-
+ * Backstop in `syncAlarms()` sofort abweist. Der Schalter selbst steht dabei weiter auf AN
+ * (die Pause ruehrt `autoAlarmEnabled` bewusst nicht an), behauptet also von sich aus das
+ * Gegenteil der Lage. Deshalb: Ursache, Folge und der Weg zurueck - und der Schalter wird
+ * gesperrt (siehe [autoAlarmSchalterBedienbar]), damit hier kein Zustand bedienbar aussieht,
+ * der gerade keine Wirkung hat.
+ */
+internal const val AUTO_ALARM_BESCHREIBUNG_PAUSIERT: String =
+    "Ohne Wirkung, solange alles pausiert ist: es sind bereits alle Wecker gelöscht, und es wird " +
+        "keiner neu gestellt."
+
+/** PURE, TESTBAR: welcher der beiden Beschreibungstexte unter dem Schalter steht. */
+internal fun autoAlarmBeschreibung(masterPausePaused: Boolean): String =
+    if (masterPausePaused) AUTO_ALARM_BESCHREIBUNG_PAUSIERT else AUTO_ALARM_BESCHREIBUNG_NORMAL
+
+/**
+ * PURE, TESTBAR: darf der Schalter "Automatische Alarme" bedient werden?
+ *
+ * Zwei voneinander unabhaengige Gruende, ihn zu sperren - und in BEIDEN Faellen steht das WARUM
+ * daneben (Beschreibungstext bzw. der Ladezustand), sonst waere es nur ein toter Schalter:
+ *  - `shiftConfigGeladen == false`: kurzes Fenster beim Kaltstart, der Tap wuerde wortlos
+ *    verpuffen (`onUpdateShiftConfig` wird nie erreicht).
+ *  - `masterPausePaused == true`: der Schalter haette keine sichtbare Wirkung.
+ */
+internal fun autoAlarmSchalterBedienbar(
+    shiftConfigGeladen: Boolean,
+    masterPausePaused: Boolean
+): Boolean = shiftConfigGeladen && !masterPausePaused
+
 @Composable
 fun WeckerTabContent(
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
     snoozeMinutes: Int,
+    masterPausePaused: Boolean,
     onUpdateShiftConfig: (ShiftConfig) -> Unit,
     onSkipNextAlarm: () -> Unit,
     onCancelSkip: () -> Unit,
@@ -86,19 +125,22 @@ fun WeckerTabContent(
             ) {
                 SwitchRow(
                     title = "Automatische Alarme",
-                    description = "Deaktivieren löscht sofort alle bereits gesetzten Wecker. Aktivieren erstellt sie aus dem letzten bekannten Kalenderstand neu.",
+                    description = autoAlarmBeschreibung(masterPausePaused),
                     checked = shiftState.currentShiftConfig?.autoAlarmEnabled ?: false,
                     onCheckedChange = { enabled ->
                         shiftState.currentShiftConfig?.let { config ->
                             onUpdateShiftConfig(config.copy(autoAlarmEnabled = enabled))
                         }
                     },
-                    // Waehrend ShiftViewModel.loadShiftConfig() noch laedt (kurzes Fenster beim
-                    // Kaltstart) ist currentShiftConfig null - der Tap wuerde sonst wortlos
-                    // verpuffen (checked bleibt an "?: false" haengen, onCheckedChange erreicht
-                    // nie onUpdateShiftConfig), ohne dass der Nutzer erkennt, dass sein Toggle
-                    // wirkungslos war. Deaktiviert statt stumm zu ignorieren.
-                    enabled = shiftState.currentShiftConfig != null,
+                    // Zwei Sperrgruende, beide mit sichtbarer Begruendung daneben - siehe
+                    // autoAlarmSchalterBedienbar(). Waehrend ShiftViewModel.loadShiftConfig()
+                    // noch laedt (kurzes Fenster beim Kaltstart) ist currentShiftConfig null:
+                    // der Tap wuerde sonst wortlos verpuffen (checked bleibt an "?: false"
+                    // haengen, onCheckedChange erreicht nie onUpdateShiftConfig).
+                    enabled = autoAlarmSchalterBedienbar(
+                        shiftConfigGeladen = shiftState.currentShiftConfig != null,
+                        masterPausePaused = masterPausePaused
+                    ),
                     titleStyle = MaterialTheme.typography.titleMedium
                 )
 
@@ -115,6 +157,7 @@ fun WeckerTabContent(
         EnhancedAlarmStatusCard(
             alarmState = alarmState,
             skipState = skipState,
+            masterPausePaused = masterPausePaused,
             onSkipNextAlarm = onSkipNextAlarm,
             onCancelSkip = onCancelSkip
         )
@@ -164,6 +207,7 @@ fun WeckerTabContent(
 private fun EnhancedAlarmStatusCard(
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
+    masterPausePaused: Boolean,
     onSkipNextAlarm: () -> Unit,
     onCancelSkip: () -> Unit
 ) {
@@ -181,7 +225,11 @@ private fun EnhancedAlarmStatusCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Header Row (bestehend)
-            AlarmStatusHeader(alarmState = alarmState, skipState = skipState)
+            AlarmStatusHeader(
+                alarmState = alarmState,
+                skipState = skipState,
+                masterPausePaused = masterPausePaused
+            )
 
             // Ausgang des letzten "Aufheben", falls der uebersprungene MANUELLE Wecker NICHT
             // zurueckkam: Weckzeit inzwischen verstrichen, gesicherter Stand unlesbar, oder das

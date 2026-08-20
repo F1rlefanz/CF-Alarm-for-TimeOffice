@@ -65,6 +65,7 @@ class AlarmUseCaseSkipAndResilienceTest {
         private val rejectEventIds: Set<String> = emptySet()
     ) : IAlarmRepository {
         override suspend fun isPersistenceBlocked(): Boolean = false
+        override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean = false
         private val state = MutableStateFlow(initial)
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         val current: List<AlarmInfo> get() = state.value
@@ -368,6 +369,7 @@ class AlarmUseCaseSkipAndResilienceTest {
      */
     private class FakeNotYetLoadedRepository(private val persisted: List<AlarmInfo>) : IAlarmRepository {
         override suspend fun isPersistenceBlocked(): Boolean = false
+        override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean = false
         private val cache = MutableStateFlow<List<AlarmInfo>>(emptyList()) // Init-Load noch unterwegs
         override val activeAlarms: Flow<List<AlarmInfo>> = cache
         var deletedAll = false

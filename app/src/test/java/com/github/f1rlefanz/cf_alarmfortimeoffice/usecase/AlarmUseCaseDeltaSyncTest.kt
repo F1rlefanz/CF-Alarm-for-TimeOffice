@@ -66,6 +66,9 @@ class AlarmUseCaseDeltaSyncTest {
 
     private class FakeAlarmRepository(initial: List<AlarmInfo> = emptyList()) : IAlarmRepository {
         override suspend fun isPersistenceBlocked(): Boolean = false
+        // Schreibfehler-Merker: fuer diese Tests immer heil - die Trennung der beiden
+        // Signale wird in Pruefrunde8SignaltrennungTest geprueft.
+        override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean = false
         private val state = MutableStateFlow(initial)
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         val current: List<AlarmInfo> get() = state.value

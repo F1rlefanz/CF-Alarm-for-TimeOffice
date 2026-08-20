@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -27,6 +28,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.ZoneId
 import javax.inject.Inject
 
 /**
@@ -39,7 +42,8 @@ class DimmerRulesViewModel @Inject constructor(
     private val dimRuleUseCase: DimRuleUseCase,
     private val shiftUseCase: IShiftUseCase,
     private val dimSchedule: DimScheduleUseCase,
-    private val prefs: DimOverlayPrefs
+    private val prefs: DimOverlayPrefs,
+    private val shiftSpanStore: ShiftSpanStore
 ) : ViewModel() {
 
     /**
@@ -139,5 +143,71 @@ class DimmerRulesViewModel @Inject constructor(
      * [DimScheduleUseCase.previewTimeline]. Ohne Seiteneffekt auf den echten Scheduler. */
     fun refreshTimeline() = viewModelScope.launch {
         _timeline.value = dimSchedule.previewTimeline()
+    }
+
+    /**
+     * Eine Regel wird an [tage] Kalendertagen des Planungshorizonts von einer anderen verdraengt;
+     * dort gilt stattdessen eine der Regeln aus [gewinnerNamen] (Roh-Namen aus [DimRule.name], ein
+     * leerer Name bleibt leer - die Ersatzbeschriftung dafuer ist ein Nutzertext und gehoert in den
+     * Bildschirm, nicht ins ViewModel).
+     */
+    data class RegelVerdraengt(val tage: Int, val gewinnerNamen: List<String>)
+
+    private val _verdraengteRegeln = MutableStateFlow<Map<String, RegelVerdraengt>>(emptyMap())
+
+    /**
+     * Je Regel-ID: an wie vielen Tagen sie hinter einer anderen Regel zurueckstehen muss, und
+     * hinter welcher. Leer = kein Konflikt (oder die Regel-Quelle ist ganz aus).
+     *
+     * **Warum dieses Feld existiert:** [DimWindowResolver.buildRuleSpans] entscheidet den Konflikt
+     * zweier Regeln an einem Tag zugunsten der frueheren Schicht - bis dahin sichtbar
+     * ausschliesslich als Logzeile. Die Regelliste zeigte beide Regeln unveraendert als aktiv:
+     * "angezeigt, wirkt nicht". Genau diese Karte rendert den Wert (siehe `DimmerSettingsScreen`);
+     * ein Zustand, den niemand rendert, waere hier so falsch wie eine Renderstelle ohne Zustand.
+     */
+    val verdraengteRegeln: StateFlow<Map<String, RegelVerdraengt>> = _verdraengteRegeln.asStateFlow()
+
+    /**
+     * Rechnet [verdraengteRegeln] neu - reine Auskunft, ohne Seiteneffekt auf den Scheduler.
+     *
+     * Gerechnet wird auf derselben Grundlage wie der echte Scheduler: die Schichtspannen aus dem
+     * [ShiftSpanStore] (NICHT der Alarm-Bestand - ein Alarm ueberlebt die Weckzeit nicht) und
+     * dieselbe Regelauswahl ueber [DimRuleUseCase.findRuleForShift].
+     *
+     * Zwei bewusste Leer-Ausgaenge, beide in Richtung "nichts behaupten":
+     * - **Regel-Quelle aus** (`toggles.rulesEnabled == false`): dann wirkt KEINE Regel, und ein
+     *   Hinweis "diese hier wirkt an 3 Tagen nicht" waere eine Halbwahrheit, die die eigentliche
+     *   Ursache verdeckt.
+     * - **Schichtspannen nicht lesbar**: ohne Dienstplan ist unbekannt, an welchen Tagen mehrere
+     *   Dienste zusammentreffen. Lieber kein Hinweis als ein falscher - dieselbe Richtung wie der
+     *   fail-open des Schedulers.
+     */
+    fun refreshVerdraengteRegeln() = viewModelScope.launch {
+        val alleRegeln = dimRuleUseCase.getAllRules()
+        val spans = shiftSpanStore.spansNow().getOrNull()
+        if (spans == null || !prefs.togglesNow().rulesEnabled) {
+            _verdraengteRegeln.value = emptyMap()
+            return@launch
+        }
+        val zone = ZoneId.systemDefault()
+        val konflikte = DimWindowResolver.findRuleConflicts(
+            alarms = spans.map { DimWindowResolver.AlarmSlot(it.alarmTriggerTime, it.shiftName, it.endTime) },
+            horizonDays = DimWindowResolver.KONFLIKT_HORIZONT_TAGE,
+            today = LocalDate.now(zone),
+            zone = zone,
+            ruleForShift = { name -> dimRuleUseCase.findRuleForShift(name, alleRegeln) },
+        )
+        val namen = alleRegeln.associate { it.id to it.name }
+        _verdraengteRegeln.value = konflikte
+            .flatMap { k -> k.shadowedRuleIds.map { id -> id to k } }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, tage) ->
+                RegelVerdraengt(
+                    // Distinct: ein Tag zaehlt einmal, auch wenn dort mehrere Schichten dieselbe
+                    // Regel verdraengen.
+                    tage = tage.map { it.date }.distinct().size,
+                    gewinnerNamen = tage.mapNotNull { namen[it.winningRuleId] }.distinct().sorted()
+                )
+            }
     }
 }

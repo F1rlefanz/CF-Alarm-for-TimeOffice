@@ -61,6 +61,9 @@ class AlarmUseCaseCancellationTest {
         private val alwaysCancel: Boolean
     ) : IAlarmRepository {
         override suspend fun isPersistenceBlocked(): Boolean = false
+        // Schreibfehler-Merker: fuer diese Tests immer heil - die Trennung der beiden
+        // Signale wird in Pruefrunde8SignaltrennungTest geprueft.
+        override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean = false
         private val state = MutableStateFlow<List<AlarmInfo>>(emptyList())
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         var saveAttempts = 0

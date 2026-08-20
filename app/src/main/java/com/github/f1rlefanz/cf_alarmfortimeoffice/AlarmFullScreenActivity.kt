@@ -48,6 +48,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SchlummerEntscheidung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SchlummerMeldung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SnoozeErgebnis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CFAlarmForTimeOfficeTheme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -95,6 +98,40 @@ internal class OneShotAlarmHandoff {
 }
 
 /**
+ * Die Entscheidung "ist das ein ANDERER Weckvorgang?" — Android-frei und damit ohne
+ * Instrumentierung testbar (dieselbe Bauart und derselbe Grund wie [OneShotAlarmHandoff]).
+ *
+ * Gebraucht wird sie in [AlarmFullScreenActivity.uebernimmAlarmAusIntent]: bei
+ * `launchMode="singleTask"` kommt JEDE weitere Zustellung an derselben Instanz an - auch die
+ * Wiederzustellung DESSELBEN Weckers, denn der [AlarmSoundService] setzt den Vollbild-PendingIntent
+ * zusaetzlich als `setContentIntent()` der laufenden Wecker-Benachrichtigung. Ein Tipp darauf ist
+ * kein neuer Wecker. Die vollstaendige Begruendung steht im KDoc von
+ * [AlarmFullScreenActivity.onNewIntent].
+ */
+internal object Weckvorgang {
+
+    /**
+     * Der Wert, den `getIntExtra` liefert, wenn die Kennung fehlt. Deckungsgleich mit dem
+     * Fallback, den auch [AlarmReceiver] und [AlarmSoundService] verwenden.
+     */
+    const val ID_UNBEKANNT = -1
+
+    /**
+     * true NUR, wenn beide Kennungen bekannt sind UND sich unterscheiden.
+     *
+     * Die Richtung des Zweifels ist bewusst gewaehlt: fehlt eine der beiden Kennungen, gilt
+     * "derselbe Vorgang" — also NICHT zuruecksetzen. Halten wir einen neuen Wecker faelschlich
+     * fuer denselben, sieht der Nutzer eine Warnung ueber einem laut klingelnden Wecker und kann
+     * ihn weiterhin stoppen. Halten wir denselben Wecker faelschlich fuer einen neuen,
+     * verschwindet die Warnung "Es ist KEIN weiterer Weckruf geplant", und er legt sich ohne
+     * gestellten Wecker hin. Nur der zweite Irrtum kostet einen Wecker — im Zweifel also die
+     * Warnung stehen lassen.
+     */
+    fun istAnderer(bisher: Int, neu: Int): Boolean =
+        bisher != ID_UNBEKANNT && neu != ID_UNBEKANNT && bisher != neu
+}
+
+/**
  * Vollbild-Wecker über dem Sperrbildschirm.
  *
  * ROLLENVERTEILUNG (v3.0):
@@ -127,7 +164,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      * und "er zeigt den, der als Erstes geklingelt hat": bei `launchMode="singleTask"` kommt eine
      * zweite Zustellung als onNewIntent an derselben Instanz an, und ohne State gibt es nichts,
      * was rekomponieren koennte. Wer das hier wieder zu einem `val` in onCreate macht, baut den
-     * Fehler zurueck - siehe [readShiftFromIntent].
+     * Fehler zurueck - siehe [uebernimmAlarmAusIntent].
      */
     private var shiftName by mutableStateOf("")
     private var shiftStartTime by mutableStateOf("")
@@ -146,8 +183,34 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     /**
      * Einweg-Sperre gegen Doppelauslösung von Dismiss/Snooze — siehe [OneShotAlarmHandoff].
      * Dient zusätzlich dem alarmActive-Observer als "wurde hier schon bewusst gehandelt?".
+     *
+     * `var`, nicht `val`: die Sperre gehoert dem WECKER, nicht der Activity-Instanz. Bei
+     * launchMode="singleTask" bedient dieselbe Instanz nacheinander mehrere Wecker; eine einmal
+     * beanspruchte Sperre wuerde den naechsten aussperren (siehe [uebernimmAlarmAusIntent]).
      */
-    private val alarmHandoff = OneShotAlarmHandoff()
+    private var alarmHandoff = OneShotAlarmHandoff()
+
+    /**
+     * Kennung des Weckvorgangs, den diese Instanz gerade bedient — [Weckvorgang.ID_UNBEKANNT],
+     * solange noch keine gelesen werden konnte.
+     *
+     * Sie ist das einzige Unterscheidungsmerkmal zwischen "ein ANDERER Wecker wird zugestellt"
+     * (dann gehoert der weckerbezogene Zustand zurueckgesetzt) und "derselbe Wecker wird ERNEUT
+     * zugestellt" (dann darf genau das nicht passieren) — die Begruendung steht im KDoc von
+     * [onNewIntent].
+     */
+    private var aktuelleAlarmId = Weckvorgang.ID_UNBEKANNT
+
+    /**
+     * Grund, warum das Schlummern KEINEN neuen Weckruf gestellt hat — `null` im Normalfall.
+     *
+     * Gefunden in Pruefrunde 8: [snoozeAlarm] stoppte den Ton, verwarf das Ergebnis der Planung und
+     * schloss den Bildschirm. Ein gescheiterter Schlummer sah damit bitgenau aus wie ein
+     * erfolgreicher — der Nutzer legte sich hin und wurde nie geweckt. Ist dieses Feld gesetzt,
+     * bleibt der Wecker laut und der Bildschirm offen, und statt des Schlummer-Knopfes steht hier
+     * der Grund.
+     */
+    private var schlummerHinweis by mutableStateOf<SchlummerMeldung?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -161,7 +224,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // Der Wake-Lock wird NICHT hier erworben, sondern in onStart - siehe dort.
         setupBackButtonHandling()
 
-        readShiftFromIntent()
+        uebernimmAlarmAusIntent()
 
         setContent {
             CFAlarmForTimeOfficeTheme {
@@ -169,7 +232,8 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                     shiftName = shiftName,
                     shiftStartTime = shiftStartTime,
                     snoozeMinutes = snoozeMinutes,
-                    onDismiss = ::dismissAlarm,
+                    schlummerHinweis = schlummerHinweis,
+                    onDismiss = ::weckerBeenden,
                     onSnooze = ::snoozeAlarm
                 )
             }
@@ -199,6 +263,50 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      * `intent` auf dem alten Stand, und snoozeAlarm() laese Schicht/ID/Snooze-Dauer aus dem
      * VORHERIGEN Alarm. Das ist real erreichbar: der Snooze-Wecker feuert erneut, waehrend die
      * Activity noch (gestoppt, aber nicht zerstoert) im Task liegt.
+     *
+     * DIE FRAGE, DIE HIER JEDES MAL ZU BEANTWORTEN IST: welcher Instanzzustand gehoert dem WECKER
+     * und nicht der Activity? Genau der - und nur der - darf bei einer Zustellung neu gesetzt
+     * werden, sonst bedient der neue Wecker die Reste des alten. Alles davon ist in
+     * [uebernimmAlarmAusIntent] gebuendelt; wer ein neues weckerbezogenes Feld ergaenzt, ergaenzt
+     * es DORT, nicht daneben.
+     *
+     * Warum das keine Theorie ist: seit der Pruefrunde 8 ueberlebt diese Activity einen
+     * gescheiterten Schlummerversuch bewusst (Hinweis gesetzt, Sperre beansprucht, Bildschirm
+     * bleibt offen). Genau dann kann eine zweite Zustellung hier hereinkommen - und traf vorher auf
+     * den Fehlertext des alten Weckers, einen ausgeblendeten Schlummer-Knopf und eine verbrauchte
+     * Sperre: fuer diesen Wecker gab es kein Schlummern mehr.
+     *
+     * DIE FALLUNTERSCHEIDUNG - "neu setzen" ist NICHT dasselbe wie "zuruecksetzen". Es gibt zwei
+     * Arten weckerbezogenen Zustands, und sie brauchen gegensaetzliche Behandlung:
+     *
+     * 1. AUS DEM INTENT ABGELEITET (Schichtname, Schichtbeginn, Schlummer-Dauer): wird bei JEDER
+     *    Zustellung neu gelesen. Der Intent ist die Wahrheit; ein erneutes Lesen desselben Intents
+     *    schadet nie.
+     * 2. HIER ERARBEITET (Schlummer-Hinweis [schlummerHinweis], Einweg-Sperre [alarmHandoff]):
+     *    diese Werte stehen im Intent NICHT - sie sind das Ergebnis dessen, was der Nutzer an
+     *    diesem Bildschirm getan hat. Sie werden NUR verworfen, wenn wirklich ein ANDERER
+     *    Weckvorgang zugestellt wird (Vergleich der [AlarmSoundService.EXTRA_ALARM_ID] mit
+     *    [aktuelleAlarmId]).
+     *
+     * Warum der Vergleich noetig ist und nicht "ein neuer Intent heisst neuer Wecker" genuegt: der
+     * [AlarmSoundService] haengt denselben PendingIntent nicht nur als `setFullScreenIntent()`,
+     * sondern auch als `setContentIntent()` an die laufende Wecker-Benachrichtigung (2002). Nach
+     * einem gescheiterten Schlummern bleibt genau diese Benachrichtigung stehen - ein Tipp darauf
+     * liefert DENSELBEN Wecker erneut hier herein. Ein bedingungsloses Zuruecksetzen loeschte
+     * dabei den Hinweis "Es ist KEIN weiterer Weckruf geplant", holte den Schlummer-Knopf zurueck
+     * und gaebe die Sperre frei: der Bildschirm behauptete wieder, alles sei in Ordnung, und der
+     * Nutzer legt sich ohne gestellten Wecker hin.
+     *
+     * GRENZFALL "Kennung fehlt oder ist unlesbar": dann gilt DERSELBE Vorgang - siehe
+     * [Weckvorgang.istAnderer]. Die beiden moeglichen Irrtuemer wiegen ungleich schwer. Halten wir
+     * einen neuen Wecker faelschlich fuer denselben, steht ein Warntext ueber einem laut
+     * klingelnden Wecker und der Schlummer-Knopf fehlt - unschoen, aber der Nutzer sieht eine
+     * Warnung und "Alarm stoppen" wirkt weiter (siehe [weckerBeenden]). Halten wir umgekehrt
+     * denselben Wecker faelschlich fuer einen neuen, verschwindet genau die Warnung, die ihn vor
+     * dem fehlenden Weckruf bewahrt. Nur der zweite Irrtum kostet einen Wecker.
+     *
+     * Was hier bewusst NICHT zurueckgesetzt wird: Wake-Lock (siehe unten, wird erneuert) und
+     * Fenster-Flags - beide gehoeren dem Fenster, nicht dem einzelnen Wecker.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -212,7 +320,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // "Fruehschicht 06:00" liest, obwohl der Wecker fuer die Spaetschicht klingelt, legt sich
         // wieder hin. Kein stummer Wecker, aber eine falsche Aussage an der einen Stelle, an der
         // die App keine zweite Chance bekommt.
-        readShiftFromIntent()
+        uebernimmAlarmAusIntent()
 
         // Derselbe Grund fuer den Wake-Lock: er laeuft nach WAKE_LOCK_TIMEOUT aus. Eine
         // Wiederzustellung an eine noch RESUMED laufende Instanz (Snooze-Refire, waehrend das
@@ -225,10 +333,31 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     /**
-     * Liest Schichtname und Schichtbeginn aus dem AKTUELLEN `intent` in den Compose-State.
-     * Aufgerufen aus onCreate UND onNewIntent - beide Wege muessen dieselbe Anzeige ergeben.
+     * Setzt den gesamten ALARM-BEZOGENEN Instanzzustand aus dem AKTUELLEN `intent`.
+     * Aufgerufen aus onCreate UND onNewIntent - beide Wege muessen denselben Zustand ergeben.
+     *
+     * Der einzige Ort fuer diesen Zustand. Wer ein Feld ergaenzt, das zu einem einzelnen Wecker
+     * gehoert (Anzeige, Entscheidungssperre, Fehlerzustand), setzt es HIER - sonst schleppt die
+     * singleTask-Instanz es in den naechsten Wecker mit.
+     *
+     * Dabei die Fallunterscheidung im KDoc von [onNewIntent] beachten: aus dem Intent abgeleitete
+     * Anzeigewerte werden IMMER neu gelesen, hier erarbeiteter Zustand ([schlummerHinweis],
+     * [alarmHandoff]) NUR bei einem anderen Weckvorgang verworfen.
      */
-    private fun readShiftFromIntent() {
+    private fun uebernimmAlarmAusIntent() {
+        // ZUERST die Kennung, denn sie entscheidet ueber den zweiten Teil dieser Funktion.
+        val neueAlarmId = intent.getIntExtra(
+            AlarmSoundService.EXTRA_ALARM_ID,
+            Weckvorgang.ID_UNBEKANNT
+        )
+        val andererWeckvorgang = Weckvorgang.istAnderer(aktuelleAlarmId, neueAlarmId)
+        // Eine unlesbare Kennung ueberschreibt die zuletzt bekannte NICHT: sonst gilt die naechste
+        // Zustellung mit Kennung wieder als "unvergleichbar", und wir verlieren die Unterscheidung
+        // fuer immer.
+        if (neueAlarmId != Weckvorgang.ID_UNBEKANNT) {
+            aktuelleAlarmId = neueAlarmId
+        }
+
         shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME)
             ?: getString(R.string.alarm_unknown_shift)
         shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
@@ -239,6 +368,37 @@ class AlarmFullScreenActivity : AppCompatActivity() {
             AlarmSoundService.EXTRA_SNOOZE_MINUTES,
             AlarmManagerService.SNOOZE_MINUTES.toInt()
         )
+
+        if (andererWeckvorgang) {
+            // Der Fehlertext des VORHERIGEN Weckers darf nicht ueber dem neuen stehen bleiben: er
+            // meldete sonst einen gescheiterten Schlummer fuer einen Wecker, bei dem noch
+            // niemand geschlummert hat - und blendet dabei den Schlummer-Knopf aus, weil dessen
+            // Anzeige an genau diesem Feld haengt.
+            schlummerHinweis = null
+
+            // Eine NEUE Einweg-Sperre fuer einen NEUEN Wecker. Die alte kann bereits beansprucht
+            // sein (gescheiterter Schlummerversuch am vorherigen Wecker, siehe [snoozeAlarm]); mit
+            // ihr wuerden Schlummern und Stoppen fuer den frisch zugestellten Wecker wirkungslos
+            // abprallen. Ihr Zweck - "der erste bewusste Griff gewinnt" - bezieht sich immer auf
+            // EINEN Weckvorgang; ein anderer Wecker ist ein anderer Vorgang.
+            alarmHandoff = OneShotAlarmHandoff()
+
+            Logger.i(
+                LogTags.ALARM,
+                "🔁 Anderer Weckvorgang zugestellt (id=$neueAlarmId) - Schlummer-Hinweis und " +
+                    "Einweg-Sperre zurueckgesetzt"
+            )
+        } else if (schlummerHinweis != null) {
+            // Ein Zustand, der das Schlummern anhaelt, muss sichtbar sein - auf dem Bildschirm
+            // steht er ohnehin, hier kommt er ins Release-Log (WARN), damit ein spaeterer
+            // "warum ging der Schlummer-Knopf nicht?"-Bericht beantwortbar bleibt.
+            Logger.w(
+                LogTags.ALARM,
+                "⚠️ Wiederzustellung desselben Weckvorgangs (id=$neueAlarmId, bekannt=" +
+                    "$aktuelleAlarmId) - gescheiterter Schlummer bleibt stehen, Sperre bleibt " +
+                    "beansprucht"
+            )
+        }
     }
 
     /**
@@ -537,10 +697,22 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     /**
-     * Snoozed den Wecker: stoppt den Ton und legt ueber den gemeinsamen
-     * [AlarmManagerService.scheduleSnooze] einen neuen Alarm an - denselben Weg nutzt der
-     * Snooze-Button der Benachrichtigung. Die Planungslogik (snoozeAlarmAction, requestCode,
+     * Snoozed den Wecker: plant ueber den gemeinsamen [AlarmManagerService.scheduleSnooze] einen
+     * neuen Alarm und stoppt den Ton ERST, wenn dieser Wecker wirklich steht - denselben Weg nutzt
+     * der Snooze-Button der Benachrichtigung. Die Planungslogik (snoozeAlarmAction, requestCode,
      * setAlarmClock) liegt bewusst nur dort, damit es EINE Wahrheit bleibt.
+     *
+     * REIHENFOLGE (geaendert in Pruefrunde 8): erst planen, dann stoppen. Vorher stand hier
+     * "Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races)" - der Nutzer hatte
+     * also schon Ruhe, BEVOR ueberhaupt versucht wurde zu planen, und der Schwesterpfad im
+     * [AlarmSoundService] machte es mit ausdruecklicher Begruendung genau andersherum. Die
+     * MediaPlayer-Race ist damit nicht zurueck: [stopAlarmSoundService] ist ein Intent an den
+     * Dienst, kein direkter Zugriff auf den Player, und [AlarmManagerService.scheduleSnooze] ist
+     * synchron und kurz.
+     *
+     * ERGEBNIS AUSWERTEN: Steht kein neuer Weckruf, darf sich dieser Bildschirm NICHT so
+     * schliessen, als sei alles gut. Dann bleibt der Wecker laut, der Bildschirm offen und traegt
+     * den Grund - siehe [schlummerHinweis].
      */
     private fun snoozeAlarm() {
         if (!alarmHandoff.claim()) {
@@ -551,10 +723,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
         // steht auch auf dem Knopf, den der Nutzer gerade gedrueckt hat.
         Logger.i(LogTags.ALARM, "😴 User snoozed alarm for $snoozeMinutes minutes")
 
-        try {
-            // Ton zuerst stoppen, dann Snooze planen (verhindert MediaPlayer-Races).
-            stopAlarmSoundService()
-
+        val ergebnis = try {
             val shiftName = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_NAME) ?: "Snooze"
             val alarmId = intent.getIntExtra(AlarmSoundService.EXTRA_ALARM_ID, -1)
             val shiftStartTime = intent.getStringExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME).orEmpty()
@@ -563,15 +732,51 @@ class AlarmFullScreenActivity : AppCompatActivity() {
                 this, alarmId, shiftName, shiftStartTime,
                 minutes = snoozeMinutes.toLong()
             )
+        } catch (e: Exception) {
+            // scheduleSnooze schluckt seine eigenen Fehler; hier landet nur, was DAVOR schiefgeht
+            // (Intent-Read). Der Zweig bleibt trotzdem: er darf nie wieder still zu einem
+            // "sieht aus wie Erfolg" werden.
+            Logger.e(LogTags.ALARM, "❌ Failed to snooze alarm", e)
+            SnoozeErgebnis.FEHLGESCHLAGEN
+        }
 
+        if (ergebnis == SnoozeErgebnis.GEPLANT) {
+            stopAlarmSoundService()
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(AlarmSoundService.NOTIFICATION_ID)
             finish()
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "❌ Failed to snooze alarm", e)
-            stopAndClose()
+            return
         }
+
+        // Kein verlaesslich gestellter Wecker: Ton bleibt an, Bildschirm bleibt offen, Grund wird
+        // angezeigt. Das gilt auch fuer SnoozeErgebnis.FEHLGESCHLAGEN_UNKLAR - dort steht
+        // moeglicherweise doch noch ein Weckruf, aber "moeglicherweise" ist kein Wecker, auf den
+        // sich jemand legen darf. Der Hinweistext sagt genau das.
+        // Zusaetzlich die Benachrichtigung, damit die Meldung auch dann noch da ist, wenn der
+        // Nutzer den Wecker gleich beendet.
+        Logger.w(
+            LogTags.ALARM,
+            "⚠️ Schlummern nicht ausgefuehrt ($ergebnis) - Vollbild bleibt offen, Wecker laeuft weiter"
+        )
+        AlarmSoundService.posteSchlummerHinweis(this, ergebnis)
+        // Titel UND Text als ein Wert: die Ueberschrift gehoert zum Ergebnis. Sie stand hier
+        // frueher als fester Text "Kein Schlummer-Wecker gestellt" - auch ueber der Lage, in der
+        // moeglicherweise doch noch ein Weckruf steht.
+        schlummerHinweis = SchlummerEntscheidung.hinweis(ergebnis)
+    }
+
+    /**
+     * Der einzige Knopf, der im Fehlerzustand noch etwas tut.
+     *
+     * Die Einweg-Sperre [alarmHandoff] ist nach einem gescheiterten Schlummer bereits beansprucht -
+     * [dismissAlarm] wuerde also wirkungslos abprallen und den Nutzer auf einem Bildschirm mit
+     * lautem Wecker und zwei toten Knoepfen zuruecklassen. Deshalb geht der Fehlerzustand direkt
+     * auf [stopAndClose], das die Sperre bewusst NICHT fragt (siehe dessen KDoc). Die Sperre bleibt
+     * damit unangetastet: sie schuetzt weiterhin gegen die gleichzeitige Doppelauslösung, sperrt
+     * aber niemanden aus.
+     */
+    private fun weckerBeenden() {
+        if (schlummerHinweis != null) stopAndClose() else dismissAlarm()
     }
 }
 
@@ -591,6 +796,7 @@ private fun AlarmScreen(
     shiftName: String,
     shiftStartTime: String,
     snoozeMinutes: Int,
+    schlummerHinweis: SchlummerMeldung?,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit
 ) {
@@ -646,6 +852,26 @@ private fun AlarmScreen(
                         textAlign = TextAlign.Center
                     )
                 }
+
+                // Der Grund steht dort, wo der Nutzer gerade hinsieht - nicht nur in einer
+                // Benachrichtigung, die er im Halbschlaf nicht aufzieht. Ohne diese Zeile war ein
+                // gescheitertes Schlummern von einem erfolgreichen nicht zu unterscheiden.
+                if (schlummerHinweis != null) {
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        text = schlummerHinweis.titel,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = schlummerHinweis.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
 
             Column(
@@ -668,23 +894,30 @@ private fun AlarmScreen(
                     )
                 }
 
-                Spacer(Modifier.height(12.dp))
+                // Der Schlummer-Knopf verschwindet, sobald ein Schlummer-Versuch KEINEN Weckruf
+                // gestellt hat: ein zweiter Druck liefe in die bereits beanspruchte Einweg-Sperre
+                // und taete sichtbar nichts - ein Knopf, der nichts tut, ist an diesem Bildschirm
+                // schlimmer als kein Knopf. Uebrig bleibt "Alarm stoppen", und der wirkt (er geht
+                // im Fehlerzustand ueber stopAndClose an der Sperre vorbei).
+                if (schlummerHinweis == null) {
+                    Spacer(Modifier.height(12.dp))
 
-                OutlinedButton(
-                    onClick = onSnooze,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(
-                        // Die Zahl kommt aus derselben Variablen, die snoozeAlarm() in
-                        // scheduleSnooze() reicht - der Knopf kann nicht mehr etwas anderes
-                        // behaupten, als er tut.
-                        text = stringResource(R.string.alarm_snooze_button, snoozeMinutes),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
+                    OutlinedButton(
+                        onClick = onSnooze,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(
+                            // Die Zahl kommt aus derselben Variablen, die snoozeAlarm() in
+                            // scheduleSnooze() reicht - der Knopf kann nicht mehr etwas anderes
+                            // behaupten, als er tut.
+                            text = stringResource(R.string.alarm_snooze_button, snoozeMinutes),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }

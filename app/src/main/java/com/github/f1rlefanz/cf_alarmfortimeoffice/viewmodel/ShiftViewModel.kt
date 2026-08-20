@@ -3,7 +3,12 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
@@ -14,12 +19,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class ShiftUiState(
@@ -28,6 +35,24 @@ data class ShiftUiState(
     val recognizedShifts: List<ShiftInfo> = emptyList(),
     val upcomingShift: ShiftInfo? = null,
     val error: String? = null,
+    /**
+     * Hinweis zum Regel-Nachzug beim UMBENENNEN einer Schicht - bewusst ein EIGENER Kanal neben
+     * [error].
+     *
+     * WARUM NICHT [error] (Regression aus Pruefrunde 8): Diese Meldung sagt "gespeichert, aber
+     * eine von dir eingerichtete Funktion wirkt nicht mehr" - etwas anderes als ein gescheiterter
+     * Lade- oder Speichervorgang. Und vor allem: [error] wird von [processCalendarEvents] bei
+     * JEDEM Durchgang auf `null` gesetzt, und genau so ein Durchgang folgt unmittelbar auf das
+     * Speichern (`delay(200)`, sobald Events vorliegen - im Normalbetrieb also immer). Die Meldung
+     * war damit gesetzt und Sekundenbruchteile spaeter wieder weg, bevor sie irgendwo ankam.
+     *
+     * Dieses Feld ueberlebt den folgenden Ladevorgang und wird ausschliesslich vom Nutzer
+     * ([clearRegelNachzugHinweis]) bzw. nach dem Anzeigen geloescht. Gerendert wird es im
+     * `ShiftConfigScreen` (dort steht der Nutzer beim Umbenennen) als bleibende Karte und im
+     * `MainContentScreen` als Snackbar (dort steht er beim Konfigurations-Import). Beide Screens
+     * schliessen sich gegenseitig aus, es zeigt also immer genau einer.
+     */
+    val regelNachzugHinweis: String? = null,
     /**
      * Kuerzel, die im Kalender des Nutzers vorkommen, aber von keinem Erkennungsmuster getroffen
      * werden - siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester].
@@ -52,7 +77,26 @@ class ShiftViewModel @Inject constructor(
     private val shiftUseCase: IShiftUseCase,
     private val alarmUseCase: IAlarmUseCase,  // NEW: For alarm creation
     private val calendarStateHolder: CalendarStateHolder,
-    private val errorHandler: ErrorHandler
+    private val errorHandler: ErrorHandler,
+    /**
+     * Nur fuer den Muster-Nachzug beim Umbenennen einer Schicht ([zieheRegelmusterNach]).
+     *
+     * BEWUSST `dagger.Lazy`, wie in `CFAlarmApplication`: dieses ViewModel entsteht beim
+     * App-Start. Direkt injiziert wuerde damit der komplette Hue-Graph (ApiClient/OkHttp mit
+     * eigenem TrustManager) mit aufgebaut, obwohl der Nutzer vielleicht nie eine Schicht
+     * umbenennt - und Hue womoeglich gar nicht nutzt.
+     */
+    private val dimRuleUseCase: dagger.Lazy<DimRuleUseCase>,
+    private val hueRuleUseCase: dagger.Lazy<HueRuleUseCase>,
+    /**
+     * Nach einem geaenderten Dimm-Regelmuster muessen die Fenster neu berechnet und die
+     * Tick-Kette neu armiert werden - genauso, wie `DimmerRulesViewModel.saveRule()` direkt nach
+     * jedem Regel-Schreibvorgang `enable()` ruft. Der Vorlaeufer ist `ConfigBackupUseCase`: auch
+     * dort armiert ein generischer Schreiber beide Ketten selbst, sonst stuende die neue Regel im
+     * Store, waehrend bis zur naechsten 6h-Wartung nach dem ALTEN Plan gedimmt wird.
+     */
+    private val dimScheduleUseCase: dagger.Lazy<DimScheduleUseCase>,
+    private val dndScheduleUseCase: dagger.Lazy<DndScheduleUseCase>
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShiftUiState())
@@ -150,12 +194,25 @@ class ShiftViewModel @Inject constructor(
                     if (authoritative == _uiState.value.currentShiftConfig) return@collect
                     val config = authoritative
 
+                    // Der Stand VOR dem Uebernehmen - die einzige Gelegenheit, eine Umbenennung
+                    // zu erkennen. Muss vor dem Schreiben an `_uiState` gelesen werden.
+                    val vorherigeConfig = _uiState.value.currentShiftConfig
+
                     Logger.business(
                         LogTags.SHIFT_CONFIG,
                         "🔄 EXTERNE KONFIGURATIONSAENDERUNG erkannt (${config.definitions.size} " +
                             "Definitionen) - Anzeige, Erkennung und Alarme werden nachgezogen"
                     )
                     _uiState.value = _uiState.value.copy(currentShiftConfig = config)
+
+                    // Dimmer-/Hue-Regelmuster mitziehen - HIER, am geteilten Einstieg, statt nur
+                    // in `updateShiftConfig()`. Eine Ruecksicherung oder ein Geraetewechsel bringt
+                    // dieselbe Definition (gleiche `id`) unter anderem Namen zurueck; genau dieser
+                    // Fall kommt nur ueber diesen Weg herein und haette die Migration sonst
+                    // umgangen. Die Notlage-Standardkonfiguration ist oben bereits ausgefiltert
+                    // ("DIE VIERTE TUER") - sie erreicht diese Zeile nicht und kann deshalb keine
+                    // Regel auf einen Standardnamen umziehen.
+                    zieheRegelmusterNach(vorherigeConfig, config)
 
                     // Erkennung neu laufen lassen (aktualisiert auch die Kuerzel-Vorschlaege) und
                     // die Alarme an die neuen Weckzeiten anpassen.
@@ -281,6 +338,11 @@ class ShiftViewModel @Inject constructor(
 
     fun updateShiftConfig(config: ShiftConfig) {
         viewModelScope.launch {
+            // Der Stand VOR dem Schreiben - die einzige Gelegenheit, eine Umbenennung ueberhaupt
+            // zu erkennen (die Definition behaelt ihre id, nur der Name aendert sich). Muss vor
+            // jedem Schreiben an `_uiState` gelesen werden. Siehe [zieheRegelmusterNach].
+            val vorherigeConfig = _uiState.value.currentShiftConfig
+
             // VOR dem Write vormerken, nicht danach - siehe [selfWrittenConfig]. Die
             // DataStore-Emission kann den Beobachter erreichen, BEVOR `saveShiftConfig()`
             // zurueckkehrt; ein Merker, der erst im `onSuccess` gesetzt wird, kommt zu spaet.
@@ -304,7 +366,12 @@ class ShiftViewModel @Inject constructor(
                         isLoading = false,
                         currentShiftConfig = config
                     )
-                    
+
+                    // VOR der Erkennung und vor dem Alarm-Sync: beides fuehrt (ueber ShiftSpanStore
+                    // -> DimScheduleUseCase bzw. den Hue-Pfad) auf die Regelmuster, und die sollen
+                    // dabei schon den neuen Namen tragen.
+                    zieheRegelmusterNach(vorherigeConfig, config)
+
                     // REACTIVE FIX: Re-run shift recognition with updated config
                     // HILT MIGRATION: Now uses CalendarStateHolder instead of direct ViewModel reference
                     val currentEvents = calendarStateHolder.events.value
@@ -334,6 +401,106 @@ class ShiftViewModel @Inject constructor(
                         error = errorHandler.getErrorMessage(error)
                     )
                 }
+        }
+    }
+
+    /**
+     * Zieht Dimmer- und Hue-Regeln nach, wenn eine Schichtdefinition UMBENANNT wurde.
+     *
+     * WARUM (Pruefrunde 8, Befund 2): Beide Regelarten binden ueber den NAMEN der Definition
+     * (`DimRule.shiftPattern`, `HueSchedule.shiftPattern`), waehrend der Editor den Namen bei
+     * gleichbleibender `id` frei aendern laesst. Ohne diesen Nachzug legt eine reine
+     * Beschriftungsaenderung beide Regeln lautlos still - die Regellisten zeigen sie weiter als
+     * aktiv, das Licht bleibt am Wecktag aus, das Dimm-Fenster verschwindet, und im DND-Modus
+     * "folgt dem Dimmer" faellt das Nachtfenster gleich mit weg.
+     *
+     * `NonCancellable`: Das hier stellt einen konsistenten Zustand HER - dieselbe Begruendung wie
+     * bei `MasterPauseUseCase.pause()/resume()`. Bricht der `viewModelScope` mittendrin ab (der
+     * Nutzer verlaesst den Screen), bliebe sonst ein halb migrierter Bestand liegen: Dimmer
+     * nachgezogen, Hue nicht - und niemand erfuehre davon.
+     *
+     * FEHLER WERDEN GEMELDET, nicht geschluckt: eine nicht nachgezogene Regel ist eine Funktion,
+     * die der Nutzer bewusst eingerichtet hat und die ab jetzt nichts mehr tut. Die Meldung geht
+     * ueber [ShiftUiState.regelNachzugHinweis] - NICHT ueber `error`; warum, steht dort.
+     *
+     * Aufgerufen aus [updateShiftConfig] UND aus [observeExternalConfigChanges]. Letzteres ist der
+     * zentrale Einstieg fuer FREMDE Schreiber (Konfigurations-Import, also auch die
+     * Backup-Ruecksicherung und der Geraetewechsel) - genau dort kommt eine Definition mit
+     * gleicher `id` und anderem Namen an, und ohne diesen zweiten Aufruf umginge ausgerechnet
+     * dieser Fall die Migration. Doppelt laeuft dadurch nichts: eigene Schreibvorgaenge erkennt
+     * der Beobachter am Merker `selfWrittenConfig` bzw. am Vergleich mit `currentShiftConfig` und
+     * steigt vorher aus.
+     */
+    private suspend fun zieheRegelmusterNach(vorher: ShiftConfig?, nachher: ShiftConfig) {
+        val plan = planeSchichtUmbenennungen(vorher, nachher)
+        if (plan.umbenennungen.isEmpty() && plan.blockiert.isEmpty()) return
+
+        val fehlgeschlagen = mutableListOf<String>()
+        var nachgezogen = 0
+        var dimmGeaendert = 0
+
+        withContext(NonCancellable) {
+            for (umbenennung in plan.umbenennungen) {
+                dimRuleUseCase.get().renameShiftPattern(umbenennung.alterName, umbenennung.neuerName)
+                    .onSuccess { dimmGeaendert += it }
+                    .onFailure { fehlgeschlagen += "Dimmer" }
+
+                hueRuleUseCase.get().renameShiftPattern(umbenennung.alterName, umbenennung.neuerName)
+                    .onSuccess { nachgezogen += it }
+                    .onFailure { fehlgeschlagen += "Hue" }
+            }
+            nachgezogen += dimmGeaendert
+
+            // Erst NACH dem Schreiben, und nur wenn sich wirklich etwas geaendert hat: die
+            // Dimm-Fenster werden aus den Regeln berechnet, der naechste Tick war also auf den
+            // ALTEN Plan gesetzt. Ohne dieses Nacharmieren stuende die gerettete Regel im Store,
+            // waehrend bis zur naechsten 6h-Wartung weiter nach dem alten Plan gedimmt wird.
+            // Best-effort und einzeln gefangen (Vorbild ConfigBackupUseCase): beide enable() haben
+            // ihren eigenen Master-Pause-Backstop, aber ein Fehlschlag hier darf die bereits
+            // erfolgreich umgeschriebene Regel nicht als gescheitert melden.
+            if (dimmGeaendert > 0) {
+                runCatching { dimScheduleUseCase.get().enable() }
+                    .onFailure { Logger.w(LogTags.DIMMER, "⚠️ UMBENENNUNG: Dimmer-Kette nicht neu armiert", it) }
+                runCatching { dndScheduleUseCase.get().enable() }
+                    .onFailure { Logger.w(LogTags.DND, "⚠️ UMBENENNUNG: DND-Kette nicht neu armiert", it) }
+            }
+        }
+
+        plan.blockiert.forEach { blockade ->
+            Logger.w(
+                LogTags.SHIFT_CONFIG,
+                "⚠️ UMBENENNUNG '${blockade.umbenennung.alterName}' -> " +
+                    "'${blockade.umbenennung.neuerName}': Regelmuster NICHT nachgezogen " +
+                    "(${blockade.grund})"
+            )
+        }
+
+        if (nachgezogen > 0) {
+            Logger.business(
+                LogTags.SHIFT_CONFIG,
+                "🔁 SCHICHT UMBENANNT: $nachgezogen Dimmer-/Hue-Regel(n) auf den neuen Namen nachgezogen"
+            )
+        }
+
+        // Der Nutzer erfaehrt es - sonst haelt er eine Regel fuer aktiv, die es nicht mehr ist.
+        // Beschreibt die WIRKUNG, nicht die Innerei, und sagt, was zu tun ist.
+        val meldung = when {
+            fehlgeschlagen.isNotEmpty() -> "Die Schicht wurde umbenannt, aber die zugehörigen " +
+                "${fehlgeschlagen.distinct().joinToString("- und ")}-Regeln konnten nicht auf den " +
+                "neuen Namen umgestellt werden. Sie wirken für diese Schicht erst wieder, wenn du " +
+                "dort den neuen Namen auswählst."
+
+            plan.blockiert.isNotEmpty() -> "Die Schicht wurde umbenannt. Die Dimmer- und " +
+                "Hue-Regeln dazu wurden NICHT mitgezogen, weil der Name jetzt nicht mehr eindeutig " +
+                "ist. Wähle in den betroffenen Regeln die Schicht neu aus – sonst wirken sie nicht."
+
+            else -> null
+        }
+        if (meldung != null) {
+            // EIGENES Feld, nicht `error`: die unmittelbar folgende `processCalendarEvents()`
+            // setzt `error` auf null (siehe [ShiftUiState.regelNachzugHinweis]) - die Meldung war
+            // weg, bevor sie jemand lesen konnte.
+            _uiState.value = _uiState.value.copy(regelNachzugHinweis = meldung)
         }
     }
 
@@ -489,6 +656,17 @@ class ShiftViewModel @Inject constructor(
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
+
+    /**
+     * Bestaetigt den Hinweis zum Regel-Nachzug ([ShiftUiState.regelNachzugHinweis]).
+     *
+     * Nur der Nutzer raeumt ihn weg - kein Ladevorgang, kein Folgezustand. Er beschreibt eine
+     * Funktion, die ab jetzt nicht mehr tut, was sie soll; sie wegzuwischen, weil gerade Events
+     * nachgeladen wurden, war genau der Fehler, den dieses Feld behebt.
+     */
+    fun clearRegelNachzugHinweis() {
+        _uiState.value = _uiState.value.copy(regelNachzugHinweis = null)
+    }
     
     /**
      * CRITICAL FIX: Enhanced Memory Leak Prevention - Comprehensive resource cleanup
@@ -511,3 +689,102 @@ class ShiftViewModel @Inject constructor(
     }
     
 }
+
+/** Eine erkannte Umbenennung: dieselbe Definition (gleiche `id`), neuer Name. */
+internal data class SchichtUmbenennung(val alterName: String, val neuerName: String)
+
+/** Eine Umbenennung, deren Regelmuster bewusst NICHT nachgezogen wird - mit dem Warum. */
+internal data class BlockierteUmbenennung(
+    val umbenennung: SchichtUmbenennung,
+    val grund: String
+)
+
+internal data class SchichtUmbenennungsPlan(
+    val umbenennungen: List<SchichtUmbenennung>,
+    val blockiert: List<BlockierteUmbenennung>
+)
+
+/**
+ * PURE, TESTBAR: Welche Umbenennungen muessen in Dimmer-/Hue-Regelmustern nachgezogen werden?
+ *
+ * Verglichen wird ueber die stabile `id` - nur so laesst sich eine Umbenennung von einer
+ * geloeschten plus neu angelegten Definition unterscheiden. Eine geloeschte Definition ist
+ * ausdruecklich KEINE Umbenennung: ihre Regeln sollen dort stehen bleiben, wo sie sind, statt
+ * auf eine fremde Schicht zu wandern.
+ *
+ * NUR was das Matching wirklich bricht: Der Vergleich in `DimRuleUseCase.findRuleForShift` und
+ * `HueRuleUseCase.findApplicableRules` ist gross-/kleinschreibungsblind, eine reine
+ * Schreibweisenaenderung ("ad1" -> "AD1") legt also nichts stumm. Sie zu migrieren waere ein
+ * Schreibvorgang ohne Nutzen - und jeder Schreibvorgang kann scheitern.
+ *
+ * DIE VIER BLOCKADEN sind kein Beiwerk, sondern der Unterschied zwischen "Regel gerettet" und
+ * "Regel bei der falschen Schicht":
+ *  - Sondermuster ("alle Schichten", "freie Tage") meinen KEINEN Namen. Zoege man sie mit, wuerde
+ *    aus einer Regel fuer alle Tage eine fuer genau eine Schicht - der Nutzer verloere still das
+ *    Dimmen/Licht an allen uebrigen.
+ *  - Heisst eine ANDERE Definition jetzt genauso, waere die Zuordnung mehrdeutig (beide Schichten
+ *    zoegen dieselbe Regel).
+ *  - Gehoert der ALTE Name jetzt einer anderen Definition (Namenstausch), gehoeren die Regeln mit
+ *    diesem Muster ab sofort ihr - sie duerfen nicht mitwandern.
+ *  - Hiess bisher eine andere Definition so wie diese jetzt, tragen deren Regeln das Zielmuster
+ *    bereits; ein Zusammenlegen waere nicht rueckgaengig zu machen (und
+ *    `findRuleForShift` nimmt ohnehin nur den ersten Treffer).
+ * In allen vier Faellen ist Nichtstun plus Meldung die einzige ehrliche Antwort - eine falsch
+ * zugeordnete Regel schaltet Licht und Verdunkelung zur falschen Zeit.
+ */
+internal fun planeSchichtUmbenennungen(
+    vorher: ShiftConfig?,
+    nachher: ShiftConfig
+): SchichtUmbenennungsPlan {
+    if (vorher == null) return SchichtUmbenennungsPlan(emptyList(), emptyList())
+
+    val altePerId = vorher.definitions.associateBy { it.id }
+    val umbenennungen = mutableListOf<SchichtUmbenennung>()
+    val blockiert = mutableListOf<BlockierteUmbenennung>()
+
+    nachher.definitions.forEach { neu ->
+        val alt = altePerId[neu.id] ?: return@forEach
+        val alterName = alt.name
+        val neuerName = neu.name
+        if (alterName.isBlank() || neuerName.isBlank()) return@forEach
+        if (alterName.equals(neuerName, ignoreCase = true)) return@forEach
+
+        val andereJetzt = nachher.definitions.filter { it.id != neu.id }.map { it.name }
+        val andereVorher = vorher.definitions.filter { it.id != neu.id }.map { it.name }
+
+        val grund = when {
+            istReserviertesMuster(neuerName) || istReserviertesMuster(alterName) ->
+                "der Name ist ein reserviertes Regelmuster"
+
+            andereJetzt.any { it.equals(neuerName, ignoreCase = true) } ->
+                "eine andere Schicht heisst jetzt ebenfalls '$neuerName'"
+
+            andereJetzt.any { it.equals(alterName, ignoreCase = true) } ->
+                "der bisherige Name '$alterName' gehoert jetzt einer anderen Schicht"
+
+            andereVorher.any { it.equals(neuerName, ignoreCase = true) } ->
+                "'$neuerName' war bisher der Name einer anderen Schicht"
+
+            else -> null
+        }
+
+        val umbenennung = SchichtUmbenennung(alterName, neuerName)
+        if (grund == null) {
+            umbenennungen += umbenennung
+        } else {
+            blockiert += BlockierteUmbenennung(umbenennung, grund)
+        }
+    }
+
+    return SchichtUmbenennungsPlan(umbenennungen, blockiert)
+}
+
+/**
+ * Namen, die als Regelmuster eine Sonderbedeutung tragen und deshalb nie wie ein Schichtname
+ * behandelt werden duerfen. Die Konstanten kommen aus den Regel-Modellen selbst - ein zweites
+ * Literal hier waere eine zweite Wahrheit.
+ */
+private fun istReserviertesMuster(name: String): Boolean =
+    name.equals(DimRule.SHIFT_UNIVERSAL, ignoreCase = true) ||
+        name.equals(DimRule.SHIFT_FREE, ignoreCase = true) ||
+        name.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true)

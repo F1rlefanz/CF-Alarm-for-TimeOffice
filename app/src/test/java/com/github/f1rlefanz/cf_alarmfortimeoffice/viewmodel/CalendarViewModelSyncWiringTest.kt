@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -126,6 +127,15 @@ class CalendarViewModelSyncWiringTest {
             onBlocking { pausedNow() } doReturn false
         }
 
+        // Kein offener Raeumauftrag: dieser Test beobachtet die Alarm-Verdrahtung des
+        // Ladevorgangs, nicht das Aufraeumen nach einer Abwahl.
+        val pendingCleanupStore = mock<PendingDeselectionCleanupStore>()
+        pendingCleanupStore.stub {
+            onBlocking { pendingSince() } doReturn Result.success(null)
+            onBlocking { markPending(any()) } doReturn Result.success(Unit)
+            onBlocking { clearIfPending() } doReturn Result.success(Unit)
+        }
+
         return CalendarViewModel(
             appContext = mock<Context>(),
             calendarUseCase = calendarUseCase,
@@ -134,7 +144,8 @@ class CalendarViewModelSyncWiringTest {
             errorHandler = mock<ErrorHandler>(),
             shiftUseCase = shiftUseCase,
             alarmUseCase = alarmUseCase,
-            masterPausePrefs = masterPausePrefs
+            masterPausePrefs = masterPausePrefs,
+            pendingDeselectionCleanupStore = pendingCleanupStore
         )
     }
 

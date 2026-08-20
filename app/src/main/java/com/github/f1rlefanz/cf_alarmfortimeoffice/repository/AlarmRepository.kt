@@ -179,6 +179,45 @@ class AlarmRepository @Inject constructor(
     /** Laeuft gerade ein Nachlade-Versuch? Verhindert, dass zehn Aufrufer zehn Reads starten. */
     private val reloadMutex = Mutex()
 
+    /**
+     * IST DER LETZTE SCHREIBVERSUCH GESCHEITERT?
+     *
+     * Die zweite Art, wie der Bestand nur im Arbeitsspeicher landen kann - und sie war bisher
+     * unsichtbar. [persistenceBlocked] deckt den gescheiterten Init-Load ab; ein voller Speicher,
+     * eine IOException oder eine beschaedigte `preferences_pb` treffen aber erst den SCHREIBWEG:
+     * `persistToDataStore()` faengt die Exception, loggt sie und kehrt zurueck, ohne die Sperre zu
+     * setzen (das waere auch falsch - der naechste Versuch soll wieder schreiben duerfen). Wer
+     * danach `isPersistenceBlocked()` fragte, bekam "nein" und hielt den Wecker fuer dauerhaft
+     * gesichert, obwohl `saveAlarm()` unmittelbar davor "liegt NUR im Arbeitsspeicher" geloggt hat.
+     *
+     * Deshalb wird das Ergebnis JEDES Schreibvorgangs hier festgehalten - abfragbar ueber
+     * [istLetzterSchreibvorgangGescheitert].
+     *
+     * NICHT MIT [persistenceBlocked] VERODERN. Der erste Wurf dieses Merkers tat genau das in
+     * [isPersistenceBlocked], und damit bedeuteten zwei voellig verschiedene Lagen dasselbe
+     * Signal: "der Bestand ist in diesem Prozess nicht lesbar" und "der letzte Schreibvorgang ist
+     * gescheitert". `AlarmUseCase.clearInternalAlarms()` deutet das Signal als das erste und
+     * ueberspringt bei einer ausdruecklichen Abschaltung (Master-Pause, "Automatische Alarme aus",
+     * `deleteAllAlarms`) bewusst die gesamte `cancelSystemAlarm`-Schleife - ohne Bestandsliste
+     * geht es nicht besser. Nach einem geworfenen Schreibvorgang ist der Bestand im Speicher aber
+     * VOLLSTAENDIG lesbar; die Schleife waere faelschlich uebersprungen worden, die Master-Pause
+     * haette Repository und Direct-Boot-Spiegel geleert und alle System-Alarme armiert
+     * zurueckgelassen. Sie feuern dann trotz Pause und sind ohne Bestandsliste durch nichts mehr
+     * abbrechbar - genau die verbotene Kombination "Raeumen ohne Cancellen".
+     *
+     * Dieser Merker sagt NUR: "der zuletzt geschriebene Stand liegt vielleicht nur im
+     * Arbeitsspeicher". Er sagt NICHTS darueber, ob der Bestand lesbar ist, und er darf deshalb
+     * nie einen Raeum- oder Cancel-Weg anhalten. Sein einziger Konsument ist die Anzeige des
+     * manuellen Weckers.
+     *
+     * KEINE Dauersperre: ein erfolgreicher Schreibvorgang setzt den Merker sofort wieder auf
+     * `false`. Er beschreibt den LETZTEN Versuch, nicht die Vergangenheit - sonst haette ein
+     * einmaliger, laengst behobener Speicherplatzmangel die Warnung bis zum App-Neustart
+     * stehenlassen.
+     */
+    @Volatile
+    private var letzterSchreibvorgangGescheitert = false
+
     private val userUnlocked: Boolean
         get() = try {
             appContext.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
@@ -412,8 +451,12 @@ class AlarmRepository @Inject constructor(
      *
      * @param force überschreibt die [persistenceBlocked]-Sperre. NUR für ein ausdrückliches Räumen
      *   (siehe [deleteAllAlarms]) - dort ist "nichts" der gewollte Zustand, nicht eine Notlage.
+     * @return `true`, wenn Preferences-Datei UND Direct-Boot-Spiegel wirklich geschrieben wurden.
+     *   `false` heißt: der Bestand lebt für diesen Prozess nur noch im Arbeitsspeicher. Beide
+     *   Fälle sind bewusst KEINE Exception (siehe [saveAlarm]), aber sie dürfen sich auch nicht
+     *   gleich anfühlen - deshalb dieser Rückgabewert statt eines reinen Log-Eintrags.
      */
-    private suspend fun persistToDataStore(alarms: List<AlarmInfo>, force: Boolean = false) {
+    private suspend fun persistToDataStore(alarms: List<AlarmInfo>, force: Boolean = false): Boolean {
         if (persistenceBlocked && !force) {
             Logger.w(
                 LogTags.ALARM,
@@ -421,7 +464,7 @@ class AlarmRepository @Inject constructor(
                     "ist gescheitert, der vorhandene Bestand und der Direct-Boot-Spiegel bleiben " +
                     "unangetastet (Sicherung: '$BROKEN_ALARMS_KEY_NAME')"
             )
-            return
+            return false
         }
         try {
             val alarmsData = alarms.map { it.toAlarmInfoData() }
@@ -441,12 +484,53 @@ class AlarmRepository @Inject constructor(
                 }
             )
 
+            // Erst NACH dem Spiegel zuruecksetzen: vorher waere "dauerhaft" eine Behauptung ueber
+            // einen Vorgang, der noch werfen kann.
+            letzterSchreibvorgangGescheitert = false
+
             Logger.d(LogTags.ALARM, "💾 PERSISTENCE: Saved ${alarms.size} alarms to DataStore (+ Direct-Boot-Spiegel)")
+            return true
         } catch (e: Exception) {
+            // MERKEN, nicht nur loggen: sonst meldet `isPersistenceBlocked()` gleich danach "alles
+            // in Ordnung", und der manuelle Wecker gibt sich als dauerhaft gespeichert aus,
+            // obwohl weder Preferences-Datei noch Direct-Boot-Spiegel ihn haben.
+            letzterSchreibvorgangGescheitert = true
             Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Error saving alarms to DataStore", e)
+            return false
         }
     }
 
+    /**
+     * WARUM DIESE FUNKTION AUCH DANN `success` MELDET, WENN NICHTS GESCHRIEBEN WURDE.
+     *
+     * Bei gesperrter Persistenz kehrt [persistToDataStore] ohne zu schreiben und ohne zu werfen
+     * zurück - der Alarm liegt dann nur im Arbeitsspeicher, ohne Preferences-Eintrag und ohne
+     * Direct-Boot-Spiegel, und ist nach einem Prozesstod weg. Das als `Result.failure`
+     * herauszureichen wäre die naheliegende, aber falsche Antwort, und zwar aus zwei Gründen:
+     *
+     * 1. Es bräche die ausdrückliche Zusicherung der Sperre (siehe [persistenceBlocked]): "Die
+     *    System-Alarme werden trotzdem gesetzt (der Wecker klingelt), nur die Persistenz bleibt
+     *    für diesen Prozess außen vor."
+     * 2. Es machte den Kalender-Sync SCHLECHTER, nicht besser. `AlarmUseCase.syncAlarms()` ruft
+     *    `saveAlarm(...).getOrThrow()` und erst DANACH `scheduleSystemAlarm(...)`. Ein Wurf hier
+     *    landet zwar im Pro-Event-`try/catch` (der Sync bricht also nicht ab), lässt den Alarm
+     *    aber im Cache stehen, ohne ihn je zu armieren - genau die Kombination "stummer Wecker MIT
+     *    Anzeige", gegen die anderswo im Projekt eigens zurückgerollt wird. Und ein Rollback des
+     *    Cache-Eintrags hier würde in diesem Prozess ALLE Wecker verhindern, statt sie wenigstens
+     *    klingeln zu lassen.
+     *
+     * Dasselbe gilt fuer den ZWEITEN Weg in den reinen Arbeitsspeicher: wirft der Schreibpfad
+     * (voller Speicher, IOException, beschaedigte Datei), faengt [persistToDataStore] das ebenfalls
+     * und meldet `false`. Dieser Fall hat ein EIGENES Signal
+     * ([istLetzterSchreibvorgangGescheitert]) - bewusst getrennt von [isPersistenceBlocked], die
+     * weiterhin nur "der Bestand ist unlesbar" bedeutet. Wer Dauerhaftigkeit anzeigen will, fragt
+     * beide; wer entscheidet, ob geraeumt werden darf, fragt ausschliesslich [isPersistenceBlocked].
+     *
+     * Wer Dauerhaftigkeit braucht, fragt deshalb NACH dem Speichern [isPersistenceBlocked] - so
+     * wie `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()` für das Löschen und der manuelle
+     * Wecker in `AlarmViewModel.createManualAlarm()` für das Anlegen. Für den Rest bleibt das WARN
+     * unten die Spur; es landet auch im Release-Log.
+     */
     override suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit> {
         return try {
             // VALIDATION: Check if alarm is in the future
@@ -478,7 +562,16 @@ class AlarmRepository @Inject constructor(
                 _activeAlarms.value = currentAlarms
 
                 // PERSIST to DataStore
-                persistToDataStore(currentAlarms)
+                val dauerhaft = persistToDataStore(currentAlarms)
+                if (!dauerhaft) {
+                    Logger.w(
+                        LogTags.ALARM,
+                        "⚠️ PERSISTENCE: Alarm ${alarmInfo.id} (${alarmInfo.formattedTime}) liegt NUR " +
+                            "im Arbeitsspeicher - nicht in der Preferences-Datei und nicht im " +
+                            "Direct-Boot-Spiegel. Er klingelt in diesem Prozess, ist aber nach " +
+                            "Prozesstod oder Neustart weg (siehe isPersistenceBlocked)"
+                    )
+                }
 
                 // CLEANUP: Trigger cleanup after save
                 cleanupExpiredAlarms()
@@ -491,6 +584,23 @@ class AlarmRepository @Inject constructor(
         }
     }
 
+    /**
+     * "IST DER BESTAND IN DIESEM PROZESS UNLESBAR?" - genau das und nichts anderes.
+     *
+     * Bedeutet: der Init-Load ist gescheitert (oder lief vor der ersten Entsperrung und lieferte
+     * still leere Preferences), der Cache ist auf eine Notlage-Leere degradiert, und jeder
+     * Schreibpfad ist gesperrt, damit diese Leere nicht festgeschrieben wird. `getAllAlarms()`
+     * meldet das NICHT als Fehler - deshalb gibt es diese Frage ueberhaupt.
+     *
+     * Bedeutet NICHT "der letzte Schreibvorgang ist gescheitert". Das ist eine ANDERE Lage (voller
+     * Speicher, IOException, beschaedigte Datei), sie hat ihr eigenes Signal
+     * [istLetzterSchreibvorgangGescheitert], und die beiden duerfen nie wieder zu einem Signal
+     * verschmelzen: bei unlesbarem Bestand darf `AlarmUseCase.clearInternalAlarms()` nicht
+     * raeumen (bzw. nur den Direct-Boot-Spiegel), nach einem Schreibfehler dagegen ist der
+     * Bestand vollstaendig lesbar und die `cancelSystemAlarm`-Schleife MUSS laufen. Wer beides
+     * verodert, laesst die Master-Pause armierte System-Alarme zuruecklassen, die niemand mehr
+     * abbrechen kann.
+     */
     override suspend fun isPersistenceBlocked(): Boolean {
         // Auf den Init-Load warten: vorher ist die Sperre noch nicht entschieden.
         return try {
@@ -507,6 +617,26 @@ class AlarmRepository @Inject constructor(
             true
         }
     }
+
+    /**
+     * "IST DER ZULETZT GESCHRIEBENE STAND MOEGLICHERWEISE NUR IM ARBEITSSPEICHER?"
+     *
+     * Der zweite, bis Pruefrunde 8 stumme Weg dorthin: der Schreibweg selbst wirft (voller
+     * Speicher, IOException, beschaedigte `preferences_pb`). `persistToDataStore()` faengt das
+     * bewusst - der Alarm wird trotzdem armiert und klingelt -, aber ohne diesen Merker konnte es
+     * niemand erfahren.
+     *
+     * NUR FUER ANZEIGE UND WARNUNG gedacht (einziger Konsument: der manuelle Wecker im
+     * `AlarmViewModel`). Diese Antwort darf NIEMALS einen Raeum-, Cancel- oder Loeschweg anhalten:
+     * der Bestand ist in dieser Lage vollstaendig lesbar, und ein uebersprungenes
+     * `cancelSystemAlarm()` hinterliesse armierte Alarme, die niemand mehr abbrechen kann.
+     * Fuer "darf ich raeumen?" ist [isPersistenceBlocked] zustaendig, und nur die.
+     *
+     * Kein Warten auf den Init-Load noetig: der Merker beschreibt einen Schreibvorgang, den es
+     * ohne abgeschlossenen Init-Load noch gar nicht gegeben haben kann.
+     */
+    override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean =
+        letzterSchreibvorgangGescheitert
 
     override suspend fun getAllAlarms(): Result<List<AlarmInfo>> {
         return try {

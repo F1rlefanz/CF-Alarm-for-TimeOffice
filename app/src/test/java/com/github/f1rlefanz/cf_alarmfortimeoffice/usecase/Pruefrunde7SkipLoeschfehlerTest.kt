@@ -56,6 +56,9 @@ class Pruefrunde7SkipLoeschfehlerTest {
         var deleteVersuche = 0
 
         override suspend fun isPersistenceBlocked(): Boolean = false
+        // Schreibfehler-Merker: fuer diese Tests immer heil - die Trennung der beiden
+        // Signale wird in Pruefrunde8SignaltrennungTest geprueft.
+        override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean = false
         override val activeAlarms: Flow<List<AlarmInfo>> = state
         override suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit> {
             state.value = state.value.filterNot { it.id == alarmInfo.id } + alarmInfo

@@ -84,6 +84,15 @@ fun StatusTabContent(
             fontWeight = FontWeight.Bold
         )
 
+        // GANZ OBEN und nicht bei der Kalender-Karte darunter: Wenn diese Karte erscheint,
+        // klingeln Wecker eines Dienstplans, den der Nutzer entfernt hat - das schlaegt jeden
+        // anderen Status auf diesem Bildschirm.
+        VerwaisteWeckerNachAbwahlCard(
+            fehlversuche = calendarState.deselectionCleanupFailures,
+            onErneutVersuchen = { calendarViewModel?.retryDeselectionCleanup() },
+            erneutVersuchenMoeglich = calendarViewModel != null
+        )
+
         // Auth Status. Bewusst OHNE Aktions-Button: "Nicht angemeldet" ist hier ein
         // architektonisch unerreichbarer Zustand - MainActivity zeigt bei !isSignedIn bereits
         // root-seitig den Login-Screen statt MainScreen/MainContentScreen (Teil davon ist dieser
@@ -110,6 +119,13 @@ fun StatusTabContent(
         // Karte unsichtbar. Er steht bewusst NACH der Autorisierungs-Pruefung: fallen ALLE
         // Kalender aus, ist das kein Teilerfolg, sondern der Autorisierungsfall darueber.
         val teilerfolg = calendarState.unavailableCalendarIds.isNotEmpty()
+        // Wuerde "Aus Auswahl entfernen" die Auswahl LEEREN, ist es keine Bereinigung mehr,
+        // sondern eine Abwahl - mit allen Folgen. Dann wird vorher gefragt (siehe Dialog unten).
+        var entfernenBestaetigen by remember { mutableStateOf(false) }
+        val entfernenLeertAuswahl = entfernenWuerdeAuswahlLeeren(
+            ausgewaehlt = calendarState.selectedCalendarIds,
+            nichtAbrufbar = calendarState.unavailableCalendarIds
+        )
         val calendarActionLabel: String?
         val onCalendarAction: (() -> Unit)?
         when {
@@ -125,7 +141,10 @@ fun StatusTabContent(
             }
             teilerfolg && calendarViewModel != null -> {
                 calendarActionLabel = "Aus Auswahl entfernen"
-                onCalendarAction = { calendarViewModel.removeUnavailableCalendarsFromSelection() }
+                onCalendarAction = {
+                    if (entfernenLeertAuswahl) entfernenBestaetigen = true
+                    else calendarViewModel.removeUnavailableCalendarsFromSelection()
+                }
             }
             else -> {
                 calendarActionLabel = null
@@ -152,6 +171,20 @@ fun StatusTabContent(
             onAction = onCalendarAction,
             actionEnabled = !authState.calendarOps.calendarsLoading
         )
+
+        if (entfernenBestaetigen && calendarViewModel != null) {
+            LetzteAuswahlEntfernenDialog(
+                onAbbrechen = { entfernenBestaetigen = false },
+                onKalenderWaehlen = {
+                    entfernenBestaetigen = false
+                    onShowCalendarSelection()
+                },
+                onTrotzdemEntfernen = {
+                    entfernenBestaetigen = false
+                    calendarViewModel.removeUnavailableCalendarsFromSelection()
+                }
+            )
+        }
 
         // Schicht-Erkennung Status
         StatusCard(
@@ -207,6 +240,158 @@ fun StatusTabContent(
 }
 
 
+
+/**
+ * Zeigt an, dass nach einer Kalender-Abwahl Wecker dieses Dienstplans stehengeblieben sind.
+ *
+ * WARUM EINE KARTE UND KEINE SNACKBAR (die Fassung, die das hier ersetzt): Der Hinweis lief als
+ * `SnackbarDuration.Indefinite` auf dem GEMEINSAMEN SnackbarHostState von MainContentScreen -
+ * dem einzigen Indefinite-Aufruf der App. `showSnackbar` serialisiert ueber einen Mutex: solange
+ * diese eine Snackbar stand (und sie geht nur per Aktion oder Wischen weg), suspendierten ALLE
+ * uebrigen Snackbar-Kanaele desselben Hosts, und die `clearError()`-Aufrufe hinter ihnen liefen
+ * ebenfalls nicht - ein Kalender-, Schicht- oder Wecker-Fehler erreichte den Nutzer gar nicht
+ * mehr und blieb dazu ungeleert im State stehen. Ein bleibender Hinweis darf die uebrigen
+ * Meldungen nicht blockieren; die App zeigt bleibende Zustaende ohnehin ueberall sonst als Karte
+ * im Status-Tab (Kalender-Teilerfolg, fehlende Berechtigungen, Akku-Ausnahme).
+ *
+ * SIE VERSCHWINDET VON SELBST, sobald der Zustand aufgeloest ist - geraeumt, Automatik aus,
+ * Master-Pause oder wieder ein Kalender ausgewaehlt (siehe `resolveDeselectionCleanupFailure`).
+ * Ein Wegtippen gibt es bewusst nicht: solange die Wecker klingeln koennen, hat die Karte etwas
+ * zu sagen.
+ *
+ * @param erneutVersuchenMoeglich ohne CalendarViewModel gibt es niemanden, der den zweiten
+ *   Anlauf ausfuehren koennte - dann bleibt der Knopf abgeblendet statt nur so zu tun.
+ */
+@Composable
+private fun VerwaisteWeckerNachAbwahlCard(
+    fehlversuche: Int,
+    onErneutVersuchen: () -> Unit,
+    erneutVersuchenMoeglich: Boolean
+) {
+    if (fehlversuche <= 0) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
+            verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    // dekorativ: der Titel daneben benennt den Zustand in Worten
+                    contentDescription = null,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    "Wecker eines abgewählten Kalenders",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+
+            Text(
+                CalendarViewModel.DESELECTION_CLEANUP_FAILED_MESSAGE,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+
+            CompactButton(
+                onClick = onErneutVersuchen,
+                text = CalendarViewModel.DESELECTION_CLEANUP_RETRY_ACTION,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = erneutVersuchenMoeglich
+            )
+        }
+    }
+}
+
+/**
+ * PURE, TESTBAR: Bliebe nach "Aus Auswahl entfernen" KEIN Kalender mehr ausgewaehlt?
+ *
+ * WARUM DAS EINE EIGENE FRAGE IST: Der Knopf ist als Bereinigung gedacht - "der Kalender ist weg,
+ * nimm ihn aus der Auswahl". Trifft er den letzten ausgewaehlten Kalender, tut er etwas ganz
+ * anderes: er loest eine Abwahl aus, und die raeumt seit v1.29.3 alle kalenderbasierten Wecker der
+ * naechsten zwei Wochen samt der Dienstzeit-Fenster fuer Dimmer und "Nicht stoeren". Der Anlass
+ * ist dabei haeufig voruebergehend (Server- oder Freigabestoerung), also etwas, das von allein
+ * vergeht - deshalb darf dieser Fall nicht mit demselben beilaeufigen Tippen passieren wie das
+ * Entfernen eines von mehreren Kalendern.
+ *
+ * Verglichen wird gegen die AKTUELL ausgewaehlten IDs und nicht gegen eine gemerkte Anzahl: die
+ * Liste der nicht abrufbaren Kalender stammt aus dem letzten Ladevorgang, die Auswahl kann sich
+ * seither geaendert haben.
+ */
+internal fun entfernenWuerdeAuswahlLeeren(
+    ausgewaehlt: Set<String>,
+    nichtAbrufbar: Set<String>
+): Boolean = ausgewaehlt.isNotEmpty() &&
+    nichtAbrufbar.isNotEmpty() &&
+    ausgewaehlt.all { it in nichtAbrufbar }
+
+/**
+ * Nutzertexte der Rueckfrage. Als Konstanten, damit ein Test genau sie festhalten kann - der Text
+ * IST hier die Zusicherung: er muss die Folge benennen und den harmlosen Weg zuerst anbieten.
+ */
+internal const val ENTFERNEN_LEERT_AUSWAHL_TITEL: String = "Danach wäre kein Kalender ausgewählt"
+
+internal const val ENTFERNEN_LEERT_AUSWAHL_TEXT: String =
+    "Dieser Kalender ist deine einzige Schichtquelle. Entfernst du ihn, werden alle Wecker der " +
+        "nächsten zwei Wochen gelöscht, und der Dimmer sowie \"Nicht stören\" schalten nicht mehr " +
+        "nach deinen Dienstzeiten. Selbst gestellte Wecker bleiben.\n\n" +
+        "Dass ein Kalender gerade nicht abrufbar ist, liegt oft an einer vorübergehenden Störung " +
+        "oder einer entzogenen Freigabe. Dann lohnt sich Abwarten: solange du nichts entfernst, " +
+        "bleiben deine bestehenden Wecker erhalten."
+
+/** Der harmlose Weg - steht im Dialog an erster Stelle. */
+internal const val ENTFERNEN_LEERT_AUSWAHL_ALTERNATIVE: String = "Anderen Kalender wählen"
+
+internal const val ENTFERNEN_LEERT_AUSWAHL_BESTAETIGEN: String = "Trotzdem entfernen"
+
+internal const val ENTFERNEN_LEERT_AUSWAHL_ABBRECHEN: String = "Abbrechen"
+
+/**
+ * Die Rueckfrage vor dem Entfernen des LETZTEN ausgewaehlten Kalenders.
+ *
+ * Der bestaetigende Knopf ist bewusst der unauffaellige (TextButton) und der harmlose Ausweg der
+ * hervorgehobene: der Zustand, aus dem heraus getippt wird, sieht nach einem Defekt aus, ist aber
+ * meistens voruebergehend.
+ */
+@Composable
+private fun LetzteAuswahlEntfernenDialog(
+    onAbbrechen: () -> Unit,
+    onKalenderWaehlen: () -> Unit,
+    onTrotzdemEntfernen: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onAbbrechen,
+        title = { Text(ENTFERNEN_LEERT_AUSWAHL_TITEL) },
+        text = { Text(ENTFERNEN_LEERT_AUSWAHL_TEXT) },
+        confirmButton = {
+            Button(onClick = onKalenderWaehlen) { Text(ENTFERNEN_LEERT_AUSWAHL_ALTERNATIVE) }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
+                TextButton(onClick = onAbbrechen) { Text(ENTFERNEN_LEERT_AUSWAHL_ABBRECHEN) }
+                TextButton(onClick = onTrotzdemEntfernen) {
+                    Text(
+                        ENTFERNEN_LEERT_AUSWAHL_BESTAETIGEN,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    )
+}
 
 /**
  * PURE, TESTBAR: formuliert den Teilerfolg fuer die Kalender-Karte.

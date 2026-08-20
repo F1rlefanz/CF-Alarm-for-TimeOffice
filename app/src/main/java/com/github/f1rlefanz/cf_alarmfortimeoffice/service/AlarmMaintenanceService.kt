@@ -68,6 +68,77 @@ interface AlarmMaintenanceEntryPoint {
 }
 
 /**
+ * Der offene Raeumauftrag nach einer Kalender-Abwahl — die Entscheidung, was damit zu geschehen
+ * ist. Android-frei und als eigenes Top-Level-Objekt, aus demselben Grund wie
+ * [MaintenanceLoadDecision]: pruefbar ohne eine `android.app.Service`-Ableitung.
+ *
+ * WOFUER DAS DA IST: `CalendarViewModel` haelt den Auftrag im
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore] fest, BEVOR
+ * es raeumt. Stirbt der Prozess dazwischen (App weggewischt, Force-Stop) oder scheitert das
+ * Raeumen, bleibt der Auftrag liegen — und die App wird ihn von allein nie wieder anfassen, weil
+ * die Auswahl beim naechsten Start von Anfang an leer ist und der Uebergangs-Merker deshalb nicht
+ * mehr greift. Die 6h-Wartung ist der Hintergrundpfad, der ohnehin laeuft; hier gehoert er hin.
+ *
+ * Die Master-Pause pruefen die Aufrufer VORHER — waehrend der Pause steht ohnehin kein Wecker,
+ * und ein Sync wuerde ueber den zentralen Backstop zusaetzlich einen schwebenden Snooze
+ * abbrechen.
+ */
+internal object AbwahlRaeumauftrag {
+
+    /** Was nach dem Durchgang mit dem dauerhaften Merker zu geschehen ist. */
+    enum class Merker {
+        /** Nichts anfassen: der Auftrag ist weiterhin offen (oder es gab nie einen). */
+        BEHALTEN,
+
+        /** Erledigt oder hinfaellig — der Merker darf weg. */
+        LOESCHEN
+    }
+
+    data class Ergebnis(val geraeumt: Boolean, val merker: Merker)
+
+    /**
+     * @param auftragOffen liegt ein Auftrag vor? Ein LESEFEHLER des Merkers ist hier `false` mit
+     *   [Merker.BEHALTEN] beim Aufrufer — er darf nie als "kein Auftrag" WEGGESCHRIEBEN werden.
+     * @param auswahlIstLeer die LESBAR ermittelte Kalenderauswahl ist leer. Ist sie nicht lesbar,
+     *   ruft der Aufrufer diese Funktion gar nicht erst auf: "nicht lesbar" ist keine Abwahl.
+     * @param shiftConfigLesen `null` = Konfiguration nicht lesbar. Dann wird NICHT geraeumt
+     *   (fail-safe, wie ueberall sonst: ein Defekt im Konfigurations-Store darf keine Wecker
+     *   kosten) und der Auftrag bleibt fuer den naechsten Lauf offen.
+     * @param raeumen fuehrt `syncAlarms(emptyList(), config)` aus und meldet den Erfolg. Genau
+     *   dieser Weg schont manuelle Wecker (`keepManualAlarms`) und schreibt zugleich die
+     *   Schichtspannen leer, sonst dimmten Dimmer und DND weiter nach dem alten Dienstplan.
+     */
+    suspend fun abarbeiten(
+        auftragOffen: Boolean,
+        auswahlIstLeer: Boolean,
+        shiftConfigLesen: suspend () -> com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig?,
+        raeumen: suspend (com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig) -> Boolean
+    ): Ergebnis {
+        if (!auftragOffen) return Ergebnis(geraeumt = false, merker = Merker.BEHALTEN)
+
+        // Es ist wieder ein Kalender ausgewaehlt: der naechste Delta-Sync deckt die Wecker ab,
+        // der Auftrag ist hinfaellig. Hier zu raeumen waere sogar falsch - es wuerde die Wecker
+        // des neu gewaehlten Dienstplans loeschen.
+        if (!auswahlIstLeer) return Ergebnis(geraeumt = false, merker = Merker.LOESCHEN)
+
+        val config = shiftConfigLesen()
+            ?: return Ergebnis(geraeumt = false, merker = Merker.BEHALTEN)
+
+        // Ohne Automatik gibt es keine kalenderbasierten Wecker mehr (das Abschalten selbst raeumt
+        // sie). `syncAlarms()` naehme in diesem Zweig einen anderen Weg und loeschte auch MANUELLE
+        // Wecker - die haben mit dem Kalender nichts zu tun und ueberleben eine Abwahl.
+        if (!config.autoAlarmEnabled) return Ergebnis(geraeumt = false, merker = Merker.LOESCHEN)
+
+        return if (raeumen(config)) {
+            Ergebnis(geraeumt = true, merker = Merker.LOESCHEN)
+        } else {
+            // Gescheitert: der Auftrag bleibt offen, der naechste Lauf versucht es erneut.
+            Ergebnis(geraeumt = false, merker = Merker.BEHALTEN)
+        }
+    }
+}
+
+/**
  * Reine, Android-freie Entscheidungslogik der 6h-Wartung — bewusst als eigenes Top-Level-Objekt
  * (nicht im Companion von [AlarmMaintenanceService]), damit Unit-Tests sie ohne das Laden einer
  * `android.app.Service`-Ableitung pruefen koennen.
@@ -371,6 +442,10 @@ class AlarmMaintenanceService : Service() {
 
     @Inject
     lateinit var calendarUnavailableNotifier: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
+
+    @Inject
+    lateinit var pendingDeselectionCleanupStore:
+        com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -893,6 +968,94 @@ class AlarmMaintenanceService : Service() {
     }
 
     /**
+     * Arbeitet einen offenen Raeumauftrag nach einer Kalender-Abwahl ab — siehe
+     * [AbwahlRaeumauftrag] fuer das Warum.
+     *
+     * EIGENER try/catch um alles: dieser Schritt ist ein Nachzuegler, nicht die Aufgabe der
+     * Wartung. Faellt er aus, muss der Rest (Token, Kalender, Sync) trotzdem laufen.
+     */
+    private suspend fun arbeiteOffenenRaeumauftragAb() {
+        try {
+            val offenSeit = pendingDeselectionCleanupStore.pendingSince().getOrElse { error ->
+                // NICHT als "kein Auftrag" deuten und schon gar nicht loeschen: dann faellt der
+                // Auftrag stillschweigend unter den Tisch und die verwaisten Wecker klingeln
+                // weiter. Der naechste Lauf versucht es erneut.
+                Logger.w(
+                    LogTags.MAINTENANCE,
+                    "Offener Raeumauftrag nicht lesbar - bleibt fuer den naechsten Lauf stehen",
+                    error
+                )
+                return
+            } ?: return
+
+            // Die Auswahl kommt aus dem SPEICHER, und ein Lesefehler ist keine Abwahl - dann wird
+            // nichts geraeumt und der Auftrag bleibt offen. Gleiche Unterscheidung wie unten in
+            // STEP 3 und im CalendarViewModel.
+            val auswahl = calendarSelectionRepository.getCurrentSelectedCalendarIds()
+                .getOrElse { error ->
+                    Logger.w(
+                        LogTags.MAINTENANCE,
+                        "Raeumauftrag vertagt: Kalenderauswahl nicht lesbar (kein Beleg fuer eine Abwahl)",
+                        error
+                    )
+                    return
+                }
+
+            val alterStunden = TimeUnit.MILLISECONDS.toHours(System.currentTimeMillis() - offenSeit)
+            Logger.business(
+                LogTags.MAINTENANCE,
+                "🗑️ ABWAHL: offener Raeumauftrag gefunden (seit ${alterStunden}h) - wird abgearbeitet"
+            )
+
+            val ergebnis = AbwahlRaeumauftrag.abarbeiten(
+                auftragOffen = true,
+                auswahlIstLeer = auswahl.isEmpty(),
+                shiftConfigLesen = { shiftUseCase.getCurrentShiftConfig().getOrNull() },
+                raeumen = { config ->
+                    alarmUseCase.syncAlarms(emptyList(), config)
+                        .onSuccess { verbleibend ->
+                            Logger.business(
+                                LogTags.MAINTENANCE,
+                                "✅ ABWAHL: nachtraeglich aufgeraeumt - ${verbleibend.size} Wecker " +
+                                    "verbleiben (manuelle)"
+                            )
+                        }
+                        .onFailure { e ->
+                            Logger.e(
+                                LogTags.MAINTENANCE,
+                                "❌ ABWAHL: nachtraegliches Aufraeumen fehlgeschlagen - Auftrag bleibt offen",
+                                e
+                            )
+                        }
+                        .isSuccess
+                }
+            )
+
+            if (ergebnis.merker == AbwahlRaeumauftrag.Merker.LOESCHEN) {
+                pendingDeselectionCleanupStore.clearIfPending()
+                if (!ergebnis.geraeumt) {
+                    Logger.business(
+                        LogTags.MAINTENANCE,
+                        "ABWAHL: Raeumauftrag hinfaellig (wieder ein Kalender ausgewaehlt oder " +
+                            "Automatik aus) - verworfen"
+                    )
+                }
+            }
+
+            if (ergebnis.geraeumt) saveMaintenanceTime()
+        } catch (e: CancellationException) {
+            // Ein Abbruch der Wartung ist kein Fehlschlag des Auftrags - er muss durchschlagen.
+            throw e
+        } catch (e: Exception) {
+            Logger.e(
+                LogTags.MAINTENANCE,
+                "Raeumauftrag konnte nicht abgearbeitet werden - Wartung laeuft weiter",
+                e
+            )
+        }
+    }
+
+    /**
      * Main maintenance logic
      *
      * STEPS:
@@ -922,6 +1085,17 @@ class AlarmMaintenanceService : Service() {
             Logger.business(LogTags.MAINTENANCE, "Wartung uebersprungen (Master-Pause aktiv)")
             return
         }
+
+        // STEP 0a: OFFENER RAEUMAUFTRAG nach einer Kalender-Abwahl.
+        //
+        // GANZ VORNE, und das ist die tragende Entscheidung: weiter unten steigt die Wartung
+        // gleich zweimal aus, bevor sie die Kalenderauswahl ueberhaupt ansieht - beim
+        // fehlgeschlagenen Token-Refresh und im Skip-Zweig des Lade-Gates. Genau der Skip-Zweig
+        // ist nach einer Abwahl der Normalfall: die verwaisten Wecker reichen 14 Tage weit, der
+        // Puffer ist also reichlich, und die Kalenderdaten sind frisch. Stuende dieser Schritt
+        // hinter dem Gate, waere er in genau der Lage blind, fuer die es ihn gibt. Ein Token
+        // braucht er ohnehin nicht - geraeumt wird ohne jede Netzabfrage.
+        arbeiteOffenenRaeumauftragAb()
 
         // STEP 1: TOKEN REFRESH
         Logger.d(LogTags.MAINTENANCE, "Step 1: Token refresh")

@@ -216,6 +216,43 @@ fun ShiftConfigScreen(
                 }
             }
 
+            // REGEL-NACHZUG BEIM UMBENENNEN: Ist eine Dimmer-/Hue-Regel NICHT auf den neuen Namen
+            // mitgezogen worden, tut eine bewusst eingerichtete Funktion ab jetzt nichts mehr.
+            // Das muss der Nutzer DORT erfahren, wo er gerade steht - und beim Umbenennen steht er
+            // auf genau diesem Screen. Bis zur Korrektur ging die Meldung in `ShiftUiState.error`
+            // und damit an die Snackbar des MainContentScreen, den in diesem Moment niemand sieht;
+            // die unmittelbar folgende Schichterkennung loeschte sie ausserdem sofort wieder.
+            // Deshalb: eigenes Feld, bleibende Karte, und weg erst auf Bestaetigung.
+            shiftState.regelNachzugHinweis?.let { hinweis ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(SpacingConstants.PADDING_CARD)) {
+                        Text(
+                            "Regeln prüfen",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            hinweis,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        TextButton(
+                            onClick = { shiftViewModel.clearRegelNachzugHinweis() },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Verstanden")
+                        }
+                    }
+                }
+            }
+
             // NICHT LESBARE KONFIGURATION ist etwas anderes als "noch keine angelegt".
             //
             // Seit die App eine vorhandene, aber nicht dekodierbare Konfiguration NICHT mehr mit

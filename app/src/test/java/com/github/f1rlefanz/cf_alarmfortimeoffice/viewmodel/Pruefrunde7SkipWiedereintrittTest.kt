@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -82,6 +83,8 @@ class Pruefrunde7SkipWiedereintrittTest {
         skipUseCase: IAlarmSkipUseCase
     ): AlarmViewModel {
         val shiftUseCase = mock<IShiftUseCase>()
+        // Reaktive Schichtliste: AlarmViewModel sammelt diesen Flow seit Pruefrunde 8 im init{}.
+        whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         shiftUseCase.stub {
             onBlocking { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig(autoAlarmEnabled = true))
         }
@@ -96,7 +99,10 @@ class Pruefrunde7SkipWiedereintrittTest {
             shiftUseCase = shiftUseCase,
             errorHandler = mock<ErrorHandler>(),
             masterPausePrefs = masterPausePrefs,
-            alarmPrefs = alarmPrefs
+            alarmPrefs = alarmPrefs,
+            alarmRepository = mock<IAlarmRepository>().apply {
+                stub { onBlocking { isPersistenceBlocked() } doReturn false }
+            }
         )
     }
 

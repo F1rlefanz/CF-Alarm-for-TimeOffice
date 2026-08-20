@@ -50,6 +50,23 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 
+/**
+ * PURE, TESTBAR: entscheidet, ob ein Auth-Fehler hier als Snackbar gehoert.
+ *
+ * WARUM ES DIESE PRUEFUNG BRAUCHT: `authState.errors` hat zwei Leser. Solange der Nutzer
+ * ANGEMELDET ist, ist dieser Bildschirm der einzige - der LoginScreen ist dann per Definition
+ * nicht komponiert, und ein Fehler beim Abmelden erreichte den Nutzer bisher nur als Banner ganz
+ * oben im Einstellungen-Tab, waehrend der Abmelde-Knopf am unteren Ende derselben langen Liste
+ * steht: der Nutzer sah nichts. Ist er dagegen ABGEMELDET, gehoert die Meldung dem LoginScreen
+ * (dort landet er als Naechstes) - dann darf hier nichts mehr aufpoppen, sonst zeigt eine
+ * gerade verschwindende Oberflaeche die Nachricht des naechsten Bildschirms.
+ */
+internal fun authFehlerFuerSnackbar(
+    fehler: String?,
+    istAngemeldet: Boolean
+): String? =
+    if (istAngemeldet) fehler?.takeIf { it.isNotBlank() } else null
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainContentScreen(
@@ -116,16 +133,50 @@ fun MainContentScreen(
             calendarViewModel.clearError()
         }
     }
+    // Verwaiste Wecker nach einer Kalender-Abwahl melden sich NICHT hier, sondern als bleibende
+    // Karte im Status-Tab (`VerwaisteWeckerNachAbwahlCard`). Vorher stand hier eine Snackbar mit
+    // `SnackbarDuration.Indefinite` - der einzige Indefinite-Aufruf der App. `showSnackbar`
+    // serialisiert ueber einen Mutex: solange sie stand (und sie ging nur per Aktion oder
+    // Wischen weg), suspendierten alle uebrigen Kanaele dieses Hosts, und die `clearError()`
+    // dahinter liefen ebenfalls nicht - Kalender-, Schicht- und Wecker-Fehler erreichten den
+    // Nutzer gar nicht mehr. Ein bleibender Hinweis gehoert in eine Karte, nicht in den
+    // gemeinsamen Meldungskanal.
     LaunchedEffect(shiftState.error) {
         shiftState.error?.let { msg ->
             snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
             shiftViewModel.clearError()
         }
     }
+    // Regel-Nachzug beim Umbenennen einer Schicht: eigener Kanal neben `error`, siehe
+    // ShiftUiState.regelNachzugHinweis. Hierher kommt er, wenn die Umbenennung NICHT ueber den
+    // Schicht-Editor kam, sondern ueber einen fremden Schreiber (Konfigurations-Import,
+    // Ruecksicherung) - dann steht der Nutzer in den Einstellungen und nicht im
+    // ShiftConfigScreen, der denselben Hinweis als bleibende Karte zeigt. Beide Screens schliessen
+    // sich gegenseitig aus, es meldet also immer genau einer.
+    LaunchedEffect(shiftState.regelNachzugHinweis) {
+        shiftState.regelNachzugHinweis?.let { msg ->
+            snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
+            shiftViewModel.clearRegelNachzugHinweis()
+        }
+    }
     LaunchedEffect(alarmState.error) {
         alarmState.error?.let { msg ->
             snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
             alarmViewModel.clearError()
+        }
+    }
+    // Auth-Fehler, waehrend der Nutzer angemeldet ist - praktisch immer ein gescheitertes
+    // Abmelden. Er steht dann im Einstellungen-Tab, wo der Abmelde-Knopf ganz unten liegt; das
+    // Fehler-Banner dieses Tabs sitzt aber ganz OBEN in einer langen Scroll-Liste und damit
+    // ausserhalb des Bildes. Die Snackbar meldet dort, wo er wirklich hinsieht.
+    // BEWUSST OHNE clearError(): das Banner im Einstellungen-Tab bleibt die nachlesbare Fassung
+    // und wird vom Nutzer weggetippt. Wer hier leert, nimmt ihm die zweite Chance, es zu lesen.
+    LaunchedEffect(authState.errors.error, authState.isSignedIn) {
+        authFehlerFuerSnackbar(
+            fehler = authState.errors.error,
+            istAngemeldet = authState.isSignedIn
+        )?.let { msg ->
+            snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
         }
     }
 

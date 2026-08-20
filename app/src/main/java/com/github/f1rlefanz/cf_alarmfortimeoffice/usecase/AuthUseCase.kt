@@ -181,6 +181,48 @@ class AuthUseCase @Inject constructor(
      * Scheitert das Verwerfen (z.B. kein Netz für den GMS-Teil), wird das nur geloggt: die
      * Abmeldung MUSS trotzdem durchlaufen. Ein Nutzer, der auf "Abmelden" tippt, darf nicht
      * angemeldet bleiben, weil ein Cache-Aufruf schiefging.
+     *
+     * WAS EIN FAILURE DIESER FUNKTION BEDEUTET - und was es NICHT bedeutet: Es gibt genau eine
+     * Fehlerquelle, `clearAuthData().getOrThrow()`. Das Kalender-Token ist zu diesem Zeitpunkt
+     * bereits verworfen, denn `invalidate()` laeuft davor und meldet seinen eigenen Fehlschlag
+     * nie nach oben. Ein Failure heisst also NICHT "es ist nichts passiert", sondern: "Token
+     * weg, Auth-Daten noch da". Genau diese Lesart hat einmal gefehlt - die vorige Fassung
+     * dieses KDoc versprach, ein gescheitertes Abmelden lasse nichts zurueck, und der Aufrufer
+     * hat sich darauf verlassen (Pruefrunde 8 / Welle 5, Befund B). Der zurueckbleibende Nutzer
+     * gilt weiter als angemeldet, kommt aber an keinen Kalender mehr: die 6h-Wartung faellt in
+     * ihre fail-safe-Zweige, fuer neue Schichten entstehen keine Wecker, und der
+     * Token-Verlust-Waechter meldet sich je nach Timing auch nicht. Wer `signOut()` aufruft,
+     * MUSS deshalb den Fehlerzweig genauso behandeln wie den Erfolgszweig - siehe
+     * `AuthViewModel.signOut()`, Abschnitt "Punkt ohne Wiederkehr".
+     *
+     * DIESE FUNKTION ALLEIN IST KEIN VOLLSTAENDIGES ABMELDEN. Sie verwirft die Anmeldung -
+     * gestellte Wecker, Schichtspannen, 6h-Wartung, Dimmer-/DND-Tick, Hue-Planung und
+     * Pre-Alarm-Refresh raeumt `AuthViewModel.signOut()` weg, und zwar NACH diesem Aufruf, in
+     * beiden Zweigen (`stopScheduledWorkForSignOut()`, Pruefrunde 8 / Befund 3). Die umgekehrte
+     * Reihenfolge - erst raeumen, dann abmelden - ist erprobt und verworfen: sie erfindet den
+     * Zustand "angemeldet, aber saemtliche Wecker geloescht", den die App danach vollstaendig
+     * selbst wieder aufloesen muesste, und daran ist sie in drei aufeinanderfolgenden Reviews
+     * gescheitert (der manuelle Wecker steht in keiner Terminliste; der ShiftSpanStore blieb
+     * leer; die Warnkarte loeschte sich selbst). Die Begruendung im Volltext steht im KDoc von
+     * `AuthViewModel.signOut()` - hier steht sie nur, damit niemand sie erneut umdreht.
+     *
+     * Wer `signOut()` von einer neuen Stelle aus ruft, ohne dort ebenfalls aufzuraeumen, stellt
+     * Befund 3 wieder her: armierte Wecker eines abgemeldeten Kontos, die der `BootReceiver`
+     * nach jedem Neustart erneut scharf macht - und die App zeigt danach nur noch den
+     * Anmeldebildschirm, also keine Oberflaeche mehr, ueber die sich das abstellen liesse.
+     *
+     * NICHT ABBRECHBAR: Der Aufrufer muss diesen Aufruf UND sein Aufraeumen zusammen in einen
+     * `withContext(NonCancellable)`-Abschnitt legen. `invalidate()` ruft `GoogleAuthUtil
+     * .clearToken()`, einen Netzaufruf, der ohne Netz bis zum Timeout haengt - wird die
+     * Coroutine in diesem Fenster abgebrochen (der Nutzer verlaesst die App nach "Abmelden"),
+     * ist das Token weg und nichts geraeumt.
+     *
+     * WARUM DAS AUFRAEUMEN NICHT HIER LIEGT: Sein Ergebnis muss den Nutzer erreichen ("es
+     * koennen Wecker zurueckgeblieben sein"), ohne die Bedeutung des Rueckgabewerts zu
+     * verbiegen. `Result<Unit>` aus [IAuthUseCase.signOut] heisst "die Abmeldung selbst ist
+     * gelungen"; ein gescheitertes Aufraeumen darf daraus KEIN Failure machen, denn dann bliebe
+     * der Nutzer laut Aufrufer angemeldet. Ein zweites Ergebnis passt nicht in diese Signatur -
+     * also orchestriert die Schicht, die ohnehin den Fehlerzustand der Oberflaeche haelt.
      */
     override suspend fun signOut(): Result<Unit> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("AuthUseCase.signOut") {

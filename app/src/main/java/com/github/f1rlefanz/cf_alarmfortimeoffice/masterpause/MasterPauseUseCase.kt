@@ -1,12 +1,14 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause
 
 import android.content.Context
+import android.content.Intent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -23,8 +25,9 @@ import javax.inject.Singleton
  * Schicht-Dimmer ([DimScheduleUseCase]), DND-Steuerung ([DndScheduleUseCase]), Hue-SmartScheduler
  * ([HueSmartScheduler]) und den Pre-Alarm-Refresh ([CalendarPreAlarmRefreshScheduler]).
  *
- * [pause] raeumt aktiv auf (Alarme loeschen, Ketten stoppen), statt nur den Schalter umzulegen -
- * sonst liefe alles bis zum naechsten natuerlichen Ende einfach weiter. [resume] baut dieselben
+ * [pause] raeumt aktiv auf (Alarme loeschen, Ketten stoppen, einen gerade klingelnden Wecker
+ * beenden), statt nur den Schalter umzulegen - sonst liefe alles bis zum naechsten natuerlichen
+ * Ende einfach weiter. [resume] baut dieselben
  * Ketten wieder neu auf, analog zum bestehenden Onboarding-/Boot-Restore-Pfad.
  */
 @Singleton
@@ -84,6 +87,36 @@ class MasterPauseUseCase @Inject constructor(
         // Device-Protected-Spiegel im selben Atemzug wie das DataStore-Flag - BootReceiver liest
         // ihn bei LOCKED_BOOT_COMPLETED, wo @MainDataStore (CE-Storage) noch nicht lesbar ist.
         directBootAlarmStore.savePaused(true)
+        // EINEN GERADE KLINGELNDEN WECKER BEENDEN (Pruefrunde 8).
+        //
+        // pause() raeumte bisher nur die PLANUNG ab und liess das gerade Laufende in Ruhe: der
+        // Wecker klingelte nach dem Pausieren einfach weiter, waehrend die Oberflaeche
+        // "Hintergrunddienste pausiert" zeigte. Schlimmer noch, seine Notification blieb mitsamt
+        // Schlummer-Knopf stehen - ein Druck darauf armierte einen neuen Wecker mitten in der
+        // Pause, den danach nichts mehr abraeumte (die 6h-Kette ist hier unten gerade gekappt
+        // worden). Der Schlummer-Pfad hat dagegen jetzt seinen eigenen Backstop; diese Zeile
+        // beseitigt den Anlass.
+        //
+        // BEWUSST UNBEDINGT, nicht auf AlarmSoundService.alarmActive gegated: die Richtung ist
+        // fail-safe zu waehlen, und "Pause heisst still" ist die Zusage der Oberflaeche. Laeuft
+        // gar kein Wecker, verarbeitet der Dienst den Stop-Intent und beendet sich sofort wieder;
+        // waere der Zustandsmerker dagegen veraltet, bliebe der Wecker laut.
+        //
+        // try/catch wie bei jedem Schritt unten: aus dem Hintergrund heraus lehnt Android ab
+        // Android 8 einen startService() ab, und das darf die Pause nicht zerreissen.
+        try {
+            context.startService(
+                Intent(context, AlarmSoundService::class.java)
+                    .setAction(AlarmSoundService.ACTION_STOP_ALARM)
+            )
+        } catch (e: Exception) {
+            Logger.w(
+                LogTags.MASTER_PAUSE,
+                "⚠️ MASTER-PAUSE: laufender Wecker konnte nicht gestoppt werden - er klingelt " +
+                    "weiter, obwohl die App pausiert anzeigt",
+                e
+            )
+        }
         alarmUseCase.deleteAllAlarms()
             .onSuccess {
                 Logger.business(LogTags.MASTER_PAUSE, "✅ MASTER-PAUSE: Alarme geloescht")

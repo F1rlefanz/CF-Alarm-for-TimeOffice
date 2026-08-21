@@ -74,6 +74,13 @@ jobs:
       - name: Code-Invarianten pruefen (Wecker-Killer)
         run: python3 tools/invarianten/pruefe_code.py
 
+      # Die einzige eigene Logik der Schleuse (alles Uebrige ruft nur die
+      # Skripte oben auf). Ein Fehler darin ist still: falsch-negativ heisst,
+      # ein fehlender Changelog-Eintrag rutscht durch - und genau dagegen wurde
+      # die Pruefung gebaut.
+      - name: Changelog-Diff-Logik der Schleuse testen
+        run: python3 -m unittest discover -s tools/schleuse -p "test_*.py"
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

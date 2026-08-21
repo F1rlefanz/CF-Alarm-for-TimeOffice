@@ -11,8 +11,8 @@ gepflegter Stand veraltet zudem lautlos: niemand merkt, dass er falsch ist.
 Was hier ausgegeben wird, stammt deshalb ausschliesslich aus abgeleiteten
 Quellen - Git, `app/build.gradle.kts`, die Testergebnisse. Damit KANN der Stand
 nicht veralten, ohne dass sich tatsaechlich etwas geaendert hat. Die Handarbeit
-im HANDOFF beschraenkt sich seither auf das, was sich nicht ableiten laesst:
-offene ToDos.
+beschraenkt sich seither auf das, was sich nicht ableiten laesst: die offenen
+Punkte, und die liegen im Memory `project_offene_punkte`.
 
 DIE TESTZAHL IST EIN MESSWERT MIT VERFALLSDATUM
 -----------------------------------------------
@@ -48,7 +48,21 @@ WURZEL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 GRADLE_DATEI = os.path.join(WURZEL, "app", "build.gradle.kts")
 TEST_XML = os.path.join(WURZEL, "app", "build", "test-results", "testDebugUnitTest", "TEST-*.xml")
-HANDOFF = os.path.join(WURZEL, "..Projektdateien", "claudes mds", "HANDOFF.md")
+
+# Die offenen Punkte liegen im Memory, nicht im Repo: das Repo ist oeffentlich
+# (GitHub Pages liefert daraus die Datenschutz-URL), und unbelegte
+# Fehlerhypothesen ueber eine Wecker-App gehoeren nicht dorthin. Bis zum
+# 21.08.2026 stand die Liste in `..Projektdateien/claudes mds/HANDOFF.md`; die
+# Datei ist geloescht, weil ihr uebriger Inhalt entweder abgeleitet werden kann
+# oder anderswo vollstaendig steht.
+OFFENE_PUNKTE = os.path.join(
+    os.path.expanduser("~"),
+    ".claude",
+    "projects",
+    "C--Users-Christoph-AndroidStudioProjects-CFAlarmforTimeOffice",
+    "memory",
+    "project_offene_punkte.md",
+)
 
 INTEGRATIONSBRANCH = "main"
 
@@ -208,42 +222,33 @@ def arbeitsstand():
 
 
 def offene_punkte():
-    """Zieht die Ueberschriften der offenen ToDos aus dem HANDOFF.
+    """Zieht die Ueberschriften der offenen Punkte aus dem Memory.
 
     Bewusst nur die Titel, nicht der Text: der Abschnitt ist ein Wegweiser in
-    die Datei, keine zweite Kopie davon.
+    die Datei, keine zweite Kopie davon. Die Datei selbst liegt ohnehin im
+    Memory und ist damit bei Bedarf greifbar.
     """
-    inhalt = lies(HANDOFF)
+    inhalt = lies(OFFENE_PUNKTE)
     if inhalt is None:
         return None
 
-    innerhalb = False
-    titel = []
-    aufzaehlung = []
-    for zeile in inhalt.splitlines():
-        if re.match(r"^##\s", zeile):
-            innerhalb = zeile.strip().lower().startswith("## offen")
-            continue
-        if not innerhalb:
-            continue
-        if re.match(r"^###\s", zeile):
-            titel.append("- " + re.sub(r"^###\s+", "", zeile).strip())
-        elif re.match(r"^[-*]\s", zeile):
-            aufzaehlung.append("- " + re.sub(r"^[-*]\s+", "", zeile).strip())
-
-    punkte = titel or aufzaehlung
-    if not punkte:
+    titel = [
+        "- " + re.sub(r"^##\s+", "", z).strip()
+        for z in inhalt.splitlines()
+        if re.match(r"^##\s", z)
+    ]
+    if not titel:
         return None
 
-    gekuerzt = punkte[:MAX_OFFENE_PUNKTE]
+    gekuerzt = titel[:MAX_OFFENE_PUNKTE]
     text = "\n".join(gekuerzt)
-    if len(punkte) > len(gekuerzt):
-        text += "\n- ... und {} weitere".format(len(punkte) - len(gekuerzt))
-    return text + "\n\nEinzelheiten: `..Projektdateien/claudes mds/HANDOFF.md`"
+    if len(titel) > len(gekuerzt):
+        text += "\n- ... und {} weitere".format(len(titel) - len(gekuerzt))
+    return text + "\n\nEinzelheiten: Memory `project_offene_punkte`"
 
 
 def main():
-    # Der eigene Text ist ASCII, die ToDo-Titel aus dem HANDOFF sind es NICHT
+    # Der eigene Text ist ASCII, die Titel der offenen Punkte sind es NICHT
     # (echte Umlaute, Gedankenstriche). Ohne diese Zeile zerlegt die
     # Windows-Konsole sie in Fragezeichen, und der Abschnitt wird unlesbar.
     try:

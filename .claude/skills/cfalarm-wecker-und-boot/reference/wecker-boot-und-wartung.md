@@ -229,7 +229,8 @@
   `HueSmartScheduler` löst WorkManager erst **beim Gebrauch** auf (Getter statt `lateinit`-Feld) und
   überspringt sich mit WARN, wenn er nicht verfügbar ist. **Kein Unit-Test kann das fangen** (auch
   `ColdStartSmokeTest` nicht: er läuft im entsperrten Prozess) — die Prüfung ist ein echter
-  `adb reboot` mit gefülltem Direct-Boot-Spiegel, Ablauf im HANDOFF.
+  `adb reboot` mit gefülltem Direct-Boot-Spiegel: `python tools/geraet/pruefe_direct_boot.py`
+  (nur Emulator, verweigert jedes andere Ziel).
 - **Kein `getSharedPreferences()` und kein CE-Zugriff in einem Property-Initializer einer Klasse am
   Application-Graphen** (`BackgroundServiceManager`, `HueBridgePinningStore`: beide `by lazy`). Der
   Zugriff selbst ist harmlos, der ZEITPUNKT ist es nicht. Wer daraus wieder einen sofortigen

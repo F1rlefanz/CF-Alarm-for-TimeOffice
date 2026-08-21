@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,9 +87,21 @@ internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N")
  * Vorgaben), sondern verweist auf die Karten darunter - dort steht pro Schicht, welche Muster
  * wirklich gelten.
  */
-internal val SHIFT_RECOGNITION_HINT: String =
+/**
+ * Der erste Satz - die eigentliche Regel. Er steht IMMER da.
+ *
+ * WARUM GETEILT: der vollstaendige Hinweis fuellte auf einem Geraet mit grosser Schrift die halbe
+ * Seite, und weil er ausserhalb der Liste verankert war, scrollte er nicht einmal weg - fuer die
+ * Schichten selbst blieb kaum Platz (vom Nutzer gemeldet, 21.08.2026). Der Rest ist Beiwerk
+ * (Beispiele, Stationswechsel) und liegt jetzt hinter "Mehr anzeigen".
+ */
+internal val SHIFT_RECOGNITION_HINT_KURZ: String =
     "Erkannt wird über die Muster oder den Schichtnamen (ab zwei Zeichen): eines davon muss im " +
-        "Titel deines Kalendertermins als eigenes Wort vorkommen. Welche Muster eine Schicht hat, " +
+        "Titel deines Kalendertermins als eigenes Wort vorkommen."
+
+/** Die Beispiele und der Stationshinweis - aufklappbar, siehe [SHIFT_RECOGNITION_HINT_KURZ]. */
+internal val SHIFT_RECOGNITION_HINT_DETAIL: String =
+    "Welche Muster eine Schicht hat, " +
         "steht in ihrer Karte in der Liste darunter – die Vorgaben mischen Stationskürzel (" +
         SHIFT_HINT_STATION_EXAMPLES.joinToString(", ") +
         ") mit allgemeinen Bezeichnungen (" +
@@ -98,6 +111,14 @@ internal val SHIFT_RECOGNITION_HINT: String =
         "). Arbeitest du auf einer anderen Station, trage dort deine eigenen Kürzel ein. Ohne " +
         "passendes Muster und ohne passenden Namen wird keine Schicht erkannt und es klingelt " +
         "kein Wecker."
+
+/**
+ * Der vollstaendige Hinweis. Bleibt als EIN Text bestehen, damit
+ * `ShiftConfigScreenTextTest` ihn weiterhin gegen die echte Standardkonfiguration pruefen kann -
+ * die Aufteilung ist eine Frage der Darstellung, nicht des Inhalts.
+ */
+internal val SHIFT_RECOGNITION_HINT: String =
+    SHIFT_RECOGNITION_HINT_KURZ + " " + SHIFT_RECOGNITION_HINT_DETAIL
 
 /**
  * PURE, TESTBAR: Was "Auf Standardwerte zuruecksetzen" wirklich schreibt.
@@ -186,36 +207,6 @@ fun ShiftConfigScreen(
                 fontWeight = FontWeight.Bold
             )
 
-            // Wer auf einer anderen Station arbeitet, wird ohne diesen Hinweis nicht erkannt und
-            // bekommt gar keinen Wecker - sichtbar an genau der Stelle, an der man es aendert,
-            // statt es ihn erst nach dem Verschlafen herausfinden zu lassen. Der Wortlaut steht in
-            // SHIFT_RECOGNITION_HINT, damit er gegen die echte Standardkonfiguration testbar ist.
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        // dekorativ: der Hinweistext daneben sagt es bereits
-                        contentDescription = null,
-                        modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                    Text(
-                        SHIFT_RECOGNITION_HINT,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
             // REGEL-NACHZUG BEIM UMBENENNEN: Ist eine Dimmer-/Hue-Regel NICHT auf den neuen Namen
             // mitgezogen worden, tut eine bewusst eingerichtete Funktion ab jetzt nichts mehr.
             // Das muss der Nutzer DORT erfahren, wo er gerade steht - und beim Umbenennen steht er
@@ -290,6 +281,9 @@ fun ShiftConfigScreen(
             }
 
             if (shiftState.currentShiftConfig?.definitions?.isEmpty() == true) {
+                // Ohne Liste gibt es nichts, was der Hinweis verdraengen koennte - und wer hier
+                // steht, braucht ihn am dringendsten.
+                SchichterkennungsHinweis()
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -341,6 +335,16 @@ fun ShiftConfigScreen(
                                 onCodeClick = { assigningCode = it }
                             )
                         }
+                    }
+
+                    // Der Erkennungs-Hinweis steht IN der Liste, nicht darueber: fest verankert
+                    // fuellte er auf einem Geraet mit grosser Schrift die halbe Seite und liess
+                    // sich nicht einmal wegscrollen - fuer die Schichten selbst blieb kaum Platz
+                    // (vom Nutzer gemeldet, 21.08.2026). Wer auf einer anderen Station arbeitet,
+                    // braucht ihn trotzdem, sonst wird nichts erkannt und es klingelt kein Wecker;
+                    // deshalb steht der tragende erste Satz weiterhin sofort da.
+                    item(key = "erkennungs-hinweis") {
+                        SchichterkennungsHinweis()
                     }
 
                     items(
@@ -560,6 +564,60 @@ fun ShiftConfigScreen(
  * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) —
  * eine stillschweigend gekürzte Liste liest sich wie Vollständigkeit.
  */
+/**
+ * Der Erkennungs-Hinweis, aufklappbar.
+ *
+ * WARUM AUFKLAPPBAR UND WARUM IN DER LISTE: Der vollstaendige Text fuellte auf einem Geraet mit
+ * grosser Schrift die halbe Seite - und weil die Karte ausserhalb der `LazyColumn` verankert war,
+ * liess sie sich nicht wegscrollen. Fuer die Schichttypen, um die es auf diesem Bildschirm geht,
+ * blieben ein bis zwei Karten Platz (vom Nutzer gemeldet, 21.08.2026).
+ *
+ * Der erste Satz bleibt sichtbar: er ist die eigentliche Regel, und wer auf einer anderen Station
+ * arbeitet, bekommt ohne sie gar keinen Wecker. Die Beispiele dahinter sind Nachschlagewerk und
+ * stehen hinter "Mehr anzeigen". `rememberSaveable`, damit eine Drehung den aufgeklappten Zustand
+ * nicht wieder zuklappt.
+ */
+@Composable
+private fun SchichterkennungsHinweis() {
+    var ausgeklappt by rememberSaveable { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                Icons.Default.Info,
+                // dekorativ: der Hinweistext daneben sagt es bereits
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (ausgeklappt) SHIFT_RECOGNITION_HINT else SHIFT_RECOGNITION_HINT_KURZ,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                // Der Umschalter sagt, was er zeigt - nicht "Details" oder "i". Material3 gibt
+                // einem TextButton von sich aus das 48dp-Beruehrungsziel, hier braucht es also
+                // keine eigene Klemme.
+                TextButton(onClick = { ausgeklappt = !ausgeklappt }) {
+                    Text(
+                        if (ausgeklappt) "Weniger anzeigen" else "Beispiele und Stationskürzel",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun CodeSuggestionCard(
     result: ShiftCodeSuggester.SuggestionResult,

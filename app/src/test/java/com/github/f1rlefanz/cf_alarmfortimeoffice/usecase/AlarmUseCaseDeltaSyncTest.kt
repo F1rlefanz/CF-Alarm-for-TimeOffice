@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -190,7 +191,8 @@ class AlarmUseCaseDeltaSyncTest {
         spanStore: ShiftSpanStore = mock<ShiftSpanStore>(),
         // Voreinstellung "noch kein vollstaendiger Sync bekannt" = die meldende Richtung, also
         // genau das Verhalten von vor der Horizont-Unterscheidung.
-        horizonStore: FakeSyncHorizonStore = FakeSyncHorizonStore()
+        horizonStore: FakeSyncHorizonStore = FakeSyncHorizonStore(),
+        feedStore: FakeFeedNeueinlesenStore = FakeFeedNeueinlesenStore()
     ): AlarmUseCase =
         AlarmUseCase(
             repo,
@@ -203,7 +205,8 @@ class AlarmUseCaseDeltaSyncTest {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(masterPaused) }
             },
             spanStore,
-            horizonStore
+            horizonStore,
+            feedStore
         )
 
     private fun mockManager(): AlarmManagerService {

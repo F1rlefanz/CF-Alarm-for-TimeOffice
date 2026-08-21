@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
@@ -59,6 +60,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -244,6 +249,10 @@ fun StatusTabContent(
         // Letzter Hintergrund-Sync (6h-Wartung: Token -> Kalender -> Wecker)
         LastSyncCard(calendarViewModel = calendarViewModel)
 
+        // Direkt darunter, weil es dieselbe Frage beantwortet ("was hat die App zuletzt im
+        // Hintergrund getan?") - und ausdruecklich als ruhige Zeile ohne Karte, Farbe oder Icon.
+        FeedNeueinlesenZeile(stand = calendarState.feedNeueinlesen)
+
         // Debug-Informationen
         DebugInfoCard()
         
@@ -412,6 +421,76 @@ private fun AllesPausiertCard(
             )
         }
     }
+}
+
+/**
+ * Der Text der stillen Zeile "Dienstplan-Kalender zuletzt neu eingelesen" - PURE UND TESTBAR, wie
+ * die `noShiftExplanation`-Familie in HomeTabContent.
+ *
+ * ## Was er erzaehlt, und warum ueberhaupt
+ *
+ * Der Dienstplan kommt aus einem ABONNIERTEN Kalender. Alle paar Tage liest Google den Feed neu
+ * ein und gibt jedem Termin eine neue Kennung, ohne dass sich an Schicht oder Weckzeit etwas
+ * aendert. Die App erkennt ihre Wecker daran wieder (gleiche Schicht, gleiche Weckzeit = derselbe
+ * Wecker) und laesst sie unangetastet - voellig geraeuschlos, absichtlich ohne Benachrichtigung.
+ * Der Nutzer hat trotzdem gefragt: "woran erkenne ich das?" Diese Zeile ist die Antwort und sonst
+ * nichts.
+ *
+ * ## Drei Dinge muss der Satz leisten
+ *
+ * 1. OHNE FACHBEGRIFF. Keine "Event-ID", keine "Kennung", kein "Feed", kein "Sync" - der Nutzer
+ *    ist Schichtarbeiter und kein Kalender-Entwickler. Es steht da, was passiert ist: der Kalender
+ *    wurde neu eingelesen, die Wecker wurden wiedererkannt und neu zugeordnet.
+ * 2. DIE FOLGE BENENNEN, und zwar die beruhigende: am Dienstplan hat sich dadurch NICHTS geaendert.
+ *    Ohne diesen Halbsatz liest sich "11 Wecker neu zugeordnet" wie eine Aenderung am Dienstplan -
+ *    genau die Fehldeutung, die die App an anderer Stelle schon einmal ausgeloest hat, als
+ *    taeglich "Neue Schicht erkannt" fuer den jeweils neuen Randtag erschien.
+ * 3. SINGULAR UND PLURAL. "1 Wecker" statt "1 Wecker*innen"-Kauderwelsch; ein falscher Plural in
+ *    einer beruhigenden Zeile untergraebt genau die Ruhe, die sie stiften soll.
+ *
+ * Datum bewusst kurz (Tag und Monat, "22.08."): das Jahr traegt hier keine Auskunft, und der
+ * Vorgang liegt naturgemaess wenige Tage zurueck.
+ *
+ * @return `null`, wenn es noch nie vorkam - dann gibt es auch keine Zeile.
+ */
+internal fun feedNeueinlesenHinweis(
+    stand: FeedNeueinlesenStand?,
+    zone: ZoneId = ZoneId.systemDefault()
+): String? {
+    if (stand == null) return null
+    // Backstop gegen einen unsinnigen Stand: eine Zeile mit "0 Wecker" oder einem Datum aus dem
+    // Jahr 1970 waere schlechter als gar keine. Der Store laesst so etwas gar nicht erst entstehen.
+    if (stand.anzahl <= 0 || stand.zeitpunkt <= 0L) return null
+
+    val datum = DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY)
+        .withZone(zone)
+        .format(Instant.ofEpochMilli(stand.zeitpunkt))
+    val wecker = if (stand.anzahl == 1) "1 Wecker" else "${stand.anzahl} Wecker"
+
+    return "Dienstplan-Kalender zuletzt neu eingelesen: $datum, $wecker wiedererkannt und neu " +
+        "zugeordnet. Am Dienstplan hat sich dadurch nichts geändert."
+}
+
+/**
+ * Rendert [feedNeueinlesenHinweis] - eine ruhige Zeile, kein Ereignis.
+ *
+ * BEWUSST KEINE KARTE, KEIN ICON, KEINE WARNFARBE: hier ist nichts kaputt und nichts zu tun. Alle
+ * uebrigen Elemente dieses Tabs melden einen Zustand, der Aufmerksamkeit braucht; diese Zeile ist
+ * reine Auskunft und muss sich optisch klar davon unterscheiden, sonst sucht der Nutzer ein
+ * Problem, das es nicht gibt. Aus demselben Grund gibt es dazu keine Benachrichtigung.
+ */
+@Composable
+private fun FeedNeueinlesenZeile(stand: FeedNeueinlesenStand?) {
+    val text = feedNeueinlesenHinweis(stand) ?: return
+
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = SpacingConstants.PADDING_CARD)
+    )
 }
 
 /**

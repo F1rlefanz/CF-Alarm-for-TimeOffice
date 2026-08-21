@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
@@ -127,7 +129,22 @@ data class CalendarUiState(
      * Eventliste (siehe `resolveDeselectionCleanupFailure`). Nicht vom Anzeigen, und ausdruecklich
      * NICHT schon davon, dass wieder ein Kalender ausgewaehlt ist.
      */
-    val deselectionCleanupFailures: Int = 0
+    val deselectionCleanupFailures: Int = 0,
+
+    /**
+     * Wann der abonnierte Dienstplan-Kalender zuletzt neu eingelesen wurde und wie viele Wecker
+     * die App dabei wiedererkannt hat - oder `null`, wenn das noch nie vorkam bzw. der Merker
+     * nicht lesbar war.
+     *
+     * WARUM IN DIESEM ZUSTAND UND NICHT IN EINEM EIGENEN: Der Vorgang gehoert zum Kalender - es
+     * ist der abonnierte Feed, der allen Terminen neue Kennungen gibt - und die Zeile steht im
+     * Status-Tab, der `calendarState` ohnehin schon bekommt. Ein zweiter ViewModel-Kanal nur fuer
+     * eine Auskunftszeile waere mehr Verdrahtung als Nutzen.
+     *
+     * REIN INFORMATIV: An diesem Feld haengt keine Entscheidung, kein Sync und kein Wecker. Bleibt
+     * es `null`, erscheint schlicht keine Zeile (siehe `FeedNeueinlesenStore.beobachte`).
+     */
+    val feedNeueinlesen: FeedNeueinlesenStand? = null
 )
 
 /**
@@ -158,7 +175,10 @@ class CalendarViewModel @Inject constructor(
     private val shiftUseCase: IShiftUseCase,
     private val alarmUseCase: IAlarmUseCase,
     private val masterPausePrefs: MasterPausePrefs,
-    private val pendingDeselectionCleanupStore: PendingDeselectionCleanupStore
+    private val pendingDeselectionCleanupStore: PendingDeselectionCleanupStore,
+    // Nur fuer die stille Statuszeile "Dienstplan-Kalender zuletzt neu eingelesen" - gelesen,
+    // niemals geschrieben. Geschrieben wird ausschliesslich im Sync (AlarmUseCase).
+    private val feedNeueinlesenStore: FeedNeueinlesenStore
 ) : ViewModel() {
 
     private val _localUiState = MutableStateFlow(CalendarUiState())
@@ -271,6 +291,33 @@ class CalendarViewModel @Inject constructor(
     init {
         checkTokenValidity()
         observeCalendarSelection()
+        observeFeedNeueinlesen()
+    }
+
+    /**
+     * Haelt [CalendarUiState.feedNeueinlesen] aktuell.
+     *
+     * Als Beobachter und nicht als einmaliger Read beim Start: laeuft waehrend eines geoeffneten
+     * Status-Tabs ein Sync (6h-Wartung oder "Jetzt synchronisieren"), zieht die Zeile ohne Zutun
+     * nach - sonst zeigte sie bis zum naechsten App-Start einen veralteten Stand.
+     *
+     * LESEND, NICHT SCHREIBEND: dieser Beobachter fasst den Merker nie an. Er wird ausschliesslich
+     * im Sync gesetzt, und zwar nur bei einem tatsaechlichen Kennungswechsel.
+     */
+    private fun observeFeedNeueinlesen() {
+        viewModelScope.launch {
+            feedNeueinlesenStore.beobachte().collect { stand ->
+                // ZWEITER RIEGEL vor `updateLocalStateImmediate`: das cancelt ein offenes
+                // Batch-Update BEDINGUNGSLOS, bevor es ueberhaupt vergleicht - eine Emission ohne
+                // Aenderung wuerde also ein gerade laufendes UI-Update verschlucken (z. B. das
+                // Leeren der Terminliste nach einer Kalender-Abwahl). Der Store filtert bereits
+                // per distinctUntilChanged; hier steht der Riegel trotzdem, weil diese Zeile
+                // Diagnostik ist und niemals einem echten Zustandswechsel im Weg stehen darf.
+                if (_localUiState.value.feedNeueinlesen != stand) {
+                    updateLocalStateImmediate { it.copy(feedNeueinlesen = stand) }
+                }
+            }
+        }
     }
 
     /**

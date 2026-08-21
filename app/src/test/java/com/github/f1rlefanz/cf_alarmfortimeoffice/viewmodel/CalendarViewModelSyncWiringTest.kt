@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
@@ -145,7 +146,9 @@ class CalendarViewModelSyncWiringTest {
             shiftUseCase = shiftUseCase,
             alarmUseCase = alarmUseCase,
             masterPausePrefs = masterPausePrefs,
-            pendingDeselectionCleanupStore = pendingCleanupStore
+            pendingDeselectionCleanupStore = pendingCleanupStore,
+            // Nur fuer die stille Statuszeile - fuer diesen Test ohne Belang.
+            feedNeueinlesenStore = FakeFeedNeueinlesenStore()
         )
     }
 

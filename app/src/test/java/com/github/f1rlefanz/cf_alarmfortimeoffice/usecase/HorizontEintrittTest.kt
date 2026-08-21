@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
@@ -207,7 +208,8 @@ class HorizontEintrittTest {
         repo: FakeAlarmRepository,
         manager: AlarmManagerService,
         notifier: FakeShiftChangeNotifier,
-        horizonStore: FakeSyncHorizonStore
+        horizonStore: FakeSyncHorizonStore,
+        feedStore: FakeFeedNeueinlesenStore = FakeFeedNeueinlesenStore()
     ) = AlarmUseCase(
         repo,
         manager,
@@ -219,7 +221,8 @@ class HorizontEintrittTest {
             kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(false) }
         },
         mock<ShiftSpanStore>(),
-        horizonStore
+        horizonStore,
+        feedStore
     )
 
     /** Der letzte vollstaendige Sync lief GESTERN - der bekannte Horizont endet also in 13 Tagen. */

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -177,7 +178,8 @@ class AlarmUseCaseSkipAndResilienceTest {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(masterPaused) }
             },
             mock<ShiftSpanStore>(),
-            FakeSyncHorizonStore()
+            FakeSyncHorizonStore(),
+            FakeFeedNeueinlesenStore()
         )
 
     private fun mockManager(): AlarmManagerService {
@@ -413,7 +415,8 @@ class AlarmUseCaseSkipAndResilienceTest {
                 kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(true) }
             },
             mock<ShiftSpanStore>(),
-            FakeSyncHorizonStore()
+            FakeSyncHorizonStore(),
+            FakeFeedNeueinlesenStore()
         )
 
         useCase.syncAlarms(listOf(futureEvent("evA", "F", 1)), config)

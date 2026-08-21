@@ -108,6 +108,27 @@ class Pruefrunde6BackupSchluesselInventurTest {
     }
 
     /**
+     * Die beiden Werte hinter der stillen Statuszeile "Dienstplan-Kalender zuletzt neu
+     * eingelesen" (`FeedNeueinlesenStore`). Sie sind eine BEOBACHTUNG dieses Geraets an DIESEM
+     * Kalenderabonnement, keine Einstellung.
+     *
+     * Die gefaehrliche Richtung ist der importierte FREMDE Zeitpunkt: das neue Geraet zeigte dann
+     * eine ruhige Auskunft ueber einen Vorgang, den es nie beobachtet hat - und zwar so lange, bis
+     * dort zufaellig selbst einmal ein Kennungswechsel auftritt. Eine erfundene Beobachtung ist
+     * genau das, was diese Zeile nicht sein darf: sie soll die Frage "woran erkenne ich das?"
+     * ehrlich beantworten.
+     */
+    @Test
+    fun `der Merker 'Kalender neu eingelesen' ist Laufzeitzustand`() {
+        listOf("last_feed_reread_at", "last_feed_reread_count").forEach { key ->
+            assertFalse(
+                "'$key' beschreibt eine Beobachtung DIESES Geraets und darf nie exportiert werden",
+                ConfigBackupFilter.isExportable(key)
+            )
+        }
+    }
+
+    /**
      * Der einzige dynamisch zusammengesetzte Schluessel im Baum
      * (`BatteryOptimizationHelper`: "oem_hint_shown_<hersteller>") - er entzieht sich der Inventur
      * oben, weil im Quelltext kein Literal steht. Sein Praefix ist deshalb hier festgenagelt.

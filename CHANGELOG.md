@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.30.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.30.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Der Erklärtext auf dem Schichttypen-Bildschirm nimmt den Schichten nicht mehr den Platz weg._
+
+### 🎨 Feinschliff
+
+- **Hinweis füllte die halbe Seite und ließ sich nicht wegscrollen:** Auf dem Bildschirm „Schichttypen" stand der Erklärtext zur Erkennung fest verankert über der Liste — je nach Schriftgröße blieb darunter nur noch gut eine Schichtkarte sichtbar, und wegscrollen ließ er sich nicht. Der Text steht jetzt in der Liste und scrollt mit; sichtbar bleibt der entscheidende erste Satz, die Beispiele und Stationskürzel liegen hinter „Beispiele und Stationskürzel". Auf einem Testgerät passen damit alle sechs Schichttypen plus der Zurücksetzen-Knopf auf einen Bildschirm statt zwei.
+
+## Version 1.30.1
 
 **Stand:** August 2026
 

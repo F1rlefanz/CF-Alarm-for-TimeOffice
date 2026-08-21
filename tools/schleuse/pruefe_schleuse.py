@@ -348,17 +348,22 @@ def pruefe_release_pflichten(probleme, basis):
                     )
                 )
 
-    # 10. versionCode hoeher als der hoechste je vergebene. Das gilt unabhaengig
-    # von der Nutzersichtbarkeit: mehrere Sessions (lokal und Cloud) vergeben
-    # unabhaengig Nummern, und zwei gleiche versionCodes lehnt Play ab.
+    # 10. versionCode nicht NIEDRIGER als der auf origin/main. Mehrere Sessions
+    # (lokal und Cloud) vergeben unabhaengig Nummern; hat eine andere bereits
+    # hoeher gezaehlt, waere der eigene Stand ein Rueckschritt.
+    #
+    # Bewusst nur "<", nicht "<=": Gleichstand ist der Normalfall eines reinen
+    # chore/docs-Pushes, bei dem gar kein Bump vorgesehen ist. Und Gleichstand
+    # TROTZ nutzersichtbarer Aenderung faengt bereits Pruefung 9 - deren Basis
+    # ist auf `main` genau dieses origin/main.
     code_fern, fern_gradle = git("show", "{}:app/build.gradle.kts".format(FERNREFERENZ))
     if code_fern == 0 and jetzt_code is not None:
         _, fern_code = versionen_aus(fern_gradle)
-        if fern_code is not None and jetzt_code <= fern_code:
+        if fern_code is not None and jetzt_code < fern_code:
             probleme.append(
-                "versionCode {} ist nicht hoeher als der auf {} ({}).\n"
-                "Mehrere Sessions vergeben unabhaengig Nummern - zuerst `git fetch`, dann auf "
-                "mindestens {} bumpen.".format(
+                "versionCode {} ist NIEDRIGER als der auf {} ({}) - eine andere Session hat "
+                "bereits weiter gezaehlt.\n"
+                "Zuerst `git fetch`, dann auf mindestens {} bumpen.".format(
                     jetzt_code, FERNREFERENZ, fern_code, fern_code + 1
                 )
             )

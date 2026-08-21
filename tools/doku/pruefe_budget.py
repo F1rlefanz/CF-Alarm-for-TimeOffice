@@ -172,14 +172,17 @@ def main():
     print(f"  {summe:>8,}  Summe" + (f"   (hartes Limit {HARTES_LIMIT:,})" if not nur_repo else ""))
 
     if not nur_repo:
-        # HANDOFF.md zaehlt NICHT ins Budget - sie wird nur bei Bedarf gelesen. Sie steht hier
-        # trotzdem, weil sie schon einmal unbemerkt auf 45.357 Zeichen gewachsen ist, obwohl
-        # ihre eigene Zeile 3 sagt: "Erledigtes wird geloescht". Sichtbarkeit statt Schwelle.
-        h = zeichen(os.path.join("..Projektdateien", "claudes mds", "HANDOFF.md"))
+        # Die Liste der offenen Punkte zaehlt NICHT ins Budget - sie wird nur bei Bedarf gelesen.
+        # Sie steht hier trotzdem, weil ihre Vorgaengerin (`HANDOFF.md`, geloescht am 21.08.2026)
+        # zweimal unbemerkt zugewachsen ist, zuletzt auf 45.357 Zeichen - obwohl ihre eigene
+        # dritte Zeile sagte: "Erledigtes wird geloescht". Sichtbarkeit statt Schwelle.
+        index = memory_index()
+        p = os.path.join(os.path.dirname(index), "project_offene_punkte.md") if index else None
+        h = zeichen(p) if p else None
         if h is not None:
-            hinweis = "  (waechst wieder zu - sie soll nur OFFENE Punkte fuehren)" if h > 30_000 else ""
-            print(f"\n  Nachrichtlich, NICHT im Budget (wird nur bei Bedarf gelesen):")
-            print(f"  {h:>8,}  HANDOFF.md{hinweis}")
+            hinweis = "  (waechst zu - sie soll nur OFFENE Punkte fuehren)" if h > 20_000 else ""
+            print("\n  Nachrichtlich, NICHT im Budget (wird nur bei Bedarf gelesen):")
+            print(f"  {h:>8,}  project_offene_punkte.md{hinweis}")
     if unvollstaendig:
         print(f"\n  Nicht mitgezaehlt: {', '.join(unvollstaendig)}")
     print()

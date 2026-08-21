@@ -20,6 +20,7 @@ erst bei Bedarf.
 | `cfalarm-ui-und-navigation` | Compose-Layout, Nutzertexte, Zurück-Verhalten |
 | `cfalarm-bauen-und-testen` | Gradle-Eigenheiten, Emulator, Gerätetests |
 | `cfalarm-release-und-changelog` | Versionsbump, Changelog, Release-Ablauf |
+| `cfalarm-arbeit-abschliessen` | Was Fertigsein heißt — und was die Schleuse NICHT prüfen kann |
 
 **Vor einer Änderung in einem dieser Bereiche den zugehörigen Skill lesen.** Die Regel unten sagt
 *was*, der Skill sagt *warum* — und ohne das Warum baut man dieselbe Falle in neuer Form nach.
@@ -61,10 +62,17 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
   force-push. `versionCode` muss höher als der **höchste je vergebene** sein.
 - **Im geteilten Arbeitsbaum gezielt stagen**: `git status` unmittelbar vor dem Commit, nie
   `git add .` / `commit -a`, kein `git stash`.
-- **Handoff-Notizen gehören AUSSCHLIESSLICH in `..Projektdateien/claudes mds/HANDOFF.md`** (lokal,
-  gitignored). **Keine getrackte Handoff-Datei anlegen** — `docs/` ist GitHub Pages (öffentlich).
-  Die Datei führt **nur offene ToDos und offene Nebenbefunde**; Zweck, Abgrenzung und wohin alles
-  Übrige gehört, stehen in ihrem Kopf — vor dem Schreiben lesen. Sie ist zweimal zugewachsen.
+- **Es gibt keine Handoff-Datei mehr, und es soll keine neue geben.** Der Projekt-STAND wird
+  abgeleitet (`tools/sitzungsstart.py`: Branch, Arbeitsbaum, Version, Testzahl **mit Alter**,
+  Abstand zu `origin/main`) — von Hand gepflegt veraltete er lautlos und wuchs zweimal zu, zuletzt
+  auf 26.201 Zeichen. **Offene Punkte gehören ins Memory `project_offene_punkte`**, nicht in eine
+  Datei im Repo: `docs/` ist GitHub Pages und das Repo bleibt öffentlich.
+- **Vor `git merge`/`git push` läuft die Schleuse** (`tools/schleuse/pruefe_schleuse.py`,
+  `PreToolUse`-Hook) und prüft mechanisch: Geheimnisse, Skills, Doku-Budget, Changelog-Seite,
+  Code-Invarianten, Tests, Lint — beim Push von `main` zusätzlich Changelog-Eintrag, Bump und
+  `versionCode` gegen `origin/main`. **Ein grüner Lauf ist die untere Schranke, nicht das Ziel**;
+  was sie nicht prüfen kann, steht im Skill `cfalarm-arbeit-abschliessen`. Notausgang für den Fall,
+  dass die Schleuse selbst kaputt ist: `CFALARM_SCHLEUSE=aus`.
 
 ## Build & Development Commands
 

@@ -21,6 +21,12 @@
             "command": "cd \"$(git rev-parse --show-toplevel)\" && python tools/doku/pruefe_budget.py --hook",
             "timeout": 20,
             "statusMessage": "Pruefe Doku-Budget..."
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && python tools/sitzungsstart.py",
+            "timeout": 20,
+            "statusMessage": "Projektstand wird abgeleitet..."
           }
         ]
       }

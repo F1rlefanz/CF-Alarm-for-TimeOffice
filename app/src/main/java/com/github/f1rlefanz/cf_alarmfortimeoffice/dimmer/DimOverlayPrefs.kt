@@ -297,6 +297,127 @@ class DimOverlayPrefs @Inject constructor(
         val current = p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] ?: emptySet()
         p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = if (shiftName in current) current - shiftName else current + shiftName
     }
+    /**
+     * Zieht die Ausnahmenliste des Nacht-Standards auf den neuen Namen nach, wenn eine
+     * Schichtdefinition UMBENANNT wurde. Liefert 1, wenn die Liste geaendert wurde, sonst 0 - oder
+     * einen Fehlschlag.
+     *
+     * WARUM ES DAS GEBEN MUSS: [nightDefaultExcludedShifts] speichert SCHICHTNAMEN, waehrend der
+     * Schicht-Editor den Namen bei gleichbleibender `id` frei aendern laesst - dieselbe Bindung
+     * ueber den Namen wie [DimRule.shiftPattern]. Der Nachzug fuer Dimmer-Regeln kam in v1.30.0
+     * ([DimRuleUseCase.renameShiftPattern], Vorbild fuer Semantik und Fehlerbehandlung), diese
+     * Liste wurde dabei uebersehen. Folge: Der Nutzer hat "Nachtschicht" ausgenommen, benennt sie
+     * um - und der Nacht-Standard verdunkelt ab sofort auch die Naechte, in denen er arbeitet. Die
+     * Chips im Dimmer-Bildschirm werden aus den AKTUELLEN Definitionsnamen gebaut, der
+     * gespeicherte Alt-Name ist dort unsichtbar.
+     *
+     * EXAKTER VERGLEICH, bewusst anders als bei den Dimm-REGELN: [DimScheduleUseCase] prueft
+     * `shiftName in excludedShifts` - Mengen-Zugehoerigkeit ohne Toleranz. Ein Eintrag, der sich
+     * nur in der Gross-/Kleinschreibung vom ALTEN Namen unterscheidet, hat also auch vorher NIE
+     * getroffen; ihn `ignoreCase` mitzuziehen wuerde aus einem toten Eintrag eine scharfe Ausnahme
+     * machen und dem Nutzer ungefragt eine Nacht ohne Dimmen bescheren. Exakt ersetzen heisst:
+     * hinterher trifft genau das, was vorher traf.
+     *
+     * UMGEKEHRT ist genau deshalb auch eine reine SCHREIBWEISEN-Aenderung der Definition eine
+     * Umbenennung, die hier ankommen MUSS: korrigiert der Nutzer "nachtschicht" zu "Nachtschicht",
+     * trifft der gespeicherte Alt-Eintrag ab sofort nie wieder. Die Dimm-REGELN vertragen das
+     * (sie vergleichen gross-/kleinschreibungsblind), diese Liste nicht -
+     * `ShiftViewModel.planeSchichtUmbenennungen` stieg bis zum 21.08.2026 bei
+     * `equals(ignoreCase = true)` aus und liess den Fall liegen.
+     *
+     * KEIN BLINDES SCHREIBEN: Eine Liste ohne den Altnamen wird nicht angefasst.
+     * IDEMPOTENT: Ein zweiter Lauf findet den Altnamen nicht mehr vor und schreibt nicht.
+     */
+    suspend fun renameShiftName(oldName: String, newName: String): Result<Int> = runCatching {
+        require(oldName.isNotBlank() && newName.isNotBlank()) {
+            "Leerer Schichtname - Nacht-Ausnahme wird NICHT nachgezogen ('$oldName' -> '$newName')"
+        }
+        if (oldName == newName) return@runCatching 0
+
+        var geaendert = 0
+        dataStore.edit { p ->
+            // Zuruecksetzen im Block: nur was hier passiert, wird wirklich geschrieben.
+            geaendert = 0
+            val current = p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS]
+            if (current != null && oldName in current) {
+                p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = current - oldName + newName
+                geaendert = 1
+            }
+        }
+
+        if (geaendert > 0) {
+            Logger.business(
+                LogTags.DIMMER,
+                "🔁 Nacht-Standard-Ausnahme von '$oldName' auf '$newName' nachgezogen"
+            )
+        }
+        geaendert
+    }.onFailure { error ->
+        // WARN+ landet auch im Release-Log: eine nicht nachgezogene Ausnahme ist eine Nacht, in der
+        // der Bildschirm waehrend der Arbeit verdunkelt wird, obwohl der Nutzer das abbestellt hat.
+        Logger.e(
+            LogTags.DIMMER,
+            "❌ Nacht-Standard-Ausnahme konnte nicht von '$oldName' auf '$newName' nachgezogen werden",
+            error
+        )
+    }
+
+    /**
+     * Entfernt [name] aus der Ausnahmenliste des Nacht-Standards. Liefert 1, wenn geschrieben
+     * wurde, sonst 0 - oder einen Fehlschlag.
+     *
+     * WOFUER: der BLOCKIERTE Fall einer Umbenennung, in dem der gespeicherte Name nach einem
+     * Namenstausch inzwischen einer ANDEREN Schichtdefinition gehoert (siehe
+     * `ShiftViewModel.zieheRegelmusterNach`). Fuer eine Dimm-REGEL ist Nichtstun dort ehrlich - sie
+     * wird wirkungslos und steht sichtbar in der Regelliste. Dieser Eintrag ist dagegen nicht tot,
+     * sondern ab sofort scharf fuer die falsche Schicht.
+     *
+     * RICHTUNG, eigens fuer diese Liste geprueft: Ein stehen gelassener Eintrag laesst die Naechte
+     * der FALSCHEN Schicht ungedimmt - der Bildschirm bleibt hell, obwohl der Nutzer den
+     * Nacht-Standard eingeschaltet hat, und er sieht im Bildschirm nur einen Chip, den er nie
+     * gesetzt hat. Entfernen stellt fuer diese Schicht den eingestellten Zustand wieder her
+     * (Nacht-Standard gilt). Fuer die UMBENANNTE Schicht aendert sich durch das Entfernen nichts:
+     * ihr neuer Name stand ohnehin nicht in der Liste, sie wird so oder so gedimmt - und das ist
+     * die SICHTBARE Fehlrichtung (Bildschirm dunkel waehrend der Arbeit), die den Nutzer zur
+     * Meldung fuehrt, statt still weiterzulaufen.
+     *
+     * KEIN BLINDES SCHREIBEN, IDEMPOTENT: wie [renameShiftName].
+     */
+    suspend fun removeShiftName(name: String, partnerName: String = ""): Result<Int> = runCatching {
+        require(name.isNotBlank()) {
+            "Leerer Schichtname - es wird NICHTS aus der Nacht-Ausnahmenliste entfernt"
+        }
+
+        var geaendert = 0
+        dataStore.edit { p ->
+            geaendert = 0
+            val current = p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS]
+            // TAUSCHFALL: stehen BEIDE Namen drin, ist die Liste nach dem Tausch weiterhin richtig -
+            // sie meint beide Schichten. Raeumen wuerde hier eine korrekte Ausnahme zerstoeren und
+            // beide Naechte wieder dimmen lassen.
+            val tausch = partnerName.isNotBlank() && current != null && partnerName in current
+            if (current != null && name in current && !tausch) {
+                p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = current - name
+                geaendert = 1
+            }
+        }
+
+        if (geaendert > 0) {
+            Logger.business(
+                LogTags.DIMMER,
+                "🧹 Nacht-Standard-Ausnahme '$name' entfernt - der Name gehoert jetzt einer " +
+                    "anderen Schicht und haette dort still gewirkt"
+            )
+        }
+        geaendert
+    }.onFailure { error ->
+        Logger.e(
+            LogTags.DIMMER,
+            "❌ Nacht-Standard-Ausnahme '$name' konnte nicht entfernt werden",
+            error
+        )
+    }
+
     suspend fun setNightDefaultStrength(v: Int) =
         dataStore.edit { it[KEY_NIGHT_DEFAULT_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
     suspend fun setNightDefaultWarmth(v: Int) =

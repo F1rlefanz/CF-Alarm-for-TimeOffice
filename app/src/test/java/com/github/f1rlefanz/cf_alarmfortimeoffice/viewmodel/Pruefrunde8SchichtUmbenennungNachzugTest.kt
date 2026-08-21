@@ -1,8 +1,10 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
@@ -82,7 +84,15 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         val dim: DimRuleUseCase,
         val hue: HueRuleUseCase,
         /** Der Store, wie ihn ein FREMDER Schreiber (Import/Rücksicherung) sieht. */
-        val store: MutableStateFlow<ShiftConfig>
+        val store: MutableStateFlow<ShiftConfig>,
+        /** Die beiden DND-Schichtauswahlen (Rufbereitschaft + Dienstzeit-Ausnahmen). */
+        val dnd: DndPrefs,
+        /** Die Ausnahmenliste des Nacht-Standards im Dimmer. */
+        val dimPrefs: DimOverlayPrefs,
+        val dimSchedule: DimScheduleUseCase,
+        val dndSchedule: DndScheduleUseCase,
+        /** Der Alarm-Sync - er schreibt die Schichtspannen, auf die das Nacharmieren wartet. */
+        val alarm: IAlarmUseCase
     )
 
     /**
@@ -94,7 +104,19 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         bestand: ShiftConfig,
         dimErgebnis: Result<Int> = Result.success(1),
         hueErgebnis: Result<Int> = Result.success(1),
-        mitTerminen: Boolean = true
+        dndPrefsErgebnis: Result<Int> = Result.success(1),
+        dimPrefsErgebnis: Result<Int> = Result.success(1),
+        dndEntfernErgebnis: Result<Int> = Result.success(1),
+        dimEntfernErgebnis: Result<Int> = Result.success(1),
+        mitTerminen: Boolean = true,
+        /**
+         * `true` = der Alarm-Sync laeuft wirklich (vollstaendige Eventliste). Nur dann werden die
+         * Schichtspannen neu geschrieben - der Zustand, auf den das Nacharmieren warten muss.
+         */
+        vollstaendig: Boolean = false,
+        alarmUseCase: IAlarmUseCase = mock<IAlarmUseCase>().apply {
+            stub { onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList()) }
+        }
     ): Umgebung {
         val store = MutableStateFlow(bestand)
         val shiftUseCase = mock<IShiftUseCase>()
@@ -116,13 +138,26 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         dim.stub { onBlocking { renameShiftPattern(any(), any()) } doReturn dimErgebnis }
         val hue = mock<HueRuleUseCase>()
         hue.stub { onBlocking { renameShiftPattern(any(), any()) } doReturn hueErgebnis }
+        val dnd = mock<DndPrefs>()
+        dnd.stub {
+            onBlocking { renameShiftName(any(), any()) } doReturn dndPrefsErgebnis
+            onBlocking { removeShiftName(any(), any()) } doReturn dndEntfernErgebnis
+        }
+        val dimPrefs = mock<DimOverlayPrefs>()
+        dimPrefs.stub {
+            onBlocking { renameShiftName(any(), any()) } doReturn dimPrefsErgebnis
+            onBlocking { removeShiftName(any(), any()) } doReturn dimEntfernErgebnis
+        }
+        val dimSchedule = mock<DimScheduleUseCase>()
+        val dndSchedule = mock<DndScheduleUseCase>()
 
         val holder = CalendarStateHolder()
         if (mitTerminen) {
-            // `complete = false`: der Alarm-Sync ist hier nicht das Thema und darf mangels
-            // vollständiger Liste ausdrücklich NICHT laufen (CLAUDE.md: eine unvollständige
-            // Eventliste ist keine Löschgrundlage). Für die Schichterkennung - und damit für den
-            // `error = null`-Zweig, um den es hier geht - reicht "Liste nicht leer".
+            // `complete` = [vollstaendig], per Default FALSE: der Alarm-Sync ist in den meisten
+            // dieser Tests nicht das Thema und darf mangels vollständiger Liste ausdrücklich NICHT
+            // laufen (CLAUDE.md: eine unvollständige Eventliste ist keine Löschgrundlage). Für die
+            // Schichterkennung - und damit für den `error = null`-Zweig - reicht "Liste nicht leer".
+            // Nur die Tests zum Nacharmieren brauchen den echten Sync und setzen `true`.
             holder.updateEvents(
                 listOf(
                     CalendarEvent(
@@ -133,22 +168,23 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
                         calendarId = "cal1"
                     )
                 ),
-                complete = false
+                complete = vollstaendig
             )
         }
 
         val vm = ShiftViewModel(
             shiftUseCase = shiftUseCase,
-            alarmUseCase = mock<IAlarmUseCase>(),
+            alarmUseCase = alarmUseCase,
             calendarStateHolder = holder,
             errorHandler = mock<ErrorHandler>(),
             dimRuleUseCase = dagger.Lazy { dim },
             hueRuleUseCase = dagger.Lazy { hue },
-            // Nur das Nacharmieren der Tick-Ketten - hier ohne Belang.
-            dimScheduleUseCase = dagger.Lazy { mock<DimScheduleUseCase>() },
-            dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() }
+            dimScheduleUseCase = dagger.Lazy { dimSchedule },
+            dndScheduleUseCase = dagger.Lazy { dndSchedule },
+            dndPrefs = dagger.Lazy { dnd },
+            dimOverlayPrefs = dagger.Lazy { dimPrefs }
         )
-        return Umgebung(vm, dim, hue, store)
+        return Umgebung(vm, dim, hue, store, dnd, dimPrefs, dimSchedule, dndSchedule, alarmUseCase)
     }
 
     @Test
@@ -340,7 +376,9 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             dimRuleUseCase = dagger.Lazy { dim },
             hueRuleUseCase = dagger.Lazy { hue },
             dimScheduleUseCase = dagger.Lazy { mock<DimScheduleUseCase>() },
-            dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() }
+            dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() },
+            dndPrefs = dagger.Lazy { mock<DndPrefs>() },
+            dimOverlayPrefs = dagger.Lazy { mock<DimOverlayPrefs>() }
         )
         advanceUntilIdle()
 
@@ -352,5 +390,323 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         verifyBlocking(dim, never()) { renameShiftPattern(any(), any()) }
         verifyBlocking(hue, never()) { renameShiftPattern(any(), any()) }
         assertEquals("AD1", vm.uiState.value.currentShiftConfig?.definitions?.first()?.name)
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // NACHTRAG 21.08.2026: die drei ÜBERSEHENEN Namenslisten.
+    //
+    // v1.30.0 zog nur Dimmer- und Hue-REGELN mit. Drei weitere Stellen binden ebenfalls über den
+    // Namen: `dnd_oncall_shifts` (Rufbereitschaft), `dnd_shift_excluded_shifts` (Ausnahmen von
+    // „Nicht stören während der Dienstzeit") und `dim_night_default_excluded_shifts` (Ausnahmen
+    // vom Nacht-Standard). Am Gerät des Nutzers stand in der Rufbereitschaft-Auswahl noch
+    // „Abrufdienst", während der Weckerbestand längst „Rufdienst" sagte - der On-Call-Cutoff griff
+    // nicht mehr, und in der Nacht vor der Rufbereitschaft blieb das Telefon über 05:00 hinaus
+    // stumm. Sichtbar war davon nichts: die Chips werden aus den AKTUELLEN Namen gebaut.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    fun `Umbenennen zieht auch die DND-Auswahlen und die Nacht-Ausnahmen nach`() =
+        runTest(dispatcher) {
+            val u = umgebung(ShiftConfig(definitions = listOf(def("1", "AD1"))))
+            advanceUntilIdle()
+
+            u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
+            advanceUntilIdle()
+
+            verifyBlocking(u.dnd) { renameShiftName("AD1", "Abrufdienst") }
+            verifyBlocking(u.dimPrefs) { renameShiftName("AD1", "Abrufdienst") }
+            assertNull(u.vm.uiState.value.regelNachzugHinweis)
+        }
+
+    @Test
+    fun `eine blockierte Umbenennung mit herrenlosem Altnamen laesst die Namenslisten unberuehrt`() =
+        runTest(dispatcher) {
+            // Zwei Definitionen tragen hinterher denselben Namen - die Zuordnung wäre geraten.
+            // „AD1" gehört danach NIEMANDEM mehr: der gespeicherte Eintrag wirkt nirgends und wird
+            // von selbst wieder richtig, wenn der Nutzer die Umbenennung zurücknimmt. Ihn zu
+            // löschen wäre Datenverlust ohne Gegenwert.
+            val u = umgebung(
+                ShiftConfig(definitions = listOf(def("1", "AD1"), def("2", "Abrufdienst")))
+            )
+            advanceUntilIdle()
+
+            u.vm.updateShiftConfig(
+                ShiftConfig(definitions = listOf(def("1", "Abrufdienst"), def("2", "Abrufdienst")))
+            )
+            advanceUntilIdle()
+
+            verifyBlocking(u.dnd, never()) { renameShiftName(any(), any()) }
+            verifyBlocking(u.dimPrefs, never()) { renameShiftName(any(), any()) }
+            verifyBlocking(u.dnd, never()) { removeShiftName(any(), any()) }
+            verifyBlocking(u.dimPrefs, never()) { removeShiftName(any(), any()) }
+            assertNotNull(u.vm.uiState.value.regelNachzugHinweis)
+        }
+
+    @Test
+    fun `eine gescheiterte DND-Auswahl wird gemeldet und stoppt die uebrigen nicht`() =
+        runTest(dispatcher) {
+            val u = umgebung(
+                ShiftConfig(definitions = listOf(def("1", "AD1"))),
+                dndPrefsErgebnis = Result.failure(IllegalStateException("nicht schreibbar"))
+            )
+            advanceUntilIdle()
+
+            u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
+            advanceUntilIdle()
+
+            // Die übrigen laufen trotzdem - ein Fehlschlag darf nicht die halbe Migration kosten.
+            verifyBlocking(u.dim) { renameShiftPattern("AD1", "Abrufdienst") }
+            verifyBlocking(u.hue) { renameShiftPattern("AD1", "Abrufdienst") }
+            verifyBlocking(u.dimPrefs) { renameShiftName("AD1", "Abrufdienst") }
+
+            val hinweis = u.vm.uiState.value.regelNachzugHinweis
+            assertNotNull("Der gescheiterte Nachzug muss gemeldet werden", hinweis)
+            // Der Nutzer liest den Namen des BILDSCHIRMS, nicht den des Speicherschlüssels.
+            assertTrue(
+                "Die Meldung muss den Bildschirm benennen, den der Nutzer sieht: $hinweis",
+                hinweis!!.contains("Nicht stören")
+            )
+            assertTrue(hinweis.contains("neuen Namen"))
+            assertNull(u.vm.uiState.value.error)
+        }
+
+    @Test
+    fun `eine geaenderte DND-Auswahl armiert die DND-Kette neu, nicht die Dimmer-Kette`() =
+        runTest(dispatcher) {
+            // Nur die DND-Auswahl hat sich geändert: Dimm-Regeln und Nacht-Ausnahmen melden 0.
+            // Die DND-Fenster (Dienstzeit, On-Call-Cutoff) hängen aber an genau dieser Liste - der
+            // nächste Tick steht noch auf dem ALTEN Plan und muss neu gesetzt werden.
+            val u = umgebung(
+                ShiftConfig(definitions = listOf(def("1", "AD1"))),
+                dimErgebnis = Result.success(0),
+                hueErgebnis = Result.success(0),
+                dndPrefsErgebnis = Result.success(1),
+                dimPrefsErgebnis = Result.success(0)
+            )
+            advanceUntilIdle()
+
+            u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
+            advanceUntilIdle()
+
+            verifyBlocking(u.dndSchedule) { enable() }
+            // Der Dimmer kennt die DND-Auswahlen nicht - ein enable() dort wäre Arbeit ohne Wirkung.
+            verifyBlocking(u.dimSchedule, never()) { enable() }
+        }
+
+    @Test
+    fun `eine geaenderte Nacht-Ausnahme armiert beide Ketten neu`() = runTest(dispatcher) {
+        // Die Ausnahmenliste ist ein Eingang von DimScheduleUseCase.computeWindows() - sie
+        // verschiebt die Dimm-Fenster wie eine geänderte Regel, und über den DND-Modus
+        // "folgt dem Dimmer" auch die DND-Fenster.
+        val u = umgebung(
+            ShiftConfig(definitions = listOf(def("1", "AD1"))),
+            dimErgebnis = Result.success(0),
+            hueErgebnis = Result.success(0),
+            dndPrefsErgebnis = Result.success(0),
+            dimPrefsErgebnis = Result.success(1)
+        )
+        advanceUntilIdle()
+
+        u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
+        advanceUntilIdle()
+
+        verifyBlocking(u.dimSchedule) { enable() }
+        verifyBlocking(u.dndSchedule) { enable() }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Review über dem Nachtrag, 21.08.2026 - die vier Befunde A bis D.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * BEFUND A: Eine reine SCHREIBWEISEN-Änderung ist für die drei Namenslisten sehr wohl eine
+     * Umbenennung.
+     *
+     * `planeSchichtUmbenennungen` stieg bei `equals(ignoreCase = true)` aus. Für die Dimm-/Hue-
+     * REGELN ist das richtig (sie vergleichen selbst `ignoreCase`), für die Listen nicht: sie
+     * prüfen exakte Mengen-Zugehörigkeit. Korrigiert der Nutzer „abrufdienst" zu „Abrufdienst",
+     * bleibt dort der alte Kasus stehen, der Rufbereitschaft-Cutoff greift nicht mehr, und
+     * „Nicht stören" bleibt in der Nacht vor der Rufbereitschaft über 05:00 hinaus an.
+     *
+     * OHNE DEN FIX fällt dieser Test: es wird nichts nachgezogen.
+     */
+    @Test
+    fun `eine reine Schreibweisenaenderung zieht die Namenslisten nach`() = runTest(dispatcher) {
+        val u = umgebung(ShiftConfig(definitions = listOf(def("1", "abrufdienst"))))
+        advanceUntilIdle()
+
+        u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
+        advanceUntilIdle()
+
+        verifyBlocking(u.dnd) { renameShiftName("abrufdienst", "Abrufdienst") }
+        verifyBlocking(u.dimPrefs) { renameShiftName("abrufdienst", "Abrufdienst") }
+        // Für die Regeln ist derselbe Aufruf folgenlos - sie trafen vorher und treffen nachher.
+        verifyBlocking(u.dim) { renameShiftPattern("abrufdienst", "Abrufdienst") }
+        assertNull(u.vm.uiState.value.regelNachzugHinweis)
+    }
+
+    /**
+     * BEFUND B: Das Nacharmieren muss die Schichtspannen mit dem NEUEN Namen sehen.
+     *
+     * Der `ShiftSpanStore` wird ausschließlich in `syncAlarms()` geschrieben, und `syncAlarms()`
+     * armiert die Ketten nicht selbst. Lief `enable()` direkt nach dem Umschreiben der Listen,
+     * mischte es die frisch nachgezogenen Listen (NEUER Name) mit Spannen, die noch den ALTEN
+     * trugen: das Fenster entstand ohne Cutoff und ohne Ausnahme, und weil der nächste Tick genau
+     * auf dieses zu späte Ende fällt, blieb der falsche Plan für die ganze Nacht stehen.
+     *
+     * Der Test bildet das direkt ab: Der Alarm-Sync schreibt den neuen Namen in die „Spannen",
+     * beide `enable()` protokollieren, welchen Namen sie dort vorfinden.
+     *
+     * OHNE DEN FIX fällt er: die Ketten sehen „AD1".
+     */
+    @Test
+    fun `das Nacharmieren sieht die Spannen mit dem NEUEN Namen`() = runTest(dispatcher) {
+        val spanne = arrayOf("AD1")
+        val alarm = mock<IAlarmUseCase>()
+        alarm.stub {
+            onBlocking { syncAlarms(any(), any()) } doAnswer {
+                spanne[0] = "Abrufdienst"
+                Result.success(emptyList())
+            }
+        }
+
+        val u = umgebung(
+            ShiftConfig(definitions = listOf(def("1", "AD1"))),
+            vollstaendig = true,
+            alarmUseCase = alarm
+        )
+        val gesehen = mutableListOf<String>()
+        u.dimSchedule.stub {
+            onBlocking { enable() } doAnswer {
+                gesehen += "dim:" + spanne[0]
+                Unit
+            }
+        }
+        u.dndSchedule.stub {
+            onBlocking { enable() } doAnswer {
+                gesehen += "dnd:" + spanne[0]
+                Unit
+            }
+        }
+        advanceUntilIdle()
+
+        u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
+        advanceUntilIdle()
+
+        verifyBlocking(u.alarm) { syncAlarms(any(), any()) }
+        assertEquals(listOf("dim:Abrufdienst", "dnd:Abrufdienst"), gesehen)
+    }
+
+    /**
+     * BEFUND B, zweite Hälfte: Läuft der Sync in diesem Durchlauf gar nicht, darf das Nacharmieren
+     * trotzdem NICHT ausfallen.
+     *
+     * Der Sync fällt regelmäßig aus - hier über das Vollständigkeits-Gate (die Eventliste ist nur
+     * ein Ausschnitt). Die Namenslisten sind dann bereits umgeschrieben, während der armierte Tick
+     * noch auf dem Stand von davor steht: nicht nachzuarmieren wäre der schlechtere von zwei alten
+     * Ständen. Deshalb hängt der Aufruf im `finally`, nicht im Erfolgszweig des Syncs.
+     */
+    @Test
+    fun `ohne Alarm-Sync wird trotzdem nacharmiert`() = runTest(dispatcher) {
+        val u = umgebung(
+            ShiftConfig(definitions = listOf(def("1", "AD1"))),
+            vollstaendig = false
+        )
+        advanceUntilIdle()
+
+        u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
+        advanceUntilIdle()
+
+        verifyBlocking(u.alarm, never()) { syncAlarms(any(), any()) }
+        verifyBlocking(u.dimSchedule) { enable() }
+        verifyBlocking(u.dndSchedule) { enable() }
+    }
+
+    /**
+     * BEFUND C: Ein blockierter Namenstausch darf keine scharfe Falschzuordnung hinterlassen.
+     *
+     * Nach dem Tausch gehört der gespeicherte Name einer ANDEREN Schicht. Für eine Regel ist
+     * Nichtstun ehrlich - sie wird wirkungslos und steht sichtbar in ihrer Liste. Der
+     * Listen-Eintrag dagegen ist nicht tot, sondern scharf für die falsche Schicht: „Nicht stören"
+     * endet an deren Tagen früher, während die echte Rufbereitschaftsnacht durchgehend stumm
+     * bleibt. Und sichtbar ist davon nichts, weil die Chips aus den AKTUELLEN Namen gebaut werden.
+     *
+     * OHNE DEN FIX fällt dieser Test: es wird nichts geräumt.
+     */
+    @Test
+    fun `ein blockierter Namenstausch raeumt die Falscheintraege aus den Namenslisten`() =
+        runTest(dispatcher) {
+            val u = umgebung(
+                ShiftConfig(definitions = listOf(def("1", "Frueh"), def("2", "Nacht")))
+            )
+            advanceUntilIdle()
+
+            u.vm.updateShiftConfig(
+                ShiftConfig(definitions = listOf(def("1", "Nacht"), def("2", "Frueh")))
+            )
+            advanceUntilIdle()
+
+            // Nichts wird umgeschrieben - das wäre geraten.
+            verifyBlocking(u.dnd, never()) { renameShiftName(any(), any()) }
+            verifyBlocking(u.dim, never()) { renameShiftPattern(any(), any()) }
+            // Aber beide Altnamen werden zum Raeumen angeboten - MIT ihrem Partnernamen. Der
+            // entscheidet in den Prefs ueber den Tauschfall: stehen BEIDE Namen in derselben
+            // Liste, ist ihr Inhalt nach dem Tausch weiterhin richtig (sie meint beide Schichten)
+            // und bleibt unangetastet. Das ist die Zusicherung, die diese Signatur traegt -
+            // ohne den Partnernamen koennte die Prefs-Schicht den Fall gar nicht erkennen.
+            verifyBlocking(u.dnd) { removeShiftName("Frueh", "Nacht") }
+            verifyBlocking(u.dnd) { removeShiftName("Nacht", "Frueh") }
+            verifyBlocking(u.dimPrefs) { removeShiftName("Frueh", "Nacht") }
+            verifyBlocking(u.dimPrefs) { removeShiftName("Nacht", "Frueh") }
+            // Geänderte Listen heißen: der nächste Tick steht auf einem überholten Plan.
+            verifyBlocking(u.dimSchedule) { enable() }
+            verifyBlocking(u.dndSchedule) { enable() }
+
+            val hinweis = u.vm.uiState.value.regelNachzugHinweis
+            assertNotNull(hinweis)
+            // BEFUND D: Der Text nennt die betroffene Schicht - ohne ihren Namen weiß der Nutzer
+            // nicht, wo er nachbessern soll - und sagt, dass etwas entfernt wurde.
+            assertTrue("Die Meldung muss die Schichten nennen: $hinweis", hinweis!!.contains("Frueh"))
+            assertTrue(hinweis.contains("Nacht"))
+            assertTrue("Die Meldung muss das Räumen benennen: $hinweis", hinweis.contains("entfernt"))
+        }
+
+    /**
+     * BEFUND D: Der gemischte Fall - eine Schicht wandert sauber mit, eine zweite ist blockiert.
+     *
+     * Beide Listen des Plans können gleichzeitig gefüllt sein. Der alte Text war ein `when` und
+     * behauptete dann pauschal, es sei NICHTS mitgezogen worden - der Nutzer hätte Einstellungen
+     * neu gesetzt, die längst richtig waren.
+     *
+     * OHNE DEN FIX fällt dieser Test: die Meldung nennt weder die betroffene Schicht noch die
+     * gelungene Migration.
+     */
+    @Test
+    fun `der gemischte Fall meldet beides - migriert UND blockiert`() = runTest(dispatcher) {
+        val u = umgebung(
+            ShiftConfig(
+                definitions = listOf(def("1", "AD1"), def("2", "Frueh"), def("3", "Nacht"))
+            )
+        )
+        advanceUntilIdle()
+
+        u.vm.updateShiftConfig(
+            ShiftConfig(
+                definitions = listOf(def("1", "Abrufdienst"), def("2", "Nacht"), def("3", "Frueh"))
+            )
+        )
+        advanceUntilIdle()
+
+        // Die saubere Umbenennung ist wirklich gelaufen.
+        verifyBlocking(u.dnd) { renameShiftName("AD1", "Abrufdienst") }
+
+        val hinweis = u.vm.uiState.value.regelNachzugHinweis
+        assertNotNull(hinweis)
+        assertTrue("Die betroffene Schicht muss im Text stehen: $hinweis", hinweis!!.contains("Frueh"))
+        assertTrue(hinweis.contains("Nacht"))
+        assertTrue(
+            "Der Text darf nicht behaupten, es sei nichts mitgezogen worden: $hinweis",
+            hinweis.contains("korrekt mitgezogen")
+        )
     }
 }

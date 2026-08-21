@@ -43,10 +43,38 @@ class Pruefrunde8SchichtUmbenennungPlanTest {
         assertTrue(plan.blockiert.isEmpty())
     }
 
+    /**
+     * NACHTRAG 21.08.2026: Genau umgekehrt zur ursprünglichen Fassung dieses Tests.
+     *
+     * Er hielt fest, eine reine Schreibweisenänderung sei KEINE Umbenennung, weil das Matching der
+     * Dimm-/Hue-REGELN `ignoreCase` ist. Für die Regeln stimmt das - für die drei reinen
+     * NAMENSLISTEN nicht: `DndOnCallCutoffResolver`, `DndShiftSpanResolver` und
+     * `DimScheduleUseCase` prüfen exakte Mengen-Zugehörigkeit. Korrigierte der Nutzer
+     * „abrufdienst" zu „Abrufdienst", blieb dort der alte Kasus stehen und traf nie wieder: der
+     * Rufbereitschaft-Cutoff fiel aus, und „Nicht stören" blieb in der Nacht vor der
+     * Rufbereitschaft über 05:00 hinaus an.
+     *
+     * OHNE DEN FIX fällt dieser Test: `planeSchichtUmbenennungen` stieg bei
+     * `equals(ignoreCase = true)` aus und lieferte eine leere Liste.
+     */
     @Test
-    fun `reine Schreibweisenaenderung ist KEINE Umbenennung - das Matching ist ignoreCase`() {
+    fun `eine reine Schreibweisenaenderung IST eine Umbenennung - die Namenslisten sind exakt`() {
         val plan = planeSchichtUmbenennungen(
-            vorher = config(def("1", "ad1")),
+            vorher = config(def("1", "abrufdienst")),
+            nachher = config(def("1", "Abrufdienst"))
+        )
+
+        assertEquals(
+            listOf(SchichtUmbenennung("abrufdienst", "Abrufdienst")),
+            plan.umbenennungen
+        )
+        assertTrue(plan.blockiert.isEmpty())
+    }
+
+    @Test
+    fun `ein zeichengleicher Name ist keine Aenderung - es wird nichts geschrieben`() {
+        val plan = planeSchichtUmbenennungen(
+            vorher = config(def("1", "AD1")),
             nachher = config(def("1", "AD1"))
         )
 
@@ -136,6 +164,50 @@ class Pruefrunde8SchichtUmbenennungPlanTest {
 
         assertTrue(plan.umbenennungen.isEmpty())
         assertEquals(1, plan.blockiert.size)
+    }
+
+    /**
+     * NACHTRAG 21.08.2026: Der Plan muss die beiden Blockade-Ausgänge unterscheiden.
+     *
+     * Beim Namenstausch gehört der GESPEICHERTE Altname hinterher einer anderen Definition - ein
+     * Eintrag „Frueh" in der Rufbereitschaft-Auswahl ist danach nicht tot, sondern scharf für die
+     * falsche Schicht. Nur in diesem Fall dürfen die reinen Namenslisten geräumt werden.
+     */
+    @Test
+    fun `beim Namenstausch gehoert der Altname jetzt einer anderen Schicht`() {
+        val plan = planeSchichtUmbenennungen(
+            vorher = config(def("1", "Frueh"), def("2", "Nacht")),
+            nachher = config(def("1", "Nacht"), def("2", "Frueh"))
+        )
+
+        assertTrue(plan.blockiert.all { it.alterNameGehoertJetztAnderer })
+    }
+
+    @Test
+    fun `ein bloss mehrdeutiger Zielname laesst den Altnamen herrenlos - nicht raeumen`() {
+        // "AD1" gehoert hinterher NIEMANDEM. Der gespeicherte Eintrag wirkt nirgends, und er wird
+        // von selbst wieder richtig, wenn der Nutzer die Umbenennung zuruecknimmt.
+        val plan = planeSchichtUmbenennungen(
+            vorher = config(def("1", "AD1"), def("2", "Abrufdienst")),
+            nachher = config(def("1", "Abrufdienst"), def("2", "Abrufdienst"))
+        )
+
+        assertEquals(1, plan.blockiert.size)
+        assertTrue(plan.blockiert.none { it.alterNameGehoertJetztAnderer })
+    }
+
+    @Test
+    fun `die Eigentuemerpruefung ist EXAKT - eine andere Schreibweise gehoert nicht dazu`() {
+        // Die Blockade greift schon bei `ignoreCase` (das Regel-Matching ist so), die Raeumung der
+        // Namenslisten darf das NICHT: Ein Eintrag "Frueh" gehoert einer Schicht namens "frueh"
+        // gerade nicht - er trifft dort nie, und ihn mit ihr zu begruenden waere Datenverlust.
+        val plan = planeSchichtUmbenennungen(
+            vorher = config(def("1", "Frueh"), def("2", "Nacht")),
+            nachher = config(def("1", "Nachtdienst"), def("2", "frueh"))
+        )
+
+        assertEquals(2, plan.blockiert.size)
+        assertTrue(plan.blockiert.none { it.alterNameGehoertJetztAnderer })
     }
 
     @Test

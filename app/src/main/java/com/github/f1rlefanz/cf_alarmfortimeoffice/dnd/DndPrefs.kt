@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dnd
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -188,6 +189,132 @@ class DndPrefs @Inject constructor(
         val current = p[KEY_ONCALL_SHIFTS] ?: emptySet()
         p[KEY_ONCALL_SHIFTS] = if (shiftName in current) current - shiftName else current + shiftName
     }
+    /**
+     * Zieht die beiden Schicht-AUSWAHLEN dieser Klasse auf den neuen Namen nach, wenn eine
+     * Schichtdefinition UMBENANNT wurde. Liefert die Anzahl der geaenderten Listen (0, 1 oder 2),
+     * oder einen Fehlschlag.
+     *
+     * WARUM ES DAS GEBEN MUSS: [onCallShifts] und [shiftExcludedShifts] speichern SCHICHTNAMEN,
+     * waehrend der Schicht-Editor den Namen bei gleichbleibender `id` frei aendern laesst - genau
+     * dieselbe Bindung ueber den Namen wie `DimRule.shiftPattern` (siehe
+     * [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase.renameShiftPattern],
+     * Vorbild fuer Semantik und Fehlerbehandlung). Der Nachzug fuer Dimmer- und Hue-Regeln kam in
+     * v1.30.0, diese beiden Listen wurden dabei uebersehen.
+     *
+     * Die Folge war unsichtbar und teuer: die Chips im DND-Bildschirm werden aus den AKTUELLEN
+     * Definitionsnamen gebaut, der gespeicherte ALT-Name taucht dort gar nicht auf - die Auswahl
+     * stand danach einfach leer da. Bei [onCallShifts] heisst das, dass der
+     * Rufbereitschaft-Cutoff ([DndOnCallCutoffResolver]) nicht mehr greift: In der Nacht VOR der
+     * Rufbereitschaft bleibt "Nicht stoeren" ueber 05:00 hinaus an, der Nutzer ist nicht
+     * erreichbar, und nichts weist darauf hin.
+     *
+     * EXAKTER VERGLEICH, und genau deshalb ist auch eine reine SCHREIBWEISEN-Aenderung eine
+     * Umbenennung: Beide Konsumenten pruefen Mengen-Zugehoerigkeit ohne Toleranz
+     * (`it.shiftName in onCallShifts` in [DndOnCallCutoffResolver], `alarm.shiftName in
+     * excludedShifts` in [DndShiftSpanResolver]). Korrigiert der Nutzer "abrufdienst" zu
+     * "Abrufdienst", trifft der gespeicherte Alt-Eintrag ab sofort nie wieder - anders als bei den
+     * Dimm-/Hue-REGELN, die gross-/kleinschreibungsblind vergleichen und eine solche Aenderung
+     * folgenlos ueberstehen. `ShiftViewModel.planeSchichtUmbenennungen` stieg bis zum 21.08.2026
+     * bei `equals(ignoreCase = true)` aus und liess genau diesen Fall liegen.
+     *
+     * Ein Eintrag, der sich nur in der Schreibweise vom ALTEN Namen unterscheidet ("ad1" bei einer
+     * Umbenennung von "AD1"), bleibt dagegen unberuehrt: er hat auch vorher nie getroffen, und ihn
+     * mitzuziehen machte aus einem toten Eintrag eine scharfe Ausnahme, die der Nutzer nie
+     * eingerichtet hat.
+     *
+     * KEIN BLINDES SCHREIBEN: Eine Liste, die den Altnamen nicht enthaelt, wird nicht angefasst.
+     * IDEMPOTENT: Ein zweiter Lauf findet den Altnamen nicht mehr vor und schreibt nicht.
+     */
+    suspend fun renameShiftName(oldName: String, newName: String): Result<Int> = runCatching {
+        require(oldName.isNotBlank() && newName.isNotBlank()) {
+            "Leerer Schichtname - DND-Auswahl wird NICHT nachgezogen ('$oldName' -> '$newName')"
+        }
+        if (oldName == newName) return@runCatching 0
+
+        var geaendert = 0
+        // EINE Transaktion fuer beide Listen: DataStore.edit{} liest und schreibt atomar, ein
+        // gleichzeitiger Chip-Tap kann so keine der beiden Aenderungen verlieren.
+        dataStore.edit { p ->
+            // Zuruecksetzen im Block, nicht davor: der Transform-Block ist die einzige Stelle, die
+            // wirklich zaehlt, was geschrieben wurde.
+            geaendert = 0
+            geaendert += p.zieheSchichtnamenNach(KEY_ONCALL_SHIFTS, oldName, newName)
+            geaendert += p.zieheSchichtnamenNach(KEY_SHIFT_EXCLUDED_SHIFTS, oldName, newName)
+        }
+
+        if (geaendert > 0) {
+            Logger.business(
+                LogTags.DND,
+                "🔁 DND-Schichtauswahl: $geaendert Liste(n) von '$oldName' auf '$newName' nachgezogen"
+            )
+        }
+        geaendert
+    }.onFailure { error ->
+        // WARN+ landet auch im Release-Log: eine nicht nachgezogene Rufbereitschaft-Auswahl ist ein
+        // Telefon, das in der Nacht vor dem Dienst laenger stumm bleibt als vom Nutzer eingestellt.
+        Logger.e(
+            LogTags.DND,
+            "❌ DND-Schichtauswahl konnte nicht von '$oldName' auf '$newName' nachgezogen werden",
+            error
+        )
+    }
+
+    /**
+     * Entfernt [name] aus beiden Schicht-AUSWAHLEN. Liefert die Anzahl der geaenderten Listen
+     * (0, 1 oder 2), oder einen Fehlschlag.
+     *
+     * WOFUER: der BLOCKIERTE Fall einer Umbenennung - der gespeicherte Name gehoert nach einem
+     * Namenstausch inzwischen einer ANDEREN Schichtdefinition (siehe
+     * `ShiftViewModel.zieheRegelmusterNach`). Fuer eine Dimm-/Hue-REGEL ist Nichtstun dort ehrlich:
+     * sie wird wirkungslos und steht sichtbar in ihrer Regelliste. Fuer diese beiden Listen ist
+     * Nichtstun das GEGENTEIL von ehrlich - der Eintrag ist nicht tot, sondern ab sofort scharf
+     * fuer die falsche Schicht, und im Bildschirm sieht er aus wie eine bewusste Auswahl.
+     *
+     * WARUM ENTFERNEN DIE SICHERE RICHTUNG IST - je Liste einzeln geprueft, denn die Wirkung zeigt
+     * NICHT in dieselbe Richtung:
+     *  - [onCallShifts]: Der stehen gelassene Eintrag beendet "Nicht stoeren" in der Nacht vor der
+     *    FALSCHEN Schicht vorzeitig (Cutoff 05:00) - eine Nachtruhe, die der Nutzer nie abbestellt
+     *    hat. Entfernen gibt dieser Schicht genau das zurueck, was fuer sie eingestellt war
+     *    (naemlich nichts).
+     *  - [shiftExcludedShifts]: Hier wirkt der Eintrag andersherum - er nimmt die falsche Schicht
+     *    von "Nicht stoeren waehrend der Dienstzeit" AUS, ihr Telefon klingelt also mehr als
+     *    eingestellt. Das ist zwar die harmlosere Richtung, aber es bleibt eine Einstellung, die
+     *    der Nutzer fuer diese Schicht nie getroffen hat und im Bildschirm nicht als fremd erkennt.
+     *
+     * WAS ENTFERNEN NICHT KOSTET: Die UMBENANNTE Schicht ist in beiden Faellen ohnehin schutzlos -
+     * ihr neuer Name steht nirgends in der Liste, der Alt-Eintrag half ihr also auch vorher nicht.
+     * Deshalb dominiert Entfernen das Stehenlassen: es nimmt genau eine Falschzuordnung weg und
+     * verliert nichts. Was der umbenannten Schicht fehlt, muss der Nutzer neu setzen - und genau
+     * das sagt ihm die Meldung, samt Namen der Schicht.
+     *
+     * KEIN BLINDES SCHREIBEN, IDEMPOTENT: wie [renameShiftName].
+     */
+    suspend fun removeShiftName(name: String, partnerName: String = ""): Result<Int> = runCatching {
+        require(name.isNotBlank()) {
+            "Leerer Schichtname - es wird NICHTS aus der DND-Auswahl entfernt"
+        }
+
+        var geaendert = 0
+        dataStore.edit { p ->
+            geaendert = 0
+            geaendert += p.entferneSchichtnamen(KEY_ONCALL_SHIFTS, name, partnerName)
+            geaendert += p.entferneSchichtnamen(KEY_SHIFT_EXCLUDED_SHIFTS, name, partnerName)
+        }
+
+        if (geaendert > 0) {
+            Logger.business(
+                LogTags.DND,
+                "🧹 DND-Schichtauswahl: '$name' aus $geaendert Liste(n) entfernt - der Name gehoert " +
+                    "jetzt einer anderen Schicht und haette dort still gewirkt"
+            )
+        }
+        geaendert
+    }.onFailure { error ->
+        // WARN+: bleibt der Eintrag stehen, wirkt eine Einstellung fuer eine Schicht, fuer die sie
+        // nie getroffen wurde - und niemand sieht es.
+        Logger.e(LogTags.DND, "❌ '$name' konnte nicht aus der DND-Auswahl entfernt werden", error)
+    }
+
     suspend fun setOnCallCutoffMinutes(v: Int) = dataStore.edit { it[KEY_ONCALL_CUTOFF_MIN] = v }
     suspend fun setZenRuleId(v: String) = dataStore.edit { it[KEY_ZEN_RULE_ID] = v }
 
@@ -200,4 +327,50 @@ class DndPrefs @Inject constructor(
     suspend fun setBlockSystem(v: Boolean) = dataStore.edit { it[KEY_BLOCK_SYSTEM] = v }
     suspend fun setBlockMedia(v: Boolean) = dataStore.edit { it[KEY_BLOCK_MEDIA] = v }
     suspend fun setBlockAlarms(v: Boolean) = dataStore.edit { it[KEY_BLOCK_ALARMS] = v }
+}
+
+/**
+ * Ersetzt [oldName] durch [newName] in einer gespeicherten Schichtnamen-Menge. Liefert 1, wenn
+ * geschrieben wurde, sonst 0 - siehe [DndPrefs.renameShiftName] fuer das Warum (exakter Vergleich,
+ * kein blindes Schreiben).
+ *
+ * Steht als Datei-private Funktion neben der einzigen Klasse, die sie braucht. Ein gemeinsamer
+ * Helfer mit dem gleichnamigen in `DimOverlayPrefs` waere eine Abstraktion ueber fuenf Zeilen und
+ * zwei Paketen - die Begruendung, WARUM exakt verglichen wird, haengt dagegen am jeweiligen
+ * Konsumenten und gehoert genau dorthin.
+ */
+private fun MutablePreferences.zieheSchichtnamenNach(
+    key: Preferences.Key<Set<String>>,
+    oldName: String,
+    newName: String
+): Int {
+    val current = this[key] ?: return 0
+    if (oldName !in current) return 0
+    this[key] = current - oldName + newName
+    return 1
+}
+
+/**
+ * Entfernt [name] aus einer gespeicherten Schichtnamen-Menge. Liefert 1, wenn geschrieben wurde,
+ * sonst 0 - siehe [DndPrefs.removeShiftName] fuer das Warum.
+ *
+ * Ein leer gewordener Schluessel wird auf die leere Menge gesetzt statt entfernt: die Leseseite
+ * liest beides als leere Menge, und `remove()` wuerde beim naechsten Lesen den Unterschied
+ * zwischen "nie eingestellt" und "bewusst geraeumt" einebnen.
+ */
+private fun MutablePreferences.entferneSchichtnamen(
+    key: Preferences.Key<Set<String>>,
+    name: String,
+    partnerName: String = ""
+): Int {
+    val current = this[key] ?: return 0
+    if (name !in current) return 0
+    // TAUSCHFALL: Stehen BEIDE Namen in der Liste, ist ihr Inhalt nach dem Tausch weiterhin exakt
+    // richtig - die Liste meint beide Schichten, und welcher Name zu welcher gehoert, ist ihr egal.
+    // Hier zu raeumen wuerde eine korrekte Einstellung zerstoeren: der On-Call-Cutoff griffe danach
+    // fuer KEINE der beiden Schichten mehr, und "Nicht stoeren" bliebe in der Nacht vor dem Dienst
+    // ueber den Cutoff hinaus an - genau der Schaden, gegen den der Nachzug gebaut ist.
+    if (partnerName.isNotBlank() && partnerName in current) return 0
+    this[key] = current - name
+    return 1
 }

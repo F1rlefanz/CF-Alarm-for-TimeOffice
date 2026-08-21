@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.30.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.31.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Der Status-Tab sagt jetzt in einer ruhigen Zeile, wann der Dienstplan-Kalender zuletzt neu eingelesen wurde._
+
+### ✨ Neu
+
+- **„Dienstplan-Kalender zuletzt neu eingelesen":** Google liest einen abonnierten Kalender alle paar Tage neu ein und vergibt dabei intern neue Kennungen. Seit 1.30.1 erkennt die App ihre Wecker dabei zuverlässig wieder — und weil das völlig geräuschlos abläuft, war für dich nicht mehr nachvollziehbar, ob und wann es passiert ist. Der Status-Tab zeigt es jetzt: Datum, Anzahl der wiedererkannten Wecker und der ausdrückliche Hinweis, dass sich am Dienstplan dadurch nichts geändert hat. Ohne Benachrichtigung, ohne Warnfarbe, ohne Knopf — die Zeile erscheint nur, wenn es überhaupt schon einmal vorkam, und nur für Fälle, in denen wirklich nichts anderes passiert ist.
+
+## Version 1.30.3
 
 **Stand:** August 2026
 

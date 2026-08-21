@@ -192,10 +192,39 @@ VOR und NACH der Änderung, welche `id` einen neuen Namen hat, dann
   eingesetzt ergäbe es eine Regel, die plötzlich nur noch eine Schicht trifft.
 - **`withContext(NonCancellable)`**, weil hier ein konsistenter Zustand HERgestellt wird — bricht
   der `viewModelScope` mittendrin ab (der Nutzer verlässt den Screen), wäre sonst der Dimmer
-  nachgezogen und Hue nicht, und niemand erführe davon. Nach einer geänderten Dimm-Regel werden
-  `DimScheduleUseCase.enable()` und `DndScheduleUseCase.enable()` neu armiert (best-effort, einzeln
-  gefangen): die Fenster werden aus den Regeln berechnet, der nächste Tick stand also noch auf dem
-  ALTEN Plan.
+  nachgezogen und Hue nicht, und niemand erführe davon.
+- **Nacharmiert wird ERST NACH dem Alarm-Sync**, nicht direkt nach dem Schreiben:
+  `DimScheduleUseCase.enable()`/`DndScheduleUseCase.enable()` hängen im `finally` von
+  `triggerAlarmCreationFromConfigUpdate()` (`ShiftViewModel.armiereZeitkettenNeu()`, best-effort,
+  einzeln gefangen). Der `ShiftSpanStore` wird ausschließlich in `syncAlarms()` beschrieben und
+  armiert selbst nichts; lief `enable()` davor, mischte es die frisch nachgezogenen Namenslisten
+  (NEUER Name) mit Spannen, die noch den ALTEN trugen — Fenster ohne Cutoff und ohne Ausnahme, und
+  weil der nächste Tick auf dieses zu späte Ende fällt, blieb der falsche Plan die ganze Nacht
+  stehen. Im `finally`, weil der Sync regelmäßig ausfällt (Master-Pause, keine Termine,
+  unvollständige Liste) — dann sind die Listen trotzdem schon neu.
+
+### Nachtrag 21.08.2026: die drei übersehenen NAMENSLISTEN
+
+`zieheRegelmusterNach()` zog anfangs nur die beiden REGELARTEN mit. Drei weitere Stellen binden
+ebenfalls über den Namen und vergleichen dabei **exakt**: `dnd_oncall_shifts` (Rufbereitschaft,
+`DndOnCallCutoffResolver`), `dnd_shift_excluded_shifts` (`DndShiftSpanResolver`) und
+`dim_night_default_excluded_shifts` (`DimScheduleUseCase`). Am Gerät stand dort noch der Altname,
+der On-Call-Cutoff griff nicht mehr, und „Nicht stören" blieb in der Nacht vor der Rufbereitschaft
+über 05:00 hinaus an — sichtbar war nichts, weil die Chips aus den AKTUELLEN Namen gebaut werden.
+Nachgezogen über `DndPrefs.renameShiftName()` / `DimOverlayPrefs.renameShiftName()`. Daraus:
+
+- **Eine reine SCHREIBWEISEN-Änderung ist eine Umbenennung.** `planeSchichtUmbenennungen()` stieg
+  bei `equals(ignoreCase = true)` aus — richtig gedacht für die Regeln (die vergleichen selbst
+  `ignoreCase`), falsch für die Listen. Der Abbruch ist jetzt der EXAKTE Vergleich; für die Regeln
+  ist der zusätzliche Schreibvorgang folgenlos.
+- **Blockade heißt für die Listen nicht „nichts tun".** Gehört der gespeicherte Altname nach einem
+  Namenstausch einer ANDEREN Definition, ist der Eintrag nicht tot, sondern scharf für die falsche
+  Schicht. Nur in diesem Fall (`BlockierteUmbenennung.alterNameGehoertJetztAnderer`, exakt
+  verglichen wie die Listen selbst) wird er über `removeShiftName()` geräumt — bei den übrigen
+  Blockaden ist der Altname herrenlos, und Löschen wäre Datenverlust ohne Gegenwert.
+- **Der Hinweistext ist zusammengesetzt, kein `when`.** Beide Planlisten können gleichzeitig gefüllt
+  sein; der Text nennt die betroffene Schicht beim Namen, sagt, was geräumt wurde, und behauptet
+  nicht mehr pauschal, es sei nichts mitgezogen worden.
 - **Fehlschläge werden gemeldet, nicht geschluckt** (`ShiftUiState.regelNachzugHinweis`) — eine
   nicht nachgezogene Regel ist eine Funktion, die der Nutzer bewusst eingerichtet hat und die ab
   jetzt nichts mehr tut.

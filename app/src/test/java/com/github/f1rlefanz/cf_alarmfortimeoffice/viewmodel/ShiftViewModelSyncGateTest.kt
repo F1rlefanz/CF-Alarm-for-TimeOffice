@@ -90,7 +90,9 @@ class ShiftViewModelSyncGateTest {
             dimRuleUseCase = dagger.Lazy { mock<DimRuleUseCase>() },
             hueRuleUseCase = dagger.Lazy { mock<HueRuleUseCase>() },
             dimScheduleUseCase = dagger.Lazy { mock<DimScheduleUseCase>() },
-            dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() }
+            dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() },
+            dndPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs>() },
+            dimOverlayPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs>() }
         )
     }
 

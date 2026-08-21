@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -111,6 +112,17 @@ object ConfigBackupFilter {
         // zurueck, und das neue Geraet verschweigt dann echte Dienstplan-Aenderungen als blosse
         // Horizont-Eintritte. Ein frischerer Wert waere umgekehrt nur zu gespraechig.
         SyncHorizonStore.KEY_LAST_SYNC_NAME,
+        // Wann DIESES Geraet zuletzt gesehen hat, dass sein Dienstplan-Feed neu eingelesen wurde,
+        // und wie viele Wecker es dabei wiedererkannt hat (FeedNeueinlesenStore). Eine Beobachtung
+        // dieses Geraets an DIESEM Kalenderabonnement, keine Einstellung - jeder eigene Sync
+        // erzeugt sie bei Bedarf neu. Die gefaehrliche Richtung ist der importierte FREMDE
+        // Zeitpunkt: das neue Geraet zeigte dann eine ruhige Auskunft ("zuletzt neu eingelesen:
+        // 22.08., 11 Wecker neu zugeordnet") ueber einen Vorgang, den es nie beobachtet hat, und
+        // zwar so lange, bis dort zufaellig selbst einmal ein Kennungswechsel auftritt. Eine
+        // erfundene Beobachtung ist genau das, was diese Zeile nicht sein darf - sie soll ja die
+        // Frage "woran erkenne ich das?" ehrlich beantworten.
+        FeedNeueinlesenStore.KEY_ZEITPUNKT_NAME,
+        FeedNeueinlesenStore.KEY_ANZAHL_NAME,
         // Zeitstempel der Hintergrundarbeit
         "last_maintenance_time",
         "last_event_load_time",

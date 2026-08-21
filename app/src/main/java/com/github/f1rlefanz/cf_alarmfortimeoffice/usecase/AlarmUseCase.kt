@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
@@ -87,7 +88,11 @@ class AlarmUseCase @Inject constructor(
     // Bezugspunkt fuer "war diese Schicht beim letzten Sync ueberhaupt sichtbar?" - siehe
     // SyncHorizonStore. Aus demselben Grund wie die drei Abhaengigkeiten darueber bewusst auf der
     // Implementierung statt auf IAlarmUseCase.
-    private val syncHorizonStore: SyncHorizonStore
+    private val syncHorizonStore: SyncHorizonStore,
+    // Merker fuer die stille Statuszeile "Dienstplan-Kalender zuletzt neu eingelesen" - aus
+    // demselben Grund wie die vier Abhaengigkeiten darueber bewusst auf der Implementierung statt
+    // auf IAlarmUseCase.
+    private val feedNeueinlesenStore: FeedNeueinlesenStore
 ) : IAlarmUseCase {
 
     companion object {
@@ -418,6 +423,8 @@ class AlarmUseCase @Inject constructor(
                 // Weckzeit+Schicht) - unabhaengig davon, ob daneben noch etwas Echtes anders war.
                 // Muss sichtbar bleiben - siehe die WARN-Zeile unten.
                 var neueKennungCount = 0
+                // Siehe die Erhoehungsstelle: zaehlt NUR die wirklich folgenlosen Uebernahmen.
+                var stilleUebernahmeCount = 0
                 val resultAlarms = mutableListOf<AlarmInfo>()
 
                 // "Naechsten Alarm ueberspringen": EINMAL pro Sync lesen. Fail-safe wie der
@@ -546,6 +553,15 @@ class AlarmUseCase @Inject constructor(
                             scheduleSystemAlarm(newAlarm).getOrThrow()
                             resultAlarms.add(newAlarm)
                             neueKennungCount++
+                            // ZWEITER Zaehler, und er zaehlt WENIGER: nur die Faelle, in denen sich
+                            // ausser der Kalender-Kennung wirklich NICHTS geaendert hat. Genau die
+                            // - und nur die - darf die Statuszeile im Status-Tab mit dem Satz
+                            // "Am Dienstplan hat sich dadurch nichts geaendert" zusammenfassen.
+                            // `neueKennungCount` taugt dafuer nicht: er zaehlt weiter unten auch
+                            // den Fall "Kennungswechsel UND echte Aenderung zugleich" mit, und die
+                            // Zeile wuerde dann einer "Schicht geaendert"-Meldung widersprechen,
+                            // die der Nutzer gerade ernst nehmen soll.
+                            stilleUebernahmeCount++
                         } else if (vergleichsbasis != newAlarm) {
                             // Alarm exists - check if anything about it changed. Voller Vergleich statt
                             // nur eventChecksum/triggerTime: sonst bleibt newAlarm (frisch aus der
@@ -678,6 +694,11 @@ class AlarmUseCase @Inject constructor(
                             "erhalten. Ob daneben etwas Echtes anders war, sagen die Update-Zeilen " +
                             "darueber; ohne solche gab es weder ein Neustellen noch eine Meldung"
                     )
+                    // ... und dieselbe Beobachtung als stille Auskunft in den Status-Tab. NUR in
+                    // diesem Zweig, also nur wenn es wirklich vorkam: ein Lauf ohne
+                    // Kennungswechsel darf den letzten Stand nicht auf "0 Wecker" ueberschreiben
+                    // (siehe FeedNeueinlesenStore).
+                    persistFeedNeueinlesen(stilleUebernahmeCount, syncStartedAt)
                 }
 
                 // "complete" nur, wenn wirklich alles durchlief - sonst behauptet die Abschlusszeile
@@ -1029,6 +1050,29 @@ class AlarmUseCase @Inject constructor(
             throw e
         } catch (e: Exception) {
             Logger.w(LogTags.ALARM, "Sync-Horizont konnte nicht fortgeschrieben werden", e)
+        }
+    }
+
+    /**
+     * Haelt fest, dass der Kalender-Feed neu eingelesen wurde ([FeedNeueinlesenStore]) - die
+     * Grundlage der stillen Statuszeile.
+     *
+     * **Eigenes try/catch, bewusst nicht-fatal** - dieselbe Haltung wie bei [persistShiftSpans],
+     * [persistSyncHorizon] und den [ShiftChangeNotifier]-Aufrufen: ein Nebenschauplatz darf die
+     * kritische Alarm-Synchronisation nie abbrechen oder rueckgaengig machen. Scheitert das
+     * Schreiben, fehlt hoechstens eine Auskunftszeile; die Wecker sind davon voellig unberuehrt,
+     * und die WARN-Zeile darueber steht ohnehin im Log.
+     *
+     * [CancellationException] wird weitergeworfen (kein Schreibfehler, sondern das Ende der
+     * umgebenden Coroutine).
+     */
+    private suspend fun persistFeedNeueinlesen(anzahl: Int, syncStartedAt: Long) {
+        try {
+            feedNeueinlesenStore.merkeNeueinlesen(anzahl, syncStartedAt)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.ALARM, "Merker 'Kalender neu eingelesen' konnte nicht geschrieben werden", e)
         }
     }
 

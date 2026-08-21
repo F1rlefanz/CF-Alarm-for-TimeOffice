@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -263,7 +265,8 @@ class AlarmUseCaseKennungswechselTest {
         repo: FakeAlarmRepository,
         manager: AlarmManagerService,
         notifier: FakeShiftChangeNotifier,
-        skipZustand: AlarmSkipState = AlarmSkipState()
+        skipZustand: AlarmSkipState = AlarmSkipState(),
+        feedStore: FakeFeedNeueinlesenStore = FakeFeedNeueinlesenStore()
     ): AlarmUseCase = AlarmUseCase(
         repo,
         manager,
@@ -275,7 +278,8 @@ class AlarmUseCaseKennungswechselTest {
             kotlinx.coroutines.runBlocking { whenever(it.pausedNow()).thenReturn(false) }
         },
         mock<ShiftSpanStore>(),
-        FakeSyncHorizonStore()
+        FakeSyncHorizonStore(),
+        feedStore
     )
 
     // --- Tests ---
@@ -310,6 +314,61 @@ class AlarmUseCaseKennungswechselTest {
         assertEquals("Die neue Kalender-Kennung wird trotzdem uebernommen",
             tage.map { "neu-$it" }.toSet(), repo.current.map { it.eventId }.toSet())
         assertEquals(11, repo.current.size)
+    }
+
+    /**
+     * Die Grundlage der stillen Statuszeile "Dienstplan-Kalender zuletzt neu eingelesen".
+     *
+     * Der Vorgang ist fuer den Nutzer voellig unsichtbar - genau richtig, aber auf seine Frage
+     * "woran erkenne ich das?" gab es bis dahin keine Antwort in der App. Gespeichert werden darf
+     * das nur, wenn es wirklich vorkam (siehe die Gegenprobe darunter).
+     */
+    @Test
+    fun `Kennungswechsel wird mit Zeitpunkt und Anzahl gemerkt`() = runTest {
+        val tage = (1..11).toList()
+        val bestand = tage.map { tag -> bestehenderAlarm(id = 1000 + tag, eventId = "alt-$tag", day = tag) }
+        val neueEvents = tage.map { tag -> event("neu-$tag", "F", tag) }
+
+        val repo = FakeAlarmRepository(bestand)
+        val feedStore = FakeFeedNeueinlesenStore()
+        val vorher = System.currentTimeMillis()
+
+        val result = useCase(repo, mockManager(), FakeShiftChangeNotifier(), feedStore = feedStore)
+            .syncAlarms(neueEvents, config)
+
+        assertTrue(result.isSuccess)
+        val stand = feedStore.stand
+        assertNotNull("Der Kennungswechsel muss fuer die Statuszeile festgehalten werden", stand)
+        assertEquals("Die Anzahl muss die tatsaechlich wiedererkannten Wecker nennen",
+            11, stand!!.anzahl)
+        assertTrue("Der Zeitpunkt muss aus diesem Lauf stammen",
+            stand.zeitpunkt >= vorher && stand.zeitpunkt <= System.currentTimeMillis())
+        assertEquals("Genau EIN Schreibvorgang pro Lauf", 1, feedStore.merkeAufrufe)
+    }
+
+    /**
+     * DIE EIGENTLICHE ZUSICHERUNG: ein Lauf OHNE Kennungswechsel - also der Normalfall, der
+     * zwischen zwei Feed-Neueinlesungen viele Male laeuft - darf den letzten Stand nicht
+     * anruehren. Sonst stuende in der Statuszeile binnen Stunden "heute, 0 Wecker", der letzte
+     * echte Vorgang waere ueberschrieben, und die Zeile beantwortete genau die Frage nicht mehr,
+     * fuer die sie gebaut wurde.
+     */
+    @Test
+    fun `ein Lauf ohne Kennungswechsel laesst den letzten Stand stehen`() = runTest {
+        val frueher = FeedNeueinlesenStand(zeitpunkt = 1_700_000_000_000L, anzahl = 7)
+        val bestand = listOf(bestehenderAlarm(id = 601, eventId = "evA", day = 1))
+        val repo = FakeAlarmRepository(bestand)
+        val feedStore = FakeFeedNeueinlesenStore(stand = frueher)
+
+        // Dieselbe Kennung wie im Bestand - es hat also kein Neueinlesen stattgefunden.
+        val result = useCase(repo, mockManager(), FakeShiftChangeNotifier(), feedStore = feedStore)
+            .syncAlarms(listOf(event("evA", "F", 1)), config)
+
+        assertTrue(result.isSuccess)
+        assertEquals("Ohne Kennungswechsel darf gar nicht geschrieben werden",
+            0, feedStore.merkeAufrufe)
+        assertEquals("Der letzte echte Stand muss unveraendert stehen bleiben",
+            frueher, feedStore.stand)
     }
 
     @Test
@@ -620,5 +679,41 @@ class AlarmUseCaseKennungswechselTest {
 
         assertTrue("Die Schicht muss gestellt werden", ergebnis.isSuccess)
         verify(manager).setAlarmFromShiftMatch(any(), any(), any())
+    }
+
+    /**
+     * Die Statuszeile im Status-Tab fasst das Neueinlesen mit dem Satz zusammen
+     * "Am Dienstplan hat sich dadurch nichts geaendert". Also darf sie NUR die Faelle zaehlen, in
+     * denen das auch stimmt.
+     *
+     * Faellt ein Kennungswechsel mit einer echten Aenderung zusammen (der Chef benennt um,
+     * waehrend Google den Feed neu einliest), bekommt der Nutzer dafuer eine
+     * "Schicht geaendert"-Meldung. Zaehlte die Statuszeile diesen Wecker mit, widerspraeche ihre
+     * ruhige Auskunft genau der Meldung, die er ernst nehmen soll.
+     *
+     * OHNE DEN FIX faellt dieser Test: gezaehlt wurde `neueKennungCount`, und der zaehlt den
+     * Aenderungszweig ausdruecklich mit (fuer die WARN-Zeile im Log ist das richtig).
+     */
+    @Test
+    fun `ein Kennungswechsel MIT echter Aenderung zaehlt nicht fuer die Statuszeile`() = runTest {
+        val bestand = listOf(
+            bestehenderAlarm(id = 800, eventId = "alt-1", day = 1, shiftName = "Frueh (alter Name)")
+        )
+        val feedStore = FakeFeedNeueinlesenStore()
+        val notifier = FakeShiftChangeNotifier()
+
+        val result = useCase(FakeAlarmRepository(bestand), mockManager(), notifier, feedStore = feedStore)
+            .syncAlarms(listOf(event("neu-1", "F", 1)), config)
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            "Die Umbenennung ist eine echte Aenderung und wird gemeldet",
+            1, notifier.umbenennungen.size
+        )
+        assertEquals(
+            "Aber die Statuszeile darf sie nicht als folgenlose Uebernahme fuehren",
+            0, feedStore.merkeAufrufe
+        )
+        assertNull("Und damit steht dort auch kein Stand", feedStore.stand)
     }
 }

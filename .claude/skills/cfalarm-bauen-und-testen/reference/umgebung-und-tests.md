@@ -207,3 +207,47 @@ eigenen Diff liegt, statt weiter am Werkzeug zu suchen. Vorsicht dabei: mehrfach
 `git checkout` einzelner Dateien hin und her erzeugt Folgefehler
 (`CFAlarmApplication_ComponentTreeDeps konnte nicht gefunden werden`), die wie ein neues Problem
 aussehen — nach jedem Teil-Revert das Build-Verzeichnis löschen.
+
+## Das Datei-Log auf dem Gerät des Nutzers ist das stärkste Beweismittel des Projekts
+
+Bei einer Nutzermeldung führt der erste Weg **dorthin**, nicht in den Code. Am 21.08.2026 kamen
+die drei tiefsten Fehler des Tages (v1.30.1 Wecker-Identität, v1.30.3 Namensbindung, die fehlende
+Statuszeile v1.31.0) aus echter Nutzung und ihrem Log — **keiner** davon aus einer Prüfrunde. Der
+Beleg für die Feed-Rotation war nur möglich, weil neun Tage Log vorlagen: am 20.08. um 09:30
+11 Termine gelöscht, 11 angelegt, Schnittmenge der Event-IDs **null**, Schichten und Weckzeiten
+unverändert. Aus dem Code allein war das nicht zu sehen.
+
+- Debug-Build, **ein File pro Tag**, 8 Tage Aufbewahrung.
+- Liegt unter `/sdcard/Android/data/<pkg>/files/`, erreichbar per `adb pull`.
+- **`run-as … cat` scheitert dort an den Rechten** — nicht als „Log fehlt" fehldeuten.
+- Gesicherte Stände liegen in `..Projektdateien/Logs/` (gitignored).
+
+## Am Gerät belegt (19.–21.08.2026, Emulator, API 37)
+
+Gemessen, nicht abgeleitet — der Bestand, auf den sich spätere Runden berufen dürfen:
+
+- **Der Kanal-Migrationsfix trägt.** Beim ersten Klingeln entsteht `alarm_sound_service_v2` mit
+  `mImportance=4` und `mBypassDnd=true`; die alte ID `alarm_sound_service` ist verschwunden.
+- **Die Schlummer-Beschriftung stimmt.** Bei eingestellten 15 Minuten trägt der Vollbild-Knopf
+  „15 MIN SPÄTER" und die Benachrichtigungs-Aktion „15 Min später" — beides aus derselben Quelle
+  wie die Planung.
+- **Der Wecker endet sauber:** MediaPlayer freigegeben, Vibration gestoppt, `stopSelf(startId=2)`,
+  Notification 2002 weg, kein Zombie-Dienst.
+- **Direct Boot: 10 von 10 Weckern nach dem Neustart ohne Entsperrung wieder armiert**
+  (`tools/geraet/pruefe_direct_boot.py`). Damit ist der seit Runde 6 offene Punkt erledigt.
+- **Die Nachholung nach dem Entsperren greift vollständig:** Bestand nachgeladen, alle 10 Wecker
+  aus dem Direct-Boot-Spiegel neu armiert, Datei-Log aktiviert, voller Sync; rund 30 s später sind
+  auch `DND_SCHED_TICK` und die Wartungskette wieder da.
+- **Die 6h-Kette hat GENAU einen Planer** plus den Wiederanlauf-Wachhund (zwei Einträge, wie
+  vorgesehen) — die übrigen Einträge in `dumpsys alarm` stehen in der Historie als `pi_cancelled`.
+- **Ein fehlender Kanal wird korrekt als ERREICHBAR gewertet**, nicht als Warnung — die
+  Status-Karte schlägt auf einer frischen Installation also keinen Fehlalarm.
+- **Kein FATAL, keine ANR, kein StrictMode-Verstoß, keine verworfene Berechtigung.** Nach der
+  Anmeldung 0 Fehler und 3 erwartbare Warnungen (Token vor der Autorisierung, zweimal die
+  Hue-Subnetz-Heuristik).
+- **Kalender-Abwahl räumt wirklich** (62 → 51 → 62 anstehende Alarme, „Next alarm clock" leer und
+  zurück); **Master-Pause stoppt den klingelnden Wecker** (`STOP_ALARM` vor „Alarme gelöscht").
+
+**Nicht geprüft, und warum:** Dimmer-Regelkonflikt (braucht einen Kalendertag mit zwei Diensten),
+echter Schlummer-Fehlschlag (braucht Berechtigungsentzug im Flug), Abmelden selbst (nur am Gerät
+des Nutzers möglich — ohne seine Zugangsdaten keine Wiederanmeldung).

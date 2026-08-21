@@ -27,7 +27,20 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.30.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.30.3 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Wer einen Schichttyp umbenennt, verliert damit nicht mehr stillschweigend seine „Nicht stören"- und Dimmer-Einstellungen._
+
+### 🐛 Behoben
+
+- **Umbenennen legte die Rufbereitschaft-Einstellung lahm:** Seit 1.30.0 ziehen Dimmer- und Hue-Regeln beim Umbenennen eines Schichttyps mit. Drei weitere Einstellungen tun das ebenfalls über den Namen, wurden dabei aber übersehen: die Auswahl unter „Rufbereitschaft", die Ausnahmen von „Nicht stören während der Dienstzeit" und die Ausnahmen vom Nacht-Standard des Dimmers. Nach einer Umbenennung zeigte die gespeicherte Auswahl ins Leere — „Nicht stören" endete dann in der Nacht vor der Rufbereitschaft **nicht** mehr zur eingestellten Zeit, und man war früh morgens nicht erreichbar. Zu sehen war davon nichts, weil die Auswahlfelder immer die aktuellen Namen zeigen. Alle drei ziehen jetzt mit.
+- **Auch eine geänderte Groß-/Kleinschreibung zählt:** Wer „abrufdienst" zu „Abrufdienst" korrigierte, löste denselben Schaden aus — für die Regeln war die Änderung folgenlos, für diese drei Einstellungen nicht.
+- **Beim Tausch zweier Namen bleibt nichts falsch stehen:** Tauschen zwei Schichttypen ihre Namen, gehörte die gespeicherte Auswahl danach der jeweils anderen Schicht — die Einstellung wirkte also am falschen Tag. Solche Einträge werden jetzt entfernt und benannt; sind beide Namen ausgewählt, bleibt alles unangetastet, weil die Auswahl dann weiterhin stimmt.
+- **Die Zeitpläne werden zum richtigen Zeitpunkt neu gestellt:** Dimmer und „Nicht stören" wurden nach einer Umbenennung neu berechnet, bevor die Schichtzeiten den neuen Namen trugen — für die Nacht direkt danach konnte dabei ein Plan ohne die eigene Ausnahme stehenbleiben.
+
+## Version 1.30.2
 
 **Stand:** August 2026
 

@@ -55,14 +55,7 @@ TEST_XML = os.path.join(WURZEL, "app", "build", "test-results", "testDebugUnitTe
 # 21.08.2026 stand die Liste in `..Projektdateien/claudes mds/HANDOFF.md`; die
 # Datei ist geloescht, weil ihr uebriger Inhalt entweder abgeleitet werden kann
 # oder anderswo vollstaendig steht.
-OFFENE_PUNKTE = os.path.join(
-    os.path.expanduser("~"),
-    ".claude",
-    "projects",
-    "C--Users-Christoph-AndroidStudioProjects-CFAlarmforTimeOffice",
-    "memory",
-    "project_offene_punkte.md",
-)
+MEMORY_DATEI = "project_offene_punkte.md"
 
 INTEGRATIONSBRANCH = "main"
 
@@ -221,6 +214,31 @@ def arbeitsstand():
     return "\n".join(zeilen)
 
 
+def memory_pfad(dateiname):
+    """Findet ~/.claude/projects/<bereinigte-wurzel>/memory/<dateiname>.
+
+    Claude Code ersetzt im Verzeichnisnamen die Pfadtrenner und den
+    Laufwerks-Doppelpunkt durch Bindestriche. Der Pfad wird ABGELEITET und
+    nicht festgeschrieben: ein fest eingetragener Pfad broeche bei einem
+    Umzug des Projekts oder einem anderen Rechner, und der Abschnitt
+    verschwaende dann STILL - genau die Degradierung, gegen die dieses Skript
+    antritt. Passt die Ableitung nicht, wird ueber den Projektordner-Namen
+    gesucht. (Dieselbe Ableitung wie in tools/doku/pruefe_budget.py.)
+    """
+    basis = os.path.expanduser("~/.claude/projects")
+    abgeleitet = re.sub(r"[:\\/]", "-", WURZEL)
+    kandidat = os.path.join(basis, abgeleitet, "memory", dateiname)
+    if os.path.exists(kandidat):
+        return kandidat
+    ordner = os.path.basename(WURZEL)
+    treffer = [
+        p
+        for p in glob.glob(os.path.join(basis, "*", "memory", dateiname))
+        if p.replace("\\", "/").split("/")[-3].endswith(ordner)
+    ]
+    return treffer[0] if len(treffer) == 1 else None
+
+
 def offene_punkte():
     """Zieht die Ueberschriften der offenen Punkte aus dem Memory.
 
@@ -228,7 +246,8 @@ def offene_punkte():
     die Datei, keine zweite Kopie davon. Die Datei selbst liegt ohnehin im
     Memory und ist damit bei Bedarf greifbar.
     """
-    inhalt = lies(OFFENE_PUNKTE)
+    pfad = memory_pfad(MEMORY_DATEI)
+    inhalt = lies(pfad) if pfad else None
     if inhalt is None:
         return None
 

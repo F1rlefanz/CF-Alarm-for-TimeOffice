@@ -204,6 +204,16 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   rekonstruieren. Ausdrückliche Abschaltungen räumen weiter ALLES.
 - **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft** —
   sonst bricht ein einzelner abgelehnter Alarm den gesamten Sync ab.
+- **Die Wecker-Identitaet haengt NICHT allein an der Kalender-Kennung.** Ein abonnierter
+  Dienstplan-Feed bekommt von Google alle paar Tage neue Event-IDs fuer dieselben Termine (am
+  Geraet gemessen: 11 geloescht, 11 angelegt, Schnittmenge der IDs null, Schichten und Weckzeiten
+  unveraendert). `syncAlarms()` paart deshalb ERST (Kennung, sonst Weckzeit + Schicht) und
+  entscheidet DANN; bei reinem Kennungswechsel wird die neue Kennung still uebernommen, die
+  `AlarmInfo.id` bleibt. Dieselbe Frage stellt die Boot-Wiederherstellung - sonst loescht ein
+  Neustart im Rotationsfenster den GESAMTEN Bestand.
+- **Die Skip-Erkennung nimmt den WECKZEITPUNKT als Anker, nicht nur die id** (in beiden Gates,
+  auch im Backstop). `skipNextAlarm()` loescht den Eintrag; nach einer Kennungsrotation gaebe es
+  sonst nichts mehr zu paaren, und der uebersprungene Wecker klingelte am freien Morgen.
 - **Verstrichene Weckzeit ist KEINE entfernte Schicht** (`expiredEventIds`).
 - **Alle `setAlarmClock()`-Aufrufstellen fangen die entzogene Exact-Alarm-Berechtigung**
   (`setExactOrInexact`: try/catch + inexakter Fallback). Ein verzögerter Wecker schlägt keinen Wecker.
@@ -307,6 +317,12 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **`findDefinitionFor` und `matchesKeywords` nicht verwechseln** — die Verwechslung hat zweimal
   Wecker gekostet. Ersteres ordnet einem bestehenden Alarm zu (gestaffelt), Letzteres erkennt in
   Kalendertiteln (mit Wortgrenzen über Unicode-Kategorien, NICHT `\b`).
+- **Wer einen Schichtnamen PERSISTENT speichert, traegt ihn in den Umbenennungs-Nachzug ein.**
+  Fuenf Stellen binden ueber den Namen: Dimmer- und Hue-Regeln (`shiftPattern`), die
+  Rufbereitschaft-Auswahl, die Dienstzeit-Ausnahmen und die Nacht-Ausnahmen. Die drei Letzteren
+  vergleichen EXAKT - eine reine Schreibweisen-Aenderung zaehlt deshalb als Umbenennung. Beim
+  Namenstausch wird der falsch gewordene Eintrag geraeumt, ausser beide Namen stehen in derselben
+  Liste (dann stimmt ihr Inhalt weiter). Die vollstaendige Inventur steht im Kalender-Skill.
 - **`CalendarStateHolder` ist eine Einbahnstraße**, und Laden gehört ausschließlich dem
   `CalendarViewModel`.
 - **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter** — die Prüfung VOR JEDEM

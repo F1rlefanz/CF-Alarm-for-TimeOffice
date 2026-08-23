@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
                             "calendar_auth" -> {
                                 CalendarAuthorizationScreen(
                                     authViewModel = authViewModel,
-                                    onSignOut = { authViewModel.signOut(this@MainActivity) }
+                                    onSignOut = { authViewModel.signOut() }
                                 )
                             }
                             "main" -> {

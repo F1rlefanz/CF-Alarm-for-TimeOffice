@@ -797,7 +797,12 @@ class AuthViewModel @Inject constructor(
      * sie, und sie nennt einen Ausweg, den es in dieser App wirklich gibt. Dass dieser Ausweg
      * daran haengt, dass der Nutzer ihn auch geht, ist der bewusst gezahlte Preis - siehe Punkt 3.
      */
-    fun signOut(context: Context? = null) {
+    // Bewusst OHNE Context-Parameter: bis zum 22.08.2026 nahm signOut() ein `Context? = null`
+    // entgegen, das im Rumpf nie benutzt wurde - MainActivity reichte dafuer `this@MainActivity`
+    // hinein, also eine Activity-Referenz in eine ViewModel-Methode. Die zweite Aufrufstelle
+    // kam laengst ohne aus (SettingsTabContent, Kommentar "MEMORY LEAK FIX"). Der Parameter
+    // war die Falle, die dieser Kommentar schon einmal entschaerft hatte.
+    fun signOut() {
         viewModelScope.launch {
             // VOR dem Verwerfen setzen, nicht danach: die DataStore-Emission trifft asynchron
             // ein und darf observeTokenLoss() nicht als Zugriffsverlust erreichen.

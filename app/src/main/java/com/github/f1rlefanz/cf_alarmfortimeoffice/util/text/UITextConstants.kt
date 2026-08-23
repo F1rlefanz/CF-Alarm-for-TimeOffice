@@ -1,100 +1,27 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.util.text
 
 /**
- * UI Text Constants für benutzerfreundliche Texte und Labels
+ * Die wenigen Nutzertexte, die NICHT am Verwendungsort stehen.
+ *
+ * Hier standen bis zum 22.08.2026 siebzig Konstanten, von denen genau vier einen Aufrufer
+ * hatten - alle vier in `LoginScreen.kt`. Die uebrigen 66 ("Uebersicht", "Abbrechen",
+ * "Lauft...", ganze Status- und Fehlerbausteine) sahen wie aktive Oberflaechentexte aus und
+ * wurden als Vorlage weitergeschleppt, obwohl sie nie irgendwo erschienen. Der Skill
+ * `cfalarm-ui-und-navigation` verlangt genau deshalb, sie zu loeschen statt liegen zu lassen:
+ * ein Text, den es in der App nicht gibt, ist eine Behauptung ueber eine Oberflaeche, die es
+ * nicht gibt.
+ *
+ * **Neue Nutzertexte gehoeren an ihren Verwendungsort**, nicht hierher. Diese Sammlung waechst
+ * nicht wieder; sie existiert nur noch, weil der Anmeldebildschirm vor dem Compose-Baum
+ * gebraucht wird (Icon-Beschreibung) und ein Test gegen `ADD_GOOGLE_ACCOUNT` prueft.
  */
-
-// ============================
-// UI TEXT CONSTANTS
-// ============================
 object UIText {
-    // Allgemeine Texte
-    const val OVERVIEW = "Übersicht"
-    const val REFRESH = "Aktualisieren"
-    const val LOADING = "Lädt..."
-    const val ERROR = "Fehler"
-    const val WARNING = "Warnung"
-    const val SUCCESS = "Erfolg"
-    const val SAVE = "Speichern"
-    const val CANCEL = "Abbrechen"
-    const val DELETE = "Löschen"
-    const val EDIT = "Bearbeiten"
-    const val ADD = "Hinzufügen"
-    const val BACK = "Zurück"
-    const val OK = "OK"
-    const val SELECTED = "Ausgewählt"
-    
-    // App-spezifische Texte
-    const val APP_ICON_LETTERS = "CF"
     const val APP_TITLE = "CF-Alarm for TimeOffice"
     const val APP_SUBTITLE = "Automatische Alarmverwaltung für Ihre Schichten"
-    const val GOOGLE_SIGN_IN = "Mit Google anmelden"
+
     const val PERMISSION_EXPLANATION = "Diese App benötigt Zugriff auf Ihren Google Kalender, " +
             "um Schichten zu erkennen und Alarme zu setzen."
 
     /** Sprung in die Android-Kontoverwaltung, neben der Anmelde-Fehlermeldung. */
     const val ADD_GOOGLE_ACCOUNT = "Google-Konto in den Einstellungen hinzufügen"
-    
-    // Status-bezogene Texte
-    const val SYSTEM_STATUS = "System Status"
-    const val AUTHENTICATION = "Authentifizierung"
-    const val LOGGED_IN_AS = "Angemeldet als:"
-    const val UNKNOWN = "Unbekannt"
-    const val NOT_LOGGED_IN = "Nicht angemeldet"
-    const val NO_CALENDAR_SELECTED_STATUS = "Kein Kalender ausgewählt"
-    const val NO_CALENDARS_AVAILABLE_STATUS = "Keine Kalender verfügbar"
-    const val CALENDARS_SELECTED = "Kalender ausgewählt"
-    const val SHIFT_TYPES_DEFINED = "Schichttypen definiert"
-    const val NO_CONFIGURATION_AVAILABLE = "Keine Konfiguration vorhanden"
-    const val SHIFT_RECOGNITION = "Schicht-Erkennung"
-    const val NO_SHIFTS_RECOGNIZED = "Keine Schichten erkannt"
-    const val ALARMS = "Alarme"
-    const val ALARMS_SET = "Alarme gesetzt"
-    const val DEBUG_INFORMATION = "Debug-Informationen"
-    const val EVENTS_LOADED = "Events geladen"
-    const val NO_SHIFT_SHORT = "Keine"
-    const val NEXT_ALARM = "Nächster"
-    const val CALENDAR = "Kalender"
-    
-    // Alarm-bezogene Texte
-    const val ALARM_CONTROL = "Alarm-Steuerung"
-    const val NEXT_SHIFT = "Nächste Schicht:"
-    const val ALARM_STATUS = "Alarm Status"
-    const val SET_ALARM = "Alarm setzen"
-    const val CANCEL_ALARM = "Alarm löschen"
-    const val ACTIVE_ALARMS = "aktive Alarme"
-    const val NO_ACTIVE_ALARMS = "Keine aktiven Alarme"
-    const val EXACT_ALARM_DISABLED = "Exakte Alarme sind in den Einstellungen deaktiviert"
-    const val AUTO_ALARMS = "Automatische Alarme"
-    const val AUTO_ALARMS_DESCRIPTION = "Alarme automatisch für erkannte Schichten setzen"
-
-    // Die Countdown-Texte (TIME_UNTIL_ALARM/TIME_EXPIRED/ALARM_ACTIVE) und der Block
-    // "Zeit-Einheiten" sind mit ihrem einzigen Nutzer ui/components/CountdownTimer.kt entfallen.
-
-    // Schicht-bezogene Texte
-    const val NEXT_SHIFT_LABEL = "Nächste Schicht"
-    const val NO_SHIFT_DETECTED = "Keine Schicht erkannt"
-    const val SHIFTS_RECOGNIZED = "als Schichten erkannt"
-    const val SHIFT_CONFIGURATION = "Schicht-Konfiguration"
-    const val ADD_SHIFT = "Schicht hinzufügen"
-    const val SHIFT_TYPES = "Schichttypen"
-    const val NO_SHIFT_TYPES_DEFINED = "Keine Schichttypen definiert"
-    const val ADD_SHIFT_TYPES_HINT = "Füge Schichttypen hinzu, um die automatische Erkennung zu aktivieren"
-    const val RESET_TO_DEFAULTS = "Auf Standardwerte zurücksetzen"
-    const val PATTERN_LABEL = "Muster:"
-    const val ALARM_LABEL = "Alarm:"
-    
-    // Kalender-bezogene Texte
-    const val CALENDAR_EVENTS = "Kalender-Events"
-    const val NO_EVENTS_LOADED = "Keine Events geladen"
-    const val EVENTS_IN_NEXT_DAYS = "Events in den nächsten"
-    const val DAYS_LABEL = "Tagen"
-    const val SELECT_CALENDARS = "Kalender auswählen"
-    const val SELECT_CALENDARS_INSTRUCTION = "Wähle einen oder mehrere Kalender aus, die für die Schichterkennung verwendet werden sollen."
-    const val NO_CALENDARS_AVAILABLE = "Keine Kalender verfügbar. Stelle sicher, dass die Kalenderberechtigung erteilt wurde."
-    
-    // Dialog-Texte
-    const val EDIT_SHIFT = "Schicht bearbeiten"
-    const val ADD_SHIFT_DIALOG = "Schicht hinzufügen"
-    const val DIALOG_IMPLEMENTATION_PENDING = "Dialog-Implementierung folgt..."
 }

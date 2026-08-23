@@ -85,31 +85,6 @@ object HueConstants {
     }
     
     /**
-     * Default configurations for common scenarios
-     */
-    object Defaults {
-        // Alarm lighting defaults
-        val ALARM_BRIGHTNESS = Lights.MAX_BRIGHTNESS
-        val ALARM_TRANSITION_TIME = Lights.FAST_TRANSITION_TIME
-        const val ALARM_DURATION = 15
-        
-        // Notification lighting defaults  
-        val NOTIFICATION_BRIGHTNESS = (Lights.MAX_BRIGHTNESS * 0.8).toInt()
-        val NOTIFICATION_ALERT = Lights.ALERT_LSELECT
-        const val NOTIFICATION_DURATION = 5
-        
-        // Wake-up lighting defaults (gradual)
-        val WAKEUP_START_BRIGHTNESS = Lights.MIN_BRIGHTNESS
-        val WAKEUP_END_BRIGHTNESS = (Lights.MAX_BRIGHTNESS * 0.7).toInt()
-        val WAKEUP_TRANSITION_TIME = Lights.SLOW_TRANSITION_TIME
-        
-        // Evening/night defaults
-        val EVENING_BRIGHTNESS = (Lights.MAX_BRIGHTNESS * 0.3).toInt()
-        val EVENING_COLOR_TEMPERATURE = Lights.MAX_COLOR_TEMPERATURE // Warm
-        val EVENING_TRANSITION_TIME = Lights.SLOW_TRANSITION_TIME
-    }
-    
-    /**
      * Validation helpers
      */
     object Validation {
@@ -204,13 +179,6 @@ object HueConstants {
         fun brightnessToPercentage(brightness: Int): Int {
             val clamped = clampBrightness(brightness)
             return ((clamped - Lights.MIN_BRIGHTNESS).toFloat() / (Lights.MAX_BRIGHTNESS - Lights.MIN_BRIGHTNESS) * 100).toInt()
-        }
-        
-        /**
-         * Creates a safe bridge username from device info
-         */
-        fun generateBridgeUsername(): String {
-            return "cf_alarm_${System.currentTimeMillis()}"
         }
         
         /**

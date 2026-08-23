@@ -28,46 +28,4 @@ object UIConstants {
     
     /** Delay für UI-Stabilisierung nach State-Änderungen */
     const val UI_STABILITY_DELAY_MS = 300L
-    
-    /** Vibrations-Pattern für Alarme */
-}
-
-// ============================
-// ANIMATION DURATION CONSTANTS
-// ============================
-object AnimationDurations {
-    /** Timer-Update-Intervall in Millisekunden */
-    const val TIMER_UPDATE_MS = 1000L
-    
-    /** Pulsieren-Animation für Timer */
-    const val PULSE_MS = 1000L
-    
-    /** Blinken für kritische Zustände */
-    const val BLINK_MS = 500L
-    
-    /** Schnelle UI-Übergänge */
-    const val QUICK_MS = 150L
-    
-    /** Standard UI-Animationen */
-    const val STANDARD_MS = 300L
-    
-    /** Lange Animationen */
-    const val LONG_MS = 600L
-}
-
-// ============================
-// NETWORK & TIMEOUT CONSTANTS
-// ============================
-object NetworkConstants {
-    /** Standard-Timeout für HTTP-Requests in Sekunden */
-    const val HTTP_TIMEOUT_SECONDS = 30
-    
-    /** Timeout für Authentifizierung in Sekunden */
-    const val AUTH_TIMEOUT_SECONDS = 60
-    
-    /** Retry-Anzahl für fehlgeschlagene Requests */
-    const val MAX_RETRY_ATTEMPTS = 3
-    
-    /** Delay zwischen Retry-Versuchen in Millisekunden */
-    const val RETRY_DELAY_MS = 1000L
 }

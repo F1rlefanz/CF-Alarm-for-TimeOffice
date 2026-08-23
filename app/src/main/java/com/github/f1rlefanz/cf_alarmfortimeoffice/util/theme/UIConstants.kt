@@ -77,66 +77,6 @@ object LayoutFractions {
 }
 
 // ============================
-// ALPHA & TRANSPARENCY CONSTANTS
-// ============================
-object AlphaValues {
-    /** Sehr transparente Overlays */
-    const val VERY_LIGHT = 0.05f
-    
-    /** Leichte Transparenz */
-    const val LIGHT = 0.1f
-    
-    /** Mittlere Transparenz */
-    const val MEDIUM = 0.15f
-    
-    /** Stärkere Transparenz */
-    const val STRONG = 0.3f
-    
-    /** Für Disabled-States */
-    const val DISABLED = 0.38f
-    
-    /** Für Surface-Variants */
-    const val SURFACE_VARIANT = 0.5f
-}
-
-// ============================
-// FONT SIZE CONSTANTS
-// ============================
-object FontSizes {
-    /** Kleine Schriftgröße für Details */
-    const val SMALL = 12
-    
-    /** Standard-Schriftgröße */
-    const val MEDIUM = 14
-    
-    /** Große Schriftgröße für wichtige Elemente */
-    const val LARGE = 18
-    
-    /** Extra große Schriftgröße */
-    const val EXTRA_LARGE = 24
-    
-    /** Countdown-Timer große Zahlen */
-    const val COUNTDOWN_LARGE = 28
-    
-    /** Countdown-Timer normale Zahlen */
-    const val COUNTDOWN_NORMAL = 24
-}
-
-// ============================
-// BORDER & STROKE CONSTANTS
-// ============================
-object BorderConstants {
-    /** Standard-Border-Breite */
-    const val STANDARD_WIDTH = 1
-    
-    /** Hervorgehobene Border-Breite */
-    const val HIGHLIGHTED_WIDTH = 2
-    
-    /** Dicke Border für spezielle Fälle */
-    const val THICK_WIDTH = 3
-}
-
-// ============================
 // UI COLOR CONSTANTS
 // ============================
 object UIColors {

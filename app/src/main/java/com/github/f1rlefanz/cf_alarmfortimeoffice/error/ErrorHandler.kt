@@ -150,14 +150,16 @@ object ErrorHandler {
     }
     
     /**
-     * PERFORMANCE-OPTIMIZED CoroutineExceptionHandler creation
-     * 
-     * Creates memory-efficient exception handlers for coroutine scopes
-     * Integrates with centralized error handling and logging
-     * 
-     * Note: Currently not used but kept for future coroutine error handling needs
+     * Erzeugt einen CoroutineExceptionHandler, der die Ausnahme durch die zentrale
+     * Fehlerbehandlung schickt.
+     *
+     * NICHT ENTFERNEN. Bis zum 22.08.2026 stand hier "Currently not used but kept for future
+     * needs" plus ein @Suppress("unused") - beides war falsch: `HueBridgeConnectionManager`
+     * benutzt die Funktion fuer seinen `healthCheckScope` (dort Zeile 273), und CLAUDE.md
+     * verlangt sie ausdruecklich. Ein `SupervisorJob` allein faengt die Ausnahme NICHT - sie
+     * beendet dann den Prozess. Die falsche Notiz haette bei der naechsten Aufraeumrunde fast
+     * genau das ausgeloest.
      */
-    @Suppress("unused")
     fun createCoroutineExceptionHandler(
         context: String,
         onError: ((AppError) -> Unit)? = null
@@ -166,40 +168,4 @@ object ErrorHandler {
         onError?.invoke(appError)
     }
     
-    /**
-     * MEMORY-EFFICIENT error severity classification
-     * 
-     * Used for prioritizing error handling and logging
-     * 
-     * Note: Currently not used but kept for future error prioritization features
-     */
-    @Suppress("unused")
-    fun getErrorSeverity(error: AppError): ErrorSeverity = when (error) {
-        is AppError.SystemError,
-        is AppError.AuthenticationError,
-        is AppError.DataStoreError -> ErrorSeverity.CRITICAL
-        
-        is AppError.PermissionError,
-        is AppError.ValidationError,
-        is AppError.FileSystemError -> ErrorSeverity.HIGH
-        
-        is AppError.ApiError,
-        is AppError.CalendarAccessError,
-        is AppError.PreferencesError -> ErrorSeverity.MEDIUM
-        
-        is AppError.NetworkError,
-        is AppError.CalendarNotFoundError -> ErrorSeverity.LOW
-        
-        is AppError.UnknownError -> ErrorSeverity.CRITICAL
-    }
-    
-    /**
-     * Error severity levels for prioritization
-     */
-    enum class ErrorSeverity {
-        LOW,     // Recoverable, temporary issues
-        MEDIUM,  // Service disruptions, degraded functionality
-        HIGH,    // Core functionality affected
-        CRITICAL // App stability threatened
-    }
 }

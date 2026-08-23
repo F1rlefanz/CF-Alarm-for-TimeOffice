@@ -221,12 +221,63 @@ def pruefe_konstanten():
     return fehler, f"{geprueft} Konstanten-Fundstellen in der Doku stimmen mit dem Code ueberein"
 
 
+# ─────────────────── 6. keine Hintergrundschicht importiert die Oberflaeche ──
+# Die Pakete unterhalb von viewmodel/. ui/ und viewmodel/ selbst stehen NICHT
+# in der Liste - nach unten zu greifen ist erlaubt und geschieht auch (die
+# Oberflaeche liest Konstanten wie HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN
+# bewusst an der Quelle, statt sie zu verdoppeln).
+UNTERE_SCHICHTEN = ("alarm", "auth", "backup", "calendar", "data", "di", "dimmer", "dnd",
+                    "error", "hue", "masterpause", "model", "repository", "service",
+                    "shift", "usecase", "util")
+
+OBERE_SCHICHTEN = ("ui", "viewmodel")
+
+BASISPAKET = "com.github.f1rlefanz.cf_alarmfortimeoffice"
+
+
+def pruefe_schichtrichtung():
+    """Kein Hintergrund-Paket darf `ui.` oder `viewmodel.` importieren.
+
+    Die Richtung nach unten ist frei; geprueft wird nur die Gegenrichtung. Wer sie bricht,
+    haengt eine Activity-, Composable- oder ViewModel-Klasse an einen Pfad, der ohne
+    Oberflaeche laufen MUSS: `AlarmReceiver`, `AlarmSoundService`, `BootReceiver` und die
+    6h-Wartung laufen bei gesperrtem Geraet, im Direct-Boot-Prozess und ohne sichtbare
+    Activity. Eine statische Referenz von dort in die Oberflaeche ist der kurze Weg zu einem
+    Leak oder zu einem Klassenauflösungsfehler, den kein Unit-Test sieht - er faellt beim
+    Klingeln auf.
+
+    Ausnahmefrei: beim Anlegen (22.08.2026) importiert KEINES der 17 unteren Pakete etwas aus
+    ui/ oder viewmodel/. Genau deshalb steht die Pruefung hier - ein Rauchmelder wird nicht
+    erst montiert, wenn es brennt.
+    """
+    muster = re.compile(r"^\s*import\s+" + re.escape(BASISPAKET) + r"\.(" +
+                        "|".join(OBERE_SCHICHTEN) + r")\.")
+    fehler = []
+    geprueft = 0
+    for pfad in kt_dateien():
+        rel = kurz(pfad).replace("\\", "/")
+        paket = rel.split("/java/" + BASISPAKET.replace(".", "/") + "/")[-1].split("/")[0]
+        if paket not in UNTERE_SCHICHTEN:
+            continue
+        geprueft += 1
+        for i, zeile in enumerate(io.open(pfad, encoding="utf-8")):
+            if muster.match(zeile):
+                fehler.append(f"{rel}:{i + 1} importiert die Oberflaeche: {zeile.strip()}. "
+                              "Hintergrundpfade laufen ohne Activity (Direct Boot, gesperrtes "
+                              "Geraet) - was sie brauchen, gehoert nach unten gereicht, nicht "
+                              "von oben geholt.")
+    if geprueft == 0:
+        fehler.append("kein einziges Hintergrund-Paket gefunden - Pruefung greift ins Leere?")
+    return fehler, f"{geprueft} Dateien in {len(UNTERE_SCHICHTEN)} Hintergrund-Paketen, keine greift nach oben"
+
+
 PRUEFUNGEN = [
     ("corruptionHandler an jedem DataStore", pruefe_corruption_handler),
     ("syncAlarms()-Aufrufer vollstaendig bekannt", pruefe_syncalarms_aufrufer),
     ("kein CE-Zugriff im eager Property-Initializer", pruefe_eager_sharedprefs),
     ("setAlarmClock nur im zentralen Wrapper", pruefe_setalarmclock),
     ("dokumentierte Konstanten == Code", pruefe_konstanten),
+    ("keine Hintergrundschicht importiert die Oberflaeche", pruefe_schichtrichtung),
 ]
 
 

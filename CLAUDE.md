@@ -272,6 +272,11 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 
 ### Hintergrundketten und Boot
 
+- **Kein Hintergrund-Paket importiert `ui.` oder `viewmodel.`** (nach unten greifen ist frei, nur
+  die Gegenrichtung ist gesperrt). `AlarmReceiver`, `AlarmSoundService`, `BootReceiver` und die
+  6h-Wartung laufen bei gesperrtem Gerät und im Direct-Boot-Prozess, ohne sichtbare Activity — eine
+  Referenz von dort in die Oberfläche ist der kurze Weg zu einem Leak oder Klassenauflösungsfehler,
+  den kein Unit-Test sieht. Beim Anlegen der Regel (22.08.2026) hielten alle 17 Pakete sie bereits.
 - **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.** Der Graph
   wird auch im Direct-Boot-Prozess aufgebaut; ein Wurf dort tötet den Prozess, und die
   Wiederherstellung der Alarme läuft NIE. **Kein Unit-Test fängt das** — die Prüfung ist ein echter Reboot ohne Entsperrung:

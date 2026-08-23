@@ -25,10 +25,11 @@ import java.net.InetAddress
  *
  * [isNetworkAvailable] wird seit v1.17.0 von [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager]
  * fuer die autonome Wiederverbindung genutzt (Netzwerk kommt zurueck -> Bridge-Reconnect-Versuch).
- * [isMeteredConnection]/[isCurrentlyConnected] bleiben ungenutzte, fertige API fuer spaetere
- * Offline-Support-Features - daher weiterhin unterdrueckt statt entfernt.
+ * `isCurrentlyConnected` liefert den Anfangswert fuer [isNetworkAvailable] und ist deshalb
+ * private. Die frueher hier vermerkten `isMeteredConnection`/`isWifiConnected` waren
+ * KEINE "fertige API fuer spaeter", sondern hatten nie einen Aufrufer - am 22.08.2026
+ * entfernt. Die Subnetz-Frage beantwortet [isReachableSubnet], nicht "sind wir im WLAN".
  */
-@Suppress("unused")
 class NetworkStateMonitor(private val connectivityManager: ConnectivityManager) {
 
     constructor(context: Context) : this(
@@ -74,7 +75,7 @@ class NetworkStateMonitor(private val connectivityManager: ConnectivityManager) 
      * Get current network state synchronously
      * Since minSdk is 26, we can use the modern API directly
      */
-    fun isCurrentlyConnected(): Boolean {
+    private fun isCurrentlyConnected(): Boolean {
         val activeNetwork = connectivityManager.activeNetwork ?: return false
         val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
         
@@ -83,34 +84,12 @@ class NetworkStateMonitor(private val connectivityManager: ConnectivityManager) 
     }
     
     /**
-     * Check if we're on a metered connection (mobile data)
-     * Useful for deciding whether to perform background sync
-     */
-    fun isMeteredConnection(): Boolean {
-        val activeNetwork = connectivityManager.activeNetwork ?: return true
-        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return true
-        
-        return !networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-    }
-    
-    /**
-     * Check if we're connected to Wi-Fi (or Ethernet/Local Network)
-     * Useful for smart home communication (like Philips Hue Bridge)
-     */
-    fun isWifiConnected(): Boolean {
-        val activeNetwork = connectivityManager.activeNetwork ?: return false
-        val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-
-        return networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-               networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-    }
-
-    /**
      * Checks whether [targetIp] (a literal IPv4 address, e.g. a local Hue Bridge) is reachable
      * from the phone's CURRENT network - i.e. whether the active network's own IPv4 address
      * shares a subnet with [targetIp], per its advertised prefix length.
      *
-     * Unlike [isWifiConnected], this is not fooled by "connected to *some* Wi-Fi" (public
+     * Unlike a plain "are we on Wi-Fi" check, this is not fooled by "connected to *some*
+     * Wi-Fi" (public
      * Wi-Fi, mobile hotspot, guest network) - it only returns true if the phone's IP is
      * actually in the same subnet as the target, regardless of what private range the home
      * network uses.

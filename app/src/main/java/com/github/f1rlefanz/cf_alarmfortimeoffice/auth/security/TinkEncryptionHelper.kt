@@ -143,46 +143,6 @@ class TinkEncryptionHelper private constructor(
             false
         }
     }
-    
-
-    
-    /**
-     * Diagnostics: Verschlüsselungs-Status
-     */
-    fun getDiagnostics(): String {
-        return try {
-            val isHardwareBacked = isHardwareBackedKeystore()
-            val keysetExists = context.getSharedPreferences(KEYSET_PREF_NAME, Context.MODE_PRIVATE)
-                .contains(KEYSET_NAME)
-            
-            """
-            Tink Encryption Status:
-            - Available: ${isAvailable()}
-            - Algorithm: AES-256-GCM
-            - Master Key: Android Keystore
-            - Hardware-backed: $isHardwareBacked
-            - Keyset exists: $keysetExists
-            """.trimIndent()
-        } catch (_: Exception) {
-            "Error getting diagnostics"
-        }
-    }
-    
-    /**
-     * Prüft ob Android Keystore Hardware-backed ist
-     */
-    @Suppress("SameReturnValue") // Simplified implementation
-    private fun isHardwareBackedKeystore(): Boolean {
-        return try {
-            // Android Keystore ist hardware-backed wenn:
-            // - Device hat Secure Element (SE) oder Trusted Execution Environment (TEE)
-            // - Keys werden in Hardware-backed storage erstellt
-            // Dies wird automatisch von Android gehandhabt
-            true // Konservative Annahme
-        } catch (_: Exception) {
-            false
-        }
-    }
 }
 
 /**

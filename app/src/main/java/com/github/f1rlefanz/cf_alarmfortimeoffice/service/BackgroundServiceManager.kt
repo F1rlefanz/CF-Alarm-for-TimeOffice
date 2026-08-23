@@ -216,35 +216,4 @@ class BackgroundServiceManager @Inject constructor(
             Logger.e(LogTags.MAINTENANCE, "❌ INITIAL ALARM: Failed to schedule maintenance", e)
         }
     }
-
-    /**
-     * Handles alarm failure events
-     */
-    @Suppress("unused") // Public API - may be used in future alarm failure handling
-    fun onAlarmFailureDetected(alarmId: Int, failureReason: String) {
-        Logger.business(
-            LogTags.ALARM,
-            "🚨 Alarm failure detected",
-            "ID: $alarmId, Reason: $failureReason"
-        )
-
-        // Log failure for tracking
-        preferences.edit {
-            putLong("last_alarm_failure", System.currentTimeMillis())
-            putString("last_failure_reason", failureReason)
-        }
-    }
-
-    /**
-     * Stops all background services - PHASE 1 MIGRATION
-     * AlarmMaintenanceService stops automatically, no manual cancellation needed
-     */
-    @Suppress("unused") // Public API - used for cleanup on logout or app reset
-    fun stopAllBackgroundServices() {
-        try {
-            Logger.business(LogTags.TOKEN, "🛑 Background services cleanup (Phase 1)")
-        } catch (e: Exception) {
-            Logger.e(LogTags.TOKEN, "❌ Error stopping background services", e)
-        }
-    }
 }

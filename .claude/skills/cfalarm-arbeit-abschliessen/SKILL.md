@@ -44,6 +44,16 @@ aufgerufene Funktionen, ueberholte Kommentare, jetzt redundante Abstraktionen �
 entfernen. Und **widerlegte Notizen korrigieren, nicht danebenschreiben**. Zwei Aussagen zum selben
 Sachverhalt sind ein Fehler, kein Verlauf.
 
+> **Beim Aufraeumen referenzbasiert pruefen, nie annotationsbasiert.** `@Suppress("unused")` und
+> Kommentare wie „Currently not used, kept for future needs" sind in diesem Projekt teils
+> veraltet — und zwar in BEIDE Richtungen. Am 22.08.2026 trug
+> `ErrorHandler.createCoroutineExceptionHandler` genau diese Notiz, obwohl
+> `HueBridgeConnectionManager` sie benutzt und `CLAUDE.md` sie ausdruecklich verlangt (ohne sie
+> beendet eine Ausnahme den PROZESS). Wer der Notiz geglaubt haette, haette sie geloescht.
+> Umgekehrt behauptete `NetworkStateMonitor`, zwei Methoden seien „fertige API fuer spaeter" —
+> eine davon hatte nie einen Aufrufer. Immer gegen `main`, `test`, `androidTest`, Manifest und
+> `res` gegenpruefen, inklusive Methodenreferenzen (`::name`) und `override`.
+
 **7. Ob offene Punkte eine Heimat haben.** Alles, was offen bleibt, gehoert ins Memory
 `project_offene_punkte` — nicht in eine Datei im Repo (es ist oeffentlich) und nicht in den
 Sitzungskontext (den gibt es nach `/clear` nicht mehr).

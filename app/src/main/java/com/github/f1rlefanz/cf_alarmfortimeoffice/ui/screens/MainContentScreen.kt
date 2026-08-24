@@ -314,7 +314,7 @@ fun MainContentScreen(
                             // Events noch synchronisiert es. Am Emulator gemessen (18.08.2026) -
                             // der Merker verschwand, der geloeschte Wecker kam aber nicht zurueck.
                             alarmViewModel.cancelSkip {
-                                calendarViewModel?.refreshData(forceRefresh = true)
+                                calendarViewModel.refreshData(forceRefresh = true)
                             }
                         },
                         onShowShiftConfig = onShowShiftConfig,

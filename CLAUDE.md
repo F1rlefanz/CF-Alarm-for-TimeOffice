@@ -65,8 +65,15 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
 - **Es gibt keine Handoff-Datei mehr, und es soll keine neue geben.** Der Projekt-STAND wird
   abgeleitet (`tools/sitzungsstart.py`: Branch, Arbeitsbaum, Version, Testzahl **mit Alter**,
   Abstand zu `origin/main`) — von Hand gepflegt veraltete er lautlos und wuchs zweimal zu, zuletzt
-  auf 26.201 Zeichen. **Offene Punkte gehören ins Memory `project_offene_punkte`**, nicht in eine
-  Datei im Repo: `docs/` ist GitHub Pages und das Repo bleibt öffentlich.
+  auf 26.201 Zeichen.
+- **Offene Punkte liegen an zwei Orten; das Kriterium ist, ob es öffentlich stehen darf.** Das Repo
+  ist öffentlich und bleibt es (GitHub Pages liefert aus `main` `/docs` die Datenschutz-URL für die
+  OAuth-Verifizierung). Deshalb: **belegte, harmlose Aufräumarbeit als GitHub Issue** (so seit
+  24.08.2026, derzeit #15–#18), **unbelegte Fehlerhypothesen über eine Wecker-App im Play Store
+  ins Memory `project_offene_punkte`** — die gehören nicht in ein öffentliches Issue. Die frühere
+  Pauschalregel „keine Issues" war zu grob. In eine Datei im Repo gehören sie weiterhin nicht.
+  **Vor dem Anlegen BEIDE Orte prüfen** (`gh issue list`): der Sessionstart-Hook zeigt nur die
+  Memory-Überschriften und kennt die Issues nicht — wer nur ihm glaubt, legt Dubletten an.
 - **Vor `git merge`/`git push` läuft die Schleuse** (`tools/schleuse/pruefe_schleuse.py`,
   `PreToolUse`-Hook) und prüft mechanisch: Geheimnisse, Skills, Doku-Budget, Changelog-Seite,
   Code-Invarianten, Tests, Lint — beim Push von `main` zusätzlich Changelog-Eintrag, Bump und

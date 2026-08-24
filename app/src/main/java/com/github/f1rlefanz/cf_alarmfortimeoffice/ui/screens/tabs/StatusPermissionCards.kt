@@ -867,7 +867,7 @@ internal fun TimeOfficeHealthCard() {
             SettingsLinkButton(
                 onClick = {
                     try {
-                        context.startActivity(TimeOfficeHealthHelper.createAppInfoIntent(context))
+                        context.startActivity(TimeOfficeHealthHelper.createAppInfoIntent())
                     } catch (e: Exception) {
                         Logger.e(
                             LogTags.TIMEOFFICE_HEALTH,

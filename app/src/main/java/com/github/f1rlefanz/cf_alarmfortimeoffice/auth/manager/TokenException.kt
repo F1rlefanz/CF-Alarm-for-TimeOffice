@@ -75,14 +75,8 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
      * Security Violation (z.B. Token Rotation Chain broken)
      */
     class SecurityViolation(message: String) : TokenException(message)
-    
-    /**
-     * Network Error (Retry sinnvoll)
-     */
-    class NetworkError(message: String) : TokenException(message)
-    
-    /**
-     * Transient Error (temporär, Retry sinnvoll)
-     */
-    class TransientError(message: String) : TokenException(message)
+
+    // KEINE NetworkError/TransientError mehr (bis v1.34.3): sealed-Subtypen ohne Erzeuger und ohne
+    // `when`-Zweig - Exhaustiveness konnte nicht brechen. Nicht zu verwechseln mit
+    // `AppError.NetworkError`, das sehr wohl benutzt wird.
 }

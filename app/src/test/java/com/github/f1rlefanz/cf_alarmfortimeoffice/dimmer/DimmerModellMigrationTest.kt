@@ -306,6 +306,10 @@ class DimmerModellMigrationTest {
      */
     @Test
     fun `d Wellness und Regeln - das Wind-down-Fenster wandert in jede dimmende Regel`() {
+        // ACHTUNG, GRENZE DIESES FALLS: globale Werte und Regel-Werte sind hier ABSICHTLICH gleich
+        // (55/40). Nur so ist die Zeitleiste ueberhaupt vergleichbar - im Ein-Modell gilt eine
+        // Intensitaet pro Regel. Was passiert, wenn sie sich unterscheiden, steht als eigene,
+        // benannte Abweichung weiter unten; dieser Fall kann es nicht zeigen.
         val universal = regel("u1", DimRule.SHIFT_UNIVERSAL, listOf(nachtRegelFenster()), 55, 40)
         val a = alt(wellness = true, regeln = true, windDown = 120, gStrength = 55, gWarmth = 40)
 
@@ -313,6 +317,45 @@ class DimmerModellMigrationTest {
 
         val ergebnis = anwenden(listOf(universal), plan.regeln)
         assertTrue(ergebnis.first { it.id == "u1" }.windows.contains(wellnessFenster))
+    }
+
+    /**
+     * ABWEICHUNG, die der Gleichheitsbeweis von Fall (d) NICHT zeigen konnte - und das ist der
+     * eigentliche Befund: Fall (d) setzt globale Wellness-Werte und Regel-Werte auf DIESELBEN
+     * Zahlen (55/40). Damit ist der Vergleich dort zwangslaeufig gruen, egal welche Intensitaet die
+     * Migration waehlt. Ein Test, der nur gruen werden kann, beweist nichts.
+     *
+     * WAS WIRKLICH PASSIERT: Im Ein-Modell gilt eine Intensitaet pro REGEL, nicht pro FENSTER. Das
+     * uebernommene Wind-down-Fenster wird an die bestehende Regel angehaengt und erbt damit deren
+     * Verdunkelung/Waerme. Standen die globalen Wellness-Werte vorher NIEDRIGER als die der Regel,
+     * dimmt die Stunde vor der Weckzeit nach der Migration DUNKLER als vorher - die unangenehme
+     * Richtung ("im Zweifel hell").
+     *
+     * WARUM DAS NICHT REPARIERT WIRD: Beide Werte gleichzeitig abzubilden braeuchte Intensitaet pro
+     * FENSTER, also eine Modelaenderung. Die Gegenrichtung - die Regel auf den milderen
+     * Wellness-Wert zu ziehen - waere keine Verbesserung, sondern verfaelschte die Nacht, die der
+     * Nutzer ausdruecklich eingestellt hat. Es gibt im Ein-Modell keine verlustfreie Wahl; deshalb
+     * steht sie hier als benannte Abweichung statt als stiller Nebeneffekt.
+     *
+     * BETROFFEN ist nur, wer Wellness AN hatte UND dessen Werte von denen seiner Regel abwichen.
+     * Beim Eigentuemer war Wellness aus (Fall (a)).
+     */
+    @Test
+    fun `Abweichung - das uebernommene Wind-down erbt die Intensitaet der Wirtsregel`() {
+        val universal = regel("u1", DimRule.SHIFT_UNIVERSAL, listOf(nachtRegelFenster()), 70, 10)
+        // Wellness war MILDER eingestellt als die Regel - genau der Fall, den (d) nicht sieht.
+        val a = alt(wellness = true, regeln = true, windDown = 120, gStrength = 30, gWarmth = 60)
+
+        val plan = DimmerModellMigration.plane(a, listOf(universal))
+        val ergebnis = anwenden(listOf(universal), plan.regeln)
+        val wirt = ergebnis.first { it.id == "u1" }
+
+        assertTrue("Das Wind-down-Fenster muss uebernommen sein", wirt.windows.contains(wellnessFenster))
+        assertEquals(
+            "Es erbt die Verdunkelung der Wirtsregel - NICHT die alten 30 der Wellness-Quelle",
+            70, wirt.strength
+        )
+        assertEquals("Und ebenso deren Waerme statt der alten 60", 10, wirt.warmth)
     }
 
     /** Das Wind-down-Fenster, das die Migration aus der Wellness-Quelle baut (120 Min Vorlauf). */

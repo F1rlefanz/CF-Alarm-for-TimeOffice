@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -13,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel.SchnellstartVorlage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -64,11 +66,15 @@ class DimmerSchnellstartTest {
         val vm: DimmerRulesViewModel,
         val ruleUseCase: DimRuleUseCase,
         val dimSchedule: DimScheduleUseCase,
-        val dndSchedule: DndScheduleUseCase
+        val armierer: ZeitkettenArmierer,
+        val prefs: DimOverlayPrefs
     )
 
-    private fun buildFixture(): Fixture {
+    private fun buildFixture(dimEnabled: Boolean = true): Fixture {
         val prefs = mock<DimOverlayPrefs>()
+        // `dimmerAn` liest den Hauptschalter aus den Toggles - ungestubbt scheitert schon die
+        // Konstruktion des ViewModels an einem `null`-Flow.
+        whenever(prefs.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = dimEnabled)))
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
 
@@ -83,15 +89,16 @@ class DimmerSchnellstartTest {
         whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList()))
 
         val dimSchedule = mock<DimScheduleUseCase>()
-        val dndSchedule = mock<DndScheduleUseCase>()
+        val armierer = mock<ZeitkettenArmierer>()
 
         return Fixture(
             vm = DimmerRulesViewModel(
-                ruleUseCase, shiftUseCase, dimSchedule, { dndSchedule }, prefs, mock<ShiftSpanStore>()
+                ruleUseCase, shiftUseCase, dimSchedule, armierer, prefs, mock<ShiftSpanStore>()
             ),
             ruleUseCase = ruleUseCase,
             dimSchedule = dimSchedule,
-            dndSchedule = dndSchedule
+            armierer = armierer,
+            prefs = prefs
         )
     }
 
@@ -188,7 +195,7 @@ class DimmerSchnellstartTest {
      * liest die Dimm-Zeitleiste live), siehe [DimmerDndNachzugTest].
      */
     @Test
-    fun `Schnellstart speichert die Regel und armiert beide Ketten in dieser Reihenfolge`() =
+    fun `Schnellstart speichert die Regel und armiert danach nach`() =
         runTest(dispatcher) {
             val f = buildFixture()
 
@@ -199,11 +206,44 @@ class DimmerSchnellstartTest {
             verify(f.ruleUseCase).saveRule(captor.capture())
             assertEquals(DimRule.SHIFT_UNIVERSAL, captor.firstValue.shiftPattern)
 
-            val reihenfolge = inOrder(f.ruleUseCase, f.dimSchedule, f.dndSchedule)
+            // ERST speichern, DANN nacharmieren - sonst rechnet die Kette ueber einen Bestand,
+            // in dem die neue Regel noch fehlt. Die Reihenfolge INNERHALB des Nachzugs
+            // (Dimmer vor DND) liegt seit v1.34.3 im ZeitkettenArmierer und wird dort geprueft.
+            val reihenfolge = inOrder(f.ruleUseCase, f.armierer)
             reihenfolge.verify(f.ruleUseCase).saveRule(any())
-            reihenfolge.verify(f.dimSchedule).enable()
-            reihenfolge.verify(f.dndSchedule).enable()
+            reihenfolge.verify(f.armierer).armiere(any(), any(), any())
         }
+
+    /**
+     * "ANGELEGT, WIRKT NICHT" - die Fehlerklasse aus der anderen Richtung.
+     *
+     * Die Regelliste zeigte den Dimmer-Hauptschalter nirgends. Wer ihn ausgeschaltet hatte, konnte
+     * hier per Schnellstart oder von Hand eine Regel bauen, die garantiert nichts tut, und nichts
+     * sagte es ihm - dieselbe Klasse wie ein Text, der eine Anzeige behauptet, die es nicht gibt.
+     * Seit v1.34.3 traegt das ViewModel den Zustand, und die Liste zeigt ihn samt Knopf zum
+     * Einschalten.
+     */
+    @Test
+    fun `die Regelliste kennt den Zustand des Hauptschalters`() = runTest(dispatcher) {
+        val f = buildFixture(dimEnabled = false)
+
+        // `first { }` ist hier selbst der Abonnent: `stateIn(WhileSubscribed)` startet den Upstream
+        // erst, wenn jemand zuhoert. Der Startwert ist bewusst `true` - eine faelschlich gezeigte
+        // Warnung waere schlimmer als eine, die einen Frame spaeter erscheint.
+        assertEquals(false, f.vm.dimmerAn.first { !it })
+    }
+
+    /** Das Einschalten ist eine Einbahnstrasse - und zieht den Nachzug mit, wie jede Aenderung. */
+    @Test
+    fun `Dimmer einschalten schreibt den Schalter und armiert nach`() = runTest(dispatcher) {
+        val f = buildFixture(dimEnabled = false)
+
+        f.vm.schalteDimmerEin()
+        advanceUntilIdle()
+
+        verify(f.prefs).setDimEnabled(true)
+        verify(f.armierer).armiere(any(), any(), any())
+    }
 
     /** Kein Schichtname, kein Schreibvorgang - und erst recht keine Neuarmierung. */
     @Test

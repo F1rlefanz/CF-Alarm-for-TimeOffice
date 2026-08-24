@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -99,7 +100,7 @@ class DimmerRulesViewModelPreviewCleanupTest {
         val ruleUseCase = mock<DimRuleUseCase>()
         whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList()))
         return DimmerRulesViewModel(
-            ruleUseCase, shiftUseCase, dimSchedule, { mock<DndScheduleUseCase>() },
+            ruleUseCase, shiftUseCase, dimSchedule, mock<ZeitkettenArmierer>(),
             prefs, mock<ShiftSpanStore>()
         )
     }

@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
@@ -89,8 +90,7 @@ class ShiftViewModelSyncGateTest {
             // Schichtnamen, es wird also nichts nachgezogen.
             dimRuleUseCase = dagger.Lazy { mock<DimRuleUseCase>() },
             hueRuleUseCase = dagger.Lazy { mock<HueRuleUseCase>() },
-            dimScheduleUseCase = dagger.Lazy { mock<DimScheduleUseCase>() },
-            dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() },
+            armierer = mock<ZeitkettenArmierer>(),
             dndPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs>() }
         )
     }

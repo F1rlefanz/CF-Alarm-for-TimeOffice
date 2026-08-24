@@ -26,7 +26,6 @@ data class HueBridge(
     // === ENHANCED 2025 FEATURES ===
     
     /** Discovery method used to find this bridge */
-    val discoveryMethod: DiscoveryMethod? = null,
     
     /** Whether the bridge is currently reachable */
     val isReachable: Boolean = false,

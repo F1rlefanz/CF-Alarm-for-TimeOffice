@@ -12,17 +12,19 @@ data class HueGroup(
     val id: String,
     val name: String,
     val type: String, // "Room", "Zone", "Entertainment"
-    val roomClass: String? = null, // Room class like "Living room", "Bedroom"
     val lights: List<String>, // List of light IDs in this group
     val sensors: List<String>? = null, // List of sensor IDs
     val state: GroupState,
     val action: GroupAction,
     val recycle: Boolean? = null
-) {
-    // Serialization name mapping for 'class' keyword
-    @SerializedName("class")
-    val classField: String? = roomClass
-}
+)
+
+// KEIN Raumtyp mehr (bis v1.34.3 `roomClass` + `classField`): Die Bridge sendet ihn unter dem
+// JSON-Schluessel `class`, und `classField` trug ihn per @SerializedName auch herein - gelesen hat
+// ihn NIE jemand. `roomClass` daneben hatte gar kein @SerializedName und war deshalb IMMER null;
+// zwei Kopierzeilen im Repository schoben folglich null nach null. Ein Feld, das aussieht, als
+// truege es den Raumtyp, und immer leer ist, ist schlimmer als keines. Wer ihn spaeter braucht,
+// nimmt EIN Feld mit @SerializedName("class") - nicht diese zwei.
 
 /**
  * Group State - aggregated state of all lights in group

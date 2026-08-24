@@ -23,13 +23,12 @@ data class DiscoveryStatus(
  * Discovery method being used (Enhanced 2025 Edition)
  */
 enum class DiscoveryMethod {
-    ONLINE_DISCOVERY, // Using Philips cloud service (N-UPnP)
-    N_UPNP,          // Alias for ONLINE_DISCOVERY - modern name
-    MDNS,            // Using mDNS discovery (_hue._tcp.local)
-    LOCAL_NETWORK,   // Deprecated: Legacy local network scanning
-    IP_TEST,         // Deprecated: Testing specific IP addresses
-    MANUAL,          // Manually entered IP
-    CACHE            // From cached discovery
+    // Die drei, die es wirklich gibt - je ein Erzeuger in den Discovery-Diensten.
+    ONLINE_DISCOVERY, N_UPNP, MDNS
+    // ENTFERNT (v1.34.3): LOCAL_NETWORK und IP_TEST waren im Code selbst als deprecated markiert,
+    // MANUAL und CACHE hatten nie einen Erzeuger. Ein `when` ueber die Werte gibt es nicht,
+    // Exhaustiveness konnte also nicht brechen. MANUAL beschrieb eine manuelle IP-Eingabe, die es
+    // in der Oberflaeche nicht gibt - vor dem Loeschen geprueft.
 }
 
 /**

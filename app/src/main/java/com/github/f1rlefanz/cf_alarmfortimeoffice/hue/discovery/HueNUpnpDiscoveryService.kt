@@ -88,8 +88,7 @@ class HueNUpnpDiscoveryService {
                 HueBridge(
                     id = response.id,
                     ipAddress = response.internalipaddress,
-                    name = "Philips Hue Bridge",
-                    discoveryMethod = com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryMethod.N_UPNP
+                    name = "Philips Hue Bridge"
                 )
             }
             

@@ -9,23 +9,23 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.util.timing
 // ============================
 object UIConstants {
     /** Standard-Animation-Dauer in Millisekunden */
-    const val ANIMATION_DURATION_MS = 300L
     
     /** Kurze Animation-Dauer in Millisekunden */
-    const val ANIMATION_DURATION_SHORT_MS = 150L
     
     /** Lange Animation-Dauer für aufwändige Animationen in Millisekunden */
     const val ANIMATION_DURATION_LONG_MS = 3000L
     
     /** Debounce-Delay für Benutzereingaben in Millisekunden */
-    const val INPUT_DEBOUNCE_MS = 300L
     
     /** Auto-Dismiss Zeit für Snackbars in Millisekunden */
-    const val SNACKBAR_AUTO_DISMISS_MS = 4000L
     
     /** Auto-Dismiss Zeit für Error Messages in Millisekunden */
-    const val ERROR_MESSAGE_AUTO_DISMISS_MS = 5000L
     
     /** Delay für UI-Stabilisierung nach State-Änderungen */
     const val UI_STABILITY_DELAY_MS = 300L
+
+    // ENTFERNT (v1.34.3): fuenf Konstanten ohne Verwender. INPUT_DEBOUNCE_MS ist der Rest der
+    // Slider-Entprellung, die aus DimmerViewModel entfernt wurde, weil ihr Job am viewModelScope
+    // hing und beim Verlassen der App vor dem delay() starb. Sie stehenzulassen lud dazu ein,
+    // genau diese Falle neu zu bauen - Hergang im Skill cfalarm-dimmer-und-dnd.
 }

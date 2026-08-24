@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.freietage
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
@@ -76,8 +75,7 @@ class TagFreigabeUseCase @Inject constructor(
     private val alarmRepository: IAlarmRepository,
     private val alarmManagerService: AlarmManagerService,
     private val alarmSkipUseCase: IAlarmSkipUseCase,
-    private val dimSchedule: DimScheduleUseCase,
-    private val dndSchedule: DndScheduleUseCase
+    private val armierer: ZeitkettenArmierer
 ) {
     companion object {
         /** Loeschversuche je Wecker, inklusive des ersten - Vorbild `AlarmSkipUseCase`. */
@@ -250,14 +248,7 @@ class TagFreigabeUseCase @Inject constructor(
             Instant.ofEpochMilli(zustand.skippedAlarmTriggerTime).atZone(zone).toLocalDate() == datum
     }
 
-    private suspend fun werfeNebenkettenAn() {
-        runCatching {
-            dimSchedule.enable()
-        }.onFailure { Logger.w(LogTags.DIMMER, "⚠️ FREIGABE: Dimmer-Kette nicht neu angeworfen", it) }
-        runCatching {
-            dndSchedule.enable()
-        }.onFailure { Logger.w(LogTags.DND, "⚠️ FREIGABE: DND-Kette nicht neu angeworfen", it) }
-    }
+    private suspend fun werfeNebenkettenAn() = armierer.armiere("FREIGABE")
 
     /**
      * Loescht einen Wecker und fasst bei einem Fehlschlag genau einmal nach - Wortlaut und

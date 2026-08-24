@@ -5,9 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -96,8 +95,7 @@ class ShiftViewModel @Inject constructor(
      * dort armiert ein generischer Schreiber beide Ketten selbst, sonst stuende die neue Regel im
      * Store, waehrend bis zur naechsten 6h-Wartung nach dem ALTEN Plan gedimmt wird.
      */
-    private val dimScheduleUseCase: dagger.Lazy<DimScheduleUseCase>,
-    private val dndScheduleUseCase: dagger.Lazy<DndScheduleUseCase>,
+    private val armierer: ZeitkettenArmierer,
     /**
      * Die DRITTE Stelle, die ueber den Schichtnamen bindet: die beiden Schicht-Auswahlen von
      * "Nicht stoeren" ([DndPrefs.renameShiftName]). Sie wurden beim Nachzug in v1.30.0
@@ -653,7 +651,7 @@ class ShiftViewModel @Inject constructor(
         //
         // WARUM DIE DND-AUSWAHLEN NUR DIE DND-KETTE NACHARMIEREN: `dnd_oncall_shifts` und
         // `dnd_shift_excluded_shifts` liest ausschliesslich `DndScheduleUseCase` (Dienstzeit-Fenster
-        // und Rufbereitschaft-Cutoff). Der Dimmer kennt sie nicht - ein `dimScheduleUseCase.enable()`
+        // und Rufbereitschaft-Cutoff). Der Dimmer kennt sie nicht - ihn mit zu armieren
         // dafuer waere Arbeit ohne jede Wirkung. Umgekehrt zieht ein geaendertes Dimm-Fenster die
         // DND-Kette sehr wohl mit: im Modus "folgt dem Dimmer" ist die Dimm-Zeitleiste die
         // Fensterquelle von "Nicht stoeren".
@@ -689,16 +687,7 @@ class ShiftViewModel @Inject constructor(
      */
     private suspend fun armiereZeitkettenNeu(bedarf: NacharmierBedarf) {
         if (!bedarf.beanspruche()) return
-        withContext(NonCancellable) {
-            if (bedarf.dimmer) {
-                runCatching { dimScheduleUseCase.get().enable() }
-                    .onFailure { Logger.w(LogTags.DIMMER, "⚠️ UMBENENNUNG: Dimmer-Kette nicht neu armiert", it) }
-            }
-            if (bedarf.dnd) {
-                runCatching { dndScheduleUseCase.get().enable() }
-                    .onFailure { Logger.w(LogTags.DND, "⚠️ UMBENENNUNG: DND-Kette nicht neu armiert", it) }
-            }
-        }
+        armierer.armiere("UMBENENNUNG", dimmer = bedarf.dimmer, dnd = bedarf.dnd)
     }
 
     // REMOVED: updateDaysAhead() - daysAhead is now fixed at 14 days as per Briefing 4.0

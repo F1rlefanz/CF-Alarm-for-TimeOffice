@@ -9,7 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -46,8 +46,7 @@ class DimmerRulesViewModel @Inject constructor(
     private val dimRuleUseCase: DimRuleUseCase,
     private val shiftUseCase: IShiftUseCase,
     private val dimSchedule: DimScheduleUseCase,
-    // Lazy wie in ShiftViewModel/DimmerViewModel - zyklusfrei, aber erst bei Bedarf gebaut.
-    private val dndSchedule: dagger.Lazy<DndScheduleUseCase>,
+    private val armierer: ZeitkettenArmierer,
     private val prefs: DimOverlayPrefs,
     private val shiftSpanStore: ShiftSpanStore
 ) : ViewModel() {
@@ -89,33 +88,45 @@ class DimmerRulesViewModel @Inject constructor(
      * Der Schnellstart oeffnet den Editor unmittelbar nach dem Schreiben; ohne den Rueckfall
      * traefe er ein leeres Formular an - und der Nutzer saehe genau NICHT, was entstanden ist.
      */
+    /**
+     * Ist der Dimmer-Hauptschalter ueberhaupt an?
+     *
+     * WARUM DIE REGELLISTE DAS WISSEN MUSS: Ohne diesen Zustand kann der Nutzer hier Regeln bauen -
+     * von Hand oder per Schnellstart -, die garantiert nichts tun, und nichts sagt es ihm. Das ist
+     * dieselbe Fehlerklasse wie "angezeigt, wirkt nicht", nur aus der anderen Richtung: angelegt,
+     * wirkt nicht. Der Schalter selbst sitzt im Dimmer-Reiter; hier wird sein Zustand nur
+     * angezeigt und im Notfall repariert (siehe [schalteDimmerEin]).
+     */
+    val dimmerAn: StateFlow<Boolean> = prefs.toggles
+        .map { it.dimEnabled }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    /**
+     * Schaltet den Dimmer EIN - bewusst eine Einbahnstrasse.
+     *
+     * Kein allgemeiner Setter: Ausschalten gehoert an die eine Stelle, an der der Schalter sichtbar
+     * sitzt (Dimmer-Reiter). Hier gibt es nur die Reparatur des einen Zustands, in dem die
+     * Regelliste sonst in die Irre fuehrt - und sie laeuft ueber denselben Nachzug wie jede andere
+     * fensterrelevante Aenderung.
+     */
+    fun schalteDimmerEin() = viewModelScope.launch {
+        prefs.setDimEnabled(true)
+        armierer.armiere("REGEL")
+    }
+
     fun ruleById(id: String?): DimRule? = id?.let { rid ->
         rules.value.firstOrNull { it.id == rid }
             ?: zuletztAngelegteRegel?.takeIf { it.id == rid }
     }
 
-    /**
-     * Armiert BEIDE Zeitketten neu - Dimmer, dann DND. Begruendung, Reihenfolge und die
-     * [NonCancellable]-Falle ausfuehrlich in `DimmerViewModel.armiereFensterkettenNeu`; hier gilt
-     * sie unveraendert, nur ist der Ausloeser eine geaenderte oder geloeschte Regel statt eines
-     * Toggles. Der Weg aus dem Regel-Editor zurueck ist besonders anfaellig: Speichern und
-     * Verlassen des Bildschirms liegen einen Fingertipp auseinander.
-     */
-    private suspend fun armiereFensterkettenNeu() = withContext(NonCancellable) {
-        runCatching { dimSchedule.enable() }
-            .onFailure { Logger.w(LogTags.DIMMER, "⚠️ Dimm-Kette nicht neu armiert", it) }
-        runCatching { dndSchedule.get().enable() }
-            .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nicht neu armiert", it) }
-    }
-
     fun saveRule(rule: DimRule) = viewModelScope.launch {
         dimRuleUseCase.saveRule(rule)
-        armiereFensterkettenNeu()
+        armierer.armiere("REGEL")
     }
 
     fun deleteRule(id: String) = viewModelScope.launch {
         dimRuleUseCase.deleteRule(id)
-        armiereFensterkettenNeu()
+        armierer.armiere("REGEL")
     }
 
     /**
@@ -282,7 +293,7 @@ class DimmerRulesViewModel @Inject constructor(
 
         dimRuleUseCase.saveRule(regel)
         zuletztAngelegteRegel = regel
-        armiereFensterkettenNeu()
+        armierer.armiere("REGEL")
         Logger.business(
             LogTags.DIMMER,
             "✨ Schnellstart-Regel '$vorlage' angelegt (${regel.windows.size} Fenster)"

@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
@@ -30,6 +31,7 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
@@ -86,8 +88,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         val store: MutableStateFlow<ShiftConfig>,
         /** Die beiden DND-Schichtauswahlen (Rufbereitschaft + Dienstzeit-Ausnahmen). */
         val dnd: DndPrefs,
-        val dimSchedule: DimScheduleUseCase,
-        val dndSchedule: DndScheduleUseCase,
+        val armierer: ZeitkettenArmierer,
         /** Der Alarm-Sync - er schreibt die Schichtspannen, auf die das Nacharmieren wartet. */
         val alarm: IAlarmUseCase
     )
@@ -138,8 +139,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             on { renameShiftName(any(), any()) } doReturn dndPrefsErgebnis
             on { removeShiftName(any(), any()) } doReturn dndEntfernErgebnis
         }
-        val dimSchedule = mock<DimScheduleUseCase>()
-        val dndSchedule = mock<DndScheduleUseCase>()
+        val armierer = mock<ZeitkettenArmierer>()
 
         val holder = CalendarStateHolder()
         if (mitTerminen) {
@@ -169,11 +169,10 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             errorHandler = mock<ErrorHandler>(),
             dimRuleUseCase = dagger.Lazy { dim },
             hueRuleUseCase = dagger.Lazy { hue },
-            dimScheduleUseCase = dagger.Lazy { dimSchedule },
-            dndScheduleUseCase = dagger.Lazy { dndSchedule },
+            armierer = armierer,
             dndPrefs = dagger.Lazy { dnd }
         )
-        return Umgebung(vm, dim, hue, store, dnd, dimSchedule, dndSchedule, alarmUseCase)
+        return Umgebung(vm, dim, hue, store, dnd, armierer, alarmUseCase)
     }
 
     @Test
@@ -364,8 +363,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             errorHandler = mock<ErrorHandler>(),
             dimRuleUseCase = dagger.Lazy { dim },
             hueRuleUseCase = dagger.Lazy { hue },
-            dimScheduleUseCase = dagger.Lazy { mock<DimScheduleUseCase>() },
-            dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() },
+            armierer = mock<ZeitkettenArmierer>(),
             dndPrefs = dagger.Lazy { mock<DndPrefs>() }
         )
         advanceUntilIdle()
@@ -473,9 +471,9 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
             advanceUntilIdle()
 
-            verifyBlocking(u.dndSchedule) { enable() }
-            // Der Dimmer kennt die DND-Auswahlen nicht - ein enable() dort wäre Arbeit ohne Wirkung.
-            verifyBlocking(u.dimSchedule, never()) { enable() }
+            // Der Dimmer kennt die DND-Auswahlen nicht - ihn mit zu armieren waere Arbeit ohne
+            // Wirkung. Die Flags sind seit v1.34.3 die Stelle, an der das steht.
+            verifyBlocking(u.armierer) { armiere(any(), eq(false), eq(true)) }
         }
 
     @Test
@@ -495,8 +493,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
         advanceUntilIdle()
 
-        verifyBlocking(u.dimSchedule) { enable() }
-        verifyBlocking(u.dndSchedule) { enable() }
+        verifyBlocking(u.armierer) { armiere(any(), eq(true), eq(true)) }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -560,15 +557,11 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             alarmUseCase = alarm
         )
         val gesehen = mutableListOf<String>()
-        u.dimSchedule.stub {
-            on { enable() } doAnswer {
-                gesehen += "dim:" + spanne[0]
-                Unit
-            }
-        }
-        u.dndSchedule.stub {
-            on { enable() } doAnswer {
-                gesehen += "dnd:" + spanne[0]
+        // Der Armierer haelt fest, welchen Namen die SPANNEN zum Zeitpunkt des Nacharmierens
+        // trugen - genau darum geht es hier: erst die Spannen umschreiben, dann armieren.
+        u.armierer.stub {
+            on { armiere(any(), any(), any()) } doAnswer {
+                gesehen += spanne[0]
                 Unit
             }
         }
@@ -578,7 +571,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         advanceUntilIdle()
 
         verifyBlocking(u.alarm) { syncAlarms(any(), any()) }
-        assertEquals(listOf("dim:Abrufdienst", "dnd:Abrufdienst"), gesehen)
+        assertEquals(listOf("Abrufdienst"), gesehen)
     }
 
     /**
@@ -602,8 +595,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         advanceUntilIdle()
 
         verifyBlocking(u.alarm, never()) { syncAlarms(any(), any()) }
-        verifyBlocking(u.dimSchedule) { enable() }
-        verifyBlocking(u.dndSchedule) { enable() }
+        verifyBlocking(u.armierer) { armiere(any(), any(), any()) }
     }
 
     /**
@@ -646,8 +638,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             // Fall bewusst unangetastet (Nichtstun ist dort ehrlich, sie stehen sichtbar in der
             // Regelliste). Ein enable() waere Arbeit ohne Wirkung, dieselbe Abgrenzung wie bei den
             // reinen DND-Auswahlen.
-            verifyBlocking(u.dndSchedule) { enable() }
-            verifyBlocking(u.dimSchedule, never()) { enable() }
+            verifyBlocking(u.armierer) { armiere(any(), eq(false), eq(true)) }
 
             val hinweis = u.vm.uiState.value.regelNachzugHinweis
             assertNotNull(hinweis)

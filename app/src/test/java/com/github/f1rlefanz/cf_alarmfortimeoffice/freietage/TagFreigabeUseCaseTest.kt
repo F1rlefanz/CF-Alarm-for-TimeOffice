@@ -143,8 +143,7 @@ class TagFreigabeUseCaseTest {
         alarmRepository = repo,
         alarmManagerService = alarmManager,
         alarmSkipUseCase = skip,
-        dimSchedule = mock<DimScheduleUseCase>(),
-        dndSchedule = mock<DndScheduleUseCase>()
+        armierer = mock(),
     )
 
     // --- Tages-Anker ---

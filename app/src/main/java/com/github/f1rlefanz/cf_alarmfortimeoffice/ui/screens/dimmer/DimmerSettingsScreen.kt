@@ -16,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -77,6 +79,44 @@ private fun verdraengtHinweis(info: DimmerRulesViewModel.RegelVerdraengt): Strin
     return "Wirkt $tage nicht: dort beginnt ein anderer Dienst früher, und pro Tag gilt nur eine " +
         "Regel - dann greift $gewinner. Soll an diesen Tagen diese Regel gelten, schalte " +
         "$gewinner aus."
+}
+
+/**
+ * Sagt es geradeheraus, wenn der Hauptschalter aus ist: Regeln in dieser Liste tun dann nichts.
+ *
+ * WARUM ALS KARTE UND MIT KNOPF, nicht als Fussnote: Ohne den Hinweis legt der Nutzer hier - von
+ * Hand oder per Schnellstart - eine Regel an, die garantiert wirkungslos bleibt, und nichts sagt
+ * es ihm. Das ist "angezeigt, wirkt nicht" aus der anderen Richtung. Ein reiner Hinweis waere die
+ * halbe Loesung; wer das Problem sieht, soll es an derselben Stelle beheben koennen, statt in
+ * einen anderen Reiter geschickt zu werden.
+ */
+@Composable
+private fun HauptschalterAusKarte(onEinschalten: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.dimmer_rules_master_off_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = stringResource(R.string.dimmer_rules_master_off_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Button(onClick = onEinschalten, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.dimmer_rules_master_off_action))
+            }
+        }
+    }
 }
 
 /**
@@ -217,6 +257,9 @@ fun DimmerSettingsScreen(
 
     val schichtNamen by viewModel.shiftNames.collectAsStateWithLifecycle()
     val nachtRegelName = stringResource(R.string.dimmer_quickstart_night_rulename)
+    // Ohne diesen Zustand koennte der Nutzer hier Regeln bauen, die garantiert nichts tun -
+    // "angelegt, wirkt nicht". Siehe DimmerRulesViewModel.dimmerAn.
+    val dimmerAn by viewModel.dimmerAn.collectAsStateWithLifecycle()
 
     // Welche Vorlage auf ihre Schicht wartet; null = kein Dialog offen.
     var vorlageBrauchtSchicht by remember {
@@ -308,6 +351,12 @@ fun DimmerSettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (!dimmerAn) {
+                item {
+                    HauptschalterAusKarte(onEinschalten = { viewModel.schalteDimmerEin() })
+                }
+            }
+
             item {
                 SchnellstartKarte(
                     onNachtDimmen = {

@@ -44,6 +44,21 @@ aufgerufene Funktionen, ueberholte Kommentare, jetzt redundante Abstraktionen �
 entfernen. Und **widerlegte Notizen korrigieren, nicht danebenschreiben**. Zwei Aussagen zum selben
 Sachverhalt sind ein Fehler, kein Verlauf.
 
+> **Die drei mechanischen Reste sucht ein Werkzeug, nicht dein Gedaechtnis:**
+> `python tools/aufraeumen/pruefe_reste.py --basis <merge-base>` findet tote Importe, verwaiste
+> String-Ressourcen und Doku-Notizen, die auf ein in DIESER Aenderung entferntes Symbol zeigen.
+> Es laeuft in der CI und in der Schleuse; von Hand aufrufen lohnt sich mitten im Durchgang.
+>
+> **Warum es das gibt:** Am 24./25.08.2026 wurde in einer Sitzung fuenfmal "fertig" gemeldet und
+> fuenfmal noch etwas gefunden — jedes Mal von einem Wegwerf-Skript, das mit der Sitzung
+> verschwand. Das ist dieselbe Wette, die dieses Projekt mit "Dokumente lebendig halten" schon
+> einmal verloren hat: als Prosa gescheitert, als Messung (`tools/doku/pruefe_budget.py`)
+> gehalten. Der Eigentuemer hat die Luecke benannt, nicht das Werkzeug.
+>
+> **Was es NICHT kann** und was deshalb weiterhin dir gehoert: nicht mehr aufgerufene Funktionen,
+> jetzt redundante Abstraktionen, ueberholte Kommentare ohne Symbolbezug. Ein gruener Lauf heisst
+> "keine der drei mechanischen Klassen", nicht "aufgeraeumt".
+
 > **Beim Aufraeumen referenzbasiert pruefen, nie annotationsbasiert.** `@Suppress("unused")` und
 > Kommentare wie „Currently not used, kept for future needs" sind in diesem Projekt teils
 > veraltet — und zwar in BEIDE Richtungen. Am 22.08.2026 trug

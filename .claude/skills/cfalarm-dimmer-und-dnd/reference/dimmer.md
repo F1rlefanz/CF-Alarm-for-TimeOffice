@@ -438,8 +438,10 @@
   channel=dim_correction` binnen Sekunden gepostet. Wer einen
   neuen Dimmer-Prefs-Setter ergänzt, ohne `enable()` hinterherzurufen, baut dieselbe Falle neu.
   **Und zwar unentprellt.** Die vier Darstellungs-Regler hatten kurzzeitig eine 300-ms-Entprellung
-  („die Regler feuern pro Frame") — durch den UI-Umbau auf `CommitOnReleaseSlider`
-  (`onValueChangeFinished`) kommt pro Bewegung genau EIN Setter-Aufruf an: Nutzen null, Risiko real.
+  („die Regler feuern pro Frame“). Seit dem Ein-Modell-Umbau (v1.34.0) gibt es diese Regler in dieser
+  Form nicht mehr: Stärke und Wärme stehen in `DimmerRuleConfigScreen` und schreiben in **lokalen
+  Compose-State** — persistiert wird erst beim Speichern der Regel. Pro Reglerbewegung fällt also
+  überhaupt kein `DimOverlayPrefs`-Setter mehr an: Nutzen der Entprellung null, Risiko real.
   Der Job hing am `viewModelScope` und starb beim Verlassen der App vor seinem `delay()`; der
   Prefs-Wert war geschrieben, das laufende Overlay behielt aber bis zur nächsten Fenstergrenze
   (typischerweise das Fenster-ENDE am Morgen) die alte Verdunkelung — exakt die Lücke, gegen die diese

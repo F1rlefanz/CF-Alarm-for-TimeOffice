@@ -76,8 +76,9 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
   Memory-Überschriften und kennt die Issues nicht — wer nur ihm glaubt, legt Dubletten an.
 - **Vor `git merge`/`git push` läuft die Schleuse** (`tools/schleuse/pruefe_schleuse.py`,
   `PreToolUse`-Hook) und prüft mechanisch: Geheimnisse, Skills, Doku-Budget, Changelog-Seite,
-  Code-Invarianten, Tests, Lint — beim Push von `main` zusätzlich Changelog-Eintrag, Bump und
-  `versionCode` gegen `origin/main`. **Ein grüner Lauf ist die untere Schranke, nicht das Ziel**;
+  Code-Invarianten, Aufraeum-Reste, Tests (inkl. androidTest-Uebersetzung), Lint — beim Push
+  von `main` zusätzlich Changelog-Eintrag, Bump und `versionCode` gegen `origin/main`.
+  **Ein grüner Lauf ist die untere Schranke, nicht das Ziel**;
   was sie nicht prüfen kann, steht im Skill `cfalarm-arbeit-abschliessen`. Notausgang für den Fall,
   dass die Schleuse selbst kaputt ist: `CFALARM_SCHLEUSE=aus`.
 

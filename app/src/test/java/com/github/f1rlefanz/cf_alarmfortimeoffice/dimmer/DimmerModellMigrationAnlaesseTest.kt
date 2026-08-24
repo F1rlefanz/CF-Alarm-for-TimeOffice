@@ -103,6 +103,74 @@ class DimmerModellMigrationAnlaesseTest {
         assertNull("Und schon gar kein abgeschalteter Dimmer", prefs[KEY_DIM_ON])
     }
 
+    // --- Der dritte Anlass: eine importierte ALTE Konfiguration ---------------------------------
+
+    /**
+     * DER GERÄTEWECHSEL. Auf dem Zielgerät steht der Marker längst — schon der erste Start einer
+     * frischen Installation setzt ihn (leere Prefs → nichts zu übersetzen). Der Import schreibt
+     * danach die alten Schlüssel roh in den Store, und ohne diesen Weg liest sie niemand mehr:
+     * `dim_enabled` gibt es in einer Datei von vor dem Umbau nicht, es bliebe auf `false`. Es
+     * dimmt nichts, die eingestellte Nachtruhe ist unsichtbar verloren — und legt der Nutzer den
+     * Hauptschalter um, werden die auf dem Altgerät INERTEN Regeln scharf.
+     */
+    @Test
+    fun `eine importierte Alt-Konfiguration wird nachtraeglich uebersetzt`() = runTest {
+        // Frische Installation: erster Start setzt Marker und dim_enabled=false.
+        val store = FakeStore(mutablePreferencesOf())
+        migration(store, entsperrt = true).migriereEinmalig()
+        assertEquals(false, store.data.first()[KEY_DIM_ON])
+
+        // Danach der Import einer Datei aus der Zeit vor dem Umbau.
+        store.updateData {
+            it.toMutablePreferences().apply {
+                this[KEY_WELLNESS] = true
+                this[KEY_WINDDOWN] = 90
+            }
+        }
+
+        assertTrue(
+            migration(store, entsperrt = true)
+                .migriereNachImport(setOf(KEY_WELLNESS.name, KEY_WINDDOWN.name))
+        )
+
+        assertEquals(
+            "Die importierte Nachtruhe war sonst unsichtbar verloren",
+            true, store.data.first()[KEY_DIM_ON]
+        )
+        assertEquals(
+            -90,
+            DimRuleUseCase(DimRuleRepository(store)).getAllRules().single()
+                .windows.single().startOffsetMinutes
+        )
+    }
+
+    /**
+     * Die Gegenrichtung, und sie ist die gefährlichere: Eine Datei aus dem EIN-Modell trägt
+     * `dim_enabled`. Ein Übersetzungslauf darüber läse die (fehlenden) alten Schlüssel als „alles
+     * aus" und schaltete den frisch importierten Dimmer sofort wieder ab.
+     */
+    @Test
+    fun `eine Datei aus dem Ein-Modell wird NICHT erneut uebersetzt`() = runTest {
+        val store = FakeStore(mutablePreferencesOf().apply { this[KEY_DIM_ON] = true })
+        store.updateData {
+            it.toMutablePreferences().apply { this[KEY_MARKER] = DimmerModellMigration.STAND }
+        }
+
+        assertFalse(
+            migration(store, entsperrt = true).migriereNachImport(setOf("dim_enabled", "dim_strength"))
+        )
+
+        assertEquals(true, store.data.first()[KEY_DIM_ON])
+    }
+
+    /** Und ein Import ganz ohne Dimmer-Schluessel laesst den lokalen Stand in Ruhe. */
+    @Test
+    fun `ein Import ohne Dimmer-Schluessel loest keine Migration aus`() {
+        assertFalse(
+            DimmerModellMigration.brauchtNachImportEineMigration(setOf("snooze_minutes", "dim_rules"))
+        )
+    }
+
     /**
      * DER ZWEITE ANLASS, strukturell geprüft (wie `Pruefrunde6R8RegelnTest` die R8-Regeln prüft):
      * Der 6h-Wartungslauf ist die einzige Kette, die auch den Nutzer erreicht, der die App nach

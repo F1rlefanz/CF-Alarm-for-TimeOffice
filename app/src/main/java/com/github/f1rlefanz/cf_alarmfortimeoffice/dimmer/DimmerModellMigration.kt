@@ -129,6 +129,43 @@ class DimmerModellMigration @Inject constructor(
         internal fun ausnahmeId(shiftName: String): String =
             MIGRATION_ID_PRAEFIX + "ausnahme_" + shiftName.lowercase().replace(Regex("[^a-z0-9]"), "_")
 
+        /**
+         * Die Schlüssel, an denen eine Konfiguration als ALTMODELL erkennbar ist - für
+         * [brauchtNachImportEineMigration]. Bewusst die Namen und nicht die `Preferences.Key`s:
+         * verglichen wird gegen die Schlüsselnamen einer Importdatei.
+         */
+        private val ALTE_SCHLUESSEL_NAMEN = setOf(
+            KEY_WELLNESS, KEY_RULES_ON, KEY_NIGHT_ON, KEY_WINDDOWN_MIN,
+            KEY_NIGHT_START_MIN, KEY_NIGHT_FREE_END_MIN, KEY_NIGHT_STRENGTH,
+            KEY_NIGHT_WARMTH, KEY_NIGHT_EXCLUDED
+        ).map { it.name }.toSet()
+
+        /**
+         * Bringt ein Import eine ALTE Dimmer-Konfiguration mit, die noch übersetzt werden muss?
+         *
+         * WARUM DIE FRAGE ÜBERHAUPT AUFKOMMT: Der Marker steht auf dem Zielgerät längst - schon der
+         * ERSTE Start einer frischen Installation setzt ihn (leere Prefs → nichts zu übersetzen →
+         * `dim_enabled = false`, Marker = STAND). Er ist zu Recht vom Backup ausgeschlossen, aber
+         * damit fehlt jeder Weg, eine importierte Alt-Konfiguration noch zu übersetzen: die alten
+         * Schlüssel landen im Store, und danach liest sie niemand mehr.
+         *
+         * Ausfall ohne diese Prüfung (Gerätewechsel): Altgerät auf v1.33.x, Nacht-Standard an,
+         * Regelquelle aus, zwei inerte Regeln. Export. Neues Handy, frische Installation der
+         * Ein-Modell-Version: erster Start setzt Marker und `dim_enabled = false`. Danach Import →
+         * die alten Schlüssel und `dim_rules` werden geschrieben, `dim_enabled` bleibt `false`. Es
+         * dimmt nichts, die eingestellte Nachtruhe ist unsichtbar verloren; und legt der Nutzer den
+         * Hauptschalter um, werden die auf dem Altgerät INERTEN Regeln scharf - also weder der alte
+         * noch ein von ihm bestellter Zustand.
+         *
+         * Der Test ist bewusst zweiseitig: Enthält die Datei den NEUEN Schlüssel `dim_enabled`,
+         * stammt sie aus dem Ein-Modell und ist bereits übersetzt - dann wäre ein zweiter
+         * Übersetzungslauf schädlich, denn er läse die (fehlenden) alten Schlüssel als „alles aus"
+         * und schaltete den frisch importierten Dimmer wieder ab.
+         */
+        internal fun brauchtNachImportEineMigration(importierteSchluessel: Set<String>): Boolean =
+            KEY_DIM_ON.name !in importierteSchluessel &&
+                importierteSchluessel.any { it in ALTE_SCHLUESSEL_NAMEN }
+
         /** Liest die alten Werte MIT den Klemmungen des Altmodells (siehe die Konstanten oben). */
         internal fun lies(p: Preferences): AltZustand = AltZustand(
             wellnessAn = p[KEY_WELLNESS] ?: false,
@@ -326,6 +363,42 @@ class DimmerModellMigration @Inject constructor(
      *         Funktion selbst; die DND-Kette kann sie nicht anfassen, weil `dnd/` von `dimmer/`
      *         liest und niemals umgekehrt.
      */
+    /**
+     * Übersetzt eine gerade IMPORTIERTE Alt-Konfiguration - der einzige Anlass, der den
+     * Versions-Marker bewusst zurücknimmt.
+     *
+     * Warum das nötig ist und warum nur unter der Bedingung aus [brauchtNachImportEineMigration],
+     * steht dort. Aufgerufen wird das aus `ConfigBackupUseCase.import`, mit den Schlüsseln, die die
+     * Datei WIRKLICH in den settings-Store geschrieben hat - nicht mit denen, die sie behauptet
+     * (der Filter lehnt einzelne ab).
+     *
+     * @return wie [migriereEinmalig]: true, wenn sich Fenstergrenzen geändert haben. Der Aufrufer
+     *         armiert die DND-Kette ohnehin nach dem Import, deshalb wertet er es nicht aus.
+     */
+    suspend fun migriereNachImport(importierteSchluessel: Set<String>): Boolean =
+        withContext(NonCancellable) {
+            if (!brauchtNachImportEineMigration(importierteSchluessel)) return@withContext false
+            try {
+                // Der Marker gehoert dem GERAET, nicht der Datei - deshalb nimmt ihn hier der
+                // Import zurueck und nicht der Import-Filter. Schlaegt die Uebersetzung danach
+                // fehl, bleibt er weg und der naechste Start versucht es erneut (idempotent).
+                dataStore.edit { it.remove(KEY_MARKER) }
+            } catch (e: Exception) {
+                Logger.e(
+                    LogTags.DIMMER,
+                    "❌ Marker der Dimmer-Modellmigration nach dem Import nicht zurueckgesetzt - " +
+                        "die importierte Alt-Konfiguration bleibt unuebersetzt",
+                    e
+                )
+                return@withContext false
+            }
+            Logger.business(
+                LogTags.DIMMER,
+                "🔁 Importierte Alt-Konfiguration erkannt - Dimmer-Modellmigration laeuft erneut"
+            )
+            migriereEinmalig()
+        }
+
     /**
      * Ist der Nutzer entsperrt? `null` (kein UserManager) wird als "ja" gewertet - dieselbe
      * Richtung wie in `AlarmRepository`/`ShiftConfigRepository`: die Frage stellt sich real nur im

@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import android.content.Context
+import android.os.UserManager
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -9,6 +11,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -47,14 +50,30 @@ import javax.inject.Singleton
  * geschriebener Regelbestand ist dabei ungefährlich, weil `dim_enabled` erst ganz am Ende und nur
  * im Erfolgsfall auf true geht: bis dahin erzeugt kein einziger Fenster-Berechnungslauf ein Fenster.
  *
- * LÄUFT NIEMALS BEIM BAUEN DES HILT-GRAPHEN, sondern ausschließlich aus [migriereEinmalig] heraus,
- * angestoßen von `MainActivity.onCreate` — also nach der ersten Entsperrung. Der [MainDataStore]
- * liegt im CE-Storage; ein Zugriff darauf im Direct-Boot-Prozess wäre still leer (siehe
- * `AlarmRepository`), und ein Zugriff im Property-Initializer einer Graph-Klasse tötet den Prozess,
- * der die Wecker hält.
+ * LÄUFT NIEMALS BEIM BAUEN DES HILT-GRAPHEN, sondern ausschließlich aus [migriereEinmalig] heraus.
+ * Ein Zugriff auf den [MainDataStore] im Property-Initializer einer Graph-Klasse tötet den
+ * Direct-Boot-Prozess, der die Wecker hält.
+ *
+ * ZWEI ANLÄSSE, NICHT NUR DER APP-START: `MainActivity.onCreate` (der schnelle Weg) UND der
+ * 6h-Wartungslauf (`AlarmMaintenanceService.rescheduleSideChannels`). Nur der App-Start zu nehmen
+ * war ein Fehler: `dim_enabled` ist ein NEUER Schlüssel, den es auf einem Bestandsgerät nicht gibt,
+ * und sein Default ist `false` — bis die Migration lief, steigt `computeWindows()` sofort mit
+ * leerer Fensterliste aus. Wer die App nur zum Wecken benutzt und sie nach einem
+ * Play-Auto-Update tagelang nicht öffnet, hätte also ab der ersten Nacht nach dem Update gar kein
+ * Dimmen mehr — und bei DND-Modus 1 fiele das Nachtfenster von „Nicht stören" gleich mit weg, ohne
+ * dass er etwas umgestellt hat. Der Marker macht jeden weiteren Aufruf zum No-op, die Reihenfolge
+ * der beiden Anlässe ist also gleichgültig.
+ *
+ * DESHALB DAS ENTSPERRUNGS-GATE: Der [MainDataStore] liegt im CE-Storage und liefert vor der ersten
+ * Entsperrung still LEERE Preferences, ohne zu werfen (siehe `AlarmRepository`). Eine Migration in
+ * diesem Zustand sähe eine leere Alt-Konfiguration, schriebe `dim_enabled = false` und setzte den
+ * Marker — der Dimmer wäre dauerhaft aus, und niemand sähe je wieder nach. `MainActivity` kann gar
+ * nicht vor der Entsperrung laufen; der Wartungsdienst ist nicht `directBootAware`, aber auf diese
+ * Eigenschaft eines ANDEREN Aufrufers darf sich eine so folgenschwere Entscheidung nicht verlassen.
  */
 @Singleton
 class DimmerModellMigration @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     @param:MainDataStore private val dataStore: DataStore<Preferences>,
     private val dimRuleUseCase: DimRuleUseCase,
     private val dimSchedule: DimScheduleUseCase
@@ -307,11 +326,28 @@ class DimmerModellMigration @Inject constructor(
      *         Funktion selbst; die DND-Kette kann sie nicht anfassen, weil `dnd/` von `dimmer/`
      *         liest und niemals umgekehrt.
      */
+    /**
+     * Ist der Nutzer entsperrt? `null` (kein UserManager) wird als "ja" gewertet - dieselbe
+     * Richtung wie in `AlarmRepository`/`ShiftConfigRepository`: die Frage stellt sich real nur im
+     * Direct-Boot-Prozess, und dort GIBT es den Dienst.
+     */
+    private fun nutzerEntsperrt(): Boolean =
+        context.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+
     suspend fun migriereEinmalig(): Boolean = withContext(NonCancellable) {
         // NonCancellable: die Migration stellt einen Zustand HER. Angestossen wird sie aus dem
         // lifecycleScope einer Activity - eine Drehung des Geraets im falschen Moment duerfte
         // nicht auf halber Strecke abbrechen.
         try {
+            // ENTSPERRUNGS-GATE, siehe Klassen-KDoc: vor der ersten Entsperrung ist der CE-Store
+            // still leer, und eine Migration darueber waere ein dauerhaft ausgeschalteter Dimmer.
+            if (!nutzerEntsperrt()) {
+                Logger.w(
+                    LogTags.DIMMER,
+                    "Dimmer-Modellmigration verschoben - Geraet noch nicht entsperrt (CE-Store waere leer)"
+                )
+                return@withContext false
+            }
             val prefs = dataStore.data.first()
             if ((prefs[KEY_MARKER] ?: 0) >= STAND) return@withContext false
 

@@ -106,9 +106,12 @@ class MainActivity : ComponentActivity() {
         // HILT MIGRATION: No more AppContainer needed - dependencies injected automatically
         Logger.d(LogTags.AUTH, "🔍 OAUTH2-DIAGNOSTIC: Hilt DI active - dependencies auto-injected")
 
-        // EINMALIGE DIMMER-MODELLMIGRATION - hier und NUR hier angestossen.
+        // EINMALIGE DIMMER-MODELLMIGRATION - der SCHNELLE der beiden Anlaesse. Der zweite ist der
+        // 6h-Wartungslauf (AlarmMaintenanceService.rescheduleSideChannels); er erreicht auch den
+        // Nutzer, der die App nach einem Play-Auto-Update tagelang nicht oeffnet. Der Marker macht
+        // den jeweils zweiten Aufruf zum No-op.
         //
-        // WARUM AUSGERECHNET DIESE STELLE:
+        // WARUM DIESE STELLE (fuer den schnellen Weg):
         //  - Sie liegt zwingend NACH der ersten Entsperrung. MainActivity ist nicht
         //    `directBootAware`, kann also gar nicht vorher laufen; der MainDataStore liegt im
         //    CE-Storage und lieferte davor still LEERE Preferences (siehe AlarmRepository) - die
@@ -116,6 +119,8 @@ class MainActivity : ComponentActivity() {
         //  - Sie laeuft bei JEDEM App-Start, unabhaengig davon, welchen Tab der Nutzer oeffnet.
         //    Im DimmerViewModel oder in der Dimmer-Karte aufgehaengt, bliebe der Dimmer bei
         //    jemandem, der die App nur zum Wecken benutzt, unbegrenzt lange unmigriert - also aus.
+        //    Genau diesen Nutzer faengt zusaetzlich der Wartungslauf ab, denn er oeffnet die App
+        //    unter Umstaenden ueberhaupt nicht.
         //  - Sie ist KEIN Teil des Hilt-Graphenaufbaus: injiziert wird nur die Referenz, gearbeitet
         //    wird erst in dieser Coroutine. Ein CE-Zugriff beim BAUEN des Graphen wuerde den
         //    Direct-Boot-Prozess toeten, der die Wecker wiederherstellt.

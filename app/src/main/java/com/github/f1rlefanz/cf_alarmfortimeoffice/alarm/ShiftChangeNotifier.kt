@@ -156,7 +156,7 @@ open class ShiftChangeNotifier @Inject constructor(
                 )
             }
 
-            val bisher = stehend!!
+            val bisher = stehend
             // maxOf: der Zaehler aus den Notification-Extras koennte kleiner sein als die Zahl der
             // dort mitgereisten Zeilen (fremd beschriebene/abgeschnittene Extras). Dann gilt die
             // groessere, belegbare Zahl - untertreiben waere hier dieselbe Luege wie das alte

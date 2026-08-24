@@ -82,20 +82,20 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
         val alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.activeAlarms).thenReturn(flowOf(alarms))
         alarmUseCase.stub {
-            onBlocking { getAllAlarms() } doReturn Result.success(alarms)
-            onBlocking { deleteAlarm(any()) } doReturn Result.success(Unit)
+            on { getAllAlarms() } doReturn Result.success(alarms)
+            on { deleteAlarm(any()) } doReturn Result.success(Unit)
         }
         val skipUseCase = mock<IAlarmSkipUseCase>()
         whenever(skipUseCase.skipStatusFlow).thenReturn(flowOf(AlarmSkipState()))
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
+            on { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
         }
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
         val masterPausePrefs = mock<MasterPausePrefs>()
-        masterPausePrefs.stub { onBlocking { pausedNow() } doReturn false }
+        masterPausePrefs.stub { on { pausedNow() } doReturn false }
 
         return AlarmViewModel(
             alarmUseCase = alarmUseCase,
@@ -105,7 +105,7 @@ class Pruefrunde8StilleSchichtAnzeigeTest {
             masterPausePrefs = masterPausePrefs,
             alarmPrefs = alarmPrefs,
             alarmRepository = mock<IAlarmRepository>().apply {
-                stub { onBlocking { isPersistenceBlocked() } doReturn false }
+                stub { on { isPersistenceBlocked() } doReturn false }
             }
         )
     }

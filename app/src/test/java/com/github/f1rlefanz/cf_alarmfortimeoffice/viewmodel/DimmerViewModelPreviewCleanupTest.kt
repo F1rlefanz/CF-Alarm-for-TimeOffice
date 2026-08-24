@@ -94,8 +94,8 @@ class DimmerViewModelPreviewCleanupTest {
         // erreicht - der Test scheitert dann an der ersten Zusicherung und sieht aus, als sei
         // das Aufraeumen kaputt, obwohl nur der Stub fehlt.
         prefs.stub {
-            onBlocking { strengthNow() } doReturn DimOverlayPrefs.DEFAULT_STRENGTH
-            onBlocking { warmthNow() } doReturn DimOverlayPrefs.DEFAULT_WARMTH
+            on { strengthNow() } doReturn DimOverlayPrefs.DEFAULT_STRENGTH
+            on { warmthNow() } doReturn DimOverlayPrefs.DEFAULT_WARMTH
         }
         return prefs
     }
@@ -114,7 +114,7 @@ class DimmerViewModelPreviewCleanupTest {
         // setPreviewOverlay() gibt das Preferences-Objekt von DataStore.edit() zurueck; die Vorschau
         // wertet es nicht aus, deshalb genuegt null als Antwort.
         prefs.stub {
-            onBlocking { setPreviewOverlay(any(), any(), any()) } doAnswer {
+            on { setPreviewOverlay(any(), any(), any()) } doAnswer {
                 overlayOn.countDown()
                 null
             }
@@ -122,7 +122,7 @@ class DimmerViewModelPreviewCleanupTest {
 
         val cleanedUp = CountDownLatch(1)
         val dimSchedule = mock<DimScheduleUseCase>()
-        dimSchedule.stub { onBlocking { applyCurrentState() } doAnswer { cleanedUp.countDown() } }
+        dimSchedule.stub { on { applyCurrentState() } doAnswer { cleanedUp.countDown() } }
 
         val viewModel = buildViewModel(prefs, dimSchedule)
         viewModel.previewDim(seconds = 1)
@@ -152,7 +152,7 @@ class DimmerViewModelPreviewCleanupTest {
         val prefs = mockPrefs()
         val firstOverlayOn = CountDownLatch(1)
         prefs.stub {
-            onBlocking { setPreviewOverlay(any(), any(), any()) } doAnswer {
+            on { setPreviewOverlay(any(), any(), any()) } doAnswer {
                 firstOverlayOn.countDown()
                 null
             }
@@ -160,7 +160,7 @@ class DimmerViewModelPreviewCleanupTest {
 
         val cleanedUpTwice = CountDownLatch(2)
         val dimSchedule = mock<DimScheduleUseCase>()
-        dimSchedule.stub { onBlocking { applyCurrentState() } doAnswer { cleanedUpTwice.countDown() } }
+        dimSchedule.stub { on { applyCurrentState() } doAnswer { cleanedUpTwice.countDown() } }
 
         val viewModel = buildViewModel(prefs, dimSchedule)
 

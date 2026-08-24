@@ -86,12 +86,12 @@ class Pruefrunde7SkipWiedereintrittTest {
         // Reaktive Schichtliste: AlarmViewModel sammelt diesen Flow seit Pruefrunde 8 im init{}.
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig(autoAlarmEnabled = true))
+            on { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig(autoAlarmEnabled = true))
         }
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
         val masterPausePrefs = mock<MasterPausePrefs>()
-        masterPausePrefs.stub { onBlocking { pausedNow() } doReturn false }
+        masterPausePrefs.stub { on { pausedNow() } doReturn false }
 
         return AlarmViewModel(
             alarmUseCase = alarmUseCase,
@@ -101,7 +101,7 @@ class Pruefrunde7SkipWiedereintrittTest {
             masterPausePrefs = masterPausePrefs,
             alarmPrefs = alarmPrefs,
             alarmRepository = mock<IAlarmRepository>().apply {
-                stub { onBlocking { isPersistenceBlocked() } doReturn false }
+                stub { on { isPersistenceBlocked() } doReturn false }
             }
         )
     }
@@ -110,9 +110,9 @@ class Pruefrunde7SkipWiedereintrittTest {
         val useCase = mock<IAlarmUseCase>()
         whenever(useCase.activeAlarms).thenReturn(flowOf(alarms))
         useCase.stub {
-            onBlocking { getAllAlarms() } doReturn Result.success(alarms)
-            onBlocking { scheduleSystemAlarm(any()) } doReturn Result.success(Unit)
-            onBlocking { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
+            on { getAllAlarms() } doReturn Result.success(alarms)
+            on { scheduleSystemAlarm(any()) } doReturn Result.success(Unit)
+            on { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
         }
         return useCase
     }
@@ -126,7 +126,7 @@ class Pruefrunde7SkipWiedereintrittTest {
         val skipUseCase = mock<IAlarmSkipUseCase>()
         whenever(skipUseCase.skipStatusFlow).thenReturn(toterFlow())
         skipUseCase.stub {
-            onBlocking { skipNextAlarm() } doSuspendableAnswer {
+            on { skipNextAlarm() } doSuspendableAnswer {
                 delay(40_000)
                 Result.success(AlarmSkipResult(alarmId = 5, alarmName = "Frueh", formattedTime = "05:00"))
             }
@@ -155,14 +155,14 @@ class Pruefrunde7SkipWiedereintrittTest {
         val skipUseCase = mock<IAlarmSkipUseCase>()
         whenever(skipUseCase.skipStatusFlow).thenReturn(toterFlow())
         skipUseCase.stub {
-            onBlocking { skipNextAlarm() } doSuspendableAnswer {
+            on { skipNextAlarm() } doSuspendableAnswer {
                 delay(40_000)
                 Result.success(AlarmSkipResult(alarmId = 5, alarmName = "Frueh", formattedTime = "05:00"))
             }
-            onBlocking { getSkipStatus() } doReturn Result.success(
+            on { getSkipStatus() } doReturn Result.success(
                 AlarmSkipState(isNextAlarmSkipped = true, skippedAlarmId = 5)
             )
-            onBlocking { cancelSkip() } doReturn Result.success(Unit)
+            on { cancelSkip() } doReturn Result.success(Unit)
         }
         val viewModel = buildViewModel(alarmUseCaseWith(listOf(alarm(5))), skipUseCase)
         advanceUntilIdle()

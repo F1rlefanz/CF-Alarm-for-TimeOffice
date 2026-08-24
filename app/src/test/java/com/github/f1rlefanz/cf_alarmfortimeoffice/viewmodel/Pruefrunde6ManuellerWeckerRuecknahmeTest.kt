@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -27,6 +28,7 @@ import org.junit.Test
  * No-op: der stumme Wecker MIT Anzeige blieb genau dann stehen, wenn die Ruecknahme gebraucht
  * wurde.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class Pruefrunde6ManuellerWeckerRuecknahmeTest {
 
     @Test

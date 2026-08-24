@@ -134,7 +134,7 @@ class HueBridgeRediscoveryTest {
     /** Nur die genannte IP antwortet; jede andere laeuft ins Leere (toter DHCP-Lease). */
     private fun onlyReachableAt(apiClient: HueApiClient, ip: String, id: String = bridgeId) {
         apiClient.stub {
-            onBlocking { getBridgeConfig(any(), any()) } doAnswer { invocation ->
+            on { getBridgeConfig(any(), any()) } doAnswer { invocation ->
                 if (invocation.getArgument<String>(0) == ip) {
                     bridgeConfig(id)
                 } else {
@@ -161,7 +161,7 @@ class HueBridgeRediscoveryTest {
     ): Reachability {
         val reachability = Reachability(reachableIp)
         apiClient.stub {
-            onBlocking { getBridgeConfig(any(), any()) } doAnswer { invocation ->
+            on { getBridgeConfig(any(), any()) } doAnswer { invocation ->
                 val ip = invocation.getArgument<String>(0)
                 reachability.probes[ip] = reachability.probesFor(ip) + 1
                 if (ip == reachability.reachableIp) {

@@ -106,16 +106,16 @@ class CalendarViewModelDeselectionCleanupTest {
          */
         pendingCleanupStore: PendingDeselectionCleanupStore = mock<PendingDeselectionCleanupStore>().apply {
             stub {
-                onBlocking { pendingSince() } doReturn Result.success(null)
-                onBlocking { markPending(any()) } doReturn Result.success(Unit)
-                onBlocking { clearIfPending() } doReturn Result.success(Unit)
+                on { pendingSince() } doReturn Result.success(null)
+                on { markPending(any()) } doReturn Result.success(Unit)
+                on { clearIfPending() } doReturn Result.success(Unit)
             }
         }
     ): CalendarViewModel {
         val calendarUseCase = mock<ICalendarUseCase>()
         calendarUseCase.stub {
-            onBlocking { hasValidAccessToken() } doReturn true
-            onBlocking { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
+            on { hasValidAccessToken() } doReturn true
+            on { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
                 EventPage(
                     events = events,
                     offset = 0,
@@ -126,7 +126,7 @@ class CalendarViewModelDeselectionCleanupTest {
             )
             // Wird bei vollstaendiger Liste nicht gebraucht - bewusst trotzdem gestubbt, damit ein
             // ungestubbter Aufruf nicht als NullPointerException auftaucht.
-            onBlocking { getCalendarEventsWithStatus(any(), any()) } doReturn
+            on { getCalendarEventsWithStatus(any(), any()) } doReturn
                 Result.failure(IllegalStateException("nicht gestubbt"))
         }
 
@@ -135,7 +135,7 @@ class CalendarViewModelDeselectionCleanupTest {
         selectionRepository.stub {
             // Die Rueckfrage des ViewModels geht bewusst an den SPEICHER, nicht an den StateFlow -
             // nur so laesst sich "wirklich nichts mehr ausgewaehlt" von "nicht lesbar" trennen.
-            onBlocking { getCurrentSelectedCalendarIds() } doAnswer {
+            on { getCurrentSelectedCalendarIds() } doAnswer {
                 when {
                     selectionReadFails -> Result.failure(IllegalStateException("DataStore unlesbar"))
                     persistedSelectionOverride != null -> Result.success(persistedSelectionOverride!!)
@@ -151,12 +151,12 @@ class CalendarViewModelDeselectionCleanupTest {
         }
         val shiftUseCase = mock<IShiftUseCase>()
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn shiftConfigResult
+            on { getCurrentShiftConfig() } doReturn shiftConfigResult
         }
 
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub {
-            onBlocking { pausedNow() } doReturn masterPaused
+            on { pausedNow() } doReturn masterPaused
         }
 
         return CalendarViewModel(
@@ -347,7 +347,7 @@ class CalendarViewModelDeselectionCleanupTest {
         runTest(dispatcher) {
             val alarmUseCase = mock<IAlarmUseCase>()
             alarmUseCase.stub {
-                onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+                on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
             }
             val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
             observeUiState(viewModel)
@@ -373,7 +373,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `bei nicht lesbarer Schicht-Konfiguration erfaehrt der Nutzer es`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+            on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
         }
         val viewModel = buildViewModel(alarmUseCase = alarmUseCase, shiftConfigReadFails = true)
         observeUiState(viewModel)
@@ -394,7 +394,7 @@ class CalendarViewModelDeselectionCleanupTest {
         alarmUseCase.stub {
             // Nur das Raeumen scheitert; das erste Anlegen aus den Events gelingt, sonst haenge
             // die Meldung womoeglich am falschen Vorgang.
-            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 if (passedEvents.isEmpty()) {
@@ -436,7 +436,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `ein gelungenes Aufraeumen meldet keinen Fehler`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+            on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
         }
         val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
         observeUiState(viewModel)
@@ -495,7 +495,7 @@ class CalendarViewModelDeselectionCleanupTest {
         val alarmUseCase = mock<IAlarmUseCase>()
         var raeumenScheitert = true
         alarmUseCase.stub {
-            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 when {
@@ -541,7 +541,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `ein gescheiterter zweiter Anlauf meldet sich erneut`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 if (passedEvents.isEmpty()) {
@@ -598,7 +598,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `eine neue Kalenderauswahl loest den Hinweis auf`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 if (passedEvents.isEmpty()) {

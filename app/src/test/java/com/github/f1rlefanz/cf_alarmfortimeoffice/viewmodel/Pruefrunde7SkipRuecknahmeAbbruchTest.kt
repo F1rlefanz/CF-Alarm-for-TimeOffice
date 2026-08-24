@@ -80,7 +80,7 @@ class Pruefrunde7SkipRuecknahmeAbbruchTest {
         val skipUseCase = mock<IAlarmSkipUseCase>()
         whenever(skipUseCase.skipStatusFlow).thenReturn(MutableStateFlow(AlarmSkipState()))
         skipUseCase.stub {
-            onBlocking { skipNextAlarm() } doSuspendableAnswer {
+            on { skipNextAlarm() } doSuspendableAnswer {
                 // Der Nutzer verlaesst die App, waehrend der UseCase in seinem unabbrechbaren
                 // Abschnitt steht (Merker gesetzt, Systemalarm gecancelt) - genau das macht
                 // onCleared() mit dem viewModelScope.
@@ -97,16 +97,16 @@ class Pruefrunde7SkipRuecknahmeAbbruchTest {
             // Beide Schritte suspendieren, wie ihre echten Vorbilder (DataStore-Lesen und
             // AlarmManager hinter SafeExecutor). Vermerkt wird NACH dem Suspensionspunkt - nur so
             // unterscheidet der Test "ist gelaufen" von "wurde begonnen und abgebrochen".
-            onBlocking { getAllAlarms() } doSuspendableAnswer {
+            on { getAllAlarms() } doSuspendableAnswer {
                 delay(10)
                 Result.success(listOf(alarm(5)))
             }
-            onBlocking { scheduleSystemAlarm(any()) } doSuspendableAnswer { aufruf ->
+            on { scheduleSystemAlarm(any()) } doSuspendableAnswer { aufruf ->
                 delay(10)
                 armiert += aufruf.getArgument<AlarmInfo>(0).id
                 Result.success(Unit)
             }
-            onBlocking { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
+            on { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
         }
 
         viewModel = buildViewModel(alarmUseCase, skipUseCase)
@@ -130,12 +130,12 @@ class Pruefrunde7SkipRuecknahmeAbbruchTest {
         // Reaktive Schichtliste: AlarmViewModel sammelt diesen Flow seit Pruefrunde 8 im init{}.
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig(autoAlarmEnabled = true))
+            on { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig(autoAlarmEnabled = true))
         }
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
         val masterPausePrefs = mock<MasterPausePrefs>()
-        masterPausePrefs.stub { onBlocking { pausedNow() } doReturn false }
+        masterPausePrefs.stub { on { pausedNow() } doReturn false }
 
         return AlarmViewModel(
             alarmUseCase = alarmUseCase,
@@ -146,8 +146,8 @@ class Pruefrunde7SkipRuecknahmeAbbruchTest {
             alarmPrefs = alarmPrefs,
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
-                    onBlocking { isPersistenceBlocked() } doReturn false
-                    onBlocking { istLetzterSchreibvorgangGescheitert() } doReturn false
+                    on { isPersistenceBlocked() } doReturn false
+                    on { istLetzterSchreibvorgangGescheitert() } doReturn false
                 }
             }
         )

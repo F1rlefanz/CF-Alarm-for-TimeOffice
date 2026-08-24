@@ -85,9 +85,9 @@ class Pruefrunde6DimmPreviewStampTest {
         whenever(prefs.nightDefaultStrength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
         whenever(prefs.nightDefaultWarmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
         prefs.stub {
-            onBlocking { strengthNow() } doReturn DimOverlayPrefs.DEFAULT_STRENGTH
-            onBlocking { warmthNow() } doReturn DimOverlayPrefs.DEFAULT_WARMTH
-            onBlocking { setPreviewOverlay(any(), any(), any()) } doAnswer { invocation ->
+            on { strengthNow() } doReturn DimOverlayPrefs.DEFAULT_STRENGTH
+            on { warmthNow() } doReturn DimOverlayPrefs.DEFAULT_WARMTH
+            on { setPreviewOverlay(any(), any(), any()) } doAnswer { invocation ->
                 stamp.value.set(invocation.getArgument<Long>(2))
                 stamp.written.countDown()
                 null

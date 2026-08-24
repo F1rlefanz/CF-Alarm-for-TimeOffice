@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmSkipRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -35,6 +36,7 @@ import java.io.IOException
  * [SkipRolledBackException], damit der Aufrufer den bereits gecancelten Systemalarm wieder
  * stellen kann.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class Pruefrunde7SkipLoeschfehlerTest {
 
     private val now = System.currentTimeMillis()

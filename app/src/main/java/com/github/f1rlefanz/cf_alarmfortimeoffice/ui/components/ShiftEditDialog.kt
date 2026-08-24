@@ -144,7 +144,7 @@ fun ShiftEditDialog(
                             supportingText = if (istUmbenennung) {
                                 {
                                     Text(
-                                        text = "Dimmer- und Hue-Regeln, die auf \"${shift?.name}\" " +
+                                        text = "Dimmer- und Hue-Regeln, die auf \"${shift.name}\" " +
                                             "zeigen, werden beim Speichern nach Möglichkeit auf " +
                                             "den neuen Namen umgestellt. Klappt das nicht – etwa " +
                                             "weil der neue Name schon vergeben ist –, sagt die " +

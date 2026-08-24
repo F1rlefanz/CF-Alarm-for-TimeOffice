@@ -97,8 +97,8 @@ class CalendarViewModelSyncWiringTest {
         calendarUseCase: ICalendarUseCase = mock()
     ): CalendarViewModel {
         calendarUseCase.stub {
-            onBlocking { hasValidAccessToken() } doReturn true
-            onBlocking { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
+            on { hasValidAccessToken() } doReturn true
+            on { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
                 EventPage(
                     events = pageEvents,
                     offset = 0,
@@ -107,7 +107,7 @@ class CalendarViewModelSyncWiringTest {
                     hasMore = totalEvents > pageEvents.size
                 )
             )
-            onBlocking { getCalendarEventsWithStatus(any(), any()) } doReturn
+            on { getCalendarEventsWithStatus(any(), any()) } doReturn
                 (completeFetch?.let { Result.success(it) }
                     ?: Result.failure(IllegalStateException("nicht gestubbt")))
         }
@@ -115,26 +115,26 @@ class CalendarViewModelSyncWiringTest {
         val selectionRepository = mock<ICalendarSelectionRepository>()
         whenever(selectionRepository.selectedCalendarIds).thenReturn(selectedIds)
         selectionRepository.stub {
-            onBlocking { getCurrentSelectedCalendarIds() } doReturn Result.success(setOf("cal-a"))
+            on { getCurrentSelectedCalendarIds() } doReturn Result.success(setOf("cal-a"))
         }
 
         val shiftUseCase = mock<IShiftUseCase>()
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
+            on { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
         }
 
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub {
-            onBlocking { pausedNow() } doReturn false
+            on { pausedNow() } doReturn false
         }
 
         // Kein offener Raeumauftrag: dieser Test beobachtet die Alarm-Verdrahtung des
         // Ladevorgangs, nicht das Aufraeumen nach einer Abwahl.
         val pendingCleanupStore = mock<PendingDeselectionCleanupStore>()
         pendingCleanupStore.stub {
-            onBlocking { pendingSince() } doReturn Result.success(null)
-            onBlocking { markPending(any()) } doReturn Result.success(Unit)
-            onBlocking { clearIfPending() } doReturn Result.success(Unit)
+            on { pendingSince() } doReturn Result.success(null)
+            on { markPending(any()) } doReturn Result.success(Unit)
+            on { clearIfPending() } doReturn Result.success(Unit)
         }
 
         return CalendarViewModel(

@@ -110,12 +110,12 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
     private fun protokollierenderStore(): PendingDeselectionCleanupStore {
         val store = mock<PendingDeselectionCleanupStore>()
         store.stub {
-            onBlocking { pendingSince() } doReturn Result.success(null)
-            onBlocking { markPending(any()) } doAnswer {
+            on { pendingSince() } doReturn Result.success(null)
+            on { markPending(any()) } doAnswer {
                 protokoll += MERKER_GESETZT
                 Result.success(Unit)
             }
-            onBlocking { clearIfPending() } doAnswer {
+            on { clearIfPending() } doAnswer {
                 protokoll += MERKER_GELOESCHT
                 Result.success(Unit)
             }
@@ -135,8 +135,8 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
     ): CalendarViewModel {
         val calendarUseCase = mock<ICalendarUseCase>()
         calendarUseCase.stub {
-            onBlocking { hasValidAccessToken() } doReturn true
-            onBlocking { getCalendarEventsLazy(any(), any(), any()) } doSuspendableAnswer {
+            on { hasValidAccessToken() } doReturn true
+            on { getCalendarEventsLazy(any(), any(), any()) } doSuspendableAnswer {
                 ladeSperre?.await()
                 Result.success(
                     EventPage(
@@ -149,21 +149,21 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
                     )
                 )
             }
-            onBlocking { getCalendarEventsWithStatus(any(), any()) } doReturn
+            on { getCalendarEventsWithStatus(any(), any()) } doReturn
                 Result.failure(IllegalStateException("nicht gestubbt"))
         }
 
         val selectionRepository = mock<ICalendarSelectionRepository>()
         whenever(selectionRepository.selectedCalendarIds).thenReturn(selectedIds)
         selectionRepository.stub {
-            onBlocking { getCurrentSelectedCalendarIds() } doAnswer {
+            on { getCurrentSelectedCalendarIds() } doAnswer {
                 if (selectionReadFails) Result.failure(IllegalStateException("DataStore unlesbar"))
                 else Result.success(selectedIds.value)
             }
         }
 
         alarmUseCase.stub {
-            onBlocking { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val uebergeben = invocation.arguments[0] as List<CalendarEvent>
                 if (uebergeben.isEmpty()) {
@@ -182,12 +182,12 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
 
         val shiftUseCase = mock<IShiftUseCase>()
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
+            on { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
         }
 
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub {
-            onBlocking { pausedNow() } doReturn false
+            on { pausedNow() } doReturn false
         }
 
         return CalendarViewModel(

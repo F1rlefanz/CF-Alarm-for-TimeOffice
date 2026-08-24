@@ -130,10 +130,10 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
         whenever(tokenRepository.observe()).thenReturn(emptyFlow())
 
         val authUseCase = mock<IAuthUseCase>()
-        authUseCase.stub { onBlocking { signOut() } doReturn abmeldenErgebnis }
+        authUseCase.stub { on { signOut() } doReturn abmeldenErgebnis }
 
         val alarmUseCase = mock<IAlarmUseCase>()
-        alarmUseCase.stub { onBlocking { deleteAllAlarms() } doReturn weckerLoeschErgebnis }
+        alarmUseCase.stub { on { deleteAllAlarms() } doReturn weckerLoeschErgebnis }
 
         val credentialAuthManager = mock<CredentialAuthManager>()
         if (signOutLocallyWirft) {
@@ -289,7 +289,7 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
         // einziger Wecker abgeraeumt - Befund 3 ueber den Abbruchweg.
         val f = buildFixture()
         f.authUseCase.stub {
-            onBlocking { signOut() } doSuspendableAnswer {
+            on { signOut() } doSuspendableAnswer {
                 f.viewModel.viewModelScope.cancel()
                 // Echter Suspensionspunkt NACH dem Abbruch, stellvertretend fuer den
                 // Netzaufruf: nur daran kann sich eine Cancellation bemerkbar machen
@@ -373,7 +373,7 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
         // Sequenz hier ab, und zurueck bliebe der halb geraeumte Zustand: Wecker geloescht,
         // Dimmer/DND/Hue/Wartung aber weiter aktiv - oder umgekehrt.
         f.alarmUseCase.stub {
-            onBlocking { deleteAllAlarms() } doSuspendableAnswer {
+            on { deleteAllAlarms() } doSuspendableAnswer {
                 f.viewModel.viewModelScope.cancel()
                 Result.success(Unit)
             }
@@ -381,7 +381,7 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
         // Echter Suspensionspunkt NACH dem Abbruch: nur daran kann sich eine Cancellation
         // ueberhaupt bemerkbar machen (gemockte suspend-Aufrufe suspendieren nicht).
         f.shiftSpanStore.stub {
-            onBlocking { replaceAll(any(), any()) } doSuspendableAnswer {
+            on { replaceAll(any(), any()) } doSuspendableAnswer {
                 delay(1)
                 Unit
             }

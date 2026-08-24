@@ -27,7 +27,26 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.34.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.34.3 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Die Regelliste sagt jetzt, wenn der Dimmer-Hauptschalter aus ist — und die Korrektur-Benachrichtigung zeigt auch die Wärme._
+
+### 🐛 Behoben
+
+- **Regeln anlegen, die nichts tun:** Ist der Dimmer-Hauptschalter aus, wirkt keine Regel — auch keine neu angelegte. Die Regelliste verriet das nirgends, sodass man dort (von Hand oder per Schnellstart) eine Regel bauen konnte, die garantiert wirkungslos blieb. Jetzt steht ganz oben ein deutlicher Hinweis mit einem Knopf, der das Dimmen gleich dort einschaltet.
+- **„Nicht stören" folgte einer Dimm-Änderung manchmal nicht sofort:** Der Nachzug beider Zeitpläne stand an fünf Stellen einzeln im Code. Er liegt jetzt an einer, damit er nicht an der einen greift und an der anderen vergessen wird. Für dich ändert sich nichts — außer dass es zuverlässig bleibt.
+
+### ✨ Verbessert
+
+- **Korrektur-Benachrichtigung zeigt die Wärme:** In der Benachrichtigung mit „Heller / Dunkler / Pause" stand bisher nur die Verdunkelung. Jetzt steht die Wärme daneben — du stellst sie pro Regel ein, konntest aber nirgends ablesen, welcher Wert gerade wirkt.
+
+### 🧰 Intern
+
+- **Toter Code aus der Werkzeug-Prüfung abgearbeitet:** 71 ungenutzte Konstanten, ein nie gelesenes Hue-Feld, zwei verwaiste Fehlertypen und drei ungenutzte Parameter entfernt. Wo Löschen die falsche Antwort war, wurde stattdessen benutzt: die Fehlermeldung der Hue-Bridge landet jetzt im Protokoll, statt verworfen zu werden.
+
+## Version 1.34.2
 
 **Stand:** August 2026
 

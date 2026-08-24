@@ -51,7 +51,29 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.34.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.34.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>Die Regelliste sagt jetzt, wenn der Dimmer-Hauptschalter aus ist — und die Korrektur-Benachrichtigung zeigt auch die Wärme.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Regeln anlegen, die nichts tun:</strong> Ist der Dimmer-Hauptschalter aus, wirkt keine Regel — auch keine neu angelegte. Die Regelliste verriet das nirgends, sodass man dort (von Hand oder per Schnellstart) eine Regel bauen konnte, die garantiert wirkungslos blieb. Jetzt steht ganz oben ein deutlicher Hinweis mit einem Knopf, der das Dimmen gleich dort einschaltet.</li>
+                <li><strong>„Nicht stören" folgte einer Dimm-Änderung manchmal nicht sofort:</strong> Der Nachzug beider Zeitpläne stand an fünf Stellen einzeln im Code. Er liegt jetzt an einer, damit er nicht an der einen greift und an der anderen vergessen wird. Für dich ändert sich nichts — außer dass es zuverlässig bleibt.</li>
+            </ul>
+
+            <h4>✨ Verbessert</h4>
+            <ul>
+                <li><strong>Korrektur-Benachrichtigung zeigt die Wärme:</strong> In der Benachrichtigung mit „Heller / Dunkler / Pause" stand bisher nur die Verdunkelung. Jetzt steht die Wärme daneben — du stellst sie pro Regel ein, konntest aber nirgends ablesen, welcher Wert gerade wirkt.</li>
+            </ul>
+
+            <h4>🧰 Intern</h4>
+            <ul>
+                <li><strong>Toter Code aus der Werkzeug-Prüfung abgearbeitet:</strong> 71 ungenutzte Konstanten, ein nie gelesenes Hue-Feld, zwei verwaiste Fehlertypen und drei ungenutzte Parameter entfernt. Wo Löschen die falsche Antwort war, wurde stattdessen benutzt: die Fehlermeldung der Hue-Bridge landet jetzt im Protokoll, statt verworfen zu werden.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.34.2</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Aufräumen hinter dem Dimmer-Umbau — für dich ändert sich nichts.</em></p>
 

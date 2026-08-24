@@ -2,10 +2,12 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -79,8 +81,18 @@ class DimmerRulesViewModel @Inject constructor(
             .map { config -> config.definitions.map { it.name } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun ruleById(id: String?): DimRule? =
-        id?.let { rid -> rules.value.firstOrNull { it.id == rid } }
+    /**
+     * Regel zu einer Kennung - fuer den Editor.
+     *
+     * Der Rueckfall auf [zuletztAngelegteRegel] ist kein Zierrat: [rules] ist ein `stateIn` ueber
+     * dem DataStore-Fluss und traegt die neue Regel erst, nachdem der Store sie emittiert hat.
+     * Der Schnellstart oeffnet den Editor unmittelbar nach dem Schreiben; ohne den Rueckfall
+     * traefe er ein leeres Formular an - und der Nutzer saehe genau NICHT, was entstanden ist.
+     */
+    fun ruleById(id: String?): DimRule? = id?.let { rid ->
+        rules.value.firstOrNull { it.id == rid }
+            ?: zuletztAngelegteRegel?.takeIf { it.id == rid }
+    }
 
     /**
      * Armiert BEIDE Zeitketten neu - Dimmer, dann DND. Begruendung, Reihenfolge und die
@@ -152,6 +164,92 @@ class DimmerRulesViewModel @Inject constructor(
         }
         previewJob = job
         return job
+    }
+
+    // --- Schnellstart -------------------------------------------------------------------------
+
+    /**
+     * Eine Schnellstart-Vorlage. Sie ist ausdruecklich KEINE zweite Fenster-Quelle, sondern nur
+     * eine Vorbelegung: der Knopf legt eine ganz gewoehnliche [DimRule] an, die anschliessend in
+     * der Regelliste steht und sich aendern und loeschen laesst.
+     *
+     * GENAU DAS IST DER UNTERSCHIED ZUM ALTEN NACHT-STANDARD. Der war ein eingebautes Verhalten
+     * mit eigenen Schaltern, eigener Verdunkelung und eigener Ausnahmenliste - wirksam, aber in
+     * der Regelliste unsichtbar. Wer wissen wollte, warum um 07:00 noch gedimmt wird, fand dort
+     * keine Regel dazu. Seit dem Ein-Modell gibt es nur noch Regeln; die Vorlagen ersetzen den
+     * Komfort, den der Nacht-Standard bot, ohne seine Unsichtbarkeit zurueckzuholen.
+     */
+    enum class SchnellstartVorlage {
+        /** Die komplette bisherige Nacht-Standard-Semantik als EIN Fenster fuer jede Kalendernacht. */
+        NACHT_DIMMEN,
+
+        /** Zwei Fenster an EINEM Kalendertag, gekoppelt an eine Nachtdienst-Schicht. */
+        NACHTDIENST_RHYTHMUS,
+
+        /** Regel mit leerer Fensterliste - Unterdrueckung an den Tagen dieser Schicht. */
+        SCHICHT_AUSNEHMEN;
+
+        /** Ob die Vorlage sich auf EINE benannte Schicht bezieht und deren Namen braucht. */
+        val brauchtSchicht: Boolean get() = this != NACHT_DIMMEN
+    }
+
+    /**
+     * Zuletzt per Schnellstart angelegte Regel - siehe den Rueckfall in [ruleById]. Bewusst ein
+     * einfaches Feld ohne Fluss: es ueberbrueckt Millisekunden, es haelt keinen Zustand.
+     */
+    private var zuletztAngelegteRegel: DimRule? = null
+
+    private val _neueRegelId = MutableStateFlow<String?>(null)
+
+    /**
+     * Kennung einer soeben per Schnellstart angelegten Regel, sonst `null`.
+     *
+     * WARUM DAS SIGNAL EXISTIERT: Eine Regel, die der Nutzer nach dem Anlegen nicht zu Gesicht
+     * bekommt, waere wieder ein unsichtbares Verhalten - genau der Fehler, den der Umbau
+     * beseitigt. Der Bildschirm oeffnet auf dieses Signal hin den Editor der neuen Regel und
+     * meldet sich ueber [neueRegelGeoeffnet] wieder ab, damit das nicht bei jeder
+     * Neuzusammensetzung erneut geschieht.
+     */
+    val neueRegelId: StateFlow<String?> = _neueRegelId.asStateFlow()
+
+    /** Vom Bildschirm zu rufen, sobald er auf [neueRegelId] reagiert hat. */
+    fun neueRegelGeoeffnet() {
+        _neueRegelId.value = null
+    }
+
+    /**
+     * Legt die Regel zur Vorlage an und armiert danach BEIDE Zeitketten - ueber denselben Weg wie
+     * [saveRule] und bewusst nicht daran vorbei: eine neue Regel verschiebt Dimm-Fenster, und
+     * "Nicht stoeren" im Modus "folgt dem Dimmer" hat keine andere Fensterquelle.
+     *
+     * [regelName] kommt aus dem Bildschirm, nicht von hier: er ist ein Nutzertext und gehoert in
+     * `strings.xml` - dieselbe Trennung wie bei [RegelVerdraengt].
+     *
+     * Fehlt einer schichtbezogenen Vorlage der Schichtname, wird NICHTS geschrieben. Eine Regel
+     * auf leerem Muster traefe keine Schicht und wuerde auch vom Umbenennungs-Nachzug nicht
+     * erfasst - eine tote Regel anzulegen waere schlechter als gar keine.
+     */
+    fun legeVorlageAn(
+        vorlage: SchnellstartVorlage,
+        regelName: String,
+        schichtName: String? = null
+    ) = viewModelScope.launch {
+        val regel = baueVorlagenRegel(vorlage, regelName, schichtName)
+        if (regel == null) {
+            Logger.w(
+                LogTags.DIMMER,
+                "⚠️ Schnellstart '$vorlage' ohne Schichtnamen - es wurde KEINE Regel angelegt"
+            )
+            return@launch
+        }
+        dimRuleUseCase.saveRule(regel)
+        zuletztAngelegteRegel = regel
+        armiereFensterkettenNeu()
+        Logger.business(
+            LogTags.DIMMER,
+            "✨ Schnellstart-Regel '$vorlage' angelegt (${regel.windows.size} Fenster)"
+        )
+        _neueRegelId.value = regel.id
     }
 
     private val _timeline = MutableStateFlow<List<DimWindowResolver.ResolvedInterval>>(emptyList())
@@ -227,5 +325,77 @@ class DimmerRulesViewModel @Inject constructor(
                     gewinnerNamen = tage.mapNotNull { namen[it.winningRuleId] }.distinct().sorted()
                 )
             }
+    }
+
+    companion object {
+        /**
+         * Baut die Regel einer Schnellstart-Vorlage - rein und ohne Seiteneffekt, damit die
+         * Fenster-Anker pruefbar sind, ohne den Speicherweg nachzustellen.
+         *
+         * `null`, wenn eine schichtbezogene Vorlage keinen brauchbaren Schichtnamen hat.
+         */
+        fun baueVorlagenRegel(
+            vorlage: SchnellstartVorlage,
+            regelName: String,
+            schichtName: String?
+        ): DimRule? {
+            val schicht = schichtName?.takeIf { it.isNotBlank() }
+            if (vorlage.brauchtSchicht && schicht == null) return null
+            return when (vorlage) {
+                // EIN Fenster fuer JEDE Kalendernacht: der CLOCK-Start macht es
+                // schicht-unabhaengig, der Ende-Anker nimmt das Minimum aus Weckzeit und 07:00.
+                // Genau diese beiden Eigenschaften ersetzen den alten Nacht-Standard samt seinem
+                // Fensterpaar und der Bedingung "ausser der Folgetag hat selbst einen Wecker".
+                SchnellstartVorlage.NACHT_DIMMEN -> DimRule(
+                    name = regelName,
+                    shiftPattern = DimRule.SHIFT_UNIVERSAL,
+                    windows = listOf(
+                        DimWindow(
+                            startAnchor = DimAnchor.CLOCK,
+                            startClockMinutes = 22 * 60,
+                            endAnchor = DimAnchor.ALARM_SONST_CLOCK,
+                            endClockMinutes = 7 * 60
+                        )
+                    ),
+                    strength = DimOverlayPrefs.DEFAULT_STRENGTH,
+                    warmth = DimOverlayPrefs.DEFAULT_WARMTH
+                )
+
+                // ZWEI Fenster an EINEM Kalendertag: nach dem Dienst der Vormittagsschlaf (ab
+                // Schichtende bis 14:00), am Nachmittag das Nickerchen vor dem naechsten Dienst
+                // (15:00 bis zur Weckzeit). Weil die Regel spezifisch ist, verdraengt sie an
+                // diesen Tagen die UNIVERSAL-Nachtregel vollstaendig - die Nacht selbst bleibt
+                // also hell, und das ist der Sinn der Sache: da ist der Nutzer im Dienst.
+                SchnellstartVorlage.NACHTDIENST_RHYTHMUS -> DimRule(
+                    name = regelName,
+                    shiftPattern = schicht!!,
+                    windows = listOf(
+                        DimWindow(
+                            startAnchor = DimAnchor.SHIFT_END,
+                            startOffsetMinutes = 0,
+                            endAnchor = DimAnchor.CLOCK,
+                            endClockMinutes = 14 * 60
+                        ),
+                        DimWindow(
+                            startAnchor = DimAnchor.CLOCK,
+                            startClockMinutes = 15 * 60,
+                            endAnchor = DimAnchor.ALARM,
+                            endOffsetMinutes = 0
+                        )
+                    ),
+                    strength = DimOverlayPrefs.DEFAULT_STRENGTH,
+                    warmth = DimOverlayPrefs.DEFAULT_WARMTH
+                )
+
+                // Die LEERE Fensterliste ist bedeutungstragend: "an diesen Tagen NICHT dimmen".
+                // Sie verdraengt die UNIVERSAL-Regel, ohne selbst ein Fenster beizusteuern -
+                // niemals auf "keine Regel" wegoptimieren.
+                SchnellstartVorlage.SCHICHT_AUSNEHMEN -> DimRule(
+                    name = regelName,
+                    shiftPattern = schicht!!,
+                    windows = emptyList()
+                )
+            }
+        }
     }
 }

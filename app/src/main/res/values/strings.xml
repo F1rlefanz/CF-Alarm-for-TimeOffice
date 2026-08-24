@@ -45,6 +45,24 @@
     <string name="dimmer_rules_title">Dimm-Regeln</string>
     <string name="dimmer_rules_empty">Noch keine Regeln. Tippe auf +, um eine anzulegen.</string>
     <string name="dimmer_rule_unnamed">(ohne Name)</string>
+    <!-- Schnellstart: legt eine SICHTBARE Regel an, kein eingebautes Verhalten. Die Texte sagen
+         das ausdruecklich ("kannst du danach anpassen oder loeschen") - der abgeloeste
+         Nacht-Standard wirkte, ohne in dieser Liste zu stehen, und genau das soll nicht
+         zurueckkommen. -->
+    <string name="dimmer_quickstart_title">Schnellstart</string>
+    <string name="dimmer_quickstart_hint">Legt eine fertige Regel an. Sie steht danach in dieser Liste und lässt sich anpassen oder löschen – es entsteht nichts Unsichtbares.</string>
+    <string name="dimmer_quickstart_night">Nacht-Dimmen anlegen</string>
+    <string name="dimmer_quickstart_night_hint">Für alle Tage: 22:00 bis „Weckzeit, spätestens“ 07:00.</string>
+    <string name="dimmer_quickstart_night_rulename">Nacht-Dimmen</string>
+    <string name="dimmer_quickstart_nightshift">Nachtdienst-Rhythmus anlegen</string>
+    <string name="dimmer_quickstart_nightshift_hint">Zwei Fenster am selben Tag: Vormittagsschlaf ab Schichtende bis 14:00 und Nickerchen von 15:00 bis zur Weckzeit. Die Nacht selbst bleibt hell – da bist du im Dienst.</string>
+    <string name="dimmer_quickstart_nightshift_rulename">Nachtdienst-Rhythmus: %1$s</string>
+    <string name="dimmer_quickstart_exclude">Schicht ausnehmen</string>
+    <string name="dimmer_quickstart_exclude_hint">Regel ohne Fenster: an Tagen dieser Schicht wird nicht gedimmt.</string>
+    <string name="dimmer_quickstart_exclude_rulename">Ohne Dimmen: %1$s</string>
+    <string name="dimmer_quickstart_pick_shift">Für welche Schicht?</string>
+    <string name="dimmer_quickstart_no_shifts">Noch keine Schichten erkannt. Lege zuerst unter „Schichten“ eine an – dann kannst du eine Regel darauf setzen.</string>
+    <string name="dimmer_quickstart_cancel">Abbrechen</string>
     <!-- Kein <plurals>: "Fenster" lautet im Deutschen in Singular UND Plural gleich - eine
          Pluralform waere ein kuenstlicher, wortgleicher Zweig ohne Nutzen. -->
     <string name="dimmer_rule_subtitle" tools:ignore="PluralsCandidate">%1$s · %2$d Fenster</string>

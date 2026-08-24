@@ -1,5 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer
 
+import androidx.annotation.StringRes
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,16 +14,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -70,6 +79,124 @@ private fun verdraengtHinweis(info: DimmerRulesViewModel.RegelVerdraengt): Strin
         "$gewinner aus."
 }
 
+/**
+ * Der Schnellstart: drei Vorlagen, die je eine ECHTE Regel anlegen.
+ *
+ * WARUM ER OBEN IN DER REGELLISTE SITZT und nicht im Reiter: Was er erzeugt, ist eine Regel -
+ * also gehoert er an den Ort, an dem Regeln entstehen und zu sehen sind. Der Nutzer tippt, die
+ * Regel erscheint in derselben Liste, und der Editor der neuen Regel geht sofort auf. Der
+ * abgeloeste Nacht-Standard war ein Schalter an ganz anderer Stelle, dessen Wirkung in dieser
+ * Liste NIE auftauchte; das ist der eine Unterschied, auf den es hier ankommt.
+ *
+ * Die beiden schichtbezogenen Vorlagen fragen zuerst nach der Schicht ([onWaehleSchicht]) - ohne
+ * Schichtname gibt es keine Regel, statt einer toten Regel auf leerem Muster.
+ */
+@Composable
+private fun SchnellstartKarte(
+    onNachtDimmen: () -> Unit,
+    onWaehleSchicht: (DimmerRulesViewModel.SchnellstartVorlage) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.dimmer_quickstart_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = stringResource(R.string.dimmer_quickstart_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            VorlagenKnopf(
+                label = stringResource(R.string.dimmer_quickstart_night),
+                hinweis = stringResource(R.string.dimmer_quickstart_night_hint),
+                onClick = onNachtDimmen
+            )
+            VorlagenKnopf(
+                label = stringResource(R.string.dimmer_quickstart_nightshift),
+                hinweis = stringResource(R.string.dimmer_quickstart_nightshift_hint),
+                onClick = {
+                    onWaehleSchicht(DimmerRulesViewModel.SchnellstartVorlage.NACHTDIENST_RHYTHMUS)
+                }
+            )
+            VorlagenKnopf(
+                label = stringResource(R.string.dimmer_quickstart_exclude),
+                hinweis = stringResource(R.string.dimmer_quickstart_exclude_hint),
+                onClick = {
+                    onWaehleSchicht(DimmerRulesViewModel.SchnellstartVorlage.SCHICHT_AUSNEHMEN)
+                }
+            )
+        }
+    }
+}
+
+/** Ein Vorlagen-Knopf mit der Erklaerung darunter - der Knopf allein sagt nicht, was entsteht. */
+@Composable
+private fun VorlagenKnopf(label: String, hinweis: String, onClick: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // fillMaxWidth statt Chip-Reihe: die Mindesthoehe des Buttons haelt das 48dp-Touchziel,
+        // und die drei Beschriftungen brauchen die volle Breite ohne Umbruch mitten im Wort.
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(label) }
+        Text(
+            text = hinweis,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Schicht-Auswahl fuer die beiden schichtbezogenen Vorlagen. Ohne erkannte Schichten gibt es
+ * nichts auszuwaehlen - dann sagt der Dialog, was zu tun ist, statt eine leere Liste zu zeigen.
+ */
+@Composable
+private fun SchichtAuswahlDialog(
+    schichtNamen: List<String>,
+    @StringRes regelNameRes: Int,
+    onWaehlen: (schichtName: String, regelName: String) -> Unit,
+    onAbbrechen: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onAbbrechen,
+        title = { Text(stringResource(R.string.dimmer_quickstart_pick_shift)) },
+        text = {
+            if (schichtNamen.isEmpty()) {
+                Text(stringResource(R.string.dimmer_quickstart_no_shifts))
+            } else {
+                // verticalScroll statt LazyColumn: der Dialog gibt seinem Inhalt keine feste
+                // Hoehe, und eine LazyColumn in unbeschraenkter Hoehe wirft zur Laufzeit.
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    schichtNamen.forEach { name ->
+                        // Der Regelname wird HIER in der Komposition aufgeloest, nicht im
+                        // Klick-Handler ueber den Context: nur so folgt er einer
+                        // Konfigurationsaenderung (Sprachwechsel) - und nur so bleibt der
+                        // Nutzertext im Bildschirm statt im ViewModel.
+                        val regelName = stringResource(regelNameRes, name)
+                        TextButton(
+                            onClick = { onWaehlen(name, regelName) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(name) }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onAbbrechen) {
+                Text(stringResource(R.string.dimmer_quickstart_cancel))
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DimmerSettingsScreen(
@@ -87,6 +214,42 @@ fun DimmerSettingsScreen(
     // einer Aenderung den Stand von davor. Reine Auskunft, kein Seiteneffekt auf den Scheduler.
     val verdraengt by viewModel.verdraengteRegeln.collectAsStateWithLifecycle()
     LaunchedEffect(rules) { viewModel.refreshVerdraengteRegeln() }
+
+    val schichtNamen by viewModel.shiftNames.collectAsStateWithLifecycle()
+    val nachtRegelName = stringResource(R.string.dimmer_quickstart_night_rulename)
+
+    // Welche Vorlage auf ihre Schicht wartet; null = kein Dialog offen.
+    var vorlageBrauchtSchicht by remember {
+        mutableStateOf<DimmerRulesViewModel.SchnellstartVorlage?>(null)
+    }
+
+    // Eine angelegte Regel MUSS der Nutzer zu Gesicht bekommen - sonst waere der Schnellstart
+    // wieder das unsichtbare Verhalten, das der Umbau gerade abgeschafft hat. Deshalb geht der
+    // Editor der neuen Regel sofort auf; abgemeldet wird das Signal danach, damit ein spaeteres
+    // Neuzusammensetzen den Editor nicht erneut aufreisst.
+    val neueRegelId by viewModel.neueRegelId.collectAsStateWithLifecycle()
+    LaunchedEffect(neueRegelId) {
+        neueRegelId?.let { id ->
+            viewModel.neueRegelGeoeffnet()
+            onEditRule(id)
+        }
+    }
+
+    vorlageBrauchtSchicht?.let { vorlage ->
+        SchichtAuswahlDialog(
+            schichtNamen = schichtNamen,
+            regelNameRes = when (vorlage) {
+                DimmerRulesViewModel.SchnellstartVorlage.NACHTDIENST_RHYTHMUS ->
+                    R.string.dimmer_quickstart_nightshift_rulename
+                else -> R.string.dimmer_quickstart_exclude_rulename
+            },
+            onWaehlen = { schichtName, regelName ->
+                vorlageBrauchtSchicht = null
+                viewModel.legeVorlageAn(vorlage, regelName, schichtName)
+            },
+            onAbbrechen = { vorlageBrauchtSchicht = null }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -110,6 +273,17 @@ fun DimmerSettingsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                SchnellstartKarte(
+                    onNachtDimmen = {
+                        viewModel.legeVorlageAn(
+                            DimmerRulesViewModel.SchnellstartVorlage.NACHT_DIMMEN,
+                            nachtRegelName
+                        )
+                    },
+                    onWaehleSchicht = { vorlage -> vorlageBrauchtSchicht = vorlage }
+                )
+            }
             if (rules.isEmpty()) {
                 item {
                     Text(

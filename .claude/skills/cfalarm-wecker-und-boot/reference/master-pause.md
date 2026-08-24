@@ -71,7 +71,7 @@
   (siehe Skill `cfalarm-kalender-und-schichten`): dafür gibt es keinen Backstop in `syncAlarms()`, weil die Funktion
   einer Liste nicht ansehen kann, ob sie ein Ausschnitt ist.
 - **`DimScheduleUseCase.disable()`/`DndScheduleUseCase.disable()` rühren KEINE persistierten
-  Toggles an** (`wellnessEnabled`/`rulesEnabled`/`nightDefaultEnabled` bzw. die DND-Trigger) — nur
+  Toggles an** (`dim_enabled` bzw. die DND-Trigger) — nur
   den Laufzeitzustand (aktives Overlay/Zen-Regel-Zustand) und den rollenden Tick-Alarm. Ein
   späteres `enable()` muss exakt die vorherige Konfiguration wiederherstellen, nicht eine durch
   die Pause veränderte.

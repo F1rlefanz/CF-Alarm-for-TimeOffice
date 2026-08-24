@@ -100,8 +100,9 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Dimmer- und Hue-Regeln binden über den NAMEN** (`shiftPattern`), der Name ist aber bei
   gleichbleibender `id` frei änderbar — deshalb `zieheRegelmusterNach()` bei jeder Umbenennung,
   in `withContext(NonCancellable)`, Fehlschläge sichtbar über `regelNachzugHinweis`. **Das
-  Universalmuster wird nie mitgezogen** (Sentinel „ALL"). **Dasselbe gilt für die drei reinen
-  Namenslisten** (Rufbereitschaft, DND-Dienstzeit-Ausnahmen, Nacht-Standard-Ausnahmen): sie
+  Universalmuster wird nie mitgezogen** (Sentinel „ALL"). **Dasselbe gilt für die zwei reinen
+  Namenslisten** (Rufbereitschaft, DND-Dienstzeit-Ausnahmen — die Nacht-Standard-Ausnahmen sind
+  mit ihrer Quelle in v1.34.0 entfallen): sie
   vergleichen EXAKT, deshalb ist auch eine reine Schreibweisenänderung eine Umbenennung, und ein
   nach einem Namenstausch fremd gewordener Eintrag wird geräumt statt stehen gelassen.
   **Nacharmiert wird erst NACH dem Alarm-Sync** — vorher tragen die Schichtspannen noch den alten

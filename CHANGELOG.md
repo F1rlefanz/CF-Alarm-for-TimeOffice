@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.31.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.32.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Neu: „Tag freigeben" für Tage, an denen der Dienst ausfällt — und eine Erklärung, wann du das statt „Überspringen" nimmst._
+
+### ✨ Neu
+
+- **„Tag freigeben":** Wenn dein Chef dir einen Tag freigibt, du tauschst oder krank bist, kannst du diesen Kalendertag jetzt als dienstfrei markieren. Für den Tag wird kein Wecker gestellt, „Nicht stören" bleibt während der eigentlichen Dienstzeit aus, und der Abend verhält sich wie an jedem anderen freien Tag. Der Termin in deinem Dienstplan-Kalender bleibt dabei unangetastet. Der Knopf sitzt im Wecker-Tab direkt neben „Überspringen" und betrifft den Tag des nächsten Weckers; über das Kalender-Symbol daneben gibst du jeden anderen Tag frei. Freigegebene Tage stehen darunter und lassen sich jederzeit wieder aufheben — dann legt die App den Wecker aus dem Dienstplan neu an.
+- **Erklärung „Wann was benutzen?":** Direkt bei beiden Knöpfen steht jetzt, worin sie sich unterscheiden. Kurz: **Überspringen** lässt genau einen Weckruf aus und lässt den Dienst bestehen — „Nicht stören" und das Dimmen richten sich weiter nach der Schicht. **Tag freigeben** streicht den Dienst selbst.
+
+### 🐛 Behoben
+
+- **„Nicht stören" ging an einem freien Tag trotzdem an:** Wer bisher an einem dienstfreien Tag den Wecker übersprang, bekam pünktlich zum Schichtbeginn trotzdem „Nicht stören" — denn ein übersprungener Wecker ändert nichts daran, dass laut Kalender Dienst wäre. Das war so gewollt (es hilft an dem Morgen, an dem du ohne Wecker wach bist), aber für den umgekehrten Fall fehlte schlicht die passende Geste. Die gibt es jetzt, und die Oberfläche sagt auch, welche wofür da ist.
+
+## Version 1.31.0
 
 **Stand:** August 2026
 

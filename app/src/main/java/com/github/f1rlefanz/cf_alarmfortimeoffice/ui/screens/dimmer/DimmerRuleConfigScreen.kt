@@ -280,6 +280,51 @@ private fun ShiftDropdown(
     }
 }
 
+/** Welches Eingabefeld ein Fenster-Rand braucht - eine Uhrzeit oder einen Minuten-Offset. */
+internal enum class AnkerFeld { UHRZEIT, OFFSET }
+
+/**
+ * Die Anker, die der Fenster-Editor am START anbietet.
+ *
+ * WARUM [DimAnchor.ALARM] HIER STEHEN MUSS: Seit dem Ein-Modell-Umbau ist ein Fenster
+ * „Weckzeit −60 → Weckzeit" der einzige Weg zu einer Einschlafhilfe vor dem Dienst - die frühere
+ * Wellness-Quelle gibt es nicht mehr. Genau das versprechen der Erklärtext im Dimmer-Tab
+ * (`dimmer_rules_explain`) und die Modellmigration, die migrierten Nutzern ein solches Fenster
+ * anlegt. Fehlte der Knopf, gäbe es die einzige Fähigkeit, die die entfallene Quelle ersetzen
+ * soll, ohne Bedienelement - und ein migriertes Fenster wäre im Editor nicht einmal darstellbar.
+ *
+ * [DimAnchor.ALARM_SONST_CLOCK] fehlt bewusst: er ist ein reiner ENDE-Anker (siehe sein KDoc).
+ */
+internal val START_ANKER = listOf(DimAnchor.CLOCK, DimAnchor.ALARM, DimAnchor.SHIFT_END)
+
+/** Die Anker, die der Editor am ENDE anbietet - hier sind alle vier sinnvoll. */
+internal val ENDE_ANKER =
+    listOf(DimAnchor.CLOCK, DimAnchor.ALARM, DimAnchor.SHIFT_END, DimAnchor.ALARM_SONST_CLOCK)
+
+/**
+ * Das Eingabefeld zu einem START-Anker.
+ *
+ * DIE ZUORDNUNG IST EINE ZUSICHERUNG, KEIN LAYOUT-DETAIL: Bekäme ein weckzeit-relativer Start ein
+ * UHRZEIT-Feld, zeigte der Editor den unbeteiligten Feld-Default (20:00) statt des echten Ankers,
+ * und ein einziger Tipp darauf schriebe den Anker dauerhaft auf [DimAnchor.CLOCK] um - aus „zwei
+ * Stunden vor dem Aufstehen" würde „jede Nacht ab 20:00", vor einem Spätdienst also ein Fenster
+ * von 16,5 Stunden.
+ */
+internal fun feldFuerStartAnker(anker: DimAnchor): AnkerFeld = when (anker) {
+    DimAnchor.ALARM, DimAnchor.SHIFT_END -> AnkerFeld.OFFSET
+    // ALARM_SONST_CLOCK ist am Start wie CLOCK (siehe DimWindowResolver.resolveShiftWindow) -
+    // eingeschleust werden kann er nur aus Daten, angeboten wird er hier nicht.
+    DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK -> AnkerFeld.UHRZEIT
+}
+
+@Composable
+private fun ankerLabel(anker: DimAnchor): String = when (anker) {
+    DimAnchor.CLOCK -> stringResource(R.string.dimmer_end_clock)
+    DimAnchor.ALARM -> stringResource(R.string.dimmer_end_alarm)
+    DimAnchor.SHIFT_END -> stringResource(R.string.dimmer_anchor_shiftend)
+    DimAnchor.ALARM_SONST_CLOCK -> stringResource(R.string.dimmer_end_alarm_sonst_clock)
+}
+
 @Composable
 private fun WindowEditor(
     window: DimWindow,
@@ -294,50 +339,48 @@ private fun WindowEditor(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Start – feste Uhrzeit (Vorabend) ODER relativ zum Schichtende (ND-Tagschlaf)
+            // Start – feste Uhrzeit (Vorabend), relativ zur Weckzeit (Einschlafhilfe) ODER
+            // relativ zum Schichtende (ND-Tagschlaf). Siehe [START_ANKER].
             Text(stringResource(R.string.dimmer_window_start), style = MaterialTheme.typography.bodyMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AnchorButton(
-                    selected = window.startAnchor == DimAnchor.CLOCK,
-                    label = stringResource(R.string.dimmer_end_clock)
-                ) { onChange(window.copy(startAnchor = DimAnchor.CLOCK)) }
-                AnchorButton(
-                    selected = window.startAnchor == DimAnchor.SHIFT_END,
-                    label = stringResource(R.string.dimmer_anchor_shiftend)
-                ) { onChange(window.copy(startAnchor = DimAnchor.SHIFT_END)) }
+                START_ANKER.forEach { anker ->
+                    AnchorButton(
+                        // ALARM_SONST_CLOCK loest am Start wie CLOCK auf - dann ist der
+                        // CLOCK-Knopf die ehrliche Anzeige. Sonst waere KEIN Knopf markiert.
+                        selected = window.startAnchor == anker ||
+                            (anker == DimAnchor.CLOCK && window.startAnchor == DimAnchor.ALARM_SONST_CLOCK),
+                        label = ankerLabel(anker)
+                    ) { onChange(window.copy(startAnchor = anker)) }
+                }
             }
-            when (window.startAnchor) {
-                DimAnchor.SHIFT_END -> OffsetField(
+            when (feldFuerStartAnker(window.startAnchor)) {
+                AnkerFeld.OFFSET -> OffsetField(
                     value = window.startOffsetMinutes,
-                    label = stringResource(R.string.dimmer_shiftend_offset)
+                    label = stringResource(
+                        if (window.startAnchor == DimAnchor.ALARM) R.string.dimmer_start_offset
+                        else R.string.dimmer_shiftend_offset
+                    )
                 ) { onChange(window.copy(startOffsetMinutes = it)) }
 
-                else -> ClockField(minutes = window.startClockMinutes) {
+                // Der Anker wird hier mitgeschrieben, damit ein aus Daten eingeschleustes
+                // ALARM_SONST_CLOCK beim ersten Anfassen normalisiert wird - fuer die beiden
+                // OFFSET-Anker ist dieser Zweig unerreichbar, sie verlieren ihn also nicht.
+                AnkerFeld.UHRZEIT -> ClockField(minutes = window.startClockMinutes) {
                     onPickTime(window.startClockMinutes) {
                         onChange(window.copy(startAnchor = DimAnchor.CLOCK, startClockMinutes = it))
                     }
                 }
             }
 
-            // Ende – feste Uhrzeit, zur Weckzeit ODER relativ zum Schichtende
+            // Ende – feste Uhrzeit, zur Weckzeit, „Weckzeit, spätestens" ODER relativ zum Schichtende
             Text(stringResource(R.string.dimmer_window_end), style = MaterialTheme.typography.bodyMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AnchorButton(
-                    selected = window.endAnchor == DimAnchor.CLOCK,
-                    label = stringResource(R.string.dimmer_end_clock)
-                ) { onChange(window.copy(endAnchor = DimAnchor.CLOCK)) }
-                AnchorButton(
-                    selected = window.endAnchor == DimAnchor.ALARM,
-                    label = stringResource(R.string.dimmer_end_alarm)
-                ) { onChange(window.copy(endAnchor = DimAnchor.ALARM)) }
-                AnchorButton(
-                    selected = window.endAnchor == DimAnchor.SHIFT_END,
-                    label = stringResource(R.string.dimmer_anchor_shiftend)
-                ) { onChange(window.copy(endAnchor = DimAnchor.SHIFT_END)) }
-                AnchorButton(
-                    selected = window.endAnchor == DimAnchor.ALARM_SONST_CLOCK,
-                    label = stringResource(R.string.dimmer_end_alarm_sonst_clock)
-                ) { onChange(window.copy(endAnchor = DimAnchor.ALARM_SONST_CLOCK)) }
+                ENDE_ANKER.forEach { anker ->
+                    AnchorButton(
+                        selected = window.endAnchor == anker,
+                        label = ankerLabel(anker)
+                    ) { onChange(window.copy(endAnchor = anker)) }
+                }
             }
             when (window.endAnchor) {
                 DimAnchor.CLOCK -> ClockField(minutes = window.endClockMinutes) {

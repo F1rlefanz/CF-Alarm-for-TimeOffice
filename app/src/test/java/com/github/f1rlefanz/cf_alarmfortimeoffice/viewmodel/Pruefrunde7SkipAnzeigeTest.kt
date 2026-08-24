@@ -12,6 +12,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipRe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.tagFreigabeUseCaseOhneFreigaben
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -107,6 +108,7 @@ class Pruefrunde7SkipAnzeigeTest {
             errorHandler = mock<ErrorHandler>(),
             masterPausePrefs = masterPausePrefs,
             alarmPrefs = alarmPrefs,
+            tagFreigabeUseCase = tagFreigabeUseCaseOhneFreigaben(),
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
                     on { isPersistenceBlocked() } doReturn false

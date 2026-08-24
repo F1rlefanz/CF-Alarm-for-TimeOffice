@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
 import kotlinx.serialization.Serializable
@@ -100,6 +101,12 @@ object ConfigBackupFilter {
         // Dienstzeiten mitbringen und "Nicht stoeren" sowie den Dimmer auf einem anderen Geraet zu
         // falschen Zeiten schalten - bis der erste eigene Sync sie ueberschreibt.
         ShiftSpanStore.KEY_SHIFT_SPANS_NAME,
+        // Die vom Nutzer freigegebenen Tage (FreieTageStore). Eine Nutzerentscheidung, ja - aber
+        // eine ueber KONKRETE Kalendertage dieses Dienstplans, die binnen Tagen verfaellt.
+        // Importiert wuerde sie auf dem neuen Geraet Wecker unterdruecken, die dort zu einem ganz
+        // anderen Dienstplan gehoeren - und still, denn ein unterdrueckter Wecker meldet sich
+        // nicht. Dieselbe Abwaegung wie beim Skip-Merker.
+        FreieTageStore.KEY_FREIE_TAGE_NAME,
         // Der offene Raeumauftrag nach einer Kalender-Abwahl. Er beschreibt einen unfertigen
         // Vorgang auf DIESEM Geraet ("hier stehen noch Wecker eines abgewaehlten Dienstplans"),
         // keine Einstellung - und importiert wuerde er auf dem neuen Geraet einen Raeumlauf

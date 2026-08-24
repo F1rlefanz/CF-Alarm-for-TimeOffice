@@ -15,6 +15,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.BeachAccess
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
@@ -26,13 +29,16 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,12 +46,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.DatePickerDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.warning
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.TagFreigabeUiState
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** Auswahlmoeglichkeiten fuer die Schlummer-Dauer-Dropdown - deckt die ueblichen Werte ab. */
 private val SNOOZE_MINUTES_OPTIONS = listOf(3, 5, 10, 15)
@@ -70,6 +83,52 @@ internal const val AUTO_ALARM_BESCHREIBUNG_PAUSIERT: String =
     "Ohne Wirkung, solange alles pausiert ist: es sind bereits alle Wecker gelöscht, und es wird " +
         "keiner neu gestellt."
 
+/**
+ * Kurzfassung der Abgrenzung "Ueberspringen" gegen "Tag freigeben" - immer sichtbar.
+ *
+ * WARUM DIE ERKLAERUNG SEIN MUSS: Bis v1.31.0 gab es nur das Ueberspringen, und die Oberflaeche
+ * sagte nirgends, dass es AUSSCHLIESSLICH den Wecker betrifft. Am 24.08.2026 hat der Nutzer
+ * deshalb einen Tag, an dem sein Chef ihm freigegeben hatte, per Ueberspringen behandelt - der
+ * Wecker blieb korrekt stumm, und um 14:48 Uhr ging punktgenau zum Schichtbeginn "Nicht stoeren"
+ * an. Das war kein Fehler, sondern die dokumentierte Absicht (ein uebersprungener Wecker aendert
+ * nichts daran, dass der Dienst stattfindet) - nur konnte das aus der Oberflaeche niemand wissen.
+ * Zwei Gesten, die sich fast gleich anfuehlen und verschieden wirken, brauchen den Unterschied
+ * an genau der Stelle, an der man sich entscheidet.
+ */
+internal const val FREIGEBEN_HINWEIS_KURZ: String =
+    "„Überspringen\" betrifft nur den Wecker, „Tag freigeben\" den ganzen Dienst."
+
+/** Der ausfuehrliche Teil - nach der Hausform: was faellt weg, was kommt wieder, was bleibt. */
+internal const val FREIGEBEN_HINWEIS_DETAIL: String =
+    "Überspringen lässt genau einen Weckruf aus. Der Dienst bleibt bestehen: „Nicht stören\" und " +
+        "das Dimmen richten sich weiter nach der Schicht — gedacht für den Morgen, an dem du " +
+        "ohnehin wach bist.\n\n" +
+        "Tag freigeben streicht den Dienst selbst. Für diesen Kalendertag wird kein Wecker " +
+        "gestellt, „Nicht stören\" bleibt aus, und der Abend verhält sich wie an jedem freien " +
+        "Tag — gedacht für den Tag, an dem du nicht arbeitest, obwohl er im Dienstplan steht.\n\n" +
+        "Der Termin im Kalender bleibt in beiden Fällen unangetastet. Nimmst du eine Freigabe " +
+        "zurück, legt die App den Wecker aus dem Dienstplan neu an."
+
+/** Gesamttext - damit ein Test auf beide Haelften zeigen kann, ohne sie zu duplizieren. */
+internal const val FREIGEBEN_HINWEIS: String = FREIGEBEN_HINWEIS_KURZ + "\n\n" + FREIGEBEN_HINWEIS_DETAIL
+
+/**
+ * PURE, TESTBAR: Ist der Abschnitt "Tag freigeben" ueberhaupt zu zeigen?
+ *
+ * Das zweite Kriterium ist tragend und dieselbe Falle wie beim Ueberspringen bis v1.26.2: eine
+ * Freigabe LOESCHT die Wecker des Tages. War es der einzige, gibt es danach keinen naechsten
+ * Wecker mehr - ohne `freieTage.isNotEmpty()` verschwaende der Abschnitt samt dem einzigen Weg
+ * zurueck, obwohl der Zustand ausdruecklich als umkehrbar angeboten wird.
+ */
+internal fun freigabeAbschnittSichtbar(
+    naechsterAlarmTag: LocalDate?,
+    freieTage: List<LocalDate>
+): Boolean = naechsterAlarmTag != null || freieTage.isNotEmpty()
+
+/** Anzeigeform eines freigegebenen Tages, z. B. "Mo, 24.08.2026". */
+internal fun formatiereFreienTag(datum: LocalDate): String =
+    datum.format(DateTimeFormatter.ofPattern("EEE, dd.MM.yyyy", Locale.GERMAN))
+
 /** PURE, TESTBAR: welcher der beiden Beschreibungstexte unter dem Schalter steht. */
 internal fun autoAlarmBeschreibung(masterPausePaused: Boolean): String =
     if (masterPausePaused) AUTO_ALARM_BESCHREIBUNG_PAUSIERT else AUTO_ALARM_BESCHREIBUNG_NORMAL
@@ -93,11 +152,14 @@ fun WeckerTabContent(
     shiftState: ShiftUiState,
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
+    tagFreigabeState: TagFreigabeUiState,
     snoozeMinutes: Int,
     masterPausePaused: Boolean,
     onUpdateShiftConfig: (ShiftConfig) -> Unit,
     onSkipNextAlarm: () -> Unit,
     onCancelSkip: () -> Unit,
+    onTagFreigeben: (LocalDate) -> Unit,
+    onFreigabeZuruecknehmen: (LocalDate) -> Unit,
     onShowShiftConfig: () -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit
 ) {
@@ -157,9 +219,12 @@ fun WeckerTabContent(
         EnhancedAlarmStatusCard(
             alarmState = alarmState,
             skipState = skipState,
+            tagFreigabeState = tagFreigabeState,
             masterPausePaused = masterPausePaused,
             onSkipNextAlarm = onSkipNextAlarm,
-            onCancelSkip = onCancelSkip
+            onCancelSkip = onCancelSkip,
+            onTagFreigeben = onTagFreigeben,
+            onFreigabeZuruecknehmen = onFreigabeZuruecknehmen
         )
 
         // Schichttypen verwalten
@@ -207,9 +272,12 @@ fun WeckerTabContent(
 private fun EnhancedAlarmStatusCard(
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
+    tagFreigabeState: TagFreigabeUiState,
     masterPausePaused: Boolean,
     onSkipNextAlarm: () -> Unit,
-    onCancelSkip: () -> Unit
+    onCancelSkip: () -> Unit,
+    onTagFreigeben: (LocalDate) -> Unit,
+    onFreigabeZuruecknehmen: (LocalDate) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -332,6 +400,178 @@ private fun EnhancedAlarmStatusCard(
                             }
                         }
                     }
+                }
+            }
+
+            TagFreigabeAbschnitt(
+                naechsterAlarmTag = alarmState.nextAlarmDate,
+                tagFreigabeState = tagFreigabeState,
+                onTagFreigeben = onTagFreigeben,
+                onFreigabeZuruecknehmen = onFreigabeZuruecknehmen
+            )
+        }
+    }
+}
+
+/**
+ * "Tag freigeben": zweite Aktion neben dem Ueberspringen, plus die Liste der freigegebenen Tage
+ * und die Erklaerung, wofuer die beiden Gesten jeweils da sind.
+ *
+ * Der Hauptknopf gibt den Tag des NAECHSTEN Weckers frei (der haeufige Fall: der Chef sagt am
+ * Vorabend Bescheid); das Kalender-Symbol daneben oeffnet die vorhandene Datumsauswahl fuer jeden
+ * anderen Tag.
+ */
+@Composable
+private fun TagFreigabeAbschnitt(
+    naechsterAlarmTag: LocalDate?,
+    tagFreigabeState: TagFreigabeUiState,
+    onTagFreigeben: (LocalDate) -> Unit,
+    onFreigabeZuruecknehmen: (LocalDate) -> Unit
+) {
+    if (!freigabeAbschnittSichtbar(naechsterAlarmTag, tagFreigabeState.freieTage)) return
+
+    var datumsauswahlOffen by rememberSaveable { mutableStateOf(false) }
+
+    HorizontalDivider()
+
+    Column(verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Dienst fällt aus? Tag freigeben:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+
+            // Zwei Bedienelemente teilen sich hier eine Zeile mit dem Text - deshalb der
+            // CompactButton: ein normaler Button braeuchte mehr Innenabstand, als auf 360dp
+            // uebrig ist, und Compose braeche die Beschriftung mitten im Wort.
+            CompactButton(
+                onClick = { naechsterAlarmTag?.let(onTagFreigeben) },
+                text = "Freigeben",
+                icon = Icons.Default.BeachAccess,
+                enabled = naechsterAlarmTag != null &&
+                    naechsterAlarmTag !in tagFreigabeState.freieTage &&
+                    !tagFreigabeState.isLoading
+            )
+
+            IconButton(
+                onClick = { datumsauswahlOffen = true },
+                enabled = !tagFreigabeState.isLoading
+            ) {
+                Icon(
+                    Icons.Default.CalendarMonth,
+                    // NICHT dekorativ: dieses Symbol steht ohne Beschriftung fuer sich.
+                    contentDescription = "Anderen Tag freigeben"
+                )
+            }
+        }
+
+        naechsterAlarmTag?.let { tag ->
+            Text(
+                "Betrifft ${formatiereFreienTag(tag)} — den Tag des nächsten Weckers.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Ausgang des letzten Vorgangs, sofern er nicht einfach aufging - dieselbe Rolle wie
+        // skipState.restoreNotice: der schlechteste Fall darf nicht stumm sein.
+        tagFreigabeState.hinweis?.let { hinweis ->
+            Text(
+                hinweis,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.warning
+            )
+        }
+
+        tagFreigabeState.freieTage.forEach { tag ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.BeachAccess,
+                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                    tint = MaterialTheme.colorScheme.warning,
+                    // dekorativ: der Text daneben sagt es bereits
+                    contentDescription = null
+                )
+                Text(
+                    "${formatiereFreienTag(tag)} — kein Wecker, kein „Nicht stören\"",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                CompactOutlinedButton(
+                    onClick = { onFreigabeZuruecknehmen(tag) },
+                    text = "Aufheben",
+                    enabled = !tagFreigabeState.isLoading
+                )
+            }
+        }
+
+        UeberspringenOderFreigebenHinweis()
+    }
+
+    if (datumsauswahlOffen) {
+        DatePickerDialog(
+            selectedDate = naechsterAlarmTag ?: LocalDate.now(),
+            onDateSelected = { gewaehlt ->
+                datumsauswahlOffen = false
+                onTagFreigeben(gewaehlt)
+            },
+            onDismiss = { datumsauswahlOffen = false }
+        )
+    }
+}
+
+/**
+ * Erklaert den Unterschied zwischen "Ueberspringen" und "Tag freigeben".
+ *
+ * Aufbau wie `SchichterkennungsHinweis()` im ShiftConfigScreen, und aus denselben Gruenden:
+ * der Kurzsatz bleibt immer sichtbar (der volle Text fuellt bei grosser Systemschrift die halbe
+ * Seite), der Umschalter sagt, WAS er zeigt (nicht "Details" oder "i"), und `rememberSaveable`
+ * verhindert, dass eine Drehung ihn wieder zuklappt.
+ */
+@Composable
+private fun UeberspringenOderFreigebenHinweis() {
+    var ausgeklappt by rememberSaveable { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                Icons.Default.Info,
+                // dekorativ: der Text daneben traegt die Aussage
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (ausgeklappt) FREIGEBEN_HINWEIS else FREIGEBEN_HINWEIS_KURZ,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                TextButton(onClick = { ausgeklappt = !ausgeklappt }) {
+                    Text(
+                        if (ausgeklappt) "Weniger anzeigen" else "Wann was benutzen?",
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         }

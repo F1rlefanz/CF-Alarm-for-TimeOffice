@@ -17,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -170,7 +171,8 @@ class Pruefrunde6SkipSyncOrderTest {
             },
             mock<ShiftSpanStore>(),
             FakeSyncHorizonStore(),
-            FakeFeedNeueinlesenStore()
+            FakeFeedNeueinlesenStore(),
+            keineFreienTage()
         )
 
         val result = useCase.syncAlarms(listOf(futureEvent("evChanged", "F", 1)), config)

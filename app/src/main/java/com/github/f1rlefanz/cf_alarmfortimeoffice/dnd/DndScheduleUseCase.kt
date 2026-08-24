@@ -17,6 +17,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -67,6 +68,7 @@ import javax.inject.Singleton
 class DndScheduleUseCase @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val shiftSpanStore: ShiftSpanStore,
+    private val freieTageStore: FreieTageStore,
     private val dimSchedule: DimScheduleUseCase,
     private val prefs: DndPrefs,
     private val masterPausePrefs: MasterPausePrefs
@@ -277,6 +279,13 @@ class DndScheduleUseCase @Inject constructor(
                 // haette ein Retry-Tick nichts zu tun und die Kette bliebe endlos am Leben.
                 if (anySourceEnabled) alarmReadFailed = true
                 emptyList()
+            }.let { rohe ->
+                // FREIGEGEBENE TAGE: an einem freigegebenen Tag findet der Dienst nicht statt -
+                // also weder Dienstzeit-Fenster noch On-Call-Cutoff. Gefiltert wird an derselben
+                // Stelle wie im Dimmer und mit derselben Funktion, damit ein Tag nicht in einem
+                // der beiden Features frei ist und im anderen nicht. Quelle 1 ("folgt dem Dimmer")
+                // liest ueber previewTimelineWithStatus() bereits die gefilterte Zeitleiste.
+                FreieTageStore.filtereSpannen(rohe, freieTageStore.freieTageNow(), ZoneId.systemDefault())
             }
         } else {
             emptyList()

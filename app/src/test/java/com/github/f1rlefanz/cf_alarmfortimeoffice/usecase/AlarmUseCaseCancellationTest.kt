@@ -17,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -143,7 +144,8 @@ class AlarmUseCaseCancellationTest {
             },
             mock<ShiftSpanStore>(),
             FakeSyncHorizonStore(),
-            FakeFeedNeueinlesenStore()
+            FakeFeedNeueinlesenStore(),
+            keineFreienTage()
         )
     }
 

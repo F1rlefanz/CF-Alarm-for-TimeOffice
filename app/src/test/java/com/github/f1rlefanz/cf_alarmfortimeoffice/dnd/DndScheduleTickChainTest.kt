@@ -4,6 +4,7 @@ import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -76,7 +77,7 @@ class DndScheduleTickChainTest {
     private fun sut(dimSchedule: DimScheduleUseCase, prefs: DndPrefs): DndScheduleUseCase {
         val masterPausePrefs = mock<MasterPausePrefs>()
         return DndScheduleUseCase(
-            mock<Context>(), mock<ShiftSpanStore>(), dimSchedule, prefs, masterPausePrefs
+            mock<Context>(), mock<ShiftSpanStore>(), keineFreienTage(), dimSchedule, prefs, masterPausePrefs
         )
     }
 

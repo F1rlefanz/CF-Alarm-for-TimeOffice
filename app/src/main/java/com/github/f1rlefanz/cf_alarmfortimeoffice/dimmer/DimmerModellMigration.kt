@@ -478,7 +478,7 @@ class DimmerModellMigration @Inject constructor(
                 Logger.w(
                     LogTags.DIMMER,
                     "Dimmer-Modellmigration verschoben - Regelbestand nicht lesbar " +
-                        "(${roheRegeln?.length} Zeichen Rohdaten, dekodiert leer). " +
+                        "(${roheRegeln.length} Zeichen Rohdaten, dekodiert leer). " +
                         "Migration ueber einen degradierten Bestand wuerde Regeln verdoppeln."
                 )
                 return@withContext false

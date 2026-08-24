@@ -106,6 +106,32 @@ jobs:
       - name: androidTest-Quelltext kompilieren (blinder Fleck von `test`)
         run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
 
+      # Der Kotlin-Compiler meldet Dinge, die kein anderes Gatter sieht (unnoetige Safe-Calls,
+      # unerreichbarer Code, ungenutzte private Deklarationen) - und bis zum 25.08.2026 wurde
+      # jede dieser Zeilen weggeworfen. Beim Anlegen stand genau EINE im Baum, in Code vom Vortag.
+      #
+      # WARUM HIER UND NICHT IN DER SCHLEUSE: Ist die Compile-Task UP-TO-DATE, gibt sie ihre
+      # Warnungen nicht erneut aus - ein lokales Gatter meldete dann "sauber", ohne etwas geprueft
+      # zu haben. Genau die Sorte Gatter, die luegt. Die CI baut immer frisch, hier stimmt das
+      # Urteil. Und WARUM NICHT allWarningsAsErrors: das bricht den Build auch dann, wenn eine
+      # neue AndroidX-Fassung etwas als deprecated markiert - ausgerechnet beim Release.
+      - name: Keine Kotlin-Compiler-Warnungen im eigenen Quelltext
+        run: |
+          ./gradlew compileDebugKotlin compileDebugAndroidTestKotlin --stacktrace 2>&1 | tee /tmp/kotlinc.log
+          grep -E "^w:.*app/src/" /tmp/kotlinc.log > /tmp/w.log || true
+          grep -vE "^\s*#|^\s*$" tools/aufraeumen/warnungen_geduldet.txt > /tmp/geduldet.txt || true
+          if [ -s /tmp/geduldet.txt ]; then
+            grep -vFf /tmp/geduldet.txt /tmp/w.log > /tmp/offen.log || true
+          else
+            cp /tmp/w.log /tmp/offen.log
+          fi
+          if [ -s /tmp/offen.log ]; then
+            cat /tmp/offen.log
+            echo "::error::Kotlin-Compiler-Warnung im eigenen Quelltext. Beheben - oder, wenn sie \
+              von aussen aufgezwungen ist, MIT GRUND in tools/aufraeumen/warnungen_geduldet.txt."
+            exit 1
+          fi
+
       - name: Lint (abortOnError=true wirkt als Merge-Gate)
         run: ./gradlew lintDebug --stacktrace
 

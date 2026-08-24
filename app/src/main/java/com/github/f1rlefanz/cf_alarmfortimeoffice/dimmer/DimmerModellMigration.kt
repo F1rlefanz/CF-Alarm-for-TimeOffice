@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -96,6 +97,13 @@ class DimmerModellMigration @Inject constructor(
 
         private val KEY_DIM_ON = booleanPreferencesKey("dim_enabled")
 
+        /**
+         * Die ROHDATEN der Regelliste - ausschliesslich fuer die Gegenprobe gegen einen
+         * DEGRADIERTEN Lesepfad (siehe `fuehreAus`). Bewusst derselbe Schluesselname wie in
+         * `DimRuleRepository`; hier wird er nur GELESEN und nie geschrieben.
+         */
+        private val KEY_RULES_ROH = stringPreferencesKey("dim_rules")
+
         // Die ALTEN Schlüssel. Sie werden hier gelesen und danach nie wieder - geloescht werden
         // sie bewusst nicht (ein Downgrade soll den alten Zustand noch vorfinden).
         private val KEY_WELLNESS = booleanPreferencesKey("dim_wellness_enabled")
@@ -126,8 +134,25 @@ class DimmerModellMigration @Inject constructor(
         internal const val MIGRATION_ID_PRAEFIX = "dimrule_migriert_"
         internal const val ID_UNIVERSAL = MIGRATION_ID_PRAEFIX + "universal"
 
-        internal fun ausnahmeId(shiftName: String): String =
-            MIGRATION_ID_PRAEFIX + "ausnahme_" + shiftName.lowercase().replace(Regex("[^a-z0-9]"), "_")
+        /**
+         * Deterministische Kennung der uebernommenen Ausnahme-Regel einer Schicht.
+         *
+         * DER ANGEHAENGTE HASH IST NICHT KOSMETIK: Der lesbare Rumpf wirft alles weg, was kein
+         * Kleinbuchstabe und keine Ziffer ist. „AD 1", „AD-1" und „AD_1" ergaeben denselben Rumpf -
+         * und weil die ID der Schluessel von `upsert` ist, ueberschriebe die zweite Ausnahme die
+         * erste stillschweigend. Eine der beiden Schichten dimmte danach wieder, obwohl der Nutzer
+         * sie ausgenommen hatte. Der Hash ueber den normalisierten Namen trennt die Faelle, ohne
+         * die Determiniertheit aufzugeben (gleicher Name ⇒ gleiche ID ⇒ ein zweiter Lauf ersetzt
+         * statt zu verdoppeln).
+         *
+         * Gross-/Kleinschreibung trennt bewusst NICHT: `findRuleForShift` vergleicht
+         * schreibungsblind, „AD1" und „ad1" sind dieselbe Schicht und bekommen dieselbe Kennung.
+         */
+        internal fun ausnahmeId(shiftName: String): String {
+            val normalisiert = shiftName.lowercase()
+            val rumpf = normalisiert.replace(Regex("[^a-z0-9]"), "_")
+            return MIGRATION_ID_PRAEFIX + "ausnahme_" + rumpf + "_" + normalisiert.hashCode().toUInt().toString(36)
+        }
 
         /**
          * Die Schlüssel, an denen eine Konfiguration als ALTMODELL erkennbar ist - für
@@ -426,6 +451,39 @@ class DimmerModellMigration @Inject constructor(
 
             val alt = lies(prefs)
             val bestand = dimRuleUseCase.getAllRules()
+
+            // STILLE DEGRADIERUNG DARF NICHT ZUR SCHREIBWAHRHEIT WERDEN (CLAUDE.md, Persistenz).
+            // `getAllRules()` degradiert einen Lesefehler bewusst auf die LEERE Liste - fuer den
+            // Dimmer heisst das "diese Nacht kein Dimmen", die harmlose Richtung. Fuer eine
+            // MIGRATION ist dieselbe Leere gefaehrlich: `plane()` haelt den Bestand fuer leer und
+            // legt die uebersetzten Regeln NEU an, waehrend `upsert` in seinem eigenen `edit{}`
+            // strikt nachliest und sie an die real noch vorhandenen ANHAENGT. Danach laegen zwei
+            // Regeln auf demselben Muster im Bestand; `findRuleForShift` nimmt den ERSTEN Treffer,
+            // die zweite ist tot und wird trotzdem als aktiv angezeigt - "angezeigt, wirkt nicht".
+            //
+            // DIE NACHPRUEFUNG WEITER UNTEN REICHT DAFUER NICHT. Sie faengt den Fall zuverlaessig
+            // nur, solange auch der KONTROLL-Lesevorgang degradiert ist. Ein transienter Lesefehler
+            // ist aber genau das: voruebergehend. Erholt sich der Store zwischen Schreiben und
+            // Kontrolle, findet die Kontrolle die neuen Regeln vor, meldet Erfolg, und der Marker
+            // wird ueber einen verdoppelten Bestand gesetzt.
+            //
+            // Deshalb hier die Gegenprobe an den ROHDATEN, VOR jedem Schreibvorgang: steht unter
+            // `dim_rules` etwas anderes als eine leere Liste, waehrend der dekodierte Bestand leer
+            // ist, war der Lesepfad degradiert. Dann wird nichts geschrieben und nichts markiert -
+            // der naechste Anlass versucht es erneut. Ein transienter Fehler kostet einen Anlauf,
+            // keine Daten.
+            val roheRegeln = prefs[KEY_RULES_ROH]?.trim()
+            val rohdatenNichtLeer = !roheRegeln.isNullOrEmpty() && roheRegeln != "[]"
+            if (bestand.isEmpty() && rohdatenNichtLeer) {
+                Logger.w(
+                    LogTags.DIMMER,
+                    "Dimmer-Modellmigration verschoben - Regelbestand nicht lesbar " +
+                        "(${roheRegeln?.length} Zeichen Rohdaten, dekodiert leer). " +
+                        "Migration ueber einen degradierten Bestand wuerde Regeln verdoppeln."
+                )
+                return@withContext false
+            }
+
             val plan = plane(alt, bestand)
 
             plan.regeln.forEach { dimRuleUseCase.saveRule(it) }

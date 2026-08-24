@@ -183,6 +183,16 @@ class AlarmUseCase @Inject constructor(
             zone: ZoneId
         ): Boolean {
             if (freieTage.isEmpty()) return false
+            // MANUELLE WECKER NEHMEN NICHT TEIL (`eventId.isEmpty()`), und das ist keine Feinheit.
+            // Eine Freigabe sagt "der DIENST faellt aus" - sie sagt nichts ueber einen Wecker, den
+            // der Nutzer sich selbst gestellt hat (Zahnarzt, Zug, Abholung). Zwei Folgen haengen
+            // daran, beide schwer: `TagFreigabeUseCase` wuerde ihn loeschen, und ein geloeschter
+            // manueller Wecker kommt NIE zurueck (`syncAlarms` schont ihn nur, es rekonstruiert
+            // ihn nicht - genau deshalb sichert `AlarmSkipUseCase` fuer ihn einen Schnappschuss).
+            // Und dieser Backstop wuerde das Anlegen eines neuen manuellen Weckers an einem
+            // freigegebenen Tag abweisen. Dieselbe Ausnahme trifft `istUebersprungen` fuer sein
+            // zweites Kriterium, aus derselben Ueberlegung.
+            if (alarm.eventId.isEmpty()) return false
             return Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate() in freieTage
         }
     }

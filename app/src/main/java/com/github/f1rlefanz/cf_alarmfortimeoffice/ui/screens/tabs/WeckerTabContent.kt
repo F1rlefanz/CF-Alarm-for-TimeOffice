@@ -96,16 +96,18 @@ internal const val AUTO_ALARM_BESCHREIBUNG_PAUSIERT: String =
  * an genau der Stelle, an der man sich entscheidet.
  */
 internal const val FREIGEBEN_HINWEIS_KURZ: String =
-    "„Überspringen\" betrifft nur den Wecker, „Tag freigeben\" den ganzen Dienst."
+    "„Überspringen“ betrifft nur den Wecker, „Tag freigeben“ den ganzen Dienst."
 
 /** Der ausfuehrliche Teil - nach der Hausform: was faellt weg, was kommt wieder, was bleibt. */
 internal const val FREIGEBEN_HINWEIS_DETAIL: String =
-    "Überspringen lässt genau einen Weckruf aus. Der Dienst bleibt bestehen: „Nicht stören\" und " +
+    "Überspringen lässt genau einen Weckruf aus. Der Dienst bleibt bestehen: „Nicht stören“ und " +
         "das Dimmen richten sich weiter nach der Schicht — gedacht für den Morgen, an dem du " +
         "ohnehin wach bist.\n\n" +
         "Tag freigeben streicht den Dienst selbst. Für diesen Kalendertag wird kein Wecker " +
-        "gestellt, „Nicht stören\" bleibt aus, und der Abend verhält sich wie an jedem freien " +
-        "Tag — gedacht für den Tag, an dem du nicht arbeitest, obwohl er im Dienstplan steht.\n\n" +
+        "gestellt, und weder „Nicht stören“ noch das Dimmen richten sich noch nach der " +
+        "Schicht — der Tag zählt ab dann als freier Tag, mit allem, was für dich an freien Tagen " +
+        "gilt (Nacht-Standard, Frei-Regel). Gedacht für den Tag, an dem du nicht arbeitest, " +
+        "obwohl er im Dienstplan steht.\n\n" +
         "Der Termin im Kalender bleibt in beiden Fällen unangetastet. Nimmst du eine Freigabe " +
         "zurück, legt die App den Wecker aus dem Dienstplan neu an."
 
@@ -406,6 +408,7 @@ private fun EnhancedAlarmStatusCard(
             TagFreigabeAbschnitt(
                 naechsterAlarmTag = alarmState.nextAlarmDate,
                 tagFreigabeState = tagFreigabeState,
+                ueberspringenLaeuft = skipState.isLoading,
                 onTagFreigeben = onTagFreigeben,
                 onFreigabeZuruecknehmen = onFreigabeZuruecknehmen
             )
@@ -425,9 +428,18 @@ private fun EnhancedAlarmStatusCard(
 private fun TagFreigabeAbschnitt(
     naechsterAlarmTag: LocalDate?,
     tagFreigabeState: TagFreigabeUiState,
+    /**
+     * Laeuft gerade ein Ueberspringen? Dann sind die Knoepfe hier GESPERRT.
+     *
+     * Beide Vorgaenge teilen sich im ViewModel eine Wiedereintrittssperre (`skipVorgangLaeuft`) -
+     * ein Tap waehrenddessen kehrt wortlos zurueck. Ein Knopf, der bedienbar aussieht und still
+     * nichts tut, ist schlimmer als ein ausgegrauter: der Nutzer haelt die Freigabe fuer gesetzt.
+     */
+    ueberspringenLaeuft: Boolean,
     onTagFreigeben: (LocalDate) -> Unit,
     onFreigabeZuruecknehmen: (LocalDate) -> Unit
 ) {
+    val gesperrt = tagFreigabeState.isLoading || ueberspringenLaeuft
     if (!freigabeAbschnittSichtbar(naechsterAlarmTag, tagFreigabeState.freieTage)) return
 
     var datumsauswahlOffen by rememberSaveable { mutableStateOf(false) }
@@ -456,12 +468,12 @@ private fun TagFreigabeAbschnitt(
                 icon = Icons.Default.BeachAccess,
                 enabled = naechsterAlarmTag != null &&
                     naechsterAlarmTag !in tagFreigabeState.freieTage &&
-                    !tagFreigabeState.isLoading
+                    !gesperrt
             )
 
             IconButton(
                 onClick = { datumsauswahlOffen = true },
-                enabled = !tagFreigabeState.isLoading
+                enabled = !gesperrt
             ) {
                 Icon(
                     Icons.Default.CalendarMonth,
@@ -503,14 +515,14 @@ private fun TagFreigabeAbschnitt(
                     contentDescription = null
                 )
                 Text(
-                    "${formatiereFreienTag(tag)} — kein Wecker, kein „Nicht stören\"",
+                    "${formatiereFreienTag(tag)} — freigegeben: kein Wecker, kein Dienst",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
                 CompactOutlinedButton(
                     onClick = { onFreigabeZuruecknehmen(tag) },
                     text = "Aufheben",
-                    enabled = !tagFreigabeState.isLoading
+                    enabled = !gesperrt
                 )
             }
         }
@@ -525,7 +537,10 @@ private fun TagFreigabeAbschnitt(
                 datumsauswahlOffen = false
                 onTagFreigeben(gewaehlt)
             },
-            onDismiss = { datumsauswahlOffen = false }
+            onDismiss = { datumsauswahlOffen = false },
+            // Kein Tag in der Vergangenheit: die Freigabe wuerde beim naechsten Lesen sofort
+            // weggeraeumt, der Tap bliebe wirkungslos. Begruendung an fruehesterTag.
+            fruehesterTag = LocalDate.now()
         )
     }
 }

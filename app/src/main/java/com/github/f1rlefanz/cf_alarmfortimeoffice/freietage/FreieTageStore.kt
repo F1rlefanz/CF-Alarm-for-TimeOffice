@@ -140,7 +140,12 @@ class FreieTageStore @Inject constructor(
             emit(emptyPreferences())
         }
         .map { prefs ->
-            (prefs[KEY_FREIE_TAGE] ?: emptySet()).mapNotNull { parseOderNull(it) }.toSet()
+            // Beim LESEN mitfiltern, nicht nur beim Aufraeumen in der 6h-Wartung: laeuft die
+            // Wartung mal nicht (Master-Pause, Geraet aus), stuende ein abgelaufener Tag sonst
+            // weiter in der Liste - und eine Freigabe fuer gestern ist eine Anzeige ohne Wirkung.
+            prune(prefs[KEY_FREIE_TAGE] ?: emptySet(), LocalDate.now())
+                .mapNotNull { parseOderNull(it) }
+                .toSet()
         }
 
     suspend fun freieTageNow(): Set<LocalDate> = freieTage.first()

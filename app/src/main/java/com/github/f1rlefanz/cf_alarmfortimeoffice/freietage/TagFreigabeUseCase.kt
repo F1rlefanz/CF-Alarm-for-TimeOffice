@@ -92,8 +92,16 @@ class TagFreigabeUseCase @Inject constructor(
          * einer Schicht, deren Wecker vor Mitternacht und deren Dienst danach liegt, einen Tag,
          * an dem der Wecker geloescht ist, "Nicht stoeren" aber trotzdem laeuft.
          */
-        internal fun gehoertZuTag(alarm: AlarmInfo, datum: LocalDate, zone: ZoneId): Boolean =
-            Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate() == datum
+        internal fun gehoertZuTag(alarm: AlarmInfo, datum: LocalDate, zone: ZoneId): Boolean {
+            // MANUELLE WECKER BLEIBEN STEHEN (`eventId.isEmpty()`). Eine Freigabe streicht den
+            // DIENST, nicht die eigenen Wecker des Nutzers - und ein geloeschter manueller Wecker
+            // kommt nie zurueck: `zuruecknehmen()` baut ueber den Kalender wieder auf, und in
+            // keinem Kalender steht er. Dieselbe Schonung haelt jede andere Raeumstelle des
+            // Projekts (`clearInternalAlarms(keepManualAlarms)`, der Loeschzweig in `syncAlarms`),
+            // und `AlarmUseCase.istTagFreigegeben` nimmt sie aus demselben Grund ebenfalls aus.
+            if (alarm.eventId.isEmpty()) return false
+            return Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate() == datum
+        }
     }
 
     val freieTage: Flow<Set<LocalDate>> = store.freieTage
@@ -194,7 +202,13 @@ class TagFreigabeUseCase @Inject constructor(
             // Tick neu, und der kann Stunden entfernt liegen. Ohne das bliebe "Nicht stoeren"
             // waehrend der gerade freigegebenen Schicht weiter an - genau der gemeldete Vorfall.
             // Vorbild: `AlarmMaintenanceService.rescheduleSideChannels`.
-            werfeNebenkettenAn()
+            //
+            // EBENFALLS NICHT ABBRECHBAR, und zwar aus genau diesem Grund: schliesst der Nutzer die
+            // App direkt nach dem Tippen (der Normalfall - man gibt frei und legt das Handy weg),
+            // stirbt der viewModelScope hier. Die Markierung stuende dann, die Wecker waeren weg,
+            // und "Nicht stoeren" liefe bis zum naechsten Tick weiter - also genau der Zustand,
+            // gegen den diese ganze Funktion gebaut ist.
+            withContext(NonCancellable) { werfeNebenkettenAn() }
 
             TagFreigabeResult(
                 datum = datum,
@@ -213,8 +227,10 @@ class TagFreigabeUseCase @Inject constructor(
      */
     suspend fun zuruecknehmen(datum: LocalDate): Result<Unit> =
         SafeExecutor.safeExecute("TagFreigabeUseCase.zuruecknehmen") {
-            withContext(NonCancellable) { store.zuruecknehmen(datum) }
-            werfeNebenkettenAn()
+            withContext(NonCancellable) {
+                store.zuruecknehmen(datum)
+                werfeNebenkettenAn()
+            }
         }
 
     /**

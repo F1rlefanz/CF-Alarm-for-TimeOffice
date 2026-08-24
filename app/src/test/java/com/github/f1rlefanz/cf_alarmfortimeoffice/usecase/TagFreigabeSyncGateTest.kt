@@ -179,12 +179,16 @@ class TagFreigabeSyncGateTest {
             shiftId = "early",
             shiftName = "Frueh",
             triggerTime = eventTag.atTime(5, 30).atZone(zone).toInstant().toEpochMilli(),
-            formattedTime = "05:30"
+            formattedTime = "05:30",
+            eventId = "ev1"
         )
         assertTrue(AlarmUseCase.istTagFreigegeben(setOf(eventTag), wecker, zone))
         assertFalse(AlarmUseCase.istTagFreigegeben(setOf(eventTag.plusDays(1)), wecker, zone))
         // Leere Menge heisst NICHT freigegeben - im Zweifel wecken.
         assertFalse(AlarmUseCase.istTagFreigegeben(emptySet(), wecker, zone))
+        // MANUELLER Wecker (leere eventId): nimmt nicht teil. Sonst liesse sich an einem
+        // freigegebenen Tag kein eigener Wecker mehr stellen - der Backstop wiese ihn ab.
+        assertFalse(AlarmUseCase.istTagFreigegeben(setOf(eventTag), wecker.copy(eventId = ""), zone))
     }
 
     // --- Gate in syncAlarms() ---
@@ -279,7 +283,7 @@ class TagFreigabeSyncGateTest {
         val weckzeit = eventTag.atTime(5, 30).atZone(zone).toInstant().toEpochMilli()
         val wecker = AlarmInfo(
             id = 5, shiftId = "early", shiftName = "Frueh", triggerTime = weckzeit,
-            formattedTime = "05:30"
+            formattedTime = "05:30", eventId = "ev5"
         )
         val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(frueh))
 
@@ -296,12 +300,33 @@ class TagFreigabeSyncGateTest {
     }
 
     @Test
+    fun `scheduleSystemAlarm stellt einen MANUELLEN Wecker am freigegebenen Tag trotzdem`() = runTest {
+        // Der Nutzer hat frei - und will fuer diesen Tag einen eigenen Wecker stellen (Zahnarzt,
+        // Zug). Wuerde der Backstop ihn abweisen, waere der freigegebene Tag ein Tag, an dem sich
+        // ueberhaupt kein Wecker mehr stellen laesst.
+        val protokoll = mutableListOf<String>()
+        val weckzeit = eventTag.atTime(9, 30).atZone(zone).toInstant().toEpochMilli()
+        val manueller = AlarmInfo(
+            id = 6, shiftId = "manual_6", shiftName = "Zahnarzt", triggerTime = weckzeit,
+            formattedTime = "09:30"
+        )
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(frueh))
+
+        val ergebnis = sut(
+            RecordingAlarmRepository(listOf(manueller), protokoll),
+            managerMit(protokoll), config, setOf(eventTag)
+        ).scheduleSystemAlarm(manueller)
+
+        assertTrue(ergebnis.isSuccess)
+    }
+
+    @Test
     fun `scheduleSystemAlarm stellt einen Wecker an einem freien anderen Tag normal`() = runTest {
         val protokoll = mutableListOf<String>()
         val weckzeit = eventTag.atTime(5, 30).atZone(zone).toInstant().toEpochMilli()
         val wecker = AlarmInfo(
             id = 5, shiftId = "early", shiftName = "Frueh", triggerTime = weckzeit,
-            formattedTime = "05:30"
+            formattedTime = "05:30", eventId = "ev5"
         )
         val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(frueh))
 

@@ -38,10 +38,21 @@ class TagFreigabeUseCaseTest {
     private val zone: ZoneId = ZoneId.of("Europe/Berlin")
     private val tag: LocalDate = LocalDate.of(2026, 8, 24)
 
+    /** Ein KALENDER-Wecker: `eventId` gesetzt. Nur solche gehoeren zum Dienst. */
     private fun weckerAm(id: Int, datum: LocalDate, stunde: Int = 5): AlarmInfo = AlarmInfo(
         id = id,
         shiftId = "shift$id",
         shiftName = "Schicht$id",
+        triggerTime = datum.atTime(stunde, 30).atZone(zone).toInstant().toEpochMilli(),
+        formattedTime = "%02d:30".format(stunde),
+        eventId = "ev$id"
+    )
+
+    /** Ein MANUELLER Wecker: leere `eventId`, wie ihn `AlarmViewModel.createManualAlarm` anlegt. */
+    private fun manuellerWeckerAm(id: Int, datum: LocalDate, stunde: Int = 9): AlarmInfo = AlarmInfo(
+        id = id,
+        shiftId = "manual_$id",
+        shiftName = "Zahnarzt",
         triggerTime = datum.atTime(stunde, 30).atZone(zone).toInstant().toEpochMilli(),
         formattedTime = "%02d:30".format(stunde)
     )
@@ -267,6 +278,32 @@ class TagFreigabeUseCaseTest {
         assertTrue(ergebnis.isSuccess)
         assertEquals(0, ergebnis.getOrThrow().geloeschteWecker)
         assertEquals(setOf(tag.plusDays(10)), tage)
+    }
+
+    @Test
+    fun `Ein MANUELLER Wecker des Tages bleibt stehen`() = runTest {
+        // Eine Freigabe streicht den DIENST, nicht die eigenen Wecker des Nutzers. Und sie waere
+        // hier unumkehrbar: `zuruecknehmen()` baut ueber den Kalender wieder auf, in dem ein
+        // manueller Wecker nicht steht - `syncAlarms` schont ihn nur, es legt ihn nie neu an.
+        val protokoll_vorher = protokoll.size
+        val manueller = manuellerWeckerAm(99, tag)
+        val repo = FakeAlarmRepository(listOf(weckerAm(1, tag), manueller))
+
+        val ergebnis = sut(repo, storeMit(mutableSetOf()), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
+            .freigeben(tag, zone)
+
+        assertEquals(1, ergebnis.getOrThrow().geloeschteWecker)
+        assertEquals(listOf(99), repo.current.map { it.id })
+        assertFalse(
+            "Der manuelle Wecker darf nicht einmal gecancelt werden (Protokoll: $protokoll)",
+            protokoll.drop(protokoll_vorher).contains("cancel:99")
+        )
+    }
+
+    @Test
+    fun `gehoertZuTag nimmt manuelle Wecker aus`() {
+        assertFalse(TagFreigabeUseCase.gehoertZuTag(manuellerWeckerAm(99, tag), tag, zone))
+        assertTrue(TagFreigabeUseCase.gehoertZuTag(weckerAm(1, tag), tag, zone))
     }
 
     @Test

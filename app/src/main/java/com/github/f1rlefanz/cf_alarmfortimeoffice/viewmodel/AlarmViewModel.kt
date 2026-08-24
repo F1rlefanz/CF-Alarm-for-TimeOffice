@@ -463,8 +463,42 @@ class AlarmViewModel @Inject constructor(
      */
     private fun observeFreieTage() {
         viewModelScope.launch {
-            tagFreigabeUseCase.freieTage.collect { tage ->
-                _tagFreigabeState.update { it.copy(freieTage = tage.sorted()) }
+            var versuch = 0
+            while (true) {
+                try {
+                    tagFreigabeUseCase.freieTage.collect { tage ->
+                        _tagFreigabeState.update { it.copy(freieTage = tage.sorted()) }
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM, "Freigegebene Tage: Beobachtung fehlgeschlagen", e)
+                }
+
+                // WIEDERAUFNAHME STATT ENDGUELTIGEM AUS - dieselbe Antwort wie bei
+                // [observeSkipStatus], und hier aus einem noch haerteren Grund: der `.catch` im
+                // FreieTageStore emittiert EINMAL und beendet den Flow danach. Bliebe es dabei,
+                // fror die Liste der freigegebenen Tage fuer die Restlaufzeit auf dem letzten
+                // (im Fehlerfall leeren) Stand ein - und weil der ganze Abschnitt daran haengt,
+                // waere mit ihm der einzige Weg zurueck verschwunden, waehrend die Freigabe
+                // ueber `freieTageNow()` weiterhin jeden Wecker dieses Tages unterdrueckt.
+                // Genau die Kombination, die "ein Zustand, der den Alarm-Sync anhaelt, muss
+                // sichtbar sein" verbietet.
+                if (versuch >= SKIP_OBSERVE_RESUBSCRIBE_ATTEMPTS) {
+                    Logger.e(
+                        LogTags.ALARM,
+                        "❌ Freigegebene Tage: Beobachtung endgueltig beendet - die Liste bleibt stehen"
+                    )
+                    break
+                }
+                versuch++
+                Logger.w(
+                    LogTags.ALARM,
+                    "⚠️ Freigegebene Tage: Beobachtung endete - neuer Anlauf " +
+                        "$versuch/$SKIP_OBSERVE_RESUBSCRIBE_ATTEMPTS in " +
+                        "${SKIP_OBSERVE_RESUBSCRIBE_DELAY_MS / 1000}s"
+                )
+                delay(SKIP_OBSERVE_RESUBSCRIBE_DELAY_MS)
             }
         }
     }
@@ -578,18 +612,34 @@ class AlarmViewModel @Inject constructor(
             return "Der Tag konnte nicht freigegeben werden und ließ sich nicht sauber zurücknehmen. Bitte im Wecker-Tab prüfen, ob die Wecker dieses Tages noch stehen."
         }
 
-        val bestand = alarmUseCase.getAllAlarms().getOrNull().orEmpty()
-        val wieder = fehler.alarmIds.mapNotNull { id -> bestand.find { it.id == id } }
-        val misslungen = wieder.count { alarmUseCase.scheduleSystemAlarm(it).isFailure }
+        // EIN FEHLENDER EINTRAG IST EIN MISSLUNGENER, KEIN UEBERGANGENER. `alarmIds` traegt ALLE
+        // Wecker des Tages, auch die, die vor dem Fehlschlag bereits erfolgreich geloescht wurden -
+        // deren Systemalarme sind gecancelt und ihre Eintraege weg. Wer sie per `mapNotNull` still
+        // aus der Bilanz fallen laesst, meldet "klingeln wie geplant" fuer Wecker, die es nicht
+        // mehr gibt: gecancelt, aus Bestand und Direct-Boot-Spiegel entfernt, und die Anzeige
+        // verspricht Ruhe. Dieselbe Falle faengt `stelleNachAbgebrochenemSkipWiederHer()` mit
+        // seinem `if (alarm == null)`-Zweig ab. Ein Lesefehler des Bestands zaehlt aus demselben
+        // Grund als Fehlschlag und nicht als "nichts zu tun".
+        val bestandGelesen = alarmUseCase.getAllAlarms()
+        val bestand = bestandGelesen.getOrNull().orEmpty()
+        var misslungen = if (bestandGelesen.isFailure) fehler.alarmIds.size else 0
+        if (bestandGelesen.isSuccess) {
+            for (id in fehler.alarmIds) {
+                val alarm = bestand.find { it.id == id }
+                if (alarm == null || alarmUseCase.scheduleSystemAlarm(alarm).isFailure) {
+                    misslungen++
+                }
+            }
+        }
         return if (misslungen == 0) {
             Logger.business(LogTags.ALARM, "✅ Abgebrochene Freigabe zurueckgenommen - Wecker wieder armiert")
             "Der Tag konnte nicht freigegeben werden. Die Wecker dieses Tages klingeln wie geplant."
         } else {
             Logger.e(
                 LogTags.ALARM,
-                "❌ Abgebrochene Freigabe: $misslungen Wecker konnten nicht wieder armiert werden"
+                "❌ Abgebrochene Freigabe: $misslungen Wecker konnten nicht wieder gestellt werden"
             )
-            "Der Tag konnte nicht freigegeben werden, und $misslungen Wecker ließen sich nicht wieder stellen – bitte im Wecker-Tab prüfen."
+            "Der Tag konnte nicht freigegeben werden, und $misslungen Wecker dieses Tages stehen jetzt nicht mehr – bitte im Wecker-Tab prüfen und gegebenenfalls neu stellen."
         }
     }
 

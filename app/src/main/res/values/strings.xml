@@ -85,6 +85,9 @@
     <string name="dimmer_end_clock">Feste Uhrzeit</string>
     <string name="dimmer_end_alarm">Zur Weckzeit</string>
     <string name="dimmer_anchor_shiftend">Schichtende</string>
+    <string name="dimmer_rules_master_off_title">Der Dimmer ist ausgeschaltet</string>
+    <string name="dimmer_rules_master_off_body">Regeln hier wirken erst, wenn der Hauptschalter an ist — auch neu angelegte.</string>
+    <string name="dimmer_rules_master_off_action">Dimmen einschalten</string>
     <string name="dimmer_end_alarm_sonst_clock">Weckzeit, spätestens</string>
     <string name="dimmer_end_alarm_sonst_clock_hinweis">Endet an deiner Weckzeit — liegt in diesem Fenster keine, endet es zur eingestellten Uhrzeit.</string>
     <string name="dimmer_start_offset">Minuten zur Weckzeit (−60 = eine Stunde davor)</string>

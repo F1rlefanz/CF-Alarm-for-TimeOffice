@@ -1,0 +1,29 @@
+# Zeilenenden verbindlich festlegen - unabhaengig von core.autocrlf der jeweiligen Maschine.
+#
+# Warum das noetig ist: an diesem Repo arbeiten Windows-Sessions (core.autocrlf=true) und
+# Cloud-Sessions auf Linux (autocrlf=false) parallel. Ohne diese Datei entscheidet die lokale
+# Git-Konfiguration ueber die Normalisierung - dieselbe Datei kann je nach Maschine mit
+# unterschiedlichen Zeilenenden im Index landen und einen Diff erzeugen, der nur aus
+# Zeilenenden besteht.
+#
+# Beim Anlegen (24.08.2026) mit `git add --renormalize` nachgeprueft: von 476 getrackten Dateien
+# aendert sich genau EINE, `gradlew.bat`. Die lag als einzige mit CRLF im Index; Git legt sie jetzt
+# wie alle anderen mit LF ab und checkt sie wegen `eol=crlf` unveraendert als CRLF aus. Auf der
+# Platte bleibt sie damit exakt, wie sie war - der Diff betrifft nur die Ablage im Index.
+
+# Standard: Git normalisiert Textdateien im Index auf LF und checkt sie plattformueblich aus.
+* text=auto
+
+# Skripte, deren Zeilenenden funktional sind - nicht der Plattform ueberlassen.
+gradlew        text eol=lf
+*.sh           text eol=lf
+gradlew.bat    text eol=crlf
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+
+# Binaerdateien: nie anfassen, nie als Text diffen.
+*.jar          binary
+*.keystore     binary
+*.png          binary
+*.webp         binary
+*.ttf          binary

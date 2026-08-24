@@ -2,6 +2,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -30,6 +32,12 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
+ * DIESE REGRESSION GEHOERTE URSPRUENGLICH ZU `DimmerViewModel.previewDim()`. Mit dem
+ * Ein-Modell-Umbau ist die 5-Sekunden-Vorschau aus dem Dimmer-Reiter verschwunden und der Code
+ * dazu entfallen — die LEHRE aber nicht: `DimmerRulesViewModel.previewRule()` ist der Zwilling
+ * mit derselben Konstruktion und derselben Falle. Der Test wurde deshalb umgezogen statt
+ * geloescht.
+ *
  * Haelt fest, dass die Dimm-VORSCHAU immer hinter sich aufraeumt - auch dann, wenn der Nutzer
  * waehrend der 5 Sekunden die App verlaesst.
  *
@@ -46,7 +54,7 @@ import java.util.concurrent.TimeUnit
  * Bildschirms.
  */
 @OptIn(ExperimentalCoroutinesApi::class) // Dispatchers.setMain/resetMain
-class DimmerViewModelPreviewCleanupTest {
+class DimmerRulesViewModelPreviewCleanupTest {
 
     private val dispatcher = StandardTestDispatcher()
 
@@ -71,7 +79,7 @@ class DimmerViewModelPreviewCleanupTest {
         whenever(prefs.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = false)))
         whenever(prefs.strength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
         whenever(prefs.warmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
-        // PFLICHT, nicht Kuer: previewDim() liest die beiden Werte als SUSPEND-Funktionen
+        // PFLICHT, nicht Kuer: die Vorschau liest Werte als SUSPEND-Funktionen
         // (`setPreviewOverlay(prefs.strengthNow(), prefs.warmthNow(), …)`) - nicht ueber die
         // gleichnamigen Flows darueber. Unstubbed liefert Mockito fuer eine suspend-Funktion
         // `null`, was beim Entpacken nach `Int` eine NPE wirft; die faengt seit dem Fix der
@@ -85,10 +93,15 @@ class DimmerViewModelPreviewCleanupTest {
         return prefs
     }
 
-    private fun buildViewModel(prefs: DimOverlayPrefs, dimSchedule: DimScheduleUseCase): DimmerViewModel {
+    private fun buildViewModel(prefs: DimOverlayPrefs, dimSchedule: DimScheduleUseCase): DimmerRulesViewModel {
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
-        return DimmerViewModel(prefs, dimSchedule, { mock<DndScheduleUseCase>() }, shiftUseCase)
+        val ruleUseCase = mock<DimRuleUseCase>()
+        whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList()))
+        return DimmerRulesViewModel(
+            ruleUseCase, shiftUseCase, dimSchedule, { mock<DndScheduleUseCase>() },
+            prefs, mock<ShiftSpanStore>()
+        )
     }
 
     /** Der eigentliche Fehlerfall: App waehrend der Vorschau verlassen. */
@@ -110,7 +123,7 @@ class DimmerViewModelPreviewCleanupTest {
         dimSchedule.stub { on { applyCurrentState() } doAnswer { cleanedUp.countDown() } }
 
         val viewModel = buildViewModel(prefs, dimSchedule)
-        viewModel.previewDim(seconds = 1)
+        viewModel.previewRule(strength = 55, warmth = 40, seconds = 1)
 
         assertTrue(
             "Die Vorschau muss das Overlay ueberhaupt erst eingeschaltet haben",
@@ -149,12 +162,12 @@ class DimmerViewModelPreviewCleanupTest {
 
         val viewModel = buildViewModel(prefs, dimSchedule)
 
-        viewModel.previewDim(seconds = 30) // laeuft noch, wenn der zweite Tipp kommt
+        viewModel.previewRule(strength = 55, warmth = 40, seconds = 30) // laeuft noch, wenn der zweite Tipp kommt
         assertTrue(
             "Erste Vorschau muss eingeschaltet haben, bevor der zweite Tipp sie abloest",
             firstOverlayOn.await(10, TimeUnit.SECONDS)
         )
-        viewModel.previewDim(seconds = 0)
+        viewModel.previewRule(strength = 55, warmth = 40, seconds = 0)
 
         assertTrue(
             "Beide Vorschauen muessen aufgeraeumt haben",

@@ -5,21 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -27,11 +18,17 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * ViewModel des Dimmer-Tabs. EIN Schalter, EINE Fenster-Quelle (die Schicht-Regeln), dazu die
- * Verdunkelung/Wärme als Renderzustand-Fallback und Vorgabe für neue Regeln. Jede Änderung stößt
- * [DimScheduleUseCase.enable] an (das den rollenden Alarm self-cleaning neu plant bzw.
- * abbestellt) — und jede Änderung, die FENSTERGRENZEN verschiebt, zusätzlich
- * [DndScheduleUseCase.enable]; siehe [armiereFensterkettenNeu].
+ * ViewModel des Dimmer-Tabs — und der ist seit dem Ein-Modell-Umbau sehr klein: EIN Schalter,
+ * sonst nichts. Alles Weitere läuft über die Regeln und damit über `DimmerRulesViewModel`.
+ *
+ * Der Schalter verschiebt FENSTERGRENZEN (aus ist aus), deshalb zieht er beide Zeitketten nach —
+ * Dimmer und DND; siehe [armiereFensterkettenNeu].
+ *
+ * WAS HIER BEWUSST NICHT MEHR STEHT: Verdunkelung/Wärme-Setter, die Namen der Schichtdefinitionen
+ * und die 5-Sekunden-Vorschau. Sie stammten aus der alten Drei-Karten-Oberfläche; seit die weg ist,
+ * hatten sie keinen Aufrufer mehr. Die Vorschau lebt weiter in
+ * [DimmerRulesViewModel.previewRule] — mit derselben Konstruktion und derselben Lehre
+ * (eigener Scope, `NonCancellable` im `finally`, persistierter Ablaufzeitpunkt).
  */
 @HiltViewModel
 class DimmerViewModel @Inject constructor(
@@ -39,28 +36,15 @@ class DimmerViewModel @Inject constructor(
     private val dimSchedule: DimScheduleUseCase,
     // Lazy wie in ShiftViewModel: DND haengt am Dimmer, nicht umgekehrt - die Injektion ist
     // zyklusfrei, aber der Graph soll sie erst bauen, wenn wirklich nacharmiert wird.
-    private val dndSchedule: dagger.Lazy<DndScheduleUseCase>,
-    private val shiftUseCase: IShiftUseCase
+    private val dndSchedule: dagger.Lazy<DndScheduleUseCase>
 ) : ViewModel() {
 
-    data class DimmerUiState(
-        val dimEnabled: Boolean = false,
-        val strength: Int = DimOverlayPrefs.DEFAULT_STRENGTH,
-        val warmth: Int = DimOverlayPrefs.DEFAULT_WARMTH
-    )
+    data class DimmerUiState(val dimEnabled: Boolean = false)
 
     val uiState: StateFlow<DimmerUiState> =
-        combine(prefs.toggles, prefs.strength, prefs.warmth) { toggles, strength, warmth ->
-            DimmerUiState(dimEnabled = toggles.dimEnabled, strength = strength, warmth = warmth)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DimmerUiState())
-
-    /** Namen der erkannten Schicht-Definitionen fuer die Oberflaeche. Reaktiv statt
-     * Einmal-Snapshot - eine Schicht-Umbenennung/-Neuanlage ohne App-Neustart muss sofort
-     * sichtbar werden. */
-    val shiftNames: StateFlow<List<String>> =
-        shiftUseCase.shiftConfig
-            .map { config -> config.definitions.map { it.name } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        prefs.toggles
+            .map { DimmerUiState(dimEnabled = it.dimEnabled) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DimmerUiState())
 
     /**
      * Armiert BEIDE Zeitketten neu - Dimmer, dann DND. Fuer jeden Setter, der FENSTERGRENZEN
@@ -85,7 +69,8 @@ class DimmerViewModel @Inject constructor(
      * [NonCancellable], weil das hier einen Zustand HERSTELLT: die Setter haengen am
      * [viewModelScope], und genau der stirbt, wenn der Nutzer die App direkt nach dem Toggle
      * verlaesst - der Prefs-Wert waere geschrieben, die Ketten haengen hinterher. Dieselbe Falle
-     * wie bei der frueheren Entprellung (siehe Kommentar bei [setStrength]). Beide Aufrufe einzeln
+     * wie bei der frueheren, entfernten Slider-Entprellung (Hergang im Skill
+     * `cfalarm-dimmer-und-dnd`). Beide Aufrufe einzeln
      * gefangen: ein Fehlschlag der einen Kette darf die andere nicht mitreissen, und beide haben
      * ihren eigenen Master-Pause-Backstop.
      */
@@ -100,108 +85,5 @@ class DimmerViewModel @Inject constructor(
     fun setDimEnabled(enabled: Boolean) = viewModelScope.launch {
         prefs.setDimEnabled(enabled)
         armiereFensterkettenNeu()
-    }
-
-    // Verdunkelung/Waerme aendern keine FENSTERGRENZEN - deshalb rufen die folgenden zwei Setter
-    // bewusst `dimSchedule.enable()` und NICHT [armiereFensterkettenNeu]: „Nicht stoeren" kennt nur
-    // die Fenster einer Zeitleiste, nicht ihre Farbe. Ein DND-`enable()` waere hier eine komplette
-    // zusaetzliche Fensterberechnung ohne jede Wirkung - dieselbe Begruendung wie umgekehrt in
-    // `ShiftViewModel` fuer die reinen DND-Namenslisten.
-    //
-    // Sehr wohl aendern sie die Darstellung des gerade
-    // laufenden Fensters, und die faerbt der Dienst NICHT von allein reaktiv nach: er beobachtet
-    // ausschliesslich DimOverlayPrefs.renderState, und das liest KEY_RENDER_STRENGTH/-WARMTH mit den
-    // globalen Slidern nur als FALLBACK. Die Render-Keys schreiben einzig setActiveOverlay() und
-    // setPreviewOverlay(), also nur applyCurrentState()/die Vorschau - nach dem ersten Lauf greift der Fallback
-    // nie mehr. Ohne enable() blieb ein mitten in der Nacht verstellter Regler bis zur naechsten
-    // Fenstergrenze (typischerweise das Fenster-ENDE am Morgen) wirkungslos - dieselbe Falle wie
-    // beim Korrektur-Notification-Toggle (v1.22.1). Siehe Invariante in CLAUDE.md:
-    // "Jeder Setter, der einen DimOverlayPrefs-Wert schreibt, MUSS direkt danach enable() rufen".
-    //
-    // Das enable() laeuft hier bewusst UNENTPRELLT, genau wie bei allen anderen Settern dieser
-    // Klasse: `DimmerTabContent.CommitOnReleaseSlider` meldet den Wert erst beim LOSLASSEN nach oben
-    // (`onValueChangeFinished`), also genau EINMAL pro Reglerbewegung - der frueher befuerchtete
-    // Frame-Sturm entsteht strukturell nicht mehr. Eine zusaetzliche Entprellung hier hatte deshalb
-    // keinen Nutzen mehr, riss aber ein Loch in die Invariante: der Entprellungs-Job hing am
-    // viewModelScope und starb beim Verlassen der App vor seinem delay() - der Prefs-Wert war
-    // geschrieben, das laufende Overlay behielt bis zur naechsten Fenstergrenze die alte
-    // Verdunkelung. Wer die Entprellung wieder einbaut, muss sie ausserhalb des viewModelScope
-    // aufhaengen - besser: es beim commit-on-release der UI belassen.
-    fun setStrength(value: Int) = viewModelScope.launch {
-        prefs.setStrength(value)
-        dimSchedule.enable()
-    }
-
-    fun setWarmth(value: Int) = viewModelScope.launch {
-        prefs.setWarmth(value)
-        dimSchedule.enable()
-    }
-
-    /**
-     * Scope fuer das Aufraeumen der Vorschau - bewusst GETRENNT vom [viewModelScope], Vorbild
-     * `HueLightUseCase.followUpScope` ("Der Abbruch-Timer und das Vorschau-Auto-Aus haengen an
-     * followUpScope, nicht am Aufrufer").
-     *
-     * Der [CoroutineExceptionHandler] ist Pflicht und nicht durch den [SupervisorJob] gedeckt: der
-     * isoliert nur Geschwister-Jobs, eine ungefangene Exception laeuft trotzdem zum
-     * Thread-Default-Handler und beendet den PROZESS - denselben Prozess, der die Wecker haelt.
-     * Eine gescheiterte Dimm-Vorschau darf das nie.
-     */
-    private val previewScope = CoroutineScope(
-        Dispatchers.IO + SupervisorJob() + CoroutineExceptionHandler { _, e ->
-            Logger.w(LogTags.DIMMER, "Dimmer-Vorschau: Aufraeumen fehlgeschlagen", e)
-        }
-    )
-
-    /** Laufende Vorschau, damit ein zweiter Tipp die erste sauber abloest (siehe [previewDim]). */
-    private var previewJob: Job? = null
-
-    /**
-     * Zeigt das Overlay kurz mit den aktuellen Werten – zum Ausprobieren OHNE Schicht/Alarm.
-     * Der Bedienungshilfen-Dienst muss aktiv sein. Danach regulären Zustand wiederherstellen.
-     *
-     * Laeuft bewusst NICHT im [viewModelScope]: `setPreviewOverlay(…)` schreibt einen
-     * PERSISTENTEN Zustand, den `DimAccessibilityService` beobachtet - und der Dienst hat eine vom
-     * ViewModel voellig unabhaengige Lebensdauer. Hing das Zuruecksetzen am viewModelScope, dann
-     * genuegte es, die App waehrend der 5 Sekunden zu verlassen (zweimal Zurueck / aus den Recents
-     * wischen): `onCleared()` cancelte das `delay()`, `applyCurrentState()` lief NIE, und der
-     * Bildschirm blieb systemweit bis zu 85 % verdunkelt. Geheilt haette das erst der naechste
-     * Dimm-Tick - und wenn der Dimmer aus ist (der typische Zustand von jemandem, der die
-     * Vorschau zum Ausprobieren nutzt, BEVOR er etwas einschaltet), kommt dieser Tick unter
-     * Umstaenden gar nicht.
-     *
-     * Deshalb drei Dinge: eigener [previewScope], das Zuruecksetzen im `finally` (greift auch bei
-     * Exception oder Cancellation) und dort `NonCancellable` - dieselbe Ueberlegung wie bei
-     * `MasterPauseUseCase.pause()/resume()`: hier wird ein Zustand HERGESTELLT, nicht nur ein
-     * Schalter umgelegt. Ein zweiter Tipp laesst zuerst das Aufraeumen der laufenden Vorschau zu
-     * Ende laufen (`cancelAndJoin`), sonst schaltete deren `finally` die gerade neu eingeschaltete
-     * Vorschau sofort wieder aus.
-     *
-     * Diese drei decken aber nur Coroutine-CANCELLATION ab. Stirbt der PROZESS im Vorschau-Fenster
-     * (Absturz, "Beenden erzwingen", App-Update), laeuft kein `finally` - und Android bindet den
-     * `DimAccessibilityService` danach neu, der den persistierten `overlayOn = true` vorfindet und
-     * sofort wieder verdunkelt. Deshalb geht der Ablaufzeitpunkt ueber
-     * [DimOverlayPrefs.setPreviewOverlay] MIT auf die Platte: jeder spaetere Leser setzt das Ende
-     * der Vorschau von allein durch, auch wenn hier nie wieder etwas laeuft.
-     */
-    fun previewDim(seconds: Int = 5): Job {
-        val running = previewJob
-        val job = previewScope.launch {
-            running?.cancelAndJoin()
-            val durationMs = seconds * 1000L
-            try {
-                // Vorschau zeigt die GLOBALEN Darstellungswerte (die Slider, die der Nutzer gerade sieht).
-                prefs.setPreviewOverlay(
-                    prefs.strengthNow(),
-                    prefs.warmthNow(),
-                    System.currentTimeMillis() + durationMs + DimOverlayPrefs.PREVIEW_EXPIRY_GRACE_MS
-                )
-                delay(durationMs)
-            } finally {
-                withContext(NonCancellable) { dimSchedule.applyCurrentState() }
-            }
-        }
-        previewJob = job
-        return job
     }
 }

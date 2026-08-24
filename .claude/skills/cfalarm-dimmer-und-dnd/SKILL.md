@@ -89,8 +89,10 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** — je ein eigener
   `previewScope` mit `CoroutineExceptionHandler`, Reset im `finally` unter `NonCancellable`, und ein
   zweiter Tipp räumt die laufende Vorschau per `cancelAndJoin()` ZUERST auf. Diese Scopes werden
-  bewusst **nicht** in `onCleared()` gecancelt — genau das wäre der Bug. Betrifft `previewDim()`
-  **und** `previewRule()`.
+  bewusst **nicht** in `onCleared()` gecancelt — genau das wäre der Bug. Betrifft heute nur noch
+  `previewRule()`: die 5-Sekunden-Vorschau des Dimmer-Reiters (`previewDim()`) ist mit dem
+  Ein-Modell-Umbau entfallen, der zugehörige Regressionstest zog auf `previewRule()` um statt
+  gelöscht zu werden.
 - **Der Korrektur-Override lebt im DataStore**, mit `windowEnd` UND `windowStrength` als
   Fenster-Identität (reine `windowEnd`-Identität reicht nicht). Kein neuer Timer — der rollende Tick
   macht ihn stale.

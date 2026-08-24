@@ -218,6 +218,30 @@ class DimmerRulesViewModel @Inject constructor(
     }
 
     /**
+     * Die bereits vorhandene, aktive Regel, wegen der eine Schnellstart-Vorlage NICHT angelegt
+     * wurde - Kennung und Roh-Name (die Beschriftung dazu ist ein Nutzertext und gehoert in den
+     * Bildschirm).
+     */
+    data class SchnellstartBlockiert(val regelId: String, val regelName: String)
+
+    private val _schnellstartBlockiert = MutableStateFlow<SchnellstartBlockiert?>(null)
+
+    /**
+     * Gesetzt, wenn ein Schnellstart-Knopf nichts angelegt hat, weil auf demselben Muster schon
+     * eine aktive Regel liegt. `null` = kein Hinweis offen.
+     *
+     * WARUM ES DAS SIGNAL GEBEN MUSS: Ohne es waere der Knopf schlicht wirkungslos - der Nutzer
+     * tippt, und nichts geschieht. Ein stiller Abbruch ist an dieser Stelle dieselbe Fehlerklasse
+     * wie die tote zweite Regel, gegen die er gebaut ist.
+     */
+    val schnellstartBlockiert: StateFlow<SchnellstartBlockiert?> = _schnellstartBlockiert.asStateFlow()
+
+    /** Vom Bildschirm zu rufen, sobald er den Hinweis gezeigt hat. */
+    fun schnellstartHinweisGesehen() {
+        _schnellstartBlockiert.value = null
+    }
+
+    /**
      * Legt die Regel zur Vorlage an und armiert danach BEIDE Zeitketten - ueber denselben Weg wie
      * [saveRule] und bewusst nicht daran vorbei: eine neue Regel verschiebt Dimm-Fenster, und
      * "Nicht stoeren" im Modus "folgt dem Dimmer" hat keine andere Fensterquelle.
@@ -242,6 +266,20 @@ class DimmerRulesViewModel @Inject constructor(
             )
             return@launch
         }
+
+        // KEINE ZWEITE AKTIVE REGEL AUF DEMSELBEN MUSTER. Siehe [vorhandeneRegelFuerVorlage]:
+        // sie waere tot, stuende aber als aktiv in der Liste, und ihr Editor ginge sofort auf.
+        val vorhanden = vorhandeneRegelFuerVorlage(vorlage, schichtName, dimRuleUseCase.getAllRules())
+        if (vorhanden != null) {
+            Logger.w(
+                LogTags.DIMMER,
+                "⚠️ Schnellstart '$vorlage' abgebrochen - auf diesem Muster liegt bereits die " +
+                    "aktive Regel ${vorhanden.id}; eine zweite waere wirkungslos"
+            )
+            _schnellstartBlockiert.value = SchnellstartBlockiert(vorhanden.id, vorhanden.name)
+            return@launch
+        }
+
         dimRuleUseCase.saveRule(regel)
         zuletztAngelegteRegel = regel
         armiereFensterkettenNeu()
@@ -328,6 +366,40 @@ class DimmerRulesViewModel @Inject constructor(
     }
 
     companion object {
+        /**
+         * Die bereits vorhandene, AKTIVE Regel auf demselben Muster - oder `null`, wenn die
+         * Vorlage angelegt werden darf.
+         *
+         * WARUM DIESE PRUEFUNG NOETIG IST: `DimRuleUseCase.findRuleForShift` und
+         * `findRuleForFreeDay` nehmen den ERSTEN Treffer. Eine zweite aktivierte Regel auf
+         * demselben `shiftPattern` wird also NIE gefragt - sie ist tot, steht aber unveraendert
+         * als aktiv in der Regelliste, und der Schnellstart oeffnet direkt danach ihren Editor.
+         * Der Nutzer stellt dort Zeiten und Verdunkelung ein, und nichts davon wirkt je. Der
+         * Konflikt-Hinweis der Regelliste (`verdraengteRegeln`) faengt das NICHT ab: der entsteht
+         * aus VERSCHIEDENEN Regeln, die an EINEM Tag verschiedene Schichten treffen - zwei Regeln
+         * auf demselben Muster liefern fuer jede Schicht dieselbe (erste) Regel.
+         *
+         * Betroffen waeren zuerst die migrierten Nutzer: nach `DimmerModellMigration` liegt bei
+         * ihnen bereits eine aktive UNIVERSAL-Regel bzw. je ausgenommener Schicht eine
+         * Ausnahme-Regel.
+         *
+         * Der Vergleich ist genau der der Auswahl: nur AKTIVIERTE Regeln zaehlen (eine
+         * ausgeschaltete wird nicht gefragt, eine neue daneben ist also nicht tot), Schichtnamen
+         * gross-/kleinschreibungsblind, die Sondermuster exakt.
+         */
+        fun vorhandeneRegelFuerVorlage(
+            vorlage: SchnellstartVorlage,
+            schichtName: String?,
+            alle: List<DimRule>
+        ): DimRule? {
+            val muster = if (vorlage.brauchtSchicht) {
+                schichtName?.takeIf { it.isNotBlank() } ?: return null
+            } else {
+                DimRule.SHIFT_UNIVERSAL
+            }
+            return alle.firstOrNull { it.enabled && it.shiftPattern.equals(muster, ignoreCase = true) }
+        }
+
         /**
          * Baut die Regel einer Schnellstart-Vorlage - rein und ohne Seiteneffekt, damit die
          * Fenster-Anker pruefbar sind, ohne den Speicherweg nachzustellen.

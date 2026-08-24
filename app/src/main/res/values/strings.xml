@@ -63,6 +63,9 @@
     <string name="dimmer_quickstart_pick_shift">Für welche Schicht?</string>
     <string name="dimmer_quickstart_no_shifts">Noch keine Schichten erkannt. Lege zuerst unter „Schichten“ eine an – dann kannst du eine Regel darauf setzen.</string>
     <string name="dimmer_quickstart_cancel">Abbrechen</string>
+    <string name="dimmer_quickstart_exists_title">Dafür gibt es schon eine Regel</string>
+    <string name="dimmer_quickstart_exists_body">»%1$s« gilt bereits für dieselben Tage. Pro Tag wirkt nur eine Regel — eine zweite daneben würde nie greifen. Öffne stattdessen die vorhandene Regel und passe sie an.</string>
+    <string name="dimmer_quickstart_exists_open">Vorhandene Regel öffnen</string>
     <!-- Kein <plurals>: "Fenster" lautet im Deutschen in Singular UND Plural gleich - eine
          Pluralform waere ein kuenstlicher, wortgleicher Zweig ohne Nutzen. -->
     <string name="dimmer_rule_subtitle" tools:ignore="PluralsCandidate">%1$s · %2$d Fenster</string>

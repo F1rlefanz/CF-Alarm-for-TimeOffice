@@ -28,6 +28,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -71,7 +72,11 @@ class DimmerSchnellstartTest {
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
 
-        val ruleUseCase = mock<DimRuleUseCase>()
+        // Der Regelbestand ist im Normalfall leer - die Vorlagen-Pruefung "liegt hier schon eine
+        // aktive Regel auf demselben Muster?" darf dann nichts finden. Ein UNGESTUBBTER
+        // suspend-Aufruf liefert bei Mockito `null` (Rueckgabetyp ist im Bytecode Object) und
+        // wuerde die Coroutine still sterben lassen - deshalb ausdruecklich die leere Liste.
+        val ruleUseCase = mock<DimRuleUseCase> { onBlocking { getAllRules() } doReturn emptyList() }
         // Der Fluss bleibt bewusst leer: er bildet den echten DataStore nach, der die frisch
         // geschriebene Regel erst spaeter emittiert. Genau diese Luecke muss `ruleById`
         // ueberbruecken - sonst oeffnet der Editor leer.
@@ -211,6 +216,116 @@ class DimmerSchnellstartTest {
         verify(f.ruleUseCase, never()).saveRule(any())
         verify(f.dimSchedule, never()).enable()
         assertNull(f.vm.neueRegelId.value)
+    }
+
+    // --- Keine zweite Regel auf demselben Muster ----------------------------------------------
+
+    /**
+     * `DimRuleUseCase.findRuleForShift`/`findRuleForFreeDay` nehmen den ERSTEN Treffer - eine
+     * zweite aktivierte Regel auf demselben Muster ist TOT. Sie stuende trotzdem als aktiv in der
+     * Liste, und ihr Editor ginge sofort auf: der Nutzer stellt Zeiten und Verdunkelung ein, und
+     * nichts davon wirkt je. Genau die Fehlerklasse "angezeigt, wirkt nicht".
+     *
+     * Getroffen haette es zuerst die MIGRIERTEN Nutzer: sie haben nach der Modellmigration bereits
+     * eine aktive UNIVERSAL-Regel ("Nachtruhe (uebernommen)"), und der Schnellstart sitzt prominent
+     * oben in der Regelliste. Der Konflikt-Hinweis der Regelliste faengt das nicht ab - der
+     * entsteht nur aus VERSCHIEDENEN Regeln an einem Tag.
+     */
+    @Test
+    fun `Schnellstart legt keine zweite aktive Regel auf demselben Muster an`() =
+        runTest(dispatcher) {
+            val f = buildFixture()
+            val vorhanden = DimRule(
+                id = "dimrule_migriert_universal",
+                name = "Nachtruhe (uebernommen)",
+                shiftPattern = DimRule.SHIFT_UNIVERSAL
+            )
+            whenever(f.ruleUseCase.getAllRules()).thenReturn(listOf(vorhanden))
+
+            f.vm.legeVorlageAn(SchnellstartVorlage.NACHT_DIMMEN, "Nacht-Dimmen")
+            advanceUntilIdle()
+
+            verify(f.ruleUseCase, never()).saveRule(any())
+            verify(f.dimSchedule, never()).enable()
+            assertNull("Der Editor einer toten Regel darf nicht aufgehen", f.vm.neueRegelId.value)
+
+            val hinweis = f.vm.schnellstartBlockiert.value
+            assertNotNull("Ohne Hinweis waere der Knopf einfach wirkungslos", hinweis)
+            assertEquals(vorhanden.id, hinweis!!.regelId)
+            assertEquals(vorhanden.name, hinweis.regelName)
+        }
+
+    /** Dasselbe fuer eine schichtbezogene Vorlage - der Vergleich ist wie beim Suchen gross-/kleinblind. */
+    @Test
+    fun `Schicht ausnehmen erkennt eine vorhandene Regel derselben Schicht`() = runTest(dispatcher) {
+        val f = buildFixture()
+        whenever(f.ruleUseCase.getAllRules())
+            .thenReturn(listOf(DimRule(id = "r1", name = "ND-Rhythmus", shiftPattern = "nd")))
+
+        f.vm.legeVorlageAn(SchnellstartVorlage.SCHICHT_AUSNEHMEN, "Ohne Dimmen: ND", "ND")
+        advanceUntilIdle()
+
+        verify(f.ruleUseCase, never()).saveRule(any())
+        assertEquals("r1", f.vm.schnellstartBlockiert.value?.regelId)
+    }
+
+    /**
+     * Eine AUSGESCHALTETE Regel blockiert nicht: die Auswahl sieht nur aktivierte Regeln, eine
+     * neue Regel daneben ist also nicht tot. Andernfalls waere der Schnellstart nach einer
+     * Migration, die den inerten Bestand deaktiviert hat, dauerhaft gesperrt.
+     */
+    @Test
+    fun `eine ausgeschaltete Regel auf demselben Muster blockiert den Schnellstart nicht`() =
+        runTest(dispatcher) {
+            val f = buildFixture()
+            whenever(f.ruleUseCase.getAllRules()).thenReturn(
+                listOf(
+                    DimRule(
+                        id = "aus1", name = "alt", shiftPattern = DimRule.SHIFT_UNIVERSAL,
+                        enabled = false
+                    )
+                )
+            )
+
+            f.vm.legeVorlageAn(SchnellstartVorlage.NACHT_DIMMEN, "Nacht-Dimmen")
+            advanceUntilIdle()
+
+            verify(f.ruleUseCase).saveRule(any())
+            assertNull(f.vm.schnellstartBlockiert.value)
+            assertNotNull(f.vm.neueRegelId.value)
+        }
+
+    /**
+     * Eine SPEZIFISCHE Regel blockiert die UNIVERSAL-Vorlage nicht - sie liegt auf einem anderen
+     * Muster, verdraengt UNIVERSAL nur an ihren eigenen Tagen und laesst alle uebrigen frei.
+     */
+    @Test
+    fun `eine Schicht-Regel blockiert die Universal-Vorlage nicht`() = runTest(dispatcher) {
+        val f = buildFixture()
+        whenever(f.ruleUseCase.getAllRules())
+            .thenReturn(listOf(DimRule(id = "r1", name = "ND", shiftPattern = "ND")))
+
+        f.vm.legeVorlageAn(SchnellstartVorlage.NACHT_DIMMEN, "Nacht-Dimmen")
+        advanceUntilIdle()
+
+        verify(f.ruleUseCase).saveRule(any())
+        assertNull(f.vm.schnellstartBlockiert.value)
+    }
+
+    /** Das Signal ist ein EREIGNIS - nach dem Abmelden darf der Hinweis nicht wiederkehren. */
+    @Test
+    fun `der Hinweis wird nach dem Anzeigen zurueckgesetzt`() = runTest(dispatcher) {
+        val f = buildFixture()
+        whenever(f.ruleUseCase.getAllRules())
+            .thenReturn(listOf(DimRule(id = "u1", name = "x", shiftPattern = DimRule.SHIFT_UNIVERSAL)))
+
+        f.vm.legeVorlageAn(SchnellstartVorlage.NACHT_DIMMEN, "Nacht-Dimmen")
+        advanceUntilIdle()
+        assertNotNull(f.vm.schnellstartBlockiert.value)
+
+        f.vm.schnellstartHinweisGesehen()
+
+        assertNull(f.vm.schnellstartBlockiert.value)
     }
 
     // --- Der Nutzer sieht, was entstanden ist --------------------------------------------------

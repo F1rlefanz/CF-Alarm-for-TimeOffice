@@ -235,6 +235,41 @@ fun DimmerSettingsScreen(
         }
     }
 
+    // Der Schnellstart legt KEINE zweite aktive Regel auf demselben Muster an - sie waere tot
+    // (die Auswahl nimmt den ersten Treffer). Ohne diesen Hinweis waere der Knopf aber schlicht
+    // wirkungslos, und "nichts passiert" ist keine bessere Auskunft als eine tote Regel. Deshalb
+    // benennt der Dialog die vorhandene Regel und bietet den einen Weg an, der wirklich hilft:
+    // sie zu oeffnen und dort zu aendern.
+    val blockiert by viewModel.schnellstartBlockiert.collectAsStateWithLifecycle()
+    blockiert?.let { info ->
+        val unbenannt = stringResource(R.string.dimmer_rule_unnamed)
+        AlertDialog(
+            onDismissRequest = { viewModel.schnellstartHinweisGesehen() },
+            title = { Text(stringResource(R.string.dimmer_quickstart_exists_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.dimmer_quickstart_exists_body,
+                        info.regelName.ifBlank { unbenannt }
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.schnellstartHinweisGesehen()
+                        onEditRule(info.regelId)
+                    }
+                ) { Text(stringResource(R.string.dimmer_quickstart_exists_open)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.schnellstartHinweisGesehen() }) {
+                    Text(stringResource(R.string.dimmer_quickstart_cancel))
+                }
+            }
+        )
+    }
+
     vorlageBrauchtSchicht?.let { vorlage ->
         SchichtAuswahlDialog(
             schichtNamen = schichtNamen,

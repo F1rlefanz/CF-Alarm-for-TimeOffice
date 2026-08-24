@@ -40,6 +40,16 @@ das baut man dieselbe Falle in neuer Form nach.
   `cfalarm-kalender-und-schichten`).
 - **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel". Nicht wegoptimieren.
 - **CLOCK↔CLOCK = lückenlos jede Kalendernacht**; ALARM/SHIFT_END brauchen eine **Schichtspanne**.
+- **`ALARM_SONST_CLOCK` ist ein reiner ENDE-Anker: „bis zur Weckzeit, spätestens um X".** Er sucht
+  die früheste Weckzeit ECHT nach dem Fensterstart und ECHT vor der Uhrzeit-Schranke — in der
+  gesamten Zeitleiste, nicht im Slot des Tages. Mit CLOCK-Start gilt er deshalb für JEDE
+  Kalendernacht und braucht keinen Wecker an diesem Datum. Leere Zeitleiste ⇒ Ende an der Uhrzeit
+  (fail-safe hell, nie endlos dunkel). Am START verhält er sich wie CLOCK.
+- **Die Weckzeit-Zeitleiste ist eine ZWEITE, flachere Sicht neben den Slots — sie ersetzt sie nicht.**
+  Slots beantworten „welche Regel gilt an diesem Tag" und brauchen den Schichtnamen; die Zeitleiste
+  nur „wann klingelt als nächstes etwas". Deshalb enthält sie zusätzlich MANUELLE Wecker (die keine
+  Schichtspanne haben und bewusst NICHT durch den Freie-Tage-Filter laufen) — sie in die Slots zu
+  legen würde dagegen die Regel-Auswahl FREI↔Schicht still kippen.
 - **Zeitrechnung: echte Wanduhrzeit + Datums-Arithmetik**, niemals „Mitternacht-Instant + Minuten"
   und niemals fixe 24h-Millis (DST-Tage haben 23/25 h).
 - **Die Fenster-Schleifen beginnen einen Kalendertag VOR `today`** (`LOOKBACK_DAYS`) — Achtung bei

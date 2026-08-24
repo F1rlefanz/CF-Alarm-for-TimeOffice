@@ -53,10 +53,20 @@ object DimWindowResolver {
      * (0 = unbekannt). Ein SHIFT_END-Anker an einem Alarm ohne bekanntes Schichtende liefert `null`.
      * Ergebnis `null` auch, wenn Ende ≤ Start (leeres/ungültiges Fenster).
      */
-    fun resolveShiftWindow(w: DimWindow, alarmEpoch: Long, shiftEndEpoch: Long, zone: ZoneId): LongRange? {
+    fun resolveShiftWindow(
+        w: DimWindow,
+        alarmEpoch: Long,
+        shiftEndEpoch: Long,
+        zone: ZoneId,
+        weckzeiten: List<Long> = emptyList()
+    ): LongRange? {
         val start = when (w.startAnchor) {
             DimAnchor.ALARM -> alarmEpoch + w.startOffsetMinutes * MIN_MS
-            DimAnchor.CLOCK -> clockAtOrBefore(alarmEpoch, w.startClockMinutes, zone)
+            // ALARM_SONST_CLOCK ist kein START-Anker (siehe DimAnchor-KDoc) - am Start verhaelt er
+            // sich wie CLOCK, statt das Fenster wegen eines unmoeglichen Falls verschwinden zu
+            // lassen. "Nicht dimmen" waere hier die schlechtere Degradation als "wie eingestellt".
+            DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK ->
+                clockAtOrBefore(alarmEpoch, w.startClockMinutes, zone)
             DimAnchor.SHIFT_END -> {
                 if (shiftEndEpoch == 0L) return null
                 shiftEndEpoch + w.startOffsetMinutes * MIN_MS
@@ -68,6 +78,8 @@ object DimWindowResolver {
                 if (shiftEndEpoch == 0L) return null
                 shiftEndEpoch + w.endOffsetMinutes * MIN_MS
             }
+            DimAnchor.ALARM_SONST_CLOCK ->
+                endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten)
             DimAnchor.CLOCK -> {
                 // Roll-forward ueber KALENDERTAGE, nicht ueber +24h-Millis: an einem
                 // DST-Umstellungstag ist ein Tag 23 h bzw. 25 h lang, ein fixer Millis-Sprung
@@ -84,16 +96,70 @@ object DimWindowResolver {
         return if (end > start) start..end else null
     }
 
-    /** Fenster eines freien Tags – nur CLOCK-Anker sinnvoll (kein Wecker/keine Schicht). */
-    fun resolveFreeWindow(w: DimWindow, date: LocalDate, zone: ZoneId): LongRange? {
-        if (w.startAnchor != DimAnchor.CLOCK || w.endAnchor != DimAnchor.CLOCK) return null
+    /**
+     * Fenster einer KALENDERNACHT – Start immer CLOCK, Ende CLOCK oder [DimAnchor.ALARM_SONST_CLOCK].
+     * Braucht weder Wecker noch Schicht und gilt deshalb an freien wie an Schicht-Tagen gleich.
+     *
+     * [weckzeiten] ist die aufsteigend sortierte Zeitleiste ALLER Weckzeiten im Horizont (siehe
+     * [buildRuleSpans]) und wird nur vom [DimAnchor.ALARM_SONST_CLOCK]-Ende gelesen. Leer heisst
+     * „keine bekannt" – dann endet das Fenster an der Uhrzeit, also fail-safe hell statt endlos dunkel.
+     */
+    fun resolveFreeWindow(
+        w: DimWindow,
+        date: LocalDate,
+        zone: ZoneId,
+        weckzeiten: List<Long> = emptyList()
+    ): LongRange? {
+        if (w.startAnchor != DimAnchor.CLOCK) return null
         val start = wallClock(date, w.startClockMinutes, zone)
-        // Über Mitternacht = die Uhrzeit auf dem FOLGE-KALENDERTAG (nicht Start + 24h-Millis) –
-        // sonst eine Stunde falsch an DST-Umstellungstagen.
-        val end = wallClock(date, w.endClockMinutes, zone).let {
-            if (it <= start) wallClock(date.plusDays(1), w.endClockMinutes, zone) else it
+        return when (w.endAnchor) {
+            DimAnchor.CLOCK -> {
+                // Über Mitternacht = die Uhrzeit auf dem FOLGE-KALENDERTAG (nicht Start + 24h-Millis) –
+                // sonst eine Stunde falsch an DST-Umstellungstagen.
+                val end = wallClock(date, w.endClockMinutes, zone).let {
+                    if (it <= start) wallClock(date.plusDays(1), w.endClockMinutes, zone) else it
+                }
+                start..end
+            }
+
+            DimAnchor.ALARM_SONST_CLOCK -> {
+                val end = endeAnWeckzeitSonstUhrzeit(start, w.endClockMinutes, zone, weckzeiten)
+                if (end > start) start..end else null
+            }
+
+            else -> null
         }
-        return start..end
+    }
+
+    /**
+     * Das Ende eines [DimAnchor.ALARM_SONST_CLOCK]-Fensters: die FRÜHESTE Weckzeit echt nach
+     * [start] und echt vor der Uhrzeit-Schranke – sonst die Schranke selbst.
+     *
+     * Die Schranke wird über KALENDERTAGE nach vorn gerollt, bis sie hinter [start] liegt (nie über
+     * fixe 24-h-Millis: ein DST-Tag hat 23 bzw. 25 Stunden, ein Millis-Sprung träfe dort die
+     * falsche Wanduhrzeit – dieselbe Falle wie in [resolveShiftWindow]).
+     *
+     * DIE SCHRANKE IST EINE OBERGRENZE, KEIN SUCHFENSTER-ARTEFAKT: Eine Weckzeit GENAU auf der
+     * Schranke ändert nichts (beides derselbe Zeitpunkt), eine danach gehört nicht mehr zu dieser
+     * Nacht. Und eine Weckzeit genau auf [start] darf das Fenster nicht auf die Länge null
+     * schrumpfen lassen – deshalb echt größer als [start]. Die Aufrufer verwerfen `end <= start`
+     * ohnehin, aber ein Fenster, das wegen des eigenen Startzeitpunkts verschwindet, wäre eine
+     * stille Dimm-Lücke statt eines erkennbaren Fehlers.
+     */
+    private fun endeAnWeckzeitSonstUhrzeit(
+        start: Long,
+        endClockMinutes: Int,
+        zone: ZoneId,
+        weckzeiten: List<Long>
+    ): Long {
+        var date = dateOf(start, zone)
+        var schranke = wallClock(date, endClockMinutes, zone)
+        while (schranke <= start) {
+            date = date.plusDays(1)
+            schranke = wallClock(date, endClockMinutes, zone)
+        }
+        val weckzeit = weckzeiten.firstOrNull { it > start && it < schranke }
+        return weckzeit ?: schranke
     }
 
     /**
@@ -179,8 +245,12 @@ object DimWindowResolver {
         zone: ZoneId,
         ruleForShift: (String) -> DimRule?,
         ruleForFreeDay: () -> DimRule?,
+        weckzeiten: List<Long> = emptyList(),
     ): List<DimSpan> {
         val byDate = slotsByDate(alarms, zone)
+        // Aufsteigend sortiert, weil [endeAnWeckzeitSonstUhrzeit] die FRUEHESTE passende Weckzeit
+        // per firstOrNull sucht. Hier einmal statt in jeder Fenster-Aufloesung erneut.
+        val sortierteWeckzeiten = weckzeiten.sorted()
         val out = mutableListOf<DimSpan>()
         val konflikte = mutableListOf<String>()
         // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): ein CLOCK<->CLOCK-Fenster
@@ -193,7 +263,8 @@ object DimWindowResolver {
                 // Freier Tag - unveraendert: FREI schlaegt UNIVERSAL, sonst nichts.
                 val freeRule = ruleForFreeDay() ?: continue
                 for (w in freeRule.windows) {
-                    resolveWindowForDate(w, date, null, zone)?.let { out += DimSpan(it, freeRule.strength, freeRule.warmth) }
+                    resolveWindowForDate(w, date, null, zone, sortierteWeckzeiten)
+                        ?.let { out += DimSpan(it, freeRule.strength, freeRule.warmth) }
                 }
                 continue
             }
@@ -211,7 +282,7 @@ object DimWindowResolver {
                 konflikte += "$date->${wahl.rule.id} statt ${wahl.verdraengteRegelIds}"
             }
             for (w in wahl.rule.windows) {
-                resolveWindowForDate(w, date, wahl.anker, zone)
+                resolveWindowForDate(w, date, wahl.anker, zone, sortierteWeckzeiten)
                     ?.let { out += DimSpan(it, wahl.rule.strength, wahl.rule.warmth) }
             }
         }
@@ -405,7 +476,10 @@ object DimWindowResolver {
             val alarm = shifts.firstOrNull()
             if (alarm != null) {
                 val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0)
-                resolveWindowForDate(window, date, alarm, zone)?.let { out += DimSpan(it, strength, warmth) }
+                // Leere Zeitleiste: der eingebaute Nacht-Standard baut seine Fenster selbst und
+                // ausschliesslich mit CLOCK-/ALARM-Ankern - er braucht ALARM_SONST_CLOCK nicht.
+                resolveWindowForDate(window, date, alarm, zone, emptyList())
+                    ?.let { out += DimSpan(it, strength, warmth) }
             }
 
             // Vorwaerts: heutiger Abend, AUSSER der Folgetag hat selbst einen NICHT ausgeschlossenen
@@ -418,7 +492,8 @@ object DimWindowResolver {
             val nextDayCoversTonight = nextDayShifts.isNotEmpty() && !istTagAusgeschlossen(nextDayShifts, isExcluded)
             if (!nextDayCoversTonight) {
                 val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.CLOCK, endClockMinutes = freeDayEndClockMinutes)
-                resolveWindowForDate(window, date, null, zone)?.let { out += DimSpan(it, strength, warmth) }
+                resolveWindowForDate(window, date, null, zone, emptyList())
+                    ?.let { out += DimSpan(it, strength, warmth) }
             }
         }
         return out
@@ -503,12 +578,29 @@ object DimWindowResolver {
     private fun istTagAusgeschlossen(shifts: List<AlarmSlot>, isExcluded: (String?) -> Boolean): Boolean =
         if (shifts.isEmpty()) isExcluded(null) else shifts.any { isExcluded(it.shiftName) }
 
-    /** CLOCK↔CLOCK = jede Nacht des Datums; sonst schicht-relativ (nur mit Alarm auflösbar). */
-    private fun resolveWindowForDate(w: DimWindow, date: LocalDate, alarm: AlarmSlot?, zone: ZoneId): LongRange? =
-        if (w.startAnchor == DimAnchor.CLOCK && w.endAnchor == DimAnchor.CLOCK) {
-            resolveFreeWindow(w, date, zone)
+    /**
+     * CLOCK-Start = jede KALENDERNACHT des Datums; sonst schicht-relativ (nur mit Alarm auflösbar).
+     *
+     * Mit CLOCK-Start gehen BEIDE Kalendernacht-Enden hier durch — das feste [DimAnchor.CLOCK] und
+     * das neue [DimAnchor.ALARM_SONST_CLOCK]. Letzteres braucht bewusst KEINEN Slot dieses Tages:
+     * seine Weckzeit sucht es in der Zeitleiste [weckzeiten], nicht im Tages-Slot. Genau das macht
+     * es an einem weckerfreien Tag ebenso auflösbar wie an einem Schicht-Tag und ersetzt damit das
+     * Rückwärts-/Vorwärts-Fensterpaar des eingebauten Nacht-Standards samt seiner
+     * Folgetag-Bedingung.
+     */
+    private fun resolveWindowForDate(
+        w: DimWindow,
+        date: LocalDate,
+        alarm: AlarmSlot?,
+        zone: ZoneId,
+        weckzeiten: List<Long>
+    ): LongRange? =
+        if (w.startAnchor == DimAnchor.CLOCK &&
+            (w.endAnchor == DimAnchor.CLOCK || w.endAnchor == DimAnchor.ALARM_SONST_CLOCK)
+        ) {
+            resolveFreeWindow(w, date, zone, weckzeiten)
         } else if (alarm != null) {
-            resolveShiftWindow(w, alarm.triggerTime, alarm.shiftEndTime, zone)
+            resolveShiftWindow(w, alarm.triggerTime, alarm.shiftEndTime, zone, weckzeiten)
         } else {
             null
         }

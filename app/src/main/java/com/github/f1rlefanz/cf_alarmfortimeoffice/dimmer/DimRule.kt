@@ -45,7 +45,31 @@ enum class DimAnchor {
     /** Relativ zum SchichtENDE (Kalender-Event-Ende) + Offset – z. B. ND-Tagschlaf „ab Schichtende
      * +60 Min". Braucht ein bekanntes Schichtende ([com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo.shiftEndTime]
      * ≠ 0); an manuellen Alarmen ohne Schicht nicht auflösbar. Nutzt dieselben Offset-Felder wie [ALARM]. */
-    SHIFT_END
+    SHIFT_END,
+
+    /**
+     * **Nur als ENDE-Anker.** „Bis zur Weckzeit – aber spätestens um [DimWindow.endClockMinutes]."
+     * Das Fenster endet an der FRÜHESTEN Weckzeit, die zwischen seinem Start und dieser Uhrzeit
+     * liegt; gibt es dort keine, endet es an der Uhrzeit.
+     *
+     * WARUM ES DEN ANKER GIBT (Befund 23.08.2026): Genau diese Semantik erwartet man von einem
+     * Nacht-Fenster, und sie war im Modell nicht ausdrückbar. [ALARM] endet an der Weckzeit —
+     * *egal wie spät die ist*: vor einem Spätdienst mit Wecker 12:30 dimmte der eingebaute
+     * Nacht-Standard bis mittags, obwohl der Nutzer „bis 07:00" eingestellt zu haben glaubte
+     * (die 07:00 galten dort nur an weckerfreien Tagen). [CLOCK] wiederum endet stur an der
+     * Uhrzeit und überdimmt damit jeden früheren Wecker. Dieser Anker ist das Minimum aus beidem.
+     *
+     * ER ERSETZT AUSSERDEM EINE SONDERLOGIK: Mit [CLOCK] als Start ist ein solches Fenster „die
+     * Nacht DIESES Kalendertags" und wird für jede Kalendernacht aufgelöst. Der eingebaute
+     * Nacht-Standard brauchte dafür ein Paar aus Rückwärts- und Vorwärts-Fenster plus die
+     * Bedingung „außer der Folgetag hat selbst einen Wecker" — eine Regel, die auf ein ANDERES
+     * Datum schaut. Weil die Weckzeit hier aus der gesamten Zeitleiste gesucht wird und nicht aus
+     * „dem Wecker dieses Tages", entfällt diese Bedingung ersatzlos.
+     *
+     * Als START-Anker ist er nicht vorgesehen; die Oberfläche bietet ihn dort nicht an, und die
+     * Auflösung behandelt ihn am Start wie [CLOCK].
+     */
+    ALARM_SONST_CLOCK
 }
 
 /**

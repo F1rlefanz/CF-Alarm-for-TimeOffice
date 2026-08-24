@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -64,7 +65,7 @@ class DimmerSchnellstartTest {
         val vm: DimmerRulesViewModel,
         val ruleUseCase: DimRuleUseCase,
         val dimSchedule: DimScheduleUseCase,
-        val dndSchedule: DndScheduleUseCase
+        val armierer: ZeitkettenArmierer
     )
 
     private fun buildFixture(): Fixture {
@@ -83,15 +84,15 @@ class DimmerSchnellstartTest {
         whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList()))
 
         val dimSchedule = mock<DimScheduleUseCase>()
-        val dndSchedule = mock<DndScheduleUseCase>()
+        val armierer = mock<ZeitkettenArmierer>()
 
         return Fixture(
             vm = DimmerRulesViewModel(
-                ruleUseCase, shiftUseCase, dimSchedule, { dndSchedule }, prefs, mock<ShiftSpanStore>()
+                ruleUseCase, shiftUseCase, dimSchedule, armierer, prefs, mock<ShiftSpanStore>()
             ),
             ruleUseCase = ruleUseCase,
             dimSchedule = dimSchedule,
-            dndSchedule = dndSchedule
+            armierer = armierer
         )
     }
 
@@ -188,7 +189,7 @@ class DimmerSchnellstartTest {
      * liest die Dimm-Zeitleiste live), siehe [DimmerDndNachzugTest].
      */
     @Test
-    fun `Schnellstart speichert die Regel und armiert beide Ketten in dieser Reihenfolge`() =
+    fun `Schnellstart speichert die Regel und armiert danach nach`() =
         runTest(dispatcher) {
             val f = buildFixture()
 
@@ -199,10 +200,12 @@ class DimmerSchnellstartTest {
             verify(f.ruleUseCase).saveRule(captor.capture())
             assertEquals(DimRule.SHIFT_UNIVERSAL, captor.firstValue.shiftPattern)
 
-            val reihenfolge = inOrder(f.ruleUseCase, f.dimSchedule, f.dndSchedule)
+            // ERST speichern, DANN nacharmieren - sonst rechnet die Kette ueber einen Bestand,
+            // in dem die neue Regel noch fehlt. Die Reihenfolge INNERHALB des Nachzugs
+            // (Dimmer vor DND) liegt seit v1.34.3 im ZeitkettenArmierer und wird dort geprueft.
+            val reihenfolge = inOrder(f.ruleUseCase, f.armierer)
             reihenfolge.verify(f.ruleUseCase).saveRule(any())
-            reihenfolge.verify(f.dimSchedule).enable()
-            reihenfolge.verify(f.dndSchedule).enable()
+            reihenfolge.verify(f.armierer).armiere(any(), any(), any())
         }
 
     /** Kein Schichtname, kein Schreibvorgang - und erst recht keine Neuarmierung. */

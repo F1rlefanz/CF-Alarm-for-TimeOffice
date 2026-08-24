@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -117,7 +118,7 @@ class Pruefrunde8RegelkonfliktAnzeigeTest {
         whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = rulesEnabled))
 
         return Fixture(
-            DimmerRulesViewModel(ruleUseCase, shiftUseCase, dimSchedule, { mock<DndScheduleUseCase>() }, prefs, spanStore),
+            DimmerRulesViewModel(ruleUseCase, shiftUseCase, dimSchedule, mock<ZeitkettenArmierer>(), prefs, spanStore),
             ruleUseCase, spanStore, prefs
         )
     }

@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -21,8 +22,9 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import org.mockito.kotlin.inOrder
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 /**
@@ -67,7 +69,7 @@ class DimmerDndNachzugTest {
         val dimmer: DimmerViewModel,
         val regeln: DimmerRulesViewModel,
         val dimSchedule: DimScheduleUseCase,
-        val dndSchedule: DndScheduleUseCase
+        val armierer: ZeitkettenArmierer
     )
 
     private fun buildFixture(): Fixture {
@@ -83,28 +85,29 @@ class DimmerDndNachzugTest {
         whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList()))
 
         val dimSchedule = mock<DimScheduleUseCase>()
-        val dndSchedule = mock<DndScheduleUseCase>()
+        val armierer = mock<ZeitkettenArmierer>()
 
         return Fixture(
-            dimmer = DimmerViewModel(prefs, dimSchedule, { dndSchedule }),
+            dimmer = DimmerViewModel(prefs, armierer),
             regeln = DimmerRulesViewModel(
-                ruleUseCase, shiftUseCase, dimSchedule, { dndSchedule }, prefs, mock<ShiftSpanStore>()
+                ruleUseCase, shiftUseCase, dimSchedule, armierer, prefs, mock<ShiftSpanStore>()
             ),
             dimSchedule = dimSchedule,
-            dndSchedule = dndSchedule
+            armierer = armierer
         )
     }
 
     /**
-     * Die Reihenfolge ist tragend, nicht Geschmack: `DndScheduleUseCase.computeWindows()` liest im
-     * Modus 1 die Dimm-Zeitleiste LIVE. `dataStore.edit {}` kehrt erst nach persistiertem Write
-     * zurueck, das anschliessende DND-`enable()` sieht also den neuen Stand - aber nur, wenn der
-     * Dimmer vorher dran war.
+     * WAS HIER SEIT v1.34.3 GEPRUEFT WIRD - und was NICHT MEHR.
+     *
+     * Die REIHENFOLGE (Dimmer vor DND) samt ihrer Begruendung liegt jetzt in [ZeitkettenArmierer]
+     * und wird dort EINMAL geprueft (`ZeitkettenArmiererTest`), statt an fuenf Aufrufstellen
+     * erneut. Hier bleibt die Frage, um die es an DIESER Stelle geht: Stoesst der Setter den
+     * Nachzug ueberhaupt an? Genau das fehlte am 23.08.2026 und kostete knapp drei Stunden
+     * "Nicht stoeren" ohne Grund.
      */
-    private suspend fun Fixture.erwarteBeideKettenInReihenfolge() {
-        val reihenfolge = inOrder(dimSchedule, dndSchedule)
-        reihenfolge.verify(dimSchedule).enable()
-        reihenfolge.verify(dndSchedule).enable()
+    private suspend fun Fixture.erwarteNachzug() {
+        verify(armierer).armiere(any(), any(), any())
     }
 
     /**
@@ -122,7 +125,7 @@ class DimmerDndNachzugTest {
         f.dimmer.setDimEnabled(true)
         advanceUntilIdle()
 
-        f.erwarteBeideKettenInReihenfolge()
+        f.erwarteNachzug()
     }
 
     @Test
@@ -149,7 +152,7 @@ class DimmerDndNachzugTest {
         )
         advanceUntilIdle()
 
-        f.erwarteBeideKettenInReihenfolge()
+        f.erwarteNachzug()
     }
 
     @Test
@@ -159,6 +162,6 @@ class DimmerDndNachzugTest {
         f.regeln.deleteRule("r1")
         advanceUntilIdle()
 
-        f.erwarteBeideKettenInReihenfolge()
+        f.erwarteNachzug()
     }
 }

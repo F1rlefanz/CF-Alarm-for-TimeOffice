@@ -14,9 +14,8 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
@@ -74,8 +73,7 @@ class ConfigBackupUseCase @Inject constructor(
     // Erkennung lieferte bei unveraenderter Eventliste einen Cache-Treffer mit den ALTEN
     // Weckzeiten - der Import waere bis zum Ablauf der Cache-Gueltigkeit wirkungslos gewesen.
     private val shiftUseCase: IShiftUseCase,
-    private val dimSchedule: DimScheduleUseCase,
-    private val dndSchedule: DndScheduleUseCase,
+    private val armierer: ZeitkettenArmierer,
     // Nur fuer den Fall "die Datei stammt aus der Zeit vor dem Ein-Modell-Umbau" - siehe die
     // Stelle im Import und DimmerModellMigration.brauchtNachImportEineMigration.
     private val dimmerModellMigration: DimmerModellMigration,
@@ -198,10 +196,7 @@ class ConfigBackupUseCase @Inject constructor(
         // Best-effort und getrennt gefangen: enable() traegt seinen eigenen Master-Pause-Backstop,
         // ist also auch bei aktiver Pause gefahrlos, aber ein Fehlschlag hier darf den bereits
         // geschriebenen Import nicht als gescheitert melden.
-        runCatching { dimSchedule.enable() }
-            .onFailure { Logger.w(LogTags.DIMMER, "⚠️ IMPORT: Dimmer-Kette nicht armiert", it) }
-        runCatching { dndSchedule.enable() }
-            .onFailure { Logger.w(LogTags.DND, "⚠️ IMPORT: DND-Kette nicht armiert", it) }
+        armierer.armiere("IMPORT")
 
         val unresolvedHueTargets = reconcileImportedHueTargets()
 

@@ -116,8 +116,6 @@ object NotificationDeliverability {
      * PURE, TESTBAR: Was ist aus diesen drei Beobachtungen zu schliessen?
      *
      * @param appErlaubt Ergebnis von `areNotificationsEnabled()`.
-     * @param kanaeleUnterstuetzt `false` vor API 26 - dort gibt es keine Kanaele, und die
-     *   App-Ebene ist die ganze Wahrheit.
      * @param kanalWichtigkeit Importance des Kanals, oder [KANAL_FEHLT], wenn es ihn (noch) nicht
      *   gibt.
      * @param gruppeGesperrt `true`, wenn der Kanal in einer vom Nutzer gesperrten Gruppe liegt.
@@ -127,13 +125,11 @@ object NotificationDeliverability {
      */
     fun beurteile(
         appErlaubt: Boolean,
-        kanaeleUnterstuetzt: Boolean,
         kanalWichtigkeit: Int,
         gruppeGesperrt: Boolean,
         mindestwichtigkeit: Int = WICHTIGKEIT_KEINE + 1
     ): Zustellbarkeit = when {
         !appErlaubt -> Zustellbarkeit.APP_BLOCKIERT
-        !kanaeleUnterstuetzt -> Zustellbarkeit.ERREICHBAR
         // Ein fehlender Kanal ist kein blockierter: er entsteht beim ersten Post.
         kanalWichtigkeit == KANAL_FEHLT -> Zustellbarkeit.ERREICHBAR
         kanalWichtigkeit <= WICHTIGKEIT_KEINE -> Zustellbarkeit.KANAL_BLOCKIERT
@@ -173,7 +169,6 @@ object NotificationDeliverability {
     fun mindeststufeBeschreibung(mindestwichtigkeit: Int): String {
         val standardGenuegt = beurteile(
             appErlaubt = true,
-            kanaeleUnterstuetzt = true,
             kanalWichtigkeit = WICHTIGKEIT_STANDARD,
             gruppeGesperrt = false,
             mindestwichtigkeit = mindestwichtigkeit
@@ -193,26 +188,21 @@ object NotificationDeliverability {
         mindestwichtigkeit: Int = WICHTIGKEIT_KEINE + 1
     ): Zustellbarkeit = try {
         val appErlaubt = NotificationManagerCompat.from(context).areNotificationsEnabled()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            beurteile(appErlaubt, kanaeleUnterstuetzt = false, KANAL_FEHLT, false, mindestwichtigkeit)
-        } else {
-            val manager = context.getSystemService(NotificationManager::class.java)
-            val kanal = manager?.getNotificationChannel(kanalId)
-            val gruppeGesperrt = kanal?.group?.let { gruppenId ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    manager.getNotificationChannelGroup(gruppenId)?.isBlocked == true
-                } else {
-                    false
-                }
-            } == true
-            beurteile(
-                appErlaubt = appErlaubt,
-                kanaeleUnterstuetzt = true,
-                kanalWichtigkeit = kanal?.importance ?: KANAL_FEHLT,
-                gruppeGesperrt = gruppeGesperrt,
-                mindestwichtigkeit = mindestwichtigkeit
-            )
-        }
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val kanal = manager?.getNotificationChannel(kanalId)
+        val gruppeGesperrt = kanal?.group?.let { gruppenId ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                manager.getNotificationChannelGroup(gruppenId)?.isBlocked == true
+            } else {
+                false
+            }
+        } == true
+        beurteile(
+            appErlaubt = appErlaubt,
+            kanalWichtigkeit = kanal?.importance ?: KANAL_FEHLT,
+            gruppeGesperrt = gruppeGesperrt,
+            mindestwichtigkeit = mindestwichtigkeit
+        )
     } catch (e: Exception) {
         Logger.w(LogTags.SYSTEM, "Zustellbarkeit von '$kanalId' nicht pruefbar - nehme erreichbar an: ${e.message}")
         Zustellbarkeit.ERREICHBAR

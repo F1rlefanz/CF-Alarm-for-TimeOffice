@@ -1105,10 +1105,6 @@ private fun weckerZustellbarkeit(context: android.content.Context): Notification
  * Activity), bleibt die App-Uebersicht der Rueckfallweg.
  */
 private fun openChannelNotificationSettings(context: android.content.Context, channelId: String) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-        openAppNotificationSettings(context)
-        return
-    }
     try {
         context.startActivity(
             Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)

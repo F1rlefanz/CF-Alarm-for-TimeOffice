@@ -28,21 +28,13 @@
 
     <!-- Dimmer-Tab -->
     <string name="dimmer_header">Schicht-Dimmer</string>
-    <string name="dimmer_intro">Dunkelt den Bildschirm vor deiner nächsten Schicht automatisch ab und blendet ihn zur Weckzeit wieder auf – damit du leichter herunterfährst.</string>
-    <string name="dimmer_wellness">Wellness (Wind-down)</string>
-    <string name="dimmer_wellness_hint">Dunkelt eine Weile vor jeder Weckzeit ab – unabhängig von Regeln, wie ein sanfter Übergang.</string>
-    <string name="dimmer_rules">Schicht-Regeln</string>
-    <string name="dimmer_rules_hint">Dimmt nach frei definierbaren Regeln, gekoppelt an deine erkannten Schichten (z. B. nachts, aber nicht an Nachtdienst-Nächten).</string>
+    <string name="dimmer_intro">Dunkelt den Bildschirm zu deinen Zeiten ab – damit du leichter herunterfährst. Alles läuft über Regeln: eine Regel legt fest, an welchen Tagen sie gilt, welche Zeitfenster sie dimmt und wie dunkel und warm es dabei wird.</string>
+    <string name="dimmer_enabled">Dimmen</string>
+    <string name="dimmer_enabled_hint">Hauptschalter für die Bildschirm-Verdunkelung. Ist er aus, dimmt nichts – auch keine Regel.</string>
+    <string name="dimmer_rules_explain">Ohne Regel wird nie gedimmt. Jede Nacht dimmst du z. B. mit einer Regel für „Alle Tage (Universal)“ und einem Fenster von 22:00 bis „Weckzeit, spätestens“ 07:00. Eine Einschlafhilfe nur vor der Schicht ist ein Fenster von 60 Minuten vor der Weckzeit bis zur Weckzeit. Eine Regel ohne Fenster nimmt ihre Tage vom Dimmen aus.</string>
     <string name="dimmer_manage_rules">Regeln verwalten</string>
+    <string name="dimmer_preview_timeline_hint">Zeigt, wann in den nächsten Tagen tatsächlich gedimmt wird – so siehst du, ob deine Regeln greifen.</string>
     <string name="dimmer_preview_timeline">Vorschau (nächste Tage)</string>
-
-    <!-- Nacht-Standard (seit v1.17.0): eingebaute Standard-Nachtdimmung ohne eigene Regel -->
-    <string name="dimmer_night_default">Nacht-Standard</string>
-    <string name="dimmer_night_default_hint">Dimmt ab einer festen Uhrzeit bis zum nächsten CF-Alarm-Wecker (nicht System-/Fremd-Wecker) – ohne dass du dafür eine Regel anlegen musst. Ausgenommene Schichten dimmen ihre Nacht gar nicht. Schicht-Regeln (unten) sind für zusätzliche Zeitfenster tagsüber, z. B. Vorschlaf/Tagschlaf.</string>
-    <string name="dimmer_night_default_exceptions">Ausnahmen (keine Nacht-Dimmung)</string>
-    <string name="dimmer_night_default_intensity_hint">Eigene Verdunkelung/Wärme für den Nacht-Standard, unabhängig von Wellness.</string>
-    <string name="dimmer_night_default_start">Beginn</string>
-    <string name="dimmer_night_default_free_end">Ende an freien Tagen (ohne Wecker)</string>
 
     <!-- Dimmer-Vorschau-Zeitleiste -->
     <string name="dimmer_preview_title">Dimm-Vorschau</string>
@@ -65,7 +57,7 @@
     <string name="dimmer_rule_enabled">Aktiv</string>
     <string name="dimmer_rule_windows">Zeitfenster</string>
     <string name="dimmer_rule_add_window">+ Fenster</string>
-    <string name="dimmer_rule_no_windows_hint">Ohne Fenster wird an passenden Tagen NICHT gedimmt – so nimmst du z. B. Nachtdienst-Nächte von einer Universal-Regel aus. Willst du nur den Nacht-Standard für eine Schicht ausschalten, geht das einfacher direkt über die Ausnahme-Chips an dessen Karte, ganz ohne eigene Regel.</string>
+    <string name="dimmer_rule_no_windows_hint">Ohne Fenster wird an passenden Tagen NICHT gedimmt – so nimmst du z. B. Nachtdienst-Nächte von einer Universal-Regel aus.</string>
     <string name="dimmer_window_start">Start</string>
     <string name="dimmer_window_end">Ende</string>
     <string name="dimmer_clock_time">Uhrzeit</string>
@@ -78,15 +70,11 @@
     <string name="dimmer_shiftend_offset">Minuten nach Schichtende</string>
     <string name="dimmer_window_remove">Fenster entfernen</string>
     <string name="dimmer_rule_intensity">Intensität dieser Regel</string>
-    <string name="dimmer_rule_intensity_hint">Gilt für die Fenster dieser Regel. Wellness nutzt die globale Darstellung.</string>
+    <string name="dimmer_rule_intensity_hint">Gilt für die Fenster dieser Regel. Jede Regel hat eigene Werte.</string>
     <string name="dimmer_rule_save">Speichern</string>
     <string name="dimmer_rule_delete">Regel löschen</string>
-    <string name="dimmer_appearance_hint">Verdunkelung und Wärme dieser Wellness-Abdunkelung. Schicht-Regeln haben je eigene Werte (im Regel-Editor).</string>
     <string name="dimmer_strength_label">Verdunkelung: %1$d %%</string>
     <string name="dimmer_warmth_label">Wärme (Amber): %1$d %%</string>
-    <!-- Kein <plurals>: "Min" ist eine Abkuerzung und im Deutschen in Singular UND Plural
-         identisch - eine Pluralform waere wortgleich und damit ohne Nutzen. -->
-    <string name="dimmer_winddown_label" tools:ignore="PluralsCandidate">Beginn: %1$d Min vor der Weckzeit</string>
     <string name="dimmer_preview">Vorschau (5 s dimmen)</string>
     <string name="dimmer_preview_hint">Zeigt das Dimmen kurz mit den aktuellen Werten – auch ohne Schicht/Alarm.</string>
     <string name="dimmer_open_accessibility">Bedienungshilfen-Dienst aktivieren</string>

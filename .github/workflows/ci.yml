@@ -81,8 +81,30 @@ jobs:
       - name: Changelog-Diff-Logik der Schleuse testen
         run: python3 -m unittest discover -s tools/schleuse -p "test_*.py"
 
+      # Die Reste, die ein Aufraeumdurchgang hinterlaesst: tote Importe, verwaiste Nutzertexte,
+      # Doku-Notizen auf frisch entfernte Symbole. Bis zum 25.08.2026 fand die jedes Mal ein von
+      # Hand getipptes Wegwerf-Skript, das mit der Sitzung verschwand - dieselbe Wette, die dieses
+      # Projekt mit der Doku-Budget-Regel schon einmal verloren hat. In der CI laeuft nur der
+      # basislose Teil (tote Importe, verwaiste Texte); den Doku-Teil kann erst die Schleuse
+      # pruefen, weil er eine Aenderungs-Basis braucht.
+      - name: Reste eines Aufraeumdurchgangs suchen
+        run: python3 tools/aufraeumen/pruefe_reste.py --ci
+
+      # Beide Fehlalarm-Quellen dieses Gatters sind real aufgetreten und kommen unauffaellig
+      # zurueck: Operator-Importe (`by getValue`) und historische Doku-Absaetze.
+      - name: Entscheidungen der Reste-Pruefung testen
+        run: python3 -m unittest discover -s tools/aufraeumen -p "test_*.py"
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
+
+      # `testDebugUnitTest` uebersetzt AUSSCHLIESSLICH src/test - der androidTest-Quelltext
+      # kompiliert dabei nie. Ohne diesen Schritt kann ein Instrumentierungstest monatelang
+      # unuebersetzbar sein und faellt erst auf, wenn jemand ein Geraet anschliesst und ihn
+      # dringend braucht. Nur kompilieren, nicht ausfuehren: Ausfuehren braucht ein Geraet, und
+      # `connectedDebugAndroidTest` deinstalliert die App hinterher.
+      - name: androidTest-Quelltext kompilieren (blinder Fleck von `test`)
+        run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
 
       - name: Lint (abortOnError=true wirkt als Merge-Gate)
         run: ./gradlew lintDebug --stacktrace

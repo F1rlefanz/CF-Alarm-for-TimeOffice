@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -42,7 +43,7 @@ class DimScheduleMasterPauseTest {
         val ruleUseCase = DimRuleUseCase(mock<DimRuleRepository>())
         val spanStore = mock<ShiftSpanStore>()
         whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
-        return DimScheduleUseCase(mock<Context>(), alarmUseCase, spanStore, ruleUseCase, prefs, notifier, masterPausePrefs)
+        return DimScheduleUseCase(mock<Context>(), alarmUseCase, spanStore, keineFreienTage(), ruleUseCase, prefs, notifier, masterPausePrefs)
     }
 
     private suspend fun pausedPrefs(): DimOverlayPrefs {

@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
@@ -31,6 +32,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -56,6 +59,22 @@ class SkippedAlarmNotArmedException(
     val shiftName: String
 ) : Exception(
     "Alarm $alarmId ($shiftName) ist als uebersprungen markiert und wurde deshalb nicht gestellt"
+)
+
+/**
+ * Meldet dem Aufrufer, dass [AlarmUseCase.scheduleSystemAlarm] den Alarm NICHT armiert hat, weil
+ * sein Kalendertag vom Nutzer freigegeben ist ("Tag freigeben").
+ *
+ * Eigene Klasse statt eines Flags an [SkippedAlarmNotArmedException]: die beiden Faelle sind fuer
+ * den Nutzer verschiedene Aussagen ("du hast diesen einen Weckruf ausgelassen" gegen "an diesem
+ * Tag hast du frei"), und die Oberflaeche beschriftet sie unterschiedlich. Ein gemeinsamer Typ
+ * haette die Unterscheidung genau dort verloren, wo sie gebraucht wird.
+ */
+class FreigegebenerTagNichtArmiertException(
+    val alarmId: Int,
+    val shiftName: String
+) : Exception(
+    "Alarm $alarmId ($shiftName) faellt auf einen freigegebenen Tag und wurde deshalb nicht gestellt"
 )
 
 /**
@@ -92,7 +111,10 @@ class AlarmUseCase @Inject constructor(
     // Merker fuer die stille Statuszeile "Dienstplan-Kalender zuletzt neu eingelesen" - aus
     // demselben Grund wie die vier Abhaengigkeiten darueber bewusst auf der Implementierung statt
     // auf IAlarmUseCase.
-    private val feedNeueinlesenStore: FeedNeueinlesenStore
+    private val feedNeueinlesenStore: FeedNeueinlesenStore,
+    // Vom Nutzer freigegebene Tage ("heute faellt der Dienst aus") - aus demselben Grund wie die
+    // fuenf Abhaengigkeiten darueber bewusst auf der Implementierung statt auf IAlarmUseCase.
+    private val freieTageStore: FreieTageStore
 ) : IAlarmUseCase {
 
     companion object {
@@ -142,6 +164,36 @@ class AlarmUseCase @Inject constructor(
                 skipState.skippedManualAlarm == null &&
                 skipState.skippedAlarmTriggerTime > 0L &&
                 skipState.skippedAlarmTriggerTime == alarm.triggerTime
+        }
+
+        /**
+         * Faellt [alarm] auf einen Tag, den der Nutzer freigegeben hat?
+         *
+         * **Anker ist die WECKZEIT**, dieselbe Wahl wie in `FreieTageStore.tagVon` fuer die
+         * Schichtspannen und in `TagFreigabeUseCase.gehoertZuTag` fuer das Abraeumen. Drei
+         * Stellen, ein Anker - laufen sie auseinander, gibt es einen halb freigegebenen Tag, an
+         * dem der Wecker weg ist, "Nicht stoeren" aber laeuft (oder umgekehrt).
+         *
+         * Eine leere Menge heisst NICHT freigegeben - fail-safe, im Zweifel wecken. Der
+         * Lesefehler wird bereits im `FreieTageStore` in diese Richtung degradiert.
+         */
+        internal fun istTagFreigegeben(
+            freieTage: Set<LocalDate>,
+            alarm: AlarmInfo,
+            zone: ZoneId
+        ): Boolean {
+            if (freieTage.isEmpty()) return false
+            // MANUELLE WECKER NEHMEN NICHT TEIL (`eventId.isEmpty()`), und das ist keine Feinheit.
+            // Eine Freigabe sagt "der DIENST faellt aus" - sie sagt nichts ueber einen Wecker, den
+            // der Nutzer sich selbst gestellt hat (Zahnarzt, Zug, Abholung). Zwei Folgen haengen
+            // daran, beide schwer: `TagFreigabeUseCase` wuerde ihn loeschen, und ein geloeschter
+            // manueller Wecker kommt NIE zurueck (`syncAlarms` schont ihn nur, es rekonstruiert
+            // ihn nicht - genau deshalb sichert `AlarmSkipUseCase` fuer ihn einen Schnappschuss).
+            // Und dieser Backstop wuerde das Anlegen eines neuen manuellen Weckers an einem
+            // freigegebenen Tag abweisen. Dieselbe Ausnahme trifft `istUebersprungen` fuer sein
+            // zweites Kriterium, aus derselben Ueberlegung.
+            if (alarm.eventId.isEmpty()) return false
+            return Instant.ofEpochMilli(alarm.triggerTime).atZone(zone).toLocalDate() in freieTage
         }
     }
     
@@ -433,6 +485,13 @@ class AlarmUseCase @Inject constructor(
                 // Im Zweifel wecken.
                 val skipState = alarmSkipUseCase.getSkipStatus().getOrNull()
 
+                // "Tag freigeben": ebenfalls EINMAL pro Sync lesen. Der Store degradiert einen
+                // Lesefehler bereits auf die leere Menge ("kein Tag freigegeben") - dieselbe
+                // fail-safe Richtung wie beim Ueberspringen: im Zweifel wecken.
+                val freieTage = freieTageStore.freieTageNow()
+                val zoneFuerFreigaben = ZoneId.systemDefault()
+                var freigegebenCount = 0
+
                 for (kandidat in eindeutigeKandidaten) {
                   // Abgelaufene Kandidaten hat Schritt 1 bereits abschliessend behandelt.
                   val frischerAlarm = kandidat.neuerAlarm ?: continue
@@ -492,6 +551,37 @@ class AlarmUseCase @Inject constructor(
                             LogTags.ALARM,
                             "⏭️ SYNC: Uebersprungener Alarm wird nicht neu gestellt: ${newAlarm.shiftName} " +
                                 "(id=${newAlarm.id}, Weckzeit=${newAlarm.formattedTime})"
+                        )
+                        continue
+                    }
+
+                    // TAG FREIGEGEBEN: der Dienst faellt an diesem Kalendertag aus, also entsteht
+                    // hier kein Wecker - und ein bereits bestehender muss WEG.
+                    //
+                    // Unterschied zum Skip-Zweig darueber, und er ist der Grund fuer die vier
+                    // Zeilen mehr: beim Ueberspringen hat `skipNextAlarm()` den Eintrag schon
+                    // geloescht, hier kann er noch stehen (die Freigabe kann fuer einen Tag
+                    // gesetzt worden sein, dessen Wecker erst spaeter aus dem Kalender entsteht,
+                    // oder das Loeschen in `TagFreigabeUseCase` ist einem Sync in die Quere
+                    // gekommen). Ein liegengebliebener Eintrag ist nicht harmlos: der
+                    // Direct-Boot-Spiegel armiert jeden Zukunfts-Eintrag nach einem Neustart
+                    // ungefiltert wieder, und die Hue-Tagesplanung liest den Bestand ebenfalls
+                    // ohne Filter - der freigegebene Morgen bekaeme Wecker UND Licht.
+                    //
+                    // ERST cancellen, DANN loeschen - wie an jeder anderen Loeschstelle.
+                    // KEINE "Schicht entfernt"-Meldung: der Dienstplan hat sich nicht geaendert,
+                    // der Nutzer hat den Tag selbst freigegeben. Eine Meldung waere hier dieselbe
+                    // Fehlklasse wie die verstrichene Weckzeit in Schritt 1.
+                    if (istTagFreigegeben(freieTage, newAlarm, zoneFuerFreigaben)) {
+                        if (existingAlarm != null) {
+                            alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                            alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
+                        }
+                        freigegebenCount++
+                        Logger.business(
+                            LogTags.ALARM,
+                            "🏖️ SYNC: Tag freigegeben - kein Wecker: ${newAlarm.shiftName} " +
+                                "(Weckzeit=${newAlarm.formattedTime})"
                         )
                         continue
                     }
@@ -712,6 +802,7 @@ class AlarmUseCase @Inject constructor(
                         "⚠️ SYNC: Intelligent synchronization UNVOLLSTAENDIG ($skippedCount Event(s) uebersprungen) - "
                     }) +
                     "Created: $createdCount, Updated: $updatedCount, Deleted: $deletedCount, " +
+                    "Freigegeben: $freigegebenCount, " +
                     "Neue-Kennung: $neueKennungCount, Total: ${resultAlarms.size} alarms"
                 )
 
@@ -946,6 +1037,25 @@ class AlarmUseCase @Inject constructor(
                     "ist als uebersprungen markiert - kein System-Alarm"
             )
             return Result.failure(SkippedAlarmNotArmedException(alarmInfo.id, alarmInfo.shiftName))
+        }
+
+        // Derselbe Backstop fuer "Tag freigeben", aus demselben Grund und mit derselben
+        // Erkennung wie das Gate in syncAlarms() ([istTagFreigegeben]). Er ist hier nicht
+        // doppelt gemoppelt: der BootReceiver re-armt nach einem Neustart JEDEN gespeicherten
+        // Zukunfts-Eintrag direkt ueber diese Funktion, und der TimezoneChangeReceiver rechnet
+        // ebenso ueber sie neu. Ohne diese Zeilen kaeme ein Wecker, den `TagFreigabeUseCase`
+        // gerade geloescht hat, ueber einen dieser Wege zurueck, bevor der naechste Sync laeuft.
+        //
+        // Der Fehler wird gemeldet statt still geschluckt - identische Begruendung wie oben:
+        // "abgewiesen" darf fuer den Aufrufer nicht wie "armiert" aussehen.
+        val freieTage = freieTageStore.freieTageNow()
+        if (istTagFreigegeben(freieTage, alarmInfo, ZoneId.systemDefault())) {
+            Logger.business(
+                LogTags.ALARM,
+                "🏖️ SCHEDULE: Alarm ${alarmInfo.id} (${alarmInfo.shiftName}, ${alarmInfo.formattedTime}) " +
+                    "faellt auf einen freigegebenen Tag - kein System-Alarm"
+            )
+            return Result.failure(FreigegebenerTagNichtArmiertException(alarmInfo.id, alarmInfo.shiftName))
         }
 
         return SafeExecutor.safeExecute("AlarmUseCase.scheduleSystemAlarm") {

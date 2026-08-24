@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,6 +54,7 @@ class DimSchedulePreviewStatusTest {
             mock<Context>(),
             alarmUseCase,
             spanStore,
+            keineFreienTage(),
             DimRuleUseCase(mock<DimRuleRepository>()),
             prefs,
             mock<DimCorrectionNotifier>(),

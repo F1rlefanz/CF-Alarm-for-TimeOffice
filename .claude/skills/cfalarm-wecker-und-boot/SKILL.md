@@ -15,6 +15,7 @@ das baut man dieselbe Falle in neuer Form nach.
 ## Hergang und Belege
 
 - `reference/wecker-boot-und-wartung.md` — Wecker, Vollbild, Snooze, Boot, Direct Boot, 6h-Wartung
+- `reference/tag-freigeben.md` — "Tag freigeben": Gate, Backstop, manuelle Wecker, Direct-Boot-Grenze
 - `reference/master-pause.md` — die Master-Pause und ihre Backstops
 
 ---
@@ -77,6 +78,10 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Das Skip-Flag läuft zeitbasiert ab, nicht per ID-Match** (`skippedAlarmTriggerTime` +
   `clearExpiredSkip()`, aufgehängt an `syncAlarms()`). Dazu ein Gate in `syncAlarms()` UND ein
   Backstop in `scheduleSystemAlarm()`.
+- **„Tag freigeben" braucht Gate UND Backstop, und beide nehmen MANUELLE Wecker aus**
+  (`eventId.isEmpty()`). Tagesanker ist überall die WECKZEIT — in `FreieTageStore.tagVon`,
+  `TagFreigabeUseCase.gehoertZuTag`, `AlarmUseCase.istTagFreigegeben` und
+  `berechneWeckerAnzeige`. Hergang in `reference/tag-freigeben.md`.
 - **Stille Schicht (`isSilent`) gated NUR die Wecker-AUSLÖSUNG**, nicht die `AlarmInfo` selbst;
   `alarmTime` bleibt ein nicht-nullables Pflichtfeld. Fail-safe: Lookup-Fehler = NICHT still.
 - **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.** Die Falle

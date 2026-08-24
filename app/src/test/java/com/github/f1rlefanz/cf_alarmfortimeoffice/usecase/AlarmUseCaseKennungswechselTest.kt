@@ -19,6 +19,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipRe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -279,7 +280,8 @@ class AlarmUseCaseKennungswechselTest {
         },
         mock<ShiftSpanStore>(),
         FakeSyncHorizonStore(),
-        feedStore
+        feedStore,
+        keineFreienTage()
     )
 
     // --- Tests ---

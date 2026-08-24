@@ -17,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -104,7 +105,8 @@ class Pruefrunde8SignaltrennungTest {
             mock<MasterPausePrefs>(),
             mock<ShiftSpanStore>(),
             FakeSyncHorizonStore(),
-            FakeFeedNeueinlesenStore()
+            FakeFeedNeueinlesenStore(),
+            keineFreienTage()
         )
     }
 

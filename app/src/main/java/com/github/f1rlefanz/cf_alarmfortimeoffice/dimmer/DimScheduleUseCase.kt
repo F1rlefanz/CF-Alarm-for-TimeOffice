@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
@@ -42,6 +43,7 @@ class DimScheduleUseCase @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val alarmUseCase: IAlarmUseCase,
     private val shiftSpanStore: ShiftSpanStore,
+    private val freieTageStore: FreieTageStore,
     private val dimRuleUseCase: DimRuleUseCase,
     private val prefs: DimOverlayPrefs,
     private val correctionNotifier: DimCorrectionNotifier,
@@ -287,7 +289,17 @@ class DimScheduleUseCase @Inject constructor(
             Logger.w(LogTags.DIMMER, "Schichtspannen nicht lesbar - kein Dimming (fail-open)")
             return Windows(emptyList(), alarmReadFailed = true, anySourceEnabled = true)
         }
-        val spans = spansResult.getOrDefault(emptyList())
+        // FREIGEGEBENE TAGE: an einem vom Nutzer freigegebenen Tag findet der Dienst nicht statt,
+        // also darf er auch keine SCHICHT-Fenster erzeugen. Gefiltert wird hier, an der Quelle -
+        // damit Regel-Fenster UND Nacht-Standard dieselbe Wahrheit sehen. Der Tag sieht danach fuer
+        // die Fensterlogik aus wie jeder andere freie Tag (FREI-Regel, Nacht-Standard), und das ist
+        // Absicht: der Nutzer HAT frei. Ein Lesefehler des Freigabe-Speichers degradiert auf
+        // "keine Freigabe" - lieber einmal zuviel gedimmt als eine unerwartet helle Nacht.
+        val spans = FreieTageStore.filtereSpannen(
+            spannen = spansResult.getOrDefault(emptyList()),
+            freieTage = freieTageStore.freieTageNow(),
+            zone = zone
+        )
 
         val out = mutableListOf<DimWindowResolver.DimSpan>()
         val gStrength = prefs.strengthNow()

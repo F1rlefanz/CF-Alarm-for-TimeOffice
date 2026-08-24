@@ -101,6 +101,7 @@ fun MainContentScreen(
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
     val alarmState by alarmViewModel.uiState.collectAsStateWithLifecycle()
     val skipState by alarmViewModel.skipState.collectAsStateWithLifecycle()
+    val tagFreigabeState by alarmViewModel.tagFreigabeState.collectAsStateWithLifecycle()
     val manualAlarmState by alarmViewModel.manualAlarmState.collectAsStateWithLifecycle() // NEU
     val snoozeMinutes by alarmViewModel.snoozeMinutes.collectAsStateWithLifecycle()
     // EINE Sammelstelle fuer die Master-Pause, von hier an drei Tabs verteilt (Home, Wecker,
@@ -300,6 +301,7 @@ fun MainContentScreen(
                         shiftState = shiftState,
                         alarmState = alarmState,
                         skipState = skipState,
+                        tagFreigabeState = tagFreigabeState,
                         snoozeMinutes = snoozeMinutes,
                         masterPausePaused = masterPausePaused,
                         onUpdateShiftConfig = shiftViewModel::updateShiftConfig,
@@ -314,6 +316,16 @@ fun MainContentScreen(
                             // Events noch synchronisiert es. Am Emulator gemessen (18.08.2026) -
                             // der Merker verschwand, der geloeschte Wecker kam aber nicht zurueck.
                             alarmViewModel.cancelSkip {
+                                calendarViewModel.refreshData(forceRefresh = true)
+                            }
+                        },
+                        onTagFreigeben = alarmViewModel::tagFreigeben,
+                        // Wie beim Aufheben des Ueberspringens: der Bestand muss neu aus dem
+                        // Kalender aufgebaut werden, denn die Freigabe hat die Wecker dieses
+                        // Tages geloescht. forceRefresh = true ist auch hier Pflicht -
+                        // refreshData(false) macht nur einen Token-Check und laedt nichts.
+                        onFreigabeZuruecknehmen = { tag ->
+                            alarmViewModel.freigabeZuruecknehmen(tag) {
                                 calendarViewModel.refreshData(forceRefresh = true)
                             }
                         },

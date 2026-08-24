@@ -20,6 +20,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.AlarmSkipRe
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -206,7 +207,8 @@ class AlarmUseCaseDeltaSyncTest {
             },
             spanStore,
             horizonStore,
-            feedStore
+            feedStore,
+            keineFreienTage()
         )
 
     private fun mockManager(): AlarmManagerService {

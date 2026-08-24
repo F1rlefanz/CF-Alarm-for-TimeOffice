@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -111,7 +112,7 @@ class DimScheduleUseCaseTest {
         // Fenster-Vorschau hier immer "nicht pausiert".
         val masterPausePrefs = mock<MasterPausePrefs>()
         whenever(masterPausePrefs.pausedNow()).thenReturn(false)
-        return DimScheduleUseCase(context, alarmUseCase, spanStore, ruleUseCase(rules), prefs, notifier, masterPausePrefs)
+        return DimScheduleUseCase(context, alarmUseCase, spanStore, keineFreienTage(), ruleUseCase(rules), prefs, notifier, masterPausePrefs)
     }
 
     @Test

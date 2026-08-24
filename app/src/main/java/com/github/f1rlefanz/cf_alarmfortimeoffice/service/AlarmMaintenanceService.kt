@@ -41,6 +41,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Date
 import java.util.concurrent.TimeUnit
@@ -442,6 +443,9 @@ class AlarmMaintenanceService : Service() {
 
     @Inject
     lateinit var calendarUnavailableNotifier: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
+
+    @Inject
+    lateinit var freieTageStore: com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 
     @Inject
     lateinit var pendingDeselectionCleanupStore:
@@ -1078,6 +1082,17 @@ class AlarmMaintenanceService : Service() {
             applicationContext.getExternalFilesDir(null)?.let { SimpleFileTree.cleanupOldLogs(it) }
         } catch (e: Exception) {
             Logger.w(LogTags.FILE_SYSTEM, "Log-Bereinigung uebersprungen", e)
+        }
+
+        // STEP 0b: ABGELAUFENE TAGES-FREIGABEN. Ebenfalls VOR dem Master-Pause-Gate, aus
+        // demselben Grund wie STEP 0: dahinter steigt die Wartung dreimal frueh aus (Pause,
+        // Token-Refresh, Lade-Gate), und ein Datums-Aufraeumen braucht weder Netz noch Token.
+        // Anders als die Schichtspannen kann sich dieser Speicher nicht beim Schreiben selbst
+        // aufraeumen - geschrieben wird nur, wenn der Nutzer einen Tag anfasst.
+        try {
+            freieTageStore.aufraeumen(LocalDate.now())
+        } catch (e: Exception) {
+            Logger.w(LogTags.SHIFT, "Aufraeumen der freigegebenen Tage uebersprungen", e)
         }
 
         // MASTER-PAUSE: gesamte Wartung ueberspringen, wenn der Nutzer pausiert hat.

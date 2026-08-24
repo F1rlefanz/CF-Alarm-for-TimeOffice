@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -42,7 +43,7 @@ class DndShiftSpanSourceTest {
         val spanStore = mock<ShiftSpanStore>()
         kotlinx.coroutines.runBlocking { whenever(spanStore.spansNow()).thenReturn(spans) }
         return DndScheduleUseCase(
-            mock<Context>(), spanStore, mock<DimScheduleUseCase>(), prefs, mock<MasterPausePrefs>()
+            mock<Context>(), spanStore, keineFreienTage(), mock<DimScheduleUseCase>(), prefs, mock<MasterPausePrefs>()
         )
     }
 

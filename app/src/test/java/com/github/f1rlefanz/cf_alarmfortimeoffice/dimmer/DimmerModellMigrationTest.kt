@@ -300,28 +300,71 @@ class DimmerModellMigrationTest {
     // --- (d) Wellness + Regeln ------------------------------------------------------------------
 
     /**
-     * Wellness lief im Altmodell NEBEN den Regeln — auch an einem Tag, den eine Regel mit leerer
-     * Fensterliste unterdrückt hat („leere Liste" hieß dort nur „keine REGEL-Fenster"). Deshalb
-     * bekommt jede wirksame Regel das Wind-down-Fenster angehängt, ausdrücklich auch die leere.
+     * Wellness lief im Altmodell NEBEN den Regeln. Sein Fenster wandert deshalb in jede wirksame
+     * Regel — mit EINER Ausnahme, die weiter unten als eigener Test steht: eine Regel mit LEERER
+     * Fensterliste bleibt leer, weil ihre Leere die Unterdrückung des ganzen Tages IST.
      */
     @Test
-    fun `d Wellness und Regeln - das Wind-down-Fenster wandert in JEDE wirksame Regel`() {
+    fun `d Wellness und Regeln - das Wind-down-Fenster wandert in jede dimmende Regel`() {
         val universal = regel("u1", DimRule.SHIFT_UNIVERSAL, listOf(nachtRegelFenster()), 55, 40)
-        val unterdrueckt = regel("z1", ZWISCHEN, emptyList(), 55, 40)
         val a = alt(wellness = true, regeln = true, windDown = 120, gStrength = 55, gWarmth = 40)
 
-        val plan = beweise("Wellness + Regeln", a, listOf(universal, unterdrueckt), dienstplanFrueh)
+        val plan = beweise("Wellness + Regeln", a, listOf(universal), dienstplanFrueh)
 
-        val ergebnis = anwenden(listOf(universal, unterdrueckt), plan.regeln)
-        val wellnessFenster = DimWindow(
-            startAnchor = DimAnchor.ALARM, startOffsetMinutes = -120,
-            endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0
-        )
+        val ergebnis = anwenden(listOf(universal), plan.regeln)
         assertTrue(ergebnis.first { it.id == "u1" }.windows.contains(wellnessFenster))
+    }
+
+    /** Das Wind-down-Fenster, das die Migration aus der Wellness-Quelle baut (120 Min Vorlauf). */
+    private val wellnessFenster = DimWindow(
+        startAnchor = DimAnchor.ALARM, startOffsetMinutes = -120,
+        endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0
+    )
+
+    /** Ein Kalendertag mit ZWEI Diensten - Fruehdienst und anschliessender Nachtdienst. */
+    private val dienstplanDoppelschicht = listOf(
+        slot(1, FRUEH, 5, 30), slot(1, NACHT, 18, 0),
+        slot(4, FRUEH, 5, 30), slot(8, FRUEH, 5, 30)
+    )
+
+    /**
+     * DIE UNTERDRÜCKUNG DARF DIE MIGRATION NICHT ÜBERLEBEN — als das, was sie ist.
+     *
+     * `DimWindowResolver.regelFuerTag()` erkennt die Nachtdienst-Ausnahme an EINEM Merkmal: der
+     * leeren Fensterliste. Sie gilt für den GANZEN Kalendertag, ausdrücklich auch dann, wenn eine
+     * ANDERE Schicht desselben Tages eine dimmende Regel trägt (Prüfrunde 8). Hängt die Migration
+     * an eine solche Regel „nur" das Wind-down-Fenster an, ist sie nicht mehr leer — die
+     * Tages-Priorität fällt weg, und der Tag wird stattdessen über den normalen Vorrang
+     * entschieden. An einem Tag mit zwei Diensten gewinnt dann die Regel der FRÜHEREN Schicht, und
+     * ihr Nacht-Fenster dimmt genau die Nacht, die der Nutzer ausdrücklich ausgenommen hatte.
+     *
+     * Nicht zu dimmen ist die harmlose Richtung („im Zweifel klingeln und hell"); ein Fenster, das
+     * es im Altmodell an diesem Tag nie gab, ist es nicht.
+     */
+    @Test
+    fun `eine unterdrueckende Regel bleibt leer - sonst dimmt der ausgenommene Nachtdienst`() {
+        val fruehRegel = regel("f1", FRUEH, listOf(nachtRegelFenster(22 * 60, 6 * 60)))
+        val nachtAusnahme = regel("n1", NACHT, emptyList())
+        val bestand = listOf(fruehRegel, nachtAusnahme)
+        val a = alt(wellness = true, regeln = true, windDown = 120)
+
+        val plan = DimmerModellMigration.plane(a, bestand)
+
+        assertTrue(
+            "Die Ausnahme-Regel muss OHNE Fenster bleiben - ihre Leere IST die Unterdrueckung. " +
+                "Geplant war: ${plan.regeln}",
+            anwenden(bestand, plan.regeln).first { it.id == "n1" }.windows.isEmpty()
+        )
+
+        // Und die Wirkung dazu: an dem Doppelschicht-Tag entsteht kein einziges Fenster.
+        val ausgenommen = tag(1)
+        val nachts = zeitleiste(neuesModell(plan, bestand, dienstplanDoppelschicht))
+            .filter { i ->
+                java.time.Instant.ofEpochMilli(i.range.first).atZone(zone).toLocalDate() == ausgenommen
+            }
         assertEquals(
-            "Die unterdrueckende Regel traegt danach GENAU das Wind-down-Fenster - genau das, was " +
-                "das Altmodell an diesem Tag noch gedimmt hat",
-            listOf(wellnessFenster), ergebnis.first { it.id == "z1" }.windows
+            "Am ausgenommenen Tag darf NICHTS dimmen - gefunden:\n${zeige(nachts)}",
+            emptyList<DimWindowResolver.ResolvedInterval>(), nachts
         )
     }
 
@@ -336,14 +379,13 @@ class DimmerModellMigrationTest {
     @Test
     fun `e alle drei an - der von UNIVERSAL verdeckte Nacht-Standard wird NICHT uebernommen`() {
         val universal = regel("u1", DimRule.SHIFT_UNIVERSAL, listOf(nachtRegelFenster()), 55, 40)
-        val unterdrueckt = regel("z1", ZWISCHEN, emptyList(), 55, 40)
         val a = alt(
             wellness = true, regeln = true, nacht = true,
             gStrength = 55, gWarmth = 40, nachtStrength = 80, nachtWarmth = 90,
             ausnahmen = setOf(NACHT)
         )
 
-        val plan = beweise("alle drei an", a, listOf(universal, unterdrueckt), dienstplanMitNacht)
+        val plan = beweise("alle drei an", a, listOf(universal), dienstplanMitNacht)
 
         assertTrue(
             "Weder Nacht-Fenster noch Ausnahme duerfen entstehen - geplant war: ${plan.regeln}",
@@ -505,5 +547,44 @@ class DimmerModellMigrationTest {
         )
         assertTrue("ALT kannte den milderen Abschnitt", vorher.any { it.strength == 40 })
         assertTrue("NEU hat nur noch die duenklere Stufe", nachher.all { it.strength == 70 })
+    }
+
+    /**
+     * ABWEICHUNG 5 (bewusst gewählt, mit konkreten Zahlen): An einem Tag, den eine Regel
+     * UNTERDRÜCKT, entfällt das Wind-down.
+     *
+     * Im Altmodell hieß „leere Fensterliste" nur „keine REGEL-Fenster" — die Wellness-Quelle lief
+     * daneben weiter und dimmte auch dort die zwei Stunden vor der Weckzeit. Im Ein-Modell ist die
+     * leere Fensterliste das EINZIGE Merkmal, an dem die Unterdrückung hängt, und sie gilt
+     * tagesweit. Beides zugleich geht nicht: hängt man das Wind-down an, verliert der Tag seine
+     * Unterdrückung (dann dimmt an einem Tag mit zwei Diensten die Regel der früheren Schicht die
+     * ausgenommene Nacht durch — der Test „eine unterdrueckende Regel bleibt leer" oben).
+     *
+     * Gewählt ist die HELLE Richtung: die Unterdrückung bleibt, das Wind-down entfällt an genau
+     * diesen Tagen. Wer es dort behalten will, legt auf diese Schicht eine Regel mit einem Fenster
+     * „Weckzeit −120 → Weckzeit" statt einer leeren an.
+     */
+    @Test
+    fun `Abweichung - an einem unterdrueckten Tag entfaellt das Wind-down`() {
+        // Bewusst OHNE Nacht-Regel im Bestand: sonst zoege `mergeToTimeline` das Wind-down mit der
+        // Nacht davor zu EINEM Abschnitt zusammen, und die Zahlen unten waeren nicht mehr ablesbar.
+        val bestand = listOf(regel("z1", ZWISCHEN, emptyList()))
+        val a = alt(wellness = true, regeln = true, windDown = 120)
+        val plan = DimmerModellMigration.plane(a, bestand)
+
+        // Tag 3 traegt den Zwischendienst (Weckzeit 06:15) und wird von z1 unterdrueckt.
+        val zwischendienstTag = tag(3)
+        fun amTag(l: List<DimWindowResolver.ResolvedInterval>) = l.filter { i ->
+            java.time.Instant.ofEpochMilli(i.range.first).atZone(zone).toLocalDate() == zwischendienstTag
+        }
+
+        val vorher = amTag(zeitleiste(altModell(a, bestand, dienstplanFrueh)))
+        val nachher = amTag(zeitleiste(neuesModell(plan, bestand, dienstplanFrueh)))
+
+        assertEquals(
+            "ALT dimmte dort die zwei Stunden vor der Weckzeit",
+            listOf(wanduhr(tag(3), 4, 15)..wanduhr(tag(3), 6, 15)), vorher.map { it.range }
+        )
+        assertTrue("NEU bleibt der unterdrueckte Tag ganz hell", nachher.isEmpty())
     }
 }

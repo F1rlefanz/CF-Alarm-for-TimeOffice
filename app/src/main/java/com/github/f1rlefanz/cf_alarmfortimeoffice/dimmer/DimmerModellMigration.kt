@@ -147,10 +147,10 @@ class DimmerModellMigration @Inject constructor(
          *    von einer Regel gedeckter Tag fiel aus dem Nacht-Standard heraus. Dann wird weder sein
          *    Fenster noch eine seiner Ausnahmen übernommen. Siehe Klassen-KDoc.
          * 3. **Wellness lief als eigene Quelle NEBEN allem anderen** - auch an Tagen, die eine Regel
-         *    unterdrückt hat. Sein Fenster wird deshalb an JEDE wirksame Regel angehängt, ausdrücklich
-         *    auch an eine bis dahin leere: „leere Fensterliste = Unterdrückung" hieß im Altmodell nur
-         *    „keine REGEL-Fenster", nicht „kein Dimmen". Eine Regel mit ausschließlich dem
-         *    Wellness-Fenster ergibt exakt dasselbe Ergebnis wie damals.
+         *    unterdrückt hat. Sein Fenster wird deshalb an jede wirksame Regel angehängt - mit einer
+         *    Ausnahme, die keine Nachlässigkeit ist: an eine Regel mit LEERER Fensterliste NICHT.
+         *    Ihre Leere ist das einzige Merkmal, an dem die tagesweite Unterdrückung hängt; ein
+         *    angehängtes Fenster nähme sie ihr (Begründung und Preis an der Codestelle).
          * 4. **Was keine Regel traf, traf im Altmodell trotzdem Wellness und Nacht-Standard.** Dafür
          *    entsteht eine UNIVERSAL-Regel mit den übernommenen Fenstern - es sei denn, es gibt schon
          *    eine aktive (dann hat Schritt 3 sie bereits ergänzt, und Schritt 2 hat den Nacht-Standard
@@ -196,9 +196,27 @@ class DimmerModellMigration @Inject constructor(
                 altbestand.filter { it.enabled }.forEach { geplant += it.copy(enabled = false) }
             }
 
-            // (3) Wellness an jede wirksame Regel anhaengen (contains-Pruefung = Idempotenz).
+            // (3) Wellness an jede DIMMENDE Regel anhaengen (contains-Pruefung = Idempotenz).
+            //
+            // EINE REGEL MIT LEERER FENSTERLISTE BLEIBT LEER, und das ist keine Nachlaessigkeit,
+            // sondern die Bedingung dafuer, dass die Unterdrueckung die Migration ueberlebt:
+            // `DimWindowResolver.regelFuerTag()` erkennt die Nachtdienst-Ausnahme an genau EINEM
+            // Merkmal - `windows.isEmpty()` - und laesst sie fuer den GANZEN Kalendertag gelten,
+            // auch wenn eine ANDERE Schicht desselben Tages eine dimmende Regel traegt
+            // (Pruefrunde 8). Haengt man hier "nur" das Wind-down an, ist die Regel nicht mehr
+            // leer: die Tages-Prioritaet faellt weg, der Tag wird ueber den normalen Vorrang
+            // entschieden, und an einem Tag mit zwei Diensten gewinnt die Regel der FRUEHEREN
+            // Schicht - deren Nacht-Fenster dimmt dann ausgerechnet die Nacht, die der Nutzer
+            // ausdruecklich ausgenommen hatte.
+            //
+            // DER PREIS, bewusst gezahlt und in `DimmerModellMigrationTest` mit Zahlen
+            // festgehalten ("Abweichung - an einem unterdrueckten Tag entfaellt das Wind-down"):
+            // an genau diesen Tagen dimmt das Wind-down nicht mehr, das die alte Wellness-Quelle
+            // dort noch legte. Beides zugleich ist im Ein-Modell nicht ausdrueckbar, und die
+            // Richtung "bleibt hell" ist die harmlose - "im Zweifel klingeln und hell".
             if (wellnessFenster != null) {
                 wirksamerBestand
+                    .filter { it.windows.isNotEmpty() }
                     .filterNot { wellnessFenster in it.windows }
                     .forEach { geplant += it.copy(windows = it.windows + wellnessFenster) }
             }

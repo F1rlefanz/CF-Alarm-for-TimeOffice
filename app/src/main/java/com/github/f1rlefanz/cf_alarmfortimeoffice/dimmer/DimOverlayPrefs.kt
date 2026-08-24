@@ -291,8 +291,12 @@ class DimOverlayPrefs @Inject constructor(
         it[KEY_RENDER_WARMTH] = warmth.coerceIn(0, WARMTH_MAX)
         it[KEY_OVERLAY_PREVIEW_UNTIL] = expiresAtMillis
     }
-    suspend fun setStrength(v: Int) = dataStore.edit { it[KEY_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
-    suspend fun setWarmth(v: Int) = dataStore.edit { it[KEY_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
+    // KEIN setStrength/setWarmth mehr: Mit dem Ein-Modell-Umbau hat die Oberflaeche keine globalen
+    // Verdunkelungs-/Waerme-Regler mehr - Intensitaet gehoert seither zur REGEL. Die Schluessel
+    // selbst bleiben und werden weiter GELESEN (`strengthNow()`/`warmthNow()`): sie sind der
+    // Fallback des Renderzustands und der Wert, mit dem `setActiveOverlay(false, …)` abschaltet.
+    // Ein Setter ohne Bedienelement waere dagegen genau die Altlast, die dieses Projekt am Ende
+    // eines Durchgangs entfernt.
 
     /**
      * Schreibt Delta/Pause/Fenster-Schlüssel ATOMAR zusammen. Ein Teil-Update (z. B. nur `paused`

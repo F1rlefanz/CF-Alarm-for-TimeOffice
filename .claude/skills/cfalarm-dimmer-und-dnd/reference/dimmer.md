@@ -292,6 +292,27 @@
   nach einem **Lesefehler der Fenster-Grundlage** (Schichtspannen für die Regeln und für den
   gesamten DND-Pfad, Alarm-Bestand für die Weckzeit-Zeitleiste). Die BEDEUTUNG einer leeren Fensterliste
   (Nachtdienst-Unterdrückung) bleibt unverändert — es wird nur später noch einmal nachgesehen.
+- **Aufraeumen nach dem Ein-Modell-Umbau (v1.34.2): was ohne Bedienelement uebrig blieb, ist weg.**
+  Der Umbau hat den Dimmer-Reiter von drei Karten auf einen Schalter reduziert — die Oberflaeche
+  liest seither aus `DimmerViewModel` nur noch `uiState.dimEnabled` und ruft `setDimEnabled()`.
+  Alles Uebrige war damit ohne Aufrufer und ist entfernt: die globalen Verdunkelungs-/Waerme-Setter
+  (im ViewModel UND in `DimOverlayPrefs`), `shiftNames` (dessen Konsumenten haengen samt und
+  sonders an `DimmerRulesViewModel`/`DndViewModel`, nicht hier), die komplette
+  `previewDim()`-Maschinerie samt eigenem Scope, zwei `uiState`-Felder und neun tote Importe. Die
+  Datei schrumpfte von 207 auf 89 Zeilen.
+  **Referenzbasiert geprueft, nicht annotationsbasiert** — und das war noetig: die Kommentare in
+  `DndViewModel` und `DimmerViewModel` verwiesen weiter auf `setStrength`/`setWarmth`, als gaebe es
+  sie noch.
+  **Die SCHLUESSEL `dim_strength`/`dim_warmth` bleiben** und werden weiter gelesen
+  (`strengthNow()`/`warmthNow()`): sie sind der Fallback des Renderzustands und der Wert, mit dem
+  `setActiveOverlay(false, …)` abschaltet. Entfernt wurden nur die SETTER — ein Setter ohne
+  Bedienelement ist die Altlast, der Getter mit Konsument nicht.
+  **Kein Test wurde weggeworfen, nur weil sein Traeger entfiel:** Die beiden Regressionen zum
+  Vorschau-Aufraeumen (App waehrend der Vorschau verlassen; zweiter Tipp loest den ersten in der
+  richtigen Reihenfolge ab) sind auf `DimmerRulesViewModel.previewRule()` umgezogen — den Zwilling
+  mit derselben Konstruktion und derselben Falle. Ersatzlos gestrichen wurde nur, was gar keinen
+  Gegenstand mehr hat (`DimmerViewModelRenderSettersTest`, die `previewDim`-Haelfte des
+  Stempel-Tests).
 - **Der Ende-Anker `ALARM_SONST_CLOCK` (seit v1.33.0) bringt die Semantik „min(Weckzeit, Uhrzeit)"
   ins Modell — sie fehlte, und ihr Fehlen war ein gemeldeter Fehler.** Am 23.08.2026 wachte der
   Eigentuemer um 08:48 auf und fand den Bildschirm gedimmt. Kein Defekt: der Nacht-Standard endet

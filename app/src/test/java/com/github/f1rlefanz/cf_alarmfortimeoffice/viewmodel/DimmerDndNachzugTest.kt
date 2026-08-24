@@ -86,7 +86,7 @@ class DimmerDndNachzugTest {
         val dndSchedule = mock<DndScheduleUseCase>()
 
         return Fixture(
-            dimmer = DimmerViewModel(prefs, dimSchedule, { dndSchedule }, shiftUseCase),
+            dimmer = DimmerViewModel(prefs, dimSchedule, { dndSchedule }),
             regeln = DimmerRulesViewModel(
                 ruleUseCase, shiftUseCase, dimSchedule, { dndSchedule }, prefs, mock<ShiftSpanStore>()
             ),

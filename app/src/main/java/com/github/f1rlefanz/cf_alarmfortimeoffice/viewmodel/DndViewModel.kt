@@ -94,7 +94,8 @@ class DndViewModel @Inject constructor(
 
     // Policy-Aenderungen wirken auf die registrierte Zen-Regel, nicht auf die Fenster-Berechnung -
     // applyCurrentState() reicht (aktualisiert die Regel sofort), kein Reschedule noetig. Analog zu
-    // DimmerViewModel.setStrength/setWarmth (Darstellung aendert keine Fenster).
+    // den Darstellungs-Settern des Dimmers (Farbe aendert keine Fenster) - die gab es bis zum
+    // Ein-Modell-Umbau als eigene Regler, heute gehoert Intensitaet zur Regel.
     fun setBlockCalls(v: Boolean) = viewModelScope.launch {
         prefs.setBlockCalls(v); dndSchedule.applyCurrentState()
     }

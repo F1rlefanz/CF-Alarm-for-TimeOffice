@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.34.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.34.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Aufräumen hinter dem Dimmer-Umbau — für dich ändert sich nichts._
+
+### 🧰 Intern
+
+- **Reste des alten Dimmer-Aufbaus entfernt:** Mit dem Umstieg auf ein einziges Regel-Modell (1.34.0) hat der Dimmer-Reiter seine drei Karten verloren. Der Code dahinter — globale Verdunkelungs- und Wärme-Regler, die 5-Sekunden-Vorschau des Reiters, die Schichtnamen-Liste — blieb stehen, ohne dass ihn noch etwas aufrief. Er ist jetzt weg. **Sichtbar ändert sich dadurch nichts:** die Vorschau gibt es weiterhin im Regel-Editor, und Verdunkelung und Wärme stellst du dort pro Regel ein. Die abgesicherten Verhaltensweisen wurden nicht mitentsorgt, sondern auf die Regel-Vorschau übertragen.
+
+## Version 1.34.1
 
 **Stand:** August 2026
 

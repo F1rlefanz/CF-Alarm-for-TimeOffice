@@ -99,21 +99,11 @@ class Pruefrunde6DimmPreviewStampTest {
         )
     }
 
-    @Test
-    fun `previewDim schreibt den Ablaufzeitpunkt mit`() {
-        val stamp = Stamp()
-        val prefs = mockPrefs(stamp)
-        val shiftUseCase = mock<IShiftUseCase>()
-        whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
-        val viewModel = DimmerViewModel(prefs, mock<DimScheduleUseCase>(), { mock<DndScheduleUseCase>() }, shiftUseCase)
-
-        val startedAt = System.currentTimeMillis()
-        viewModel.previewDim(seconds = 5)
-
-        assertStamped(stamp, startedAt, seconds = 5)
-    }
-
-    /** Der Zwilling: dieselbe Konstruktion im Regel-Editor, derselbe Ausfall. */
+    /**
+     * Frueher hatte dieser Test einen Zwilling fuer `DimmerViewModel.previewDim()`. Die
+     * 5-Sekunden-Vorschau des Dimmer-Reiters ist mit dem Ein-Modell-Umbau entfallen; geblieben ist
+     * die Vorschau im Regel-Editor - mit derselben Konstruktion und derselben Zusicherung.
+     */
     @Test
     fun `previewRule schreibt den Ablaufzeitpunkt mit`() {
         val stamp = Stamp()

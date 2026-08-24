@@ -145,7 +145,7 @@
   `CLOCK 22:00 → ALARM_SONST_CLOCK 07:00`), „Nachtdienst-Rhythmus" (Regel auf eine gewählte Schicht
   mit ZWEI Fenstern an einem Kalendertag: `SHIFT_END +0 → CLOCK 14:00` und `CLOCK 15:00 → ALARM +0`)
   und „Schicht ausnehmen" (Regel auf eine gewählte Schicht mit LEERER Fensterliste). Jede geht über
-  `saveRule()` und damit über `armiereFensterkettenNeu()`. Der Unterschied zur abgelösten
+  `saveRule()` und damit über den `ZeitkettenArmierer`. Der Unterschied zur abgelösten
   eingebauten Quelle ist der Punkt: was entsteht, steht danach **sichtbar** in der Regelliste und
   lässt sich ändern und löschen. Damit der Nutzer das auch sieht, öffnet der Bildschirm den Editor
   der neuen Regel (`neueRegelId` als Ereignis); `ruleById` fällt dabei auf die zuletzt angelegte
@@ -172,7 +172,7 @@
   `DimmerFensterEditorAnkerTest` stellt sie gegen die Fenster, die die Migration wirklich erzeugt.
 
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** (v1.24.0, an ZWEI
-  Stellen: `DimmerViewModel.previewDim()` und `DimmerRulesViewModel.previewRule()` — „Regel
+  Stelle: `DimmerRulesViewModel.previewRule()` — „Regel
   testen"). Beide schrieben mit `setActiveOverlay(true, …)` einen **persistenten** Zustand und
   stellten den regulären erst nach `delay(5s)` wieder her. `DimAccessibilityService` beobachtet nur
   `DimOverlayPrefs.renderState` und hat eine vom ViewModel völlig unabhängige Lebensdauer: verlässt

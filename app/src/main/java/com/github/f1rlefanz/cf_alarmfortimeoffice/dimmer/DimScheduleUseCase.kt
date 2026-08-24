@@ -164,7 +164,7 @@ class DimScheduleUseCase @Inject constructor(
             // Derselbe Aufraeumpfad wie disable(), aber ohne den rollenden Alarm anzufassen.
             // ACHTUNG, keine Garantie: applyCurrentState() wird auch OHNE
             // scheduleNextTransition() gerufen (DimNotificationService, DimmerRulesViewModel,
-            // DimmerViewModel.previewDim) - "beide immer zusammen" gilt nur fuer enable().
+            // die Vorschau im Regel-Editor) - "beide immer zusammen" gilt nur fuer enable().
             // Storniert wird der REQ_TICK-Alarm heute ausschliesslich von disable() bzw.
             // scheduleNextTransition(), und die Pause wird nur ueber MasterPauseUseCase.pause()
             // gesetzt, das disable() mit-ruft. Wer das Pause-Flag kuenftig woanders setzt, MUSS

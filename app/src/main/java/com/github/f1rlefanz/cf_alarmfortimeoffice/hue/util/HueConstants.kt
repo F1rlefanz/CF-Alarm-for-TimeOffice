@@ -27,8 +27,6 @@ object HueConstants {
         // Hue Bridge API endpoints
         const val API_BASE_PATH = "/api"
         const val SCHEDULES_ENDPOINT = "/schedules"
-        
-        // Device type for user creation
     }
     
     /**

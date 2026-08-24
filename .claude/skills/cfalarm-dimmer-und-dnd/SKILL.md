@@ -90,7 +90,7 @@ das baut man dieselbe Falle in neuer Form nach.
   `previewScope` mit `CoroutineExceptionHandler`, Reset im `finally` unter `NonCancellable`, und ein
   zweiter Tipp räumt die laufende Vorschau per `cancelAndJoin()` ZUERST auf. Diese Scopes werden
   bewusst **nicht** in `onCleared()` gecancelt — genau das wäre der Bug. Betrifft heute nur noch
-  `previewRule()`: die 5-Sekunden-Vorschau des Dimmer-Reiters (`previewDim()`) ist mit dem
+  `previewRule()`: die 5-Sekunden-Vorschau des Dimmer-Reiters ist mit dem
   Ein-Modell-Umbau entfallen, der zugehörige Regressionstest zog auf `previewRule()` um statt
   gelöscht zu werden.
 - **Der Korrektur-Override lebt im DataStore**, mit `windowEnd` UND `windowStrength` als
@@ -113,8 +113,8 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`DimCorrectionNotifier.show()` prüft `areNotificationsEnabled()` vor `notify()`.**
 - **DND: zwei Fenster-Trigger plus ein Klipp-Modifikator, kein Regel-Editor.**
 - **Jeder Setter, der DIMM-FENSTERGRENZEN verschiebt, armiert BEIDE Ketten neu — Dimmer, dann
-  DND** (`armiereFensterkettenNeu()` in `DimmerViewModel` und `DimmerRulesViewModel`, unter
-  `NonCancellable`). Reine DARSTELLUNGS-Setter (Verdunkelung/Wärme) rufen bewusst nur den Dimmer.
+  DND** — seit v1.34.3 an EINER Stelle, `ZeitkettenArmierer.armiere()`, statt fuenfmal von Hand.
+  Reihenfolge, `NonCancellable` und das getrennte Fangen liegen dort. Reine DARSTELLUNGS-Setter (Verdunkelung/Wärme) rufen bewusst nur den Dimmer.
 - **Modus 1 dupliziert KEINE Fenster-Logik** — er ruft `previewTimelineWithStatus()` direkt auf.
   Einbahnstraße: `dnd/` liest von `dimmer/`, nie umgekehrt. **Das `…WithStatus` ist kein Luxus**: der
   Lesefehler muss über die Grenze kommen, sonst plant DND den 6h-Keep-alive statt des 15-min-Retry.

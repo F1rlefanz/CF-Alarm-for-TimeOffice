@@ -2,10 +2,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent

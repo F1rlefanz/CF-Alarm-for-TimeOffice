@@ -66,30 +66,14 @@ class DimmerViewModelRenderSettersTest {
     )
 
     /**
-     * `uiState` wird im Property-Initializer aus neun Prefs-Flows kombiniert - die muessen alle
+     * `uiState` wird im Property-Initializer aus den Prefs-Flows kombiniert - die muessen alle
      * gestubbt sein, sonst scheitert schon die Konstruktion an einem `null`-Flow.
      */
     private fun buildFixture(): Fixture {
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.toggles).thenReturn(
-            flowOf(
-                DimOverlayPrefs.Toggles(
-                    wellnessEnabled = false,
-                    rulesEnabled = false,
-                    nightDefaultEnabled = true
-                )
-            )
-        )
+        whenever(prefs.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = false)))
         whenever(prefs.strength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
         whenever(prefs.warmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
-        whenever(prefs.windDownMinutes).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WINDDOWN_MIN))
-        whenever(prefs.nightDefaultStartMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN))
-        whenever(prefs.nightDefaultFreeEndMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN))
-        whenever(prefs.nightDefaultExcludedShifts).thenReturn(flowOf(emptySet()))
-        whenever(prefs.nightDefaultStrength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
-        whenever(prefs.nightDefaultWarmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
 
         val dimSchedule = mock<DimScheduleUseCase>()
         val dndSchedule = mock<DndScheduleUseCase>()
@@ -133,34 +117,6 @@ class DimmerViewModelRenderSettersTest {
     }
 
     @Test
-    fun `Nacht-Standard-Verdunkelung wirkt ebenfalls sofort`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.viewModel.setNightDefaultStrength(45)
-        advanceUntilIdle()
-
-        verify(f.prefs).setNightDefaultStrength(45)
-        verify(f.dimSchedule).enable()
-        // Gegenprobe: eine reine FARB-Aenderung verschiebt keine Fenstergrenze - DND haette
-        // hier nichts neu zu rechnen. Ohne diese Zeile zementierte der Test die Verschwendung.
-        verify(f.dndSchedule, never()).enable()
-    }
-
-    @Test
-    fun `Nacht-Standard-Waerme wirkt ebenfalls sofort`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.viewModel.setNightDefaultWarmth(65)
-        advanceUntilIdle()
-
-        verify(f.prefs).setNightDefaultWarmth(65)
-        verify(f.dimSchedule).enable()
-        // Gegenprobe: eine reine FARB-Aenderung verschiebt keine Fenstergrenze - DND haette
-        // hier nichts neu zu rechnen. Ohne diese Zeile zementierte der Test die Verschwendung.
-        verify(f.dndSchedule, never()).enable()
-    }
-
-    @Test
     fun `Jeder Regler-Commit wendet seinen Wert an - kein verschluckter Zwischenstand`() = runTest(dispatcher) {
         val f = buildFixture()
 
@@ -168,13 +124,13 @@ class DimmerViewModelRenderSettersTest {
         // Entprellung wuerde die ersten beiden verwerfen; da die UI nur beim Loslassen meldet, ist
         // jeder dieser Commits ein echter Nutzer-Wunsch und muss auch angewendet werden.
         f.viewModel.setStrength(10)
-        f.viewModel.setNightDefaultStrength(20)
-        f.viewModel.setWarmth(30)
+        f.viewModel.setWarmth(20)
+        f.viewModel.setStrength(30)
         advanceUntilIdle()
 
         verify(f.prefs).setStrength(10)
-        verify(f.prefs).setNightDefaultStrength(20)
-        verify(f.prefs).setWarmth(30)
+        verify(f.prefs).setWarmth(20)
+        verify(f.prefs).setStrength(30)
         verify(f.dimSchedule, times(3)).enable()
     }
 }

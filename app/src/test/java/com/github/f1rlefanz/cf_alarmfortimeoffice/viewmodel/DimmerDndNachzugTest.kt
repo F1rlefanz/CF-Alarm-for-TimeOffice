@@ -72,25 +72,9 @@ class DimmerDndNachzugTest {
 
     private fun buildFixture(): Fixture {
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.toggles).thenReturn(
-            flowOf(
-                DimOverlayPrefs.Toggles(
-                    wellnessEnabled = false,
-                    rulesEnabled = false,
-                    nightDefaultEnabled = true
-                )
-            )
-        )
+        whenever(prefs.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = false)))
         whenever(prefs.strength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
         whenever(prefs.warmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
-        whenever(prefs.windDownMinutes).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WINDDOWN_MIN))
-        whenever(prefs.nightDefaultStartMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN))
-        whenever(prefs.nightDefaultFreeEndMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN))
-        whenever(prefs.nightDefaultExcludedShifts).thenReturn(flowOf(emptySet()))
-        whenever(prefs.nightDefaultStrength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
-        whenever(prefs.nightDefaultWarmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
 
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
@@ -123,76 +107,19 @@ class DimmerDndNachzugTest {
         reihenfolge.verify(dndSchedule).enable()
     }
 
-    @Test
-    fun `Regeln-Schalter armiert beide Ketten - der Fall vom 23 08 2026`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.dimmer.setRulesEnabled(true)
-        advanceUntilIdle()
-
-        f.erwarteBeideKettenInReihenfolge()
-    }
-
-    @Test
-    fun `Nacht-Standard-Schalter armiert beide Ketten - die zweite Haelfte desselben Falls`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.dimmer.setNightDefaultEnabled(false)
-        advanceUntilIdle()
-
-        f.erwarteBeideKettenInReihenfolge()
-    }
-
-    @Test
-    fun `Wellness-Schalter armiert beide Ketten`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.dimmer.setWellnessEnabled(true)
-        advanceUntilIdle()
-
-        f.erwarteBeideKettenInReihenfolge()
-    }
-
-    @Test
-    fun `Nacht-Standard-Startzeit armiert beide Ketten`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.dimmer.setNightDefaultStartMinutes(21 * 60)
-        advanceUntilIdle()
-
-        f.erwarteBeideKettenInReihenfolge()
-    }
-
-    @Test
-    fun `Nacht-Standard-Ende an freien Tagen armiert beide Ketten`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.dimmer.setNightDefaultFreeEndMinutes(8 * 60)
-        advanceUntilIdle()
-
-        f.erwarteBeideKettenInReihenfolge()
-    }
-
     /**
-     * Die Ausnahmenliste ist ein Eingang von `computeWindows()` (`isExcluded`) - ein Toggle daran
-     * verschiebt die Fenster genauso wie eine geaenderte Regel. Dieselbe Begruendung steht in
-     * `ShiftViewModel` fuer den Umbenennungs-Nachzug.
+     * Der gemeldete Fall selbst - nur mit dem EINEN Schalter, den es seit dem Ein-Modell-Umbau
+     * gibt. Die frueheren sechs fensterrelevanten Setter (Regeln-Schalter, Nacht-Standard-Schalter,
+     * Wellness-Schalter, Nacht-Startzeit, Nacht-Ende an freien Tagen, Wind-down-Dauer, Ausnahme-
+     * Chips) sind mit ihren Quellen entfallen; ihre Zusicherung ist hier zusammengefasst. Die
+     * uebrigen fensterrelevanten Setter liegen jetzt vollstaendig in `DimmerRulesViewModel` und
+     * stehen unten.
      */
     @Test
-    fun `Ausnahme-Schicht des Nacht-Standards armiert beide Ketten`() = runTest(dispatcher) {
+    fun `Dimmer-Schalter armiert beide Ketten - der Fall vom 23 08 2026`() = runTest(dispatcher) {
         val f = buildFixture()
 
-        f.dimmer.toggleNightDefaultExcludedShift("Nachtschicht")
-        advanceUntilIdle()
-
-        f.erwarteBeideKettenInReihenfolge()
-    }
-
-    @Test
-    fun `Wind-down-Dauer armiert beide Ketten`() = runTest(dispatcher) {
-        val f = buildFixture()
-
-        f.dimmer.setWindDownMinutes(90)
+        f.dimmer.setDimEnabled(true)
         advanceUntilIdle()
 
         f.erwarteBeideKettenInReihenfolge()

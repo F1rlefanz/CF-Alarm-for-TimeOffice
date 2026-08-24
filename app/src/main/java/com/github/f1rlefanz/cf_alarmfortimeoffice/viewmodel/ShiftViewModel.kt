@@ -3,7 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
@@ -100,16 +99,18 @@ class ShiftViewModel @Inject constructor(
     private val dimScheduleUseCase: dagger.Lazy<DimScheduleUseCase>,
     private val dndScheduleUseCase: dagger.Lazy<DndScheduleUseCase>,
     /**
-     * Die DRITTE und VIERTE Stelle, die ueber den Schichtnamen bindet: die beiden
-     * Schicht-Auswahlen von "Nicht stoeren" ([DndPrefs.renameShiftName]) und die Ausnahmen des
-     * Nacht-Standards ([DimOverlayPrefs.renameShiftName]). Sie wurden beim Nachzug in v1.30.0
-     * uebersehen - warum das teuer ist, steht an den beiden Funktionen.
+     * Die DRITTE Stelle, die ueber den Schichtnamen bindet: die beiden Schicht-Auswahlen von
+     * "Nicht stoeren" ([DndPrefs.renameShiftName]). Sie wurden beim Nachzug in v1.30.0
+     * uebersehen - warum das teuer ist, steht an der Funktion.
+     *
+     * Die Nacht-Ausnahmen des Dimmers waren einmal eine VIERTE solche Stelle; mit dem
+     * eingebauten Nacht-Standard ist auch seine Namensliste entfallen. Der Dimmer bindet nur
+     * noch ueber `DimRule.shiftPattern`, und das zieht `dimRuleUseCase` oben nach.
      *
      * Ebenfalls `dagger.Lazy`, aus demselben Grund wie oben: dieses ViewModel entsteht beim
-     * App-Start, und beide Klassen sollen erst angefasst werden, wenn wirklich umbenannt wird.
+     * App-Start, und die Klasse soll erst angefasst werden, wenn wirklich umbenannt wird.
      */
-    private val dndPrefs: dagger.Lazy<DndPrefs>,
-    private val dimOverlayPrefs: dagger.Lazy<DimOverlayPrefs>
+    private val dndPrefs: dagger.Lazy<DndPrefs>
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShiftUiState())
@@ -513,19 +514,15 @@ class ShiftViewModel @Inject constructor(
                     .onSuccess { nachgezogen += it }
                     .onFailure { fehlgeschlagen += "Hue" }
 
-                // Die drei uebersehenen Namenslisten (Befund 21.08.2026): zwei in "Nicht stoeren"
-                // (Rufbereitschaft + Dienstzeit-Ausnahmen), eine im Dimmer (Nacht-Ausnahmen).
-                // Jede meldet ihren Fehlschlag EINZELN in dieselbe Liste - eine unlesbare
-                // DND-Auswahl darf den
-                // Nachzug der Dimmer-Ausnahme nicht verhindern und umgekehrt. Der Nutzer sieht die
+                // Die uebersehenen Namenslisten (Befund 21.08.2026): zwei in "Nicht stoeren"
+                // (Rufbereitschaft + Dienstzeit-Ausnahmen). Die dritte lag im Dimmer
+                // (Nacht-Ausnahmen) und ist mit dem eingebauten Nacht-Standard entfallen.
+                // Der Fehlschlag wird EINZELN gemeldet - eine unlesbare DND-Auswahl darf den
+                // Nachzug der Dimm-Regeln nicht verhindern und umgekehrt. Der Nutzer sieht die
                 // Namen der BILDSCHIRME ("Nicht stören", "Dimmer"), nicht die Speicherschluessel.
                 dndPrefs.get().renameShiftName(umbenennung.alterName, umbenennung.neuerName)
                     .onSuccess { dndGeaendert += it }
                     .onFailure { fehlgeschlagen += "Nicht stören" }
-
-                dimOverlayPrefs.get().renameShiftName(umbenennung.alterName, umbenennung.neuerName)
-                    .onSuccess { dimmGeaendert += it }
-                    .onFailure { fehlgeschlagen += "Dimmer" }
             }
             // VOR der Blockade-Schleife: `nachgezogen` zaehlt nur MIGRIERTES. Ein geraeumter
             // Falscheintrag ist kein Nachzug - er darf weder im Erfolgs-Log noch im Satz "alle
@@ -535,7 +532,7 @@ class ShiftViewModel @Inject constructor(
             // DIE BLOCKIERTEN UMBENENNUNGEN - und warum Nichtstun hier NICHT reicht.
             //
             // Fuer eine Dimm-/Hue-REGEL ist Nichtstun ehrlich: sie wird wirkungslos und steht dabei
-            // sichtbar in ihrer Regelliste, der Nutzer kann sie dort neu zuordnen. Die drei reinen
+            // sichtbar in ihrer Regelliste, der Nutzer kann sie dort neu zuordnen. Die reinen
             // NAMENSLISTEN haben diese Sichtbarkeit nicht - ihre Chips werden aus den AKTUELLEN
             // Definitionsnamen gebaut. Gehoert der gespeicherte Altname nach einem Namenstausch
             // inzwischen einer ANDEREN Definition, ist der Eintrag deshalb nicht tot, sondern
@@ -563,13 +560,6 @@ class ShiftViewModel @Inject constructor(
                         if (it > 0) betroffen += "„Nicht stören“"
                     }
                     .onFailure { raeumenFehlgeschlagen += "„Nicht stören“" }
-
-                dimOverlayPrefs.get().removeShiftName(alterName, partnerName)
-                    .onSuccess {
-                        dimmGeaendert += it
-                        if (it > 0) betroffen += "Dimmer"
-                    }
-                    .onFailure { raeumenFehlgeschlagen += "Dimmer" }
             }
         }
 

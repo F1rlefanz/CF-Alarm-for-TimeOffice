@@ -4,7 +4,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -39,7 +38,6 @@ class SchichtnamenNachzugPrefsTest {
 
     private val KEY_ONCALL = stringSetPreferencesKey("dnd_oncall_shifts")
     private val KEY_SHIFT_EXCLUDED = stringSetPreferencesKey("dnd_shift_excluded_shifts")
-    private val KEY_NIGHT_EXCLUDED = stringSetPreferencesKey("dim_night_default_excluded_shifts")
 
     private class FakeDataStore(initial: Preferences) : DataStore<Preferences> {
         private val flow = MutableStateFlow(initial)
@@ -161,45 +159,18 @@ class SchichtnamenNachzugPrefsTest {
         assertNull(ergebnis.getOrNull())
     }
 
-    // ------------------------------------------------ Dimmer: Ausnahmen des Nacht-Standards
-
-    @Test
-    fun `die Nacht-Ausnahme wird mitgezogen`() = runTest {
-        val s = store(KEY_NIGHT_EXCLUDED to setOf("Nachtschicht", "Frueh"))
-        val prefs = DimOverlayPrefs(s)
-
-        assertEquals(1, prefs.renameShiftName("Nachtschicht", "Nachtdienst").getOrNull())
-        assertEquals(setOf("Nachtdienst", "Frueh"), s.lies(KEY_NIGHT_EXCLUDED))
-        assertTrue("Nachtdienst" in prefs.nightDefaultExcludedShiftsNow())
-    }
-
-    @Test
-    fun `eine Nacht-Ausnahmenliste ohne den Altnamen bleibt unveraendert`() = runTest {
-        val s = store(KEY_NIGHT_EXCLUDED to setOf("Frueh"))
-
-        assertEquals(0, DimOverlayPrefs(s).renameShiftName("Nachtschicht", "Nachtdienst").getOrNull())
-        assertEquals(emptySet<String>(), s.zuletztGeaendert)
-        assertEquals(setOf("Frueh"), s.lies(KEY_NIGHT_EXCLUDED))
-    }
+    // Die Ausnahmenliste des eingebauten Nacht-Standards war einmal die dritte Namensliste hier.
+    // Sie ist mit dem Nacht-Standard selbst entfallen (Ein-Modell-Umbau) - der Dimmer bindet nur
+    // noch ueber `DimRule.shiftPattern`, dessen Nachzug `DimRuleUseCase.renameShiftPattern` macht
+    // und `Pruefrunde8DimRegelNachzugTest` prueft. Die hier gestrichenen Faelle hatten kein
+    // Gegenstueck mehr; die identischen Zusicherungen fuer die DND-Listen stehen unveraendert oben.
 
     @Test
     fun `ein noch nie gesetzter Schluessel entsteht nicht durch den Nachzug`() = runTest {
         val s = store()
 
-        assertEquals(0, DimOverlayPrefs(s).renameShiftName("Nachtschicht", "Nachtdienst").getOrNull())
         assertEquals(0, DndPrefs(s).renameShiftName("AD1", "Abrufdienst").getOrNull())
-        assertNull(s.lies(KEY_NIGHT_EXCLUDED))
         assertNull(s.lies(KEY_ONCALL))
-    }
-
-    @Test
-    fun `Nacht-Ausnahme ist idempotent und lehnt leere Namen ab`() = runTest {
-        val s = store(KEY_NIGHT_EXCLUDED to setOf("Nachtschicht"))
-        val prefs = DimOverlayPrefs(s)
-
-        assertEquals(1, prefs.renameShiftName("Nachtschicht", "Nachtdienst").getOrNull())
-        assertEquals(0, prefs.renameShiftName("Nachtschicht", "Nachtdienst").getOrNull())
-        assertTrue(prefs.renameShiftName("Nachtdienst", " ").isFailure)
     }
 
     // ---------------------------------------------------- Nachtrag 21.08.2026, Befunde A und C
@@ -242,22 +213,10 @@ class SchichtnamenNachzugPrefsTest {
     }
 
     @Test
-    fun `removeShiftName raeumt die Nacht-Ausnahme`() = runTest {
-        val s = store(KEY_NIGHT_EXCLUDED to setOf("Frueh", "Nacht"))
-
-        assertEquals(1, DimOverlayPrefs(s).removeShiftName("Frueh").getOrNull())
-        assertEquals(setOf("Nacht"), s.lies(KEY_NIGHT_EXCLUDED))
-    }
-
-    @Test
     fun `removeShiftName fasst nichts an, was den Namen nicht enthaelt`() = runTest {
-        val s = store(
-            KEY_ONCALL to setOf("Bereitschaft"),
-            KEY_NIGHT_EXCLUDED to setOf("Nacht")
-        )
+        val s = store(KEY_ONCALL to setOf("Bereitschaft"))
 
         assertEquals(0, DndPrefs(s).removeShiftName("Frueh").getOrNull())
-        assertEquals(0, DimOverlayPrefs(s).removeShiftName("Frueh").getOrNull())
         assertEquals(emptySet<String>(), s.zuletztGeaendert)
     }
 
@@ -276,15 +235,9 @@ class SchichtnamenNachzugPrefsTest {
         val s = store(KEY_ONCALL to setOf("Frueh"))
 
         assertTrue(DndPrefs(s).removeShiftName(" ").isFailure)
-        assertTrue(DimOverlayPrefs(s).removeShiftName("").isFailure)
+        assertTrue(DndPrefs(s).removeShiftName("").isFailure)
         assertEquals(setOf("Frueh"), s.lies(KEY_ONCALL))
         assertTrue(DndPrefs(FailingDataStore()).removeShiftName("Frueh").isFailure)
-        assertTrue(DimOverlayPrefs(FailingDataStore()).removeShiftName("Frueh").isFailure)
-    }
-
-    @Test
-    fun `ein Schreibfehler im Dimmer-Store wird als Fehlschlag gemeldet`() = runTest {
-        assertTrue(DimOverlayPrefs(FailingDataStore()).renameShiftName("A", "B").isFailure)
     }
 
     // ------------------------------------------------------- Der Tauschfall (Befund 21.08.2026)
@@ -323,15 +276,4 @@ class SchichtnamenNachzugPrefsTest {
         assertEquals(emptySet<String>(), s.lies(KEY_ONCALL))
     }
 
-    /** Dieselbe Regel fuer die Nacht-Ausnahmen des Dimmers. */
-    @Test
-    fun `Nacht-Ausnahmen bleiben beim Tausch mit beiden Namen erhalten`() = runTest {
-        val s = store(KEY_NIGHT_EXCLUDED to setOf("Frueh", "Nacht"))
-        val prefs = DimOverlayPrefs(s)
-
-        val ergebnis = prefs.removeShiftName("Frueh", partnerName = "Nacht")
-
-        assertEquals(0, ergebnis.getOrNull())
-        assertEquals(setOf("Frueh", "Nacht"), s.lies(KEY_NIGHT_EXCLUDED))
-    }
 }

@@ -63,30 +63,14 @@ class DimmerViewModelPreviewCleanupTest {
     }
 
     /**
-     * `uiState` kombiniert neun Prefs-Flows im Property-Initializer - alle muessen gestubbt sein,
+     * `uiState` kombiniert die Prefs-Flows im Property-Initializer - alle muessen gestubbt sein,
      * sonst scheitert bereits die Konstruktion an einem `null`-Flow.
      */
     private fun mockPrefs(): DimOverlayPrefs {
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.toggles).thenReturn(
-            flowOf(
-                DimOverlayPrefs.Toggles(
-                    wellnessEnabled = false,
-                    rulesEnabled = false,
-                    nightDefaultEnabled = false
-                )
-            )
-        )
+        whenever(prefs.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = false)))
         whenever(prefs.strength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
         whenever(prefs.warmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
-        whenever(prefs.windDownMinutes).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WINDDOWN_MIN))
-        whenever(prefs.nightDefaultStartMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN))
-        whenever(prefs.nightDefaultFreeEndMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN))
-        whenever(prefs.nightDefaultExcludedShifts).thenReturn(flowOf(emptySet()))
-        whenever(prefs.nightDefaultStrength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
-        whenever(prefs.nightDefaultWarmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
         // PFLICHT, nicht Kuer: previewDim() liest die beiden Werte als SUSPEND-Funktionen
         // (`setPreviewOverlay(prefs.strengthNow(), prefs.warmthNow(), …)`) - nicht ueber die
         // gleichnamigen Flows darueber. Unstubbed liefert Mockito fuer eine suspend-Funktion

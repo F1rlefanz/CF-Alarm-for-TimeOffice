@@ -8,7 +8,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -27,12 +26,15 @@ import javax.inject.Singleton
 /**
  * Einstellungen und Render-Zustand des Schicht-Dimmers (im bestehenden [MainDataStore]).
  *
- * Drei unabhängige Fenster-Quellen (siehe [DimScheduleUseCase], [Toggles]):
- * - `wellnessEnabled`: globaler „Wind-down" um den Wecker (nutzt Verdunkelung/Wärme/Wind-down).
- * - `rulesEnabled`: das schicht-gekoppelte Regelsystem ([DimRule]).
- * - `nightDefaultEnabled` (seit v1.17.0): eingebauter Nacht-Standard ohne eigene Regel, mit
- *   eigener Verdunkelung/Wärme ([nightDefaultStrength]/[nightDefaultWarmth]) und expliziten
- *   Schicht-Ausnahmen ([nightDefaultExcludedShifts]) statt einer leeren [DimRule].
+ * EINE Fenster-Quelle, EIN Schalter (siehe [DimScheduleUseCase], [Toggles]): das
+ * schicht-gekoppelte Regelsystem ([DimRule]). Die frueheren Sonderquellen "Wellness/Wind-down"
+ * und "Nacht-Standard" sind entfallen - beide lassen sich seit dem Ende-Anker
+ * [DimAnchor.ALARM_SONST_CLOCK] als gewoehnliche Regel ausdruecken (Wellness als Fenster
+ * `ALARM -X` -> `ALARM +0`, der Nacht-Standard als `CLOCK 22:00` -> `ALARM_SONST_CLOCK 07:00`,
+ * das fuer JEDE Kalendernacht gilt und keinen Folgetag-Sonderfall braucht).
+ *
+ * [strength]/[warmth] bleiben: sie sind der Fallback des Renderzustands und der Vorgabewert
+ * fuer neue Regeln.
  *
  * [overlayOn] wird vom Scheduler gesetzt; der [DimAccessibilityService] beobachtet nur
  * [renderState] (an/aus + Farbe).
@@ -42,9 +44,15 @@ class DimOverlayPrefs @Inject constructor(
     @param:MainDataStore private val dataStore: DataStore<Preferences>
 ) {
     companion object {
-        private val KEY_WELLNESS = booleanPreferencesKey("dim_wellness_enabled")
-        private val KEY_RULES_ON = booleanPreferencesKey("dim_rules_enabled")
-        private val KEY_NIGHT_DEFAULT_ON = booleanPreferencesKey("dim_night_default_enabled")
+        /**
+         * DER Dimmer-Schalter. Loest die drei frueheren Quellen-Schalter
+         * (`dim_wellness_enabled` / `dim_rules_enabled` / `dim_night_default_enabled`) ab.
+         *
+         * BEWUSST EIN NEUER SCHLUESSEL, und die alten werden NICHT geloescht: sie bleiben eine
+         * Version lang im Store liegen, damit ein Downgrade den alten Zustand noch vorfindet und
+         * die Migration sie noch lesen kann. Hier werden sie nur nicht mehr gelesen.
+         */
+        private val KEY_DIM_ON = booleanPreferencesKey("dim_enabled")
         private val KEY_OVERLAY_ON = booleanPreferencesKey("dim_overlay_on")
 
         // Ablaufzeitpunkt einer VORSCHAU (Wanduhr-Millis). Nur von setPreviewOverlay gesetzt, von
@@ -53,12 +61,6 @@ class DimOverlayPrefs @Inject constructor(
         private val KEY_OVERLAY_PREVIEW_UNTIL = longPreferencesKey("dim_overlay_preview_until")
         private val KEY_STRENGTH = intPreferencesKey("dim_strength")
         private val KEY_WARMTH = intPreferencesKey("dim_warmth")
-        private val KEY_WINDDOWN_MIN = intPreferencesKey("dim_winddown_min")
-        private val KEY_NIGHT_DEFAULT_START_MIN = intPreferencesKey("dim_night_default_start_min")
-        private val KEY_NIGHT_DEFAULT_FREE_END_MIN = intPreferencesKey("dim_night_default_free_end_min")
-        private val KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS = stringSetPreferencesKey("dim_night_default_excluded_shifts")
-        private val KEY_NIGHT_DEFAULT_STRENGTH = intPreferencesKey("dim_night_default_strength")
-        private val KEY_NIGHT_DEFAULT_WARMTH = intPreferencesKey("dim_night_default_warmth")
 
         // Dimmer-Korrektur-Notification (Feature C) - Override-Zustand + Settings-Toggle. Angebunden
         // ueber NotificationSettingsViewModel/SettingsTabContent (Default AUS).
@@ -91,11 +93,6 @@ class DimOverlayPrefs @Inject constructor(
         const val WARMTH_MAX = 100
         const val DEFAULT_STRENGTH = 55
         const val DEFAULT_WARMTH = 40
-        const val DEFAULT_WINDDOWN_MIN = 120
-        const val WINDDOWN_MIN_LIMIT = 15
-        const val WINDDOWN_MAX_LIMIT = 8 * 60
-        const val DEFAULT_NIGHT_DEFAULT_START_MIN = 22 * 60
-        const val DEFAULT_NIGHT_DEFAULT_FREE_END_MIN = 7 * 60
 
         fun overlayColor(strength: Int, warmth: Int): Int {
             val alpha = Math.round(strength / 100.0 * 255.0).toInt()
@@ -110,8 +107,12 @@ class DimOverlayPrefs @Inject constructor(
         val color: Int get() = overlayColor(strength, warmth)
     }
 
-    /** Die drei Fenster-Quellen-Schalter. */
-    data class Toggles(val wellnessEnabled: Boolean, val rulesEnabled: Boolean, val nightDefaultEnabled: Boolean)
+    /**
+     * DER Dimmer-Schalter. Bewusst weiterhin ein eigener Typ statt eines nackten `Boolean`:
+     * ueber ihn beantwortet [DimScheduleUseCase] die Frage "ist ueberhaupt eine Quelle an", und
+     * diese Frage soll benannt bleiben (sie steuert Keep-alive- gegen Retry-Tick).
+     */
+    data class Toggles(val dimEnabled: Boolean)
 
     // Serialisiert JEDEN Read-Modify-Write auf den Override-Zustand ueber ALLE Aufrufer hinweg -
     // DimNotificationService's Aktions-Handler (Heller/Dunkler/Pause) UND DimScheduleUseCase.
@@ -131,7 +132,7 @@ class DimOverlayPrefs @Inject constructor(
      * [DimAccessibilityService]/[DimScheduleReceiver], die beide keine garantierte Lebensdauer
      * haben. [windowEnd] + [windowStrength] (= `range.last`/`strength` der aktiven Spanne) sind der
      * Gültigkeits-Schlüssel: gilt nur für dieselbe aktive Fenster-Spanne wie beim Setzen - `windowEnd`
-     * allein reicht nicht, weil Wellness/Regeln/Nacht-Standard sich denselben Anker (oft die Weckzeit)
+     * allein reicht nicht, weil mehrere Regel-Fenster sich denselben Anker (oft die Weckzeit)
      * teilen können, siehe [DimWindowResolver.isOverrideStale].
      */
     data class Override(val strengthDelta: Int, val paused: Boolean, val windowEnd: Long, val windowStrength: Int)
@@ -226,36 +227,10 @@ class DimOverlayPrefs @Inject constructor(
         }
     }
 
-    val toggles: Flow<Toggles> = safeData.map { p ->
-        Toggles(
-            wellnessEnabled = p[KEY_WELLNESS] ?: false,
-            rulesEnabled = p[KEY_RULES_ON] ?: false,
-            nightDefaultEnabled = p[KEY_NIGHT_DEFAULT_ON] ?: false
-        )
-    }
+    val toggles: Flow<Toggles> = safeData.map { p -> Toggles(dimEnabled = p[KEY_DIM_ON] ?: false) }
 
     val strength: Flow<Int> = safeData.map { (it[KEY_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX) }
     val warmth: Flow<Int> = safeData.map { (it[KEY_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX) }
-    val windDownMinutes: Flow<Int> = safeData.map {
-        (it[KEY_WINDDOWN_MIN] ?: DEFAULT_WINDDOWN_MIN).coerceIn(WINDDOWN_MIN_LIMIT, WINDDOWN_MAX_LIMIT)
-    }
-    val nightDefaultStartMinutes: Flow<Int> = safeData.map {
-        (it[KEY_NIGHT_DEFAULT_START_MIN] ?: DEFAULT_NIGHT_DEFAULT_START_MIN).coerceIn(0, 24 * 60 - 1)
-    }
-    val nightDefaultFreeEndMinutes: Flow<Int> = safeData.map {
-        (it[KEY_NIGHT_DEFAULT_FREE_END_MIN] ?: DEFAULT_NIGHT_DEFAULT_FREE_END_MIN).coerceIn(0, 24 * 60 - 1)
-    }
-    /** Schichtnamen, deren Nacht der Nacht-Standard NICHT dimmt (z. B. Nachtdienst). */
-    val nightDefaultExcludedShifts: Flow<Set<String>> = safeData.map {
-        it[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] ?: emptySet()
-    }
-    /** Eigene Verdunkelung/Wärme des Nacht-Standards - unabhängig von der globalen Wellness-Darstellung. */
-    val nightDefaultStrength: Flow<Int> = safeData.map {
-        (it[KEY_NIGHT_DEFAULT_STRENGTH] ?: DEFAULT_STRENGTH).coerceIn(0, STRENGTH_MAX)
-    }
-    val nightDefaultWarmth: Flow<Int> = safeData.map {
-        (it[KEY_NIGHT_DEFAULT_WARMTH] ?: DEFAULT_WARMTH).coerceIn(0, WARMTH_MAX)
-    }
 
     val override: Flow<Override> = safeData.map { p ->
         Override(
@@ -273,160 +248,17 @@ class DimOverlayPrefs @Inject constructor(
     }
 
     suspend fun togglesNow(): Toggles = toggles.first()
-    suspend fun windDownMinutesNow(): Int = windDownMinutes.first()
     suspend fun strengthNow(): Int = strength.first()
     suspend fun warmthNow(): Int = warmth.first()
-    suspend fun nightDefaultStartMinutesNow(): Int = nightDefaultStartMinutes.first()
-    suspend fun nightDefaultFreeEndMinutesNow(): Int = nightDefaultFreeEndMinutes.first()
-    suspend fun nightDefaultExcludedShiftsNow(): Set<String> = nightDefaultExcludedShifts.first()
-    suspend fun nightDefaultStrengthNow(): Int = nightDefaultStrength.first()
-    suspend fun nightDefaultWarmthNow(): Int = nightDefaultWarmth.first()
     suspend fun overrideNow(): Override = override.first()
     suspend fun correctionNotificationEnabledNow(): Boolean = correctionNotificationEnabled.first()
 
-    suspend fun setWellnessEnabled(v: Boolean) = dataStore.edit { it[KEY_WELLNESS] = v }
-    suspend fun setRulesEnabled(v: Boolean) = dataStore.edit { it[KEY_RULES_ON] = v }
-    suspend fun setNightDefaultEnabled(v: Boolean) = dataStore.edit { it[KEY_NIGHT_DEFAULT_ON] = v }
-    suspend fun setNightDefaultStartMinutes(v: Int) =
-        dataStore.edit { it[KEY_NIGHT_DEFAULT_START_MIN] = v.coerceIn(0, 24 * 60 - 1) }
-    suspend fun setNightDefaultFreeEndMinutes(v: Int) =
-        dataStore.edit { it[KEY_NIGHT_DEFAULT_FREE_END_MIN] = v.coerceIn(0, 24 * 60 - 1) }
-    /** Atomarer Toggle statt Read-Modify-Write im Aufrufer - DataStore.edit{} serialisiert
-     * konkurrierende Transaktionen, ein Doppel-Tap auf zwei Chips verliert so keine Aenderung mehr. */
-    suspend fun toggleNightDefaultExcludedShift(shiftName: String) = dataStore.edit { p ->
-        val current = p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] ?: emptySet()
-        p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = if (shiftName in current) current - shiftName else current + shiftName
-    }
-    /**
-     * Zieht die Ausnahmenliste des Nacht-Standards auf den neuen Namen nach, wenn eine
-     * Schichtdefinition UMBENANNT wurde. Liefert 1, wenn die Liste geaendert wurde, sonst 0 - oder
-     * einen Fehlschlag.
-     *
-     * WARUM ES DAS GEBEN MUSS: [nightDefaultExcludedShifts] speichert SCHICHTNAMEN, waehrend der
-     * Schicht-Editor den Namen bei gleichbleibender `id` frei aendern laesst - dieselbe Bindung
-     * ueber den Namen wie [DimRule.shiftPattern]. Der Nachzug fuer Dimmer-Regeln kam in v1.30.0
-     * ([DimRuleUseCase.renameShiftPattern], Vorbild fuer Semantik und Fehlerbehandlung), diese
-     * Liste wurde dabei uebersehen. Folge: Der Nutzer hat "Nachtschicht" ausgenommen, benennt sie
-     * um - und der Nacht-Standard verdunkelt ab sofort auch die Naechte, in denen er arbeitet. Die
-     * Chips im Dimmer-Bildschirm werden aus den AKTUELLEN Definitionsnamen gebaut, der
-     * gespeicherte Alt-Name ist dort unsichtbar.
-     *
-     * EXAKTER VERGLEICH, bewusst anders als bei den Dimm-REGELN: [DimScheduleUseCase] prueft
-     * `shiftName in excludedShifts` - Mengen-Zugehoerigkeit ohne Toleranz. Ein Eintrag, der sich
-     * nur in der Gross-/Kleinschreibung vom ALTEN Namen unterscheidet, hat also auch vorher NIE
-     * getroffen; ihn `ignoreCase` mitzuziehen wuerde aus einem toten Eintrag eine scharfe Ausnahme
-     * machen und dem Nutzer ungefragt eine Nacht ohne Dimmen bescheren. Exakt ersetzen heisst:
-     * hinterher trifft genau das, was vorher traf.
-     *
-     * UMGEKEHRT ist genau deshalb auch eine reine SCHREIBWEISEN-Aenderung der Definition eine
-     * Umbenennung, die hier ankommen MUSS: korrigiert der Nutzer "nachtschicht" zu "Nachtschicht",
-     * trifft der gespeicherte Alt-Eintrag ab sofort nie wieder. Die Dimm-REGELN vertragen das
-     * (sie vergleichen gross-/kleinschreibungsblind), diese Liste nicht -
-     * `ShiftViewModel.planeSchichtUmbenennungen` stieg bis zum 21.08.2026 bei
-     * `equals(ignoreCase = true)` aus und liess den Fall liegen.
-     *
-     * KEIN BLINDES SCHREIBEN: Eine Liste ohne den Altnamen wird nicht angefasst.
-     * IDEMPOTENT: Ein zweiter Lauf findet den Altnamen nicht mehr vor und schreibt nicht.
-     */
-    suspend fun renameShiftName(oldName: String, newName: String): Result<Int> = runCatching {
-        require(oldName.isNotBlank() && newName.isNotBlank()) {
-            "Leerer Schichtname - Nacht-Ausnahme wird NICHT nachgezogen ('$oldName' -> '$newName')"
-        }
-        if (oldName == newName) return@runCatching 0
-
-        var geaendert = 0
-        dataStore.edit { p ->
-            // Zuruecksetzen im Block: nur was hier passiert, wird wirklich geschrieben.
-            geaendert = 0
-            val current = p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS]
-            if (current != null && oldName in current) {
-                p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = current - oldName + newName
-                geaendert = 1
-            }
-        }
-
-        if (geaendert > 0) {
-            Logger.business(
-                LogTags.DIMMER,
-                "🔁 Nacht-Standard-Ausnahme von '$oldName' auf '$newName' nachgezogen"
-            )
-        }
-        geaendert
-    }.onFailure { error ->
-        // WARN+ landet auch im Release-Log: eine nicht nachgezogene Ausnahme ist eine Nacht, in der
-        // der Bildschirm waehrend der Arbeit verdunkelt wird, obwohl der Nutzer das abbestellt hat.
-        Logger.e(
-            LogTags.DIMMER,
-            "❌ Nacht-Standard-Ausnahme konnte nicht von '$oldName' auf '$newName' nachgezogen werden",
-            error
-        )
-    }
-
-    /**
-     * Entfernt [name] aus der Ausnahmenliste des Nacht-Standards. Liefert 1, wenn geschrieben
-     * wurde, sonst 0 - oder einen Fehlschlag.
-     *
-     * WOFUER: der BLOCKIERTE Fall einer Umbenennung, in dem der gespeicherte Name nach einem
-     * Namenstausch inzwischen einer ANDEREN Schichtdefinition gehoert (siehe
-     * `ShiftViewModel.zieheRegelmusterNach`). Fuer eine Dimm-REGEL ist Nichtstun dort ehrlich - sie
-     * wird wirkungslos und steht sichtbar in der Regelliste. Dieser Eintrag ist dagegen nicht tot,
-     * sondern ab sofort scharf fuer die falsche Schicht.
-     *
-     * RICHTUNG, eigens fuer diese Liste geprueft: Ein stehen gelassener Eintrag laesst die Naechte
-     * der FALSCHEN Schicht ungedimmt - der Bildschirm bleibt hell, obwohl der Nutzer den
-     * Nacht-Standard eingeschaltet hat, und er sieht im Bildschirm nur einen Chip, den er nie
-     * gesetzt hat. Entfernen stellt fuer diese Schicht den eingestellten Zustand wieder her
-     * (Nacht-Standard gilt). Fuer die UMBENANNTE Schicht aendert sich durch das Entfernen nichts:
-     * ihr neuer Name stand ohnehin nicht in der Liste, sie wird so oder so gedimmt - und das ist
-     * die SICHTBARE Fehlrichtung (Bildschirm dunkel waehrend der Arbeit), die den Nutzer zur
-     * Meldung fuehrt, statt still weiterzulaufen.
-     *
-     * KEIN BLINDES SCHREIBEN, IDEMPOTENT: wie [renameShiftName].
-     */
-    suspend fun removeShiftName(name: String, partnerName: String = ""): Result<Int> = runCatching {
-        require(name.isNotBlank()) {
-            "Leerer Schichtname - es wird NICHTS aus der Nacht-Ausnahmenliste entfernt"
-        }
-
-        var geaendert = 0
-        dataStore.edit { p ->
-            geaendert = 0
-            val current = p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS]
-            // TAUSCHFALL: stehen BEIDE Namen drin, ist die Liste nach dem Tausch weiterhin richtig -
-            // sie meint beide Schichten. Raeumen wuerde hier eine korrekte Ausnahme zerstoeren und
-            // beide Naechte wieder dimmen lassen.
-            val tausch = partnerName.isNotBlank() && current != null && partnerName in current
-            if (current != null && name in current && !tausch) {
-                p[KEY_NIGHT_DEFAULT_EXCLUDED_SHIFTS] = current - name
-                geaendert = 1
-            }
-        }
-
-        if (geaendert > 0) {
-            Logger.business(
-                LogTags.DIMMER,
-                "🧹 Nacht-Standard-Ausnahme '$name' entfernt - der Name gehoert jetzt einer " +
-                    "anderen Schicht und haette dort still gewirkt"
-            )
-        }
-        geaendert
-    }.onFailure { error ->
-        Logger.e(
-            LogTags.DIMMER,
-            "❌ Nacht-Standard-Ausnahme '$name' konnte nicht entfernt werden",
-            error
-        )
-    }
-
-    suspend fun setNightDefaultStrength(v: Int) =
-        dataStore.edit { it[KEY_NIGHT_DEFAULT_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
-    suspend fun setNightDefaultWarmth(v: Int) =
-        dataStore.edit { it[KEY_NIGHT_DEFAULT_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
+    suspend fun setDimEnabled(v: Boolean) = dataStore.edit { it[KEY_DIM_ON] = v }
 
     /**
      * Setzt An/Aus UND die Render-Farbe (Intensität/Wärme des gerade aktiven Fensters). Der Scheduler
      * ruft das mit den Werten der aktiven Spanne; die globalen [strength]/[warmth] bleiben unberührt
-     * (sie sind Wellness- + Editor-Default). Für Vorschau: mit den globalen Werten aufrufen.
+     * (sie sind Renderzustand-Fallback + Editor-Default). Für Vorschau: mit den globalen Werten aufrufen.
      */
     suspend fun setActiveOverlay(on: Boolean, strength: Int, warmth: Int) = dataStore.edit {
         it[KEY_OVERLAY_ON] = on
@@ -461,8 +293,6 @@ class DimOverlayPrefs @Inject constructor(
     }
     suspend fun setStrength(v: Int) = dataStore.edit { it[KEY_STRENGTH] = v.coerceIn(0, STRENGTH_MAX) }
     suspend fun setWarmth(v: Int) = dataStore.edit { it[KEY_WARMTH] = v.coerceIn(0, WARMTH_MAX) }
-    suspend fun setWindDownMinutes(v: Int) =
-        dataStore.edit { it[KEY_WINDDOWN_MIN] = v.coerceIn(WINDDOWN_MIN_LIMIT, WINDDOWN_MAX_LIMIT) }
 
     /**
      * Schreibt Delta/Pause/Fenster-Schlüssel ATOMAR zusammen. Ein Teil-Update (z. B. nur `paused`

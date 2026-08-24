@@ -95,14 +95,38 @@ class DimWindowResolverTimeArithmeticTest {
         assertEquals(ep(berlin, 2026, 10, 25, 14, 0), r.last)
     }
 
-    @Test
-    fun `Nacht-Standard dimmt am DST-Vorspringen-Tag ab der eingestellten Uhrzeit`() {
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = emptyList(), horizonDays = 1, today = LocalDate.of(2026, 3, 29), zone = berlin,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { false }
+    /**
+     * Der frueher eingebaute Nacht-Standard, jetzt als gewoehnliche Regel: jede Kalendernacht ab
+     * 22:00 bis zur Weckzeit, spaetestens 07:00. EIN Fenster je Nacht - der Ende-Anker
+     * ALARM_SONST_CLOCK sucht seine Weckzeit in der gesamten Zeitleiste und macht das frueher
+     * noetige Rueckwaerts-/Vorwaerts-Paar samt Folgetag-Bedingung ueberfluessig.
+     */
+    private fun nachtSpans(
+        alarms: List<DimWindowResolver.AlarmSlot>,
+        horizonDays: Int,
+        today: LocalDate,
+        zone: ZoneId,
+    ): List<DimSpan> {
+        val nacht = DimRule(
+            id = "nacht", name = "Nacht", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
+            windows = listOf(
+                DimWindow(
+                    startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60,
+                    endAnchor = DimAnchor.ALARM_SONST_CLOCK, endClockMinutes = 7 * 60
+                )
+            ),
+            strength = 60, warmth = 40
         )
+        return DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = horizonDays, today = today, zone = zone,
+            ruleForShift = { nacht }, ruleForFreeDay = { nacht },
+            weckzeiten = alarms.map { it.triggerTime }
+        )
+    }
+
+    @Test
+    fun `Nacht-Regel dimmt am DST-Vorspringen-Tag ab der eingestellten Uhrzeit`() {
+        val spans = nachtSpans(emptyList(), horizonDays = 1, today = LocalDate.of(2026, 3, 29), zone = berlin)
 
         val night = spans.first { ep(berlin, 2026, 3, 29, 23, 0) in it.range }
         assertEquals(ep(berlin, 2026, 3, 29, 22, 0), night.range.first)
@@ -112,18 +136,13 @@ class DimWindowResolverTimeArithmeticTest {
     // --- 2. Datumswechsel: die laufende Nacht darf nach 00:00 nicht verschwinden ---
 
     @Test
-    fun `Nacht-Standard - die laufende Nacht bleibt nach Mitternacht aktiv`() {
-        // Freier Tag -> freier Tag, Nacht-Standard 22:00-07:00. Es ist 03:00 des Folgetags,
+    fun `Nacht-Regel - die laufende Nacht bleibt nach Mitternacht aktiv`() {
+        // Freier Tag -> freier Tag, Nacht-Regel 22:00-07:00. Es ist 03:00 des Folgetags,
         // die Neuberechnung laeuft mit today = FOLGETAG (z. B. App-Update um 03:00, 6h-Wartung).
         val today = LocalDate.of(2026, 1, 13)
         val now = ep(utc, 2026, 1, 13, 3, 0)
 
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = emptyList(), horizonDays = 14, today = today, zone = utc,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { false }
-        )
+        val spans = nachtSpans(emptyList(), horizonDays = 14, today = today, zone = utc)
 
         val active = DimWindowResolver.activeSpan(spans, now)
         assertNotNull(
@@ -157,17 +176,14 @@ class DimWindowResolverTimeArithmeticTest {
 
     @Test
     fun `Der Rueckblick erzeugt keine zusaetzliche Nacht wenn der Folgetag einen Wecker hat`() {
-        // Gegenprobe zum Rueckblick: mit Wecker am 13.01. deckt dessen Rueckwaerts-Fenster die
-        // Nacht 12.->13.01. ab - es darf dafuer nicht ZWEI unterschiedliche Spannen geben.
+        // Gegenprobe zum Rueckblick: mit Wecker am 13.01. endet die Nacht 12.->13.01. an diesem
+        // Wecker - es darf dafuer nicht ZWEI unterschiedliche Spannen geben. Im alten Modell kam
+        // die Doppelung aus dem Rueckwaerts-/Vorwaerts-Paar; im Ein-Modell waere sie ein Zeichen
+        // dafuer, dass der Rueckblick eine Nacht doppelt aufloest.
         val today = LocalDate.of(2026, 1, 13)
         val alarms = listOf(DimWindowResolver.AlarmSlot(ep(utc, 2026, 1, 13, 5, 0), "Fruehdienst", 0))
 
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = alarms, horizonDays = 2, today = today, zone = utc,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { false }
-        )
+        val spans = nachtSpans(alarms, horizonDays = 2, today = today, zone = utc)
 
         val covering = spans.filter { ep(utc, 2026, 1, 13, 3, 0) in it.range }
         assertEquals(1, covering.size)

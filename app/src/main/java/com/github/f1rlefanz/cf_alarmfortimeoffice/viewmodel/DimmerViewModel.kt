@@ -27,11 +27,11 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * ViewModel des Dimmer-Tabs. Drei unabhängige Modi (Wellness/Wind-down, eingebauter Nacht-Standard
- * und Schicht-Regeln), gemeinsame Verdunkelung/Wärme. Jede Änderung stößt [DimScheduleUseCase.enable]
- * an (das den rollenden Alarm self-cleaning neu plant bzw. abbestellt) — und jede Änderung, die
- * FENSTERGRENZEN verschiebt, zusätzlich [DndScheduleUseCase.enable]; siehe
- * [armiereFensterkettenNeu].
+ * ViewModel des Dimmer-Tabs. EIN Schalter, EINE Fenster-Quelle (die Schicht-Regeln), dazu die
+ * Verdunkelung/Wärme als Renderzustand-Fallback und Vorgabe für neue Regeln. Jede Änderung stößt
+ * [DimScheduleUseCase.enable] an (das den rollenden Alarm self-cleaning neu plant bzw.
+ * abbestellt) — und jede Änderung, die FENSTERGRENZEN verschiebt, zusätzlich
+ * [DndScheduleUseCase.enable]; siehe [armiereFensterkettenNeu].
  */
 @HiltViewModel
 class DimmerViewModel @Inject constructor(
@@ -44,64 +44,19 @@ class DimmerViewModel @Inject constructor(
 ) : ViewModel() {
 
     data class DimmerUiState(
-        val wellnessEnabled: Boolean = false,
-        val rulesEnabled: Boolean = false,
-        val nightDefaultEnabled: Boolean = false,
+        val dimEnabled: Boolean = false,
         val strength: Int = DimOverlayPrefs.DEFAULT_STRENGTH,
-        val warmth: Int = DimOverlayPrefs.DEFAULT_WARMTH,
-        val windDownMinutes: Int = DimOverlayPrefs.DEFAULT_WINDDOWN_MIN,
-        val nightDefaultStartMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN,
-        val nightDefaultFreeEndMinutes: Int = DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN,
-        val nightDefaultExcludedShifts: Set<String> = emptySet(),
-        val nightDefaultStrength: Int = DimOverlayPrefs.DEFAULT_STRENGTH,
-        val nightDefaultWarmth: Int = DimOverlayPrefs.DEFAULT_WARMTH
+        val warmth: Int = DimOverlayPrefs.DEFAULT_WARMTH
     )
 
     val uiState: StateFlow<DimmerUiState> =
-        combine(
-            combine(prefs.toggles, prefs.strength, prefs.warmth, prefs.windDownMinutes, ::PrefsCore),
-            combine(
-                prefs.nightDefaultStartMinutes,
-                prefs.nightDefaultFreeEndMinutes,
-                prefs.nightDefaultExcludedShifts,
-                prefs.nightDefaultStrength,
-                prefs.nightDefaultWarmth,
-                ::NightDefaultExtra
-            )
-        ) { core, night ->
-            DimmerUiState(
-                wellnessEnabled = core.toggles.wellnessEnabled,
-                rulesEnabled = core.toggles.rulesEnabled,
-                nightDefaultEnabled = core.toggles.nightDefaultEnabled,
-                strength = core.strength,
-                warmth = core.warmth,
-                windDownMinutes = core.windDownMinutes,
-                nightDefaultStartMinutes = night.startMinutes,
-                nightDefaultFreeEndMinutes = night.freeEndMinutes,
-                nightDefaultExcludedShifts = night.excludedShifts,
-                nightDefaultStrength = night.strength,
-                nightDefaultWarmth = night.warmth
-            )
+        combine(prefs.toggles, prefs.strength, prefs.warmth) { toggles, strength, warmth ->
+            DimmerUiState(dimEnabled = toggles.dimEnabled, strength = strength, warmth = warmth)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DimmerUiState())
 
-    private data class PrefsCore(
-        val toggles: DimOverlayPrefs.Toggles,
-        val strength: Int,
-        val warmth: Int,
-        val windDownMinutes: Int
-    )
-
-    private data class NightDefaultExtra(
-        val startMinutes: Int,
-        val freeEndMinutes: Int,
-        val excludedShifts: Set<String>,
-        val strength: Int,
-        val warmth: Int
-    )
-
-    /** Namen der erkannten Schicht-Definitionen, fuer die Ausnahme-Chips an der Nacht-Standard-Karte.
-     * Reaktiv statt Einmal-Snapshot - eine Schicht-Umbenennung/-Neuanlage ohne App-Neustart muss
-     * sofort sichtbar werden. */
+    /** Namen der erkannten Schicht-Definitionen fuer die Oberflaeche. Reaktiv statt
+     * Einmal-Snapshot - eine Schicht-Umbenennung/-Neuanlage ohne App-Neustart muss sofort
+     * sichtbar werden. */
     val shiftNames: StateFlow<List<String>> =
         shiftUseCase.shiftConfig
             .map { config -> config.definitions.map { it.name } }
@@ -141,38 +96,13 @@ class DimmerViewModel @Inject constructor(
             .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nicht neu armiert", it) }
     }
 
-    /** Schaltet eine Schicht als Ausnahme vom Nacht-Standard ein/aus - keine DimRule dafuer noetig. */
-    fun toggleNightDefaultExcludedShift(shiftName: String) = viewModelScope.launch {
-        prefs.toggleNightDefaultExcludedShift(shiftName)
+    /** DER Dimmer-Schalter. Schaltet die einzige Fenster-Quelle (die Regeln) an und aus. */
+    fun setDimEnabled(enabled: Boolean) = viewModelScope.launch {
+        prefs.setDimEnabled(enabled)
         armiereFensterkettenNeu()
     }
 
-    fun setWellnessEnabled(enabled: Boolean) = viewModelScope.launch {
-        prefs.setWellnessEnabled(enabled)
-        armiereFensterkettenNeu()
-    }
-
-    fun setRulesEnabled(enabled: Boolean) = viewModelScope.launch {
-        prefs.setRulesEnabled(enabled)
-        armiereFensterkettenNeu()
-    }
-
-    fun setNightDefaultEnabled(enabled: Boolean) = viewModelScope.launch {
-        prefs.setNightDefaultEnabled(enabled)
-        armiereFensterkettenNeu()
-    }
-
-    fun setNightDefaultStartMinutes(value: Int) = viewModelScope.launch {
-        prefs.setNightDefaultStartMinutes(value)
-        armiereFensterkettenNeu()
-    }
-
-    fun setNightDefaultFreeEndMinutes(value: Int) = viewModelScope.launch {
-        prefs.setNightDefaultFreeEndMinutes(value)
-        armiereFensterkettenNeu()
-    }
-
-    // Verdunkelung/Waerme aendern keine FENSTERGRENZEN - deshalb rufen die folgenden vier Setter
+    // Verdunkelung/Waerme aendern keine FENSTERGRENZEN - deshalb rufen die folgenden zwei Setter
     // bewusst `dimSchedule.enable()` und NICHT [armiereFensterkettenNeu]: „Nicht stoeren" kennt nur
     // die Fenster einer Zeitleiste, nicht ihre Farbe. Ein DND-`enable()` waere hier eine komplette
     // zusaetzliche Fensterberechnung ohne jede Wirkung - dieselbe Begruendung wie umgekehrt in
@@ -207,21 +137,6 @@ class DimmerViewModel @Inject constructor(
         dimSchedule.enable()
     }
 
-    fun setNightDefaultStrength(value: Int) = viewModelScope.launch {
-        prefs.setNightDefaultStrength(value)
-        dimSchedule.enable()
-    }
-
-    fun setNightDefaultWarmth(value: Int) = viewModelScope.launch {
-        prefs.setNightDefaultWarmth(value)
-        dimSchedule.enable()
-    }
-
-    fun setWindDownMinutes(value: Int) = viewModelScope.launch {
-        prefs.setWindDownMinutes(value)
-        armiereFensterkettenNeu() // Wellness-Fenster verschieben sich -> beide Ketten neu planen
-    }
-
     /**
      * Scope fuer das Aufraeumen der Vorschau - bewusst GETRENNT vom [viewModelScope], Vorbild
      * `HueLightUseCase.followUpScope` ("Der Abbruch-Timer und das Vorschau-Auto-Aus haengen an
@@ -251,9 +166,9 @@ class DimmerViewModel @Inject constructor(
      * genuegte es, die App waehrend der 5 Sekunden zu verlassen (zweimal Zurueck / aus den Recents
      * wischen): `onCleared()` cancelte das `delay()`, `applyCurrentState()` lief NIE, und der
      * Bildschirm blieb systemweit bis zu 85 % verdunkelt. Geheilt haette das erst der naechste
-     * Dimm-Tick - und wenn keine der drei Fenster-Quellen (Wellness/Regeln/Nacht-Standard) an ist
-     * (der typische Zustand von jemandem, der die Vorschau zum Ausprobieren nutzt, BEVOR er etwas
-     * einschaltet), kommt dieser Tick unter Umstaenden gar nicht.
+     * Dimm-Tick - und wenn der Dimmer aus ist (der typische Zustand von jemandem, der die
+     * Vorschau zum Ausprobieren nutzt, BEVOR er etwas einschaltet), kommt dieser Tick unter
+     * Umstaenden gar nicht.
      *
      * Deshalb drei Dinge: eigener [previewScope], das Zuruecksetzen im `finally` (greift auch bei
      * Exception oder Cancellation) und dort `NonCancellable` - dieselbe Ueberlegung wie bei

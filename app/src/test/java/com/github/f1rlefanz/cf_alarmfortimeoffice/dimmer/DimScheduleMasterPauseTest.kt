@@ -40,7 +40,12 @@ class DimScheduleMasterPauseTest {
     ): DimScheduleUseCase {
         val masterPausePrefs = mock<MasterPausePrefs>()
         whenever(masterPausePrefs.pausedNow()).thenReturn(paused)
-        val ruleUseCase = DimRuleUseCase(mock<DimRuleRepository>())
+        // Seit dem Ein-Modell-Umbau sind die Regeln die EINZIGE Fenster-Quelle - computeWindows()
+        // liest sie immer, sobald der Dimmer an ist. Ein ungestubbtes Repository liefert bei einer
+        // suspend-Funktion Mockitos `null` und riss den Aufruf mit einer NPE ab.
+        val ruleRepo = mock<DimRuleRepository>()
+        whenever(ruleRepo.getRules()).thenReturn(emptyList())
+        val ruleUseCase = DimRuleUseCase(ruleRepo)
         val spanStore = mock<ShiftSpanStore>()
         whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
         return DimScheduleUseCase(mock<Context>(), alarmUseCase, spanStore, keineFreienTage(), ruleUseCase, prefs, notifier, masterPausePrefs)
@@ -85,13 +90,7 @@ class DimScheduleMasterPauseTest {
         // Fenster-Berechnung an - hier ueber die seiteneffektfreie Vorschau geprueft, weil
         // applyCurrentState() danach den (in dieser Umgebung nicht stubbaren) Override-Mutex nutzt.
         val prefs = pausedPrefs()
-        whenever(prefs.togglesNow()).thenReturn(
-            DimOverlayPrefs.Toggles(wellnessEnabled = true, rulesEnabled = false, nightDefaultEnabled = false)
-        )
-        // Pflicht-Stub: `windDownMinutesNow()` ist eine SUSPEND-Funktion, ihr Rueckgabewert laeuft
-        // damit ueber `Any?` - Mockitos Default ist `null`, NICHT die 0 eines echten Int. Ungestubbt
-        // scheitert die Wellness-Fenster-Berechnung (`windDownMinutesNow() * MIN_MS`) an einer NPE.
-        whenever(prefs.windDownMinutesNow()).thenReturn(120)
+        whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = true))
         val alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.getAllAlarms()).thenReturn(Result.success(emptyList()))
 

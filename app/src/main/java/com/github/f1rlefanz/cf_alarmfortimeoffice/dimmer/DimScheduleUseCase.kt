@@ -19,21 +19,22 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Berechnet die Dimm-Zeitfenster aus DREI unabhängigen Quellen und steuert EINEN rollenden,
- * exakten Alarm auf den nächsten Fenster-Rand (Muster wie NachtDimmer-ScheduleManager /
- * [com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService]):
+ * Berechnet die Dimm-Zeitfenster aus EINER Quelle und steuert EINEN rollenden, exakten Alarm auf
+ * den nächsten Fenster-Rand (Muster wie NachtDimmer-ScheduleManager /
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService]).
  *
- *  1. Wellness (global): `[Weckzeit − Wind-down, Weckzeit]` je aktivem Alarm.
- *  2. Regeln: pro Kalendertag die passende [DimRule] (Schicht-Tag → Schicht/UNIVERSAL, freier Tag
- *     → FREI/UNIVERSAL; siehe [DimRuleUseCase]). CLOCK↔CLOCK-Fenster = lückenlos jede Nacht,
- *     ALARM/SHIFT_END schicht-relativ, leere Fensterliste = Unterdrückung. Details in
- *     [DimWindowResolver.buildRuleSpans].
- *  3. Nacht-Standard (seit v1.17.0, [DimOverlayPrefs.Toggles.nightDefaultEnabled]): ab einer festen
- *     Uhrzeit bis zum naechsten Wecker (bzw. bis zu einer zweiten festen Uhrzeit an Tagen ohne
- *     Alarm) - OHNE dass dafuer eine Regel angelegt werden muss. Ausgeschlossen sind explizit
- *     markierte Schichten ([DimOverlayPrefs.nightDefaultExcludedShifts]) UND jeder Tag, den eine
- *     vorhandene Regel (Punkt 2) ohnehin schon abdeckt. Details in
- *     [DimWindowResolver.buildDefaultNightSpans].
+ * Die Quelle sind die [DimRule]n: pro Kalendertag die passende Regel (Schicht-Tag →
+ * Schicht/UNIVERSAL, freier Tag → FREI/UNIVERSAL; siehe [DimRuleUseCase]). CLOCK↔CLOCK-Fenster =
+ * lückenlos jede Nacht, ALARM/SHIFT_END schicht-relativ, `ALARM_SONST_CLOCK` als Ende = „bis zur
+ * Weckzeit, spätestens um X", leere Fensterliste = Unterdrückung. Details in
+ * [DimWindowResolver.buildRuleSpans].
+ *
+ * Die früheren Sonderquellen „Wellness/Wind-down" und „Nacht-Standard" sind entfallen: seit dem
+ * Ende-Anker [DimAnchor.ALARM_SONST_CLOCK] lässt sich beides als gewöhnliche Regel ausdrücken —
+ * Wellness als `ALARM -X` → `ALARM +0`, der Nacht-Standard als `CLOCK 22:00` →
+ * `ALARM_SONST_CLOCK 07:00`, das für jede Kalendernacht gilt und keinen Folgetag-Sonderfall
+ * braucht. Damit gibt es nur noch EINE Stelle, an der ein Fenster entsteht, und nur noch EINEN
+ * Schalter.
  *
  * Overlay ist an, wenn `now` in irgendeinem Fenster liegt (Vereinigung). Fail-open: lässt sich
  * der Alarm-Bestand nicht lesen, wird NICHT gedimmt.
@@ -53,12 +54,10 @@ class DimScheduleUseCase @Inject constructor(
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
         private const val REQ_TICK = 7710
         private const val HORIZON_DAYS = 14
-        private const val MIN_MS = 60_000L
-
         /** Retry-Abstand, wenn der Alarm-Bestand gerade NICHT lesbar war (transienter Fehler). */
         private const val RETRY_MS = 15 * 60_000L
 
-        /** Keep-alive-Abstand, wenn mindestens eine Quelle AN ist, aber gerade kein Fenster-Rand
+        /** Keep-alive-Abstand, wenn der Dimmer AN ist, aber gerade kein Fenster-Rand
          *  in der Zukunft liegt (z. B. Urlaubswoche ohne Schichten). */
         private const val KEEPALIVE_MS = 6 * 60 * 60_000L
 
@@ -72,8 +71,8 @@ class DimScheduleUseCase @Inject constructor(
          * NICHT nacharmieren.
          *
          * Aendert NICHTS an der Bedeutung einer leeren Fensterliste (= heute wird nicht gedimmt,
-         * z. B. Nachtdienst-Unterdrueckung) - es wird nur nachgesehen, statt aufzugeben. Ist gar
-         * keine Quelle aktiv, bleibt die Kette bewusst self-cleaning (`null` = Alarm abbestellen).
+         * z. B. Nachtdienst-Unterdrueckung) - es wird nur nachgesehen, statt aufzugeben. Ist der
+         * Dimmer aus, bleibt die Kette bewusst self-cleaning (`null` = Alarm abbestellen).
          */
         @VisibleForTesting
         internal fun fallbackTick(now: Long, alarmReadFailed: Boolean, anySourceEnabled: Boolean): Long? = when {
@@ -264,8 +263,7 @@ class DimScheduleUseCase @Inject constructor(
     private suspend fun windows(): List<DimWindowResolver.DimSpan> = computeWindows().spans
 
     private suspend fun computeWindows(): Windows {
-        val toggles = prefs.togglesNow()
-        val anySourceEnabled = toggles.wellnessEnabled || toggles.rulesEnabled || toggles.nightDefaultEnabled
+        val anySourceEnabled = prefs.togglesNow().dimEnabled
         if (!anySourceEnabled) return Windows(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
 
         val alarmsResult = alarmUseCase.getAllAlarms()
@@ -277,22 +275,18 @@ class DimScheduleUseCase @Inject constructor(
         }
         val alarms = alarmsResult.getOrDefault(emptyList()).filter { it.isActive }
 
-        // Schichtspannen sind seit v1.25.2 die Quelle fuer alles SCHICHT-bezogene (Regel-Fenster,
-        // Nacht-Standard). Der Alarm-Bestand ueberlebt die Weckzeit nicht - ein SHIFT_END-
-        // verankertes Fenster verschwand deshalb mitten in der Schicht, sobald der Wecker
-        // geklingelt hatte und der naechste Sync ihn geraeumt hatte. Siehe ShiftSpanStore.
-        //
-        // Die WELLNESS-Quelle unten bleibt bewusst am echten Alarm-Bestand: sie dimmt vor der
-        // Weckzeit, ihr Fenster ist nach dem Klingeln ohnehin vorbei.
+        // Schichtspannen sind seit v1.25.2 die Quelle fuer alles SCHICHT-bezogene. Der
+        // Alarm-Bestand ueberlebt die Weckzeit nicht - ein SHIFT_END-verankertes Fenster
+        // verschwand deshalb mitten in der Schicht, sobald der Wecker geklingelt hatte und der
+        // naechste Sync ihn geraeumt hatte. Siehe ShiftSpanStore.
         val spansResult = shiftSpanStore.spansNow()
         if (spansResult.isFailure) {
             Logger.w(LogTags.DIMMER, "Schichtspannen nicht lesbar - kein Dimming (fail-open)")
             return Windows(emptyList(), alarmReadFailed = true, anySourceEnabled = true)
         }
         // FREIGEGEBENE TAGE: an einem vom Nutzer freigegebenen Tag findet der Dienst nicht statt,
-        // also darf er auch keine SCHICHT-Fenster erzeugen. Gefiltert wird hier, an der Quelle -
-        // damit Regel-Fenster UND Nacht-Standard dieselbe Wahrheit sehen. Der Tag sieht danach fuer
-        // die Fensterlogik aus wie jeder andere freie Tag (FREI-Regel, Nacht-Standard), und das ist
+        // also darf er auch keine SCHICHT-Fenster erzeugen. Gefiltert wird hier, an der Quelle. Der Tag sieht danach fuer
+        // die Fensterlogik aus wie jeder andere freie Tag (FREI-Regel greift), und das ist
         // Absicht: der Nutzer HAT frei. Ein Lesefehler des Freigabe-Speichers degradiert auf
         // "keine Freigabe" - lieber einmal zuviel gedimmt als eine unerwartet helle Nacht.
         val spans = FreieTageStore.filtereSpannen(
@@ -302,36 +296,25 @@ class DimScheduleUseCase @Inject constructor(
         )
 
         val out = mutableListOf<DimWindowResolver.DimSpan>()
-        val gStrength = prefs.strengthNow()
-        val gWarmth = prefs.warmthNow()
 
-        // 1. Wellness (global): Wind-down vor jeder Weckzeit – mit der globalen Intensität.
-        if (toggles.wellnessEnabled) {
-            val windDownMs = prefs.windDownMinutesNow() * MIN_MS
-            alarms.forEach {
-                out += DimWindowResolver.DimSpan((it.triggerTime - windDownMs)..it.triggerTime, gStrength, gWarmth)
-            }
-        }
-
-        // 2. Regeln: pro Kalendertag GENAU eine Regel (Anker-Semantik in
-        //    DimWindowResolver.buildRuleSpans). CLOCK↔CLOCK = jede Nacht (lückenlos, ermöglicht
-        //    „immer 22–7 außer ND"), ALARM/SHIFT_END = schicht-relativ, leere Fensterliste = ND-Ausnahme.
-        //    Welche Regel das ist, entscheidet der Resolver seit Pruefrunde 8 aus ALLEN Schichten
-        //    des Tages: `ruleForShift` wird pro Schicht gefragt (an einem Tag mit Fruehdienst UND
-        //    Rufbereitschaft wurde die zweite Regel vorher nie gefragt). Unterdrueckung schlaegt
-        //    dabei alles (leere Fensterliste = ausdrueckliche Nutzerentscheidung); bei zwei
-        //    widersprechenden spezifischen Regeln gewinnt die Regel der fruehesten Schicht, und der
-        //    Konflikt geht als WARN ins Log. Wichtig fuer diese Stelle: den Tag in so einem Fall
-        //    einfach auszulassen waere KEIN "nur nicht dimmen" - Punkt 3 unten nimmt jeden von einer
-        //    Regel getroffenen Tag aus dem Nacht-Standard heraus, der Tag bliebe also ganz ohne
-        //    Dimm-Quelle, obwohl die Oberflaeche beide Regeln als aktiv zeigt.
-        val rules = if (toggles.rulesEnabled) dimRuleUseCase.getAllRules() else emptyList()
-        val rulesActive = toggles.rulesEnabled && rules.any { it.enabled }
+        // DIE EINZIGE FENSTER-QUELLE: Regeln, pro Kalendertag GENAU eine (Anker-Semantik in
+        // DimWindowResolver.buildRuleSpans). CLOCK<->CLOCK = jede Nacht (lueckenlos, ermoeglicht
+        // "immer 22-7 ausser ND"), ALARM/SHIFT_END = schicht-relativ, ALARM_SONST_CLOCK als Ende =
+        // "bis zur Weckzeit, spaetestens um X", leere Fensterliste = ND-Ausnahme.
+        // Welche Regel das ist, entscheidet der Resolver seit Pruefrunde 8 aus ALLEN Schichten
+        // des Tages: `ruleForShift` wird pro Schicht gefragt (an einem Tag mit Fruehdienst UND
+        // Rufbereitschaft wurde die zweite Regel vorher nie gefragt). Unterdrueckung schlaegt
+        // dabei alles (leere Fensterliste = ausdrueckliche Nutzerentscheidung); bei zwei
+        // widersprechenden spezifischen Regeln gewinnt die Regel der fruehesten Schicht, und der
+        // Konflikt geht als WARN ins Log. Wichtig fuer diese Stelle: den Tag in so einem Fall
+        // einfach auszulassen waere KEIN "nur nicht dimmen" - seit dem Ein-Modell-Umbau gibt es
+        // keine zweite Quelle mehr, die einspringen koennte, der Tag bliebe also ganz ohne
+        // Dimmung, obwohl die Oberflaeche beide Regeln als aktiv zeigt.
+        val rules = dimRuleUseCase.getAllRules()
         // `triggerTime` MUSS hier die urspruenglich berechnete Weckzeit sein, auch wenn sie
         // laengst verstrichen ist: DimWindowResolver leitet daraus den KALENDERTAG des Slots ab
-        // (buildRuleSpans/buildDefaultNightSpans). Genau deshalb fuehrt ShiftSpan sie mit - mit
-        // einem Platzhalter waere der Slot auf 1970 datiert und die Tagesverankerung der
-        // Dimm-Fenster kaputt.
+        // (buildRuleSpans). Genau deshalb fuehrt ShiftSpan sie mit - mit einem Platzhalter waere
+        // der Slot auf 1970 datiert und die Tagesverankerung der Dimm-Fenster kaputt.
         val slots = spans.map { DimWindowResolver.AlarmSlot(it.alarmTriggerTime, it.shiftName, it.endTime) }
 
         // ZEITLEISTE ALLER WECKZEITEN - nur fuer den Ende-Anker ALARM_SONST_CLOCK ("bis zur
@@ -350,11 +333,24 @@ class DimScheduleUseCase @Inject constructor(
         //   "nimmt MANUELLE Wecker aus"). Er klingelt also - und muss das Fenster beenden.
         // - `spans` ist bereits gefiltert; an einem freigegebenen Tag steht dort nichts mehr, und
         //   das Nacht-Fenster laeuft dort korrekt bis zu seiner Uhrzeit durch.
+        //
+        // WAS EIN MANUELLER WECKER SEIT DEM EIN-MODELL-UMBAU NICHT MEHR KANN - bewusst in Kauf
+        // genommen, hier festgehalten, damit es nicht als Bug gesucht wird: Er erreicht die
+        // Fensterlogik AUSSCHLIESSLICH ueber diese Zeitleiste, also nur ueber den ENDE-Anker
+        // ALARM_SONST_CLOCK. Er kann ein laufendes Nacht-Fenster beenden - aber kein Fenster mehr
+        // selbst AUFSPANNEN. Die alte Wellness-Quelle konnte das: sie legte um JEDE Weckzeit des
+        // Alarm-Bestands ein Wind-down-Fenster, also auch um einen selbst gestellten Wecker. Als
+        // Regel ausgedrueckt (Fenster `ALARM -X` -> `ALARM +0`) geht das nicht mehr, weil
+        // ALARM-verankerte Regelfenster ueber `slots` aufgeloest werden und dort nur
+        // SCHICHTSPANNEN stehen. Wer vor einem manuellen Wecker gedimmt haben will, deckt das
+        // ueber ein Nacht-Fenster mit CLOCK-Start ab (das endet dann an genau diesem Wecker).
+        // Die Alternative - manuelle Wecker in `slots` aufzunehmen - ist ausgeschlossen: sie
+        // wuerde aus einem freien Tag still einen Schicht-Tag machen und die FREI-Regel aushebeln.
         val weckzeiten = (spans.map { it.alarmTriggerTime } + alarms.map { it.triggerTime })
             .distinct()
             .sorted()
 
-        if (rulesActive) {
+        if (rules.any { it.enabled }) {
             out += DimWindowResolver.buildRuleSpans(
                 alarms = slots,
                 horizonDays = HORIZON_DAYS,
@@ -366,33 +362,6 @@ class DimScheduleUseCase @Inject constructor(
             )
         }
 
-        // 3. Nacht-Standard: ab fester Uhrzeit bis zum naechsten Wecker, ohne dass dafuer eine
-        //    Regel angelegt werden muss. Ausgeschlossen sind: explizit vom Nutzer markierte
-        //    Schichten (Toggle an der Karte) UND - falls "Regeln" aktiv ist - jeder Tag, den Punkt 2
-        //    ohnehin schon abdeckt (rulesActive steuert dieselbe Ausschliesslichkeit wie dort).
-        //    Dieses Praedikat wird vom Resolver seit Pruefrunde 8 fuer JEDE Schicht des Tages
-        //    aufgerufen; ein Treffer schliesst den ganzen Tag aus. Die Signatur bleibt bewusst
-        //    "ein Name je Aufruf" - die Buendelung gehoert in den Resolver, nicht hierher.
-        if (toggles.nightDefaultEnabled) {
-            val excludedShifts = prefs.nightDefaultExcludedShiftsNow()
-            out += DimWindowResolver.buildDefaultNightSpans(
-                alarms = slots,
-                horizonDays = HORIZON_DAYS,
-                today = LocalDate.now(zone),
-                zone = zone,
-                startClockMinutes = prefs.nightDefaultStartMinutesNow(),
-                freeDayEndClockMinutes = prefs.nightDefaultFreeEndMinutesNow(),
-                strength = prefs.nightDefaultStrengthNow(),
-                warmth = prefs.nightDefaultWarmthNow(),
-                isExcluded = { shiftName ->
-                    if (shiftName != null) {
-                        shiftName in excludedShifts || (rulesActive && dimRuleUseCase.findRuleForShift(shiftName, rules) != null)
-                    } else {
-                        rulesActive && dimRuleUseCase.findRuleForFreeDay(rules) != null
-                    }
-                },
-            )
-        }
         return Windows(out, alarmReadFailed = false, anySourceEnabled = true)
     }
 

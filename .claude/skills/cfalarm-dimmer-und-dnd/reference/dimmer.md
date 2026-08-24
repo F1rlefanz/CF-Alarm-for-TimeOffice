@@ -6,6 +6,8 @@
 
 ## Inhalt
 
+- Ein Modell statt drei Quellen — und warum die eigentliche Lehre die KOPPLUNG ist (v1.34.0)
+- Die Modellmigration und warum der App-Start als einziger Anlass zu wenig war (v1.34.0)
 - Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen
 - Ein Kalendertag kann ZWEI Schichten haben (Prüfrunde 8)
 - Der Regelkonflikt an einem solchen Tag wird entschieden, nicht aufgelöst (Prüfrunde 8)
@@ -18,7 +20,6 @@
 - Die Fenster-Schleifen beginnen einen Kalendertag VOR `today` (`LOOKBACK_DAYS`)
 - Das Fenster-Ende ist HALB OFFEN (`first <= now < last`)
 - Die Tick-Kette darf nicht abreißen
-- Nacht-Standard (`DimWindowResolver.buildDefaultNightSpans`, seit v1.17.0) ist eine DRITTE,
 - Dimmer-Korrektur-Override (Feature C, seit v1.20.0) lebt im DataStore, nicht in-memory
 - `DimNotificationService` klemmt den `strengthDelta` selbst, nicht nur den abgeleiteten
 - Jeder Setter, der einen `DimOverlayPrefs`-Wert schreibt, MUSS direkt danach
@@ -26,6 +27,149 @@
 - `DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
 
 ---
+
+- **Ein Modell statt drei Quellen (v1.34.0) — und die eigentliche Lehre ist die KOPPLUNG, nicht die
+  Zahl drei.** Bis v1.33.0 hatte der Dimmer drei gleichrangige Fenster-Quellen mit drei eigenen
+  Schaltern: „Wellness/Wind-down" (dimmt eine Weile vor JEDER Weckzeit des Alarm-Bestands),
+  „Schicht-Regeln" (`DimRule`) und den eingebauten „Nacht-Standard" (`buildDefaultNightSpans`,
+  seit v1.17.0: ab fester Uhrzeit bis zum nächsten Wecker, mit eigener Verdunkelung/Wärme und einer
+  eigenen Ausnahmen-Chipliste). Seit v1.34.0 gibt es **nur noch die Regeln** und **einen** Schalter
+  (`dim_enabled`).
+
+  **Warum es die drei überhaupt gab:** jede war für sich eine berechtigte Bequemlichkeit — „ich will
+  nachts einfach Ruhe, ohne erst eine Regel zu bauen". Gebaut wurden sie NEBEN die Regel-Funktion,
+  nicht AUF sie. **Und genau das ist die Lehre: die Regeln konnten „jede Nacht 22–7 außer
+  Nachtdienst" schon FÜNF TAGE, BEVOR der Nacht-Standard gebaut wurde** — `cb9a94d` (21.07.2026,
+  Regelsystem), `58890f0` (23.07.2026, CLOCK↔CLOCK lückenlos jede Nacht + Nachtdienst-Ausnahme über
+  die leere Fensterliste), und erst `ff5b5e2` (28.07.2026) legte den Nacht-Standard daneben. Die
+  Bequemlichkeitsschicht duplizierte eine vorhandene Fähigkeit als eigene Quelle mit eigenem
+  Zustand, statt sie als Vorlage auf diese Fähigkeit zu setzen. Wer das nächste Mal „das geht mit
+  den Regeln zwar, ist aber umständlich" denkt: die Antwort ist eine Vorlage, die eine gewöhnliche
+  Regel anlegt (heute `SchnellstartVorlage`), nie eine zweite Quelle.
+
+  **Der Konstruktionsfehler war die KOPPLUNG der drei Schalter, nicht ihre Zahl.** Der Nacht-Standard
+  wirkte NUR an Tagen, die keine aktivierte Regel ohnehin abdeckte, **und nur solange die Quelle
+  „Regeln" eingeschaltet war**. Damit änderte das Umlegen EINES Master-Schalters unsichtbar die
+  BEDEUTUNG der anderen: wer „Regeln" ausschaltete, schaltete damit auch den Nacht-Standard scharf,
+  wo er vorher wirkungslos war — und wer eine UNIVERSAL-Regel aktivierte, machte den Nacht-Standard
+  samt seiner ausdrücklich gesetzten Ausnahmen vollständig wirkungslos, während dessen Schalter
+  weiter „an" zeigte. Das ist die Fehlerklasse „angezeigt, wirkt nicht", nur eine Ebene höher: nicht
+  eine Regel wirkt nicht, sondern ein ganzer Schalter bedeutet je nach Stand eines anderen Schalters
+  etwas anderes. Aus einem Modell mit dieser Eigenschaft lässt sich der reale Zustand nicht ablesen —
+  weder vom Nutzer noch beim Debuggen, und die Migration musste diese Ausschließlichkeit eigens
+  nachbilden (`nachtStandardWirksam`), um überhaupt sagen zu können, was vorher galt.
+
+  **Ausgelöst hat den Umbau der gemeldete Fehler vom 23.08.2026** — gedimmter Bildschirm und
+  laufendes „Nicht stören" um 08:48 nach einem Spätdienst-Wecker 12:30; Hergang und Messung stehen
+  beim Ende-Anker `ALARM_SONST_CLOCK` weiter unten und werden hier nicht wiederholt. Er schloss die
+  Ausdruckslücke und machte damit zugleich den Nacht-Standard entbehrlich: ein Fenster
+  `CLOCK 22:00 → ALARM_SONST_CLOCK 07:00` IST der komplette Nacht-Standard, für jede Kalendernacht,
+  als EIN Fenster — ohne das Paar aus Rückwärts- und Vorwärts-Fenster und ohne die
+  Folgetag-Bedingung `nextDayCoversTonight`, die auf ein ANDERES Datum schaut und deren erster Wurf
+  real eine ganze Nacht hat durchfallen lassen (03./04.08.2026, siehe unten). Wellness ist ein
+  Fenster `ALARM −X → ALARM +0`.
+
+  **Was der alte Nacht-Standard konnte und warum sein Wegfall dokumentiert bleiben muss** (der Code
+  ist weg, die Fälle bleiben gültige Prüfszenarien): er lief pro Tag über ZWEI unabhängige
+  Fenster-Prüfungen, nicht eine exklusive (Fix v1.21.1) — ein Rückwärts-Fenster (nur falls der Tag
+  selbst einen Wecker hat: die Nacht VOR diesem Wecker) UND ein Vorwärts-Fenster (immer, AUSSER der
+  FOLGETAG hat selbst einen Wecker). Bis v1.21.0 waren beide exklusiv an „Tag hat keinen Wecker"
+  gebunden, was die Nacht NACH einem späten Wecker komplett durchfallen ließ, sobald der Folgetag
+  ebenfalls weckerlos war — real reproduziert am 03./04./05.08.2026 (S2-Wecker 14:30 → Tag ohne
+  Kalendertermin → Frühschicht 05:30), und mit dem Dimmen fiel über DND-Modus 1 auch „Nicht stören"
+  weg. **Dieser Fall ist NICHT erledigt, er ist nur anders begründet:** im Ein-Modell kann er aus
+  einem ANDEREN Grund zurückkehren (Ende-Anker ohne obere Schranke), deshalb ist er in
+  `DimWindowResolverTest` als Regel-Szenario erhalten geblieben statt gelöscht zu werden. Ein
+  Ausschluss galt immer tages-granular und über ALLE Schichten des Tages (`istTagAusgeschlossen`);
+  heute drückt eine spezifische Regel mit LEERER Fensterliste dasselbe aus. Die eigene
+  Verdunkelung/Wärme (`nightDefaultStrength`/`nightDefaultWarmth`, v1.17.1) war ein ausdrücklicher
+  Nutzerwunsch — die globalen Wellness-Werte mitzuverwenden war der erste Wurf und wurde
+  zurückgewiesen; im Ein-Modell trägt ohnehin jede Regel ihre eigenen Werte.
+  `DimmerAltmodellReferenz` (Testcode) hält `buildDefaultNightSpans` wortgetreu eingefroren fest —
+  sie wird NICHT mitgepflegt, sie existiert nur als Vergleichsmaßstab der Migration.
+
+  **Vier bewusst gezahlte Preise** (aus `DimmerModellMigrationTest`, dort mit Zahlen; nicht als neue
+  Bugs melden): (1) ein SPÄTER Wecker verlängert die Nacht nicht mehr bis mittags — das war der
+  Anlass, also die Absicht; (2) ein MANUELLER Wecker bekommt kein eigenes Wind-down-Fenster mehr
+  (ALARM-verankerte Regelfenster lösen über die Schichtspannen auf, die alte Wellness-Quelle über
+  den Alarm-Bestand); (3) die Nacht vor einem regelbelegten Tag endet an dessen Weckzeit statt an
+  der festen Morgenuhrzeit — hellere Richtung; (4) an einem unterdrückten Tag entfällt das
+  Wind-down: beides zugleich ist im Ein-Modell nicht ausdrückbar, und „bleibt hell" ist die
+  harmlose Richtung. Ebenso zusammengeführt: zwei überlappende Quellen mit verschiedener
+  Verdunkelung werden zu einer.
+
+- **Die Modellmigration: der App-Start als einziger Anlass war zu wenig, und der Import brauchte
+  einen eigenen Weg** (`DimmerModellMigration`, v1.34.0). Die alten Preference-Schlüssel bleiben
+  bewusst im Store liegen (eine Version Rückweg), gelesen werden sie nur noch hier. Vier Dinge sind
+  tragend, jedes davon war ein gefundener Ausfall:
+  **(1) Zwei Anlässe.** `dim_enabled` ist ein NEUER Schlüssel mit Default `false`; bis die Migration
+  lief, steigt `computeWindows()` sofort mit leerer Fensterliste aus. Angestoßen wurde sie zuerst nur
+  aus `MainActivity.onCreate` — wer die App nur zum Wecken benutzt und sie nach einem
+  Play-Auto-Update tagelang nicht öffnet, hätte ab der ersten Nacht nach dem Update gar kein Dimmen
+  mehr gehabt, und über DND-Modus 1 wäre das Nachtfenster von „Nicht stören" mitgefallen — sichtbar
+  nirgends. Zweiter Anlass ist deshalb `AlarmMaintenanceService.rescheduleSideChannels`, die einzige
+  Kette, die diesen Nutzer alle 6 h erreicht. Der Marker macht jeden weiteren Aufruf zum No-op, die
+  Reihenfolge ist gleichgültig.
+  **(2) Entsperrungs-Gate.** Weil die Migration damit aus einer Hintergrundkette kommen kann, fragt
+  sie selbst den `UserManager`: der `@MainDataStore` liegt im CE-Storage und liefert vor der ersten
+  Entsperrung still LEERE Preferences, ohne zu werfen. Eine Migration darüber sähe eine leere
+  Alt-Konfiguration, schriebe `dim_enabled = false`, setzte den Marker — und niemand sähe je wieder
+  nach.
+  **(3) Nur übernehmen, was auch GEWIRKT hat.** Siehe die Kopplung oben: war der Nacht-Standard durch
+  eine aktive UNIVERSAL-Regel wirkungslos, entsteht weder sein Fenster noch eine seiner Ausnahmen —
+  sonst würde aus einer inerten Ausnahme eine scharfe Unterdrückung, die der UNIVERSAL-Regel genau
+  die Nächte nimmt, in denen sie heute dimmt. War die Regel-Quelle aus, wird ihr inerter Bestand
+  deaktiviert statt vom einen neuen Schalter scharf gemacht. Und das Wind-down-Fenster wird NICHT an
+  eine Regel mit leerer Fensterliste gehängt — die Leere ist die Nachtdienst-Ausnahme, ein Fenster
+  darin nähme ihr genau die Bedeutung (gefunden, nachdem der erste Gleichheitsbeweis das nicht sehen
+  konnte: seine Testdaten hatten keinen Kalendertag mit ZWEI Schichten).
+  **(4) Der Import ist ein eigener Anlass.** Der Marker ist zu Recht aus dem Backup ausgeschlossen
+  (ein importierter Marker überspränge auf einem unmigrierten Gerät die Migration). Damit fehlte aber
+  jeder Weg, eine importierte ALT-Konfiguration noch zu übersetzen — Gerätewechsel: frische
+  Installation setzt beim ersten Start den Marker, danach schreibt der Import die alten Schlüssel roh
+  in den Store, `dim_enabled` bleibt `false`, es dimmt nichts, und der neue Hauptschalter machte
+  stattdessen die auf dem Altgerät inerten Regeln scharf. `ConfigBackupUseCase.import` nimmt den
+  Marker jetzt zurück — **aber nur, wenn die Datei die ALTEN Schlüssel mitbringt UND kein
+  `dim_enabled`.** Die Gegenrichtung ist die gefährlichere: ein Übersetzungslauf über eine
+  Ein-Modell-Datei läse die fehlenden alten Schlüssel als „alles aus" und schaltete den frisch
+  importierten Dimmer sofort wieder ab.
+  **Fail-safe:** scheitert etwas, bleibt der Dimmer aus (heller Bildschirm, Wecker unberührt), der
+  Marker ungesetzt (Retry beim nächsten Anlass), WARN im Release-Log. Ein halb geschriebener
+  Regelbestand ist ungefährlich, weil `dim_enabled` erst ganz am Ende und nur im Erfolgsfall auf
+  `true` geht. Der Beweis der Verlustfreiheit liegt in `DimmerModellMigrationTest`: für sechs
+  Alt-Konfigurationen wird die 14-Tage-Zeitleiste einmal mit `DimmerAltmodellReferenz` und einmal
+  mit den migrierten Regeln berechnet und auf Gleichheit geprüft.
+
+- **Schnellstart-Vorlagen legen ECHTE Regeln an — das ist ihr ganzer Zweck** (`SchnellstartVorlage`,
+  v1.34.0). Drei Vorlagen oben in der Regelliste: „Nacht-Dimmen" (UNIVERSAL,
+  `CLOCK 22:00 → ALARM_SONST_CLOCK 07:00`), „Nachtdienst-Rhythmus" (Regel auf eine gewählte Schicht
+  mit ZWEI Fenstern an einem Kalendertag: `SHIFT_END +0 → CLOCK 14:00` und `CLOCK 15:00 → ALARM +0`)
+  und „Schicht ausnehmen" (Regel auf eine gewählte Schicht mit LEERER Fensterliste). Jede geht über
+  `saveRule()` und damit über `armiereFensterkettenNeu()`. Der Unterschied zur abgelösten
+  eingebauten Quelle ist der Punkt: was entsteht, steht danach **sichtbar** in der Regelliste und
+  lässt sich ändern und löschen. Damit der Nutzer das auch sieht, öffnet der Bildschirm den Editor
+  der neuen Regel (`neueRegelId` als Ereignis); `ruleById` fällt dabei auf die zuletzt angelegte
+  Regel zurück, weil der DataStore-Fluss sie erst Millisekunden später emittiert und der Editor
+  sonst leer aufginge. **Zwei Fallen, beide gefunden:** eine Vorlage darf keine ZWEITE aktivierte
+  Regel auf demselben `shiftPattern` anlegen (`findRuleForShift` nimmt den ERSTEN Treffer, die zweite
+  wäre tot — und der Konflikt-Hinweis der Regelliste fängt das nicht ab, er entsteht nur aus
+  VERSCHIEDENEN Regeln an einem Tag); stattdessen benennt ein Dialog die vorhandene und bietet an,
+  sie zu öffnen — ein stiller Abbruch wäre dieselbe Fehlerklasse gewesen. Ausgeschaltete Regeln
+  blockieren bewusst nicht. Und ohne Schichtnamen wird gar nichts geschrieben: eine Regel auf leerem
+  Muster träfe keine Schicht und stünde trotzdem als aktiv in der Liste.
+
+- **Der Fenster-Editor muss JEDEN Anker anbieten, den Erklärtext, Vorlage oder Migration erzeugen
+  können.** Der Editor bot am START nur „Feste Uhrzeit" und „Schichtende" an — `DimAnchor.ALARM` war
+  über die Oberfläche nicht erreichbar, obwohl der Erklärtext im Dimmer-Tab und die Migration genau
+  dieses Fenster als Ersatz für die ausgebaute Wellness-Quelle benennen. Zwei Ausfälle in einem:
+  wer der Anleitung folgte, fand den Knopf nicht und griff zur nächstbesten Wahl (feste Uhrzeit —
+  vor einem Spätdienst mit Weckzeit 12:30 also stundenlang zu früh); und ein migriertes Fenster
+  `ALARM −120 → ALARM +0` fiel im Editor in den `else`-Zweig: ein Uhrzeit-Feld mit dem Feld-Default
+  20:00, kein markierter Anker, und der `onPicked`-Callback schrieb `startAnchor = CLOCK`. **Ein
+  einziger Tipp auf das Feld** machte aus „zwei Stunden vor dem Aufstehen" dauerhaft „jede Nacht ab
+  20:00" — vor einem Spätdienst ein Fenster von 16,5 Stunden. Die Anker-Listen und die
+  Feld-Zuordnung liegen deshalb als prüfbare Konstanten neben dem Composable, und
+  `DimmerFensterEditorAnkerTest` stellt sie gegen die Fenster, die die Migration wirklich erzeugt.
 
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** (v1.24.0, an ZWEI
   Stellen: `DimmerViewModel.previewDim()` und `DimmerRulesViewModel.previewRule()` — „Regel
@@ -46,8 +190,9 @@
   später wieder `false`. Nachweis NICHT über die Layer-Anwesenheit führen: `render(false)` fährt nur
   das Alpha auf 0 und lässt `CFAlarmDimLayer` stehen.
 
-- **Ein Kalendertag kann ZWEI Schichten haben** (Prüfrunde 8, v1.30.0). `buildRuleSpans` und
-  `buildDefaultNightSpans` bauten sich beide eine `HashMap<LocalDate, AlarmSlot>` mit „first wins";
+- **Ein Kalendertag kann ZWEI Schichten haben** (Prüfrunde 8, v1.30.0). `buildRuleSpans` und das
+  damalige `buildDefaultNightSpans` bauten sich beide eine `HashMap<LocalDate, AlarmSlot>` mit
+  „first wins";
   weil die Slots nach Weckzeit sortiert ankamen, gewann immer die früheste Schicht, und **jede
   weitere Schicht desselben Tages existierte für Regelauswahl und Nacht-Ausnahme nicht**. Getroffen
   hat das genau den Alltagsfall, für den die App gebaut ist: Frühdienst plus anschließende
@@ -56,24 +201,25 @@
   ausdrücklich gesetzte Ausschluss der Rufbereitschaft wirkte nicht, der Bildschirm dimmte
   mitten im Dienst, und über DND-Modus 1 („Schlaf-Fenster folgt dem Dimmer") schaltete „Nicht
   stören" in genau der Nacht ein, in der Erreichbarkeit der Zweck des Dienstes ist. Beide
-  Funktionen gehen jetzt über `slotsByDate()` (`groupBy` + explizite Sortierung nach
+  Die verbliebene Funktion geht über `slotsByDate()` (`groupBy` + explizite Sortierung nach
   `triggerTime`, bei Gleichstand `shiftName`). **Die Sortierung ist Teil der Zusicherung, nicht
   Kosmetik:** „früheste Schicht des Tages" darf nicht stillschweigend an der Lieferreihenfolge des
   `ShiftSpanStore` hängen — sonst kippt ein laufendes Fenster zwischen zwei Ticks auf einen anderen
   Anker, und die Fenster-Identität (`range.last` + `strength`, siehe `isOverrideStale`) wird
-  instabil. Für den Nacht-Standard gilt zusätzlich `istTagAusgeschlossen()`: **ein Ausschluss
-  IRGENDEINER Schicht des Tages nimmt den ganzen Tag heraus** (der Ausschluss war immer
-  tages-granular — er entfernt Rückwärts- UND Vorwärts-Fenster dieses Datums), und
-  `nextDayCoversTonight` verlangt einen Folgetag, der eine Schicht hat UND nicht ausgeschlossen ist;
-  sonst fällt die gemeinsame Nacht durch beide Raster. Das Rückwärts-Fenster verankert weiterhin an
-  der ERSTEN Weckzeit des Tages. Festgehalten in `Pruefrunde8MehrereSchichtenProTagTest`.
+  instabil. Für den damaligen Nacht-Standard galt zusätzlich `istTagAusgeschlossen()`: **ein
+  Ausschluss IRGENDEINER Schicht des Tages nahm den ganzen Tag heraus** (der Ausschluss war immer
+  tages-granular). Beides ist mit dem Ein-Modell (v1.34.0) entfallen; im heutigen Modell drückt
+  eine spezifische Regel mit LEERER Fensterliste denselben Ausschluss aus, und
+  `Pruefrunde8MehrereSchichtenProTagTest` hält den Fall genau so fest — die Zusicherung „früheste
+  Weckzeit des Tages entscheidet" ist unverändert.
 
 - **Der Regelkonflikt an einem solchen Tag wird ENTSCHIEDEN, nicht aufgelöst** — und das Entscheiden
   muss sichtbar sein. Der erste Wurf des Fixes ließ einen Tag, an dem zwei Schichten zwei
   VERSCHIEDENE spezifische Regeln treffen, kommentarlos ganz aus. Das war schlimmer als der Bug:
-  weil spezifische Regeln UNIVERSAL verdrängen **und** ein regelbelegter Tag ohnehin aus dem
-  Nacht-Standard fällt (Punkt 3 in `DimScheduleUseCase`), blieb der Tag **komplett ohne
-  Dimm-Quelle** — während die Regelliste beide Regeln unverändert als aktiv zeigte. Also dieselbe
+  weil spezifische Regeln UNIVERSAL verdrängen **und** ein regelbelegter Tag damals auch noch aus
+  dem Nacht-Standard fiel, blieb der Tag **komplett ohne Dimm-Quelle** — während die Regelliste
+  beide Regeln unverändert als aktiv zeigte. Seit dem Ein-Modell (v1.34.0) gilt das erst recht: es
+  gibt keine zweite Quelle mehr, die einspringen könnte. Also dieselbe
   Fehlerklasse „aktiv angezeigt, wirkt nicht", gegen die der Fix gebaut wurde, plus ein Bruch von
   „ein Zustand, der eine Funktion dauerhaft anhält, muss sichtbar sein". Heute gilt: **die Regel der
   frühesten Schicht gewinnt**, der Fall geht als **WARN** ins Release-Log (eine Zeile je Berechnung,
@@ -142,9 +288,9 @@
   `scheduleNextTransition()` den Alarm — danach konnte sich die Kette nicht selbst wiederbeleben, und
   die übrigen `syncAlarms()`-Aufrufer armieren Dimmer/DND nicht nach: nach einer Urlaubswoche ohne
   Schichten blieb „Während der Dienstzeit" bis zum nächsten Reboot wirkungslos. Deshalb ein
-  Keep-alive-Tick (6 h), solange überhaupt eine Quelle AN ist, plus ein kurzer Retry-Tick (15 min)
-  nach einem **Lesefehler der Fenster-Grundlage** (Alarm-Bestand für Wellness, Schichtspannen für
-  Regeln/Nacht-Standard und für den gesamten DND-Pfad). Die BEDEUTUNG einer leeren Fensterliste
+  Keep-alive-Tick (6 h), solange der Dimmer überhaupt AN ist, plus ein kurzer Retry-Tick (15 min)
+  nach einem **Lesefehler der Fenster-Grundlage** (Schichtspannen für die Regeln und für den
+  gesamten DND-Pfad, Alarm-Bestand für die Weckzeit-Zeitleiste). Die BEDEUTUNG einer leeren Fensterliste
   (Nachtdienst-Unterdrückung) bleibt unverändert — es wird nur später noch einmal nachgesehen.
 - **Der Ende-Anker `ALARM_SONST_CLOCK` (seit v1.33.0) bringt die Semantik „min(Weckzeit, Uhrzeit)"
   ins Modell — sie fehlte, und ihr Fehlen war ein gemeldeter Fehler.** Am 23.08.2026 wachte der
@@ -153,12 +299,12 @@
   12:30 hiess „Nacht-Dimmung" damit faktisch „bis mittags", waehrend die eingestellten 07:00 nur an
   weckerfreien Tagen galten. Ausdruecken liess sich die erwartete Semantik mit keinem der drei
   Anker: `CLOCK` endet stur an der Uhrzeit und ueberdimmt jeden frueheren Wecker, `ALARM` endet
-  stur am Wecker. **Der neue Anker ist das Minimum aus beidem** und damit die Voraussetzung dafuer,
-  den eingebauten Nacht-Standard spaeter als gewoehnliche Regel auszudruecken statt als eigene
-  Quelle (Plan: ein Modell statt drei Quellen).
-  **Er raeumt zugleich eine Sonderlogik ab:** der Nacht-Standard braucht pro Tag ZWEI Fenster
+  stur am Wecker. **Der neue Anker ist das Minimum aus beidem** und war damit die Voraussetzung dafuer,
+  den eingebauten Nacht-Standard als gewoehnliche Regel auszudruecken statt als eigene Quelle —
+  **mit v1.34.0 umgesetzt, siehe den Eintrag „Ein Modell statt drei Quellen" oben.**
+  **Er raeumte zugleich eine Sonderlogik ab:** der Nacht-Standard brauchte pro Tag ZWEI Fenster
   (rueckwaerts/vorwaerts) plus `nextDayCoversTonight` — eine Bedingung, die auf ein ANDERES Datum
-  schaut als das gerade berechnete und deren erster Wurf real eine ganze Nacht durchfallen liess
+  schaute als das gerade berechnete und deren erster Wurf real eine ganze Nacht durchfallen liess
   (03./04.08.2026). Weil der Anker seine Weckzeit in der GESAMTEN Zeitleiste sucht statt „im Wecker
   dieses Tages", entfaellt das Fensterpaar: jede Kalendernacht bekommt genau ein Fenster und findet
   ihr Ende selbst. `DimAnkerWeckzeitSonstUhrzeitTest` haelt den ausloesenden Fall (12:30 beendet die
@@ -181,36 +327,13 @@
   Feld-Default), und `editRules()` verweigert JEDE Aenderung — auch das Loeschen einer anderen
   Regel. Das ist die dokumentierte Absicht des `strictJson`-Schreibpfads und kein Defekt; wer beim
   Testen zwischen Versionen springt, muss es kennen, sonst sieht es wie ein kaputtes Loeschen aus.
-- **Nacht-Standard (`DimWindowResolver.buildDefaultNightSpans`, seit v1.17.0) ist eine DRITTE,
-  eigenständige Fenster-Quelle** neben Regeln — dimmt ab fester Uhrzeit bis zum nächsten Wecker,
-  ganz ohne dass dafür eine `DimRule` existieren muss. Wirkt NUR an Tagen, die `isExcluded` nicht
-  ausschließt — **gefragt über ALLE Schichten des Tages** (`istTagAusgeschlossen`, siehe den Punkt
-  „Ein Kalendertag kann ZWEI Schichten haben" oben; bis v1.29.2 wurde nur die früheste gefragt, ein
-  Ausschluss an der zweiten Schicht war wirkungslos). Das Prädikat bündelt zwei unabhängige Wege:
-  eine explizit vom Nutzer markierte
-  Schicht (`DimOverlayPrefs.nightDefaultExcludedShifts`, Toggle direkt an der Karte) ODER eine
-  vorhandene `DimRule`, die den Tag ohnehin schon abdeckt (dieselbe Ausschließlichkeit wie oben).
-  **Pro Tag laufen ZWEI unabhängige Fenster-Prüfungen, nicht eine exklusive** (Fix v1.21.1): ein
-  Rückwärts-Fenster (nur falls der Tag selbst einen Wecker hat — die Nacht VOR diesem Wecker,
-  endend am Wecker) UND ein Vorwärts-Fenster (immer, AUSSER der FOLGETAG hat selbst einen Wecker —
-  dann deckt dessen eigenes Rückwärts-Fenster den heutigen Abend automatisch ab). Bis v1.21.0
-  waren beide exklusiv an „Tag hat keinen Wecker" gebunden — das ließ die Nacht NACH einem
-  Wecker, der nicht der frühe Morgen ist (z. B. eine Nachmittagsschicht mit Wecker 14:30),
-  komplett durchfallen, sobald der Folgetag ebenfalls keinen Wecker hatte: der Skip für den
-  Folgetag nahm fälschlich an, ein Wecker am ÜBERnächsten Tag decke die Nacht schon ab — dessen
-  Rückwärts-Fenster reicht aber nur exakt einen Tag zurück. Real reproduziert am 03./04./05.08.2026
-  (S2-Wecker 14:30 → Tag ganz ohne Kalendertermin → Frühschicht 05:30): die Nacht vom 3. auf den
-  4.8. blieb dadurch komplett ungedimmt UND ohne DND (DND-Modus 1 nutzt dieselbe Fensterberechnung
-  über `previewTimeline()`). `DimWindowResolverTest` hält sowohl das alte Kern-Szenario als auch
-  diesen Regressionsfall fest. **Eigene Verdunkelung/Wärme** (`nightDefaultStrength`/
-  `nightDefaultWarmth`, seit v1.17.1) — NICHT die globalen Wellness-Werte mitverwenden, das war
-  der erste Wurf und wurde vom Nutzer explizit zurückgewiesen.
 - **Dimmer-Korrektur-Override (Feature C, seit v1.20.0) lebt im DataStore, nicht in-memory** —
   `DimAccessibilityService`/`DimScheduleReceiver` haben keine garantierte Lebensdauer, ein
   In-Memory-State ginge bei Prozess-Neustart verloren. `DimOverlayPrefs.Override` speichert
   `strengthDelta`/`paused` PLUS `windowEnd` UND `windowStrength` (nicht nur `windowEnd`!) als
   Fenster-Identität. **Reine `windowEnd`-Identität reicht nicht:** `DimScheduleUseCase.windows()`
-  liefert drei unabhängige, überlappende Quellen (Wellness/Regeln/Nacht-Standard), die sehr häufig
+  liefert mehrere überlappende Fenster (bis v1.33.0 aus drei Quellen, seit dem
+  Ein-Modell aus Regeln mit mehreren Fenstern), die sehr häufig
   denselben Anker teilen (typischerweise ALARM-Offset 0 = die Weckzeit) — wechselt „darkest wins"
   (`activeSpan`) wegen einer neu überlappenden, stärkeren Quelle die aktive Spanne, bleibt
   `range.last` dabei oft identisch, nur die Stärke ändert sich. Ohne den Stärke-Vergleich in

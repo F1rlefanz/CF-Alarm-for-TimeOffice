@@ -34,8 +34,8 @@ object DimWindowResolver {
 
     /**
      * Wie viele Kalendertage VOR [today] die Fenster-Schleifen zusaetzlich mitrechnen. Ohne diesen
-     * Rueckblick verschwindet ein am Vorabend gestartetes Fenster (Vorwaerts-Fenster des
-     * Nacht-Standards, jedes CLOCK<->CLOCK-Regelfenster) nach dem Datumswechsel aus JEDER
+     * Rueckblick verschwindet ein am Vorabend gestartetes Fenster (jedes Regelfenster mit
+     * CLOCK-Start, also jede Nacht-Regel) nach dem Datumswechsel aus JEDER
      * Iteration: die Iteration fuer den neuen Tag erzeugt nur dessen EIGENEN Abend. Jede
      * Neuberechnung nach Mitternacht (App-Update via MY_PACKAGE_REPLACED, 6h-Wartung,
      * Master-Pause-Resume, jeder ViewModel-Setter, ein Tap auf die Korrektur-Notification) haette
@@ -45,7 +45,7 @@ object DimWindowResolver {
      */
     private const val LOOKBACK_DAYS = 1L
 
-    /** Ein aufgelöstes Dimm-Fenster samt Intensität seiner Quelle (Wellness = global, Regel = Regel-Wert). */
+    /** Ein aufgelöstes Dimm-Fenster samt Intensität der Regel, aus der es stammt. */
     data class DimSpan(val range: LongRange, val strength: Int, val warmth: Int)
 
     /**
@@ -180,13 +180,11 @@ object DimWindowResolver {
      * Minimal-Info einer Schicht für die Fenster-Berechnung (entkoppelt von Android).
      *
      * Name historisch: `DimScheduleUseCase` füllt das seit v1.25.2 aus `ShiftSpan`, damit
-     * SHIFT_END-verankerte Fenster nicht verschwinden, sobald der Wecker geklingelt hat. Die
-     * **Wellness**-Quelle daneben liest weiterhin den echten Alarm-Bestand — sie dimmt vor der
-     * Weckzeit, ihr Fenster ist danach ohnehin vorbei.
+     * SHIFT_END-verankerte Fenster nicht verschwinden, sobald der Wecker geklingelt hat.
      *
-     * **[triggerTime] ist der Tages-Anker**, nicht nur der ALARM-Anker: `buildRuleSpans` und
-     * `buildDefaultNightSpans` leiten den Kalendertag daraus ab. Ein Platzhalter (0) datiert den
-     * Slot auf 1970 und zerstört die Tagesverankerung aller Fenster.
+     * **[triggerTime] ist der Tages-Anker**, nicht nur der ALARM-Anker: `buildRuleSpans` leitet
+     * den Kalendertag daraus ab. Ein Platzhalter (0) datiert den Slot auf 1970 und zerstört die
+     * Tagesverankerung aller Fenster.
      */
     data class AlarmSlot(val triggerTime: Long, val shiftName: String, val shiftEndTime: Long)
 
@@ -223,8 +221,8 @@ object DimWindowResolver {
      *    [findRuleConflicts] in der Regelliste angezeigt (das Log allein waere wieder "angezeigt,
      *    wirkt nicht" - der Nutzer liest kein Logcat). Der erste Wurf
      *    dieses Fixes liess den Tag stattdessen kommentarlos ganz aus; das schaltete das Dimmen fuer
-     *    diesen Kalendertag KOMPLETT ab (samt Nacht-Standard, den Punkt 3 in [DimScheduleUseCase]
-     *    fuer regelbelegte Tage ohnehin ausschliesst), waehrend die Regelliste beide Regeln weiter
+     *    diesen Kalendertag KOMPLETT ab - Regeln sind seit dem Ein-Modell-Umbau die EINZIGE
+     *    Fenster-Quelle -, waehrend die Regelliste beide Regeln weiter
      *    als aktiv zeigte - "angezeigt, wirkt nicht", genau die Fehlerklasse, gegen die dieser Fix
      *    gebaut wurde. Die Fenster zu vereinigen ist keine Alternative: das waere additiv (Bruch von
      *    "pro Kalendertag GENAU eine Regel") und dimmte mehr als jede Regel fuer sich.
@@ -403,103 +401,6 @@ object DimWindowResolver {
     }
 
     /**
-     * Eingebauter Nacht-Standard (seit v1.17.0): dimmt ab [startClockMinutes] bis zum naechsten
-     * Wecker (ueber [DimAnchor.ALARM]) bzw. bis [freeDayEndClockMinutes] (ueber [DimAnchor.CLOCK],
-     * wenn kein Wecker in Reichweite ist) - jeweils nur an Kalendertagen, fuer die [isExcluded]
-     * false liefert. [isExcluded] buendelt ZWEI unabhaengige Ausschluss-Wege: eine explizit vom
-     * Nutzer ausgeschlossene Schicht (Toggle direkt an der Nacht-Standard-Karte) ODER eine
-     * vorhandene [DimRule] (spezifisch, UNIVERSAL oder FREI), die diesen Tag ohnehin schon
-     * abdeckt - exakt dieselbe Ausschliesslichkeit wie in [buildRuleSpans].
-     *
-     * Pro Tag werden ZWEI voneinander unabhaengige Fenster geprueft, nicht nur eines:
-     * 1. **Rueckwaerts** (nur wenn der Tag selbst einen Wecker hat): die Nacht VOR diesem Wecker,
-     *    endend am Wecker selbst (CLOCK reicht ueber "vor der Weckzeit" zurueck).
-     * 2. **Vorwaerts** (immer, AUSSER der Folgetag hat selbst einen NICHT ausgeschlossenen Wecker):
-     *    der heutige ABEND braucht ein eigenes Fenster bis [freeDayEndClockMinutes], weil das
-     *    Rueckwaerts-Fenster (Punkt 1) - falls es ueberhaupt existiert - nur bis zum EIGENEN Wecker
-     *    des Tages reicht, nicht bis in den eigenen Abend hinein. Hat der Tag KEINEN eigenen Wecker
-     *    (klassischer freier Tag), ist Punkt 2 das einzige Fenster. "Nicht ausgeschlossen" ist
-     *    Teil der Bedingung, nicht nur "hat einen Wecker": ist der Folgetag selbst per [isExcluded]
-     *    ausgeschlossen, ueberspringt SEINE Schleifen-Iteration ihr eigenes Rueckwaerts-Fenster
-     *    komplett (Punkt 1 oben) - dann deckt niemand die gemeinsame Nacht ab, wenn Punkt 2 hier
-     *    trotzdem uebersprungen wird.
-     *
-     * Diese Trennung ist bewusst: ein Wecker, der nicht der fruehe Morgen ist (z. B. eine
-     * Nachmittagsschicht mit Wecker 14:30), "verbraucht" den Tag fuer Punkt 1 als Ende einer
-     * Nacht VOR sich - deckt aber NIE den eigenen Abend ab. Waere Punkt 2 weiterhin exklusiv an
-     * "kein eigener Wecker" gebunden (wie vor diesem Fix), faellt die Nacht NACH einem solchen
-     * Nachmittagswecker komplett durch, sobald der Folgetag ebenfalls keinen Wecker hat (der
-     * Skip fuer den Folgetag nimmt faelschlich an, ein Wecker am UEBERnaechsten Tag decke sie
-     * schon ab - dessen Rueckwaerts-Fenster reicht aber nur einen Tag zurueck). Real reproduziert
-     * am 03./04./05.08.2026 (S2-Wecker 14:30 -> Tag ohne Termin -> Fruehschicht 05:30): die Nacht
-     * vom 3. auf den 4.8. blieb dadurch komplett ungedimmt/DND-los. Derselbe Fehlerklasse kehrte
-     * spaeter ueber den Ausschluss-Pfad zurueck (freier Tag vor einer ausgeschlossenen Schicht),
-     * seither deckt Punkt 2 auch diesen Fall ab. Siehe `DimWindowResolverTest` fuer beide
-     * Regressionsfaelle.
-     *
-     * **[isExcluded] wird ueber ALLE Schichten des Kalendertags gefragt, nicht nur ueber die
-     * fruehesten** (Fix Pruefrunde 8, dieselbe Ursache wie in [buildRuleSpans]): der Ausschluss
-     * ist von jeher TAGES-granular - er nimmt sowohl das Rueckwaerts- als auch das
-     * Vorwaerts-Fenster dieses Datums heraus. Solange nur die frueheste Schicht gefragt wurde, war
-     * ein an der Nacht-Standard-Karte gesetzter Ausschluss fuer die ZWEITE Schicht des Tages
-     * (typisch: Rufbereitschaft nach dem Fruehdienst) wirkungslos, obwohl die Oberflaeche ihn als
-     * gesetzt anzeigte. Deshalb gilt jetzt: **ein Ausschluss irgendeiner Schicht des Tages
-     * schliesst den ganzen Tag aus** - Ausschluss heisst "hier nicht dimmen", und nicht zu dimmen
-     * ist die harmlose Richtung. Dieselbe Antwort gilt fuer [nextDayCoversTonight] weiter unten:
-     * der Folgetag deckt den heutigen Abend nur ab, wenn er ueberhaupt eine Schicht hat UND als
-     * Tag nicht ausgeschlossen ist - sonst faellt die gemeinsame Nacht durch beide Raster.
-     * Das Rueckwaerts-Fenster verankert weiterhin an der FRUEHESTEN Weckzeit des Tages: die Nacht
-     * davor endet am ersten Wecken, nicht am zweiten. Neu ist nur, dass diese Wahl ausdruecklich
-     * sortiert getroffen wird ([slotsByDate]) statt als Nebeneffekt der Eingabereihenfolge.
-     */
-    fun buildDefaultNightSpans(
-        alarms: List<AlarmSlot>,
-        horizonDays: Int,
-        today: LocalDate,
-        zone: ZoneId,
-        startClockMinutes: Int,
-        freeDayEndClockMinutes: Int,
-        strength: Int,
-        warmth: Int,
-        isExcluded: (shiftName: String?) -> Boolean,
-    ): List<DimSpan> {
-        val byDate = slotsByDate(alarms, zone)
-        val out = mutableListOf<DimSpan>()
-        // Beginnt bewusst EINEN Tag vor [today] (siehe [LOOKBACK_DAYS]): das Vorwaerts-Fenster des
-        // Vorabends gehoert nach dem Datumswechsel weiterhin zur laufenden Nacht.
-        for (i in -LOOKBACK_DAYS until horizonDays.toLong()) {
-            val date = today.plusDays(i)
-            val shifts = byDate[date].orEmpty()
-            if (istTagAusgeschlossen(shifts, isExcluded)) continue
-
-            // Rueckwaerts: Nacht VOR dem ERSTEN Wecker des Tages, falls einer existiert.
-            val alarm = shifts.firstOrNull()
-            if (alarm != null) {
-                val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0)
-                // Leere Zeitleiste: der eingebaute Nacht-Standard baut seine Fenster selbst und
-                // ausschliesslich mit CLOCK-/ALARM-Ankern - er braucht ALARM_SONST_CLOCK nicht.
-                resolveWindowForDate(window, date, alarm, zone, emptyList())
-                    ?.let { out += DimSpan(it, strength, warmth) }
-            }
-
-            // Vorwaerts: heutiger Abend, AUSSER der Folgetag hat selbst einen NICHT ausgeschlossenen
-            // Wecker (nur dann deckt dessen eigenes Rueckwaerts-Fenster den heutigen Abend automatisch
-            // mit ab). Ist der Folgetag selbst ausgeschlossen (isExcluded), ueberspringt SEINE eigene
-            // Schleifen-Iteration weiter oben ihr Rueckwaerts-Fenster komplett - dann muss dieser Tag
-            // die gemeinsame Nacht selbst abdecken, sonst faellt sie ganz durch (Regression, real
-            // reproduziert: freier Tag vor einer ausgeschlossenen Nachtdienst-Schicht).
-            val nextDayShifts = byDate[date.plusDays(1)].orEmpty()
-            val nextDayCoversTonight = nextDayShifts.isNotEmpty() && !istTagAusgeschlossen(nextDayShifts, isExcluded)
-            if (!nextDayCoversTonight) {
-                val window = DimWindow(startAnchor = DimAnchor.CLOCK, startClockMinutes = startClockMinutes, endAnchor = DimAnchor.CLOCK, endClockMinutes = freeDayEndClockMinutes)
-                resolveWindowForDate(window, date, null, zone, emptyList())
-                    ?.let { out += DimSpan(it, strength, warmth) }
-            }
-        }
-        return out
-    }
-
-    /**
      * Gilt ein Dimmer-Korrektur-Override (Feature C) noch? Er ist an [DimOverlayPrefs.Override.windowEnd]
      * + [DimOverlayPrefs.Override.windowStrength] gebunden (= `range.last`/`strength` der aktiven
      * Spanne beim Setzen) - rein DATENBASIERTE Reset-Erkennung, KEIN eigener Timer/Alarm noetig: der
@@ -507,9 +408,9 @@ object DimWindowResolver {
      * Fenstergrenze ohnehin neu auf, wodurch ein Override fuer ein inzwischen beendetes/gewechseltes
      * Fenster automatisch stale wird.
      *
-     * `windowEnd` ALLEIN reicht nicht: [DimScheduleUseCase.windows] liefert DREI unabhaengige,
-     * ueberlappende Quellen (Wellness/Regeln/Nacht-Standard), die sehr haeufig denselben Anker teilen
-     * (typischerweise ALARM-Offset 0 = die Weckzeit). Wechselt "darkest wins" ([activeSpan]) wegen
+     * `windowEnd` ALLEIN reicht nicht: eine einzige Quelle liefert weiterhin MEHRERE, einander
+     * ueberlappende Regel-Fenster, die sehr haeufig denselben Anker teilen (typischerweise
+     * ALARM-Offset 0 = die Weckzeit). Wechselt "darkest wins" ([activeSpan]) wegen
      * einer neu ueberlappenden, staerkeren Quelle die aktive Spanne, bleibt `range.last` dabei oft
      * IDENTISCH - nur die Staerke aendert sich. Deshalb zaehlt zusaetzlich [activeStrength] zur
      * Identitaet des Fensters.
@@ -527,8 +428,8 @@ object DimWindowResolver {
     data class ResolvedInterval(val range: LongRange, val strength: Int, val warmth: Int)
 
     /**
-     * Fasst (moeglicherweise ueberlappende) Spannen aus allen Quellen (Wellness/Regeln/Nacht-
-     * Standard) zu einer chronologischen, nicht ueberlappenden Zeitleiste zusammen - bei
+     * Fasst (moeglicherweise ueberlappende) Regel-Spannen zu einer chronologischen, nicht
+     * ueberlappenden Zeitleiste zusammen - bei
      * Ueberlappung gewinnt an jeder Stelle dieselbe "dunkelste zuerst"-Regel wie [activeSpan], nur
      * ueber die Zeit hinweg statt fuer einen einzelnen Zeitpunkt. Reine Vorschau-Funktion, ohne
      * Seiteneffekt auf den echten Scheduler.
@@ -553,8 +454,7 @@ object DimWindowResolver {
     }
 
     /**
-     * Alle Schichten je Kalendertag, chronologisch sortiert - die gemeinsame Grundlage von
-     * [buildRuleSpans] und [buildDefaultNightSpans].
+     * Alle Schichten je Kalendertag, chronologisch sortiert - die Grundlage von [buildRuleSpans].
      *
      * Ersetzt die fruehere `HashMap<LocalDate, AlarmSlot>` mit "first wins", die pro Tag alles
      * ausser der ersten Schicht verwarf (Pruefrunde 8). Die Sortierung nach `triggerTime` und -
@@ -569,24 +469,15 @@ object DimWindowResolver {
             .mapValues { (_, slots) -> slots.sortedWith(compareBy({ it.triggerTime }, { it.shiftName })) }
 
     /**
-     * Ist dieser Kalendertag vom Nacht-Standard ausgenommen? Ein Ausschluss IRGENDEINER Schicht
-     * des Tages schliesst den ganzen Tag aus - der Ausschluss ist tages-granular (er nimmt beide
-     * Fenster dieses Datums heraus), und "nicht dimmen" ist die harmlose Richtung. Ein Tag ohne
-     * Schicht fragt weiterhin mit `null` (freier Tag), damit die Aufrufer-Semantik in
-     * [DimScheduleUseCase] unveraendert bleibt.
-     */
-    private fun istTagAusgeschlossen(shifts: List<AlarmSlot>, isExcluded: (String?) -> Boolean): Boolean =
-        if (shifts.isEmpty()) isExcluded(null) else shifts.any { isExcluded(it.shiftName) }
-
-    /**
      * CLOCK-Start = jede KALENDERNACHT des Datums; sonst schicht-relativ (nur mit Alarm auflösbar).
      *
      * Mit CLOCK-Start gehen BEIDE Kalendernacht-Enden hier durch — das feste [DimAnchor.CLOCK] und
      * das neue [DimAnchor.ALARM_SONST_CLOCK]. Letzteres braucht bewusst KEINEN Slot dieses Tages:
      * seine Weckzeit sucht es in der Zeitleiste [weckzeiten], nicht im Tages-Slot. Genau das macht
-     * es an einem weckerfreien Tag ebenso auflösbar wie an einem Schicht-Tag und ersetzt damit das
-     * Rückwärts-/Vorwärts-Fensterpaar des eingebauten Nacht-Standards samt seiner
-     * Folgetag-Bedingung.
+     * es an einem weckerfreien Tag ebenso auflösbar wie an einem Schicht-Tag. Genau deshalb konnte
+     * der eingebaute Nacht-Standard (Rückwärts-/Vorwärts-Fensterpaar plus Folgetag-Bedingung)
+     * ersatzlos entfallen: ein CLOCK→ALARM_SONST_CLOCK-Fenster einer gewöhnlichen Regel leistet
+     * dasselbe mit EINEM Fenster je Kalendernacht.
      */
     private fun resolveWindowForDate(
         w: DimWindow,

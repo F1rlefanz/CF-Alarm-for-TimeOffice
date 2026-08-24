@@ -106,7 +106,7 @@ internal const val FREIGEBEN_HINWEIS_DETAIL: String =
         "Tag freigeben streicht den Dienst selbst. Für diesen Kalendertag wird kein Wecker " +
         "gestellt, und weder „Nicht stören“ noch das Dimmen richten sich noch nach der " +
         "Schicht — der Tag zählt ab dann als freier Tag, mit allem, was für dich an freien Tagen " +
-        "gilt (Nacht-Standard, Frei-Regel). Gedacht für den Tag, an dem du nicht arbeitest, " +
+        "gilt (deine Regel für freie Tage). Gedacht für den Tag, an dem du nicht arbeitest, " +
         "obwohl er im Dienstplan steht.\n\n" +
         "Der Termin im Kalender bleibt in beiden Fällen unangetastet. Nimmst du eine Freigabe " +
         "zurück, legt die App den Wecker aus dem Dienstplan neu an."

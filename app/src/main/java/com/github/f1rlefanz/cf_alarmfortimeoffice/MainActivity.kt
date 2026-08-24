@@ -25,6 +25,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.CalendarPermissionOutcome
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.CalendarAuthorizationScreen
@@ -41,7 +43,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -62,6 +66,10 @@ class MainActivity : ComponentActivity() {
     // Hue Bridge Connection Manager for lifecycle events — via Hilt (HueModule brueckt den
     // getInstance()-Singleton), statt ihn direkt per getInstance() an Hilt vorbeizuziehen.
     @Inject lateinit var bridgeConnectionManager: HueBridgeConnectionManager
+
+    // Einmalige Ueberfuehrung der alten Dimmer-Konfiguration ins Ein-Modell - siehe onCreate().
+    @Inject lateinit var dimmerModellMigration: DimmerModellMigration
+    @Inject lateinit var dndSchedule: DndScheduleUseCase
 
     // HILT MIGRATION: ViewModels via Hilt's viewModels() delegate
     // ✅ Automatically scoped to Activity lifecycle
@@ -97,6 +105,37 @@ class MainActivity : ComponentActivity() {
 
         // HILT MIGRATION: No more AppContainer needed - dependencies injected automatically
         Logger.d(LogTags.AUTH, "🔍 OAUTH2-DIAGNOSTIC: Hilt DI active - dependencies auto-injected")
+
+        // EINMALIGE DIMMER-MODELLMIGRATION - der SCHNELLE der beiden Anlaesse. Der zweite ist der
+        // 6h-Wartungslauf (AlarmMaintenanceService.rescheduleSideChannels); er erreicht auch den
+        // Nutzer, der die App nach einem Play-Auto-Update tagelang nicht oeffnet. Der Marker macht
+        // den jeweils zweiten Aufruf zum No-op.
+        //
+        // WARUM DIESE STELLE (fuer den schnellen Weg):
+        //  - Sie liegt zwingend NACH der ersten Entsperrung. MainActivity ist nicht
+        //    `directBootAware`, kann also gar nicht vorher laufen; der MainDataStore liegt im
+        //    CE-Storage und lieferte davor still LEERE Preferences (siehe AlarmRepository) - die
+        //    Migration wuerde dann eine leere Alt-Konfiguration sehen und den Dimmer stillegen.
+        //  - Sie laeuft bei JEDEM App-Start, unabhaengig davon, welchen Tab der Nutzer oeffnet.
+        //    Im DimmerViewModel oder in der Dimmer-Karte aufgehaengt, bliebe der Dimmer bei
+        //    jemandem, der die App nur zum Wecken benutzt, unbegrenzt lange unmigriert - also aus.
+        //    Genau diesen Nutzer faengt zusaetzlich der Wartungslauf ab, denn er oeffnet die App
+        //    unter Umstaenden ueberhaupt nicht.
+        //  - Sie ist KEIN Teil des Hilt-Graphenaufbaus: injiziert wird nur die Referenz, gearbeitet
+        //    wird erst in dieser Coroutine. Ein CE-Zugriff beim BAUEN des Graphen wuerde den
+        //    Direct-Boot-Prozess toeten, der die Wecker wiederherstellt.
+        // Der Marker im DataStore macht jeden weiteren Aufruf (Rotation, Neustart) zum No-op.
+        lifecycleScope.launch {
+            if (dimmerModellMigration.migriereEinmalig()) {
+                // Die Migration verschiebt DIMM-FENSTERGRENZEN, also muss auch die DND-Kette neu
+                // armiert werden (Invariante seit v1.32.1). Sie kann das nicht selbst tun: `dnd/`
+                // liest von `dimmer/`, niemals umgekehrt - deshalb steht dieser eine Aufruf hier.
+                withContext(NonCancellable) {
+                    runCatching { dndSchedule.enable() }
+                        .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nach der Dimmer-Migration nicht neu armiert", it) }
+                }
+            }
+        }
 
         // POST_NOTIFICATIONS wird NICHT mehr hier (vor dem Login, kontextlos) abgefragt, sondern
         // erst wenn der Nutzer den Hauptbereich erreicht (LaunchedEffect im "main"-Screen unten) -

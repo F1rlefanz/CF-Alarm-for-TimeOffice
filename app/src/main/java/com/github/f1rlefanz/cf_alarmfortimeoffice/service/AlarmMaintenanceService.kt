@@ -433,6 +433,10 @@ class AlarmMaintenanceService : Service() {
     lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 
     @Inject
+    lateinit var dimmerModellMigration:
+        com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+
+    @Inject
     lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 
     @Inject
@@ -907,6 +911,26 @@ class AlarmMaintenanceService : Service() {
      * `BootReceiver`); `disable()` ruehrt laut Invariante keine persistierten Toggles an.
      */
     private suspend fun rescheduleSideChannels(paused: Boolean) {
+        // EINMALIGE DIMMER-MODELLMIGRATION, zweiter Anlass neben MainActivity.onCreate.
+        //
+        // WARUM SIE HIER STEHEN MUSS: `dim_enabled` ist ein NEUER Schluessel mit Default `false`;
+        // solange die Migration nicht lief, liefert computeWindows() eine leere Fensterliste. Wer
+        // die App nur zum Wecken benutzt und sie nach einem Play-Auto-Update tagelang nicht
+        // oeffnet, haette ab der ersten Nacht danach gar kein Dimmen mehr - und bei DND-Modus 1
+        // faellt das Nachtfenster von "Nicht stoeren" gleich mit weg. Der Wartungslauf ist die
+        // einzige Kette, die diesen Nutzer trotzdem alle 6 h erreicht.
+        //
+        // VOR den beiden Bloecken unten, damit derselbe Lauf gleich mit den neuen Fenstergrenzen
+        // plant. Die Migration armiert die DIMM-Kette selbst; die DND-Kette kann sie nicht
+        // anfassen (`dnd/` liest von `dimmer/`, nie umgekehrt) - hier folgt sie ohnehin direkt.
+        // Der Marker macht jeden weiteren Aufruf zum No-op, das Entsperrungs-Gate steckt in der
+        // Migration selbst. Eigenes try/catch wie bei den drei Bloecken unten.
+        try {
+            dimmerModellMigration.migriereEinmalig()
+        } catch (e: Exception) {
+            Logger.w(LogTags.DIMMER, "Wartung: Dimmer-Modellmigration fehlgeschlagen", e)
+        }
+
         try {
             if (paused) {
                 dimSchedule.disable()

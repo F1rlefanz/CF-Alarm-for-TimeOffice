@@ -15,6 +15,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.HueDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
@@ -75,6 +76,9 @@ class ConfigBackupUseCase @Inject constructor(
     private val shiftUseCase: IShiftUseCase,
     private val dimSchedule: DimScheduleUseCase,
     private val dndSchedule: DndScheduleUseCase,
+    // Nur fuer den Fall "die Datei stammt aus der Zeit vor dem Ein-Modell-Umbau" - siehe die
+    // Stelle im Import und DimmerModellMigration.brauchtNachImportEineMigration.
+    private val dimmerModellMigration: DimmerModellMigration,
     // Nur fuer den Ziel-Abgleich der importierten Hue-Regeln (siehe
     // reconcileImportedHueTargets). Beide werden ausschliesslich im Import benutzt und beruehren
     // die Bridge nur, wenn sie erreichbar ist.
@@ -169,8 +173,21 @@ class ConfigBackupUseCase @Inject constructor(
             definitions = config.definitions.size
         }
 
-        val settingsWritten = writeValues(mainDataStore, backup.settings, rejected)
-        val hueWritten = writeValues(hueDataStore, backup.hue, rejected)
+        val geschriebeneSettings = writeValues(mainDataStore, backup.settings, rejected)
+        val settingsWritten = geschriebeneSettings.size
+        val hueWritten = writeValues(hueDataStore, backup.hue, rejected).size
+
+        // EINE DATEI AUS DER ZEIT VOR DEM EIN-MODELL-UMBAU muss noch uebersetzt werden - und
+        // niemand sonst tut es mehr: der Migrations-Marker steht auf diesem Geraet laengst (schon
+        // der erste Start einer frischen Installation setzt ihn), und er ist zu Recht vom Backup
+        // ausgeschlossen. Ohne diesen Aufruf liegen `dim_wellness_enabled`/`dim_night_default_*`
+        // im Store und werden nie wieder gelesen, waehrend `dim_enabled` (in so einer Datei nicht
+        // enthalten) auf seinem lokalen Wert stehen bleibt: es dimmt nichts, und legt der Nutzer
+        // den Hauptschalter um, werden die auf dem Altgeraet inerten Regeln scharf.
+        // Best-effort wie die beiden enable()-Aufrufe darunter, und VOR ihnen: die Migration
+        // verschiebt Fenstergrenzen, die anschliessende Armierung soll sie schon sehen.
+        runCatching { dimmerModellMigration.migriereNachImport(geschriebeneSettings.toSet()) }
+            .onFailure { Logger.w(LogTags.DIMMER, "⚠️ IMPORT: Dimmer-Modellmigration uebersprungen", it) }
 
         // "Jeder Setter, der einen DimOverlayPrefs-Wert schreibt, MUSS direkt danach
         // DimScheduleUseCase.enable() aufrufen" (CLAUDE.md). Der Import ist ein neuer, generischer
@@ -223,12 +240,13 @@ class ConfigBackupUseCase @Inject constructor(
             .mapNotNull { (key, value) -> toStoredValue(value)?.let { key.name to it } }
             .toMap()
 
+    /** @return die Namen der tatsaechlich geschriebenen Schluessel (nicht die der Datei). */
     private suspend fun writeValues(
         store: DataStore<Preferences>,
         values: Map<String, StoredValue>,
         rejected: MutableList<String>
-    ): Int {
-        var written = 0
+    ): List<String> {
+        val written = mutableListOf<String>()
         store.edit { prefs ->
             values.forEach { (name, stored) ->
                 val reason = ConfigBackupFilter.exclusionReason(name)
@@ -254,7 +272,8 @@ class ConfigBackupUseCase @Inject constructor(
                     rejected += "$name ($wrongType)"
                     return@forEach
                 }
-                if (applyValue(prefs, name, stored)) written++ else rejected += "$name (unbekannter Typ '${stored.type}')"
+                if (applyValue(prefs, name, stored)) written += name
+                else rejected += "$name (unbekannter Typ '${stored.type}')"
             }
         }
         return written

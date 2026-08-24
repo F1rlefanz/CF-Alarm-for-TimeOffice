@@ -104,8 +104,8 @@ class FreieTageStore @Inject constructor(
          * einer Freigabe eine Wirkung auf Dimmer und "Nicht stoeren" wird.
          *
          * **Der uebrig bleibende Tag sieht fuer die Fensterlogik aus wie ein echter freier Tag**,
-         * und das ist Absicht: `DimWindowResolver.buildRuleSpans` wendet dann die FREI-Regel an,
-         * `buildDefaultNightSpans` den Nacht-Standard. Wer hier eine Sonderbehandlung "gar kein
+         * und das ist Absicht: `DimWindowResolver.buildRuleSpans` wendet dann die FREI-Regel an
+         * (bzw. die UNIVERSAL-Regel, falls es keine gibt). Wer hier eine Sonderbehandlung "gar kein
          * Dimmen" einbaut, baut einen dritten Tageszustand, den die Regelliste nicht anzeigen kann.
          */
         internal fun filtereSpannen(

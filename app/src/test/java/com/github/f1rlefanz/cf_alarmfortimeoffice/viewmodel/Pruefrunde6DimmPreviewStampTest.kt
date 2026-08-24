@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -120,7 +121,7 @@ class Pruefrunde6DimmPreviewStampTest {
         val prefs = mockPrefs(stamp)
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
-        val viewModel = DimmerViewModel(prefs, mock<DimScheduleUseCase>(), shiftUseCase)
+        val viewModel = DimmerViewModel(prefs, mock<DimScheduleUseCase>(), { mock<DndScheduleUseCase>() }, shiftUseCase)
 
         val startedAt = System.currentTimeMillis()
         viewModel.previewDim(seconds = 5)
@@ -137,7 +138,7 @@ class Pruefrunde6DimmPreviewStampTest {
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         val ruleUseCase = mock<DimRuleUseCase>()
         whenever(ruleUseCase.rules).thenReturn(flowOf(emptyList<DimRule>()))
-        val viewModel = DimmerRulesViewModel(ruleUseCase, shiftUseCase, mock<DimScheduleUseCase>(), prefs, mock<ShiftSpanStore>())
+        val viewModel = DimmerRulesViewModel(ruleUseCase, shiftUseCase, mock<DimScheduleUseCase>(), { mock<DndScheduleUseCase>() }, prefs, mock<ShiftSpanStore>())
 
         val startedAt = System.currentTimeMillis()
         viewModel.previewRule(strength = 60, warmth = 30, seconds = 5)

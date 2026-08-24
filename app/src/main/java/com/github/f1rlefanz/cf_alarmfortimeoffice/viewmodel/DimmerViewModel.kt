@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -28,12 +29,17 @@ import javax.inject.Inject
 /**
  * ViewModel des Dimmer-Tabs. Drei unabhängige Modi (Wellness/Wind-down, eingebauter Nacht-Standard
  * und Schicht-Regeln), gemeinsame Verdunkelung/Wärme. Jede Änderung stößt [DimScheduleUseCase.enable]
- * an (das den rollenden Alarm self-cleaning neu plant bzw. abbestellt).
+ * an (das den rollenden Alarm self-cleaning neu plant bzw. abbestellt) — und jede Änderung, die
+ * FENSTERGRENZEN verschiebt, zusätzlich [DndScheduleUseCase.enable]; siehe
+ * [armiereFensterkettenNeu].
  */
 @HiltViewModel
 class DimmerViewModel @Inject constructor(
     private val prefs: DimOverlayPrefs,
     private val dimSchedule: DimScheduleUseCase,
+    // Lazy wie in ShiftViewModel: DND haengt am Dimmer, nicht umgekehrt - die Injektion ist
+    // zyklusfrei, aber der Graph soll sie erst bauen, wenn wirklich nacharmiert wird.
+    private val dndSchedule: dagger.Lazy<DndScheduleUseCase>,
     private val shiftUseCase: IShiftUseCase
 ) : ViewModel() {
 
@@ -101,38 +107,78 @@ class DimmerViewModel @Inject constructor(
             .map { config -> config.definitions.map { it.name } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Armiert BEIDE Zeitketten neu - Dimmer, dann DND. Fuer jeden Setter, der FENSTERGRENZEN
+     * verschiebt.
+     *
+     * WARUM DND HIER MIT MUSS (Befund 23.08.2026, am Fairphone reproduziert): DND-Modus 1 („folgt
+     * dem Dimmer") hat keine eigene Fensterquelle - er liest ueber
+     * [DimScheduleUseCase.previewTimelineWithStatus] die Dimm-Zeitleiste. Verschiebt ein Setter
+     * die Dimm-Fenster, ohne DND nachzuarmieren, bleibt „Nicht stoeren" auf dem alten Plan stehen,
+     * bis der eigene DND-Tick faellt. Real gemessen: Nacht-Standard aus + Regeln an um 09:59, der
+     * Dimmer schaltete sofort ab, `zen_mode` blieb bis zum naechsten DND-Tick um 12:30 auf 1 -
+     * knapp drei Stunden „Nicht stoeren" ohne Grund. In einer Rufbereitschaftsnacht waeren das
+     * verlorene Anrufe. Die Invariante steht seit der Schicht-Umbenennung im Code
+     * (`ShiftViewModel`, „ein geaendertes Dimm-Fenster zieht die DND-Kette sehr wohl mit"), war
+     * aber nur dort und im Import umgesetzt.
+     *
+     * REIHENFOLGE DIMMER → DND ist tragend: `DndScheduleUseCase.computeWindows()` liest die
+     * Dimm-Zeitleiste LIVE. `dataStore.edit {}` kehrt erst nach persistiertem Write zurueck, das
+     * anschliessende `enable()` sieht also den neuen Stand - aber nur in dieser Reihenfolge.
+     * Vorbild: `MasterPauseUseCase`, `ConfigBackupUseCase`, `TagFreigabeUseCase`.
+     *
+     * [NonCancellable], weil das hier einen Zustand HERSTELLT: die Setter haengen am
+     * [viewModelScope], und genau der stirbt, wenn der Nutzer die App direkt nach dem Toggle
+     * verlaesst - der Prefs-Wert waere geschrieben, die Ketten haengen hinterher. Dieselbe Falle
+     * wie bei der frueheren Entprellung (siehe Kommentar bei [setStrength]). Beide Aufrufe einzeln
+     * gefangen: ein Fehlschlag der einen Kette darf die andere nicht mitreissen, und beide haben
+     * ihren eigenen Master-Pause-Backstop.
+     */
+    private suspend fun armiereFensterkettenNeu() = withContext(NonCancellable) {
+        runCatching { dimSchedule.enable() }
+            .onFailure { Logger.w(LogTags.DIMMER, "⚠️ Dimm-Kette nicht neu armiert", it) }
+        runCatching { dndSchedule.get().enable() }
+            .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nicht neu armiert", it) }
+    }
+
     /** Schaltet eine Schicht als Ausnahme vom Nacht-Standard ein/aus - keine DimRule dafuer noetig. */
     fun toggleNightDefaultExcludedShift(shiftName: String) = viewModelScope.launch {
         prefs.toggleNightDefaultExcludedShift(shiftName)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
     fun setWellnessEnabled(enabled: Boolean) = viewModelScope.launch {
         prefs.setWellnessEnabled(enabled)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
     fun setRulesEnabled(enabled: Boolean) = viewModelScope.launch {
         prefs.setRulesEnabled(enabled)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
     fun setNightDefaultEnabled(enabled: Boolean) = viewModelScope.launch {
         prefs.setNightDefaultEnabled(enabled)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
     fun setNightDefaultStartMinutes(value: Int) = viewModelScope.launch {
         prefs.setNightDefaultStartMinutes(value)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
     fun setNightDefaultFreeEndMinutes(value: Int) = viewModelScope.launch {
         prefs.setNightDefaultFreeEndMinutes(value)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
-    // Verdunkelung/Waerme aendern keine FENSTERGRENZEN - aber sehr wohl die Darstellung des gerade
+    // Verdunkelung/Waerme aendern keine FENSTERGRENZEN - deshalb rufen die folgenden vier Setter
+    // bewusst `dimSchedule.enable()` und NICHT [armiereFensterkettenNeu]: „Nicht stoeren" kennt nur
+    // die Fenster einer Zeitleiste, nicht ihre Farbe. Ein DND-`enable()` waere hier eine komplette
+    // zusaetzliche Fensterberechnung ohne jede Wirkung - dieselbe Begruendung wie umgekehrt in
+    // `ShiftViewModel` fuer die reinen DND-Namenslisten.
+    //
+    // Sehr wohl aendern sie die Darstellung des gerade
     // laufenden Fensters, und die faerbt der Dienst NICHT von allein reaktiv nach: er beobachtet
     // ausschliesslich DimOverlayPrefs.renderState, und das liest KEY_RENDER_STRENGTH/-WARMTH mit den
     // globalen Slidern nur als FALLBACK. Die Render-Keys schreiben einzig setActiveOverlay() und
@@ -173,7 +219,7 @@ class DimmerViewModel @Inject constructor(
 
     fun setWindDownMinutes(value: Int) = viewModelScope.launch {
         prefs.setWindDownMinutes(value)
-        dimSchedule.enable() // Wellness-Fenster verschieben sich -> neu planen
+        armiereFensterkettenNeu() // Wellness-Fenster verschieben sich -> beide Ketten neu planen
     }
 
     /**

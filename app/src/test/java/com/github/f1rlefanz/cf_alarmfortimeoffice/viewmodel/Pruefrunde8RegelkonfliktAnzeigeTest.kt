@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -122,7 +123,7 @@ class Pruefrunde8RegelkonfliktAnzeigeTest {
         )
 
         return Fixture(
-            DimmerRulesViewModel(ruleUseCase, shiftUseCase, dimSchedule, prefs, spanStore),
+            DimmerRulesViewModel(ruleUseCase, shiftUseCase, dimSchedule, { mock<DndScheduleUseCase>() }, prefs, spanStore),
             ruleUseCase, spanStore, prefs
         )
     }

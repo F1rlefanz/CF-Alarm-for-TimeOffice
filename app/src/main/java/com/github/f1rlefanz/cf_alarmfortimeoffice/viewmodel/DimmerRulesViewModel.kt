@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindowResolver
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -34,14 +35,17 @@ import javax.inject.Inject
 
 /**
  * ViewModel für Regel-Liste und Regel-Editor. Liefert die Regeln + die Namen der erkannten
- * Schicht-Definitionen (fürs Dropdown) und stößt nach jedem Speichern/Löschen den
- * [DimScheduleUseCase] neu an.
+ * Schicht-Definitionen (fürs Dropdown) und stößt nach jedem Speichern/Löschen BEIDE Zeitketten
+ * neu an ([armiereFensterkettenNeu]) — eine geänderte Regel verschiebt Dimm-Fenster, und
+ * „Nicht stören" im Modus „folgt dem Dimmer" hat keine andere Fensterquelle.
  */
 @HiltViewModel
 class DimmerRulesViewModel @Inject constructor(
     private val dimRuleUseCase: DimRuleUseCase,
     private val shiftUseCase: IShiftUseCase,
     private val dimSchedule: DimScheduleUseCase,
+    // Lazy wie in ShiftViewModel/DimmerViewModel - zyklusfrei, aber erst bei Bedarf gebaut.
+    private val dndSchedule: dagger.Lazy<DndScheduleUseCase>,
     private val prefs: DimOverlayPrefs,
     private val shiftSpanStore: ShiftSpanStore
 ) : ViewModel() {
@@ -78,14 +82,28 @@ class DimmerRulesViewModel @Inject constructor(
     fun ruleById(id: String?): DimRule? =
         id?.let { rid -> rules.value.firstOrNull { it.id == rid } }
 
+    /**
+     * Armiert BEIDE Zeitketten neu - Dimmer, dann DND. Begruendung, Reihenfolge und die
+     * [NonCancellable]-Falle ausfuehrlich in `DimmerViewModel.armiereFensterkettenNeu`; hier gilt
+     * sie unveraendert, nur ist der Ausloeser eine geaenderte oder geloeschte Regel statt eines
+     * Toggles. Der Weg aus dem Regel-Editor zurueck ist besonders anfaellig: Speichern und
+     * Verlassen des Bildschirms liegen einen Fingertipp auseinander.
+     */
+    private suspend fun armiereFensterkettenNeu() = withContext(NonCancellable) {
+        runCatching { dimSchedule.enable() }
+            .onFailure { Logger.w(LogTags.DIMMER, "⚠️ Dimm-Kette nicht neu armiert", it) }
+        runCatching { dndSchedule.get().enable() }
+            .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nicht neu armiert", it) }
+    }
+
     fun saveRule(rule: DimRule) = viewModelScope.launch {
         dimRuleUseCase.saveRule(rule)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
     fun deleteRule(id: String) = viewModelScope.launch {
         dimRuleUseCase.deleteRule(id)
-        dimSchedule.enable()
+        armiereFensterkettenNeu()
     }
 
     /**

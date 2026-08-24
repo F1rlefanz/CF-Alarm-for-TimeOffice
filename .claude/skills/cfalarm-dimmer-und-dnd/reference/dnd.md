@@ -64,7 +64,7 @@
   naechsten eigenen DND-Tick um 12:30 stehen, knapp drei Stunden ohne Grund. Die Selbstheilung
   kommt spaetestens mit der 6h-Wartung; in einer Rufbereitschaftsnacht sind drei Stunden aber genau
   die verlorenen Anrufe, gegen die der On-Call-Cutoff ueberhaupt gebaut wurde. Seit v1.32.1 haben
-  beide ViewModels ein `armiereFensterkettenNeu()` (Vorbild `ShiftViewModel.armiereZeitkettenNeu`).
+  beide ViewModels einen Nachzug; seit v1.34.3 liegt er als `ZeitkettenArmierer` an EINER Stelle, die alle fuenf frueheren Kopien abloest.
   Drei Dinge daran sind tragend: **Reihenfolge Dimmer → DND** (DND liest die Dimm-Zeitleiste LIVE;
   `dataStore.edit {}` kehrt erst nach persistiertem Write zurueck, das DND-`enable()` sieht den
   neuen Stand also nur in dieser Reihenfolge), **`withContext(NonCancellable)`** (die Setter haengen

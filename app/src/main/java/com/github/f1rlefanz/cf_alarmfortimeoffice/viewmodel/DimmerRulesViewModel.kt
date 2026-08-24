@@ -38,7 +38,7 @@ import javax.inject.Inject
 /**
  * ViewModel für Regel-Liste und Regel-Editor. Liefert die Regeln + die Namen der erkannten
  * Schicht-Definitionen (fürs Dropdown) und stößt nach jedem Speichern/Löschen BEIDE Zeitketten
- * neu an ([armiereFensterkettenNeu]) — eine geänderte Regel verschiebt Dimm-Fenster, und
+ * neu an ([com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer]) — eine geänderte Regel verschiebt Dimm-Fenster, und
  * „Nicht stören" im Modus „folgt dem Dimmer" hat keine andere Fensterquelle.
  */
 @HiltViewModel
@@ -131,11 +131,11 @@ class DimmerRulesViewModel @Inject constructor(
 
     /**
      * Zeigt das Overlay kurz mit den Werten AUS DEM FORMULAR (auch ungespeichert) – analog zu
-     * [DimmerViewModel.previewDim], aber mit den Regel-eigenen statt den globalen Wellness-Werten.
+     * der frueheren Vorschau des Dimmer-Reiters, aber mit den Regel-eigenen Werten.
      * Der Bedienungshilfen-Dienst muss aktiv sein. Danach den regulären Zustand wiederherstellen.
      *
      * **Das Aufräumen darf NICHT am `viewModelScope` hängen** — exakt dieselbe Falle wie in
-     * [DimmerViewModel.previewDim], hier ein zweites Mal. `setPreviewOverlay(…)` schreibt
+     * der frueheren Vorschau des Dimmer-Reiters, hier ein zweites Mal. `setPreviewOverlay(…)` schreibt
      * einen PERSISTENTEN Zustand; `DimAccessibilityService` beobachtet nur
      * `DimOverlayPrefs.renderState` und hat eine vom ViewModel völlig unabhängige Lebensdauer.
      * Wird der `viewModelScope` während des `delay()` gecancelt (Nutzer verlässt die App

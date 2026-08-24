@@ -10,8 +10,6 @@ import androidx.compose.ui.unit.dp
 // SPACING & DIMENSION CONSTANTS
 // ============================
 object SpacingConstants {
-    // Micro-Abstände für sehr kleine UI-Elemente
-    
     // Standard-Abstände
     val SPACING_EXTRA_SMALL = 4.dp
     val SPACING_SMALL = 8.dp
@@ -72,8 +70,6 @@ object UIColors {
     const val STATUS_WARNING = 0xFFFF9800L // Orange
     const val STATUS_INFO = 0xFF2196F3L    // Blue
     const val STATUS_LOADING = 0xFF9C27B0L // Purple
-    
-    // Warning and info container colors for light theme
 }
 
 // ============================

@@ -4,8 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.SharingStarted
@@ -13,7 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -21,7 +18,7 @@ import javax.inject.Inject
  * sonst nichts. Alles Weitere läuft über die Regeln und damit über `DimmerRulesViewModel`.
  *
  * Der Schalter verschiebt FENSTERGRENZEN (aus ist aus), deshalb zieht er beide Zeitketten nach —
- * Dimmer und DND; siehe [armiereFensterkettenNeu].
+ * Dimmer und DND; siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer].
  *
  * WAS HIER BEWUSST NICHT MEHR STEHT: Verdunkelung/Wärme-Setter, die Namen der Schichtdefinitionen
  * und die 5-Sekunden-Vorschau. Sie stammten aus der alten Drei-Karten-Oberfläche; seit die weg ist,

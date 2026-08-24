@@ -85,8 +85,6 @@ object LogTags {
     // === PHASE 2: SECURITY & VALIDATION ===
     const val SECURITY = "CFAlarm.Security"
 
-    // === HTTPS-FIRST HUE INTEGRATION ===
-
     // === ERROR & RECOVERY ===
     const val ERROR = "CFAlarm.Error"
     const val RECOVERY = "CFAlarm.Recovery"

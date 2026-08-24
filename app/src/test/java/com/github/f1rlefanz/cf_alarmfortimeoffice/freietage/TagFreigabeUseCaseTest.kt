@@ -1,7 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.freietage
 
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository

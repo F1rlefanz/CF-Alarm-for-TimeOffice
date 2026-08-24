@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
-import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
@@ -87,8 +86,6 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         val store: MutableStateFlow<ShiftConfig>,
         /** Die beiden DND-Schichtauswahlen (Rufbereitschaft + Dienstzeit-Ausnahmen). */
         val dnd: DndPrefs,
-        /** Die Ausnahmenliste des Nacht-Standards im Dimmer. */
-        val dimPrefs: DimOverlayPrefs,
         val dimSchedule: DimScheduleUseCase,
         val dndSchedule: DndScheduleUseCase,
         /** Der Alarm-Sync - er schreibt die Schichtspannen, auf die das Nacharmieren wartet. */
@@ -105,9 +102,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         dimErgebnis: Result<Int> = Result.success(1),
         hueErgebnis: Result<Int> = Result.success(1),
         dndPrefsErgebnis: Result<Int> = Result.success(1),
-        dimPrefsErgebnis: Result<Int> = Result.success(1),
         dndEntfernErgebnis: Result<Int> = Result.success(1),
-        dimEntfernErgebnis: Result<Int> = Result.success(1),
         mitTerminen: Boolean = true,
         /**
          * `true` = der Alarm-Sync laeuft wirklich (vollstaendige Eventliste). Nur dann werden die
@@ -143,11 +138,6 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             on { renameShiftName(any(), any()) } doReturn dndPrefsErgebnis
             on { removeShiftName(any(), any()) } doReturn dndEntfernErgebnis
         }
-        val dimPrefs = mock<DimOverlayPrefs>()
-        dimPrefs.stub {
-            on { renameShiftName(any(), any()) } doReturn dimPrefsErgebnis
-            on { removeShiftName(any(), any()) } doReturn dimEntfernErgebnis
-        }
         val dimSchedule = mock<DimScheduleUseCase>()
         val dndSchedule = mock<DndScheduleUseCase>()
 
@@ -181,10 +171,9 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             hueRuleUseCase = dagger.Lazy { hue },
             dimScheduleUseCase = dagger.Lazy { dimSchedule },
             dndScheduleUseCase = dagger.Lazy { dndSchedule },
-            dndPrefs = dagger.Lazy { dnd },
-            dimOverlayPrefs = dagger.Lazy { dimPrefs }
+            dndPrefs = dagger.Lazy { dnd }
         )
-        return Umgebung(vm, dim, hue, store, dnd, dimPrefs, dimSchedule, dndSchedule, alarmUseCase)
+        return Umgebung(vm, dim, hue, store, dnd, dimSchedule, dndSchedule, alarmUseCase)
     }
 
     @Test
@@ -377,8 +366,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             hueRuleUseCase = dagger.Lazy { hue },
             dimScheduleUseCase = dagger.Lazy { mock<DimScheduleUseCase>() },
             dndScheduleUseCase = dagger.Lazy { mock<DndScheduleUseCase>() },
-            dndPrefs = dagger.Lazy { mock<DndPrefs>() },
-            dimOverlayPrefs = dagger.Lazy { mock<DimOverlayPrefs>() }
+            dndPrefs = dagger.Lazy { mock<DndPrefs>() }
         )
         advanceUntilIdle()
 
@@ -393,19 +381,21 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
     }
 
     // ---------------------------------------------------------------------------------------
-    // NACHTRAG 21.08.2026: die drei ÜBERSEHENEN Namenslisten.
+    // NACHTRAG 21.08.2026: die ÜBERSEHENEN Namenslisten.
     //
-    // v1.30.0 zog nur Dimmer- und Hue-REGELN mit. Drei weitere Stellen binden ebenfalls über den
-    // Namen: `dnd_oncall_shifts` (Rufbereitschaft), `dnd_shift_excluded_shifts` (Ausnahmen von
-    // „Nicht stören während der Dienstzeit") und `dim_night_default_excluded_shifts` (Ausnahmen
-    // vom Nacht-Standard). Am Gerät des Nutzers stand in der Rufbereitschaft-Auswahl noch
+    // v1.30.0 zog nur Dimmer- und Hue-REGELN mit. Weitere Stellen binden ebenfalls über den
+    // Namen: `dnd_oncall_shifts` (Rufbereitschaft) und `dnd_shift_excluded_shifts` (Ausnahmen von
+    // „Nicht stören während der Dienstzeit"). Eine dritte, `dim_night_default_excluded_shifts`
+    // (Ausnahmen vom Nacht-Standard), ist mit dem Nacht-Standard selbst entfallen - der Dimmer
+    // bindet nur noch über `DimRule.shiftPattern`. Am Gerät des Nutzers stand in der
+    // Rufbereitschaft-Auswahl noch
     // „Abrufdienst", während der Weckerbestand längst „Rufdienst" sagte - der On-Call-Cutoff griff
     // nicht mehr, und in der Nacht vor der Rufbereitschaft blieb das Telefon über 05:00 hinaus
     // stumm. Sichtbar war davon nichts: die Chips werden aus den AKTUELLEN Namen gebaut.
     // ---------------------------------------------------------------------------------------
 
     @Test
-    fun `Umbenennen zieht auch die DND-Auswahlen und die Nacht-Ausnahmen nach`() =
+    fun `Umbenennen zieht auch die DND-Auswahlen nach`() =
         runTest(dispatcher) {
             val u = umgebung(ShiftConfig(definitions = listOf(def("1", "AD1"))))
             advanceUntilIdle()
@@ -414,7 +404,6 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             advanceUntilIdle()
 
             verifyBlocking(u.dnd) { renameShiftName("AD1", "Abrufdienst") }
-            verifyBlocking(u.dimPrefs) { renameShiftName("AD1", "Abrufdienst") }
             assertNull(u.vm.uiState.value.regelNachzugHinweis)
         }
 
@@ -436,9 +425,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             advanceUntilIdle()
 
             verifyBlocking(u.dnd, never()) { renameShiftName(any(), any()) }
-            verifyBlocking(u.dimPrefs, never()) { renameShiftName(any(), any()) }
             verifyBlocking(u.dnd, never()) { removeShiftName(any(), any()) }
-            verifyBlocking(u.dimPrefs, never()) { removeShiftName(any(), any()) }
             assertNotNull(u.vm.uiState.value.regelNachzugHinweis)
         }
 
@@ -457,7 +444,6 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             // Die übrigen laufen trotzdem - ein Fehlschlag darf nicht die halbe Migration kosten.
             verifyBlocking(u.dim) { renameShiftPattern("AD1", "Abrufdienst") }
             verifyBlocking(u.hue) { renameShiftPattern("AD1", "Abrufdienst") }
-            verifyBlocking(u.dimPrefs) { renameShiftName("AD1", "Abrufdienst") }
 
             val hinweis = u.vm.uiState.value.regelNachzugHinweis
             assertNotNull("Der gescheiterte Nachzug muss gemeldet werden", hinweis)
@@ -473,15 +459,14 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
     @Test
     fun `eine geaenderte DND-Auswahl armiert die DND-Kette neu, nicht die Dimmer-Kette`() =
         runTest(dispatcher) {
-            // Nur die DND-Auswahl hat sich geändert: Dimm-Regeln und Nacht-Ausnahmen melden 0.
+            // Nur die DND-Auswahl hat sich geändert: die Dimm-Regeln melden 0.
             // Die DND-Fenster (Dienstzeit, On-Call-Cutoff) hängen aber an genau dieser Liste - der
             // nächste Tick steht noch auf dem ALTEN Plan und muss neu gesetzt werden.
             val u = umgebung(
                 ShiftConfig(definitions = listOf(def("1", "AD1"))),
                 dimErgebnis = Result.success(0),
                 hueErgebnis = Result.success(0),
-                dndPrefsErgebnis = Result.success(1),
-                dimPrefsErgebnis = Result.success(0)
+                dndPrefsErgebnis = Result.success(1)
             )
             advanceUntilIdle()
 
@@ -494,16 +479,16 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         }
 
     @Test
-    fun `eine geaenderte Nacht-Ausnahme armiert beide Ketten neu`() = runTest(dispatcher) {
-        // Die Ausnahmenliste ist ein Eingang von DimScheduleUseCase.computeWindows() - sie
-        // verschiebt die Dimm-Fenster wie eine geänderte Regel, und über den DND-Modus
-        // "folgt dem Dimmer" auch die DND-Fenster.
+    fun `ein geaendertes Dimm-Regelmuster armiert beide Ketten neu`() = runTest(dispatcher) {
+        // Uebersetzt aus "eine geaenderte Nacht-Ausnahme armiert beide Ketten neu": die
+        // Ausnahmenliste ist mit dem Nacht-Standard entfallen, die Zusicherung gilt unveraendert
+        // fuer den verbliebenen Dimmer-Eingang - ein geaendertes Regelmuster verschiebt die
+        // Dimm-Fenster und ueber den DND-Modus "folgt dem Dimmer" auch die DND-Fenster.
         val u = umgebung(
             ShiftConfig(definitions = listOf(def("1", "AD1"))),
-            dimErgebnis = Result.success(0),
+            dimErgebnis = Result.success(1),
             hueErgebnis = Result.success(0),
-            dndPrefsErgebnis = Result.success(0),
-            dimPrefsErgebnis = Result.success(1)
+            dndPrefsErgebnis = Result.success(0)
         )
         advanceUntilIdle()
 
@@ -539,7 +524,6 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         advanceUntilIdle()
 
         verifyBlocking(u.dnd) { renameShiftName("abrufdienst", "Abrufdienst") }
-        verifyBlocking(u.dimPrefs) { renameShiftName("abrufdienst", "Abrufdienst") }
         // Für die Regeln ist derselbe Aufruf folgenlos - sie trafen vorher und treffen nachher.
         verifyBlocking(u.dim) { renameShiftPattern("abrufdienst", "Abrufdienst") }
         assertNull(u.vm.uiState.value.regelNachzugHinweis)
@@ -656,11 +640,14 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             // ohne den Partnernamen koennte die Prefs-Schicht den Fall gar nicht erkennen.
             verifyBlocking(u.dnd) { removeShiftName("Frueh", "Nacht") }
             verifyBlocking(u.dnd) { removeShiftName("Nacht", "Frueh") }
-            verifyBlocking(u.dimPrefs) { removeShiftName("Frueh", "Nacht") }
-            verifyBlocking(u.dimPrefs) { removeShiftName("Nacht", "Frueh") }
             // Geänderte Listen heißen: der nächste Tick steht auf einem überholten Plan.
-            verifyBlocking(u.dimSchedule) { enable() }
+            // NUR die DND-Kette: seit dem Ein-Modell-Umbau hat der Dimmer keine Namensliste mehr,
+            // an der ein blockierter Tausch etwas raeumen koennte - seine Regeln bleiben in diesem
+            // Fall bewusst unangetastet (Nichtstun ist dort ehrlich, sie stehen sichtbar in der
+            // Regelliste). Ein enable() waere Arbeit ohne Wirkung, dieselbe Abgrenzung wie bei den
+            // reinen DND-Auswahlen.
             verifyBlocking(u.dndSchedule) { enable() }
+            verifyBlocking(u.dimSchedule, never()) { enable() }
 
             val hinweis = u.vm.uiState.value.regelNachzugHinweis
             assertNotNull(hinweis)

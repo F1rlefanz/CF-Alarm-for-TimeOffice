@@ -66,25 +66,9 @@ class Pruefrunde6DimmPreviewStampTest {
 
     private fun mockPrefs(stamp: Stamp): DimOverlayPrefs {
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.toggles).thenReturn(
-            flowOf(
-                DimOverlayPrefs.Toggles(
-                    wellnessEnabled = false,
-                    rulesEnabled = false,
-                    nightDefaultEnabled = false
-                )
-            )
-        )
+        whenever(prefs.toggles).thenReturn(flowOf(DimOverlayPrefs.Toggles(dimEnabled = false)))
         whenever(prefs.strength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
         whenever(prefs.warmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
-        whenever(prefs.windDownMinutes).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WINDDOWN_MIN))
-        whenever(prefs.nightDefaultStartMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_START_MIN))
-        whenever(prefs.nightDefaultFreeEndMinutes)
-            .thenReturn(flowOf(DimOverlayPrefs.DEFAULT_NIGHT_DEFAULT_FREE_END_MIN))
-        whenever(prefs.nightDefaultExcludedShifts).thenReturn(flowOf(emptySet()))
-        whenever(prefs.nightDefaultStrength).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_STRENGTH))
-        whenever(prefs.nightDefaultWarmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
         prefs.stub {
             on { strengthNow() } doReturn DimOverlayPrefs.DEFAULT_STRENGTH
             on { warmthNow() } doReturn DimOverlayPrefs.DEFAULT_WARMTH

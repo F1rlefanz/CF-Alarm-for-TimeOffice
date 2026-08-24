@@ -114,13 +114,7 @@ class Pruefrunde8RegelkonfliktAnzeigeTest {
         whenever(ruleUseCase.findRuleForShift(eq("Rufbereitschaft"), any()))
             .thenReturn(regeln.firstOrNull { it.shiftPattern == "Rufbereitschaft" })
         whenever(spanStore.spansNow()).thenReturn(spannen)
-        whenever(prefs.togglesNow()).thenReturn(
-            DimOverlayPrefs.Toggles(
-                wellnessEnabled = false,
-                rulesEnabled = rulesEnabled,
-                nightDefaultEnabled = false
-            )
-        )
+        whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = rulesEnabled))
 
         return Fixture(
             DimmerRulesViewModel(ruleUseCase, shiftUseCase, dimSchedule, { mock<DndScheduleUseCase>() }, prefs, spanStore),

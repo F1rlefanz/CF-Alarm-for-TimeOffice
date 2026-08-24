@@ -28,18 +28,10 @@ import org.mockito.kotlin.whenever
  */
 class DimSchedulePreviewStatusTest {
 
-    private suspend fun sut(alarms: Result<List<AlarmInfo>>, wellnessEnabled: Boolean = true): DimScheduleUseCase {
+    private suspend fun sut(alarms: Result<List<AlarmInfo>>, dimEnabled: Boolean = true): DimScheduleUseCase {
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.togglesNow()).thenReturn(
-            DimOverlayPrefs.Toggles(
-                wellnessEnabled = wellnessEnabled,
-                rulesEnabled = false,
-                nightDefaultEnabled = false
-            )
-        )
-        // Suspend-Getter liefern ungestubbt `null` (Mockito-Default ueber Any?) und wuerden die
-        // Wellness-Rechnung an einer NPE scheitern lassen.
-        whenever(prefs.windDownMinutesNow()).thenReturn(120)
+        whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = dimEnabled))
+        // Suspend-Getter liefern ungestubbt `null` (Mockito-Default ueber Any?).
         whenever(prefs.strengthNow()).thenReturn(55)
         whenever(prefs.warmthNow()).thenReturn(40)
 
@@ -50,12 +42,15 @@ class DimSchedulePreviewStatusTest {
 
         val spanStore = mock<ShiftSpanStore>()
         whenever(spanStore.spansNow()).thenReturn(Result.success(emptyList()))
+        // Pflicht-Stub: die Regeln sind die einzige Fenster-Quelle und werden immer gelesen.
+        val ruleRepo = mock<DimRuleRepository>()
+        whenever(ruleRepo.getRules()).thenReturn(emptyList())
         return DimScheduleUseCase(
             mock<Context>(),
             alarmUseCase,
             spanStore,
             keineFreienTage(),
-            DimRuleUseCase(mock<DimRuleRepository>()),
+            DimRuleUseCase(ruleRepo),
             prefs,
             mock<DimCorrectionNotifier>(),
             masterPausePrefs
@@ -76,9 +71,9 @@ class DimSchedulePreviewStatusTest {
 
     @Test
     fun `Eine legitim leere Fensterliste ist KEIN Lesefehler`() = runTest {
-        // Alle Quellen aus: leer, aber fehlerfrei. "Leere Fensterliste" ist bedeutungstragend
+        // Dimmer aus: leer, aber fehlerfrei. "Leere Fensterliste" ist bedeutungstragend
         // (z. B. Nachtdienst-Unterdrueckung) und darf keinen Retry-Tick ausloesen.
-        val preview = sut(Result.success(emptyList()), wellnessEnabled = false).previewTimelineWithStatus()
+        val preview = sut(Result.success(emptyList()), dimEnabled = false).previewTimelineWithStatus()
 
         assertTrue(preview.intervals.isEmpty())
         assertFalse(preview.alarmReadFailed)

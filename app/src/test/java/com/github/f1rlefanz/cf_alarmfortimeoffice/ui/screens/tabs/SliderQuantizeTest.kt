@@ -2,11 +2,16 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * Deckt die Rasterung ab, die aus dem Wind-down-Slider in DimmerTabContent herausgezogen wurde.
+ *
+ * Der Wind-down-Slider selbst ist mit der Wellness-Quelle entfallen. [quantizeToStep] bleibt der
+ * gemeinsame Rastermechanismus von `CommitOnReleaseSlider` und muss weiterhin exakt liefern, was
+ * der fruehere Inline-Ausdruck lieferte - der Fall "Schrittweite groesser 1" bleibt damit
+ * erreichbar. GESTRICHEN wurde nur der Fall "Ergebnis bleibt im Wind-down-Bereich der Prefs":
+ * sein Gegenstand (WINDDOWN_MIN_LIMIT/-MAX_LIMIT) existiert nicht mehr.
  *
  * Der Slider meldete seinen Wert bis dahin bei JEDEM Touch-Frame an das ViewModel (kein
  * `onValueChangeFinished`) und stiess damit pro Frame die komplette Dimmer-Neuplanung an. Beim
@@ -33,24 +38,5 @@ class SliderQuantizeTest {
             DimOverlayPrefs.STRENGTH_MAX,
             quantizeToStep(DimOverlayPrefs.STRENGTH_MAX.toFloat(), 1)
         )
-    }
-
-    @Test
-    fun `Ergebnis bleibt im Wind-down-Bereich der Prefs`() {
-        val min = DimOverlayPrefs.WINDDOWN_MIN_LIMIT
-        val max = DimOverlayPrefs.WINDDOWN_MAX_LIMIT
-        var value = min.toFloat()
-        while (value <= max.toFloat()) {
-            val quantized = quantizeToStep(value, 15)
-            // Gegen `min`, NICHT gegen 0: die Rasterung darf nie unter die Prefs-Untergrenze
-            // rutschen. Sonst schreibt onCommit() z. B. 0, DimOverlayPrefs klemmt beim Lesen still
-            // auf 15 hoch - und weil sich der persistierte Wert dadurch nicht aendert, feuert der
-            // LaunchedEffect(value) im CommitOnReleaseSlider nicht: Anzeige und gespeicherter Wert
-            // laufen auseinander. Faellt diese Zusicherung um (z. B. Schrittweite 20 bei Minimum
-            // 15), ist das ein echter Befund an der Rasterung, kein Testproblem.
-            assertTrue("$quantized liegt unter dem Minimum $min", quantized >= min)
-            assertTrue("$quantized liegt ueber dem Maximum $max", quantized <= max)
-            value += 0.7f
-        }
     }
 }

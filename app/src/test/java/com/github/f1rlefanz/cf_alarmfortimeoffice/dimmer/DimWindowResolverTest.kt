@@ -186,20 +186,61 @@ class DimWindowResolverTest {
         assertTrue(spans.any { ep(2026, 1, 15, 23, 0) in it.range })
     }
 
-    // --- buildDefaultNightSpans: eingebauter Nacht-Standard (v1.17.0) ---
+    // --- Der frueher eingebaute Nacht-Standard, jetzt als gewoehnliche Regel ---
+    //
+    // Die Faelle sind UEBERSETZT, nicht gestrichen: sie pruefen dieselben Zusicherungen, nur
+    // ausgedrueckt im Ein-Modell (UNIVERSAL-Regel mit einem Fenster CLOCK 22:00 ->
+    // ALARM_SONST_CLOCK 07:00). Genau dieses eine Fenster ersetzt das frueher noetige Paar aus
+    // Rueckwaerts- und Vorwaerts-Fenster samt der Bedingung "ausser der Folgetag hat selbst einen
+    // Wecker" - der Ende-Anker sucht seine Weckzeit in der GESAMTEN Zeitleiste.
+
+    /** Die Nacht-Regel: jede Kalendernacht ab 22:00, Ende an der Weckzeit, spaetestens 07:00. */
+    private fun nachtRegel() = DimRule(
+        id = "nacht", name = "Nacht", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
+        windows = listOf(
+            DimWindow(
+                startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60,
+                endAnchor = DimAnchor.ALARM_SONST_CLOCK, endClockMinutes = 7 * 60
+            )
+        ),
+        strength = 60, warmth = 40
+    )
+
+    /** Regelauswahl wie [DimRuleUseCase]: exakter Schichtname schlaegt FREI/UNIVERSAL. */
+    private fun auswahl(rules: List<DimRule>): Pair<(String) -> DimRule?, () -> DimRule?> {
+        val en = rules.filter { it.enabled }
+        val forShift = { name: String ->
+            en.firstOrNull { it.shiftPattern.equals(name, ignoreCase = true) }
+                ?: en.firstOrNull { it.shiftPattern == DimRule.SHIFT_UNIVERSAL }
+        }
+        val forFree = {
+            en.firstOrNull { it.shiftPattern == DimRule.SHIFT_FREE }
+                ?: en.firstOrNull { it.shiftPattern == DimRule.SHIFT_UNIVERSAL }
+        }
+        return forShift to forFree
+    }
+
+    private fun nachtSpans(
+        alarms: List<DimWindowResolver.AlarmSlot>,
+        horizonDays: Int,
+        today: LocalDate,
+        rules: List<DimRule> = listOf(nachtRegel()),
+    ): List<DimSpan> {
+        val (forShift, forFree) = auswahl(rules)
+        return DimWindowResolver.buildRuleSpans(
+            alarms = alarms, horizonDays = horizonDays, today = today, zone = zone,
+            ruleForShift = forShift, ruleForFreeDay = forFree,
+            weckzeiten = alarms.map { it.triggerTime }
+        )
+    }
 
     @Test
-    fun `Nacht-Standard endet an Tagen mit Alarm dynamisch beim tatsaechlichen Wecker`() {
+    fun `Nacht-Regel endet an Tagen mit Wecker dynamisch beim tatsaechlichen Wecker`() {
         // Spaetdienst-Nacht (12.01.), Folgetag 13.01. ist Fruehdienst mit 5-Uhr-Wecker.
         val today = LocalDate.of(2026, 1, 12)
         val alarms = listOf(DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 5, 0), "Fruehdienst", 0))
 
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = alarms, horizonDays = 3, today = today, zone = zone,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { false }
-        )
+        val spans = nachtSpans(alarms, horizonDays = 3, today = today)
 
         val night = spans.first { ep(2026, 1, 12, 23, 0) in it.range }
         assertEquals(ep(2026, 1, 12, 22, 0), night.range.first)
@@ -207,15 +248,10 @@ class DimWindowResolverTest {
     }
 
     @Test
-    fun `Nacht-Standard nutzt an alarmlosen Tagen die feste Ende-Uhrzeit`() {
+    fun `Nacht-Regel nutzt an weckerlosen Tagen die feste Ende-Uhrzeit`() {
         val today = LocalDate.of(2026, 1, 12)
 
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = emptyList(), horizonDays = 1, today = today, zone = zone,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { false }
-        )
+        val spans = nachtSpans(emptyList(), horizonDays = 1, today = today)
 
         // Ab `today` genau EIN Fenster (die Nacht 12.->13.01.). Die Schleife rechnet zusätzlich die
         // Vornacht mit (LOOKBACK_DAYS, damit eine laufende Nacht nach Mitternacht nicht wegfällt) –
@@ -227,21 +263,20 @@ class DimWindowResolverTest {
     }
 
     @Test
-    fun `Eine vorhandene Regel ersetzt den Nacht-Standard fuer ihren Tag komplett`() {
+    fun `Eine spezifische Regel ersetzt die Nacht-Regel fuer ihren Tag komplett`() {
+        // Frueher: "eine vorhandene Regel ersetzt den Nacht-Standard". Die Nachtdienst-Ausnahme ist
+        // im Ein-Modell eine spezifische Regel mit LEERER Fensterliste - sie verdraengt UNIVERSAL
+        // und unterdrueckt den Tag dadurch, statt ihn nur auszulassen.
         val today = LocalDate.of(2026, 1, 12)
         val alarms = listOf(DimWindowResolver.AlarmSlot(ep(2026, 1, 12, 20, 0), "Nachtdienst", 0))
+        val nd = DimRule(id = "nd", name = "ND", shiftPattern = "Nachtdienst", enabled = true, windows = emptyList())
 
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = alarms, horizonDays = 1, today = today, zone = zone,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { name -> name == "Nachtdienst" }
-        )
+        val spans = nachtSpans(alarms, horizonDays = 1, today = today, rules = listOf(nachtRegel(), nd))
 
-        // Der ausgeschlossene Tag SELBST bekommt kein Fenster – das ist die Aussage dieses Tests.
-        // Die Vornacht (11.->12.01., durch LOOKBACK_DAYS mitgerechnet) ist ein freier Tag VOR einer
-        // ausgeschlossenen Schicht und wird korrekt gedimmt – siehe den eigenen Regressionstest
-        // „freier Tag vor einer ausgeschlossenen Schicht" weiter unten.
+        // Der unterdrueckte Tag SELBST bekommt kein Fenster - das ist die Aussage dieses Tests.
+        // Die Vornacht (11.->12.01., durch LOOKBACK_DAYS mitgerechnet) ist ein freier Tag VOR der
+        // Nachtdienst-Schicht und wird korrekt gedimmt - siehe den eigenen Regressionstest weiter
+        // unten.
         assertTrue(spans.none { ep(2026, 1, 12, 23, 0) in it.range })
         assertTrue(spans.none { it.range.first >= ep(2026, 1, 12, 0, 0) })
     }
@@ -249,27 +284,27 @@ class DimWindowResolverTest {
     @Test
     fun `Regression - Nachmittagswecker gefolgt von wecker-losem Tag verliert nicht die eigene Nacht`() {
         // Realer Vorfall 03.-05.08.2026: S2-Wecker (14:30, kein Morgen-Wecker) am 12.01., 13.01.
-        // ganz ohne Termin/Wecker, 14.01. Fruehschicht (05:30). Das alte Modell erzeugte fuer den
-        // 12.01. nur ein RUECKWAERTS-Fenster bis 14:30 (endet am eigenen Wecker) und ueberspringt
+        // ganz ohne Termin/Wecker, 14.01. Fruehschicht (05:30). Das ALTE Modell erzeugte fuer den
+        // 12.01. nur ein RUECKWAERTS-Fenster bis 14:30 (endet am eigenen Wecker) und uebersprang
         // den 13.01. komplett, weil der 14.01. einen Wecker hat - dessen Fenster reicht aber nur
         // bis 22:00 Uhr des 13.01. zurueck, NICHT bis 22:00 Uhr des 12.01. Die Nacht vom 12.01. auf
         // den 13.01. blieb dadurch komplett ungedimmt.
+        //
+        // Im Ein-Modell kann dieselbe Luecke aus einem ANDEREN Grund zurueckkehren: der
+        // ALARM_SONST_CLOCK-Anker sucht seine Weckzeit in der gesamten Zeitleiste. Wuerde er sie
+        // ohne obere Schranke suchen, endete die Nacht des 12.01. erst am Wecker des 14.01. - das
+        // Gegenstueck derselben Fehlerklasse. Deshalb bleibt der Fall hier stehen.
         val today = LocalDate.of(2026, 1, 12)
         val alarms = listOf(
             DimWindowResolver.AlarmSlot(ep(2026, 1, 12, 14, 30), "S2", 0),
             DimWindowResolver.AlarmSlot(ep(2026, 1, 14, 5, 30), "Fruehdienst", 0),
         )
 
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = alarms, horizonDays = 3, today = today, zone = zone,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { false }
-        )
+        val spans = nachtSpans(alarms, horizonDays = 3, today = today)
 
         // Die Nacht vom 12.01. auf den 13.01. muss abgedeckt sein - 23:00 Uhr des 12.01. faellt in
-        // irgendeine Spanne, UND deren Ende liegt VOR 22:00 Uhr des 13.01. (sonst waere es die
-        // rueckwaerts-Spanne des 14.01., die faelschlich bis in den 12.01. zurueckreichen wuerde).
+        // irgendeine Spanne, UND deren Ende liegt VOR 22:00 Uhr des 13.01. (sonst liefe sie ueber
+        // den ganzen 13.01. hinweg bis zum Wecker des 14.01.).
         val night = spans.firstOrNull { ep(2026, 1, 12, 23, 0) in it.range }
         assertTrue("Nacht 12.01.->13.01. hat keine Spanne - die alte Luecke ist zurueck", night != null)
         assertTrue(night!!.range.last < ep(2026, 1, 13, 22, 0))
@@ -281,26 +316,25 @@ class DimWindowResolverTest {
     }
 
     @Test
-    fun `Regression - freier Tag vor einer ausgeschlossenen Schicht verliert nicht die gemeinsame Nacht`() {
-        // Tag N (12.01.) ist frei (kein Alarm), Tag N+1 (13.01.) ist eine vom Nutzer ausgeschlossene
-        // Schicht ("Nachtdienst"). Die alte Vorwaerts-Pruefung fragte nur "hat der Folgetag IRGENDEINEN
-        // Alarm", nicht ob er ausgeschlossen ist - dadurch blieb die gemeinsame Nacht komplett ungedimmt.
+    fun `Regression - freier Tag vor einer unterdrueckten Schicht verliert nicht die gemeinsame Nacht`() {
+        // Tag N (12.01.) ist frei (kein Wecker), Tag N+1 (13.01.) ist eine unterdrueckte Schicht
+        // ("Nachtdienst"). Die alte Vorwaerts-Pruefung fragte nur "hat der Folgetag IRGENDEINEN
+        // Wecker", nicht ob er ausgeschlossen ist - dadurch blieb die gemeinsame Nacht komplett
+        // ungedimmt. Im Ein-Modell entfaellt diese Folgetag-Bedingung ersatzlos; der Fall bleibt
+        // als Waechter stehen, falls sie je zurueckkehrt.
         val today = LocalDate.of(2026, 1, 12)
         val alarms = listOf(
             DimWindowResolver.AlarmSlot(ep(2026, 1, 13, 20, 0), "Nachtdienst", 0)
         )
+        val nd = DimRule(id = "nd", name = "ND", shiftPattern = "Nachtdienst", enabled = true, windows = emptyList())
 
-        val spans = DimWindowResolver.buildDefaultNightSpans(
-            alarms = alarms, horizonDays = 2, today = today, zone = zone,
-            startClockMinutes = 22 * 60, freeDayEndClockMinutes = 7 * 60,
-            strength = 60, warmth = 40,
-            isExcluded = { name -> name == "Nachtdienst" }
-        )
+        val spans = nachtSpans(alarms, horizonDays = 2, today = today, rules = listOf(nachtRegel(), nd))
 
-        // Die Nacht vom 12.01. auf den 13.01. (VOR der ausgeschlossenen Schicht) muss trotzdem gedimmt sein.
+        // Die Nacht vom 12.01. auf den 13.01. (VOR der unterdrueckten Schicht) muss trotzdem
+        // gedimmt sein.
         val night = spans.firstOrNull { ep(2026, 1, 12, 23, 0) in it.range }
-        assertTrue("Nacht 12.01.->13.01. hat keine Spanne - die Luecke ueber den Ausschluss-Pfad ist zurueck", night != null)
-        // Die eigentliche Nachtdienst-Nacht (Tag N+1, ausgeschlossen) bleibt weiterhin ungedimmt.
+        assertTrue("Nacht 12.01.->13.01. hat keine Spanne - die Luecke ueber den Unterdrueckungs-Pfad ist zurueck", night != null)
+        // Die eigentliche Nachtdienst-Nacht (Tag N+1, unterdrueckt) bleibt weiterhin ungedimmt.
         assertTrue(spans.none { ep(2026, 1, 13, 23, 0) in it.range })
     }
 

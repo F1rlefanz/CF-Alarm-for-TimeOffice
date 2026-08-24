@@ -41,6 +41,7 @@ class Pruefrunde6BackupSchluesselInventurTest {
         "calendar_unavailable_notification_enabled",
         "calendar_unavailable_notified",
         "dim_correction_notification_enabled",
+        "dim_enabled",
         "dim_night_default_enabled",
         "dim_night_default_excluded_shifts",
         "dim_night_default_free_end_min",

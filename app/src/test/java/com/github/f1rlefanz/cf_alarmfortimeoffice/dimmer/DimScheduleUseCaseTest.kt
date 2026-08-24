@@ -17,18 +17,16 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * Unit-Tests fuer [DimScheduleUseCase.previewTimeline] - die einzige oeffentliche, seiteneffektfreie
- * Methode der Klasse. Sie ruft ausschliesslich die private `windows()`-Funktion auf, welche die
- * DREI Fenster-Quellen (Wellness/Regeln/Nacht-Standard, siehe Klassen-KDoc) zusammenfuehrt - die
- * eigentliche Produktions-Verdrahtung, die bisher (anders als die reine Mathematik in
- * [DimWindowResolver], siehe [DimWindowResolverTest]) komplett ungetestet war.
+ * Unit-Tests fuer [DimScheduleUseCase.previewTimeline] - die einzige oeffentliche,
+ * seiteneffektfreie Methode der Klasse. Sie ruft ausschliesslich die private `windows()`-Funktion
+ * auf, also die Produktions-Verdrahtung zwischen Schalter, Regelauswahl und der reinen Mathematik
+ * in [DimWindowResolver] (siehe [DimWindowResolverTest]).
  *
- * Kernrisiko dieser Datei (Regressionstest): sind "Regeln" UND "Nacht-Standard" beide aktiv, prueft
- * `windows()` fuer den Nacht-Standard-Ausschluss `dimRuleUseCase.findRuleForShift(shiftName, rules)`.
- * Existiert NUR eine SHIFT_FREE-Regel (keine UNIVERSAL-Regel, keine zur Schicht passende Regel),
- * liefert `findRuleForShift` fuer eine Arbeitsschicht `null` - `rulesActive` ist zwar `true` (die
- * FREI-Regel ist aktiv), gilt aber nicht fuer DIESEN Tag. Der Nacht-Standard darf in diesem Fall
- * NICHT unterdrueckt werden.
+ * SEIT DEM EIN-MODELL-UMBAU gibt es nur noch EINE Fenster-Quelle: die Regeln. Die frueheren
+ * Sonderquellen "Wellness/Wind-down" und "Nacht-Standard" sind entfallen; was sie konnten, wird
+ * hier als gewoehnliche Regel ausgedrueckt - Wellness als Fenster `ALARM -60` -> `ALARM +0`, der
+ * Nacht-Standard als UNIVERSAL-Fenster `CLOCK 22:00` -> `ALARM_SONST_CLOCK 07:00`. Genau in dieser
+ * uebersetzten Form bleiben die alten Regressionsfaelle erhalten.
  *
  * `DimScheduleUseCase` zieht `ZoneId.systemDefault()`/`LocalDate.now()` intern (keine injizierbare
  * Uhr) - die Tests rechnen deshalb relativ zur echten aktuellen Zeitzone/zum echten heutigen Datum,
@@ -58,27 +56,32 @@ class DimScheduleUseCaseTest {
         shiftEndTime = shiftEndTime,
     )
 
+    /** Der Nacht-Standard als gewoehnliche Regel: jede Kalendernacht ab 22:00 bis zur Weckzeit,
+     * spaetestens 07:00. EIN Fenster je Nacht, kein Folgetag-Sonderfall. */
+    private fun nachtRegel(strength: Int = 60, warmth: Int = 40) = DimRule(
+        id = "nacht",
+        name = "Nacht",
+        shiftPattern = DimRule.SHIFT_UNIVERSAL,
+        enabled = true,
+        windows = listOf(
+            DimWindow(
+                startAnchor = DimAnchor.CLOCK, startClockMinutes = 22 * 60,
+                endAnchor = DimAnchor.ALARM_SONST_CLOCK, endClockMinutes = 7 * 60
+            )
+        ),
+        strength = strength,
+        warmth = warmth,
+    )
+
     private suspend fun mockPrefs(
-        toggles: DimOverlayPrefs.Toggles,
-        windDownMinutes: Int = 120,
+        dimEnabled: Boolean,
         strength: Int = 55,
         warmth: Int = 40,
-        nightDefaultStartMinutes: Int = 22 * 60,
-        nightDefaultFreeEndMinutes: Int = 7 * 60,
-        nightDefaultExcludedShifts: Set<String> = emptySet(),
-        nightDefaultStrength: Int = 60,
-        nightDefaultWarmth: Int = 40,
     ): DimOverlayPrefs {
         val prefs = mock<DimOverlayPrefs>()
-        whenever(prefs.togglesNow()).thenReturn(toggles)
-        whenever(prefs.windDownMinutesNow()).thenReturn(windDownMinutes)
+        whenever(prefs.togglesNow()).thenReturn(DimOverlayPrefs.Toggles(dimEnabled = dimEnabled))
         whenever(prefs.strengthNow()).thenReturn(strength)
         whenever(prefs.warmthNow()).thenReturn(warmth)
-        whenever(prefs.nightDefaultStartMinutesNow()).thenReturn(nightDefaultStartMinutes)
-        whenever(prefs.nightDefaultFreeEndMinutesNow()).thenReturn(nightDefaultFreeEndMinutes)
-        whenever(prefs.nightDefaultExcludedShiftsNow()).thenReturn(nightDefaultExcludedShifts)
-        whenever(prefs.nightDefaultStrengthNow()).thenReturn(nightDefaultStrength)
-        whenever(prefs.nightDefaultWarmthNow()).thenReturn(nightDefaultWarmth)
         return prefs
     }
 
@@ -96,8 +99,8 @@ class DimScheduleUseCaseTest {
     ): DimScheduleUseCase {
         val alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.getAllAlarms()).thenReturn(alarms)
-        // Seit v1.25.2 speisen sich Regel- und Nacht-Standard-Fenster aus den Schichtspannen statt
-        // aus dem Alarm-Bestand (der ueberlebt die Weckzeit nicht). Fuer die Tests werden sie aus
+        // Seit v1.25.2 speisen sich die Regel-Fenster aus den Schichtspannen statt aus dem
+        // Alarm-Bestand (der ueberlebt die Weckzeit nicht). Fuer die Tests werden sie aus
         // denselben Fixtures abgeleitet - inklusive des Fehlerfalls, damit der Fail-open-Pfad
         // weiterhin geprueft wird.
         val spanStore = mock<ShiftSpanStore>()
@@ -116,34 +119,50 @@ class DimScheduleUseCaseTest {
     }
 
     @Test
-    fun `previewTimeline ist leer wenn alle drei Fenster-Quellen deaktiviert sind`() = runTest {
-        val prefs = mockPrefs(
-            DimOverlayPrefs.Toggles(wellnessEnabled = false, rulesEnabled = false, nightDefaultEnabled = false)
+    fun `previewTimeline ist leer wenn der Dimmer ausgeschaltet ist`() = runTest {
+        // Uebersetzt aus "alle drei Fenster-Quellen deaktiviert": es gibt nur noch einen Schalter,
+        // und der schaltet die Regeln aus - vorhandene, aktivierte Regeln duerfen dann NICHTS tun.
+        val triggerTime = atDate(today.plusDays(1), 6, 0)
+        val prefs = mockPrefs(dimEnabled = false)
+        val useCase = sut(
+            prefs,
+            Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))),
+            rules = listOf(nachtRegel()),
         )
-        val useCase = sut(prefs, Result.success(emptyList()))
 
         assertTrue(useCase.previewTimeline().isEmpty())
     }
 
     @Test
     fun `previewTimeline dimmt NICHT wenn der Alarm-Bestand nicht lesbar ist (fail-open)`() = runTest {
-        val prefs = mockPrefs(
-            DimOverlayPrefs.Toggles(wellnessEnabled = true, rulesEnabled = false, nightDefaultEnabled = false)
-        )
-        val useCase = sut(prefs, Result.failure(RuntimeException("Kalender/Token kaputt")))
+        val prefs = mockPrefs(dimEnabled = true)
+        val useCase = sut(prefs, Result.failure(RuntimeException("Kalender/Token kaputt")), rules = listOf(nachtRegel()))
 
         assertTrue(useCase.previewTimeline().isEmpty())
     }
 
     @Test
-    fun `Wellness allein erzeugt ein Wind-down-Fenster bis exakt zur Weckzeit`() = runTest {
+    fun `Ein ALARM-verankertes Regel-Fenster reicht bis exakt zur Weckzeit (frueher Wellness)`() = runTest {
+        // Uebersetzt aus "Wellness allein erzeugt ein Wind-down-Fenster": der Wind-down war
+        // `[Weckzeit - X, Weckzeit]`, als Regel ist das ein Fenster ALARM -60 -> ALARM +0.
         val triggerTime = atDate(today.plusDays(1), 6, 0)
-        val prefs = mockPrefs(
-            DimOverlayPrefs.Toggles(wellnessEnabled = true, rulesEnabled = false, nightDefaultEnabled = false),
-            windDownMinutes = 60,
+        val windDownRegel = DimRule(
+            id = "wind", name = "Wind-down", shiftPattern = DimRule.SHIFT_UNIVERSAL, enabled = true,
+            windows = listOf(
+                DimWindow(
+                    startAnchor = DimAnchor.ALARM, startOffsetMinutes = -60,
+                    endAnchor = DimAnchor.ALARM, endOffsetMinutes = 0
+                )
+            ),
             strength = 55,
+            warmth = 40,
         )
-        val useCase = sut(prefs, Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))))
+        val prefs = mockPrefs(dimEnabled = true)
+        val useCase = sut(
+            prefs,
+            Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))),
+            rules = listOf(windDownRegel),
+        )
 
         val timeline = useCase.previewTimeline()
 
@@ -155,50 +174,55 @@ class DimScheduleUseCaseTest {
     }
 
     @Test
-    fun `Nacht-Standard bleibt fuer eine Arbeitsschicht aktiv wenn nur eine FREI-Regel existiert`() = runTest {
-        // Regressionsrisiko: rulesEnabled=true UND nightDefaultEnabled=true, aber die einzige
-        // aktive Regel passt auf freie Tage (SHIFT_FREE), nicht auf die tatsaechliche Schicht -
-        // findRuleForShift("Fruehschicht", ...) muss null liefern, damit der Nacht-Standard NICHT
-        // faelschlich unterdrueckt wird (rulesActive=true bedeutet nicht "gilt fuer jeden Tag").
+    fun `Eine FREI-Regel unterdrueckt an einem Schicht-Tag NICHT die UNIVERSAL-Nachtregel`() = runTest {
+        // Uebersetzt aus "Nacht-Standard bleibt fuer eine Arbeitsschicht aktiv, wenn nur eine
+        // FREI-Regel existiert". Die Regressionsabsicht ist unveraendert: dass ueberhaupt eine
+        // Regel aktiv ist, heisst nicht, dass sie fuer DIESEN Tag gilt. Der Anker ist deshalb die
+        // Nacht DES SCHICHT-TAGS - an ihm entscheidet findRuleForShift(), und dort muss die
+        // UNIVERSAL-Nachtregel gewinnen, nicht die FREI-Regel.
+        //
+        // Die Nacht DAVOR gehoert dagegen dem freien Vortag; dass die FREI-Regel sie unterdrueckt,
+        // ist im Ein-Modell richtig und ausdruecklich mitgeprueft.
         val shiftDay = today.plusDays(2)
         val triggerTime = atDate(shiftDay, 5, 30)
-        val nightStart = atDate(shiftDay.minusDays(1), 22, 0)
 
         val freeRule = DimRule(
             id = "free", name = "Frei", shiftPattern = DimRule.SHIFT_FREE, enabled = true, windows = emptyList()
         )
-        val prefs = mockPrefs(
-            DimOverlayPrefs.Toggles(wellnessEnabled = false, rulesEnabled = true, nightDefaultEnabled = true),
-            nightDefaultStrength = 60,
-            nightDefaultWarmth = 40,
-        )
+        val prefs = mockPrefs(dimEnabled = true)
         val useCase = sut(
             prefs,
             Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))),
-            rules = listOf(freeRule),
+            rules = listOf(freeRule, nachtRegel()),
         )
 
         val timeline = useCase.previewTimeline()
 
         assertTrue(
-            "Nacht-Standard-Fenster vor der Arbeitsschicht fehlt - faelschlich durch die FREI-Regel unterdrueckt",
-            timeline.any { it.range.first == nightStart && it.range.last == triggerTime && it.strength == 60 }
+            "Die Nacht des Schicht-Tags fehlt - die FREI-Regel hat faelschlich fuer einen " +
+                "Schicht-Tag gegolten",
+            timeline.any {
+                it.range.first == atDate(shiftDay, 22, 0) &&
+                    it.range.last == atDate(shiftDay.plusDays(1), 7, 0) && it.strength == 60
+            }
+        )
+        assertTrue(
+            "Der freie Vortag hat eine FREI-Regel mit leerer Fensterliste - das ist eine " +
+                "ausdrueckliche Unterdrueckung und muss wirken",
+            timeline.none { it.range.first == atDate(shiftDay.minusDays(1), 22, 0) }
         )
     }
 
     @Test
-    fun `Eine passende Schicht-Regel ueberschreibt den Nacht-Standard fuer ihren Tag`() = runTest {
-        // Companion zum vorigen Test: kommt zusaetzlich eine Regel hinzu, deren shiftPattern
-        // EXAKT den Schichtnamen trifft, muss findRuleForShift() jetzt diese Regel liefern - ihr
-        // eigenes Fenster erscheint, und der Nacht-Standard-Bereich fuer genau diesen Tag
-        // verschwindet in seiner alten (unterdrueckten) Form.
+    fun `Eine passende Schicht-Regel ueberschreibt die UNIVERSAL-Nachtregel fuer ihren Tag`() = runTest {
+        // Companion zum vorigen Test (uebersetzt aus "Eine passende Schicht-Regel ueberschreibt den
+        // Nacht-Standard"): kommt eine Regel hinzu, deren shiftPattern EXAKT den Schichtnamen
+        // trifft, gewinnt sie fuer diesen Tag komplett - nicht additiv. Ihr eigenes Fenster
+        // erscheint, das UNIVERSAL-Nachtfenster dieses Tages verschwindet.
         val shiftDay = today.plusDays(2)
         val triggerTime = atDate(shiftDay, 5, 30)
         val nightStart = atDate(shiftDay.minusDays(1), 22, 0)
 
-        val freeRule = DimRule(
-            id = "free", name = "Frei", shiftPattern = DimRule.SHIFT_FREE, enabled = true, windows = emptyList()
-        )
         val shiftRule = DimRule(
             id = "fs", name = "Fruehschicht-Regel", shiftPattern = "Fruehschicht", enabled = true,
             windows = listOf(
@@ -210,15 +234,11 @@ class DimScheduleUseCaseTest {
             strength = 70,
             warmth = 50,
         )
-        val prefs = mockPrefs(
-            DimOverlayPrefs.Toggles(wellnessEnabled = false, rulesEnabled = true, nightDefaultEnabled = true),
-            nightDefaultStrength = 60,
-            nightDefaultWarmth = 40,
-        )
+        val prefs = mockPrefs(dimEnabled = true)
         val useCase = sut(
             prefs,
             Result.success(listOf(alarm(shiftName = "Fruehschicht", triggerTime = triggerTime))),
-            rules = listOf(freeRule, shiftRule),
+            rules = listOf(nachtRegel(), shiftRule),
         )
 
         val timeline = useCase.previewTimeline()
@@ -231,8 +251,8 @@ class DimScheduleUseCaseTest {
             }
         )
         assertTrue(
-            "Der alte, ununterbrochene Nacht-Standard-Bereich (22 Uhr bis Weckzeit, Staerke 60) " +
-                "darf nach der passenden Regel nicht mehr in dieser Form auftauchen",
+            "Das UNIVERSAL-Nachtfenster (22 Uhr bis Weckzeit, Staerke 60) darf an einem Tag mit " +
+                "passender Schicht-Regel nicht mehr auftauchen",
             timeline.none { it.range.first == nightStart && it.range.last == triggerTime && it.strength == 60 }
         )
     }

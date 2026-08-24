@@ -59,14 +59,12 @@ class DimOverlayPrefsReadFailureTest {
     }
 
     @Test
-    fun `toggles wirft bei Lesefehler nicht, sondern degradiert auf alle AUS`() = runTest {
+    fun `toggles wirft bei Lesefehler nicht, sondern degradiert auf AUS`() = runTest {
         val prefs = DimOverlayPrefs(FailingDataStore())
 
         val toggles = prefs.togglesNow()
 
-        assertFalse(toggles.wellnessEnabled)
-        assertFalse(toggles.rulesEnabled)
-        assertFalse(toggles.nightDefaultEnabled)
+        assertFalse("Fail-safe: unlesbare Einstellungen heissen NICHT dimmen", toggles.dimEnabled)
     }
 
     @Test

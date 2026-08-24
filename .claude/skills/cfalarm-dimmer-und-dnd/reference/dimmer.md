@@ -327,6 +327,51 @@
   Feld-Default), und `editRules()` verweigert JEDE Aenderung — auch das Loeschen einer anderen
   Regel. Das ist die dokumentierte Absicht des `strictJson`-Schreibpfads und kein Defekt; wer beim
   Testen zwischen Versionen springt, muss es kennen, sonst sieht es wie ein kaputtes Loeschen aus.
+- **Das Verschwinden des Overlays muss eine Spur hinterlassen (seit v1.34.1) — und der Vorfall,
+  der das erzwang, war KEIN App-Fehler.** Am 24.08.2026 meldete der Eigentuemer, der Bildschirm sei
+  waehrend einer per adb ferngesteuerten Sitzung „mal heller und mal dunkler" geworden. Ursache
+  gemessen: `uiautomator` verbindet sich als `UiAutomation` und **unterdrueckt dabei alle anderen
+  Bedienungshilfen-Dienste**, also auch `DimAccessibilityService`. Beleg: die SurfaceFlinger-Layer-ID
+  des `CFAlarmDimLayer` wechselte bei JEDEM Automations-Aufruf (64604 → 64609 → 64614), im Leerlauf
+  ueber Sekunden nie. Einzelheiten im Memory `env_android_emulator_mcp`.
+  **Der eigentliche Befund war die Unauswertbarkeit:** `DimAccessibilityService` hatte KEINE einzige
+  Log-Zeile beim Verbinden, Trennen oder Abraeumen, und der haeufigste Aus-Weg in
+  `applyCurrentState()` („kein aktives Fenster") kehrte kommentarlos zurueck — man sah hinterher
+  nur, wann gedimmt WURDE, nie wann und warum es aufhoerte. Seither: `onServiceConnected`,
+  `onUnbind`, `onDestroy` und `removeAllOverlays()` loggen auf **WARN** (Release-Logs fuehren nur
+  WARN+), jeweils mit einem einzeiligen, PII-freien Schnappschuss (`DimDiagnostik.overlaySnapshot`,
+  Bauart wie `visibilitySnapshot()` am Weckbildschirm, inkl. `Locale.ROOT` — sonst haengt das
+  Zahlenformat an der Geraetesprache). Am Emulator verifiziert: ein einziger `get_all_text`-Aufruf
+  erzeugt jetzt `entbunden` → `zerstoert` → `verbunden`, 1,1 s auseinander.
+  **Zwei echte Fehler fielen dabei mit ab:** (1) `running` wurde ausschliesslich in `onDestroy`
+  zurueckgesetzt — ein entbundener, nicht zerstoerter Dienst meldete weiter `isRunning() == true`,
+  und beide Konsumenten glaubten das: die Diagnosezeile schrieb `accessibilityServiceBound=true`,
+  obwohl nichts zeichnete, und die Status-Karte zeigte dem Nutzer einen gruenen Dienst. Jetzt setzt
+  `onUnbind` zurueck. (2) `onServiceConnected` startete jedes Mal einen NEUEN
+  `renderState`-Collector, ohne den alten abzubrechen — bei einem Rebind ohne `onDestroy` haetten
+  zwei Collector `render()` doppelt gerufen, jeder mit eigener Alpha-Rampe. Jetzt
+  cancel-and-replace.
+- **`enable()` rechnet die Fenster EINMAL, nicht zweimal (seit v1.34.1).** `applyCurrentState()`
+  und `scheduleNextTransition()` berechneten frueher unabhaengig voneinander dieselbe Zeitleiste,
+  Millisekunden auseinander. Am Emulator gemessen: zwei Laeufe je Kette, warm ~2 ms
+  (`computeWindows #1 … #2`), nach dem Fix genau einer. **Das Leistungsargument allein traegt das
+  nicht** — der eigentliche Grund ist Konsistenz: faellt eine Fenstergrenze zwischen die beiden
+  Berechnungen, sieht `applyCurrentState()` das Fenster noch als aktiv und schaltet ein, waehrend
+  `scheduleNextTransition()` dieselbe Grenze schon verwirft und erst die NAECHSTE plant — das
+  Overlay bliebe bis dahin an. Der Schnappschuss wird **nur innerhalb von `enable()`**
+  durchgereicht; beide Funktionen bleiben einzeln aufrufbar und rechnen dann selbst („beide immer
+  zusammen" gilt nur fuer `enable()`). `BootReceiver`, `AlarmMaintenanceService` und
+  `TagFreigabeUseCase` riefen die beiden Funktionen ausgeschrieben statt `enable()` — deshalb kam
+  die Halbierung dort zunaechst NICHT an; sie rufen jetzt `enable()`.
+  **NICHT gebaut wurde ein Entprellen ueber Aufrufer-Grenzen.** Dagegen stehen die
+  „unentprellt"-Regel (eine fruehere 300-ms-Entprellung hing am `viewModelScope` und starb beim
+  Verlassen der App), der Retry-Pfad (ein verworfener Aufruf verwirft auch den 15-min-Retry) und
+  der Migrations-`enable()`, der keine zweite Chance hat. Waere es je noetig: daempfen, was
+  gerechnet wird — nie, was angewendet wird (Vorbild `HueBridgeRediscoveryTest`).
+  **Ein Unit-Test dafuer gibt es bewusst nicht:** `enable()` braucht `AlarmManager` und
+  `PendingIntent`, die im reinen JVM-Test nicht existieren — kein Test im Projekt ruft es. Der
+  Beleg ist die Geraetemessung oben, und der Messzaehler in `computeWindows()` (Debug-only) macht
+  sie jederzeit wiederholbar.
 - **Dimmer-Korrektur-Override (Feature C, seit v1.20.0) lebt im DataStore, nicht in-memory** —
   `DimAccessibilityService`/`DimScheduleReceiver` haben keine garantierte Lebensdauer, ein
   In-Memory-State ginge bei Prozess-Neustart verloren. `DimOverlayPrefs.Override` speichert

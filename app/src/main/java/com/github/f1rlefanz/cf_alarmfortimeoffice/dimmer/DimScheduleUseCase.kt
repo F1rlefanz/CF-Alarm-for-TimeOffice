@@ -86,15 +86,38 @@ class DimScheduleUseCase @Inject constructor(
     private data class Windows(
         val spans: List<DimWindowResolver.DimSpan>,
         val alarmReadFailed: Boolean,
-        val anySourceEnabled: Boolean
+        val anySourceEnabled: Boolean,
+        /**
+         * Lag mindestens EINE aktivierte Regel vor? Rein diagnostisch (siehe [meldeAbschaltung]):
+         * "Dimmer an, Regeln da, trotzdem kein Fenster" ist der einzige Aus-Weg, der spaeter
+         * jemanden interessiert. Der Wert faellt bei der Berechnung ohnehin an - ihn hier
+         * mitzufuehren spart einen zusaetzlichen DataStore-Read allein fuers Log.
+         */
+        val regelnVorhanden: Boolean = false
     )
+
+    /** Nur fuer die Messung (siehe computeWindows) - laeuft im Release-Build ins Leere. */
+    private val zaehler = java.util.concurrent.atomic.AtomicInteger(0)
 
     private val zone: ZoneId get() = ZoneId.systemDefault()
 
     /** Ist-Zustand anwenden + nächsten Wechsel planen. Self-cleaning, wenn nichts aktiv ist. */
     suspend fun enable() {
-        applyCurrentState()
-        scheduleNextTransition()
+        // EIN Schnappschuss fuer beide Schritte. Das spart nicht nur die zweite, identische
+        // Berechnung (am Emulator gemessen: 2 Laeufe je enable(), warm ~2 ms) - es beseitigt vor
+        // allem eine kleine, echte Unstimmigkeit: bisher rechneten beide Schritte unabhaengig,
+        // Millisekunden auseinander. Faellt eine Fenstergrenze genau dazwischen, sieht
+        // applyCurrentState() das Fenster noch als aktiv und schaltet das Overlay EIN, waehrend
+        // scheduleNextTransition() dieselbe Grenze schon als vergangen verwirft und erst die
+        // NAECHSTE plant - das Overlay bliebe bis dahin an. Mit einem gemeinsamen Schnappschuss
+        // kann das nicht mehr passieren.
+        //
+        // BEWUSST NUR HIER: Die beiden Funktionen bleiben einzeln aufrufbar und rechnen dann
+        // weiterhin selbst (DimNotificationService, die Vorschau-Pfade der ViewModels rufen
+        // applyCurrentState() allein). "Beide immer zusammen" gilt nur fuer enable() - das ist
+        // eine dokumentierte Zusicherung, keine Nachlaessigkeit.
+        val schnappschuss = applyCurrentStateIntern()
+        scheduleNextTransitionIntern(schnappschuss)
     }
 
     /**
@@ -118,6 +141,18 @@ class DimScheduleUseCase @Inject constructor(
      * ohnehin rollende Tick ruft diese Funktion an jeder Fenstergrenze neu auf).
      */
     suspend fun applyCurrentState() {
+        applyCurrentStateIntern()
+    }
+
+    /**
+     * Wie [applyCurrentState], liefert aber den verwendeten Fenster-Schnappschuss zurueck, damit
+     * [enable] ihn an [scheduleNextTransitionIntern] weiterreichen kann. `null` heisst: es wurde
+     * gar nicht gerechnet (Master-Pause) - dann soll der Planer selbst nachsehen.
+     *
+     * Privat, damit die oeffentliche Schnittstelle unveraendert bleibt: [Windows] ist ein
+     * Implementierungsdetail und soll es bleiben.
+     */
+    private suspend fun applyCurrentStateIntern(): Windows? {
         // Zentraler Master-Pause-Backstop - Vorbild AlarmUseCase.syncAlarms(): jeder
         // DimmerViewModel-/NotificationSettingsViewModel-Setter ruft enable() UNGEGATET auf, und der
         // rollende Tick plant sich selbst nach. Ohne diesen Fangnetz-Punkt genuegt eine einzige
@@ -125,7 +160,7 @@ class DimScheduleUseCase @Inject constructor(
         // anzuwerfen, obwohl die UI "pausiert" anzeigt. disable() bleibt bewusst UNgegatet, damit
         // MasterPauseUseCase.pause() weiter durchkommt.
         if (masterPausePrefs.pausedNow()) {
-            Logger.d(LogTags.DIMMER, "Master-Pause aktiv - Dimmen ausgesetzt")
+            meldeAbschaltung(DimDiagnostik.AbschaltGrund.MASTER_PAUSE)
             // Derselbe Aufraeumpfad wie disable(), aber ohne den rollenden Alarm anzufassen.
             // ACHTUNG, keine Garantie: applyCurrentState() wird auch OHNE
             // scheduleNextTransition() gerufen (DimNotificationService, DimmerRulesViewModel,
@@ -137,11 +172,16 @@ class DimScheduleUseCase @Inject constructor(
             // weiter (wirkungslos, aber nicht kostenlos).
             prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
             correctionNotifier.cancel()
-            return
+            // Kein Schnappschuss: bei Master-Pause wurde gar nichts gerechnet, und
+            // scheduleNextTransition() hat denselben Backstop - es storniert ohnehin.
+            return null
         }
         val now = System.currentTimeMillis()
+        // Das ganze Ergebnis statt nur der Spannen: die Diagnostik unten braucht auch
+        // `anySourceEnabled` und `regelnVorhanden`, und beide fallen bei der Berechnung ohnehin an.
+        val fenster = computeWindows()
         // Aktive Spanne (überlappen mehrere, gewinnt die dunkelste – Logik in DimWindowResolver).
-        val active = DimWindowResolver.activeSpan(windows(), now)
+        val active = DimWindowResolver.activeSpan(fenster.spans, now)
 
         // Serialisiert gegen DimNotificationService's eigenes Read-Modify-Write auf denselben
         // Override-Zustand - siehe DimOverlayPrefs.withOverrideLock.
@@ -155,9 +195,22 @@ class DimScheduleUseCase @Inject constructor(
         }
 
         if (active == null) {
+            // BIS 24.08.2026 KEHRTE DIESER ZWEIG KOMMENTARLOS ZURUECK - der haeufigste Aus-Weg
+            // ueberhaupt, und der einzige, nach dem man spaeter fragt ("warum war es hell?").
+            // Der Grund wird aus bereits gelesenen Werten bestimmt, kostet also keinen
+            // zusaetzlichen DataStore-Zugriff.
+            meldeAbschaltung(
+                DimDiagnostik.abschaltGrund(
+                    masterPause = false,
+                    dimEnabled = fenster.anySourceEnabled,
+                    regelnVorhanden = fenster.regelnVorhanden,
+                    fensterAktiv = false,
+                    overridePausiert = false
+                )
+            )
             prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
             correctionNotifier.cancel()
-            return
+            return fenster
         }
 
         val effectiveDelta = if (stale) 0 else override.strengthDelta
@@ -177,6 +230,7 @@ class DimScheduleUseCase @Inject constructor(
         if (isPaused) {
             // paused=true => gar kein Overlay berechnen (nicht nur strength=0 - der Nutzer hat
             // das Dimmen bewusst ausgesetzt).
+            meldeAbschaltung(DimDiagnostik.AbschaltGrund.OVERRIDE_PAUSIERT)
             prefs.setActiveOverlay(false, prefs.strengthNow(), prefs.warmthNow())
         } else {
             prefs.setActiveOverlay(true, effectiveStrength, active.warmth)
@@ -186,6 +240,29 @@ class DimScheduleUseCase @Inject constructor(
             correctionNotifier.show(effectiveStrength, active.warmth, isPaused)
         } else {
             correctionNotifier.cancel()
+        }
+        return fenster
+    }
+
+    /**
+     * Protokolliert, WARUM das Overlay abgeschaltet wird.
+     *
+     * Das Level verzweigt am Verdachtsmoment, nach dem Vorbild von `visibilitySnapshot()` am
+     * Weckbildschirm: Was der Nutzer selbst eingestellt hat (Pause, Hauptschalter aus, Fenster von
+     * Hand pausiert) ist kein Vorfall und bleibt DEBUG - im Release-Log waere es taeglich
+     * wiederkehrendes Rauschen. WARN bekommt nur der eine Fall, bei dem spaeter jemand fragen
+     * wird: Dimmer AN, Regeln da, trotzdem kein Fenster. Genau der ist im Release-Log noetig,
+     * weil dort nur WARN+ landet.
+     *
+     * Der Dienst-Zustand haengt bewusst mit dran: ein aktives Fenster auf einem NICHT gebundenen
+     * Dienst sieht im Log sonst genauso aus wie ein gebundener ohne Fenster.
+     */
+    private fun meldeAbschaltung(grund: DimDiagnostik.AbschaltGrund) {
+        val zeile = "Dimmen aus - Grund=$grund bound=${DimAccessibilityService.isRunning()}"
+        if (DimDiagnostik.istVerdaechtig(grund)) {
+            Logger.w(LogTags.DIMMER, zeile)
+        } else {
+            Logger.d(LogTags.DIMMER, zeile)
         }
     }
 
@@ -197,6 +274,11 @@ class DimScheduleUseCase @Inject constructor(
     suspend fun activeSpanNow(): DimWindowResolver.DimSpan? = DimWindowResolver.activeSpan(windows(), System.currentTimeMillis())
 
     suspend fun scheduleNextTransition() {
+        scheduleNextTransitionIntern(null)
+    }
+
+    /** Wie [scheduleNextTransition], nutzt aber einen bereits vorliegenden Schnappschuss. */
+    private suspend fun scheduleNextTransitionIntern(vorberechnet: Windows?) {
         val am = alarmManager()
         val pi = buildPendingIntent()
         // Master-Pause-Backstop, siehe applyCurrentState().
@@ -205,7 +287,7 @@ class DimScheduleUseCase @Inject constructor(
             Logger.d(LogTags.DIMMER, "Master-Pause aktiv - kein Dimm-Tick geplant")
             return
         }
-        val next = computeNextTransition(System.currentTimeMillis())
+        val next = computeNextTransition(System.currentTimeMillis(), vorberechnet)
         if (next == null) {
             am.cancel(pi)
             return
@@ -262,7 +344,26 @@ class DimScheduleUseCase @Inject constructor(
 
     private suspend fun windows(): List<DimWindowResolver.DimSpan> = computeWindows().spans
 
+    /**
+     * MESSZAEHLER, nur im Debug-Build wirksam (Logger.d). Beantwortet die Frage, die sonst
+     * geschaetzt werden muesste: wie oft und wie teuer wird die komplette Fenster-Zeitleiste
+     * tatsaechlich gerechnet? Anlass war die Beobachtung, dass nach einer Installation DREI
+     * unabhaengige Ketten (Migration, Wartung, Boot-Recovery) binnen fuenf Sekunden dasselbe
+     * Ergebnis erzeugten.
+     */
     private suspend fun computeWindows(): Windows {
+        val begonnen = System.nanoTime()
+        return computeWindowsIntern().also {
+            Logger.d(
+                LogTags.DIMMER,
+                "computeWindows #${zaehler.incrementAndGet()} in " +
+                    "${(System.nanoTime() - begonnen) / 1_000_000.0} ms " +
+                    "(${it.spans.size} Spannen)"
+            )
+        }
+    }
+
+    private suspend fun computeWindowsIntern(): Windows {
         val anySourceEnabled = prefs.togglesNow().dimEnabled
         if (!anySourceEnabled) return Windows(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
 
@@ -362,11 +463,15 @@ class DimScheduleUseCase @Inject constructor(
             )
         }
 
-        return Windows(out, alarmReadFailed = false, anySourceEnabled = true)
+        return Windows(out, alarmReadFailed = false, anySourceEnabled = true, regelnVorhanden = rules.any { it.enabled })
     }
 
-    private suspend fun computeNextTransition(now: Long): Long? {
-        val w = computeWindows()
+    private suspend fun computeNextTransition(now: Long, vorberechnet: Windows? = null): Long? {
+        // Der Schnappschuss kommt aus enable() (siehe dort). Fehlt er - jeder Einzelaufruf von
+        // scheduleNextTransition() -, wird wie bisher frisch gerechnet. Die Fenster-Grenzen werden
+        // ohnehin gegen `now` gefiltert, ein Schnappschuss aus derselben Coroutine ist also nicht
+        // "veraltet", sondern genau der Stand, den auch applyCurrentState() angewendet hat.
+        val w = vorberechnet ?: computeWindows()
         return w.spans
             .flatMap { listOf(it.range.first, it.range.last) }
             .filter { it > now }

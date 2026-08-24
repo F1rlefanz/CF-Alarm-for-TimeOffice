@@ -98,11 +98,27 @@ class DimAccessibilityService : AccessibilityService() {
         fun isRunning(): Boolean = running
     }
 
+    /**
+     * Der laufende [DimOverlayPrefs.renderState]-Collector.
+     *
+     * WARUM ER GEMERKT WIRD: [onServiceConnected] kann ohne vorheriges [onDestroy] erneut laufen -
+     * Android bindet Bedienungshilfen-Dienste unter Umstaenden neu, ohne die Instanz wegzuwerfen
+     * (etwa nachdem eine `UiAutomation` sie voruebergehend unterdrueckt hat, siehe [DimDiagnostik]).
+     * Ohne Abbruch saessen danach ZWEI Collector auf demselben Flow und riefen `render()` doppelt,
+     * jeder mit eigener Alpha-Rampe - ausgerechnet Flackern waere die Folge. Cancel-and-replace ist
+     * hier das Hausmuster (Vorbild: der Vorschau-Job in `DimmerRulesViewModel`).
+     */
+    private var renderJob: Job? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         running = true
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        scope.launch {
+        // Bewusst WARN: Release-Logs fuehren nur WARN+, und genau dort muss die Spur stehen. Ohne
+        // sie war der Vorfall vom 24.08.2026 nicht rekonstruierbar (siehe [DimDiagnostik]).
+        Logger.w(LogTags.DIMMER, "Dimm-Dienst verbunden - ${snapshot()}")
+        renderJob?.cancel()
+        renderJob = scope.launch {
             // renderState ist upstream abgesichert (DimOverlayPrefs.safeData): ein Lesefehler kommt
             // hier als EIN Default-Zustand an (overlayOn = false -> Overlay wird abgeraeumt) und
             // beendet den Collector, statt den Prozess zu reissen. Danach kommen bis zum naechsten
@@ -231,8 +247,14 @@ class DimAccessibilityService : AccessibilityService() {
     }
 
     private fun removeAllOverlays() {
+        // Nur melden, wenn wirklich etwas abgeraeumt wurde - der Aufruf laeuft auch dann durch,
+        // wenn gar kein Overlay stand (Alpha-Rampe auf 0 ohne vorherige Anzeige).
+        val hatteOverlay = displaySc != null || wmView != null
         removeDisplayOverlay()
         removeWindowManagerOverlay()
+        if (hatteOverlay) {
+            Logger.w(LogTags.DIMMER, "Dimm-Overlay abgeraeumt - ${snapshot()}")
+        }
     }
 
     // --- Sanfte Alpha-Rampe (Coroutine, Main) ---
@@ -288,10 +310,50 @@ class DimAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
+    /**
+     * DER FIX FUER EINE LUEGENDE AUSKUNFT. Bis hierher wurde [running] ausschliesslich in
+     * [onDestroy] zurueckgesetzt. Wird der Dienst ENTBUNDEN, ohne zerstoert zu werden - genau das
+     * passiert, wenn eine `UiAutomation` ihn unterdrueckt -, blieb [isRunning] faelschlich `true`.
+     * Zwei Stellen glaubten das: die Diagnosezeile in `DimScheduleUseCase.applyCurrentState()`
+     * schrieb `accessibilityServiceBound=true`, obwohl nichts zeichnete, und die Status-Karte
+     * zeigte dem Nutzer einen gruenen Dienst, waehrend der Dimmer tot war - „angezeigt, wirkt
+     * nicht", die Fehlerklasse, gegen die dieses Projekt sonst ueberall Netze spannt.
+     *
+     * Das Overlay wird hier NICHT abgeraeumt: das erledigt das System mit dem Fenster-Token, und
+     * ein Aufraeumen im Entbinden wuerde bei einem folgenden [onDestroy] doppelt laufen.
+     */
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        running = false
+        Logger.w(LogTags.DIMMER, "Dimm-Dienst entbunden - Overlay verschwindet - ${snapshot()}")
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
+        Logger.w(LogTags.DIMMER, "Dimm-Dienst zerstoert - ${snapshot()}")
+        renderJob = null
         scope.cancel()
         removeAllOverlays()
         running = false
         super.onDestroy()
     }
+
+    /**
+     * Der Zustand dieses Dienstes in einer Zeile - siehe [DimDiagnostik.overlaySnapshot].
+     * Jeder Wert wird defensiv gelesen: eine Diagnostik, die selbst wirft, macht den Vorfall
+     * schlimmer statt auswertbar (dieselbe Auflage wie bei `visibilitySnapshot()`).
+     */
+    private fun snapshot(): String = runCatching {
+        val weg = when {
+            displaySc != null -> DimDiagnostik.OverlayWeg.DISPLAY
+            wmView != null -> DimDiagnostik.OverlayWeg.WINDOW_MANAGER
+            else -> DimDiagnostik.OverlayWeg.KEINER
+        }
+        DimDiagnostik.overlaySnapshot(
+            bound = running,
+            weg = weg,
+            alpha = currentAlpha,
+            lastOverlayOn = lastOverlayOn,
+            sdkInt = Build.VERSION.SDK_INT
+        )
+    }.getOrElse { "Schnappschuss nicht lesbar (${it.javaClass.simpleName})" }
 }

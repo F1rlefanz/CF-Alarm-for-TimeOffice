@@ -101,8 +101,13 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Jeder Setter, der einen `DimOverlayPrefs`-Wert schreibt, MUSS direkt danach
   `DimScheduleUseCase.enable()` rufen** — auch `setDimCorrectionNotificationEnabled()`. Und zwar
   **unentprellt**.
-- **`DimAccessibilityService.isRunning()` wird in `applyCurrentState()` mitgeloggt** — ohne diese
-  Zeile ist ein ECM-/Binding-Vorfall nachträglich nicht mehr rekonstruierbar.
+- **`isRunning()` wird in `onUnbind` zurueckgesetzt, nicht nur in `onDestroy`.** Ein entbundener,
+  aber nicht zerstoerter Dienst meldete sonst weiter „laeuft" — und Diagnosezeile wie Status-Karte
+  behaupteten einen Dimmer, den es gerade nicht gab.
+- **Jeder Aus-Weg von `applyCurrentState()` protokolliert seinen GRUND**, und der Dienst
+  protokolliert Verbinden/Entbinden/Zerstoeren auf **WARN** (Release-Log). Ohne das ist ein
+  „warum war der Bildschirm kurz hell?" nicht rekonstruierbar. Nur der Verdachtsfall
+  (Dimmer an + Regeln da + trotzdem kein Fenster) ist WARN, der Rest DEBUG.
 - **`DimCorrectionNotifier.show()` prüft `areNotificationsEnabled()` vor `notify()`.**
 - **DND: zwei Fenster-Trigger plus ein Klipp-Modifikator, kein Regel-Editor.**
 - **Jeder Setter, der DIMM-FENSTERGRENZEN verschiebt, armiert BEIDE Ketten neu — Dimmer, dann

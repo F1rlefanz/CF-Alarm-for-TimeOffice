@@ -27,7 +27,18 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.34.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.34.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Die Status-Karte konnte „Dimm-Dienst läuft" anzeigen, obwohl er es nicht tat._
+
+### 🐛 Behoben
+
+- **„Dimm-Dienst läuft" stimmte nicht immer:** Android kann den Bedienungshilfen-Dienst, der die Verdunkelung zeichnet, vorübergehend abschalten — etwa während eine andere App die Bedienungshilfen belegt. Die App merkte das bisher nur, wenn der Dienst ganz beendet wurde: in der Status-Karte stand weiter ein grünes „läuft", während gar nichts mehr gedimmt wurde. Jetzt wird auch das bloße Abmelden erkannt, und die Karte sagt die Wahrheit.
+- **Nachvollziehbar, warum gerade nicht gedimmt wird:** Die App schreibt jetzt in ihr Protokoll, wann die Verdunkelung verschwindet und warum — pausiert, ausgeschaltet, gerade kein Zeitfenster, oder der Dienst wurde abgemeldet. Für dich ändert sich dadurch nichts; es hilft, wenn du eine Beobachtung meldest und wir hinterher wissen wollen, was wirklich passiert ist.
+
+## Version 1.34.0
 
 **Stand:** August 2026
 

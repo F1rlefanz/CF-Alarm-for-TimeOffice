@@ -536,8 +536,7 @@ class BootReceiver : BroadcastReceiver() {
                         if (paused) {
                             dimSchedule.disable()
                         } else {
-                            dimSchedule.applyCurrentState()
-                            dimSchedule.scheduleNextTransition()
+                            dimSchedule.enable()
                         }
                     } catch (e: Exception) {
                         Logger.w(LogTags.DIMMER, "Boot: Dimm-Reschedule fehlgeschlagen", e)
@@ -551,8 +550,7 @@ class BootReceiver : BroadcastReceiver() {
                         if (paused) {
                             dndSchedule.disable()
                         } else {
-                            dndSchedule.applyCurrentState()
-                            dndSchedule.scheduleNextTransition()
+                            dndSchedule.enable()
                         }
                     } catch (e: Exception) {
                         Logger.w(LogTags.DND, "Boot: DND-Reschedule fehlgeschlagen", e)

@@ -21,7 +21,7 @@ import javax.inject.Singleton
  *
  * **Warum es diese Groesse ueberhaupt gibt.** Bis v1.25.1 haben `DndScheduleUseCase` (Trigger
  * "Waehrend der Dienstzeit" + Rufbereitschaft-Cutoff) und `DimScheduleUseCase` (Regel- und
- * Nacht-Standard-Fenster) ihre Schichtspannen aus `AlarmUseCase.getAllAlarms()` gezogen. Der
+ * Nacht-Fenster) ihre Schichtspannen aus `AlarmUseCase.getAllAlarms()` gezogen. Der
  * Alarm-Bestand ueberlebt die Weckzeit aber NICHT, und das ist auch richtig so: `AlarmRepository`
  * verwirft abgelaufene Alarme in beiden Ladepfaden und lehnt das Speichern eines vergangenen
  * Alarms ab - ein abgelaufener Alarm waere genau die verwaiste, armierte Leiche, gegen die die
@@ -35,8 +35,8 @@ import javax.inject.Singleton
  * Deshalb die Trennung: **Ein Alarm ist ein Weckzeitpunkt, eine [ShiftSpan] ist ein Dienst.**
  *
  * [alarmTriggerTime] wird bewusst MITGEFUEHRT und ist nicht redundant: `DimWindowResolver` leitet
- * den KALENDERTAG eines Slots aus der Weckzeit ab (`DimWindowResolver.buildRuleSpans` /
- * `buildDefaultNightSpans`). Ohne diesen Wert waere die Tagesverankerung der Dimm-Fenster kaputt,
+ * den KALENDERTAG eines Slots aus der Weckzeit ab (`DimWindowResolver.buildRuleSpans`). Ohne
+ * diesen Wert waere die Tagesverankerung der Dimm-Fenster kaputt,
  * sobald der Alarm geraeumt ist - dieselbe Fehlerklasse, die schon einmal falsche Dimm-Naechte
  * erzeugt hat. Es ist die urspruenglich berechnete Weckzeit, auch wenn sie inzwischen verstrichen
  * ist oder der Nutzer den Wecker uebersprungen hat.

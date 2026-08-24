@@ -293,7 +293,7 @@ class DimmerRulesViewModel @Inject constructor(
     private val _timeline = MutableStateFlow<List<DimWindowResolver.ResolvedInterval>>(emptyList())
     val timeline: StateFlow<List<DimWindowResolver.ResolvedInterval>> = _timeline.asStateFlow()
 
-    /** Berechnet die Dimm-Vorschau (Wellness + Regeln + Nacht-Standard) neu - siehe
+    /** Berechnet die Dimm-Vorschau aus den Regeln neu - siehe
      * [DimScheduleUseCase.previewTimeline]. Ohne Seiteneffekt auf den echten Scheduler. */
     fun refreshTimeline() = viewModelScope.launch {
         _timeline.value = dimSchedule.previewTimeline()

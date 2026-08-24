@@ -38,8 +38,8 @@ Oberfläche sagte nirgends, dass „Überspringen" ausschließlich den Wecker be
 
 Deshalb kam mit der Funktion auch die **Erklärung** in die Wecker-Karte (ausklappbar, Muster
 `SchichterkennungsHinweis()`). Ihr Text war im ersten Wurf selbst zu absolut („„Nicht stören"
-bleibt aus") — an einem freien Tag greift nachts weiterhin der Nacht-Standard, und DND-Modus 1
-folgt dem Dimmer. Der Text sagt jetzt, was wirklich gilt: *der Tag zählt ab dann als freier Tag*.
+bleibt aus") — an einem freien Tag greift nachts weiterhin die Dimm-Regel für freie Tage
+(bis v1.33.0 war es der eingebaute Nacht-Standard), und DND-Modus 1 folgt dem Dimmer. Der Text sagt jetzt, was wirklich gilt: *der Tag zählt ab dann als freier Tag*.
 
 ## Die Freigabe bindet an das DATUM, nicht an Schicht oder Kennung
 

@@ -14,15 +14,15 @@ Urteilsfragen stehen in `.claude/skills/`, nicht hier.
 
 GESTAFFELTER UMFANG - UND WARUM
 --------------------------------
-    git merge (ueberall)          -> Pruefungen 1-7
-    git push auf einem Feature-Branch -> Pruefungen 1-7
-    git push auf main             -> Pruefungen 1-10
+    git merge (ueberall)          -> Pruefungen 1-9
+    git push auf einem Feature-Branch -> Pruefungen 1-9
+    git push auf main             -> Pruefungen 1-12
 
 Der Skill `cfalarm-release-und-changelog` schreibt vor: erst mergen, DANN auf
 `main` bumpen und den Changelog schreiben, dann pushen. Die Git-Historie belegt
 es (d445975 Merge -> c22ebf8 Bump). Ein Tor, das Bump und Changelog schon beim
 `git merge` verlangt, blockiert also den eigenen dokumentierten Ablauf. Deshalb
-greifen die Pruefungen 8-10 ausschliesslich beim Push von `main`.
+greifen die Pruefungen 10-12 ausschliesslich beim Push von `main`.
 
 EIN UMGEBUNGSFEHLER IST KEIN FREISPRUCH
 ----------------------------------------
@@ -297,6 +297,29 @@ def pruefe_tests(probleme):
         )
 
 
+def pruefe_androidtest_kompiliert(probleme):
+    """`gradlew test` kompiliert den androidTest-Quelltext NIE - das ist ein blinder Fleck.
+
+    Verifiziert am 25.08.2026: Die Unit-Test-Task uebersetzt ausschliesslich `src/test`. Ein
+    Instrumentierungstest kann also monatelang nicht mehr uebersetzbar sein, ohne dass irgendetwas
+    meldet - er faellt erst auf, wenn jemand ein Geraet anschliesst und
+    `connectedDebugAndroidTest` startet. Genau dann braucht man ihn aber und hat keine Zeit dafuer.
+
+    Geprueft wird nur das KOMPILIEREN, nicht das Ausfuehren: Ausfuehren braucht ein Geraet, und in
+    diesem Projekt deinstalliert die Task hinterher die App (ein eingerichteter Emulator-Zustand
+    waere weg). Das Uebersetzen braucht nichts davon.
+    """
+    code, ausgabe = gradle("compileDebugAndroidTestKotlin", timeout=TIMEOUT_TESTS_S)
+    if code == 0:
+        return
+    probleme.append(
+        "Der androidTest-Quelltext kompiliert nicht:\n{}\n"
+        "`gradlew test` faellt darueber NICHT - es uebersetzt nur src/test.".format(
+            letzte_zeilen(ausgabe)
+        )
+    )
+
+
 def pruefe_lint(probleme):
     code, ausgabe = gradle("lintDebug", timeout=TIMEOUT_LINT_S)
     if code == 0:
@@ -311,7 +334,7 @@ def pruefe_lint(probleme):
 
 
 def pruefe_release_pflichten(probleme, basis):
-    """Pruefungen 8-10: Changelog-Eintrag, Versionsbump, versionCode gegen origin/main.
+    """Pruefungen 10-12: Changelog-Eintrag, Versionsbump, versionCode gegen origin/main.
 
     Nur beim Push von `main` - siehe GESTAFFELTER UMFANG im Kopf.
     """
@@ -354,7 +377,7 @@ def pruefe_release_pflichten(probleme, basis):
     #
     # Bewusst nur "<", nicht "<=": Gleichstand ist der Normalfall eines reinen
     # chore/docs-Pushes, bei dem gar kein Bump vorgesehen ist. Und Gleichstand
-    # TROTZ nutzersichtbarer Aenderung faengt bereits Pruefung 9 - deren Basis
+    # TROTZ nutzersichtbarer Aenderung faengt bereits Pruefung 11 - deren Basis
     # ist auf `main` genau dieses origin/main.
     code_fern, fern_gradle = git("show", "{}:app/build.gradle.kts".format(FERNREFERENZ))
     if code_fern == 0 and jetzt_code is not None:
@@ -429,10 +452,25 @@ def main():
         os.path.join("tools", "invarianten", "pruefe_code.py"),
         "Eine Code-Invariante ist gerissen (Wecker-Killer)",
     )
+    # Der Doku-Teil dieser Pruefung braucht eine Basis: entfernt wurde ein Symbol IN DIESER
+    # Aenderung, nicht irgendwann. Ohne Basis laufen nur die beiden mechanischen Teile.
+    code_mb, mb = git("merge-base", "HEAD", FERNREFERENZ)
+    reste_argumente = ["--ci"]
+    if code_mb == 0 and mb.strip():
+        reste_argumente += ["--basis", mb.strip()]
+    pruefe_hilfsskript(
+        probleme,
+        os.path.join("tools", "aufraeumen", "pruefe_reste.py"),
+        "Der Aufraeumdurchgang hat Reste hinterlassen",
+        argumente=tuple(reste_argumente),
+        hinweis="Tote Importe und verwaiste Texte loeschen; eine Doku-Notiz, die auf ein "
+                "entferntes Symbol zeigt, korrigieren statt danebenschreiben.",
+    )
     pruefe_tests(probleme)
+    pruefe_androidtest_kompiliert(probleme)
     pruefe_lint(probleme)
 
-    # Pruefungen 8-10 nur beim Push von main: Bump und Changelog gehoeren laut
+    # Pruefungen 10-12 nur beim Push von main: Bump und Changelog gehoeren laut
     # Release-Skill auf main NACH dem Merge.
     if ist_push and branch == INTEGRATIONSBRANCH:
         code_basis, basis = git("merge-base", "HEAD", FERNREFERENZ)

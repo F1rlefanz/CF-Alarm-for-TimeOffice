@@ -68,6 +68,9 @@ das baut man dieselbe Falle in neuer Form nach.
   Zeile ist ein ECM-/Binding-Vorfall nachträglich nicht mehr rekonstruierbar.
 - **`DimCorrectionNotifier.show()` prüft `areNotificationsEnabled()` vor `notify()`.**
 - **DND: zwei Fenster-Trigger plus ein Klipp-Modifikator, kein Regel-Editor.**
+- **Jeder Setter, der DIMM-FENSTERGRENZEN verschiebt, armiert BEIDE Ketten neu — Dimmer, dann
+  DND** (`armiereFensterkettenNeu()` in `DimmerViewModel` und `DimmerRulesViewModel`, unter
+  `NonCancellable`). Reine DARSTELLUNGS-Setter (Verdunkelung/Wärme) rufen bewusst nur den Dimmer.
 - **Modus 1 dupliziert KEINE Fenster-Logik** — er ruft `previewTimelineWithStatus()` direkt auf.
   Einbahnstraße: `dnd/` liest von `dimmer/`, nie umgekehrt. **Das `…WithStatus` ist kein Luxus**: der
   Lesefehler muss über die Grenze kommen, sonst plant DND den 6h-Keep-alive statt des 15-min-Retry.

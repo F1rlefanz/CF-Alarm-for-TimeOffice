@@ -8,6 +8,7 @@
 
 - Zwei Fenster-Trigger plus ein Klipp-Modifikator, kein Regel-Editor
 - Rufbereitschaft-Cutoff (`DndOnCallCutoffResolver`, seit v1.20.0) klippt statt eine eigene
+- Ein geaendertes Dimm-Fenster muss die DND-Kette mitziehen — an JEDER Setter-Stelle
 - Modus 1 dupliziert KEINE Fenster-Logik
 - Das `…WithStatus` ist kein Luxus: der Lesefehler muss über die Dimmer-DND-Grenze kommen
 - Modus 2 braucht `AlarmInfo.shiftStartTime`
@@ -49,6 +50,35 @@
   `LocalTime.atZone()` als echte Wanduhrzeit aufgelöst werden, NICHT als Mitternacht-Instant plus
   fixer Minuten-Millis-Offset — sonst landet er an einem DST-Vorspringen-Tag eine Stunde zu spät.
   `DndOnCallCutoffResolverTest` hält beide Fälle fest.
+- **Ein geaendertes Dimm-Fenster muss die DND-Kette mitziehen — an JEDER Setter-Stelle, nicht nur
+  an der, wo es zuerst auffiel.** Weil Modus 1 keine eigene Fensterquelle hat (siehe naechster
+  Punkt), ist jede Verschiebung der Dimm-Fenster zugleich eine Verschiebung der DND-Fenster. Die
+  Regel war seit dem Umbenennungs-Nachzug im Code ausformuliert (`ShiftViewModel`: „umgekehrt zieht
+  ein geaendertes Dimm-Fenster die DND-Kette sehr wohl mit") — **umgesetzt war sie aber nur dort
+  und im Konfigurations-Import.** Acht Setter in `DimmerViewModel`/`DimmerRulesViewModel` riefen
+  ausschliesslich `dimSchedule.enable()`; `DndScheduleUseCase` war in beiden ViewModels nicht
+  einmal injiziert. **Am Fairphone 6 real gemessen (23.08.2026):** Der Nutzer stellte um 09:59 um
+  (Regeln AN, Nacht-Standard AUS). Der Dimmer rechnete sofort neu und schaltete ab
+  (`Naechster Dimm-Wechsel geplant: 22:00`), danach kam **keine einzige `CFAlarm.Dnd`-Zeile mehr**,
+  und `settings get global zen_mode` lieferte weiterhin `1` — „Nicht stoeren" blieb bis zum
+  naechsten eigenen DND-Tick um 12:30 stehen, knapp drei Stunden ohne Grund. Die Selbstheilung
+  kommt spaetestens mit der 6h-Wartung; in einer Rufbereitschaftsnacht sind drei Stunden aber genau
+  die verlorenen Anrufe, gegen die der On-Call-Cutoff ueberhaupt gebaut wurde. Seit v1.32.1 haben
+  beide ViewModels ein `armiereFensterkettenNeu()` (Vorbild `ShiftViewModel.armiereZeitkettenNeu`).
+  Drei Dinge daran sind tragend: **Reihenfolge Dimmer → DND** (DND liest die Dimm-Zeitleiste LIVE;
+  `dataStore.edit {}` kehrt erst nach persistiertem Write zurueck, das DND-`enable()` sieht den
+  neuen Stand also nur in dieser Reihenfolge), **`withContext(NonCancellable)`** (die Setter haengen
+  am `viewModelScope` — verlaesst der Nutzer die App direkt nach dem Toggle, entsteht sonst wieder
+  genau der gemeldete Zustand; dieselbe Falle wie bei der frueheren Slider-Entprellung), und **je
+  ein eigenes `runCatching`** (ein Fehlschlag der einen Kette darf die andere nicht mitreissen).
+  **Die Abgrenzung gehoert dazu und ist keine Sparsamkeit:** reine DARSTELLUNGS-Setter
+  (Verdunkelung/Waerme global und am Nacht-Standard) rufen weiterhin nur `dimSchedule.enable()` —
+  „Nicht stoeren" kennt nur die Fenster einer Zeitleiste, nicht ihre Farbe, und ein DND-`enable()`
+  waere dort eine komplette zusaetzliche Fensterberechnung ohne jede Wirkung. `DimmerDndNachzugTest`
+  haelt beide Richtungen fest (neun Faelle mit `inOrder`), `DimmerViewModelRenderSettersTest` die
+  Gegenprobe `verify(dndSchedule, never()).enable()`. **Am Emulator nachgemessen (24.08.2026):**
+  Wellness-Toggle → `17:37:28.033 Dimmer`, `17:37:28.046 Dnd`; Verdunkelungs-Regler → nur die
+  Dimmer-Zeile. Wer einen neuen fensterrelevanten Setter ergaenzt, traegt ihn in beide Tests ein.
 - **Modus 1 dupliziert KEINE Fenster-Logik.** Er ruft `DimScheduleUseCase.previewTimelineWithStatus()`
   direkt auf (seiteneffektfrei) statt eine eigene Kopie der Dimmer-Fensterberechnung zu pflegen.
   Einbahnstraße wie `CalendarStateHolder`: `dnd/` liest von `dimmer/`, nie umgekehrt — der Dimmer

@@ -51,7 +51,18 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.32.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.32.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> August 2026</p>
+            <p><em>„Nicht stören" blieb nach einer Änderung an den Dimm-Einstellungen stundenlang hängen.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>„Nicht stören" folgte einer geänderten Dimm-Einstellung erst Stunden später:</strong> Wenn „Nicht stören" auf „folgt dem Dimmer" steht, holt es sich seine Zeiten aus dem Dimm-Zeitplan. Änderte man diesen Zeitplan — Nacht-Standard oder Regeln an- und ausschalten, Zeiten verstellen, eine Regel speichern oder löschen —, rechnete der Dimmer sofort neu, „Nicht stören" aber nicht: es blieb auf dem alten Plan stehen, bis es das nächste Mal von selbst nachsah. Real gemessen waren das knapp drei Stunden, in denen der Bildschirm längst wieder hell war und das Telefon trotzdem stumm blieb. Jetzt zieht „Nicht stören" jede solche Änderung sofort mit nach. Reines Verstellen von Verdunkelung oder Wärme lässt es weiterhin unberührt — das ändert nur die Farbe, nicht die Zeiten.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.32.0</h3>
             <p><strong>Stand:</strong> August 2026</p>
             <p><em>Neu: „Tag freigeben" für Tage, an denen der Dienst ausfällt — und eine Erklärung, wann du das statt „Überspringen" nimmst.</em></p>
 

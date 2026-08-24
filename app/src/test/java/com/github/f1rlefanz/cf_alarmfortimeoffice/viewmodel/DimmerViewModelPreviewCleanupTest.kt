@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import kotlinx.coroutines.Dispatchers
@@ -103,7 +104,7 @@ class DimmerViewModelPreviewCleanupTest {
     private fun buildViewModel(prefs: DimOverlayPrefs, dimSchedule: DimScheduleUseCase): DimmerViewModel {
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
-        return DimmerViewModel(prefs, dimSchedule, shiftUseCase)
+        return DimmerViewModel(prefs, dimSchedule, { mock<DndScheduleUseCase>() }, shiftUseCase)
     }
 
     /** Der eigentliche Fehlerfall: App waehrend der Vorschau verlassen. */

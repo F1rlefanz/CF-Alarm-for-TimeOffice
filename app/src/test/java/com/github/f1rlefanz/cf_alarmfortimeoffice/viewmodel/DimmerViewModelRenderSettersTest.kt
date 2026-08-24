@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -59,7 +61,8 @@ class DimmerViewModelRenderSettersTest {
     private class Fixture(
         val viewModel: DimmerViewModel,
         val prefs: DimOverlayPrefs,
-        val dimSchedule: DimScheduleUseCase
+        val dimSchedule: DimScheduleUseCase,
+        val dndSchedule: DndScheduleUseCase
     )
 
     /**
@@ -89,10 +92,16 @@ class DimmerViewModelRenderSettersTest {
         whenever(prefs.nightDefaultWarmth).thenReturn(flowOf(DimOverlayPrefs.DEFAULT_WARMTH))
 
         val dimSchedule = mock<DimScheduleUseCase>()
+        val dndSchedule = mock<DndScheduleUseCase>()
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
 
-        return Fixture(DimmerViewModel(prefs, dimSchedule, shiftUseCase), prefs, dimSchedule)
+        return Fixture(
+            DimmerViewModel(prefs, dimSchedule, { dndSchedule }, shiftUseCase),
+            prefs,
+            dimSchedule,
+            dndSchedule
+        )
     }
 
     @Test
@@ -104,6 +113,9 @@ class DimmerViewModelRenderSettersTest {
 
         verify(f.prefs).setStrength(30)
         verify(f.dimSchedule).enable()
+        // Gegenprobe: eine reine FARB-Aenderung verschiebt keine Fenstergrenze - DND haette
+        // hier nichts neu zu rechnen. Ohne diese Zeile zementierte der Test die Verschwendung.
+        verify(f.dndSchedule, never()).enable()
     }
 
     @Test
@@ -115,6 +127,9 @@ class DimmerViewModelRenderSettersTest {
 
         verify(f.prefs).setWarmth(70)
         verify(f.dimSchedule).enable()
+        // Gegenprobe: eine reine FARB-Aenderung verschiebt keine Fenstergrenze - DND haette
+        // hier nichts neu zu rechnen. Ohne diese Zeile zementierte der Test die Verschwendung.
+        verify(f.dndSchedule, never()).enable()
     }
 
     @Test
@@ -126,6 +141,9 @@ class DimmerViewModelRenderSettersTest {
 
         verify(f.prefs).setNightDefaultStrength(45)
         verify(f.dimSchedule).enable()
+        // Gegenprobe: eine reine FARB-Aenderung verschiebt keine Fenstergrenze - DND haette
+        // hier nichts neu zu rechnen. Ohne diese Zeile zementierte der Test die Verschwendung.
+        verify(f.dndSchedule, never()).enable()
     }
 
     @Test
@@ -137,6 +155,9 @@ class DimmerViewModelRenderSettersTest {
 
         verify(f.prefs).setNightDefaultWarmth(65)
         verify(f.dimSchedule).enable()
+        // Gegenprobe: eine reine FARB-Aenderung verschiebt keine Fenstergrenze - DND haette
+        // hier nichts neu zu rechnen. Ohne diese Zeile zementierte der Test die Verschwendung.
+        verify(f.dndSchedule, never()).enable()
     }
 
     @Test

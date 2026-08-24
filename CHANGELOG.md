@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.32.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.32.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_„Nicht stören" blieb nach einer Änderung an den Dimm-Einstellungen stundenlang hängen._
+
+### 🐛 Behoben
+
+- **„Nicht stören" folgte einer geänderten Dimm-Einstellung erst Stunden später:** Wenn „Nicht stören" auf „folgt dem Dimmer" steht, holt es sich seine Zeiten aus dem Dimm-Zeitplan. Änderte man diesen Zeitplan — Nacht-Standard oder Regeln an- und ausschalten, Zeiten verstellen, eine Regel speichern oder löschen —, rechnete der Dimmer sofort neu, „Nicht stören" aber nicht: es blieb auf dem alten Plan stehen, bis es das nächste Mal von selbst nachsah. Real gemessen waren das knapp drei Stunden, in denen der Bildschirm längst wieder hell war und das Telefon trotzdem stumm blieb. Jetzt zieht „Nicht stören" jede solche Änderung sofort mit nach. Reines Verstellen von Verdunkelung oder Wärme lässt es weiterhin unberührt — das ändert nur die Farbe, nicht die Zeiten.
+
+## Version 1.32.0
 
 **Stand:** August 2026
 

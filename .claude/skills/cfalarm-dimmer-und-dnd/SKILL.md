@@ -72,6 +72,15 @@ das baut man dieselbe Falle in neuer Form nach.
   Einbahnstraße: `dnd/` liest von `dimmer/`, nie umgekehrt. **Das `…WithStatus` ist kein Luxus**: der
   Lesefehler muss über die Grenze kommen, sonst plant DND den 6h-Keep-alive statt des 15-min-Retry.
 - **Modus 2 braucht `AlarmInfo.shiftStartTime`**, nicht `triggerTime`.
+- **Ein freigegebener Tag („Tag freigeben") verliert seine Schichtspannen an EINER Stelle:
+  `FreieTageStore.filtereSpannen`, angewendet direkt nach `spansNow()` in BEIDEN
+  `computeWindows()` (Dimmer und DND).** Danach sieht der Tag fuer die Fensterlogik aus wie ein
+  echter freier Tag — FREI-Regel und Nacht-Standard greifen, `nextDayCoversTonight` rechnet mit
+  ihm als freiem Tag. **Das ist die ausdrueckliche Nutzer-Entscheidung, kein Versehen**: wer frei
+  hat, will den Abend eines freien Tages. Ein dritter Tageszustand „gar kein Dimmen" wurde bewusst
+  verworfen — die Regelliste koennte ihn nicht anzeigen. Folge fuer die Nutzertexte: „Nicht
+  stoeren bleibt aus" gilt NUR fuer die Dienstzeit; nachts kann Modus 1 weiterhin schalten, weil
+  er dem Dimmer folgt. Hergang im Skill `cfalarm-wecker-und-boot` (dortige Hergang-Datei zu „Tag freigeben").
 - **Die Dienstzeit-Fenster kommen aus `ShiftSpanStore`, NICHT aus dem Alarm-Bestand** — ein Alarm
   überlebt die Weckzeit nicht. Spannen werden in `syncAlarms()` **vor** dem Vergangenheits-Filter
   geschrieben, **auch in den beiden Leer-Zweigen**, und der Schreibvorgang ist nicht-fatal gekapselt.

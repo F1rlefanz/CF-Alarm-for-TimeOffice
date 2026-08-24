@@ -235,6 +235,11 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **Das Skip-Flag läuft zeitbasiert ab, nicht per ID-Match** — plus Gate in `syncAlarms()` UND
   Backstop in `scheduleSystemAlarm()`.
 - **`ShiftConfig.autoAlarmEnabled = false` ist eine ECHTE, sofortige Pause**, kein stilles `return`.
+- **Ein freigegebener Tag („Tag freigeben") braucht Gate UND Backstop — und nimmt MANUELLE Wecker
+  aus.** Der Anker ist überall die Weckzeit (vier Stellen). Ohne den Backstop holt der
+  `BootReceiver` den Wecker nach einem Neustart zurück; ohne die Ausnahme für manuelle Wecker
+  löscht die Freigabe einen Wecker, den kein Kalender rekonstruieren kann — und der Backstop
+  verhindert zusätzlich, dass an dem Tag überhaupt einer gestellt werden kann.
 
 ### Wecken, Vollbild, Snooze
 

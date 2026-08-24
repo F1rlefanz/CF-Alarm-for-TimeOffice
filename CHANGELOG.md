@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.32.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.33.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Neues Fenster-Ende „Weckzeit, spätestens" — dimmt bis zu deinem Wecker, aber nie über die eingestellte Uhrzeit hinaus._
+
+### ✨ Neu
+
+- **Fenster-Ende „Weckzeit, spätestens":** Im Regel-Editor kannst du ein Dimm-Fenster jetzt so enden lassen: *bis zu deiner Weckzeit — und falls in diesem Fenster gar kein Wecker liegt, zur eingestellten Uhrzeit*. Bisher gab es nur entweder/oder: „Feste Uhrzeit" dimmte stur bis zur Uhrzeit und damit über einen früheren Wecker hinweg, „Zur Weckzeit" dimmte bis zum Wecker — egal wie spät der ist. Vor einem Spätdienst mit Weckzeit 12:30 hieß „Nacht-Dimmen" damit faktisch „bis mittags". Mit dem neuen Ende stellst du „22:00 bis Weckzeit, spätestens 7:00" als **ein** Fenster ein, und es tut an jedem Tag das Erwartete: Frühdienst → Ende um 5:30, Spätdienst → Ende um 7:00, freier Tag → Ende um 7:00. Ein selbst gestellter Wecker ohne Dienst beendet das Fenster ebenfalls.
+
+## Version 1.32.1
 
 **Stand:** August 2026
 

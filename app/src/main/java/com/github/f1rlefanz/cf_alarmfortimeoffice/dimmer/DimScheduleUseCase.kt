@@ -333,6 +333,27 @@ class DimScheduleUseCase @Inject constructor(
         // einem Platzhalter waere der Slot auf 1970 datiert und die Tagesverankerung der
         // Dimm-Fenster kaputt.
         val slots = spans.map { DimWindowResolver.AlarmSlot(it.alarmTriggerTime, it.shiftName, it.endTime) }
+
+        // ZEITLEISTE ALLER WECKZEITEN - nur fuer den Ende-Anker ALARM_SONST_CLOCK ("bis zur
+        // Weckzeit, spaetestens um X"). Sie ist bewusst eine ZWEITE, flachere Sicht neben `slots`
+        // und ersetzt diese nicht:
+        //
+        // - `slots` beantwortet "welche Regel gilt an diesem Kalendertag" und braucht dafuer den
+        //   Schichtnamen. Die Zeitleiste beantwortet nur "wann klingelt als naechstes etwas".
+        // - Deshalb duerfen hier MANUELLE Wecker mit hinein, die gar keine Schichtspanne haben.
+        //   Genau die sollen ein Nacht-Fenster beenden - wer sich einen Wecker stellt, will um
+        //   diese Zeit einen hellen Bildschirm. Sie in `slots` aufzunehmen waere dagegen falsch:
+        //   ein manueller Wecker macht aus einem freien Tag keinen Schicht-Tag, und die
+        //   Regel-Auswahl (FREI vs. Schicht) wuerde still kippen.
+        // - Manuelle Wecker laufen bewusst NICHT durch den Freie-Tage-Filter: eine Tagesfreigabe
+        //   streicht den DIENST, nicht einen selbst gestellten Wecker (siehe TagFreigabeUseCase,
+        //   "nimmt MANUELLE Wecker aus"). Er klingelt also - und muss das Fenster beenden.
+        // - `spans` ist bereits gefiltert; an einem freigegebenen Tag steht dort nichts mehr, und
+        //   das Nacht-Fenster laeuft dort korrekt bis zu seiner Uhrzeit durch.
+        val weckzeiten = (spans.map { it.alarmTriggerTime } + alarms.map { it.triggerTime })
+            .distinct()
+            .sorted()
+
         if (rulesActive) {
             out += DimWindowResolver.buildRuleSpans(
                 alarms = slots,
@@ -341,6 +362,7 @@ class DimScheduleUseCase @Inject constructor(
                 zone = zone,
                 ruleForShift = { name -> dimRuleUseCase.findRuleForShift(name, rules) },
                 ruleForFreeDay = { dimRuleUseCase.findRuleForFreeDay(rules) },
+                weckzeiten = weckzeiten,
             )
         }
 

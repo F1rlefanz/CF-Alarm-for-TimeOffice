@@ -334,6 +334,10 @@ private fun WindowEditor(
                     selected = window.endAnchor == DimAnchor.SHIFT_END,
                     label = stringResource(R.string.dimmer_anchor_shiftend)
                 ) { onChange(window.copy(endAnchor = DimAnchor.SHIFT_END)) }
+                AnchorButton(
+                    selected = window.endAnchor == DimAnchor.ALARM_SONST_CLOCK,
+                    label = stringResource(R.string.dimmer_end_alarm_sonst_clock)
+                ) { onChange(window.copy(endAnchor = DimAnchor.ALARM_SONST_CLOCK)) }
             }
             when (window.endAnchor) {
                 DimAnchor.CLOCK -> ClockField(minutes = window.endClockMinutes) {
@@ -349,6 +353,21 @@ private fun WindowEditor(
                     value = window.endOffsetMinutes,
                     label = stringResource(R.string.dimmer_shiftend_offset)
                 ) { onChange(window.copy(endOffsetMinutes = it)) }
+
+                // Derselbe Uhrzeit-Waehler wie bei CLOCK - die Uhrzeit ist hier die SPAETESTE
+                // Moeglichkeit, nicht das feste Ende. Ohne den erklaerenden Satz daneben ist der
+                // Unterschied zu "Feste Uhrzeit" am Knopf allein nicht zu erkennen, und genau
+                // dieses Missverstaendnis war der Ausloeser des Ankers.
+                DimAnchor.ALARM_SONST_CLOCK -> {
+                    ClockField(minutes = window.endClockMinutes) {
+                        onPickTime(window.endClockMinutes) { onChange(window.copy(endClockMinutes = it)) }
+                    }
+                    Text(
+                        text = stringResource(R.string.dimmer_end_alarm_sonst_clock_hinweis),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             TextButton(onClick = onRemove) {

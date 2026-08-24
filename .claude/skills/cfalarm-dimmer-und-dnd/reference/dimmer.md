@@ -146,6 +146,41 @@
   nach einem **Lesefehler der Fenster-Grundlage** (Alarm-Bestand für Wellness, Schichtspannen für
   Regeln/Nacht-Standard und für den gesamten DND-Pfad). Die BEDEUTUNG einer leeren Fensterliste
   (Nachtdienst-Unterdrückung) bleibt unverändert — es wird nur später noch einmal nachgesehen.
+- **Der Ende-Anker `ALARM_SONST_CLOCK` (seit v1.33.0) bringt die Semantik „min(Weckzeit, Uhrzeit)"
+  ins Modell — sie fehlte, und ihr Fehlen war ein gemeldeter Fehler.** Am 23.08.2026 wachte der
+  Eigentuemer um 08:48 auf und fand den Bildschirm gedimmt. Kein Defekt: der Nacht-Standard endet
+  an Schicht-Tagen am ALARM-Anker — *egal wie spaet der ist*. Vor einem Spaetdienst mit Weckzeit
+  12:30 hiess „Nacht-Dimmung" damit faktisch „bis mittags", waehrend die eingestellten 07:00 nur an
+  weckerfreien Tagen galten. Ausdruecken liess sich die erwartete Semantik mit keinem der drei
+  Anker: `CLOCK` endet stur an der Uhrzeit und ueberdimmt jeden frueheren Wecker, `ALARM` endet
+  stur am Wecker. **Der neue Anker ist das Minimum aus beidem** und damit die Voraussetzung dafuer,
+  den eingebauten Nacht-Standard spaeter als gewoehnliche Regel auszudruecken statt als eigene
+  Quelle (Plan: ein Modell statt drei Quellen).
+  **Er raeumt zugleich eine Sonderlogik ab:** der Nacht-Standard braucht pro Tag ZWEI Fenster
+  (rueckwaerts/vorwaerts) plus `nextDayCoversTonight` — eine Bedingung, die auf ein ANDERES Datum
+  schaut als das gerade berechnete und deren erster Wurf real eine ganze Nacht durchfallen liess
+  (03./04.08.2026). Weil der Anker seine Weckzeit in der GESAMTEN Zeitleiste sucht statt „im Wecker
+  dieses Tages", entfaellt das Fensterpaar: jede Kalendernacht bekommt genau ein Fenster und findet
+  ihr Ende selbst. `DimAnkerWeckzeitSonstUhrzeitTest` haelt den ausloesenden Fall (12:30 beendet die
+  Nacht NICHT), den Gegenfall (05:30 beendet sie), die Auswahl der fruehesten Weckzeit, beide
+  Raender (Weckzeit exakt auf Start bzw. exakt auf der Schranke) und beide DST-Tage fest.
+  **Drei Entscheidungen, die nicht offensichtlich sind:** (1) Die Weckzeit muss ECHT nach dem Start
+  liegen — sonst schrumpfte ein Wecker exakt auf 22:00 das Fenster auf Laenge null, also eine
+  stille Dimm-Luecke statt eines erkennbaren Fehlers. (2) Leere Zeitleiste degradiert auf die
+  Uhrzeit, nicht auf „kein Ende": die Richtung ist „im Zweifel hell", wie ueberall hier.
+  (3) Am START verhaelt er sich wie `CLOCK` statt `null` zu liefern — die Oberflaeche bietet ihn
+  dort nicht an, aber ein aus Daten eingeschleuster Wert soll das Fenster nicht verschwinden lassen.
+  **Die Zeitleiste ist bewusst eine zweite Sicht neben den Slots** (`DimScheduleUseCase`): Slots
+  entscheiden ueber die Regel-Auswahl und brauchen den Schichtnamen, die Zeitleiste nur „wann
+  klingelt etwas". Nur deshalb duerfen MANUELLE Wecker hinein — sie haben keine Schichtspanne, und
+  in die Slots gelegt wuerden sie aus einem freien Tag still einen Schicht-Tag machen und die
+  FREI-Regel aushebeln. Sie laufen zudem bewusst NICHT durch den Freie-Tage-Filter: eine
+  Tagesfreigabe streicht den DIENST, nicht einen selbst gestellten Wecker.
+  **Downgrade-Verhalten am Geraet nachgemessen (24.08.2026):** Mit einer gespeicherten
+  `ALARM_SONST_CLOCK`-Regel auf einer aelteren APK liest die Anzeige tolerant (Anker faellt auf den
+  Feld-Default), und `editRules()` verweigert JEDE Aenderung — auch das Loeschen einer anderen
+  Regel. Das ist die dokumentierte Absicht des `strictJson`-Schreibpfads und kein Defekt; wer beim
+  Testen zwischen Versionen springt, muss es kennen, sonst sieht es wie ein kaputtes Loeschen aus.
 - **Nacht-Standard (`DimWindowResolver.buildDefaultNightSpans`, seit v1.17.0) ist eine DRITTE,
   eigenständige Fenster-Quelle** neben Regeln — dimmt ab fester Uhrzeit bis zum nächsten Wecker,
   ganz ohne dass dafür eine `DimRule` existieren muss. Wirkt NUR an Tagen, die `isExcluded` nicht

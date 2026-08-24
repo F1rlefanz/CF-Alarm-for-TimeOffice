@@ -67,7 +67,10 @@ class DimRuleUseCase @Inject constructor(
      */
     suspend fun renameShiftPattern(oldName: String, newName: String): Result<Int> = runCatching {
         require(oldName.isNotBlank() && newName.isNotBlank()) {
-            "Leerer Schichtname - Dimm-Regelmuster wird NICHT nachgezogen ('$oldName' -> '$newName')"
+            // OHNE die Namen: diese Meldung wird zur Exception-Message und landet ueber das
+            // Logger.e im onFailure-Zweig im RELEASE-Log. Welcher der beiden leer war, genuegt.
+            "Leerer Schichtname - Dimm-Regelmuster wird NICHT nachgezogen " +
+                "(alt leer: ${oldName.isBlank()}, neu leer: ${newName.isBlank()})"
         }
         // Rein groß-/kleinschreibungsbedingte Änderungen brechen das Matching nicht (siehe oben) -
         // es gibt nichts zu retten, und ein Schreibvorgang wäre reines Risiko.
@@ -108,8 +111,12 @@ class DimRuleUseCase @Inject constructor(
         if (aufNeuemMuster > 1) {
             Logger.w(
                 LogTags.DIMMER,
-                "⚠️ Nach dem Umbenennen liegen $aufNeuemMuster aktive Dimm-Regeln auf '$newName' - " +
-                    "es greift nur die erste, die uebrigen sind wirkungslos"
+                // OHNE den Schichtnamen: WARN landet im Release-Log, und Schichtnamen sind
+                // Nutzertexte (dieselbe Regel wie beim Regelkonflikt-WARN in DimWindowResolver).
+                // Die Regel-IDs benennen den Fall genauso eindeutig und sind keine PII.
+                "⚠️ Nach dem Umbenennen liegen $aufNeuemMuster aktive Dimm-Regeln auf demselben " +
+                    "Muster - es greift nur die erste, die uebrigen sind wirkungslos. IDs: " +
+                    nachher.filter { it.enabled && it.betrifftSchicht(newName) }.map { it.id }
             )
         }
 
@@ -121,9 +128,12 @@ class DimRuleUseCase @Inject constructor(
     }.onFailure { error ->
         // WARN+ landet auch im Release-Log: eine nicht nachgezogene Regel ist ein Dimm-Fenster,
         // das ab jetzt fehlt - und beim DND-Modus "folgt dem Dimmer" ein Telefon, das nachts klingelt.
+        // OHNE Namen, aus demselben Grund wie oben - ERROR landet im Release-Log.
+        // Die LAENGEN genuegen zur Unterscheidung "leer/vertauscht" beim Nachstellen.
         Logger.e(
             LogTags.DIMMER,
-            "❌ Dimm-Regelmuster konnte nicht von '$oldName' auf '$newName' nachgezogen werden",
+            "❌ Dimm-Regelmuster konnte nicht nachgezogen werden " +
+                "(alt ${oldName.length} Zeichen, neu ${newName.length} Zeichen)",
             error
         )
     }

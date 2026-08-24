@@ -935,8 +935,7 @@ class AlarmMaintenanceService : Service() {
             if (paused) {
                 dimSchedule.disable()
             } else {
-                dimSchedule.applyCurrentState()
-                dimSchedule.scheduleNextTransition()
+                dimSchedule.enable()
             }
         } catch (e: Exception) {
             Logger.w(LogTags.DIMMER, "Wartung: Dimm-Reschedule fehlgeschlagen", e)
@@ -946,8 +945,7 @@ class AlarmMaintenanceService : Service() {
             if (paused) {
                 dndSchedule.disable()
             } else {
-                dndSchedule.applyCurrentState()
-                dndSchedule.scheduleNextTransition()
+                dndSchedule.enable()
             }
         } catch (e: Exception) {
             Logger.w(LogTags.DND, "Wartung: DND-Reschedule fehlgeschlagen", e)

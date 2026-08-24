@@ -252,12 +252,10 @@ class TagFreigabeUseCase @Inject constructor(
 
     private suspend fun werfeNebenkettenAn() {
         runCatching {
-            dimSchedule.applyCurrentState()
-            dimSchedule.scheduleNextTransition()
+            dimSchedule.enable()
         }.onFailure { Logger.w(LogTags.DIMMER, "⚠️ FREIGABE: Dimmer-Kette nicht neu angeworfen", it) }
         runCatching {
-            dndSchedule.applyCurrentState()
-            dndSchedule.scheduleNextTransition()
+            dndSchedule.enable()
         }.onFailure { Logger.w(LogTags.DND, "⚠️ FREIGABE: DND-Kette nicht neu angeworfen", it) }
     }
 

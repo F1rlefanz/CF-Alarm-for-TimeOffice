@@ -72,7 +72,7 @@
   genau der gemeldete Zustand; dieselbe Falle wie bei der frueheren Slider-Entprellung), und **je
   ein eigenes `runCatching`** (ein Fehlschlag der einen Kette darf die andere nicht mitreissen).
   **Die Abgrenzung gehoert dazu und ist keine Sparsamkeit:** reine DARSTELLUNGS-Setter
-  (Verdunkelung/Waerme global und am Nacht-Standard) rufen weiterhin nur `dimSchedule.enable()` —
+  (Verdunkelung/Waerme) rufen weiterhin nur `dimSchedule.enable()` —
   „Nicht stoeren" kennt nur die Fenster einer Zeitleiste, nicht ihre Farbe, und ein DND-`enable()`
   waere dort eine komplette zusaetzliche Fensterberechnung ohne jede Wirkung. `DimmerDndNachzugTest`
   haelt beide Richtungen fest (neun Faelle mit `inOrder`), `DimmerViewModelRenderSettersTest` die
@@ -114,13 +114,14 @@
   abbrechen). Eine Spanne kennt bewusst **kein `isActive` und kein „übersprungen"**: ein
   deaktivierter oder übersprungener Wecker ändert nichts daran, dass der Dienst stattfindet.
 - **`ShiftSpan.alarmTriggerTime` ist NICHT redundant.** `DimWindowResolver` leitet den
-  **Kalendertag** eines Slots aus der Weckzeit ab (`buildRuleSpans`/`buildDefaultNightSpans`,
+  **Kalendertag** eines Slots aus der Weckzeit ab (`buildRuleSpans`,
   `Instant.ofEpochMilli(a.triggerTime)`). Wer die Spanne ohne diesen Wert baut und einen
   Platzhalter einsetzt, datiert den Slot auf 1970 und zerstört die Tagesverankerung ALLER
   Dimm-Fenster — dieselbe Fehlerklasse, die schon einmal falsche Dimm-Nächte erzeugt hat. Der
-  Dimmer zieht deshalb Regel- und Nacht-Standard-Slots aus den Spannen, die **Wellness**-Quelle
-  aber weiterhin aus dem echten Alarm-Bestand: sie dimmt VOR der Weckzeit, ihr Fenster ist nach
-  dem Klingeln ohnehin vorbei.
+  Dimmer zieht seine Regel-Slots deshalb aus den Spannen; der Alarm-Bestand speist nur noch die
+  flachere Weckzeit-Zeitleiste (die auch manuelle Wecker kennt). Bis v1.33.0 lief zusätzlich die
+  **Wellness**-Quelle über den Alarm-Bestand — sie dimmte VOR der Weckzeit, ihr Fenster war nach
+  dem Klingeln ohnehin vorbei; seit dem Ein-Modell (v1.34.0) gibt es sie nicht mehr.
 - **Verstrichene Weckzeit ist KEINE entfernte Schicht.** Der Löschzweig des Delta-Syncs meldete
   jeden Schichtmorgen „Schicht entfernt" für den Dienst, den der Nutzer gerade antrat — beide
   Fälle landen im selben Zweig (`!newAlarmsMap.containsKey(eventId)`), aber nur einer ist eine

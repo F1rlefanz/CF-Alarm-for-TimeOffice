@@ -343,8 +343,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   Wecker gekostet. Ersteres ordnet einem bestehenden Alarm zu (gestaffelt), Letzteres erkennt in
   Kalendertiteln (mit Wortgrenzen über Unicode-Kategorien, NICHT `\b`).
 - **Wer einen Schichtnamen PERSISTENT speichert, traegt ihn in den Umbenennungs-Nachzug ein.**
-  Fuenf Stellen binden ueber den Namen: Dimmer- und Hue-Regeln (`shiftPattern`), die
-  Rufbereitschaft-Auswahl, die Dienstzeit-Ausnahmen und die Nacht-Ausnahmen. Die drei Letzteren
+  Vier Stellen binden ueber den Namen: Dimmer- und Hue-Regeln (`shiftPattern`), die
+  Rufbereitschaft-Auswahl und die Dienstzeit-Ausnahmen. Die beiden Letzteren
   vergleichen EXAKT - eine reine Schreibweisen-Aenderung zaehlt deshalb als Umbenennung. Beim
   Namenstausch wird der falsch gewordene Eintrag geraeumt, ausser beide Namen stehen in derselben
   Liste (dann stimmt ihr Inhalt weiter). Die vollstaendige Inventur steht im Kalender-Skill.
@@ -387,6 +387,9 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 
 ### Dimmer, DND, Hue
 
+- **Es gibt GENAU EINE Dimm-Fenster-Quelle: die Regeln** (seit v1.34.0, ein Schalter `dim_enabled`).
+  Wer eine zweite, „eingebaute" Quelle daneben stellt, koppelt Schalter aneinander — genau der
+  Konstruktionsfehler, der Wellness und Nacht-Standard gekostet hat (Hergang im Dimmer-Skill).
 - **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel". Nicht wegoptimieren.
 - **Die Tick-Kette darf nicht abreißen** — Keep-alive (6 h) plus Retry (15 min) nach Lesefehler.
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** — sonst bleibt der

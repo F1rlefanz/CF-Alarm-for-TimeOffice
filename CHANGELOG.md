@@ -27,7 +27,25 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.33.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.34.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Der Dimmer hat nur noch einen Schalter: alles Dimmen läuft jetzt über Regeln, die du sehen und ändern kannst._
+
+### ✨ Neu
+
+- **Ein Schalter statt drei:** Der Dimmer-Reiter hatte drei gleichrangige Karten mit eigenen Schaltern — „Wellness/Wind-down", „Nacht-Standard" und „Schicht-Regeln". Sie hingen unsichtbar voneinander ab: der Nacht-Standard wirkte nur an Tagen ohne Regel und nur, solange „Regeln" eingeschaltet war. Wer einen Schalter umlegte, änderte damit stillschweigend die Bedeutung der anderen — und ob eine Einstellung gerade überhaupt etwas tat, war nirgends abzulesen. Jetzt gibt es **einen** Schalter „Dimmen an/aus". Wann, wie dunkel und wie warm gedimmt wird, steht ausschließlich in deinen Regeln — und die stehen sichtbar in der Liste, mit Vorschau, änderbar und löschbar.
+- **Drei Vorlagen für den schnellen Anfang:** Oben in „Regeln verwalten" legst du mit einem Tipp eine fertige Regel an, die sich danach wie jede andere bearbeiten lässt. **„Nacht-Dimmen"** ist die frühere Nachtruhe als eine Regel: ab 22:00 bis zu deiner Weckzeit, spätestens 7:00 — an jedem Tag das Passende, auch vor einem Spätdienst. **„Nachtdienst-Rhythmus"** dimmt den Tagschlaf nach dem Dienst statt der Nacht. **„Schicht ausnehmen"** nimmt eine Schicht ganz vom Dimmen aus (das ersetzt die früheren Ausnahme-Chips am Nacht-Standard). Liegt für dieselbe Schicht schon eine Regel vor, sagt die App das und bietet an, sie zu öffnen, statt eine zweite anzulegen, die nie wirken würde.
+- **Die Weckzeit als Fenster-Anfang:** Im Regel-Editor kannst du ein Fenster jetzt auch **vor** deiner Weckzeit beginnen lassen — „ab 60 Minuten vor dem Aufstehen bis zur Weckzeit" ist damit eine gewöhnliche Regel. Das ist der Ersatz für die frühere Einschlafhilfe „Wellness".
+
+### 🔄 Geändert
+
+- **Deine bisherigen Dimm-Einstellungen werden beim Update automatisch übernommen** — du musst nichts neu einrichten. Was du eingestellt hattest, wird in Regeln übersetzt: aus dem Nacht-Standard wird die Regel „Nachtruhe (uebernommen)", aus Wellness ein Fenster vor der Weckzeit, aus jeder Ausnahme-Schicht eine Regel ohne Fenster. Übernommen wird dabei nur, was vorher auch wirklich gewirkt hat — Einstellungen, die durch die alten Abhängigkeiten still wirkungslos waren, werden nicht nachträglich scharf geschaltet. **Schau nach dem Update trotzdem einmal in „Regeln verwalten"**: dort steht ab jetzt schwarz auf weiß, was der Dimmer tut. Sollte etwas fehlen, legst du es mit einer der drei Vorlagen in wenigen Sekunden neu an. Die Übernahme läuft auch dann, wenn du die App nach dem Update gar nicht öffnest — und ebenso, wenn du eine mit der Vorversion gesicherte Konfiguration einspielst.
+- **Drei Dinge verhalten sich jetzt bewusst anders** (alle in die hellere Richtung): Eine späte Weckzeit verlängert die Nacht nicht mehr bis mittags. Ein selbst gestellter Wecker ohne Dienst bekommt keine eigene Einschlafhilfe mehr — er kann ein laufendes Fenster nur noch beenden. Und an einer Schicht, die du vom Dimmen ausgenommen hast, entfällt auch die Einschlafhilfe davor; beides zugleich lässt sich in einer Regel nicht ausdrücken.
+- **Die globalen Regler für Verdunkelung und Wärme sind entfallen.** Sie färbten nur die abgelösten Quellen; jede Regel bringt ihre eigenen Werte mit, und die Probe-Verdunkelung sitzt jetzt dort, wo sie etwas aussagt — im Regel-Editor.
+
+## Version 1.33.0
 
 **Stand:** August 2026
 

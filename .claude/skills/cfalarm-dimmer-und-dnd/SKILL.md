@@ -1,6 +1,6 @@
 ---
 name: cfalarm-dimmer-und-dnd
-description: Zusicherungen fuer den Schicht-Dimmer (systemweite Overlay-Verdunkelung ueber einen Accessibility-Dienst) und die DND-Steuerung ueber AutomaticZenRule in der CFAlarm-Wecker-App. Deckt Fensteraufloesung und Regel-Vorrang, den Nacht-Standard, den Korrektur-Override, die rollende Tick-Kette, die Dienstzeit-Fenster aus dem ShiftSpanStore und den Rufbereitschaft-Cutoff ab. Zu verwenden bei Arbeit an DimWindowResolver, DimScheduleUseCase, DimOverlayPrefs, DimAccessibilityService, DimNotificationService, DimmerViewModel, DimmerRulesViewModel, DndScheduleUseCase, DndPrefs oder DndOnCallCutoffResolver — und immer dann, wenn der Bildschirm zur falschen Zeit gedimmt bleibt, 'Nicht stoeren' waehrend der Dienstzeit abschaltet oder eine Dimm-Vorschau haengen bleibt.
+description: Zusicherungen fuer den Schicht-Dimmer (systemweite Overlay-Verdunkelung ueber einen Accessibility-Dienst) und die DND-Steuerung ueber AutomaticZenRule in der CFAlarm-Wecker-App. Deckt das Ein-Quellen-Modell (Regeln als einzige Fenster-Quelle, ein Schalter), Fensteraufloesung und Regel-Vorrang, die Anker inklusive ALARM_SONST_CLOCK, die Modellmigration, den Korrektur-Override, die rollende Tick-Kette, die Dienstzeit-Fenster aus dem ShiftSpanStore und den Rufbereitschaft-Cutoff ab. Zu verwenden bei Arbeit an DimWindowResolver, DimScheduleUseCase, DimOverlayPrefs, DimmerModellMigration, DimAccessibilityService, DimNotificationService, DimmerViewModel, DimmerRulesViewModel, DndScheduleUseCase, DndPrefs oder DndOnCallCutoffResolver — und immer dann, wenn der Bildschirm zur falschen Zeit gedimmt bleibt, 'Nicht stoeren' waehrend der Dienstzeit abschaltet oder eine Dimm-Vorschau haengen bleibt.
 ---
 
 # Schicht-Dimmer und DND-Steuerung
@@ -14,26 +14,51 @@ das baut man dieselbe Falle in neuer Form nach.
 
 ## Hergang und Belege
 
-- `reference/dimmer.md` — Fensteraufloesung, Nacht-Standard, Vorschau-Scopes, Korrektur-Override
+- `reference/dimmer.md` — Ein-Quellen-Modell und warum es drei Quellen gab, Fensteraufloesung,
+  Anker, Modellmigration, Vorschau-Scopes, Korrektur-Override
 - `reference/dnd.md` — AutomaticZenRule, Policy, Dienstzeit-Fenster, Rufbereitschaft-Cutoff
 
 ---
 
 ## Kurzregeln
 
-- **Ein Kalendertag kann ZWEI Schichten haben.** `buildRuleSpans` und `buildDefaultNightSpans`
-  fragen JEDE Schicht des Tages (`slotsByDate`), nie nur die früheste. Wirksam wird trotzdem
+- **Es gibt GENAU EINE Fenster-Quelle: die Regeln** (seit v1.34.0). Ein Schalter (`dim_enabled`)
+  sagt „Dimmen an/aus"; WANN, wie dunkel und wie warm gedimmt wird, steht ausschließlich in einer
+  `DimRule`. Die früheren Quellen „Wellness/Wind-down" und „Nacht-Standard" sind ersatzlos
+  ausgebaut — beide sind als gewöhnliche Regel ausdrückbar (Nachtruhe = ein Fenster
+  `CLOCK 22:00 → ALARM_SONST_CLOCK 07:00`, Wellness = `ALARM −X → ALARM +0`). **Wer eine zweite,
+  „eingebaute" Quelle daneben stellt, baut die Kopplung wieder auf, an der das alte Modell
+  gescheitert ist** (Hergang in `reference/dimmer.md`).
+- **Eine Bequemlichkeit gehört AUF die Fähigkeit, nicht NEBEN sie.** Was der Nutzer schnell
+  einrichten können soll, wird als Vorlage ausgedrückt, die eine gewöhnliche, danach sichtbare und
+  änderbare Regel anlegt (`DimmerRulesViewModel.SchnellstartVorlage`) — nicht als eigene Quelle mit
+  eigenem Schalter. Eine Vorlage legt **keine zweite aktivierte Regel auf demselben `shiftPattern`**
+  an (die wäre tot, siehe `findRuleForShift`), sondern benennt die vorhandene und bietet an, sie zu
+  öffnen; ohne Schichtnamen schreibt sie gar nichts.
+- **Ein Modellwechsel braucht eine Migration, und die braucht MEHR als den App-Start.**
+  `DimmerModellMigration` läuft einmalig, versioniert (`dim_modell_migration`) und idempotent, aus
+  ZWEI Anlässen: `MainActivity.onCreate` **und** `AlarmMaintenanceService.rescheduleSideChannels`
+  (die einzige Kette, die den erreicht, der die App nach einem Auto-Update tagelang nicht öffnet).
+  Sie **gated sich selbst gegen die Entsperrung** (CE-Storage liefert davor still leere Preferences
+  — eine Migration darüber schriebe „alles aus" und setzte den Marker), sie ist **fail-safe**
+  (scheitert etwas: Dimmer aus, Marker ungesetzt, WARN, Retry), und der **Konfigurations-Import
+  nimmt den Marker zurück** — aber nur, wenn die Datei die ALTEN Schlüssel mitbringt UND kein
+  `dim_enabled`. Die alten Preference-Schlüssel werden bewusst NICHT gelöscht (eine Version Rückweg).
+- **Ein Kalendertag kann ZWEI Schichten haben.** `buildRuleSpans`
+  fragt JEDE Schicht des Tages (`slotsByDate`), nie nur die früheste. Wirksam wird trotzdem
   **pro Kalendertag GENAU eine Regel**; eine spezifische Regel **überschreibt** UNIVERSAL komplett,
   nicht additiv. UNIVERSAL heißt „alle **Tage**", nicht „alle Schichten".
 - **Konflikt zweier VERSCHIEDENER spezifischer Regeln an einem Tag: es gewinnt die Regel der
   FRÜHESTEN Schicht** — plus WARN im Release-Log UND ein Hinweis an der verdrängten Regel in der
-  Regelliste. Den Tag stattdessen auszulassen ist verboten (schaltet das Dimmen dort komplett ab,
-  samt Nacht-Standard), die Fenster zu vereinigen ebenfalls (additiv).
+  Regelliste. Den Tag stattdessen auszulassen ist verboten (schaltet das Dimmen dort komplett ab —
+  es gibt keine zweite Quelle mehr, die einspränge), die Fenster zu vereinigen ebenfalls (additiv).
 - **Wirkung und Anzeige des Konflikts teilen EINE Funktion** (`regelFuerTag`, benutzt von
   `buildRuleSpans` und `findRuleConflicts`) — zwei Implementierungen würden auseinanderdriften.
-- **Ein Ausschluss IRGENDEINER Schicht des Tages nimmt den GANZEN Tag aus dem Nacht-Standard**
-  (`istTagAusgeschlossen`), und `nextDayCoversTonight` gilt nur für einen nicht ausgeschlossenen
-  Folgetag mit Schicht.
+- **Eine Schicht aus der Nachtruhe zu nehmen heißt heute: eine spezifische Regel mit LEERER
+  Fensterliste** (sie überschreibt UNIVERSAL für diesen Tag und unterdrückt ihn damit ganz). Die
+  frühere tages-granulare Ausnahmenliste des Nacht-Standards (`istTagAusgeschlossen`,
+  `nextDayCoversTonight`) gibt es nicht mehr — und damit auch keine Schichtnamens-Liste im Dimmer,
+  die beim Umbenennen nachgezogen werden müsste (die Regeln binden weiter über `shiftPattern`).
 - **`findRuleForShift` nimmt den ERSTEN Treffer** — zwei Regeln auf demselben Muster: die zweite ist tot.
 - **Dimmer-Regeln binden über den NAMEN der Schichtdefinition** (`shiftPattern`), der frei änderbar
   ist — jedes Umbenennen zieht sie über `DimRuleUseCase.renameShiftPattern()` mit (Hergang im Skill
@@ -55,10 +80,12 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Die Fenster-Schleifen beginnen einen Kalendertag VOR `today`** (`LOOKBACK_DAYS`) — Achtung bei
   Tests, die Spannen absolut zählen.
 - **Das Fenster-Ende ist HALB OFFEN (`first <= now < last`)** — sonst bleibt der Randzustand hängen.
-- **Die Tick-Kette darf nicht abreißen**: Keep-alive-Tick (6 h), solange eine Quelle AN ist, plus
+- **Die Tick-Kette darf nicht abreißen**: Keep-alive-Tick (6 h), solange der Dimmer AN ist, plus
   kurzer Retry-Tick (15 min) nach einem Lesefehler der Fenster-Grundlage.
-- **Nacht-Standard ist eine DRITTE, eigenständige Fenster-Quelle** mit eigener Verdunkelung/Wärme.
-  **Pro Tag laufen ZWEI unabhängige Fenster-Prüfungen** (rückwärts + vorwärts), nicht eine exklusive.
+- **Ein MANUELLER Wecker spannt kein Dimm-Fenster mehr selbst auf** — er kann eines nur noch über
+  `ALARM_SONST_CLOCK` beenden. ALARM-verankerte Regelfenster lösen über die Schichtspannen auf; die
+  alte Wellness-Quelle legte ihr Fenster dagegen um JEDE Weckzeit des Alarm-Bestands. Bewusst in
+  Kauf genommen, Begründung und Ausweg stehen im Code bei `computeWindows`.
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** — je ein eigener
   `previewScope` mit `CoroutineExceptionHandler`, Reset im `finally` unter `NonCancellable`, und ein
   zweiter Tipp räumt die laufende Vorschau per `cancelAndJoin()` ZUERST auf. Diese Scopes werden
@@ -88,8 +115,8 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Ein freigegebener Tag („Tag freigeben") verliert seine Schichtspannen an EINER Stelle:
   `FreieTageStore.filtereSpannen`, angewendet direkt nach `spansNow()` in BEIDEN
   `computeWindows()` (Dimmer und DND).** Danach sieht der Tag fuer die Fensterlogik aus wie ein
-  echter freier Tag — FREI-Regel und Nacht-Standard greifen, `nextDayCoversTonight` rechnet mit
-  ihm als freiem Tag. **Das ist die ausdrueckliche Nutzer-Entscheidung, kein Versehen**: wer frei
+  echter freier Tag — die FREI-Regel greift, und ein Fenster mit `ALARM_SONST_CLOCK`-Ende findet
+  an ihm keine Weckzeit mehr, endet also an seiner Uhrzeit-Schranke. **Das ist die ausdrueckliche Nutzer-Entscheidung, kein Versehen**: wer frei
   hat, will den Abend eines freien Tages. Ein dritter Tageszustand „gar kein Dimmen" wurde bewusst
   verworfen — die Regelliste koennte ihn nicht anzeigen. Folge fuer die Nutzertexte: „Nicht
   stoeren bleibt aus" gilt NUR fuer die Dienstzeit; nachts kann Modus 1 weiterhin schalten, weil

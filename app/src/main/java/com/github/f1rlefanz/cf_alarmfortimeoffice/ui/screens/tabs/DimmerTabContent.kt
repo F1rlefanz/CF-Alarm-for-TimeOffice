@@ -3,9 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -25,9 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,13 +31,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.fmtClock
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.pickTime
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerViewModel
 
 /**
- * Dimmer-Tab: Wellness-Wind-down, eingebauter Nacht-Standard und schicht-gekoppelte Regeln
- * ein-/ausschalten sowie Intensitaet/Waerme einstellen. Der Status des Bedienungshilfen-Dienstes
+ * Dimmer-Tab: den Dimmer ein-/ausschalten, zu den schicht-gekoppelten Regeln abbiegen und
+ * Intensitaet/Waerme einstellen. Der Status des Bedienungshilfen-Dienstes
  * samt Pflicht-Offenlegung liegt im Status-Tab (DimmerAccessibilityCard) — hier gibt es nur die
  * Feature-Bedienung plus einen Vorschau-Knopf zum Ausprobieren.
  */
@@ -53,14 +46,12 @@ fun DimmerTabContent(
     modifier: Modifier = Modifier,
     viewModel: DimmerViewModel = hiltViewModel()
 ) {
-    // collectAsStateWithLifecycle, nicht collectAsState: Beide Flows sind
-    // `stateIn(SharingStarted.WhileSubscribed(5_000))` ueber insgesamt zehn DataStore-Quellen.
+    // collectAsStateWithLifecycle, nicht collectAsState: der Flow ist
+    // `stateIn(SharingStarted.WhileSubscribed(5_000))` ueber mehrere DataStore-Quellen.
     // `collectAsState` sammelt weiter, solange die Composition lebt - also auch, waehrend die App
     // im Hintergrund ist; der 5s-Timeout lief dadurch NIE ab und war eine Attrappe. Mit der
     // Lifecycle-Variante endet das Abo beim Verlassen des Vordergrunds und der Timeout wirkt.
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
-    val context = LocalContext.current
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -87,7 +78,10 @@ fun DimmerTabContent(
             }
         }
 
-        // Wellness (Wind-down) – eigener Bereich mit seinem Wind-down-Regler
+        // EIN Schalter, EINE Fenster-Quelle (die Schicht-Regeln). Die frueheren Karten
+        // "Wellness/Wind-down" und "Nacht-Standard" sind mit ihren Quellen entfallen; der
+        // eigentliche Neubau dieser Oberflaeche kommt in der naechsten Phase - hier steht
+        // absichtlich nur so viel, dass die Bedienung nicht verschwindet.
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -97,21 +91,19 @@ fun DimmerTabContent(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     SwitchRow(
-                        title = stringResource(R.string.dimmer_wellness),
-                        description = stringResource(R.string.dimmer_wellness_hint),
-                        checked = state.wellnessEnabled,
-                        onCheckedChange = { viewModel.setWellnessEnabled(it) },
+                        title = stringResource(R.string.dimmer_rules),
+                        description = stringResource(R.string.dimmer_rules_hint),
+                        checked = state.dimEnabled,
+                        onCheckedChange = { viewModel.setDimEnabled(it) },
                         titleStyle = MaterialTheme.typography.titleMedium
                     )
-                    CommitOnReleaseSlider(
-                        labelRes = R.string.dimmer_winddown_label,
-                        value = state.windDownMinutes,
-                        valueRange = DimOverlayPrefs.WINDDOWN_MIN_LIMIT.toFloat()..DimOverlayPrefs.WINDDOWN_MAX_LIMIT.toFloat(),
-                        step = 15,
-                        onCommit = { viewModel.setWindDownMinutes(it) }
-                    )
+                    Button(
+                        onClick = onNavigateToRules,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.dimmer_manage_rules))
+                    }
 
-                    // Darstellung der Wellness-Abdunkelung (Schicht-Regeln bringen eigene Werte mit)
                     Text(
                         text = stringResource(R.string.dimmer_appearance_hint),
                         style = MaterialTheme.typography.bodySmall,
@@ -145,114 +137,6 @@ fun DimmerTabContent(
             }
         }
 
-        // Nacht-Standard – eingebaute Standard-Nachtdimmung ohne eigene Regel (seit v1.17.0)
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SwitchRow(
-                        title = stringResource(R.string.dimmer_night_default),
-                        description = stringResource(R.string.dimmer_night_default_hint),
-                        checked = state.nightDefaultEnabled,
-                        onCheckedChange = { viewModel.setNightDefaultEnabled(it) },
-                        titleStyle = MaterialTheme.typography.titleMedium
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.dimmer_night_default_start),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedButton(onClick = {
-                            pickTime(context, state.nightDefaultStartMinutes) { viewModel.setNightDefaultStartMinutes(it) }
-                        }) {
-                            Text(fmtClock(state.nightDefaultStartMinutes))
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.dimmer_night_default_free_end),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedButton(onClick = {
-                            pickTime(context, state.nightDefaultFreeEndMinutes) { viewModel.setNightDefaultFreeEndMinutes(it) }
-                        }) {
-                            Text(fmtClock(state.nightDefaultFreeEndMinutes))
-                        }
-                    }
-                    Text(
-                        text = stringResource(R.string.dimmer_night_default_intensity_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    CommitOnReleaseSlider(
-                        labelRes = R.string.dimmer_strength_label,
-                        value = state.nightDefaultStrength,
-                        valueRange = 0f..DimOverlayPrefs.STRENGTH_MAX.toFloat(),
-                        onCommit = { viewModel.setNightDefaultStrength(it) }
-                    )
-                    CommitOnReleaseSlider(
-                        labelRes = R.string.dimmer_warmth_label,
-                        value = state.nightDefaultWarmth,
-                        valueRange = 0f..DimOverlayPrefs.WARMTH_MAX.toFloat(),
-                        onCommit = { viewModel.setNightDefaultWarmth(it) }
-                    )
-                    if (shiftNames.isNotEmpty()) {
-                        Text(
-                            text = stringResource(R.string.dimmer_night_default_exceptions),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            shiftNames.forEach { name ->
-                                FilterChip(
-                                    selected = name in state.nightDefaultExcludedShifts,
-                                    onClick = { viewModel.toggleNightDefaultExcludedShift(name) },
-                                    label = { Text(name) }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Schicht-Regeln – eigener Bereich
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SwitchRow(
-                        title = stringResource(R.string.dimmer_rules),
-                        description = stringResource(R.string.dimmer_rules_hint),
-                        checked = state.rulesEnabled,
-                        onCheckedChange = { viewModel.setRulesEnabled(it) },
-                        titleStyle = MaterialTheme.typography.titleMedium
-                    )
-                    Button(
-                        onClick = onNavigateToRules,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.dimmer_manage_rules))
-                    }
-                }
-            }
-        }
 
         item { Spacer(Modifier.height(24.dp)) }
     }

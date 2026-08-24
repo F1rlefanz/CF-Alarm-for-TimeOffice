@@ -193,7 +193,7 @@ class DimmerRulesViewModel @Inject constructor(
      * dieselbe Regelauswahl ueber [DimRuleUseCase.findRuleForShift].
      *
      * Zwei bewusste Leer-Ausgaenge, beide in Richtung "nichts behaupten":
-     * - **Regel-Quelle aus** (`toggles.rulesEnabled == false`): dann wirkt KEINE Regel, und ein
+     * - **Dimmer aus** (`toggles.dimEnabled == false`): dann wirkt KEINE Regel, und ein
      *   Hinweis "diese hier wirkt an 3 Tagen nicht" waere eine Halbwahrheit, die die eigentliche
      *   Ursache verdeckt.
      * - **Schichtspannen nicht lesbar**: ohne Dienstplan ist unbekannt, an welchen Tagen mehrere
@@ -203,7 +203,7 @@ class DimmerRulesViewModel @Inject constructor(
     fun refreshVerdraengteRegeln() = viewModelScope.launch {
         val alleRegeln = dimRuleUseCase.getAllRules()
         val spans = shiftSpanStore.spansNow().getOrNull()
-        if (spans == null || !prefs.togglesNow().rulesEnabled) {
+        if (spans == null || !prefs.togglesNow().dimEnabled) {
             _verdraengteRegeln.value = emptyMap()
             return@launch
         }

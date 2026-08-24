@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -151,6 +152,12 @@ object ConfigBackupFilter {
         "dim_override_paused",
         "dim_override_window_end",
         "dim_override_window_strength",
+        // Der Stand der einmaligen Dimmer-Modellmigration (DimmerModellMigration). Er beschreibt,
+        // was auf DIESEM Geraet schon umgestellt wurde - keine Einstellung. Die gefaehrliche
+        // Richtung ist der IMPORTIERTE Marker: er liesse ein noch nicht migriertes Geraet die
+        // Migration ueberspringen, und dessen alte Dimmer-Konfiguration (Wellness/Nacht-Standard)
+        // waere damit dauerhaft unlesbar - der Dimmer bliebe dort lautlos aus.
+        DimmerModellMigration.KEY_MARKER_NAME,
         // Eine laufende Pause. Importiert wuerde sie den Wecker stumm schalten.
         "master_pause_enabled",
         // "Naechsten Alarm ueberspringen" gilt fuer EINEN konkreten, bereits geplanten Alarm.

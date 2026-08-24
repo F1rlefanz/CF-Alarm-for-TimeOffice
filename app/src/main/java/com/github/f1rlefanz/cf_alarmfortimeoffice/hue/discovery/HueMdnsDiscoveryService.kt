@@ -228,8 +228,7 @@ class HueMdnsDiscoveryService(private val context: Context) {
                 HueBridge(
                     id = bridgeId,
                     ipAddress = hostAddress,
-                    name = serviceInfo.serviceName,
-                    discoveryMethod = com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryMethod.MDNS
+                    name = serviceInfo.serviceName
                 )
             } else {
                 // Ehrlicher Unterschied: gar keine Adresse vs. nur IPv6 (dann ist die Bridge da,

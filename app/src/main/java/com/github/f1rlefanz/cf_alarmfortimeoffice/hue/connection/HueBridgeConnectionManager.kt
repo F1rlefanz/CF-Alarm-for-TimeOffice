@@ -1174,7 +1174,25 @@ class HueBridgeConnectionManager private constructor(
         currentConnectionState.set(newState)
         _connectionStatus.value = newState
 
-        Logger.d(LogTags.HUE_BRIDGE, "📊 BRIDGE-MANAGER: Connection state updated to: ${newState.javaClass.simpleName}")
+        // WARUM DER FEHLERFALL EIGENS PROTOKOLLIERT WIRD: `ConnectionState.ERROR` traegt `message`
+        // und `exception` - und BEIDE fielen bis v1.34.3 auf den Boden. Der einzige Beobachter
+        // (`HueViewModel`) wertet nur den TYP aus und mappt ihn auf `HueConnectionHealth.ERROR`;
+        // die Nutzlast las niemand. Genau dort will man aber wissen, WARUM die Bridge weg ist -
+        // "Verbindung verloren" und "Health-Check gescheitert" verlangen verschiedene Antworten.
+        //
+        // Hier statt an den sieben Erzeugungsstellen: eine Stelle, die jeden Uebergang sieht.
+        // WARN, weil Release-Logs nur WARN+ fuehren und ein Bridge-Ausfall am Wecktag genau die
+        // Lage ist, in der man das Log hinterher liest. Der Rest bleibt DEBUG - ein normaler
+        // Zustandswechsel ist kein Vorfall.
+        if (newState is ConnectionState.ERROR) {
+            Logger.w(
+                LogTags.HUE_BRIDGE,
+                "⚠️ BRIDGE-MANAGER: Verbindung im Fehlerzustand - ${newState.message}",
+                newState.exception
+            )
+        } else {
+            Logger.d(LogTags.HUE_BRIDGE, "📊 BRIDGE-MANAGER: Connection state updated to: ${newState.javaClass.simpleName}")
+        }
     }
 
     /**

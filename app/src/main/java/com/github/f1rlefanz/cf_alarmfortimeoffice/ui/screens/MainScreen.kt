@@ -464,7 +464,7 @@ fun MainScreen(
                     onOpenSettings = {
                         try {
                             timeOfficeSettingsLauncher.launch(
-                                TimeOfficeHealthHelper.createAppInfoIntent(context)
+                                TimeOfficeHealthHelper.createAppInfoIntent()
                             )
                             Logger.d(
                                 LogTags.TIMEOFFICE_HEALTH,

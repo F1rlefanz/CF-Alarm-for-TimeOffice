@@ -113,10 +113,6 @@ class HueTrustManager internal constructor(
             return sslContext
         }
 
-        /** Convenience: SSLSocketFactory built on top of [createSecureSSLContext]. */
-        fun createSecureSSLSocketFactory(context: Context? = null): SSLSocketFactory =
-            createSecureSSLContext(context).socketFactory
-
         /**
          * Hostname verifier for Hue Bridge connections.
          *

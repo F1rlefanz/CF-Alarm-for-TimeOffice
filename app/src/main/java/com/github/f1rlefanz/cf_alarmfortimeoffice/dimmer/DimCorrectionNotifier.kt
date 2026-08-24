@@ -55,10 +55,15 @@ class DimCorrectionNotifier @Inject constructor(
             actionIntent(DimNotificationService.ACTION_PAUSE, 2)
         }
 
+        // WARUM DIE WAERME MIT DRINSTEHT: Sie wurde bis v1.34.3 uebergeben und nie gelesen - ein
+        // toter Parameter. Loeschen waere die eine Antwort gewesen, anzeigen ist die bessere: der
+        // Nutzer stellt die Waerme pro Regel ein, sah aber nirgends, welcher Wert gerade WIRKT.
+        // Und genau hier steht der wirkende Wert schon zur Verfuegung - inklusive dem, was ein
+        // Korrektur-Override daraus gemacht hat.
         val statusText = if (paused) {
             "Dimmer pausiert"
         } else {
-            "Verdunkelung: $strength %"
+            "Verdunkelung: $strength %, Wärme: $warmth %"
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)

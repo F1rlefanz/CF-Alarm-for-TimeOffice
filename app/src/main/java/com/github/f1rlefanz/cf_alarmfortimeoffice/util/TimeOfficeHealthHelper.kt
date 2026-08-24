@@ -84,7 +84,7 @@ object TimeOfficeHealthHelper {
         BatteryOptimizationHelper.isExempted(context, TIMEOFFICE_PACKAGE)
 
     /** Deep-Link auf TimeOffices eigene App-Info-Seite — dort liegen Akku- UND Nichtnutzungs-Schalter. */
-    fun createAppInfoIntent(context: Context): Intent =
+    fun createAppInfoIntent(): Intent =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = "package:$TIMEOFFICE_PACKAGE".toUri()
         }

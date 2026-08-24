@@ -117,35 +117,35 @@ class Pruefrunde8ManuellerWeckerTest {
         alarmUseCase = mock<IAlarmUseCase>()
         whenever(alarmUseCase.activeAlarms).thenReturn(flowOf(emptyList()))
         alarmUseCase.stub {
-            onBlocking { getAllAlarms() } doReturn Result.success(emptyList())
+            on { getAllAlarms() } doReturn Result.success(emptyList())
             // DURCHREICHEN statt festverdrahtetem Erfolg: `AlarmUseCase.saveAlarm()` tut im
             // Original genau das (eine Zeile Delegation). Nur so entsteht der Fehlschlag im Test
             // dort, wo er auch in der App entsteht - im Schreibweg des Repositoriums.
-            onBlocking { saveAlarm(any()) } doSuspendableAnswer { aufruf ->
+            on { saveAlarm(any()) } doSuspendableAnswer { aufruf ->
                 alarmRepository.saveAlarm(aufruf.getArgument<AlarmInfo>(0))
             }
-            onBlocking { scheduleSystemAlarm(any()) } doReturn Result.success(Unit)
-            onBlocking { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
-            onBlocking { deleteAlarm(any()) } doReturn Result.success(Unit)
+            on { scheduleSystemAlarm(any()) } doReturn Result.success(Unit)
+            on { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
+            on { deleteAlarm(any()) } doReturn Result.success(Unit)
         }
 
         val skipUseCase = mock<IAlarmSkipUseCase>()
         whenever(skipUseCase.skipStatusFlow).thenReturn(flowOf(AlarmSkipState()))
         skipUseCase.stub {
-            onBlocking { getSkipStatus() } doReturn Result.success(AlarmSkipState())
+            on { getSkipStatus() } doReturn Result.success(AlarmSkipState())
         }
 
         shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(konfiguration)
         shiftUseCase.stub {
             // Der Einmal-Read im Erstellungspfad sieht denselben Stand wie der Flow.
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(konfiguration.value)
+            on { getCurrentShiftConfig() } doReturn Result.success(konfiguration.value)
         }
 
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
         val masterPausePrefs = mock<MasterPausePrefs>()
-        masterPausePrefs.stub { onBlocking { pausedNow() } doReturn false }
+        masterPausePrefs.stub { on { pausedNow() } doReturn false }
 
         return AlarmViewModel(
             alarmUseCase = alarmUseCase,
@@ -161,9 +161,9 @@ class Pruefrunde8ManuellerWeckerTest {
     /** Attrappe fuer alle Tests, die mit der Persistenz nichts zu tun haben. */
     private fun heilesRepositorium(): IAlarmRepository = mock<IAlarmRepository>().apply {
         stub {
-            onBlocking { isPersistenceBlocked() } doReturn false
-            onBlocking { istLetzterSchreibvorgangGescheitert() } doReturn false
-            onBlocking { saveAlarm(any()) } doReturn Result.success(Unit)
+            on { isPersistenceBlocked() } doReturn false
+            on { istLetzterSchreibvorgangGescheitert() } doReturn false
+            on { saveAlarm(any()) } doReturn Result.success(Unit)
         }
     }
 
@@ -207,7 +207,7 @@ class Pruefrunde8ManuellerWeckerTest {
      */
     private fun nurEinmalReadAendern(neu: ShiftConfig) {
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(neu)
+            on { getCurrentShiftConfig() } doReturn Result.success(neu)
         }
     }
 

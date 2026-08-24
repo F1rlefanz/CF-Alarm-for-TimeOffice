@@ -89,14 +89,14 @@ class AlarmViewModelSkipRestoreTest {
         // Reaktive Schichtliste: AlarmViewModel sammelt diesen Flow seit Pruefrunde 8 im init{}.
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn
+            on { getCurrentShiftConfig() } doReturn
                 Result.success(ShiftConfig(autoAlarmEnabled = autoAlarmEnabled))
         }
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub {
-            onBlocking { pausedNow() } doReturn masterPaused
+            on { pausedNow() } doReturn masterPaused
         }
 
         return AlarmViewModel(
@@ -108,8 +108,8 @@ class AlarmViewModelSkipRestoreTest {
             alarmPrefs = alarmPrefs,
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
-                    onBlocking { isPersistenceBlocked() } doReturn false
-                    onBlocking { istLetzterSchreibvorgangGescheitert() } doReturn false
+                    on { isPersistenceBlocked() } doReturn false
+                    on { istLetzterSchreibvorgangGescheitert() } doReturn false
                 }
             }
         )
@@ -123,11 +123,11 @@ class AlarmViewModelSkipRestoreTest {
         val useCase = mock<IAlarmUseCase>()
         whenever(useCase.activeAlarms).thenReturn(flowOf(alarms))
         useCase.stub {
-            onBlocking { getAllAlarms() } doReturn Result.success(alarms)
-            onBlocking { saveAlarm(any()) } doReturn saveResult
-            onBlocking { scheduleSystemAlarm(any()) } doReturn scheduleResult
-            onBlocking { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
-            onBlocking { deleteAlarm(any()) } doReturn Result.success(Unit)
+            on { getAllAlarms() } doReturn Result.success(alarms)
+            on { saveAlarm(any()) } doReturn saveResult
+            on { scheduleSystemAlarm(any()) } doReturn scheduleResult
+            on { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
+            on { deleteAlarm(any()) } doReturn Result.success(Unit)
         }
         return useCase
     }
@@ -154,12 +154,12 @@ class AlarmViewModelSkipRestoreTest {
         }
         whenever(skipUseCase.skipStatusFlow).thenReturn(flowOf(state))
         skipUseCase.stub {
-            onBlocking { getSkipStatus() } doReturn if (statusFails) {
+            on { getSkipStatus() } doReturn if (statusFails) {
                 Result.failure(IllegalStateException("DataStore nicht lesbar"))
             } else {
                 Result.success(state)
             }
-            onBlocking { cancelSkip() } doReturn Result.success(Unit)
+            on { cancelSkip() } doReturn Result.success(Unit)
         }
         return skipUseCase
     }

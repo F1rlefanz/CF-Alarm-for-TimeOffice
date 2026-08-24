@@ -99,11 +99,11 @@ class Pruefrunde6SkipManualAlarmTest {
         val useCase = mock<IAlarmUseCase>()
         whenever(useCase.activeAlarms).thenReturn(flowOf(alarms))
         useCase.stub {
-            onBlocking { getAllAlarms() } doReturn alarmsResult
-            onBlocking { saveAlarm(any()) } doReturn saveResult
-            onBlocking { scheduleSystemAlarm(any()) } doReturn scheduleResult
-            onBlocking { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
-            onBlocking { deleteAlarm(any()) } doReturn Result.success(Unit)
+            on { getAllAlarms() } doReturn alarmsResult
+            on { saveAlarm(any()) } doReturn saveResult
+            on { scheduleSystemAlarm(any()) } doReturn scheduleResult
+            on { cancelSystemAlarm(any()) } doReturn Result.success(Unit)
+            on { deleteAlarm(any()) } doReturn Result.success(Unit)
         }
         return useCase
     }
@@ -126,8 +126,8 @@ class Pruefrunde6SkipManualAlarmTest {
         }
         whenever(skipUseCase.skipStatusFlow).thenReturn(flowOf(state))
         skipUseCase.stub {
-            onBlocking { getSkipStatus() } doReturn Result.success(state)
-            onBlocking { cancelSkip() } doReturn cancelResult
+            on { getSkipStatus() } doReturn Result.success(state)
+            on { cancelSkip() } doReturn cancelResult
         }
         return skipUseCase
     }
@@ -144,13 +144,13 @@ class Pruefrunde6SkipManualAlarmTest {
         whenever(shiftUseCase.shiftConfig)
             .thenReturn(flowOf(shiftConfigResult.getOrNull() ?: ShiftConfig()))
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn shiftConfigResult
+            on { getCurrentShiftConfig() } doReturn shiftConfigResult
         }
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub {
-            onBlocking { pausedNow() } doReturn false
+            on { pausedNow() } doReturn false
         }
 
         return AlarmViewModel(
@@ -162,8 +162,8 @@ class Pruefrunde6SkipManualAlarmTest {
             alarmPrefs = alarmPrefs,
             alarmRepository = mock<IAlarmRepository>().apply {
                 stub {
-                    onBlocking { isPersistenceBlocked() } doReturn false
-                    onBlocking { istLetzterSchreibvorgangGescheitert() } doReturn false
+                    on { isPersistenceBlocked() } doReturn false
+                    on { istLetzterSchreibvorgangGescheitert() } doReturn false
                 }
             }
         )

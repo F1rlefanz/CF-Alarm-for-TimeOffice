@@ -115,7 +115,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
          */
         vollstaendig: Boolean = false,
         alarmUseCase: IAlarmUseCase = mock<IAlarmUseCase>().apply {
-            stub { onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList()) }
+            stub { on { syncAlarms(any(), any()) } doReturn Result.success(emptyList()) }
         }
     ): Umgebung {
         val store = MutableStateFlow(bestand)
@@ -124,29 +124,29 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         shiftUseCase.stub {
             // Der maßgebliche Lesepfad liefert immer den AKTUELLEN Store-Inhalt - sonst könnte der
             // Beobachter für externe Änderungen gar nicht funktionieren.
-            onBlocking { getCurrentShiftConfig() } doAnswer { Result.success(store.value) }
+            on { getCurrentShiftConfig() } doAnswer { Result.success(store.value) }
             // Wie DataStore: das Speichern veröffentlicht den neuen Wert auch im Flow. Ohne das
             // sähe dieser Test nie, ob der Beobachter beim eigenen Schreibvorgang ein zweites Mal
             // migriert (er darf nicht).
-            onBlocking { saveShiftConfig(any()) } doAnswer { aufruf ->
+            on { saveShiftConfig(any()) } doAnswer { aufruf ->
                 store.value = aufruf.getArgument(0)
                 Result.success(Unit)
             }
-            onBlocking { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
+            on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
         }
         val dim = mock<DimRuleUseCase>()
-        dim.stub { onBlocking { renameShiftPattern(any(), any()) } doReturn dimErgebnis }
+        dim.stub { on { renameShiftPattern(any(), any()) } doReturn dimErgebnis }
         val hue = mock<HueRuleUseCase>()
-        hue.stub { onBlocking { renameShiftPattern(any(), any()) } doReturn hueErgebnis }
+        hue.stub { on { renameShiftPattern(any(), any()) } doReturn hueErgebnis }
         val dnd = mock<DndPrefs>()
         dnd.stub {
-            onBlocking { renameShiftName(any(), any()) } doReturn dndPrefsErgebnis
-            onBlocking { removeShiftName(any(), any()) } doReturn dndEntfernErgebnis
+            on { renameShiftName(any(), any()) } doReturn dndPrefsErgebnis
+            on { removeShiftName(any(), any()) } doReturn dndEntfernErgebnis
         }
         val dimPrefs = mock<DimOverlayPrefs>()
         dimPrefs.stub {
-            onBlocking { renameShiftName(any(), any()) } doReturn dimPrefsErgebnis
-            onBlocking { removeShiftName(any(), any()) } doReturn dimEntfernErgebnis
+            on { renameShiftName(any(), any()) } doReturn dimPrefsErgebnis
+            on { removeShiftName(any(), any()) } doReturn dimEntfernErgebnis
         }
         val dimSchedule = mock<DimScheduleUseCase>()
         val dndSchedule = mock<DndScheduleUseCase>()
@@ -360,11 +360,11 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         whenever(shiftUseCase.shiftConfig).thenReturn(store)
         var defekt = false
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doAnswer {
+            on { getCurrentShiftConfig() } doAnswer {
                 if (defekt) Result.failure(IllegalStateException("Konfiguration nicht lesbar"))
                 else Result.success(store.value)
             }
-            onBlocking { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
+            on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
         }
         val dim = mock<DimRuleUseCase>()
         val hue = mock<HueRuleUseCase>()
@@ -564,7 +564,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         val spanne = arrayOf("AD1")
         val alarm = mock<IAlarmUseCase>()
         alarm.stub {
-            onBlocking { syncAlarms(any(), any()) } doAnswer {
+            on { syncAlarms(any(), any()) } doAnswer {
                 spanne[0] = "Abrufdienst"
                 Result.success(emptyList())
             }
@@ -577,13 +577,13 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         )
         val gesehen = mutableListOf<String>()
         u.dimSchedule.stub {
-            onBlocking { enable() } doAnswer {
+            on { enable() } doAnswer {
                 gesehen += "dim:" + spanne[0]
                 Unit
             }
         }
         u.dndSchedule.stub {
-            onBlocking { enable() } doAnswer {
+            on { enable() } doAnswer {
                 gesehen += "dnd:" + spanne[0]
                 Unit
             }

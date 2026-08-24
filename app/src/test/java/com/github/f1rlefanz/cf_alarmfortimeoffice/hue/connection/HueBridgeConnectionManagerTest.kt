@@ -198,7 +198,7 @@ class HueBridgeConnectionManagerTest {
         runBlocking {
             val (manager, _, apiClient) = buildManager(isReachable = false)
             apiClient.stub {
-                onBlocking { getBridgeConfig(any(), any()) } doAnswer { throw java.io.IOException("no route") }
+                on { getBridgeConfig(any(), any()) } doAnswer { throw java.io.IOException("no route") }
             }
 
             assertThrows(IllegalStateException::class.java) {

@@ -75,9 +75,9 @@ class ShiftViewModelSyncGateTest {
         val shiftUseCase = mock<IShiftUseCase>()
         whenever(shiftUseCase.shiftConfig).thenReturn(flowOf(ShiftConfig()))
         shiftUseCase.stub {
-            onBlocking { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
-            onBlocking { saveShiftConfig(any()) } doReturn Result.success(Unit)
-            onBlocking { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
+            on { getCurrentShiftConfig() } doReturn Result.success(ShiftConfig())
+            on { saveShiftConfig(any()) } doReturn Result.success(Unit)
+            on { recognizeShiftsInEvents(any()) } doReturn Result.success(emptyList())
         }
         return ShiftViewModel(
             shiftUseCase = shiftUseCase,
@@ -120,7 +120,7 @@ class ShiftViewModelSyncGateTest {
         // PFLICHT: der Erfolgszweig liest `alarms.size` - ein ungestubbtes `null` wirft dort eine
         // NPE, die wie ein Fehler im Gate aussieht, obwohl das Gate gerade korrekt durchgelassen hat.
         alarmUseCase.stub {
-            onBlocking { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+            on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
         }
         val vm = buildViewModel(holder, alarmUseCase)
         advanceUntilIdle()
@@ -140,7 +140,7 @@ class ShiftViewModelSyncGateTest {
         holder.updateEvents(listOf(event("A")), complete = false)
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            onBlocking { deleteAllAlarms() } doReturn Result.success(Unit)
+            on { deleteAllAlarms() } doReturn Result.success(Unit)
         }
         val vm = buildViewModel(holder, alarmUseCase)
         advanceUntilIdle()

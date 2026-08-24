@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.34.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.34.4 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Nur Aufräumen — für dich ändert sich nichts._
+
+### 🧰 Intern
+
+- **Drei ungenutzte Importe entfernt.** Reste der vorangegangenen Aufräumrunden. Kein sichtbarer Effekt; der Eintrag steht hier nur, weil jede ausgelieferte Version einen bekommt.
+
+## Version 1.34.3
 
 **Stand:** August 2026
 

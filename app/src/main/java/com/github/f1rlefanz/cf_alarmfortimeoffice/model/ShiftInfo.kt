@@ -7,7 +7,6 @@ data class ShiftInfo(
     val shiftType: ShiftType,
     val startTime: LocalDateTime,
     val endTime: LocalDateTime,
-    val eventTitle: String,
     val alarmTime: LocalDateTime
 )
 

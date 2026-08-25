@@ -723,7 +723,6 @@ class ShiftViewModel @Inject constructor(
                         ),
                         startTime = match.calendarEvent.startTime,
                         endTime = match.calendarEvent.endTime,
-                        eventTitle = match.calendarEvent.title,
                         alarmTime = match.calculatedAlarmTime
                     )
                 }

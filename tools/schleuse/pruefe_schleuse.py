@@ -123,11 +123,27 @@ def python_skript(*argumente):
 
 
 def gradle(*aufgaben, timeout):
-    """Ruft den Gradle-Wrapper - unter Windows die .bat, sonst das Shellskript."""
+    """Ruft den Gradle-Wrapper - unter Windows die .bat, sonst das Shellskript.
+
+    `--offline` NUR lokal. Es steht dort, weil der Rechner des Eigentuemers einen
+    gefuellten Gradle-Cache hat (gemessen 25.08.2026: 11 GB) und weil Gradles
+    Netzzugriff hier unbestaendig ist (Memory `env_gradle_loopback`) - offline ist
+    schneller UND verlaesslicher.
+
+    Auf einem CI-Runner ist beides umgekehrt: der Container startet ohne Cache.
+    `--offline` scheitert dort an der ersten fehlenden Abhaengigkeit, die Schleuse
+    meldete "Testlauf NICHT DURCHFUEHRBAR" und blockierte jeden autonomen Lauf -
+    fail-closed, also richtig gemeldet, aber aus dem falschen Grund. Deshalb faellt
+    das Flag weg, sobald `CI` gesetzt ist (GitHub Actions setzt es auf "true").
+
+    Wichtig: NICHT den Rueckgabewert von Gradle als Testurteil verwenden - das
+    Urteil kommt weiterhin aus den JUnit-XML, siehe pruefe_tests().
+    """
     wrapper = os.path.join(WURZEL, "gradlew.bat" if os.name == "nt" else "gradlew")
     if not os.path.exists(wrapper):
         return None, "Gradle-Wrapper nicht gefunden: {}".format(wrapper)
-    return lauf((wrapper, "--offline") + aufgaben, timeout=timeout)
+    flags = () if os.environ.get("CI") else ("--offline",)
+    return lauf((wrapper,) + flags + aufgaben, timeout=timeout)
 
 
 def lies(pfad):

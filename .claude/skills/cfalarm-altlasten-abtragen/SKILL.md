@@ -102,6 +102,14 @@ gh pr create --fill
 beheben: verwirf die ganze Sitzung** (`git checkout main && git branch -D …`) und schreib ins
 Issue, woran es lag. Ein halber Umbau ist schlimmer als keiner.
 
+**Über deinen PR entscheidest nicht du.** `.github/workflows/torwaechter.yml` holt ihn sich,
+baut und testet **selbst** (er glaubt keinem CI-Status), prüft ihn gegen die Leitplanken oben,
+lässt ihn von drei unabhängigen Agenten *widerlegen* — und merged oder schließt. Wird er
+geschlossen, öffnet der Torwächter das Aufräum-Issue wieder; der Blickwinkel geht also nicht
+verloren. Deshalb ist die Commit-Nachricht kein Beiwerk: **ohne Rohbefund- und
+Bestätigungszahl schließt er den PR.** Der Erzeuger läuft täglich als
+`.github/workflows/aufraeumen.yml`.
+
 ## Diesen Skill lebendig halten
 
 Jede Runde ergänzt hier: neue Leitplanke, wenn ein Fehlurteil passiert ist; neue Zeile in

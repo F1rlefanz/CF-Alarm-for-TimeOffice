@@ -27,7 +27,19 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.35.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.35.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Ein von Hand angelegter Wecker schaltet jetzt auch dein Licht._
+
+### 🐛 Behoben
+
+- **Manueller Wecker ließ das Licht aus.** Wer einen Wecker über „Manueller Alarm" anlegte, bekam seine Hue-Regel für dieselbe Schicht nicht ausgeführt – der Wecker klingelte, das Licht blieb dunkel, und nichts wies darauf hin. Ursache war der Zusatz „(Manuell)" im Schichtnamen, an dem die Zuordnung scheiterte.
+- **Aktualisieren meldet jetzt, wenn es nicht klappt.** Das Symbol in der Lampen- und Szenenauswahl tat bei nicht erreichbarer Bridge sichtbar nichts. Jetzt sagt es Bescheid. Deine bereits geladene Liste bleibt dabei wie bisher stehen.
+- **„Ausschalten nach: 1 Minuten"** heißt jetzt „1 Minute".
+
+## Version 1.35.0
 
 **Stand:** August 2026
 

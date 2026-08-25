@@ -109,6 +109,22 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`getScenes()` wirft bei Parserfehler, statt auf `emptyMap()` zu degradieren** — anders als
   `getLights`/`getGroups`. „Keine Szenen" und „Szenen nicht abrufbar" sind zwei Aussagen, und die
   Oberflaeche hat dafuer zwei getrennte Texte. Nicht „angleichen".
+- **Ein VON HAND angelegter Wecker heisst "Fruehschicht (Manuell)" - wer damit zuordnet, findet
+  nichts.** Das Anhaengsel steht bewusst im `AlarmInfo.shiftName` (die Weckerliste soll es
+  zeigen), aber `ShiftConfig.findDefinitionFor()` kennt es nicht. Bis v1.35.1 fuehrte deshalb ein
+  manueller Wecker **nie** seine Hue-Regeln aus: er klingelte normal, das Licht blieb aus, und im
+  Log stand nur `No shift definition found ... (skipping Hue rules)` - das liest sich wie "keine
+  Regel konfiguriert". Am Emulator gegen die echte Bridge gemessen (27.08.2026); kein Unit-Test
+  und kein Blick in die Oberflaeche zeigte es, sondern erst ein echter Weckvorgang. Wer ueber den
+  Schichtnamen ZUORDNET, nimmt `reinerSchichtname()`; wer ihn ANZEIGT, nimmt `shiftName`.
+- **Ein Aktualisieren-Knopf, der stumm scheitert, ist von einem defekten nicht zu
+  unterscheiden.** `HueViewModel.refreshLightTargets(userInitiated = true)` meldet den Fehlschlag;
+  die automatischen Laeufe (Start, nach der Kopplung) bleiben bewusst still, dort erklaert die
+  Verbindungs-Karte den Zustand ohnehin. Die LISTE bleibt in beiden Faellen unangetastet - "Bridge
+  nicht erreichbar" ist keine Aussage darueber, welche Lampen es gibt. Folge davon: bei einer
+  komplett unerreichbaren Bridge greift der `scenesFailed`-Zweig der Szenen-Karte NICHT (dann
+  scheitert die Gesamtabfrage und die alte Liste bleibt stehen) - er ist fuer den Teilausfall da,
+  in dem nur `/scenes` scheitert.
 - **Die drei Regel-Modi (Szene, Manuell, Sonnenaufgang) schliessen sich aus, und zwar
   STRUKTURELL**: `HueRuleFormState.toRule()` liest nur die Felder des aktiven Modus. Der Modus
   wird an genau EINER Stelle hergeleitet (`HueScheduleRule.modus`) — Editor, Regel-Liste und Tab

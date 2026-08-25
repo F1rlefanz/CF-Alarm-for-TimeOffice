@@ -143,4 +143,278 @@
     <string name="dnd_policy_media_hint">Aus lässt laufende Wiedergabe unangetastet.</string>
     <string name="dnd_policy_alarms">Wecker anderer Apps</string>
     <string name="dnd_policy_alarms_hint">Betrifft nur fremde Wecker-/Alarm-Apps – der Wecker dieser App klingelt immer, unabhängig davon.</string>
+
+    <!-- ============================================================================
+         Philips Hue
+
+         Bis v1.35.1 fuehrte dieser Bereich als EINZIGER seine Nutzertexte inline im
+         Kotlin-Code (202 Stueck, davon 45 mit Platzhaltern) - der Dimmer hatte 70
+         Ressourcen, Hue null. Wer hier etwas ergaenzt, legt den Text hier an.
+
+         DIE GRENZE IST BEWUSST GEZOGEN: Ressourcen gelten fuer die COMPOSE-OBERFLAECHE.
+         Text, der in der Fach- oder ViewModel-Schicht entsteht (UnresolvedRuleTarget.label,
+         der Vorschau-Hinweis aus HueRuleUseCase, die Meldung aus HueViewModel), bleibt im
+         Code: dafuer einen Context in die Fachschicht zu ziehen waere schlimmer als die
+         Uneinheitlichkeit. Wer dort etwas anfasst, faengt sich also weiter deutschen Text -
+         das ist kein Versehen.
+
+         Zaehlabhaengige Texte gehoeren in <plurals>, nicht in einen Format-String mit
+         if (n == 1) daneben. Am Geraet stand sonst "1 Minuten"; Lint meldet es als
+         PluralsCandidate.
+         ============================================================================ -->
+
+    <!-- Regel-Editor: Grunddaten -->
+    <string name="hue_rule_info_header">Regel-Informationen</string>
+    <string name="hue_rule_name_label">Regel-Name</string>
+    <string name="hue_rule_name_placeholder">z.B. Morgenlicht Frühschicht</string>
+    <string name="hue_rule_name_required">Regel-Name ist erforderlich</string>
+    <string name="hue_rule_enabled_title">Regel aktivieren</string>
+    <string name="hue_rule_enabled_hint">Regel wird automatisch ausgeführt, wenn Bedingungen erfüllt sind</string>
+
+    <!-- Regel-Editor: Betriebsart -->
+    <string name="hue_mode_header">Wie soll das Licht gesetzt werden?</string>
+    <string name="hue_mode_scene">Szene</string>
+    <string name="hue_mode_manual">Manuell</string>
+    <string name="hue_mode_sunrise">Sonnenaufgang</string>
+    <string name="hue_mode_scene_explain">Eine Szene aus deiner Hue-App. Sie bringt Helligkeit und Farbe je Lampe selbst mit.</string>
+    <string name="hue_mode_manual_explain">Lampen und Gruppen selbst auswählen und Helligkeit und Farbe einstellen.</string>
+    <string name="hue_mode_sunrise_explain">Langsam heller werden — von warm nach kühl, über mehrere Minuten.</string>
+
+    <!-- Nicht zuordenbare Ziele -->
+    <string name="hue_unresolved_body">Betroffen: %1$s. Die Lampen stammen von einer anderen Bridge – diese Regeln schalten dafür nichts. Was sich über den Namen wiederfinden ließ, wurde bereits automatisch zugeordnet.</string>
+    <string name="hue_unresolved_action">Regeln prüfen</string>
+
+
+    <!-- Regel-Editor: Schichtmuster -->
+    <string name="hue_shift_header">Schichtmuster</string>
+    <string name="hue_shift_intro">Wählen Sie aus, für welches Schichtmuster diese Regel gilt:</string>
+    <string name="hue_shift_none_title">Keine Schichtmuster konfiguriert</string>
+    <string name="hue_shift_none_body">Bitte konfigurieren Sie zunächst Ihre Schichtmuster in den Einstellungen.</string>
+    <string name="hue_shift_universal_hint">Gilt für jede erkannte Schicht</string>
+    <string name="hue_shift_required">Bitte wählen Sie ein Schichtmuster aus</string>
+    <string name="hue_shift_universal_label">Alle Schichten</string>
+
+    <!-- Regel-Editor: Automatisch ausschalten -->
+    <string name="hue_autooff_title">Automatisch ausschalten</string>
+    <string name="hue_autooff_hint_scene">Schaltet den Raum wieder aus, nachdem die Szene gelaufen ist.</string>
+    <string name="hue_autooff_hint_default">Schaltet die Lichter wieder aus, nachdem die Regel sie eingeschaltet hat.</string>
+    <string name="hue_autooff_from_sunrise">Gemessen ab dem Ende des Sonnenaufgangs.</string>
+    <string name="hue_autooff_from_rule">Gemessen ab der Regelausführung (Weckzeit).</string>
+    <string name="hue_autooff_from_rule_scene">Gemessen ab der Regelausführung (Weckzeit). Ausgeschaltet wird der ganze Raum «%1$s» – eine Szene lässt sich nicht einzeln zurücknehmen.</string>
+
+    <!-- Regel-Editor: Sonnenaufgang -->
+    <string name="hue_sunrise_title">Sunrise-Lichtwecker</string>
+    <string name="hue_sunrise_intro">Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.</string>
+    <string name="hue_sunrise_start_k">Start: %1$d K (warm)</string>
+    <string name="hue_sunrise_end_k">Ziel: %1$d K</string>
+    <string name="hue_sunrise_end_brightness">Ziel-Helligkeit: %1$d%%</string>
+    <string name="hue_sunrise_when">Zeitpunkt</string>
+    <string name="hue_sunrise_before_alarm">Vor dem Alarm</string>
+    <string name="hue_sunrise_at_alarm">Ab Alarmzeit</string>
+    <string name="hue_sunrise_at_hint">Rampe startet zur Weckzeit</string>
+
+
+    <!-- Regel-Editor: Szenen-Auswahl -->
+    <string name="hue_scene_header">Szene</string>
+    <string name="hue_scene_refresh">Szenen aktualisieren</string>
+    <string name="hue_scene_failed">Die Szenen konnten nicht von der Bridge geladen werden. Prüfe, ob du im selben WLAN bist, und tippe dann auf das Aktualisieren-Symbol.</string>
+    <string name="hue_scene_none">Auf dieser Bridge gibt es keine Szenen, die einem Raum oder einer Zone zugeordnet sind. Lege in der Hue-App eine Szene für einen Raum an – danach erscheint sie hier.</string>
+    <string name="hue_scene_intro">Wähle eine Szene aus deiner Hue-App. Helligkeit und Farbe kommen dann aus der Szene selbst.</string>
+    <string name="hue_scene_unknown_targets">Auf dieser Bridge unbekannt: %1$s. Bitte neu auswählen.</string>
+    <string name="hue_scene_pick_room">Raum wählen</string>
+    <string name="hue_scene_required">Bitte eine Szene auswählen</string>
+    <string name="hue_scene_lightscene_note">Szenen ohne Raum oder Zone werden hier nicht angeboten. Ordne sie in der Hue-App einem Raum zu, dann erscheinen sie.</string>
+
+    <!-- Regel-Editor: Zielauswahl -->
+    <string name="hue_targets_header">Zielauswahl</string>
+    <string name="hue_targets_refresh">Lichter aktualisieren</string>
+    <string name="hue_targets_intro">Wählen Sie aus, welche Lichter oder Gruppen diese Regel steuern soll:</string>
+    <string name="hue_targets_unknown">Auf dieser Bridge unbekannt: %1$s. Diese Ziele stammen von einer anderen Bridge und sind unten nicht angehakt – bitte neu auswählen.</string>
+    <string name="hue_targets_no_groups">Keine Gruppen gefunden. Erstellen Sie zunächst Gruppen in der Hue-App.</string>
+    <string name="hue_targets_no_lights">Keine Lichter gefunden. Stellen Sie sicher, dass Ihre Bridge verbunden ist.</string>
+    <string name="hue_targets_group_state">Gruppe • %1$s</string>
+    <string name="hue_targets_light_state">Licht • %1$s</string>
+    <string name="hue_state_on">An</string>
+    <string name="hue_state_off">Aus</string>
+    <string name="hue_targets_required">Bitte wählen Sie mindestens ein Licht oder eine Gruppe aus</string>
+
+    <!-- Regel-Editor: Aktion (manuell) -->
+    <string name="hue_action_on">Einschalten</string>
+    <string name="hue_action_off">Ausschalten</string>
+    <string name="hue_action_hint_on">Lichter einschalten bei Regelausführung</string>
+    <string name="hue_action_hint_off">Lichter ausschalten bei Regelausführung</string>
+    <string name="hue_action_brightness">Helligkeit: %1$d%%</string>
+    <string name="hue_action_brightness_max">100%</string>
+    <string name="hue_action_color">Farbe</string>
+    <string name="hue_action_color_none">Standard</string>
+    <string name="hue_action_color_white">Weißton</string>
+    <string name="hue_action_color_preset">Farbe</string>
+    <string name="hue_action_color_temp">Farbtemperatur: %1$d K</string>
+    <string name="hue_action_color_warm">Warm (2000K)</string>
+    <string name="hue_action_color_cool">Kühl (6500K)</string>
+
+
+    <!-- Regel-Editor: Vorschau -->
+    <string name="hue_preview_header">Regel-Vorschau</string>
+    <string name="hue_preview_test">Regel testen</string>
+    <string name="hue_preview_quoted_name">\"%1$s\"</string>
+    <string name="hue_preview_any_shift">Bei jeder Schicht:</string>
+    <string name="hue_preview_shift">Bei %1$s-Schicht:</string>
+    <string name="hue_preview_at_alarm">Ausführung zur Weckzeit</string>
+    <string name="hue_preview_scene">🎬 Szene «%1$s» im Raum %2$s</string>
+    <string name="hue_preview_sunrise_before">vor dem Alarm</string>
+    <string name="hue_preview_sunrise_at">ab Alarmzeit</string>
+    <string name="hue_preview_manual_brightness"> mit %1$d%% Helligkeit</string>
+    <string name="hue_preview_manual_kelvin">, %1$d K</string>
+    <string name="hue_preview_manual_color">, %1$s</string>
+    <string name="hue_preview_status">Status: %1$s</string>
+    <string name="hue_preview_status_on">Aktiviert</string>
+    <string name="hue_preview_status_off">Deaktiviert</string>
+    <string name="hue_preview_test_rule_name">Test-Regel</string>
+
+    <!-- Regel-Liste -->
+    <string name="hue_rulecard_shift">Schichtmuster: %1$s</string>
+    <string name="hue_rulecard_active">Aktiv</string>
+    <string name="hue_rulecard_inactive">Deaktiviert</string>
+    <string name="hue_rulecard_edit">Bearbeiten</string>
+    <string name="hue_rulecard_test">Test</string>
+    <string name="hue_rulecard_delete">Regel löschen</string>
+    <string name="hue_rulecard_delete_title">Regel löschen?</string>
+    <string name="hue_rulecard_delete_body">Die Regel \"%1$s\" wird mit allen Einstellungen (Lampenauswahl, Farbe, Auto-Aus, Sonnenaufgang) gelöscht. Das lässt sich nicht rückgängig machen.</string>
+    <string name="hue_rulecard_delete_confirm">Löschen</string>
+    <string name="hue_cancel">Abbrechen</string>
+    <string name="hue_rulecard_desc_scene_room">Szene «%1$s» · %2$s</string>
+    <string name="hue_rulecard_desc_scene">Szene «%1$s»</string>
+    <string name="hue_rulecard_desc_manual">%1$s · %2$s</string>
+    <string name="hue_rulecard_no_target">kein Ziel</string>
+
+    <!-- Farb-Presets -->
+    <string name="hue_color_warm_white">Warmweiß</string>
+    <string name="hue_color_cool_white">Kaltweiß</string>
+    <string name="hue_color_red">Rot</string>
+    <string name="hue_color_green">Grün</string>
+    <string name="hue_color_blue">Blau</string>
+    <string name="hue_color_yellow">Gelb</string>
+    <string name="hue_color_purple">Lila</string>
+    <string name="hue_color_orange">Orange</string>
+    <string name="hue_color_pink">Pink</string>
+    <string name="hue_color_cyan">Türkis</string>
+
+    <!-- Regel-Editor: Rahmen -->
+    <string name="hue_editor_title_edit">Regel bearbeiten</string>
+    <string name="hue_editor_title_new">Neue Regel</string>
+    <string name="hue_back">Zurück</string>
+    <string name="hue_save">Speichern</string>
+
+
+    <!-- Hue-Einstellungen (Regel-Liste) -->
+    <string name="hue_settings_title">Hue-Einstellungen</string>
+    <string name="hue_settings_new_rule">Neue Regel</string>
+    <string name="hue_settings_rule_gone">Die Regel steht nicht mehr in der Liste. Bitte den Test erneut starten.</string>
+    <string name="hue_settings_manage_header">Hue-Regeln verwalten</string>
+    <string name="hue_bridge_title">Philips Hue Bridge</string>
+    <string name="hue_bridge_connected">Verbunden mit %1$s</string>
+    <string name="hue_bridge_disconnected">Nicht verbunden</string>
+    <string name="hue_bridge_disconnected_hint">Lichtaktionen für Alarme könnten ausfallen.</string>
+    <string name="hue_bridge_check">Prüfen</string>
+    <string name="hue_bridge_test">Test</string>
+    <string name="hue_bridge_forget">Verbindung trennen / Bridge vergessen</string>
+    <string name="hue_bridge_forget_title">Bridge vergessen?</string>
+    <string name="hue_bridge_forget_body">Die Verbindung zur Hue-Bridge wird getrennt. Um die App wieder mit der Bridge zu nutzen, muss sie erneut gekoppelt werden (Link-Taste drücken). Ihre gespeicherten Regeln bleiben erhalten.</string>
+    <string name="hue_bridge_forget_confirm">Trennen</string>
+    <string name="hue_stats_header">Übersicht</string>
+    <string name="hue_stats_rules">Regeln</string>
+    <string name="hue_stats_lights">Lichter</string>
+    <string name="hue_stats_groups">Gruppen</string>
+    <string name="hue_stats_scenes">Szenen</string>
+    <string name="hue_stats_active">aktiv</string>
+    <string name="hue_stats_available">verfügbar</string>
+    <string name="hue_empty_rules_title">Noch keine Regeln erstellt</string>
+    <string name="hue_empty_rules_body">Erstellen Sie Ihre erste Hue-Regel, um Ihre Beleuchtung automatisch zu steuern – mit einer Szene aus Ihrer Hue-App, eigenen Farbwerten oder einem sanften Sonnenaufgang.</string>
+    <string name="hue_empty_rules_action">Erste Regel erstellen</string>
+
+    <!-- Hue-Tab -->
+    <string name="hue_tab_title">Philips Hue Integration</string>
+    <string name="hue_tab_bridge_gone">Die Bridge steht nicht mehr in der Trefferliste. Bitte erneut suchen und dann verbinden.</string>
+    <string name="hue_tab_loading">Lade Hue-Konfiguration…</string>
+
+
+    <!-- Hue-Tab: Weg zur Bridge -->
+    <string name="hue_conn_connected">Verbunden</string>
+    <string name="hue_conn_never">Noch keine Bridge eingerichtet</string>
+    <string name="hue_conn_never_hint">Suche unten nach deiner Hue-Bridge, um Lichtregeln für deine Alarme anzulegen.</string>
+    <string name="hue_discovery_header">Bridge-Suche</string>
+    <string name="hue_discovery_start">Bridges suchen</string>
+    <string name="hue_discovery_again">Erneut suchen</string>
+    <string name="hue_pair_hint">🔗 Link-Taste an der Bridge drücken, dann \'Jetzt verbinden\' antippen</string>
+    <string name="hue_pair_action">Jetzt verbinden</string>
+
+    <!-- Hue-Tab: verbundene Bridge -->
+    <string name="hue_connected_title">Bridge verbunden</string>
+    <string name="hue_connected_manage">Regeln verwalten</string>
+    <string name="hue_setup_done_title">🎉 Erfolgreich verbunden!</string>
+    <string name="hue_setup_done_body">Ihre Philips Hue Bridge ist jetzt mit der App verbunden. Sie können Lichtregeln für Ihre Alarme erstellen!</string>
+    <string name="hue_setup_done_next">Was möchten Sie als nächstes tun?</string>
+    <string name="hue_setup_done_first_rule">Erste Hue-Regel erstellen</string>
+    <string name="hue_setup_done_settings">Einstellungen</string>
+    <string name="hue_setup_done_tip">💡 Tipp: Erstellen Sie für jede Schicht eine eigene Licht-Regel mit verschiedenen Farben und Helligkeiten.</string>
+
+
+    <!-- Zaehlabhaengige Hue-Texte.
+
+         Als schlichte Format-Strings stand hier "1 Minuten" und "1 Lichter" - der Regler laesst
+         genau diese Werte zu, also muss der Text sie koennen. Lint meldet solche Faelle als
+         PluralsCandidate; das ist keine Formsache, sondern der einzige Weg, der beim Uebersetzen
+         in eine Sprache mit anderen Pluralregeln nicht bricht. -->
+    <plurals name="hue_autooff_after">
+        <item quantity="one">Ausschalten nach: %1$d Minute</item>
+        <item quantity="other">Ausschalten nach: %1$d Minuten</item>
+    </plurals>
+    <plurals name="hue_sunrise_duration">
+        <item quantity="one">Dauer: %1$d Minute</item>
+        <item quantity="other">Dauer: %1$d Minuten</item>
+    </plurals>
+    <plurals name="hue_sunrise_before_hint">
+        <item quantity="one">Rampe endet zur Weckzeit (startet %1$d Minute früher)</item>
+        <item quantity="other">Rampe endet zur Weckzeit (startet %1$d Minuten früher)</item>
+    </plurals>
+    <plurals name="hue_preview_autooff_suffix">
+        <item quantity="one"> · Auto-Aus nach %1$d Minute</item>
+        <item quantity="other"> · Auto-Aus nach %1$d Minuten</item>
+    </plurals>
+    <plurals name="hue_count_lights">
+        <item quantity="one">%1$d Licht</item>
+        <item quantity="other">%1$d Lichter</item>
+    </plurals>
+    <plurals name="hue_count_groups">
+        <item quantity="one">%1$d Gruppe</item>
+        <item quantity="other">%1$d Gruppen</item>
+    </plurals>
+    <plurals name="hue_count_unresolved">
+        <item quantity="one">%1$d Ziel</item>
+        <item quantity="other">%1$d Ziele</item>
+    </plurals>
+    <plurals name="hue_sunrise_duration_bare">
+        <item quantity="one">%1$d Minute</item>
+        <item quantity="other">%1$d Minuten</item>
+    </plurals>
+    <plurals name="hue_discovery_found">
+        <item quantity="one">%1$d Bridge gefunden:</item>
+        <item quantity="other">%1$d Bridges gefunden:</item>
+    </plurals>
+
+    <!-- Zusammengesetzte Texte, die eine der Zaehlformen oben einsetzen -->
+    <string name="hue_preview_sunrise">🌅 Sunrise über %1$s an %2$s und %3$s (%4$s)</string>
+    <string name="hue_preview_manual">%1$s von %2$s und %3$s</string>
+    <string name="hue_rulecard_desc_sunrise">Sonnenaufgang über %1$s · %2$s</string>
+    <string name="hue_rulecard_unresolved">%1$s auf dieser Bridge unbekannt: %2$s. Diese Regel schaltet dafür nichts – bitte in \"Bearbeiten\" neu auswählen.</string>
+    <string name="hue_unresolved_title">%1$s auf dieser Bridge unbekannt</string>
+    <string name="hue_targets_tab_groups">Gruppen (%1$d)</string>
+    <string name="hue_targets_tab_lights">Lichter (%1$d)</string>
+    <string name="hue_targets_selected">Ausgewählt: %1$s, %2$s</string>
+    <plurals name="hue_connected_rules">
+        <item quantity="one">%1$d von %2$d Regel aktiv</item>
+        <item quantity="other">%1$d von %2$d Regeln aktiv</item>
+    </plurals>
+
 </resources>

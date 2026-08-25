@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.reinerSchichtname
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
@@ -479,13 +480,20 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Gestaffelt nach Genauigkeit - siehe ShiftConfig.findDefinitionFor().
                     // Ein unscharfes find{} stand mal hier und hat die Regeln fast jeder
                     // Schicht auf "Spaetschicht" umgebogen.
-                    val matchingShiftDef = shiftConfig?.findDefinitionFor(shiftName)
+                    // ZUGEORDNET wird ueber den REINEN Schichtnamen: ein von Hand angelegter
+                    // Wecker heisst "Fruehschicht (Manuell)", und findDefinitionFor findet dazu
+                    // nichts. Am Emulator gemessen (27.08.2026): der Wecker klingelte normal, die
+                    // Hue-Regel derselben Schicht lief nicht, und im Log stand nur ein
+                    // unauffaelliges "No shift definition found" - ein stiller Ausfall genau der
+                    // Art, die diese App nicht haben darf. ANGEZEIGT wird weiter `shiftName`.
+                    val zuordnungsName = reinerSchichtname(shiftName)
+                    val matchingShiftDef = shiftConfig?.findDefinitionFor(zuordnungsName)
 
                     if (matchingShiftDef != null) {
                         // Create synthetic ShiftMatch for Hue rules
                         val syntheticShiftMatch = createSyntheticShiftMatch(
                             shiftDefinition = matchingShiftDef,
-                            shiftName = shiftName
+                            shiftName = zuordnungsName
                         )
 
                         // Execute Hue rules for this shift using injected hueRuleUseCase
@@ -526,7 +534,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     } else {
                         Logger.d(
                             LogTags.ALARM_RECEIVER,
-                            "🎨💡 No shift definition found for: $shiftName (skipping Hue rules)"
+                            "🎨💡 No shift definition found for: $zuordnungsName (skipping Hue rules)"
                         )
                     }
                 } else {

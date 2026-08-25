@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,9 +55,9 @@ internal fun ShiftPatternCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Schichtmuster", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.hue_shift_header), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Wählen Sie aus, für welches Schichtmuster diese Regel gilt:",
+                stringResource(R.string.hue_shift_intro),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -70,13 +72,13 @@ internal fun ShiftPatternCard(
                             .padding(12.dp)
                     ) {
                         Text(
-                            "Keine Schichtmuster konfiguriert",
+                            stringResource(R.string.hue_shift_none_title),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Text(
-                            "Bitte konfigurieren Sie zunächst Ihre Schichtmuster in den Einstellungen.",
+                            stringResource(R.string.hue_shift_none_body),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -154,7 +156,7 @@ internal fun ShiftPatternCard(
                     Column {
                         Text(UNIVERSAL_SHIFT_LABEL, style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Gilt für jede erkannte Schicht",
+                            stringResource(R.string.hue_shift_universal_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -164,7 +166,7 @@ internal fun ShiftPatternCard(
 
             if (showValidationErrors && selectedShiftPattern.isBlank()) {
                 Text(
-                    "Bitte wählen Sie ein Schichtmuster aus",
+                    stringResource(R.string.hue_shift_required),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )

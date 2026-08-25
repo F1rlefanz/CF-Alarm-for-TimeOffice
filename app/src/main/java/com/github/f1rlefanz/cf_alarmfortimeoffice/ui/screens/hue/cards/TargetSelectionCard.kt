@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,12 +27,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.MIN_TOUCH_TARGET
+import androidx.compose.ui.res.pluralStringResource
 
 /** Auswahl der Lampen/Gruppen, die eine Hue-Regel steuert. Aus `HueRuleConfigScreen` ausgelagert. */
 @Composable
@@ -57,14 +60,14 @@ internal fun TargetSelectionCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Zielauswahl", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.hue_targets_header), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 IconButton(onClick = onRefreshTargets) {
-                    Icon(Icons.Default.Refresh, "Lichter aktualisieren")
+                    Icon(Icons.Default.Refresh, stringResource(R.string.hue_targets_refresh))
                 }
             }
 
             Text(
-                "Wählen Sie aus, welche Lichter oder Gruppen diese Regel steuern soll:",
+                stringResource(R.string.hue_targets_intro),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -74,9 +77,7 @@ internal fun TargetSelectionCard(
             // die Regel ist gespeichert, aber nichts ist angehakt, und nichts sagt warum.
             if (unresolvedTargets.isNotEmpty()) {
                 Text(
-                    "Auf dieser Bridge unbekannt: ${unresolvedTargets.joinToString { it.label }}. " +
-                        "Diese Ziele stammen von einer anderen Bridge und sind unten nicht " +
-                        "angehakt – bitte neu auswählen.",
+                    stringResource(R.string.hue_targets_unknown, unresolvedTargets.joinToString { it.label }),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -91,12 +92,12 @@ internal fun TargetSelectionCard(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Gruppen (${lightTargets.groups.size})") }
+                    text = { Text(stringResource(R.string.hue_targets_tab_groups, lightTargets.groups.size)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Lichter (${lightTargets.lights.size})") }
+                    text = { Text(stringResource(R.string.hue_targets_tab_lights, lightTargets.lights.size)) }
                 )
             }
 
@@ -104,7 +105,7 @@ internal fun TargetSelectionCard(
                 0 -> {
                     if (lightTargets.groups.isEmpty()) {
                         Text(
-                            "Keine Gruppen gefunden. Erstellen Sie zunächst Gruppen in der Hue-App.",
+                            stringResource(R.string.hue_targets_no_groups),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -138,7 +139,7 @@ internal fun TargetSelectionCard(
                                 Column {
                                     Text(group.name, style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        "Gruppe • ${if (group.state.any_on) "An" else "Aus"}",
+                                        stringResource(R.string.hue_targets_group_state, stringResource(if (group.state.any_on) R.string.hue_state_on else R.string.hue_state_off)),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -150,7 +151,7 @@ internal fun TargetSelectionCard(
                 1 -> {
                     if (lightTargets.lights.isEmpty()) {
                         Text(
-                            "Keine Lichter gefunden. Stellen Sie sicher, dass Ihre Bridge verbunden ist.",
+                            stringResource(R.string.hue_targets_no_lights),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -182,7 +183,7 @@ internal fun TargetSelectionCard(
                                 Column {
                                     Text(light.name, style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        "Licht • ${if (light.state.on) "An" else "Aus"}",
+                                        stringResource(R.string.hue_targets_light_state, stringResource(if (light.state.on) R.string.hue_state_on else R.string.hue_state_off)),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -195,7 +196,7 @@ internal fun TargetSelectionCard(
 
             if (showValidationErrors && selectedLightIds.isEmpty() && selectedGroupIds.isEmpty()) {
                 Text(
-                    "Bitte wählen Sie mindestens ein Licht oder eine Gruppe aus",
+                    stringResource(R.string.hue_targets_required),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -203,7 +204,11 @@ internal fun TargetSelectionCard(
 
             if (selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty()) {
                 Text(
-                    "Ausgewählt: ${selectedLightIds.size} Lichter, ${selectedGroupIds.size} Gruppen",
+                    stringResource(
+                        R.string.hue_targets_selected,
+                        pluralStringResource(R.plurals.hue_count_lights, selectedLightIds.size, selectedLightIds.size),
+                        pluralStringResource(R.plurals.hue_count_groups, selectedGroupIds.size, selectedGroupIds.size)
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium

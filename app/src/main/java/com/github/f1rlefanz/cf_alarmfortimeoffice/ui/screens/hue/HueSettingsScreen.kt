@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue
 
 import android.widget.Toast
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +101,10 @@ fun HueSettingsScreen(
     // Alle drei netzbeduerftigen Knoepfe dieses Bildschirms (Verbindung pruefen, Lampentest,
     // Regeltest je Karte) laufen durch dasselbe Tor wie der Hue-Tab. Ohne das scheiterten sie ab
     // Android 17 mit einer generischen Netzwerkmeldung, ohne dass je der Systemdialog erschien.
+    // Vor dem Tor aufgeloest: im Callback ist stringResource nicht erlaubt, und
+    // context.getString() waere dort nicht konfigurationssicher (Lint).
+    val regelWegText = stringResource(R.string.hue_settings_rule_gone)
+
     val gate = rememberLocalNetworkPermissionGate<HueSettingsNetzAktion>(
         onMessage = { hueViewModel.setError(it) }
     ) { action, ruleId ->
@@ -114,7 +120,7 @@ fun HueSettingsScreen(
                     hueViewModel.testRuleExecution(rule)
                 } else {
                     hueViewModel.setError(
-                        "Die Regel steht nicht mehr in der Liste. Bitte den Test erneut starten."
+                        regelWegText
                     )
                 }
             }
@@ -124,15 +130,15 @@ fun HueSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Hue-Einstellungen") },
+                title = { Text(stringResource(R.string.hue_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.hue_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = onCreateNewRule) {
-                        Icon(Icons.Default.Add, "Neue Regel")
+                        Icon(Icons.Default.Add, stringResource(R.string.hue_settings_new_rule))
                     }
                 }
             )
@@ -178,7 +184,7 @@ fun HueSettingsScreen(
             
             item {
                 Text(
-                    "Hue-Regeln verwalten",
+                    stringResource(R.string.hue_settings_manage_header),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -238,14 +244,15 @@ private fun BridgeStatusCard(
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Philips Hue Bridge", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.hue_bridge_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        if (connectionInfo?.isConnected == true) "Verbunden mit ${connectionInfo.bridgeIp}" else "Nicht verbunden",
+                        if (connectionInfo?.isConnected == true) stringResource(R.string.hue_bridge_connected, connectionInfo.bridgeIp.orEmpty())
+                        else stringResource(R.string.hue_bridge_disconnected),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     if (connectionInfo?.isConnected != true) {
                         Text(
-                            "Lichtaktionen für Alarme könnten ausfallen.",
+                            stringResource(R.string.hue_bridge_disconnected_hint),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -255,13 +262,13 @@ private fun BridgeStatusCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CompactOutlinedButton(
                     onClick = onValidate,
-                    text = "Prüfen",
+                    text = stringResource(R.string.hue_bridge_check),
                     icon = Icons.Default.Refresh,
                     modifier = Modifier.weight(1f)
                 )
                 CompactOutlinedButton(
                     onClick = onTest,
-                    text = "Test",
+                    text = stringResource(R.string.hue_bridge_test),
                     icon = Icons.Default.FlashOn,
                     modifier = Modifier.weight(1f)
                 )
@@ -280,7 +287,7 @@ private fun BridgeStatusCard(
                     // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                     Icon(Icons.Default.LinkOff, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Verbindung trennen / Bridge vergessen")
+                    Text(stringResource(R.string.hue_bridge_forget))
                 }
             }
         }
@@ -289,12 +296,10 @@ private fun BridgeStatusCard(
     if (showForgetDialog) {
         AlertDialog(
             onDismissRequest = { showForgetDialog = false },
-            title = { Text("Bridge vergessen?") },
+            title = { Text(stringResource(R.string.hue_bridge_forget_title)) },
             text = {
                 Text(
-                    "Die Verbindung zur Hue-Bridge wird getrennt. Um die App wieder mit der " +
-                        "Bridge zu nutzen, muss sie erneut gekoppelt werden (Link-Taste drücken). " +
-                        "Ihre gespeicherten Regeln bleiben erhalten."
+                    stringResource(R.string.hue_bridge_forget_body)
                 )
             },
             confirmButton = {
@@ -304,12 +309,12 @@ private fun BridgeStatusCard(
                         onForgetBridge()
                     }
                 ) {
-                    Text("Trennen", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.hue_bridge_forget_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showForgetDialog = false }) {
-                    Text("Abbrechen")
+                    Text(stringResource(R.string.hue_cancel))
                 }
             }
         )
@@ -331,15 +336,15 @@ private fun StatsCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Übersicht", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.hue_stats_header), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                StatItem(Icons.Default.Schedule, "Regeln", "$enabledCount/$rulesCount", "aktiv")
-                StatItem(Icons.Default.Lightbulb, "Lichter", lightsCount.toString(), "verfügbar")
-                StatItem(Icons.Default.Group, "Gruppen", groupsCount.toString(), "verfügbar")
-                StatItem(Icons.Default.Movie, "Szenen", scenesCount.toString(), "verfügbar")
+                StatItem(Icons.Default.Schedule, stringResource(R.string.hue_stats_rules), "$enabledCount/$rulesCount", stringResource(R.string.hue_stats_active))
+                StatItem(Icons.Default.Lightbulb, stringResource(R.string.hue_stats_lights), lightsCount.toString(), stringResource(R.string.hue_stats_available))
+                StatItem(Icons.Default.Group, stringResource(R.string.hue_stats_groups), groupsCount.toString(), stringResource(R.string.hue_stats_available))
+                StatItem(Icons.Default.Movie, stringResource(R.string.hue_stats_scenes), scenesCount.toString(), stringResource(R.string.hue_stats_available))
             }
         }
     }
@@ -376,11 +381,9 @@ private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
         ) {
             // dekorativ: die Ueberschrift darunter sagt es bereits
             Icon(Icons.Default.Lightbulb, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Noch keine Regeln erstellt", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.hue_empty_rules_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Erstellen Sie Ihre erste Hue-Regel, um Ihre Beleuchtung automatisch zu steuern – " +
-                    "mit einer Szene aus Ihrer Hue-App, eigenen Farbwerten oder einem sanften " +
-                    "Sonnenaufgang.",
+                stringResource(R.string.hue_empty_rules_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -388,7 +391,7 @@ private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
                 // dekorativ: die Knopfbeschriftung daneben sagt es bereits
                 Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Erste Regel erstellen")
+                Text(stringResource(R.string.hue_empty_rules_action))
             }
         }
     }

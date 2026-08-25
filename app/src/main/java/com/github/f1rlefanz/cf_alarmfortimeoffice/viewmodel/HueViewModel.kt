@@ -89,6 +89,15 @@ class HueViewModel @Inject constructor(
         _userMessages.tryEmit(message)
     }
 
+    /**
+     * Eine Meldung, kein Fehlerzustand: die bisherige Liste bleibt ja gueltig.
+     *
+     * Kurz gehalten, weil ein Toast nach zwei Zeilen abschneidet - die erste Fassung endete am
+     * Geraet sichtbar mit "aktualisiert werd..." und verlor damit genau die Aussage.
+     */
+    private val aktualisierenFehlgeschlagen =
+        "Bridge nicht erreichbar – Lichter und Szenen nicht aktualisiert."
+
     // ==============================
     // INITIALIZATION
     // ==============================
@@ -327,7 +336,21 @@ class HueViewModel @Inject constructor(
     // LIGHT OPERATIONS
     // ==============================
     
-    fun refreshLightTargets() {
+    /**
+     * @param userInitiated true = der Nutzer hat auf ein Aktualisieren-Symbol getippt.
+     *
+     * Nur dann wird ein Fehlschlag auch GEMELDET. Vorher blieb er ausschliesslich im Log: Der
+     * Knopf tat sichtbar nichts, die (noch korrekte) alte Liste blieb stehen, und nichts sagte
+     * warum - bei nicht erreichbarer Bridge am Emulator nachgestellt. Ein Bedienelement, das
+     * stumm scheitert, ist fuer den Nutzer nicht von einem defekten unterscheidbar.
+     *
+     * Die automatischen Aufrufe (Start, nach der Kopplung) melden bewusst NICHTS: dort erklaert
+     * die Verbindungs-Karte den Zustand ohnehin, und eine Meldung beim Oeffnen waere Laerm.
+     *
+     * Die LISTE wird bei einem Fehlschlag nicht angetastet - "Bridge nicht erreichbar" ist keine
+     * Aussage darueber, welche Lampen es gibt (siehe getAllLightTargets).
+     */
+    fun refreshLightTargets(userInitiated: Boolean = false) {
         Logger.d(LogTags.HUE_VIEWMODEL, "Refreshing light targets")
         
         viewModelScope.launch {
@@ -341,9 +364,11 @@ class HueViewModel @Inject constructor(
                     reconcileRuleTargets(lightTargets)
                 } else {
                     Logger.w(LogTags.HUE_VIEWMODEL, "Failed to refresh light targets", result.exceptionOrNull())
+                    if (userInitiated) emitUserMessage(aktualisierenFehlgeschlagen)
                 }
             } catch (e: Exception) {
                 Logger.e(LogTags.HUE_VIEWMODEL, "Light targets refresh exception", e)
+                if (userInitiated) emitUserMessage(aktualisierenFehlgeschlagen)
             }
         }
     }

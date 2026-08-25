@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -15,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
@@ -53,8 +55,8 @@ internal fun ActionConfigCard(
             // ein Oberbegriff fuer beides, obwohl der Sunrise-Lichtwecker eine eigene, gleichrangige
             // Karte ist. Ist Sunrise an, wird diese Karte gar nicht erst gezeigt (siehe Aufrufer).
             SwitchRow(
-                title = if (targetOn) "Einschalten" else "Ausschalten",
-                description = "Lichter ${if (targetOn) "einschalten" else "ausschalten"} bei Regelausführung",
+                title = stringResource(if (targetOn) R.string.hue_action_on else R.string.hue_action_off),
+                description = stringResource(if (targetOn) R.string.hue_action_hint_on else R.string.hue_action_hint_off),
                 checked = targetOn,
                 onCheckedChange = onTargetOnChange,
                 titleStyle = MaterialTheme.typography.titleMedium,
@@ -64,7 +66,7 @@ internal fun ActionConfigCard(
             if (targetOn) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Helligkeit: ${(targetBrightness * 100 / 254)}%",
+                        stringResource(R.string.hue_action_brightness, targetBrightness * 100 / 254),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
@@ -81,12 +83,12 @@ internal fun ActionConfigCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("1%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("100%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.hue_action_brightness_max), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
                 // Color mode selector
-                Text("Farbe", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.hue_action_color), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 // FlowRow statt Row: in einer Row quetscht sich der letzte Chip in den Rest der
                 // Zeile, und passt sein Wort nicht hinein, wird es zerlegt ("Farb/e"). FlowRow
                 // schiebt ihn stattdessen in die nächste Zeile. Bei Standardschrift passen alle
@@ -95,17 +97,17 @@ internal fun ActionConfigCard(
                     FilterChip(
                         selected = colorMode == ColorMode.NONE,
                         onClick = { onColorModeChange(ColorMode.NONE) },
-                        label = { Text("Standard") }
+                        label = { Text(stringResource(R.string.hue_action_color_none)) }
                     )
                     FilterChip(
                         selected = colorMode == ColorMode.WHITE,
                         onClick = { onColorModeChange(ColorMode.WHITE) },
-                        label = { Text("Weißton") }
+                        label = { Text(stringResource(R.string.hue_action_color_white)) }
                     )
                     FilterChip(
                         selected = colorMode == ColorMode.COLOR,
                         onClick = { onColorModeChange(ColorMode.COLOR) },
-                        label = { Text("Farbe") }
+                        label = { Text(stringResource(R.string.hue_action_color_preset)) }
                     )
                 }
 
@@ -113,7 +115,7 @@ internal fun ActionConfigCard(
                     ColorMode.WHITE -> {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             ColorSwatch(previewColorForKelvin(colorKelvin))
-                            Text("Farbtemperatur: $colorKelvin K", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.hue_action_color_temp, colorKelvin), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         }
                         Slider(
                             value = colorKelvin.toFloat(),
@@ -122,8 +124,8 @@ internal fun ActionConfigCard(
                             modifier = Modifier.fillMaxWidth()
                         )
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Warm (2000K)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("Kühl (6500K)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.hue_action_color_warm), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.hue_action_color_cool), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     ColorMode.COLOR -> {

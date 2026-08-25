@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 
@@ -76,6 +77,27 @@ internal fun isUniversalShiftPattern(pattern: String): Boolean =
  */
 internal fun hueShiftPatternLabel(pattern: String): String =
     if (isUniversalShiftPattern(pattern)) UNIVERSAL_SHIFT_LABEL else pattern
+
+/**
+ * Beschriftung eines Regel-Modus. Liegt hier, weil sie an ZWEI Stellen gebraucht wird: der
+ * Modus-Umschalter im Editor und das Abzeichen in der Regel-Liste. Zwei eigene Formulierungen
+ * waeren zwei Wahrheiten - und die Regel-Liste sagte irgendwann etwas anderes als der Editor.
+ */
+internal fun hueRuleModusLabel(modus: HueRuleModus): String = when (modus) {
+    HueRuleModus.SZENE -> "Szene"
+    HueRuleModus.MANUELL -> "Manuell"
+    HueRuleModus.SONNENAUFGANG -> "Sonnenaufgang"
+}
+
+/** Ein Satz, der den Modus erklaert - im Umschalter unter der jeweiligen Beschriftung. */
+internal fun hueRuleModusErklaerung(modus: HueRuleModus): String = when (modus) {
+    HueRuleModus.SZENE ->
+        "Eine Szene aus deiner Hue-App. Sie bringt Helligkeit und Farbe je Lampe selbst mit."
+    HueRuleModus.MANUELL ->
+        "Lampen und Gruppen selbst auswählen und Helligkeit und Farbe einstellen."
+    HueRuleModus.SONNENAUFGANG ->
+        "Langsam heller werden — von warm nach kühl, über mehrere Minuten."
+}
 
 internal fun presetLabel(preset: HueColorConverter.ColorPreset): String = when (preset) {
     HueColorConverter.ColorPreset.WARM_WHITE -> "Warmweiß"

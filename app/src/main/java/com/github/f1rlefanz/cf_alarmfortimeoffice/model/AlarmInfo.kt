@@ -42,3 +42,27 @@ data class AlarmInfo(
     // "Stille Schicht".
     val isSilent: Boolean = false
 )
+
+/**
+ * Anhaengsel, das einen VON HAND angelegten Wecker in der Anzeige kenntlich macht
+ * ("Fruehschicht (Manuell)"). Es steht bewusst im [AlarmInfo.shiftName], weil der Nutzer in der
+ * Weckerliste sehen soll, welcher Wecker nicht aus dem Kalender stammt.
+ *
+ * Genau deshalb ist es aber eine Falle fuer jeden Konsumenten, der ueber den Schichtnamen
+ * ZUORDNET: `ShiftConfig.findDefinitionFor("Fruehschicht (Manuell)")` findet nichts, und der
+ * Aufrufer haelt das fuer "diese Schicht kenne ich nicht". Am Emulator gemessen (27.08.2026):
+ * Ein manueller Fruehschicht-Wecker feuerte normal, im Log stand
+ * `No shift definition found for: Fruehschicht (Manuell) (skipping Hue rules)` - die Hue-Regel
+ * der Fruehschicht lief nicht, ohne dass irgendwo etwas von einem Fehler stand.
+ *
+ * Wer ueber den Schichtnamen zuordnet, nimmt deshalb [reinerSchichtname]; wer ihn ANZEIGT,
+ * nimmt weiterhin [AlarmInfo.shiftName].
+ */
+const val MANUELLER_ALARM_SUFFIX = " (Manuell)"
+
+/**
+ * Der Schichtname ohne das Anzeige-Anhaengsel [MANUELLER_ALARM_SUFFIX] - die Form, mit der sich
+ * eine Schichtdefinition wiederfinden laesst.
+ */
+fun reinerSchichtname(shiftName: String): String = shiftName.removeSuffix(MANUELLER_ALARM_SUFFIX)
+

@@ -250,7 +250,7 @@ fun HueRuleConfigScreen(
                         lightTargets = uiState.lightTargets,
                         ausgewaehlt = form.szene,
                         onAuswahlChange = { form = form.copy(szene = it) },
-                        onRefreshTargets = { hueViewModel.refreshLightTargets() },
+                        onRefreshTargets = { hueViewModel.refreshLightTargets(userInitiated = true) },
                         showValidationErrors = form.showValidationErrors,
                         unresolvedTargets = unresolvedFuerRegel
                     )
@@ -346,7 +346,7 @@ private fun ZielAuswahl(
         selectedGroupIds = form.selectedGroupIds,
         onLightSelectionChange = { onFormChange(form.copy(selectedLightIds = it)) },
         onGroupSelectionChange = { onFormChange(form.copy(selectedGroupIds = it)) },
-        onRefreshTargets = { hueViewModel.refreshLightTargets() },
+        onRefreshTargets = { hueViewModel.refreshLightTargets(userInitiated = true) },
         showValidationErrors = form.showValidationErrors,
         unresolvedTargets = unresolvedTargets
     )

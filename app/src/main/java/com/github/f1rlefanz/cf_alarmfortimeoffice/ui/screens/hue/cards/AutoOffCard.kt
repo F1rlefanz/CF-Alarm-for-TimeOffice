@@ -67,7 +67,10 @@ internal fun AutoOffCard(
             )
             if (autoOffEnabled) {
                 Text(
-                    "Ausschalten nach: $autoOffMinutes Minuten",
+                    // "1 Minuten" stand hier, sobald der Regler ganz links steht - am Geraet
+                    // gesehen. Der Regler laesst genau diesen Wert zu, also muss der Text ihn
+                    // koennen.
+                    "Ausschalten nach: $autoOffMinutes ${if (autoOffMinutes == 1) "Minute" else "Minuten"}",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )

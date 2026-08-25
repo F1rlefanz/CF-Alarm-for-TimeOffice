@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeZurueckgenom
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.TagFreigabeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.MANUELLER_ALARM_SUFFIX
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
@@ -1497,7 +1498,7 @@ class AlarmViewModel @Inject constructor(
                 val alarmInfo = AlarmInfo(
                     id = manualAlarmId,
                     shiftId = manualShiftId,
-                    shiftName = "${schicht.name} (Manuell)",
+                    shiftName = "${schicht.name}$MANUELLER_ALARM_SUFFIX",
                     triggerTime = alarmTimeMillis,
                     formattedTime = alarmDateTime.format(
                         DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)

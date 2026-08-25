@@ -77,6 +77,7 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
 | Manifest-Berechtigung ohne Nennung im Code | 4 Kandidaten, **alle** falsch | implizit gebraucht (ConnectivityManager, startForeground, BootReceiver, Vibrator) |
 | Tests ohne sichtbare Behauptung | 16 Kandidaten, **alle** falsch | sie behaupten über Helfer (`erwarteNachzug()`) |
 | Doku nennt Datei, die es nicht gibt | 1 Treffer, falsch | stand in einem *historischen* Satz — das ist der Hergang, kein Fehler |
+| Testdatei ohne `@Test` = ungenutztes Test-Double | **6 Kandidaten, 5 falsch** (Runde 8) | Fakes und Fixture-Helfer tragen naturgemäß kein `@Test` und werden trotzdem von 2–20 Testklassen benutzt. Die Klasse ist zu klein und zu falsch-positiv für ein Gatter — der eine echte Fund war kein Test-Double, sondern eine JUnit-`Suite` |
 
 **Akzeptierte Dauermeldungen** (nicht als Fund melden): Lint `TrustAllX509TrustManager` ×2 (der
 bewusste Hue-TrustManager), `PluralsCandidate` („%d Min" hat im Deutschen keine Pluralform),

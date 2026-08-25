@@ -1082,14 +1082,19 @@ class AlarmManagerService(
         internal fun snoozeIdsOf(entries: Set<String>): List<Int> =
             entries.mapNotNull { parseSnoozeEntry(it)?.id }.distinct()
 
-        // Lint-Befund ApplySharedPref ("nimm apply()") wird hier bewusst NICHT befolgt: der
-        // synchrone commit() ist eine Entscheidung, kein Versehen - siehe Kommentar am Write unten
+        // Der synchrone commit() ist eine Entscheidung, kein Versehen - siehe Kommentar am Write unten
         // und Skill cfalarm-wecker-und-boot ("Der Snooze-Merker ist serialisiert
         // (snoozeRegistryLock) und schreibt mit commit()"). apply() schreibt asynchron und verloere
         // denselben Eintrag bei einem Prozess-Tod unmittelbar danach; der Snooze waere dann im
         // AlarmManager scharf, aber der App unbekannt - weder abbrechbar noch nach einem Reboot
         // wiederherstellbar.
-        @Suppress("ApplySharedPref")
+        //
+        // Hier stand bis zum 25.08.2026 ein @Suppress("ApplySharedPref") - es unterdrueckte
+        // NICHTS. Der Detektor sieht nur ein direktes editor.commit(), nicht die KTX-Form
+        // `edit(commit = true) { ... }`, die hier benutzt wird; gemessen, indem die Annotation
+        // entfernt und `lint` gefahren wurde: Bericht byte-gleich. Wird die Stelle je auf
+        // editor.commit() umgestellt, ist ein Lint-Hinweis ERWUENSCHT - er erzwingt eine bewusste
+        // Entscheidung, und die Antwort darauf steht in den Zeilen darueber.
         private fun rememberPendingSnooze(
             context: Context,
             alarmId: Int,
@@ -1130,13 +1135,14 @@ class AlarmManagerService(
             }
         }
 
-        // Lint-Befund ApplySharedPref ("nimm apply()") wird hier bewusst NICHT befolgt - dieselbe
-        // Begruendung wie bei [rememberPendingSnooze] und im Skill cfalarm-wecker-und-boot:
+        // Der synchrone commit() ist auch hier Absicht - dieselbe Begruendung wie bei
+        // [rememberPendingSnooze] und im Skill cfalarm-wecker-und-boot:
         // der Merker ist die einzige Spur eines schwebenden Snooze, und ein asynchroner Write kann
         // bei einem Prozess-Tod unmittelbar danach verloren gehen. Beim Vergessen ist die Richtung
         // gespiegelt, aber genauso wenig hinnehmbar: ein bereits abgebrochener Snooze bliebe im
         // Merker stehen und wuerde beim naechsten Boot-Restore wieder scharf gesetzt.
-        @Suppress("ApplySharedPref")
+        // Auch das @Suppress("ApplySharedPref") ist am 25.08.2026 gefallen, aus demselben Grund
+        // wie bei [rememberPendingSnooze]: es unterdrueckte nichts.
         private fun forgetPendingSnooze(context: Context, alarmId: Int) = synchronized(snoozeRegistryLock) {
             try {
                 val prefs = snoozePrefs(context)

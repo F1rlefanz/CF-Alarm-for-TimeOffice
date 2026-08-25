@@ -231,6 +231,13 @@ def pruefe_doku_verweise(befunde, basis):
     verschwunden = {
         s for s in entfernt
         if not re.search(r"\b(?:fun|val|var|class|object|interface)\s+" + re.escape(s) + r"\b", quelltext)
+        # PARAMETERNAMEN ZAEHLEN MIT, und das ist kein Detail: Am 25.08.2026 entfernte ein
+        # Durchgang das Feld `ShiftInfo.eventTitle` - und dieses Gatter meldete daraufhin zwei
+        # Skill-Zeilen, die `matchesKeywords(eventTitle)` nennen. Diese Funktion gibt es
+        # weiterhin; die Doku meinte ihren PARAMETER, nicht das geloeschte Feld. Ohne diese
+        # Zeile blockiert das Gatter eine voellig richtige Notiz und verlangt, sie
+        # kaputtzumachen - der sichere Weg, ein Gatter unglaubwuerdig zu machen.
+        and not re.search(r"[(,]\s*(?:@\w+\s+)?" + re.escape(s) + r"\s*:", quelltext)
     }
     if not verschwunden:
         return

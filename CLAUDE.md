@@ -155,8 +155,10 @@ Alarm-Erzeugung), `AlarmSoundService` (`mediaPlayback`), `AlarmReceiver`, `BootR
 Ergebnis adaptiv gecacht (2–30 s). `ShiftConfig` im `@MainDataStore`.
 
 **Hue** (`hue/`): Discovery per mDNS/N-UPnP/offiziellem Endpunkt, `HueBridgeConnectionManager`
-(Singleton), `HueApiClient` (Retrofit/OkHttp mit eigenem TrustManager), `HueSmartScheduler`
-(WorkManager für Tagesplanung und Pre-Alarm-Checks). Hue-Konfiguration im `@HueDataStore`.
+(Singleton), `HueApiClient` (**handgebautes OkHttp + Gson**, kein Retrofit — die V1-Semantik
+„HTTP 200 auch bei Ablehnung" braucht die Body-Auswertung in `HueV1Envelope`), `HueSmartScheduler`
+(WorkManager für Tagesplanung und Pre-Alarm-Checks). Eine Regel setzt das Licht auf genau eine von
+drei Arten: Szene, manuell oder Sonnenaufgang. Hue-Konfiguration im `@HueDataStore`.
 
 **Navigation**: eigener `NavigationState` + `MainTab`-Enum (`HOME, WECKER, STATUS, SETTINGS, HUE,
 DIMMER`), **kein** Navigation-Compose. `MainScreen` ist die Compose-Wurzel (Unterscreens,

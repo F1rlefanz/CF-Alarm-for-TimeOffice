@@ -17,6 +17,13 @@ import androidx.compose.runtime.Immutable
  * er ist **bridge-lokal** - genau dieselbe Falle wie `HueLightAction.targetId`. Der Anker ueber
  * Geraete hinweg ist das Paar (Szenenname, Gruppenname); siehe `HueTargetReconciler`.
  *
+ * ABSICHTLICH NICHT ABGEBILDET sind die uebrigen Felder der Antwort (`type`, `lights`, `owner`,
+ * `locked`, `appdata`, `picture`, `lastupdated`, `version`). Sie stehen im JSON, aber niemand
+ * liest sie - und ein Feld, das nur befuellt und nie gelesen wird, sieht bei der naechsten
+ * Aenderung wie eine vorhandene Faehigkeit aus. `type` waere zudem eine zweite Wahrheit neben
+ * [isGroupScene]: massgeblich ist, ob eine `group` da ist, denn genau die braucht der PUT und
+ * der Namensanker. Wer eines davon spaeter braucht, holt es zurueck - dann mit Leser.
+ *
  * Gemessen an der Bridge des Nutzers (BSB002, apiversion 1.78.0, 25.08.2026): 73 Szenen,
  * davon 67 GroupScene und 6 LightScene; die Listen-Antwort traegt **kein** `lightstates`
  * (das gibt es nur bei `GET /scenes/<id>`), deshalb bleibt sie mit ~21 kB handhabbar.
@@ -25,9 +32,7 @@ import androidx.compose.runtime.Immutable
 data class HueScene(
     val id: String,
     val name: String? = null,
-    val type: String? = null,          // "GroupScene" | "LightScene"
     val group: String? = null,         // nur GroupScene; die Gruppen-Id dieser Bridge
-    val lights: List<String>? = null,
     val recycle: Boolean? = null       // von der Hue-App automatisch angelegt/aufgeraeumt
 ) {
     /**

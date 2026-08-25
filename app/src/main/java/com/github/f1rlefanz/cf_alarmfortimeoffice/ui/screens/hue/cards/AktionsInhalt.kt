@@ -26,7 +26,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.presetLabel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForKelvin
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForPreset
 
-/** Manuelle Einschalt-Konfiguration (An/Aus, Helligkeit, Farbe). Aus `HueRuleConfigScreen` ausgelagert. */
+/**
+ * Die manuelle Einstellung: An/Aus, Helligkeit, Farbe.
+ *
+ * INHALT, KEINE KARTE: Den Rahmen setzt [ManuellCard] in `ModusKarten.kt`, zusammen mit der
+ * Zielauswahl darueber und der Trennlinie dazwischen.
+ *
+ * Der Ein/Aus-Schalter ist zugleich die Ueberschrift dieses Blocks - deshalb kraeftiger gesetzt.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AktionsInhalt(

@@ -100,12 +100,12 @@ class HueSceneParsingTest {
     fun `die drei Ausschlussgruende werden einzeln gezaehlt`() {
         val ergebnis = waehleNutzbareSzenen(
             listOf(
-                HueScene(id = "a", name = "Nachtlicht", type = "GroupScene", group = "1"),
-                HueScene(id = "b", name = null, type = "GroupScene", group = "1"),
-                HueScene(id = "c", name = "  ", type = "GroupScene", group = "1"),
-                HueScene(id = "d", name = "Auto", type = "GroupScene", group = "1", recycle = true),
-                HueScene(id = "e", name = "Entspannen", type = "LightScene", group = null),
-                HueScene(id = "f", name = "Lesen", type = "GroupScene", group = "82")
+                HueScene(id = "a", name = "Nachtlicht", group = "1"),
+                HueScene(id = "b", name = null, group = "1"),
+                HueScene(id = "c", name = "  ", group = "1"),
+                HueScene(id = "d", name = "Auto", group = "1", recycle = true),
+                HueScene(id = "e", name = "Entspannen", group = null),
+                HueScene(id = "f", name = "Lesen", group = "82")
             )
         )
 
@@ -119,7 +119,7 @@ class HueSceneParsingTest {
     @Test
     fun `nichts faellt weg, wenn alles in Ordnung ist`() {
         val ergebnis = waehleNutzbareSzenen(
-            listOf(HueScene(id = "a", name = "Nachtlicht", type = "GroupScene", group = "1"))
+            listOf(HueScene(id = "a", name = "Nachtlicht", group = "1"))
         )
 
         assertEquals(1, ergebnis.nutzbar.size)

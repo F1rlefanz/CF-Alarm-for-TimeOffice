@@ -101,6 +101,16 @@ das baut man dieselbe Falle in neuer Form nach.
   jede Szene mit ihren eigenen Werten -, und die Vorschau raeumte `2/2 targets switched off`.
   **Zwei Szenen auf DEMSELBEN Raum bleiben ausgeschlossen**: das waeren zwei PUTs auf denselben
   Endpunkt, der zweite gewaenne. Eine neue Wahl im selben Raum ersetzt deshalb die alte.
+- **Der Bridge-Wechsel und das Snooze-Stapeln sind am GERAET belegt** (26.08.2026, echte Bridge,
+  Regel mit ZWEI Szenen):
+  - *Bridge-Wechsel*: exportiert, die Datei ausserhalb der App verbogen (eine gueltige Szene mit
+    fremden Ids, eine erfundene), importiert. Log: `1 Ziel(e) ueber den Namen neu zugeordnet,
+    1 nicht zuordenbar (FD/Szene «Gibtsnicht» in Wohnzimmer: NOT_FOUND)`. Die gueltige war
+    sofort wieder da, die erfundene stand NAMENTLICH MIT RAUM im Fertig-Dialog, in der
+    Regel-Liste und im Editor - und nichts wurde geloescht.
+  - *Snooze*: Wecker feuert → zwei Szenen, zwei Timer (`CFAlarm Auto-Off G82`, `G1`). Schlummern,
+    zweites Feuern → `Alt-Zeitplan ... entfernt` fuer beide, dann zwei neue. Auf der Bridge liegen
+    danach **2** statt 4, und die beiden fremden Dimmer-Schalter-Zeitplaene sind unangetastet.
 - **Ueberlappende Bereiche werden BENANNT, nicht verboten.** Zonen ueberschneiden sich auf der
   Bridge des Nutzers real (Lampe 4 liegt in „Wohnzimmer", „Deckenlampe" UND „Zuhause"); fuer eine
   geteilte Lampe gewinnt die zuletzt gesendete Szene. Das ist keine Fehlbedienung, aber es

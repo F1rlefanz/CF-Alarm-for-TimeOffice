@@ -263,12 +263,33 @@ def pruefe_doku_verweise(befunde, basis):
                     continue
                 for nr in range(start, ende):
                     for symbol in verschwunden:
-                        if re.search(r"`[^`]*\b" + re.escape(symbol) + r"\b[^`]*`", zeilen[nr]):
+                        if _als_symbol_genannt(zeilen[nr], symbol):
                             befunde.append(
                                 "Doku nennt entferntes Symbol `{}`: {}:{}".format(
                                     symbol, _relativ(pfad), nr + 1
                                 )
                             )
+
+
+def _als_symbol_genannt(zeile, symbol):
+    """Steht das Wort in einer Code-Spanne wirklich als SYMBOL - oder nur als Wort darin?
+
+    WARUM DIESE UNTERSCHEIDUNG (25.08.2026): Nach dem Entfernen von `HueBridgeConfig.whitelist`
+    meldete das Gatter eine Skill-Zeile mit `cmd deviceidle whitelist -<pkg>` - einem
+    adb-BEFEHL. Voellig richtige Notiz, nichts mit unserem Feld zu tun. Backticks bedeuten in
+    dieser Doku "wortwoertlich", nicht "Kotlin-Symbol": Shell-Kommandos, Dateipfade und
+    Log-Ausschnitte stehen genauso darin.
+
+    Die Unterscheidung, die traegt: Ein Symbol steht an einem Punkt, einer Klammer oder allein -
+    ein Wort in einem Kommando steht zwischen Leerzeichen.
+    """
+    for spanne in re.findall(r"`([^`]*)`", zeile):
+        for treffer in re.finditer(r"\b" + re.escape(symbol) + r"\b", spanne):
+            davor = spanne[treffer.start() - 1] if treffer.start() else ""
+            danach = spanne[treffer.end()] if treffer.end() < len(spanne) else ""
+            if davor in ("", ".", "(", "[") and danach in ("", ".", "(", ")", ",", "["):
+                return True
+    return False
 
 
 # ---------------------------------------------------------------------------------------------
@@ -421,8 +442,28 @@ KONSTANTE = re.compile(
 BEWUSST_OHNE_VERWENDER = "OHNE VERWENDER"
 
 
+BEZEICHNER = re.compile(r"[A-Za-z_]\w*")
+DEKLARATION = re.compile(r"\b(?:val|var)\s+([A-Za-z_]\w*)")
+
+
 def pruefe_ungenutzte_konstanten(befunde):
+    """EIN Index statt verschachtelter Schleifen.
+
+    Die naive Fassung (jede Eigenschaft gegen jede Datei) lief nach der Erweiterung von
+    `const val` auf alle Eigenschaften in die 60-s-Grenze der Schleuse: 1039 Eigenschaften mal
+    ~350 Dateien mal einem eigenen regulaeren Ausdruck. Hier wird der Baum EINMAL in Bezeichner
+    zerlegt; danach ist jede Frage ein Nachschlagen. Gleiche Aussage, Laufzeit in Sekunden.
+    """
     dateien = [(p, _lies(p)) for p in _kotlin_dateien()]
+
+    vorkommen = {}
+    deklarationen = {}
+    for _, text in dateien:
+        for wort in BEZEICHNER.findall(text):
+            vorkommen[wort] = vorkommen.get(wort, 0) + 1
+        for name in DEKLARATION.findall(text):
+            deklarationen[name] = deklarationen.get(name, 0) + 1
+
     for pfad, text in dateien:
         if os.sep + "main" + os.sep not in pfad:
             continue
@@ -433,17 +474,13 @@ def pruefe_ungenutzte_konstanten(befunde):
             block = davor[davor.rfind("/**"):] if "/**" in davor[-1200:] else ""
             if BEWUSST_OHNE_VERWENDER in block:
                 continue
-            rufe = 0
-            for pfad2, text2 in dateien:
-                for vorkommen in re.finditer(r"\b" + re.escape(name) + r"\b", text2):
-                    if pfad2 == pfad and re.search(r"(?:val|var)\s+$", text2[:vorkommen.start()]):
-                        continue
-                    rufe += 1
-            if rufe == 0:
+            # Jede Nennung ausser den Deklarationen selbst ist ein Verwender.
+            if vorkommen.get(name, 0) - deklarationen.get(name, 0) == 0:
                 befunde.append(
-                    "Eigenschaft ohne Verwender: {} in {} - loeschen, oder die Entscheidung "
+                    "Eigenschaft ohne Verwender: {} in {}:{} - loeschen, oder die Entscheidung "
                     "mit '{}' im eigenen KDoc begruenden".format(
-                        name, _relativ(pfad), BEWUSST_OHNE_VERWENDER
+                        name, _relativ(pfad), text[:treffer.start()].count(chr(10)) + 2,
+                        BEWUSST_OHNE_VERWENDER
                     )
                 )
 

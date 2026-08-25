@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,12 +20,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorSwatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForKelvin
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Sunrise-Lichtwecker (Rampe von dim-warm auf hell-kuehl).
@@ -56,12 +59,12 @@ internal fun SunriseConfigCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "Sunrise-Lichtwecker",
+                stringResource(R.string.hue_sunrise_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.",
+                stringResource(R.string.hue_sunrise_intro),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -80,7 +83,7 @@ internal fun SunriseConfigCard(
                         )
                 )
 
-                Text("Dauer: $durationMinutes Minuten", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(pluralStringResource(R.plurals.hue_sunrise_duration, durationMinutes, durationMinutes), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 Slider(
                     value = durationMinutes.toFloat(),
                     onValueChange = { onDurationChange(it.toInt().coerceIn(1, 90)) },
@@ -90,7 +93,7 @@ internal fun SunriseConfigCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ColorSwatch(previewColorForKelvin(startKelvin))
-                    Text("Start: $startKelvin K (warm)", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.hue_sunrise_start_k, startKelvin), style = MaterialTheme.typography.bodyMedium)
                 }
                 Slider(
                     value = startKelvin.toFloat(),
@@ -101,7 +104,7 @@ internal fun SunriseConfigCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ColorSwatch(previewColorForKelvin(endKelvin))
-                    Text("Ziel: $endKelvin K", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.hue_sunrise_end_k, endKelvin), style = MaterialTheme.typography.bodyMedium)
                 }
                 Slider(
                     value = endKelvin.toFloat(),
@@ -110,7 +113,7 @@ internal fun SunriseConfigCard(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("Ziel-Helligkeit: ${endBrightness * 100 / 254}%", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.hue_sunrise_end_brightness, endBrightness * 100 / 254), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 Slider(
                     value = endBrightness.toFloat(),
                     onValueChange = { onEndBrightnessChange(it.toInt()) },
@@ -118,24 +121,24 @@ internal fun SunriseConfigCard(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("Zeitpunkt", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.hue_sunrise_when), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = startBeforeAlarm,
                         onClick = { onStartBeforeAlarmChange(true) },
-                        label = { Text("Vor dem Alarm") }
+                        label = { Text(stringResource(R.string.hue_sunrise_before_alarm)) }
                     )
                     FilterChip(
                         selected = !startBeforeAlarm,
                         onClick = { onStartBeforeAlarmChange(false) },
-                        label = { Text("Ab Alarmzeit") }
+                        label = { Text(stringResource(R.string.hue_sunrise_at_alarm)) }
                     )
                 }
                 Text(
                     if (startBeforeAlarm) {
-                        "Rampe endet zur Weckzeit (startet $durationMinutes Min früher)"
+                        pluralStringResource(R.plurals.hue_sunrise_before_hint, durationMinutes, durationMinutes)
                     } else {
-                        "Rampe startet zur Weckzeit"
+                        stringResource(R.string.hue_sunrise_at_hint)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,

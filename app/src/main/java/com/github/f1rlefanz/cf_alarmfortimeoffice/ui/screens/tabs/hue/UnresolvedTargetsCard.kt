@@ -21,6 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Warnkarte fuer Regel-Ziele, die auf DIESER Bridge nicht existieren.
@@ -56,19 +59,20 @@ internal fun UnresolvedTargetsCard(
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "$targetCount Regel-Ziel(e) auf dieser Bridge unbekannt",
+                    stringResource(
+                        R.string.hue_unresolved_title,
+                        pluralStringResource(R.plurals.hue_count_unresolved, targetCount, targetCount)
+                    ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
             Text(
-                "Betroffen: ${affectedRules.joinToString()}. Die Lampen stammen von einer anderen " +
-                    "Bridge – diese Regeln schalten dafür nichts. Was sich über den Namen " +
-                    "wiederfinden ließ, wurde bereits automatisch zugeordnet.",
+                stringResource(R.string.hue_unresolved_body, affectedRules.joinToString()),
                 style = MaterialTheme.typography.bodyMedium
             )
             Button(onClick = onNavigateToSettings, modifier = Modifier.fillMaxWidth()) {
-                Text("Regeln prüfen")
+                Text(stringResource(R.string.hue_unresolved_action))
             }
         }
     }

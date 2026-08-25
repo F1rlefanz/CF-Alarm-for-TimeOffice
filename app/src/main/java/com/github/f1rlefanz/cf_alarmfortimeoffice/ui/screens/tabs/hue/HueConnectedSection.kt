@@ -34,6 +34,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnec
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import kotlinx.coroutines.launch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Die Karten fuer eine EINGERICHTETE Bridge: Verwaltung (Statistik, Knoepfe) und die
@@ -78,13 +81,13 @@ internal fun ConnectedManagementCard(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Bridge verbunden",
+                        text = stringResource(R.string.hue_connected_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "$enabledRulesCount von $rulesCount Regeln aktiv",
+                        text = pluralStringResource(R.plurals.hue_connected_rules, rulesCount, enabledRulesCount, rulesCount),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -98,17 +101,17 @@ internal fun ConnectedManagementCard(
             ) {
                 QuickStatItem(
                     icon = Icons.Default.Schedule,
-                    label = "Regeln",
+                    label = stringResource(R.string.hue_stats_rules),
                     value = rulesCount.toString()
                 )
                 QuickStatItem(
                     icon = Icons.Default.Lightbulb,
-                    label = "Lichter",
+                    label = stringResource(R.string.hue_stats_lights),
                     value = lightsCount.toString()
                 )
                 QuickStatItem(
                     icon = Icons.Default.CheckCircle,
-                    label = "Aktiv",
+                    label = stringResource(R.string.hue_rulecard_active),
                     value = enabledRulesCount.toString()
                 )
             }
@@ -129,7 +132,7 @@ internal fun ConnectedManagementCard(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Regeln verwalten")
+                    Text(stringResource(R.string.hue_connected_manage))
                 }
 
                 // Secondary actions
@@ -139,14 +142,14 @@ internal fun ConnectedManagementCard(
                 ) {
                     CompactOutlinedButton(
                         onClick = onNavigateToRuleConfig,
-                        text = "Neue Regel",
+                        text = stringResource(R.string.hue_settings_new_rule),
                         icon = Icons.Default.Add,
                         modifier = Modifier.weight(1f)
                     )
 
                     CompactOutlinedButton(
                         onClick = onTestConnection,
-                        text = "Test",
+                        text = stringResource(R.string.hue_bridge_test),
                         icon = Icons.Default.FlashOn,
                         modifier = Modifier.weight(1f)
                     )
@@ -225,7 +228,7 @@ internal fun ConnectedFeaturesCard(
                     modifier = Modifier.size(48.dp) // Bigger celebration icon
                 )
                 Text(
-                    text = "🎉 Erfolgreich verbunden!",
+                    text = stringResource(R.string.hue_setup_done_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -235,7 +238,7 @@ internal fun ConnectedFeaturesCard(
 
             // Feature Description
             Text(
-                text = "Ihre Philips Hue Bridge ist jetzt mit der App verbunden. Sie können Lichtregeln für Ihre Alarme erstellen!",
+                text = stringResource(R.string.hue_setup_done_body),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -246,7 +249,7 @@ internal fun ConnectedFeaturesCard(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Was möchten Sie als nächstes tun?",
+                    text = stringResource(R.string.hue_setup_done_next),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -269,7 +272,7 @@ internal fun ConnectedFeaturesCard(
                     // den Knopf und trieb sie in die zweite Zeile. Die Standard-Button-Typografie
                     // passt in eine Zeile - und der Knopf ist als einziger ganzbreiter Primär-
                     // Knopf ohnehin schon deutlich genug hervorgehoben.
-                    Text("Erste Hue-Regel erstellen")
+                    Text(stringResource(R.string.hue_setup_done_first_rule))
                 }
 
                 // Secondary Actions
@@ -279,7 +282,7 @@ internal fun ConnectedFeaturesCard(
                 ) {
                     CompactOutlinedButton(
                         onClick = onNavigateToSettings,
-                        text = "Einstellungen",
+                        text = stringResource(R.string.hue_setup_done_settings),
                         icon = Icons.Default.Settings,
                         modifier = Modifier.weight(1f)
                     )
@@ -292,7 +295,7 @@ internal fun ConnectedFeaturesCard(
                             }
                             onTestConnection()
                         },
-                        text = "Test",
+                        text = stringResource(R.string.hue_bridge_test),
                         icon = Icons.Default.Lightbulb,
                         modifier = Modifier.weight(1f)
                     )
@@ -306,7 +309,7 @@ internal fun ConnectedFeaturesCard(
                 )
             ) {
                 Text(
-                    text = "💡 Tipp: Erstellen Sie für jede Schicht eine eigene Licht-Regel mit verschiedenen Farben und Helligkeiten.",
+                    text = stringResource(R.string.hue_setup_done_tip),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     textAlign = TextAlign.Center,

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,9 +11,11 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Eigene Karte "Automatisch ausschalten" (auto-off) - Schalter als Kartenueberschrift, plus
@@ -52,11 +55,11 @@ internal fun AutoOffCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             SwitchRow(
-                title = "Automatisch ausschalten",
+                title = stringResource(R.string.hue_autooff_title),
                 description = if (szenenRaumName != null) {
-                    "Schaltet den Raum wieder aus, nachdem die Szene gelaufen ist."
+                    stringResource(R.string.hue_autooff_hint_scene)
                 } else {
-                    "Schaltet die Lichter wieder aus, nachdem die Regel sie eingeschaltet hat."
+                    stringResource(R.string.hue_autooff_hint_default)
                 },
                 checked = autoOffEnabled,
                 onCheckedChange = onAutoOffEnabledChange,
@@ -70,7 +73,7 @@ internal fun AutoOffCard(
                     // "1 Minuten" stand hier, sobald der Regler ganz links steht - am Geraet
                     // gesehen. Der Regler laesst genau diesen Wert zu, also muss der Text ihn
                     // koennen.
-                    "Ausschalten nach: $autoOffMinutes ${if (autoOffMinutes == 1) "Minute" else "Minuten"}",
+                    pluralStringResource(R.plurals.hue_autooff_after, autoOffMinutes, autoOffMinutes),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -82,12 +85,10 @@ internal fun AutoOffCard(
                 )
                 Text(
                     when {
-                        sunriseActive -> "Gemessen ab dem Ende des Sonnenaufgangs."
+                        sunriseActive -> stringResource(R.string.hue_autooff_from_sunrise)
                         szenenRaumName != null ->
-                            "Gemessen ab der Regelausführung (Weckzeit). Ausgeschaltet wird der " +
-                                "ganze Raum «$szenenRaumName» – eine Szene lässt sich nicht " +
-                                "einzeln zurücknehmen."
-                        else -> "Gemessen ab der Regelausführung (Weckzeit)."
+                            stringResource(R.string.hue_autooff_from_rule_scene, szenenRaumName)
+                        else -> stringResource(R.string.hue_autooff_from_rule)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

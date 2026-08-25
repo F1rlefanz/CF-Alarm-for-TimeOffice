@@ -37,6 +37,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeConnectionInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import kotlinx.coroutines.launch
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Die Karten fuer den Weg ZUR Bridge: Verbindungszustand, Suche und Kopplung.
@@ -100,23 +103,23 @@ internal fun BridgeConnectionStatusCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = when {
-                            isConnected -> "Verbunden"
-                            neverConfigured -> "Noch keine Bridge eingerichtet"
-                            else -> "Nicht verbunden"
+                            isConnected -> stringResource(R.string.hue_conn_connected)
+                            neverConfigured -> stringResource(R.string.hue_conn_never)
+                            else -> stringResource(R.string.hue_bridge_disconnected)
                         },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                     when {
                         neverConfigured -> Text(
-                            text = "Suche unten nach deiner Hue-Bridge, um Lichtregeln für deine Alarme anzulegen.",
+                            text = stringResource(R.string.hue_conn_never_hint),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         // Die Folge, nicht nur der Zustand: Das ist der Satz, der frueher als
                         // eigenes Banner darueber stand.
                         !isConnected -> Text(
-                            text = "Lichtaktionen für Alarme könnten ausfallen.",
+                            text = stringResource(R.string.hue_bridge_disconnected_hint),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -151,7 +154,7 @@ internal fun BridgeConnectionStatusCard(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Prüfen")
+                        Text(stringResource(R.string.hue_bridge_check))
                     }
                 }
             }
@@ -176,7 +179,7 @@ internal fun BridgeDiscoveryCard(
         ) {
             // Section Header
             Text(
-                text = "Bridge-Suche",
+                text = stringResource(R.string.hue_discovery_header),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -201,11 +204,11 @@ internal fun BridgeDiscoveryCard(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Bridges suchen")
+                    Text(stringResource(R.string.hue_discovery_start))
                 }
             } else {
                 Text(
-                    text = "${discoveredBridges.size} Bridge${if (discoveredBridges.size != 1) "s" else ""} gefunden:",
+                    text = pluralStringResource(R.plurals.hue_discovery_found, discoveredBridges.size, discoveredBridges.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -228,7 +231,7 @@ internal fun BridgeDiscoveryCard(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Erneut suchen")
+                    Text(stringResource(R.string.hue_discovery_again))
                 }
             }
         }
@@ -255,7 +258,7 @@ internal fun BridgeConnectionCard(
         ) {
             // Bridge Info
             Text(
-                text = bridge.name ?: "Philips Hue Bridge",
+                text = bridge.name ?: stringResource(R.string.hue_bridge_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -272,7 +275,7 @@ internal fun BridgeConnectionCard(
                 )
             ) {
                 Text(
-                    text = "🔗 Link-Taste an der Bridge drücken, dann 'Jetzt verbinden' antippen",
+                    text = stringResource(R.string.hue_pair_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.Medium,
@@ -293,7 +296,7 @@ internal fun BridgeConnectionCard(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Jetzt verbinden")
+                Text(stringResource(R.string.hue_pair_action))
             }
         }
     }

@@ -30,8 +30,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.modus
@@ -39,6 +41,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.Unresol
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueRuleModusLabel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueShiftPatternLabel
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Eine Regel in der Liste. Aus `HueSettingsScreen` ausgelagert.
@@ -95,7 +98,7 @@ internal fun HueRuleCard(
                     // hueShiftPatternLabel: das Universalmuster ist ein Sentinel ("ALL") und
                     // darf in der Liste nicht roh erscheinen - dieselbe Beschriftung wie im Editor.
                     Text(
-                        "Schichtmuster: ${hueShiftPatternLabel(rule.shiftPattern)}",
+                        stringResource(R.string.hue_rulecard_shift, hueShiftPatternLabel(rule.shiftPattern)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -105,7 +108,7 @@ internal fun HueRuleCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        if (rule.enabled) "Aktiv" else "Deaktiviert",
+                        stringResource(if (rule.enabled) R.string.hue_rulecard_active else R.string.hue_rulecard_inactive),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (rule.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -128,9 +131,11 @@ internal fun HueRuleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "${unresolvedTargets.size} Ziel(e) auf dieser Bridge unbekannt: " +
-                            "${unresolvedTargets.joinToString { it.label }}. " +
-                            "Diese Regel schaltet dafür nichts – bitte in \"Bearbeiten\" neu auswählen.",
+                        stringResource(
+                            R.string.hue_rulecard_unresolved,
+                            pluralStringResource(R.plurals.hue_count_unresolved, unresolvedTargets.size, unresolvedTargets.size),
+                            unresolvedTargets.joinToString { it.label }
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -147,20 +152,20 @@ internal fun HueRuleCard(
             ) {
                 CompactOutlinedButton(
                     onClick = onEdit,
-                    text = "Bearbeiten",
+                    text = stringResource(R.string.hue_rulecard_edit),
                     icon = Icons.Default.Edit,
                     modifier = Modifier.weight(1f)
                 )
                 CompactOutlinedButton(
                     onClick = onTest,
-                    text = "Test",
+                    text = stringResource(R.string.hue_rulecard_test),
                     icon = Icons.Default.PlayArrow,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = { showDeleteDialog = true }) {
                     // Eigenstaendiges Bedienelement ohne sichtbare Beschriftung: die
                     // contentDescription benennt die AKTION, nicht das Symbol.
-                    Icon(Icons.Default.Delete, "Regel löschen", tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Default.Delete, stringResource(R.string.hue_rulecard_delete), tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -169,12 +174,10 @@ internal fun HueRuleCard(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Regel löschen?") },
+            title = { Text(stringResource(R.string.hue_rulecard_delete_title)) },
             text = {
                 Text(
-                    "Die Regel \"${rule.name}\" wird mit allen Einstellungen (Lampenauswahl, " +
-                        "Farbe, Auto-Aus, Sonnenaufgang) gelöscht. Das lässt sich nicht rückgängig " +
-                        "machen."
+                    stringResource(R.string.hue_rulecard_delete_body, rule.name)
                 )
             },
             confirmButton = {
@@ -184,12 +187,12 @@ internal fun HueRuleCard(
                         onDelete()
                     }
                 ) {
-                    Text("Löschen", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.hue_rulecard_delete_confirm), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Abbrechen")
+                    Text(stringResource(R.string.hue_cancel))
                 }
             }
         )
@@ -200,28 +203,44 @@ internal fun HueRuleCard(
  * Was die Regel konkret tut, in einer Zeile. Je Modus eine eigene Formulierung - eine gemeinsame
  * ("N Ziele") verschwiege genau das, was den Unterschied ausmacht.
  */
+@Composable
 private fun regelBeschreibung(rule: HueSchedule): String = when (rule.modus) {
     HueRuleModus.SZENE -> {
         val aktion = rule.lightActions.firstOrNull { it.isScene }
-        val szene = aktion?.sceneName?.takeIf { it.isNotBlank() } ?: "Szene"
+        val szene = aktion?.sceneName?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.hue_scene_header)
         val raum = aktion?.targetName?.takeIf { it.isNotBlank() }
-        if (raum != null) "Szene «$szene» · $raum" else "Szene «$szene»"
+        if (raum != null) stringResource(R.string.hue_rulecard_desc_scene_room, szene, raum)
+        else stringResource(R.string.hue_rulecard_desc_scene, szene)
     }
 
-    HueRuleModus.SONNENAUFGANG ->
-        "Sonnenaufgang über ${rule.sunrise?.durationMinutes ?: 0} Min · ${zielZahl(rule)}"
+    HueRuleModus.SONNENAUFGANG -> stringResource(
+        R.string.hue_rulecard_desc_sunrise,
+        pluralStringResource(
+            R.plurals.hue_sunrise_duration_bare,
+            rule.sunrise?.durationMinutes ?: 0,
+            rule.sunrise?.durationMinutes ?: 0
+        ),
+        zielZahl(rule)
+    )
 
     HueRuleModus.MANUELL -> {
         val an = rule.lightActions.any { it.on == true }
-        "${if (an) "Einschalten" else "Ausschalten"} · ${zielZahl(rule)}"
+        stringResource(
+            R.string.hue_rulecard_desc_manual,
+            stringResource(if (an) R.string.hue_action_on else R.string.hue_action_off),
+            zielZahl(rule)
+        )
     }
 }
 
+@Composable
 private fun zielZahl(rule: HueSchedule): String {
     val lichter = rule.lightActions.count { !it.isScene && !it.isGroup }
     val gruppen = rule.lightActions.count { !it.isScene && it.isGroup }
-    return listOfNotNull(
-        lichter.takeIf { it > 0 }?.let { "$it ${if (it == 1) "Licht" else "Lichter"}" },
-        gruppen.takeIf { it > 0 }?.let { "$it ${if (it == 1) "Gruppe" else "Gruppen"}" }
-    ).joinToString(", ").ifEmpty { "kein Ziel" }
+    val teile = listOfNotNull(
+        if (lichter > 0) pluralStringResource(R.plurals.hue_count_lights, lichter, lichter) else null,
+        if (gruppen > 0) pluralStringResource(R.plurals.hue_count_groups, gruppen, gruppen) else null
+    )
+    return teile.joinToString(", ").ifEmpty { stringResource(R.string.hue_rulecard_no_target) }
 }

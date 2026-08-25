@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -89,9 +91,9 @@ internal fun SceneSelectionCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Szene", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.hue_scene_header), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 IconButton(onClick = onRefreshTargets) {
-                    Icon(Icons.Default.Refresh, "Szenen aktualisieren")
+                    Icon(Icons.Default.Refresh, stringResource(R.string.hue_scene_refresh))
                 }
             }
 
@@ -101,24 +103,20 @@ internal fun SceneSelectionCard(
                 // anderen fehlt schlicht eine Szene in der Hue-App. Ein gemeinsames "Keine Szenen
                 // gefunden" schickt den Nutzer in die falsche Richtung.
                 lightTargets.scenesFailed -> Text(
-                    "Die Szenen konnten nicht von der Bridge geladen werden. Prüfe, ob du im " +
-                        "selben WLAN bist, und tippe dann auf das Aktualisieren-Symbol.",
+                    stringResource(R.string.hue_scene_failed),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
 
                 lightTargets.scenes.isEmpty() -> Text(
-                    "Auf dieser Bridge gibt es keine Szenen, die einem Raum oder einer Zone " +
-                        "zugeordnet sind. Lege in der Hue-App eine Szene für einen Raum an – " +
-                        "danach erscheint sie hier.",
+                    stringResource(R.string.hue_scene_none),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 else -> {
                     Text(
-                        "Wähle eine Szene aus deiner Hue-App. Helligkeit und Farbe kommen dann " +
-                            "aus der Szene selbst.",
+                        stringResource(R.string.hue_scene_intro),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -128,8 +126,7 @@ internal fun SceneSelectionCard(
                     // ausgewaehlt, und nichts sagt warum.
                     if (unresolvedTargets.isNotEmpty()) {
                         Text(
-                            "Auf dieser Bridge unbekannt: ${unresolvedTargets.joinToString { it.label }}. " +
-                                "Bitte neu auswählen.",
+                            stringResource(R.string.hue_scene_unknown_targets, unresolvedTargets.joinToString { it.label }),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -141,7 +138,7 @@ internal fun SceneSelectionCard(
                             onClick = { menueOffen = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(gewaehlterRaum?.name ?: "Raum wählen", modifier = Modifier.weight(1f))
+                            Text(gewaehlterRaum?.name ?: stringResource(R.string.hue_scene_pick_room), modifier = Modifier.weight(1f))
                             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                         }
                         DropdownMenu(expanded = menueOffen, onDismissRequest = { menueOffen = false }) {
@@ -189,7 +186,7 @@ internal fun SceneSelectionCard(
 
                     if (showValidationErrors && ausgewaehlt == null) {
                         Text(
-                            "Bitte eine Szene auswählen",
+                            stringResource(R.string.hue_scene_required),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -200,8 +197,7 @@ internal fun SceneSelectionCard(
                     // Auto-Aus. Das still wegzulassen hiesse, den Nutzer eine fehlende Szene
                     // suchen zu lassen, die es nie geben wird.
                     Text(
-                        "Szenen ohne Raum oder Zone werden hier nicht angeboten. Ordne sie in " +
-                            "der Hue-App einem Raum zu, dann erscheinen sie.",
+                        stringResource(R.string.hue_scene_lightscene_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

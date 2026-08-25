@@ -26,9 +26,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
@@ -155,11 +157,15 @@ fun HueRuleConfigScreen(
     // dass je der Systemdialog erschien. Die Testregel wird bewusst ERST HIER gebaut, aus dem
     // aktuellen Formularzustand: Der ist rememberSaveable, ueberlebt also den Activity-Neuaufbau
     // waehrend des Dialogs - eine vorher gebaute Regel waere danach weg.
+    // Vor dem Tor aufgeloest: der Rueckfallname wird im Callback gebraucht, und dort ist
+    // stringResource nicht erlaubt.
+    val testRegelName = stringResource(R.string.hue_preview_test_rule_name)
+
     val gate = rememberLocalNetworkPermissionGate<HueRuleConfigNetzAktion>(
         onMessage = { hueViewModel.setError(it) }
     ) { _, _ ->
         val testRule = baueRegel("test_${System.currentTimeMillis()}")
-            .copy(name = form.name.ifBlank { "Test-Regel" })
+            .copy(name = form.name.ifBlank { testRegelName })
         hueViewModel.testRuleExecution(testRule)
     }
 
@@ -172,14 +178,14 @@ fun HueRuleConfigScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (ruleId != null) "Regel bearbeiten" else "Neue Regel",
+                        stringResource(if (ruleId != null) R.string.hue_editor_title_edit else R.string.hue_editor_title_new),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.hue_back))
                     }
                 },
                 actions = {
@@ -195,7 +201,7 @@ fun HueRuleConfigScreen(
                             }
                         }
                     ) {
-                        Text("Speichern", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.hue_save), fontWeight = FontWeight.Bold)
                     }
                 }
             )

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -83,6 +85,10 @@ fun HueTabContent(
     // EINE Abbildung Absicht -> ViewModel-Aufruf, hinter dem gemeinsamen Berechtigungstor: beide
     // Wege (Berechtigung liegt schon vor ODER wurde gerade im Dialog erteilt) laufen durch
     // dieselbe Stelle und koennen deshalb nicht auseinanderlaufen.
+    // Vor dem Tor aufgeloest: im Callback ist stringResource nicht erlaubt, und
+    // context.getString() waere dort nicht konfigurationssicher (Lint).
+    val bridgeWegText = stringResource(R.string.hue_tab_bridge_gone)
+
     val gate = rememberLocalNetworkPermissionGate<PendingHueAction>(
         onMessage = { hueViewModel.setError(it) }
     ) { action, bridgeId ->
@@ -100,7 +106,7 @@ fun HueTabContent(
                     hueViewModel.setupBridge(bridge)
                 } else {
                     hueViewModel.setError(
-                        "Die Bridge steht nicht mehr in der Trefferliste. Bitte erneut suchen und dann verbinden."
+                        bridgeWegText
                     )
                 }
             }
@@ -116,7 +122,7 @@ fun HueTabContent(
         // Header
         item {
             Text(
-                text = "Philips Hue Integration",
+                text = stringResource(R.string.hue_tab_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -192,7 +198,7 @@ fun HueTabContent(
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
-                                        text = "Lade Hue-Konfiguration...",
+                                        text = stringResource(R.string.hue_tab_loading),
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )

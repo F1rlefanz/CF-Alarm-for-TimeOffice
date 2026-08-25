@@ -10,7 +10,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
@@ -58,7 +60,8 @@ internal val COLOR_PRESETS = listOf(
  * Bewusst "Alle Schichten" (nicht "Alle Tage" wie beim Dimmer): der Dimmer meint Kalendertage
  * inklusive freier, eine Hue-Regel laeuft ausschliesslich zur Weckzeit einer erkannten Schicht.
  */
-internal const val UNIVERSAL_SHIFT_LABEL = "Alle Schichten"
+internal val UNIVERSAL_SHIFT_LABEL: String
+    @Composable get() = stringResource(R.string.hue_shift_universal_label)
 
 /**
  * Ist [pattern] das Universalmuster?
@@ -75,6 +78,7 @@ internal fun isUniversalShiftPattern(pattern: String): Boolean =
  * Beschriftung eines gespeicherten Schichtmusters. Das Universalmuster ist ein Sentinel ("ALL")
  * und darf dem Nutzer nie roh angezeigt werden.
  */
+@Composable
 internal fun hueShiftPatternLabel(pattern: String): String =
     if (isUniversalShiftPattern(pattern)) UNIVERSAL_SHIFT_LABEL else pattern
 
@@ -83,34 +87,40 @@ internal fun hueShiftPatternLabel(pattern: String): String =
  * Modus-Umschalter im Editor und das Abzeichen in der Regel-Liste. Zwei eigene Formulierungen
  * waeren zwei Wahrheiten - und die Regel-Liste sagte irgendwann etwas anderes als der Editor.
  */
-internal fun hueRuleModusLabel(modus: HueRuleModus): String = when (modus) {
-    HueRuleModus.SZENE -> "Szene"
-    HueRuleModus.MANUELL -> "Manuell"
-    HueRuleModus.SONNENAUFGANG -> "Sonnenaufgang"
-}
+@Composable
+internal fun hueRuleModusLabel(modus: HueRuleModus): String = stringResource(
+    when (modus) {
+        HueRuleModus.SZENE -> R.string.hue_mode_scene
+        HueRuleModus.MANUELL -> R.string.hue_mode_manual
+        HueRuleModus.SONNENAUFGANG -> R.string.hue_mode_sunrise
+    }
+)
 
 /** Ein Satz, der den Modus erklaert - im Umschalter unter der jeweiligen Beschriftung. */
-internal fun hueRuleModusErklaerung(modus: HueRuleModus): String = when (modus) {
-    HueRuleModus.SZENE ->
-        "Eine Szene aus deiner Hue-App. Sie bringt Helligkeit und Farbe je Lampe selbst mit."
-    HueRuleModus.MANUELL ->
-        "Lampen und Gruppen selbst auswählen und Helligkeit und Farbe einstellen."
-    HueRuleModus.SONNENAUFGANG ->
-        "Langsam heller werden — von warm nach kühl, über mehrere Minuten."
-}
+@Composable
+internal fun hueRuleModusErklaerung(modus: HueRuleModus): String = stringResource(
+    when (modus) {
+        HueRuleModus.SZENE -> R.string.hue_mode_scene_explain
+        HueRuleModus.MANUELL -> R.string.hue_mode_manual_explain
+        HueRuleModus.SONNENAUFGANG -> R.string.hue_mode_sunrise_explain
+    }
+)
 
-internal fun presetLabel(preset: HueColorConverter.ColorPreset): String = when (preset) {
-    HueColorConverter.ColorPreset.WARM_WHITE -> "Warmweiß"
-    HueColorConverter.ColorPreset.COOL_WHITE -> "Kaltweiß"
-    HueColorConverter.ColorPreset.RED -> "Rot"
-    HueColorConverter.ColorPreset.GREEN -> "Grün"
-    HueColorConverter.ColorPreset.BLUE -> "Blau"
-    HueColorConverter.ColorPreset.YELLOW -> "Gelb"
-    HueColorConverter.ColorPreset.PURPLE -> "Lila"
-    HueColorConverter.ColorPreset.ORANGE -> "Orange"
-    HueColorConverter.ColorPreset.PINK -> "Pink"
-    HueColorConverter.ColorPreset.CYAN -> "Türkis"
-}
+@Composable
+internal fun presetLabel(preset: HueColorConverter.ColorPreset): String = stringResource(
+    when (preset) {
+        HueColorConverter.ColorPreset.WARM_WHITE -> R.string.hue_color_warm_white
+        HueColorConverter.ColorPreset.COOL_WHITE -> R.string.hue_color_cool_white
+        HueColorConverter.ColorPreset.RED -> R.string.hue_color_red
+        HueColorConverter.ColorPreset.GREEN -> R.string.hue_color_green
+        HueColorConverter.ColorPreset.BLUE -> R.string.hue_color_blue
+        HueColorConverter.ColorPreset.YELLOW -> R.string.hue_color_yellow
+        HueColorConverter.ColorPreset.PURPLE -> R.string.hue_color_purple
+        HueColorConverter.ColorPreset.ORANGE -> R.string.hue_color_orange
+        HueColorConverter.ColorPreset.PINK -> R.string.hue_color_pink
+        HueColorConverter.ColorPreset.CYAN -> R.string.hue_color_cyan
+    }
+)
 
 /**
  * Recovers the closest preset for a stored hue, so an edited COLOR rule round-trips back to

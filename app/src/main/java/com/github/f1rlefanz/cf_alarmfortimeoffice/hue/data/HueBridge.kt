@@ -16,7 +16,6 @@ import androidx.compose.runtime.Immutable
 data class HueBridge(
     val id: String,
     val ipAddress: String, // Renamed from internalipaddress for clarity
-    val port: Int = 80,
     val name: String? = null,
     val modelid: String? = null,
     val swversion: String? = null,
@@ -51,6 +50,5 @@ data class HueBridgeConfig(
 @Immutable
 data class BridgeDiscoveryResponse(
     val id: String,
-    val internalipaddress: String,
-    val port: Int? = null
+    val internalipaddress: String
 )

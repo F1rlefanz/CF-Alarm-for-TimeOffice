@@ -29,8 +29,7 @@ class HueNUpnpDiscoveryService {
     @Serializable
     data class DiscoveryResponse(
         val id: String,
-        val internalipaddress: String,
-        val port: Int? = null
+        val internalipaddress: String
     )
     
     private val httpClient = OkHttpClient.Builder()

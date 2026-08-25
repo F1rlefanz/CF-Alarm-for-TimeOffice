@@ -32,8 +32,8 @@ import androidx.compose.ui.res.pluralStringResource
  *
  * @param sunriseActive nur fuer den Hinweistext: bei Sunrise haengt das Aus hinter der Rampe
  *        (siehe SUNRISE_TEST_DURATION-Logik), nicht ab der Regelausfuehrung.
- * @param szenenRaumName gesetzt = die Regel schaltet eine SZENE. Dann trifft das Aus den GANZEN
- *        Raum, nicht nur die Lampen der Szene: es gibt keinen Gegenbefehl zu einer Szene, die
+ * @param szenenRaeume nicht leer = die Regel schaltet SZENEN. Dann trifft das Aus die GANZEN
+ *        Raeume, nicht nur die Lampen der Szenen: es gibt keinen Gegenbefehl zu einer Szene, die
  *        einzige ehrliche Ruecknahme ist "Raum aus". Bei einer Raum-Szene sind das dieselben
  *        Lampen; beruehrt sie nur einen Teil des Raums, geht mehr aus als anging. Der Text sagt
  *        das - er behauptet nichts anderes.
@@ -43,7 +43,7 @@ internal fun AutoOffCard(
     autoOffEnabled: Boolean,
     autoOffMinutes: Int,
     sunriseActive: Boolean,
-    szenenRaumName: String? = null,
+    szenenRaeume: List<String> = emptyList(),
     onAutoOffEnabledChange: (Boolean) -> Unit,
     onAutoOffMinutesChange: (Int) -> Unit
 ) {
@@ -56,7 +56,7 @@ internal fun AutoOffCard(
         ) {
             SwitchRow(
                 title = stringResource(R.string.hue_autooff_title),
-                description = if (szenenRaumName != null) {
+                description = if (szenenRaeume.isNotEmpty()) {
                     stringResource(R.string.hue_autooff_hint_scene)
                 } else {
                     stringResource(R.string.hue_autooff_hint_default)
@@ -86,8 +86,13 @@ internal fun AutoOffCard(
                 Text(
                     when {
                         sunriseActive -> stringResource(R.string.hue_autooff_from_sunrise)
-                        szenenRaumName != null ->
-                            stringResource(R.string.hue_autooff_from_rule_scene, szenenRaumName)
+                        szenenRaeume.isNotEmpty() ->
+                            pluralStringResource(
+                                R.plurals.hue_autooff_from_rule_scene,
+                                szenenRaeume.size,
+                                if (szenenRaeume.size == 1) szenenRaeume.single()
+                                else szenenRaeume.joinToString(", ") { "«$it»" }
+                            )
                         else -> stringResource(R.string.hue_autooff_from_rule)
                     },
                     style = MaterialTheme.typography.bodySmall,

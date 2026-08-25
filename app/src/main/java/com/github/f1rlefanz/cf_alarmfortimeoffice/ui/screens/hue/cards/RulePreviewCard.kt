@@ -117,17 +117,27 @@ internal fun RulePreviewCard(
             if (form.hatZiel) {
                 // Die Texte werden VOR den buildString-Bloecken aufgeloest: stringResource ist
                 // @Composable und darf in einem gewoehnlichen Lambda nicht aufgerufen werden.
-                val autoOffZusatz = if (form.autoOffEnabled) {
+                // Der Abstand steht HIER, nicht in der Ressource: Android trimmt Rand-
+                // Leerzeichen beim Einlesen, am Geraet stand sonst "Wohnzimmer· Auto-Aus".
+                val autoOffText = if (form.autoOffEnabled) {
                     pluralStringResource(R.plurals.hue_preview_autooff_suffix, form.autoOffMinutes, form.autoOffMinutes)
-                } else ""
+                } else null
+                val autoOffZusatz = autoOffText?.let { " " + it } ?: ""
+
+                // Jede Szene bekommt ihre eigene Zeile: eine Zusammenfassung wie "2 Szenen"
+                // verschwiege genau das, was der Nutzer hier nachlesen will. Die Zeilen werden
+                // VOR dem Zusammenfuegen aufgeloest - stringResource ist @Composable und darf in
+                // einem gewoehnlichen Lambda (joinToString) nicht aufgerufen werden.
+                val szenenZeilen = form.szenen.map { auswahl ->
+                    stringResource(R.string.hue_preview_scene, auswahl.sceneName, auswahl.groupName)
+                }
 
                 when (form.modus) {
+                    // Bei mehreren Szenen bekommt das Auto-Aus eine EIGENE Zeile - haengte es
+                    // an der letzten, laese es sich, als gaelte es nur fuer diesen einen Raum.
                     HueRuleModus.SZENE -> Text(
-                        stringResource(
-                            R.string.hue_preview_scene,
-                            form.szene?.sceneName.orEmpty(),
-                            form.szene?.groupName.orEmpty()
-                        ) + autoOffZusatz,
+                        (szenenZeilen + listOfNotNull(autoOffText))
+                            .joinToString(separator = "\n"),
                         style = MaterialTheme.typography.bodyMedium
                     )
 

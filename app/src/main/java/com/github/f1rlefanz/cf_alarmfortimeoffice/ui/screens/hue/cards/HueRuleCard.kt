@@ -206,12 +206,17 @@ internal fun HueRuleCard(
 @Composable
 private fun regelBeschreibung(rule: HueSchedule): String = when (rule.modus) {
     HueRuleModus.SZENE -> {
-        val aktion = rule.lightActions.firstOrNull { it.isScene }
-        val szene = aktion?.sceneName?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.hue_scene_header)
-        val raum = aktion?.targetName?.takeIf { it.isNotBlank() }
-        if (raum != null) stringResource(R.string.hue_rulecard_desc_scene_room, szene, raum)
-        else stringResource(R.string.hue_rulecard_desc_scene, szene)
+        // Eine Regel darf mehrere Szenen schalten (je Raum eine). In der Liste stehen sie
+        // hintereinander: "Szene «Nachtlicht» · Wohnzimmer, Szene «Lesen» · Schlafzimmer".
+        // Eine Zusammenfassung wie "2 Szenen" verschwiege genau das, wonach man in der Liste sucht.
+        val zeilen = rule.lightActions.filter { it.isScene }.map { aktion ->
+            val szene = aktion.sceneName?.takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.hue_scene_header)
+            val raum = aktion.targetName?.takeIf { it.isNotBlank() }
+            if (raum != null) stringResource(R.string.hue_rulecard_desc_scene_room, szene, raum)
+            else stringResource(R.string.hue_rulecard_desc_scene, szene)
+        }
+        zeilen.joinToString(", ")
     }
 
     HueRuleModus.SONNENAUFGANG -> stringResource(

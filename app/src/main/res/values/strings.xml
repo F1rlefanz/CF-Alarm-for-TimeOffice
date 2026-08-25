@@ -200,7 +200,10 @@
     <string name="hue_autooff_hint_default">Schaltet die Lichter wieder aus, nachdem die Regel sie eingeschaltet hat.</string>
     <string name="hue_autooff_from_sunrise">Gemessen ab dem Ende des Sonnenaufgangs.</string>
     <string name="hue_autooff_from_rule">Gemessen ab der Regelausführung (Weckzeit).</string>
-    <string name="hue_autooff_from_rule_scene">Gemessen ab der Regelausführung (Weckzeit). Ausgeschaltet wird der ganze Raum «%1$s» – eine Szene lässt sich nicht einzeln zurücknehmen.</string>
+    <plurals name="hue_autooff_from_rule_scene">
+        <item quantity="one">Gemessen ab der Regelausführung (Weckzeit). Ausgeschaltet wird der ganze Raum «%1$s» – eine Szene lässt sich nicht einzeln zurücknehmen.</item>
+        <item quantity="other">Gemessen ab der Regelausführung (Weckzeit). Ausgeschaltet werden die ganzen Räume %1$s – eine Szene lässt sich nicht einzeln zurücknehmen.</item>
+    </plurals>
 
     <!-- Regel-Editor: Sonnenaufgang -->
     <string name="hue_sunrise_title">Sunrise-Lichtwecker</string>
@@ -219,7 +222,9 @@
     <string name="hue_scene_refresh">Szenen aktualisieren</string>
     <string name="hue_scene_failed">Die Szenen konnten nicht von der Bridge geladen werden. Prüfe, ob du im selben WLAN bist, und tippe dann auf das Aktualisieren-Symbol.</string>
     <string name="hue_scene_none">Auf dieser Bridge gibt es keine Szenen, die einem Raum oder einer Zone zugeordnet sind. Lege in der Hue-App eine Szene für einen Raum an – danach erscheint sie hier.</string>
-    <string name="hue_scene_intro">Wähle eine Szene aus deiner Hue-App. Helligkeit und Farbe kommen dann aus der Szene selbst.</string>
+    <string name="hue_scene_intro_multi">Wähle Szenen aus deiner Hue-App. Du kannst mehrere Räume kombinieren – pro Raum eine Szene. Helligkeit und Farbe kommen aus der Szene selbst.</string>
+    <string name="hue_scene_remove">%1$s in %2$s entfernen</string>
+    <string name="hue_scene_overlap_hint">Zwei der gewählten Bereiche teilen sich mindestens eine Lampe. Für diese Lampe gilt dann die zuletzt gesetzte Szene.</string>
     <string name="hue_scene_unknown_targets">Auf dieser Bridge unbekannt: %1$s. Bitte neu auswählen.</string>
     <string name="hue_scene_pick_room">Raum wählen</string>
     <string name="hue_scene_required">Bitte eine Szene auswählen</string>
@@ -378,9 +383,12 @@
         <item quantity="one">Rampe endet zur Weckzeit (startet %1$d Minute früher)</item>
         <item quantity="other">Rampe endet zur Weckzeit (startet %1$d Minuten früher)</item>
     </plurals>
+    <!-- OHNE fuehrendes Leerzeichen: Android trimmt Rand-Leerzeichen beim Einlesen einer
+         Ressource, am Geraet stand sonst "Wohnzimmer· Auto-Aus". Der Abstand wird im Code
+         gesetzt (oder die Zeile steht ohnehin fuer sich). -->
     <plurals name="hue_preview_autooff_suffix">
-        <item quantity="one"> · Auto-Aus nach %1$d Minute</item>
-        <item quantity="other"> · Auto-Aus nach %1$d Minuten</item>
+        <item quantity="one">· Auto-Aus nach %1$d Minute</item>
+        <item quantity="other">· Auto-Aus nach %1$d Minuten</item>
     </plurals>
     <plurals name="hue_count_lights">
         <item quantity="one">%1$d Licht</item>

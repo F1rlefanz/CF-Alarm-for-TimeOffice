@@ -254,8 +254,8 @@ fun HueRuleConfigScreen(
                 HueRuleModus.SZENE -> item {
                     SceneSelectionCard(
                         lightTargets = uiState.lightTargets,
-                        ausgewaehlt = form.szene,
-                        onAuswahlChange = { form = form.copy(szene = it) },
+                        ausgewaehlt = form.szenen,
+                        onAuswahlChange = { form = form.copy(szenen = it) },
                         onRefreshTargets = { hueViewModel.refreshLightTargets(userInitiated = true) },
                         showValidationErrors = form.showValidationErrors,
                         unresolvedTargets = unresolvedFuerRegel
@@ -312,7 +312,9 @@ fun HueRuleConfigScreen(
                         // Bei einer Szene trifft das Aus den GANZEN Raum, nicht nur die Lampen
                         // der Szene - es gibt keinen Gegenbefehl zu einer Szene, die einzige
                         // ehrliche Ruecknahme ist "Raum aus". Das muss dabeistehen.
-                        szenenRaumName = form.szene?.groupName?.takeIf { form.modus == HueRuleModus.SZENE },
+                        szenenRaeume = form.szenen.map { it.groupName }
+                            .takeIf { form.modus == HueRuleModus.SZENE }
+                            .orEmpty(),
                         onAutoOffEnabledChange = { form = form.copy(autoOffEnabled = it) },
                         onAutoOffMinutesChange = { form = form.copy(autoOffMinutes = it) }
                     )

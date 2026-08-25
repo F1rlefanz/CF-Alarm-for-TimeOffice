@@ -93,6 +93,21 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`executeActionsWithAutoRevert()` filtert `on == true || sceneId != null`.** Eine Szene traegt
   `on == null`, schaltet aber Licht an: ohne das zweite Glied liesse die VORSCHAU den Raum
   dauerhaft leuchten — derselbe Bug wie in `RulePreviewCleanupTest`, in neuer Gestalt.
+- **Eine Regel darf MEHRERE Szenen schalten - je Raum eine** (seit v1.36.0). Die Kette darunter
+  konnte das von Anfang an: `convertRuleToLightActions` laeuft ueber alle Aktionen,
+  `autoOffTargetsOf()` flatMapt und dedupliziert, der Ziel-Abgleich behandelt jede Aktion einzeln.
+  Begrenzt hat allein die Oberflaeche (`HueRuleFormState.szene` in der Einzahl). Am Geraet belegt:
+  zwei PUTs, `2/2 successful`, Wohnzimmer `bri=254 ct=230` und Schlafzimmer `bri=26 ct=500` -
+  jede Szene mit ihren eigenen Werten -, und die Vorschau raeumte `2/2 targets switched off`.
+  **Zwei Szenen auf DEMSELBEN Raum bleiben ausgeschlossen**: das waeren zwei PUTs auf denselben
+  Endpunkt, der zweite gewaenne. Eine neue Wahl im selben Raum ersetzt deshalb die alte.
+- **Ueberlappende Bereiche werden BENANNT, nicht verboten.** Zonen ueberschneiden sich auf der
+  Bridge des Nutzers real (Lampe 4 liegt in „Wohnzimmer", „Deckenlampe" UND „Zuhause"); fuer eine
+  geteilte Lampe gewinnt die zuletzt gesendete Szene. Das ist keine Fehlbedienung, aber es
+  ueberrascht - deshalb ein Hinweis in der Auswahl.
+- **Ein fuehrendes Leerzeichen in einer String-Ressource ueberlebt nicht.** Android trimmt
+  Rand-Leerzeichen beim Einlesen; am Geraet stand deshalb „Wohnzimmer· Auto-Aus". Abstaende
+  gehoeren in den Code (oder die Zeile steht fuer sich).
 - **Der Ziel-Abgleich einer Szene ist ZWEISTUFIG, und die Reihenfolge ist nicht verhandelbar:**
   erst die Gruppe ueber `targetName`, dann die Szene AUSSCHLIESSLICH innerhalb der aufgeloesten
   Gruppe. Scheitert die Gruppe, bleibt `sceneId` unangetastet — eine Szene in den falschen Raum zu

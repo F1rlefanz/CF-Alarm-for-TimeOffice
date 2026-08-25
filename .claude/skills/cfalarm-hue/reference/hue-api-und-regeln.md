@@ -27,6 +27,7 @@
 - „Bridge eingerichtet" und „Bridge verbunden" sind zwei Fragen
 - `HueSmartScheduler.getInstance()` veröffentlicht `INSTANCE` erst NACH `initialize()`
 - Regel speichern navigiert sofort weg
+- Szenen: was am 25.08.2026 an der echten Bridge gemessen wurde
 
 ---
 
@@ -210,3 +211,31 @@
   von der ungültigen ID 8 auf 1 zurückgeordnet, „Gaestebad" blieb unangetastet und stand
   **namentlich** im Fertig-Dialog („1 Hue-Regel-Ziel(e) gibt es auf deiner Bridge nicht"). Der
   Export trägt `targetName` mit — ohne das wäre der Abgleich auf einer anderen Bridge unmöglich.
+
+- **Szenen: was am 25.08.2026 an der echten Bridge gemessen wurde** (BSB002, apiversion 1.78.0,
+  `GET/PUT` direkt gegen `https://192.168.178.24`, Zugangsdaten aus dem Emulator-DataStore). Die
+  Szenen-Unterstuetzung ist auf diesen Zahlen gebaut, nicht auf der Doku:
+  - **73 Szenen**, davon **67 `GroupScene`** und **6 `LightScene`**; `recycle:true` bei genau 2.
+    Die LISTEN-Antwort traegt **kein** `lightstates` (das gibt es nur bei `GET /scenes/<id>`) und
+    bleibt damit bei ~21 kB. 73 Eintraege in einer flachen Liste waeren unbedienbar — deshalb
+    waehlt die Oberflaeche erst den Raum und dann die Szene.
+  - **Szenennamen kollidieren massiv ueber Raeume hinweg**: „Energie tanken" existiert **10×**,
+    „Entspannen", „Lesen", „Konzentrieren", „Nachtlicht" und „Ruhephase" je **9×**. Ein Anker
+    allein ueber den Szenennamen waere damit in der Praxis IMMER mehrdeutig und wuerde nach einem
+    Geraete-/Bridge-Wechsel nichts mehr zuordnen. **Innerhalb** einer Gruppe kollidierte dagegen
+    **kein einziger** Name — deshalb ist der Anker das Paar (Szenenname, Gruppenname), und
+    deshalb wird die Gruppe ZUERST aufgeloest.
+  - **`PUT /groups/<g>/action` mit `{"scene":"<id>"}` antwortet mit GENAU EINEM Eintrag**
+    (`[{"success":{"/groups/5/action/scene":"3JXxZqxyctKtYXK"}}]`), nicht mit einem pro Lampe.
+    `parseControl` ist damit richtig; ein Attribut-PUT daneben liefert weiterhin einen Eintrag je
+    Attribut (im selben Lauf gegengeprueft).
+  - **Gruppe 0 funktioniert auch fuer eine GroupScene** (`/groups/0/action` mit derselben
+    Szenen-Id wurde angenommen und schaltete dieselben Lampen). LightScenes waeren darueber also
+    technisch erreichbar — sie bleiben trotzdem ausgeschlossen, weil ihnen der Gruppen-Namensanker
+    UND das Ziel fuers Auto-Aus fehlen. Das ist ein Produktschnitt, kein API-Hindernis.
+  - **`{"scene":id,"transitiontime":20}` im selben PUT wird angenommen** (kein Fehlereintrag).
+    Trotzdem wird `transitiontime` bei Szenen NICHT mitgeschickt: die Szene bestimmt ihren
+    Uebergang selbst, ein zweiter Uebergangsbegriff daneben waere eine ungeprueffte Zusage.
+  - **Keine der stichprobenhaft geprueften Szenen enthaelt Lampen mit `on:false`** (8 Szenen aus
+    5 Raeumen, Felder je Lampe: `on` + `bri` + `ct`/`xy`). „Szene an heisst Licht an" traegt damit
+    fuer den Auto-Aus-Text.

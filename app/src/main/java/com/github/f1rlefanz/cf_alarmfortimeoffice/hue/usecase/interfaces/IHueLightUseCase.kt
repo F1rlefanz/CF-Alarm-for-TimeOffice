@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 import kotlin.time.Duration
 
 /**
@@ -145,12 +146,19 @@ data class AutoOffTarget(
  * Ziel-Abgleich ([com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueTargetReconciler])
  * haengt daran: er darf Ziele einer Art, deren Abfrage gescheitert ist, weder umschreiben noch
  * als "auf dieser Bridge unbekannt" melden.
+ *
+ * [scenes]/[scenesFailed] folgen derselben Regel. Ein Szenen-Ausfall ist dabei ausdruecklich
+ * ein TEILausfall: er wertet [IHueLightUseCase.getAllLightTargets] NICHT zum Fehlschlag auf,
+ * weil eine Bridge ohne nutzbare Szenen voellig normal ist und die Lampenauswahl davon
+ * unberuehrt funktioniert.
  */
 data class LightTargets(
     val lights: List<HueLight> = emptyList(),
     val groups: List<HueGroup> = emptyList(),
+    val scenes: List<HueScene> = emptyList(),
     val lightsFailed: Boolean = false,
-    val groupsFailed: Boolean = false
+    val groupsFailed: Boolean = false,
+    val scenesFailed: Boolean = false
 )
 
 /**
@@ -165,7 +173,14 @@ data class LightAction(
     val saturation: Int? = null,
     val colorTemperature: Int? = null, // White color temperature in mireds (153-500)
     val transitionTime: Int? = null, // Transition duration in deciseconds (0-65535)
-    val actionDescription: String? = null
+    val actionDescription: String? = null,
+
+    /**
+     * Gesetzt = diese Aktion wendet eine SZENE an; [targetId] ist dann die Gruppen-Id und
+     * [isGroup] ist true. Alles Uebrige (on/brightness/hue/saturation/colorTemperature) bleibt
+     * null - die Szene bestimmt das selbst, und zwei Wahrheiten im selben PUT gaebe es sonst.
+     */
+    val sceneId: String? = null
 )
 
 /**

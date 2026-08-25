@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedReason
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
@@ -76,8 +77,27 @@ internal object HueTargetReconciler {
             val newTimeRanges = rule.timeRanges.map { range ->
                 val newActions = range.actions.map { action ->
                     // Ziele einer Art, deren Abfrage gescheitert ist: nicht anfassen, nicht melden.
-                    val queryFailed = if (action.isGroup) targets.groupsFailed else targets.lightsFailed
+                    // Eine Szenen-Aktion haengt an ZWEI Abfragen (Gruppe UND Szene) - faellt eine
+                    // davon aus, bleibt sie komplett unberuehrt.
+                    val queryFailed = when {
+                        action.isScene -> targets.groupsFailed || targets.scenesFailed
+                        action.isGroup -> targets.groupsFailed
+                        else -> targets.lightsFailed
+                    }
                     if (queryFailed) return@map action
+
+                    if (action.isScene) {
+                        return@map reconcileScene(
+                            action = action,
+                            rule = rule,
+                            groupsById = byId.getValue(true),
+                            groupsByName = byName.getValue(true),
+                            scenes = targets.scenes,
+                            onRemapped = { remapped++; ruleChanged = true },
+                            onNameRefreshed = { namesRefreshed++; ruleChanged = true },
+                            onUnresolved = { unresolved += it }
+                        )
+                    }
 
                     val known = byId.getValue(action.isGroup)[action.targetId]
                     if (known != null) {
@@ -125,6 +145,94 @@ internal object HueTargetReconciler {
         )
     }
 
+    /**
+     * Zweistufiger Abgleich einer SZENEN-Aktion. Sie traegt ZWEI bridge-lokale Werte - die
+     * Gruppen-Id und die Szenen-Id - und die Reihenfolge ist nicht verhandelbar:
+     *
+     *  1. **Erst die Gruppe.** Laesst sie sich nicht eindeutig aufloesen, gilt die GANZE Aktion
+     *     als nicht zuordenbar und die Szenen-Id bleibt unangetastet. Eine Szene in den falschen
+     *     Raum zu schieben waere schlimmer als gar nichts zu tun.
+     *  2. **Dann die Szene, ausschliesslich INNERHALB der aufgeloesten Gruppe.** Genau deshalb
+     *     ist der Anker das Paar (Szenenname, Gruppenname): an der Bridge des Nutzers gemessen
+     *     gibt es „Nachtlicht" NEUN Mal und „Energie tanken" ZEHN Mal - ueber die Raeume hinweg
+     *     waere der Szenenname allein immer mehrdeutig. Innerhalb einer Gruppe kollidierte
+     *     dagegen kein einziger Name.
+     *
+     * Eine bereits bekannte Szenen-Id schliesst nur dann kurz, wenn sie auch WIRKLICH in der
+     * aufgeloesten Gruppe liegt - eine in einen anderen Raum gewanderte Szene wird neu verankert
+     * oder gemeldet, nie still im falschen Raum angewendet.
+     */
+    private fun reconcileScene(
+        action: HueLightAction,
+        rule: HueSchedule,
+        groupsById: Map<String, Candidate>,
+        groupsByName: Map<String, List<Candidate>>,
+        scenes: List<HueScene>,
+        onRemapped: () -> Unit,
+        onNameRefreshed: () -> Unit,
+        onUnresolved: (UnresolvedRuleTarget) -> Unit
+    ): HueLightAction {
+        // --- Schritt 1: die Gruppe ---
+        val gruppe: Candidate = groupsById[action.targetId] ?: run {
+            val anker = action.targetName?.trim()
+            if (anker.isNullOrEmpty()) {
+                onUnresolved(action.unresolved(rule, UnresolvedReason.NO_NAME, action.sceneName))
+                return action
+            }
+            val kandidaten = groupsByName[anker.normalized()].orEmpty()
+            when (kandidaten.size) {
+                1 -> kandidaten[0]
+                0 -> {
+                    onUnresolved(action.unresolved(rule, UnresolvedReason.NOT_FOUND, action.sceneName))
+                    return action
+                }
+                else -> {
+                    onUnresolved(action.unresolved(rule, UnresolvedReason.AMBIGUOUS, action.sceneName))
+                    return action
+                }
+            }
+        }
+
+        // --- Schritt 2: die Szene, nur in dieser Gruppe ---
+        val bekannt = scenes.firstOrNull { it.id == action.sceneId }
+        if (bekannt != null && bekannt.group == gruppe.id) {
+            // Beide Ids gelten auf dieser Bridge - nur die Namen als Anker auffrischen.
+            if (action.targetName == gruppe.name && action.sceneName == bekannt.name) return action
+            onNameRefreshed()
+            return action.copy(targetName = gruppe.name, sceneName = bekannt.name ?: action.sceneName)
+        }
+
+        val szenenAnker = action.sceneName?.trim()
+        if (szenenAnker.isNullOrEmpty()) {
+            onUnresolved(action.unresolved(rule, UnresolvedReason.NO_NAME, null))
+            return action
+        }
+
+        val szenenKandidaten = scenes.filter {
+            it.group == gruppe.id && (it.name ?: "").normalized() == szenenAnker.normalized()
+        }
+        return when (szenenKandidaten.size) {
+            1 -> {
+                onRemapped()
+                action.copy(
+                    targetId = gruppe.id,
+                    targetName = gruppe.name,
+                    sceneId = szenenKandidaten[0].id,
+                    sceneName = szenenKandidaten[0].name ?: szenenAnker
+                )
+            }
+            0 -> {
+                onUnresolved(action.unresolved(rule, UnresolvedReason.NOT_FOUND, szenenAnker))
+                action
+            }
+            else -> {
+                // Die Hue-App verhindert Doppelnamen im selben Raum, die API nicht. Nicht raten.
+                onUnresolved(action.unresolved(rule, UnresolvedReason.AMBIGUOUS, szenenAnker))
+                action
+            }
+        }
+    }
+
     private fun HueLightAction.unresolved(rule: HueSchedule, reason: UnresolvedReason) =
         UnresolvedRuleTarget(
             ruleId = rule.id,
@@ -134,6 +242,12 @@ internal object HueTargetReconciler {
             isGroup = isGroup,
             reason = reason
         )
+
+    private fun HueLightAction.unresolved(
+        rule: HueSchedule,
+        reason: UnresolvedReason,
+        sceneName: String?
+    ) = unresolved(rule, reason).copy(sceneName = sceneName)
 
     /**
      * Vergleichsform fuer Bridge-Namen: getrimmt und ohne Gross-/Kleinschreibung. Hue-Namen tippt

@@ -23,21 +23,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorSwatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForKelvin
 
-/** Sunrise-Lichtwecker (Rampe von dim-warm auf hell-kuehl). Aus `HueRuleConfigScreen` ausgelagert. */
+/**
+ * Sunrise-Lichtwecker (Rampe von dim-warm auf hell-kuehl).
+ *
+ * KEIN eigener An/Aus-Schalter mehr: Der Sonnenaufgang war frueher ein Schalter INNERHALB dieser
+ * Karte, stellte faktisch aber den gesamten Regel-Modus um (die manuelle Karte verschwand ja
+ * mit). Seit es die [RuleModeCard] gibt, gehoert dieser Zustand dorthin - ein Zustand, ein Ort.
+ * Diese Karte wird nur noch im Modus SONNENAUFGANG ueberhaupt angezeigt.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SunriseConfigCard(
-    enabled: Boolean,
     durationMinutes: Int,
     startKelvin: Int,
     endKelvin: Int,
     endBrightness: Int,
     startBeforeAlarm: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
     onDurationChange: (Int) -> Unit,
     onStartKelvinChange: (Int) -> Unit,
     onEndKelvinChange: (Int) -> Unit,
@@ -51,18 +55,18 @@ internal fun SunriseConfigCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SwitchRow(
-                title = "Sunrise-Lichtwecker",
-                description = "Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.",
-                checked = enabled,
-                onCheckedChange = onEnabledChange,
-                // Diese Zeile ist zugleich die Überschrift ihrer Karte - deshalb kräftiger als
-                // die Schalter-Zeilen innerhalb einer Karte.
-                titleStyle = MaterialTheme.typography.titleMedium,
-                titleFontWeight = FontWeight.Bold
+            Text(
+                "Sunrise-Lichtwecker",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            if (enabled) {
+            run {
                 // Gradient preview from start to end temperature
                 Box(
                     modifier = Modifier

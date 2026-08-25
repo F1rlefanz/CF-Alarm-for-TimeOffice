@@ -364,6 +364,23 @@ class HueRuleUseCase @Inject constructor(
             
             // Convert each light action in the rule
             rule.lightActions.forEach { ruleAction ->
+                // SZENE: Es faehrt AUSSCHLIESSLICH die Szene mit. Kein on, keine Helligkeit,
+                // keine Farbe, keine Uebergangszeit - die Szene bestimmt das alles selbst, und
+                // ein zweiter Wert im selben PUT waere eine Zusage, die niemand prueft. Das
+                // `on = true` der gespeicherten Regel ist bewusst NUR die Zusage fuer
+                // autoOffTargetsOf(), es wird hier nicht durchgereicht.
+                if (ruleAction.isScene) {
+                    actions.add(
+                        LightAction(
+                            targetId = ruleAction.targetId,
+                            isGroup = true,
+                            sceneId = ruleAction.sceneId,
+                            actionDescription = "Rule: ${rule.name} - Szene ${ruleAction.sceneName ?: ruleAction.sceneId}"
+                        )
+                    )
+                    return@forEach
+                }
+
                 // Resolve color: prefer the explicit hue/sat fields, else fall back to
                 // the action's HueColor (so rules built with a color picker still work).
                 val resolvedHue = ruleAction.hue ?: ruleAction.color?.hue
@@ -526,10 +543,30 @@ class HueRuleUseCase @Inject constructor(
             errors.add("Rule must have at least one light action")
         }
         
+        // Sonnenaufgang und Szene schliessen sich aus: die Rampe erzeugt den Lichtzustand ueber
+        // die Zeit, die Szene bringt ihn fertig mit. Beides zusammen waeren zwei Wahrheiten fuer
+        // denselben Zustand, und welche gewinnt, haenge am Timing zweier Bridge-Aufrufe.
+        if (rule.sunrise?.enabled == true && rule.lightActions.any { it.isScene }) {
+            errors.add("Sonnenaufgang und Szene schliessen sich aus - waehle eines von beidem")
+        }
+
         // Validate individual light actions
         rule.lightActions.forEach { action ->
             if (action.targetId.isBlank()) {
                 errors.add("Light action must have a valid target ID")
+            }
+
+            if (action.isScene) {
+                // Eine Szene wird ueber /groups/<id>/action angewendet - ohne Gruppenziel gibt
+                // es keinen Endpunkt, an den sie gehen koennte.
+                if (!action.isGroup) {
+                    errors.add("Ein Szenen-Ziel braucht eine Gruppe (Raum oder Zone)")
+                }
+                if (action.brightness != null || action.hue != null ||
+                    action.saturation != null || action.colorTemperature != null
+                ) {
+                    errors.add("Eine Szene bestimmt Helligkeit und Farbe selbst")
+                }
             }
             
             action.brightness?.let { brightness ->
@@ -658,7 +695,11 @@ class HueRuleUseCase @Inject constructor(
                 val hasAutoOff = rule.lightActions.any { it.on == true && (it.duration ?: 0) > 0 }
                 // ... und dann darf auch die Meldung kein Aus versprechen: eine reine
                 // Ausschalt-Regel laesst nichts an, was zurueckzunehmen waere.
-                val turnsAnythingOn = actions.any { it.on == true }
+                //
+                // Eine Szenen-Aktion traegt `on == null` (gesendet wird nur `{"scene": ...}`),
+                // schaltet aber sehr wohl Licht an - sie zaehlt hier also mit, sonst behauptet
+                // die Meldung "nichts geht an", waehrend der Raum hell wird.
+                val turnsAnythingOn = actions.any { it.on == true || it.sceneId != null }
 
                 lightUseCase.executeActionsWithAutoRevert(
                     actions = actions,
@@ -681,6 +722,9 @@ class HueRuleUseCase @Inject constructor(
                                     hasAutoOff ->
                                         "Test: Auto-Aus verkürzt auf ~${AUTO_OFF_TEST_DURATION_SECONDS} s " +
                                             "(die echte Regel nutzt die konfigurierte Zeit)"
+                                    actions.any { it.sceneId != null } ->
+                                        "Test: Der Raum geht nach ~${AUTO_OFF_TEST_DURATION_SECONDS} s wieder aus " +
+                                            "(nur im Test – die echte Regel lässt die Szene an)"
                                     else ->
                                         "Test: Lichter gehen nach ~${AUTO_OFF_TEST_DURATION_SECONDS} s wieder aus " +
                                             "(nur im Test – die echte Regel lässt sie an)"

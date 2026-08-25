@@ -20,34 +20,29 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueRuleModus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorMode
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleFormState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.ColorSwatch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.isUniversalShiftPattern
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.presetLabel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForKelvin
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorForPreset
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.validate
 import kotlinx.coroutines.launch
 
-/** Zusammenfassung der Regel plus "Regel testen". Aus `HueRuleConfigScreen` ausgelagert. */
+/**
+ * Zusammenfassung der Regel plus "Regel testen".
+ *
+ * Nimmt den [HueRuleFormState] am Stueck statt 15 Einzelparameter: Diese Karte muss den Zustand
+ * ohnehin VOLLSTAENDIG beschreiben, jeder neue Modus und jedes neue Feld ginge sonst hier
+ * lautlos verloren - und ausgerechnet die Zusammenfassung schwiege dann ueber das, was die Regel
+ * wirklich tut.
+ */
 @Composable
 internal fun RulePreviewCard(
-    ruleName: String,
-    selectedShiftPattern: String,
-    selectedLightIds: Set<String>,
-    selectedGroupIds: Set<String>,
-    targetOn: Boolean,
-    targetBrightness: Int,
-    isEnabled: Boolean,
-    colorMode: ColorMode,
-    colorKelvin: Int,
-    colorPreset: HueColorConverter.ColorPreset,
-    autoOffEnabled: Boolean,
-    autoOffMinutes: Int,
-    sunriseEnabled: Boolean,
-    sunriseDurationMinutes: Int,
-    sunriseStartBeforeAlarm: Boolean,
+    form: HueRuleFormState,
     onTestRule: () -> Unit
 ) {
     val context = LocalContext.current
@@ -89,65 +84,77 @@ internal fun RulePreviewCard(
                     },
                     text = "Regel testen",
                     icon = Icons.Default.PlayArrow,
-                    enabled = ruleName.isNotBlank() &&
-                            selectedShiftPattern.isNotBlank() &&
-                            (selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty())
+                    // Dieselbe Bedingung wie beim Speichern - der Test soll nicht anbieten, was
+                    // als Regel nicht gueltig waere.
+                    enabled = form.validate().isEmpty()
                 )
             }
 
-            if (ruleName.isNotBlank()) {
-                Text("\"$ruleName\"", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+            if (form.name.isNotBlank()) {
+                Text("\"${form.name}\"", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
             }
 
-            if (selectedShiftPattern.isNotBlank()) {
+            if (form.shiftPattern.isNotBlank()) {
                 // Das Universalmuster ist ein Sentinel ("ALL") und ergibt eingesetzt einen
                 // Satz, den es nicht gibt ("Bei ALL-Schicht") - deshalb ein eigener Wortlaut.
                 Text(
-                    if (isUniversalShiftPattern(selectedShiftPattern)) {
+                    if (isUniversalShiftPattern(form.shiftPattern)) {
                         "Bei jeder Schicht:"
                     } else {
-                        "Bei $selectedShiftPattern-Schicht:"
+                        "Bei ${form.shiftPattern}-Schicht:"
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
 
-            if (selectedShiftPattern.isNotBlank()) {
+            if (form.shiftPattern.isNotBlank()) {
                 Text("Ausführung zur Weckzeit", style = MaterialTheme.typography.bodyMedium)
             }
 
-            if (selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty()) {
-                if (sunriseEnabled) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            buildString {
-                                append("🌅 Sunrise über $sunriseDurationMinutes Min an ${selectedLightIds.size} Lichtern und ${selectedGroupIds.size} Gruppen")
-                                append(" (${if (sunriseStartBeforeAlarm) "vor dem Alarm" else "ab Alarmzeit"})")
-                                // UX FIX (D): auto-off now also applies to sunrise rules.
-                                if (autoOffEnabled) append(" · Auto-Aus nach $autoOffMinutes Min")
-                            },
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        when (colorMode) {
-                            ColorMode.WHITE -> ColorSwatch(previewColorForKelvin(colorKelvin))
-                            ColorMode.COLOR -> ColorSwatch(previewColorForPreset(colorPreset))
+            if (form.hatZiel) {
+                val autoOffZusatz = if (form.autoOffEnabled) " · Auto-Aus nach ${form.autoOffMinutes} Min" else ""
+
+                when (form.modus) {
+                    HueRuleModus.SZENE -> Text(
+                        buildString {
+                            append("🎬 Szene «${form.szene?.sceneName.orEmpty()}»")
+                            append(" im Raum ${form.szene?.groupName.orEmpty()}")
+                            append(autoOffZusatz)
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    HueRuleModus.SONNENAUFGANG -> Text(
+                        buildString {
+                            append("🌅 Sunrise über ${form.sunrise.durationMinutes} Min an ")
+                            append("${form.selectedLightIds.size} Lichtern und ${form.selectedGroupIds.size} Gruppen")
+                            append(" (${if (form.sunrise.startBeforeAlarm) "vor dem Alarm" else "ab Alarmzeit"})")
+                            append(autoOffZusatz)
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    HueRuleModus.MANUELL -> Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        when (form.colorMode) {
+                            ColorMode.WHITE -> ColorSwatch(previewColorForKelvin(form.colorKelvin))
+                            ColorMode.COLOR -> ColorSwatch(previewColorForPreset(form.colorPreset))
                             ColorMode.NONE -> {}
                         }
                         Text(
                             buildString {
-                                append(if (targetOn) "Einschalten" else "Ausschalten")
-                                append(" von ${selectedLightIds.size} Lichtern und ${selectedGroupIds.size} Gruppen")
-                                if (targetOn) {
-                                    append(" mit ${(targetBrightness * 100 / 254)}% Helligkeit")
-                                    when (colorMode) {
-                                        ColorMode.WHITE -> append(", $colorKelvin K")
-                                        ColorMode.COLOR -> append(", ${presetLabel(colorPreset)}")
+                                append(if (form.on) "Einschalten" else "Ausschalten")
+                                append(" von ${form.selectedLightIds.size} Lichtern und ${form.selectedGroupIds.size} Gruppen")
+                                if (form.on) {
+                                    append(" mit ${(form.brightness * 100 / 254)}% Helligkeit")
+                                    when (form.colorMode) {
+                                        ColorMode.WHITE -> append(", ${form.colorKelvin} K")
+                                        ColorMode.COLOR -> append(", ${presetLabel(form.colorPreset)}")
                                         ColorMode.NONE -> {}
                                     }
-                                    if (autoOffEnabled) append(" · Auto-Aus nach $autoOffMinutes Min")
+                                    append(autoOffZusatz)
                                 }
                             },
                             style = MaterialTheme.typography.bodyMedium
@@ -157,9 +164,9 @@ internal fun RulePreviewCard(
             }
 
             Text(
-                "Status: ${if (isEnabled) "Aktiviert" else "Deaktiviert"}",
+                "Status: ${if (form.enabled) "Aktiviert" else "Deaktiviert"}",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (form.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

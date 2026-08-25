@@ -24,7 +24,9 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
      Verbraucher; er ist Werkzeug der IDE und haelt nichts am Leben.
   5. KDOC-BLOECKE, DIE NICHTS MEHR BESCHREIBEN - blockierend. Die Narbe, die ein Aufraeumlauf
      hinterlaesst, wenn er die Deklaration entfernt und ihre Doku vergisst.
-  6. KONSTANTEN OHNE VERWENDER - blockierend, mit Begruendungszwang im eigenen KDoc.
+  6. EIGENSCHAFTEN OHNE VERWENDER (val, var, const val) - blockierend, mit Begruendungszwang
+     im eigenen KDoc. Nicht nur `const val`: ein `dp`-Wert kann gar keine Compile-Zeit-Konstante
+     sein, und genau dort lag eine tote Konstante.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -402,7 +404,20 @@ def pruefe_haengende_kdocs(befunde):
 # Text `OHNE VERWENDER` in ihrer Doku schreibt, hat die Entscheidung getroffen und begruendet.
 # Alles andere blockiert.
 # ---------------------------------------------------------------------------------------------
-KONSTANTE = re.compile(r"^[ \t]*(?:private |internal |)const val (\w+)\s*[:=]", re.M)
+# NICHT NUR `const val`, UND DAS WAR EINE ECHTE LUECKE: In Runde 7 fiel `CARD_ELEVATION = 4.dp`
+# auf - ein `val`, kein `const val` (ein `dp`-Wert KANN keine Compile-Zeit-Konstante sein). Der
+# ganze `SpacingConstants`-Block lag damit ausserhalb dieser Pruefung. Deshalb jetzt jede
+# Eigenschaft auf Klassenebene.
+#
+# GEMESSEN, BEVOR ES EIN GATTER WURDE: Diese weite Fassung liefert 26 Treffer, davon 23 Felder von
+# Hue-JSON-Modellen. Die waren aber NICHT harmlos - `BridgeCapabilities`, `HueUser` und der ganze
+# `LightCapabilities`-Teilbaum wurden nie erzeugt und nie gelesen. Nach dem Entfernen bleiben
+# DREI, und zwei davon tragen ihre Begruendung im eigenen KDoc. Die Quote stimmt also erst,
+# seit der Baum aufgeraeumt ist - eine weite Pruefung auf einem ungeraeumten Baum waere ein
+# Fehlalarm-Generator gewesen.
+KONSTANTE = re.compile(
+    r"^[ \t]{4}(?:private |internal |)(?:@\w+\s+)?(?:const )?(?:val|var) (\w+)\s*[:=]", re.M
+)
 BEWUSST_OHNE_VERWENDER = "OHNE VERWENDER"
 
 
@@ -421,12 +436,12 @@ def pruefe_ungenutzte_konstanten(befunde):
             rufe = 0
             for pfad2, text2 in dateien:
                 for vorkommen in re.finditer(r"\b" + re.escape(name) + r"\b", text2):
-                    if pfad2 == pfad and re.search(r"const val\s+$", text2[:vorkommen.start()]):
+                    if pfad2 == pfad and re.search(r"(?:val|var)\s+$", text2[:vorkommen.start()]):
                         continue
                     rufe += 1
             if rufe == 0:
                 befunde.append(
-                    "Konstante ohne Verwender: {} in {} - loeschen, oder die Entscheidung "
+                    "Eigenschaft ohne Verwender: {} in {} - loeschen, oder die Entscheidung "
                     "mit '{}' im eigenen KDoc begruenden".format(
                         name, _relativ(pfad), BEWUSST_OHNE_VERWENDER
                     )

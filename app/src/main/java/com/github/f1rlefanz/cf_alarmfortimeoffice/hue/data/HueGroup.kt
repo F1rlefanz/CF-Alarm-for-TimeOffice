@@ -48,8 +48,7 @@ data class GroupAction(
     val ct: Int? = null,
     val alert: String? = null,
     val effect: String? = null,
-    val transitiontime: Int? = null,
-    val colormode: String? = null
+    val transitiontime: Int? = null
 )
 
 /**

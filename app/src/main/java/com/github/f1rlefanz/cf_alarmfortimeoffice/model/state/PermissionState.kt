@@ -17,9 +17,6 @@ data class PermissionState(
     val needsPermissionRequest: Boolean get() = 
         !androidCalendarPermissionGranted && !calendarPermissionDenied
     
-    val shouldShowRationale: Boolean get() = 
-        showAndroidCalendarPermissionRationale && !androidCalendarPermissionGranted
-    
     val isPermanentlyDenied: Boolean get() = 
         calendarPermissionDenied && !showAndroidCalendarPermissionRationale
     

@@ -75,7 +75,6 @@ class HueLightRepository @Inject constructor(
                     manufacturername = lightData.manufacturername,
                     productname = lightData.productname,
                     state = lightData.state,
-                    capabilities = lightData.capabilities,
                     uniqueid = lightData.uniqueid
                 )
             }
@@ -261,7 +260,6 @@ class HueLightRepository @Inject constructor(
                 manufacturername = lightData.manufacturername,
                 productname = lightData.productname,
                 state = lightData.state,
-                capabilities = lightData.capabilities,
                 uniqueid = lightData.uniqueid
             )
             

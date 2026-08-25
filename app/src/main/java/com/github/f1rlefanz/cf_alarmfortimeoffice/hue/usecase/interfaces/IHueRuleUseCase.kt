@@ -131,12 +131,26 @@ data class UnresolvedRuleTarget(
     val targetId: String,
     val targetName: String?,
     val isGroup: Boolean,
-    val reason: UnresolvedReason
+    val reason: UnresolvedReason,
+    /**
+     * Gesetzt = nicht das Gruppen-, sondern das SZENEN-Ziel ist das Problem. Additiv und
+     * nullbar, damit bestehende Aufrufer und Tests unveraendert gueltig bleiben.
+     */
+    val sceneName: String? = null
 ) {
-    /** Beschriftung fuer die Oberflaeche: der Name, wenn es einen gibt, sonst die rohe ID. */
+    /**
+     * Beschriftung fuer die Oberflaeche: der Name, wenn es einen gibt, sonst die rohe ID.
+     *
+     * Dies ist die EINZIGE Beschriftungsquelle fuer nicht zuordenbare Ziele - Regel-Liste,
+     * Ziel-Karte im Hue-Tab und der Fertig-Dialog des Konfigurations-Imports lesen alle hier.
+     * Deshalb erben sie den Szenenfall, ohne selbst etwas zu formulieren.
+     */
     val label: String
-        get() = targetName?.takeIf { it.isNotBlank() }
-            ?: "${if (isGroup) "Gruppe" else "Licht"} $targetId"
+        get() = when {
+            sceneName != null -> "Szene «$sceneName» in ${targetName?.takeIf { it.isNotBlank() } ?: "Gruppe $targetId"}"
+            else -> targetName?.takeIf { it.isNotBlank() }
+                ?: "${if (isGroup) "Gruppe" else "Licht"} $targetId"
+        }
 }
 
 /** Ergebnis eines Ziel-Abgleichs. */

@@ -111,7 +111,11 @@ internal class HueSunriseExecutor(
      * Runs the sunrise ramp on every target of [rule] via the light use case.
      */
     suspend fun runSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
+        // Szenen-Ziele sind hier ausgeschlossen: eine Rampe erzeugt den Lichtzustand ueber die
+        // Zeit, eine Szene bringt ihn fertig mit. validateRule() lehnt die Kombination bereits
+        // ab - dieser Filter ist die zweite Linie fuer Bestandsdaten und kuenftige Editor-Fehler.
         val targets = rule.lightActions
+            .filter { !it.isScene }
             .map { it.targetId to it.isGroup }
             .filter { it.first.isNotBlank() }
             .distinct()
@@ -150,7 +154,11 @@ internal class HueSunriseExecutor(
      * always reach the wake-up state even if the pre-alarm ramp never ran.
      */
     suspend fun finalizeSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
+        // Szenen-Ziele sind hier ausgeschlossen: eine Rampe erzeugt den Lichtzustand ueber die
+        // Zeit, eine Szene bringt ihn fertig mit. validateRule() lehnt die Kombination bereits
+        // ab - dieser Filter ist die zweite Linie fuer Bestandsdaten und kuenftige Editor-Fehler.
         val targets = rule.lightActions
+            .filter { !it.isScene }
             .map { it.targetId to it.isGroup }
             .filter { it.first.isNotBlank() }
             .distinct()

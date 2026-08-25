@@ -203,4 +203,55 @@ class RulePreviewCleanupTest {
             revertAfter.inWholeSeconds > 60
         )
     }
+
+    /**
+     * Der Szenenfall derselben Zusicherung. Eine Szenen-Aktion traegt `on == null` (gesendet
+     * wird nur `{"scene": ...}`), schaltet aber sehr wohl Licht an - der Filter in
+     * executeActionsWithAutoRevert haette sie ohne die Szenen-Bedingung durchfallen lassen, und
+     * die Vorschau haette den Raum dauerhaft erleuchtet zurueckgelassen. Genau der urspruengliche
+     * Bug, nur in neuer Gestalt.
+     */
+    @Test
+    fun `Szenen-Vorschau raeumt ebenfalls auf und sagt es auch`() = runTest {
+        val light = FakeLightUseCase()
+
+        val result = newUseCase(light).executeRuleNow(szenenRegel())
+
+        assertEquals("Auch die Szene muss mit Auto-Revert laufen", 1, light.autoRevertCalls.size)
+        assertEquals(0, light.batchWithoutRevertCalls)
+
+        val (actions, _) = light.autoRevertCalls.single()
+        val aktion = actions.single()
+        assertEquals("Es faehrt genau die Szene mit", "wz-nacht", aktion.sceneId)
+        assertNull("Kein on neben der Szene", aktion.on)
+        assertNull("Keine Helligkeit neben der Szene", aktion.brightness)
+        assertTrue("Die Szene geht an ihre Gruppe", aktion.isGroup)
+
+        val hinweis = result.getOrThrow().autoOffTestNote
+        assertNotNull("Auch hier muss der Nutzer erfahren, dass nur der Test ausschaltet", hinweis)
+        assertTrue("Der Hinweis muss den raumweiten Effekt benennen", hinweis!!.contains("Raum"))
+    }
+
+    private fun szenenRegel(): HueSchedule = HueSchedule(
+        id = "rule_szene",
+        name = "Szenenregel",
+        shiftPattern = "Frühschicht",
+        timeRanges = listOf(
+            HueTimeRange(
+                actions = listOf(
+                    HueLightAction(
+                        targetType = TargetType.GROUP,
+                        targetId = "1",
+                        targetName = "Wohnzimmer",
+                        actionType = ActionType.TURN_ON,
+                        // Gespeicherte Zusage fuer autoOffTargetsOf(), NICHT gesendeter Wert.
+                        on = true,
+                        isGroup = true,
+                        sceneId = "wz-nacht",
+                        sceneName = "Nachtlicht"
+                    )
+                )
+            )
+        )
+    )
 }

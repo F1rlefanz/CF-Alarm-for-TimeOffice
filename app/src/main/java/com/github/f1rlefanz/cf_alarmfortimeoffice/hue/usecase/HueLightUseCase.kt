@@ -77,9 +77,11 @@ class HueLightUseCase @Inject constructor(
                 // Execute both operations concurrently
                 val lightsDeferred = async { lightRepository.getLights() }
                 val groupsDeferred = async { lightRepository.getGroups() }
+                val scenesDeferred = async { lightRepository.getScenes() }
                 
                 val lightsResult = lightsDeferred.await()
                 val groupsResult = groupsDeferred.await()
+                val scenesResult = scenesDeferred.await()
 
                 // BEIDE ABFRAGEN GESCHEITERT = EHRLICHER FEHLSCHLAG, kein leeres Ergebnis.
                 //
@@ -97,6 +99,10 @@ class HueLightUseCase @Inject constructor(
                 // Gruppen ist normal, und dann sollen die Lampen trotzdem nutzbar sein. Nur wenn
                 // KEINE der beiden Abfragen durchkam, ist "keine Ziele" keine Aussage ueber die
                 // Bridge, sondern ein Fehler - und ein Fehler muss als Fehler nach oben.
+                // Die Szenen zaehlen hier BEWUSST NICHT mit: eine Bridge ohne nutzbare Szenen
+                // ist voellig normal, und die Lampen-/Gruppenauswahl funktioniert ohne sie
+                // vollstaendig. Ein Szenen-Ausfall ist ein Teilausfall und wird unten in
+                // `scenesFailed` mitgefuehrt - er darf die Bedingung hier nicht verschaerfen.
                 if (lightsResult.isFailure && groupsResult.isFailure) {
                     val error = lightsResult.exceptionOrNull()
                         ?: groupsResult.exceptionOrNull()
@@ -123,6 +129,13 @@ class HueLightUseCase @Inject constructor(
                     Logger.w(LogTags.HUE_USECASE, "Failed to get groups", groupsResult.exceptionOrNull())
                     emptyList()
                 }
+
+                val scenes = if (scenesResult.isSuccess) {
+                    scenesResult.getOrNull() ?: emptyList()
+                } else {
+                    Logger.w(LogTags.HUE_USECASE, "Failed to get scenes", scenesResult.exceptionOrNull())
+                    emptyList()
+                }
                 
                 // Return combined result. Der Teilausfall wird MITGEFUEHRT, nicht nur geloggt:
                 // fuer den Ziel-Abgleich ist "Gruppen nicht abrufbar" etwas voellig anderes als
@@ -130,11 +143,16 @@ class HueLightUseCase @Inject constructor(
                 val lightTargets = LightTargets(
                     lights = lights,
                     groups = groups,
+                    scenes = scenes,
                     lightsFailed = lightsResult.isFailure,
-                    groupsFailed = groupsResult.isFailure
+                    groupsFailed = groupsResult.isFailure,
+                    scenesFailed = scenesResult.isFailure
                 )
                 
-                Logger.i(LogTags.HUE_USECASE, "Retrieved ${lights.size} lights and ${groups.size} groups")
+                Logger.i(
+                    LogTags.HUE_USECASE,
+                    "Retrieved ${lights.size} lights, ${groups.size} groups and ${scenes.size} scenes"
+                )
                 Result.success(lightTargets)
             }
             
@@ -163,7 +181,15 @@ class HueLightUseCase @Inject constructor(
             
             // Execute action with timeout
             val result = withTimeoutOrNull(LIGHT_OPERATION_TIMEOUT_MS) {
-                if (action.isGroup) {
+                // Der Szenen-Zweig steht VOR der isGroup-Verzweigung: eine Szenen-Aktion traegt
+                // zwar isGroup = true (sie geht an /groups/<id>/action), aber sie schickt
+                // ausschliesslich {"scene": ...} - kein on, keine Helligkeit, keine Farbe.
+                if (action.sceneId != null) {
+                    lightRepository.applyScene(
+                        groupId = action.targetId,
+                        sceneId = action.sceneId
+                    )
+                } else if (action.isGroup) {
                     lightRepository.controlGroup(
                         groupId = action.targetId,
                         on = action.on,
@@ -380,8 +406,13 @@ class HueLightUseCase @Inject constructor(
             val applyResult = executeBatchLightActions(actions)
 
             // Only targets that were actually switched ON have something to turn back off.
+            //
+            // Eine Szenen-Aktion traegt `on == null` (gesendet wird nur `{"scene": ...}`), schaltet
+            // aber sehr wohl Licht an. Ohne das zweite Glied liefe die Regel-VORSCHAU einer
+            // Szenenregel ohne jedes Aufraeumen - genau der Bug, gegen den die Zusicherung "Die
+            // Vorschau raeumt IMMER auf" steht (RulePreviewCleanupTest), nur in neuer Gestalt.
             val autoOffTargets = actions
-                .filter { it.on == true && it.targetId.isNotBlank() }
+                .filter { (it.on == true || it.sceneId != null) && it.targetId.isNotBlank() }
                 .map { it.targetId to it.isGroup }
                 .distinct()
 
@@ -616,8 +647,14 @@ class HueLightUseCase @Inject constructor(
                 }
             }
 
-            // Ensure at least one action is specified
-            if (action.on == null && action.brightness == null && action.hue == null &&
+            // Ensure at least one action is specified.
+            //
+            // `sceneId` MUSS hier mitzaehlen: eine reine Szenen-Aktion setzt bewusst keine
+            // einzige dieser Eigenschaften (die Szene bringt sie selbst mit). Ohne diese
+            // Bedingung scheitert JEDE Szenenregel mit "At least one light property must be
+            // specified" - das Feature waere komplett tot, und zwar erst zur Weckzeit.
+            if (action.sceneId == null &&
+                action.on == null && action.brightness == null && action.hue == null &&
                 action.saturation == null && action.colorTemperature == null
             ) {
                 return Result.failure(

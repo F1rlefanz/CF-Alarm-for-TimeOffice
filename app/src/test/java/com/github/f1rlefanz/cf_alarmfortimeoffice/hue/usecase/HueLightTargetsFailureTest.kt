@@ -5,10 +5,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.LightState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueLightRepository
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -32,12 +34,17 @@ class HueLightTargetsFailureTest {
 
     private class FakeLightRepository(
         private val lights: Result<List<HueLight>>,
-        private val groups: Result<List<HueGroup>>
+        private val groups: Result<List<HueGroup>>,
+        private val scenes: Result<List<HueScene>> = Result.success(emptyList())
     ) : IHueLightRepository {
         override suspend fun getLights(): Result<List<HueLight>> = lights
         override suspend fun getGroups(): Result<List<HueGroup>> = groups
+        override suspend fun getScenes(): Result<List<HueScene>> = scenes
 
         // Von getAllLightTargets nicht benutzt:
+        override suspend fun applyScene(groupId: String, sceneId: String): Result<Unit> =
+            Result.failure(UnsupportedOperationException())
+
         override suspend fun controlLight(
             lightId: String,
             on: Boolean?,
@@ -166,5 +173,43 @@ class HueLightTargetsFailureTest {
         assertTrue("Erreichbar, nur nichts konfiguriert - das ist eine Aussage, kein Fehler", result.isSuccess)
         assertTrue(result.getOrThrow().lights.isEmpty())
         assertTrue(result.getOrThrow().groups.isEmpty())
+    }
+
+    @Test
+    fun `nur die Szenen-Abfrage scheitert - Teilausfall, kein Fehlschlag`() = runTest {
+        // Eine Bridge ohne nutzbare Szenen ist normal, und die Lampenauswahl funktioniert ohne
+        // sie vollstaendig. Ein Szenen-Ausfall darf getAllLightTargets deshalb NICHT kippen -
+        // er wird nur mitgefuehrt, damit der Ziel-Abgleich Szenen-Ziele in Ruhe laesst.
+        val useCase = HueLightUseCase(
+            FakeLightRepository(
+                lights = Result.success(listOf(light("1"))),
+                groups = Result.success(emptyList()),
+                scenes = Result.failure(IOException("Bridge lehnte die Szenen-Abfrage ab"))
+            )
+        )
+
+        val result = useCase.getAllLightTargets()
+
+        assertTrue("Szenen-Ausfall allein ist kein Fehlschlag", result.isSuccess)
+        val targets = result.getOrThrow()
+        assertTrue("scenesFailed muss mitgefuehrt werden", targets.scenesFailed)
+        assertTrue(targets.scenes.isEmpty())
+        assertEquals("Die Lampen bleiben nutzbar", 1, targets.lights.size)
+    }
+
+    @Test
+    fun `Bridge ohne Szenen ist kein Fehler`() = runTest {
+        val useCase = HueLightUseCase(
+            FakeLightRepository(
+                lights = Result.success(listOf(light("1"))),
+                groups = Result.success(emptyList()),
+                scenes = Result.success(emptyList())
+            )
+        )
+
+        val targets = useCase.getAllLightTargets().getOrThrow()
+
+        assertFalse("Leer ist nicht gescheitert", targets.scenesFailed)
+        assertTrue(targets.scenes.isEmpty())
     }
 }

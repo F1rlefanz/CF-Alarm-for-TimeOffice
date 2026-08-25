@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network
 
-import android.annotation.SuppressLint
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -299,7 +298,6 @@ class HueTrustManager internal constructor(
      * Validates Hue Bridge certificates against known conventions when system trust
      * store validation fails (the common case for today's bridges).
      */
-    @SuppressLint("CustomX509TrustManager", "TrustAllX509TrustManager")
     private fun validateHueBridgeCertificate(
         chain: Array<X509Certificate>,
         type: String,

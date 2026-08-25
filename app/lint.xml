@@ -67,11 +67,15 @@
     
     <!-- ================= LINT VITAL RELEASE CHECKS ================= -->
     
-    <!-- 
-    TrustAllX509TrustManager: Apache Commons Logging optional Log4J dependency
-    Begründung: Log4JLogger ist eine optionale Implementierung, die nicht 
-    verwendet wird. Die Warnung über "unreachable code" kann ignoriert werden,
-    da wir Androids native Logging verwenden.
+    <!--
+    TrustAllX509TrustManager: leere checkClientTrusted/checkServerTrusted in einer Bibliothek
+
+    Gemessen am 25.08.2026 (Aufräum-Runde 9): die beiden Treffer stammen aus
+    google-http-client-2.2.0.jar, NICHT aus dem HueTrustManager der App - der validiert
+    echt und wirft bei Fehlschlag. Bis dahin stand hier, es gehe um Apache Commons
+    Logging / Log4JLogger; das war falsch, und der <ignore regexp> darunter trifft
+    entsprechend nichts. Wirksam ist allein das severity="informational".
+    Der tote regexp ist als Issue #31 vorgemerkt, nicht hier nebenbei entfernt.
     -->
     <issue id="TrustAllX509TrustManager" severity="informational">
         <ignore regexp=".*org\.apache\.commons\.logging\.impl\.Log4JLogger.*" />

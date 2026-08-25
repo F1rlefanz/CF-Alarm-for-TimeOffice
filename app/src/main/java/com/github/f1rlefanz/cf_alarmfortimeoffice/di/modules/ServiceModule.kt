@@ -23,10 +23,7 @@ import javax.inject.Singleton
  * 
  * NOTE: BackgroundServiceManager is not provided here because it has its own
  * @Singleton @Inject constructor and is automatically provided by Hilt.
- * 
- * @suppress unused - All @Provides methods are used by Hilt at compile-time via annotation processing
  */
-@Suppress("unused") // Hilt uses these methods via annotation processing
 @Module
 @InstallIn(SingletonComponent::class)
 object ServiceModule {

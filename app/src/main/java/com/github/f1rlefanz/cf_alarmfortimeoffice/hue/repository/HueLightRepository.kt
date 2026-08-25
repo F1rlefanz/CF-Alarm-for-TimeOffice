@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeScheduleCommand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeScheduleCreate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueLightRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -118,6 +119,59 @@ class HueLightRepository @Inject constructor(
         }
     }
     
+    override suspend fun getScenes(): Result<List<HueScene>> = withContext(Dispatchers.IO) {
+        try {
+            val (bridgeIp, username) = getValidatedConnectionInfo()
+
+            Logger.d(LogTags.HUE_LIGHTS, "Fetching scenes from bridge $bridgeIp")
+
+            val roh = apiClient.getScenes(bridgeIp, username).values.toList()
+
+            // Gefiltert wird HIER, damit kein Konsument die drei Ausschlussgruende doppelt fuehrt.
+            val nutzbar = roh.filter { szene ->
+                !szene.name.isNullOrBlank() && szene.recycle != true && szene.isGroupScene
+            }
+
+            // Die Zahl der weggefilterten Eintraege MUSS ins Log: sonst ist "meine Szene fehlt
+            // in der Liste" nicht diagnostizierbar - der Nutzer sieht nur eine kuerzere Liste.
+            val ohneNamen = roh.count { it.name.isNullOrBlank() }
+            val automatisch = roh.count { it.recycle == true }
+            val ohneGruppe = roh.count { !it.isGroupScene }
+            Logger.i(
+                LogTags.HUE_LIGHTS,
+                "Successfully retrieved ${nutzbar.size} von ${roh.size} Szenen " +
+                    "(ausgefiltert: $ohneNamen ohne Namen, $automatisch automatisch verwaltet, " +
+                    "$ohneGruppe ohne Raum/Zone)"
+            )
+            Result.success(nutzbar)
+
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_LIGHTS, "Failed to get scenes", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun applyScene(groupId: String, sceneId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val (bridgeIp, username) = getValidatedConnectionInfo()
+
+                val angenommen = apiClient.applyScene(bridgeIp, username, groupId, sceneId)
+                if (angenommen) {
+                    Logger.i(LogTags.HUE_LIGHTS, "Szene $sceneId in Gruppe $groupId angewendet")
+                    Result.success(Unit)
+                } else {
+                    // Die Bridge antwortet auch bei Ablehnung mit HTTP 200 - `angenommen` ist
+                    // bereits das Urteil aus dem BODY, nicht der Status.
+                    Logger.w(LogTags.HUE_LIGHTS, "Bridge lehnte Szene $sceneId in Gruppe $groupId ab")
+                    Result.failure(IOException("Bridge lehnte die Szene ab"))
+                }
+            } catch (e: Exception) {
+                Logger.e(LogTags.HUE_LIGHTS, "Failed to apply scene $sceneId to group $groupId", e)
+                Result.failure(e)
+            }
+        }
+
     override suspend fun controlLight(
         lightId: String,
         on: Boolean?,

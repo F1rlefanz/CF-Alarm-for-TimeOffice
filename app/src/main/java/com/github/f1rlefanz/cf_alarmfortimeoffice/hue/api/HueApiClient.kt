@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridgeConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.LightStateUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.HueTrustManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
@@ -416,6 +417,74 @@ class HueApiClient(context: Context? = null) {
                 throw result.exceptionOrNull() ?: IOException("Failed to get groups")
             }
         }
+
+    /**
+     * Alle Szenen der Bridge, nach Szenen-Id.
+     *
+     * Huellen-Waechter wie in [getLights]/[getGroups]: HTTP 200 + JSON-ARRAY ist bei einem
+     * GET immer eine Ablehnung, nie ein Ergebnis. Eine Bridge ganz OHNE Szenen antwortet `{}`
+     * und laeuft damit sauber in die leere Map - kein Fehlalarm.
+     *
+     * BEWUSSTE ABWEICHUNG von [getLights]/[getGroups]: ein Parserfehler wird hier GEWORFEN und
+     * nicht zu `emptyMap()` degradiert. Eine still leere Szenenliste ist von "du hast keine
+     * Szenen angelegt" nicht unterscheidbar - der Nutzer staende vor einem leeren Auswahl-Dialog
+     * ohne jeden Hinweis, genau die Fehlerklasse, die die Huellen-Waechter beseitigt haben.
+     * Nicht "angleichen".
+     */
+    suspend fun getScenes(bridgeIp: String, username: String): Map<String, HueScene> =
+        withContext(Dispatchers.IO) {
+            val result = makeSecureHueRequest(bridgeIp, "/api/$username/scenes", "GET")
+
+            if (result.isSuccess) {
+                val responseBody = result.getOrNull() ?: "{}"
+                Logger.d(LogTags.HUE_LIGHTS, "Scenes API response: ${responseBody.length} Zeichen")
+
+                if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
+                    val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
+                        ?: IOException("Bridge antwortete mit einer Huelle statt mit Szenen: $responseBody")
+                    Logger.w(LogTags.HUE_LIGHTS, "Bridge lehnte die Szenen-Abfrage ab: ${failure.message}")
+                    throw failure
+                }
+
+                return@withContext try {
+                    val type = object : TypeToken<Map<String, HueSceneDto>>() {}.type
+                    val roh: Map<String, HueSceneDto> = gson.fromJson(responseBody, type) ?: emptyMap()
+                    roh.mapValues { (id, dto) -> dto.toDomain(id) }
+                } catch (e: Exception) {
+                    Logger.e(LogTags.HUE_LIGHTS, "Failed to parse scenes response", e)
+                    throw IOException("Szenen der Bridge nicht lesbar", e)
+                }
+            } else {
+                throw result.exceptionOrNull() ?: IOException("Failed to get scenes")
+            }
+        }
+
+    /**
+     * Wendet eine Szene an: `PUT /groups/<groupId>/action` mit `{"scene":"<sceneId>"}`.
+     *
+     * Gegen die echte Bridge gemessen (BSB002, apiversion 1.78.0, 25.08.2026): die Antwort ist
+     * `[{"success":{"/groups/5/action/scene":"3JXxZ…"}}]` - EIN Eintrag fuer den ganzen Aufruf,
+     * nicht einer pro Lampe. [wasAccepted] mit `parseControl` ist damit richtig und streng genug.
+     *
+     * `transitiontime` wird bewusst NICHT mitgeschickt, obwohl die Bridge es im selben PUT
+     * annimmt (ebenfalls gemessen, ohne Fehlereintrag): die Szene bestimmt ihren Uebergang
+     * selbst, und ein zweiter Uebergangsbegriff daneben waere eine Zusage, die niemand prueft.
+     */
+    suspend fun applyScene(
+        bridgeIp: String,
+        username: String,
+        groupId: String,
+        sceneId: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val json = gson.toJson(mapOf("scene" to sceneId))
+            val result = makeSecureHueRequest(bridgeIp, "/api/$username/groups/$groupId/action", "PUT", json)
+            wasAccepted(result, "Szene $sceneId in Gruppe $groupId")
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_LIGHTS, "Error applying scene $sceneId to group $groupId", e)
+            false
+        }
+    }
 
     /**
      * Control a light with HTTPS-First approach
@@ -856,4 +925,29 @@ internal object HueV1Envelope {
         null -> emptyMap<String, Any>()
         else -> mapOf(KEY_MESSAGE to success)
     }
+}
+
+/**
+ * Rohgestalt eines Szenen-Eintrags, wie ihn `GET /api/<user>/scenes` liefert.
+ *
+ * Eine eigene Klasse, weil die Szenen-Id der SCHLUESSEL der Map ist und nicht im Rumpf steht -
+ * `HueScene.id` waere beim direkten Deserialisieren `null`, obwohl es nicht-nullbar deklariert
+ * ist (Gson erzwingt das nicht). Der Schluessel wird deshalb in [toDomain] von Hand gesetzt.
+ * Alles Uebrige ist nullbar, weil die Bridge Felder weglassen darf.
+ */
+internal data class HueSceneDto(
+    val name: String? = null,
+    val type: String? = null,
+    val group: String? = null,
+    val lights: List<String>? = null,
+    val recycle: Boolean? = null
+) {
+    fun toDomain(id: String): HueScene = HueScene(
+        id = id,
+        name = name,
+        type = type,
+        group = group,
+        lights = lights,
+        recycle = recycle
+    )
 }

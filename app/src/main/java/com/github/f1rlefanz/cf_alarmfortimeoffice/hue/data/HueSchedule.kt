@@ -36,6 +36,30 @@ data class HueScheduleRule(
 }
 
 /**
+ * Die drei Betriebsarten einer Hue-Regel. Sie schliessen sich gegenseitig aus: eine Szene bringt
+ * Helligkeit und Farbe selbst mit, eine Sonnenaufgangs-Rampe erzeugt sie ueber die Zeit, und
+ * manuell stellt der Nutzer sie ein. Zwei davon gleichzeitig ergaeben zwei Wahrheiten fuer
+ * denselben Lichtzustand.
+ */
+enum class HueRuleModus { MANUELL, SZENE, SONNENAUFGANG }
+
+/**
+ * Die EINE Herleitung des Modus - bewusst hier im Datenpaket und nicht in einer der drei
+ * Oberflaechen (Regel-Editor, Regel-Liste, Hue-Tab). Drei eigene Herleitungen waeren drei
+ * Wahrheiten, die auseinanderlaufen, sobald jemand eine davon anfasst.
+ *
+ * Die Reihenfolge ist tragend: Sonnenaufgang schlaegt Szene. Beides zusammen lehnt
+ * `validateRule()` zwar ab, aber Bestandsdaten und ein kuenftiger Editor-Fehler duerfen hier
+ * nicht in eine undefinierte Anzeige laufen.
+ */
+val HueScheduleRule.modus: HueRuleModus
+    get() = when {
+        sunrise?.enabled == true -> HueRuleModus.SONNENAUFGANG
+        lightActions.any { it.isScene } -> HueRuleModus.SZENE
+        else -> HueRuleModus.MANUELL
+    }
+
+/**
  * Container for the light actions of a rule.
  *
  * Historisch modellierte diese Klasse ein Zeitfenster (Start/Ende/relativeTo/Offset/Wochentage),
@@ -94,10 +118,33 @@ data class HueLightAction(
     val color: HueColor? = null,
     val transitionTime: Int = 10, // in deciseconds (1/10 second)
     val duration: Int? = null, // Duration in minutes before reverting
-    val isGroup: Boolean = false // For UseCase compatibility
+    val isGroup: Boolean = false, // For UseCase compatibility
+
+    // --- Szene ---------------------------------------------------------------------------
+    // Additiv und nullbar, damit Bestands-JSON ohne Migration weiter dekodiert. Eine Szene ist
+    // KEIN vierter Zieltyp, sondern ein Zusatz zu einem GRUPPEN-Ziel: der Aufruf geht an
+    // `PUT /groups/<id>/action` mit `{"scene":"<id>"}` - genau den Pfad, den `isGroup = true`
+    // ohnehin waehlt. Deshalb bleiben Ausfuehrung, `autoOffTargetsOf()` und `BridgeTimer`
+    // unveraendert. [TargetType] wird bewusst NICHT um `SCENE` erweitert: `ignoreUnknownKeys`
+    // deckt unbekannte SCHLUESSEL ab, nicht unbekannte ENUM-WERTE - ein APK-Downgrade wuerde
+    // sonst zum harten Dekodierfehler, und `updateScheduleRules` faengt bewusst nicht ab.
+    val sceneId: String? = null,   // BRIDGE-LOKAL - dieselbe Falle wie [targetId]
+    val sceneName: String? = null  // Anker Teil 1; Teil 2 ist [targetName] (die Gruppe)
 ) {
     // Computed property for targetId access
     val lightId: String get() = targetId
+
+    /**
+     * Der EINE Diskriminator fuer ein Szenen-Ziel. Nicht [targetType] - der ist seit jeher
+     * dekorativ (`ZONE`/`ROOM` werden nirgends gesetzt, entschieden wird ueber [isGroup]).
+     *
+     * Fuer eine Szenen-Aktion gilt verbindlich: [targetType] = GROUP, [targetId]/[targetName] =
+     * die Gruppe, [isGroup] = true, [on] = true und alle Helligkeits-/Farbfelder = null.
+     * Das [on] = true ist eine GESPEICHERTE ZUSAGE, kein gesendeter Wert: `autoOffTargetsOf()`
+     * filtert auf `on == true` - ohne das verloere jede Szenenregel ihr Auto-Aus. Gesendet wird
+     * ausschliesslich `{"scene": ...}`.
+     */
+    val isScene: Boolean get() = !sceneId.isNullOrBlank()
 }
 
 /**

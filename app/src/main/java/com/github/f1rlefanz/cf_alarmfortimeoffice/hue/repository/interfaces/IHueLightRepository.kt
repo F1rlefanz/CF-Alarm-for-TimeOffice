@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 
 /**
  * Interface for Hue Light repository operations
@@ -19,6 +20,25 @@ interface IHueLightRepository {
      * Get all available groups from connected bridge
      */
     suspend fun getGroups(): Result<List<HueGroup>>
+
+    /**
+     * Alle NUTZBAREN Szenen der Bridge: die vom Nutzer in der Hue-App angelegten Licht-Profile.
+     *
+     * Gefiltert wird in der Implementierung, nicht beim Aufrufer - namenlose Eintraege (Gson
+     * erzwingt Non-Null nicht), von der Hue-App selbst verwaltete `recycle`-Szenen, und Szenen
+     * OHNE Gruppe (LightScenes). Letztere haetten weder einen Gruppen-Namensanker noch ein Ziel
+     * fuers Auto-Aus; sie werden bewusst nicht angeboten, und die Oberflaeche sagt das auch.
+     *
+     * Ein Fehlschlag der Bridge wird durchgereicht und NICHT zur leeren Liste degradiert -
+     * "keine Szenen" und "Szenen nicht abrufbar" sind zwei verschiedene Aussagen.
+     */
+    suspend fun getScenes(): Result<List<HueScene>>
+
+    /**
+     * Wendet eine Szene auf ihre Gruppe an. Die Szene bestimmt Helligkeit und Farbe je Lampe
+     * selbst; deshalb faehrt hier nichts weiter mit.
+     */
+    suspend fun applyScene(groupId: String, sceneId: String): Result<Unit>
     
     /**
      * Control a specific light

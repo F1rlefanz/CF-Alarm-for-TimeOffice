@@ -251,3 +251,23 @@ Gemessen, nicht abgeleitet — der Bestand, auf den sich spätere Runden berufen
 **Nicht geprüft, und warum:** Dimmer-Regelkonflikt (braucht einen Kalendertag mit zwei Diensten),
 echter Schlummer-Fehlschlag (braucht Berechtigungsentzug im Flug), Abmelden selbst (nur am Gerät
 des Nutzers möglich — ohne seine Zugangsdaten keine Wiederanmeldung).
+
+## Die Testzahl zählt LÄUFE, nicht Testmethoden — eine JUnit-Suite verdoppelt
+
+Bis zum 25.08.2026 meldeten `tools/sitzungsstart.py` und die Schleuse **1221** Tests, obwohl es nur
+**1205** gab. Die Differenz war keine Messfehlerquelle, sondern echte Doppelarbeit:
+`app/src/test/.../TestSuite.kt` war eine `@RunWith(Suite::class)`-Klasse, die genau zwei der 158
+Testklassen aufführte (`StateSynchronisationTest`, `AlarmSchedulerTest`). Gradles
+`testDebugUnitTest` findet alle Testklassen ohnehin selbst — die beiden liefen daher **zweimal**,
+einmal direkt und einmal über die Suite.
+
+**Woran man es erkennt:** doppelte Ergebnisdateien mit Zählsuffix,
+`TEST-<Klasse>-1.xml` und `TEST-<Klasse>-2.xml`, beide mit demselben `name`-Attribut und derselben
+`tests`-Zahl. Ein Blick in `app/build/test-results/testDebugUnitTest/` genügt.
+
+**Warum das mehr als Kosmetik war:** Eine Suite, die 2 von 158 Klassen nennt, liest sich wie „die"
+Testsuite des Projekts. Wer ihr glaubt, hält 156 Klassen für nicht Teil des Laufs. Die Datei ist
+am 25.08.2026 entfernt worden; die verschiedene Klassenzahl blieb dabei unverändert bei 158, nur
+die Läufe fielen von 1221 auf 1205. **Ein Rückgang der Testzahl ist hier also kein Verlust.**
+
+Für neue Testklassen gilt: nichts registrieren, nichts eintragen. Gradle findet sie.

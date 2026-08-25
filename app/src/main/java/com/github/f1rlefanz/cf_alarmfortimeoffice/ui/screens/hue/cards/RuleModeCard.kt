@@ -34,7 +34,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueRuleModusLab
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RuleModeCard(
+internal fun RuleModeCard(
     modus: HueRuleModus,
     onModusChange: (HueRuleModus) -> Unit,
     modifier: Modifier = Modifier

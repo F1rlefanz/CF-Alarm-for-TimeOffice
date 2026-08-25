@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.HueRuleCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
@@ -176,7 +178,8 @@ fun HueSettingsScreen(
                     rulesCount = uiState.scheduleRules.size,
                     enabledCount = uiState.scheduleRules.count { it.enabled },
                     lightsCount = uiState.lightTargets.lights.size,
-                    groupsCount = uiState.lightTargets.groups.size
+                    groupsCount = uiState.lightTargets.groups.size,
+                    scenesCount = uiState.lightTargets.scenes.size
                 )
             }
             
@@ -194,7 +197,7 @@ fun HueSettingsScreen(
                 }
             } else {
                 items(uiState.scheduleRules) { rule ->
-                    RuleCard(
+                    HueRuleCard(
                         rule = rule,
                         unresolvedTargets = uiState.unresolvedTargets.filter { it.ruleId == rule.id },
                         onEdit = { onEditRule(rule.id) },
@@ -321,7 +324,13 @@ private fun BridgeStatusCard(
 }
 
 @Composable
-private fun StatsCard(rulesCount: Int, enabledCount: Int, lightsCount: Int, groupsCount: Int) {
+private fun StatsCard(
+    rulesCount: Int,
+    enabledCount: Int,
+    lightsCount: Int,
+    groupsCount: Int,
+    scenesCount: Int
+) {
     Card {
         Column(
             modifier = Modifier
@@ -337,6 +346,7 @@ private fun StatsCard(rulesCount: Int, enabledCount: Int, lightsCount: Int, grou
                 StatItem(Icons.Default.Schedule, "Regeln", "$enabledCount/$rulesCount", "aktiv")
                 StatItem(Icons.Default.Lightbulb, "Lichter", lightsCount.toString(), "verfügbar")
                 StatItem(Icons.Default.Group, "Gruppen", groupsCount.toString(), "verfügbar")
+                StatItem(Icons.Default.Movie, "Szenen", scenesCount.toString(), "verfügbar")
             }
         }
     }
@@ -375,7 +385,9 @@ private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
             Icon(Icons.Default.Lightbulb, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Noch keine Regeln erstellt", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Erstellen Sie Ihre erste Hue-Regel, um Ihre Beleuchtung automatisch zu steuern.",
+                "Erstellen Sie Ihre erste Hue-Regel, um Ihre Beleuchtung automatisch zu steuern – " +
+                    "mit einer Szene aus Ihrer Hue-App, eigenen Farbwerten oder einem sanften " +
+                    "Sonnenaufgang.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -386,137 +398,5 @@ private fun EmptyRulesCard(onCreateNewRule: () -> Unit) {
                 Text("Erste Regel erstellen")
             }
         }
-    }
-}
-
-@Composable
-private fun RuleCard(
-    rule: HueSchedule,
-    unresolvedTargets: List<UnresolvedRuleTarget>,
-    onEdit: () -> Unit,
-    onToggle: () -> Unit,
-    onDelete: () -> Unit,
-    onTest: () -> Unit
-) {
-    // Loeschen ist unwiderruflich (Lampenauswahl, Farbwerte, Auto-Aus, Sunrise sind danach weg) und
-    // der Papierkorb sitzt in einer schmalen Zeile direkt neben "Bearbeiten" — ein Fehlgriff kostete
-    // bisher die ganze Regel ohne Rueckfrage. Dieselbe Karte fragt fuer die WENIGER folgenreiche
-    // Aktion "Bridge vergessen" schon nach (BridgeStatusCard), das war ein Widerspruch.
-    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (rule.enabled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween, 
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(rule.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    // hueShiftPatternLabel: das Universalmuster ist ein Sentinel ("ALL") und
-                    // darf in der Liste nicht roh erscheinen - dieselbe Beschriftung wie im Editor.
-                    Text(
-                        "Schichtmuster: ${hueShiftPatternLabel(rule.shiftPattern)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "${if (rule.enabled) "Aktiv" else "Deaktiviert"} • ${rule.timeRanges.size} Zeitbereich(e)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (rule.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = rule.enabled, onCheckedChange = { onToggle() })
-            }
-
-            // Ein Ziel, das auf DIESER Bridge nicht existiert, macht die Regel nicht kaputt - sie
-            // schaltet nur nichts. Ohne diesen Hinweis sieht sie vollstaendig aus, und der Nutzer
-            // merkt es erst morgens. Erscheint nur, wenn die Bridge geantwortet hat (siehe
-            // HueUiState.unresolvedTargets) - ein fremdes WLAN loest das hier NICHT aus.
-            if (unresolvedTargets.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.Top) {
-                    // dekorativ: der Text daneben sagt es aus
-                    Icon(
-                        Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "${unresolvedTargets.size} Ziel(e) auf dieser Bridge unbekannt: " +
-                            "${unresolvedTargets.joinToString { it.label }}. " +
-                            "Diese Regel schaltet dafür nichts – bitte in \"Bearbeiten\" neu auswählen.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-
-            // Hier war "Bearbeiten" zu "Bea/rbei/ten" zerfallen: zwei weight(1f)-Buttons plus
-            // IconButton lassen je ~116dp, davon gehen 48dp allein für den Material3-Innenabstand
-            // ab. CompactOutlinedButton nimmt den zurück und lässt nur eine Zeile zu.
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CompactOutlinedButton(
-                    onClick = onEdit,
-                    text = "Bearbeiten",
-                    icon = Icons.Default.Edit,
-                    modifier = Modifier.weight(1f)
-                )
-                CompactOutlinedButton(
-                    onClick = onTest,
-                    text = "Test",
-                    icon = Icons.Default.PlayArrow,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = { showDeleteDialog = true }) {
-                    // Eigenstaendiges Bedienelement ohne sichtbare Beschriftung: die
-                    // contentDescription benennt die AKTION, nicht das Symbol.
-                    Icon(Icons.Default.Delete, "Regel löschen", tint = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-    }
-
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Regel löschen?") },
-            text = {
-                Text(
-                    "Die Regel \"${rule.name}\" wird mit allen Einstellungen (Lampenauswahl, " +
-                        "Farbe, Auto-Aus, Sonnenaufgang) gelöscht. Das lässt sich nicht rückgängig " +
-                        "machen."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteDialog = false
-                        onDelete()
-                    }
-                ) {
-                    Text("Löschen", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Abbrechen")
-                }
-            }
-        )
     }
 }

@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.35.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.35.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Zwei schiefe Sätze in der Regel-Vorschau geradegerückt._
+
+### 🐛 Behoben
+
+- **„Sunrise an 3 Lichter" heißt jetzt wieder „an 3 Lichtern".** Beim internen Umbau der Texte war in der Regel-Vorschau zweimal die falsche Beugung gelandet. Betrifft nur die Anzeige – die Regeln selbst haben immer richtig geschaltet.
+
+## Version 1.35.1
 
 **Stand:** August 2026
 

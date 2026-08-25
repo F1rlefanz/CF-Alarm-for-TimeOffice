@@ -73,7 +73,15 @@ object NotificationDeliverability {
     /** Entspricht `NotificationManager.IMPORTANCE_NONE` - hier ohne Android-Bezug, s. [beurteile]. */
     const val WICHTIGKEIT_KEINE = 0
 
-    /** Entspricht `NotificationManager.IMPORTANCE_LOW` - lautlos, kein Heads-up, kein Vollbild. */
+    /**
+     * Entspricht `NotificationManager.IMPORTANCE_LOW` - lautlos, kein Heads-up, kein Vollbild.
+     *
+     * OHNE VERWENDER, UND DAS IST EINE ENTSCHEIDUNG (25.08.2026): Ein Aufraeumlauf meldet diese
+     * Konstante als tot, weil sie niemand liest. Sie bleibt trotzdem - sie benennt genau den Wert,
+     * auf dem der Weckerkanal von v1.9.7 bis v1.29.0 unbemerkt stand: Wecker ohne Vollbild, ohne
+     * Knoepfe, ohne DND-Durchgriff (Hergang in `CLAUDE.md`). Ohne sie hat die Skala eine Luecke
+     * zwischen 0 und 3, und der teuerste Wert des Projekts steht nirgends benannt.
+     */
     const val WICHTIGKEIT_NIEDRIG = 2
 
     /**

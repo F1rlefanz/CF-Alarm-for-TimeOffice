@@ -30,7 +30,6 @@ object LogTags {
     const val CALENDAR = "CFAlarm.Calendar"
 
     // === HUE INTEGRATION ===
-    const val HUE = "CFAlarm.Hue"
     const val HUE_BRIDGE = "CFAlarm.Hue.Bridge"
     const val HUE_LIGHTS = "CFAlarm.Hue.Lights"
     const val HUE_CONFIG = "CFAlarm.Hue.Config"
@@ -58,7 +57,6 @@ object LogTags {
     // === DATA PERSISTENCE ===
     const val DATASTORE = "CFAlarm.DataStore"
     const val REPOSITORY = "CFAlarm.Repository"
-    const val DI = "CFAlarm.DI"
 
     // === SYSTEM & LIFECYCLE ===
     const val APP = "CFAlarm.App"
@@ -69,8 +67,6 @@ object LogTags {
     const val TIMEOFFICE_HEALTH = "CFAlarm.TimeOfficeHealth"
 
     // === PERFORMANCE & DEBUG ===
-    const val PERFORMANCE = "CFAlarm.Performance"
-    const val CACHE = "CFAlarm.Cache"
     const val NETWORK = "CFAlarm.Network"
     const val HUE_NETWORK = "CFAlarm.Hue.Network"
     const val BACKGROUND_WORKER = "CFAlarm.Background.Worker"
@@ -82,13 +78,8 @@ object LogTags {
     const val MASTER_PAUSE = "CFAlarm.MasterPause" // Globaler Pause-Schalter fuer alle Hintergrunddienste
     const val MAINTENANCE_L4 = "CFAlarm.Maintenance.L4"
 
-    // === PHASE 2: SECURITY & VALIDATION ===
-    const val SECURITY = "CFAlarm.Security"
-
     // === ERROR & RECOVERY ===
     const val ERROR = "CFAlarm.Error"
-    const val RECOVERY = "CFAlarm.Recovery"
-    const val OFFLINE = "CFAlarm.Offline"
     const val VALIDATION = "CFAlarm.Validation"
     const val SYSTEM = "CFAlarm.System"
     const val FILE_SYSTEM = "CFAlarm.FileSystem"

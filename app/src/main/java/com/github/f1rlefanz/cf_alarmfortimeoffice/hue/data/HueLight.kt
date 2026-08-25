@@ -16,7 +16,6 @@ data class HueLight(
     val manufacturername: String?,
     val productname: String?,
     val state: LightState,
-    val capabilities: LightCapabilities? = null,
     val uniqueid: String
 )
 
@@ -35,37 +34,6 @@ data class LightState(
     val effect: String = "none", // "none", "colorloop"
     val transitiontime: Int? = null, // Transition time in 100ms
     val reachable: Boolean = true
-)
-
-/**
- * Light Capabilities
- */
-@Immutable
-data class LightCapabilities(
-    val certified: Boolean,
-    val control: Control? = null,
-    val streaming: Streaming? = null
-)
-
-@Immutable
-data class Control(
-    val mindimlevel: Int? = null,
-    val maxlumen: Int? = null,
-    val colorgamuttype: String? = null,
-    val colorgamut: List<List<Float>>? = null,
-    val ct: ColorTemperatureRange? = null
-)
-
-@Immutable
-data class ColorTemperatureRange(
-    val min: Int,
-    val max: Int
-)
-
-@Immutable
-data class Streaming(
-    val renderer: Boolean,
-    val proxy: Boolean
 )
 
 /**

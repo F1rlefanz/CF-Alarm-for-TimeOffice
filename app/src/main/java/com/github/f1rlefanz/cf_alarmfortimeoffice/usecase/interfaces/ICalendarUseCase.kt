@@ -13,9 +13,7 @@ data class CalendarPage(
     val pageSize: Int,
     val totalCalendars: Int,
     val hasNextPage: Boolean
-) {
-    val totalPages: Int = (totalCalendars + pageSize - 1) / pageSize
-}
+)
 
 data class EventPage(
     val events: List<CalendarEvent>,

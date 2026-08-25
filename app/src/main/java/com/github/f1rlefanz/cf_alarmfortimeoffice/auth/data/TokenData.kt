@@ -24,6 +24,13 @@ data class TokenData(
     val refreshToken: String? = null,
     val expiresAt: Long,
     val scope: String,
+    /**
+     * OHNE VERWENDER, und das ist eine Entscheidung (25.08.2026): Beide Felder liest niemand -
+     * ein Aufraeumlauf meldet sie zu Recht. Sie bleiben trotzdem, weil sie Teil des
+     * GESPEICHERTEN Token-Formats sind: `TokenData` wird als JSON in den verschluesselten
+     * DataStore geschrieben. Sie zu entfernen aendert das Format auf jedem Geraet, das die App
+     * schon benutzt - fuer null Gewinn. Wer eines von beiden braucht, hat es dann schon.
+     */
     val tokenType: String = "Bearer",
     val issuedAt: Long = System.currentTimeMillis(),
     

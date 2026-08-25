@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeScheduleCreate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.waehleNutzbareSzenen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueLightRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -127,23 +128,20 @@ class HueLightRepository @Inject constructor(
 
             val roh = apiClient.getScenes(bridgeIp, username).values.toList()
 
-            // Gefiltert wird HIER, damit kein Konsument die drei Ausschlussgruende doppelt fuehrt.
-            val nutzbar = roh.filter { szene ->
-                !szene.name.isNullOrBlank() && szene.recycle != true && szene.isGroupScene
-            }
+            // Gefiltert wird in einer REINEN Funktion, damit kein Konsument die drei
+            // Ausschlussgruende doppelt fuehrt - und damit sie pruefbar ist (waehleNutzbareSzenen).
+            val auswahl = waehleNutzbareSzenen(roh)
 
             // Die Zahl der weggefilterten Eintraege MUSS ins Log: sonst ist "meine Szene fehlt
             // in der Liste" nicht diagnostizierbar - der Nutzer sieht nur eine kuerzere Liste.
-            val ohneNamen = roh.count { it.name.isNullOrBlank() }
-            val automatisch = roh.count { it.recycle == true }
-            val ohneGruppe = roh.count { !it.isGroupScene }
             Logger.i(
                 LogTags.HUE_LIGHTS,
-                "Successfully retrieved ${nutzbar.size} von ${roh.size} Szenen " +
-                    "(ausgefiltert: $ohneNamen ohne Namen, $automatisch automatisch verwaltet, " +
-                    "$ohneGruppe ohne Raum/Zone)"
+                "Successfully retrieved ${auswahl.nutzbar.size} von ${auswahl.gesamt} Szenen " +
+                    "(ausgefiltert: ${auswahl.ohneNamen} ohne Namen, " +
+                    "${auswahl.automatischVerwaltet} automatisch verwaltet, " +
+                    "${auswahl.ohneRaum} ohne Raum/Zone)"
             )
-            Result.success(nutzbar)
+            Result.success(auswahl.nutzbar)
 
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Failed to get scenes", e)

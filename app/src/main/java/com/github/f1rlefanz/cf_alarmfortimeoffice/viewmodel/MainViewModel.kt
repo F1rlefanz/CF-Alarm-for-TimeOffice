@@ -52,9 +52,6 @@ class MainViewModel @Inject constructor(
     data class MainUiState(
         val isAuthenticated: Boolean = false,
         val hasSelectedCalendars: Boolean = false,
-        val hasShiftConfig: Boolean = false,
-        val isProcessingShifts: Boolean = false,
-        val hasUpcomingShift: Boolean = false,
         val hasActiveAlarms: Boolean = false
     )
 

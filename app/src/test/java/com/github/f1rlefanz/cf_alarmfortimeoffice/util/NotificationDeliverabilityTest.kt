@@ -35,7 +35,7 @@ class NotificationDeliverabilityTest {
     fun `alles an, Kanal hoch - erreichbar`() {
         assertEquals(
             Zustellbarkeit.ERREICHBAR,
-            beurteile(true, kanaeleUnterstuetzt = true, WICHTIGKEIT_HOCH, gruppeGesperrt = false, WICHTIGKEIT_HOCH)
+            beurteile(true, WICHTIGKEIT_HOCH, gruppeGesperrt = false, WICHTIGKEIT_HOCH)
         )
     }
 
@@ -45,7 +45,7 @@ class NotificationDeliverabilityTest {
         // fuehren, nicht in die Kanaleinstellungen.
         assertEquals(
             Zustellbarkeit.APP_BLOCKIERT,
-            beurteile(false, kanaeleUnterstuetzt = true, WICHTIGKEIT_HOCH, gruppeGesperrt = false)
+            beurteile(false, WICHTIGKEIT_HOCH, gruppeGesperrt = false)
         )
     }
 
@@ -55,7 +55,6 @@ class NotificationDeliverabilityTest {
         // App-Ebene allein nicht.
         val urteil = beurteile(
             appErlaubt = true,
-            kanaeleUnterstuetzt = true,
             kanalWichtigkeit = WICHTIGKEIT_KEINE,
             gruppeGesperrt = false
         )
@@ -69,7 +68,6 @@ class NotificationDeliverabilityTest {
         // Vollbild. Der Wecker klingelt, der Weck-Bildschirm kommt nicht.
         val urteil = beurteile(
             appErlaubt = true,
-            kanaeleUnterstuetzt = true,
             kanalWichtigkeit = 2,
             gruppeGesperrt = false,
             mindestwichtigkeit = WICHTIGKEIT_HOCH
@@ -83,7 +81,7 @@ class NotificationDeliverabilityTest {
         // Schichtwechsel- und Kalender-Warnung brauchen kein Vollbild - "ueberhaupt an" reicht.
         assertEquals(
             Zustellbarkeit.ERREICHBAR,
-            beurteile(true, kanaeleUnterstuetzt = true, kanalWichtigkeit = 2, gruppeGesperrt = false)
+            beurteile(true, kanalWichtigkeit = 2, gruppeGesperrt = false)
         )
     }
 
@@ -91,7 +89,7 @@ class NotificationDeliverabilityTest {
     fun `gesperrte Kanalgruppe wird erkannt`() {
         assertEquals(
             Zustellbarkeit.GRUPPE_BLOCKIERT,
-            beurteile(true, kanaeleUnterstuetzt = true, WICHTIGKEIT_HOCH, gruppeGesperrt = true)
+            beurteile(true, WICHTIGKEIT_HOCH, gruppeGesperrt = true)
         )
     }
 
@@ -102,25 +100,12 @@ class NotificationDeliverabilityTest {
         // die den Kanal ueberhaupt erst anlegt.
         val urteil = beurteile(
             appErlaubt = true,
-            kanaeleUnterstuetzt = true,
             kanalWichtigkeit = KANAL_FEHLT,
             gruppeGesperrt = false,
             mindestwichtigkeit = WICHTIGKEIT_HOCH
         )
         assertEquals(Zustellbarkeit.ERREICHBAR, urteil)
         assertTrue(urteil.erreicht)
-    }
-
-    @Test
-    fun `vor API 26 ist die App-Ebene die ganze Wahrheit`() {
-        assertEquals(
-            Zustellbarkeit.ERREICHBAR,
-            beurteile(true, kanaeleUnterstuetzt = false, KANAL_FEHLT, gruppeGesperrt = false, WICHTIGKEIT_HOCH)
-        )
-        assertEquals(
-            Zustellbarkeit.APP_BLOCKIERT,
-            beurteile(false, kanaeleUnterstuetzt = false, KANAL_FEHLT, gruppeGesperrt = false)
-        )
     }
 
     @Test
@@ -189,7 +174,7 @@ class NotificationDeliverabilityTest {
         // Gegenprobe an der Mechanik selbst: IMPORTANCE_DEFAULT faellt hier durch.
         assertEquals(
             Zustellbarkeit.KANAL_LEISE,
-            beurteile(true, kanaeleUnterstuetzt = true, WICHTIGKEIT_STANDARD, false, WICHTIGKEIT_HOCH)
+            beurteile(true, WICHTIGKEIT_STANDARD, false, WICHTIGKEIT_HOCH)
         )
     }
 

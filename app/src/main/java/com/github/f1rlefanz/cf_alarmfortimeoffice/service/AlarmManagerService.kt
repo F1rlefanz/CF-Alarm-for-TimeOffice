@@ -329,14 +329,12 @@ class AlarmManagerService(
         val systemAlarmSet: Boolean,
         val canScheduleExactAlarms: Boolean,
         val alarmStatusMessage: String?,
-        val batteryOptimizationExempt: Boolean = false,
-        val recommendedActions: List<String> = emptyList()
+        val batteryOptimizationExempt: Boolean = false
     )
 
     data class NextAlarmInfo(
         val triggerTime: Long,
-        val formattedTime: String,
-        val isAlarmClockType: Boolean = false
+        val formattedTime: String
     )
 
 
@@ -388,8 +386,7 @@ class AlarmManagerService(
                 )
                 NextAlarmInfo(
                     triggerTime = triggerTime,
-                    formattedTime = formattedTime,
-                    isAlarmClockType = true // AlarmClock API used
+                    formattedTime = formattedTime
                 )
             } else {
                 null
@@ -600,15 +597,13 @@ class AlarmManagerService(
      */
     private fun createAlarmStatus(
         systemAlarmSet: Boolean,
-        message: String,
-        recommendations: List<String> = emptyList()
+        message: String
     ): AlarmStatus {
         return AlarmStatus(
             systemAlarmSet = systemAlarmSet,
             canScheduleExactAlarms = canScheduleExactAlarms(),
             alarmStatusMessage = message,
-            batteryOptimizationExempt = BatteryOptimizationHelper.isExempted(application),
-            recommendedActions = recommendations
+            batteryOptimizationExempt = BatteryOptimizationHelper.isExempted(application)
         )
     }
 
@@ -688,33 +683,11 @@ class AlarmManagerService(
             level = overallStatus,
             canScheduleExactAlarms = canScheduleExact,
             batteryOptimizationExempt = batteryExempt,
-            canUseFullScreenIntent = canUseFullScreen,
-            recommendations = buildRecommendations(canScheduleExact, batteryExempt, canUseFullScreen)
+            canUseFullScreenIntent = canUseFullScreen
         )
     }
 
 
-    private fun buildRecommendations(
-        canScheduleExact: Boolean,
-        batteryExempt: Boolean,
-        canUseFullScreen: Boolean
-    ): List<String> {
-        val recommendations = mutableListOf<String>()
-
-        if (!canScheduleExact) {
-            recommendations.add("Aktiviere 'Exakte Alarme' in den App-Einstellungen")
-        }
-
-        if (!batteryExempt) {
-            recommendations.add("Aktiviere Akkuoptimierung-Ausnahme für zuverlässige Alarme")
-        }
-
-        if (!canUseFullScreen) {
-            recommendations.add("Erlaube 'Vollbild-Benachrichtigungen' - ohne sie erscheint der Wecker nur als Banner statt als Vollbild")
-        }
-
-        return recommendations
-    }
 
     private fun formatAlarmTime(alarmTime: java.time.LocalDateTime): String {
         val formatter = DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
@@ -1427,7 +1400,7 @@ class AlarmManagerService(
 }
 
 /**
- * Alarm permission status with actionable recommendations
+ * Alarm permission status
  */
 data class AlarmPermissionStatus(
     val level: AlarmPermissionLevel,
@@ -1438,8 +1411,7 @@ data class AlarmPermissionStatus(
      * Ab Android 14 entzieht der Play Store diese Berechtigung nach der Installation, wenn er
      * die App nicht als Wecker-App einstuft.
      */
-    val canUseFullScreenIntent: Boolean = true,
-    val recommendations: List<String>
+    val canUseFullScreenIntent: Boolean = true
 )
 
 /**

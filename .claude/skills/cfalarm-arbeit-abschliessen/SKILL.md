@@ -55,6 +55,19 @@ Sachverhalt sind ein Fehler, kein Verlauf.
 > einmal verloren hat: als Prosa gescheitert, als Messung (`tools/doku/pruefe_budget.py`)
 > gehalten. Der Eigentuemer hat die Luecke benannt, nicht das Werkzeug.
 >
+> **Der Compiler ist die zweite Quelle, und sie war bis zum 25.08.2026 stumm geschaltet.** Seine
+> Warnungen (unnoetige Safe-Calls, unerreichbarer Code, veraltete APIs) landeten im Build-Log und
+> wurden weggeworfen. Jetzt bricht die CI daran ab. Geduldet wird nur, was in
+> `tools/aufraeumen/warnungen_geduldet.txt` **namentlich und mit Grund** steht — eine neue
+> Deprecation blockiert, bis jemand sie bewusst dort eintraegt. Das Gatter sitzt in der CI und
+> NICHT in der Schleuse: eine UP-TO-DATE-Compile-Task gibt ihre Warnungen nicht erneut aus, ein
+> lokales Gatter meldete dann "sauber", ohne etwas geprueft zu haben.
+>
+> **Nicht noch einmal versuchen — gemessen und verworfen:** "ungenutzte Funktion" ueber gezaehlte
+> Namensreferenzen zu bestimmen. Das liefert in diesem Projekt **222 Kandidaten, praktisch alle
+> falsch**: Hilt-Provider ruft niemand beim Namen, Compose-Funktionen werden dateiintern
+> aufgerufen, das Framework ruft Lebenszyklus-Methoden. Diese Klasse bleibt Handarbeit.
+
 > **Was es NICHT kann** und was deshalb weiterhin dir gehoert: nicht mehr aufgerufene Funktionen,
 > jetzt redundante Abstraktionen, ueberholte Kommentare ohne Symbolbezug. Ein gruener Lauf heisst
 > "keine der drei mechanischen Klassen", nicht "aufgeraeumt".

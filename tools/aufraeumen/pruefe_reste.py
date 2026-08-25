@@ -12,7 +12,7 @@ daraus eine Messung machte.
 
 Deshalb steht das hier - nicht als guter Vorsatz, sondern als Gatter in der Schleuse.
 
-DREI PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
+SECHS PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
 meldet, wird weggeklickt und schuetzt dann gar nichts mehr (siehe die Triage-Lehre in
 GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten den Einzelfall).
 
@@ -20,6 +20,11 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
   2. VERWAISTE STRING-RESSOURCEN - mechanisch, blockierend. Ein Nutzertext ohne Anzeige ist die
      Ruckseite der Projektregel "eine Faehigkeit ohne Bedienoberflaeche gibt es nicht".
   3. DOKU-VERWEISE AUF FRISCH ENTFERNTE SYMBOLE - blockierend, aber eng gefasst (siehe unten).
+  4. COMPOSE-KARTEN, DIE NUR IHRE EIGENE VORSCHAU KENNT - blockierend. Ein `@Preview` ist kein
+     Verbraucher; er ist Werkzeug der IDE und haelt nichts am Leben.
+  5. KDOC-BLOECKE, DIE NICHTS MEHR BESCHREIBEN - blockierend. Die Narbe, die ein Aufraeumlauf
+     hinterlaesst, wenn er die Deklaration entfernt und ihre Doku vergisst.
+  6. KONSTANTEN OHNE VERWENDER - blockierend, mit Begruendungszwang im eigenen KDoc.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -226,6 +231,13 @@ def pruefe_doku_verweise(befunde, basis):
     verschwunden = {
         s for s in entfernt
         if not re.search(r"\b(?:fun|val|var|class|object|interface)\s+" + re.escape(s) + r"\b", quelltext)
+        # PARAMETERNAMEN ZAEHLEN MIT, und das ist kein Detail: Am 25.08.2026 entfernte ein
+        # Durchgang das Feld `ShiftInfo.eventTitle` - und dieses Gatter meldete daraufhin zwei
+        # Skill-Zeilen, die `matchesKeywords(eventTitle)` nennen. Diese Funktion gibt es
+        # weiterhin; die Doku meinte ihren PARAMETER, nicht das geloeschte Feld. Ohne diese
+        # Zeile blockiert das Gatter eine voellig richtige Notiz und verlangt, sie
+        # kaputtzumachen - der sichere Weg, ein Gatter unglaubwuerdig zu machen.
+        and not re.search(r"[(,]\s*(?:@\w+\s+)?" + re.escape(s) + r"\s*:", quelltext)
     }
     if not verschwunden:
         return
@@ -257,6 +269,170 @@ def pruefe_doku_verweise(befunde, basis):
                             )
 
 
+# ---------------------------------------------------------------------------------------------
+# 4. Compose-Karten, die nur ihre eigene Vorschau kennt
+#
+# HERGANG (25.08.2026): `NoAlarmCard` - eine Karte mit eigener versiegelter Grund-Hierarchie,
+# 274 Zeilen - hatte NIE einen Aufrufer. Nicht seit dem Umbau, sondern seit dem Initial-Commit,
+# und sie hat zwei ausdrueckliche Aufraeum-Commits ueberlebt. Gefunden hat sie keine
+# Namenszaehlung, sondern erst die Frage nach dem VERBRAUCHER.
+#
+# DIE ENTSCHEIDENDE FEINHEIT: Ein `@Preview` zaehlt NICHT als Verbraucher. Er ist Werkzeug der
+# IDE und haelt nichts am Leben - genau daran lief die erste Messung blind vorbei (`NoAlarmCard`
+# galt als benutzt, weil `NoAlarmCardPreview` sie aufruft). Ebenso muss der Trailing-Lambda-Aufruf
+# (`CFAlarmForTimeOfficeTheme { ... }`, ohne Klammern) zaehlen, sonst meldet der Check ein
+# offensichtlich benutztes Theme.
+#
+# Mit beiden Feinheiten: EIN Treffer im ganzen Baum, kein Fehlalarm. Ohne sie: einer von beiden
+# falsch. Deshalb ist diese Klasse gatterfaehig - anders als "ungenutzte Funktion" ueber
+# Namensreferenzen (222 Kandidaten, praktisch alle falsch; siehe Skill
+# `cfalarm-arbeit-abschliessen`).
+# ---------------------------------------------------------------------------------------------
+COMPOSABLE_DEF = re.compile(
+    r"@Composable\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*\n\s*(?:private |internal |)fun\s+(\w+)\s*\("
+)
+
+
+def _preview_bereiche(text):
+    """Zeilenbereiche aller mit `@Preview` annotierten Funktionen."""
+    zeilen = text.split("\n")
+    bereiche = []
+    for i, zeile in enumerate(zeilen):
+        if "@Preview" not in zeile:
+            continue
+        j = i
+        while j < len(zeilen) and not re.search(r"\bfun\s+\w+\s*\(", zeilen[j]):
+            j += 1
+        if j >= len(zeilen):
+            continue
+        tiefe, gestartet = 0, False
+        for k in range(j, len(zeilen)):
+            tiefe += zeilen[k].count("{") - zeilen[k].count("}")
+            if "{" in zeilen[k]:
+                gestartet = True
+            if gestartet and tiefe <= 0:
+                bereiche.append((i, k))
+                break
+    return bereiche
+
+
+def pruefe_composable_ohne_verbraucher(befunde):
+    dateien = [(p, _lies(p)) for p in _kotlin_dateien()]
+    vorschau = {p: _preview_bereiche(t) for p, t in dateien}
+
+    for pfad, text in dateien:
+        if os.sep + "main" + os.sep not in pfad:
+            continue
+        for treffer in COMPOSABLE_DEF.finditer(text):
+            name = treffer.group(1)
+            eigene_zeile = text[:treffer.start()].count("\n")
+            if any(a <= eigene_zeile <= b for a, b in vorschau[pfad]):
+                continue
+            rufe = 0
+            for pfad2, text2 in dateien:
+                for aufruf in re.finditer(r"\b" + re.escape(name) + r"\s*[({]", text2):
+                    zeile = text2[:aufruf.start()].count("\n")
+                    if any(a <= zeile <= b for a, b in vorschau[pfad2]):
+                        continue
+                    if re.search(r"fun\s+$", text2[:aufruf.start()]):
+                        continue
+                    rufe += 1
+            if rufe == 0:
+                befunde.append(
+                    "Compose-Karte ohne Verbraucher: {} in {} - nur die eigene Vorschau "
+                    "ruft sie auf".format(name, _relativ(pfad))
+                )
+
+
+# ---------------------------------------------------------------------------------------------
+# 5. KDoc-Bloecke, die nichts mehr beschreiben
+#
+# HERGANG (25.08.2026): Der Aufraeumlauf v1.34.3 entfernte 35 ungenutzte Konstanten - und liess
+# ELF ihrer KDoc-Kommentare stehen. Zurueck blieben Zeilen wie `/** Halbe Breite fuer zweispaltige
+# Layouts */`, direkt gefolgt von der schliessenden Klammer, plus zwei Objekte, die dadurch leer
+# dastanden. Ein Aufraeumen, das seine eigenen Narben hinterlaesst.
+#
+# ENG GEFASST, WEIL DIE WEITE FASSUNG NICHT TRAEGT: "KDoc, dem keine Deklaration folgt" liefert
+# 79 Treffer, ganz ueberwiegend falsch - Enum-Eintraege (`MASTER_PAUSE,`), Konstruktor-Parameter
+# und der voellig normale Fall "Datei-KDoc, dann Klassen-KDoc". Eindeutig ist nur: Auf den Block
+# folgt NICHTS MEHR ausser einer schliessenden Klammer. Damit blieben nach der Bereinigung null
+# Treffer, vorher elf.
+# ---------------------------------------------------------------------------------------------
+def haengende_kdocs_in(text):
+    """Zeilennummern (1-basiert) von KDoc-Bloecken, hinter denen nur noch eine Klammer steht."""
+    zeilen = text.split("\n")
+    treffer = []
+    i = 0
+    while i < len(zeilen):
+        if not zeilen[i].strip().startswith("/**"):
+            i += 1
+            continue
+        j = i
+        while j < len(zeilen) and not zeilen[j].strip().endswith("*/"):
+            j += 1
+        k = j + 1
+        # Leerzeilen und Zeilenkommentare stehen oft zwischen Doku und Klammer - sie sind selbst
+        # keine Deklaration und duerfen den Befund nicht verdecken.
+        while k < len(zeilen) and (not zeilen[k].strip() or zeilen[k].strip().startswith("//")):
+            k += 1
+        if k >= len(zeilen) or zeilen[k].strip() in ("}", ")"):
+            treffer.append(i + 1)
+        i = j + 1
+    return treffer
+
+
+def pruefe_haengende_kdocs(befunde):
+    for pfad in _kotlin_dateien():
+        for nr in haengende_kdocs_in(_lies(pfad)):
+            befunde.append(
+                "KDoc ohne Deklaration: {}:{} - beschreibt nichts mehr".format(_relativ(pfad), nr)
+            )
+
+
+# ---------------------------------------------------------------------------------------------
+# 6. Konstanten ohne jeden Verwender
+#
+# HERGANG (25.08.2026): Sieben von 48 Log-Tags hatte nie jemand benutzt - weder ueber `LogTags.X`
+# noch als Zeichenkette. Dazu sechs weitere Konstanten in den Gestaltungs-Dateien. Die
+# "fertige API fuer spaeter"-Falle, gegen die dieses Projekt schon zweimal angetreten ist.
+#
+# EINE AUSNAHME BRAUCHT EINEN GRUND IM CODE: `WICHTIGKEIT_NIEDRIG` bleibt bewusst ohne Verwender -
+# sie benennt den Wert, auf dem der Weckerkanal von v1.9.7 bis v1.29.0 unbemerkt stand. Solche
+# Faelle traegt man nicht in eine Liste am Rand, sondern ins KDoc der Konstante selbst: wer den
+# Text `OHNE VERWENDER` in ihrer Doku schreibt, hat die Entscheidung getroffen und begruendet.
+# Alles andere blockiert.
+# ---------------------------------------------------------------------------------------------
+KONSTANTE = re.compile(r"^[ \t]*(?:private |internal |)const val (\w+)\s*[:=]", re.M)
+BEWUSST_OHNE_VERWENDER = "OHNE VERWENDER"
+
+
+def pruefe_ungenutzte_konstanten(befunde):
+    dateien = [(p, _lies(p)) for p in _kotlin_dateien()]
+    for pfad, text in dateien:
+        if os.sep + "main" + os.sep not in pfad:
+            continue
+        for treffer in KONSTANTE.finditer(text):
+            name = treffer.group(1)
+            # Der KDoc-Block unmittelbar davor - dort steht die Begruendung, wenn es eine gibt.
+            davor = text[:treffer.start()]
+            block = davor[davor.rfind("/**"):] if "/**" in davor[-1200:] else ""
+            if BEWUSST_OHNE_VERWENDER in block:
+                continue
+            rufe = 0
+            for pfad2, text2 in dateien:
+                for vorkommen in re.finditer(r"\b" + re.escape(name) + r"\b", text2):
+                    if pfad2 == pfad and re.search(r"const val\s+$", text2[:vorkommen.start()]):
+                        continue
+                    rufe += 1
+            if rufe == 0:
+                befunde.append(
+                    "Konstante ohne Verwender: {} in {} - loeschen, oder die Entscheidung "
+                    "mit '{}' im eigenen KDoc begruenden".format(
+                        name, _relativ(pfad), BEWUSST_OHNE_VERWENDER
+                    )
+                )
+
+
 def main():
     ci = "--ci" in sys.argv
     basis = ""
@@ -268,6 +444,9 @@ def main():
     befunde = []
     pruefe_tote_importe(befunde)
     pruefe_verwaiste_strings(befunde)
+    pruefe_composable_ohne_verbraucher(befunde)
+    pruefe_haengende_kdocs(befunde)
+    pruefe_ungenutzte_konstanten(befunde)
     pruefe_doku_verweise(befunde, basis)
 
     if not befunde:

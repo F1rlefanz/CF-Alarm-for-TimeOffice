@@ -73,7 +73,15 @@ object NotificationDeliverability {
     /** Entspricht `NotificationManager.IMPORTANCE_NONE` - hier ohne Android-Bezug, s. [beurteile]. */
     const val WICHTIGKEIT_KEINE = 0
 
-    /** Entspricht `NotificationManager.IMPORTANCE_LOW` - lautlos, kein Heads-up, kein Vollbild. */
+    /**
+     * Entspricht `NotificationManager.IMPORTANCE_LOW` - lautlos, kein Heads-up, kein Vollbild.
+     *
+     * OHNE VERWENDER, UND DAS IST EINE ENTSCHEIDUNG (25.08.2026): Ein Aufraeumlauf meldet diese
+     * Konstante als tot, weil sie niemand liest. Sie bleibt trotzdem - sie benennt genau den Wert,
+     * auf dem der Weckerkanal von v1.9.7 bis v1.29.0 unbemerkt stand: Wecker ohne Vollbild, ohne
+     * Knoepfe, ohne DND-Durchgriff (Hergang in `CLAUDE.md`). Ohne sie hat die Skala eine Luecke
+     * zwischen 0 und 3, und der teuerste Wert des Projekts steht nirgends benannt.
+     */
     const val WICHTIGKEIT_NIEDRIG = 2
 
     /**
@@ -116,8 +124,6 @@ object NotificationDeliverability {
      * PURE, TESTBAR: Was ist aus diesen drei Beobachtungen zu schliessen?
      *
      * @param appErlaubt Ergebnis von `areNotificationsEnabled()`.
-     * @param kanaeleUnterstuetzt `false` vor API 26 - dort gibt es keine Kanaele, und die
-     *   App-Ebene ist die ganze Wahrheit.
      * @param kanalWichtigkeit Importance des Kanals, oder [KANAL_FEHLT], wenn es ihn (noch) nicht
      *   gibt.
      * @param gruppeGesperrt `true`, wenn der Kanal in einer vom Nutzer gesperrten Gruppe liegt.
@@ -127,13 +133,11 @@ object NotificationDeliverability {
      */
     fun beurteile(
         appErlaubt: Boolean,
-        kanaeleUnterstuetzt: Boolean,
         kanalWichtigkeit: Int,
         gruppeGesperrt: Boolean,
         mindestwichtigkeit: Int = WICHTIGKEIT_KEINE + 1
     ): Zustellbarkeit = when {
         !appErlaubt -> Zustellbarkeit.APP_BLOCKIERT
-        !kanaeleUnterstuetzt -> Zustellbarkeit.ERREICHBAR
         // Ein fehlender Kanal ist kein blockierter: er entsteht beim ersten Post.
         kanalWichtigkeit == KANAL_FEHLT -> Zustellbarkeit.ERREICHBAR
         kanalWichtigkeit <= WICHTIGKEIT_KEINE -> Zustellbarkeit.KANAL_BLOCKIERT
@@ -173,7 +177,6 @@ object NotificationDeliverability {
     fun mindeststufeBeschreibung(mindestwichtigkeit: Int): String {
         val standardGenuegt = beurteile(
             appErlaubt = true,
-            kanaeleUnterstuetzt = true,
             kanalWichtigkeit = WICHTIGKEIT_STANDARD,
             gruppeGesperrt = false,
             mindestwichtigkeit = mindestwichtigkeit
@@ -193,26 +196,21 @@ object NotificationDeliverability {
         mindestwichtigkeit: Int = WICHTIGKEIT_KEINE + 1
     ): Zustellbarkeit = try {
         val appErlaubt = NotificationManagerCompat.from(context).areNotificationsEnabled()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            beurteile(appErlaubt, kanaeleUnterstuetzt = false, KANAL_FEHLT, false, mindestwichtigkeit)
-        } else {
-            val manager = context.getSystemService(NotificationManager::class.java)
-            val kanal = manager?.getNotificationChannel(kanalId)
-            val gruppeGesperrt = kanal?.group?.let { gruppenId ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    manager.getNotificationChannelGroup(gruppenId)?.isBlocked == true
-                } else {
-                    false
-                }
-            } == true
-            beurteile(
-                appErlaubt = appErlaubt,
-                kanaeleUnterstuetzt = true,
-                kanalWichtigkeit = kanal?.importance ?: KANAL_FEHLT,
-                gruppeGesperrt = gruppeGesperrt,
-                mindestwichtigkeit = mindestwichtigkeit
-            )
-        }
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val kanal = manager?.getNotificationChannel(kanalId)
+        val gruppeGesperrt = kanal?.group?.let { gruppenId ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                manager.getNotificationChannelGroup(gruppenId)?.isBlocked == true
+            } else {
+                false
+            }
+        } == true
+        beurteile(
+            appErlaubt = appErlaubt,
+            kanalWichtigkeit = kanal?.importance ?: KANAL_FEHLT,
+            gruppeGesperrt = gruppeGesperrt,
+            mindestwichtigkeit = mindestwichtigkeit
+        )
     } catch (e: Exception) {
         Logger.w(LogTags.SYSTEM, "Zustellbarkeit von '$kanalId' nicht pruefbar - nehme erreichbar an: ${e.message}")
         Zustellbarkeit.ERREICHBAR

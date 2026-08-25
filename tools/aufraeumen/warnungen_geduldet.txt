@@ -1,0 +1,28 @@
+# Geduldete Kotlin-Compiler-Warnungen — jede mit Grund und Ausweg.
+#
+# WIE DAS GELESEN WIRD: Eine Zeile ist ein Teilstring. Meldet der Compiler eine Warnung, deren
+# Text einen dieser Teilstrings enthaelt, blockiert sie die CI nicht. Alles Uebrige blockiert.
+#
+# WARUM ES DIESE LISTE GIBT statt einer pauschalen Ausnahme fuer Deprecations: Eine neue
+# AndroidX-Fassung markiert frueher oder spaeter etwas als veraltet, und das darf den Build nicht
+# ausgerechnet beim Release brechen. Pauschal auszunehmen waere aber genau die Sorte Gatter, die
+# nichts mehr faengt — eine veraltete API ist echte Schuld. Also: geduldet wird nur, was hier
+# NAMENTLICH und MIT GRUND steht. Eine neue Deprecation blockiert, bis jemand sie bewusst
+# hierher schreibt.
+#
+# Leere Zeilen und Zeilen mit '#' sind Kommentar.
+
+# ---------------------------------------------------------------------------------------------
+# 25.08.2026 — createEmptyComposeRule (AlarmFullScreenSmokeTest)
+#
+# GRUND DER DULDUNG: Der Nachfolger `...junit4.v2.createEmptyComposeRule` wechselt von
+# UnconfinedTestDispatcher auf StandardTestDispatcher — Aufgaben werden dann eingereiht statt
+# sofort ausgefuehrt, und die Migrationsnotiz sagt ausdruecklich, dass Tests danach eigene
+# Synchronisation brauchen koennen. Das ist der EINZIGE Rauchtest des Weck-Bildschirms, und er
+# laesst sich nur auf einem Geraet pruefen (`connectedDebugAndroidTest`, das die App hinterher
+# deinstalliert). Eine ungeprueft umgestellte Absicherung des Weckbildschirms ist schlechter als
+# die dokumentierte Schuld.
+#
+# AUSWEG: Beim naechsten ohnehin faelligen Emulator-Durchgang umstellen, den Test dort laufen
+# lassen, danach DIESE ZEILEN LOESCHEN. Nicht stillschweigend stehenlassen.
+createEmptyComposeRule

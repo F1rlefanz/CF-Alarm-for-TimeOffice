@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -178,7 +179,7 @@ class AlarmFullScreenActivity : AppCompatActivity() {
      * Mensch bedient. Zwei Quellen fuer denselben Wert sind hier keine Redundanz, sondern eine
      * Luege mit Verzoegerung.
      */
-    private var snoozeMinutes by mutableStateOf(AlarmManagerService.SNOOZE_MINUTES.toInt())
+    private var snoozeMinutes by mutableIntStateOf(AlarmManagerService.SNOOZE_MINUTES.toInt())
 
     /**
      * Einweg-Sperre gegen Doppelauslösung von Dismiss/Snooze — siehe [OneShotAlarmHandoff].

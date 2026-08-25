@@ -14,6 +14,5 @@ data class AndroidCalendar(
     val id: String,
     val name: String,
     val accountName: String? = null,
-    val color: Int? = null,
-    val isPrimary: Boolean = false
+    val color: Int? = null
 )

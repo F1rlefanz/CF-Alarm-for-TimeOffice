@@ -390,6 +390,17 @@
         <item quantity="one">%1$d Gruppe</item>
         <item quantity="other">%1$d Gruppen</item>
     </plurals>
+    <!-- Dativformen: "an 3 LichtERN", "von 1 GruppE". Die Nominativ-Plurale oben passen dort
+         NICHT - "Sunrise an 3 Lichter" ist schlicht falsch. Wer eine neue Satzstelle baut, muss
+         den Fall mitdenken; deshalb stehen beide Formen nebeneinander statt einer "allgemeinen". -->
+    <plurals name="hue_count_lights_dativ">
+        <item quantity="one">%1$d Licht</item>
+        <item quantity="other">%1$d Lichtern</item>
+    </plurals>
+    <plurals name="hue_count_groups_dativ">
+        <item quantity="one">%1$d Gruppe</item>
+        <item quantity="other">%1$d Gruppen</item>
+    </plurals>
     <plurals name="hue_count_unresolved">
         <item quantity="one">%1$d Ziel</item>
         <item quantity="other">%1$d Ziele</item>

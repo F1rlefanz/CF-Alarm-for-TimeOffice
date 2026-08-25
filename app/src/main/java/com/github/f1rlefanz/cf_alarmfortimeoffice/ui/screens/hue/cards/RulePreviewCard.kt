@@ -135,8 +135,8 @@ internal fun RulePreviewCard(
                         stringResource(
                             R.string.hue_preview_sunrise,
                             pluralStringResource(R.plurals.hue_sunrise_duration_bare, form.sunrise.durationMinutes, form.sunrise.durationMinutes),
-                            pluralStringResource(R.plurals.hue_count_lights, form.selectedLightIds.size, form.selectedLightIds.size),
-                            pluralStringResource(R.plurals.hue_count_groups, form.selectedGroupIds.size, form.selectedGroupIds.size),
+                            pluralStringResource(R.plurals.hue_count_lights_dativ, form.selectedLightIds.size, form.selectedLightIds.size),
+                            pluralStringResource(R.plurals.hue_count_groups_dativ, form.selectedGroupIds.size, form.selectedGroupIds.size),
                             stringResource(
                                 if (form.sunrise.startBeforeAlarm) R.string.hue_preview_sunrise_before
                                 else R.string.hue_preview_sunrise_at
@@ -149,8 +149,8 @@ internal fun RulePreviewCard(
                         val kopf = stringResource(
                             R.string.hue_preview_manual,
                             stringResource(if (form.on) R.string.hue_action_on else R.string.hue_action_off),
-                            pluralStringResource(R.plurals.hue_count_lights, form.selectedLightIds.size, form.selectedLightIds.size),
-                            pluralStringResource(R.plurals.hue_count_groups, form.selectedGroupIds.size, form.selectedGroupIds.size)
+                            pluralStringResource(R.plurals.hue_count_lights_dativ, form.selectedLightIds.size, form.selectedLightIds.size),
+                            pluralStringResource(R.plurals.hue_count_groups_dativ, form.selectedGroupIds.size, form.selectedGroupIds.size)
                         )
                         val helligkeit = if (form.on) {
                             stringResource(R.string.hue_preview_manual_brightness, form.brightness * 100 / 254)

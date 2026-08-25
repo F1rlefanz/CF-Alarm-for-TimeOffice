@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.36.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.36.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Der Regel-Editor sieht in allen drei Betriebsarten gleich aus._
+
+### 💅 Verbessert
+
+- **Eine Karte je Betriebsart.** Bisher brachte „Szene" eine einzige Karte mit, die Raum und Licht enthielt – bei „Manuell" und „Sonnenaufgang" schob sich die Lampenauswahl dagegen als eigene Karte zwischen den Umschalter und die eigentliche Einstellung. Derselbe Gedanke sah damit in drei Modi verschieden aus. Jetzt steht unter dem Umschalter überall genau eine Karte: erst wohin, eine Trennlinie, dann wie.
+
+## Version 1.36.0
 
 **Stand:** August 2026
 

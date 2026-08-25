@@ -169,7 +169,6 @@ class HueMdnsDiscoveryService(private val context: Context) {
         }
     }
     
-    @Suppress("DEPRECATION")
     private fun resolveService(serviceInfo: NsdServiceInfo, callback: (NsdServiceInfo?) -> Unit) {
         val resolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {

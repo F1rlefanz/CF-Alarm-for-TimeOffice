@@ -129,6 +129,12 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Das Auto-Aus einer Szene trifft den GANZEN Raum**, weil es zu einer Szene keinen Gegenbefehl
   gibt. `BridgeTimer` bleibt unveraendert (`/groups/<id>/action` + `{"on": false}`). Die
   `AutoOffCard` sagt das ausdruecklich — ein `/scenes/...`-Pfad waere erfunden.
+- **Der Szenen-Filter ist eine REINE Funktion und zaehlt seine Gruende einzeln**
+  (`waehleNutzbareSzenen`). Er nimmt dem Nutzer Szenen aus der Liste - ohne die einzelnen Zahlen
+  im Log ist „meine Szene fehlt" nicht diagnostizierbar, der Nutzer sieht nur eine kuerzere
+  Liste. Ein Eintrag mit mehreren Ausschlussgruenden zaehlt nur EINMAL, sonst laege die Summe
+  ueber der Rohmenge und das Log loege (real: 73 roh, 66 nutzbar - eine Szene ist zugleich
+  `recycle` UND ohne Raum).
 - **Nur GroupScenes werden angeboten**, und das SICHTBAR: LightScenes haben weder Gruppen-Anker
   noch Auto-Aus-Ziel. Gruppe 0 wuerde zwar funktionieren (gemessen), aendert daran nichts.
 - **`getScenes()` wirft bei Parserfehler, statt auf `emptyMap()` zu degradieren** — anders als

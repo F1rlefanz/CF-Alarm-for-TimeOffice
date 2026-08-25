@@ -240,4 +240,49 @@ class HueV1EnvelopeTest {
         assertFalse(HueV1Envelope.looksLikeEnvelope("""{"1":{"name":"Wohnzimmer"}}"""))
         assertFalse(HueV1Envelope.looksLikeEnvelope(""))
     }
+
+    // =====================================================================================
+    // parseControl - der Szenen-PUT (PUT /groups/<id>/action mit {"scene": ...})
+    // =====================================================================================
+
+    /**
+     * Gegen die echte Bridge gemessen (BSB002, apiversion 1.78.0, 25.08.2026): Ein Szenen-PUT
+     * antwortet mit GENAU EINEM Eintrag fuer den ganzen Aufruf - nicht mit einem pro Lampe.
+     */
+    @Test
+    fun `der Szenen-PUT liefert genau einen Erfolgseintrag`() {
+        val body = """[{"success":{"/groups/2/action/scene":"3JXxZqxyctKtYXK"}}]"""
+
+        val result = HueV1Envelope.parseControl(body)
+
+        assertTrue("Die Bridge hat die Szene angenommen", result.isSuccess)
+        assertTrue("Kein abgelehntes Attribut zu melden", result.getOrThrow().isEmpty())
+    }
+
+    /**
+     * Warum hier `parseControl` und nicht `parseAll` steht: Die Bridge darf einzelne Attribute
+     * ablehnen, waehrend sie die uebrigen anwendet - real etwa `ct` an einer Lampe ohne
+     * Farbtemperatur. Mit `parseAll` waere daraus ein Fehlschlag geworden, und der Aufrufer
+     * haette das Licht fuer "nicht angegangen" gehalten, obwohl es brennt.
+     */
+    @Test
+    fun `ein abgelehntes Einzelattribut kippt den Aufruf nicht`() {
+        val body = """[{"success":{"/groups/2/action/on":true}},
+                       {"error":{"type":6,"address":"/groups/2/action/ct",
+                                 "description":"parameter, ct, not available"}}]"""
+
+        val result = HueV1Envelope.parseControl(body)
+
+        assertTrue("Mindestens ein Erfolg reicht", result.isSuccess)
+        assertEquals("Die Ablehnung wird trotzdem gemeldet", 1, result.getOrThrow().size)
+    }
+
+    /** Die Gegenprobe: NUR Fehler ist auch fuer parseControl ein Fehlschlag. */
+    @Test
+    fun `ein Szenen-PUT ohne jeden Erfolg ist ein Fehlschlag`() {
+        val body = """[{"error":{"type":3,"address":"/groups/99/action",
+                                 "description":"resource, /groups/99, not available"}}]"""
+
+        assertTrue(HueV1Envelope.parseControl(body).isFailure)
+    }
 }

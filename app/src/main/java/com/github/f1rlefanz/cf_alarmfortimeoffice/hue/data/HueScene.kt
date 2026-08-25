@@ -36,3 +36,54 @@ data class HueScene(
      */
     val isGroupScene: Boolean get() = !group.isNullOrBlank()
 }
+
+/**
+ * Welche Szenen der Bridge fuer eine Regel ueberhaupt in Frage kommen - und wie viele aus
+ * welchem Grund wegfallen.
+ *
+ * REIN und ohne Android, damit pruefbar (Vorbild: `HueTargetReconciler`, `DimWindowResolver`).
+ * Vorher stand dieselbe Entscheidung inline im Repository und war damit nur am Geraet zu sehen -
+ * ausgerechnet die Entscheidung, die dem Nutzer Szenen aus der Liste NIMMT.
+ *
+ * Die drei Gruende sind einzeln gezaehlt, weil sie einzeln ins Log gehoeren: "meine Szene fehlt"
+ * ist sonst nicht diagnostizierbar, der Nutzer sieht nur eine kuerzere Liste.
+ */
+data class SzenenAuswahlErgebnis(
+    val nutzbar: List<HueScene>,
+    val ohneNamen: Int,
+    val automatischVerwaltet: Int,
+    val ohneRaum: Int
+) {
+    val gesamt: Int get() = nutzbar.size + ohneNamen + automatischVerwaltet + ohneRaum
+}
+
+/**
+ * Filtert die Rohliste der Bridge.
+ *
+ * Drei Ausschlussgruende, in dieser Reihenfolge gezaehlt (ein Eintrag kann mehrere erfuellen -
+ * gezaehlt wird er beim ERSTEN, damit die Summe der Zahlen die Rohmenge ergibt):
+ *  1. **ohne Namen** - Gson erzwingt Kotlins Non-Null NICHT, ein Eintrag ohne `name` ist real
+ *     moeglich und in der Auswahl unbenennbar.
+ *  2. **`recycle: true`** - von der Hue-App selbst angelegt und wieder aufgeraeumt; auf der
+ *     Bridge des Nutzers real vorhanden (2 von 73, gemessen 25.08.2026).
+ *  3. **ohne Raum/Zone** (LightScene) - ihr fehlt der Gruppen-Namensanker UND das Ziel fuers
+ *     Auto-Aus. Bewusster Produktschnitt, kein API-Hindernis; die Oberflaeche sagt es auch.
+ */
+fun waehleNutzbareSzenen(roh: List<HueScene>): SzenenAuswahlErgebnis {
+    var ohneNamen = 0
+    var automatisch = 0
+    var ohneRaum = 0
+    val nutzbar = mutableListOf<HueScene>()
+
+    roh.forEach { szene ->
+        when {
+            szene.name.isNullOrBlank() -> ohneNamen++
+            szene.recycle == true -> automatisch++
+            !szene.isGroupScene -> ohneRaum++
+            else -> nutzbar += szene
+        }
+    }
+
+    return SzenenAuswahlErgebnis(nutzbar, ohneNamen, automatisch, ohneRaum)
+}
+

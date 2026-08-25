@@ -12,7 +12,7 @@ daraus eine Messung machte.
 
 Deshalb steht das hier - nicht als guter Vorsatz, sondern als Gatter in der Schleuse.
 
-DREI PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
+VIER PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
 meldet, wird weggeklickt und schuetzt dann gar nichts mehr (siehe die Triage-Lehre in
 GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten den Einzelfall).
 
@@ -20,6 +20,8 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
   2. VERWAISTE STRING-RESSOURCEN - mechanisch, blockierend. Ein Nutzertext ohne Anzeige ist die
      Ruckseite der Projektregel "eine Faehigkeit ohne Bedienoberflaeche gibt es nicht".
   3. DOKU-VERWEISE AUF FRISCH ENTFERNTE SYMBOLE - blockierend, aber eng gefasst (siehe unten).
+  4. COMPOSE-KARTEN, DIE NUR IHRE EIGENE VORSCHAU KENNT - blockierend. Ein `@Preview` ist kein
+     Verbraucher; er ist Werkzeug der IDE und haelt nichts am Leben.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -257,6 +259,81 @@ def pruefe_doku_verweise(befunde, basis):
                             )
 
 
+# ---------------------------------------------------------------------------------------------
+# 4. Compose-Karten, die nur ihre eigene Vorschau kennt
+#
+# HERGANG (25.08.2026): `NoAlarmCard` - eine Karte mit eigener versiegelter Grund-Hierarchie,
+# 274 Zeilen - hatte NIE einen Aufrufer. Nicht seit dem Umbau, sondern seit dem Initial-Commit,
+# und sie hat zwei ausdrueckliche Aufraeum-Commits ueberlebt. Gefunden hat sie keine
+# Namenszaehlung, sondern erst die Frage nach dem VERBRAUCHER.
+#
+# DIE ENTSCHEIDENDE FEINHEIT: Ein `@Preview` zaehlt NICHT als Verbraucher. Er ist Werkzeug der
+# IDE und haelt nichts am Leben - genau daran lief die erste Messung blind vorbei (`NoAlarmCard`
+# galt als benutzt, weil `NoAlarmCardPreview` sie aufruft). Ebenso muss der Trailing-Lambda-Aufruf
+# (`CFAlarmForTimeOfficeTheme { ... }`, ohne Klammern) zaehlen, sonst meldet der Check ein
+# offensichtlich benutztes Theme.
+#
+# Mit beiden Feinheiten: EIN Treffer im ganzen Baum, kein Fehlalarm. Ohne sie: einer von beiden
+# falsch. Deshalb ist diese Klasse gatterfaehig - anders als "ungenutzte Funktion" ueber
+# Namensreferenzen (222 Kandidaten, praktisch alle falsch; siehe Skill
+# `cfalarm-arbeit-abschliessen`).
+# ---------------------------------------------------------------------------------------------
+COMPOSABLE_DEF = re.compile(
+    r"@Composable\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*\n\s*(?:private |internal |)fun\s+(\w+)\s*\("
+)
+
+
+def _preview_bereiche(text):
+    """Zeilenbereiche aller mit `@Preview` annotierten Funktionen."""
+    zeilen = text.split("\n")
+    bereiche = []
+    for i, zeile in enumerate(zeilen):
+        if "@Preview" not in zeile:
+            continue
+        j = i
+        while j < len(zeilen) and not re.search(r"\bfun\s+\w+\s*\(", zeilen[j]):
+            j += 1
+        if j >= len(zeilen):
+            continue
+        tiefe, gestartet = 0, False
+        for k in range(j, len(zeilen)):
+            tiefe += zeilen[k].count("{") - zeilen[k].count("}")
+            if "{" in zeilen[k]:
+                gestartet = True
+            if gestartet and tiefe <= 0:
+                bereiche.append((i, k))
+                break
+    return bereiche
+
+
+def pruefe_composable_ohne_verbraucher(befunde):
+    dateien = [(p, _lies(p)) for p in _kotlin_dateien()]
+    vorschau = {p: _preview_bereiche(t) for p, t in dateien}
+
+    for pfad, text in dateien:
+        if os.sep + "main" + os.sep not in pfad:
+            continue
+        for treffer in COMPOSABLE_DEF.finditer(text):
+            name = treffer.group(1)
+            eigene_zeile = text[:treffer.start()].count("\n")
+            if any(a <= eigene_zeile <= b for a, b in vorschau[pfad]):
+                continue
+            rufe = 0
+            for pfad2, text2 in dateien:
+                for aufruf in re.finditer(r"\b" + re.escape(name) + r"\s*[({]", text2):
+                    zeile = text2[:aufruf.start()].count("\n")
+                    if any(a <= zeile <= b for a, b in vorschau[pfad2]):
+                        continue
+                    if re.search(r"fun\s+$", text2[:aufruf.start()]):
+                        continue
+                    rufe += 1
+            if rufe == 0:
+                befunde.append(
+                    "Compose-Karte ohne Verbraucher: {} in {} - nur die eigene Vorschau "
+                    "ruft sie auf".format(name, _relativ(pfad))
+                )
+
+
 def main():
     ci = "--ci" in sys.argv
     basis = ""
@@ -268,6 +345,7 @@ def main():
     befunde = []
     pruefe_tote_importe(befunde)
     pruefe_verwaiste_strings(befunde)
+    pruefe_composable_ohne_verbraucher(befunde)
     pruefe_doku_verweise(befunde, basis)
 
     if not befunde:

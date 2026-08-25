@@ -12,11 +12,19 @@ on:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Die autonomen Aufraeum-PRs sind hier ausgenommen - aus zwei Gruenden.
+    #
+    # 1. Es geht ohnehin nicht: Die Action lehnt Bot-Ausloeser ab, um Schleifen
+    #    zu verhindern (`allowed_bots` ist leer). Unsere Aufraeum-PRs oeffnet
+    #    `claude[bot]`, der Lauf endet also nach ~12 s als ROT. Am 25.08.2026 auf
+    #    PR #32 gemessen. Das ist kein Fehler, sieht aber wie einer aus - und ein
+    #    rotes Kreuz, das nichts bedeutet, ist schlimmer als gar keins.
+    # 2. Es waere doppelt: Ueber diese PRs urteilt torwaechter.yml, und zwar
+    #    gruendlicher (eigener Build, Leitplanken, drei widerlegende Agenten).
+    #
+    # Wer das aufheben will, braucht `allowed_bots: "claude[bot]"` am Action-
+    # Schritt - dann aber bewusst, mit Blick auf die Schleifengefahr.
+    if: ${{ !startsWith(github.event.pull_request.head.ref, 'chore/aufraeumen-') }}
 
     runs-on: ubuntu-latest
     permissions:

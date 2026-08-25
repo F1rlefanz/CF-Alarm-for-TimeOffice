@@ -1,0 +1,123 @@
+# Torwaechter: entscheidet ueber die PRs, die aufraeumen.yml erzeugt hat.
+#
+# WARUM ES IHN GIBT
+# Wer eine Aenderung schreibt, urteilt nicht ueber sie - ein Agent, der seinen
+# eigenen PR bewertet, ist Partei. Und die Schleuse faengt RESTE, nicht
+# ZUVIEL-WEGSCHNEIDEN: sie prueft, ob der Baum nach dem Schnitt noch haelt, nicht
+# ob der Schnitt richtig war. Das kann nur ein zweites Augenpaar.
+#
+# WARUM ER SELBST BAUT, STATT DEN CI-STATUS ZU LESEN
+# Ob ein von der Action erzeugter PR die CI ausloest, haengt daran, mit welchem
+# Token gepusht wurde - mit dem Standard-GITHUB_TOKEN loest GitHub bewusst KEINE
+# Workflows aus. Ein Torwaechter, der auf eine gruene Ampel wartet, die nie
+# angeht, wuerde jeden PR liegen lassen. Er baut deshalb selbst. Das kostet ein
+# paar Minuten und haengt an nichts.
+#
+# FEHLERRICHTUNG: Im Zweifel NICHT mergen. Ein liegengebliebener Aufraeum-PR
+# kostet nichts, ein falsch gemergter kann einen Wecker kosten.
+name: Torwaechter
+
+on:
+  schedule:
+    # 06:00 UTC = 08:00 Europe/Berlin, drei Stunden nach der Runde.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: torwaechter
+  cancel-in-progress: false
+
+jobs:
+  urteilen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v6.3.0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-opus-5
+            --allowedTools "Bash,Read,Glob,Grep,Task,TodoWrite"
+          prompt: |
+            Du bist der Torwaechter der autonomen Aufraeumrunden dieses Repos. Du
+            hast die Aenderungen NICHT geschrieben und bist deshalb der einzige,
+            der unbefangen darueber urteilen kann.
+
+            Lies zuerst `.claude/skills/cfalarm-altlasten-abtragen/SKILL.md` -
+            dort stehen die Leitplanken, gegen die du pruefst.
+
+            ARBEITE JEDEN OFFENEN PR AB, dessen Branch mit `chore/aufraeumen-`
+            beginnt (`gh pr list --state open`). Gibt es keinen, melde das und
+            hoere auf - nichts erfinden.
+
+            Je PR, in dieser Reihenfolge:
+
+            1. BAU UND TESTS SELBST FAHREN, nicht den CI-Status glauben:
+               `gh pr checkout <nr>`, dann
+               `./gradlew assembleDebug testDebugUnitTest lintDebug`.
+               Das Testurteil kommt aus `app/build/test-results/testDebugUnitTest/*.xml`,
+               NIE aus dem Rueckgabewert - ein gruener Exit-Code ist in diesem
+               Projekt kein gruener Testlauf. Dazu
+               `python tools/invarianten/pruefe_code.py` und
+               `python tools/aufraeumen/pruefe_reste.py`.
+               Faellt irgendetwas davon: schliessen, mit Begruendung.
+
+            2. GEGEN DIE LEITPLANKEN PRUEFEN. Sofort schliessen, wenn der PR
+               eine davon verletzt - besonders diese:
+               - Er fasst die Weckerkette an (`alarm/`, `service/`,
+                 `dimmer/`-Planung, `AlarmReceiver`, `BootReceiver`).
+               - Er macht etwas "schoener": umbenannt, umstrukturiert,
+                 "effizienter" - das ist kein Aufraeumen.
+               - Er entfernt ein gespeichertes Format (Felder, die auf echten
+                 Geraeten im DataStore stehen) oder ein Modellfeld, ohne den
+                 Parser geprueft zu haben.
+               - Er entfernt etwas, das ausdruecklich `OHNE VERWENDER` im
+                 eigenen KDoc traegt.
+               - Seine Commit-Nachricht nennt keine Rohbefund- UND
+                 Bestaetigungszahl.
+
+            3. WIDERLEGEN LASSEN, nicht bewerten. Starte mit dem Task-Werkzeug
+               DREI unabhaengige Subagenten. Jeder bekommt den Diff und genau
+               einen Auftrag: "Finde einen Grund, warum dieses Entfernen FALSCH
+               ist - einen Verwender, den die Messung uebersehen hat, eine
+               Reflexion, einen Manifest- oder res-Eintrag, einen Aufruf aus
+               einem Test. Im Zweifel gilt WIDERLEGT." Sag ihnen ausdruecklich,
+               dass sie NICHT bewerten, sondern widerlegen sollen.
+               Widerlegen zwei oder drei: schliessen. Sonst weiter.
+
+            4. ENTSCHEIDEN.
+               - Alles bestanden -> `gh pr merge <nr> --merge --delete-branch`.
+               - Sonst -> `gh pr close <nr> --delete-branch` und das zugehoerige
+                 Aufraeum-Issue mit `gh issue reopen` wieder oeffnen, damit der
+                 Blickwinkel nicht verloren geht.
+               In BEIDEN Faellen einen Kommentar an den PR, der den Grund nennt
+               und die Zahlen zeigt, auf die du dich stuetzt. "Sieht gut aus"
+               ist keine Begruendung.
+
+            Nichts bleibt liegen: jeder offene Aufraeum-PR ist am Ende dieses
+            Laufs entweder in `main` oder geschlossen.

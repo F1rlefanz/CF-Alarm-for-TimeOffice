@@ -1,0 +1,78 @@
+# Erzeuger: arbeitet taeglich EINEN Aufraeum-Blickwinkel ab und oeffnet einen PR.
+#
+# WARUM DAS HIER LAEUFT UND NICHT IN EINER CLOUD-ROUTINE
+# Der Blickwinkel braucht einen echten Build: die Schleuse (PreToolUse-Hook in
+# .claude/settings.json) ruft vor jedem Push `gradlew testDebugUnitTest` und
+# `lintDebug`. Eine Anthropic-Cloud-Routine startet in einem Container, von dem
+# nicht feststeht, dass er ein Android SDK hat - `ubuntu-latest` dagegen baut
+# dieses Projekt nachweislich, ci.yml tut es bei jedem Push.
+#
+# GEGENSTUECK: torwaechter.yml entscheidet ueber den PR. Wer erzeugt, urteilt nicht.
+name: Aufraeumrunde
+
+on:
+  schedule:
+    # 03:00 UTC = 05:00 Europe/Berlin (Sommerzeit). GitHub startet geplante
+    # Workflows NUR vom Standardbranch und schaltet den Zeitplan in oeffentlichen
+    # Repos nach 60 Tagen ohne Repo-Aktivitaet ab.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+# Zwei Runden gleichzeitig wuerden sich an denselben Issues bedienen.
+concurrency:
+  group: aufraeumrunde
+  cancel-in-progress: false
+
+jobs:
+  runde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # PFLICHT, genau wie in ci.yml: app/build.gradle.kts wirft ohne diesen Wert
+      # eine GradleException (keystore.properties gibt es auf dem Runner nicht).
+      # Die Schleuse ruft Gradle als Unterprozess - der erbt diese Job-Umgebung.
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+      # Der Skill schliesst mit `git push` und `gh pr create` ab.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: write        # Branch anlegen und pushen
+      pull-requests: write   # PR oeffnen
+      issues: write          # Issue kommentieren und schliessen
+      id-token: write        # Standard-Authentifizierung der Action
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Die Schleuse vergleicht gegen `main` bzw. `origin/main` - mit einem
+          # flachen Klon gibt es keine merge-base und die Pruefungen 10-12
+          # entfielen stillschweigend.
+          fetch-depth: 0
+
+      # Die Hooks in .claude/settings.json rufen `python`, nicht `python3`.
+      # Ohne diesen Schritt ist auf dem Runner nur `python3` da, und der
+      # PostToolUse-Hook scheitert bei jedem Schreibvorgang.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Fuellt den Gradle-Cache aus dem Cache von `main`. Die Schleuse laesst
+      # `--offline` weg, sobald CI gesetzt ist (siehe pruefe_schleuse.py) - ein
+      # kalter Container haette sonst keine Chance.
+      - uses: gradle/actions/setup-gradle@v6.3.0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Ein Skill-Aufruf, kein Fliesstext: die ganze Disziplin einer Runde
+          # steht in .claude/skills/cfalarm-altlasten-abtragen/SKILL.md, und der
+          # Checkout oben legt sie auf den Runner.
+          prompt: "/cfalarm-altlasten-abtragen"
+          claude_args: |
+            --model claude-opus-5
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,TodoWrite"

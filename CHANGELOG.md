@@ -27,7 +27,25 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.34.4 (Aktuell – interne Alpha)
+## 🆕 Version 1.35.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Deine Hue-Szenen aus der Hue-App lassen sich jetzt direkt als Weckbeleuchtung auswählen._
+
+### ✨ Neu
+
+- **Szenen statt Farbe von Hand einstellen.** Eine Hue-Regel kann jetzt eine Szene aus deiner Hue-App verwenden – „Nachtlicht", „Entspannen", was immer du dort angelegt hast. Helligkeit und Farbe je Lampe kommen dann aus der Szene selbst; du musst sie nicht mehr näherungsweise nachbauen.
+- **Erst der Raum, dann die Szene.** Weil Szenennamen sich pro Raum wiederholen (auf einer echten Bridge gibt es „Nachtlicht" schnell neun Mal), wählst du zuerst den Raum und dann die Szene darin. Damit findet die App deine Auswahl auch nach einem Gerätewechsel wieder.
+- **Ein klarer Umschalter im Regel-Editor.** Szene, Manuell oder Sonnenaufgang – drei Wege, die sich gegenseitig ausschließen, mit je einem Satz Erklärung. Der Sonnenaufgang hat dafür seinen eigenen Schalter abgegeben; er hat ohnehin immer die ganze Regel umgestellt.
+- **Die Regelliste zeigt, was eine Regel tut.** Jede Regel trägt jetzt ein Abzeichen mit ihrer Betriebsart und darunter eine Zeile im Klartext – etwa „Szene «Nachtlicht» · Badezimmer". Vorher stand dort eine Zahl, die immer 1 war.
+
+### ⚠️ Gut zu wissen
+
+- **Das automatische Ausschalten trifft bei einer Szene den ganzen Raum.** Zu einer Szene gibt es keinen Gegenbefehl – die einzige ehrliche Rücknahme ist „Raum aus". Der Regel-Editor sagt das an Ort und Stelle dazu.
+- **Szenen ohne Raum oder Zone werden nicht angeboten.** Ordne sie in der Hue-App einem Raum zu, dann erscheinen sie. Auch das steht direkt in der Auswahl.
+
+## Version 1.34.4
 
 **Stand:** August 2026
 

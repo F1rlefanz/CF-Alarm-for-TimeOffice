@@ -74,3 +74,42 @@ das baut man dieselbe Falle in neuer Form nach.
   Wer Ziele braucht, ruft `getAllLightTargets()` und **wartet**.
 - **Regel speichern navigiert sofort weg** — ein Fehler landet dadurch auf dem `HueSettingsScreen`
   statt im Formular (bekannt, bisher unkritisch).
+
+### Szenen (seit v1.35.0)
+
+- **Eine Szene ist KEIN vierter Zieltyp, sondern ein Zusatz zu einem GRUPPEN-Ziel.** Sie traegt
+  `isGroup = true`, `targetId` = Gruppe und wird ueber `PUT /groups/<id>/action {"scene": ...}`
+  angewendet — genau den Pfad, den `isGroup` ohnehin waehlt. Deshalb bleiben Ausfuehrung,
+  `autoOffTargetsOf()` und `BridgeTimer` unveraendert.
+- **`TargetType` wird NICHT um `SCENE` erweitert.** `ignoreUnknownKeys` deckt unbekannte
+  *Schluessel* ab, nicht unbekannte *Enum-Werte*: ein APK-Downgrade waere ein harter
+  Dekodierfehler, und `updateScheduleRules` faengt bewusst nicht ab. Diskriminator ist
+  `HueLightAction.isScene` ueber das nullbare `sceneId`.
+- **Das `on = true` einer Szenen-Aktion ist eine gespeicherte ZUSAGE, kein gesendeter Wert.**
+  `autoOffTargetsOf()` filtert auf `on == true`; ohne das verloere jede Szenenregel ihr Auto-Aus.
+  Gesendet wird ausschliesslich `{"scene": ...}` — nichts faehrt daneben mit.
+- **`validateLightAction()` MUSS `sceneId` in „mindestens eine Eigenschaft" mitzaehlen**, sonst
+  scheitert jede Szenenregel mit „At least one light property must be specified" — zur Weckzeit.
+- **`executeActionsWithAutoRevert()` filtert `on == true || sceneId != null`.** Eine Szene traegt
+  `on == null`, schaltet aber Licht an: ohne das zweite Glied liesse die VORSCHAU den Raum
+  dauerhaft leuchten — derselbe Bug wie in `RulePreviewCleanupTest`, in neuer Gestalt.
+- **Der Ziel-Abgleich einer Szene ist ZWEISTUFIG, und die Reihenfolge ist nicht verhandelbar:**
+  erst die Gruppe ueber `targetName`, dann die Szene AUSSCHLIESSLICH innerhalb der aufgeloesten
+  Gruppe. Scheitert die Gruppe, bleibt `sceneId` unangetastet — eine Szene in den falschen Raum zu
+  schieben ist schlimmer als nichts zu tun. Eine bekannte `sceneId` schliesst nur kurz, wenn ihre
+  `group` zur aufgeloesten Gruppe passt.
+- **Der Anker ist das PAAR (Szenenname, Gruppenname).** An der Bridge des Nutzers gemessen gibt es
+  „Nachtlicht" NEUN Mal und „Energie tanken" ZEHN Mal — je einmal pro Raum; innerhalb einer Gruppe
+  kollidierte kein einziger Name. Der Szenenname allein waere in der Praxis immer mehrdeutig.
+- **Das Auto-Aus einer Szene trifft den GANZEN Raum**, weil es zu einer Szene keinen Gegenbefehl
+  gibt. `BridgeTimer` bleibt unveraendert (`/groups/<id>/action` + `{"on": false}`). Die
+  `AutoOffCard` sagt das ausdruecklich — ein `/scenes/...`-Pfad waere erfunden.
+- **Nur GroupScenes werden angeboten**, und das SICHTBAR: LightScenes haben weder Gruppen-Anker
+  noch Auto-Aus-Ziel. Gruppe 0 wuerde zwar funktionieren (gemessen), aendert daran nichts.
+- **`getScenes()` wirft bei Parserfehler, statt auf `emptyMap()` zu degradieren** — anders als
+  `getLights`/`getGroups`. „Keine Szenen" und „Szenen nicht abrufbar" sind zwei Aussagen, und die
+  Oberflaeche hat dafuer zwei getrennte Texte. Nicht „angleichen".
+- **Die drei Regel-Modi (Szene, Manuell, Sonnenaufgang) schliessen sich aus, und zwar
+  STRUKTURELL**: `HueRuleFormState.toRule()` liest nur die Felder des aktiven Modus. Der Modus
+  wird an genau EINER Stelle hergeleitet (`HueScheduleRule.modus`) — Editor, Regel-Liste und Tab
+  lesen dort, drei eigene Herleitungen waeren drei Wahrheiten.

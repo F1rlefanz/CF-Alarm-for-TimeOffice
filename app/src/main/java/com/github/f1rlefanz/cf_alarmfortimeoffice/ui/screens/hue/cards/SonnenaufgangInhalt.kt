@@ -28,12 +28,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorFor
 import androidx.compose.ui.res.pluralStringResource
 
 /**
- * Sunrise-Lichtwecker (Rampe von dim-warm auf hell-kuehl).
+ * Die Einstellungen des Sunrise-Lichtweckers (Rampe von dim-warm auf hell-kuehl).
  *
- * KEIN eigener An/Aus-Schalter mehr: Der Sonnenaufgang war frueher ein Schalter INNERHALB dieser
- * Karte, stellte faktisch aber den gesamten Regel-Modus um (die manuelle Karte verschwand ja
- * mit). Seit es die [RuleModeCard] gibt, gehoert dieser Zustand dorthin - ein Zustand, ein Ort.
- * Diese Karte wird nur noch im Modus SONNENAUFGANG ueberhaupt angezeigt.
+ * INHALT, KEINE KARTE: Den Rahmen setzt [SonnenaufgangCard] in `ModusKarten.kt` - dort steht auch
+ * die Ueberschrift, und dort sitzt der Innenabstand einmal fuer beide Teile.
+ *
+ * KEIN eigener An/Aus-Schalter: Der Sonnenaufgang war frueher ein Schalter INNERHALB dieses
+ * Blocks, stellte faktisch aber den gesamten Regel-Modus um (die manuelle Einstellung verschwand
+ * ja mit). Seit es die [RuleModeCard] gibt, gehoert dieser Zustand dorthin - ein Zustand, ein
+ * Ort. Angezeigt wird dieser Block nur noch im Modus SONNENAUFGANG.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

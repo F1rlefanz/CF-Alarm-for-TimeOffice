@@ -35,9 +35,9 @@ class HueTargetReconcilerSceneTest {
     )
 
     private val szenen = listOf(
-        HueScene(id = "wz-nacht", name = "Nachtlicht", type = "GroupScene", group = "1"),
-        HueScene(id = "sz-nacht", name = "Nachtlicht", type = "GroupScene", group = "82"),
-        HueScene(id = "sz-lesen", name = "Lesen", type = "GroupScene", group = "82")
+        HueScene(id = "wz-nacht", name = "Nachtlicht", group = "1"),
+        HueScene(id = "sz-nacht", name = "Nachtlicht", group = "82"),
+        HueScene(id = "sz-lesen", name = "Lesen", group = "82")
     )
 
     private val bestand = LightTargets(groups = gruppen, scenes = szenen)

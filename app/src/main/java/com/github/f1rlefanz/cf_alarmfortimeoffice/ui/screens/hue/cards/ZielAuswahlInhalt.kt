@@ -31,7 +31,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.Unresol
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.MIN_TOUCH_TARGET
 import androidx.compose.ui.res.pluralStringResource
 
-/** Auswahl der Lampen/Gruppen, die eine Hue-Regel steuert. Aus `HueRuleConfigScreen` ausgelagert. */
+/**
+ * Auswahl der Lampen und Gruppen, die eine Hue-Regel steuert.
+ *
+ * INHALT, KEINE KARTE: Den Rahmen setzen [ManuellCard] und [SonnenaufgangCard] in
+ * `ModusKarten.kt` - beide Modi teilen sich diesen Block, und dort steht auch das
+ * Aktualisieren-Symbol.
+ */
 @Composable
 internal fun ZielAuswahlInhalt(
     lightTargets: LightTargets,

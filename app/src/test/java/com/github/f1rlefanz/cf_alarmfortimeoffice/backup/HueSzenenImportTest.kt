@@ -142,7 +142,7 @@ class HueSzenenImportTest {
         val dieseBridge = LightTargets(
             groups = listOf(gruppe("1", "Wohnzimmer")),
             scenes = listOf(
-                HueScene(id = "neu-nacht", name = "Nachtlicht", type = "GroupScene", group = "1")
+                HueScene(id = "neu-nacht", name = "Nachtlicht", group = "1")
             )
         )
 

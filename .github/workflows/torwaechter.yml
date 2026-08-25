@@ -60,6 +60,11 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Ohne das steht im Runner-Log nur `num_turns`. Am 25.08.2026 lief der
+          # Torwaechter 21 Turns lang und hinterliess NICHTS - kein Merge, kein
+          # Close, kein Kommentar -, und der Grund war nicht rekonstruierbar.
+          # Ein stiller Leerlauf ist die teuerste Fehlerart, die es hier gibt.
+          show_full_output: true
           claude_args: |
             --model claude-opus-5
             --allowedTools "Bash,Read,Glob,Grep,Task,TodoWrite"
@@ -70,6 +75,15 @@ jobs:
 
             Lies zuerst `.claude/skills/cfalarm-altlasten-abtragen/SKILL.md` -
             dort stehen die Leitplanken, gegen die du pruefst.
+
+            UNVERHANDELBAR, und zwar VOR allem anderen: Dieser Lauf endet NIE
+            stumm. Was immer passiert - du findest keinen PR, ein Werkzeug
+            fehlt, ein Befehl scheitert, du bist dir unsicher, dir geht die
+            Zeit aus -, du hinterlaesst eine Spur: einen Kommentar am PR, wenn
+            es einen gibt, sonst deine Antwort im Lauf-Log. Sag dabei
+            ausdruecklich, WAS du geprueft hast und WORAN du haengst. Ein Lauf
+            ohne Merge, ohne Close und ohne Kommentar ist ein Fehlschlag,
+            selbst wenn er gruen endet.
 
             ARBEITE JEDEN OFFENEN PR AB, dessen Branch mit `chore/aufraeumen-`
             beginnt (`gh pr list --state open`). Gibt es keinen, melde das und

@@ -36,15 +36,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScheduleRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ErrorMessage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue.rememberLocalNetworkPermissionGate
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ActionConfigCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.AutoOffCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RuleBasicInfoCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ManuellCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RuleModeCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.SonnenaufgangCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.RulePreviewCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.SceneSelectionCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.ShiftPatternCard
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.SunriseConfigCard
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards.TargetSelectionCard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
 
@@ -250,6 +249,10 @@ fun HueRuleConfigScreen(
             // Szene bringt Helligkeit und Farbe selbst mit, eine Rampe erzeugt sie ueber die
             // Zeit, manuell stellt sie der Nutzer ein. Deshalb steht immer genau EIN Zielblock
             // da, statt Karten zu entkernen oder Felder auszugrauen.
+            // GENAU EINE Karte je Modus. Vorher trug die Szene eine Karte, waehrend Manuell
+            // und Sonnenaufgang sich auf zwei verteilten - die Zielauswahl schob sich zwischen
+            // Umschalter und Einstellung. Derselbe Gedanke sah damit in drei Modi verschieden
+            // aus. Siehe ModusKarten.kt.
             when (form.modus) {
                 HueRuleModus.SZENE -> item {
                     SceneSelectionCard(
@@ -262,40 +265,46 @@ fun HueRuleConfigScreen(
                     )
                 }
 
-                HueRuleModus.MANUELL -> {
-                    item { ZielAuswahl(form, uiState, hueViewModel, unresolvedFuerRegel) { form = it } }
-                    item {
-                        ActionConfigCard(
-                            targetOn = form.on,
-                            targetBrightness = form.brightness,
-                            colorMode = form.colorMode,
-                            colorKelvin = form.colorKelvin,
-                            colorPreset = form.colorPreset,
-                            onTargetOnChange = { form = form.copy(on = it) },
-                            onTargetBrightnessChange = { form = form.copy(brightness = it) },
-                            onColorModeChange = { form = form.copy(colorMode = it) },
-                            onColorKelvinChange = { form = form.copy(colorKelvin = it) },
-                            onColorPresetChange = { form = form.copy(colorPreset = it) }
-                        )
-                    }
+                HueRuleModus.MANUELL -> item {
+                    ManuellCard(
+                        lightTargets = uiState.lightTargets,
+                        selectedLightIds = form.selectedLightIds,
+                        selectedGroupIds = form.selectedGroupIds,
+                        onLightSelectionChange = { form = form.copy(selectedLightIds = it) },
+                        onGroupSelectionChange = { form = form.copy(selectedGroupIds = it) },
+                        onRefreshTargets = { hueViewModel.refreshLightTargets(userInitiated = true) },
+                        showValidationErrors = form.showValidationErrors,
+                        unresolvedTargets = unresolvedFuerRegel,
+                        targetOn = form.on,
+                        targetBrightness = form.brightness,
+                        colorMode = form.colorMode,
+                        colorKelvin = form.colorKelvin,
+                        colorPreset = form.colorPreset,
+                        onTargetOnChange = { form = form.copy(on = it) },
+                        onTargetBrightnessChange = { form = form.copy(brightness = it) },
+                        onColorModeChange = { form = form.copy(colorMode = it) },
+                        onColorKelvinChange = { form = form.copy(colorKelvin = it) },
+                        onColorPresetChange = { form = form.copy(colorPreset = it) }
+                    )
                 }
 
-                HueRuleModus.SONNENAUFGANG -> {
-                    item { ZielAuswahl(form, uiState, hueViewModel, unresolvedFuerRegel) { form = it } }
-                    item {
-                        SunriseConfigCard(
-                            durationMinutes = form.sunrise.durationMinutes,
-                            startKelvin = form.sunrise.startKelvin,
-                            endKelvin = form.sunrise.endKelvin,
-                            endBrightness = form.sunrise.endBrightness,
-                            startBeforeAlarm = form.sunrise.startBeforeAlarm,
-                            onDurationChange = { form = form.copy(sunrise = form.sunrise.copy(durationMinutes = it)) },
-                            onStartKelvinChange = { form = form.copy(sunrise = form.sunrise.copy(startKelvin = it)) },
-                            onEndKelvinChange = { form = form.copy(sunrise = form.sunrise.copy(endKelvin = it)) },
-                            onEndBrightnessChange = { form = form.copy(sunrise = form.sunrise.copy(endBrightness = it)) },
-                            onStartBeforeAlarmChange = { form = form.copy(sunrise = form.sunrise.copy(startBeforeAlarm = it)) }
-                        )
-                    }
+                HueRuleModus.SONNENAUFGANG -> item {
+                    SonnenaufgangCard(
+                        lightTargets = uiState.lightTargets,
+                        selectedLightIds = form.selectedLightIds,
+                        selectedGroupIds = form.selectedGroupIds,
+                        onLightSelectionChange = { form = form.copy(selectedLightIds = it) },
+                        onGroupSelectionChange = { form = form.copy(selectedGroupIds = it) },
+                        onRefreshTargets = { hueViewModel.refreshLightTargets(userInitiated = true) },
+                        showValidationErrors = form.showValidationErrors,
+                        unresolvedTargets = unresolvedFuerRegel,
+                        sunrise = form.sunrise,
+                        onDurationChange = { form = form.copy(sunrise = form.sunrise.copy(durationMinutes = it)) },
+                        onStartKelvinChange = { form = form.copy(sunrise = form.sunrise.copy(startKelvin = it)) },
+                        onEndKelvinChange = { form = form.copy(sunrise = form.sunrise.copy(endKelvin = it)) },
+                        onEndBrightnessChange = { form = form.copy(sunrise = form.sunrise.copy(endBrightness = it)) },
+                        onStartBeforeAlarmChange = { form = form.copy(sunrise = form.sunrise.copy(startBeforeAlarm = it)) }
+                    )
                 }
             }
 
@@ -333,29 +342,4 @@ fun HueRuleConfigScreen(
             LoadingScreen()
         }
     }
-}
-
-/**
- * Die Lampen-/Gruppenauswahl teilen sich die Modi MANUELL und SONNENAUFGANG. Ausgelagert, damit
- * der Aufruf nicht zweimal wortgleich im `when` steht - laufen die beiden Aufrufe je
- * auseinander, waehlt derselbe Nutzer in zwei Modi aus zwei verschiedenen Listen.
- */
-@Composable
-private fun ZielAuswahl(
-    form: HueRuleFormState,
-    uiState: com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueUiState,
-    hueViewModel: HueViewModel,
-    unresolvedTargets: List<com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget>,
-    onFormChange: (HueRuleFormState) -> Unit
-) {
-    TargetSelectionCard(
-        lightTargets = uiState.lightTargets,
-        selectedLightIds = form.selectedLightIds,
-        selectedGroupIds = form.selectedGroupIds,
-        onLightSelectionChange = { onFormChange(form.copy(selectedLightIds = it)) },
-        onGroupSelectionChange = { onFormChange(form.copy(selectedGroupIds = it)) },
-        onRefreshTargets = { hueViewModel.refreshLightTargets(userInitiated = true) },
-        showValidationErrors = form.showValidationErrors,
-        unresolvedTargets = unresolvedTargets
-    )
 }

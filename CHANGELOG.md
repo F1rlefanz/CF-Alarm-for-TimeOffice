@@ -27,7 +27,23 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.35.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.36.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Eine Regel darf jetzt mehrere Räume mit je einer Szene schalten._
+
+### ✨ Neu
+
+- **Mehrere Szenen in einer Regel.** Du kannst das Schlafzimmer auf „Nachtlicht" und gleichzeitig das Wohnzimmer auf „Konzentrieren" setzen – in derselben Regel. Pro Raum bleibt es bei einer Szene: zwei Szenen auf demselben Raum würden sich gegenseitig überschreiben. Die Auswahl zeigt oben als Chips, was du bereits gewählt hast, und im Raum-Menü steht ein Haken bei jedem Raum, in dem schon etwas gesetzt ist.
+- **Hinweis bei überlappenden Bereichen.** Teilen sich zwei gewählte Räume oder Zonen eine Lampe, sagt die App das – für diese Lampe gilt dann die zuletzt gesetzte Szene.
+
+### 🐛 Behoben
+
+- **„Wohnzimmer· Auto-Aus"** hat wieder ein Leerzeichen, und bei mehreren Szenen steht der Auto-Aus-Hinweis auf einer eigenen Zeile statt an der letzten Szene zu kleben.
+- **„Ausgeschaltet wird der ganze Raum «A», «B»"** heißt bei mehreren Räumen jetzt „werden die ganzen Räume".
+
+## Version 1.35.2
 
 **Stand:** August 2026
 

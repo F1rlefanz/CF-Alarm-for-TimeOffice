@@ -65,7 +65,7 @@ class HueRuleFormStateTest {
         assertEquals(200, zurueck.brightness)
         assertTrue(zurueck.autoOffEnabled)
         assertEquals(30, zurueck.autoOffMinutes)
-        assertNull("Manuell traegt keine Szene", zurueck.szene)
+        assertTrue("Manuell traegt keine Szene", zurueck.szenen.isEmpty())
     }
 
     @Test
@@ -119,7 +119,7 @@ class HueRuleFormStateTest {
             name = "Nachtlicht Frueh",
             shiftPattern = "Frühdienst",
             modus = HueRuleModus.SZENE,
-            szene = SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"),
+            szenen = listOf(SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer")),
             autoOffEnabled = true,
             autoOffMinutes = 45
         )
@@ -135,7 +135,7 @@ class HueRuleFormStateTest {
 
         val zurueck = regel.toFormState()
         assertEquals(HueRuleModus.SZENE, zurueck.modus)
-        assertEquals(SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"), zurueck.szene)
+        assertEquals(listOf(SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer")), zurueck.szenen)
         assertTrue(zurueck.autoOffEnabled)
         assertEquals(45, zurueck.autoOffMinutes)
     }
@@ -160,7 +160,7 @@ class HueRuleFormStateTest {
 
         val alsSzene = manuell.copy(
             modus = HueRuleModus.SZENE,
-            szene = SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer")
+            szenen = listOf(SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"))
         )
 
         val aktion = alsSzene.baue().lightActions.single()
@@ -178,7 +178,7 @@ class HueRuleFormStateTest {
             shiftPattern = "Frühdienst",
             modus = HueRuleModus.MANUELL,
             selectedGroupIds = setOf("1"),
-            szene = SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer")
+            szenen = listOf(SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"))
         )
 
         val aktion = alsManuell.baue().lightActions.single()
@@ -192,7 +192,7 @@ class HueRuleFormStateTest {
             name = "Test",
             shiftPattern = "Frühdienst",
             modus = HueRuleModus.SZENE,
-            szene = SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"),
+            szenen = listOf(SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer")),
             sunrise = SunriseConfig(enabled = true, durationMinutes = 20)
         )
 
@@ -247,14 +247,14 @@ class HueRuleFormStateTest {
         val manuellOhneLampe = HueRuleFormState(
             name = "A", shiftPattern = "B",
             modus = HueRuleModus.MANUELL,
-            szene = SzenenAuswahl("s", "S", "1", "W")
+            szenen = listOf(SzenenAuswahl("s", "S", "1", "W"))
         )
         assertEquals(listOf(HueRuleFormFehler.ZIEL_FEHLT), manuellOhneLampe.validate())
 
         val vollstaendig = HueRuleFormState(
             name = "A", shiftPattern = "B",
             modus = HueRuleModus.SZENE,
-            szene = SzenenAuswahl("s", "S", "1", "W")
+            szenen = listOf(SzenenAuswahl("s", "S", "1", "W"))
         )
         assertTrue(vollstaendig.validate().isEmpty())
     }
@@ -272,7 +272,7 @@ class HueRuleFormStateTest {
             modus = HueRuleModus.SZENE,
             selectedLightIds = setOf("4", "10"),
             selectedGroupIds = setOf("1"),
-            szene = SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"),
+            szenen = listOf(SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer")),
             on = false,
             brightness = 77,
             colorMode = ColorMode.COLOR,
@@ -305,5 +305,78 @@ class HueRuleFormStateTest {
 
         assertEquals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, zurueck.shiftPattern)
         assertTrue(isUniversalShiftPattern(zurueck.shiftPattern))
+    }
+
+    // --- Mehrere Szenen ------------------------------------------------------------------------
+
+    @Test
+    fun `eine Regel darf mehrere Raeume mit je einer Szene schalten`() {
+        // Die Kette darunter konnte das von Anfang an - convertRuleToLightActions laeuft ueber
+        // ALLE Aktionen, autoOffTargetsOf() flatMapt und dedupliziert. Begrenzt hat allein die
+        // Oberflaeche, und genau das ist hier weg.
+        val form = HueRuleFormState(
+            name = "Abendrunde",
+            shiftPattern = "Spätdienst",
+            modus = HueRuleModus.SZENE,
+            szenen = listOf(
+                SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"),
+                SzenenAuswahl("sz-lesen", "Lesen", "82", "Schlafzimmer")
+            ),
+            autoOffEnabled = true,
+            autoOffMinutes = 20
+        )
+
+        val regel = form.baue()
+        val aktionen = regel.lightActions
+
+        assertEquals("Je gewaehlter Szene eine Aktion", 2, aktionen.size)
+        assertTrue("Beide sind Szenen-Aktionen", aktionen.all { it.isScene })
+        assertTrue("Beide gehen an ihre Gruppe", aktionen.all { it.isGroup })
+        assertEquals(setOf("wz-nacht", "sz-lesen"), aktionen.mapNotNull { it.sceneId }.toSet())
+        assertEquals(setOf("1", "82"), aktionen.map { it.targetId }.toSet())
+        assertTrue(
+            "Jede traegt die Auto-Aus-Dauer - sonst bliebe ein Raum an",
+            aktionen.all { it.duration == 20 }
+        )
+
+        // Und der Rundlauf haelt beide.
+        val zurueck = regel.toFormState()
+        assertEquals(2, zurueck.szenen.size)
+        assertEquals(form.szenen, zurueck.szenen)
+    }
+
+    @Test
+    fun `mehrere Szenen ergeben mehrere Auto-Aus-Ziele, eines je Raum`() {
+        val form = HueRuleFormState(
+            name = "Abendrunde",
+            shiftPattern = "Spätdienst",
+            modus = HueRuleModus.SZENE,
+            szenen = listOf(
+                SzenenAuswahl("wz-nacht", "Nachtlicht", "1", "Wohnzimmer"),
+                SzenenAuswahl("sz-lesen", "Lesen", "82", "Schlafzimmer")
+            ),
+            autoOffEnabled = true,
+            autoOffMinutes = 30
+        )
+
+        // Das ist die Bedingung, auf die autoOffTargetsOf() filtert: on == true UND duration > 0.
+        // Faellt sie fuer eine der beiden weg, bleibt genau dieser Raum hell.
+        val aktionen = form.baue().lightActions
+        assertTrue(aktionen.all { it.on == true && (it.duration ?: 0) > 0 })
+        assertEquals(
+            "Zwei verschiedene Gruppen - der BridgeTimer benennt seine Zeitplaene danach",
+            2,
+            aktionen.map { it.targetId }.distinct().size
+        )
+    }
+
+    @Test
+    fun `ohne ausgewaehlte Szene fehlt weiterhin das Ziel`() {
+        val leer = HueRuleFormState(
+            name = "A", shiftPattern = "B",
+            modus = HueRuleModus.SZENE,
+            szenen = emptyList()
+        )
+        assertEquals(listOf(HueRuleFormFehler.ZIEL_FEHLT), leer.validate())
     }
 }

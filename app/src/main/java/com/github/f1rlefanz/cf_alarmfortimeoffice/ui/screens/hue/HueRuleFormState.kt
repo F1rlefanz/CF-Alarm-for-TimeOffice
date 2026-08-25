@@ -43,8 +43,15 @@ internal data class HueRuleFormState(
     val selectedLightIds: Set<String> = emptySet(),
     val selectedGroupIds: Set<String> = emptySet(),
 
-    // Ziel des Modus SZENE
-    val szene: SzenenAuswahl? = null,
+    // Ziele des Modus SZENE. MEHRERE sind ausdruecklich erlaubt: eine Regel darf das Wohnzimmer
+    // auf "Nachtlicht" und das Schlafzimmer auf "Lesen" setzen. Die Kette darunter kann das
+    // laengst - `convertRuleToLightActions` laeuft ueber alle Aktionen, `autoOffTargetsOf()`
+    // flatMapt und dedupliziert, der Ziel-Abgleich behandelt jede Aktion einzeln. Die frueher
+    // einzelne Auswahl war eine reine Oberflaechen-Begrenzung.
+    //
+    // HOECHSTENS EINE Szene JE RAUM: zwei Szenen auf derselben Gruppe waeren zwei PUTs auf
+    // denselben Endpunkt, der zweite gewaenne - eine Einstellung, die sich selbst widerspricht.
+    val szenen: List<SzenenAuswahl> = emptyList(),
 
     // Modus MANUELL
     val on: Boolean = true,
@@ -76,7 +83,7 @@ internal data class HueRuleFormState(
     /** Hat der aktive Modus ein Ziel? */
     val hatZiel: Boolean
         get() = when (modus) {
-            HueRuleModus.SZENE -> szene != null
+            HueRuleModus.SZENE -> szenen.isNotEmpty()
             else -> selectedLightIds.isNotEmpty() || selectedGroupIds.isNotEmpty()
         }
 }
@@ -118,26 +125,24 @@ internal fun HueRuleFormState.toRule(
 
     val aktionen: List<HueLightAction> = when (modus) {
         HueRuleModus.SZENE -> {
-            // EINE Aktion, und sie traegt ausschliesslich Szene + Gruppe.
+            // JE AUSGEWAEHLTER SZENE eine Aktion, und jede traegt ausschliesslich Szene + Gruppe.
             //
             // `on = true` ist hier eine gespeicherte ZUSAGE, kein gesendeter Wert: Der
             // Ausfuehrungspfad schickt nur `{"scene": ...}`, aber `autoOffTargetsOf()` filtert auf
             // `on == true` - ohne das verloere jede Szenenregel ihr Auto-Aus.
-            szene?.let { s ->
-                listOf(
-                    HueLightAction(
-                        targetType = TargetType.GROUP,
-                        targetId = s.groupId,
-                        targetName = groupNames[s.groupId] ?: s.groupName,
-                        actionType = ActionType.TURN_ON,
-                        on = true,
-                        duration = autoOffDauer,
-                        isGroup = true,
-                        sceneId = s.sceneId,
-                        sceneName = s.sceneName
-                    )
+            szenen.map { s ->
+                HueLightAction(
+                    targetType = TargetType.GROUP,
+                    targetId = s.groupId,
+                    targetName = groupNames[s.groupId] ?: s.groupName,
+                    actionType = ActionType.TURN_ON,
+                    on = true,
+                    duration = autoOffDauer,
+                    isGroup = true,
+                    sceneId = s.sceneId,
+                    sceneName = s.sceneName
                 )
-            }.orEmpty()
+            }
         }
 
         HueRuleModus.SONNENAUFGANG -> {
@@ -196,8 +201,7 @@ internal fun HueScheduleRule.toFormState(): HueRuleFormState {
     val ersteAktion = lightActions.firstOrNull()
     val modus = this.modus
 
-    val szenenAktion = lightActions.firstOrNull { it.isScene }
-    val szene = szenenAktion?.let {
+    val szenen = lightActions.filter { it.isScene }.map {
         SzenenAuswahl(
             sceneId = it.sceneId.orEmpty(),
             sceneName = it.sceneName.orEmpty(),
@@ -224,7 +228,7 @@ internal fun HueScheduleRule.toFormState(): HueRuleFormState {
             .map { it.targetId }.toSet(),
         selectedGroupIds = lightActions.filter { !it.isScene && it.isGroup }
             .map { it.targetId }.toSet(),
-        szene = szene,
+        szenen = szenen,
         on = if (modus == HueRuleModus.MANUELL) ersteAktion?.on ?: true else true,
         brightness = ersteAktion?.brightness ?: 128,
         colorMode = farbModus,

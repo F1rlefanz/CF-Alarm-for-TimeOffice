@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.36.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.36.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Die Karte im Regel-Editor heißt jetzt so wie das, was du ausgewählt hast._
+
+### 💅 Verbessert
+
+- **Überschrift folgt der Auswahl.** Tippst du „Manuell", heißt die Karte darunter „Manuell" – vorher stand dort „Zielauswahl", also gar nicht die gewählte Betriebsart. Bei „Sonnenaufgang" genauso. „Szene" hieß schon immer „Szene"; jetzt sind alle drei gleich. Die Beschriftung kommt aus derselben Quelle wie der Umschalter und das Abzeichen in der Regelliste, kann also nicht auseinanderlaufen.
+
+## Version 1.36.1
 
 **Stand:** August 2026
 

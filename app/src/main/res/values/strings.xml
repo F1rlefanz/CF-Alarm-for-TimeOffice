@@ -206,7 +206,6 @@
     </plurals>
 
     <!-- Regel-Editor: Sonnenaufgang -->
-    <string name="hue_sunrise_title">Sunrise-Lichtwecker</string>
     <string name="hue_sunrise_intro">Sanfter Sonnenaufgang: das Licht fährt von dim-warm auf hell-kühl hoch.</string>
     <string name="hue_sunrise_start_k">Start: %1$d K (warm)</string>
     <string name="hue_sunrise_end_k">Ziel: %1$d K</string>
@@ -231,7 +230,6 @@
     <string name="hue_scene_lightscene_note">Szenen ohne Raum oder Zone werden hier nicht angeboten. Ordne sie in der Hue-App einem Raum zu, dann erscheinen sie.</string>
 
     <!-- Regel-Editor: Zielauswahl -->
-    <string name="hue_targets_header">Zielauswahl</string>
     <string name="hue_targets_refresh">Lichter aktualisieren</string>
     <string name="hue_targets_intro">Wählen Sie aus, welche Lichter oder Gruppen diese Regel steuern soll:</string>
     <string name="hue_targets_unknown">Auf dieser Bridge unbekannt: %1$s. Diese Ziele stammen von einer anderen Bridge und sind unten nicht angehakt – bitte neu auswählen.</string>

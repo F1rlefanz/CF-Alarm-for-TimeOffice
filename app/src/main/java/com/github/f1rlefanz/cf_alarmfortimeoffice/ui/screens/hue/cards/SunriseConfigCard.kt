@@ -55,11 +55,6 @@ internal fun SonnenaufgangInhalt(
     ) {
 
         Text(
-            stringResource(R.string.hue_sunrise_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
             stringResource(R.string.hue_sunrise_intro),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant

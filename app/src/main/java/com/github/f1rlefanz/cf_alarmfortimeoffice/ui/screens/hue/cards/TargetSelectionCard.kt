@@ -10,11 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
@@ -43,7 +39,6 @@ internal fun ZielAuswahlInhalt(
     selectedGroupIds: Set<String>,
     onLightSelectionChange: (Set<String>) -> Unit,
     onGroupSelectionChange: (Set<String>) -> Unit,
-    onRefreshTargets: () -> Unit,
     showValidationErrors: Boolean,
     unresolvedTargets: List<UnresolvedRuleTarget> = emptyList()
 ) {
@@ -51,17 +46,6 @@ internal fun ZielAuswahlInhalt(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(stringResource(R.string.hue_targets_header), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onRefreshTargets) {
-                Icon(Icons.Default.Refresh, stringResource(R.string.hue_targets_refresh))
-            }
-        }
 
         Text(
             stringResource(R.string.hue_targets_intro),

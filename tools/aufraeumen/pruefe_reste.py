@@ -12,7 +12,7 @@ daraus eine Messung machte.
 
 Deshalb steht das hier - nicht als guter Vorsatz, sondern als Gatter in der Schleuse.
 
-SECHS PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
+SIEBEN PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
 meldet, wird weggeklickt und schuetzt dann gar nichts mehr (siehe die Triage-Lehre in
 GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten den Einzelfall).
 
@@ -27,6 +27,8 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
   6. EIGENSCHAFTEN OHNE VERWENDER (val, var, const val) - blockierend, mit Begruendungszwang
      im eigenen KDoc. Nicht nur `const val`: ein `dp`-Wert kann gar keine Compile-Zeit-Konstante
      sein, und genau dort lag eine tote Konstante.
+  7. LINT-EINTRAEGE OHNE WIRKUNG - blockierend. Ein `<issue>` in `app/lint.xml` ohne severity,
+     ohne <ignore> und ohne <option> konfiguriert nichts und taeuscht eine Unterdrueckung vor.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -485,6 +487,58 @@ def pruefe_ungenutzte_konstanten(befunde):
                 )
 
 
+# ---------------------------------------------------------------------------------------------
+# 7. Lint-Eintraege, die gar nichts konfigurieren KOENNEN
+#
+# Aufraeum-Runde 10 (27.08.2026) hat jeden Eintrag in `app/lint.xml` einzeln entfernt und den
+# XML-Bericht verglichen. Ergebnis: 23 Eintraege, 4 davon wirkungslos - darunter
+# `<issue id="BatteryLife">` mit nur einem Kommentar darin. Der taeuschte eine Unterdrueckung
+# vor, die in Wahrheit als `@Suppress("BatteryLife")` im Code steht.
+#
+# NUR DIESER TEIL IST STATISCH ENTSCHEIDBAR und steht deshalb hier: ein `<issue>` ohne
+# `severity`, ohne `<ignore>` und ohne `<option>` kann per Definition nichts bewirken - dafuer
+# braucht es keinen Build. Die uebrigen drei Faelle waren tote `<ignore regexp>`; ob ein Regexp
+# etwas trifft, sagt einem erst ein mutierender Lint-Lauf (~1 min pro Eintrag). Das ist im
+# Schleusen-Hook ueber einem geteilten Arbeitsbaum ausgeschlossen - dieselbe Grenze wie beim
+# Blickwinkel "totes @Suppress" in Runde 9.
+#
+# ElementTree kann die Datei NICHT parsen: im Kopfkommentar steht `--offline`, und `--` ist in
+# einem XML-Kommentar verboten. Android Lint nimmt das seit August 2026 klaglos hin. Deshalb
+# werden Kommentare vorher entfernt - was ohnehin richtig ist, denn ein Kommentar konfiguriert
+# nichts.
+# ---------------------------------------------------------------------------------------------
+LINT_XML = os.path.join(WURZEL, "app", "lint.xml")
+XML_KOMMENTAR = re.compile(r"<!--.*?-->", re.S)
+LINT_ISSUE = re.compile(r"<issue\b([^>]*?)(/>|>(.*?)</issue>)", re.S)
+
+
+def wirkungslose_lint_eintraege(text):
+    """REIN, damit die Entscheidung ohne Repository pruefbar ist.
+
+    Liefert die Issue-IDs, deren Block weder eine Severity setzt noch etwas ausnimmt.
+    """
+    ohne_kommentare = XML_KOMMENTAR.sub("", text)
+    ergebnis = []
+    for treffer in LINT_ISSUE.finditer(ohne_kommentare):
+        attribute, _, rumpf = treffer.groups()
+        if "severity" in attribute:
+            continue
+        if rumpf and ("<ignore" in rumpf or "<option" in rumpf):
+            continue
+        kennung = re.search(r'id="([^"]+)"', attribute)
+        ergebnis.append(kennung.group(1) if kennung else "?")
+    return ergebnis
+
+
+def pruefe_lint_konfiguration(befunde):
+    for kennung in wirkungslose_lint_eintraege(_lies(LINT_XML)):
+        befunde.append(
+            "Lint-Eintrag ohne Wirkung: <issue id=\"{}\"> in app/lint.xml setzt keine severity "
+            "und nimmt nichts aus - er konfiguriert nichts und taeuscht eine Unterdrueckung "
+            "vor".format(kennung)
+        )
+
+
 def main():
     ci = "--ci" in sys.argv
     basis = ""
@@ -499,6 +553,7 @@ def main():
     pruefe_composable_ohne_verbraucher(befunde)
     pruefe_haengende_kdocs(befunde)
     pruefe_ungenutzte_konstanten(befunde)
+    pruefe_lint_konfiguration(befunde)
     pruefe_doku_verweise(befunde, basis)
 
     if not befunde:

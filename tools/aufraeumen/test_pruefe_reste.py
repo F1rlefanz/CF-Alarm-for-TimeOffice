@@ -27,7 +27,12 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pruefe_reste import HISTORISCH, _absaetze, tote_importe_in  # noqa: E402
+from pruefe_reste import (  # noqa: E402
+    HISTORISCH,
+    _absaetze,
+    tote_importe_in,
+    wirkungslose_lint_eintraege,
+)
 
 
 class ToteImporte(unittest.TestCase):
@@ -125,6 +130,55 @@ class DokuAbsaetze(unittest.TestCase):
         (a, b), = list(_absaetze(zeilen))
 
         self.assertTrue(HISTORISCH.search("\n".join(zeilen[a:b])))
+
+
+class WirkungsloseLintEintraege(unittest.TestCase):
+    """Runde 10: der real gefundene Fall war `<issue id="BatteryLife">` mit nur einem
+    Kommentar darin - er sah nach Unterdrueckung aus, unterdrueckte aber nichts (gemessen:
+    Entfernen aendert den Lint-Bericht in keiner Zeile). Die Gegenrichtung ist hier die
+    gefaehrlichere: meldet das Gatter einen Eintrag, der WIRKT, wird eine echte
+    Unterdrueckung geloescht - und ein Lint-Fehler bricht danach den Release-Build.
+    """
+
+    def test_ein_block_ohne_severity_und_ohne_ignore_wird_gemeldet(self):
+        text = '<lint>\n    <issue id="BatteryLife">\n    </issue>\n</lint>\n'
+
+        self.assertEqual(["BatteryLife"], wirkungslose_lint_eintraege(text))
+
+    def test_ein_block_mit_nur_einem_kommentar_darin_wird_gemeldet(self):
+        """Der Originalfall: der Kommentar sieht nach Inhalt aus, konfiguriert aber nichts."""
+        text = '<lint>\n    <issue id="BatteryLife">\n        <!-- alte Datei entfernt -->\n' \
+               '    </issue>\n</lint>\n'
+
+        self.assertEqual(["BatteryLife"], wirkungslose_lint_eintraege(text))
+
+    def test_severity_ignore_und_option_gelten_als_wirksam(self):
+        text = (
+            '<lint>\n'
+            '    <issue id="ObsoleteSdkInt" severity="informational" />\n'
+            '    <issue id="CustomX509TrustManager">\n'
+            '        <ignore path="**/HueTrustManager.kt" />\n'
+            '    </issue>\n'
+            '    <issue id="UnusedIds">\n'
+            '        <option name="x" value="y" />\n'
+            '    </issue>\n'
+            '</lint>\n'
+        )
+
+        self.assertEqual([], wirkungslose_lint_eintraege(text))
+
+    def test_ein_auskommentierter_block_zaehlt_nicht(self):
+        """Sonst meldet das Gatter einen Eintrag, den Lint nie gesehen hat."""
+        text = '<lint>\n    <!--\n    <issue id="Alt">\n    </issue>\n    -->\n</lint>\n'
+
+        self.assertEqual([], wirkungslose_lint_eintraege(text))
+
+    def test_die_echte_datei_ist_sauber(self):
+        """Die Ausgangslage nach Runde 10 - schlaegt an, wenn jemand so einen Block zurueckholt."""
+        pfad = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "app", "lint.xml")
+        with open(pfad, encoding="utf-8") as f:
+            self.assertEqual([], wirkungslose_lint_eintraege(f.read()))
 
 
 if __name__ == "__main__":

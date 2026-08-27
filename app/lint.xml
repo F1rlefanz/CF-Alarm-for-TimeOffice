@@ -19,17 +19,17 @@
 
     <!-- ================= KRITISCHE FALSE POSITIVES ================= -->
     
-    <!-- 
-    BatteryLife: REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-    Begründung: Wir verwenden dies nur in createBatteryOptimizationIntent(),
-    welches einen Intent zurückgibt aber NICHT direkt ausführt.
-    Der User muss aktiv zustimmen. Dies ist Play Store konform.
+    <!--
+    BatteryLife wird NICHT hier unterdrückt, sondern an den beiden Stellen, die die
+    Berechtigung anfassen: @Suppress("BatteryLife") in MainScreen.kt und in
+    BatteryOptimizationHelper.kt. Die Begründung (wir bauen nur den Intent, ausführen
+    muss ihn der Nutzer) steht dort. Bis zur Aufräum-Runde 10 (27.08.2026) stand hier
+    zusätzlich ein <issue id="BatteryLife">-Block ohne jeden <ignore> und ohne severity -
+    der konfigurierte nichts und täuschte eine zweite Unterdrückung vor (gemessen:
+    Entfernen ändert den Lint-Bericht in keiner Zeile).
     -->
-    <issue id="BatteryLife">
-        <!-- PHASE 2 CLEANUP: BatteryOptimizationManager.kt removed (obsoleted by BatteryOptimizationHelper) -->
-    </issue>
-    
-    <!-- 
+
+    <!--
     CustomX509TrustManager: Philips Hue Bridge Zertifikat-Handling
     Begründung: Wird ausschließlich für die lokale Kommunikation mit der 
     Philips Hue Bridge verwendet (selbst-signierte Zertifikate).
@@ -73,24 +73,22 @@
     Gemessen am 25.08.2026 (Aufräum-Runde 9): die beiden Treffer stammen aus
     google-http-client-2.2.0.jar, NICHT aus dem HueTrustManager der App - der validiert
     echt und wirft bei Fehlschlag. Bis dahin stand hier, es gehe um Apache Commons
-    Logging / Log4JLogger; das war falsch, und der <ignore regexp> darunter trifft
-    entsprechend nichts. Wirksam ist allein das severity="informational".
-    Der tote regexp ist als Issue #31 vorgemerkt, nicht hier nebenbei entfernt.
+    Logging / Log4JLogger; das war falsch, und der <ignore regexp> darunter traf
+    entsprechend nichts. Er ist in Runde 10 entfernt worden (gemessen: Bericht
+    unverändert, auch lintVitalRelease unverändert grün).
+    Wirksam ist allein das severity="informational".
     -->
-    <issue id="TrustAllX509TrustManager" severity="informational">
-        <ignore regexp=".*org\.apache\.commons\.logging\.impl\.Log4JLogger.*" />
-    </issue>
+    <issue id="TrustAllX509TrustManager" severity="informational" />
     
-    <!-- 
-    InvalidPackage: Apache Commons Logging's optional dependencies
-    Begründung: org.apache.commons.logging hat optionale Abhängigkeiten 
-    zu Log4J, die für die Android-Plattform nicht erforderlich sind.
+    <!--
+    InvalidPackage: hier stand bis zur Aufräum-Runde 10 (27.08.2026) ein Block mit zwei <ignore regexp> auf
+    org.apache.commons.logging und org.apache.log4j. commons-logging:1.2 liegt zwar
+    weiterhin im debugRuntimeClasspath, aber InvalidPackage meldet darauf nichts -
+    Runde 10 hat beide Regexps einzeln und gemeinsam entfernt und den XML-Bericht
+    verglichen: keine Zeile Unterschied, lintVitalRelease weiter grün. Wer den Block
+    zurückholen will, misst vorher: erscheint ohne ihn wirklich ein Befund?
     -->
-    <issue id="InvalidPackage">
-        <ignore regexp=".*org\.apache\.commons\.logging.*" />
-        <ignore regexp=".*org\.apache\.log4j.*" />
-    </issue>
-    
+
     <!-- ================= SDK VERSION CHECKS ================= -->
     
     <!-- 

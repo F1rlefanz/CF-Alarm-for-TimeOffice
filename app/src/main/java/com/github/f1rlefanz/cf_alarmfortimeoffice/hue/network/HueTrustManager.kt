@@ -57,10 +57,13 @@ import javax.net.ssl.X509TrustManager
  *  Layer 4: Private-network (RFC 1918) IP validation for hostname verification
  *  Layer 5: Comprehensive security audit logging throughout
  *
- * @suppress CustomX509TrustManager: Justified - see class doc above; Hue Bridge IoT
- * integration requires a bridge-aware fallback beyond the system trust store.
- * @suppress TrustAllX509TrustManager: False positive - this does not trust all
- * certificates; it validates against certificate patterns, validity, and identity pinning.
+ * LINT
+ * `CustomX509TrustManager` genuinely fires on this class and is suppressed for this file in
+ * `app/lint.xml`, NOT by an annotation here - the justification is the class doc above.
+ * `TrustAllX509TrustManager` does not fire on this class at all: it wants an *empty*
+ * checkServerTrusted, and this one validates and throws. Both of its hints come from
+ * google-http-client-2.2.0.jar. Measured 26.08.2026 by removing the lint.xml ignore and
+ * re-running lint; only CustomX509TrustManager reappeared, on this file.
  */
 // Constructor is `internal` (not `private`) purely so unit tests in the same module can
 // inject a fake system [X509TrustManager] and thereby exercise the Hue-specific fallback

@@ -12,7 +12,7 @@ daraus eine Messung machte.
 
 Deshalb steht das hier - nicht als guter Vorsatz, sondern als Gatter in der Schleuse.
 
-SECHS PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
+SIEBEN PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
 meldet, wird weggeklickt und schuetzt dann gar nichts mehr (siehe die Triage-Lehre in
 GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten den Einzelfall).
 
@@ -27,6 +27,9 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
   6. EIGENSCHAFTEN OHNE VERWENDER (val, var, const val) - blockierend, mit Begruendungszwang
      im eigenen KDoc. Nicht nur `const val`: ein `dp`-Wert kann gar keine Compile-Zeit-Konstante
      sein, und genau dort lag eine tote Konstante.
+  7. KONFIGURATIONSDATEIEN, DIE EIN STANDARD-PARSER NICHT LIEST - blockierend. `app/lint.xml`
+     war lange kein wohlgeformtes XML, ohne dass es jemandem auffiel: Android Lint nimmt es
+     hin, also wirkte die Datei. Nur wer sie parst, merkt es.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -34,10 +37,13 @@ Aufruf:
     python tools/aufraeumen/pruefe_reste.py --basis <commit>   # Doku-Check gegen diese Basis
 """
 
+import json
 import os
 import re
 import subprocess
 import sys
+import tomllib
+import xml.etree.ElementTree as ET
 
 WURZEL = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 QUELLEN = os.path.join(WURZEL, "app", "src")
@@ -485,6 +491,81 @@ def pruefe_ungenutzte_konstanten(befunde):
                 )
 
 
+# ---------------------------------------------------------------------------------------------
+# 7. Konfigurationsdateien, die ein Standard-Parser nicht liest
+#
+# HERGANG (28.08.2026, Issue #39): `app/lint.xml` war KEIN wohlgeformtes XML. Im Kopfkommentar
+# stand der Rat, neue Eintraege mit dem Offline-Schalter von `gradlew lintDebug` gegenzupruefen -
+# und die zwei Bindestriche dieses Schalters sind innerhalb eines XML-Kommentars verboten. Android
+# Lint nahm die Datei klaglos an, die Unterdrueckungen wirkten also; auffallen konnte es deshalb
+# nur jemandem, der die Datei PARST. Der Fehler stand seit unbekannter Zeit drin.
+#
+# WARUM DAS EIN GATTER VERDIENT: Es ist statisch entscheidbar, kostet Sekunden und hat keinen
+# Ermessensspielraum - eine Datei parst oder sie parst nicht. Gemessen ueber den ganzen Baum:
+# 30 Dateien (27 XML, 2 JSON, 1 TOML), EIN Rohbefund, NULL Fehlalarme. Kein anderer Blickwinkel
+# dieser Reihe hatte je eine so saubere Quote.
+#
+# WARUM KEIN YAML: Die sechs `.yml` im Repo wurden mitgemessen (PyYAML, null Befunde), aber die
+# Standardbibliothek hat keinen YAML-Parser. Eine Abhaengigkeit fuer eine Pruefung, die bisher
+# nichts findet, waere ein schlechter Tausch - zumal GitHub die Workflow-Dateien selbst ablehnt,
+# wenn sie nicht lesbar sind, und `tools/skills/pruefe_skills.py` das Skill-Frontmatter prueft.
+#
+# GRENZE: Wer bewusst eine Datei mit nicht-standardkonformer Syntax ablegt (JSON mit Kommentaren,
+# ein XML-Rumpf als Vorlage), bekommt hier eine Meldung. Das ist dann keine Altlast, sondern eine
+# Entscheidung - und gehoert als Ausnahme hierher, nicht weggeklickt.
+#
+# NUMMERNKOLLISION: Der offene PR #37 (Runde 10) fuehrt in DIESER Datei ebenfalls eine Pruefung 7
+# ein ("Lint-Eintraege ohne Wirkung"). Wer als Zweiter merged, nummeriert um. Inhaltlich beissen
+# sie sich nicht - im Gegenteil: jene Pruefung musste die Kommentare aus `app/lint.xml` per
+# regulaerem Ausdruck entfernen, WEIL die Datei nicht parsbar war. Nach dem Fix hier kann sie
+# einfach parsen.
+# ---------------------------------------------------------------------------------------------
+KONFIG_PARSER = {".xml": "xml", ".json": "json", ".toml": "toml"}
+
+
+def konfig_fehler(name, inhalt):
+    """Die eigentliche Entscheidung - REIN, damit sie ohne Repository pruefbar ist.
+
+    Liefert die Parser-Meldung, wenn `inhalt` unter dem zu `name` passenden Format unlesbar
+    ist; sonst die leere Zeichenkette. Endungen ohne Parser gelten als lesbar.
+    """
+    art = KONFIG_PARSER.get(os.path.splitext(name)[1].lower(), "")
+    if not art:
+        return ""
+    roh = inhalt.encode("utf-8") if isinstance(inhalt, str) else inhalt
+    try:
+        if art == "xml":
+            ET.fromstring(roh)
+        elif art == "json":
+            json.loads(roh.decode("utf-8"))
+        else:
+            tomllib.loads(roh.decode("utf-8"))
+    except (ET.ParseError, ValueError, UnicodeDecodeError) as fehler:
+        return "{}: {}".format(type(fehler).__name__, fehler)
+    return ""
+
+
+def pruefe_unlesbare_konfig(befunde):
+    code, ausgabe = _git("ls-files")
+    if code != 0:
+        return
+    for name in ausgabe.split("\n"):
+        name = name.strip()
+        if not name or os.path.splitext(name)[1].lower() not in KONFIG_PARSER:
+            continue
+        pfad = os.path.join(WURZEL, name.replace("/", os.sep))
+        try:
+            with open(pfad, "rb") as datei:
+                inhalt = datei.read()
+        except OSError:
+            continue
+        fehler = konfig_fehler(name, inhalt)
+        if fehler:
+            befunde.append(
+                "Konfiguration nicht parsbar: {} - {}".format(name, fehler)
+            )
+
+
 def main():
     ci = "--ci" in sys.argv
     basis = ""
@@ -499,6 +580,7 @@ def main():
     pruefe_composable_ohne_verbraucher(befunde)
     pruefe_haengende_kdocs(befunde)
     pruefe_ungenutzte_konstanten(befunde)
+    pruefe_unlesbare_konfig(befunde)
     pruefe_doku_verweise(befunde, basis)
 
     if not befunde:

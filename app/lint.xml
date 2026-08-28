@@ -12,7 +12,11 @@
     als UnknownIssueId-Warnung - und zwar einmal pro geprüfter Variante, also mehrfach.
     Vor August 2026 standen hier drei erfundene IDs (HardcodedCredentials, UnencryptedIntent,
     LeakCanary), die allein 18 der damals 50 Lint-Warnungen erzeugten, ohne irgendetwas zu
-    bewirken. Neue Einträge deshalb immer mit `./gradlew --offline lintDebug` gegenprüfen.
+    bewirken. Neue Einträge deshalb immer mit `./gradlew lintDebug` gegenprüfen; das läuft
+    offline, mit dem Schalter „offline“ und den üblichen zwei Bindestrichen davor. Die zwei
+    Bindestriche können hier nicht ausgeschrieben stehen: XML verbietet sie innerhalb eines
+    Kommentars, und genau daran scheiterte bis August 2026 jeder Standard-Parser auf dieser
+    Datei (Lint selbst nimmt es klaglos hin, deshalb fiel es jahrelang niemandem auf).
 
     Letzte Aktualisierung: August 2026
     -->

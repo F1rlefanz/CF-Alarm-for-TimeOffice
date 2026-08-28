@@ -27,7 +27,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pruefe_reste import HISTORISCH, _absaetze, tote_importe_in  # noqa: E402
+from pruefe_reste import HISTORISCH, _absaetze, konfig_fehler, tote_importe_in  # noqa: E402
 
 
 class ToteImporte(unittest.TestCase):
@@ -125,6 +125,46 @@ class DokuAbsaetze(unittest.TestCase):
         (a, b), = list(_absaetze(zeilen))
 
         self.assertTrue(HISTORISCH.search("\n".join(zeilen[a:b])))
+
+
+class UnlesbareKonfiguration(unittest.TestCase):
+    """Beide Richtungen: meldet es, wo etwas ist - und schweigt es, wo nichts ist?"""
+
+    def test_der_echte_fall_zwei_bindestriche_im_xml_kommentar(self):
+        """Genau der Fund aus Issue #39, nachgebaut.
+
+        Zwei Bindestriche in Folge sind innerhalb eines XML-Kommentars verboten. Android Lint
+        nimmt die Datei trotzdem an - deshalb konnte der Fehler jahrelang stehenbleiben.
+        """
+        text = "<lint>\n  <!-- ruf `gradlew " + "--" + "offline lintDebug` auf -->\n</lint>\n"
+
+        self.assertIn("ParseError", konfig_fehler("app/lint.xml", text))
+
+    def test_wohlgeformtes_xml_wird_nicht_gemeldet(self):
+        text = "<lint>\n  <!-- ein harmloser Kommentar -->\n  <issue id=\"X\" />\n</lint>\n"
+
+        self.assertEqual("", konfig_fehler("app/lint.xml", text))
+
+    def test_kaputtes_json_wird_gemeldet(self):
+        self.assertNotEqual("", konfig_fehler("docs/manifest.json", '{"a": 1,}'))
+
+    def test_gueltiges_json_wird_nicht_gemeldet(self):
+        self.assertEqual("", konfig_fehler("docs/manifest.json", '{"a": 1}'))
+
+    def test_kaputtes_toml_wird_gemeldet(self):
+        self.assertNotEqual("", konfig_fehler("gradle/libs.versions.toml", "a = = 1\n"))
+
+    def test_gueltiges_toml_wird_nicht_gemeldet(self):
+        self.assertEqual("", konfig_fehler("gradle/libs.versions.toml", '[v]\na = "1"\n'))
+
+    def test_endungen_ohne_parser_gelten_als_lesbar(self):
+        """Sonst wuerde jede `.kt`- oder `.md`-Datei durch diese Pruefung laufen."""
+        self.assertEqual("", konfig_fehler("app/proguard-rules.pro", "<<< kein Format >>>"))
+        self.assertEqual("", konfig_fehler(".github/workflows/ci.yml", "a: [1"))
+
+    def test_die_meldung_nennt_die_stelle(self):
+        """Ohne Zeilenangabe ist ein Parse-Fehler in einer 190-Zeilen-Datei kaum zu finden."""
+        self.assertIn("line 3", konfig_fehler("a.xml", "<a>\n<b>\n</a>\n"))
 
 
 if __name__ == "__main__":

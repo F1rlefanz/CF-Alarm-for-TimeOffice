@@ -91,6 +91,17 @@ class DimAccessibilityService : AccessibilityService() {
         private const val FADE_MS = 320L
         private const val FADE_FRAME_MS = 16L
 
+        /**
+         * Merker fuer [DimDiagnostik.rueckkehrArt]. Eigene, winzige Datei statt DataStore: er wird
+         * in `onUnbind`/`onDestroy` geschrieben, also in Rueckgabepfaden, die SOFORT fertig sein
+         * muessen - ein suspendierender Schreibvorgang haette dort keinen Coroutine-Scope mehr, den
+         * das System noch am Leben laesst. Gleiche Ueberlegung wie beim Snooze-Merker, der aus
+         * demselben Grund `commit()` statt `apply()` nimmt.
+         */
+        private const val MERKER_PREFS = "dim_dienst_merker"
+        private const val MERKER_LAEUFT = "laeuft"
+        private const val MERKER_ELAPSED = "elapsed"
+
         @Volatile
         private var running = false
 
@@ -117,6 +128,7 @@ class DimAccessibilityService : AccessibilityService() {
         // Bewusst WARN: Release-Logs fuehren nur WARN+, und genau dort muss die Spur stehen. Ohne
         // sie war der Vorfall vom 24.08.2026 nicht rekonstruierbar (siehe [DimDiagnostik]).
         Logger.w(LogTags.DIMMER, "Dimm-Dienst verbunden - ${snapshot()}")
+        meldeUnterbrechung()
         renderJob?.cancel()
         renderJob = scope.launch {
             // renderState ist upstream abgesichert (DimOverlayPrefs.safeData): ein Lesefehler kommt
@@ -325,16 +337,63 @@ class DimAccessibilityService : AccessibilityService() {
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         running = false
         Logger.w(LogTags.DIMMER, "Dimm-Dienst entbunden - Overlay verschwindet - ${snapshot()}")
+        merkerAus()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         Logger.w(LogTags.DIMMER, "Dimm-Dienst zerstoert - ${snapshot()}")
+        merkerAus()
         renderJob = null
         scope.cancel()
         removeAllOverlays()
         running = false
         super.onDestroy()
+    }
+
+    /**
+     * Beantwortet beim Verbinden die Frage „warum war der Bildschirm vorhin kurz hell?" - siehe
+     * [DimDiagnostik.rueckkehrArt] fuer den Hergang und die Neustart-Falle.
+     *
+     * Laeuft NACH der „verbunden"-Zeile, damit die beiden im Log zusammenstehen, und setzt den
+     * Merker anschliessend neu. Defensiv gekapselt: eine Diagnostik, die selbst wirft, macht den
+     * Vorfall schlimmer statt auswertbar - dieselbe Auflage wie bei [snapshot].
+     */
+    private fun meldeUnterbrechung() = runCatching {
+        val p = getSharedPreferences(MERKER_PREFS, Context.MODE_PRIVATE)
+        val jetzt = SystemClock.elapsedRealtime()
+        val art = DimDiagnostik.rueckkehrArt(
+            merkerVorhanden = p.contains(MERKER_LAEUFT),
+            liefZuletzt = p.getBoolean(MERKER_LAEUFT, false),
+            elapsedGespeichert = p.getLong(MERKER_ELAPSED, 0L),
+            elapsedJetzt = jetzt
+        )
+        if (DimDiagnostik.istUnerwartet(art)) {
+            // Bewusst WARN: genau diese Zeile fehlte am 29.08.2026, als der Nutzer einen kurz
+            // hellen Bildschirm meldete und das App-Log dazu schwieg.
+            Logger.w(
+                LogTags.DIMMER,
+                "Dimm-Dienst kehrt nach UNERWARTETEM Ende zurueck - der Prozess wurde beendet " +
+                    "(App-Update, Speicherdruck oder Absturz); das Overlay war bis eben weg"
+            )
+        } else {
+            Logger.d(LogTags.DIMMER, "Dimm-Dienst-Rueckkehr: $art")
+        }
+        p.edit().putBoolean(MERKER_LAEUFT, true).putLong(MERKER_ELAPSED, jetzt).commit()
+    }.onFailure {
+        Logger.w(LogTags.DIMMER, "Dimm-Dienst-Merker nicht lesbar (${it.javaClass.simpleName})")
+    }
+
+    /**
+     * Das saubere Ende. `commit()` statt `apply()`: `onUnbind`/`onDestroy` sind die letzten
+     * Momente, in denen dieser Prozess noch sicher laeuft - ein asynchroner Schreibvorgang koennte
+     * genau hier verloren gehen und das naechste Verbinden meldete faelschlich einen Vorfall.
+     */
+    private fun merkerAus() {
+        runCatching {
+            getSharedPreferences(MERKER_PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(MERKER_LAEUFT, false).commit()
+        }
     }
 
     /**

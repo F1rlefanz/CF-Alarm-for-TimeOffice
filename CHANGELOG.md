@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.37.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.37.2 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Wenn der Bildschirm kurz hell wird und von allein wieder dunkel, steht jetzt im Protokoll, warum._
+
+### 🔧 Unter der Haube
+
+- **Unterbrechungen des Dimmers werden protokolliert.** Wird die App aktualisiert oder ihr Prozess vom System beendet, verschwindet die Verdunkelung für ein paar Sekunden und kommt dann von selbst zurück — sichtbar als kurz heller Bildschirm. Bisher war davon im Protokoll der App nichts zu finden, weil in diesem Moment gar kein App-Code mehr läuft. Jetzt erkennt der Dimmer beim nächsten Start, dass er unsauber beendet wurde, und hält das fest. Ein Geräteneustart zählt dabei ausdrücklich nicht als Störung.
+
+## Version 1.37.1
 
 **Stand:** August 2026
 

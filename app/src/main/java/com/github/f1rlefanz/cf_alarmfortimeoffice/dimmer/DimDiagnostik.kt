@@ -144,4 +144,61 @@ internal object DimDiagnostik {
         overridePausiert: Boolean,
         dienstGebunden: Boolean
     ): Boolean = fensterAktiv && !overridePausiert && !dienstGebunden
+
+    /**
+     * Wie endete der VORIGE Lauf des Dimm-Dienstes?
+     *
+     * WARUM ES DAS GIBT (Vorfall 29.08.2026, zweiter Teil): Beim Einspielen einer neuen Version
+     * meldete der Eigentuemer, der Bildschirm sei „kurz hell und dann von allein wieder dunkel"
+     * geworden. Im Systemlog stand der Grund (`Killing … due to installPackageLI`, sieben Sekunden
+     * spaeter der neue Prozess) — **im App-Log nichts.** Bei einem `SIGKILL` laeuft weder
+     * `onUnbind` noch `onDestroy`; der Moment des Verschwindens ist prinzipiell nicht
+     * protokollierbar, egal wie man es anstellt.
+     *
+     * Protokollierbar ist die RUECKKEHR. [DimAccessibilityService] setzt beim Verbinden einen
+     * Merker und raeumt ihn beim sauberen Beenden wieder weg; steht er beim naechsten Verbinden
+     * noch, wurde der Prozess dazwischen beendet. Damit ist ein „warum war es kurz hell?"
+     * beantwortbar — nicht auf die Sekunde, aber mit Zeitpunkt und Ursachenklasse.
+     *
+     * **Die Falle ist der Geraeteneustart**: der toetet den Dienst genauso, ohne `onDestroy`, und
+     * liesse den Merker ebenso stehen. Ohne die Unterscheidung stuende nach JEDEM Neustart ein
+     * WARN im Release-Log und entwertete die Zeile, auf die es ankommt. Erkannt wird er an
+     * [android.os.SystemClock.elapsedRealtime], das beim Booten auf null zurueckfaellt: ist die
+     * gespeicherte Laufzeit GROESSER als die aktuelle, kann dazwischen nur ein Neustart liegen.
+     * Die Wanduhr taugt dafuer nicht — sie kann sich auch ohne Neustart verstellen (Zeitzone,
+     * NTP-Korrektur), und genau daran scheiterte die erste Ueberlegung.
+     */
+    enum class RueckkehrArt {
+        /** Kein Merker vorhanden — erste Inbetriebnahme nach der Installation. */
+        ERSTMALIG,
+
+        /** Der vorige Lauf wurde ordentlich beendet (`onUnbind`/`onDestroy` liefen durch). */
+        SAUBER,
+
+        /** Dazwischen lag ein Geraeteneustart. Erwartbar, kein Vorfall. */
+        NACH_NEUSTART,
+
+        /**
+         * Der vorige Lauf endete ohne Abmeldung: der Prozess wurde beendet (App-Update,
+         * Speicherdruck, Absturz). Das ist der Fall, bei dem der Nutzer einen kurz hellen
+         * Bildschirm gesehen hat.
+         */
+        UNERWARTET
+    }
+
+    /** Reine Entscheidung aus den bereits gelesenen Merkerwerten — siehe [RueckkehrArt]. */
+    fun rueckkehrArt(
+        merkerVorhanden: Boolean,
+        liefZuletzt: Boolean,
+        elapsedGespeichert: Long,
+        elapsedJetzt: Long
+    ): RueckkehrArt = when {
+        !merkerVorhanden -> RueckkehrArt.ERSTMALIG
+        !liefZuletzt -> RueckkehrArt.SAUBER
+        elapsedJetzt < elapsedGespeichert -> RueckkehrArt.NACH_NEUSTART
+        else -> RueckkehrArt.UNERWARTET
+    }
+
+    /** Gehoert diese Rueckkehr ins Release-Log (WARN)? Nur der eine Fall — vgl. [istVerdaechtig]. */
+    fun istUnerwartet(art: RueckkehrArt): Boolean = art == RueckkehrArt.UNERWARTET
 }

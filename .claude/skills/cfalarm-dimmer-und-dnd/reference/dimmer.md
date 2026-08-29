@@ -25,6 +25,7 @@
 - Jeder Setter, der einen `DimOverlayPrefs`-Wert schreibt, MUSS direkt danach
 - `DimAccessibilityService.isRunning()` (der einzige echte Bound-Status) wird seit v1.22.1 in
 - Diese Log-Zeile allein genuegte NICHT — ein wirkungsloses Dimm-Fenster muss SICHTBAR sein
+- „Kurz hell, dann wieder dunkel“ — das Verschwinden ist nicht loggbar, die Rueckkehr schon
 - `DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
 
 ---
@@ -483,6 +484,33 @@
   Dimmer-Meldungen nebeneinander wären genau die Doppelaussage, die hier korrigiert wird. Am Emulator
   beidseitig belegt (Fenster 22:00–07:00, Zeit 23:30): Dienst nicht gebunden ⇒ `actions=0` und genau
   ein WARN; Dienst gebunden ⇒ „Verdunkelung: 55 %, Wärme: 40 %", `actions=3`, kein WARN.
+- **„Kurz hell, dann von allein wieder dunkel" — warum das Verschwinden NIE im App-Log stehen kann
+  (29.08.2026).** Unmittelbar nach dem obigen Fix meldete der Eigentümer beim Einspielen der neuen
+  Version genau das. Im Systemlog stand der Grund lückenlos: `23:06:07.619 Killing 18584 … due to
+  installPackageLI`, `23:06:08.245` neuer Prozess, `23:06:14.713` wieder `bound=true` — rund sieben
+  Sekunden hell. Im App-Log stand **nichts**, und daran lässt sich auch nichts ändern: bei einem
+  `SIGKILL` läuft kein `onUnbind` und kein `onDestroy` mehr. Wer hier „dann loggen wir das eben"
+  denkt, baut etwas, das im Ernstfall garantiert nicht ausgeführt wird.
+
+  **Die Lösung verschiebt den Zeitpunkt: nicht das Ende protokollieren, sondern die Rückkehr
+  klassifizieren.** `onServiceConnected()` liest einen Merker, bevor es ihn neu setzt; steht er
+  noch auf „läuft", endete der vorige Lauf ohne Abmeldung. Der Merker liegt bewusst in
+  SharedPreferences mit `commit()` und nicht im DataStore: geschrieben wird er in `onUnbind` und
+  `onDestroy`, also in Rückgabepfaden, die sofort fertig sein müssen — ein suspendierender Schreib‑
+  vorgang hätte dort keinen Scope mehr, den das System noch am Leben lässt (gleiche Überlegung wie
+  beim Snooze-Merker).
+
+  **Die eigentliche Konstruktionsfrage war der Geräteneustart.** Er tötet den Dienst genauso ohne
+  `onDestroy` und liesse den Merker ebenso stehen — ohne Unterscheidung stünde nach JEDEM Boot ein
+  WARN im Release-Log und hätte die eine Zeile entwertet, auf die es ankommt. Erkannt wird er an
+  `SystemClock.elapsedRealtime()`, das beim Booten auf null zurückfällt: gespeicherte Laufzeit
+  größer als die aktuelle ⇒ Neustart. **Die Wanduhr taugt dafür nicht** — sie kann sich auch ohne
+  Neustart verstellen (Zeitzone, NTP), und genau daran scheiterte die erste Überlegung.
+
+  Alle vier Zweige am Emulator belegt: Erstinstallation ⇒ `ERSTMALIG` (DEBUG), zweites Update
+  ⇒ `Killing … killDueToPackageUpdate` und beim Wiederverbinden das WARN, Dienst von Hand aus/ein
+  ⇒ `SAUBER` (DEBUG, `onUnbind`+`onDestroy` liefen davor durch), `adb reboot` ⇒ `NACH_NEUSTART`
+  (DEBUG, kein falsches WARN).
 - **`DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
   vor `notify()`** (Fix v1.22.1) — ohne POST_NOTIFICATIONS-Berechtigung verschluckt `notify()` sonst
   lautlos, ohne Log oder Exception, und sieht im Logcat identisch aus wie der obige Toggle-Bug.

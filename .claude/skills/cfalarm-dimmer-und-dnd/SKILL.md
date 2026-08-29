@@ -117,6 +117,13 @@ das baut man dieselbe Falle in neuer Form nach.
   Entscheidung in `DimDiagnostik.dimmenWirkungslos()`, bewusst nur bei aktivem, nicht pausiertem
   Fenster. Vorher stand der Dienst-Zustand NUR in einer DEBUG-Zeile, während die Benachrichtigung
   einen Verdunkelungswert behauptete — Hergang in `reference/dimmer.md`.
+- **Das Verschwinden des Dienstes ist nicht protokollierbar — die RÜCKKEHR schon.** Bei einem
+  `SIGKILL` (App-Update, Speicherdruck, Absturz) läuft weder `onUnbind` noch `onDestroy`. Deshalb
+  setzt `onServiceConnected()` einen SharedPreferences-Merker (`commit()`, nicht `apply()`), den
+  `onUnbind`/`onDestroy` wieder wegräumen; steht er beim nächsten Verbinden noch, gab es ein
+  unerwartetes Ende → WARN. `DimDiagnostik.rueckkehrArt()` entscheidet. **Der Geräteneustart MUSS
+  ausgenommen bleiben** (`elapsedRealtime()` fällt beim Booten auf null — die Wanduhr taugt dafür
+  nicht), sonst steht nach jedem Boot ein falsches WARN im Release-Log.
 - **`DimCorrectionNotifier.show()` prüft `areNotificationsEnabled()` vor `notify()`.**
 - **DND: zwei Fenster-Trigger plus ein Klipp-Modifikator, kein Regel-Editor.**
 - **Jeder Setter, der DIMM-FENSTERGRENZEN verschiebt, armiert BEIDE Ketten neu — Dimmer, dann

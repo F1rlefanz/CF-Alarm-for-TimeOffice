@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik.AbschaltGrund
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik.RueckkehrArt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik.OverlayWeg
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -266,5 +267,84 @@ class DimDiagnostikTest {
                 fensterAktiv = true, overridePausiert = true, dienstGebunden = false
             )
         )
+    }
+
+    // --- Rueckkehr des Dienstes nach einer Unterbrechung ---------------------------------------
+
+    /**
+     * VORFALL 29.08.2026, zweiter Teil: Beim Einspielen von v1.37.1 ueber WLAN meldete der
+     * Eigentuemer, der Bildschirm sei "kurz hell und dann von allein wieder dunkel" geworden. Im
+     * Systemlog stand der Grund (`Killing 18584 ... due to installPackageLI`, 7 s spaeter der neue
+     * Prozess) - im App-Log NICHTS. Bei einem `SIGKILL` laeuft kein `onUnbind` und kein
+     * `onDestroy` mehr; der Moment des Verschwindens ist prinzipiell nicht protokollierbar.
+     *
+     * Protokollierbar ist die RUECKKEHR. Beim Verbinden sieht der Dienst in einem Merker nach, ob
+     * sein voriger Lauf sauber beendet wurde - war er es nicht, wurde der Prozess beendet.
+     */
+    @Test
+    fun `ein Merker der noch auf laufend steht bedeutet ein unerwartetes Ende`() {
+        assertEquals(
+            RueckkehrArt.UNERWARTET,
+            DimDiagnostik.rueckkehrArt(
+                merkerVorhanden = true, liefZuletzt = true,
+                elapsedGespeichert = 10_000L, elapsedJetzt = 17_000L
+            )
+        )
+    }
+
+    @Test
+    fun `ein sauber zurueckgesetzter Merker ist kein Vorfall`() {
+        assertEquals(
+            RueckkehrArt.SAUBER,
+            DimDiagnostik.rueckkehrArt(
+                merkerVorhanden = true, liefZuletzt = false,
+                elapsedGespeichert = 10_000L, elapsedJetzt = 17_000L
+            )
+        )
+    }
+
+    /**
+     * Der erste Start nach der Installation hat keinen Merker. Ohne diesen Fall meldete JEDE
+     * Erstinbetriebnahme einen Vorfall - die Warnung waere ab dem ersten Tag entwertet.
+     */
+    @Test
+    fun `ohne Merker ist es die erstmalige Inbetriebnahme`() {
+        assertEquals(
+            RueckkehrArt.ERSTMALIG,
+            DimDiagnostik.rueckkehrArt(
+                merkerVorhanden = false, liefZuletzt = false,
+                elapsedGespeichert = 0L, elapsedJetzt = 17_000L
+            )
+        )
+    }
+
+    /**
+     * DIE FALLE. Ein Neustart toetet den Dienst ebenfalls, ohne dass `onDestroy` durchlaeuft - der
+     * Merker steht danach genauso auf "laufend" wie nach einem Kill. Ohne Unterscheidung stuende
+     * nach JEDEM Geraeteneustart ein WARN im Release-Log, und die Zeile, auf die es ankommt, ginge
+     * darin unter.
+     *
+     * Erkannt wird es an `elapsedRealtime()`, das beim Booten auf null zurueckfaellt: ist die
+     * gespeicherte Laufzeit GROESSER als die aktuelle, kann dazwischen nur ein Neustart liegen.
+     * Die Wanduhr taugt dafuer nicht - sie kann sich auch ohne Neustart verstellen.
+     */
+    @Test
+    fun `ein Neustart ist kein unerwartetes Ende`() {
+        assertEquals(
+            RueckkehrArt.NACH_NEUSTART,
+            DimDiagnostik.rueckkehrArt(
+                merkerVorhanden = true, liefZuletzt = true,
+                elapsedGespeichert = 900_000L, elapsedJetzt = 12_000L
+            )
+        )
+    }
+
+    /** Nur der eine Fall gehoert ins Release-Log - dieselbe Auflage wie bei [istVerdaechtig]. */
+    @Test
+    fun `nur das unerwartete Ende wird gemeldet`() {
+        assertTrue(DimDiagnostik.istUnerwartet(RueckkehrArt.UNERWARTET))
+
+        listOf(RueckkehrArt.ERSTMALIG, RueckkehrArt.SAUBER, RueckkehrArt.NACH_NEUSTART)
+            .forEach { assertFalse("$it ist kein Vorfall", DimDiagnostik.istUnerwartet(it)) }
     }
 }

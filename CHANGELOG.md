@@ -27,7 +27,23 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.37.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.37.1 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Wenn der Dimmer nicht dimmen kann, sagt er es jetzt — statt eine Verdunkelung zu melden, die es nicht gibt._
+
+### 🐛 Behoben
+
+- **Der Dimmer meldet jetzt, wenn er gar nicht dimmen kann.** Die Verdunkelung braucht den Bedienungshilfen-Dienst der App. War der ausgeschaltet, lief trotzdem alles Weitere normal — „Nicht stören" schaltete zur gewohnten Zeit, und die Dimmer-Benachrichtigung zeigte einen Verdunkelungswert an, obwohl der Bildschirm hell blieb. Jetzt steht dort in dem Fall „Dimmt nicht — Bedienungshilfen-Dienst ist aus", und ein Tipp darauf führt in die App, wo sich der Dienst einschalten lässt.
+
+  Der Dienst schaltet sich bei jeder Neuinstallation der App von selbst ab. Wer den Schicht-Dimmer nutzt, sollte ihn danach im Status-Tab wieder aktivieren.
+
+### 🎨 Feinschliff
+
+- **Angeschnittene Buchstaben in den Status-Karten.** Brauchte ein Verweis-Link unter einer Statuskarte zwei Zeilen — etwa „Bedienungshilfen-Dienst aktivieren" bei großer Schrift —, fehlte am linken Rand jeweils ein Stück vom ersten Buchstaben. Der Text steht jetzt vollständig da.
+
+## Version 1.37.0
 
 **Stand:** August 2026
 
@@ -39,7 +55,7 @@ _Wenn dein Gerät den Weck-Bildschirm wegdrängt, sagt die App dir das jetzt —
 
   Ursache ist auf dem Fairphone 6 die Gesichtsentsperrung des Geräts: sie legt sich als eigenes Fenster über den Weck-Bildschirm. Das betrifft **jede** Wecker-App auf diesem Gerät — mit der vorinstallierten Uhr nachgestellt — und lässt sich aus einer App heraus nicht beheben. Wer davon betroffen ist, kann das eingelernte Gesicht löschen; der Fingerabdruck ist nicht betroffen.
 
-## 🆕 Version 1.36.2 (Aktuell – interne Alpha)
+## Version 1.36.2
 
 **Stand:** August 2026
 

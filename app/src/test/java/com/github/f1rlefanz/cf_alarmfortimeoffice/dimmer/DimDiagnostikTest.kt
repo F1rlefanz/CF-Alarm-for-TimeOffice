@@ -208,4 +208,63 @@ class DimDiagnostikTest {
             1, verdaechtig
         )
     }
+
+    /**
+     * VORFALL 29.08.2026: Um 22:00 schaltete "Nicht stoeren" wie geplant, die
+     * Korrektur-Benachrichtigung meldete "Verdunkelung: 67 %" — und der Bildschirm blieb hell.
+     * Am Geraet gemessen: die App hatte alles richtig gerechnet (Tick gefeuert, Fenster aktiv,
+     * ZenRule STATE_TRUE), aber der Bedienungshilfen-Dienst war nach einer Neuinstallation nicht
+     * mehr aktiviert — `Enabled services` enthielt CFAlarm nicht, in SurfaceFlinger existierte
+     * kein `CFAlarmDimLayer`.
+     *
+     * Der Dienst-Zustand war bis dahin NUR eine DEBUG-Logzeile. Die einzige Flaeche, die nachts
+     * sichtbar ist, behauptete damit eine Verdunkelung, die technisch garantiert nicht
+     * stattfinden konnte — genau die Sorte Text, die eine Diagnose in die falsche Richtung
+     * schickt (der Eigentuemer suchte den Fehler in der Fensterlogik).
+     */
+    @Test
+    fun `aktives Fenster ohne gebundenen Dienst ist wirkungsloses Dimmen`() {
+        assertTrue(
+            DimDiagnostik.dimmenWirkungslos(
+                fensterAktiv = true, overridePausiert = false, dienstGebunden = false
+            )
+        )
+    }
+
+    @Test
+    fun `mit gebundenem Dienst ist ein aktives Fenster nicht wirkungslos`() {
+        assertFalse(
+            DimDiagnostik.dimmenWirkungslos(
+                fensterAktiv = true, overridePausiert = false, dienstGebunden = true
+            )
+        )
+    }
+
+    /**
+     * Ohne Fenster soll gar nicht gedimmt werden — dass der Dienst dann nicht gebunden ist, ist
+     * kein Vorfall. Sonst stuende tagsueber dauerhaft eine Warnung im Release-Log und auf dem
+     * Sperrbildschirm, bei jedem Nutzer, der den Dimmer schlicht nicht verwendet.
+     */
+    @Test
+    fun `ohne aktives Fenster ist ein nicht gebundener Dienst kein Vorfall`() {
+        assertFalse(
+            DimDiagnostik.dimmenWirkungslos(
+                fensterAktiv = false, overridePausiert = false, dienstGebunden = false
+            )
+        )
+    }
+
+    /**
+     * Pausiert der Nutzer das laufende Fenster ueber die Korrektur-Benachrichtigung, soll bewusst
+     * NICHT gedimmt werden. Ein fehlender Dienst aendert daran nichts — es waere eine Warnung
+     * ueber eine Wirkung, die ohnehin niemand erwartet.
+     */
+    @Test
+    fun `ein pausiertes Fenster meldet kein wirkungsloses Dimmen`() {
+        assertFalse(
+            DimDiagnostik.dimmenWirkungslos(
+                fensterAktiv = true, overridePausiert = true, dienstGebunden = false
+            )
+        )
+    }
 }

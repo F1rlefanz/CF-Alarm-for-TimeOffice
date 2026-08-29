@@ -113,4 +113,35 @@ internal object DimDiagnostik {
      */
     fun istVerdaechtig(grund: AbschaltGrund): Boolean =
         grund == AbschaltGrund.KEIN_FENSTER_TROTZ_REGELN
+
+    /**
+     * Laeuft gerade ein Fenster, das gar nichts bewirken KANN, weil der Bedienungshilfen-Dienst
+     * nicht gebunden ist?
+     *
+     * WARUM ES DAS GIBT (Vorfall 29.08.2026): Der Eigentuemer meldete, um 22:00 habe "Nicht
+     * stoeren" geschaltet, die Korrektur-Benachrichtigung "Verdunkelung: 67 %" gemeldet — und der
+     * Bildschirm sei hell geblieben. Am Geraet gemessen war die App fehlerfrei: Tick gefeuert,
+     * Fenster aktiv, ZenRule `STATE_TRUE`. Nur [DimAccessibilityService] stand nach einer
+     * Neuinstallation nicht mehr in `Enabled services`, und in SurfaceFlinger existierte kein
+     * `CFAlarmDimLayer`.
+     *
+     * Der Dienst-Zustand hing bis dahin nur an einer DEBUG-Logzeile in
+     * [DimScheduleUseCase.applyCurrentState] — im Release-Log also gar nicht, und auf keiner
+     * Bedienoberflaeche. Die einzige Flaeche, die nachts sichtbar ist, behauptete stattdessen eine
+     * Verdunkelung, die technisch garantiert nicht stattfinden konnte. Das ist die Umkehrung
+     * dessen, wofuer diese Diagnostik da ist: es fuehrte die Fehlersuche aktiv in die falsche
+     * Richtung (gesucht wurde in der Fensterlogik).
+     *
+     * Bewusst NUR bei aktivem, nicht pausiertem Fenster. Ohne Fenster soll ohnehin nicht gedimmt
+     * werden — dort waere ein fehlender Dienst kein Vorfall, sondern eine Dauerwarnung bei jedem
+     * Nutzer, der den Dimmer nie einschaltet.
+     *
+     * Gegenstueck zu [abschaltGrund]: dort geht es um ein Overlay, das absichtlich AUS ist; hier
+     * um eines, das AN sein soll und trotzdem nicht erscheint.
+     */
+    fun dimmenWirkungslos(
+        fensterAktiv: Boolean,
+        overridePausiert: Boolean,
+        dienstGebunden: Boolean
+    ): Boolean = fensterAktiv && !overridePausiert && !dienstGebunden
 }

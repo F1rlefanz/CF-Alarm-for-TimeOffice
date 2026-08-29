@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
@@ -44,8 +45,22 @@ class DimCorrectionNotifier @Inject constructor(
     @Volatile
     private var zuletztGemeldeteSperre: NotificationDeliverability.Zustellbarkeit? = null
 
-    fun show(strength: Int, warmth: Int, paused: Boolean) {
+    /**
+     * [dienstGebunden] = laeuft [DimAccessibilityService] gerade? Ist er es NICHT, kann das
+     * Overlay technisch nicht erscheinen — dann meldet diese Benachrichtigung genau das, statt
+     * eine Verdunkelung zu behaupten (Vorfall 29.08.2026, Hergang in
+     * [DimDiagnostik.dimmenWirkungslos]). Die drei Korrektur-Knoepfe entfallen in dem Fall
+     * bewusst: sie wuerden ein Overlay heller/dunkler stellen, das es nicht gibt. An ihre Stelle
+     * tritt ein Tipp-Ziel in die App, wo die Status-Karte den Dienst aktivieren laesst — eine
+     * Meldung ohne Ausweg waere nur halb so viel wert.
+     */
+    fun show(strength: Int, warmth: Int, paused: Boolean, dienstGebunden: Boolean) {
         createNotificationChannelIfNeeded()
+
+        if (!dienstGebunden) {
+            zeigeDienstFehltHinweis()
+            return
+        }
 
         val brighterIntent = actionIntent(DimNotificationService.ACTION_BRIGHTER, 0)
         val darkerIntent = actionIntent(DimNotificationService.ACTION_DARKER, 1)
@@ -82,6 +97,15 @@ class DimCorrectionNotifier @Inject constructor(
             )
             .build()
 
+        poste(notification)
+    }
+
+    /**
+     * Gemeinsamer Zustellweg beider Varianten — inklusive Zustellbarkeits-Pruefung und
+     * Anti-Spam-Merker. Waere er dupliziert, wuerde die eine Variante die Sperre melden und die
+     * andere nicht.
+     */
+    private fun poste(notification: android.app.Notification) {
         // notify() wuerde sonst lautlos verschlucken - kein Log, keine Exception. Ohne diesen
         // Check sieht eine fehlende POST_NOTIFICATIONS-Berechtigung im Logcat exakt gleich aus wie
         // der (gefixte) Bug "Toggle loest keine Neubewertung aus".
@@ -97,7 +121,7 @@ class DimCorrectionNotifier @Inject constructor(
                 zuletztGemeldeteSperre = zustellbarkeit
                 Logger.w(
                     LogTags.DIMMER,
-                    "Dimmer-Korrektur-Notification unterdrueckt ($zustellbarkeit) - Heller/Dunkler/Pause sind fuer den Nutzer nicht erreichbar"
+                    "Dimmer-Notification unterdrueckt ($zustellbarkeit) - Zustand und Korrektur des laufenden Dimmers sind fuer den Nutzer nicht erreichbar"
                 )
             }
             return
@@ -113,12 +137,54 @@ class DimCorrectionNotifier @Inject constructor(
         }
     }
 
+    /**
+     * Das Dimm-Fenster laeuft, der Dienst nicht. Bewusst derselbe Kanal und dieselbe
+     * NOTIFICATION_ID: es ist derselbe Platz fuer denselben Sachverhalt ("was macht der Dimmer
+     * gerade"), und zwei nebeneinander stehende Dimmer-Meldungen waeren genau die Doppelaussage,
+     * die hier korrigiert werden soll. Der naechste Tick mit gebundenem Dienst ersetzt sie
+     * lautlos durch die normale Korrektur-Ansicht.
+     */
+    private fun zeigeDienstFehltHinweis() {
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setContentTitle("Schicht-Dimmer")
+            .setContentText("Dimmt nicht — Bedienungshilfen-Dienst ist aus")
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    "Das Dimm-Fenster laeuft gerade, aber der Bedienungshilfen-Dienst ist nicht " +
+                        "aktiv — ohne ihn kann der Bildschirm nicht verdunkelt werden. " +
+                        "Zum Aktivieren tippen."
+                )
+            )
+            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(appIntent())
+            .build()
+
+        poste(notification)
+    }
+
     fun cancel() {
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         notificationManager.cancel(NOTIFICATION_ID)
         // Naechste Sperre gilt als neuer Anlass und darf wieder einmal loggen.
         zuletztGemeldeteSperre = null
     }
+
+    /**
+     * Tipp-Ziel des Dienst-fehlt-Hinweises: die App selbst. Der Sprung direkt in die
+     * Bedienungshilfen-Einstellungen waere kuerzer, ginge aber an der Play-Pflicht-Offenlegung
+     * vorbei, die die Status-Karte vor dem Aktivieren zeigt (siehe `DimmerAccessibilityCard`).
+     */
+    private fun appIntent(): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            3,
+            Intent(context, MainActivity::class.java)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
     private fun actionIntent(action: String, requestCode: Int): PendingIntent =
         PendingIntent.getService(

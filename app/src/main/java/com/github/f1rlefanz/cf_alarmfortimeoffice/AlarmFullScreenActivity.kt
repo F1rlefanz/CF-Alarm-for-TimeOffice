@@ -53,6 +53,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SchlummerEntscheidung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SchlummerMeldung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.SnoozeErgebnis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.CFAlarmForTimeOfficeTheme
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WeckbildschirmVerdraengungPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.filter
@@ -157,6 +158,16 @@ class AlarmFullScreenActivity : AppCompatActivity() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+
+    /**
+     * Wurde der Weckbildschirm in DIESEM Weckvorgang schon einmal verdraengt?
+     *
+     * Instanzlokal und bewusst nicht persistiert: die Frage lautet "lief dieser eine Wecker
+     * sauber durch?". Nur wenn er das tat, faellt der Zaehler in
+     * [WeckbildschirmVerdraengungPrefs] auf 0 zurueck - sonst wuerde das Beenden nach einer
+     * Verdraengung den Hinweis jedes Mal wieder loeschen.
+     */
+    private var wurdeVerdraengt = false
 
     /**
      * Schichtname und Schichtbeginn als Compose-State, NICHT als lokale `val` in onCreate.
@@ -449,6 +460,34 @@ class AlarmFullScreenActivity : AppCompatActivity() {
             )
         } else {
             Logger.d(LogTags.ALARM, "⏹️ AlarmFullScreenActivity STOPPED — $detail")
+        }
+
+        // Merker fuer den Hinweis in der Status-Karte (WeckbildschirmVerdraengungPrefs).
+        //
+        // NUR der Fall "fremdes Fenster liegt darueber" zaehlt, nicht "Bildschirm ist ausgegangen" -
+        // die Unterscheidung ist dieselbe, die der Kommentar oben beschreibt: `isInteractive` trennt
+        // sie, und nur sie. Ohne diese Bedingung wuerde ein Druck auf die Power-Taste waehrend des
+        // Klingelns als Verdraengung gezaehlt, und die App wuerde dem Nutzer irgendwann raten,
+        // seine Gesichtsentsperrung zu entfernen, weil er den Wecker weggedrueckt hat.
+        val bildschirmNochAn = try {
+            (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+        } catch (e: Exception) {
+            Logger.w(LogTags.ALARM, "isInteractive nicht lesbar - zaehlt NICHT als Verdraengung", e)
+            false
+        }
+        if (stoppedWhileRinging && bildschirmNochAn) {
+            // HOECHSTENS EINMAL pro Weckvorgang, und das ist keine Feinheit: am 29.08.2026 gemessen
+            // wurde derselbe Wecker ZWEIMAL verdraengt (14:52:01 und 14:52:11) - die Activity kommt
+            // zwischendurch zurueck und wird erneut weggedraengt. Ohne diese Sperre zaehlt der
+            // Merker Ereignisse statt Weckvorgaenge, und die Schwelle von zwei Weckern in Folge
+            // waere schon nach einem einzigen erreicht.
+            if (!wurdeVerdraengt) {
+                wurdeVerdraengt = true
+                WeckbildschirmVerdraengungPrefs.zaehleVerdraengung(this)
+            }
+        } else if (isFinishing && !wurdeVerdraengt) {
+            // Dieser Weckvorgang lief sauber durch - der Hinweis darf wieder verschwinden.
+            WeckbildschirmVerdraengungPrefs.meldeSauberenLauf(this)
         }
 
         releaseWakeLock()

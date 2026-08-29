@@ -27,6 +27,18 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
+## 🆕 Version 1.37.0 (Aktuell – interne Alpha)
+
+**Stand:** August 2026
+
+_Wenn dein Gerät den Weck-Bildschirm wegdrängt, sagt die App dir das jetzt — statt dich rätseln zu lassen._
+
+### 🆕 Neu
+
+- **Hinweis, wenn der Weck-Bildschirm verdrängt wird.** Auf manchen Geräten erscheint der Weck-Bildschirm beim Klingeln nur kurz und verschwindet wieder — der Wecker läuft weiter, lässt sich aber erst nach dem Entsperren stoppen oder schlummern. Passiert das zweimal hintereinander, steht im Status-Tab jetzt eine Karte, die erklärt, was los ist und was hilft. Sie verschwindet von allein, sobald wieder ein Wecker normal durchläuft.
+
+  Ursache ist auf dem Fairphone 6 die Gesichtsentsperrung des Geräts: sie legt sich als eigenes Fenster über den Weck-Bildschirm. Das betrifft **jede** Wecker-App auf diesem Gerät — mit der vorinstallierten Uhr nachgestellt — und lässt sich aus einer App heraus nicht beheben. Wer davon betroffen ist, kann das eingelernte Gesicht löschen; der Fingerabdruck ist nicht betroffen.
+
 ## 🆕 Version 1.36.2 (Aktuell – interne Alpha)
 
 **Stand:** August 2026

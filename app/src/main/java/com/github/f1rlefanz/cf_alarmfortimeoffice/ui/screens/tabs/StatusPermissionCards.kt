@@ -55,6 +55,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DndPermissionHelper
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WeckbildschirmVerdraengungPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NotificationDeliverability
@@ -311,6 +312,98 @@ internal fun FullScreenIntentCard() {
                         text = "Einstellung öffnen"
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Sagt dem Nutzer, dass der Weckbildschirm beim Klingeln verdraengt wird - und was er dagegen tun
+ * kann.
+ *
+ * WARUM ES DIESE KARTE GIBT: Auf dem Fairphone 6 (Android 16) startet die herstellereigene
+ * Gesichtsentsperrung als gewoehnliche Activity und draengt den Weckbildschirm hinter den
+ * Sperrbildschirm. Der Wecker klingelt weiter, laesst sich aber ohne Entsperren weder stoppen noch
+ * schlummern. Am 29.08.2026 mit der vorinstallierten Google Uhr gegengeprueft - es trifft jede
+ * Wecker-App auf diesem Geraet.
+ *
+ * WARUM NUR EIN HINWEIS: Vier Messlaeufe haben belegt, dass sich der Full-Screen-Intent nicht
+ * nachreichen laesst (weder ueber eine zweite Notification noch als Update, auch nicht ohne
+ * Verzoegerung). App-seitig ist nichts zu gewinnen. Was bleibt, ist Ehrlichkeit: sagen, was
+ * passiert, statt den Nutzer raten zu lassen, warum sein Wecker morgens ohne Bedienoberflaeche
+ * dasteht.
+ *
+ * WARUM KEIN KNOPF ZUR EINSTELLUNG: Es gibt keine. Die Gesichtsentsperrung des FP6 kennt nur
+ * "einlernen" und "loeschen" - ein Schalter existiert nicht (im Fairphone-Forum unabhaengig
+ * bestaetigt). Ein Knopf, der ins Nichts fuehrt, waere schlimmer als keiner.
+ *
+ * Die Karte erscheint erst nach [WeckbildschirmVerdraengungPrefs.SCHWELLE] Weckvorgaengen in Folge
+ * und verschwindet von allein, sobald wieder einer sauber durchlaeuft.
+ */
+@Composable
+internal fun WeckbildschirmVerdraengtCard() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Bei jedem ON_RESUME neu lesen: der Zaehler aendert sich waehrend eines Weckvorgangs,
+    // also waehrend diese Karte nicht sichtbar ist.
+    var faellig by remember { mutableStateOf(WeckbildschirmVerdraengungPrefs.hinweisFaellig(context)) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                faellig = WeckbildschirmVerdraengungPrefs.hinweisFaellig(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (!faellig) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
+                tint = MaterialTheme.colorScheme.error
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Weck-Bildschirm wird verdrängt",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Beim Klingeln erscheint der Weck-Bildschirm kurz und verschwindet wieder. " +
+                        "Der Wecker läuft weiter, lässt sich aber erst nach dem Entsperren " +
+                        "stoppen oder schlummern.\n\n" +
+                        "Ursache ist die Gesichtsentsperrung deines Geräts: sie legt sich über " +
+                        "den Weck-Bildschirm. Das betrifft jede Wecker-App, auch die " +
+                        "vorinstallierte Uhr — es liegt nicht an dieser App, und sie kann es " +
+                        "nicht beheben.\n\n" +
+                        "Was hilft: das eingelernte Gesicht in den Geräte-Einstellungen unter " +
+                        "„Entsperrung per Gesichtserkennung“ löschen. Der Fingerabdruck ist " +
+                        "nicht betroffen.\n\n" +
+                        "Dieser Hinweis verschwindet von selbst, sobald wieder ein Wecker " +
+                        "normal durchläuft.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
         }
     }

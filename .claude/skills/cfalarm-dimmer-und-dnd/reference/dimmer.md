@@ -24,6 +24,7 @@
 - `DimNotificationService` klemmt den `strengthDelta` selbst, nicht nur den abgeleiteten
 - Jeder Setter, der einen `DimOverlayPrefs`-Wert schreibt, MUSS direkt danach
 - `DimAccessibilityService.isRunning()` (der einzige echte Bound-Status) wird seit v1.22.1 in
+- Diese Log-Zeile allein genuegte NICHT — ein wirkungsloses Dimm-Fenster muss SICHTBAR sein
 - `DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
 
 ---
@@ -455,6 +456,33 @@
   Memory `project_a11y_restricted_settings_ecm.md`), war rückwirkend aus dem Log nicht rekonstruierbar.
   Wer diese Log-Zeile entfernt, verliert die einzige Möglichkeit, einen solchen Vorfall im Nachhinein
   zu diagnostizieren.
+- **Diese Log-Zeile allein genügte NICHT — der Vorfall vom 29.08.2026 hat es bewiesen.**
+  Der Eigentümer meldete: um 22:00 schaltete „Nicht stören" wie geplant, die Korrektur-Benachrichtigung
+  meldete „Verdunkelung: 67 %" — und der Bildschirm blieb hell. Am Fairphone gemessen war die App
+  fehlerfrei: Tick gefeuert (`22:00:00.038 Start proc … DimScheduleReceiver`), Fenster aktiv, ZenRule
+  `STATE_TRUE` seit `2026-08-29T20:00:01Z`. Nur stand `DimAccessibilityService` nach einer
+  Neuinstallation (`lastUpdateTime` 14:54, `installerPackageName=null`) nicht mehr in
+  `Enabled services`, und in SurfaceFlinger existierte kein `CFAlarmDimLayer`.
+
+  **Zwei Lehren, und die zweite ist die wichtigere.** Erstens: die Zeile war `Logger.d` — im
+  Release-Log (nur WARN+) also gar nicht vorhanden. Ein Diagnose-Signal, das genau im Ernstfall fehlt,
+  ist keines; deshalb geht der Fall jetzt als WARN durch (entprellt über einen Merker, weil
+  `applyCurrentState()` auch bei jedem Setter läuft, nicht nur beim Tick). Zweitens, und das ist der
+  eigentliche Fehler: **die einzige nachts sichtbare Fläche behauptete das Gegenteil.** Sie nannte
+  einen Verdunkelungswert für ein Overlay, das technisch garantiert nicht existieren konnte, und
+  schickte die Fehlersuche damit aktiv in die Fensterlogik statt in die Gerätekonfiguration. Ein Log
+  ist Diagnostik für hinterher — hier fehlte die Wahrheit im Moment selbst.
+
+  Die Entscheidung liegt als reine Funktion in `DimDiagnostik.dimmenWirkungslos()`, bewusst nur bei
+  aktivem, **nicht pausiertem** Fenster: ohne Fenster soll ohnehin nicht gedimmt werden, dort wäre
+  ein fehlender Dienst eine Dauerwarnung bei jedem, der den Dimmer nie einschaltet. Der Notifier
+  zeigt dann „Dimmt nicht — Bedienungshilfen-Dienst ist aus", **ohne** die drei Korrektur-Knöpfe
+  (sie würden ein Overlay verstellen, das es nicht gibt) und mit Tipp-Ziel in die App — nicht direkt
+  in die Bedienungshilfen-Einstellungen, das ginge an der Play-Pflicht-Offenlegung vorbei, die die
+  Status-Karte vor dem Aktivieren zeigt. Verworfen: eine zweite, eigene Notification daneben — zwei
+  Dimmer-Meldungen nebeneinander wären genau die Doppelaussage, die hier korrigiert wird. Am Emulator
+  beidseitig belegt (Fenster 22:00–07:00, Zeit 23:30): Dienst nicht gebunden ⇒ `actions=0` und genau
+  ein WARN; Dienst gebunden ⇒ „Verdunkelung: 55 %, Wärme: 40 %", `actions=3`, kein WARN.
 - **`DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
   vor `notify()`** (Fix v1.22.1) — ohne POST_NOTIFICATIONS-Berechtigung verschluckt `notify()` sonst
   lautlos, ohne Log oder Exception, und sieht im Logcat identisch aus wie der obige Toggle-Bug.

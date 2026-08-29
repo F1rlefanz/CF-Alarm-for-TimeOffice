@@ -99,6 +99,13 @@ class DimScheduleUseCase @Inject constructor(
     /** Nur fuer die Messung (siehe computeWindows) - laeuft im Release-Build ins Leere. */
     private val zaehler = java.util.concurrent.atomic.AtomicInteger(0)
 
+    /**
+     * Ob zuletzt "Fenster aktiv, aber Dienst nicht gebunden" galt - gegen WARN-Spam. `false` ist
+     * der richtige Startwert: nach einem Prozessstart soll der Fall wieder einmal geloggt werden.
+     */
+    @Volatile
+    private var zuletztGemeldetWirkungslos = false
+
     private val zone: ZoneId get() = ZoneId.systemDefault()
 
     /** Ist-Zustand anwenden + nächsten Wechsel planen. Self-cleaning, wenn nichts aktiv ist. */
@@ -221,11 +228,32 @@ class DimScheduleUseCase @Inject constructor(
         // der einzige echte Bound-Status des Accessibility-Dienstes. Ohne diese Zeile ist im
         // Nachhinein aus dem Log nicht rekonstruierbar, ob ein aktives Fenster auf einen NICHT
         // gebundenen Dienst traf (z. B. ECM-Restricted-Settings nach Sideload).
+        val dienstGebunden = DimAccessibilityService.isRunning()
         Logger.d(
             LogTags.DIMMER,
             "Dimm-Fenster aktiv: strength=$effectiveStrength warmth=${active.warmth} paused=$isPaused " +
-                "accessibilityServiceBound=${DimAccessibilityService.isRunning()}"
+                "accessibilityServiceBound=$dienstGebunden"
         )
+
+        // DEBUG REICHTE NICHT (Vorfall 29.08.2026): genau dieser Fall trat ein - Fenster aktiv,
+        // Dienst nach einer Neuinstallation nicht mehr gebunden - und war hinterher im
+        // Release-Log (nur WARN+) nicht auffindbar. Er gehoert in dieselbe Verdachtsklasse wie
+        // KEIN_FENSTER_TROTZ_REGELN: der Nutzer hat nichts falsch eingestellt, es wirkt nur
+        // nichts. Der Merker haelt es bei EINER Zeile je Zustandswechsel - applyCurrentState()
+        // laeuft auch bei jedem Setter, nicht nur beim Tick.
+        val wirkungslos = DimDiagnostik.dimmenWirkungslos(
+            fensterAktiv = true, overridePausiert = isPaused, dienstGebunden = dienstGebunden
+        )
+        if (wirkungslos != zuletztGemeldetWirkungslos) {
+            zuletztGemeldetWirkungslos = wirkungslos
+            if (wirkungslos) {
+                Logger.w(
+                    LogTags.DIMMER,
+                    "Dimm-Fenster aktiv, aber Bedienungshilfen-Dienst NICHT gebunden - es wird " +
+                        "nichts verdunkelt (Dienst deaktiviert oder ECM-Sperre nach Sideload)"
+                )
+            }
+        }
 
         if (isPaused) {
             // paused=true => gar kein Overlay berechnen (nicht nur strength=0 - der Nutzer hat
@@ -237,7 +265,7 @@ class DimScheduleUseCase @Inject constructor(
         }
 
         if (prefs.correctionNotificationEnabledNow()) {
-            correctionNotifier.show(effectiveStrength, active.warmth, isPaused)
+            correctionNotifier.show(effectiveStrength, active.warmth, isPaused, dienstGebunden)
         } else {
             correctionNotifier.cancel()
         }

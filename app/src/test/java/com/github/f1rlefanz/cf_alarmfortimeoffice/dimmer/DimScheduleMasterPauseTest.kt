@@ -68,7 +68,7 @@ class DimScheduleMasterPauseTest {
         verify(prefs).setActiveOverlay(false, 55, 40)
         verify(prefs, never()).setActiveOverlay(eq(true), any(), any())
         verify(notifier).cancel()
-        verify(notifier, never()).show(any(), any(), any())
+        verify(notifier, never()).show(any(), any(), any(), any())
     }
 
     @Test

@@ -221,6 +221,11 @@ fun StatusTabContent(
 
         FullScreenIntentCard()
 
+        // Direkt hinter der Berechtigungs-Karte: beide sagen etwas ueber den Weck-Bildschirm.
+        // Die obere beantwortet "darf er?", diese "kommt er auch durch?". Zeigt sich nur, wenn
+        // die Verdraengung mehrfach in Folge gemessen wurde.
+        WeckbildschirmVerdraengtCard()
+
         // Akku-Ausnahme: ohne sie darf Android die 6h-Wartung und die exakten Wecker-Alarme
         // im Doze/Standby einfrieren — die zweite OS-Berechtigung, an der die Hintergrund-
         // Zuverlaessigkeit haengt, direkt neben dem Vollbild-Wecker.

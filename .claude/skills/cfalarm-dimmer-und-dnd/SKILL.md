@@ -110,6 +110,13 @@ das baut man dieselbe Falle in neuer Form nach.
   protokolliert Verbinden/Entbinden/Zerstoeren auf **WARN** (Release-Log). Ohne das ist ein
   „warum war der Bildschirm kurz hell?" nicht rekonstruierbar. Nur der Verdachtsfall
   (Dimmer an + Regeln da + trotzdem kein Fenster) ist WARN, der Rest DEBUG.
+- **Ein Dimm-Fenster, das nichts bewirken KANN, muss das SAGEN — nicht nur loggen.** Läuft ein
+  Fenster, während der Bedienungshilfen-Dienst nicht gebunden ist, meldet die
+  Korrektur-Benachrichtigung „Dimmt nicht — Bedienungshilfen-Dienst ist aus" (ohne die drei
+  Korrektur-Knöpfe) und `applyCurrentState()` schreibt ein entprelltes WARN ins Release-Log.
+  Entscheidung in `DimDiagnostik.dimmenWirkungslos()`, bewusst nur bei aktivem, nicht pausiertem
+  Fenster. Vorher stand der Dienst-Zustand NUR in einer DEBUG-Zeile, während die Benachrichtigung
+  einen Verdunkelungswert behauptete — Hergang in `reference/dimmer.md`.
 - **`DimCorrectionNotifier.show()` prüft `areNotificationsEnabled()` vor `notify()`.**
 - **DND: zwei Fenster-Trigger plus ein Klipp-Modifikator, kein Regel-Editor.**
 - **Jeder Setter, der DIMM-FENSTERGRENZEN verschiebt, armiert BEIDE Ketten neu — Dimmer, dann

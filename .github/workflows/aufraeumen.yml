@@ -52,7 +52,7 @@ jobs:
       # Die Hooks in .claude/settings.json rufen `python`, nicht `python3`.
       # Ohne diesen Schritt ist auf dem Runner nur `python3` da, und der
       # PostToolUse-Hook scheitert bei jedem Schreibvorgang.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

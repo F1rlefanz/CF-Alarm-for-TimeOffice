@@ -1,4 +1,4 @@
-"""Testet die beiden Entscheidungen in `pruefe_reste.py`, die still falsch sein koennen.
+"""Testet die Entscheidungen in `pruefe_reste.py`, die still falsch sein koennen.
 
 WARUM ES DAS GIBT
 -----------------
@@ -15,6 +15,11 @@ und beide sind unauffaellig, wenn sie zurueckkommen:
      Hergang und muss stehenbleiben. Zeilenweise geprueft waren SECHS von neun Treffern
      genau solche Absaetze - das Signalwort steht selten in derselben Zeile wie das Symbol.
 
+Dazu Pruefung 7 (Konfigurationsdateien), die anders gelagert ist: sie hat keine bekannte
+Fehlalarm-Quelle (36 Dateien, 1 Rohbefund, 0 Fehlalarme). Ihr Risiko ist das umgekehrte -
+dass sie STILL NICHTS MEHR PRUEFT, etwa wenn ein Parser fehlt oder die Endung durchfaellt.
+Deshalb hier beide Richtungen: meldet sie, wo etwas ist, und schweigt sie, wo nichts ist?
+
 Aufruf:
     python -m unittest discover -s tools/aufraeumen -p "test_*.py"
     python tools/aufraeumen/test_pruefe_reste.py
@@ -24,10 +29,12 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pruefe_reste import HISTORISCH, _absaetze, tote_importe_in  # noqa: E402
+import pruefe_reste  # noqa: E402
+from pruefe_reste import HISTORISCH, _absaetze, konfig_fehler, tote_importe_in  # noqa: E402
 
 
 class ToteImporte(unittest.TestCase):
@@ -125,6 +132,57 @@ class DokuAbsaetze(unittest.TestCase):
         (a, b), = list(_absaetze(zeilen))
 
         self.assertTrue(HISTORISCH.search("\n".join(zeilen[a:b])))
+
+
+class Konfigurationsdateien(unittest.TestCase):
+    """Pruefung 7 - beide Richtungen, je Parser.
+
+    Der echte Befund war `app/lint.xml`: zwei Bindestriche in einem XML-Kommentar, weil dort
+    Gradles Offline-Schalter ausgeschrieben stand. Android Lint las die Datei weiter klaglos,
+    nur ein echter Parser nicht - genau dieser Fall steht als erster Test hier.
+    """
+
+    def test_zwei_bindestriche_im_xml_kommentar_werden_gemeldet(self):
+        roh = b'<?xml version="1.0"?>\n<lint>\n  <!-- ruf `gradlew ' + b'--' + b'offline lint` -->\n</lint>\n'
+
+        self.assertIn("ParseError", konfig_fehler("app/lint.xml", roh))
+
+    def test_wohlgeformtes_xml_wird_nicht_gemeldet(self):
+        roh = b'<?xml version="1.0"?>\n<lint>\n  <!-- ruf `gradlew lintDebug` -->\n</lint>\n'
+
+        self.assertIsNone(konfig_fehler("app/lint.xml", roh))
+
+    def test_kaputtes_json_wird_gemeldet(self):
+        self.assertIn("JSONDecodeError", konfig_fehler("a.json", b'{"x": 1,}'))
+
+    def test_gueltiges_json_wird_nicht_gemeldet(self):
+        self.assertIsNone(konfig_fehler("a.json", b'{"x": 1}'))
+
+    def test_eine_nicht_gepruefte_endung_bleibt_stumm(self):
+        """Die Pruefung darf nicht ueber den Baum wandern - `.kt` ist kein Konfigurat."""
+        self.assertIsNone(konfig_fehler("Main.kt", b"das ist kein XML <<<"))
+
+    def test_toml_wird_geprueft_wenn_der_parser_da_ist(self):
+        """`tomllib` gibt es erst ab 3.11. Ohne ihn darf die Pruefung schweigen, nicht sterben."""
+        try:
+            import tomllib  # noqa: F401
+        except ImportError:
+            self.assertIsNone(konfig_fehler("libs.versions.toml", b"kein = [gueltiges toml"))
+            return
+        self.assertIn("TOMLDecodeError", konfig_fehler("libs.versions.toml", b"kein = [gueltig"))
+        self.assertIsNone(konfig_fehler("libs.versions.toml", b'agp = "8.0"\n'))
+
+    def test_eine_bewusste_ausnahme_wird_nicht_gemeldet(self):
+        """Der Ausnahmeweg muss es WIRKLICH geben - er laesst sich hier nicht in die Datei
+        schreiben (JSON kennt keine Kommentare, und in einer unparsbaren Datei erreicht der
+        Parser den Marker nie). Ein Kommentar, der eine Ausnahme verspricht, die es nicht gibt,
+        ist genau die Sorte Notiz, gegen die dieses Werkzeug antritt.
+        """
+        kaputt = b"{{{"
+        self.assertIsNotNone(konfig_fehler("beispiel.json", kaputt))
+
+        with unittest.mock.patch.object(pruefe_reste, "BEWUSST_UNPARSBAR", {"beispiel.json"}):
+            self.assertIsNone(konfig_fehler("beispiel.json", kaputt))
 
 
 if __name__ == "__main__":

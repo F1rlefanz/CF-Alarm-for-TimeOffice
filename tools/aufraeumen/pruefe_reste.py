@@ -12,7 +12,7 @@ daraus eine Messung machte.
 
 Deshalb steht das hier - nicht als guter Vorsatz, sondern als Gatter in der Schleuse.
 
-SECHS PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
+SIEBEN PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
 meldet, wird weggeklickt und schuetzt dann gar nichts mehr (siehe die Triage-Lehre in
 GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten den Einzelfall).
 
@@ -27,6 +27,8 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
   6. EIGENSCHAFTEN OHNE VERWENDER (val, var, const val) - blockierend, mit Begruendungszwang
      im eigenen KDoc. Nicht nur `const val`: ein `dp`-Wert kann gar keine Compile-Zeit-Konstante
      sein, und genau dort lag eine tote Konstante.
+  7. KONFIGURATIONSDATEIEN, DIE EIN STRIKTER PARSER NICHT LIEST - blockierend. Statisch
+     entscheidbar, deshalb ohne Ermessensspielraum: eine Datei parst oder sie parst nicht.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -34,10 +36,12 @@ Aufruf:
     python tools/aufraeumen/pruefe_reste.py --basis <commit>   # Doku-Check gegen diese Basis
 """
 
+import json
 import os
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 WURZEL = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 QUELLEN = os.path.join(WURZEL, "app", "src")
@@ -485,6 +489,106 @@ def pruefe_ungenutzte_konstanten(befunde):
                 )
 
 
+# ---------------------------------------------------------------------------------------------
+# 7. Konfigurationsdateien, die ein strikter Parser nicht liest
+#
+# HERGANG (31.08.2026): `app/lint.xml` war kein wohlgeformtes XML. In Zeile 15 stand Gradles
+# Offline-Schalter ausgeschrieben, und seine zwei Bindestriche duerfen innerhalb eines
+# XML-Kommentars nicht vorkommen. Android Lint nahm die Datei trotzdem klaglos an, saemtliche
+# Unterdrueckungen wirkten weiter - es gab also nie einen Anlass hinzusehen. Gemerkt hat es erst
+# das erste Werkzeug, das sie PARSEN wollte, und das musste sich deswegen mit regulaeren
+# Ausdruecken behelfen. "Es funktioniert ja" ist kein Beleg fuer Wohlgeformtheit; das naechste
+# Werkzeug zahlt.
+#
+# GEMESSEN, BEVOR ES EIN GATTER WURDE: 36 Konfigurationsdateien unter `git ls-files` (27 XML,
+# 2 JSON, 1 TOML, 6 YAML), 1 ROHBEFUND, 0 FEHLALARME. Das ist die Eigenschaft, die diese Klasse
+# gatterfaehig macht: sie ist statisch entscheidbar. Verworfen wurden bisher fast nur
+# Blickwinkel, die ABSICHT erraten mussten (siehe die Tabelle im Skill
+# `cfalarm-altlasten-abtragen`) - hier gibt es nichts zu erraten, und der Lauf dauert Sekunden.
+#
+# DER ZEITRAUM IST GEMESSEN, NICHT GESCHAETZT: jede Fassung der Datei geparst - `34abec2`
+# (22.08.2025) bis `54ce3d2` (12.07.2026) wohlgeformt, ab `c445dee` (06.08.2026) kaputt. Also
+# 349 Tage gut, danach gut drei Wochen kaputt. Ein frueherer Anlauf schrieb "jahrelang" in genau
+# die Datei, die er wahrheitsgemaess machen sollte, und ist daran gescheitert.
+#
+# YAML BLEIBT DRAUSSEN: Die Standardbibliothek hat keinen YAML-Parser, und PyYAML ist hier nicht
+# installiert (am 31.08.2026 nachgesehen). Alle sechs YAML-Dateien wurden einmalig von Hand
+# gegengelesen und sind in Ordnung; eine Abhaengigkeit fuer eine Pruefung ohne einen einzigen
+# Befund waere ein schlechter Tausch.
+#
+# TOML NUR, WENN DER PARSER DA IST: `tomllib` gibt es erst ab Python 3.11, und nichts sichert
+# diese Version zu - der Schleusen-Hook ruft bares `python`, und `.github/workflows/ci.yml` hat
+# kein `setup-python`. Am Modulkopf importiert wuerde unter 3.10 das GANZE Skript sterben, samt
+# der sechs bestehenden Pruefungen, und das gemeldet als "Der Aufraeumdurchgang hat Reste
+# hinterlassen" - eine Meldung, die in die voellig falsche Richtung zeigt. Deshalb lokal im
+# `try`; fehlt der Parser, wird der TOML-Zweig still uebersprungen. Es geht ohnehin nur um
+# `gradle/libs.versions.toml`, und das prueft Gradle bei jedem Build selbst.
+# ---------------------------------------------------------------------------------------------
+KONFIG_ENDUNGEN = (".xml", ".json", ".toml")
+
+# DER AUSNAHMEWEG IST DIESE LISTE, KEIN MARKER IN DER DATEI - und das ist erzwungen, nicht
+# bequem: Pruefung 3 laesst sich mit `HISTORISCH` in der Doku selbst begruenden, Pruefung 6 mit
+# `OHNE VERWENDER` im eigenen KDoc. Hier geht das strukturell nicht. JSON kennt keine Kommentare,
+# und in einer Datei, die der Parser nicht lesen kann, erreicht er einen Marker darin nie.
+# Wer eine Datei bewusst nicht-standardkonform haelt, traegt ihren Pfad mit Begruendung hier ein.
+BEWUSST_UNPARSBAR = {
+    # Derzeit leer. Jeder Eintrag braucht seine Begruendung als Kommentar in derselben Zeile.
+}
+
+
+def konfig_fehler(pfad, roh):
+    """Die eigentliche Entscheidung - REIN, damit sie ohne Repository pruefbar ist.
+
+    `pfad` waehlt ueber die Endung den Parser und entscheidet ueber die Ausnahme, `roh` ist der
+    Dateiinhalt als bytes (nicht als Text: die XML-Deklaration bestimmt die Kodierung selbst).
+
+    Liefert die Fehlermeldung des Parsers - oder None, wenn die Datei parst, ihre Endung nicht
+    geprueft wird oder sie bewusst ausgenommen ist.
+    """
+    if pfad in BEWUSST_UNPARSBAR:
+        return None
+    endung = os.path.splitext(pfad)[1].lower()
+    if endung not in KONFIG_ENDUNGEN:
+        return None
+    try:
+        if endung == ".xml":
+            ET.fromstring(roh)
+        elif endung == ".json":
+            json.loads(roh.decode("utf-8"))
+        else:
+            try:
+                import tomllib
+            except ImportError:
+                return None
+            tomllib.loads(roh.decode("utf-8"))
+    # ET.ParseError erbt von SyntaxError; JSONDecodeError, TOMLDecodeError und UnicodeDecodeError
+    # erben von ValueError. Zusammen deckt das jeden Fehlschlag dieser drei Parser ab, ohne dass
+    # ein blankes `except Exception` echte Programmierfehler im Gatter selbst verschluckt.
+    except (SyntaxError, ValueError) as fehler:
+        return "{}: {}".format(type(fehler).__name__, fehler)
+    return None
+
+
+def pruefe_konfigdateien(befunde):
+    code, ausgabe = _git("ls-files")
+    if code != 0:
+        return
+    for name in ausgabe.splitlines():
+        name = name.strip()
+        if not name.lower().endswith(KONFIG_ENDUNGEN):
+            continue
+        try:
+            with open(os.path.join(WURZEL, name), "rb") as f:
+                roh = f.read()
+        except OSError:
+            continue
+        fehler = konfig_fehler(name, roh)
+        if fehler:
+            befunde.append(
+                "Konfigurationsdatei parst nicht: {} - {}".format(name, fehler)
+            )
+
+
 def main():
     ci = "--ci" in sys.argv
     basis = ""
@@ -499,6 +603,7 @@ def main():
     pruefe_composable_ohne_verbraucher(befunde)
     pruefe_haengende_kdocs(befunde)
     pruefe_ungenutzte_konstanten(befunde)
+    pruefe_konfigdateien(befunde)
     pruefe_doku_verweise(befunde, basis)
 
     if not befunde:

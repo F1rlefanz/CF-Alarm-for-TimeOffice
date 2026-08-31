@@ -12,7 +12,17 @@
     als UnknownIssueId-Warnung - und zwar einmal pro geprüfter Variante, also mehrfach.
     Vor August 2026 standen hier drei erfundene IDs (HardcodedCredentials, UnencryptedIntent,
     LeakCanary), die allein 18 der damals 50 Lint-Warnungen erzeugten, ohne irgendetwas zu
-    bewirken. Neue Einträge deshalb immer mit `./gradlew --offline lintDebug` gegenprüfen.
+    bewirken. Neue Einträge deshalb immer mit `./gradlew lintDebug` gegenprüfen, bei Bedarf mit
+    dem Offline-Schalter davor.
+
+    WARUM DER OFFLINE-SCHALTER HIER NUR AUSGESCHRIEBEN STEHT: Sein Präfix sind zwei Bindestriche,
+    und die dürfen innerhalb eines XML-Kommentars nirgends vorkommen. Genau daran war diese Datei
+    vom 06.08.2026 (c445dee) bis zur Reparatur am 31.08.2026 kein wohlgeformtes XML - die
+    349 Tage davor (ab 34abec2, 22.08.2025) war sie es; jede Fassung wurde dafür geparst, nicht
+    geschätzt. Android Lint hat das nie beanstandet, alle Unterdrückungen wirkten weiter, es gab
+    also nie einen Anlass hinzusehen. Gemerkt hat es erst das erste Werkzeug, das die Datei
+    PARSEN wollte. Wer den Schalter hier ausschreibt, macht sie erneut unlesbar; seit Prüfung 7
+    in tools/aufraeumen/pruefe_reste.py blockiert das die Schleuse.
 
     Letzte Aktualisierung: August 2026
     -->

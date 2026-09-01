@@ -1,0 +1,154 @@
+name: Veroeffentlichen (interner Track)
+
+# WARUM NUR VON HAND (workflow_dispatch, kein push/tag-Trigger):
+# Die Messlatte dieses Projekts ist "ein gruener Build ist noch KEINE auslieferbare Version" -
+# gruene Unit-Tests plus gruener Build haben hier schon einen Crash-on-Launch durchgelassen
+# (05.08.2026, Property nach init{}), und mehrere Fehler fand erst die Installation am Geraet.
+# Bei einer Wecker-App ist eine still ausgelieferte kaputte Version der teuerste denkbare Fehler.
+# Deshalb faengt die Automatik bei "auf Knopfdruck, auf den INTERNEN Track" an. Ein automatischer
+# Ausloeser (Tag, oder Push auf main mit erhoehtem versionCode) kommt erst, wenn mehrere Laeufe
+# nachweislich ein installierbares AAB abgeliefert haben - und Produktion bleibt Handarbeit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Play-Track'
+        required: true
+        default: internal
+        type: choice
+        options:
+          - internal
+      status:
+        description: 'Freigabestatus im Track'
+        required: true
+        default: completed
+        type: choice
+        options:
+          - completed
+          - draft
+
+concurrency:
+  group: veroeffentlichen
+  cancel-in-progress: false
+
+jobs:
+  ausliefern:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.3.0
+        with:
+          validate-wrappers: true
+          cache-read-only: true
+
+      # DIE SCHLEUSE VOR DEM UPLOAD. Dieselben Pruefungen, die lokal vor jedem Merge laufen -
+      # Geheimnisse, Skills, Doku-Budget, Changelog-Seite, Code-Invarianten, Aufraeum-Reste.
+      # Sie kosten Sekunden und stehen deshalb VOR dem teuren Build.
+      - name: Skill-Frontmatter pruefen
+        run: python3 tools/skills/pruefe_skills.py .claude/skills
+
+      - name: Changelog-Seite gegen CHANGELOG.md pruefen
+        run: python3 tools/changelog/build_changelog.py --pruefen
+
+      - name: Doku-Budget pruefen
+        run: python3 tools/doku/pruefe_budget.py --ci
+
+      - name: Code-Invarianten pruefen (Wecker-Killer)
+        run: python3 tools/invarianten/pruefe_code.py
+
+      # Kein Upload ohne gruene Tests. --rerun-tasks, weil ein FROM-CACHE-Ergebnis hier nichts
+      # beweist: es stammt womoeglich von einem anderen Stand.
+      - name: Unit-Tests
+        run: ./gradlew testDebugUnitTest --rerun-tasks --stacktrace
+
+      - name: Lint (release-relevant)
+        run: ./gradlew lintVitalRelease --stacktrace
+
+      # Der Upload-Schluessel liegt als Base64-Secret. build.gradle.kts erkennt an der gesetzten
+      # KEYSTORE_PASSWORD-Umgebungsvariable, dass signiert werden soll, und faellt fuer storeFile
+      # auf "../cf-alarm-release.keystore" zurueck - also den Projekt-Root. Genau dorthin.
+      - name: Upload-Schluessel wiederherstellen
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > cf-alarm-release.keystore
+
+      - name: AAB bauen (signiert)
+        run: ./gradlew bundleRelease --stacktrace
+
+      # Ein UNSIGNIERTES Bundle waere hier der gefaehrliche Fall: der Upload schluege erst bei
+      # Google fehl, mit einer Meldung, die auf alles Moegliche zeigt. Lieber sofort und deutlich.
+      - name: Signatur pruefen
+        run: |
+          BUNDLE=app/build/outputs/bundle/release/app-release.aab
+          test -f "$BUNDLE" || { echo "::error::$BUNDLE fehlt - Build hat kein Bundle erzeugt"; exit 1; }
+          if unzip -l "$BUNDLE" | grep -qE 'META-INF/.*\.(RSA|DSA|EC)'; then
+            echo "Bundle ist signiert."
+          else
+            echo "::error::Bundle ist NICHT signiert - Secrets pruefen (KEYSTORE_BASE64/KEYSTORE_PASSWORD/KEY_PASSWORD)"
+            exit 1
+          fi
+
+      - name: Version aus dem Build lesen
+        id: version
+        run: |
+          VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          echo "name=$VN" >> "$GITHUB_OUTPUT"
+          echo "code=$VC" >> "$GITHUB_OUTPUT"
+          echo "Version $VN (versionCode $VC)"
+
+      # Auf einen festen Commit gepinnt, nicht auf ein bewegliches Tag: diese Aktion bekommt den
+      # Play-Publishing-Schluessel zu sehen. v1.1.5 = e738b9dd8f2476ea806d921b64aacd24f34515a5.
+      - name: Auf den internen Track hochladen
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.github.f1rlefanz.cf_alarmfortimeoffice
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track }}
+          status: ${{ inputs.status }}
+          releaseName: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
+
+      # Der Schluessel darf den Runner nicht ueberleben. GitHub raeumt den Arbeitsbereich zwar
+      # ohnehin ab, aber "ohnehin" ist bei einem Signierschluessel keine Begruendung.
+      - name: Schluessel entfernen
+        if: always()
+        run: rm -f cf-alarm-release.keystore
+
+      - name: Bundle als Artefakt sichern
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: aab-${{ steps.version.outputs.name }}
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Die mapping.txt gehoert archiviert, sobald Obfuskation je eingeschaltet wird (Issue #54).
+      # Heute ist -dontobfuscate gesetzt, die Datei ist also duenn - sie hier trotzdem zu sichern
+      # kostet nichts und macht den Schritt nicht zur Nachruestung, wenn es soweit ist.
+      - name: R8-Mapping sichern
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mapping-${{ steps.version.outputs.name }}
+          path: app/build/outputs/mapping/release/
+          if-no-files-found: ignore
+          retention-days: 90

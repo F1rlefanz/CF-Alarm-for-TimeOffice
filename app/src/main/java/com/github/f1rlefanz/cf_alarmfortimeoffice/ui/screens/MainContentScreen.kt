@@ -1,23 +1,31 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AccessAlarm
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -28,17 +36,21 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ManualAlarmCard
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.navigation.MAIN_TAB_ZIELE
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.navigation.mainTabZiel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.DimmerTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HomeTabContent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.HueTabContent
@@ -50,7 +62,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MasterPauseViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.text.UIText
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import kotlinx.coroutines.launch
 
 /**
  * PURE, TESTBAR: entscheidet, ob ein Auth-Fehler hier als Snackbar gehoert.
@@ -196,62 +210,119 @@ fun MainContentScreen(
         }
     }
 
+    // NAVIGATION IN EINER SCHUBLADE STATT IN EINER UNTEREN LEISTE (seit v1.38.0).
+    //
+    // WARUM: Sechs Ziele passen nicht in eine Material-3-Navigationsleiste - die ist fuer drei
+    // bis fuenf gebaut. Auf dem Geraet des Eigentuemers (hochgestellte Anzeigegroesse, 320 dp
+    // Breite) blieben 53,3 dp pro Fach, waehrend die aktive Pille hinter dem Symbol 64 dp breit
+    // ist: das erste Element wurde links angeschnitten, benachbarte Pillen ueberschnitten sich,
+    // und die Beschriftungen kuerzten zu "Dimm..." und "Einste...".
+    //
+    // WARUM DIE SCHUBLADE HIER LIEGT UND NICHT IN MainScreen: Die vier Onboarding-Gates
+    // (BatteryExemption, UnusedAppRestrictions, TimeOfficeHealthCheck, OEMWarning) sind Zweige
+    // DESSELBEN `when` wie dieser Bildschirm - sie ERSETZEN ihn. Eine Ebene hoeher liesse sich
+    // per Wischgeste mitten aus einem Gate herausnavigieren, ohne dass dessen Dismissed-Flag
+    // geschrieben wird; handleAuthenticationSuccess() wuerfe den Nutzer beim naechsten Durchlauf
+    // zurueck ins Gate. Hier ist die Schublade waehrend der Gates schlicht nicht komponiert -
+    // deshalb braucht `gesturesEnabled` auch keine Einschraenkung.
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val schubladenScope = rememberCoroutineScope()
+    val ziel = mainTabZiel(selectedTab)
+
+    // Die Kopfzeile klappt beim Runterscrollen weg und kommt bei der kleinsten
+    // Aufwaertsbewegung zurueck. Sie ersetzt ZWEI frueher gleichzeitig sichtbare Zeilen: die
+    // gepinnte App-Titelzeile ("CF-Alarm for TimeOffice", ~64 dp, scrollte nie weg) und die
+    // Ueberschrift, die jeder Tab-Inhalt zusaetzlich selbst setzte (~40 dp) - zusammen rund
+    // 15 % der Hoehe dafuer, dem Nutzer zu sagen, was er selbst angetippt hat.
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            // ZWINGEND die Ueberladung MIT `drawerState`: nur sie registriert intern den
+            // PredictiveBackHandler(enabled = drawerState.isOpen) (Material3 1.4.0,
+            // NavigationDrawer.kt:633 -> :643 -> :955). ModalNavigationDrawer selbst behandelt
+            // Zurueck NICHT, und die parameterlose ModalDrawerSheet-Ueberladung (:590) auch
+            // nicht. Das ist kein Schoenheitsfehler: auf dem Home-Tab ist der BackHandler in
+            // MainScreen bewusst AUS (dort soll Zurueck die App verlassen) - mit der falschen
+            // Ueberladung wuerde ein Zurueck bei offener Schublade also die App beenden.
+            ModalDrawerSheet(
+                drawerState = drawerState,
+                // Die Compose-Wurzel in MainActivity hat die Insets bereits mit
+                // safeDrawingPadding() VERBRAUCHT. Hier nichts aufschlagen - das waere die
+                // doppelte Polsterung, gegen die RandloseDarstellungTest gebaut ist.
+                windowInsets = WindowInsets(0, 0, 0, 0)
+            ) {
+                // Scrollbar, weil sechs Eintraege plus Kopf bei 320 dp und grosser Schrift
+                // hoeher werden koennen als der Bildschirm.
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // Der Name der App steht jetzt hier - einmal, auf Wunsch sichtbar -
+                    // statt auf jedem Bildschirm eine gepinnte Zeile zu belegen.
+                    Text(
+                        text = UIText.APP_TITLE,
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
+                    )
+                    HorizontalDivider()
+                    MAIN_TAB_ZIELE.forEach { eintrag ->
+                        NavigationDrawerItem(
+                            // dekorativ: das Label daneben traegt den Namen. Die alten
+                            // NavigationBarItems hatten contentDescription == label und liessen
+                            // TalkBack damit jedes Ziel doppelt vorlesen.
+                            icon = { Icon(eintrag.icon, contentDescription = null) },
+                            label = { Text(eintrag.titel) },
+                            selected = eintrag.tab == selectedTab,
+                            onClick = {
+                                schubladenScope.launch { drawerState.close() }
+                                onSelectedTabChange(eintrag.tab)
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                        )
+                    }
+                }
+            }
+        }
+    ) {
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        "CF-Alarm for TimeOffice",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                title = { Text(ziel.titel) },
+                navigationIcon = {
+                    IconButton(onClick = { schubladenScope.launch { drawerState.open() } }) {
+                        // Nicht dekorativ: das Symbol ist der einzige Traeger dieser Aktion.
+                        Icon(Icons.Filled.Menu, contentDescription = "Navigation öffnen")
+                    }
+                },
+                actions = {
+                    if (selectedTab == MainTab.HOME) {
+                        IconButton(
+                            onClick = {
+                                // Gleicher Grund wie beim Snackbar-Retry oben: der frueher hier
+                                // gerufene mainViewModel.forceRefreshCalendarEvents() schrieb nur
+                                // in den CalendarStateHolder. Der "Aktualisieren"-Knopf lud damit
+                                // zwar Events (die Schichterkennung bekam sie ueber den
+                                // StateHolder), aber Home zeigte weder Ladeanzeige noch die neue
+                                // Liste noch einen Fehler - er wirkte wie ein toter Knopf.
+                                calendarViewModel.refreshData(forceRefresh = true)
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = "Aktualisieren",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
-                )
+                ),
+                scrollBehavior = scrollBehavior
             )
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Home, contentDescription = "Home") },
-                    label = { Text("Home", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.HOME,
-                    onClick = { onSelectedTabChange(MainTab.HOME) }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.AccessAlarm, contentDescription = "Wecker") },
-                    label = { Text("Wecker", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.WECKER,
-                    onClick = { onSelectedTabChange(MainTab.WECKER) }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.DarkMode, contentDescription = "Dimmen") },
-                    label = { Text("Dimmen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.DIMMER,
-                    onClick = { onSelectedTabChange(MainTab.DIMMER) }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Lightbulb, contentDescription = "Hue") },
-                    label = { Text("Hue", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.HUE,
-                    onClick = { onSelectedTabChange(MainTab.HUE) }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Info, contentDescription = "Status") },
-                    label = { Text("Status", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.STATUS,
-                    onClick = { onSelectedTabChange(MainTab.STATUS) }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen") },
-                    label = { Text("Einstellungen", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    selected = selectedTab == MainTab.SETTINGS,
-                    onClick = { onSelectedTabChange(MainTab.SETTINGS) }
-                )
-            }
         },
         floatingActionButton = {
             // Nur im Home-Tab: manuellen Alarm als Sekundaer-Aktion anbieten.
@@ -276,19 +347,6 @@ fun MainContentScreen(
                         alarmState = alarmState,
                         skipState = skipState,
                         masterPausePaused = masterPausePaused,
-                        onRefresh = {
-                            // Gleicher Grund wie beim Snackbar-Retry oben: der frueher hier
-                            // gerufene mainViewModel.forceRefreshCalendarEvents() schrieb nur in
-                            // den CalendarStateHolder. Der "Aktualisieren"-Knopf lud damit zwar
-                            // Events (die Schichterkennung bekam sie ueber den StateHolder), aber
-                            // Home zeigte weder Ladeanzeige noch die neue Liste noch einen
-                            // Fehler - er wirkte wie ein toter Knopf.
-                            //
-                            // Phase 1: BackgroundTokenRefreshWorker removed
-                            // Manual refresh now only triggers calendar data reload
-                            // Token refresh handled by AlarmMaintenanceService
-                            calendarViewModel.refreshData(forceRefresh = true)
-                        },
                         onNavigateToWecker = { onSelectedTabChange(MainTab.WECKER) },
                         onShowEventList = onShowEventList,
                         onReauthorize = {
@@ -365,6 +423,7 @@ fun MainContentScreen(
                 }
             }
         }
+    }
     }
 
     // Bottom-Sheet fuer den manuellen Alarm (per FAB im Home-Tab geoeffnet).

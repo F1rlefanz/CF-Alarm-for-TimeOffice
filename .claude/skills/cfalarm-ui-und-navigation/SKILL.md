@@ -28,6 +28,9 @@ das baut man dieselbe Falle in neuer Form nach.
   anstoßen. Auf dem Home-Tab bleibt der Handler bewusst aus.
 - **„Später" beim Akku-Gate heißt ERLEDIGT, nicht abgebrochen** (`batteryGateResolved`) — sonst fällt
   der Nutzer aus jedem Zweig heraus und bekommt den nächsten Schritt NIE angeboten.
+- **Die Navigationsschublade gehoert in `MainContentScreen`** - nur dort ist sie waehrend der
+  Onboarding-Gates nicht komponiert. Und sie braucht `ModalDrawerSheet(drawerState = ...)`: nur
+  diese Ueberladung behandelt Zurueck, sonst beendet ein Zurueck auf dem Home-Tab die App.
 - **`HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`**, nicht nur `returnToTab`:
   System-Back und screen-eigener Zurück-Pfeil MÜSSEN für denselben Einstiegspfad zum selben Ziel führen.
 

@@ -98,12 +98,7 @@ fun SettingsTabContent(
             )
         }
 
-        Text(
-            "Einstellungen",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-
+        
         // Kalender-Einstellungen
         Card(
             modifier = Modifier.fillMaxWidth(),

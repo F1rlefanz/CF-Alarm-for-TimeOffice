@@ -27,7 +27,6 @@
     <string name="dim_accessibility_desc">Legt eine abdunkelnde Schicht über den Bildschirm, um dich vor Schichtbeginn zum Herunterfahren zu bringen. Der Dienst liest keine Bildschirminhalte und wertet keine Eingaben aus – er dient ausschließlich der Verdunkelung.</string>
 
     <!-- Dimmer-Tab -->
-    <string name="dimmer_header">Schicht-Dimmer</string>
     <string name="dimmer_intro">Dunkelt den Bildschirm zu deinen Zeiten ab – damit du leichter herunterfährst. Alles läuft über Regeln: eine Regel legt fest, an welchen Tagen sie gilt, welche Zeitfenster sie dimmt und wie dunkel und warm es dabei wird.</string>
     <string name="dimmer_enabled">Dimmen</string>
     <string name="dimmer_enabled_hint">Hauptschalter für die Bildschirm-Verdunkelung. Ist er aus, dimmt nichts – auch keine Regel.</string>
@@ -337,7 +336,6 @@
     <string name="hue_empty_rules_action">Erste Regel erstellen</string>
 
     <!-- Hue-Tab -->
-    <string name="hue_tab_title">Philips Hue Integration</string>
     <string name="hue_tab_bridge_gone">Die Bridge steht nicht mehr in der Trefferliste. Bitte erneut suchen und dann verbinden.</string>
     <string name="hue_tab_loading">Lade Hue-Konfiguration…</string>
 

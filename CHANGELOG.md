@@ -27,7 +27,31 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.38.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.0 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Ein Abgleich statt drei Knöpfen — und der Status-Tab sagt endlich, was er meint._
+
+### ✨ Neu
+
+- **„Mit Google Kalender abgleichen" steht jetzt dort, wo man es sucht.** Der Knopf saß bisher als bloßes Kreispfeil-Symbol oben rechts und sah aus, als betreffe er den ganzen Bildschirm — dabei lädt er die Termine neu und stellt die Wecker danach. Jetzt sitzt er in der Kalender-Karte, mit Beschriftung und einer Zeile darunter, die sagt, was er tut. Sie nennt ausdrücklich den **Google Kalender**: CF-Alarm liest nur den Kalender, was TimeOffice dort noch nicht eingetragen hat, kann auch hier nicht auftauchen.
+
+- **Der Hintergrunddienst zeigt zwei Zeitpunkte statt einem.** Bisher stand dort „Letzter Sync" — ein Wert, der auch dann neu gestempelt wurde, wenn der Dienst nachgesehen und *nichts zu tun gefunden* hatte. „Vor 15 Minuten" konnte also heißen: vor 15 Minuten wurde entschieden, nichts zu tun. Jetzt stehen beide Angaben getrennt da: **„Zuletzt nachgesehen"** und **„Termine zuletzt abgerufen"**, jeweils mit einer Zeile, was sie bedeuten.
+
+### 🐛 Behoben
+
+- **Die Navigationsschublade ließ sich nicht mehr durch Danebentippen schließen.** Bei größerer Anzeigegröße füllte sie den ganzen Bildschirm, sodass es keine abgedunkelte Fläche mehr gab, auf die man tippen konnte. Sie lässt jetzt immer einen Streifen frei — dahinter sieht man, dass der Bildschirm weitergeht.
+
+### 🎨 Feinschliff
+
+- **Zwei Knöpfe im System-Status entfernt, die nichts bewirkt haben.** Ein Aktualisieren-Pfeil neben „Cache-Status" schrieb sein Ergebnis nur ins Protokoll und änderte nie etwas Sichtbares; „Cache leeren" wirkte ohne jede Rückmeldung und war überflüssig, weil der Abgleich den Zwischenspeicher ohnehin verwirft. Dazu ist die Zeile „Cache-Details: Cache-Statistiken in Log ausgegeben" verschwunden — sie beschrieb etwas, das man nirgends nachlesen konnte.
+
+- **Ein Vorgang, ein Name.** „Aktualisieren", „Neu laden" und „Jetzt synchronisieren" waren drei Beschriftungen für denselben Ablauf. Übrig bleiben der Abgleich in der Kalender-Karte und — wenn länger nichts passiert ist — der Knopf in der Warnung.
+
+- **Die Karte im System-Status heißt jetzt „Verbunden" bzw. „Keine Verbindung"** statt „Cache-Status".
+
+## Version 1.38.0
 
 **Stand:** September 2026
 

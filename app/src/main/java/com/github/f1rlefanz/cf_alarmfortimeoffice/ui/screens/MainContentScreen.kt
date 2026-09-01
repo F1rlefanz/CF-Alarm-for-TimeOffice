@@ -5,13 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -43,8 +43,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
@@ -248,6 +250,20 @@ fun MainContentScreen(
             // Ueberladung wuerde ein Zurueck bei offener Schublade also die App beenden.
             ModalDrawerSheet(
                 drawerState = drawerState,
+                // BREITE AUSDRUECKLICH BEGRENZEN, sonst gibt es nichts zum Danebentippen.
+                // Compose deckelt die Schublade nur bei 360 dp (`sizeIn(240.dp, 360.dp)`), zieht
+                // aber KEINEN Streifen ab. Auf dem Geraet des Eigentuemers (320 dp Breite, weil
+                // die Anzeigegroesse hochgestellt ist) fuellte sie damit den ganzen Bildschirm -
+                // am 01.09.2026 pixelweise nachgemessen: weiss bis zur letzten Spalte. Von den
+                // vier Schliesswegen fiel damit der wichtigste aus, denn genau der ist der
+                // beworbene: Material gibt der abgedunkelten Flaeche eine eigene
+                // Beschreibung ("Navigationsmenue schliessen") und eine Dismiss-Aktion.
+                //
+                // Die Material-Spezifikation nennt dafuer Bildschirmbreite minus 56 dp; die 56 dp
+                // sind kein Zierrat, sondern das Mindestmass eines Beruehrungsziels. Deshalb ein
+                // fester Abzug statt eines Prozentsatzes: ein Prozentsatz waere auf einem Tablet
+                // Verschwendung und auf einem kleinen Geraet zu schmal zum Treffen.
+                modifier = Modifier.width(min(360.dp, LocalConfiguration.current.screenWidthDp.dp - 56.dp)),
                 // Die Compose-Wurzel in MainActivity hat die Insets bereits mit
                 // safeDrawingPadding() VERBRAUCHT. Hier nichts aufschlagen - das waere die
                 // doppelte Polsterung, gegen die RandloseDarstellungTest gebaut ist.
@@ -296,27 +312,6 @@ fun MainContentScreen(
                         Icon(Icons.Filled.Menu, contentDescription = "Navigation öffnen")
                     }
                 },
-                actions = {
-                    if (selectedTab == MainTab.HOME) {
-                        IconButton(
-                            onClick = {
-                                // Gleicher Grund wie beim Snackbar-Retry oben: der frueher hier
-                                // gerufene mainViewModel.forceRefreshCalendarEvents() schrieb nur
-                                // in den CalendarStateHolder. Der "Aktualisieren"-Knopf lud damit
-                                // zwar Events (die Schichterkennung bekam sie ueber den
-                                // StateHolder), aber Home zeigte weder Ladeanzeige noch die neue
-                                // Liste noch einen Fehler - er wirkte wie ein toter Knopf.
-                                calendarViewModel.refreshData(forceRefresh = true)
-                            }
-                        ) {
-                            Icon(
-                                Icons.Filled.Refresh,
-                                contentDescription = "Aktualisieren",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
@@ -347,6 +342,15 @@ fun MainContentScreen(
                         alarmState = alarmState,
                         skipState = skipState,
                         masterPausePaused = masterPausePaused,
+                        onJetztAbgleichen = {
+                            // Gleicher Grund wie beim Snackbar-Retry oben: der frueher hier
+                            // gerufene mainViewModel.forceRefreshCalendarEvents() schrieb nur in
+                            // den CalendarStateHolder. Der Knopf lud damit zwar Events (die
+                            // Schichterkennung bekam sie ueber den StateHolder), aber Home zeigte
+                            // weder Ladeanzeige noch die neue Liste noch einen Fehler - er wirkte
+                            // wie ein toter Knopf.
+                            calendarViewModel.refreshData(forceRefresh = true)
+                        },
                         onNavigateToWecker = { onSelectedTabChange(MainTab.WECKER) },
                         onShowEventList = onShowEventList,
                         onReauthorize = {

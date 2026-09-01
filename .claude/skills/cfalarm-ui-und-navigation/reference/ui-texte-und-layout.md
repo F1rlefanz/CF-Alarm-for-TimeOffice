@@ -171,3 +171,39 @@ falschen Zustand, am falschen Ort, in der falschen Richtung oder gar nicht geren
   **Zusammengesetzte Hauptwörter in Beschreibungstexten deshalb kurz halten**, und neue Screens
   einmal bei 320 dp ansehen: `adb shell wm density 540` auf einem 1080-px-Emulator stellt genau
   diesen Fall her (danach `wm density reset`).
+
+- **Eine modale Schublade MUSS einen Streifen frei lassen, sonst gibt es nichts zum Danebentippen.**
+  Compose baut `ModalDrawerSheet` mit `sizeIn(minWidth = 240.dp, maxWidth = 360.dp)` und zieht
+  KEINEN Rand ab. Auf einem 320-dp-Bildschirm (hochgestellte Anzeigegroesse) fuellte sie damit die
+  ganze Breite - am 01.09.2026 pixelweise nachgemessen: weiss bis zur letzten Spalte. Damit fiel
+  der wichtigste von vier Schliesswegen aus, und ausgerechnet der ist der beworbene: Material gibt
+  der abgedunkelten Flaeche eine eigene Beschreibung ("Navigationsmenue schliessen") und eine
+  Dismiss-Aktion. Die Material-Spezifikation nennt *Bildschirmbreite minus 56 dp*; die 56 dp sind
+  das Mindestmass eines Beruehrungsziels, deshalb ein fester Abzug und KEIN Prozentsatz - ein
+  Prozentsatz waere auf einem Tablet Verschwendung und auf einem kleinen Geraet zu schmal.
+
+- **Drei Beschriftungen fuer einen Code-Pfad sind drei Versprechen.** Bis v1.39.0 loesten
+  "Aktualisieren" (Kopfzeile), "Neu laden" (Cache-Karte) und "Jetzt synchronisieren"
+  (>24h-Warnung) alle exakt `refreshData(forceRefresh = true)` aus. Der Eigentuemer konnte nicht
+  mehr sagen, was welcher tut - und ein Symbol allein kann es nicht sagen: ein Kreispfeil heisst
+  ueberall "irgendwas neu laden", nie WAS. Die Regel daraus: **ein Vorgang bekommt einen Namen und
+  steht an der Stelle, deren Inhalt er veraendert.** Der Abgleich sitzt jetzt in der
+  Kalender-Karte, nicht in der Kopfzeile.
+
+- **Ein Zeitstempel braucht dazu, WORAUF er sich bezieht - sonst ist er eine falsche Zusicherung.**
+  "Letzter Sync" zeigte `KEY_LAST_MAINTENANCE`. Der wird aber auch gestempelt, wenn die 6h-Wartung
+  den Lauf UEBERSPRINGT (Puffer reichte) und zusaetzlich aus dem Vordergrund. "Vor 15 Minuten"
+  konnte also heissen "vor 15 Minuten wurde entschieden, nichts zu tun" - in einem Tab, dessen
+  Zweck die Frage "warum kam kein Wecker" ist, genau die falsche Auskunft. Der Code wusste es
+  besser als die Oberflaeche: `KEY_LAST_EVENT_LOAD` fuehrt seit jeher den letzten ECHTEN
+  Terminabruf, mit dem Kommentar, der andere Wert sei "als Frische-Signal wertlos". Angezeigt
+  wurde er nur nie. Jetzt stehen beide da, jeder mit einer Zeile, was er bedeutet.
+
+- **Ein Knopf, der sein Ergebnis wegwirft, ist schlimmer als kein Knopf.** Der Aktualisieren-Pfeil
+  in der Cache-Karte rief `getCacheStats()` - eine Methode, die eine INFO-Logzeile schreibt und
+  nichts zurueckgibt. Die Anzeige aenderte sich nie, und im Release-Build landete nicht einmal das
+  Log irgendwo (der `SimpleFileTree` schreibt erst ab WARN). Daneben behauptete "Cache-Details:
+  Cache-Statistiken in Log ausgegeben" einen Vorgang, den der Nutzer nirgends einsehen kann.
+  **Vor dem Einbauen einer Diagnose-Anzeige pruefen, ob ihr Ergebnis den Nutzer je erreicht** -
+  im RELEASE-Build, nicht im Debug-Build.
+

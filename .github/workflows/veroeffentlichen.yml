@@ -122,7 +122,8 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.github.f1rlefanz.cf_alarmfortimeoffice
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
-          track: ${{ inputs.track }}
+          # `track` ist in v1.1.5 als veraltet gemeldet; `tracks` ist der Nachfolger.
+          tracks: ${{ inputs.track }}
           status: ${{ inputs.status }}
           releaseName: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
 

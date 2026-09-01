@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -581,11 +582,18 @@ fun ShiftConfigScreen(
 private fun SchichterkennungsHinweis() {
     var ausgeklappt by rememberSaveable { mutableStateOf(false) }
 
+    // `surfaceVariant` ist in der hellen CSJR-Palette derselbe Farbwert wie `background`
+    // (beides `OffWhite`, siehe Theme.kt) - eine Karte in dieser Farbe hat auf dem Seiten-
+    // hintergrund gar keine sichtbare Flaeche mehr. Ein Hinweis, den man nicht als Hinweis
+    // erkennt, ist keiner. Deshalb weisse Flaeche und ein Rand aus der Marken-Randfarbe:
+    // dezent abgesetzt von den Inhaltskarten, aber vorhanden. Im dunklen Schema war es nie
+    // kaputt (`DarkSurfaceVariant` != `DarkBg`) - die Regel gilt trotzdem fuer beide.
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Row(
             modifier = Modifier.padding(SpacingConstants.PADDING_CARD),

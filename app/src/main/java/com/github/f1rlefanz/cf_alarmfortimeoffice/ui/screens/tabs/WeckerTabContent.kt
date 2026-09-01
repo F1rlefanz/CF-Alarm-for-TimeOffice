@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -179,8 +180,18 @@ fun WeckerTabContent(
         )
 
         // Auto-Alarm Switch
+        //
+        // Farbe und Erhebung ausdruecklich gesetzt, obwohl die Compose-Vorgabe hier dasselbe
+        // Weiss liefert: die Status-Karte darunter setzt beides seit jeher selbst, und zwei
+        // Inhaltskarten direkt untereinander duerfen nicht aus zwei verschiedenen Quellen
+        // stammen - sonst verschiebt eine kuenftige Aenderung an einer der beiden Stellen
+        // stillschweigend nur die halbe Liste.
         Card(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -557,11 +568,18 @@ private fun TagFreigabeAbschnitt(
 private fun UeberspringenOderFreigebenHinweis() {
     var ausgeklappt by rememberSaveable { mutableStateOf(false) }
 
+    // `surfaceVariant` ist in der hellen CSJR-Palette derselbe Farbwert wie `background`
+    // (beides `OffWhite`, siehe Theme.kt) - eine Karte in dieser Farbe hat auf dem Seiten-
+    // hintergrund gar keine sichtbare Flaeche mehr. Ein Hinweis, den man nicht als Hinweis
+    // erkennt, ist keiner. Deshalb weisse Flaeche und ein Rand aus der Marken-Randfarbe:
+    // dezent abgesetzt von den Inhaltskarten, aber vorhanden. Im dunklen Schema war es nie
+    // kaputt (`DarkSurfaceVariant` != `DarkBg`) - die Regel gilt trotzdem fuer beide.
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Row(
             modifier = Modifier
@@ -615,7 +633,7 @@ private fun SnoozeMinutesRow(
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                "Gilt für den Vollbild- und den Benachrichtigungs-Schlummer-Knopf",
+                "Gilt für Vollbild und Benachrichtigung",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

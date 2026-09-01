@@ -53,6 +53,8 @@ _Eine eingeschaltete Hue-Regel sah aus, als gehöre sie nicht dazu — und bei g
 
 - **„Benachrichtigungs-Schlummer-Knopf" brach mitten im Wort um.** Bei großer Anzeigegröße zerfiel die Erläuterung unter „Schlummer-Dauer" in „…-Sch" und „lummer-Knopf". Der Text ist jetzt kürzer und bricht sauber.
 
+- **Der „+“-Knopf verdeckte die letzte Dimm-Regel.** In der Regelliste schwebte er über der untersten Karte — bei genau einer Regel also über der einzigen. Die Liste hat jetzt Freiraum darunter, wie der Home-Tab ihn längst hat.
+
 - **Zwei Karten im Wecker-Tab, zwei Erscheinungsbilder.** Die obere Karte lag flach auf, die Status-Karte darunter leicht erhoben. Beide sehen jetzt gleich aus.
 
 ## Version 1.37.1

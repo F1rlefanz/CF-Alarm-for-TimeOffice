@@ -348,7 +348,10 @@ fun DimmerSettingsScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            // Unten mehr Freiraum: der FAB liegt AUSSERHALB des Scaffold-innerPadding und
+            // schwebte sonst ueber der letzten Regel - bei genau einer Regel also ueber der
+            // einzigen. Derselbe Wert und derselbe Grund wie in HomeTabContent.
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (!dimmerAn) {

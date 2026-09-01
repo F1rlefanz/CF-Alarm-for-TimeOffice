@@ -13,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -22,7 +21,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -183,7 +181,6 @@ fun HomeTabContent(
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
     masterPausePaused: Boolean,
-    onRefresh: () -> Unit,
     onNavigateToWecker: () -> Unit,
     onShowEventList: (() -> Unit)? = null,
     onReauthorize: (() -> Unit)? = null
@@ -193,32 +190,13 @@ fun HomeTabContent(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL)
-            // Zusaetzlicher Freiraum unten, damit der Manueller-Alarm-FAB nicht ueber der letzten
-            // Karte schwebt (der FAB liegt ausserhalb des Scaffold-innerPadding).
+            // Zusaetzlicher Freiraum unten, damit der Manueller-Alarm-FAB nicht ueber der
+            // letzten Karte schwebt (der FAB liegt ausserhalb des Scaffold-innerPadding). Seit
+            // dem Wegfall der unteren Navigationsleiste (v1.38.0) sitzt der FAB tiefer; 88 dp
+            // decken seine 56 dp plus Rand weiterhin ab - am Geraet gegengesehen.
             .padding(bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
-        // Header mit Refresh-Button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Übersicht",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            
-            IconButton(onClick = onRefresh) {
-                Icon(
-                    Icons.Default.Refresh,
-                    contentDescription = "Aktualisieren",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
         // Nächste Schicht Card
         Card(
             modifier = Modifier.fillMaxWidth(),

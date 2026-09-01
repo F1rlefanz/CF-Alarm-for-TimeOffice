@@ -77,16 +77,23 @@ class RandloseDarstellungTest {
     }
 
     @Test
-    fun `keine zweite Polsterung in den Bildschirmen ausserhalb des Scaffold`() {
+    fun `keine zweite Polsterung unterhalb der Wurzel`() {
         // safeDrawingPadding() an der Wurzel VERBRAUCHT die Insets; ein zweiter Aufruf weiter
         // unten waere wirkungslos, ein handgemachtes systemBarsPadding() dagegen doppelte
         // Polsterung - der uebliche Folgefehler dieser Korrektur.
+        //
+        // MainContentScreen steht seit v1.38.0 mit auf der Liste, obwohl es ein Scaffold HAT:
+        // mit dem Wegfall der unteren Navigationsleiste und der App-Titelzeile schrumpfte sein
+        // innerPadding auf fast nichts, und genau dann ist jemand versucht, ein
+        // statusBarsPadding() "nachzuruesten". Die Schublade traegt aus demselben Grund
+        // ausdruecklich WindowInsets(0, 0, 0, 0).
         val doppelt = listOf(
             "ui/components/PermissionOnboardingScreen.kt",
             "ui/components/LoadingScreen.kt",
             "ui/screens/OEMWarningScreen.kt",
             "ui/screens/LoginScreen.kt",
-            "ui/screens/CalendarAuthorizationScreen.kt"
+            "ui/screens/CalendarAuthorizationScreen.kt",
+            "ui/screens/MainContentScreen.kt"
         ).filter { pfad ->
             val text = code(pfad)
             text.contains("safeDrawingPadding") ||

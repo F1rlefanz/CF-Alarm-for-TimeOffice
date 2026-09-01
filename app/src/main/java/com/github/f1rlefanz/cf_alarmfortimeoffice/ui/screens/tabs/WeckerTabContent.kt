@@ -173,12 +173,7 @@ fun WeckerTabContent(
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
-        Text(
-            "Wecker",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-
+        
         // Auto-Alarm Switch
         //
         // Farbe und Erhebung ausdruecklich gesetzt, obwohl die Compose-Vorgabe hier dasselbe

@@ -86,12 +86,7 @@ fun StatusTabContent(
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
-        Text(
-            "System-Status",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-
+        
         // GANZ OBEN und nicht bei der Kalender-Karte darunter: Wenn diese Karte erscheint,
         // klingeln Wecker eines Dienstplans, den der Nutzer entfernt hat - das schlaegt jeden
         // anderen Status auf diesem Bildschirm.

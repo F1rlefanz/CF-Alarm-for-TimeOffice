@@ -27,7 +27,25 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.37.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.38.0 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Die sechs Bereiche stehen jetzt in einer Schublade — und der Bildschirm gehört wieder dem Inhalt._
+
+### ✨ Neu
+
+- **Navigation in einer Schublade statt in einer Leiste am unteren Rand.** Sie geht über das Menü-Symbol links neben der Überschrift auf, oder indem du vom linken Bildschirmrand nach innen ziehst. Der Grund: sechs Bereiche passen nicht in eine Leiste am unteren Rand — bei größerer Anzeigegröße wurde der aktive Bereich links angeschnitten, benachbarte Einträge überlappten sich, und aus „Dimmen" und „Einstellungen" wurden „Dimm…" und „Einste…". In der Schublade steht jeder Name vollständig da, mit Symbol.
+
+- **Eine Kopfzeile statt zwei.** Bisher stand ganz oben fest „CF-Alarm for TimeOffice" und darunter noch einmal der Name des Bereichs — zusammen etwa ein Siebtel des Bildschirms dafür, dir zu sagen, was du selbst geöffnet hast. Jetzt steht dort nur noch der Bereichsname, und diese Zeile schiebt sich beim Scrollen weg und kommt bei der kleinsten Aufwärtsbewegung zurück. Der Name der App steht im Kopf der Schublade.
+
+- **Zwei Bereiche heißen jetzt überall gleich.** „Home" und „Übersicht" waren derselbe Bereich, ebenso „Dimmen" und „Schicht-Dimmer" — je nachdem, ob man auf die Leiste oder auf die Überschrift sah. Jetzt gilt ein Name: Übersicht, Wecker, Schicht-Dimmer, Philips Hue, System-Status, Einstellungen.
+
+### 🔧 Unter der Haube
+
+- **Screenreader lesen die Bereiche nicht mehr doppelt vor.** In der alten Leiste trug jedes Symbol dieselbe Beschreibung wie seine Beschriftung daneben.
+
+## Version 1.37.3
 
 **Stand:** September 2026
 

@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,10 +67,20 @@ internal fun HueRuleCard(
     // Aktion "Bridge vergessen" schon nach (BridgeStatusCard), das war ein Widerspruch.
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
 
+    // WARUM KEIN `surfaceVariant` FUER DIE AKTIVE REGEL: In der hellen CSJR-Palette ist
+    // `surfaceVariant` derselbe Farbwert wie `background` (beides `OffWhite`, siehe Theme.kt) —
+    // die eingeschaltete Regel verlor damit ihre Kartenflaeche und verschwamm mit dem
+    // Seitenhintergrund, waehrend die AUSgeschalteten weiss abgesetzt blieben. Ausgerechnet die
+    // wirksame Regel sah also aus, als gehoere sie nicht dazu (am Geraet gesehen, 01.09.2026).
+    // Der Zustand wird jetzt additiv gezeigt — Rand in der Akzentfarbe, passend zum roten
+    // Schalter und zum "Aktiv" darunter —, nicht durch Wegnehmen der Flaeche.
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (rule.enabled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = if (rule.enabled) {
+            BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            null
+        }
     ) {
         Column(
             modifier = Modifier

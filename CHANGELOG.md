@@ -37,6 +37,24 @@ _Wenn der Bildschirm kurz hell wird und von allein wieder dunkel, steht jetzt im
 
 - **Unterbrechungen des Dimmers werden protokolliert.** Wird die App aktualisiert oder ihr Prozess vom System beendet, verschwindet die Verdunkelung für ein paar Sekunden und kommt dann von selbst zurück — sichtbar als kurz heller Bildschirm. Bisher war davon im Protokoll der App nichts zu finden, weil in diesem Moment gar kein App-Code mehr läuft. Jetzt erkennt der Dimmer beim nächsten Start, dass er unsauber beendet wurde, und hält das fest. Ein Geräteneustart zählt dabei ausdrücklich nicht als Störung.
 
+## Version 1.37.3
+
+**Stand:** September 2026
+
+_Eine eingeschaltete Hue-Regel sah aus, als gehöre sie nicht dazu — und bei großer Anzeige brach ein Wort mitten entzwei._
+
+### 🐛 Behoben
+
+- **Die aktive Hue-Regel hatte keine Karte mehr.** In der Regelliste bekam ausgerechnet die eingeschaltete Regel dieselbe Farbe wie der Seitenhintergrund und verschwamm damit; die ausgeschalteten standen weiß abgesetzt da. Aktive Regeln haben jetzt eine weiße Karte mit rotem Rand — sichtbar als Karte und deutlich als aktiv.
+
+- **Hinweiskarten waren unsichtbar.** Aus demselben Grund waren auch die beiden Erklärkarten („Überspringen oder Tag freigeben?" im Wecker-Tab, „Wie die Schichterkennung arbeitet" bei den Schichttypen) ohne erkennbare Fläche. Sie haben jetzt einen feinen Rahmen.
+
+### 🎨 Feinschliff
+
+- **„Benachrichtigungs-Schlummer-Knopf" brach mitten im Wort um.** Bei großer Anzeigegröße zerfiel die Erläuterung unter „Schlummer-Dauer" in „…-Sch" und „lummer-Knopf". Der Text ist jetzt kürzer und bricht sauber.
+
+- **Zwei Karten im Wecker-Tab, zwei Erscheinungsbilder.** Die obere Karte lag flach auf, die Status-Karte darunter leicht erhoben. Beide sehen jetzt gleich aus.
+
 ## Version 1.37.1
 
 **Stand:** August 2026

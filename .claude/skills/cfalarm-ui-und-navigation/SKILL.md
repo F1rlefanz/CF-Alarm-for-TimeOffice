@@ -60,5 +60,12 @@ das baut man dieselbe Falle in neuer Form nach.
   unerreichbar (real passiert). Gleiches gilt für lange Dialoge: scrollbar machen.
 - **`RadioButton`/`Checkbox` mit `onClick = null` brauchen `heightIn(min = 48.dp)` am Row.**
 - **Chip-Reihen als `FlowRow`**, nicht `Row` mit `chunked(n)`.
+- **Keine Karte bekommt `surfaceVariant` als Fläche** — in der hellen Palette ist das derselbe
+  Wert wie `background`, die Karte verschwindet. Dezente Karten: `surface` +
+  `BorderStroke(1.dp, outline)`. Und ein Zustand wird ADDITIV gezeigt (Rand, Text), nie durch
+  Wegnehmen der Fläche.
+- **Neue Screens einmal bei 320 dp ansehen** (`adb shell wm density 540` auf 1080 px, danach
+  `wm density reset`) — das Gerät des Eigentümers läuft so. Lange zusammengesetzte Hauptwörter
+  brechen dort mitten im Wort um.
 
 ---

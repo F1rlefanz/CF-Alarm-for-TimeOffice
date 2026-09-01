@@ -14,6 +14,8 @@
 - Scrollbare Dialoge, tote `UITextConstants`
 - Compose-Layout: `weight(1f)` neben Switch und um `LazyColumn`, 24dp-ContentPadding,
   48dp-Touchziele, `FlowRow`
+- Farbe als einziger Zustandsträger: `surfaceVariant` ist in der hellen Palette `background`
+- Anzeigegröße 320 dp ist die reale untere Grenze
 - Wahrheit der Anzeige (Prüfrunde 8): Master-Pause sichtbar machen, Meldeweg im richtigen Zustand,
   kein `SnackbarDuration.Indefinite`, Handlungsrichtung, kein Default für `masterPausePaused`
 
@@ -140,3 +142,32 @@ falschen Zustand, am falschen Ort, in der falschen Richtung oder gar nicht geren
   (Pause unsichtbar) zurückfallen lassen, ohne dass Compiler oder Test anschlagen. Auf dem
   Anzeigepfad (`AlarmStatusHeader`, `WeckerTabContent`, `StatusTabContent`) ist der Parameter
   deshalb pflichtig.
+
+- **`surfaceVariant` ist in der HELLEN CSJR-Palette derselbe Farbwert wie `background` — eine Karte
+  in dieser Farbe hat auf einer Seite keine Fläche mehr.** Beides ist `OffWhite` (`0xFFF0EDEA`),
+  und zwar **so aus dem Corporate-Design übernommen** (`..Projektdateien/CSJR Corporate Design für
+  Apps.zip`, `design-system/android/Theme.kt`) — es ist kein Tippfehler im Theme, den man
+  „reparieren" dürfte: an der Palette zu drehen ändert alles, was `surfaceVariant` sonst noch
+  nutzt. Falsch war die VERWENDUNG. `HueRuleCard` drückte damit den Zustand *aktiv* aus, also
+  bekam ausgerechnet die eingeschaltete Regel keine sichtbare Karte, während die ausgeschalteten
+  weiß abgesetzt dastanden (am Fairphone gesehen, 01.09.2026; zwei Hinweiskarten in
+  `WeckerTabContent` und `ShiftConfigScreen` waren aus demselben Grund flächenlos). Im dunklen
+  Schema war nie etwas kaputt (`DarkSurfaceVariant` != `DarkBg`) — ein Blick nur dort hätte den
+  Fehler nicht gezeigt.
+
+  Zwei Lehren, die über den Einzelfall hinausgehen: **Ein Zustand wird ADDITIV gezeigt, nicht
+  durch Wegnehmen** — die aktive Regel hat jetzt Rand plus „Aktiv"-Text plus Schalter, drei
+  Träger statt einem. Und **wer eine Farbrolle als Kartenfläche einsetzt, prüft sie gegen die
+  Fläche, auf der die Karte liegt**, nicht gegen ihren Namen: `surfaceVariant` klingt nach
+  „Variante einer Oberfläche" und ist hier der Seitenhintergrund. Für dezente Karten deshalb
+  `surface` + `BorderStroke(1.dp, outline)`.
+
+- **320 dp Breite ist die reale untere Grenze, nicht 360.** Der Eigentümer fährt sein Fairphone 6
+  mit hochgestellter Anzeigegröße (Dichte 558 statt 480 bei `font_scale = 1.0`) — aus 1116 px
+  werden damit **320 dp**. Dort brach „Benachrichtigungs-Schlummer-Knopf" mitten im Wort um
+  (`Benachrichtigungs-Sch` / `lummer-Knopf`): ein Wort ohne Trennmöglichkeit, das breiter ist als
+  seine Spalte, wird zeichenweise umbrochen. Die `weight(1f)`-Regel neben einem Bedienelement
+  verhindert das NICHT — sie sorgt nur dafür, dass die Spalte überhaupt Platz bekommt.
+  **Zusammengesetzte Hauptwörter in Beschreibungstexten deshalb kurz halten**, und neue Screens
+  einmal bei 320 dp ansehen: `adb shell wm density 540` auf einem 1080-px-Emulator stellt genau
+  diesen Fall her (danach `wm density reset`).

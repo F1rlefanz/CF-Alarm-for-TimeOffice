@@ -523,6 +523,23 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
+         * Zeitpunkt der letzten ECHTEN Kalender-Abfrage - fuer die Anzeige im Status-Tab.
+         *
+         * WARUM ES DIESEN ZWEITEN LESER BRAUCHT: [getLastMaintenanceTime] beantwortet die Frage
+         * "wann hat der Dienst zuletzt nachgesehen" und wird auch dann gestempelt, wenn der Lauf
+         * UEBERSPRUNGEN wurde (Puffer reichte) oder aus dem Vordergrund kam. Als Auskunft
+         * "wie frisch sind meine Termine" ist er damit wertlos - "vor 15 Minuten" kann heissen
+         * "vor 15 Minuten wurde entschieden, nichts zu tun". Genau dafuer existiert
+         * [KEY_LAST_EVENT_LOAD] seit jeher; angezeigt wurde er nur nie.
+         */
+        suspend fun getLastEventLoadTime(context: Context): Long {
+            val dataStore = EntryPointAccessors
+                .fromApplication(context.applicationContext, AlarmMaintenanceEntryPoint::class.java)
+                .mainDataStore()
+            return dataStore.data.first()[KEY_LAST_EVENT_LOAD] ?: 0L
+        }
+
+        /**
          * Stamps "now" as the last sync time.
          *
          * Wird zusätzlich aus dem VORDERGRUND-Sync (CalendarViewModel → syncAlarms) aufgerufen,

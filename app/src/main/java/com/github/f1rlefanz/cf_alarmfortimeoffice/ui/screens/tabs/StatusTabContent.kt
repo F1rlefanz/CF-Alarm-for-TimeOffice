@@ -30,7 +30,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -52,7 +51,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -256,8 +254,9 @@ fun StatusTabContent(
         // Debug-Informationen
         DebugInfoCard()
         
-        // Cache-Statistiken und Offline-Status
-        CacheStatusCard(calendarViewModel = calendarViewModel)
+        // Netzstatus. WAS HIER FRUEHER STAND und warum es weg ist, siehe Kopf von
+        // CacheStatusCard.
+        CacheStatusCard()
     }
 }
 
@@ -658,10 +657,32 @@ private fun StatusCard(
     }
 }
 
+/**
+ * Zeigt, ob das Geraet gerade Netz hat - mehr nicht, und das ist Absicht.
+ *
+ * WAS HIER BIS v1.38.0 STAND UND WARUM ES WEG IST: Die Karte trug vier weitere Elemente, von
+ * denen drei fuer den Nutzer nichts taten und eines etwas Falsches behauptete.
+ *
+ * - Ein Aktualisieren-Pfeil rief `getCacheStats()`. Diese Methode WIRFT IHR ERGEBNIS WEG: sie
+ *   schreibt eine INFO-Logzeile und gibt nichts zurueck. Die Anzeige aenderte sich nie, und im
+ *   Release-Build landete nicht einmal das Log irgendwo (der SimpleFileTree schreibt erst ab
+ *   WARN). Ein Knopf, der nichts tut, neben einem zweiten Knopf, der etwas tut - genau die
+ *   Verwechslung, die der Eigentuemer gemeldet hat.
+ * - "Cache-Details: Cache-Statistiken in Log ausgegeben" behauptete einen Vorgang, dessen
+ *   Ergebnis der Nutzer nirgends einsehen kann. Verstoss gegen "kein Text darf eine Anzeige
+ *   behaupten, die es nicht gibt".
+ * - "Cache leeren" wirkte real, aber ohne jede Rueckmeldung - von einem toten Knopf nicht zu
+ *   unterscheiden. Und ueberfluessig: der Abgleich verwirft den Cache ohnehin.
+ * - "Neu laden" war Zeichen fuer Zeichen derselbe Aufruf wie der Abgleich-Knopf auf der
+ *   Uebersicht. Drei Knoepfe (mit "Jetzt synchronisieren" darunter) fuer EINEN Code-Pfad, unter
+ *   drei verschiedenen Namen.
+ *
+ * Uebrig bleibt die Netzanzeige - die ist live (NetworkCallback, siehe unten), korrekt und
+ * beantwortet im Status-Tab eine echte Frage.
+ */
 @Composable
-private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
+private fun CacheStatusCard() {
     val context = LocalContext.current
-    var cacheStats by remember { mutableStateOf("Cache-Statistiken laden...") }
 
     // KEIN derivedStateOf: Hier stand `remember { derivedStateOf { !isNetworkAvailable(context) } }`.
     // `derivedStateOf` invalidiert ausschliesslich, wenn ein im Block GELESENER Snapshot-State sich
@@ -709,20 +730,6 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
         }
     }
 
-    // Nur einmal laden, nicht bei jeder Recomposition
-    LaunchedEffect(calendarViewModel) {
-        calendarViewModel?.let { viewModel ->
-            try {
-                viewModel.getCacheStats()
-                cacheStats = "Cache-Statistiken in Log ausgegeben"
-            } catch (_: Exception) {
-                cacheStats = "Cache-Statistiken nicht verfügbar"
-            }
-        } ?: run {
-            cacheStats = "Cache-Statistiken nicht verfügbar (kein ViewModel)"
-        }
-    }
-    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -751,75 +758,42 @@ private fun CacheStatusCard(calendarViewModel: CalendarViewModel?) {
                 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (isOffline) "Offline-Modus" else "Cache-Status",
+                        if (isOffline) "Keine Verbindung" else "Verbunden",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        if (isOffline) "Offline - verwende gespeicherte Daten" else "Online - Cache aktiv",
+                        if (isOffline) {
+                            "Es werden gespeicherte Termine gezeigt."
+                        } else {
+                            "Termine können abgerufen werden."
+                        },
                         style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                
-                // Cache Actions
-                if (calendarViewModel != null) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-                    ) {
-                        IconButton(
-                            onClick = { 
-                                calendarViewModel.getCacheStats()
-                            }
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Cache-Stats aktualisieren",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-            
-            HorizontalDivider()
-            
-            // Cache Statistics
-            Text(
-                "Cache-Details:",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                cacheStats,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            // Cache Actions Row
-            if (calendarViewModel != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
-                ) {
-                    // Zwei weight(1f)-Buttons in einer Kartenzeile: genau der Fall, fuer den es
-                    // CompactActionButton gibt. Mit der Standard-ContentPadding (24dp pro Seite)
-                    // bleiben auf einem 360dp-Geraet nur ~96dp fuer die Schrift — bei groesserer
-                    // Systemschrift bricht Compose "Cache leeren" mitten im Wort um (dasselbe
-                    // Symptom, das im HueSettingsScreen als "Bea/rbei/ten" gemeldet wurde).
-                    CompactOutlinedButton(
-                        onClick = { calendarViewModel.clearEventCache() },
-                        text = "Cache leeren",
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    CompactButton(
-                        onClick = { calendarViewModel.refreshData(forceRefresh = true) },
-                        text = "Neu laden",
-                        modifier = Modifier.weight(1f)
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * PURE, TESTBAR: Zeitabstand in Worten, wie ihn die Status-Karte zeigt.
+ *
+ * Ausgelagert, weil dieselbe Formulierung jetzt fuer ZWEI Werte gilt (Wartungslauf und
+ * Terminabruf) - zwei Kopien derselben `when`-Kette waeren die naechste Stelle, an der zwei
+ * Wahrheiten auseinanderlaufen.
+ */
+internal fun zeitAbstandInWorten(zeitpunkt: Long, jetzt: Long = System.currentTimeMillis()): String {
+    if (zeitpunkt <= 0L) return "Noch nie"
+    val abstand = jetzt - zeitpunkt
+    return when {
+        abstand < 0 -> "Unbekannt"
+        abstand < TimeUnit.HOURS.toMillis(1) ->
+            "Vor ${TimeUnit.MILLISECONDS.toMinutes(abstand)} Minuten"
+        abstand < TimeUnit.DAYS.toMillis(1) ->
+            "Vor ${TimeUnit.MILLISECONDS.toHours(abstand)} Stunden"
+        else ->
+            "Vor ${TimeUnit.MILLISECONDS.toDays(abstand)} Tagen"
     }
 }
 
@@ -829,13 +803,16 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
     // mutableLongStateOf statt mutableStateOf(0L): kein Autoboxing des Zeitstempels bei jedem
     // 30s-Tick (Delegat-Nutzung unveraendert).
     var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
+    var letzterTerminabruf by remember { mutableStateOf(0L) }
 
     // Wartungszeit laden und alle 30s aktualisieren
     LaunchedEffect(Unit) {
         lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
+        letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
         while (true) {
             kotlinx.coroutines.delay(30_000)
             lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
+        letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
         }
     }
 
@@ -844,6 +821,8 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
     } else {
         -1L
     }
+
+    val terminabrufText = zeitAbstandInWorten(letzterTerminabruf)
 
     val lastMaintenanceText = when {
         lastMaintenanceTime == 0L -> "Noch nie ausgeführt"
@@ -887,13 +866,36 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Letzter Sync",
+                    "Hintergrunddienst",
                     style = MaterialTheme.typography.titleMedium
                 )
+
+                // ZWEI WERTE, WEIL SIE ZWEI VERSCHIEDENE FRAGEN BEANTWORTEN - und weil hier bis
+                // v1.38.0 nur der erste stand, unter der Ueberschrift "Letzter Sync". Das war
+                // eine Zusicherung, die er nicht einloest: KEY_LAST_MAINTENANCE wird auch dann
+                // gestempelt, wenn der Lauf UEBERSPRUNGEN wurde (Puffer reichte), und
+                // zusaetzlich aus dem Vordergrund. "Vor 15 Minuten" konnte also heissen "vor 15
+                // Minuten wurde entschieden, nichts zu tun". In einem Tab, dessen Zweck die Frage
+                // "warum kam kein Wecker" ist, ist das die falsche Auskunft.
                 Text(
-                    lastMaintenanceText,
+                    "Zuletzt nachgesehen: $lastMaintenanceText",
                     style = MaterialTheme.typography.bodyMedium,
                     color = statusColor
+                )
+                Text(
+                    "Auch wenn dabei nichts zu tun war.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                Text(
+                    "Termine zuletzt abgerufen: $terminabrufText",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    "Wann der Dienst zuletzt wirklich Termine aus dem Google Kalender geholt hat.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (timeSinceLastMaintenance > TimeUnit.HOURS.toMillis(24)) {
                     Text(

@@ -51,7 +51,31 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.38.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.39.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Ein Abgleich statt drei Knöpfen — und der Status-Tab sagt endlich, was er meint.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>„Mit Google Kalender abgleichen" steht jetzt dort, wo man es sucht.</strong> Der Knopf saß bisher als bloßes Kreispfeil-Symbol oben rechts und sah aus, als betreffe er den ganzen Bildschirm — dabei lädt er die Termine neu und stellt die Wecker danach. Jetzt sitzt er in der Kalender-Karte, mit Beschriftung und einer Zeile darunter, die sagt, was er tut. Sie nennt ausdrücklich den <strong>Google Kalender</strong>: CF-Alarm liest nur den Kalender, was TimeOffice dort noch nicht eingetragen hat, kann auch hier nicht auftauchen.</li>
+                <li><strong>Der Hintergrunddienst zeigt zwei Zeitpunkte statt einem.</strong> Bisher stand dort „Letzter Sync" — ein Wert, der auch dann neu gestempelt wurde, wenn der Dienst nachgesehen und <em>nichts zu tun gefunden</em> hatte. „Vor 15 Minuten" konnte also heißen: vor 15 Minuten wurde entschieden, nichts zu tun. Jetzt stehen beide Angaben getrennt da: <strong>„Zuletzt nachgesehen"</strong> und <strong>„Termine zuletzt abgerufen"</strong>, jeweils mit einer Zeile, was sie bedeuten.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Die Navigationsschublade ließ sich nicht mehr durch Danebentippen schließen.</strong> Bei größerer Anzeigegröße füllte sie den ganzen Bildschirm, sodass es keine abgedunkelte Fläche mehr gab, auf die man tippen konnte. Sie lässt jetzt immer einen Streifen frei — dahinter sieht man, dass der Bildschirm weitergeht.</li>
+            </ul>
+
+            <h4>🎨 Feinschliff</h4>
+            <ul>
+                <li><strong>Zwei Knöpfe im System-Status entfernt, die nichts bewirkt haben.</strong> Ein Aktualisieren-Pfeil neben „Cache-Status" schrieb sein Ergebnis nur ins Protokoll und änderte nie etwas Sichtbares; „Cache leeren" wirkte ohne jede Rückmeldung und war überflüssig, weil der Abgleich den Zwischenspeicher ohnehin verwirft. Dazu ist die Zeile „Cache-Details: Cache-Statistiken in Log ausgegeben" verschwunden — sie beschrieb etwas, das man nirgends nachlesen konnte.</li>
+                <li><strong>Ein Vorgang, ein Name.</strong> „Aktualisieren", „Neu laden" und „Jetzt synchronisieren" waren drei Beschriftungen für denselben Ablauf. Übrig bleiben der Abgleich in der Kalender-Karte und — wenn länger nichts passiert ist — der Knopf in der Warnung.</li>
+                <li><strong>Die Karte im System-Status heißt jetzt „Verbunden" bzw. „Keine Verbindung"</strong> statt „Cache-Status".</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.38.0</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Die sechs Bereiche stehen jetzt in einer Schublade — und der Bildschirm gehört wieder dem Inhalt.</em></p>
 

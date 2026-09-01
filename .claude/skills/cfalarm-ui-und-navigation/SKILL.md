@@ -63,6 +63,12 @@ das baut man dieselbe Falle in neuer Form nach.
   unerreichbar (real passiert). Gleiches gilt für lange Dialoge: scrollbar machen.
 - **`RadioButton`/`Checkbox` mit `onClick = null` brauchen `heightIn(min = 48.dp)` am Row.**
 - **Chip-Reihen als `FlowRow`**, nicht `Row` mit `chunked(n)`.
+- **Eine modale Schublade laesst einen Streifen frei** (`min(360.dp, Bildschirmbreite - 56.dp)`) -
+  sonst fehlt auf schmalen Anzeigen die Flaeche zum Danebentippen, der beworbene Schliessweg.
+- **Ein Vorgang, ein Name, an der Stelle, deren Inhalt er veraendert.** Drei Beschriftungen fuer
+  einen Aufruf sind drei Versprechen; ein blosses Symbol kann nicht sagen, WAS es tut.
+- **Ein Zeitstempel nennt, worauf er sich bezieht** - und wer eine Diagnose-Anzeige einbaut, prueft
+  vorher, ob ihr Ergebnis den Nutzer im RELEASE-Build je erreicht.
 - **Keine Karte bekommt `surfaceVariant` als Fläche** — in der hellen Palette ist das derselbe
   Wert wie `background`, die Karte verschwindet. Dezente Karten: `surface` +
   `BorderStroke(1.dp, outline)`. Und ein Zustand wird ADDITIV gezeigt (Rand, Text), nie durch

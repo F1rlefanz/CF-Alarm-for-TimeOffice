@@ -4,15 +4,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -22,6 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -181,6 +185,7 @@ fun HomeTabContent(
     alarmState: AlarmUiState,
     skipState: AlarmSkipUiState,
     masterPausePaused: Boolean,
+    onJetztAbgleichen: () -> Unit,
     onNavigateToWecker: () -> Unit,
     onShowEventList: (() -> Unit)? = null,
     onReauthorize: (() -> Unit)? = null
@@ -444,6 +449,41 @@ fun HomeTabContent(
                         "Antippen für Details →",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+
+                    // WARUM DER ABGLEICH HIER STEHT UND NICHT IN DER KOPFZEILE: Bis v1.38.0 sass
+                    // er als blosses Kreispfeil-Symbol oben rechts. Dort sah er aus, als betreffe
+                    // er den ganzen Bildschirm, und ein Symbol kann nicht sagen, WAS es neu laedt
+                    // - der Eigentuemer hat mehrfach vergessen, wozu der Knopf da ist. Jetzt steht
+                    // er an der Karte, deren Inhalt er erneuert, und traegt Worte.
+                    //
+                    // Der Text nennt ausdruecklich den Google Kalender: die App gleicht mit IHM ab,
+                    // nicht mit TimeOffice. Sie ist nur die Schnittstelle - was TimeOffice noch
+                    // nicht in den Kalender geschrieben hat, kann auch hier nicht auftauchen.
+                    // Ohne diesen Satz vermutet man den Fehler in der App statt im Dienstplan.
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL)
+                    )
+                    OutlinedButton(
+                        onClick = onJetztAbgleichen,
+                        enabled = !calendarState.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            // dekorativ: die Beschriftung daneben sagt es vollstaendig
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                        Text("Mit Google Kalender abgleichen")
+                    }
+                    Text(
+                        "Holt die Termine aus deinem Google Kalender und stellt die Wecker " +
+                            "danach neu. CF-Alarm liest nur den Kalender — was TimeOffice dort " +
+                            "noch nicht eingetragen hat, kann auch hier nicht auftauchen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
                     Text(

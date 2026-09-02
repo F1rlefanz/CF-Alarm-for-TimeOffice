@@ -6,8 +6,10 @@ description: "Arbeitet EINEN Aufraeum-Blickwinkel ab - fuer autonome Sitzungen o
 # Altlasten abtragen — eine Runde pro Sitzung
 
 Diese App trägt Baugerüst aus einem Jahr: Code, den nie jemand aufgerufen hat, Konstanten auf
-Vorrat, Kommentare ohne Deklaration. **Es ist kein Verfall** — in sieben Runden wurden 525 Zeilen
-entfernt und **kein einziger Fehler** gefunden (0 `fix`-Commits). Wer das anders erzählt,
+Vorrat, Kommentare ohne Deklaration. **Es ist kein Verfall** — in den Runden 1–7 wurden 525 Zeilen
+entfernt und **kein einziger Fehler** gefunden. Diese Zeilenzahl ist seit Runde 7 nicht
+fortgeschrieben (zuletzt geprüft 02.09.2026, inzwischen bei Runde 14); was weiter gilt, ist die
+Aussage dahinter: **0 `fix`-Commits aus allen Aufräumrunden zusammen**. Wer das anders erzählt,
 verunsichert den Eigentümer ohne Grund.
 
 ## Was du in dieser Sitzung tust
@@ -66,6 +68,18 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
 - **Nichts wird schöner gemacht.** Umbenennen, umstrukturieren, „effizienter machen" ist NICHT
   Aufräumen — das ist eine Änderung mit eigenem Risiko und gehört besprochen. Entfernt wird nur,
   was **nachweislich niemand benutzt**.
+- **Ein Formatfehler, den das produktive Werkzeug toleriert, bleibt ein Formatfehler.**
+  `app/lint.xml` war lange kein wohlgeformtes XML (`--` im Kommentar), und Android Lint nahm es
+  klaglos hin — die Datei wirkte, niemand hatte einen Anlass hinzusehen. Gemerkt hat es erst das
+  erste Werkzeug, das sie *parsen* wollte, und das musste sich mit Regexps behelfen. **„Es
+  funktioniert ja" ist kein Beleg für Wohlgeformtheit**; das nächste Werkzeug zahlt.
+- **Blickwinkel, die statisch entscheidbar sind, sind die guten.** Runde 11 hatte 36 Dateien,
+  1 Rohbefund, **0 Fehlalarme** — eine Datei parst oder sie parst nicht, es gibt keinen
+  Ermessensspielraum. Verworfen wurden bisher fast nur Blickwinkel, die *Absicht* erraten mussten
+  (siehe die Tabelle unten: dort steht in jeder Zeile ein Ermessensspielraum).
+- **Prüf vor dem Aufsetzen die offenen PRs, nicht nur die offenen Issues.** Runde 11 nummerierte
+  ihre neue Prüfung als 7 — und der noch offene PR aus Runde 10 tat in derselben Datei dasselbe.
+  Der Konflikt war klein und mechanisch, aber vermeidbar: `gh pr list` kostet eine Sekunde.
 
 ## Verworfen — gemessen, nicht gatterfähig. NICHT noch einmal versuchen
 
@@ -77,12 +91,40 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
 | Manifest-Berechtigung ohne Nennung im Code | 4 Kandidaten, **alle** falsch | implizit gebraucht (ConnectivityManager, startForeground, BootReceiver, Vibrator) |
 | Tests ohne sichtbare Behauptung | 16 Kandidaten, **alle** falsch | sie behaupten über Helfer (`erwarteNachzug()`) |
 | Doku nennt Datei, die es nicht gibt | 1 Treffer, falsch | stand in einem *historischen* Satz — das ist der Hergang, kein Fehler |
+| `@Suppress`/`@SuppressLint`, das nichts mehr unterdrückt | **24 Rohbefunde, 19 lebendig (79 % Fehlalarm)**, 5 tot (Runde 9) | reine Textsuche taugt nicht; die Erkennung verlangt einen mutierenden Rebuild (Annotation entfernen, neu kompilieren, `lint`, Zeilenverschiebungen zurückrechnen, ~6 min) — im Schleusen-Hook über einem geteilten Arbeitsbaum ausgeschlossen |
 | Testdatei ohne `@Test` = ungenutztes Test-Double | **6 Kandidaten, 5 falsch** (Runde 8) | Fakes und Fixture-Helfer tragen naturgemäß kein `@Test` und werden trotzdem von 2–20 Testklassen benutzt. Die Klasse ist zu klein und zu falsch-positiv für ein Gatter — der eine echte Fund war kein Test-Double, sondern eine JUnit-`Suite` |
 
-**Akzeptierte Dauermeldungen** (nicht als Fund melden): Lint `TrustAllX509TrustManager` ×2 (der
-bewusste Hue-TrustManager), `PluralsCandidate` („%d Min" hat im Deutschen keine Pluralform),
-`ObsoleteSdkInt` für `mipmap-anydpi-v26` (siehe oben). Compiler: `createEmptyComposeRule`, steht mit
-Ausweg in `tools/aufraeumen/warnungen_geduldet.txt`.
+### Akzeptierte Dauermeldungen — nicht als Fund melden
+
+Gemessen am 02.09.2026 auf `main` + v1.40.0, gezählt aus
+`app/build/reports/lint-results-debug.sarif` (eindeutig zählbar, anders als der HTML-Bericht):
+**6 Befunde, kein `UnknownIssueId`.**
+
+| Regel | Anzahl | Warum sie steht |
+|---|---|---|
+| `TrustAllX509TrustManager` | 2 | **aus `google-http-client-2.2.0.jar`**, nicht aus unserem Code |
+| `PluralsCandidate` | 1 | „%d Min" hat im Deutschen keine Pluralform |
+| `ObsoleteSdkInt` | 1 | `mipmap-anydpi-v26`, siehe Leitplanke „Folge keinem Linter blind" |
+| `ConfigurationScreenWidthHeight` | 1 | `MainContentScreen`, reiner Stilrat → „Nichts wird schöner gemacht" |
+| `AutoboxingStateCreation` | 1 | `StatusTabContent`, dito |
+
+Compiler: `createEmptyComposeRule`, steht mit Ausweg in `tools/aufraeumen/warnungen_geduldet.txt`.
+
+**Drei Korrekturen an dem, was hier bis zum 02.09.2026 stand** — jede gemessen, nicht vermutet:
+
+1. `TrustAllX509TrustManager` ist **nicht** „der bewusste Hue-TrustManager". Der `HueTrustManager`
+   validiert echt und wirft bei Fehlschlag; Lint meldet ihn gar nicht. Beide Treffer stammen aus
+   einer Bibliothek. In `app/lint.xml` stand das seit Runde 9 richtig, hier war es falsch (#33).
+2. Die Befundzahl hängt **nicht** an `--offline`, wie #49 vermutete. Sie hängt am Code und an den
+   Abhängigkeiten: Runde 11 maß 7, Runde 13 maß 13 (v1.37.0/.2 brachten sechs Meldungen mit), heute
+   sind es 6 — `NewerVersionAvailable` und `GradleDependency` sind weg, weil Dependabot die
+   Abhängigkeiten aktuell hält. **Nimm keine Zahl von hier als Sollwert; miss selbst.**
+3. `ApplySharedPref` ×2 und `UseKtx` ×4 stehen nicht mehr in der Liste, weil sie nicht mehr
+   erscheinen: Runde 14 hat die vier bewussten `commit()`-Aufrufe in
+   `WeckbildschirmVerdraengungPrefs` und `DimAccessibilityService` **pfadgenau** in `app/lint.xml`
+   verankert, samt Begründung. Wer diese Verankerung wieder entfernt, entfernt die einzige Stelle,
+   an der steht, dass dort eine Entscheidung getroffen wurde — die Begründung ist in `app/lint.xml`
+   nachzulesen, bevor jemand „aufräumt".
 
 ## Abschluss — Branch und Pull Request, niemals direkt auf `main`
 
@@ -114,6 +156,15 @@ Bestätigungszahl schließt er den PR.** Der Erzeuger läuft täglich als
 
 Jede Runde ergänzt hier: neue Leitplanke, wenn ein Fehlurteil passiert ist; neue Zeile in
 „Verworfen", wenn ein Blickwinkel nichts taugt; Korrektur, wenn eine Aussage hier sich als falsch
-erweist. **Danebenschreiben ist ein Fehler, nicht Verlauf.** Für den Hergang der Werkzeuge selbst
+erweist. **Danebenschreiben ist ein Fehler, nicht Verlauf.**
+
+**Wenn dir das Schreiben an dieser Datei nicht gelingt, ist das kein Grund, den Nachtrag fallen zu
+lassen.** In den Runden 9, 11 und 14 scheiterte es (die Sitzungen meldeten verweigerten
+Schreibzugriff auf `.claude/`; lokal ist die Ursache nicht nachstellbar — weder `.claude/settings.json`
+noch die `allowedTools` in `aufraeumen.yml` sperren das). Der Ausweg ist erprobt und gilt als
+vollwertig: **den fertigen Wortlaut als Issue mit Label `aufraeumen` anhängen** und im
+PR-Kommentar darauf verweisen. Genau so kamen die Issues #33, #41 und #49 zustande, und genau so
+sind sie hier eingeflossen. Was NICHT zählt, ist den Nachtrag nur in einer PR-Beschreibung zu
+lassen — die liest die nächste Runde nicht. Für den Hergang der Werkzeuge selbst
 siehe `tools/aufraeumen/pruefe_reste.py` (die Kommentare dort tragen jede Messung) und
 `cfalarm-arbeit-abschliessen`.

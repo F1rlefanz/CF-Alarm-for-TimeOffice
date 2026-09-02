@@ -5,7 +5,10 @@ wie die naechste Version aussieht, und dass der Changelog-Block der bisher obers
 `🆕` wirklich abnimmt. Die Betreffs unten sind ECHTE Zeilen aus der Historie dieses Repos - der
 Detektor muss an genau denen haengen, nicht an ausgedachten.
 """
+import pathlib
 import unittest
+
+import sammel_release as sammel_release_modul
 
 from sammel_release import (
     changelog_block,
@@ -131,6 +134,104 @@ class ChangelogBlock(unittest.TestCase):
     def test_ohne_versionsueberschrift_wirft(self):
         with self.assertRaises(ValueError):
             setze_neuen_block("# Changelog\n\nnur Vorspann\n", changelog_block("1.0.1", 1, 2026, 9))
+
+
+class GitSicht(unittest.TestCase):
+    """Der Fehler, der die Automatik am 02.09.2026 dauerhaft blockiert haette.
+
+    Dieses Repo merged mit `--no-ff`. Hinter jedem Release-Bump steht deshalb ein
+    "Merge branch 'chore/release-...'" - eine reine Buchhaltungszeile ohne eigene Aenderung.
+    Zaehlte sie als unausgelieferter Nicht-Wartungs-Commit, waere nach dem ersten Release NIE
+    wieder etwas automatisch ausgeliefert worden, ohne dass irgendwo ein Fehler erschienen waere.
+    Deshalb steht hier ein echtes kleines Repo statt einer Attrappe.
+    """
+
+    def setUp(self):
+        import os
+        import subprocess
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.pfad = pathlib.Path(self.tmp.name)
+
+        def git(*args):
+            subprocess.run(["git", *args], cwd=self.pfad, check=True,
+                           capture_output=True, text=True)
+
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "test@example.invalid")
+        git("config", "user.name", "Test")
+        (self.pfad / "app").mkdir()
+        self.gradle = self.pfad / "app" / "build.gradle.kts"
+
+        def commit(nachricht, code=None):
+            if code is not None:
+                self.gradle.write_text(
+                    "versionCode = %d\nversionName = \"1.0.%d\"\n" % (code, code),
+                    encoding="utf-8")
+            else:
+                (self.pfad / "quelle.txt").write_text(nachricht, encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-q", "-m", nachricht)
+
+        self.commit = commit
+        self.git = git
+        commit("erster Stand", code=1)
+
+        self._alte_wurzel = sammel_release_modul.WURZEL
+        self._alte_datei = sammel_release_modul.VERSIONSDATEI
+        sammel_release_modul.WURZEL = self.pfad
+        sammel_release_modul.VERSIONSDATEI = self.gradle
+
+    def tearDown(self):
+        sammel_release_modul.WURZEL = self._alte_wurzel
+        sammel_release_modul.VERSIONSDATEI = self._alte_datei
+        self.tmp.cleanup()
+
+    def test_release_merge_commit_blockiert_nicht(self):
+        # Release auf einem Zweig, mit --no-ff zurueckgemergt - genau der echte Ablauf.
+        self.git("checkout", "-q", "-b", "chore/release-1-0-2")
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        self.git("checkout", "-q", "main")
+        self.git("merge", "--no-ff", "-q", "chore/release-1-0-2",
+                 "-m", "Merge branch 'chore/release-1-0-2'")
+
+        ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
+        self.assertEqual(commits, [], begruendung)
+        self.assertFalse(ausliefern)
+        self.assertIn("Nichts Unausgeliefertes", begruendung)
+
+    def test_wartung_nach_einem_release_wird_erkannt(self):
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        self.git("checkout", "-q", "-b", "chore/aufraeumen-tote-importe")
+        self.commit("chore(aufraeumen): tote Importe entfernt")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "--no-ff", "-q", "chore/aufraeumen-tote-importe",
+                 "-m", "Merge branch 'chore/aufraeumen-tote-importe'")
+
+        ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
+        self.assertTrue(ausliefern, begruendung)
+        self.assertEqual([b for _, b in commits], ["chore(aufraeumen): tote Importe entfernt"])
+
+    def test_ein_inhaltlicher_commit_haelt_alles_an(self):
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        self.commit("chore(deps): Bump irgendwas")
+        self.commit("feat(ui): neuer Knopf")
+
+        ausliefern, _, begruendung = sammel_release_modul.ermitteln()
+        self.assertFalse(ausliefern)
+        self.assertIn("KEINE Wartung", begruendung)
+
+    def test_versionsdatei_ohne_bump_ist_kein_release(self):
+        """compileSdk & Co. aendern dieselbe Datei, ohne dass ausgeliefert wurde."""
+        self.gradle.write_text(
+            "versionCode = 1\nversionName = \"1.0.1\"\ncompileSdk = 37\n", encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "chore(deps): compileSdk anheben")
+
+        ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
+        self.assertTrue(ausliefern, begruendung)
+        self.assertEqual([b for _, b in commits], ["chore(deps): compileSdk anheben"])
 
 
 if __name__ == "__main__":

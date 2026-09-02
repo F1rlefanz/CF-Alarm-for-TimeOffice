@@ -15,7 +15,7 @@
 
 ## ⚠️ Alpha-Test-Status
 
-Aktueller Stand: **1.24.2** (versionCode 89), verteilt im **internen Alpha-Test**. Die App ist **nicht** öffentlich im Play Store veröffentlicht und geht ausschließlich an eine kleine Gruppe eingeladener Tester (aktuell: Kolleginnen und Kollegen aus der Pflege).
+Die App wird im **internen Alpha-Test** verteilt. Sie ist **nicht** öffentlich im Play Store veröffentlicht und geht ausschließlich an eine kleine Gruppe eingeladener Tester (aktuell: Kolleginnen und Kollegen aus der Pflege). Welche Version gerade aktuell ist, steht im [Changelog](https://cf-alarm.duckdns.org/changelog.html) — hier stand die Nummer bis September 2026 fest im Text und war irgendwann fünfzehn Versionen alt.
 
 Was das bedeutet:
 - Es kann Bugs geben – Feedback ist ausdrücklich erwünscht.

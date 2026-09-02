@@ -42,7 +42,7 @@ jobs:
       actions: read
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Die Schleuse vergleicht gegen `main` bzw. `origin/main` - mit einem
           # flachen Klon gibt es keine merge-base und die Pruefungen 10-12

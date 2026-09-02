@@ -8,7 +8,7 @@ description: "Arbeitet EINEN Aufraeum-Blickwinkel ab - fuer autonome Sitzungen o
 Diese App trägt Baugerüst aus einem Jahr: Code, den nie jemand aufgerufen hat, Konstanten auf
 Vorrat, Kommentare ohne Deklaration. **Es ist kein Verfall** — in den Runden 1–7 wurden 525 Zeilen
 entfernt und **kein einziger Fehler** gefunden. Diese Zeilenzahl ist seit Runde 7 nicht
-fortgeschrieben (zuletzt geprüft 02.09.2026, inzwischen bei Runde 14); was weiter gilt, ist die
+fortgeschrieben (zuletzt geprüft 02.09.2026, inzwischen bei Runde 15); was weiter gilt, ist die
 Aussage dahinter: **0 `fix`-Commits aus allen Aufräumrunden zusammen**. Wer das anders erzählt,
 verunsichert den Eigentümer ohne Grund.
 
@@ -79,10 +79,37 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
   Repariert wird es NICHT nebenbei: die Runden 11 und 13 haben es versucht (PR #40, PR #48), der
   Torwächter hat beide geschlossen, und der Blickwinkel steht als **Issue #39** wieder offen. Das
   ist der Weg dafür.
+- **Zwei Lehren aus geschlossenen Anläufen — sie gelten für jedes neue Gatter.**
+  1. **Ein `except`-Tupel über einen fremden Parser ist eine Wette.** PR #48 fing
+     `(SyntaxError, ValueError)`; `<?xml … encoding="cp1252-de"?>` wirft `LookupError`, der
+     entkam und riss **alle** Prüfungen mit — gemeldet als „Reste hinterlassen", also eine
+     Fehldiagnose an einem blockierenden Gatter. Umschließe nur den Fremdaufruf und fang dann
+     breit.
+  2. **Teste die VERDRAHTUNG, nicht nur die reine Funktion.** Bei #48 blieben alle Tests grün,
+     wenn man den Aufruf aus `main()` entfernte. Der Beleg ist billig: das echte Skript über
+     einem Wegwerf-Repo laufen lassen und **jede Mutation einzeln rot sehen**.
+
+  Und daneben, kleiner, aber teuer: **Datumsangaben misst man** (`git log -S` plus jede Fassung
+  parsen) — PR #40 fiel über ein geschätztes „jahrelang" in genau der Zeile, die er reparierte.
+  Runde 15 hat es richtig gemacht und die exakte Spanne belegt: 349 Tage wohlgeformt, 27 Tage
+  kaputt.
 - **Blickwinkel, die statisch entscheidbar sind, sind die guten.** Runde 11 hatte 36 Dateien,
   1 Rohbefund, **0 Fehlalarme** — eine Datei parst oder sie parst nicht, es gibt keinen
   Ermessensspielraum. Verworfen wurden bisher fast nur Blickwinkel, die *Absicht* erraten mussten
   (siehe die Tabelle unten: dort steht in jeder Zeile ein Ermessensspielraum).
+- **Ein blockierendes Gatter muss den KONFLIKTZUSTAND kennen.** Die teuerste Lehre aus Runde 15
+  (PR #56, geschlossen): eine Prüfung „parst diese Konfigurationsdatei?" ist inhaltlich
+  tadellos — und sperrt das Repo trotzdem ein. Ein Konfliktmarker ist nie wohlgeformtes
+  XML/JSON/TOML, betroffen wären `strings.xml`, `AndroidManifest.xml`, `libs.versions.toml` und
+  `.claude/settings.json`; und weil der Schleusen-Hook auf `git\s+(merge|push)` triggert
+  und nur `--dry-run` ausnimmt, werden ausgerechnet `git merge --abort` und `--continue`
+  abgewiesen — die beiden **Rettungsbefehle**. Mit einer Fehldiagnose („Der Aufraeumdurchgang hat
+  Reste hinterlassen") und einem unbefolgbaren Rat obendrauf. Der Torwächter hat das in einem
+  Wegwerf-Repo nachgestellt, nicht vermutet.
+  **Also bei JEDER neuen Prüfung, die den Baum liest: was tut sie, während ein Merge offen ist?**
+  Ausweg ist billig (`git ls-files -u` nicht leer → überspringen), das Übersehen ist teuer.
+  Bitter an dem Fall: der Code *benannte* die Lage im eigenen Docstring und behob trotzdem nur
+  die Doppelmeldung, nicht die Blockade. **Eine Gefahr zu beschreiben ist nicht, sie zu bannen.**
 - **Prüf vor dem Aufsetzen die offenen PRs, nicht nur die offenen Issues.** Runde 11 nummerierte
   ihre neue Prüfung als 7 — und der noch offene PR aus Runde 10 tat in derselben Datei dasselbe.
   Der Konflikt war klein und mechanisch, aber vermeidbar: `gh pr list` kostet eine Sekunde.
@@ -104,7 +131,11 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
 
 Gemessen am 02.09.2026 auf dem Stand von v1.39.1, gezählt aus
 `app/build/reports/lint-results-debug.sarif` (eindeutig zählbar, anders als der HTML-Bericht):
-**6 Befunde, kein `UnknownIssueId`.**
+**6 bis 8 Befunde, kein `UnknownIssueId` — und die Schwankung ist der eigentliche Befund.**
+Am 02.09.2026 auf demselben Stand dreimal gemessen: **6** am Vormittag, **7** zwei Stunden
+später (`AndroidGradlePluginVersion` war dazugekommen, ohne dass sich am Repo etwas geändert
+hatte), **8** im Lauf des Torwächters. **Schreib deshalb keine Gesamtzahl fest** — die
+Gradle-/AGP-Regeln hängen an fremden Veröffentlichungen, nicht an unserem Code.
 
 | Regel | Anzahl | Warum sie steht |
 |---|---|---|
@@ -113,6 +144,8 @@ Gemessen am 02.09.2026 auf dem Stand von v1.39.1, gezählt aus
 | `ObsoleteSdkInt` | 1 | `mipmap-anydpi-v26`, siehe Leitplanke „Folge keinem Linter blind" |
 | `ConfigurationScreenWidthHeight` | 1 | `MainContentScreen`, reiner Stilrat → „Nichts wird schöner gemacht" |
 | `AutoboxingStateCreation` | 1 | `StatusTabContent`, dito |
+| `AndroidGradlePluginVersion` | 0–1 | **kommt und geht mit fremden Veröffentlichungen** |
+| `NewerVersionAvailable` | 0–1 | dito; auf `informational` gestellt |
 
 Compiler: `createEmptyComposeRule`, steht mit Ausweg in `tools/aufraeumen/warnungen_geduldet.txt`.
 

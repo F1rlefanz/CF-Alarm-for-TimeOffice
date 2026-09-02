@@ -222,6 +222,50 @@ class GitSicht(unittest.TestCase):
         self.assertFalse(ausliefern)
         self.assertIn("KEINE Wartung", begruendung)
 
+    def test_reine_ci_und_doku_commits_loesen_nichts_aus(self):
+        """Sonst liefert jeder Workflow- oder README-Commit eine bit-gleiche APK aus."""
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        for pfad, nachricht in [
+            (".github/workflows/ci.yml", "chore(ci): Schritt ergaenzt"),
+            ("tools/release/etwas.py", "chore(aufraeumen): Werkzeug aufgeraeumt"),
+            ("README.md", "docs: Tippfehler"),
+        ]:
+            ziel = self.pfad / pfad
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_text(nachricht, encoding="utf-8")
+            self.git("add", "-A")
+            self.git("commit", "-q", "-m", nachricht)
+
+        ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
+        self.assertFalse(ausliefern)
+        self.assertEqual(commits, [])
+        self.assertIn("bit-gleiche APK", begruendung)
+
+    def test_libs_versions_toml_zaehlt_sehr_wohl(self):
+        """Dort arbeitet Dependabot - das aendert, WAS in der APK landet."""
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        ziel = self.pfad / "gradle" / "libs.versions.toml"
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        ziel.write_text('okhttp = "5.0.0"\n', encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "chore(deps): Bump okhttp")
+
+        ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
+        self.assertTrue(ausliefern, begruendung)
+        self.assertEqual([b for _, b in commits], ["chore(deps): Bump okhttp"])
+
+    def test_inhaltlicher_commit_an_der_app_blockiert_trotz_doku_rauschen(self):
+        """Die Reihenfolge der beiden Fragen darf einen echten Blocker nicht wegfiltern."""
+        self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
+        (self.pfad / "README.md").write_text("x", encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "docs: Kleinkram")
+        self.commit("feat(ui): neuer Knopf")
+
+        ausliefern, _, begruendung = sammel_release_modul.ermitteln()
+        self.assertFalse(ausliefern)
+        self.assertIn("KEINE Wartung", begruendung)
+
     def test_versionsdatei_ohne_bump_ist_kein_release(self):
         """compileSdk & Co. aendern dieselbe Datei, ohne dass ausgeliefert wurde."""
         self.gradle.write_text(

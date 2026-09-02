@@ -50,6 +50,22 @@ MERGE_MUSTER = re.compile(
     r"(?:[\w.-]+/)?(?:chore/aufraeumen-|dependabot/)"
 )
 
+# Pfade, die eine gebaute APK NICHT veraendern koennen. Ein Commit, der ausschliesslich hier
+# arbeitet, braucht keine neue Version - er wuerde ein bit-gleiches Artefakt ausliefern und den
+# Testern eine Aktualisierung zumuten, hinter der nichts steht.
+#
+# BEWUSST NICHT dabei: `gradle/libs.versions.toml`, `gradle.properties`, `settings.gradle.kts`.
+# Die sehen nach Bauwerk aus, bestimmen aber, WAS in der APK landet - dort arbeitet Dependabot.
+IRRELEVANTE_PFADE = (
+    ".github/",
+    ".claude/",
+    "tools/",
+    "docs/",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "README.md",
+)
+
 MONATE = {
     1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
     7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
@@ -185,11 +201,38 @@ def unausgelieferte_commits() -> list[tuple[str, str]]:
     return [(z.split("\x1f", 1)[0], z.split("\x1f", 1)[1]) for z in zeilen if "\x1f" in z]
 
 
+def beruehrt_die_app(dateien: list[str]) -> bool:
+    """Aendert dieser Commit etwas, das in der APK landet?
+
+    Ein leerer Commit (kommt bei Merges ohne eigene Aenderung vor) zaehlt als NICHT relevant.
+    """
+    return any(
+        d and not d.startswith(IRRELEVANTE_PFADE)
+        for d in dateien
+    )
+
+
+def _dateien_von(commit: str) -> list[str]:
+    return [z for z in _git("show", "--name-only", "--format=", commit).splitlines() if z.strip()]
+
+
 def ermitteln() -> tuple[bool, list[tuple[str, str]], str]:
     """(ausliefern, unausgelieferte Commits, Begruendung in einem Satz)"""
-    commits = unausgelieferte_commits()
-    if not commits:
+    alle = unausgelieferte_commits()
+    if not alle:
         return False, [], "Nichts Unausgeliefertes - main steht auf dem letzten Release."
+
+    # Erst die Frage "aendert das ueberhaupt die App?", dann "ist es Wartung?". Anders herum
+    # loeste jeder Commit an der CI oder an der Dokumentation eine Version aus, die eine
+    # bit-gleiche APK ausliefert - eine Aktualisierung, hinter der fuer den Tester nichts steht.
+    commits = [(h, b) for h, b in alle if beruehrt_die_app(_dateien_von(h))]
+    if not commits:
+        return False, [], (
+            "Nichts, was die App aendert - " + str(len(alle)) + " unausgelieferte Commits, alle "
+            "nur an CI, Werkzeugen oder Dokumentation. Eine Version dafuer waere eine "
+            "bit-gleiche APK."
+        )
+
     fremd = [(h, b) for h, b in commits if not ist_wartungscommit(b)]
     if fremd:
         namen = ", ".join(h[:7] + " " + b for h, b in fremd[:3])
@@ -198,7 +241,10 @@ def ermitteln() -> tuple[bool, list[tuple[str, str]], str]:
             "Wartung (" + namen + "). Das veroeffentlicht ein Mensch, mit eigenem "
             "Changelog-Eintrag."
         )
-    return True, commits, str(len(commits)) + " unausgelieferte Wartungs-Commits."
+    zusatz = ""
+    if len(alle) > len(commits):
+        zusatz = " (" + str(len(alle) - len(commits)) + " weitere aendern die App nicht)"
+    return True, commits, str(len(commits)) + " unausgelieferte Wartungs-Commits" + zusatz + "."
 
 
 def bumpen(anzahl: int, jahr: int, monat: int) -> tuple[str, int]:

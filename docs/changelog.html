@@ -51,7 +51,24 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.39.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.39.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Die Kalenderauswahl sagt nicht mehr das Gegenteil dessen, was sie tut.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>„Speichern" heißt jetzt „Fertig" — und der Knopf ist nie mehr ausgegraut.</strong> In der Kalenderauswahl wirkt jedes Antippen eines Kalenders <strong>sofort</strong>; gespeichert wird nichts erst am Ende. Der Knopf hieß trotzdem „Speichern" und wurde grau, sobald kein Kalender mehr ausgewählt war. Wer den letzten Kalender abwählte, sah damit einen toten Speichern-Knopf und durfte glauben, es sei nichts passiert — dabei waren die Wecker der nächsten zwei Wochen in dem Moment bereits entfernt. Jetzt steht über der Liste, dass Änderungen sofort gelten, und der Knopf verlässt den Bildschirm einfach.</li>
+                <li><strong>Ohne ausgewählten Kalender steht jetzt da, was das bedeutet.</strong> Eine Warnung in der Liste sagt es in Klartext: keine Schichten, keine Wecker, bereits gestellte entfernt — und wie man es rückgängig macht (einen Kalender antippen). Vorher war der leere Zustand nur am grauen Knopf zu ahnen, und der sagte das Falsche.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li><strong>Die nächtliche Aufräum-Automatik kann nicht mehr stillschweigend leerlaufen.</strong> Zweimal endete der prüfende Lauf „erfolgreich", ohne irgendetwas zu entscheiden oder zu hinterlassen — beim zweiten Mal blieb dadurch eine fertige Änderung eine Nacht lang liegen. Die Ursache ist gefunden und behoben; zusätzlich wird ein Lauf, der nichts hinterlässt, ab jetzt als Fehlschlag gemeldet, statt grün auszusehen. Für Nutzer der App ändert sich nichts — für die Zuverlässigkeit der Wartung eine Menge.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.39.0</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Ein Abgleich statt drei Knöpfen — und der Status-Tab sagt endlich, was er meint.</em></p>
 

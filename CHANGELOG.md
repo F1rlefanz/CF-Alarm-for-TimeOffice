@@ -27,7 +27,23 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.1 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Die Kalenderauswahl sagt nicht mehr das Gegenteil dessen, was sie tut._
+
+### 🐛 Behoben
+
+- **„Speichern" heißt jetzt „Fertig" — und der Knopf ist nie mehr ausgegraut.** In der Kalenderauswahl wirkt jedes Antippen eines Kalenders **sofort**; gespeichert wird nichts erst am Ende. Der Knopf hieß trotzdem „Speichern" und wurde grau, sobald kein Kalender mehr ausgewählt war. Wer den letzten Kalender abwählte, sah damit einen toten Speichern-Knopf und durfte glauben, es sei nichts passiert — dabei waren die Wecker der nächsten zwei Wochen in dem Moment bereits entfernt. Jetzt steht über der Liste, dass Änderungen sofort gelten, und der Knopf verlässt den Bildschirm einfach.
+
+- **Ohne ausgewählten Kalender steht jetzt da, was das bedeutet.** Eine Warnung in der Liste sagt es in Klartext: keine Schichten, keine Wecker, bereits gestellte entfernt — und wie man es rückgängig macht (einen Kalender antippen). Vorher war der leere Zustand nur am grauen Knopf zu ahnen, und der sagte das Falsche.
+
+### 🔧 Unter der Haube
+
+- **Die nächtliche Aufräum-Automatik kann nicht mehr stillschweigend leerlaufen.** Zweimal endete der prüfende Lauf „erfolgreich", ohne irgendetwas zu entscheiden oder zu hinterlassen — beim zweiten Mal blieb dadurch eine fertige Änderung eine Nacht lang liegen. Die Ursache ist gefunden und behoben; zusätzlich wird ein Lauf, der nichts hinterlässt, ab jetzt als Fehlschlag gemeldet, statt grün auszusehen. Für Nutzer der App ändert sich nichts — für die Zuverlässigkeit der Wartung eine Menge.
+
+## Version 1.39.0
 
 **Stand:** September 2026
 

@@ -53,8 +53,17 @@ python tools/changelog/build_changelog.py --pruefen  # exit 1, wenn Seite != Mar
 **5. Build und Tests**: `./gradlew testDebugUnitTest lintDebug assembleDebug`; `assembleRelease`
 braucht Netz (R8 an). Die CI baut den Release-Pfad ebenfalls.
 
-**6. Merge, Push, Branches aufräumen.** Der Play-Upload bleibt **manuell** — bewusste
-Nutzerentscheidung (Memory `project_play_auto_publish_goal`).
+**6. Merge, Push, Branches aufräumen.** Der Push nach `main` **ist** die Auslieferung: seit
+`.github/workflows/veroeffentlichen.yml` existiert, lädt jeder Push auf `main`, der den
+`versionCode` erhöht, von allein in den **internen** Play-Track. Ein Push ohne Bump löst nichts
+aus, und `app/build.gradle.kts` ist der einzige Pfad, der den Workflow überhaupt startet.
+
+Bis zum 01.09.2026 stand hier „der Play-Upload bleibt manuell". Das gilt nicht mehr — heißt aber
+**nicht**, dass die Messlatte gefallen wäre: automatisch beliefert wird ausschließlich der interne
+Track. Der Produktions-Track bleibt Handarbeit, und zwar mit Absicht — grüne Tests plus grüner Build
+haben in diesem Projekt schon einen Crash beim Start durchgelassen (05.08.2026). Der interne Track
+ist die Stelle, an der so etwas auffällt, bevor es jemanden weckt. Die Begründung steht ausführlich
+im Kopf von `veroeffentlichen.yml`.
 
 ## Nicht verhandelbar
 

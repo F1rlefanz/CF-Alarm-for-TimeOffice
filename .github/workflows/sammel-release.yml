@@ -120,7 +120,10 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: |
-            set -eo pipefail
+            # `set -e` allein, KEIN `pipefail`: die Action fuehrt dieses Skript mit /bin/sh aus,
+            # und das ist auf dem Runner dash - `set -o pipefail` bricht dort sofort mit
+            # "Illegal option" ab, noch bevor irgendetwas geprueft wird (Lauf 33609480271).
+            set -e
             PAKET=com.github.f1rlefanz.cf_alarmfortimeoffice
 
             adb install -r app/build/outputs/apk/debug/app-debug.apk

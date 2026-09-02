@@ -41,9 +41,10 @@ CHANGELOG = WURZEL / "CHANGELOG.md"
 # automatische Auslieferung, statt stillschweigend mitzufahren.
 WARTUNG_PRAEFIXE = ("chore(deps)", "chore(aufraeumen)", "chore(ci)")
 
-# Der Torwaechter merged mit `--merge` (Merge-Commit), Dependabot squasht (Betreff bleibt erhalten).
-# Beide Formen muessen erkannt werden - sonst blockiert ausgerechnet die Merge-Zeile den Release,
-# den sie ausloesen soll. In der Historie kommen beide vor, siehe 725fb90 gegen 580f549.
+# Merge-Commits von Wartungszweigen. `unausgelieferte_commits()` filtert Merges inzwischen ohnehin
+# heraus - dieses Muster ist der zweite Riegel, nicht der erste: es greift, wenn jemand die Liste
+# ohne `--no-merges` auswertet (etwa beim Nachrechnen von Hand). Der Torwaechter merged mit
+# `--merge`, Dependabot squasht; in der Historie kommen beide Formen vor (725fb90 gegen 580f549).
 MERGE_MUSTER = re.compile(
     r"^Merge (?:pull request #\d+ from |branch .)"
     r"(?:[\w.-]+/)?(?:chore/aufraeumen-|dependabot/)"
@@ -162,9 +163,25 @@ def letzter_release_commit() -> str | None:
 
 
 def unausgelieferte_commits() -> list[tuple[str, str]]:
+    """Die ARBEITS-Commits seit dem letzten Release - Merge-Commits zaehlen nicht mit.
+
+    `--no-merges` ist hier nicht Bequemlichkeit, sondern notwendig. Dieses Repo merged mit
+    `--no-ff`; nach jedem Release steht also ein "Merge branch 'chore/release-...'" hinter dem
+    Bump-Commit. Ohne `--no-merges` gilt diese reine Buchhaltungszeile als unausgelieferter
+    Nicht-Wartungs-Commit und blockiert die Automatik DAUERHAFT - am 02.09.2026 unmittelbar nach
+    dem ersten Scharfschalten aufgefallen, mit genau einem solchen Eintrag.
+
+    Die Arbeit selbst geht dabei nicht verloren: die Commits eines gemergten Zweigs sind ueber den
+    zweiten Elternteil erreichbar und stehen weiter in der Liste. Beurteilt wird also, was
+    tatsaechlich geaendert wurde, statt wie es zusammengefuehrt wurde.
+
+    Der Preis, offen gesagt: ein "evil merge" - eine Aenderung, die es nur im Merge-Commit selbst
+    gibt und in keinem Elternteil - waere hier unsichtbar. In diesem Repo entstehen Merges durch
+    Werkzeuge und werden nicht von Hand aufgeloest; das ist vertretbar.
+    """
     basis = letzter_release_commit()
     bereich = (basis + "..HEAD") if basis else "HEAD"
-    zeilen = _git("log", "--format=%H%x1f%s", bereich).splitlines()
+    zeilen = _git("log", "--no-merges", "--format=%H%x1f%s", bereich).splitlines()
     return [(z.split("\x1f", 1)[0], z.split("\x1f", 1)[1]) for z in zeilen if "\x1f" in z]
 
 

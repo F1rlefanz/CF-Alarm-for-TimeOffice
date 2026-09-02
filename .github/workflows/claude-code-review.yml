@@ -24,7 +24,22 @@ jobs:
     #
     # Wer das aufheben will, braucht `allowed_bots: "claude[bot]"` am Action-
     # Schritt - dann aber bewusst, mit Blick auf die Schleifengefahr.
-    if: ${{ !startsWith(github.event.pull_request.head.ref, 'chore/aufraeumen-') }}
+    #
+    # DEPENDABOT ist aus einem DRITTEN Grund ausgenommen, und der ist noch handfester:
+    # GitHub gibt Dependabot-Laeufen die Secrets aus einem EIGENEN Speicher
+    # (Settings -> Secrets -> Dependabot), nicht aus den normalen Actions-Secrets. Der
+    # CLAUDE_CODE_OAUTH_TOKEN ist dort nicht hinterlegt, die Action startet also mit einem
+    # LEEREN Token und stirbt nach ~9 Sekunden. Im Log steht es woertlich:
+    # "Secret source: Dependabot" und `"claude_code_oauth_token": ""`.
+    #
+    # Fuenf Dependabot-PRs standen deshalb wochenlang mit einem roten Kreuz da, obwohl die
+    # eigentliche CI (build-test-lint) auf allen gruen durchlief - und ein rotes Kreuz, das
+    # nichts bedeutet, haelt echte Arbeit auf. Wer den Review auf Dependabot-PRs wirklich
+    # will, hinterlegt das Token zusaetzlich unter den Dependabot-Secrets; er bezahlt es dann
+    # mit einem Modell-Lauf pro Versions-Bump.
+    if: >-
+      ${{ !startsWith(github.event.pull_request.head.ref, 'chore/aufraeumen-')
+          && github.actor != 'dependabot[bot]' }}
 
     runs-on: ubuntu-latest
     permissions:

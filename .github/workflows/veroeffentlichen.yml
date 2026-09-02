@@ -1,15 +1,28 @@
 name: Veroeffentlichen (interner Track)
 
-# WARUM NUR VON HAND (workflow_dispatch, kein push/tag-Trigger):
-# Die Messlatte dieses Projekts ist "ein gruener Build ist noch KEINE auslieferbare Version" -
-# gruene Unit-Tests plus gruener Build haben hier schon einen Crash-on-Launch durchgelassen
-# (05.08.2026, Property nach init{}), und mehrere Fehler fand erst die Installation am Geraet.
-# Bei einer Wecker-App ist eine still ausgelieferte kaputte Version der teuerste denkbare Fehler.
-# Deshalb faengt die Automatik bei "auf Knopfdruck, auf den INTERNEN Track" an. Ein automatischer
-# Ausloeser (Tag, oder Push auf main mit erhoehtem versionCode) kommt erst, wenn mehrere Laeufe
-# nachweislich ein installierbares AAB abgeliefert haben - und Produktion bleibt Handarbeit.
+# WANN DAS HIER LAEUFT:
+#
+# 1. AUTOMATISCH bei jedem Push auf main, der den `versionCode` ERHOEHT. Das ist der Ausloeser,
+#    den der Eigentuemer wollte: eine neue Version soll ohne Klicken im Play Store landen. Der
+#    versionCode ist dafuer das richtige Signal - er ist ohnehin bei jedem Release zu erhoehen
+#    (Play lehnt eine doppelte Nummer ab), und ein reiner Doku- oder Aufraeum-Commit hat ihn
+#    nicht dabei. Eine Aenderung ohne Bump loest also NICHTS aus.
+# 2. VON HAND ueber "Run workflow", z. B. um einen Entwurf statt einer Veroeffentlichung zu
+#    erzeugen oder einen fehlgeschlagenen Lauf zu wiederholen.
+#
+# WAS BEWUSST NICHT AUTOMATISCH IST: der PRODUKTIONS-Track. Hier geht es ausschliesslich auf den
+# INTERNEN Track. Die Messlatte dieses Projekts bleibt "ein gruener Build ist noch KEINE
+# auslieferbare Version" - gruene Tests plus gruener Build haben hier schon einen
+# Crash-on-Launch durchgelassen (05.08.2026, Property nach init{}). Der interne Track ist die
+# Stelle, an der so etwas auffaellt, BEVOR es jemanden weckt.
 
 on:
+  push:
+    branches: [main]
+    # Nur wenn die Versionsdatei angefasst wurde - alles Weitere entscheidet der Bump-Vergleich
+    # im ersten Job. Spart den Lauf bei jedem gewoehnlichen Commit.
+    paths:
+      - 'app/build.gradle.kts'
   workflow_dispatch:
     inputs:
       track:
@@ -33,7 +46,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Bei einem Push: nur weitermachen, wenn der versionCode WIRKLICH gestiegen ist. Play lehnt
+  # eine bereits vergebene Nummer ab - ein Lauf ohne Bump waere also nicht nur ueberfluessig,
+  # sondern ein garantierter Fehlschlag, der eine rote Mail erzeugt und nichts bedeutet.
+  pruefe-bump:
+    runs-on: ubuntu-latest
+    outputs:
+      ausliefern: ${{ steps.vergleich.outputs.ausliefern }}
+    steps:
+      - name: Checkout (zwei Commits, fuer den Vergleich)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: versionCode mit dem Stand davor vergleichen
+        id: vergleich
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "Von Hand gestartet - kein Bump-Vergleich noetig."
+            echo "ausliefern=ja" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          NEU=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          ALT=$(git show HEAD~1:app/build.gradle.kts 2>/dev/null | grep -oP 'versionCode\s*=\s*\K[0-9]+' | head -1 || echo 0)
+          echo "vorher=$ALT  jetzt=$NEU"
+          if [ "$NEU" -gt "$ALT" ]; then
+            echo "ausliefern=ja" >> "$GITHUB_OUTPUT"
+          else
+            echo "Kein Bump ($ALT -> $NEU) - nichts auszuliefern."
+            echo "ausliefern=nein" >> "$GITHUB_OUTPUT"
+          fi
+
   ausliefern:
+    needs: pruefe-bump
+    if: needs.pruefe-bump.outputs.ausliefern == 'ja'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -123,8 +168,9 @@ jobs:
           packageName: com.github.f1rlefanz.cf_alarmfortimeoffice
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
           # `track` ist in v1.1.5 als veraltet gemeldet; `tracks` ist der Nachfolger.
-          tracks: ${{ inputs.track }}
-          status: ${{ inputs.status }}
+          tracks: ${{ inputs.track || 'internal' }}
+          # Bei einem Push ohne Eingaben: veroeffentlichen, nicht als Entwurf liegen lassen.
+          status: ${{ inputs.status || 'completed' }}
           releaseName: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
 
       # Der Schluessel darf den Runner nicht ueberleben. GitHub raeumt den Arbeitsbereich zwar

@@ -119,47 +119,12 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: |
-            # `set -e` allein, KEIN `pipefail`: die Action fuehrt dieses Skript mit /bin/sh aus,
-            # und das ist auf dem Runner dash - `set -o pipefail` bricht dort sofort mit
-            # "Illegal option" ab, noch bevor irgendetwas geprueft wird (Lauf 33609480271).
-            set -e
-            PAKET=com.github.f1rlefanz.cf_alarmfortimeoffice
-
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb logcat -c
-            adb shell am start -W -n "$PAKET/.MainActivity"
-
-            # Zeit fuer den Compose-Baum, die Hilt-Injektion und die ersten Effekte. Der Absturz
-            # vom 05.08.2026 passierte beim Aufbau des ViewModels, also genau hier.
-            sleep 15
-
-            echo "--- laeuft der Prozess noch? ---"
-            PID=$(adb shell pidof "$PAKET" | tr -d '\r')
-            if [ -z "$PID" ]; then
-              echo "::error::Die App laeuft nach dem Start nicht mehr - Absturz beim Start."
-              adb logcat -d -b crash | tail -80
-              exit 1
-            fi
-            echo "PID $PID"
-
-            echo "--- steht ein Absturz im Log? ---"
-            # Der crash-Puffer allein reicht nicht: eine im Hintergrund gefangene Exception steht
-            # nur im Hauptpuffer, und ein Prozess, der sich sofort neu startet, sieht oben lebendig
-            # aus.
-            if adb logcat -d -b crash,main | grep -E "FATAL EXCEPTION|AndroidRuntime: Process: $PAKET" ; then
-              echo "::error::Absturz im Log, obwohl der Prozess laeuft - Neustart nach Crash."
-              exit 1
-            fi
-
-            echo "--- ist unsere Activity im Vordergrund? ---"
-            if ! adb shell dumpsys activity activities | grep -q "$PAKET/.MainActivity"; then
-              echo "::error::MainActivity ist nicht im Vordergrund - die App ist nicht hochgekommen."
-              adb logcat -d -b main | tail -80
-              exit 1
-            fi
-
-            echo "Rauchtest bestanden: App startet und bleibt oben."
+          # EINE Zeile, und zwar mit Absicht: diese Action fuehrt ihr `script:` ZEILENWEISE
+          # aus, jede Zeile in einer eigenen Shell. Ein mehrzeiliges Skript zerfaellt dabei -
+          # Variablen ueberleben nicht, `if`-Bloecke brechen mitten durch. Am 02.09.2026 zweimal
+          # gemessen (Laeufe 33609480271 und 33609854635). Der Inhalt steht deshalb in
+          # tools/geraet/rauchtest.sh, wo er ausserdem lesbar und einzeln aufrufbar ist.
+          script: bash tools/geraet/rauchtest.sh
 
   bumpen:
     needs: [pruefen, rauchtest]

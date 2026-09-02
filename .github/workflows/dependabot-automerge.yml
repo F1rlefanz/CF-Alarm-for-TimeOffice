@@ -1,0 +1,107 @@
+name: Dependabot automatisch mergen
+
+# WARUM ES DIESEN WORKFLOW GIBT:
+#
+# Fuenf Dependabot-PRs lagen wochenlang offen, obwohl die CI auf allen gruen durchlief. Sie
+# blieben liegen, weil ein zweiter Check rot war, der ueber den Code gar nichts aussagt (siehe
+# claude-code-review.yml: Dependabot-Laeufe bekommen die Secrets aus einem eigenen Speicher, in
+# dem das Claude-Token nicht liegt). Liegengebliebene Abhaengigkeits-Updates sind kein
+# Schoenheitsfehler - sie sammeln sich, kollidieren miteinander, und irgendwann macht sie niemand
+# mehr einzeln auf.
+#
+# WARUM `workflow_run` UND NICHT `pull_request`:
+# Ein `pull_request`-Lauf startet, wenn der PR geoeffnet wird - da laeuft die CI noch. Es gaebe
+# `--auto`, aber das braucht aktivierte Auto-Merge-Einstellung UND Branch-Schutz mit erforderlichen
+# Checks; ohne Branch-Schutz wuerde `--auto` sofort mergen und damit genau die Pruefung
+# ueberspringen, um die es geht. `workflow_run` feuert dagegen NACH der CI und kennt deren
+# Ergebnis. Der Preis ist eine Umstaendlichkeit: der Lauf weiss nur den Branch, den PR muss er
+# sich selbst suchen.
+#
+# WAS BEWUSST NICHT AUTOMATISCH GEMERGT WIRD:
+# - MAJOR-Sprünge. Ein Major kann Verhalten aendern, ohne dass etwas nicht kompiliert - genau der
+#   Fall, den gruene Tests nicht fangen. Beispiel aus diesem Repo: play-services-auth 21 -> 22
+#   entfernt die alte GoogleSignIn-API. Hier ging es gut, weil der Code sie nicht benutzt; das
+#   musste aber jemand NACHSEHEN.
+# - Alles, was nicht von Dependabot kommt.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  mergen:
+    # Nur nach einer GRUENEN CI, und nur fuer Dependabot-Branches.
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'pull_request'
+      && startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Den PR zum Branch finden
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          NUMMER=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
+                     --json number --jq '.[0].number // empty')
+          if [ -z "$NUMMER" ]; then
+            echo "Kein offener PR zu $BRANCH - nichts zu tun."
+            echo "gefunden=nein" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "PR #$NUMMER zu $BRANCH"
+          echo "nummer=$NUMMER" >> "$GITHUB_OUTPUT"
+          echo "gefunden=ja" >> "$GITHUB_OUTPUT"
+
+      - name: Art des Updates bestimmen
+        id: art
+        if: steps.pr.outputs.gefunden == 'ja'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMMER: ${{ steps.pr.outputs.nummer }}
+        run: |
+          # Dependabot schreibt die Art in den Branchnamen und in den PR-Text. Der Branchname ist
+          # das stabilere Signal, reicht aber nicht: er nennt nur "von -> nach". Deshalb der
+          # Vergleich der Hauptnummern - das ist die eine Sache, die hier wirklich zaehlt.
+          TITEL=$(gh pr view "$NUMMER" --repo "$GITHUB_REPOSITORY" --json title --jq '.title')
+          VON=$(echo "$TITEL"  | grep -oP 'from \K[0-9]+' | head -1 || echo "")
+          NACH=$(echo "$TITEL" | grep -oP 'to \K[0-9]+'   | head -1 || echo "")
+          if [ -z "$VON" ] || [ -z "$NACH" ]; then
+            # Gruppen-PRs ("Bump the libraries group with 2 updates") nennen keine Nummern.
+            # Im Zweifel NICHT mergen - lieber ein PR zu viel von Hand als ein Major zu wenig
+            # angesehen.
+            echo "Versionen nicht aus dem Titel ablesbar: '$TITEL' - bleibt liegen."
+            echo "mergen=nein" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$NACH" -gt "$VON" ]; then
+            echo "Major-Sprung $VON -> $NACH - bleibt fuer eine menschliche Durchsicht liegen."
+            echo "mergen=nein" >> "$GITHUB_OUTPUT"
+          else
+            echo "Kein Major-Sprung ($VON -> $NACH) - kann gemergt werden."
+            echo "mergen=ja" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mergen
+        if: steps.pr.outputs.gefunden == 'ja' && steps.art.outputs.mergen == 'ja'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMMER: ${{ steps.pr.outputs.nummer }}
+        run: |
+          gh pr merge "$NUMMER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch
+          echo "PR #$NUMMER gemergt."
+
+      - name: Vermerken, warum nicht gemergt wurde
+        if: steps.pr.outputs.gefunden == 'ja' && steps.art.outputs.mergen != 'ja'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMMER: ${{ steps.pr.outputs.nummer }}
+        run: |
+          # Ein PR, der ohne Erklaerung liegen bleibt, ist genau das Problem, gegen das dieser
+          # Workflow gebaut wurde. Also sagt er, warum.
+          gh pr comment "$NUMMER" --repo "$GITHUB_REPOSITORY" --body \
+            "Die CI ist gruen, aber dieser PR wird **nicht automatisch gemergt**: es ist entweder ein Major-Sprung oder ein Gruppen-Update, dessen Versionen sich nicht aus dem Titel ablesen lassen. Beides kann Verhalten aendern, ohne dass etwas nicht kompiliert - und genau das fangen gruene Tests nicht. Bitte einmal ansehen und von Hand mergen."

@@ -14,7 +14,7 @@
     LeakCanary), die allein 18 der damals 50 Lint-Warnungen erzeugten, ohne irgendetwas zu
     bewirken. Neue Einträge deshalb immer mit `./gradlew --offline lintDebug` gegenprüfen.
 
-    Letzte Aktualisierung: August 2026
+    Letzte Aktualisierung: September 2026
     -->
 
     <!-- ================= KRITISCHE FALSE POSITIVES ================= -->
@@ -91,6 +91,53 @@
         <ignore regexp=".*org\.apache\.log4j.*" />
     </issue>
     
+    <!-- ================= BEWUSSTES commit() STATT apply() ================= -->
+
+    <!--
+    ApplySharedPref / UseKtx: die SharedPreferences-Schreibvorgaenge im Weckbildschirm-Merker
+
+    Lint raet an beiden Stellen zweierlei: `apply()` statt `commit()` (ApplySharedPref) und die
+    KTX-Form `edit { }` statt `edit().put...()` (UseKtx). BEIDEN Raten zu folgen waere hier
+    falsch - deshalb steht die Begruendung ab dem 01.09.2026 (Aufraeum-Runde 14, Issue #49) hier,
+    statt dass ein bewusster Verstoss in der Weckerkette voellig unmarkiert bleibt.
+
+    Warum commit(): geschrieben wird aus dem `onStop` des Weckbildschirms bzw. aus
+    `onUnbind`/`onDestroy` des Dimm-Dienstes - Momente, denen der Prozesstod unmittelbar folgen
+    kann. `apply()` schreibt asynchron und verloere den Eintrag genau dann. Dieselbe Entscheidung
+    fuehrt CLAUDE.md fuer den Schlummer-Merker als harte Regel; der Hergang steht ausserdem im
+    KDoc der jeweiligen Klasse (WeckbildschirmVerdraengungPrefs Zeile 23-26,
+    DimAccessibilityService oberhalb von merkerAus()).
+
+    Warum NICHT die KTX-Form: sie wuerde den ApplySharedPref-Hinweis stillschweigend
+    verschlucken. Am 25.08.2026 in AlarmManagerService gemessen - der Detektor sieht nur ein
+    direktes `editor.commit()`, nicht `edit(commit = true) { }`; Bericht byte-gleich mit und ohne
+    Annotation. Wer hier UseKtx "behebt", nimmt der naechsten Runde das einzige Signal, dass an
+    dieser Stelle ueberhaupt eine Entscheidung getroffen wurde.
+
+    Warum PFADGENAU und nicht global: an einer NEUEN Stelle ist der ApplySharedPref-Hinweis
+    ERWUENSCHT - er erzwingt genau diese Abwaegung (so schon als Kommentar in
+    AlarmManagerService festgehalten). Global unterdrueckt bliebe der naechste versehentliche
+    commit() unbemerkt. Der Preis der Pfad-Form: ein spaeter in DIESEN beiden Dateien
+    hinzugefuegter commit() meldet sich auch nicht mehr - beide sind klein und einzweckig, das ist
+    vertretbar.
+
+    ApplySharedPref meldete nur 2 der 4 commit()-Stellen - die beiden im Dimm-Dienst nicht. Am
+    01.09.2026 mit einer Wegwerf-Datei nachgemessen (drei Formen, ein Lint-Lauf): der Detektor
+    schweigt, wenn der Rueckgabewert von `commit()` VERWENDET wird, und im Dimm-Dienst ist der
+    Aufruf der letzte Ausdruck eines `runCatching`-Blocks. Der Eintrag deckt trotzdem beide
+    Dateien ab: welche der vier Stellen meldet, haengt an einer Formulierung, die sich bei der
+    naechsten Umformung aendern kann.
+    -->
+    <issue id="ApplySharedPref">
+        <ignore path="**/WeckbildschirmVerdraengungPrefs.kt" />
+        <ignore path="**/DimAccessibilityService.kt" />
+    </issue>
+
+    <issue id="UseKtx">
+        <ignore path="**/WeckbildschirmVerdraengungPrefs.kt" />
+        <ignore path="**/DimAccessibilityService.kt" />
+    </issue>
+
     <!-- ================= SDK VERSION CHECKS ================= -->
     
     <!-- 

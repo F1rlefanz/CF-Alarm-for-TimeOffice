@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.2 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Wartungsversion — an der App ändert sich nichts, an der Zuverlässigkeit dahinter einiges._
+
+### 🔧 Unter der Haube
+
+- **Wartungsarbeiten kommen ab jetzt von selbst bei dir an.** Aktualisierte Bibliotheken und aufgeräumter Code lagen bisher wochenlang herum, bis zufällig eine neue Version gebaut wurde. Solche Änderungen werden jetzt täglich zusammengefasst und ausgeliefert — aber nur, wenn wirklich **nichts Sichtbares** dabei ist. Alles andere geht weiterhin erst raus, wenn ein Mensch es angesehen hat.
+
+- **Vor jeder dieser automatischen Auslieferungen wird die App gestartet.** Bisher hat die Prüfmaschinerie die App gebaut, getestet und geprüft — aber nie ausgeführt. Genau dadurch ist im August einmal eine Version durchgerutscht, die beim Öffnen sofort abstürzte. Jetzt startet sie zuerst auf einem Testgerät, und nur wenn sie dort läuft und stehen bleibt, geht sie raus.
+
+- **Zwei Aussetzer der eigenen Werkstatt behoben.** Die nächtliche Aufräum-Prüfung konnte stillschweigend leerlaufen und meldete das trotzdem als Erfolg; und die Auslieferung selbst übersprang sich, wenn mehrere Änderungen zusammen veröffentlicht wurden. Beides fiel nur auf, weil jemand nachgesehen hat — beides meldet sich ab jetzt von allein.
+
+## Version 1.39.1
 
 **Stand:** September 2026
 

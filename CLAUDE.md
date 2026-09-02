@@ -76,12 +76,16 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
   Memory-Überschriften und kennt die Issues nicht — wer nur ihm glaubt, legt Dubletten an.
 - **Ein Push auf `main`, der den `versionCode` erhöht, LIEFERT AUS.**
   `.github/workflows/veroeffentlichen.yml` lädt ihn ohne weiteres Zutun in den **internen**
-  Play-Track, zu echten Testern. Nur `app/build.gradle.kts` löst das aus — ein Dependabot- oder
-  Aufräum-Merge fasst die Datei nie an und veröffentlicht deshalb nichts; solche Änderungen
-  erreichen die Tester erst mit dem nächsten Bump. Der Produktions-Track bleibt Handarbeit.
-  **Der Bump ist damit die Veröffentlichungsentscheidung**, nicht bloß eine Nummer: ein grüner
-  Build ist in diesem Projekt nachweislich keine auslieferbare Version (05.08.2026,
-  Crash-on-Launch nach grünen Tests). Ablauf im Skill `cfalarm-release-und-changelog`.
+  Play-Track, zu echten Testern. **Der Bump ist damit die Veröffentlichungsentscheidung**, nicht
+  bloß eine Nummer: ein grüner Build ist in diesem Projekt nachweislich keine auslieferbare
+  Version (05.08.2026, Crash-on-Launch nach grünen Tests). Der Produktions-Track bleibt Handarbeit.
+- **Reine Wartung bumpt sich selbst** (`sammel-release.yml`, täglich 09:00 UTC): liegen in `main`
+  ausschließlich Dependabot- und Aufräum-Commits unausgeliefert, startet der Sammel-Release die
+  App auf einem Emulator, bumpt den Patch, schreibt den Changelog und liefert aus. **Ein einziger
+  inhaltlicher Commit hält das an** — der gehört in einen Changelog-Eintrag in Nutzersprache und
+  vor dem Ausliefern angesehen. Die Grenze zieht `tools/release/sammel_release.py`; wer sie
+  aufweicht, veröffentlicht ungeprüfte Inhalte an echte Tester. Ablauf im Skill
+  `cfalarm-release-und-changelog`.
 - **Vor `git merge`/`git push` läuft die Schleuse** (`tools/schleuse/pruefe_schleuse.py`,
   `PreToolUse`-Hook) und prüft mechanisch: Geheimnisse, Skills, Doku-Budget, Changelog-Seite,
   Code-Invarianten, Aufraeum-Reste, Tests (inkl. androidTest-Uebersetzung), Lint — beim Push

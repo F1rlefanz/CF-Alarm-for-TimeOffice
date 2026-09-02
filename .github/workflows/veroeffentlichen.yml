@@ -23,6 +23,26 @@ on:
     # im ersten Job. Spart den Lauf bei jedem gewoehnlichen Commit.
     paths:
       - 'app/build.gradle.kts'
+  # Aufgerufen vom Sammel-Release (`sammel-release.yml`), nachdem der seinen Bump nach `main`
+  # gepusht hat. Der Umweg ueber `workflow_call` statt eines zweiten Push-Ausloesers ist noetig,
+  # weil ein Push mit dem Standard-GITHUB_TOKEN bewusst KEINE Workflows ausloest - derselbe
+  # Umstand, der oben schon den Torwaechter zwingt, selbst zu bauen.
+  workflow_call:
+    inputs:
+      track:
+        type: string
+        required: false
+        default: internal
+      status:
+        type: string
+        required: false
+        default: completed
+      ref:
+        description: 'Stand, der gebaut werden soll - fuer den Aufrufer, der gerade gebumpt hat'
+        type: string
+        required: false
+        default: ''
+
   workflow_dispatch:
     inputs:
       track:
@@ -64,8 +84,11 @@ jobs:
       - name: versionCode mit dem Stand davor vergleichen
         id: vergleich
         run: |
-          if [ "${{ github.event_name }}" != "push" ]; then
-            echo "Von Hand gestartet - kein Bump-Vergleich noetig."
+          # Von Hand gestartet ODER vom Sammel-Release aufgerufen: in beiden Faellen hat der
+          # Ausloeser die Entscheidung schon getroffen, der Bump-Vergleich hat hier nichts zu
+          # melden. Er gilt nur fuer den Push-Ausloeser.
+          if [ "${{ github.event_name }}" != "push" ] || [ -n "${{ inputs.ref }}" ]; then
+            echo "Nicht durch einen Push ausgeloest - kein Bump-Vergleich noetig."
             echo "ausliefern=ja" >> "$GITHUB_OUTPUT"; exit 0
           fi
           NEU=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
@@ -116,8 +139,13 @@ jobs:
       KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
     steps:
+      # `inputs.ref` setzt nur das Sammel-Release - und zwar auf `main`, weil sein Bump-Commit
+      # dort schon liegt, waehrend `github.sha` noch auf den Stand VOR dem Bump zeigt. Ohne das
+      # wuerde hier die Version gebaut, die gerade ersetzt werden sollte.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Make gradlew executable
         run: chmod +x gradlew

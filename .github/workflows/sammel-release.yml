@@ -1,0 +1,213 @@
+# Sammel-Release: liefert die Wartungsarbeit aus, die sonst in `main` liegen bliebe.
+#
+# DAS PROBLEM
+# `veroeffentlichen.yml` laedt eine Version in den internen Play-Track, sobald der `versionCode`
+# in `app/build.gradle.kts` steigt. Dependabot und die naechtliche Aufraeumrunde fassen diese
+# Datei aber NIE an - am 02.09.2026 ueber die ganze Historie geprueft, kein einziger
+# `chore(deps)`- oder `chore(aufraeumen)`-Commit hat sie beruehrt. Ihre Arbeit landete damit in
+# `main` und erreichte die Tester erst, wenn zufaellig ein Mensch eine Version baute.
+#
+# DIE GRENZE, UND SIE IST DER KERN
+# Automatisch ausgeliefert wird NUR, wenn ALLE unausgelieferten Commits Wartung sind. Ein
+# einziger inhaltlicher Commit haelt das hier an - der gehoert in einen Changelog-Eintrag, den
+# ein Mensch in Nutzersprache schreibt, und er gehoert vorher angesehen. Die Entscheidung faellt
+# `tools/release/sammel_release.py`; dort steht sie ausfuehrlich und ist mit 18 Tests belegt.
+#
+# WARUM EIN RAUCHTEST DAVOR STEHT
+# Unbeaufsichtigt an echte Tester einer WECKER-App auszuliefern, ist nur zu verantworten, wenn
+# vorher jemand nachgesehen hat, dass die App ueberhaupt startet. Genau das konnte bisher
+# NIEMAND: `ci.yml` baut, testet und lintet - aber fuehrt die App nie aus. Und genau dieser
+# blinde Fleck hat am 05.08.2026 zugeschlagen (Absturz beim Start durch eine Property nach
+# `init{}`, an gruenen Tests und gruenem Build vorbei). Ein Mensch, der von Hand veroeffentlicht,
+# faengt so etwas beim Installieren; ein Bot faengt es nur hier.
+#
+# REIHENFOLGE, und sie ist bewusst so
+# pruefen -> rauchtest -> bumpen+pushen -> ausliefern. Der Bump kommt NACH dem Rauchtest, weil
+# ein gepushter Bump, der es nicht in den Store schafft, den naechsten Lauf blind macht: das
+# Werkzeug haelt den Bump-Commit dann fuer einen erfolgten Release und sieht die Wartungsarbeit
+# als ausgeliefert an. Scheitert die Auslieferung trotzdem, wird der Lauf ROT - dann von Hand
+# `veroeffentlichen.yml` nachstossen, nicht neu bumpen.
+name: Sammel-Release (Wartung ausliefern)
+
+on:
+  schedule:
+    # 09:00 UTC = 11:00 Europe/Berlin. Nach der Aufraeumrunde (03:00) UND nach dem Torwaechter
+    # (06:00, bis zu 45 min) - was heute Nacht gemergt wurde, ist also drin.
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # BEWUSST eine eigene Gruppe, NICHT `veroeffentlichen`: dieser Workflow ruft den anderen auf.
+  # Teilten sie sich die Gruppe, wartete der Aufrufer auf sein eigenes Kind.
+  group: sammel-release
+  cancel-in-progress: false
+
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    outputs:
+      ausliefern: ${{ steps.lage.outputs.ausliefern }}
+    steps:
+      # Volle Historie: das Werkzeug sucht den letzten Commit, der den versionCode WIRKLICH
+      # erhoeht hat, und geht dafuer die Historie von app/build.gradle.kts entlang.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Die Entscheidungslogik hat eigene Tests. Sie hier mitlaufen zu lassen kostet eine
+      # Sekunde und verhindert, dass ein kaputter Detektor unbemerkt ausliefert.
+      - name: Entscheidungslogik testen
+        run: python3 -m unittest discover -s tools/release -p "test_*.py"
+
+      - name: Unausgelieferte Wartung ermitteln
+        id: lage
+        run: python3 tools/release/sammel_release.py --ausgabe "$GITHUB_OUTPUT"
+
+  # Startet die App wirklich? Der einzige Schritt in diesem Repo, der die App AUSFUEHRT.
+  rauchtest:
+    needs: pruefen
+    if: needs.pruefen.outputs.ausliefern == 'ja'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: chmod +x gradlew
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Debug-APK bauen
+        run: ./gradlew assembleDebug --stacktrace
+
+      # KVM freischalten - ohne das laeuft der Emulator in Software und braucht ein Vielfaches
+      # der Zeit, bis er in den Timeout laeuft.
+      - name: KVM freigeben
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Sieht keine Geheimnisse, deshalb auf ein Versions-Tag statt auf einen Commit gepinnt -
+      # anders als der Play-Upload in veroeffentlichen.yml.
+      - name: App starten und auf Absturz pruefen
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: |
+            set -eo pipefail
+            PAKET=com.github.f1rlefanz.cf_alarmfortimeoffice
+
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am start -W -n "$PAKET/.MainActivity"
+
+            # Zeit fuer den Compose-Baum, die Hilt-Injektion und die ersten Effekte. Der Absturz
+            # vom 05.08.2026 passierte beim Aufbau des ViewModels, also genau hier.
+            sleep 15
+
+            echo "--- laeuft der Prozess noch? ---"
+            PID=$(adb shell pidof "$PAKET" | tr -d '\r')
+            if [ -z "$PID" ]; then
+              echo "::error::Die App laeuft nach dem Start nicht mehr - Absturz beim Start."
+              adb logcat -d -b crash | tail -80
+              exit 1
+            fi
+            echo "PID $PID"
+
+            echo "--- steht ein Absturz im Log? ---"
+            # Der crash-Puffer allein reicht nicht: eine im Hintergrund gefangene Exception steht
+            # nur im Hauptpuffer, und ein Prozess, der sich sofort neu startet, sieht oben lebendig
+            # aus.
+            if adb logcat -d -b crash,main | grep -E "FATAL EXCEPTION|AndroidRuntime: Process: $PAKET" ; then
+              echo "::error::Absturz im Log, obwohl der Prozess laeuft - Neustart nach Crash."
+              exit 1
+            fi
+
+            echo "--- ist unsere Activity im Vordergrund? ---"
+            if ! adb shell dumpsys activity activities | grep -q "$PAKET/.MainActivity"; then
+              echo "::error::MainActivity ist nicht im Vordergrund - die App ist nicht hochgekommen."
+              adb logcat -d -b main | tail -80
+              exit 1
+            fi
+
+            echo "Rauchtest bestanden: App startet und bleibt oben."
+
+  bumpen:
+    needs: [pruefen, rauchtest]
+    if: needs.pruefen.outputs.ausliefern == 'ja'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Version und Changelog fortschreiben
+        id: bump
+        run: python3 tools/release/sammel_release.py --bumpen --ausgabe "$GITHUB_OUTPUT"
+
+      # CHANGELOG.md ist die Quelle, docs/changelog.html wird daraus erzeugt. Beide gehoeren in
+      # denselben Commit - sonst schlaegt die Pruefung im Auslieferungs-Workflow fehl.
+      - name: Changelog-Seite neu erzeugen
+        run: |
+          python3 tools/changelog/build_changelog.py
+          python3 tools/changelog/build_changelog.py --pruefen
+
+      - name: Committen und pushen
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts CHANGELOG.md docs/changelog.html
+
+          {
+            echo "chore(release): v${{ steps.bump.outputs.version }} (versionCode ${{ steps.bump.outputs.code }}) - Sammel-Release"
+            echo ""
+            echo "Automatisch erzeugt von .github/workflows/sammel-release.yml."
+            echo ""
+            echo "Ausgeliefert werden ${{ steps.bump.outputs.anzahl }} Wartungs-Commits, die seit"
+            echo "dem letzten Release in main liegen - Abhaengigkeits-Bumps und Aufraeumarbeit."
+            echo "Keiner davon aendert etwas Sichtbares; das Werkzeug haette sonst abgebrochen."
+            echo ""
+            echo "Rauchtest bestanden: die App startet auf einem Emulator und bleibt im"
+            echo "Vordergrund."
+          } > /tmp/bump-message.txt
+
+          git commit -F /tmp/bump-message.txt
+
+          # Andere Sitzungen pushen unabhaengig nach main. Erst nachziehen, dann pushen.
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+  ausliefern:
+    needs: [pruefen, bumpen]
+    if: needs.pruefen.outputs.ausliefern == 'ja'
+    uses: ./.github/workflows/veroeffentlichen.yml
+    with:
+      track: internal
+      status: completed
+      # `main` und nicht der Ausloese-Commit: der Bump liegt erst seit dem Job darueber dort.
+      ref: main
+    secrets: inherit

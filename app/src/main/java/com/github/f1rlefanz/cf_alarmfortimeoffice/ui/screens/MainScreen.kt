@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
  * gab es hier zusaetzlich einen separaten, ungegateten Dialog; die richtigen, herstellerspezifischen
  * Schritte gibt es nur im Screen (siehe [OEMWarningScreen]), daher konvergiert alles hierher.
  * Aufgerufen von jeder Stelle, die "von einem Gate zurueckgekehrt" ist: Battery-Settings-Result,
- * Unused-App-Restrictions-Settings-Result, und CalendarSelectionScreen.onSave.
+ * Unused-App-Restrictions-Settings-Result, und CalendarSelectionScreen.onDone.
  */
 private suspend fun proceedPastGates(
     context: Context,
@@ -300,7 +300,7 @@ fun MainScreen(
                         // Braucht die Activity, sonst kann Google keinen Dialog zeigen.
                         authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
                     },
-                    onSave = {
+                    onDone = {
                         // PHASE 1 MIGRATION: After calendar selection, navigate to battery exemption
                         if (!BatteryOptimizationHelper.isExempted(context)) {
                             Logger.business(

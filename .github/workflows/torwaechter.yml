@@ -57,6 +57,13 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6.3.0
 
+      # Zeitmarke fuer den Nachweis unten. Muss VOR der Action gesetzt werden,
+      # sonst laesst sich hinterher nicht unterscheiden, ob ein Kommentar am PR
+      # aus DIESEM Lauf stammt oder schon vorher dastand.
+      - name: Startzeit merken
+        id: start
+        run: echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -64,6 +71,16 @@ jobs:
           # Torwaechter 21 Turns lang und hinterliess NICHTS - kein Merge, kein
           # Close, kein Kommentar -, und der Grund war nicht rekonstruierbar.
           # Ein stiller Leerlauf ist die teuerste Fehlerart, die es hier gibt.
+          #
+          # Genau dafuer hat sich das Mitschreiben am 02.09.2026 ausgezahlt: Lauf
+          # 33498749237 (01.09., 29 min, `success`) schloss PR #48 vorbildlich ab
+          # und liess PR #53 unbeurteilt liegen. Im Log steht der Grund woertlich -
+          # "The three refutation agents for PR #53 are still running - I'll report
+          # as soon as they return." Das Task-Werkzeug arbeitet im HINTERGRUND und
+          # liefert sofort zurueck; mit diesem Satz war die Antwort fertig, die
+          # Session beendet und die drei Widerleger nie eingesammelt. Dagegen steht
+          # jetzt beides: die ausdrueckliche Regel im Prompt (Schritt 3) und der
+          # mechanische Nachweis im Schritt "Stummen Lauf aufdecken" unten.
           show_full_output: true
           claude_args: |
             --model claude-opus-5
@@ -88,6 +105,11 @@ jobs:
             ARBEITE JEDEN OFFENEN PR AB, dessen Branch mit `chore/aufraeumen-`
             beginnt (`gh pr list --state open`). Gibt es keinen, melde das und
             hoere auf - nichts erfinden.
+
+            EINEN NACH DEM ANDEREN, ganz zu Ende. Erst wenn PR A gemergt oder
+            geschlossen UND kommentiert ist, faengst du mit PR B an. Zwei PRs
+            gleichzeitig offen zu halten hat am 01.09.2026 genau einen von
+            beiden gekostet.
 
             Je PR, in dieser Reihenfolge:
 
@@ -124,6 +146,20 @@ jobs:
                dass sie NICHT bewerten, sondern widerlegen sollen.
                Widerlegen zwei oder drei: schliessen. Sonst weiter.
 
+               ACHTUNG, hier ist dieser Lauf schon einmal gestorben: Das
+               Task-Werkzeug arbeitet im HINTERGRUND. Es liefert dir sofort nur
+               einen Namen zurueck, NICHT das Urteil - das kommt spaeter als
+               Benachrichtigung. Ein Zug, der mit "die Widerleger laufen noch,
+               ich melde mich" endet, ist eine FERTIGE ANTWORT: die Sitzung ist
+               damit vorbei, die drei Urteile kommen nie an, und der PR bleibt
+               unbeurteilt liegen. Genau so ging Lauf 33498749237 am 01.09.2026
+               aus (PR #53, gruen gemeldet, kein Kommentar).
+               Also: WARTE ihre Ergebnisse ab und beende erst DANACH deinen Zug.
+               Hast du das Urteil der drei nach angemessener Zeit nicht, ist das
+               kein Grund aufzuhoeren, sondern der Fall fuer Schritt 4 mit dem
+               Vermerk "Widerleger nicht zurueckgekommen" - also SCHLIESSEN, denn
+               im Zweifel wird nicht gemergt.
+
             4. ENTSCHEIDEN.
                - Alles bestanden -> `gh pr merge <nr> --merge --delete-branch`.
                - Sonst -> `gh pr close <nr> --delete-branch` und das zugehoerige
@@ -135,3 +171,77 @@ jobs:
 
             Nichts bleibt liegen: jeder offene Aufraeum-PR ist am Ende dieses
             Laufs entweder in `main` oder geschlossen.
+
+      # DER MECHANISCHE TEIL DER ZUSICHERUNG.
+      #
+      # Der Prompt sagt "dieser Lauf endet nie stumm" - aber eine Bitte ist keine
+      # Zusicherung. Am 25.08. und am 01.09.2026 endete er trotzdem stumm, beide
+      # Male `success`. Ein gruener Lauf, der nichts hinterlaesst, ist die
+      # teuerste Fehlerart hier: er sieht aus wie Arbeit und ist keine, und
+      # niemand hat einen Anlass nachzusehen.
+      #
+      # Deshalb prueft dieser Schritt die SPUR statt der Absicht: jeder
+      # Aufraeum-PR, der schon vor dem Lauf offen war und es danach noch ist,
+      # MUSS einen Kommentar aus diesem Lauf tragen. Fehlt er, wird der Lauf rot
+      # und der PR bekommt den Fehlschlag angeheftet - so steht die Warnung dort,
+      # wo sie beim naechsten Blick auffaellt, nicht nur im Lauf-Log.
+      #
+      # `if: always()`, denn ein abgebrochener oder gescheiterter Claude-Schritt
+      # ist genau der Fall, in dem die Spur fehlt.
+      - name: Stummen Lauf aufdecken
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEIT: ${{ steps.start.outputs.ts }}
+          LAUF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          # Nur PRs, die es beim Start schon gab - ein waehrend des Laufs
+          # entstandener PR konnte gar nicht beurteilt werden.
+          FILTER=".[] | select(.headRefName | startswith(\"chore/aufraeumen-\"))"
+          FILTER="$FILTER | select(.createdAt < \"$SEIT\") | .number"
+          OFFEN=$(gh pr list --state open --json number,headRefName,createdAt --jq "$FILTER")
+
+          if [ -z "$OFFEN" ]; then
+            echo "Kein Aufraeum-PR mehr offen, der vor $SEIT bestand - nichts liegengeblieben."
+            exit 0
+          fi
+
+          STUMM=""
+          for NR in $OFFEN; do
+            # ISO-8601 in UTC vergleicht sich lexikographisch richtig.
+            LETZTER=$(gh pr view "$NR" --json comments --jq '[.comments[].createdAt] | max // ""')
+            if [ -z "$LETZTER" ] || [[ "$LETZTER" < "$SEIT" ]]; then
+              STUMM="$STUMM $NR"
+            fi
+          done
+
+          if [ -z "$STUMM" ]; then
+            echo "Jeder noch offene Aufraeum-PR traegt einen Kommentar aus diesem Lauf."
+            exit 0
+          fi
+
+          # Der Text geht ueber eine Datei, nicht als mehrzeiliges Literal:
+          # eine Zeile ohne Einrueckung wuerde den YAML-Block hier beenden, und
+          # das faellt erst im Lauf auf.
+          {
+            echo "## Torwaechter: **stumm ausgefallen**"
+            echo ""
+            echo "Der Lauf ist beendet, ohne diesen PR zu mergen, zu schliessen oder zu"
+            echo "kommentieren. Dieser Hinweis ist automatisch erzeugt und **ersetzt kein Urteil**:"
+            echo "der PR ist unbeurteilt und darf nicht als geprueft gelten."
+            echo ""
+            echo "Lauf: $LAUF"
+            echo ""
+            echo "Bekannte Ursache (Issue #52): ein Zug endete, waehrend die"
+            echo "Widerleger-Subagenten noch im Hintergrund liefen. War es wieder das,"
+            echo "steht 'agents are still running' im Lauf-Log."
+          } > torwaechter-stumm.md
+
+          for NR in $STUMM; do
+            gh pr comment "$NR" --body-file torwaechter-stumm.md
+          done
+
+          echo "::error::Stumm gebliebene Aufraeum-PRs:$STUMM"
+          exit 1

@@ -45,7 +45,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 @Composable
 fun CalendarSelectionScreen(
     calendarViewModel: CalendarViewModel,
-    onSave: () -> Unit,
+    /**
+     * Verlaesst den Bildschirm und setzt den Onboarding-Weg fort (Akku-Freistellung usw.).
+     *
+     * Hiess bis v1.39.1 `onSave` und der Knopf dazu "Speichern" - beides eine Luege: gespeichert
+     * wird bei JEDEM Tipp auf einen Kalender sofort (`toggleCalendarSelection` schreibt durch),
+     * dieser Aufruf speichert gar nichts. Siehe Issue #50.
+     */
+    onDone: () -> Unit,
     onCancel: () -> Unit,
     /**
      * Startet den Google-Zustimmungsdialog. Noetig, weil "Erneut versuchen" ohne gueltiges
@@ -72,11 +79,14 @@ fun CalendarSelectionScreen(
                     }
                 },
                 actions = {
-                    TextButton(
-                        onClick = onSave, // SIMPLIFIED: Kein manuelles Save mehr - alles automatisch
-                        enabled = calendarState.selectedCalendarIds.isNotEmpty()
-                    ) {
-                        Text("Speichern")
+                    // "Fertig", nicht "Speichern", und ohne `enabled`-Bedingung: der Knopf
+                    // speichert nichts - das ist beim Antippen des Kalenders laengst passiert.
+                    // Ausgegraut widersprach er ausserdem der Wirkung: wer den letzten Kalender
+                    // abwaehlte, sah einen toten Knopf und durfte glauben, nichts sei uebernommen
+                    // worden - die Raeumung war zu dem Zeitpunkt schon gelaufen (Issue #50).
+                    // Was der leere Zustand bedeutet, sagt jetzt die Warnkarte in der Liste.
+                    TextButton(onClick = onDone) {
+                        Text("Fertig")
                     }
                 }
             )
@@ -90,7 +100,8 @@ fun CalendarSelectionScreen(
             verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
         ) {
             Text(
-                "Wähle die Kalender aus, die für Schichtalarme überwacht werden sollen.",
+                "Wähle die Kalender aus, die für Schichtalarme überwacht werden sollen. " +
+                        "Änderungen gelten sofort.",
                 style = MaterialTheme.typography.bodyMedium
             )
 
@@ -155,6 +166,48 @@ fun CalendarSelectionScreen(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
+                    // Der leere Zustand ist kein "noch nichts getan", sondern eine WIRKUNG: die
+                    // Abwahl des letzten Kalenders raeumt die Wecker der naechsten zwei Wochen
+                    // samt der Dienstzeit-Fenster (`clearAlarmsAfterCalendarDeselection`). Solange
+                    // der Knopf das nur durch Ausgrauen andeutete, sagte die Oberflaeche das
+                    // Gegenteil dessen, was geschehen war. Als `item` und nicht als Karte ueber
+                    // der Liste, damit die LazyColumn das einzige hoehenvariable Kind der Column
+                    // bleibt.
+                    if (calendarState.selectedCalendarIds.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(SpacingConstants.SPACING_LARGE),
+                                    verticalArrangement = Arrangement.spacedBy(
+                                        SpacingConstants.SPACING_SMALL
+                                    )
+                                ) {
+                                    Text(
+                                        "Kein Kalender ausgewählt",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Text(
+                                        "Ohne Kalender erkennt die App keine Schichten mehr und " +
+                                                "stellt keine Wecker. Bereits gestellte Wecker " +
+                                                "wurden entfernt. Tippe einen Kalender an, um das " +
+                                                "rückgängig zu machen.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     items(calendarState.availableCalendars) { calendar ->
                         val isSelected = calendarState.selectedCalendarIds.contains(calendar.id)
                         

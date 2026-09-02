@@ -73,7 +73,14 @@ und ihre Arbeit deshalb unausgeliefert in `main` lag, bis zufällig ein Mensch e
 
 Der Ablauf, in dieser Reihenfolge: **prüfen → Rauchtest → bumpen und pushen → ausliefern.**
 
-**Die Grenze ist der Kern, nicht das Beiwerk.** Ausgeliefert wird nur, wenn **alle**
+**Zwei Fragen, in dieser Reihenfolge.** Erst: *ändert der Commit überhaupt die App?* Wer nur an
+`.github/`, `tools/`, `docs/`, `.claude/` oder einer `*.md` arbeitet, liefert eine bit-gleiche APK
+aus — eine Aktualisierung, hinter der für den Tester nichts steht. Solche Commits zählen nicht.
+`gradle/libs.versions.toml`, `gradle.properties` und `settings.gradle.kts` zählen dagegen **sehr
+wohl**: sie sehen nach Bauwerk aus, bestimmen aber, was in der APK landet — dort arbeitet
+Dependabot.
+
+**Dann erst die Grenze, und sie ist der Kern.** Ausgeliefert wird nur, wenn **alle**
 unausgelieferten Commits Wartung sind (`chore(deps)`, `chore(aufraeumen)`, `chore(ci)` und die
 zugehörigen Merge-Commits). Ein einziger inhaltlicher Commit hält die Automatik an — der gehört in
 einen Changelog-Eintrag, den ein Mensch in Nutzersprache schreibt, und er gehört vor dem Ausliefern

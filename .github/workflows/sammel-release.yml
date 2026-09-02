@@ -145,6 +145,20 @@ jobs:
         id: bump
         run: python3 tools/release/sammel_release.py --bumpen --ausgabe "$GITHUB_OUTPUT"
 
+      # Zwischen `pruefen` und hier liegen der Rauchtest und damit gut zehn Minuten. Ist in der
+      # Zeit etwas nach `main` gepusht worden, kann die Antwort inzwischen "nein" lauten - dann
+      # hat das Werkzeug oben nichts geschrieben, und der Commit-Schritt wuerde an einem leeren
+      # `git add` scheitern, mit einer Meldung, die auf alles Moegliche zeigt. Lieber hier und
+      # deutlich.
+      - name: Entscheidung hat sich nicht gedreht
+        run: |
+          if [ -z "${{ steps.bump.outputs.version }}" ]; then
+            echo "::error::Waehrend des Rauchtests hat sich der Stand von main geaendert - es"
+            echo "::error::gibt jetzt nichts mehr automatisch auszuliefern. Nichts passiert."
+            exit 1
+          fi
+          echo "Bump auf ${{ steps.bump.outputs.version }} steht."
+
       # CHANGELOG.md ist die Quelle, docs/changelog.html wird daraus erzeugt. Beide gehoeren in
       # denselben Commit - sonst schlaegt die Pruefung im Auslieferungs-Workflow fehl.
       - name: Changelog-Seite neu erzeugen

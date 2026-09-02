@@ -48,7 +48,7 @@ fun CalendarSelectionScreen(
     /**
      * Verlaesst den Bildschirm und setzt den Onboarding-Weg fort (Akku-Freistellung usw.).
      *
-     * Hiess bis v1.40.0 `onSave` und der Knopf dazu "Speichern" - beides eine Luege: gespeichert
+     * Hiess bis v1.39.1 `onSave` und der Knopf dazu "Speichern" - beides eine Luege: gespeichert
      * wird bei JEDEM Tipp auf einen Kalender sofort (`toggleCalendarSelection` schreibt durch),
      * dieser Aufruf speichert gar nichts. Siehe Issue #50.
      */

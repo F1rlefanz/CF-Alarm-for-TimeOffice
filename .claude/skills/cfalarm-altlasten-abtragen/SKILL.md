@@ -96,7 +96,7 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
 
 ### Akzeptierte Dauermeldungen — nicht als Fund melden
 
-Gemessen am 02.09.2026 auf `main` + v1.40.0, gezählt aus
+Gemessen am 02.09.2026 auf dem Stand von v1.39.1, gezählt aus
 `app/build/reports/lint-results-debug.sarif` (eindeutig zählbar, anders als der HTML-Bericht):
 **6 Befunde, kein `UnknownIssueId`.**
 

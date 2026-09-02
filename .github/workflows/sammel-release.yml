@@ -35,6 +35,12 @@ on:
     # (06:00, bis zu 45 min) - was heute Nacht gemergt wurde, ist also drin.
     - cron: "0 9 * * *"
   workflow_dispatch:
+    inputs:
+      nur_rauchtest:
+        description: 'Nur pruefen, ob die App startet - nichts bumpen, nichts ausliefern'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   # BEWUSST eine eigene Gruppe, NICHT `veroeffentlichen`: dieser Workflow ruft den anderen auf.
@@ -68,9 +74,12 @@ jobs:
         run: python3 tools/release/sammel_release.py --ausgabe "$GITHUB_OUTPUT"
 
   # Startet die App wirklich? Der einzige Schritt in diesem Repo, der die App AUSFUEHRT.
+  # `nur_rauchtest` startet ihn allein - ohne Bump, ohne Auslieferung. Damit laesst sich die
+  # Frage "startet die App ueberhaupt noch?" jederzeit stellen, ohne eine Version zu verbrauchen,
+  # und der Test selbst bleibt pruefbar, statt nur an dem Tag zu laufen, an dem es darauf ankommt.
   rauchtest:
     needs: pruefen
-    if: needs.pruefen.outputs.ausliefern == 'ja'
+    if: needs.pruefen.outputs.ausliefern == 'ja' || inputs.nur_rauchtest
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -151,7 +160,7 @@ jobs:
 
   bumpen:
     needs: [pruefen, rauchtest]
-    if: needs.pruefen.outputs.ausliefern == 'ja'
+    if: needs.pruefen.outputs.ausliefern == 'ja' && !inputs.nur_rauchtest
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -203,7 +212,7 @@ jobs:
 
   ausliefern:
     needs: [pruefen, bumpen]
-    if: needs.pruefen.outputs.ausliefern == 'ja'
+    if: needs.pruefen.outputs.ausliefern == 'ja' && !inputs.nur_rauchtest
     uses: ./.github/workflows/veroeffentlichen.yml
     with:
       track: internal

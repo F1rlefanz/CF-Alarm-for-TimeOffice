@@ -65,6 +65,39 @@ haben in diesem Projekt schon einen Crash beim Start durchgelassen (05.08.2026).
 ist die Stelle, an der so etwas auffällt, bevor es jemanden weckt. Die Begründung steht ausführlich
 im Kopf von `veroeffentlichen.yml`.
 
+## Sammel-Release: Wartung liefert sich selbst aus
+
+`sammel-release.yml` läuft täglich um 09:00 UTC — nach der Aufräumrunde und dem Torwächter. Es
+schließt die Lücke, dass Dependabot und die Aufräumrunde **nie** `app/build.gradle.kts` anfassen
+und ihre Arbeit deshalb unausgeliefert in `main` lag, bis zufällig ein Mensch eine Version baute.
+
+Der Ablauf, in dieser Reihenfolge: **prüfen → Rauchtest → bumpen und pushen → ausliefern.**
+
+**Die Grenze ist der Kern, nicht das Beiwerk.** Ausgeliefert wird nur, wenn **alle**
+unausgelieferten Commits Wartung sind (`chore(deps)`, `chore(aufraeumen)`, `chore(ci)` und die
+zugehörigen Merge-Commits). Ein einziger inhaltlicher Commit hält die Automatik an — der gehört in
+einen Changelog-Eintrag, den ein Mensch in Nutzersprache schreibt, und er gehört vor dem Ausliefern
+angesehen. Die Entscheidung trifft `tools/release/sammel_release.py`, sie ist mit 18 Tests belegt
+und läuft in `ci.yml` bei jedem Push mit. **Wer diese Liste erweitert, veröffentlicht ungeprüfte
+Inhalte an echte Tester** — insbesondere darf `chore(release)` nie hinein, das wäre eine Schleife.
+
+**Der Rauchtest ist der einzige Schritt im ganzen Repo, der die App AUSFÜHRT.** `ci.yml` baut,
+testet und lintet — startet sie aber nie, und genau dieser blinde Fleck hat am 05.08.2026
+zugeschlagen. Er installiert die Debug-APK auf einem Emulator, startet `MainActivity`, wartet 15 s
+und prüft dreierlei: läuft der Prozess noch, steht ein `FATAL EXCEPTION` im Log (fängt den
+Prozess, der sich nach dem Absturz neu startet und deshalb oben lebendig aussieht), und ist die
+Activity im Vordergrund.
+
+**Warum der Bump NACH dem Rauchtest kommt:** ein gepushter Bump, der es nicht in den Store
+schafft, macht den nächsten Lauf blind — das Werkzeug hält den Bump-Commit dann für einen
+erfolgten Release und sieht die Wartung als ausgeliefert an. Scheitert die Auslieferung trotzdem,
+wird der Lauf **rot**; dann `veroeffentlichen.yml` von Hand nachstoßen, **nicht neu bumpen**.
+
+**Warum `workflow_call` und kein zweiter Push-Auslöser:** ein Push mit dem Standard-`GITHUB_TOKEN`
+löst bewusst keine Workflows aus. Der Bump-Push würde `veroeffentlichen.yml` also nie starten;
+deshalb ruft das Sammel-Release es direkt auf und übergibt `ref: main`, weil `github.sha` noch auf
+den Stand vor dem Bump zeigt.
+
 ## Nicht verhandelbar
 
 - **`docs/changelog.html` nie von Hand editieren.** Der Bereich zwischen

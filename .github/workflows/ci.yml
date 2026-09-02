@@ -95,6 +95,12 @@ jobs:
       - name: Entscheidungen der Reste-Pruefung testen
         run: python3 -m unittest discover -s tools/aufraeumen -p "test_*.py"
 
+      # Entscheidet, ob Wartungsarbeit unbeaufsichtigt in den Play-Track darf. Ein Detektor, der
+      # hier zu grosszuegig wird, veroeffentlicht eine inhaltliche Aenderung ohne Changelog und
+      # ohne dass jemand sie angesehen hat - deshalb laeuft er bei JEDEM Push mit.
+      - name: Entscheidung des Sammel-Release testen
+        run: python3 -m unittest discover -s tools/release -p "test_*.py"
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

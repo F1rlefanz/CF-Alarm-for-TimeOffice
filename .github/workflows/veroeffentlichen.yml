@@ -54,10 +54,12 @@ jobs:
     outputs:
       ausliefern: ${{ steps.vergleich.outputs.ausliefern }}
     steps:
-      - name: Checkout (zwei Commits, fuer den Vergleich)
+      # Volle Historie, nicht zwei Commits: verglichen wird gegen den Stand VOR dem Push
+      # (`github.event.before`), und der kann beliebig viele Commits zurueckliegen.
+      - name: Checkout (volle Historie, fuer den Vergleich)
         uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: versionCode mit dem Stand davor vergleichen
         id: vergleich
@@ -67,9 +69,36 @@ jobs:
             echo "ausliefern=ja" >> "$GITHUB_OUTPUT"; exit 0
           fi
           NEU=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
-          ALT=$(git show HEAD~1:app/build.gradle.kts 2>/dev/null | grep -oP 'versionCode\s*=\s*\K[0-9]+' | head -1 || echo 0)
-          echo "vorher=$ALT  jetzt=$NEU"
+
+          # DER VERGLEICHSPUNKT IST DER STAND VOR DEM PUSH, NICHT HEAD~1.
+          #
+          # Bis zum 02.09.2026 stand hier `git show HEAD~1:...`. Das stimmt nur, wenn der
+          # Bump der LETZTE Commit des Pushes ist. Wird ein Zweig gemergt oder werden mehrere
+          # Commits auf einmal geschoben - der Normalfall in diesem Repo -, liegt der
+          # Bump-Commit mitten drin, HEAD~1 traegt den NEUEN versionCode, und der Vergleich
+          # lautet "127 -> 127". Der Lauf endet dann nach neun Sekunden GRUEN und liefert
+          # nichts aus. Genau so ist v1.39.1 zunaechst liegengeblieben (Lauf 33604984677).
+          # Ein Fehlschlag, der wie Erfolg aussieht, ist hier die teuerste Sorte.
+          VORHER_SHA="${{ github.event.before }}"
+          NULL_SHA="0000000000000000000000000000000000000000"
+          BRAUCHBAR=nein
+          if [ -n "$VORHER_SHA" ] && [ "$VORHER_SHA" != "$NULL_SHA" ]; then
+            git cat-file -e "$VORHER_SHA^{commit}" 2>/dev/null && BRAUCHBAR=ja
+          fi
+
+          if [ "$BRAUCHBAR" = "ja" ]; then
+            ALT=$(git show "$VORHER_SHA:app/build.gradle.kts" 2>/dev/null | grep -oP 'versionCode\s*=\s*\K[0-9]+' | head -1 || echo 0)
+            QUELLE="Stand vor dem Push ($VORHER_SHA)"
+          else
+            # Neuer Zweig oder ein Force-Push, dessen alter Commit nicht mehr da ist. Dann
+            # bleibt nur der alte Weg - mit derselben Fehlerrichtung wie bisher.
+            ALT=$(git show HEAD~1:app/build.gradle.kts 2>/dev/null | grep -oP 'versionCode\s*=\s*\K[0-9]+' | head -1 || echo 0)
+            QUELLE="HEAD~1 (Notbehelf - $VORHER_SHA nicht auffindbar)"
+          fi
+
+          echo "vorher=$ALT  jetzt=$NEU  (Quelle: $QUELLE)"
           if [ "$NEU" -gt "$ALT" ]; then
+            echo "Bump $ALT -> $NEU - wird ausgeliefert."
             echo "ausliefern=ja" >> "$GITHUB_OUTPUT"
           else
             echo "Kein Bump ($ALT -> $NEU) - nichts auszuliefern."

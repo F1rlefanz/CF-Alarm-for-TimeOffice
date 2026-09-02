@@ -85,6 +85,17 @@ fun CalendarSelectionScreen(
                     // abwaehlte, sah einen toten Knopf und durfte glauben, nichts sei uebernommen
                     // worden - die Raeumung war zu dem Zeitpunkt schon gelaufen (Issue #50).
                     // Was der leere Zustand bedeutet, sagt jetzt die Warnkarte in der Liste.
+                    //
+                    // DAS KALENDER-GATE HAENGT NICHT AN DIESEM KNOPF, auch wenn es bis v1.39.0 so
+                    // aussah. Wer ohne Kalender auf "Fertig" tippt, laeuft durch die restlichen
+                    // Onboarding-Gates bis Home - dort steht "Noch kein Kalender ausgewählt" samt
+                    // Weg zurueck (`HomeTabContent`, `NoShiftReason.NO_CALENDAR_SELECTED`), im
+                    // Status-Tab ebenso, und beim naechsten App-Vordergrund schickt
+                    // `handleAuthenticationSuccess()` ihn wieder hierher. Der ausgegraute Knopf
+                    // hat das nie verhindert, sondern nur den Vorwaertsweg gesperrt - der
+                    // Zurueck-Pfeil fuehrte an derselben Stelle vorbei. Wer hier wieder ein
+                    // `enabled` ergaenzen will, baut den ausgegrauten Luegner neu und gewinnt
+                    // nichts: ein sichtbarer Zustand ist die Sperre, kein toter Knopf.
                     TextButton(onClick = onDone) {
                         Text("Fertig")
                     }
@@ -195,11 +206,24 @@ fun CalendarSelectionScreen(
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
+                                    // KEINE Vollzugsmeldung. "Bereits gestellte Wecker wurden
+                                    // entfernt" stand hier zuerst und waere eine Behauptung ueber
+                                    // etwas, das diese Karte nicht weiss: die Raeumung nach einer
+                                    // Abwahl hat vier bewusste Fail-safe-Ausstiege
+                                    // (`clearAlarmsAfterCalendarDeselection`), bei denen JEDER
+                                    // Wecker scharf stehen bleibt. Der Widerspruch wird gemeldet -
+                                    // aber im Status-Tab, nicht hier. Und von Hand gestellte
+                                    // Wecker bleiben ohnehin (`keepManualAlarms`), ebenso wie es
+                                    // bei einer Neuinstallation gar nichts zu entfernen gab.
+                                    // Deshalb steht hier, was die Abwahl TUT, nicht was sie
+                                    // getan hat.
                                     Text(
-                                        "Ohne Kalender erkennt die App keine Schichten mehr und " +
-                                                "stellt keine Wecker. Bereits gestellte Wecker " +
-                                                "wurden entfernt. Tippe einen Kalender an, um das " +
-                                                "rückgängig zu machen.",
+                                        "Ohne Kalender erkennt die App keine Schichten und stellt " +
+                                                "keine Wecker. Beim Abwählen entfernt sie auch die " +
+                                                "bereits gestellten; von Hand gestellte Wecker " +
+                                                "bleiben. Klappt das Aufräumen nicht, sagt es der " +
+                                                "Status-Tab. Tippe einen Kalender an, um wieder " +
+                                                "Schichten zu überwachen.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )

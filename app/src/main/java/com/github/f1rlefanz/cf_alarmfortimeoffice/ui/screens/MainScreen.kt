@@ -305,7 +305,7 @@ fun MainScreen(
                         if (!BatteryOptimizationHelper.isExempted(context)) {
                             Logger.business(
                                 LogTags.NAVIGATION,
-                                "Calendar saved -> Battery Exemption needed"
+                                "Kalenderauswahl verlassen -> Battery Exemption needed"
                             )
                             navigationViewModel.navigateToBatteryExemption()
                         } else {

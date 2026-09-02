@@ -103,8 +103,11 @@ jobs:
             selbst wenn er gruen endet.
 
             ARBEITE JEDEN OFFENEN PR AB, dessen Branch mit `chore/aufraeumen-`
-            beginnt (`gh pr list --state open`). Gibt es keinen, melde das und
-            hoere auf - nichts erfinden.
+            beginnt: `gh pr list --state open --limit 100`. Das `--limit` ist
+            nicht schmueckend - ohne es zeigt gh nur 30, und mit den offenen
+            Dependabot-PRs daneben faellt ein Aufraeum-PR aus der ersten Seite
+            heraus und wird nie beurteilt. Gibt es keinen, melde das und hoere
+            auf - nichts erfinden.
 
             EINEN NACH DEM ANDEREN, ganz zu Ende. Erst wenn PR A gemergt oder
             geschlossen UND kommentiert ist, faengst du mit PR B an. Zwei PRs
@@ -169,6 +172,12 @@ jobs:
                und die Zahlen zeigt, auf die du dich stuetzt. "Sieht gut aus"
                ist keine Begruendung.
 
+               NIMM DAFUER `gh pr comment <nr>`, nicht `gh pr review`. Der
+               Schritt, der stumme Laeufe aufdeckt, liest beide Formen, aber
+               nur die erste ist auch dann noch da, wenn der PR geschlossen
+               wird - und ein Review an einem fremden PR kann am Token
+               scheitern, wo ein Kommentar durchgeht.
+
             Nichts bleibt liegen: jeder offene Aufraeum-PR ist am Ende dieses
             Laufs entweder in `main` oder geschlossen.
 
@@ -197,11 +206,24 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Ohne Zeitmarke ist dieser Schritt WERTLOS, nicht bloss ungenau: ein
+          # leeres $SEIT laesst `select(.createdAt < "")` fuer jeden PR falsch
+          # werden, die Liste bleibt leer und der Schritt meldet Entwarnung.
+          # Leer ist es genau dann, wenn "Startzeit merken" nicht lief - also
+          # wenn ein Schritt davor scheiterte und folglich GAR NICHTS beurteilt
+          # wurde. Das ist der Fall, fuer den `if: always()` hier steht.
+          if [ -z "${SEIT:-}" ]; then
+            echo "::error::Startzeit fehlt - der Lauf ist vor der Beurteilung abgebrochen."
+            exit 1
+          fi
+
           # Nur PRs, die es beim Start schon gab - ein waehrend des Laufs
           # entstandener PR konnte gar nicht beurteilt werden.
+          # `--limit 100`, weil gh sonst nach 30 abschneidet und ein
+          # Aufraeum-PR hinter den Dependabot-PRs unsichtbar bliebe.
           FILTER=".[] | select(.headRefName | startswith(\"chore/aufraeumen-\"))"
           FILTER="$FILTER | select(.createdAt < \"$SEIT\") | .number"
-          OFFEN=$(gh pr list --state open --json number,headRefName,createdAt --jq "$FILTER")
+          OFFEN=$(gh pr list --state open --limit 100 --json number,headRefName,createdAt --jq "$FILTER")
 
           if [ -z "$OFFEN" ]; then
             echo "Kein Aufraeum-PR mehr offen, der vor $SEIT bestand - nichts liegengeblieben."
@@ -210,8 +232,13 @@ jobs:
 
           STUMM=""
           for NR in $OFFEN; do
+            # BEIDE Kommentarformen zaehlen. `--json comments` liefert nur die
+            # gewoehnlichen Kommentare; haette der Torwaechter sein Urteil als
+            # Review hinterlassen, wuerde dieser Schritt sonst einen korrekt
+            # beurteilten PR als "stumm" anprangern - ein Fehlalarm an genau
+            # der Stelle, deren Wert daran haengt, dass man ihr glaubt.
             # ISO-8601 in UTC vergleicht sich lexikographisch richtig.
-            LETZTER=$(gh pr view "$NR" --json comments --jq '[.comments[].createdAt] | max // ""')
+            LETZTER=$(gh pr view "$NR" --json comments,reviews               --jq '[(.comments[]?.createdAt), (.reviews[]?.submittedAt)] | map(select(. != null)) | max // ""')
             if [ -z "$LETZTER" ] || [[ "$LETZTER" < "$SEIT" ]]; then
               STUMM="$STUMM $NR"
             fi

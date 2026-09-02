@@ -69,10 +69,16 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
   Aufräumen — das ist eine Änderung mit eigenem Risiko und gehört besprochen. Entfernt wird nur,
   was **nachweislich niemand benutzt**.
 - **Ein Formatfehler, den das produktive Werkzeug toleriert, bleibt ein Formatfehler.**
-  `app/lint.xml` war lange kein wohlgeformtes XML (`--` im Kommentar), und Android Lint nahm es
-  klaglos hin — die Datei wirkte, niemand hatte einen Anlass hinzusehen. Gemerkt hat es erst das
-  erste Werkzeug, das sie *parsen* wollte, und das musste sich mit Regexps behelfen. **„Es
-  funktioniert ja" ist kein Beleg für Wohlgeformtheit**; das nächste Werkzeug zahlt.
+  `app/lint.xml` ist **bis heute kein wohlgeformtes XML** — nachgeprüft am 02.09.2026:
+  `python -c "import xml.dom.minidom; xml.dom.minidom.parse('app/lint.xml')"` scheitert mit
+  `not well-formed (invalid token): line 15, column 59`, dem `--offline` im Kopfkommentar.
+  Android Lint nimmt das klaglos hin, die Datei *wirkt* also, und niemand hat einen Anlass
+  hinzusehen. Gemerkt hat es erst das erste Werkzeug, das sie *parsen* wollte, und das musste sich
+  mit Regexps behelfen. **„Es funktioniert ja" ist kein Beleg für Wohlgeformtheit**; das nächste
+  Werkzeug zahlt — **wer hier einen XML-Parser ansetzt, stürzt ab, nicht die Datei.**
+  Repariert wird es NICHT nebenbei: die Runden 11 und 13 haben es versucht (PR #40, PR #48), der
+  Torwächter hat beide geschlossen, und der Blickwinkel steht als **Issue #39** wieder offen. Das
+  ist der Weg dafür.
 - **Blickwinkel, die statisch entscheidbar sind, sind die guten.** Runde 11 hatte 36 Dateien,
   1 Rohbefund, **0 Fehlalarme** — eine Datei parst oder sie parst nicht, es gibt keinen
   Ermessensspielraum. Verworfen wurden bisher fast nur Blickwinkel, die *Absicht* erraten mussten

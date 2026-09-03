@@ -12,7 +12,7 @@ daraus eine Messung machte.
 
 Deshalb steht das hier - nicht als guter Vorsatz, sondern als Gatter in der Schleuse.
 
-SECHS PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
+SIEBEN PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
 meldet, wird weggeklickt und schuetzt dann gar nichts mehr (siehe die Triage-Lehre in
 GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten den Einzelfall).
 
@@ -27,6 +27,9 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
   6. EIGENSCHAFTEN OHNE VERWENDER (val, var, const val) - blockierend, mit Begruendungszwang
      im eigenen KDoc. Nicht nur `const val`: ein `dp`-Wert kann gar keine Compile-Zeit-Konstante
      sein, und genau dort lag eine tote Konstante.
+  7. KONFIGURATIONSDATEIEN, DIE EIN STANDARD-PARSER NICHT LIEST - blockierend. Die einzige
+     Pruefung hier, die gar kein Ermessen kennt: eine Datei parst, oder sie parst nicht.
+     Setzt bei offenem Merge-Konflikt aus - Begruendung an der Pruefung selbst.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -34,10 +37,12 @@ Aufruf:
     python tools/aufraeumen/pruefe_reste.py --basis <commit>   # Doku-Check gegen diese Basis
 """
 
+import json
 import os
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 WURZEL = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 QUELLEN = os.path.join(WURZEL, "app", "src")
@@ -485,6 +490,186 @@ def pruefe_ungenutzte_konstanten(befunde):
                 )
 
 
+# ---------------------------------------------------------------------------------------------
+# 7. Konfigurationsdateien, die ein Standard-Parser nicht liest
+#
+# HERGANG (03.09.2026): `app/lint.xml` war kein wohlgeformtes XML. Im Kopfkommentar stand Gradles
+# Offline-Schalter ausgeschrieben, und dessen zwei Bindestriche beenden in XML einen Kommentar.
+# GEMESSEN, NICHT GESCHAETZT (jede Fassung der Datei geparst): wohlgeformt vom 22.08.2025
+# (`34abec2`) bis `54ce3d2` (12.07.2026), kaputt ab `c445dee` (06.08.2026), repariert am
+# 03.09.2026 - also 349 Tage gut, danach vier Wochen kaputt. Nicht "jahrelang".
+#
+# Kaputtgemacht hat es nie etwas: Android Lint nimmt die Datei klaglos an, die Unterdrueckungen
+# wirkten. Auffallen konnte es nur jemandem, der sie PARST - und das erste Werkzeug, das das
+# wollte, musste sich stattdessen mit regulaeren Ausdruecken behelfen. "Es funktioniert ja" ist
+# kein Beleg fuer Wohlgeformtheit; das naechste Werkzeug zahlt.
+#
+# GEMESSEN, BEVOR ES EIN GATTER WURDE: 30 Dateien unter `git ls-files` (27 XML, 2 JSON, 1 TOML),
+# 1 Rohbefund, 0 Fehlalarme. Die sauberste Quote dieser Reihe, und das aus einem strukturellen
+# Grund: hier ist nichts zu erraten. Eine Datei parst oder sie parst nicht - waehrend jeder bisher
+# VERWORFENE Blickwinkel Absicht erraten musste (siehe Skill `cfalarm-altlasten-abtragen`).
+#
+# YAML BLEIBT DRAUSSEN: die Standardbibliothek hat keinen YAML-Parser, und PyYAML ist auf dem
+# Runner nicht installiert (nachgesehen am 03.09.2026: `ModuleNotFoundError`). Ueber die `.yml`
+# im Baum sagt diese Pruefung deshalb NICHTS - eine Abhaengigkeit dafuer waere ein schlechter
+# Tausch, zumal GitHub unlesbare Workflow-Dateien selbst ablehnt und
+# `tools/skills/pruefe_skills.py` das Skill-Frontmatter prueft.
+#
+# GRENZE: Wer bewusst eine Datei ablegt, die ein Standard-Parser nicht liest, traegt sie unten in
+# BEWUSST_UNPARSBAR ein. Anders als bei Pruefung 3 (`HISTORISCH`) und 6 (`OHNE VERWENDER`) kann
+# der Ausnahme-Marker hier NICHT in der Datei stehen: JSON kennt keine Kommentare, und in einer
+# unparsbaren Datei erreicht der Parser den Marker ohnehin nie.
+# ---------------------------------------------------------------------------------------------
+PARSER_ENDUNGEN = (".xml", ".json", ".toml")
+
+# Repo-relative Pfade, die absichtlich nicht parsen. Leer - und das ist der Normalfall.
+BEWUSST_UNPARSBAR = frozenset()
+
+
+def konfig_fehler(pfad, roh):
+    """Die eigentliche Entscheidung - REIN, damit sie ohne Repository pruefbar ist.
+
+    Liefert die Fehlerbeschreibung, wenn der Standard-Parser die Datei nicht liest, sonst "".
+    """
+    endung = os.path.splitext(pfad)[1].lower()
+    if endung not in PARSER_ENDUNGEN:
+        return ""
+    if endung == ".toml":
+        try:
+            import tomllib
+        except ImportError:
+            # tomllib gibt es erst ab Python 3.11, und es ist die einzige 3.11+-Abhaengigkeit in
+            # `tools/`. Der Schleusen-Hook ruft bares `python`, die CI ein ungepinntes `python3`.
+            # LOKAL im Zweig importiert kostet ein fehlender Parser genau diese eine Datei; am
+            # Modulkopf haette derselbe Import ALLE SIEBEN Pruefungen getoetet - gemeldet als
+            # "Der Aufraeumdurchgang hat Reste hinterlassen", also in die voellig falsche Richtung.
+            return ""
+    try:
+        if endung == ".xml":
+            ET.fromstring(roh)
+        elif endung == ".json":
+            json.loads(roh)
+        else:
+            tomllib.loads(roh.decode("utf-8"))
+    # BEWUSST BREIT, UND DAS IST NACHGEMESSEN: Ein frueherer Anlauf fing `(SyntaxError,
+    # ValueError)` - und eine XML-Deklaration mit unbekannter Kodierung (`encoding="cp1252-de"`)
+    # wirft `LookupError`. Der entkam und riss das ganze Skript samt der sechs anderen Pruefungen
+    # mit. Ein Tupel aus Fehlertypen ist hier eine Wette darauf, dass drei fremde Parser nichts
+    # anderes werfen; der `try` umschliesst dafuer NUR den Parser-Aufruf, und jeder Wurf von dort
+    # bedeutet dasselbe: die Datei parst nicht.
+    except Exception as fehler:  # noqa: BLE001
+        return "{}: {}".format(type(fehler).__name__, fehler)
+    return ""
+
+
+def _git_roh(*args):
+    """Wie `_git`, aber OHNE Dekodierung - fuer `-z`-Ausgaben mit Pfaden darin.
+
+    `_git` dekodiert mit `errors="replace"`; ein Pfadbyte, das kein UTF-8 ist, wird dort
+    unwiederbringlich zu U+FFFD. Genau daran ist der zweite Anlauf gescheitert: die Datei war
+    danach nicht mehr zu oeffnen und fiel STILL aus der Pruefung. Roh gelesen und mit
+    `os.fsdecode` (surrogateescape) uebersetzt, ueberlebt jedes Byte den Weg zurueck zu `open()`.
+    """
+    try:
+        fertig = subprocess.run(
+            ["git"] + list(args), cwd=WURZEL, capture_output=True, timeout=60,
+        )
+        return fertig.returncode, fertig.stdout
+    except (OSError, subprocess.SubprocessError):
+        return 1, b""
+
+
+def _nul_liste(roh):
+    """`\\0`-getrennte git-Ausgabe zu entdoppelten Pfaden - Reihenfolge bleibt erhalten."""
+    gesehen, ergebnis = set(), []
+    for teil in roh.split(b"\0"):
+        if not teil:
+            continue
+        pfad = os.fsdecode(teil)
+        if pfad not in gesehen:
+            gesehen.add(pfad)
+            ergebnis.append(pfad)
+    return ergebnis
+
+
+def konflikt_offen():
+    """Steht gerade ein Merge-/Rebase-Konflikt im Index?
+
+    DIE TEUERSTE LEHRE DIESER PRUEFUNG (03.09.2026, PR #56 wurde dafuer geschlossen): Ein
+    Konfliktmarker ist NIE wohlgeformtes XML/JSON/TOML. Ohne diese Bremse meldet Pruefung 7 im
+    Konflikt jede betroffene Datei - und weil `tools/schleuse/pruefe_schleuse.py` auf
+    `git\\s+(merge|push)` triggert und nur `--dry-run` ausnimmt, werden ausgerechnet
+    `git merge --abort` und `git merge --continue` abgewiesen: die beiden RETTUNGSBEFEHLE, mit
+    der Fehldiagnose "Der Aufraeumdurchgang hat Reste hinterlassen" und einem Rat, den niemand
+    befolgen kann - einen Konfliktmarker "behebt" man nicht, indem man Reste loescht. Betroffen
+    waeren `strings.xml`, `AndroidManifest.xml`, `libs.versions.toml` und `.claude/settings.json`,
+    also genau die Dateien, die hier zwischen parallelen Sessions laufend kollidieren.
+
+    Deshalb setzt Pruefung 7 im Konflikt aus. Verloren geht nichts: aufgeloest wird der Konflikt
+    ohnehin, und der naechste Lauf sieht den fertigen Baum. Ein Gatter, das den Ausweg
+    versperrt, ist schlimmer als eine Pruefung, die eine Minute spaeter greift.
+
+    Faellt `git` selbst aus, gilt "kein Konflikt" - dann laeuft die Pruefung weiter und meldet
+    ueber die leere Pfadliste laut, dass sie nichts belegen konnte.
+    """
+    code, roh = _git_roh("ls-files", "-u", "-z")
+    return code == 0 and bool(roh.strip())
+
+
+def _versionierte_pfade():
+    """Pfade aus dem Index, entdoppelt - `-z`, damit Umlaut-Pfade unverfaelscht ankommen.
+
+    OHNE `-z` quotet git Pfade mit Nicht-ASCII-Zeichen C-artig (`core.quotePath` steht per
+    Default auf `true`): aus `docs/pruefung.json` mit Umlaut wird `"docs/pr\\303\\274fung.json"`,
+    `open()` scheitert daran, und die Datei faellt STILL aus der Pruefung. In einem durchgehend
+    deutschsprachigen Repo ist das kein Exot.
+
+    Entdoppelt wird, weil `git ls-files` einen Pfad einmal pro Stage listen kann.
+    """
+    code, roh = _git_roh("ls-files", "-z")
+    if code != 0:
+        return []
+    return _nul_liste(roh)
+
+
+def pruefe_konfigdateien(befunde):
+    if konflikt_offen():
+        return
+    pfade = _versionierte_pfade()
+    if not pfade:
+        # FAIL LOUD STATT FAIL OPEN: Kein `git`, kein Repository, leerer Index - dann hat diese
+        # Pruefung nichts gesehen und darf das nicht als "gruen" ausgeben. Stille Degradierung
+        # auf "alles in Ordnung" ist genau das, wogegen dieses Projekt sonst ueberall anschreibt.
+        befunde.append(
+            "Konfigurationspruefung nicht durchfuehrbar: `git ls-files` lieferte keinen einzigen "
+            "Pfad (kein git, kein Repository?) - Pruefung 7 hat NICHTS geprueft"
+        )
+        return
+    for pfad in pfade:
+        if os.path.splitext(pfad)[1].lower() not in PARSER_ENDUNGEN:
+            continue
+        if pfad in BEWUSST_UNPARSBAR:
+            continue
+        voll = os.path.join(WURZEL, pfad)
+        if not os.path.isfile(voll):
+            # Im Index, aber nicht im Arbeitsbaum: die Datei ist lokal geloescht und die
+            # Loeschung noch nicht vorgemerkt. Da ist nichts zu parsen, und ein Befund waere hier
+            # ein Fehlalarm an einem blockierenden Gatter. Kodierung ist KEIN Grund mehr, hier zu
+            # landen - dafuer sorgt `_git_roh` samt `os.fsdecode`.
+            continue
+        try:
+            with open(voll, "rb") as datei:
+                roh = datei.read()
+        except OSError as fehler:
+            # NICHT still uebergehen: eine versionierte Datei, die im Arbeitsbaum liegt und sich
+            # trotzdem nicht oeffnen laesst, ist selbst ein Befund.
+            befunde.append("Konfigurationsdatei nicht lesbar: {} - {}".format(pfad, fehler))
+            continue
+        fehler = konfig_fehler(pfad, roh)
+        if fehler:
+            befunde.append("Konfigurationsdatei parst nicht: {} - {}".format(pfad, fehler))
+
+
 def main():
     ci = "--ci" in sys.argv
     basis = ""
@@ -499,6 +684,7 @@ def main():
     pruefe_composable_ohne_verbraucher(befunde)
     pruefe_haengende_kdocs(befunde)
     pruefe_ungenutzte_konstanten(befunde)
+    pruefe_konfigdateien(befunde)
     pruefe_doku_verweise(befunde, basis)
 
     if not befunde:

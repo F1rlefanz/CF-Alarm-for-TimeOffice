@@ -84,4 +84,13 @@
          Nicht aufgefuehrt, weil gar nicht in dieser Domain: direct_boot_alarms.xml liegt im
          Device-Protected Storage (/data/user_de/) und ist ein Spiegel der Alarme. -->
     <exclude domain="sharedpref" path="background_services.xml"/>
+
+    <!-- weckbildschirm_verdraengung.xml: die Aussage "DIESES Geraet verdraengt den
+         Weckbildschirm" (Hinweis-Zaehler und der bleibende Merker je_verdraengt, seit 1.39.3
+         das Gate fuers Vorwecken - siehe Skill cfalarm-wecker-und-boot, reference/vorwecken.md).
+         Beides ist eine Eigenschaft der HARDWARE, nicht der Nutzerkonfiguration: der Defekt
+         steckt in Fairphones Gesichtsentsperrung. Wandert der Merker mit, weckt ein gesundes
+         Nachfolgegeraet seinen Bildschirm dauerhaft 600 ms zu frueh vor - ohne dass dort je
+         etwas verdraengt wurde, und ohne dass es jemand zurueckstellen koennte. -->
+    <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
 </full-backup-content>

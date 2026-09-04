@@ -390,16 +390,19 @@ internal fun WeckbildschirmVerdraengtCard() {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Beim Klingeln erscheint der Weck-Bildschirm kurz und verschwindet wieder. " +
-                        "Der Wecker läuft weiter, lässt sich aber erst nach dem Entsperren " +
-                        "stoppen oder schlummern.\n\n" +
+                    "Beim Klingeln erschien der Weck-Bildschirm kurz und verschwand wieder. " +
+                        "Der Wecker lief weiter — zum Stoppen oder Schlummern musstest du die " +
+                        "Benachrichtigung aufklappen oder das Gerät entsperren.\n\n" +
                         "Ursache ist die Gesichtsentsperrung deines Geräts: sie legt sich über " +
                         "den Weck-Bildschirm. Das betrifft jede Wecker-App, auch die " +
-                        "vorinstallierte Uhr — es liegt nicht an dieser App, und sie kann es " +
-                        "nicht beheben.\n\n" +
-                        "Was hilft: das eingelernte Gesicht in den Geräte-Einstellungen unter " +
-                        "„Entsperrung per Gesichtserkennung“ löschen. Der Fingerabdruck ist " +
-                        "nicht betroffen.\n\n" +
+                        "vorinstallierte Uhr — es liegt nicht an dieser App.\n\n" +
+                        "Diese App steuert seit Version 1.39.3 dagegen: sie weckt den Bildschirm " +
+                        "kurz vorher selbst, damit der Weck-Bildschirm oben bleibt. Das greift ab " +
+                        "dem nächsten Wecker — beim allerersten Mal und nach einem Neustart ohne " +
+                        "Entsperren kann es trotzdem noch auftreten.\n\n" +
+                        "Wenn es weiter passiert, hilft nur: das eingelernte Gesicht in den " +
+                        "Geräte-Einstellungen unter „Entsperrung per Gesichtserkennung“ " +
+                        "löschen. Der Fingerabdruck ist nicht betroffen.\n\n" +
                         "Dieser Hinweis verschwindet von selbst, sobald wieder ein Wecker " +
                         "normal durchläuft.",
                     style = MaterialTheme.typography.bodyMedium

@@ -127,21 +127,27 @@ das baut man dieselbe Falle in neuer Form nach.
 
 ## Vorwecken — Kurzregeln
 
-Seit 1.39.3. Hergang, Messwerte und die widerlegten Saetze: `reference/vorwecken.md`.
+Seit 1.39.3, ohne Geraete-Unterscheidung seit 1.39.5. Hergang, Messwerte und die widerlegten
+Saetze: `reference/vorwecken.md`.
 
 - **Der Ton startet IMMER sofort, nie im verzoegerten Zweig.** Verzoegert wird ausschliesslich
   `startForeground()` mit der FSI-Notification. Der Ton ist der Wecker; wer ihn mit verzoegert,
   verzoegert den Weckruf selbst.
-- **Das Gate ist [WeckbildschirmVerdraengungPrefs.jeVerdraengt], NICHT der Hinweis-Zaehler.**
-  Der Zaehler beantwortet "passiert es gerade" und wird bei jedem sauberen Wecker
-  zurueckgestellt; das Gate beantwortet "ist dieses Geraet betroffen" und bleibt. Wer beides
-  wieder zusammenlegt, laesst die Massnahme sich durch ihren eigenen Erfolg abschalten — genau
-  das ist am 04.09.2026 zweimal hintereinander passiert.
-- **Jeder Fehler beim Ermitteln der Eingaben fuehrt zu Vorlauf 0**, also zum unveraenderten
-  Verhalten. Ein nicht lesbarer Merker darf keinen Wecker verzoegern.
+- **`VorweckEntscheidung.vorlaufMillis` liest NUR Systemzustand** (`isInteractive`,
+  `isKeyguardLocked`) — **kein gespeicherter Merker, kein DataStore, keine SharedPreferences.**
+  Bis 1.39.4 entschied ein bleibender Merker `je_verdraengt` mit, ob vorgeweckt wird; der lag im
+  CE-Storage und war im Direct Boot nicht lesbar, weshalb ausgerechnet der erste Wecker nach
+  einem naechtlichen Neustart ungeschuetzt lief. Wer dort wieder etwas Gespeichertes abfragt,
+  holt diese Luecke zurueck — und laesst ausserdem eine Typzuweisung in
+  `VorweckEntscheidungTest` nicht mehr uebersetzen.
 - **Vorgeweckt wird nur bei dunklem UND gesperrtem Bildschirm.** Ist der Bildschirm an, gibt es
   kein Aufwecken und damit keine Gesichtsentsperrung, die verdraengen koennte; ohne Keyguard
   entscheidet SystemUI ohnehin auf Heads-up statt Vollbild.
+- **Jeder Fehler beim Ermitteln der Eingaben fuehrt zu Vorlauf 0**, also zum unveraenderten
+  Verhalten.
+- **[WeckbildschirmVerdraengungPrefs] traegt nur noch den HINWEIS**, nicht mehr die Massnahme.
+  Der Zaehler faellt bei jedem sauberen Wecker auf 0 — das ist jetzt gefahrlos und war es
+  vorher nicht.
 
 ## Master-Pause — Kurzregeln
 

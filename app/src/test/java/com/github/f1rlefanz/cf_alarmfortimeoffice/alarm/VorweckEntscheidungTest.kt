@@ -6,23 +6,24 @@ import org.junit.Test
 /**
  * Die Entscheidungstabelle des Vorweckens.
  *
- * WAS HIER GESCHUETZT WIRD: Der Vorlauf verzoegert das Posten der Wecker-Notification. Das ist auf
- * einem betroffenen Geraet der Unterschied zwischen einem bedienbaren und einem verdraengten
- * Weckbildschirm - auf jedem anderen waere es nur eine Verzoegerung ohne Gegenwert. Deshalb ist
- * die Bedingung eng, und deshalb hat sie einen eigenen Test: wer sie spaeter lockert, verzoegert
- * Wecker auf Geraeten, die das Problem gar nicht haben.
+ * WAS HIER GESCHUETZT WIRD: Der Vorlauf verzoegert das Posten der Wecker-Notification. Auf einem
+ * betroffenen Geraet ist das der Unterschied zwischen einem bedienbaren und einem verdraengten
+ * Weckbildschirm; auf jedem anderen kostet er [VorweckEntscheidung.VORLAUF_MS], waehrend der Ton
+ * bereits laeuft. Diese Abwaegung ist bewusst zugunsten des Vorweckens entschieden (04.09.2026,
+ * Begruendung in [VorweckEntscheidung]) - die Bedingung haengt seitdem NUR noch am Systemzustand.
  *
- * Hergang, Messwerte und Begruendung stehen in [VorweckEntscheidung].
+ * WER HIER EINE DRITTE BEDINGUNG ERGAENZEN WILL, muss vorher `reference/vorwecken.md` lesen: die
+ * gestrichene dritte Bedingung war ein gespeicherter Merker, und der hat den Schutz zweimal durch
+ * seinen eigenen Erfolg abgeschaltet und ausserdem den Wecker nach einem Neustart ohne
+ * Entsperrung ungeschuetzt gelassen (CE-Storage, im Direct Boot nicht lesbar).
  */
 class VorweckEntscheidungTest {
 
     @Test
-    fun `ohne gemessene Verdraengung kein Vorlauf`() {
+    fun `bei dunklem gesperrtem Bildschirm wird vorgeweckt`() {
         assertEquals(
-            "Ein Geraet ohne jede gemessene Verdraengung darf seinen Wecker nicht verzoegert bekommen",
-            0L,
+            VorweckEntscheidung.VORLAUF_MS,
             VorweckEntscheidung.vorlaufMillis(
-                geraetIstBetroffen = false,
                 bildschirmAn = false,
                 gesperrt = true
             )
@@ -30,14 +31,21 @@ class VorweckEntscheidungTest {
     }
 
     @Test
-    fun `auf einem betroffenen Geraet wird vorgeweckt`() {
+    fun `das Vorwecken haengt an keinem gespeicherten Zustand`() {
+        // DER KERN DER AENDERUNG VON 1.39.5: Es gibt keine Eingabe mehr, die aus einer Datei
+        // kommt. Genau deshalb greift das Vorwecken auch beim ersten Wecker nach einem Neustart
+        // ohne Entsperrung - der Fall, in dem der frueher noetige Merker im CE-Storage nicht
+        // lesbar war. Der Test haelt die Signatur klein: wer eine dritte Eingabe ergaenzt, muss
+        // hier vorbei.
+        // Absichtlich eine TYPZUWEISUNG und keine Reflexion: kommt eine dritte Eingabe dazu,
+        // scheitert schon die Uebersetzung dieser Zeile - das ist frueher und verlaesslicher als
+        // eine Laufzeitpruefung (und braucht kein kotlin-reflect).
+        val nurSystemzustand: (Boolean, Boolean) -> Long = VorweckEntscheidung::vorlaufMillis
         assertEquals(
+            "vorlaufMillis darf nur Systemzustand lesen (bildschirmAn, gesperrt) - kein " +
+                "gespeicherter Merker, der im Direct Boot fehlen kann",
             VorweckEntscheidung.VORLAUF_MS,
-            VorweckEntscheidung.vorlaufMillis(
-                geraetIstBetroffen = true,
-                bildschirmAn = false,
-                gesperrt = true
-            )
+            nurSystemzustand(false, true)
         )
     }
 
@@ -47,7 +55,6 @@ class VorweckEntscheidungTest {
         assertEquals(
             0L,
             VorweckEntscheidung.vorlaufMillis(
-                geraetIstBetroffen = true,
                 bildschirmAn = true,
                 gesperrt = true
             )
@@ -61,7 +68,6 @@ class VorweckEntscheidungTest {
         assertEquals(
             0L,
             VorweckEntscheidung.vorlaufMillis(
-                geraetIstBetroffen = true,
                 bildschirmAn = false,
                 gesperrt = false
             )
@@ -81,8 +87,9 @@ class VorweckEntscheidungTest {
 
     @Test
     fun `der Vorlauf bleibt fuer einen Wecker unspuerbar`() {
-        // Obergrenze mit Absicht: das hier verzoegert die einzige Bedienoberflaeche eines
-        // klingelnden Weckers. Wer den Wert hochsetzt, muss diese Zeile mit anfassen und dabei
+        // Obergrenze mit Absicht, und seit 1.39.5 mit mehr Gewicht: der Vorlauf trifft jetzt
+        // JEDEN Wecker bei dunklem, gesperrtem Bildschirm, nicht mehr nur den auf einem
+        // betroffenen Geraet. Wer den Wert hochsetzt, muss diese Zeile mit anfassen und dabei
         // erklaeren, warum das noch vertretbar ist.
         assert(VorweckEntscheidung.VORLAUF_MS <= 1_000L) {
             "Vorlauf ${VorweckEntscheidung.VORLAUF_MS} ms verzoegert den Weckbildschirm spuerbar"

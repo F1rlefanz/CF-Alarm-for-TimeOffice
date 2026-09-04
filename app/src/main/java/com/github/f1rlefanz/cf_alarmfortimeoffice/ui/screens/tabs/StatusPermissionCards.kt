@@ -327,11 +327,13 @@ internal fun FullScreenIntentCard() {
  * schlummern. Am 29.08.2026 mit der vorinstallierten Google Uhr gegengeprueft - es trifft jede
  * Wecker-App auf diesem Geraet.
  *
- * WARUM NUR EIN HINWEIS: Vier Messlaeufe haben belegt, dass sich der Full-Screen-Intent nicht
- * nachreichen laesst (weder ueber eine zweite Notification noch als Update, auch nicht ohne
- * Verzoegerung). App-seitig ist nichts zu gewinnen. Was bleibt, ist Ehrlichkeit: sagen, was
- * passiert, statt den Nutzer raten zu lassen, warum sein Wecker morgens ohne Bedienoberflaeche
- * dasteht.
+ * WARUM ES DEN HINWEIS NEBEN DER ABHILFE GIBT: Vier Messlaeufe haben belegt, dass sich der
+ * Full-Screen-Intent nicht NACHREICHEN laesst (weder ueber eine zweite Notification noch als
+ * Update, auch nicht ohne Verzoegerung). Der Satz "app-seitig ist nichts zu gewinnen", der hier
+ * stand, war daraus zu weit verallgemeinert: er galt fuers Nachreichen, nicht fuer den ZEITPUNKT
+ * des ersten Postens. Genau dort setzt das Vorwecken an (seit 1.39.3, ohne Geraete-Unterscheidung
+ * seit 1.39.5). Der Hinweis bleibt daneben bestehen - er meldet, wenn es TROTZ Vorwecken
+ * passiert, und ist die einzige Stelle, an der der Nutzer davon erfaehrt.
  *
  * WARUM KEIN KNOPF ZUR EINSTELLUNG: Es gibt keine. Die Gesichtsentsperrung des FP6 kennt nur
  * "einlernen" und "loeschen" - ein Schalter existiert nicht (im Fairphone-Forum unabhaengig
@@ -396,10 +398,9 @@ internal fun WeckbildschirmVerdraengtCard() {
                         "Ursache ist die Gesichtsentsperrung deines Geräts: sie legt sich über " +
                         "den Weck-Bildschirm. Das betrifft jede Wecker-App, auch die " +
                         "vorinstallierte Uhr — es liegt nicht an dieser App.\n\n" +
-                        "Diese App steuert seit Version 1.39.3 dagegen: sie weckt den Bildschirm " +
-                        "kurz vorher selbst, damit der Weck-Bildschirm oben bleibt. Das greift ab " +
-                        "dem nächsten Wecker — beim allerersten Mal und nach einem Neustart ohne " +
-                        "Entsperren kann es trotzdem noch auftreten.\n\n" +
+                        "Diese App steuert dagegen: sie weckt den Bildschirm kurz vorher selbst, " +
+                        "damit der Weck-Bildschirm oben bleibt. Das greift bei jedem Wecker, auch " +
+                        "beim ersten nach einem Neustart.\n\n" +
                         "Wenn es weiter passiert, hilft nur: das eingelernte Gesicht in den " +
                         "Geräte-Einstellungen unter „Entsperrung per Gesichtserkennung“ " +
                         "löschen. Der Fingerabdruck ist nicht betroffen.\n\n" +

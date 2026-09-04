@@ -89,12 +89,14 @@
         <exclude domain="sharedpref" path="background_services.xml"/>
 
         <!-- weckbildschirm_verdraengung.xml: die Aussage "DIESES Geraet verdraengt den
-             Weckbildschirm" (Hinweis-Zaehler und der bleibende Merker je_verdraengt, seit 1.39.3
-             das Gate fuers Vorwecken - siehe Skill cfalarm-wecker-und-boot, reference/vorwecken.md).
-             Beides ist eine Eigenschaft der HARDWARE, nicht der Nutzerkonfiguration: der Defekt
-             steckt in Fairphones Gesichtsentsperrung. Wandert der Merker mit, weckt ein gesundes
-             Nachfolgegeraet seinen Bildschirm dauerhaft 600 ms zu frueh vor - ohne dass dort je
-             etwas verdraengt wurde, und ohne dass es jemand zurueckstellen koennte. -->
+             Weckbildschirm" - der Zaehler hinter dem Hinweis im Status-Tab (siehe Skill
+             cfalarm-wecker-und-boot, reference/vorwecken.md). Das ist eine Eigenschaft der
+             HARDWARE, nicht der Nutzerkonfiguration: der Defekt steckt in Fairphones
+             Gesichtsentsperrung. Wandert der Zaehler mit, zeigt ein gesundes Nachfolgegeraet
+             einen Hinweis ueber einen Defekt, den es nicht hat - und raet dem Nutzer, sein
+             eingelerntes Gesicht zu loeschen. Der frueher hier mitgenannte Merker
+             je_verdraengt ist mit 1.39.5 entfallen; das Vorwecken haengt an keinem
+             gespeicherten Wert mehr. -->
         <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
     </cloud-backup>
 
@@ -111,12 +113,14 @@
         <exclude domain="sharedpref" path="background_services.xml"/>
 
         <!-- weckbildschirm_verdraengung.xml: die Aussage "DIESES Geraet verdraengt den
-             Weckbildschirm" (Hinweis-Zaehler und der bleibende Merker je_verdraengt, seit 1.39.3
-             das Gate fuers Vorwecken - siehe Skill cfalarm-wecker-und-boot, reference/vorwecken.md).
-             Beides ist eine Eigenschaft der HARDWARE, nicht der Nutzerkonfiguration: der Defekt
-             steckt in Fairphones Gesichtsentsperrung. Wandert der Merker mit, weckt ein gesundes
-             Nachfolgegeraet seinen Bildschirm dauerhaft 600 ms zu frueh vor - ohne dass dort je
-             etwas verdraengt wurde, und ohne dass es jemand zurueckstellen koennte. -->
+             Weckbildschirm" - der Zaehler hinter dem Hinweis im Status-Tab (siehe Skill
+             cfalarm-wecker-und-boot, reference/vorwecken.md). Das ist eine Eigenschaft der
+             HARDWARE, nicht der Nutzerkonfiguration: der Defekt steckt in Fairphones
+             Gesichtsentsperrung. Wandert der Zaehler mit, zeigt ein gesundes Nachfolgegeraet
+             einen Hinweis ueber einen Defekt, den es nicht hat - und raet dem Nutzer, sein
+             eingelerntes Gesicht zu loeschen. Der frueher hier mitgenannte Merker
+             je_verdraengt ist mit 1.39.5 entfallen; das Vorwecken haengt an keinem
+             gespeicherten Wert mehr. -->
         <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
     </device-transfer>
 </data-extraction-rules>

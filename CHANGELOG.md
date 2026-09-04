@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.3 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Auf dem Fairphone 6 blieb der Weckbildschirm hinter dem Sperrbildschirm hängen — er kommt jetzt nach vorn._
+
+### 🐛 Behoben
+
+- **Der Weckbildschirm bleibt stehen, statt hinter dem Sperrbildschirm zu verschwinden.** Auf dem Fairphone 6 startet die Gesichtsentsperrung bei jedem Aufwachen des Bildschirms und schob den klingelnden Wecker dabei nach hinten. Der Ton lief weiter, aber die großen Knöpfe zum Ausschalten und Schlummern waren weg — in einer Messung 32 Sekunden lang. Die App weckt den Bildschirm jetzt eine halbe Sekunde vorher selbst, sodass die Gesichtsentsperrung vorbeiziehen kann und der Weckbildschirm obendrauf landet. Am Gerät in drei Weckvorgängen nachgemessen: der Bildschirm blieb jedes Mal stehen und liess sich ohne Entsperren abstellen.
+
+- **Der Ton klingelt dabei unverändert sofort.** Nur die Anzeige wartet die halbe Sekunde ab — am Weckruf selbst ändert sich nichts.
+
+- **Die Abhilfe schaltet sich nicht mehr durch ihren eigenen Erfolg ab.** Sie läuft nur auf Geräten, auf denen das Problem tatsächlich aufgetreten ist. Weil ein geglückter Weckvorgang diesen Merker vorher zurücksetzte, wäre jeder zweite Wecker wieder ohne Bedienoberfläche geblieben. Das Gerät merkt sich jetzt dauerhaft, dass es betroffen ist.
+
+## Version 1.39.2
 
 **Stand:** September 2026
 

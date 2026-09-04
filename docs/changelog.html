@@ -51,7 +51,20 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.39.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.39.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Auf dem Fairphone 6 blieb der Weckbildschirm hinter dem Sperrbildschirm hängen — er kommt jetzt nach vorn.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Der Weckbildschirm bleibt stehen, statt hinter dem Sperrbildschirm zu verschwinden.</strong> Auf dem Fairphone 6 startet die Gesichtsentsperrung bei jedem Aufwachen des Bildschirms und schob den klingelnden Wecker dabei nach hinten. Der Ton lief weiter, aber die großen Knöpfe zum Ausschalten und Schlummern waren weg — in einer Messung 32 Sekunden lang. Die App weckt den Bildschirm jetzt eine halbe Sekunde vorher selbst, sodass die Gesichtsentsperrung vorbeiziehen kann und der Weckbildschirm obendrauf landet. Am Gerät in drei Weckvorgängen nachgemessen: der Bildschirm blieb jedes Mal stehen und liess sich ohne Entsperren abstellen.</li>
+                <li><strong>Der Ton klingelt dabei unverändert sofort.</strong> Nur die Anzeige wartet die halbe Sekunde ab — am Weckruf selbst ändert sich nichts.</li>
+                <li><strong>Die Abhilfe schaltet sich nicht mehr durch ihren eigenen Erfolg ab.</strong> Sie läuft nur auf Geräten, auf denen das Problem tatsächlich aufgetreten ist. Weil ein geglückter Weckvorgang diesen Merker vorher zurücksetzte, wäre jeder zweite Wecker wieder ohne Bedienoberfläche geblieben. Das Gerät merkt sich jetzt dauerhaft, dass es betroffen ist.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.39.2</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Wartungsversion — an der App ändert sich nichts, an der Zuverlässigkeit dahinter einiges.</em></p>
 

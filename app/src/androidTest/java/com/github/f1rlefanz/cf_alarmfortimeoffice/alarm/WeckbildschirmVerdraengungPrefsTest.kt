@@ -86,6 +86,26 @@ class WeckbildschirmVerdraengungPrefsTest {
     }
 
     @Test
+    fun derSaubereLaufSchreibtDenMerkerAuchNach() {
+        // DER FALL, DER AM 04.09.2026 UM 17:33 DURCHRUTSCHTE: Bestandsgeraet, Zaehler steht,
+        // Merker gibt es noch nicht. Der geschuetzte Lauf ist sauber - zaehleVerdraengung() kommt
+        // also gar nicht dran, und ohne diesen Nachzug faellt mit dem Zaehler auch die
+        // Migrationsbedingung weg. Der naechste Wecker liefe wieder ungeschuetzt.
+        prefs().edit().putInt("anzahl_in_folge", 4).commit()
+        assertTrue(WeckbildschirmVerdraengungPrefs.jeVerdraengt(context))
+
+        WeckbildschirmVerdraengungPrefs.meldeSauberenLauf(context)
+
+        assertEquals(0, WeckbildschirmVerdraengungPrefs.anzahlInFolge(context))
+        assertTrue(
+            "Der Merker muss beim Zuruecksetzen mitgeschrieben werden - sonst ist der Schutz weg, " +
+                "sobald der Zaehler faellt",
+            prefs().getBoolean("je_verdraengt", false)
+        )
+        assertTrue(WeckbildschirmVerdraengungPrefs.jeVerdraengt(context))
+    }
+
+    @Test
     fun bestandsgeraeteMitZaehlerGeltenAlsBetroffen() {
         // Migration: auf Geraeten, die vor dieser Version schon gezaehlt haben, gibt es den neuen
         // Merker noch nicht. Ohne diesen Zweig muesste dort erst wieder ein Wecker verdraengt

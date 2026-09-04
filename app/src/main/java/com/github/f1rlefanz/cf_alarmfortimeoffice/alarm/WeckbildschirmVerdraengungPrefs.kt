@@ -101,7 +101,19 @@ object WeckbildschirmVerdraengungPrefs {
     fun meldeSauberenLauf(context: Context) {
         try {
             if (anzahlInFolge(context) == 0) return
-            prefs(context).edit().putInt(KEY_ANZAHL_IN_FOLGE, 0).commit()
+            // Der Zaehler stand auf >= 1, also HAT dieses Geraet schon verdraengt - der bleibende
+            // Merker wird hier mitgeschrieben, nicht nur in zaehleVerdraengung().
+            //
+            // WARUM DAS NOETIG IST (am Geraet gemessen, 04.09.2026, 17:33): auf einem Bestandsgeraet
+            // kam der Schutz ueber den Migrationszweig von [jeVerdraengt] - Zaehler >= 1, Merker noch
+            // nicht vorhanden. Der geschuetzte Lauf war sauber, der Zaehler fiel auf 0, und weil in
+            // diesem Lauf nichts verdraengt wurde, kam zaehleVerdraengung() nie dran: der Merker
+            // blieb ungeschrieben, die Migrationsbedingung war weg, der naechste Wecker waere wieder
+            // ungeschuetzt gewesen. Dieselbe Falle wie zuvor, nur eine Ebene tiefer.
+            prefs(context).edit()
+                .putInt(KEY_ANZAHL_IN_FOLGE, 0)
+                .putBoolean(KEY_JE_VERDRAENGT, true)
+                .commit()
             Logger.i(LogTags.ALARM, "Weckbildschirm blieb stehen - Verdraengungs-Zaehler zurueckgesetzt")
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "Verdraengungs-Zaehler nicht zuruecksetzbar", e)

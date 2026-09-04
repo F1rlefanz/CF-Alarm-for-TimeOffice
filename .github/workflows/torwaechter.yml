@@ -139,6 +139,19 @@ jobs:
                  eigenen KDoc traegt.
                - Seine Commit-Nachricht nennt keine Rohbefund- UND
                  Bestaetigungszahl.
+               - ER LIEFERT EINEN SCHNITT UND EIN NEUES BLOCKIERENDES GATTER IM
+                 SELBEN PR (also Aenderungen an `tools/aufraeumen/pruefe_reste.py`
+                 oder `tools/schleuse/pruefe_schleuse.py` NEBEN einem Schnitt am
+                 Quelltext). Seit dem 04.09.2026 verlangt Schritt 4 des Skills,
+                 beides zu trennen. Der Grund ist ausgezaehlt: von neun
+                 beurteilten Aufraeum-PRs wurden alle vier ohne neues Gatter
+                 gemergt und alle fuenf mit einem geschlossen - nie wegen des
+                 Befundes, immer wegen des Gatters. Schliesse mit dem
+                 ausdruecklichen Hinweis, dass der SCHNITT unveraendert allein
+                 wiederkommen darf und das Gatter als eigenes Issue gehoert.
+                 Das ist eine formale Pruefung: sie kostet dich zwei Minuten
+                 statt eines 40-Minuten-Baus, und sie spart der naechsten Runde
+                 den Schnitt.
 
             3. WIDERLEGEN LASSEN, nicht bewerten. Starte mit dem Task-Werkzeug
                DREI unabhaengige Subagenten. Jeder bekommt den Diff und genau
@@ -168,6 +181,27 @@ jobs:
                - Sonst -> `gh pr close <nr> --delete-branch` und das zugehoerige
                  Aufraeum-Issue mit `gh issue reopen` wieder oeffnen, damit der
                  Blickwinkel nicht verloren geht.
+
+                 VORHER, wenn der PR `tools/aufraeumen/nachtraege.md` aendert:
+                 RETTE DIESE EINE DATEI NACH `main`. Sie ist der einzige Weg,
+                 auf dem eine Runde die naechste warnen kann - `.claude/` darf
+                 eine Runde nicht schreiben (eingebauter Schutz, am 03.09.2026
+                 gemessen). Bleibt die Lehre im geschlossenen PR, ist sie weg
+                 und die naechste Runde baut denselben Fehler nach; genau so
+                 ging die Parser-Lehre aus Runde 16 verloren (PR #59,
+                 04.09.2026). Der Weg:
+
+                     git fetch origin main <branch-des-prs>
+                     git checkout -B main origin/main
+                     git checkout FETCH_HEAD -- tools/aufraeumen/nachtraege.md
+                     git commit -m "docs(aufraeumen): Nachtrag aus dem geschlossenen PR #<nr> gerettet"
+                     git push origin main
+
+                 NUR diese Datei, nie etwas anderes aus dem PR. Scheitert der
+                 Push, weil sich `main` bewegt hat: einmal mit frischem
+                 `origin/main` wiederholen. Geht es dann immer noch nicht,
+                 haeng den Wortlaut als Kommentar an das wiedereroeffnete
+                 Issue - verlorengehen darf er nicht.
                In BEIDEN Faellen einen Kommentar an den PR, der den Grund nennt
                und die Zahlen zeigt, auf die du dich stuetzt. "Sieht gut aus"
                ist keine Begruendung.

@@ -433,7 +433,7 @@ class AlarmSoundService : Service() {
         val power = getSystemService(POWER_SERVICE) as PowerManager
         val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
         VorweckEntscheidung.vorlaufMillis(
-            verdraengungenInFolge = WeckbildschirmVerdraengungPrefs.anzahlInFolge(this),
+            geraetIstBetroffen = WeckbildschirmVerdraengungPrefs.jeVerdraengt(this),
             bildschirmAn = power.isInteractive,
             gesperrt = keyguard.isKeyguardLocked
         )

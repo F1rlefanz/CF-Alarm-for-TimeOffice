@@ -22,7 +22,7 @@ class VorweckEntscheidungTest {
             "Ein Geraet ohne jede gemessene Verdraengung darf seinen Wecker nicht verzoegert bekommen",
             0L,
             VorweckEntscheidung.vorlaufMillis(
-                verdraengungenInFolge = 0,
+                geraetIstBetroffen = false,
                 bildschirmAn = false,
                 gesperrt = true
             )
@@ -30,14 +30,11 @@ class VorweckEntscheidungTest {
     }
 
     @Test
-    fun `eine einzige Verdraengung genuegt bereits`() {
-        // Bewusst 1 und nicht die Hinweis-Schwelle 2: der Hinweis behauptet dem Nutzer gegenueber
-        // einen Zustand und darf sich nicht irren; das Vorwecken kostet dagegen 600 ms und ist
-        // folgenlos, wenn es unnoetig war. Zwei verschiedene Fragen, zwei verschiedene Schwellen.
+    fun `auf einem betroffenen Geraet wird vorgeweckt`() {
         assertEquals(
             VorweckEntscheidung.VORLAUF_MS,
             VorweckEntscheidung.vorlaufMillis(
-                verdraengungenInFolge = 1,
+                geraetIstBetroffen = true,
                 bildschirmAn = false,
                 gesperrt = true
             )
@@ -50,7 +47,7 @@ class VorweckEntscheidungTest {
         assertEquals(
             0L,
             VorweckEntscheidung.vorlaufMillis(
-                verdraengungenInFolge = 5,
+                geraetIstBetroffen = true,
                 bildschirmAn = true,
                 gesperrt = true
             )
@@ -64,7 +61,7 @@ class VorweckEntscheidungTest {
         assertEquals(
             0L,
             VorweckEntscheidung.vorlaufMillis(
-                verdraengungenInFolge = 5,
+                geraetIstBetroffen = true,
                 bildschirmAn = false,
                 gesperrt = false
             )

@@ -12,7 +12,7 @@ daraus eine Messung machte.
 
 Deshalb steht das hier - nicht als guter Vorsatz, sondern als Gatter in der Schleuse.
 
-SECHS PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
+SIEBEN PRUEFUNGEN, alle mit dem Anspruch NAHEZU KEINER FEHLALARME. Ein Gatter, das haeufig falsch
 meldet, wird weggeklickt und schuetzt dann gar nichts mehr (siehe die Triage-Lehre in
 GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten den Einzelfall).
 
@@ -27,6 +27,10 @@ GitHub-Issue #18: 97 von 344 Meldungen waren Fehlalarm, und genau die verdeckten
   6. EIGENSCHAFTEN OHNE VERWENDER (val, var, const val) - blockierend, mit Begruendungszwang
      im eigenen KDoc. Nicht nur `const val`: ein `dp`-Wert kann gar keine Compile-Zeit-Konstante
      sein, und genau dort lag eine tote Konstante.
+  7. ENUM-EINTRAEGE OHNE VERWENDER - blockierend, mit demselben Begruendungszwang. Ein
+     Enum-Eintrag ist weder `val` noch `var` und lag damit ausserhalb von Pruefung 6. Iterierte
+     Enums (`entries`/`values()`/`valueOf`) sind ausgenommen: dort ist ein Eintrag erreichbar,
+     ohne je namentlich dazustehen.
 
 Aufruf:
     python tools/aufraeumen/pruefe_reste.py            # alles, Ausgabe fuer Menschen
@@ -485,6 +489,181 @@ def pruefe_ungenutzte_konstanten(befunde):
                 )
 
 
+# ---------------------------------------------------------------------------------------------
+# 7. Enum-Eintraege ohne Verwender
+#
+# HERGANG (Runde 16, Issue #19): 35 Enums, 146 Eintraege, SIEBEN ohne jeden Verwender und KEIN
+# Fehlalarm - sechs von acht `ActionType`-Werten (DIM, BRIGHTEN, SET_COLOR, SET_TEMPERATURE,
+# PULSE, COLOR_LOOP) und `DiscoveryMethod.N_UPNP`. Dieselbe "fertige API fuer spaeter"-Falle wie
+# bei Pruefung 6, nur eine Deklarationsform weiter: `KONSTANTE` trifft `val`/`var`, ein
+# Enum-Eintrag ist keins von beiden und lag deshalb ausserhalb jeder Pruefung.
+#
+# DER PARSER MUSS KOMMENTARE UND STRINGS AUSBLENDEN, UND DAS IST NICHT KOSMETIK: Die erste
+# Messfassung schnitt die Eintragsliste am ersten `;` auf Klammertiefe 0 ab - und `RueckbauErgebnis`
+# hat einen Strichpunkt IM KDoc seines ersten Eintrags ("Der Alarm ist wieder weg; es steht nichts
+# Scharfes mehr."). Das Enum galt damit als leer, acht Eintraege im Baum blieben ungeprueft
+# (138 statt 146). Ein Gatter, das seine eigene Blindstelle nicht kennt, meldet "sauber" und ist es
+# nicht. Deshalb wird vor JEDER Struktursuche ausgeblendet - zeichenlaengentreu, damit
+# Zeilennummern stimmen.
+#
+# GEZAEHLT WIRD DAGEGEN AUF DEM ROHTEXT, ABSICHTLICH: `"actionType":"TURN_ON"` in einer
+# Test-JSON ist ein echter Verwender, denn der Eintragsname ist Teil eines GESPEICHERTEN FORMATS.
+# Wer hier Strings ausblendet, erklaert ein persistiertes Format zu totem Code - genau die Falle,
+# vor der die TokenData-Leitplanke im Skill warnt.
+#
+# WAS DIESE PRUEFUNG NICHT SEHEN KANN: Ein Eintrag, den nur `entries`/`values()`/`valueOf` oder
+# eine Deserialisierung erreicht, steht nirgends namentlich im Code. Iterierte Enums werden
+# deshalb komplett uebersprungen. Fuer den Deserialisierungs-Fall bleibt der Begruendungszwang:
+# `OHNE VERWENDER` im Kommentar davor - dieselbe Ausnahme wie bei Pruefung 6.
+ENUM_KOPF = re.compile(r"\benum\s+class\s+(\w+)")
+ENUM_EINTRAG = re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s*)*([A-Za-z_]\w*)\b")
+
+
+def _ausgeblendet(text):
+    """Kommentare und String-Literale durch Leerzeichen gleicher Laenge ersetzen.
+
+    Zeilenumbrueche bleiben stehen, damit Offsets und Zeilennummern gueltig bleiben.
+    """
+    raus = list(text)
+    i, n = 0, len(text)
+    while i < n:
+        paar = text[i:i + 2]
+        if paar == "/*":
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+        elif paar == "//":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+        elif text[i] == '"':
+            if text[i:i + 3] == '"""':
+                j = text.find('"""', i + 3)
+                j = n if j < 0 else j + 3
+            else:
+                j = i + 1
+                while j < n and text[j] not in '"\n':
+                    j += 2 if text[j] == "\\" else 1
+                j = min(j + 1, n)
+        else:
+            i += 1
+            continue
+        for k in range(i, j):
+            if raus[k] != "\n":
+                raus[k] = " "
+        i = j
+    return "".join(raus)
+
+
+def enum_eintraege_in(text):
+    """Die eigentliche Zerlegung - REIN, damit sie ohne Repository pruefbar ist.
+
+    Liefert (Enum-Name, Eintrag, Zeilennummer, Kommentarblock-davor) je Eintrag.
+    """
+    ergebnis = []
+    blind = _ausgeblendet(text)
+    for kopf in ENUM_KOPF.finditer(blind):
+        start = blind.find("{", kopf.end())
+        if start < 0:
+            continue
+        tiefe, i = 0, start
+        while i < len(blind):
+            if blind[i] == "{":
+                tiefe += 1
+            elif blind[i] == "}":
+                tiefe -= 1
+                if tiefe == 0:
+                    break
+            i += 1
+        rumpf = blind[start + 1:i]
+        # Der Eintragsteil endet am ersten ';' auf Tiefe 0 - ab dort stehen Methoden.
+        tiefe, schnitt = 0, len(rumpf)
+        for j, z in enumerate(rumpf):
+            if z in "{([":
+                tiefe += 1
+            elif z in "})]":
+                tiefe -= 1
+            elif z == ";" and tiefe == 0:
+                schnitt = j
+                break
+        teil = rumpf[:schnitt]
+        tiefe, ab, stuecke = 0, 0, []
+        for j, z in enumerate(teil):
+            if z in "{([":
+                tiefe += 1
+            elif z in "})]":
+                tiefe -= 1
+            elif z == "," and tiefe == 0:
+                stuecke.append((ab, teil[ab:j]))
+                ab = j + 1
+        stuecke.append((ab, teil[ab:]))
+        for versatz, stueck in stuecke:
+            treffer = ENUM_EINTRAG.match(stueck)
+            if not treffer:
+                continue
+            absolut = start + 1 + versatz + treffer.start(1)
+            # Der Kommentarblock unmittelbar davor - dort steht die Begruendung, wenn es eine gibt.
+            davor = text[:absolut]
+            ergebnis.append((
+                kopf.group(1), treffer.group(1), text.count("\n", 0, absolut) + 1, davor[-600:],
+            ))
+    return ergebnis
+
+
+ITERATION = "{}.entries", "{}.values(", "{}.valueOf", "enumValueOf<{}>"
+
+
+def pruefe_enum_eintraege(befunde):
+    # KONFLIKTZUSTAND (Lehre aus Runde 15): Waehrend eines offenen Merge stehen Konfliktmarker im
+    # Baum. Die Zerlegung wuerde daran zwar nicht abstuerzen, aber unsinnige Eintraege melden - und
+    # weil dieses Werkzeug in der Schleuse BLOCKIERT, traefe die Fehldiagnose ausgerechnet
+    # `git merge --continue` und `--abort`, also die Rettungsbefehle. Also: nicht raten, schweigen.
+    kode, offen = _git("ls-files", "-u")
+    if kode == 0 and offen.strip():
+        return
+
+    dateien = [(p, _lies(p)) for p in _kotlin_dateien()]
+
+    # EIN Index statt verschachtelter Schleifen - dieselbe Laufzeit-Lehre wie bei Pruefung 6.
+    # Gezaehlt wird auf dem ROHTEXT (Strings zaehlen mit, siehe Kopfkommentar).
+    vorkommen = {}
+    for _, text in dateien:
+        for wort in BEZEICHNER.findall(text):
+            vorkommen[wort] = vorkommen.get(wort, 0) + 1
+
+    alle = [(pfad, text, enum_eintraege_in(text)) for pfad, text in dateien]
+
+    # Eigene Deklarationen abziehen: derselbe Name kann in mehreren Enums stehen.
+    deklarationen = {}
+    for _, _, eintraege in alle:
+        for _, eintrag, _, _ in eintraege:
+            deklarationen[eintrag] = deklarationen.get(eintrag, 0) + 1
+
+    # Iterierte Enums ganz ueberspringen - ihre Eintraege sind ohne Nennung erreichbar.
+    iteriert = set()
+    for _, text, eintraege in alle:
+        for enum_name, _, _, _ in eintraege:
+            for muster in ITERATION:
+                nadel = muster.format(enum_name)
+                if any(nadel in t for _, t in dateien):
+                    iteriert.add(enum_name)
+                    break
+
+    for pfad, _, eintraege in alle:
+        if os.sep + "main" + os.sep not in pfad:
+            continue
+        for enum_name, eintrag, zeile, davor in eintraege:
+            if enum_name in iteriert:
+                continue
+            if BEWUSST_OHNE_VERWENDER in davor:
+                continue
+            if vorkommen.get(eintrag, 0) - deklarationen.get(eintrag, 0) == 0:
+                befunde.append(
+                    "Enum-Eintrag ohne Verwender: {}.{} in {}:{} - loeschen, oder die "
+                    "Entscheidung mit '{}' im Kommentar davor begruenden".format(
+                        enum_name, eintrag, _relativ(pfad), zeile, BEWUSST_OHNE_VERWENDER
+                    )
+                )
+
+
 def main():
     ci = "--ci" in sys.argv
     basis = ""
@@ -499,6 +678,7 @@ def main():
     pruefe_composable_ohne_verbraucher(befunde)
     pruefe_haengende_kdocs(befunde)
     pruefe_ungenutzte_konstanten(befunde)
+    pruefe_enum_eintraege(befunde)
     pruefe_doku_verweise(befunde, basis)
 
     if not befunde:

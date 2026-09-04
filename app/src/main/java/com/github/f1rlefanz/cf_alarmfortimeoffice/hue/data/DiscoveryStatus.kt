@@ -23,12 +23,19 @@ data class DiscoveryStatus(
  * Discovery method being used (Enhanced 2025 Edition)
  */
 enum class DiscoveryMethod {
-    // Die drei, die es wirklich gibt - je ein Erzeuger in den Discovery-Diensten.
-    ONLINE_DISCOVERY, N_UPNP, MDNS
+    // Die zwei, die es wirklich gibt - je ein Erzeuger in [OfficialHueDiscoveryService].
+    ONLINE_DISCOVERY, MDNS
     // ENTFERNT (v1.34.3): LOCAL_NETWORK und IP_TEST waren im Code selbst als deprecated markiert,
     // MANUAL und CACHE hatten nie einen Erzeuger. Ein `when` ueber die Werte gibt es nicht,
     // Exhaustiveness konnte also nicht brechen. MANUAL beschrieb eine manuelle IP-Eingabe, die es
     // in der Oberflaeche nicht gibt - vor dem Loeschen geprueft.
+    //
+    // ENTFERNT (Runde 16): N_UPNP - und die Zeile darueber behauptete bis dahin "je ein Erzeuger"
+    // fuer alle DREI. Das stimmte nicht: die N-UPnP-Suche meldet sich als ONLINE_DISCOVERY und
+    // haelt ihren Schritt in [DiscoveryStatus.stage] als Zeichenkette "N_UPNP_SEARCH" fest - eine
+    // Namensaehnlichkeit, die leicht ueber den fehlenden Erzeuger hinwegsieht. Nicht persistiert
+    // ([DiscoveryStatus] ist reiner UI-Zustand, nicht @Serializable) und ohne jeden Leser:
+    // [DiscoveryStatus.method] wird nirgends ausgewertet.
 }
 
 /**

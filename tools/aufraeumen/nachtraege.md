@@ -42,4 +42,27 @@ dem, was die Reparatur **neu** hineinschrieb.
 
 ## Offene Nachträge
 
-*(keine — Stand 04.09.2026)*
+### 04.09.2026, Runde 16 (Issue #19, Enum-Einträge ohne Verwender)
+
+**Miss deine Messfassung, bevor du ihren Zahlen glaubst — ein leeres Strukturergebnis ist ein
+Parserfehler, kein Befund.** Das Wegwerf-Skript dieser Runde meldete zuerst „35 Enums, 138
+Einträge" und nebenbei ein Enum mit **null** Einträgen. Das war die Spur: die Eintragsliste wurde
+am ersten `;` auf Klammertiefe 0 abgeschnitten, und `RueckbauErgebnis` hat einen Strichpunkt *im
+KDoc* seines ersten Eintrags („Der Alarm ist wieder weg; es steht nichts Scharfes mehr."). Acht
+Einträge im Baum wurden nie angesehen — echte Zahl ist 146. Hätte ich die Null nicht verfolgt,
+wäre die Runde mit einer stillen Blindstelle „fertig" geworden, und ein daraus gebautes Gatter
+hätte für immer „sauber" gemeldet, ohne hinzusehen.
+
+**Die verallgemeinerbare Regel:** Wenn dein Zählskript eine Struktur als *leer* ausweist
+(Klasse ohne Methoden, Enum ohne Einträge, Datei ohne Symbole), ist das fast nie die Wahrheit über
+den Code, sondern eine Aussage über deinen Parser. Bau die Selbstprüfung gleich ein — eine Zeile
+„!! Enums ohne geparste Einträge" reicht. Konkret für Kotlin: **Kommentare und String-Literale vor
+jeder Struktursuche ausblenden** (zeichenlängentreu, dann bleiben Zeilennummern gültig), aber
+**Referenzen auf dem Rohtext zählen** — ein Eintragsname in einer Test-JSON ist ein echter
+Verwender, weil er Teil eines gespeicherten Formats ist.
+
+**Zum Stand der Werkzeuge:** `pruefe_reste.py` hat jetzt **sieben** Prüfungen. Den
+Konfliktzustands-Wächter aus der Runde-15-Lehre (`git ls-files -u` nicht leer → schweigen) hat
+**nur Prüfung 7**; die Prüfungen 1–6 lesen den Baum weiterhin ungeschützt. Das ist als Issue
+angehängt und bewusst nicht in dieser Runde miterledigt worden — es ist ein eigener Blickwinkel,
+kein Beifang.

@@ -175,12 +175,19 @@ enum class TargetType {
  */
 @Serializable
 enum class ActionType {
+    // Die zwei, die es wirklich gibt - beide werden in [HueRuleFormState] erzeugt.
     TURN_ON,
-    TURN_OFF,
-    DIM,
-    BRIGHTEN,
-    SET_COLOR,
-    SET_TEMPERATURE,
-    PULSE,
-    COLOR_LOOP
+    TURN_OFF
+    // ENTFERNT (Runde 16): DIM, BRIGHTEN, SET_COLOR, SET_TEMPERATURE, PULSE und COLOR_LOOP hatten
+    // nie einen Erzeuger - `git log -S` findet fuer keinen der sechs Namen einen einzigen Commit,
+    // sie standen also seit ihrer Einfuehrung auf Vorrat. Ein `when` ueber [actionType] gibt es
+    // nicht (es liest ueberhaupt niemand), Exhaustiveness konnte daher nicht brechen.
+    //
+    // WARUM DAS TROTZ @Serializable SICHER IST - und die Richtung ist entscheidend: Der Kommentar
+    // an [HueLightAction.sceneId] warnt zu Recht davor, ein Enum zu ERWEITERN, weil ein
+    // APK-Downgrade unbekannte ENUM-WERTE hart ablehnt. Beim ENTFERNEN liegt die Gefahr
+    // spiegelbildlich bei Bestands-JSON, das einen der sechs Namen enthaelt - und genau das kann
+    // es nicht geben: was nie erzeugt wurde, wurde nie gespeichert. Beide Richtungen bleiben
+    // damit dekodierbar, weil in keiner Fassung je etwas anderes als TURN_ON/TURN_OFF im
+    // Feld stand.
 }

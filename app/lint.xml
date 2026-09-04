@@ -12,7 +12,11 @@
     als UnknownIssueId-Warnung - und zwar einmal pro geprüfter Variante, also mehrfach.
     Vor August 2026 standen hier drei erfundene IDs (HardcodedCredentials, UnencryptedIntent,
     LeakCanary), die allein 18 der damals 50 Lint-Warnungen erzeugten, ohne irgendetwas zu
-    bewirken. Neue Einträge deshalb immer mit `./gradlew --offline lintDebug` gegenprüfen.
+    bewirken. Neue Einträge deshalb immer mit `./gradlew lintDebug` gegenprüfen, bei Bedarf über
+    den Offline-Schalter von Gradle. Dessen zwei führende Bindestriche stehen hier bewusst NICHT
+    ausgeschrieben: zwei Bindestriche beenden einen XML-Kommentar. Genau daran war diese Datei
+    vom 06.08. bis 04.09.2026 kein wohlgeformtes XML - Android Lint nahm es klaglos hin, jeder
+    echte XML-Parser stürzt darüber ab. Nicht zurückändern.
 
     Letzte Aktualisierung: September 2026
     -->

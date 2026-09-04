@@ -4,6 +4,14 @@ Seit **1.39.3** (04.09.2026). Betrifft `AlarmSoundService.onStartCommand`, `Vorw
 und `WeckbildschirmVerdraengungPrefs`. Vollständige Beweisführung: GitHub Issue **#36**
 (geschlossen), Nachlese: **#61**.
 
+## Inhalt
+
+- [Der Defekt, gegen den es existiert](#der-defekt-gegen-den-es-existiert)
+- [Die Loesung](#die-loesung)
+- [Zwei Fallen, die erst echte Weckvorgaenge zeigten](#zwei-fallen-die-erst-echte-weckvorgaenge-zeigten)
+- [Widerlegte Saetze, die hier gestanden haben](#widerlegte-saetze-die-hier-gestanden-haben)
+- [Grenzen, die bekannt sind](#grenzen-die-bekannt-sind)
+
 ## Der Defekt, gegen den es existiert
 
 Auf dem Fairphone 6 (Android 16) startet SystemUI die herstellereigene Gesichtsentsperrung

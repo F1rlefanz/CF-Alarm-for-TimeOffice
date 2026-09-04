@@ -14,11 +14,16 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
  * vorinstallierten Google Uhr gegengeprueft - es trifft JEDE Wecker-App auf diesem Geraet, ist
  * also ein Geraetedefekt und nicht unserer.
  *
- * WARUM NUR EIN HINWEIS UND KEINE REPARATUR: Vier Messlaeufe haben belegt, dass sich der
- * Full-Screen-Intent nicht nachreichen laesst - weder ueber eine zweite Notification (auch nicht
- * mit Verzoegerung 0) noch als Update der bestehenden. Das System wertet ihn ausschliesslich beim
- * ERSTEN Posten aus. Es gibt app-seitig nichts zu gewinnen; das Einzige, was bleibt, ist dem
- * Nutzer zu sagen, was er da erlebt.
+ * WARUM DER FULL-SCREEN-INTENT NICHT NACHGEREICHT WIRD: Vier Messlaeufe haben belegt, dass er sich
+ * nicht nachreichen laesst - weder ueber eine zweite Notification (auch nicht mit Verzoegerung 0)
+ * noch als Update der bestehenden. Das System wertet ihn ausschliesslich beim ERSTEN Posten aus.
+ *
+ * DER SATZ "ES GIBT APP-SEITIG NICHTS ZU GEWINNEN" STAND HIER UND WAR FALSCH (korrigiert am
+ * 04.09.2026). Er galt fuer das NACHREICHEN - nicht fuer den Zeitpunkt des ersten Postens. Genau
+ * dort setzt [VorweckEntscheidung] an: erst den Bildschirm selbst wecken, die Gesichtsentsperrung
+ * vorbeiziehen lassen und die Notification 600 ms spaeter posten. Dieser Zaehler ist deshalb nicht
+ * mehr nur Grundlage des Hinweises, sondern zugleich das GATE dafuer - er entscheidet, auf welchen
+ * Geraeten vorgeweckt wird.
  *
  * WARUM SharedPreferences UND NICHT DataStore: Geschrieben wird aus `onStop` der
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity] - einem

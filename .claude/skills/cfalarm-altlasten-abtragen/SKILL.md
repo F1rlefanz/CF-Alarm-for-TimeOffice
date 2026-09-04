@@ -46,13 +46,25 @@ erfinden**, sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, k
 2. **Jeden Rohbefund einzeln am Code prüfen.** Referenzbasiert, nie annotationsbasiert.
 3. **Erst dann schneiden.** Nach jedem Schnitt: `./gradlew assembleDebug testDebugUnitTest` und
    `python tools/aufraeumen/pruefe_reste.py`.
-4. **Entscheiden, ob die Klasse gatterfähig ist.** Faustregel aus der Messung: unter ~10 %
-   Fehlalarm ja, darüber nein.
-   - **Ja** → als Prüfung in `tools/aufraeumen/pruefe_reste.py` heben, mit Tests für **beide**
-     Richtungen (meldet es, wo etwas ist? schweigt es, wo nichts ist?) und mit dem Hergang im
-     Kommentar.
-   - **Nein** → unten unter „Verworfen" eintragen, **mit den Zahlen**. Sonst versucht es die
-     nächste Sitzung wieder.
+4. **Den Schnitt ALLEIN liefern. Ein neues Gatter ist eine EIGENE Runde.** Das ist die teuerste
+   Lehre dieser Reihe, und sie ist ausgezählt (Stand 04.09.2026): von den neun beurteilten
+   Aufräum-PRs wurden **alle vier gemergt, die kein blockierendes Gatter mitbrachten** (#28, #32,
+   #35, #53) — und **alle fünf geschlossen, die eins mitbrachten** (#40, #48, #56, #58, #59).
+   Neun von neun, und **kein einziges Mal lag es am Befund**; immer an dem, was daneben neu
+   hineingeschrieben wurde. Ein zweifelhaftes Gatter reißt den belegten Schnitt mit, und die ganze
+   Runde war umsonst.
+   - **Also:** Schnitt committen, PR aufmachen, fertig. Rohbefunde und Fehlalarme werden trotzdem
+     gemessen und stehen in der Commit-Nachricht — ohne sie schließt der Torwächter.
+   - **Hältst du die Klasse für gatterfähig** (Faustregel: unter ~10 % Fehlalarm), dann schreib das
+     als **eigenes Issue** mit `--label aufraeumen` und deinen Zahlen. Eine SPÄTERE Runde baut die
+     Prüfung — dann steht sie allein im PR und ihr Scheitern kostet keinen Schnitt mehr.
+   - Was so ein Gatter können muss, bevor es blockieren darf, steht in den Leitplanken:
+     Konfliktzustand kennen, Iterations- und Erreichbarkeitsausnahmen vollständig haben, und wissen,
+     ob es auf dem Roh- oder dem bereinigten Text zählt. PR #59 ist an genau diesen drei Punkten
+     gescheitert — sein Gatter hätte reguläres Kotlin (`enumValues<T>()`) als Fund gemeldet und
+     sich zugleich durch die eigenen ENTFERNT-Notizen dauerhaft entwaffnet.
+   - **Nicht gatterfähig** → unten unter „Verworfen" eintragen, **mit den Zahlen**. Sonst versucht
+     es die nächste Sitzung wieder.
 5. **Neue Fragen, die unterwegs auftauchen, als neues Issue anhängen** (`--label aufraeumen`).
    Dadurch bleibt die Liste lebendig, ohne dass jemand sie pflegen muss.
 6. **Das Issue schließen** — mit den Zahlen im Kommentar, nicht nur „erledigt".
@@ -229,7 +241,14 @@ geschlossenen Anläufe an #39.
 
 **Dein Weg ist `tools/aufraeumen/nachtraege.md`.** Die darfst du schreiben, sie liegt im Checkout,
 die nächste Runde liest sie als Erstes, und sie geht mit deinem PR durch den Torwächter. Ein
-eigenes Issue dafür brauchst du **nicht** mehr. Was NICHT zählt, ist den Nachtrag nur in einer
+eigenes Issue dafür brauchst du **nicht** mehr.
+
+**Und sie überlebt, wenn dein PR es nicht tut.** Das war am 04.09.2026 noch anders und hat sofort
+eine Lehre gekostet: Runde 16 schrieb hier eine gute Notiz über Parser-Blindstellen, PR #59 wurde
+geschlossen, und die Notiz war weg — derselbe Fehler wie beim Issue-Weg, nur in neuem Gewand.
+Seither holt der Torwächter beim Schließen **genau diese eine Datei** in `main` nach
+(`torwaechter.yml`, Schritt 4). Schreib deine Lehre also auf, auch wenn du ahnst, dass dein PR
+wackelt. Was NICHT zählt, ist den Nachtrag nur in einer
 PR-Beschreibung zu lassen — die liest die nächste Runde nicht. Für den Hergang der Werkzeuge selbst
 siehe `tools/aufraeumen/pruefe_reste.py` (die Kommentare dort tragen jede Messung) und
 `cfalarm-arbeit-abschliessen`.

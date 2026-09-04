@@ -83,18 +83,22 @@ erfinden**, sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, k
   Aufräumen — das ist eine Änderung mit eigenem Risiko und gehört besprochen. Entfernt wird nur,
   was **nachweislich niemand benutzt**.
 - **Ein Formatfehler, den das produktive Werkzeug toleriert, bleibt ein Formatfehler.**
-  `app/lint.xml` ist **bis heute kein wohlgeformtes XML** — nachgeprüft am 02.09.2026:
-  `python -c "import xml.dom.minidom; xml.dom.minidom.parse('app/lint.xml')"` scheitert mit
-  `not well-formed (invalid token): line 15, column 59`, dem `--offline` im Kopfkommentar.
-  Android Lint nimmt das klaglos hin, die Datei *wirkt* also, und niemand hat einen Anlass
-  hinzusehen. Gemerkt hat es erst das erste Werkzeug, das sie *parsen* wollte, und das musste sich
-  mit Regexps behelfen. **„Es funktioniert ja" ist kein Beleg für Wohlgeformtheit**; das nächste
-  Werkzeug zahlt — **wer hier einen XML-Parser ansetzt, stürzt ab, nicht die Datei.**
-  Repariert wird es NICHT nebenbei: **vier** Runden haben es versucht (PR #40, #48, #56, #58), der
-  Torwächter hat alle vier geschlossen — nie wegen des Befundes, immer wegen dessen, was die
-  Reparatur neu hineinschrieb. Issue #39 ist deshalb seit dem 03.09.2026 **zurückgestellt** (siehe
-  `blickwinkel_waehlen.py`): es bleibt offen und gut, aber es kostet keine weitere Runde, bis der
-  Eigentümer entschieden hat. Fass es nicht von dir aus wieder an.
+  `app/lint.xml` war **vom 06.08. bis 04.09.2026 kein wohlgeformtes XML** — das `--offline` im
+  Kopfkommentar, dessen zwei Bindestriche einen XML-Kommentar beenden. Beide Daten sind gemessen,
+  nicht geschätzt: `git log -S` weist den Schalter dem Commit `c445dee` vom 06.08.2026 zu, die
+  Datei selbst gibt es seit dem 22.08.2025 — **349 Tage wohlgeformt, 29 Tage kaputt.** Android Lint
+  nahm es klaglos hin, die Datei *wirkte* also, und niemand hatte einen Anlass hinzusehen. Gemerkt
+  hat es erst das erste Werkzeug, das sie *parsen* wollte, und das musste sich mit Regexps behelfen.
+  **„Es funktioniert ja" ist kein Beleg für Wohlgeformtheit**; das nächste Werkzeug zahlt.
+  **Die Lehre steckt aber nicht im Befund, sondern in seinem Preis.** Vier Runden haben ihn
+  repariert (PR #40, #48, #56, #58), der Torwächter hat alle vier geschlossen — nie wegen des
+  Befundes, immer wegen des **Gatters**, das sie beim Reparieren dazu bauten. Erledigt hat es am
+  04.09.2026 der Eigentümer von Hand, in **einer Zeile und ohne neue Prüfung**: der Schalter steht
+  im Kommentar jetzt nicht mehr ausgeschrieben, die Begründung dazu in der Datei selbst. A/B über
+  den SARIF-Bericht belegt die Wirkungslosigkeit für Lint — 7 Befunde vorher, 7 nachher, dieselben
+  Regeln. **Ein einmaliger Tippfehler braucht keine Wache**; wer hier wieder ein Dauergatter
+  vorschlägt, liest zuerst die Leitplanke „Ein blockierendes Gatter muss den KONFLIKTZUSTAND
+  kennen" — sie stammt aus genau diesem Anlauf.
 - **Zwei Lehren aus geschlossenen Anläufen — sie gelten für jedes neue Gatter.**
   1. **Ein `except`-Tupel über einen fremden Parser ist eine Wette.** PR #48 fing
      `(SyntaxError, ValueError)`; `<?xml … encoding="cp1252-de"?>` wirft `LookupError`, der
@@ -107,8 +111,8 @@ erfinden**, sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, k
 
   Und daneben, kleiner, aber teuer: **Datumsangaben misst man** (`git log -S` plus jede Fassung
   parsen) — PR #40 fiel über ein geschätztes „jahrelang" in genau der Zeile, die er reparierte.
-  Runde 15 hat es richtig gemacht und die exakte Spanne belegt: 349 Tage wohlgeformt, 27 Tage
-  kaputt.
+  Runde 15 hat es richtig gemacht und die Spanne belegt statt geschätzt; die Zahlen stehen oben in
+  der Leitplanke „Ein Formatfehler …" — dort und nur dort, damit sie nicht an zwei Stellen altern.
 - **Blickwinkel, die statisch entscheidbar sind, sind die guten.** Runde 11 hatte 36 Dateien,
   1 Rohbefund, **0 Fehlalarme** — eine Datei parst oder sie parst nicht, es gibt keinen
   Ermessensspielraum. Verworfen wurden bisher fast nur Blickwinkel, die *Absicht* erraten mussten

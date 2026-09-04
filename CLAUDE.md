@@ -296,6 +296,9 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **Blockierte Benachrichtigungen sind ein Wecker ohne Oberfläche** — deshalb die Status-Karte davor
   und ein WARN direkt nach `startForeground()`.
 - **`visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS** (WARN).
+- **Der Weckton startet sofort, nie im verzoegerten Vorweck-Zweig.** Auf betroffenen Geraeten
+  wartet ausschliesslich `startForeground()` mit der FSI-Notification (600 ms, siehe
+  `VorweckEntscheidung`). Wer den Ton mit verzoegert, verzoegert den Weckruf selbst.
 
 ### Hintergrundketten und Boot
 

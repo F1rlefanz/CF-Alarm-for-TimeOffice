@@ -244,6 +244,21 @@ class AlarmSoundService : Service() {
 
     private var vorweckLock: PowerManager.WakeLock? = null
 
+    /**
+     * Steht der verzoegerte [starteVordergrundUndWecken]-Aufruf noch aus?
+     *
+     * Gebraucht von [stopAlarmAndService]: ein per `startForegroundService()` gestarteter Dienst,
+     * der heruntergefahren wird, OHNE dass je `startForeground()` lief, wird vom System mit
+     * "did not then call Service.startForeground()" abgeschossen. Vor dem Vorwecken war der Aufruf
+     * synchron und dieses Fenster gab es nicht; jetzt sind es 600 ms, in denen die Master-Pause
+     * stoppen kann (Notification-Knoepfe und Vollbild existieren da noch nicht).
+     */
+    @Volatile
+    private var vordergrundStehtAus = false
+
+    /** Die Notification des laufenden Vorlaufs - nur fuer das Nachholen in [stopAlarmAndService]. */
+    private var ausstehendeWeckerNotification: Notification? = null
+
     // Generation counter - each new MediaPlayer gets a unique ID so stale
     // OnPreparedListener callbacks from a previous player can never start playback.
     @Volatile
@@ -296,12 +311,14 @@ class AlarmSoundService : Service() {
                 // verworfen und ist deshalb kein tragfaehiger Fallback mehr).
                 val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId, snoozeMinutes)
 
-                // VORWECKEN (v1.40.0): auf Geraeten, die den Weckbildschirm nachweislich
+                // VORWECKEN (seit 1.39.3): auf Geraeten, die den Weckbildschirm nachweislich
                 // verdraengen, zuerst selbst den Bildschirm wecken und erst danach die
                 // Notification posten. Warum das hilft, steht bei [vorlaufFuerWeckbildschirm].
                 val vorlauf = vorlaufFuerWeckbildschirm()
                 if (vorlauf > 0L) {
                     weckeBildschirmVorab()
+                    vordergrundStehtAus = true
+                    ausstehendeWeckerNotification = notification
                     vorweckHandler.postDelayed({ starteVordergrundUndWecken(notification) }, vorlauf)
                 } else {
                     starteVordergrundUndWecken(notification)
@@ -393,6 +410,34 @@ class AlarmSoundService : Service() {
      * derselbe - insbesondere die Reihenfolge `startForeground` -> Sichtbarkeits-Diagnose.
      */
     private fun starteVordergrundUndWecken(notification: Notification) {
+        val warVorlauf = vordergrundStehtAus
+        vordergrundStehtAus = false
+        ausstehendeWeckerNotification = null
+
+        // HAT DAS VORWECKEN GEWIRKT? Diese Zeile ist das Fruehwarnsystem fuer den Tag, an dem der
+        // Mechanismus aufhoert zu funktionieren, ohne dass sich am Code etwas aendert: dass
+        // ACQUIRE_CAUSES_WAKEUP ohne die Berechtigung TURN_SCREEN_ON (signature|privileged|appop,
+        // fuer eine Play-App unerreichbar) ueberhaupt weckt, haengt am Kompat-Schalter
+        // REQUIRE_TURN_SCREEN_ON_PERMISSION - am FP6 gemessen enableSinceTargetSdk=10000, also noch
+        // nicht scharf. Schaltet Google ihn fuer ein kuenftiges targetSdk, wartet der Vorlauf 600 ms
+        // umsonst und die Verdraengung ist zurueck. Ohne diese Zeile waere das aus dem Log nicht zu
+        // erkennen - es saehe aus wie ein Rueckfall ohne Ursache.
+        if (warVorlauf) {
+            val an = try {
+                (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+            } catch (e: Exception) {
+                Logger.w(LogTags.ALARM, "isInteractive nach dem Vorwecken nicht lesbar", e)
+                true
+            }
+            if (!an) {
+                Logger.w(
+                    LogTags.ALARM,
+                    "⚠️ Vorwecken WIRKUNGSLOS: Bildschirm ist nach ${VorweckEntscheidung.VORLAUF_MS} ms " +
+                        "immer noch aus - ACQUIRE_CAUSES_WAKEUP weckt nicht mehr. Der Weckbildschirm " +
+                        "wird auf diesem Geraet vermutlich wieder verdraengt."
+                )
+            }
+        }
         try {
             startForeground(NOTIFICATION_ID, notification)
             Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
@@ -504,6 +549,24 @@ class AlarmSoundService : Service() {
      */
     private fun stopAlarmAndService(startId: Int) {
         _alarmActive.value = false
+
+        // Ein ausstehender Vorweck-Vorlauf wird hier abgeraeumt - und der Vordergrund-Start
+        // NACHGEHOLT, falls er noch aussteht: siehe [vordergrundStehtAus]. Reihenfolge zaehlt,
+        // startForeground() muss vor stopForeground() gelaufen sein.
+        vorweckHandler.removeCallbacksAndMessages(null)
+        gibVorweckLockFrei()
+        ausstehendeWeckerNotification?.let { notification ->
+            if (vordergrundStehtAus) {
+                vordergrundStehtAus = false
+                try {
+                    startForeground(NOTIFICATION_ID, notification)
+                } catch (e: Exception) {
+                    Logger.e(LogTags.ALARM, "❌ Nachgeholtes startForeground fehlgeschlagen", e)
+                }
+            }
+        }
+        ausstehendeWeckerNotification = null
+
         stopAlarmSound()
         stopVibration()
         abandonAudioFocus() // laesst pausierte Medien (Podcast/Musik) wieder anlaufen

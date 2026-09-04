@@ -475,7 +475,12 @@ class AlarmFullScreenActivity : AppCompatActivity() {
             Logger.w(LogTags.ALARM, "isInteractive nicht lesbar - zaehlt NICHT als Verdraengung", e)
             false
         }
-        if (stoppedWhileRinging && bildschirmNochAn) {
+        // isChangingConfigurations SCHLIESST AUS, seit der Zaehler das Gate fuers Vorwecken
+        // traegt (1.39.3): Rotation und Dunkelmodus-Wechsel stoppen die Activity bei wachem
+        // Bildschirm und sahen bis dahin aus wie eine Verdraengung. Fuer den Hinweis federte
+        // die Schwelle 2 das ab - fuer ein Gate, das ab EINEM Ereignis und BLEIBEND greift,
+        // nicht mehr. Der Wert wurde vorher schon geloggt, nur nicht ausgewertet.
+        if (stoppedWhileRinging && bildschirmNochAn && !isChangingConfigurations) {
             // HOECHSTENS EINMAL pro Weckvorgang, und das ist keine Feinheit: am 29.08.2026 gemessen
             // wurde derselbe Wecker ZWEIMAL verdraengt (14:52:01 und 14:52:11) - die Activity kommt
             // zwischendurch zurueck und wird erneut weggedraengt. Ohne diese Sperre zaehlt der

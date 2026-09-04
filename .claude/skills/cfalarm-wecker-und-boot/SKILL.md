@@ -17,6 +17,7 @@ das baut man dieselbe Falle in neuer Form nach.
 - `reference/wecker-boot-und-wartung.md` — Wecker, Vollbild, Snooze, Boot, Direct Boot, 6h-Wartung
 - `reference/tag-freigeben.md` — "Tag freigeben": Gate, Backstop, manuelle Wecker, Direct-Boot-Grenze
 - `reference/master-pause.md` — die Master-Pause und ihre Backstops
+- `reference/vorwecken.md` — warum der Wecker den Bildschirm selbst weckt (FP6-Verdraengung)
 
 ---
 
@@ -123,6 +124,24 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`WakeLockManager`/`IWakeLockManager` sind ENTFERNT** (v1.23.1). Die Wake-Locks des echten
   Weckvorgangs liegen in `AlarmReceiver` (PARTIAL) und `AlarmFullScreenActivity` (SCREEN_BRIGHT) —
   dort suchen, nicht nach einer zuständig klingenden Klasse.
+
+## Vorwecken — Kurzregeln
+
+Seit 1.39.3. Hergang, Messwerte und die widerlegten Saetze: `reference/vorwecken.md`.
+
+- **Der Ton startet IMMER sofort, nie im verzoegerten Zweig.** Verzoegert wird ausschliesslich
+  `startForeground()` mit der FSI-Notification. Der Ton ist der Wecker; wer ihn mit verzoegert,
+  verzoegert den Weckruf selbst.
+- **Das Gate ist [WeckbildschirmVerdraengungPrefs.jeVerdraengt], NICHT der Hinweis-Zaehler.**
+  Der Zaehler beantwortet "passiert es gerade" und wird bei jedem sauberen Wecker
+  zurueckgestellt; das Gate beantwortet "ist dieses Geraet betroffen" und bleibt. Wer beides
+  wieder zusammenlegt, laesst die Massnahme sich durch ihren eigenen Erfolg abschalten — genau
+  das ist am 04.09.2026 zweimal hintereinander passiert.
+- **Jeder Fehler beim Ermitteln der Eingaben fuehrt zu Vorlauf 0**, also zum unveraenderten
+  Verhalten. Ein nicht lesbarer Merker darf keinen Wecker verzoegern.
+- **Vorgeweckt wird nur bei dunklem UND gesperrtem Bildschirm.** Ist der Bildschirm an, gibt es
+  kein Aufwecken und damit keine Gesichtsentsperrung, die verdraengen koennte; ohne Keyguard
+  entscheidet SystemUI ohnehin auf Heads-up statt Vollbild.
 
 ## Master-Pause — Kurzregeln
 

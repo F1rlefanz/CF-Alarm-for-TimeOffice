@@ -118,6 +118,28 @@ ihrem eigenen Wake, der Wert ist also nichts Außergewöhnliches.
 TROTZ Vorwecken passiert. Sein Backup-Ausschluss bleibt aus demselben Grund wie vorher: ein
 geerbter Zähler würde auf einem gesunden Gerät raten, das eingelernte Gesicht zu löschen.
 
+### Am Emulator gemessen (04.09.2026, nach dem Streichen)
+
+`VorweckenAmGeraetTest` lief auf `emulator-5554` (Android 16) in einem Zustand, den kein
+Unit-Test herstellen kann: **Direct Boot, Nutzer nie entsperrt, Bildschirm aus und gesperrt.**
+Der Test protokolliert den Ausgangszustand ausdrücklich mit — `CE-Storage GESPERRT (Direct Boot)
+— der alte Merker wäre hier unlesbar gewesen`. Aus dem Systemlog:
+
+```
+PowerManagerService: Waking up from Asleep (uid=10227, reason=WAKE_REASON_APPLICATION,
+                     details=CFAlarm:VorweckenFuerWeckbildschirm)
+CFAlarm.Alarm: 🌅 Vorwecken: Bildschirm wird 600 ms vor der Wecker-Notification geweckt
+```
+
+**Der Weckgrund ist jetzt unser eigener Wake-Lock**, nicht mehr `systemui:full_screen_intent` —
+genau die Umkehrung, um die es geht. Unter 1.39.4 wäre in dieser Lage gar nicht vorgeweckt worden.
+
+**Nebenbefund, und der schließt eine offene Lücke:** derselbe Lauf stoppte den Wecker 123 ms nach
+dem Start, also **mitten im 600-ms-Vorlauf, bevor `startForeground()` je lief** — das Fenster, das
+1.39.4 abgesichert hat und das bis dahin nur *am Code gelesen*, nicht gemessen war. Ergebnis:
+kein „did not then call Service.startForeground()", kein Prozesstod, Dienst sauber abgebaut
+(`dumpsys activity services` danach leer). Das Nachholen in `stopAlarmAndService()` hält.
+
 **Was das für künftige Änderungen heißt:** `VorweckEntscheidung.vorlaufMillis` liest **nur
 Systemzustand**. Wer dort wieder etwas Gespeichertes abfragt, holt sich Punkt 3 zurück — und
 `VorweckEntscheidungTest` hält mit einer Typzuweisung dagegen, die dann nicht mehr übersetzt.

@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
+import android.app.KeyguardManager
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -12,7 +14,10 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -21,6 +26,8 @@ import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.VorweckEntscheidung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WeckbildschirmVerdraengungPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -92,6 +99,11 @@ class AlarmSoundService : Service() {
         // AlarmFullScreenActivity) lesen sie synchron aus dem Intent statt selbst den DataStore
         // anzufassen - siehe AlarmPrefs-Klassenkommentar.
         const val EXTRA_SNOOZE_MINUTES = "snooze_minutes"
+
+        private const val VORWECK_LOCK_TAG = "CFAlarm:VorweckenFuerWeckbildschirm"
+
+        /** Nur eine Ueberbrueckung bis zum eigenen Lock des Weckbildschirms. */
+        private const val VORWECK_LOCK_TIMEOUT_MS = 10_000L
 
         // Notification Configuration
         // EINZIGE Alarm-Notification der App. Der AlarmReceiver postete frueher eine zweite
@@ -227,6 +239,11 @@ class AlarmSoundService : Service() {
     @Volatile
     private var isShuttingDown = false
 
+    /** Traegt den verzoegerten [starteVordergrundUndWecken]-Aufruf des Vorweck-Pfades. */
+    private val vorweckHandler = Handler(Looper.getMainLooper())
+
+    private var vorweckLock: PowerManager.WakeLock? = null
+
     // Generation counter - each new MediaPlayer gets a unique ID so stale
     // OnPreparedListener callbacks from a previous player can never start playback.
     @Volatile
@@ -278,27 +295,21 @@ class AlarmSoundService : Service() {
                 // eine Activity zu starten (ein direktes startActivity() aus dem Receiver wird
                 // verworfen und ist deshalb kein tragfaehiger Fallback mehr).
                 val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId, snoozeMinutes)
-                startForeground(NOTIFICATION_ID, notification)
-                Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
 
-                // DIAGNOSE, die im Release-Log landen MUSS (WARN): sind Benachrichtigungen
-                // blockiert, laeuft dieser Dienst weiter - Ton und Vibration kommen -, aber seine
-                // Notification wird unterdrueckt UND der Full-Screen-Intent abgelehnt. Der Nutzer
-                // hat dann KEINE Oberflaeche, um den Wecker zu stoppen oder zu schlummern; der
-                // einzige Ausweg ist "App beenden" in den Systemeinstellungen. Am Emulator im
-                // echten Zustand gesehen (11.08.2026), und ohne diese Zeile war der Fall im Log
-                // nicht von einem funktionierenden Wecker zu unterscheiden. Der Status-Tab hat
-                // dafuer eine eigene Karte; hier geht es um die nachtraegliche Auswertbarkeit.
-                if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
-                    Logger.w(
-                        LogTags.ALARM,
-                        "⚠️ WECKER OHNE OBERFLAECHE: Benachrichtigungen sind fuer diese App " +
-                            "blockiert - Ton laeuft, aber Weck-Bildschirm und Stopp-/Schlummer-" +
-                            "Knoepfe erscheinen NICHT. Nur ueber die Systemeinstellungen zu beheben."
-                    )
+                // VORWECKEN (v1.40.0): auf Geraeten, die den Weckbildschirm nachweislich
+                // verdraengen, zuerst selbst den Bildschirm wecken und erst danach die
+                // Notification posten. Warum das hilft, steht bei [vorlaufFuerWeckbildschirm].
+                val vorlauf = vorlaufFuerWeckbildschirm()
+                if (vorlauf > 0L) {
+                    weckeBildschirmVorab()
+                    vorweckHandler.postDelayed({ starteVordergrundUndWecken(notification) }, vorlauf)
+                } else {
+                    starteVordergrundUndWecken(notification)
                 }
 
-                // Start alarm sound and vibration
+                // Start alarm sound and vibration. BEWUSST NICHT verzoegert, auch nicht auf dem
+                // Vorweck-Pfad: der Ton ist der Wecker. Er darf nicht auf eine Bildschirmfrage
+                // warten - und er braucht den Vordergrund-Zustand nicht, um zu spielen.
                 requestAudioFocus()
                 startAlarmSound()
                 startVibration()
@@ -373,6 +384,107 @@ class AlarmSoundService : Service() {
         // START_ALARM-Intent erneut aus, statt mit intent == null zu starten (siehe Klassenkommentar).
         return START_REDELIVER_INTENT
     }
+
+    /**
+     * Postet die Wecker-Notification und geht in den Vordergrund.
+     *
+     * Eigene Funktion, weil sie an ZWEI Zeitpunkten laufen kann: sofort (Normalfall) oder nach
+     * dem Vorweck-Vorlauf ([vorlaufFuerWeckbildschirm]). Der Inhalt ist in beiden Faellen
+     * derselbe - insbesondere die Reihenfolge `startForeground` -> Sichtbarkeits-Diagnose.
+     */
+    private fun starteVordergrundUndWecken(notification: Notification) {
+        try {
+            startForeground(NOTIFICATION_ID, notification)
+            Logger.d(LogTags.ALARM, "✅ Foreground service started with alarm notification")
+        } catch (e: Exception) {
+            // Fangen, nicht durchreichen: ein Wurf aus einem verzoegerten Handler-Callback
+            // beendet den PROZESS - und damit den klingelnden Wecker. Ton und Vibration laufen
+            // bereits; ohne Notification fehlt die Oberflaeche, aber der Wecker weckt weiter.
+            Logger.e(LogTags.ALARM, "❌ startForeground fuer die Wecker-Notification fehlgeschlagen", e)
+            return
+        }
+
+        // DIAGNOSE, die im Release-Log landen MUSS (WARN): sind Benachrichtigungen
+        // blockiert, laeuft dieser Dienst weiter - Ton und Vibration kommen -, aber seine
+        // Notification wird unterdrueckt UND der Full-Screen-Intent abgelehnt. Der Nutzer
+        // hat dann KEINE Oberflaeche, um den Wecker zu stoppen oder zu schlummern; der
+        // einzige Ausweg ist "App beenden" in den Systemeinstellungen. Am Emulator im
+        // echten Zustand gesehen (11.08.2026), und ohne diese Zeile war der Fall im Log
+        // nicht von einem funktionierenden Wecker zu unterscheiden. Der Status-Tab hat
+        // dafuer eine eigene Karte; hier geht es um die nachtraegliche Auswertbarkeit.
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+            Logger.w(
+                LogTags.ALARM,
+                "⚠️ WECKER OHNE OBERFLAECHE: Benachrichtigungen sind fuer diese App " +
+                    "blockiert - Ton laeuft, aber Weck-Bildschirm und Stopp-/Schlummer-" +
+                    "Knoepfe erscheinen NICHT. Nur ueber die Systemeinstellungen zu beheben."
+            )
+        }
+    }
+
+    /**
+     * Wie lange vor der Wecker-Notification soll der Bildschirm selbst geweckt werden - oder 0.
+     *
+     * Die Entscheidung selbst steht in [VorweckEntscheidung] (dort auch der vollstaendige Hergang
+     * samt Messwerten); hier werden nur die drei Eingaben besorgt. Jeder Fehler dabei fuehrt zu 0,
+     * also zum unveraenderten Verhalten - ein nicht lesbarer Zaehler darf keinen Wecker verzoegern.
+     */
+    private fun vorlaufFuerWeckbildschirm(): Long = try {
+        val power = getSystemService(POWER_SERVICE) as PowerManager
+        val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+        VorweckEntscheidung.vorlaufMillis(
+            verdraengungenInFolge = WeckbildschirmVerdraengungPrefs.anzahlInFolge(this),
+            bildschirmAn = power.isInteractive,
+            gesperrt = keyguard.isKeyguardLocked
+        )
+    } catch (e: Exception) {
+        Logger.w(LogTags.ALARM, "Vorweck-Bedingung nicht pruefbar - Wecker laeuft unveraendert", e)
+        0L
+    }
+
+    /**
+     * Weckt den Bildschirm, BEVOR die Wecker-Notification gepostet wird.
+     *
+     * `SCREEN_BRIGHT_WAKE_LOCK or ACQUIRE_CAUSES_WAKEUP` ist derselbe Griff, den die
+     * [com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity] schon benutzt; dass er
+     * dieser App auch ohne `TURN_SCREEN_ON` erlaubt ist, steht im Systemlog des FP6
+     * ("Allowing device wake-up without android.permission.TURN_SCREEN_ON for ...").
+     *
+     * Der Lock laeuft nach [VORWECK_LOCK_TIMEOUT_MS] von selbst aus und wird zusaetzlich beim
+     * Beenden des Weckers freigegeben - er soll nur die Luecke bis zum eigenen Lock des
+     * Weckbildschirms ueberbruecken, nicht laenger.
+     */
+    private fun weckeBildschirmVorab() {
+        try {
+            gibVorweckLockFrei()
+            val power = getSystemService(POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            vorweckLock = power.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                VORWECK_LOCK_TAG
+            ).apply {
+                setReferenceCounted(false)
+                acquire(VORWECK_LOCK_TIMEOUT_MS)
+            }
+            Logger.w(
+                LogTags.ALARM,
+                "🌅 Vorwecken: Bildschirm wird ${VorweckEntscheidung.VORLAUF_MS} ms vor der Wecker-" +
+                    "Notification geweckt (Verdraengung war zuvor gemessen)"
+            )
+        } catch (e: Exception) {
+            // Folgenlos fuer den Wecker: ohne Vorwecken laeuft er wie bisher.
+            Logger.e(LogTags.ALARM, "Vorwecken fehlgeschlagen - Wecker laeuft unveraendert", e)
+        }
+    }
+
+    private fun gibVorweckLockFrei() {
+        try {
+            vorweckLock?.let { if (it.isHeld) it.release() }
+        } catch (e: Exception) {
+            Logger.e(LogTags.ALARM, "Vorweck-Lock nicht freigebbar", e)
+        }
+        vorweckLock = null
+    }
     
     /**
      * Beendet den Wecker vollstaendig: Ton, Vibration, Audio-Fokus, Foreground-Notification und den
@@ -406,6 +518,8 @@ class AlarmSoundService : Service() {
 
         // Guaranteed cleanup on service destruction
         _alarmActive.value = false
+        vorweckHandler.removeCallbacksAndMessages(null)
+        gibVorweckLockFrei()
         stopAlarmSound()
         stopVibration()
         abandonAudioFocus()

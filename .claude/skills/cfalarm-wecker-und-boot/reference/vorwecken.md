@@ -1,14 +1,15 @@
 # Vorwecken: warum der Wecker den Bildschirm selbst weckt
 
-Seit **1.39.3** (04.09.2026). Betrifft `AlarmSoundService.onStartCommand`, `VorweckEntscheidung`
-und `WeckbildschirmVerdraengungPrefs`. Vollständige Beweisführung: GitHub Issue **#36**
-(geschlossen), Nachlese: **#61**.
+Seit **1.39.3** (04.09.2026), **ohne Geräte-Unterscheidung seit 1.39.5**. Betrifft
+`AlarmSoundService.onStartCommand` und `VorweckEntscheidung`. Vollständige Beweisführung: GitHub
+Issue **#36** (geschlossen), Nachlese: **#61**.
 
 ## Inhalt
 
 - [Der Defekt, gegen den es existiert](#der-defekt-gegen-den-es-existiert)
 - [Die Loesung](#die-loesung)
 - [Zwei Fallen, die erst echte Weckvorgaenge zeigten](#zwei-fallen-die-erst-echte-weckvorgaenge-zeigten)
+- [Warum das Geraete-Gate gestrichen wurde (1.39.5)](#warum-das-geraete-gate-gestrichen-wurde-1395)
 - [Widerlegte Saetze, die hier gestanden haben](#widerlegte-saetze-die-hier-gestanden-haben)
 - [Grenzen, die bekannt sind](#grenzen-die-bekannt-sind)
 
@@ -69,8 +70,10 @@ Beleg am Gerät, drei Läufe, Bedingung jeweils VOR der Weckzeit gemessen (`Dozi
 
 ## Zwei Fallen, die erst echte Weckvorgänge zeigten
 
-Beide hätten die Lösung im Alltag wertlos gemacht, und **beide schlagen erst beim ZWEITEN Wecker
-zu** — kein Unit-Test und kein Emulator hätte sie gefunden.
+**Historie — beide gehörten zum Geräte-Gate, das es seit 1.39.5 nicht mehr gibt.** Sie stehen
+hier, weil ihre Lehre über den Einzelfall hinausreicht und weil sie erklärt, warum das Gate am
+Ende gestrichen wurde. Beide hätten die Lösung im Alltag wertlos gemacht, und **beide schlagen
+erst beim ZWEITEN Wecker zu** — kein Unit-Test und kein Emulator hätte sie gefunden.
 
 **1. Der Erfolg löschte sein eigenes Gate.** Gate war zuerst der Hinweis-Zähler
 `anzahl_in_folge`. Der geschützte Lauf war sauber, also lief `meldeSauberenLauf()` und setzte ihn
@@ -86,6 +89,38 @@ weg. Dieselbe Falle eine Ebene tiefer.
 **Die verallgemeinerbare Lehre:** *Hängt eine Gegenmaßnahme davon ab, dass der Fehler noch
 auftritt, schaltet ihr Erfolg sie ab.* Zwei Fragen brauchen zwei Merker — „passiert es gerade"
 (zurücksetzbar, für den Hinweis) und „ist dieses Gerät betroffen" (bleibend, für die Maßnahme).
+
+**Die noch bessere Lehre, einen Tag später:** *Wenn eine Maßnahme so billig ist, dass man sie
+immer anwenden kann, braucht sie die Frage „ist dieses Gerät betroffen" gar nicht* — und dann
+auch keinen Merker, der falsch stehen kann.
+
+## Warum das Geräte-Gate gestrichen wurde (1.39.5)
+
+Bis 1.39.4 lief das Vorwecken nur, wenn auf diesem Gerät zuvor eine Verdrängung gemessen worden
+war (`je_verdraengt`). Gestrichen am 04.09.2026, Entscheidung des Eigentümers. Die drei Kosten,
+gegen die abgewogen wurde:
+
+1. **Backup.** Der Merker musste aus Cloud-Backup und Gerätetransfer ausgeschlossen werden, sonst
+   erbt ein gesundes Nachfolgegerät die Diagnose des alten.
+2. **Verzahnung mit dem Hinweis-Zähler** — die zwei Fallen oben, beide am selben Tag, beide erst
+   im echten Betrieb sichtbar.
+3. **Direct Boot, und das gab den Ausschlag.** Der Merker lag im CE-Storage und ist vor der ersten
+   Entsperrung nicht lesbar. Der erste Wecker nach einem nächtlichen Neustart lief damit
+   ungeschützt — ausgerechnet die Lage, in der niemand danebensteht und in der man einen Wecker
+   am wenigsten verlieren will.
+
+**Der Preis:** 600 ms später erscheint der Weckbildschirm jetzt auf JEDEM Gerät bei dunklem,
+gesperrtem Bildschirm. Er ist nicht der Weckruf — **der Ton startet unverändert sofort**, auf
+beiden Pfaden. Zum Vergleich: die Google Uhr postet ihren Full-Screen-Intent ohnehin ~448 ms nach
+ihrem eigenen Wake, der Wert ist also nichts Außergewöhnliches.
+
+**Was blieb:** der Hinweis-Zähler (`anzahl_in_folge`) samt Status-Karte — er meldet, wenn es
+TROTZ Vorwecken passiert. Sein Backup-Ausschluss bleibt aus demselben Grund wie vorher: ein
+geerbter Zähler würde auf einem gesunden Gerät raten, das eingelernte Gesicht zu löschen.
+
+**Was das für künftige Änderungen heißt:** `VorweckEntscheidung.vorlaufMillis` liest **nur
+Systemzustand**. Wer dort wieder etwas Gespeichertes abfragt, holt sich Punkt 3 zurück — und
+`VorweckEntscheidungTest` hält mit einer Typzuweisung dagegen, die dann nicht mehr übersetzt.
 
 ## Widerlegte Sätze, die hier gestanden haben
 
@@ -109,6 +144,7 @@ auftritt, schaltet ihr Erfolg sie ab.* Zwei Fragen brauchen zwei Merker — „p
   `TURN_SCREEN_ON` (`signature|privileged|appop`, für uns unerreichbar) überhaupt weckt, liegt an
   `REQUIRE_TURN_SCREEN_ON_PERMISSION` — am FP6 gemessen `enableSinceTargetSdk=10000`, also noch nicht
   scharf. Schaltet Google das für ein künftiges targetSdk, wartet der Vorlauf umsonst.
-- **Der erste Wecker nach Neuinstallation oder nach einem Neustart ohne Entsperrung ist
-  ungeschützt** — das Gate liegt im CE-Storage und ist im Direct Boot nicht lesbar. Bewusst so:
-  die Degradation geht nach unten, im Zweifel klingelt es unverändert.
+- **Der Vorlauf trifft auch gesunde Geräte.** Seit 1.39.5 bewusst so — Begründung im Abschnitt
+  darüber. Die frühere Grenze „der erste Wecker nach einem Neustart ohne Entsperrung ist
+  ungeschützt" ist damit **weggefallen**, nicht etwa vergessen worden: sie war die Folge des
+  Gates im CE-Storage.

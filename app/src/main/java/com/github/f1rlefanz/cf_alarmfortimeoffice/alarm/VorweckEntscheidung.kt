@@ -34,25 +34,38 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
  * (16 s spaeter noch `mKeyguardOccluded=true` und top-resumed). Mit vertauschter Reihenfolge
  * dagegen `wm_set_keyguard_occluded [0]` und `wm_stop_activity` fuer den Weckbildschirm.
  *
- * ## Warum es nur auf betroffenen Geraeten laeuft
+ * ## Warum ohne Geraete-Unterscheidung - und warum das eine Entscheidung war
  *
- * Gate ist der bereits vorhandene [WeckbildschirmVerdraengungPrefs]-Zaehler: erst wenn mindestens
- * EIN Weckvorgang tatsaechlich verdraengt wurde, wird vorgeweckt. Auf jedem gesunden Geraet bleibt
- * der Ablauf damit unveraendert. Und weil [WeckbildschirmVerdraengungPrefs.meldeSauberenLauf] den
- * Zaehler bei jedem sauberen Wecker zurueckstellt, verschwindet der Vorlauf von selbst, sobald es
- * aufhoert - etwa weil Fairphone es repariert oder der Nutzer die Gesichtsentsperrung entfernt.
+ * 1.39.3 und 1.39.4 haben vorgeweckt, WENN auf diesem Geraet zuvor eine Verdraengung gemessen
+ * worden war (bleibender Merker `je_verdraengt`). Das war gut gemeint - gesunde Geraete sollten
+ * unveraendert laufen - und hat drei Kosten gehabt, von denen die dritte den Wecker betraf:
  *
- * ## Warum ausserdem nur bei dunklem, gesperrtem Bildschirm
+ * 1. Der Merker musste vom Backup ausgeschlossen werden, sonst erbt ein neues Geraet die Diagnose
+ *    des alten.
+ * 2. Er verzahnte sich mit dem Hinweis-Zaehler. Zweimal hintereinander (04.09.2026) fuehrte das
+ *    dazu, dass sich der Schutz durch seinen eigenen Erfolg abschaltete - Hergang in
+ *    `reference/vorwecken.md`.
+ * 3. **Er lag im CE-Storage und war im Direct Boot nicht lesbar.** Der erste Wecker nach einem
+ *    naechtlichen Neustart ohne Entsperrung lief damit ungeschuetzt - ausgerechnet die Lage, in
+ *    der niemand danebensteht.
+ *
+ * Der Preis fuer das Streichen ist ein um [VORLAUF_MS] spaeterer Weckbildschirm auch auf gesunden
+ * Geraeten. Der **Ton startet auf beiden Pfaden sofort**, es geht also nicht um den Weckruf,
+ * sondern um seine Bedienoberflaeche; die Google Uhr postet ihren Full-Screen-Intent ohnehin
+ * ~448 ms nach ihrem eigenen Wake. Entscheidung des Eigentuemers am 04.09.2026: die drei Kosten
+ * wiegen schwerer als 600 ms.
+ *
+ * ## Warum nur bei dunklem, gesperrtem Bildschirm
  *
  * Ist der Bildschirm schon an, gibt es kein Aufwecken - also auch keine Gesichtsentsperrung, die
  * verdraengen koennte. Ist kein Sperrbildschirm aktiv, gibt es nichts zu ueberlagern. In beiden
- * Faellen waere der Vorlauf reine Verzoegerung ohne Gegenwert.
+ * Faellen waere der Vorlauf reine Verzoegerung ohne Gegenwert. **Das ist die letzte verbliebene
+ * Bedingung; sie liest nur Systemzustand und braucht keinen gespeicherten Wert.**
  *
  * ## Richtung der Degradation
  *
- * Alles, was unklar ist, fuehrt zu 0 - also zum unveraenderten Verhalten. Ein nicht lesbarer
- * Zaehler darf einen Wecker nicht verzoegern. Der Ton haengt ohnehin nicht daran: er startet auf
- * beiden Pfaden sofort.
+ * Alles, was unklar ist, fuehrt zu 0 - also zum unveraenderten Verhalten. Der Ton haengt ohnehin
+ * nicht daran: er startet auf beiden Pfaden sofort.
  */
 object VorweckEntscheidung {
 
@@ -66,19 +79,14 @@ object VorweckEntscheidung {
     const val VORLAUF_MS = 600L
 
     /**
-     * @param geraetIstBetroffen [WeckbildschirmVerdraengungPrefs.jeVerdraengt] - BLEIBEND, nicht
-     *   der zuruecksetzbare Hinweis-Zaehler. Mit dem Zaehler als Gate schaltete sich das Vorwecken
-     *   durch seinen eigenen Erfolg ab; am 04.09.2026 am Geraet gemessen.
      * @param bildschirmAn `PowerManager.isInteractive`.
      * @param gesperrt `KeyguardManager.isKeyguardLocked`.
      * @return [VORLAUF_MS], wenn vorgeweckt werden soll, sonst 0.
      */
     fun vorlaufMillis(
-        geraetIstBetroffen: Boolean,
         bildschirmAn: Boolean,
         gesperrt: Boolean
     ): Long = when {
-        !geraetIstBetroffen -> 0L
         bildschirmAn -> 0L
         !gesperrt -> 0L
         else -> VORLAUF_MS

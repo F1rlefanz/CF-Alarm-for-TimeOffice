@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.4 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.5 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Die Abhilfe für den verdrängten Weck-Bildschirm gilt jetzt für jeden Wecker — auch für den ersten nach einem Neustart._
+
+### 🐛 Behoben
+
+- **Der erste Wecker nach einem nächtlichen Neustart war bisher ungeschützt.** Die App merkte sich, ob dein Gerät von dem Problem betroffen ist — und genau diese Merkung kann sie nach einem Neustart erst lesen, wenn das Gerät einmal entsperrt wurde. Ausgerechnet in der Nacht, in der niemand danebensteht, hätte der Weck-Bildschirm also wieder verschwinden können. Die App weckt den Bildschirm jetzt immer kurz vorher selbst, wenn er dunkel und gesperrt ist, und braucht dafür nichts mehr, was sie sich merken müsste.
+
+### 🔧 Unter der Haube
+
+- **Eine Einstellung weniger, die falsch stehen kann.** Mit der Merkung entfallen gleich mehrere Sonderfälle: sie musste vom Backup ausgenommen werden, sie hätte sich unter unglücklichen Umständen selbst abschalten können, und sie war nach einem Neustart zeitweise unlesbar. Der Preis dafür ist eine halbe Sekunde: der Weck-Bildschirm erscheint jetzt auch auf unauffälligen Geräten so viel später. **Der Ton klingelt unverändert sofort** — am Weckruf selbst ändert das nichts.
+
+## Version 1.39.4
 
 **Stand:** September 2026
 

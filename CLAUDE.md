@@ -296,9 +296,12 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **Blockierte Benachrichtigungen sind ein Wecker ohne Oberfläche** — deshalb die Status-Karte davor
   und ein WARN direkt nach `startForeground()`.
 - **`visibilitySnapshot()` ist Diagnostik, die im Release-Log landen MUSS** (WARN).
-- **Der Weckton startet sofort, nie im verzoegerten Vorweck-Zweig.** Auf betroffenen Geraeten
-  wartet ausschliesslich `startForeground()` mit der FSI-Notification (600 ms, siehe
+- **Der Weckton startet sofort, nie im verzoegerten Vorweck-Zweig.** Bei dunklem, gesperrtem
+  Bildschirm wartet ausschliesslich `startForeground()` mit der FSI-Notification (600 ms, siehe
   `VorweckEntscheidung`). Wer den Ton mit verzoegert, verzoegert den Weckruf selbst.
+- **Die Vorweck-Bedingung liest NUR Systemzustand, nie etwas Gespeichertes.** Bis 1.39.4 gab ein
+  Merker im CE-Storage das Gate — im Direct Boot nicht lesbar, weshalb der erste Wecker nach
+  einem naechtlichen Neustart ungeschuetzt lief. Seit 1.39.5 gestrichen; Hergang im Wecker-Skill.
 
 ### Hintergrundketten und Boot
 

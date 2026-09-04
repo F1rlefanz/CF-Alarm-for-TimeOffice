@@ -51,7 +51,23 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.39.4 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.39.5 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Die Abhilfe für den verdrängten Weck-Bildschirm gilt jetzt für jeden Wecker — auch für den ersten nach einem Neustart.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Der erste Wecker nach einem nächtlichen Neustart war bisher ungeschützt.</strong> Die App merkte sich, ob dein Gerät von dem Problem betroffen ist — und genau diese Merkung kann sie nach einem Neustart erst lesen, wenn das Gerät einmal entsperrt wurde. Ausgerechnet in der Nacht, in der niemand danebensteht, hätte der Weck-Bildschirm also wieder verschwinden können. Die App weckt den Bildschirm jetzt immer kurz vorher selbst, wenn er dunkel und gesperrt ist, und braucht dafür nichts mehr, was sie sich merken müsste.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li><strong>Eine Einstellung weniger, die falsch stehen kann.</strong> Mit der Merkung entfallen gleich mehrere Sonderfälle: sie musste vom Backup ausgenommen werden, sie hätte sich unter unglücklichen Umständen selbst abschalten können, und sie war nach einem Neustart zeitweise unlesbar. Der Preis dafür ist eine halbe Sekunde: der Weck-Bildschirm erscheint jetzt auch auf unauffälligen Geräten so viel später. <strong>Der Ton klingelt unverändert sofort</strong> — am Weckruf selbst ändert das nichts.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.39.4</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Nachbesserungen an der Weckbildschirm-Abhilfe von 1.39.3 — und ein Hinweistext, der nicht mehr stimmte.</em></p>
 

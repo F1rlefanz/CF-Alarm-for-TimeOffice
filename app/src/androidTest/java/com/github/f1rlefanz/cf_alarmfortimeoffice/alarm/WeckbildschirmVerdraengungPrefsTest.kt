@@ -13,18 +13,22 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Die beiden Merker der Verdraengung — und dass ein sauberer Lauf nur EINEN davon zuruecksetzt.
+ * Der Zaehler hinter dem Hinweis „Weck-Bildschirm wird verdraengt".
  *
  * WARUM INSTRUMENTIERT UND NICHT ALS UNIT-TEST: [WeckbildschirmVerdraengungPrefs] schreibt
  * SharedPreferences und braucht einen echten `Context`; das Projekt fuehrt kein Robolectric.
  *
- * WARUM ES DIESEN TEST GIBT: Am 04.09.2026 war der Hinweis-Zaehler zugleich das Gate fuers
- * Vorwecken. Der erste geschuetzte Lauf am Fairphone war sauber — und genau dadurch fiel der
- * Zaehler auf 0 und schaltete den Schutz fuer den naechsten Wecker wieder ab. Das Ergebnis waere
- * jeder ZWEITE Wecker ohne Bedienoberflaeche gewesen. Wer die beiden Merker wieder zu einem
- * zusammenzieht, baut genau das nach.
+ * WAS HIER NICHT MEHR STEHT - und warum das eine Verbesserung ist: Bis 1.39.4 trug diese Datei
+ * einen zweiten, bleibenden Merker `je_verdraengt`, der entschied, OB vorgeweckt wird. Die drei
+ * Tests dazu sind mit ihm gestrichen (1.39.5). Der Grund fuer das Streichen war nicht, dass sie
+ * laestig waren, sondern dass das Gate im CE-Storage lag und im Direct Boot nicht lesbar war -
+ * der erste Wecker nach einem naechtlichen Neustart lief ungeschuetzt. Das Vorwecken haengt jetzt
+ * nur noch am Systemzustand; seine Bedingung prueft [VorweckEntscheidungTest] ohne Geraet.
  *
- * Der Test schreibt in die echten App-Preferences und stellt den Ausgangszustand danach wieder her —
+ * Was bleibt, ist der HINWEIS - und fuer den gilt weiterhin: er behauptet einen Zustand
+ * („auf diesem Geraet passiert das"), also faellt er weg, sobald ein Wecker sauber durchlaeuft.
+ *
+ * Der Test schreibt in die echten App-Preferences und stellt den Ausgangszustand danach wieder her -
  * auf einem produktiv genutzten Geraet darf er keine Spur hinterlassen.
  */
 @RunWith(AndroidJUnit4::class)
@@ -35,12 +39,10 @@ class WeckbildschirmVerdraengungPrefsTest {
     private fun prefs() = context.getSharedPreferences("weckbildschirm_verdraengung", Context.MODE_PRIVATE)
 
     private var sicherungAnzahl = 0
-    private var sicherungMerker = false
 
     @Before
     fun sichereAusgangszustand() {
         sicherungAnzahl = prefs().getInt("anzahl_in_folge", 0)
-        sicherungMerker = prefs().getBoolean("je_verdraengt", false)
         prefs().edit().clear().commit()
     }
 
@@ -48,69 +50,45 @@ class WeckbildschirmVerdraengungPrefsTest {
     fun stelleAusgangszustandWiederHer() {
         prefs().edit()
             .putInt("anzahl_in_folge", sicherungAnzahl)
-            .putBoolean("je_verdraengt", sicherungMerker)
             .commit()
     }
 
     @Test
-    fun frischesGeraetIstNichtBetroffen() {
-        assertFalse(
-            "Ohne jede Messung darf kein Vorwecken greifen",
-            WeckbildschirmVerdraengungPrefs.jeVerdraengt(context)
-        )
+    fun frischesGeraetZeigtKeinenHinweis() {
+        assertEquals(0, WeckbildschirmVerdraengungPrefs.anzahlInFolge(context))
         assertFalse(WeckbildschirmVerdraengungPrefs.hinweisFaellig(context))
     }
 
     @Test
-    fun einSaubererLaufLoeschtDenHinweisAberNichtDenSchutz() {
+    fun derHinweisErscheintErstAbDerSchwelle() {
+        // Ein einzelner Aussetzer kann ein Systemdialog oder ein Anruf gewesen sein - der soll den
+        // Nutzer nicht behelligen. Erst zwei Weckvorgaenge in Folge sind ein Zustand.
         WeckbildschirmVerdraengungPrefs.zaehleVerdraengung(context)
+        assertEquals(1, WeckbildschirmVerdraengungPrefs.anzahlInFolge(context))
+        assertFalse(
+            "Nach EINER Verdraengung darf noch kein Hinweis stehen",
+            WeckbildschirmVerdraengungPrefs.hinweisFaellig(context)
+        )
+
         WeckbildschirmVerdraengungPrefs.zaehleVerdraengung(context)
-        assertEquals(2, WeckbildschirmVerdraengungPrefs.anzahlInFolge(context))
+        assertEquals(WeckbildschirmVerdraengungPrefs.SCHWELLE, WeckbildschirmVerdraengungPrefs.anzahlInFolge(context))
         assertTrue(WeckbildschirmVerdraengungPrefs.hinweisFaellig(context))
-        assertTrue(WeckbildschirmVerdraengungPrefs.jeVerdraengt(context))
+    }
+
+    @Test
+    fun einSaubererLaufNimmtDenHinweisZurueck() {
+        WeckbildschirmVerdraengungPrefs.zaehleVerdraengung(context)
+        WeckbildschirmVerdraengungPrefs.zaehleVerdraengung(context)
+        assertTrue(WeckbildschirmVerdraengungPrefs.hinweisFaellig(context))
 
         WeckbildschirmVerdraengungPrefs.meldeSauberenLauf(context)
 
         assertEquals(
-            "Der Hinweis-Zaehler gehoert zurueckgestellt - es passiert gerade nicht mehr",
+            "Der Zaehler gehoert hart zurueckgestellt, nicht heruntergezaehlt - der Hinweis " +
+                "behauptet einen Zustand, keine Statistik",
             0,
             WeckbildschirmVerdraengungPrefs.anzahlInFolge(context)
         )
         assertFalse(WeckbildschirmVerdraengungPrefs.hinweisFaellig(context))
-        assertTrue(
-            "DER KERN DIESES TESTS: der saubere Lauf ist das Verdienst des Vorweckens. Faellt der " +
-                "bleibende Merker mit zurueck, laeuft der naechste Wecker ungeschuetzt und wird " +
-                "wieder verdraengt - jeder zweite Wecker ohne Bedienoberflaeche.",
-            WeckbildschirmVerdraengungPrefs.jeVerdraengt(context)
-        )
-    }
-
-    @Test
-    fun derSaubereLaufSchreibtDenMerkerAuchNach() {
-        // DER FALL, DER AM 04.09.2026 UM 17:33 DURCHRUTSCHTE: Bestandsgeraet, Zaehler steht,
-        // Merker gibt es noch nicht. Der geschuetzte Lauf ist sauber - zaehleVerdraengung() kommt
-        // also gar nicht dran, und ohne diesen Nachzug faellt mit dem Zaehler auch die
-        // Migrationsbedingung weg. Der naechste Wecker liefe wieder ungeschuetzt.
-        prefs().edit().putInt("anzahl_in_folge", 4).commit()
-        assertTrue(WeckbildschirmVerdraengungPrefs.jeVerdraengt(context))
-
-        WeckbildschirmVerdraengungPrefs.meldeSauberenLauf(context)
-
-        assertEquals(0, WeckbildschirmVerdraengungPrefs.anzahlInFolge(context))
-        assertTrue(
-            "Der Merker muss beim Zuruecksetzen mitgeschrieben werden - sonst ist der Schutz weg, " +
-                "sobald der Zaehler faellt",
-            prefs().getBoolean("je_verdraengt", false)
-        )
-        assertTrue(WeckbildschirmVerdraengungPrefs.jeVerdraengt(context))
-    }
-
-    @Test
-    fun bestandsgeraeteMitZaehlerGeltenAlsBetroffen() {
-        // Migration: auf Geraeten, die vor dieser Version schon gezaehlt haben, gibt es den neuen
-        // Merker noch nicht. Ohne diesen Zweig muesste dort erst wieder ein Wecker verdraengt
-        // werden, bevor der Schutz ueberhaupt greift.
-        prefs().edit().putInt("anzahl_in_folge", 3).commit()
-        assertTrue(WeckbildschirmVerdraengungPrefs.jeVerdraengt(context))
     }
 }

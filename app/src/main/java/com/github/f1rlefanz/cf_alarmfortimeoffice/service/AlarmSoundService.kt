@@ -27,7 +27,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.VorweckEntscheidung
-import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WeckbildschirmVerdraengungPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -311,8 +310,8 @@ class AlarmSoundService : Service() {
                 // verworfen und ist deshalb kein tragfaehiger Fallback mehr).
                 val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId, snoozeMinutes)
 
-                // VORWECKEN (seit 1.39.3): auf Geraeten, die den Weckbildschirm nachweislich
-                // verdraengen, zuerst selbst den Bildschirm wecken und erst danach die
+                // VORWECKEN (seit 1.39.3, ohne Geraete-Unterscheidung seit 1.39.5): bei dunklem,
+                // gesperrtem Bildschirm zuerst selbst den Bildschirm wecken und erst danach die
                 // Notification posten. Warum das hilft, steht bei [vorlaufFuerWeckbildschirm].
                 val vorlauf = vorlaufFuerWeckbildschirm()
                 if (vorlauf > 0L) {
@@ -471,14 +470,19 @@ class AlarmSoundService : Service() {
      * Wie lange vor der Wecker-Notification soll der Bildschirm selbst geweckt werden - oder 0.
      *
      * Die Entscheidung selbst steht in [VorweckEntscheidung] (dort auch der vollstaendige Hergang
-     * samt Messwerten); hier werden nur die drei Eingaben besorgt. Jeder Fehler dabei fuehrt zu 0,
-     * also zum unveraenderten Verhalten - ein nicht lesbarer Zaehler darf keinen Wecker verzoegern.
+     * samt Messwerten); hier werden nur die beiden Eingaben besorgt. Jeder Fehler dabei fuehrt zu
+     * 0, also zum unveraenderten Verhalten.
+     *
+     * BEIDE EINGABEN SIND REINER SYSTEMZUSTAND, und das ist seit 1.39.5 der Punkt: bis 1.39.4
+     * stand hier zusaetzlich ein gespeicherter Merker "dieses Geraet verdraengt". Der lag im
+     * CE-Storage und war im Direct Boot nicht lesbar - der erste Wecker nach einem naechtlichen
+     * Neustart ohne Entsperrung lief damit ungeschuetzt. Wer hier wieder etwas Gespeichertes
+     * abfragt, holt sich genau diese Luecke zurueck.
      */
     private fun vorlaufFuerWeckbildschirm(): Long = try {
         val power = getSystemService(POWER_SERVICE) as PowerManager
         val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
         VorweckEntscheidung.vorlaufMillis(
-            geraetIstBetroffen = WeckbildschirmVerdraengungPrefs.jeVerdraengt(this),
             bildschirmAn = power.isInteractive,
             gesperrt = keyguard.isKeyguardLocked
         )
@@ -514,7 +518,7 @@ class AlarmSoundService : Service() {
             Logger.w(
                 LogTags.ALARM,
                 "🌅 Vorwecken: Bildschirm wird ${VorweckEntscheidung.VORLAUF_MS} ms vor der Wecker-" +
-                    "Notification geweckt (Verdraengung war zuvor gemessen)"
+                    "Notification geweckt (Bildschirm war aus und gesperrt)"
             )
         } catch (e: Exception) {
             // Folgenlos fuer den Wecker: ohne Vorwecken laeuft er wie bisher.

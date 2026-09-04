@@ -51,7 +51,25 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.39.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.39.4 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Nachbesserungen an der Weckbildschirm-Abhilfe von 1.39.3 — und ein Hinweistext, der nicht mehr stimmte.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Der Hinweis zum verdrängten Weck-Bildschirm sagte weiterhin, die App könne nichts dagegen tun.</strong> Das stimmt seit der letzten Version nicht mehr. Er erklärt jetzt, dass die App gegensteuert, ab wann das greift — und dass sich ein Wecker notfalls auch über die aufgeklappte Benachrichtigung stoppen lässt, ohne das Gerät zu entsperren.</li>
+                <li><strong>Die Abhilfe wandert nicht mehr auf ein neues Telefon mit.</strong> Die Merkung „auf diesem Gerät tritt das Problem auf“ gehört zum Gerät, nicht zu deinen Einstellungen. Bisher wäre sie bei einem Gerätewechsel mitgesichert worden und hätte dort dauerhaft eine kleine Verzögerung eingeschaltet, obwohl es gar nichts zu beheben gibt.</li>
+                <li><strong>Ein Drehen des Geräts während des Klingelns zählt nicht mehr als Fehler.</strong> Bildschirmdrehung oder ein automatischer Wechsel auf dunkle Darstellung sahen bisher aus wie ein verdrängter Weck-Bildschirm und konnten die Abhilfe unnötig einschalten.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li><strong>Zwei Absicherungen für den Fall, dass etwas schiefgeht:</strong> Wird ein Wecker in dem kurzen Moment abgebrochen, in dem die App gerade den Bildschirm weckt, räumt sie das jetzt sauber ab. Und falls Android das Vorwecken künftig unterbindet, steht das ab sofort im Protokoll — statt als unerklärlicher Rückfall.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.39.3</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Auf dem Fairphone 6 blieb der Weckbildschirm hinter dem Sperrbildschirm hängen — er kommt jetzt nach vorn.</em></p>
 

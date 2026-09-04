@@ -27,7 +27,25 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.4 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Nachbesserungen an der Weckbildschirm-Abhilfe von 1.39.3 — und ein Hinweistext, der nicht mehr stimmte._
+
+### 🐛 Behoben
+
+- **Der Hinweis zum verdrängten Weck-Bildschirm sagte weiterhin, die App könne nichts dagegen tun.** Das stimmt seit der letzten Version nicht mehr. Er erklärt jetzt, dass die App gegensteuert, ab wann das greift — und dass sich ein Wecker notfalls auch über die aufgeklappte Benachrichtigung stoppen lässt, ohne das Gerät zu entsperren.
+
+- **Die Abhilfe wandert nicht mehr auf ein neues Telefon mit.** Die Merkung „auf diesem Gerät tritt das Problem auf“ gehört zum Gerät, nicht zu deinen Einstellungen. Bisher wäre sie bei einem Gerätewechsel mitgesichert worden und hätte dort dauerhaft eine kleine Verzögerung eingeschaltet, obwohl es gar nichts zu beheben gibt.
+
+- **Ein Drehen des Geräts während des Klingelns zählt nicht mehr als Fehler.** Bildschirmdrehung oder ein automatischer Wechsel auf dunkle Darstellung sahen bisher aus wie ein verdrängter Weck-Bildschirm und konnten die Abhilfe unnötig einschalten.
+
+### 🔧 Unter der Haube
+
+- **Zwei Absicherungen für den Fall, dass etwas schiefgeht:** Wird ein Wecker in dem kurzen Moment abgebrochen, in dem die App gerade den Bildschirm weckt, räumt sie das jetzt sauber ab. Und falls Android das Vorwecken künftig unterbindet, steht das ab sofort im Protokoll — statt als unerklärlicher Rückfall.
+
+## Version 1.39.3
 
 **Stand:** September 2026
 

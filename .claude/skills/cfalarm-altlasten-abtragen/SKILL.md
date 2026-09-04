@@ -18,11 +18,25 @@ verunsichert den Eigentümer ohne Grund.
 Form „welche Art von Leiche könnte es noch geben, die noch niemand gesucht hat?".
 
 ```bash
-gh issue list --label aufraeumen --state open      # das ist die Warteschlange
+python tools/aufraeumen/blickwinkel_waehlen.py    # nennt den Blickwinkel dieser Runde
+cat tools/aufraeumen/nachtraege.md                # bindend wie dieser Skill — vor dem Anfangen lesen
 ```
 
-Nimm den obersten offenen Eintrag. Gibt es keinen, ist die Liste leer — dann **nichts erfinden**,
-sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen.
+**Nimm den Blickwinkel, den das Werkzeug nennt** — nicht den obersten aus `gh issue list`. Genau
+das stand hier bis zum 03.09.2026, und es war zweimal falsch, beide Male an den echten Daten
+gemessen: `gh issue list` sortiert **absteigend** nach Erstelldatum, die Warteschlange war also ein
+Stapel (die neun Blickwinkel vom 25.08. kamen nie an die Reihe); und weil der Torwächter ein Issue
+beim Schließen des PR **wieder öffnet**, ohne dass sich dessen Erstelldatum ändert, sperrte ein
+gescheiterter Blickwinkel den Kopf der Liste dauerhaft — **Issue #39 hat so vier Runden
+verbraucht** (PR #40, #48, #56, #58). Das Werkzeug nimmt den ältesten und stellt einen Blickwinkel
+nach drei gescheiterten Anläufen zurück; der Hergang steht in seinem Kopfkommentar.
+
+**Zurückgestellt heißt nicht verworfen.** Das Issue bleibt offen, der Blickwinkel gilt weiter als
+gut — er kostet nur keine weitere Runde, bis ein Mensch entschieden hat. Wenn du meinst, die
+Zurückstellung sei falsch, ist das eine Rückfrage ans Issue, kein Grund zum Übergehen.
+
+Meldet das Werkzeug **nichts Wählbares** (Rückgabewert 1) oder scheitert es (2), dann **nichts
+erfinden**, sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen.
 
 ## Die Disziplin je Runde — sie ist der ganze Wert
 
@@ -76,9 +90,11 @@ sondern das melden und aufhören. Ein leerer Zustand ist das Ziel, kein Versagen
   hinzusehen. Gemerkt hat es erst das erste Werkzeug, das sie *parsen* wollte, und das musste sich
   mit Regexps behelfen. **„Es funktioniert ja" ist kein Beleg für Wohlgeformtheit**; das nächste
   Werkzeug zahlt — **wer hier einen XML-Parser ansetzt, stürzt ab, nicht die Datei.**
-  Repariert wird es NICHT nebenbei: die Runden 11 und 13 haben es versucht (PR #40, PR #48), der
-  Torwächter hat beide geschlossen, und der Blickwinkel steht als **Issue #39** wieder offen. Das
-  ist der Weg dafür.
+  Repariert wird es NICHT nebenbei: **vier** Runden haben es versucht (PR #40, #48, #56, #58), der
+  Torwächter hat alle vier geschlossen — nie wegen des Befundes, immer wegen dessen, was die
+  Reparatur neu hineinschrieb. Issue #39 ist deshalb seit dem 03.09.2026 **zurückgestellt** (siehe
+  `blickwinkel_waehlen.py`): es bleibt offen und gut, aber es kostet keine weitere Runde, bis der
+  Eigentümer entschieden hat. Fass es nicht von dir aus wieder an.
 - **Zwei Lehren aus geschlossenen Anläufen — sie gelten für jedes neue Gatter.**
   1. **Ein `except`-Tupel über einen fremden Parser ist eine Wette.** PR #48 fing
      `(SyntaxError, ValueError)`; `<?xml … encoding="cp1252-de"?>` wirft `LookupError`, der
@@ -197,13 +213,19 @@ Jede Runde ergänzt hier: neue Leitplanke, wenn ein Fehlurteil passiert ist; neu
 „Verworfen", wenn ein Blickwinkel nichts taugt; Korrektur, wenn eine Aussage hier sich als falsch
 erweist. **Danebenschreiben ist ein Fehler, nicht Verlauf.**
 
-**Wenn dir das Schreiben an dieser Datei nicht gelingt, ist das kein Grund, den Nachtrag fallen zu
-lassen.** In den Runden 9, 11 und 14 scheiterte es (die Sitzungen meldeten verweigerten
-Schreibzugriff auf `.claude/`; lokal ist die Ursache nicht nachstellbar — weder `.claude/settings.json`
-noch die `allowedTools` in `aufraeumen.yml` sperren das). Der Ausweg ist erprobt und gilt als
-vollwertig: **den fertigen Wortlaut als Issue mit Label `aufraeumen` anhängen** und im
-PR-Kommentar darauf verweisen. Genau so kamen die Issues #33, #41 und #49 zustande, und genau so
-sind sie hier eingeflossen. Was NICHT zählt, ist den Nachtrag nur in einer PR-Beschreibung zu
-lassen — die liest die nächste Runde nicht. Für den Hergang der Werkzeuge selbst
+**Versuch es gar nicht erst — du kannst diese Datei nicht schreiben, und das ist Absicht.** Am
+03.09.2026 headless nachgestellt (Claude Code 2.1.259, dieselben Schalter wie in `aufraeumen.yml`):
+`Edit`, `Write` **und** `Bash` auf `.claude/**` werden abgelehnt, und weder eine Pfadregel in
+`--allowedTools` noch `--permission-mode acceptEdits` heben das auf. Es ist ein eingebauter Schutz,
+keine Fehleinstellung dieses Repos: **ein Agent darf seine eigene Anweisung nicht unbeaufsichtigt
+umschreiben.** Die frühere Notiz hier — „lokal ist die Ursache nicht nachstellbar" — war eine
+Vermutung und ist damit widerlegt. In den Runden 9, 11, 14 und 15 hat das je einen Nachtrag
+gekostet (Issues #33, #41, #49, #57), und weil die nächste Runde sie nicht las, entstanden die vier
+geschlossenen Anläufe an #39.
+
+**Dein Weg ist `tools/aufraeumen/nachtraege.md`.** Die darfst du schreiben, sie liegt im Checkout,
+die nächste Runde liest sie als Erstes, und sie geht mit deinem PR durch den Torwächter. Ein
+eigenes Issue dafür brauchst du **nicht** mehr. Was NICHT zählt, ist den Nachtrag nur in einer
+PR-Beschreibung zu lassen — die liest die nächste Runde nicht. Für den Hergang der Werkzeuge selbst
 siehe `tools/aufraeumen/pruefe_reste.py` (die Kommentare dort tragen jede Messung) und
 `cfalarm-arbeit-abschliessen`.

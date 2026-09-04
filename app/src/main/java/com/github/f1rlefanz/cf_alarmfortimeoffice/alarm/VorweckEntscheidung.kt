@@ -66,17 +66,19 @@ object VorweckEntscheidung {
     const val VORLAUF_MS = 600L
 
     /**
-     * @param verdraengungenInFolge Stand aus [WeckbildschirmVerdraengungPrefs.anzahlInFolge].
+     * @param geraetIstBetroffen [WeckbildschirmVerdraengungPrefs.jeVerdraengt] - BLEIBEND, nicht
+     *   der zuruecksetzbare Hinweis-Zaehler. Mit dem Zaehler als Gate schaltete sich das Vorwecken
+     *   durch seinen eigenen Erfolg ab; am 04.09.2026 am Geraet gemessen.
      * @param bildschirmAn `PowerManager.isInteractive`.
      * @param gesperrt `KeyguardManager.isKeyguardLocked`.
      * @return [VORLAUF_MS], wenn vorgeweckt werden soll, sonst 0.
      */
     fun vorlaufMillis(
-        verdraengungenInFolge: Int,
+        geraetIstBetroffen: Boolean,
         bildschirmAn: Boolean,
         gesperrt: Boolean
     ): Long = when {
-        verdraengungenInFolge < 1 -> 0L
+        !geraetIstBetroffen -> 0L
         bildschirmAn -> 0L
         !gesperrt -> 0L
         else -> VORLAUF_MS

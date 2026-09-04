@@ -21,9 +21,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
  * DER SATZ "ES GIBT APP-SEITIG NICHTS ZU GEWINNEN" STAND HIER UND WAR FALSCH (korrigiert am
  * 04.09.2026). Er galt fuer das NACHREICHEN - nicht fuer den Zeitpunkt des ersten Postens. Genau
  * dort setzt [VorweckEntscheidung] an: erst den Bildschirm selbst wecken, die Gesichtsentsperrung
- * vorbeiziehen lassen und die Notification 600 ms spaeter posten. Dieser Zaehler ist deshalb nicht
- * mehr nur Grundlage des Hinweises, sondern zugleich das GATE dafuer - er entscheidet, auf welchen
- * Geraeten vorgeweckt wird.
+ * vorbeiziehen lassen und die Notification 600 ms spaeter posten. Diese Datei haelt deshalb ZWEI
+ * Merker: den Zaehler fuer den Hinweis (zuruecksetzbar) und [jeVerdraengt] als Gate fuer das
+ * Vorwecken (bleibend). Warum das getrennt sein MUSS, steht bei `KEY_JE_VERDRAENGT`.
  *
  * WARUM SharedPreferences UND NICHT DataStore: Geschrieben wird aus `onStop` der
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity] - einem
@@ -42,6 +42,21 @@ object WeckbildschirmVerdraengungPrefs {
     private const val KEY_ANZAHL_IN_FOLGE = "anzahl_in_folge"
 
     /**
+     * Wurde auf DIESEM Geraet jemals eine Verdraengung gemessen?
+     *
+     * ZWEI FRAGEN, ZWEI MERKER - und das ist der Kern: [KEY_ANZAHL_IN_FOLGE] beantwortet "passiert
+     * es GERADE" (fuer den Hinweis, deshalb bei jedem sauberen Wecker zurueckgestellt), dieser hier
+     * beantwortet "ist dieses GERAET betroffen" (fuer das Vorwecken, deshalb bleibend).
+     *
+     * WARUM DAS NOETIG WURDE - am Geraet gemessen, 04.09.2026: mit dem Zaehler als Gate schaltete
+     * sich das Vorwecken durch seinen eigenen Erfolg ab. Der geschuetzte Lauf um 16:42 war sauber,
+     * [meldeSauberenLauf] setzte den Zaehler auf 0 - und der naechste Wecker waere wieder ungeschuetzt
+     * gewesen, also verdraengt, Zaehler 1, der uebernaechste wieder geschuetzt. Jeder ZWEITE Wecker
+     * ohne Bedienoberflaeche, dauerhaft.
+     */
+    private const val KEY_JE_VERDRAENGT = "je_verdraengt"
+
+    /**
      * Ab wie vielen Weckvorgaengen in Folge der Hinweis erscheint.
      *
      * Zwei, nicht eins: der erste Fall kann ein Zufall sein (ein Systemdialog, ein eingehender
@@ -57,7 +72,10 @@ object WeckbildschirmVerdraengungPrefs {
     fun zaehleVerdraengung(context: Context) {
         try {
             val neu = anzahlInFolge(context) + 1
-            prefs(context).edit().putInt(KEY_ANZAHL_IN_FOLGE, neu).commit()
+            prefs(context).edit()
+                .putInt(KEY_ANZAHL_IN_FOLGE, neu)
+                .putBoolean(KEY_JE_VERDRAENGT, true)
+                .commit()
             Logger.w(
                 LogTags.ALARM,
                 "Weckbildschirm verdraengt - $neu. Mal in Folge (Hinweis ab $SCHWELLE)"
@@ -75,6 +93,10 @@ object WeckbildschirmVerdraengungPrefs {
      * Bewusst hart zurueckgestellt statt heruntergezaehlt: Der Hinweis behauptet einen ZUSTAND
      * ("auf diesem Geraet passiert das"), nicht eine Statistik. Sobald ein Wecker sauber
      * durchlaeuft, stimmt die Behauptung nicht mehr.
+     *
+     * [KEY_JE_VERDRAENGT] bleibt dabei ausdruecklich STEHEN - der saubere Lauf ist ja in der Regel
+     * das Verdienst des Vorweckens. Wer ihn hier mit zuruecksetzt, schaltet den Schutz durch seinen
+     * eigenen Erfolg ab (am 04.09.2026 genau so gemessen).
      */
     fun meldeSauberenLauf(context: Context) {
         try {
@@ -98,4 +120,24 @@ object WeckbildschirmVerdraengungPrefs {
 
     /** Soll der Hinweis angezeigt werden? */
     fun hinweisFaellig(context: Context): Boolean = anzahlInFolge(context) >= SCHWELLE
+
+    /**
+     * Ist dieses Geraet von der Verdraengung betroffen? Gate fuer das Vorwecken
+     * ([com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.VorweckEntscheidung]).
+     *
+     * Bleibend, im Gegensatz zu [hinweisFaellig] - siehe [KEY_JE_VERDRAENGT]. Der Oder-Zweig ueber
+     * den Zaehler ist die Migration fuer Bestandsgeraete: dort steht der Zaehler schon, den neuen
+     * Merker gibt es noch nicht, und ohne ihn muesste erst wieder ein Wecker verdraengt werden,
+     * bevor der Schutz greift.
+     *
+     * Degradation nach UNTEN wie beim Zaehler: ein Lesefehler heisst "nicht betroffen" und damit
+     * unveraendertes Verhalten. Ein faelschlich eingeschaltetes Vorwecken kostet zwar nur 600 ms,
+     * aber es soll aus einer Messung folgen, nicht aus einer Panne.
+     */
+    fun jeVerdraengt(context: Context): Boolean = try {
+        prefs(context).getBoolean(KEY_JE_VERDRAENGT, false) || anzahlInFolge(context) >= 1
+    } catch (e: Exception) {
+        Logger.e(LogTags.ALARM, "Verdraengungs-Merker nicht lesbar - gilt als NICHT betroffen", e)
+        false
+    }
 }

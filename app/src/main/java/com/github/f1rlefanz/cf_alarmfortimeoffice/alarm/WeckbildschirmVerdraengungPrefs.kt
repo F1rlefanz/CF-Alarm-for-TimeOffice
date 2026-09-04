@@ -142,12 +142,35 @@ object WeckbildschirmVerdraengungPrefs {
      * Merker gibt es noch nicht, und ohne ihn muesste erst wieder ein Wecker verdraengt werden,
      * bevor der Schutz greift.
      *
+     * DIE MIGRATION MUSS SCHREIBEN, NICHT NUR LESEN - am Geraet gemessen, 04.09.2026, 17:33:
+     * Auf einem Bestandsgeraet trug allein der Zaehler das Gate (6, Merker fehlte). Der geschuetzte
+     * Lauf war sauber, [meldeSauberenLauf] setzte den Zaehler auf 0 - und damit waren BEIDE Signale
+     * weg: `je_verdraengt` war nie geschrieben worden, weil ihn nur [zaehleVerdraengung] setzt, und
+     * die hatte seit der Installation nie gefeuert. Danach war das Geraet von einem gesunden nicht
+     * mehr zu unterscheiden, der Schutz also wieder aus. Dieselbe Falle wie zuvor, nur eine Ebene
+     * tiefer: es genuegt nicht, den Merker nicht ZURUECKZUSETZEN - er muss auch ENTSTEHEN, sobald
+     * es etwas zu merken gibt.
+     *
      * Degradation nach UNTEN wie beim Zaehler: ein Lesefehler heisst "nicht betroffen" und damit
      * unveraendertes Verhalten. Ein faelschlich eingeschaltetes Vorwecken kostet zwar nur 600 ms,
      * aber es soll aus einer Messung folgen, nicht aus einer Panne.
      */
     fun jeVerdraengt(context: Context): Boolean = try {
-        prefs(context).getBoolean(KEY_JE_VERDRAENGT, false) || anzahlInFolge(context) >= 1
+        val p = prefs(context)
+        when {
+            p.getBoolean(KEY_JE_VERDRAENGT, false) -> true
+            anzahlInFolge(context) >= 1 -> {
+                // Genau hier wird die Migration bleibend gemacht - siehe den Absatz oben. Synchron
+                // mit commit(), weil der naechste Leser der Weckvorgang selbst sein kann.
+                p.edit().putBoolean(KEY_JE_VERDRAENGT, true).commit()
+                Logger.i(
+                    LogTags.ALARM,
+                    "Verdraengungs-Merker aus dem Zaehler uebernommen - Vorwecken bleibt ab jetzt an"
+                )
+                true
+            }
+            else -> false
+        }
     } catch (e: Exception) {
         Logger.e(LogTags.ALARM, "Verdraengungs-Merker nicht lesbar - gilt als NICHT betroffen", e)
         false

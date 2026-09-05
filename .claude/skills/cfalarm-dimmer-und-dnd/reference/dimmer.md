@@ -497,9 +497,8 @@
   Play-Pflicht-Offenlegung, und die zeigt nur die Karte. Deshalb hat der Weg bewusst zwei
   Stationen: Das Extra `MainActivity.EXTRA_EINSTIEG` sagt der Activity, WESHALB geöffnet wurde;
   sie stellt den Wunsch (`DimBedienungshilfenWunsch`) und wechselt auf den Status-Tab, der rollt
-  die Karte ins Bild und lässt sie die Offenlegung zeigen. **Erst deren Knopf** springt — seit
-  jetzt über `ACTION_ACCESSIBILITY_DETAILS_SETTINGS` (ab Android 11) direkt auf die Seite DIESES
-  Dienstes, mit Rückfall auf die Liste, weil das Detail-Ziel nicht auf jedem Gerät existiert.
+  die Karte ins Bild und lässt sie die Offenlegung zeigen. **Erst deren Knopf** führt in die
+  Bedienungshilfen — auf den hervorgehobenen Eintrag dieses Dienstes (siehe die Messung unten).
 
   Vier Fallen stecken in den Details, alle nicht offensichtlich: `FLAG_ACTIVITY_CLEAR_TOP` **ohne**
   `FLAG_ACTIVITY_SINGLE_TOP` legt die laufende MainActivity (Start-Modus `standard`) neu an statt
@@ -512,11 +511,57 @@
   `positionInRoot()` von Karte und Spalte plus dem aktuellen Stand gerechnet: der reine Abstand im
   Fenster verschiebt sich beim Rollen mit.
 
-  **Am Gerät noch nicht belegt** (die Sitzung, die es gebaut hat, hatte weder Emulator noch SDK).
-  Zu prüfen ist genau zweierlei: dass die Detailseite auf dem Fairphone wirklich mit dem Eintrag
-  der App öffnet (sonst greift der Rückfall, und der ist die Liste von vorher), und dass der
-  Bildlauf die Karte trifft, wenn die App aus der Benachrichtigung KALT startet — dort läuft der
-  Effekt vor dem ersten Layout-Durchgang und wartet auf die Vermessung.
+  **Und dann fiel der Direktsprung bei der Geräteprüfung durch — dauerhaft, nicht gerätespezifisch
+  (05.09.2026).** Die Prüfung sollte nur beantworten, ob das Fairphone die Detailseite öffnet oder
+  ob der Rückfall greift. Sie ergab etwas Grundsätzlicheres: **diese App kann
+  `ACTION_ACCESSIBILITY_DETAILS_SETTINGS` nie starten.** Die Ziel-Activity
+  `Settings$AccessibilityDetailsSettingsActivity` trägt in AOSP `android:permission=
+  "android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"`, und diese Berechtigung steht auf
+  `signature|installer`, `@hide`, mit dem Kommentar „Not for use by third-party applications".
+  **Seit Android 11 — also seit es die Aktion überhaupt gibt**; in `android11-release`,
+  `android13-release`, `android16-release` und `main` von `platform_packages_apps_Settings` bzw.
+  `platform_frameworks_base` nachgelesen, das ist keine spätere Härtung. Eine nicht
+  plattformsignierte App hält sie nie.
+
+  Gemessen an **beiden** Geräten (Fairphone 6 / Android 16 und Emulator / API 36), identisch: die
+  Aktion löst sauber auf die Settings-Activity auf und wird dann abgewiesen mit
+  `SecurityException: Permission Denial … requires android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS`.
+  Der Zweig hätte also auf jedem Gerät nur seinen eigenen Rückfall erreicht — und dabei bei **jedem
+  Tipp** ein `Logger.w` („Direkte Bedienungshilfen-Seite nicht erreichbar") ins Release-Log
+  geschrieben, in einem Projekt, das WARN als Ernstfall-Signal liest. Deshalb ist er raus.
+
+  **Prüfweg ohne Installation** — er gilt für jede künftige Frage dieser Art, denn auf dem
+  produktiven Fairphone wird nichts installiert (ein Debug-Build ersetzte die Play-Installation
+  samt Weckern und Token). Die Dienst-Komponente steckt in der installierten Version, geprüft wird
+  nur die Reaktion der Einstellungen-App:
+
+  ```
+  adb -s <FP6-Serial> shell am start -a android.settings.ACCESSIBILITY_DETAILS_SETTINGS \
+    --es android.intent.extra.COMPONENT_NAME \
+    <pkg>/<pkg>.dimmer.DimAccessibilityService
+  ```
+
+  Das ist zeichengleich, was der Code tut. Ergänzend `adb shell pm list permissions -f` für die
+  Schutzstufe — die ist die eigentliche Antwort, nicht der Start-Versuch: **ein `Activity not
+  started` hieße „Aktion fehlt", ein `Permission Denial` heißt „Aktion da, aber gesperrt".**
+  Die beiden auseinanderzuhalten ist der ganze Unterschied zwischen „auf manchen Geräten" und
+  „nie".
+
+  **Was stattdessen wirkt, ist gemessen.** Die öffentliche, ungeschützte
+  `ACTION_ACCESSIBILITY_SETTINGS` nimmt den Schlüssel `:settings:fragment_args_key` (in AOSP
+  `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY`, ebenfalls nicht in `android.jar`) mit der flach
+  geschriebenen Kennung des Dienstes; die Einstellungen-App rollt den Eintrag dann ins Bild und
+  hebt ihn hervor. Am Emulator im **A/B** belegt: mit dem Extra steht „CF-Alarm Schicht-Dimmer"
+  unter „Downloaded apps" mit Hervorhebung, ohne das Extra dieselbe Liste ohne sie. Ignoriert eine
+  Einstellungen-App den Schlüssel, bleibt die blanke Liste — dasselbe Ergebnis wie ohne den
+  Versuch, ohne Fehlerfall. Deshalb braucht dieser Weg **keine** zweite Ebene mehr, und der
+  Regressionstest hält den Direktsprung ausdrücklich draußen.
+
+  **Am Gerät noch offen** bleibt der Bildlauf: dass er die Karte trifft, wenn die App aus der
+  Benachrichtigung KALT startet — dort läuft der Effekt vor dem ersten Layout-Durchgang und wartet
+  über `snapshotFlow` auf die Vermessung. Das braucht einen Debug-Build auf dem Emulator; in der
+  Sitzung vom 05.09.2026 war Gradle durch den JVM-Loopback-Defekt blockiert (Memory
+  `env_gradle_loopback`), die Prüfung steht also noch aus.
 - **„Kurz hell, dann von allein wieder dunkel" — warum das Verschwinden NIE im App-Log stehen kann
   (29.08.2026).** Unmittelbar nach dem obigen Fix meldete der Eigentümer beim Einspielen der neuen
   Version genau das. Im Systemlog stand der Grund lückenlos: `23:06:07.619 Killing 18584 … due to

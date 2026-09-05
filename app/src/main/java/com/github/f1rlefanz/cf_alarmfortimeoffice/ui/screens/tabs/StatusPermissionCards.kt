@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -1188,56 +1189,62 @@ internal fun DndPermissionCard() {
 }
 
 /**
- * Die Seite EINES Bedienungshilfen-Dienstes, ab Android 11.
+ * Schluessel, mit dem die Einstellungen-App EINEN Eintrag ihrer Liste ins Bild rollt und hervorhebt.
  *
- * ALS TEXT UND NICHT ALS `Settings.`-KONSTANTE, weil es die Konstante im SDK nicht gibt: sie ist
- * in AOSP `@hide`, und `Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS` scheitert beim
- * Uebersetzen mit „Unresolved reference" (in der CI belegt, 05.09.2026). Dasselbe gilt fuer den
- * Extra-Schluessel. Das ZIEL gibt es trotzdem — die Einstellungen-App verarbeitet die Aktion seit
- * Android 11; sie steht nur nicht in `android.jar`. Wer die beiden Zeilen „aufraeumen" und durch
- * Konstanten ersetzen will, bricht damit den Build.
- *
- * Fehlt die Aktion auf einem Geraet, wirft `startActivity` — dafuer gibt es den Rueckfall auf die
- * Liste, siehe [openAccessibilitySettings].
+ * ALS TEXT UND NICHT ALS KONSTANTE, weil es die Konstante im SDK nicht gibt: sie heisst in AOSP
+ * `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY` und steht nicht in `android.jar`. Der erwartete Wert
+ * ist die flach geschriebene Kennung des Dienstes — dieselbe Zeichenkette, die die Liste als
+ * Schluessel ihres Eintrags benutzt.
  */
-private const val AKTION_BEDIENUNGSHILFEN_DETAILS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
-
-/** Kennung des Dienstes fuer [AKTION_BEDIENUNGSHILFEN_DETAILS], flach geschriebener ComponentName. */
-private const val EXTRA_BEDIENUNGSHILFEN_KOMPONENTE = "android.intent.extra.COMPONENT_NAME"
+private const val EXTRA_EINSTELLUNGEN_HERVORHEBUNG = ":settings:fragment_args_key"
 
 /**
- * Fuehrt in die Bedienungshilfen — moeglichst auf die Seite GENAU DIESES Dienstes.
+ * Buendel, in dem die Einstellungen-App [EXTRA_EINSTELLUNGEN_HERVORHEBUNG] zusaetzlich erwartet.
  *
- * WARUM ZWEISTUFIG: `ACTION_ACCESSIBILITY_SETTINGS` oeffnet die Liste ALLER Bedienungshilfen;
- * dort steht der Eintrag der App zwischen Systemdiensten und, je nach Hersteller, hinter einer
- * Unterrubrik wie „Heruntergeladene Apps" — der Nutzer kommt aus einer Meldung, die ihm sagt,
- * was zu tun ist, und muss den Schalter dann trotzdem suchen. Ab Android 11 fuehrt
- * [AKTION_BEDIENUNGSHILFEN_DETAILS] direkt auf die Seite eines benannten Dienstes (Kennung als
- * flach geschriebener [ComponentName] im Extra).
+ * Gemessen wirkt schon das Extra obenauf allein (siehe [openAccessibilitySettings]); das Buendel
+ * steht daneben, weil abweichende Hersteller-Einstellungen den Schluessel von dort lesen. Wird es
+ * ignoriert, kostet es nichts.
+ */
+private const val EXTRA_EINSTELLUNGEN_ARGUMENTE = ":settings:show_fragment_args"
+
+/**
+ * Fuehrt in die Bedienungshilfen — auf den hervorgehobenen Eintrag GENAU DIESES Dienstes.
  *
- * Die Liste bleibt als Rueckfallebene: das Detail-Ziel ist nicht auf jedem Geraet vorhanden, und
- * eine Bedienungshilfen-Einstellung, die sich gar nicht oeffnet, waere schlechter als eine, in
- * der man scrollen muss.
+ * WARUM NICHT AUF DIE DETAILSEITE: `android.settings.ACCESSIBILITY_DETAILS_SETTINGS` (ab
+ * Android 11) fuehrt zwar auf die Seite eines benannten Dienstes, ist fuer diese App aber
+ * unerreichbar — und zwar dauerhaft, nicht nur auf manchen Geraeten. Die Ziel-Activity
+ * `Settings$AccessibilityDetailsSettingsActivity` traegt in AOSP seit Android 11, also seit es
+ * die Aktion ueberhaupt gibt, `android:permission="android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"`;
+ * diese Berechtigung steht auf `signature|installer` und ist dort ausdruecklich als „Not for use
+ * by third-party applications" (`@hide`) gekennzeichnet. Eine nicht plattformsignierte App kann
+ * sie NIE halten, `startActivity` scheitert mit `SecurityException`.
+ *
+ * Am 05.09.2026 an BEIDEN Geraeten gemessen (Fairphone 6 / Android 16 und Emulator / API 36): die
+ * Aktion loest sauber auf die Settings-Activity auf und wird dann mit „Permission Denial … requires
+ * android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS" abgewiesen. **Wer den Direktsprung wieder
+ * einbaut, baut einen Zweig, der garantiert immer nur seinen Rueckfall erreicht — und dabei bei
+ * JEDEM Tipp eine sinnlose Zeile ins Release-Log schreibt.**
+ *
+ * WAS STATTDESSEN WIRKT: die oeffentliche, ungeschuetzte [Settings.ACTION_ACCESSIBILITY_SETTINGS]
+ * plus [EXTRA_EINSTELLUNGEN_HERVORHEBUNG]. Die Einstellungen-App rollt den Eintrag dann ins Bild
+ * und hebt ihn hervor — dasselbe Ziel wie die Detailseite, einen Tipp entfernt. Am 05.09.2026 am
+ * Emulator im A/B belegt: MIT dem Extra steht „CF-Alarm Schicht-Dimmer" unter „Downloaded apps"
+ * hervorgehoben, OHNE das Extra dieselbe Liste ohne Hervorhebung.
+ *
+ * Ignoriert eine Einstellungen-App das Extra, bleibt die blanke Liste — dasselbe Ergebnis wie ohne
+ * den Versuch, ohne Fehlerfall. Deshalb braucht dieser Weg keine zweite Ebene mehr.
  */
 private fun openAccessibilitySettings(context: android.content.Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        val dienst = ComponentName(context, DimAccessibilityService::class.java).flattenToString()
-        try {
-            context.startActivity(
-                Intent(AKTION_BEDIENUNGSHILFEN_DETAILS)
-                    .putExtra(EXTRA_BEDIENUNGSHILFEN_KOMPONENTE, dienst)
-            )
-            return
-        } catch (e: Exception) {
-            Logger.w(
-                LogTags.UI,
-                "Direkte Bedienungshilfen-Seite nicht erreichbar (${e.message}) - weiter ueber die Liste"
-            )
-        }
-    }
-
+    val dienst = ComponentName(context, DimAccessibilityService::class.java).flattenToString()
     try {
-        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        context.startActivity(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .putExtra(EXTRA_EINSTELLUNGEN_HERVORHEBUNG, dienst)
+                .putExtra(
+                    EXTRA_EINSTELLUNGEN_ARGUMENTE,
+                    Bundle().apply { putString(EXTRA_EINSTELLUNGEN_HERVORHEBUNG, dienst) }
+                )
+        )
     } catch (e: Exception) {
         Logger.e(LogTags.UI, "❌ Bedienungshilfen-Einstellungen nicht erreichbar", e)
     }

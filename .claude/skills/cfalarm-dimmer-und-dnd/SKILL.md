@@ -119,11 +119,19 @@ das baut man dieselbe Falle in neuer Form nach.
   einen Verdunkelungswert behauptete — Hergang in `reference/dimmer.md`.
 - **Und dieser Hinweis muss AN DIE STELLE FÜHREN, an der man ihn auflöst.** Ein Tipp darauf öffnet
   den Status-Tab, rollt die Bedienungshilfen-Karte ins Bild und zeigt deren Offenlegung; ihr Knopf
-  springt direkt auf die Detailseite DIESES Dienstes (`ACTION_ACCESSIBILITY_DETAILS_SETTINGS`, ab
-  Android 11, Rückfall auf die Liste). **Die Offenlegung bleibt dazwischen** — der direkte Sprung
-  aus der Benachrichtigung ginge an der Play-Pflicht vorbei, und genau deshalb hat der Weg zwei
-  Stationen statt einer. Signalweg und seine vier Fallen (SINGLE_TOP, `setIntent()`,
-  `savedInstanceState == null`, Zähler statt Boolean) in `reference/dimmer.md`.
+  führt in die Bedienungshilfen — auf den **hervorgehobenen** Eintrag dieses Dienstes, über
+  `ACTION_ACCESSIBILITY_SETTINGS` plus `:settings:fragment_args_key`. **Die Offenlegung bleibt
+  dazwischen** — der direkte Sprung aus der Benachrichtigung ginge an der Play-Pflicht vorbei, und
+  genau deshalb hat der Weg zwei Stationen statt einer. Signalweg und seine vier Fallen
+  (SINGLE_TOP, `setIntent()`, `savedInstanceState == null`, Zähler statt Boolean) in
+  `reference/dimmer.md`.
+- **`ACTION_ACCESSIBILITY_DETAILS_SETTINGS` ist für diese App unerreichbar — nicht „auf manchen
+  Geräten", sondern immer.** Die Ziel-Activity ist seit Android 11 mit
+  `OPEN_ACCESSIBILITY_DETAILS_SETTINGS` geschützt (`signature|installer`, `@hide`, AOSP: „Not for
+  use by third-party applications"); an FP6 und Emulator gemessen, beide `Permission Denial`. Wer
+  sie zurückholt, baut einen Zweig, der nur seinen eigenen Rückfall erreicht und dabei jedes Mal
+  ein WARN ins Release-Log schreibt. Ein Regressionstest hält sie draußen; Hergang und der
+  Prüfweg ohne Installation in `reference/dimmer.md`.
 - **Das Verschwinden des Dienstes ist nicht protokollierbar — die RÜCKKEHR schon.** Bei einem
   `SIGKILL` (App-Update, Speicherdruck, Absturz) läuft weder `onUnbind` noch `onDestroy`. Deshalb
   setzt `onServiceConnected()` einen SharedPreferences-Merker (`commit()`, nicht `apply()`), den

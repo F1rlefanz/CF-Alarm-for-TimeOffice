@@ -411,12 +411,40 @@ def pruefe_release_pflichten(probleme, basis):
 # ---- Ablauf -----------------------------------------------------------------
 
 
+HANDBETRIEB = object()
+
+HANDBETRIEB_HINWEIS = """Die Schleuse ist ein PreToolUse-Hook, kein Kommandozeilenwerkzeug.
+Sie liest den zu beurteilenden Befehl als Hook-JSON von stdin - haengt stdin an
+einem Terminal, wartet sie ewig auf ein Dateiende. NICHTS wurde geprueft.
+
+Von Hand pruefen, so wie der Hook es tut:
+
+    echo '{"tool_input":{"command":"git push"}}' | python tools/schleuse/pruefe_schleuse.py
+
+PowerShell:
+
+    '{"tool_input":{"command":"git push"}}' | python tools/schleuse/pruefe_schleuse.py
+"""
+
+
 def befehl_aus_stdin():
     """Liest das Hook-JSON. Alles Unerwartete laesst durch - fail-open.
 
     Anders als in der Node-Vorlage liefert Python bei leerem stdin einen leeren
     String statt zu werfen; der Fall wird deshalb ausdruecklich abgefangen.
+
+    HAENGT STDIN AN EINEM TERMINAL, ist der Aufrufer ein Mensch und kein Hook -
+    dann NICHT lesen. Am 05.09.2026 hat das dreimal je 25 Minuten gekostet:
+    `sys.stdin.read()` wartet auf ein Dateiende, das per Hand nie kommt, und der
+    Prozess sieht dabei aus wie ein haengender Build (null CPU, kein Gradle, kein
+    Kindprozess). Schlimmer als das Haengen ist aber der Ausweg, der sich anbietet:
+    wer mit `< NUL` nachhilft, faellt in den fail-open-Zweig unten und bekommt
+    stillschweigend Exit 0 - einen Freispruch, ohne dass EINE Pruefung lief.
+    Fail-open ist richtig, solange ein Hook ruft (sonst sperrt ein Defekt hier
+    jede Arbeit aus); gegenueber einem Menschen ist es eine Luege.
     """
+    if sys.stdin is None or sys.stdin.isatty():
+        return HANDBETRIEB
     try:
         eingabe = sys.stdin.read()
     except (OSError, ValueError):
@@ -429,16 +457,52 @@ def befehl_aus_stdin():
         return None
 
 
+def soll_pruefen(befehl):
+    """Loest dieser Befehl die Schleuse aus?
+
+    Zwei Ausnahmen, beide teuer erkauft:
+
+    `git merge-base` ist ein reiner LESEBEFEHL und darf nichts ausloesen. Der
+    alte Ausdruck `\\bgit\\s+(merge|push)\\b` traf ihn trotzdem - zwischen `merge`
+    und dem Bindestrich steht eine Wortgrenze. Am 05.09.2026 hat das mitten in
+    einer Fehlersuche einen Zehn-Minuten-Gradle-Lauf ausgeloest, und die Schleuse
+    ruft `git merge-base` sogar selbst auf. `(?![\\w-])` verlangt jetzt, dass nach
+    `merge`/`push` weder ein Wortzeichen noch ein Bindestrich folgt.
+
+    Die RETTUNGSBEFEHLE eines offenen Merge (`--abort`, `--continue`, `--quit`)
+    duerfen NIE blockiert werden. Waehrend eines Konflikts stehen Konfliktmarker
+    im Baum; jede Pruefung, die den Baum liest, schlaegt dann an - und
+    ausgerechnet die Befehle, mit denen man da wieder herauskommt, waeren gesperrt.
+    Das Repo sperrt sich selbst ein. Die Leitplanke dazu steht seit Runde 15 im
+    Skill `cfalarm-altlasten-abtragen`; behoben war dort nur die Doppelmeldung,
+    nicht die Blockade. Was nach `--continue` entsteht, prueft ohnehin der
+    anschliessende Push.
+    """
+    if not re.search(r"\bgit\s+(merge|push)(?![\w-])", befehl):
+        return False
+    if "--dry-run" in befehl:
+        return False
+    if re.search(r"\bgit\s+merge\s+(--abort|--continue|--quit)\b", befehl):
+        return False
+    return True
+
+
 def main():
+    # DER NOTAUSGANG ZUERST, vor allem anderen. Er stand bis zum 05.09.2026 hinter
+    # dem stdin-Lesen - und damit hinter genau der Stelle, an der sich die Schleuse
+    # aufhaengen oder (neu) mit Fehlercode 2 blockieren kann. Ein Notausgang, den
+    # man nur erreicht, wenn ohnehin alles funktioniert, ist keiner.
+    if os.environ.get(NOTAUSGANG, "").strip().lower() == "aus":
+        return 0
+
     befehl = befehl_aus_stdin()
+    if befehl is HANDBETRIEB:
+        sys.stderr.write(HANDBETRIEB_HINWEIS)
+        return 2
     if befehl is None:
         return 0
 
-    # Nur an der Schleuse pruefen. --dry-run verlaesst den Branch nicht.
-    if not re.search(r"\bgit\s+(merge|push)\b", befehl) or "--dry-run" in befehl:
-        return 0
-
-    if os.environ.get(NOTAUSGANG, "").strip().lower() == "aus":
+    if not soll_pruefen(befehl):
         return 0
 
     ist_push = bool(re.search(r"\bgit\s+push\b", befehl))

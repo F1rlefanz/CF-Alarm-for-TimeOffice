@@ -117,6 +117,13 @@ das baut man dieselbe Falle in neuer Form nach.
   Entscheidung in `DimDiagnostik.dimmenWirkungslos()`, bewusst nur bei aktivem, nicht pausiertem
   Fenster. Vorher stand der Dienst-Zustand NUR in einer DEBUG-Zeile, während die Benachrichtigung
   einen Verdunkelungswert behauptete — Hergang in `reference/dimmer.md`.
+- **Und dieser Hinweis muss AN DIE STELLE FÜHREN, an der man ihn auflöst.** Ein Tipp darauf öffnet
+  den Status-Tab, rollt die Bedienungshilfen-Karte ins Bild und zeigt deren Offenlegung; ihr Knopf
+  springt direkt auf die Detailseite DIESES Dienstes (`ACTION_ACCESSIBILITY_DETAILS_SETTINGS`, ab
+  Android 11, Rückfall auf die Liste). **Die Offenlegung bleibt dazwischen** — der direkte Sprung
+  aus der Benachrichtigung ginge an der Play-Pflicht vorbei, und genau deshalb hat der Weg zwei
+  Stationen statt einer. Signalweg und seine vier Fallen (SINGLE_TOP, `setIntent()`,
+  `savedInstanceState == null`, Zähler statt Boolean) in `reference/dimmer.md`.
 - **Das Verschwinden des Dienstes ist nicht protokollierbar — die RÜCKKEHR schon.** Bei einem
   `SIGKILL` (App-Update, Speicherdruck, Absturz) läuft weder `onUnbind` noch `onDestroy`. Deshalb
   setzt `onServiceConnected()` einen SharedPreferences-Merker (`commit()`, nicht `apply()`), den

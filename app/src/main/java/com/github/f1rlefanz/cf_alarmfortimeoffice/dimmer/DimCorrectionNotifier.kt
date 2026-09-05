@@ -51,8 +51,8 @@ class DimCorrectionNotifier @Inject constructor(
      * eine Verdunkelung zu behaupten (Vorfall 29.08.2026, Hergang in
      * [DimDiagnostik.dimmenWirkungslos]). Die drei Korrektur-Knoepfe entfallen in dem Fall
      * bewusst: sie wuerden ein Overlay heller/dunkler stellen, das es nicht gibt. An ihre Stelle
-     * tritt ein Tipp-Ziel in die App, wo die Status-Karte den Dienst aktivieren laesst — eine
-     * Meldung ohne Ausweg waere nur halb so viel wert.
+     * tritt ein Tipp-Ziel auf die Status-Karte, die den Dienst aktivieren laesst (siehe
+     * [appIntent]) — eine Meldung ohne Ausweg waere nur halb so viel wert.
      */
     fun show(strength: Int, warmth: Int, paused: Boolean, dienstGebunden: Boolean) {
         createNotificationChannelIfNeeded()
@@ -176,13 +176,34 @@ class DimCorrectionNotifier @Inject constructor(
      * Tipp-Ziel des Dienst-fehlt-Hinweises: die App selbst. Der Sprung direkt in die
      * Bedienungshilfen-Einstellungen waere kuerzer, ginge aber an der Play-Pflicht-Offenlegung
      * vorbei, die die Status-Karte vor dem Aktivieren zeigt (siehe `DimmerAccessibilityCard`).
+     *
+     * ABER NICHT NUR „die App": das Extra sagt MainActivity, WESHALB geoeffnet wurde, und die
+     * fuehrt damit auf den Status-Tab, rollt die Bedienungshilfen-Karte ins Bild und laesst sie
+     * die Offenlegung zeigen. Ohne das Extra endete der Tipp auf dem zuletzt benutzten Tab, und
+     * die Karte, um die es geht, stand ungesehen weiter unten — eine Meldung mit Ausweg, den
+     * man suchen muss, ist nur die halbe Meldung. Von der Offenlegung aus geht es dann direkt auf
+     * die Detailseite DIESES Dienstes (siehe `openAccessibilitySettings`), nicht in die lange
+     * Liste aller Bedienungshilfen.
+     *
+     * `FLAG_ACTIVITY_SINGLE_TOP` gehoert zwingend dazu: ohne es wirft `FLAG_ACTIVITY_CLEAR_TOP`
+     * eine bereits laufende MainActivity (Start-Modus `standard`) weg und legt sie neu an — der
+     * Nutzer verlaere dabei den Zustand, in dem er die App zuletzt verlassen hat. Mit dem Flag
+     * bekommt die laufende Instanz stattdessen `onNewIntent()`.
      */
     private fun appIntent(): PendingIntent =
         PendingIntent.getActivity(
             context,
             3,
             Intent(context, MainActivity::class.java)
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                .setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                .putExtra(MainActivity.EXTRA_EINSTIEG, MainActivity.EINSTIEG_DIMMER_BEDIENUNGSHILFEN),
+            // FLAG_UPDATE_CURRENT: PendingIntents vergleichen sich OHNE Extras - ein aelterer,
+            // noch registrierter PendingIntent unter demselben Request-Code (aus einer Version
+            // vor diesem Extra) wuerde sonst weiterverwendet und traege das Ziel nicht.
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 

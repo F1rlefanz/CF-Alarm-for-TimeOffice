@@ -484,6 +484,39 @@
   Dimmer-Meldungen nebeneinander wären genau die Doppelaussage, die hier korrigiert wird. Am Emulator
   beidseitig belegt (Fenster 22:00–07:00, Zeit 23:30): Dienst nicht gebunden ⇒ `actions=0` und genau
   ein WARN; Dienst gebunden ⇒ „Verdunkelung: 55 %, Wärme: 40 %", `actions=3`, kein WARN.
+- **Die Meldung sagte, WAS zu tun ist — nicht, WO (04.09.2026).** Der Eigentümer fragte, ob die
+  Benachrichtigung „nicht direkt zum Bedienungshilfen-aktivieren-Ort verlinken kann, oder
+  wenigstens auf die Karte in der App". Der Hinweis endete mit „Zum Aktivieren tippen", und der
+  Tipp öffnete die App — auf dem zuletzt benutzten Tab. Die Karte, die den Dienst aktivieren
+  lässt, steht im Status-Tab unterhalb von sechs anderen; am Ende derselben Kette öffnete ihr
+  Knopf die Liste **aller** Bedienungshilfen, in der der Eintrag der App zwischen Systemdiensten
+  steht. Beide Enden waren also formal richtig und praktisch eine Schnitzeljagd — dieselbe Klasse
+  Fehler wie oben, nur eine Ebene weiter: die Meldung stimmte, ihr Ausweg war unbenutzbar.
+
+  **Direkt in die Android-Einstellungen zu springen bleibt verboten** — davor gehört die
+  Play-Pflicht-Offenlegung, und die zeigt nur die Karte. Deshalb hat der Weg bewusst zwei
+  Stationen: Das Extra `MainActivity.EXTRA_EINSTIEG` sagt der Activity, WESHALB geöffnet wurde;
+  sie stellt den Wunsch (`DimBedienungshilfenWunsch`) und wechselt auf den Status-Tab, der rollt
+  die Karte ins Bild und lässt sie die Offenlegung zeigen. **Erst deren Knopf** springt — seit
+  jetzt über `ACTION_ACCESSIBILITY_DETAILS_SETTINGS` (ab Android 11) direkt auf die Seite DIESES
+  Dienstes, mit Rückfall auf die Liste, weil das Detail-Ziel nicht auf jedem Gerät existiert.
+
+  Vier Fallen stecken in den Details, alle nicht offensichtlich: `FLAG_ACTIVITY_CLEAR_TOP` **ohne**
+  `FLAG_ACTIVITY_SINGLE_TOP` legt die laufende MainActivity (Start-Modus `standard`) neu an statt
+  ihr `onNewIntent` zu geben — der Nutzer verlöre seinen Stand; `onNewIntent` ohne `setIntent()`
+  lässt `getIntent()` weiter den Start-Intent liefern (dieselbe Falle wie am Weckbildschirm); die
+  Auswertung in `onCreate` gehört hinter `savedInstanceState == null`, sonst schickt **jede
+  Drehung** den Nutzer erneut auf den Status-Tab; und das Signal an die Karte ist ein ZÄHLER, kein
+  Boolean — ein Rückkanal „verbraucht" wäre als `LaunchedEffect`-Schlüssel gerade der Wert, der
+  den noch laufenden Bildlauf mittendrin abbräche. Das Bildlaufziel wird aus
+  `positionInRoot()` von Karte und Spalte plus dem aktuellen Stand gerechnet: der reine Abstand im
+  Fenster verschiebt sich beim Rollen mit.
+
+  **Am Gerät noch nicht belegt** (die Sitzung, die es gebaut hat, hatte weder Emulator noch SDK).
+  Zu prüfen ist genau zweierlei: dass die Detailseite auf dem Fairphone wirklich mit dem Eintrag
+  der App öffnet (sonst greift der Rückfall, und der ist die Liste von vorher), und dass der
+  Bildlauf die Karte trifft, wenn die App aus der Benachrichtigung KALT startet — dort läuft der
+  Effekt vor dem ersten Layout-Durchgang und wartet auf die Vermessung.
 - **„Kurz hell, dann von allein wieder dunkel" — warum das Verschwinden NIE im App-Log stehen kann
   (29.08.2026).** Unmittelbar nach dem obigen Fix meldete der Eigentümer beim Einspielen der neuen
   Version genau das. Im Systemlog stand der Grund lückenlos: `23:06:07.619 Killing 18584 … due to

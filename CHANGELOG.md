@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.6 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.7 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Der Hinweis „Dimmt nicht“ führt jetzt bis zu der Stelle, an der sich der Dienst einschalten lässt._
+
+### 🎨 Feinschliff
+
+- **Vom Hinweis direkt zum Schalter.** Meldet der Schicht-Dimmer „Dimmt nicht — Bedienungshilfen-Dienst ist aus“, war bisher zwar klar, WAS zu tun ist, aber nicht, wo: ein Tipp auf die Meldung öffnete die App auf dem zuletzt benutzten Bereich, und der Knopf auf der Dimmer-Karte führte in die Liste **aller** Bedienungshilfen, in der der Eintrag der App zwischen Systemdiensten steht. Jetzt führt der Weg durch: Der Tipp öffnet den Status-Bereich, rollt die Dimmer-Karte ins Bild und zeigt, wofür der Dienst gebraucht wird — und deren Knopf öffnet die Bedienungshilfen mit dem Eintrag „CF-Alarm Schicht-Dimmer“ bereits hervorgehoben.
+
+## Version 1.39.6
 
 **Stand:** September 2026
 

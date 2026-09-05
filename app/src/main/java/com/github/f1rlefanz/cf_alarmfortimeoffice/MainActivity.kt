@@ -25,9 +25,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.CalendarPermissionOutcome
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWunsch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.CalendarAuthorizationScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.LoginScreen
@@ -59,6 +61,24 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        /**
+         * Sagt, WESHALB die App geoeffnet wurde. Eine Benachrichtigung, die auf einen Zustand
+         * hinweist, muss auch an die Stelle fuehren, an der man ihn aendert - sonst schickt sie
+         * den Nutzer auf die Suche. Gesetzt wird das Extra vom Absender der Meldung, ausgewertet
+         * in [verarbeiteEinstieg].
+         */
+        const val EXTRA_EINSTIEG = "com.github.f1rlefanz.cf_alarmfortimeoffice.EINSTIEG"
+
+        /**
+         * „Der Schicht-Dimmer kann nicht dimmen, weil der Bedienungshilfen-Dienst aus ist" -
+         * gesetzt von `DimCorrectionNotifier.appIntent()`. Ziel ist der Status-Tab mit seiner
+         * Bedienungshilfen-Karte, nicht die Android-Einstellung selbst: davor gehoert die
+         * Play-Pflicht-Offenlegung, die die Karte zeigt.
+         */
+        const val EINSTIEG_DIMMER_BEDIENUNGSHILFEN = "dimmer_bedienungshilfen"
+    }
 
     // Hilt injected dependencies
     @Inject lateinit var oauth2TokenManager: OAuth2TokenManager
@@ -135,6 +155,14 @@ class MainActivity : ComponentActivity() {
                         .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nach der Dimmer-Migration nicht neu armiert", it) }
                 }
             }
+        }
+
+        // NUR beim ECHTEN Erststart dieser Activity, nicht nach einer Drehung: `onCreate` laeuft
+        // dann mit DEMSELBEN Intent erneut, und der Nutzer landete jedes Mal wieder auf dem
+        // Status-Tab - auch wenn er laengst woanders war. Nach Prozesstod und Wiederherstellung
+        // (savedInstanceState != null) gilt dasselbe: der Wunsch von damals ist erledigt.
+        if (savedInstanceState == null) {
+            verarbeiteEinstieg(intent)
         }
 
         // POST_NOTIFICATIONS wird NICHT mehr hier (vor dem Login, kontextlos) abgefragt, sondern
@@ -256,6 +284,43 @@ class MainActivity : ComponentActivity() {
         
         // PHASE 2: Initialize Smart Scheduling on app startup
         Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
+    }
+
+    /**
+     * Die App laeuft bereits, und eine Benachrichtigung schickt sie an eine bestimmte Stelle.
+     *
+     * `setIntent()` ist Pflicht, nicht Kosmetik: ohne den Aufruf liefert `getIntent()` weiterhin
+     * den Start-Intent - jede spaetere Auswertung (auch die nach einer Drehung) laese dann das
+     * ALTE Ziel. Dieselbe Falle wie am Weckbildschirm, siehe
+     * [AlarmFullScreenActivity.onNewIntent].
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        verarbeiteEinstieg(intent)
+    }
+
+    /**
+     * Setzt den Einstiegswunsch aus einer Benachrichtigung in Navigation um.
+     *
+     * Der Wunsch wird gestellt, BEVOR der Tab gewechselt wird - der Status-Tab wertet ihn beim
+     * ersten Zeichnen aus, und ein noch nicht gestellter Wunsch waere dann schlicht nicht da.
+     * Fuehrt ein Onboarding-Gate oder der Login-Screen den Nutzer zuerst woandershin, bleibt der
+     * Wunsch stehen und wird eingeloest, sobald der Status-Tab wirklich erscheint.
+     */
+    private fun verarbeiteEinstieg(intent: Intent?) {
+        when (intent?.getStringExtra(EXTRA_EINSTIEG)) {
+            EINSTIEG_DIMMER_BEDIENUNGSHILFEN -> {
+                Logger.business(
+                    LogTags.NAVIGATION,
+                    "Einstieg aus der Dimmer-Benachrichtigung -> Status-Tab, Bedienungshilfen-Karte"
+                )
+                DimBedienungshilfenWunsch.stellen()
+                navigationViewModel.navigateToMainWithTab(MainTab.STATUS)
+            }
+
+            else -> Unit
+        }
     }
 
     private fun checkNotificationPermission() {

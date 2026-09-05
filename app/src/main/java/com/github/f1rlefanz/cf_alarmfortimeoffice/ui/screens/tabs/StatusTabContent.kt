@@ -97,11 +97,15 @@ fun StatusTabContent(
     // LaunchedEffect-Schluessel den noch laufenden Bildlauf unten mittendrin abbrechen.
     var kartenAnfragen by remember { mutableIntStateOf(0) }
     var spalteObenImFenster by remember { mutableFloatStateOf(0f) }
+    // Ob die Spalte ueberhaupt schon vermessen wurde - als EIGENES Signal und nicht als
+    // "spalteObenImFenster != 0f": null ist eine voellig legitime Lage, und ein Vergleich gegen
+    // null wuerde genau dann ewig warten.
+    var spalteVermessen by remember { mutableStateOf(false) }
     // BEWUSST HIER gelesen und nicht erst im Rueckruf unten: so haengt die Komposition daran.
-    // Steht der Wert beim ersten Vermessen der Karte noch auf 0, korrigiert ihn die naechste
-    // Zusammensetzung von selbst - ein Lesen erst im Rueckruf wuerde nichts anstossen, und ein
-    // zu grosses Bildlaufziel bliebe stehen.
+    // Aendert sich einer der beiden Werte, wird die Karte neu vermessen und schreibt ihren
+    // Versatz mit der dann richtigen Spaltenlage.
     val spalteOben = spalteObenImFenster
+    val spalteBekannt = spalteVermessen
 
     LaunchedEffect(Unit) {
         // Schluessel `Unit`, nicht der Wunsch selbst: `verbrauchen()` setzt ihn sofort zurueck,
@@ -120,7 +124,10 @@ fun StatusTabContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .onGloballyPositioned { spalteObenImFenster = it.positionInRoot().y }
+            .onGloballyPositioned {
+                spalteObenImFenster = it.positionInRoot().y
+                spalteVermessen = true
+            }
             .verticalScroll(scrollState)
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
@@ -283,7 +290,15 @@ fun StatusTabContent(
             // positionInRoot beider Seiten, weil der Bildlauf die Karte im Fenster verschiebt:
             // die Differenz plus der aktuelle Stand ergibt den Versatz im INHALT, und nur der
             // ist ein brauchbares Bildlaufziel.
+            // ERST schreiben, wenn die Spalte vermessen ist. Beim KALTSTART aus der
+            // Benachrichtigung wird die Karte vermessen, bevor die Spalte es ist; mit
+            // spalteOben == 0 faellt der Versatz um die Hoehe der Kopfzeile ZU GROSS aus, und
+            // weil der Effekt unten die ERSTE brauchbare Messung nimmt, rollte er die Karte
+            // ueber den oberen Rand hinaus - am 05.09.2026 am Emulator gesehen: sichtbar blieb
+            // ein Streifen ihrer Unterkante. Ohne dieses Gate hilft es auch nichts, dass die
+            // naechste Zusammensetzung den Wert korrigiert: da ist der Bildlauf schon gelaufen.
             modifier = Modifier.onGloballyPositioned { koordinaten ->
+                if (!spalteBekannt) return@onGloballyPositioned
                 dimmerKarteVersatz =
                     (koordinaten.positionInRoot().y - spalteOben + scrollState.value)
                         .toInt().coerceAtLeast(0)

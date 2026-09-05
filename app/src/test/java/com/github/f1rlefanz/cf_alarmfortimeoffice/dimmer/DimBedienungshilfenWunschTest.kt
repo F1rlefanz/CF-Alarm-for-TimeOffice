@@ -198,26 +198,60 @@ class DimBedienungshilfenWunschTest {
     // ---------------------------------------------------------------- Station 4: die Einstellung
 
     @Test
-    fun `der Knopf fuehrt auf die Seite DIESES Dienstes - mit Rueckfall auf die Liste`() {
+    fun `der Knopf fuehrt ueber die oeffentliche Aktion in die Bedienungshilfen`() {
         val karten = ohneKommentare("ui/screens/tabs/StatusPermissionCards.kt")
 
-        // Aktion und Extra stehen als TEXT im Code, nicht als Settings-/Intent-Konstante: die
-        // gibt es im SDK nicht (in AOSP @hide, der Uebersetzer meldet "Unresolved reference" -
-        // in der CI belegt). Deshalb prueft der Test die Zeichenketten selbst.
         assertTrue(
-            "Ohne die Aktion ACCESSIBILITY_DETAILS_SETTINGS landet der Nutzer in der Liste ALLER " +
-                "Bedienungshilfen und sucht den Eintrag der App selbst",
-            karten.contains("\"android.settings.ACCESSIBILITY_DETAILS_SETTINGS\"")
-        )
-        assertTrue(
-            "Die Detailseite braucht die Kennung des Dienstes, sonst zeigt sie nichts an",
-            karten.contains("\"android.intent.extra.COMPONENT_NAME\"") &&
-                karten.contains("ComponentName(context, DimAccessibilityService::class.java)")
-        )
-        assertTrue(
-            "Der Rueckfall auf die Liste fehlt - das Detail-Ziel gibt es nicht auf jedem Geraet, " +
-                "und eine Einstellung, die sich gar nicht oeffnet, ist schlechter als eine zum Scrollen",
+            "Der Weg in die Bedienungshilfen laeuft nicht mehr ueber die oeffentliche Aktion",
             karten.contains("Settings.ACTION_ACCESSIBILITY_SETTINGS")
+        )
+    }
+
+    /**
+     * Der uebliche Kniff, den eigenen Eintrag in der Liste hervorzuheben, ist
+     * `:settings:fragment_args_key`. Aus der Shell gestartet wirkt er - aus DIESER App nicht.
+     *
+     * Am 05.09.2026 am Emulator durchgemessen: mit und ohne Argument-Buendel
+     * (`:settings:show_fragment_args`), mit und ohne `FLAG_ACTIVITY_NEW_TASK`, mit frisch
+     * geleerter Einstellungen-App - immer ohne Hervorhebung, waehrend `dumpsys activity
+     * activities` fuer App- und Shell-Start denselben Intent zeigt. Der Unterschied ist der
+     * Aufrufer; AOSP liest den Schluessel primaer aus den Fragment-Argumenten und nur hinter
+     * einem Feature-Flag aus dem Intent.
+     *
+     * Deshalb bleibt der Zusatz draussen: er bewirkt im einzigen Kontext, in dem er laeuft,
+     * nichts - und eine Erklaerung daneben wuerde etwas versprechen, das der Nutzer nicht bekommt.
+     * Wer es erneut versucht, misst zuerst AUS DER APP, nicht aus der Shell.
+     */
+    @Test
+    fun `der wirkungslose Hervorhebungs-Zusatz bleibt draussen`() {
+        val karten = ohneKommentare("ui/screens/tabs/StatusPermissionCards.kt")
+
+        assertTrue(
+            "':settings:fragment_args_key' ist wieder im Code - aus dieser App heraus bewirkt " +
+                "er nachweislich nichts; erst messen (aus der App!), dann einbauen",
+            !karten.contains("fragment_args_key")
+        )
+    }
+
+    /**
+     * Der Direktsprung auf die Detailseite ist fuer diese App dauerhaft unerreichbar, nicht nur
+     * auf manchen Geraeten: `Settings$AccessibilityDetailsSettingsActivity` traegt in AOSP seit
+     * Android 11 `android:permission="android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"`,
+     * und die Berechtigung ist `signature|installer` und `@hide` ("Not for use by third-party
+     * applications"). Am 05.09.2026 an Fairphone 6 (Android 16) und Emulator (API 36) gemessen:
+     * SecurityException, Permission Denial.
+     *
+     * Wer sie zurueckholt, baut einen Zweig, der immer nur seinen eigenen Rueckfall erreicht -
+     * und dabei bei jedem Tipp eine sinnlose Zeile ins Release-Log schreibt.
+     */
+    @Test
+    fun `der unerreichbare Direktsprung auf die Detailseite bleibt draussen`() {
+        val karten = ohneKommentare("ui/screens/tabs/StatusPermissionCards.kt")
+
+        assertTrue(
+            "ACCESSIBILITY_DETAILS_SETTINGS ist wieder im Code - diese Aktion kann diese App " +
+                "nicht starten (signature|installer), sie erreicht immer nur ihren Rueckfall",
+            !karten.contains("ACCESSIBILITY_DETAILS_SETTINGS")
         )
     }
 }

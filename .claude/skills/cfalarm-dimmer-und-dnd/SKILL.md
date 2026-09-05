@@ -160,5 +160,15 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`DndScheduleUseCase.CONDITION_ID` ist `by lazy`** (sonst scheitert die Companion-Init im Test-JVM).
 - **„Koppeln mit Schlafenszeit" ist final verworfen** (AOSP-verifiziert): fremde Zen-Regeln sind
   nicht lesbar, `MODIFY_DAY_NIGHT_MODE` ist `signature|privileged` und `@hide`. Nicht erneut aufrollen.
+- **DND protokolliert seinen ZUSTAND, nicht nur den naechsten Wechsel** — eine Zeile pro Wechsel
+  auf WARN (`DndDiagnostik.zustandszeile`, aufgerufen NACH dem erfolgreichen
+  `setAutomaticZenRuleState`), mit Uhrzeit-Fenster und Quelle beim AN und einem von vier
+  unterscheidbaren Gruenden beim AUS. Entprellt ueber die zuletzt protokollierte Zeile, sonst
+  schriebe jeder Keep-alive-Tick dieselbe Zeile. Ohne das laesst sich am Tag danach nicht
+  beantworten, ob „Nicht stoeren" nachts an war — und **Androids eigenes Zen-Protokoll taugt als
+  Ersatz nicht** (siehe naechster Punkt).
 - **Logcat-Fallstrick**: `W/System.err` mit `Thread.dumpStack()` um `setAutomaticZenRuleState()` ist
-  Androids eigenes Tracing, kein Crash.
+  Androids eigenes Tracing, kein Crash. Und `dumpsys notification` reicht am FP6 nur rund eine
+  halbe Stunde zurueck: Googles Digital Wellbeing ruft dort im MINUTENTAKT `setAzrState` auf seiner
+  eigenen, abgeschalteten Regel auf und flutet den Ringpuffer. Fuer eine Frage vom Vortag ist er
+  leer — deshalb das eigene Protokoll.

@@ -64,7 +64,7 @@
   **Ausgelöst hat den Umbau der gemeldete Fehler vom 23.08.2026** — gedimmter Bildschirm und
   laufendes „Nicht stören" um 08:48 nach einem Spätdienst-Wecker 12:30; Hergang und Messung stehen
   beim Ende-Anker `ALARM_SONST_CLOCK` weiter unten und werden hier nicht wiederholt. Er schloss die
-  Ausdrucklücke und machte damit zugleich den Nacht-Standard entbehrlich: ein Fenster
+  Ausdruckslücke und machte damit zugleich den Nacht-Standard entbehrlich: ein Fenster
   `CLOCK 22:00 → ALARM_SONST_CLOCK 07:00` IST der komplette Nacht-Standard, für jede Kalendernacht,
   als EIN Fenster — ohne das Paar aus Rückwärts- und Vorwärts-Fenster und ohne die
   Folgetag-Bedingung `nextDayCoversTonight`, die auf ein ANDERES Datum schaut und deren erster Wurf
@@ -352,7 +352,7 @@
   Testen zwischen Versionen springt, muss es kennen, sonst sieht es wie ein kaputtes Loeschen aus.
 - **Das Verschwinden des Overlays muss eine Spur hinterlassen (seit v1.34.1) — und der Vorfall,
   der das erzwang, war KEIN App-Fehler.** Am 24.08.2026 meldete der Eigentuemer, der Bildschirm sei
-  waehrend einer per adb ferngesteuerten Sitzung „mail heller und mal dunkler" geworden. Ursache
+  waehrend einer per adb ferngesteuerten Sitzung „mal heller und mal dunkler" geworden. Ursache
   gemessen: `uiautomator` verbindet sich als `UiAutomation` und **unterdrueckt dabei alle anderen
   Bedienungshilfen-Dienste**, also auch `DimAccessibilityService`. Beleg: die SurfaceFlinger-Layer-ID
   des `CFAlarmDimLayer` wechselte bei JEDEM Automations-Aufruf (64604 → 64609 → 64614), im Leerlauf
@@ -547,3 +547,4 @@
 - **`DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
   vor `notify()`** (Fix v1.22.1) — ohne POST_NOTIFICATIONS-Berechtigung verschluckt `notify()` sonst
   lautlos, ohne Log oder Exception, und sieht im Logcat identisch aus wie der obige Toggle-Bug.
+

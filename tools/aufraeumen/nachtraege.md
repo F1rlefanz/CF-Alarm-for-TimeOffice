@@ -63,11 +63,15 @@ den Code, sondern eine Aussage über deinen Parser. Bau die Selbstprüfung gleic
 „!! Enums ohne geparste Einträge" reicht. Konkret für Kotlin: **Kommentare und String-Literale vor
 jeder Struktursuche ausblenden** (zeichenlängentreu, dann bleiben Zeilennummern gültig).
 
-> **Korrigiert in Runde 17 (05.09.2026):** Hier stand „**Referenzen auf dem Rohtext zählen**".
-> Das ist gemessen falsch und kostet den ganzen Blickwinkel — siehe den Abschnitt zu Runde 17
-> unten. Richtig ist: **Kommentare auch beim Zählen ausblenden, String-Literale dagegen
-> mitzählen** (ein Eintragsname in einer Test-JSON ist ein echter Verwender, weil er Teil eines
-> gespeicherten Formats ist), und **reine Doku-Dateien zählen gar nicht mit**.
+> **Korrigiert in Runde 17 (05.09.2026), Begründung nachgeschärft am 05.09.2026:** Hier stand
+> „**Referenzen auf dem Rohtext zählen**". Die neue Regel gilt: **Kommentare auch beim Zählen
+> ausblenden, String-Literale dagegen mitzählen** (ein Eintragsname in einer Test-JSON ist ein
+> echter Verwender, weil er Teil eines gespeicherten Formats ist), und **reine Doku-Dateien zählen
+> gar nicht mit**. Der Grund ist aber ein anderer als der zunächst eingetragene: eine
+> Kommentarnennung als „Verwender" zu zählen ist genau der Selbstentwaffnungs-Mechanismus, den der
+> Torwächter als Defekt (b) an Prüfung 7 nachgewiesen hat — die ENTFERNT-Notiz hält den entfernten
+> Namen für immer am Leben. **Nicht** dagegen, weil Rohtext-Zählung hier neun Befunde getilgt
+> hätte; das war eine Fehlmessung (siehe Runde 17, Punkt 1).
 
 **Zum Stand der Werkzeuge — hier weicht der Nachtrag von seinem Original ab, weil PR #59
 geschlossen wurde:** `pruefe_reste.py` hat weiterhin **sechs** Prüfungen. Die Prüfung 7 aus jenem
@@ -86,13 +90,27 @@ neun von neun beurteilten Aufräum-PRs. Gemessen: **9 Rohbefunde, 9 bestätigt, 
 **Zwei stille Fehlmessungen auf dem Weg dahin — beide hätte die Runde-16-Selbstprüfung
 durchgelassen:**
 
-1. **Referenzen auf dem Rohtext zu zählen ergab „0 Rohbefunde".** Nicht ein Befund weniger —
-   **alle neun** weg. Ursache: KDoc- und Prosanennungen zählen dann als Verwender, und jeder
-   dieser Einträge wird irgendwo in einem Kommentar erwähnt. Das ist derselbe Mechanismus, den
-   der Torwächter als Defekt (b) an Prüfung 7 nachgewiesen hat („sie entwaffnet sich durch die
-   eigenen ENTFERNT-Notizen") — nur trifft er hier schon die **Messung**, nicht erst das Gatter.
-   Deshalb die Korrektur oben. Wer das übersieht, meldet „nichts gefunden" und beendet die Runde
-   mit einem sauberen Gewissen und null Ergebnis.
+1. **Ein Messlauf ergab „0 Rohbefunde" — alle neun weg.** ⚠️ **Die hier ursprünglich eingetragene
+   Ursache ist widerlegt** (Torwächter zu PR #63, nachgemessen am 05.09.2026). Sie lautete:
+   Rohtext-Zählung tilge alle neun, „weil jeder dieser Einträge irgendwo in einem Kommentar
+   erwähnt wird". `git grep -nw <name> main -- .` sagt etwas anderes:
+
+   ```
+   DIM 1   BRIGHTEN 1   SET_COLOR 1   SET_TEMPERATURE 1   PULSE 1
+   COLOR_LOOP 1   N_UPNP 1   ZONE 3   ROOM 3
+   ```
+
+   **Sieben der neun Namen kommen im ganzen Baum genau einmal vor — in ihrer eigenen
+   Deklarationszeile.** Eine Kommentarnennung haben nur `ZONE`/`ROOM`. „Alle neun weg" ist mit
+   Rohtext-Zählung also gar nicht herstellbar; die tatsächliche Ursache war der Parser-Defekt aus
+   Punkt 2 — wenn jeder Eintragsname zu einem Einzelbuchstaben verkommt, findet die Referenzsuche
+   natürlich überall Treffer.
+
+   **Die Lehre daran ist die teurere:** Hier wurde eine *richtige* Regel (Kommentare nicht als
+   Verwender zählen) mit einer *falschen* Messung begründet — und weil dieser Zettel für die
+   nächste Runde bindend ist, hätte die falsche Begründung Bestand gehabt. **Wenn zwei
+   Fehlmessungen in einer Runde auftreten, prüfe, ob die eine die andere erklärt**, bevor du
+   ihnen zwei getrennte Ursachen zuschreibst.
 2. **Die Selbstprüfung war grün, während jeder Eintragsname Müll war.** Mein Parser meldete
    ordentliche 35 Enums, 146 Einträge und „kein Enum ohne geparste Einträge" — die Namen darin
    waren aber Einzelbuchstaben: `GOOD_BUT_RISKY` wurde zu `Y`, `OPTIMAL` zu `L`. Schuld war das

@@ -171,6 +171,32 @@ class DimBedienungshilfenWunschTest {
     }
 
     @Test
+    fun `der Bildlauf wird nachgefuehrt, solange sich die Karten darueber setzen`() {
+        val statusTab = ohneKommentare("ui/screens/tabs/StatusTabContent.kt")
+
+        // Das Ziel steht, sobald die Karte EINMAL vermessen ist. Die Karten darueber
+        // (UnusedAppRestrictionsCard, TimeOfficeHealthCard) fuellen sich aber asynchron und
+        // rendern zeitweise gar nichts; faellt eine weg, rueckt die Karte im Inhalt nach oben
+        // und der einmal angefahrene Stand rollt zu weit.
+        assertTrue(
+            "Nach dem Anfahren wird nicht mehr nachgemessen - ein Kartenwegfall darueber laesst " +
+                "den Bildlauf zu weit stehen (Issue #68)",
+            Regex(
+                """animateScrollTo\(ziel\)[\s\S]{0,600}?withTimeoutOrNull\([\s\S]{0,400}?scrollState\.scrollTo\("""
+            ).containsMatchIn(statusTab)
+        )
+        assertTrue(
+            "Das Nachfuehren ist zeitlich unbegrenzt - ein Inhalt, der sich nie beruhigt, " +
+                "behielte den Bildlauf fuer immer",
+            statusTab.contains("KARTE_NACHFUEHREN_MS")
+        )
+        assertTrue(
+            "Ein eigener Bildlauf des Nutzers beendet das Nachfuehren nicht - es risse ihn zurueck",
+            statusTab.contains("scrollState.value != gerollt")
+        )
+    }
+
+    @Test
     fun `die Karte zeigt auf Anfrage die Offenlegung und nicht die Einstellung`() {
         val karten = ohneKommentare("ui/screens/tabs/StatusPermissionCards.kt")
 

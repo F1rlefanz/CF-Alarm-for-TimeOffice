@@ -239,7 +239,10 @@ Der Eigentümer bestätigte, dass es gepasst hat — aber eine Bestätigung aus 
 kein Beleg, und beim nächsten Mal ist es vielleicht keine Bestätigung, sondern eine Beschwerde.
 
 **Warum Androids eigenes Protokoll nicht einspringt.** `dumpsys notification` führt ein „Zen Log"
-aus zwei Unterlogs mit je **100 Plätzen**. Nur eines davon beantwortet „war die Regel an oder aus":
+aus zwei Unterlogs mit je **100 Plätzen** — das ist keine Messung, sondern AOSP-Konstante
+(`ZenLog.java`: `SIZE = Build.IS_DEBUGGABLE ? 200 : 100`, dazu je ein `LocalLog` für
+`STATE_CHANGES` und `INTERCEPTION_EVENTS`). Ein Debug-Build verdoppelt nur auf ~66 Minuten und
+hilft für eine Frage vom Vortag also auch nicht. Nur eines davon beantwortet „war die Regel an oder aus":
 **State Changes** — und genau das flutet Googles Digital Wellbeing
 (`com.google.android.apps.wellbeing`, Regel „Schlafenszeit") **im Minutentakt** mit
 `config: setAzrState … (ORIGIN_APP) no changes`, auf seiner eigenen Regel, die dabei
@@ -247,6 +250,11 @@ aus zwei Unterlogs mit je **100 Plätzen**. Nur eines davon beantwortet „war d
 mehr lief. Drei Einträge pro Minute gegen 100 Plätze — der Abschnitt reichte in der Nachmessung vom
 05.09.2026 von 14:49:43 bis 15:20:46, also **31 Minuten**. Die halbe Stunde ist damit keine
 FP6-Eigenheit, sondern ausgerechnet.
+
+Dass es drei Einträge je Aufruf sind, erklärt `ZenModeHelper.setConfigLocked`: bei unveränderter
+Konfiguration kehrt es NICHT früh zurück, sondern überspringt nur `dispatchOnConfigChanged()` und
+die Policy-Anwendung und ruft weiterhin `evaluateZenModeLocked(...)`, das seinerseits
+`set_zen_mode` protokolliert. Das „no changes" beschreibt die Config, nicht den Aufwand.
 
 **Das Geschwister-Unterlog `Interception Events` ist NICHT betroffen.** In derselben Messung reichte
 es von 04.09. 23:00 bis 05.09. 13:43 zurück — knapp 15 Stunden, inklusive des Weckers dieses Morgens
@@ -261,6 +269,12 @@ unsere Regel-ID. Die Kosten trägt das Gerät: `dumpsys batterystats --charged` 
 App (Wartung, beide Ticks, Wecker). Dass genau dieser Alarm die Zen-Zeilen schreibt, ist nicht
 bewiesen — der Takt passt, mehr nicht. Abstellen lässt sich nichts davon; es heißt nur, dass eigenes
 Protokollieren nicht optional war.
+
+**Und es ist nirgends dokumentiert.** Weder `setAzrState` im Minutentakt noch der Alarm-Tag
+`TASK_MANAGER_URGENT_ALARM` liefern öffentlich einen Treffer — kein Issue, kein Bugreport. Es gibt
+nur die allgemeine Foren-Folklore „Digital Wellbeing zieht Akku, schalt es ab". Wer hier später
+nach einer Quelle sucht, findet keine: diese Notiz IST die Quelle. Und weil niemand es gemeldet
+hat, ist auch nicht damit zu rechnen, dass es verschwindet.
 
 **Was jetzt passiert.** `applyCurrentState()` schreibt nach dem erfolgreichen
 `setAutomaticZenRuleState` eine Zeile:

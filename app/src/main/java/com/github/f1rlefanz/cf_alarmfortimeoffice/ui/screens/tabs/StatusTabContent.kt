@@ -38,16 +38,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWunsch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
@@ -58,6 +64,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AuthViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
+import kotlinx.coroutines.flow.first
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -77,14 +84,48 @@ fun StatusTabContent(
 ) {
     val context = LocalContext.current
 
+    // EINSTIEG AUS DER DIMMER-BENACHRICHTIGUNG ("Dimmt nicht - Bedienungshilfen-Dienst ist aus").
+    // Sie fuehrt bewusst hierher statt direkt in die Android-Einstellungen (Play-Pflicht-
+    // Offenlegung, siehe DimCorrectionNotifier.appIntent) - dann muss dieser Bildschirm den
+    // Nutzer aber auch bis zur richtigen Karte bringen: sie steht unterhalb von sechs anderen.
+    val scrollState = rememberScrollState()
+    // Versatz der Bedienungshilfen-Karte INNERHALB des scrollbaren Inhalts, in Pixeln.
+    // -1 = noch nicht vermessen (erste Komposition).
+    var dimmerKarteVersatz by remember { mutableIntStateOf(-1) }
+    // Zaehler statt Boolean: jede neue Anfrage oeffnet die Offenlegung erneut, ohne dass die
+    // Karte ein Zuruecksetzen zurueckmelden muesste - ein solcher Rueckkanal wuerde als
+    // LaunchedEffect-Schluessel den noch laufenden Bildlauf unten mittendrin abbrechen.
+    var kartenAnfragen by remember { mutableIntStateOf(0) }
+    var spalteObenImFenster by remember { mutableFloatStateOf(0f) }
+    // BEWUSST HIER gelesen und nicht erst im Rueckruf unten: so haengt die Komposition daran.
+    // Steht der Wert beim ersten Vermessen der Karte noch auf 0, korrigiert ihn die naechste
+    // Zusammensetzung von selbst - ein Lesen erst im Rueckruf wuerde nichts anstossen, und ein
+    // zu grosses Bildlaufziel bliebe stehen.
+    val spalteOben = spalteObenImFenster
+
+    LaunchedEffect(Unit) {
+        // Schluessel `Unit`, nicht der Wunsch selbst: `verbrauchen()` setzt ihn sofort zurueck,
+        // und ein daran haengender Effekt wuerde sich selbst abbrechen - mitten im Bildlauf.
+        DimBedienungshilfenWunsch.offen.collect { offen ->
+            if (!offen) return@collect
+            DimBedienungshilfenWunsch.verbrauchen()
+            kartenAnfragen++
+            // Erst rollen, wenn die Karte vermessen ist - beim Einstieg direkt aus der
+            // Benachrichtigung laeuft dieser Effekt vor dem ersten Layout-Durchgang.
+            val ziel = snapshotFlow { dimmerKarteVersatz }.first { it >= 0 }
+            scrollState.animateScrollTo(ziel)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .onGloballyPositioned { spalteObenImFenster = it.positionInRoot().y }
+            .verticalScroll(scrollState)
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
-        
+
         // GANZ OBEN und nicht bei der Kalender-Karte darunter: Wenn diese Karte erscheint,
         // klingeln Wecker eines Dienstplans, den der Nutzer entfernt hat - das schlaegt jeden
         // anderen Status auf diesem Bildschirm.
@@ -238,7 +279,17 @@ fun StatusTabContent(
         // Schicht-Dimmer: laeuft der Bedienungshilfen-Dienst? Nur dann kann das Dimm-Overlay
         // ueberhaupt erscheinen. Der Status stand frueher im Dimmer-Tab; hier neben den anderen
         // OS-Berechtigungen ist er dauerhaft ablesbar und der Dienst von einer Stelle aus aktivierbar.
-        DimmerAccessibilityCard()
+        DimmerAccessibilityCard(
+            // positionInRoot beider Seiten, weil der Bildlauf die Karte im Fenster verschiebt:
+            // die Differenz plus der aktuelle Stand ergibt den Versatz im INHALT, und nur der
+            // ist ein brauchbares Bildlaufziel.
+            modifier = Modifier.onGloballyPositioned { koordinaten ->
+                dimmerKarteVersatz =
+                    (koordinaten.positionInRoot().y - spalteOben + scrollState.value)
+                        .toInt().coerceAtLeast(0)
+            },
+            aktivierungsAnfragen = kartenAnfragen
+        )
 
         // DND-Steuerung: Freigabe-Status fuer ACCESS_NOTIFICATION_POLICY, analog zur
         // Bedienungshilfen-Karte des Dimmers.
@@ -647,7 +698,6 @@ private fun StatusCard(
                     details,
                     style = MaterialTheme.typography.bodyMedium
                 )
-
                 if (!isOk && actionLabel != null && onAction != null) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
                     SettingsLinkButton(onClick = onAction, text = actionLabel, enabled = actionEnabled)

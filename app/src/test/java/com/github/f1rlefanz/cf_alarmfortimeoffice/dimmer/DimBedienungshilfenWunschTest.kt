@@ -198,25 +198,38 @@ class DimBedienungshilfenWunschTest {
     // ---------------------------------------------------------------- Station 4: die Einstellung
 
     @Test
-    fun `der Knopf hebt den Eintrag DIESES Dienstes in der Liste hervor`() {
+    fun `der Knopf fuehrt ueber die oeffentliche Aktion in die Bedienungshilfen`() {
         val karten = ohneKommentare("ui/screens/tabs/StatusPermissionCards.kt")
 
         assertTrue(
             "Der Weg in die Bedienungshilfen laeuft nicht mehr ueber die oeffentliche Aktion",
             karten.contains("Settings.ACTION_ACCESSIBILITY_SETTINGS")
         )
-        // Der Schluessel steht als TEXT im Code, nicht als Konstante: die gibt es im SDK nicht
-        // (in AOSP SettingsActivity.EXTRA_FRAGMENT_ARG_KEY, nicht in android.jar). Deshalb
-        // prueft der Test die Zeichenkette selbst.
+    }
+
+    /**
+     * Der uebliche Kniff, den eigenen Eintrag in der Liste hervorzuheben, ist
+     * `:settings:fragment_args_key`. Aus der Shell gestartet wirkt er - aus DIESER App nicht.
+     *
+     * Am 05.09.2026 am Emulator durchgemessen: mit und ohne Argument-Buendel
+     * (`:settings:show_fragment_args`), mit und ohne `FLAG_ACTIVITY_NEW_TASK`, mit frisch
+     * geleerter Einstellungen-App - immer ohne Hervorhebung, waehrend `dumpsys activity
+     * activities` fuer App- und Shell-Start denselben Intent zeigt. Der Unterschied ist der
+     * Aufrufer; AOSP liest den Schluessel primaer aus den Fragment-Argumenten und nur hinter
+     * einem Feature-Flag aus dem Intent.
+     *
+     * Deshalb bleibt der Zusatz draussen: er bewirkt im einzigen Kontext, in dem er laeuft,
+     * nichts - und eine Erklaerung daneben wuerde etwas versprechen, das der Nutzer nicht bekommt.
+     * Wer es erneut versucht, misst zuerst AUS DER APP, nicht aus der Shell.
+     */
+    @Test
+    fun `der wirkungslose Hervorhebungs-Zusatz bleibt draussen`() {
+        val karten = ohneKommentare("ui/screens/tabs/StatusPermissionCards.kt")
+
         assertTrue(
-            "Ohne den Hervorhebungs-Schluessel landet der Nutzer in der Liste ALLER " +
-                "Bedienungshilfen und sucht den Eintrag der App selbst",
-            karten.contains("\":settings:fragment_args_key\"")
-        )
-        assertTrue(
-            "Die Hervorhebung braucht die flach geschriebene Kennung des Dienstes als Wert",
-            karten.contains("ComponentName(context, DimAccessibilityService::class.java)") &&
-                karten.contains("flattenToString()")
+            "':settings:fragment_args_key' ist wieder im Code - aus dieser App heraus bewirkt " +
+                "er nachweislich nichts; erst messen (aus der App!), dann einbauen",
+            !karten.contains("fragment_args_key")
         )
     }
 

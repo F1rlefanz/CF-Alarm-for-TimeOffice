@@ -2,11 +2,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 import android.app.AlarmManager
 import android.app.NotificationManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Bundle
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -1189,61 +1187,43 @@ internal fun DndPermissionCard() {
 }
 
 /**
- * Schluessel, mit dem die Einstellungen-App EINEN Eintrag ihrer Liste ins Bild rollt und hervorhebt.
+ * Fuehrt in die Bedienungshilfen-Liste. Mehr ist von einer normalen App aus nicht erreichbar -
+ * und das ist gemessen, nicht vermutet.
  *
- * ALS TEXT UND NICHT ALS KONSTANTE, weil es die Konstante im SDK nicht gibt: sie heisst in AOSP
- * `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY` und steht nicht in `android.jar`. Der erwartete Wert
- * ist die flach geschriebene Kennung des Dienstes — dieselbe Zeichenkette, die die Liste als
- * Schluessel ihres Eintrags benutzt.
- */
-private const val EXTRA_EINSTELLUNGEN_HERVORHEBUNG = ":settings:fragment_args_key"
-
-/**
- * Buendel, in dem die Einstellungen-App [EXTRA_EINSTELLUNGEN_HERVORHEBUNG] zusaetzlich erwartet.
+ * WARUM NICHT AUF DIE DETAILSEITE DIESES DIENSTES:
+ * `android.settings.ACCESSIBILITY_DETAILS_SETTINGS` (ab Android 11) fuehrt zwar dorthin, ist fuer
+ * diese App aber dauerhaft unerreichbar - nicht nur auf manchen Geraeten. Die Ziel-Activity
+ * `Settings$AccessibilityDetailsSettingsActivity` traegt in AOSP seit Android 11, also seit es die
+ * Aktion ueberhaupt gibt, `android:permission="android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"`;
+ * die Berechtigung steht auf `signature|installer` und ist dort ausdruecklich als „Not for use by
+ * third-party applications" (`@hide`) gekennzeichnet. Eine nicht plattformsignierte App kann sie
+ * NIE halten. Am 05.09.2026 an BEIDEN Geraeten gemessen (Fairphone 6 / Android 16 und Emulator /
+ * API 36): die Aktion loest sauber auf die Settings-Activity auf und wird dann mit
+ * „Permission Denial ... requires OPEN_ACCESSIBILITY_DETAILS_SETTINGS" abgewiesen.
+ * **Wer den Direktsprung wieder einbaut, baut einen Zweig, der garantiert immer nur seinen
+ * Rueckfall erreicht - und dabei bei JEDEM Tipp eine sinnlose Zeile ins Release-Log schreibt.**
  *
- * Gemessen wirkt schon das Extra obenauf allein (siehe [openAccessibilitySettings]); das Buendel
- * steht daneben, weil abweichende Hersteller-Einstellungen den Schluessel von dort lesen. Wird es
- * ignoriert, kostet es nichts.
- */
-private const val EXTRA_EINSTELLUNGEN_ARGUMENTE = ":settings:show_fragment_args"
-
-/**
- * Fuehrt in die Bedienungshilfen — auf den hervorgehobenen Eintrag GENAU DIESES Dienstes.
+ * WARUM AUCH KEIN HERVORHEBEN DES EINTRAGS: der uebliche Kniff dafuer ist
+ * `:settings:fragment_args_key` (in AOSP `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY`) mit der flach
+ * geschriebenen Kennung des Dienstes. Aus der Shell gestartet wirkt er auch - der Eintrag steht
+ * dann markiert unter „Downloaded apps", nachgemessen im A/B und ueber 20 s stabil. **Aus DIESER
+ * App heraus wirkt er nicht**, und daran lag es an nichts, was sich am Intent aendern liesse: mit
+ * und ohne Argument-Buendel, mit und ohne `FLAG_ACTIVITY_NEW_TASK`, mit frisch geleerter
+ * Einstellungen-App - immer ohne Hervorhebung, waehrend `dumpsys activity activities` fuer beide
+ * Wege denselben Intent zeigt (`act=...ACCESSIBILITY_SETTINGS flg=0x10000000 xflg=0x4`, „has
+ * extras"). Der Unterschied ist der Aufrufer selbst; AOSP liest den Schluessel primaer aus den
+ * Fragment-Argumenten und nur hinter einem Feature-Flag aus dem Intent
+ * (`SettingsPreferenceFragment.onCreateAdapter`).
  *
- * WARUM NICHT AUF DIE DETAILSEITE: `android.settings.ACCESSIBILITY_DETAILS_SETTINGS` (ab
- * Android 11) fuehrt zwar auf die Seite eines benannten Dienstes, ist fuer diese App aber
- * unerreichbar — und zwar dauerhaft, nicht nur auf manchen Geraeten. Die Ziel-Activity
- * `Settings$AccessibilityDetailsSettingsActivity` traegt in AOSP seit Android 11, also seit es
- * die Aktion ueberhaupt gibt, `android:permission="android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"`;
- * diese Berechtigung steht auf `signature|installer` und ist dort ausdruecklich als „Not for use
- * by third-party applications" (`@hide`) gekennzeichnet. Eine nicht plattformsignierte App kann
- * sie NIE halten, `startActivity` scheitert mit `SecurityException`.
- *
- * Am 05.09.2026 an BEIDEN Geraeten gemessen (Fairphone 6 / Android 16 und Emulator / API 36): die
- * Aktion loest sauber auf die Settings-Activity auf und wird dann mit „Permission Denial … requires
- * android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS" abgewiesen. **Wer den Direktsprung wieder
- * einbaut, baut einen Zweig, der garantiert immer nur seinen Rueckfall erreicht — und dabei bei
- * JEDEM Tipp eine sinnlose Zeile ins Release-Log schreibt.**
- *
- * WAS STATTDESSEN WIRKT: die oeffentliche, ungeschuetzte [Settings.ACTION_ACCESSIBILITY_SETTINGS]
- * plus [EXTRA_EINSTELLUNGEN_HERVORHEBUNG]. Die Einstellungen-App rollt den Eintrag dann ins Bild
- * und hebt ihn hervor — dasselbe Ziel wie die Detailseite, einen Tipp entfernt. Am 05.09.2026 am
- * Emulator im A/B belegt: MIT dem Extra steht „CF-Alarm Schicht-Dimmer" unter „Downloaded apps"
- * hervorgehoben, OHNE das Extra dieselbe Liste ohne Hervorhebung.
- *
- * Ignoriert eine Einstellungen-App das Extra, bleibt die blanke Liste — dasselbe Ergebnis wie ohne
- * den Versuch, ohne Fehlerfall. Deshalb braucht dieser Weg keine zweite Ebene mehr.
+ * Deshalb steht hier der schlichte Aufruf ohne Extra: ein Zusatz, der im einzigen Kontext, in dem
+ * er laeuft, nachweislich nichts bewirkt, ist kein Sicherheitsnetz, sondern Ballast mit einer
+ * Erklaerung daneben, die etwas verspricht. Wer es erneut versucht, misst zuerst - und zwar aus
+ * der App, nicht aus der Shell.
  */
 private fun openAccessibilitySettings(context: android.content.Context) {
-    val dienst = ComponentName(context, DimAccessibilityService::class.java).flattenToString()
     try {
         context.startActivity(
             Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                .putExtra(EXTRA_EINSTELLUNGEN_HERVORHEBUNG, dienst)
-                .putExtra(
-                    EXTRA_EINSTELLUNGEN_ARGUMENTE,
-                    Bundle().apply { putString(EXTRA_EINSTELLUNGEN_HERVORHEBUNG, dienst) }
-                )
         )
     } catch (e: Exception) {
         Logger.e(LogTags.UI, "❌ Bedienungshilfen-Einstellungen nicht erreichbar", e)

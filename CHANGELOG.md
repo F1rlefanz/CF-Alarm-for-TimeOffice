@@ -35,7 +35,7 @@ _Der Hinweis „Dimmt nicht“ führt jetzt bis zu der Stelle, an der sich der D
 
 ### 🎨 Feinschliff
 
-- **Vom Hinweis direkt zum Schalter.** Meldet der Schicht-Dimmer „Dimmt nicht — Bedienungshilfen-Dienst ist aus“, war bisher zwar klar, WAS zu tun ist, aber nicht, wo: ein Tipp auf die Meldung öffnete die App auf dem zuletzt benutzten Bereich, und der Knopf auf der Dimmer-Karte führte in die Liste **aller** Bedienungshilfen, in der der Eintrag der App zwischen Systemdiensten steht. Jetzt führt der Weg durch: Der Tipp öffnet den Status-Bereich, rollt die Dimmer-Karte ins Bild und zeigt, wofür der Dienst gebraucht wird — und deren Knopf öffnet die Bedienungshilfen mit dem Eintrag „CF-Alarm Schicht-Dimmer“ bereits hervorgehoben.
+- **Vom Hinweis zur richtigen Stelle.** Meldet der Schicht-Dimmer „Dimmt nicht — Bedienungshilfen-Dienst ist aus“, war bisher zwar klar, WAS zu tun ist, aber nicht, wo: ein Tipp auf die Meldung öffnete die App auf dem zuletzt benutzten Bereich, und die Karte, um die es geht, steht im Status-Bereich unterhalb von sechs anderen. Jetzt führt der Tipp direkt dorthin: Status-Bereich, die Dimmer-Karte ins Bild gerollt, und die Erklärung, wofür der Dienst gebraucht wird, steht offen. Deren Knopf öffnet die Bedienungshilfen — den Eintrag „CF-Alarm Schicht-Dimmer“ wählst du dort weiterhin selbst aus; Android lässt Apps nicht direkt auf ihre eigene Seite springen.
 
 ## Version 1.39.6
 

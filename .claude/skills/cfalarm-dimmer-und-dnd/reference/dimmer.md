@@ -498,7 +498,7 @@
   Stationen: Das Extra `MainActivity.EXTRA_EINSTIEG` sagt der Activity, WESHALB geöffnet wurde;
   sie stellt den Wunsch (`DimBedienungshilfenWunsch`) und wechselt auf den Status-Tab, der rollt
   die Karte ins Bild und lässt sie die Offenlegung zeigen. **Erst deren Knopf** führt in die
-  Bedienungshilfen — auf den hervorgehobenen Eintrag dieses Dienstes (siehe die Messung unten).
+  Bedienungshilfen (wie weit genau, sagt die Messung unten).
 
   Vier Fallen stecken in den Details, alle nicht offensichtlich: `FLAG_ACTIVITY_CLEAR_TOP` **ohne**
   `FLAG_ACTIVITY_SINGLE_TOP` legt die laufende MainActivity (Start-Modus `standard`) neu an statt
@@ -547,21 +547,53 @@
   Die beiden auseinanderzuhalten ist der ganze Unterschied zwischen „auf manchen Geräten" und
   „nie".
 
-  **Was stattdessen wirkt, ist gemessen.** Die öffentliche, ungeschützte
-  `ACTION_ACCESSIBILITY_SETTINGS` nimmt den Schlüssel `:settings:fragment_args_key` (in AOSP
-  `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY`, ebenfalls nicht in `android.jar`) mit der flach
-  geschriebenen Kennung des Dienstes; die Einstellungen-App rollt den Eintrag dann ins Bild und
-  hebt ihn hervor. Am Emulator im **A/B** belegt: mit dem Extra steht „CF-Alarm Schicht-Dimmer"
-  unter „Downloaded apps" mit Hervorhebung, ohne das Extra dieselbe Liste ohne sie. Ignoriert eine
-  Einstellungen-App den Schlüssel, bleibt die blanke Liste — dasselbe Ergebnis wie ohne den
-  Versuch, ohne Fehlerfall. Deshalb braucht dieser Weg **keine** zweite Ebene mehr, und der
-  Regressionstest hält den Direktsprung ausdrücklich draußen.
+  **Der Knopf öffnet die Liste — den eigenen Eintrag hervorheben ließ sich NICHT erreichen, und
+  das ist durchgemessen.** Der übliche Kniff dafür ist `:settings:fragment_args_key` (in AOSP
+  `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY`) mit der flach geschriebenen Kennung des Dienstes.
+  **Aus der Shell gestartet wirkt er**: der Eintrag steht markiert unter „Downloaded apps", im A/B
+  belegt (mit Extra markiert, ohne Extra nicht) und über 20 s stabil. **Aus der App heraus wirkt er
+  nicht** — und daran ließ sich am Intent nichts ändern:
 
-  **Am Gerät noch offen** bleibt der Bildlauf: dass er die Karte trifft, wenn die App aus der
-  Benachrichtigung KALT startet — dort läuft der Effekt vor dem ersten Layout-Durchgang und wartet
-  über `snapshotFlow` auf die Vermessung. Das braucht einen Debug-Build auf dem Emulator; in der
-  Sitzung vom 05.09.2026 war Gradle durch den JVM-Loopback-Defekt blockiert (Memory
-  `env_gradle_loopback`), die Prüfung steht also noch aus.
+  | Versuch aus der App | Hervorhebung |
+  |---|---|
+  | Schlüssel obenauf + Bündel `:settings:show_fragment_args` | nein |
+  | nur Schlüssel obenauf | nein |
+  | zusätzlich `FLAG_ACTIVITY_NEW_TASK` | nein |
+  | dazu Einstellungen-App per `pm clear` frisch | nein |
+
+  `dumpsys activity activities` zeigt dabei für App- und Shell-Start **denselben** Intent
+  (`act=…ACCESSIBILITY_SETTINGS flg=0x10000000 xflg=0x4`, „has extras"). Der Unterschied ist also
+  der Aufrufer selbst, nicht der Intent. Dazu passt AOSP: `SettingsPreferenceFragment.onCreateAdapter`
+  liest den Schlüssel primär aus den **Fragment-Argumenten** und nur hinter einem Feature-Flag
+  (`Flags.catalyst()`) aus dem Intent.
+
+  **Deshalb steht im Code der schlichte Aufruf ohne Extra.** Ein Zusatz, der im einzigen Kontext,
+  in dem er läuft, nachweislich nichts bewirkt, ist kein Sicherheitsnetz — er ist Ballast mit einer
+  Erklärung daneben, die dem Leser etwas verspricht. Ein Test hält ihn draußen. Wer es erneut
+  versucht: **erst messen, und zwar aus der App, nicht aus der Shell.**
+
+  **Zwei Fehlschlüsse auf dem Weg dorthin, beide vom selben Typ.** Zwischenzeitlich stand hier,
+  das Bündel unterdrücke die Hervorhebung; danach, es fehle `FLAG_ACTIVITY_NEW_TASK`. Beides war
+  falsch und ist zurückgenommen. Der erste Vergleich war „App **mit** Bündel" gegen „Shell **ohne**
+  Bündel" — zwei Variablen auf einmal, und die Erklärung wurde der auffälligeren zugeschrieben;
+  der zweite übernahm einen einzelnen korrelierenden Unterschied (die Flags) als Ursache, ohne ihn
+  zu prüfen. **Ein A/B mit zwei Unterschieden ist kein A/B, und eine Korrelation aus einer einzigen
+  Messung ist keine Ursache.** Erst das systematische Durchvariieren der Tabelle oben schloss den
+  Intent als Erklärung aus.
+
+  **Und der Kaltstart-Bildlauf rollte zu weit — genau der Fall, den niemand gesehen hatte.** Beim
+  Einstieg aus der Benachrichtigung in eine noch nicht laufende App wird die Karte vermessen,
+  **bevor** die Spalte es ist. `spalteOben` steht dann noch auf 0, der Versatz fällt um die Höhe
+  der Kopfzeile zu groß aus — und weil der Effekt über `snapshotFlow { … }.first { it >= 0 }` die
+  ERSTE brauchbare Messung nimmt, rollt er mit dem falschen Wert los. Am Emulator gesehen: von der
+  Karte blieb nur ein Streifen ihrer Unterkante am oberen Rand stehen, Titel und Knopf lagen
+  darüber außerhalb des Bildes.
+
+  Der Kommentar im Code sagte, die nächste Zusammensetzung korrigiere den Wert von selbst — das
+  stimmt, hilft aber nicht: da ist der Bildlauf längst gelaufen. Deshalb schreibt die Karte ihren
+  Versatz jetzt **erst, wenn die Spalte vermessen ist** (`spalteVermessen`, ein eigenes Signal und
+  nicht `spalteOben != 0f` — null ist eine legitime Lage). Im warmen Fall war der Fehler klein
+  genug, um als Schönheitsfehler durchzugehen; erst der Kaltstart machte ihn sichtbar.
 - **„Kurz hell, dann von allein wieder dunkel" — warum das Verschwinden NIE im App-Log stehen kann
   (29.08.2026).** Unmittelbar nach dem obigen Fix meldete der Eigentümer beim Einspielen der neuen
   Version genau das. Im Systemlog stand der Grund lückenlos: `23:06:07.619 Killing 18584 … due to

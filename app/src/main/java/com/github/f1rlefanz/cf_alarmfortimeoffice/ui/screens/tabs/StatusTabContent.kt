@@ -65,11 +65,23 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+
+/**
+ * Wie lange der Bildlauf zur Bedienungshilfen-Karte dem Inhalt noch nachgefuehrt wird.
+ *
+ * Kein gegriffener Wert, sondern der Rahmen, in dem sich die Karten UEBER ihr setzen: sie
+ * fuellen sich aus Paketabfragen und DataStore-Lesevorgaengen und koennen sich dabei auch ganz
+ * ausblenden. In dieser Zeit liegt ohnehin die Pflicht-Offenlegung als Dialog ueber dem
+ * Bildschirm - eine Korrektur dahinter sieht niemand. Danach gehoert der Bildlauf wieder
+ * ausschliesslich dem Nutzer.
+ */
+private const val KARTE_NACHFUEHREN_MS = 2_000L
 
 @Composable
 fun StatusTabContent(
@@ -118,6 +130,35 @@ fun StatusTabContent(
             // Benachrichtigung laeuft dieser Effekt vor dem ersten Layout-Durchgang.
             val ziel = snapshotFlow { dimmerKarteVersatz }.first { it >= 0 }
             scrollState.animateScrollTo(ziel)
+            var gerollt = scrollState.value
+
+            // NACHFUEHREN, solange sich die Karten DARUEBER noch setzen. Das Ziel war im Moment
+            // der Messung richtig und ist es danach nicht mehr: ueber der Bedienungshilfen-Karte
+            // stehen Karten, deren Inhalt asynchron entsteht - UnusedAppRestrictionsCard und
+            // TimeOfficeHealthCard rendern zeitweise gar nichts. Faellt eine davon nachtraeglich
+            // weg, rueckt die Karte im Inhalt nach OBEN, der einmal angefahrene Stand rollt zu
+            // weit, und vom Titel bleibt eine Zeile ueber dem Rand stehen (Issue #68).
+            //
+            // Waehrend des Rollens selbst aendert sich der Versatz NICHT: die Karte wandert im
+            // Fenster genau so weit nach oben, wie `scrollState.value` waechst, und beides hebt
+            // sich in der Rechnung der Karte auf. Eine Aenderung heisst deshalb wirklich "der
+            // Inhalt darueber ist ein anderer geworden" - nur darauf wird korrigiert.
+            //
+            // `scrollTo` statt `animateScrollTo`: die Korrektur soll die Karte STEHEN lassen,
+            // waehrend sich der Inhalt hinter ihr sortiert. Eine Animation waere genau die
+            // sichtbare Bewegung, die hier nicht sein soll.
+            withTimeoutOrNull(KARTE_NACHFUEHREN_MS) {
+                snapshotFlow { dimmerKarteVersatz }.collect { versatz ->
+                    // Steht der Bildlauf nicht mehr dort, wo wir ihn hingesetzt haben, hat ihn
+                    // der Nutzer selbst bewegt - dann gehoert ihm der Bildschirm, und
+                    // Nachfuehren waere Zurueckreissen.
+                    val nutzerHatGerollt = scrollState.value != gerollt
+                    if (versatz >= 0 && versatz != gerollt && !nutzerHatGerollt) {
+                        scrollState.scrollTo(versatz)
+                        gerollt = scrollState.value
+                    }
+                }
+            }
         }
     }
 

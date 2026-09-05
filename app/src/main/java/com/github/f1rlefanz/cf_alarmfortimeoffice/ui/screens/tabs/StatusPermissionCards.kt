@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 import android.app.AlarmManager
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -34,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -988,14 +990,33 @@ internal fun TimeOfficeHealthCard() {
  * Wie die Nachbarkarten wird der Zustand bei jedem ON_RESUME frisch gelesen — nach der Rueckkehr
  * aus den Bedienungshilfen-Einstellungen springt die Karte so sofort auf gruen. Android startet
  * den Dienst nicht automatisch neu, wenn der Nutzer ihn dort abschaltet.
+ *
+ * @param aktivierungsAnfragen zaehlt die Einstiege aus der Dimmer-Benachrichtigung „Dimmt nicht —
+ *   Bedienungshilfen-Dienst ist aus" (siehe `StatusTabContent`). Jeder Anstieg oeffnet die
+ *   Offenlegung, ohne dass die Karte einen Verbrauch zurueckmelden muesste. Laeuft der Dienst
+ *   inzwischen doch, passiert nichts — die Meldung hat sich dann von selbst erledigt.
  */
 @Composable
-internal fun DimmerAccessibilityCard() {
+internal fun DimmerAccessibilityCard(
+    aktivierungsAnfragen: Int,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var isActive by remember { mutableStateOf(DimAccessibilityService.isRunning()) }
-    var showDisclosure by remember { mutableStateOf(false) }
+    // rememberSaveable: eine Drehung darf die Offenlegung nicht wegnehmen — sie ist der einzige
+    // Weg zum Aktivieren, und ein erneuter Einstieg aus der Benachrichtigung kommt nach der
+    // Drehung bewusst nicht noch einmal (siehe MainActivity.onCreate).
+    var showDisclosure by rememberSaveable { mutableStateOf(false) }
+
+    // Der Nutzer hat die Benachrichtigung angetippt, um zu aktivieren - dann steht hier die
+    // Pflicht-Offenlegung, und der Knopf dahinter fuehrt direkt auf die Seite dieses Dienstes.
+    LaunchedEffect(aktivierungsAnfragen) {
+        if (aktivierungsAnfragen > 0 && !DimAccessibilityService.isRunning()) {
+            showDisclosure = true
+        }
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -1027,7 +1048,7 @@ internal fun DimmerAccessibilityCard() {
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = if (isActive)
                 MaterialTheme.colorScheme.surface
@@ -1166,7 +1187,37 @@ internal fun DndPermissionCard() {
     }
 }
 
+/**
+ * Fuehrt in die Bedienungshilfen — moeglichst auf die Seite GENAU DIESES Dienstes.
+ *
+ * WARUM ZWEISTUFIG: `ACTION_ACCESSIBILITY_SETTINGS` oeffnet die Liste ALLER Bedienungshilfen;
+ * dort steht der Eintrag der App zwischen Systemdiensten und, je nach Hersteller, hinter einer
+ * Unterrubrik wie „Heruntergeladene Apps" — der Nutzer kommt aus einer Meldung, die ihm sagt,
+ * was zu tun ist, und muss den Schalter dann trotzdem suchen. Ab Android 11 gibt es
+ * `ACTION_ACCESSIBILITY_DETAILS_SETTINGS`, das direkt auf die Seite eines benannten Dienstes
+ * fuehrt (Kennung als flach geschriebener [ComponentName] im Extra).
+ *
+ * Die Liste bleibt als Rueckfallebene: das Detail-Ziel ist nicht auf jedem Geraet vorhanden, und
+ * eine Bedienungshilfen-Einstellung, die sich gar nicht oeffnet, waere schlechter als eine, in
+ * der man scrollen muss.
+ */
 private fun openAccessibilitySettings(context: android.content.Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val dienst = ComponentName(context, DimAccessibilityService::class.java).flattenToString()
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS)
+                    .putExtra(Intent.EXTRA_COMPONENT_NAME, dienst)
+            )
+            return
+        } catch (e: Exception) {
+            Logger.w(
+                LogTags.UI,
+                "Direkte Bedienungshilfen-Seite nicht erreichbar (${e.message}) - weiter ueber die Liste"
+            )
+        }
+    }
+
     try {
         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     } catch (e: Exception) {

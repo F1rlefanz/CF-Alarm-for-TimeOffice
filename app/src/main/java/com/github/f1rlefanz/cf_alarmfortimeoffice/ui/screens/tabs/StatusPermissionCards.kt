@@ -123,7 +123,7 @@ internal fun NotificationsEnabledCard() {
     // Die Reparaturanweisung wird ABGELEITET, nicht hingeschrieben - und sie nennt eine WIRKUNG
     // statt eines Stufennamens: bis v1.29.0 stand hier fest "Standard oder hoeher", danach kurz
     // ein aus einer eigenen Tabelle geholtes "Hoch". Beides schickte den Nutzer auf
-    // IMPORTANCE_DEFAULT - in der deutschen Liste von Android 8/9 heisst "Hoch" genau dieser Wert,
+    // IMPORTANCE_DEFAULT - in der deutschen Liste von Android 8/9 heisst "Hoch" genau diesen Wert,
     // den dieselbe Karte als zu niedrig verwirft, und auf neueren Versionen gibt es den Eintrag
     // gar nicht. Wer der Anweisung folgte, sah unveraendert das Warndreieck und wurde weiter ohne
     // Weck-Bildschirm geweckt.
@@ -1010,7 +1010,8 @@ internal fun DimmerAccessibilityCard(
     var showDisclosure by rememberSaveable { mutableStateOf(false) }
 
     // Der Nutzer hat die Benachrichtigung angetippt, um zu aktivieren - dann steht hier die
-    // Pflicht-Offenlegung, und der Knopf dahinter fuehrt direkt auf die Seite dieses Dienstes.
+    // Pflicht-Offenlegung, und ihr Knopf oeffnet die Bedienungshilfen-Einstellungen. Die Seite
+    // DIESES Dienstes ist fuer Fremd-Apps gesperrt (Hergang bei `openAccessibilitySettings`).
     LaunchedEffect(aktivierungsAnfragen) {
         if (aktivierungsAnfragen > 0 && !DimAccessibilityService.isRunning()) {
             showDisclosure = true

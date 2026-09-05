@@ -168,7 +168,11 @@ das baut man dieselbe Falle in neuer Form nach.
   beantworten, ob „Nicht stoeren" nachts an war — und **Androids eigenes Zen-Protokoll taugt als
   Ersatz nicht** (siehe naechster Punkt).
 - **Logcat-Fallstrick**: `W/System.err` mit `Thread.dumpStack()` um `setAutomaticZenRuleState()` ist
-  Androids eigenes Tracing, kein Crash. Und `dumpsys notification` reicht am FP6 nur rund eine
-  halbe Stunde zurueck: Googles Digital Wellbeing ruft dort im MINUTENTAKT `setAzrState` auf seiner
-  eigenen, abgeschalteten Regel auf und flutet den Ringpuffer. Fuer eine Frage vom Vortag ist er
-  leer — deshalb das eigene Protokoll.
+  Androids eigenes Tracing, kein Crash. Und im Zen Log von `dumpsys notification` ist der Abschnitt
+  **State Changes** — der einzige, der „Regel an/aus" beantwortet — nach gut einer halben Stunde
+  ueberschrieben: Googles Digital Wellbeing ruft dort im MINUTENTAKT `setAzrState` auf seiner
+  eigenen, abgeschalteten Regel auf. Der Puffer fasst **100 Eintraege**, Wellbeing erzeugt drei pro
+  Minute; die halbe Stunde ist also ausgerechnet, nicht geraten. Fuer eine Frage vom Vortag ist er
+  leer — deshalb das eigene Protokoll. Das Geschwister-Unterlog **Interception Events** trifft es
+  NICHT (eigene 100 Plaetze, ungeflutet, am 05.09.2026 knapp 15 Stunden zurueck): welche
+  Benachrichtigung unterdrueckt wurde, steht dort weiterhin.

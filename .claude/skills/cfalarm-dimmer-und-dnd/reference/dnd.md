@@ -239,12 +239,28 @@ Der Eigentümer bestätigte, dass es gepasst hat — aber eine Bestätigung aus 
 kein Beleg, und beim nächsten Mal ist es vielleicht keine Bestätigung, sondern eine Beschwerde.
 
 **Warum Androids eigenes Protokoll nicht einspringt.** `dumpsys notification` führt ein „Zen Log"
-mit Zeitstempeln. Am FP6 gemessen: es reichte nur bis rund 30 Minuten zurück, weil Googles Digital
-Wellbeing (`com.google.android.apps.wellbeing`, Regel „Schlafenszeit") **im Minutentakt**
-`config: setAzrState … (ORIGIN_APP) no changes` schreibt — auf seiner eigenen Regel, die dabei
-`enabled=FALSE, state=STATE_FALSE` ist. Der Ringpuffer war damit für 05:30 längst überschrieben.
-Das ist nichts, was sich abstellen ließe; es heißt nur, dass eigenes Protokollieren nicht optional
-ist.
+aus zwei Unterlogs mit je **100 Plätzen**. Nur eines davon beantwortet „war die Regel an oder aus":
+**State Changes** — und genau das flutet Googles Digital Wellbeing
+(`com.google.android.apps.wellbeing`, Regel „Schlafenszeit") **im Minutentakt** mit
+`config: setAzrState … (ORIGIN_APP) no changes`, auf seiner eigenen Regel, die dabei
+`enabled=FALSE, state=STATE_FALSE, disabledOrigin=3` ist und seit `lastActivation=2026-07-28` nicht
+mehr lief. Drei Einträge pro Minute gegen 100 Plätze — der Abschnitt reichte in der Nachmessung vom
+05.09.2026 von 14:49:43 bis 15:20:46, also **31 Minuten**. Die halbe Stunde ist damit keine
+FP6-Eigenheit, sondern ausgerechnet.
+
+**Das Geschwister-Unterlog `Interception Events` ist NICHT betroffen.** In derselben Messung reichte
+es von 04.09. 23:00 bis 05.09. 13:43 zurück — knapp 15 Stunden, inklusive des Weckers dieses Morgens
+(`05:01:01 … com.google.android.deskclock`). Die Aussage „`dumpsys notification` reicht nur eine
+halbe Stunde zurück" wäre also zu breit und würde ein brauchbares Werkzeug wegwerfen: unbrauchbar
+ist es für *war die Regel an*, brauchbar bleibt es für *welche Benachrichtigung wurde unterdrückt*.
+
+**Schaden für uns: keiner, nachgeprüft.** Wellbeing ändert den Zen-Zustand nicht (`no changes`, DND
+blieb aus) und fasst unsere Regel nicht an — von den 100 Einträgen des Fensters trug kein einziger
+unsere Regel-ID. Die Kosten trägt das Gerät: `dumpsys batterystats --charged` zählte über 2 d 5 h
+**1340** Wakeups auf `…wellbeing.action.TASK_MANAGER_URGENT_ALARM` gegen **16** für unsere gesamte
+App (Wartung, beide Ticks, Wecker). Dass genau dieser Alarm die Zen-Zeilen schreibt, ist nicht
+bewiesen — der Takt passt, mehr nicht. Abstellen lässt sich nichts davon; es heißt nur, dass eigenes
+Protokollieren nicht optional war.
 
 **Was jetzt passiert.** `applyCurrentState()` schreibt nach dem erfolgreichen
 `setAutomaticZenRuleState` eine Zeile:

@@ -202,6 +202,17 @@ jobs:
                  `origin/main` wiederholen. Geht es dann immer noch nicht,
                  haeng den Wortlaut als Kommentar an das wiedereroeffnete
                  Issue - verlorengehen darf er nicht.
+
+                 RETTE NIE WORTGLEICH, WAS DU GERADE WIDERLEGT HAST. Schliesst
+                 du den PR (auch) wegen einer Aussage IN dieser Datei, dann
+                 steht sie nach der Rettung in `main` und ist fuer die naechste
+                 Runde bindend - du haettest den Fehler befoerdert statt
+                 gestoppt. Genau das ist am 05.09.2026 mit PR #63 passiert.
+                 Du hast KEIN Write/Edit, aber du hast Bash, und `tools/` ist
+                 nicht gesperrt: haeng die Richtigstellung vor dem Commit mit
+                 einem Here-Dokument an die Datei an (`cat >> ... <<'EOF'`),
+                 als eigener Absatz, der die widerlegte Passage beim Namen
+                 nennt und DEINE Messzahlen zeigt. Erst dann committen.
                In BEIDEN Faellen einen Kommentar an den PR, der den Grund nennt
                und die Zahlen zeigt, auf die du dich stuetzt. "Sieht gut aus"
                ist keine Begruendung.

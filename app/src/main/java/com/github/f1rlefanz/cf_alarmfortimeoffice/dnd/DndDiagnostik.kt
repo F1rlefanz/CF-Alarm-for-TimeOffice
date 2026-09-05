@@ -16,9 +16,12 @@ import java.time.format.DateTimeFormatter
  * **Androids eigenes Zen-Protokoll taugt als Ersatz NICHT.** Am Fairphone 6 gemessen: Googles
  * Digital Wellbeing ("Schlafenszeit", `com.google.android.apps.wellbeing`) ruft im MINUTENTAKT
  * `setAutomaticZenRuleState` auf seiner eigenen, sogar abgeschalteten Regel auf
- * (`config: setAzrState … (ORIGIN_APP) no changes`). Der Ringpuffer von
- * `dumpsys notification` reicht dadurch nur rund eine halbe Stunde zurueck - fuer eine Frage vom
- * Vortag ist er leer. Wer sich darauf verlaesst, steht ohne Beleg da.
+ * (`config: setAzrState … (ORIGIN_APP) no changes`). Der Abschnitt `State Changes` im Zen Log von
+ * `dumpsys notification` fasst 100 Eintraege und ist bei drei Eintraegen je Minute nach gut einer
+ * halben Stunde ueberschrieben - fuer eine Frage vom Vortag ist er leer. Wer sich darauf
+ * verlaesst, steht ohne Beleg da. (Das Unterlog `Interception Events` daneben wird nicht geflutet
+ * und reicht weiter zurueck, beantwortet aber nur, WELCHE Benachrichtigung unterdrueckt wurde -
+ * nicht, ob die Regel an war.)
  *
  * Das Vorbild ist [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik]: der Dimmer
  * protokolliert seit laengerem jeden Aus-Weg mit GRUND, und genau deshalb war die Dimmer-Frage

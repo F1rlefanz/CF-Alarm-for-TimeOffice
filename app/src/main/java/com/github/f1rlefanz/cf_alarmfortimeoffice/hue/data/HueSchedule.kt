@@ -107,7 +107,7 @@ data class SunriseConfig(
 @Serializable
 data class HueLightAction(
     val targetType: TargetType,
-    val targetId: String, // Light ID, Group ID, or Zone ID
+    val targetId: String, // Light ID or Group ID
     val targetName: String? = null, // For display purposes
     val actionType: ActionType,
     val on: Boolean? = null, // Turn on/off state
@@ -136,7 +136,7 @@ data class HueLightAction(
 
     /**
      * Der EINE Diskriminator fuer ein Szenen-Ziel. Nicht [targetType] - der ist seit jeher
-     * dekorativ (`ZONE`/`ROOM` werden nirgends gesetzt, entschieden wird ueber [isGroup]).
+     * dekorativ (er wird gesetzt, aber nirgends gelesen; entschieden wird ueber [isGroup]).
      *
      * Fuer eine Szenen-Aktion gilt verbindlich: [targetType] = GROUP, [targetId]/[targetName] =
      * die Gruppe, [isGroup] = true, [on] = true und alle Helligkeits-/Farbfelder = null.
@@ -165,9 +165,12 @@ data class HueColor(
 @Serializable
 enum class TargetType {
     LIGHT,
-    GROUP,
-    ZONE,
-    ROOM
+    GROUP
+    // ENTFERNT (nach v1.39.5): ZONE und ROOM hatten nie einen Erzeuger - `git log -S` findet
+    // ueber die GESAMTE Historie null Commits, sie standen seit dem ersten Commit nur da. Damit
+    // kann auch kein gespeichertes JSON sie enthalten, und das Entfernen ist in BEIDE
+    // Dekodierrichtungen gefahrlos (die Warnung an [HueLightAction.sceneId] gilt dem ERWEITERN
+    // um Werte, die eine aeltere App-Fassung nicht kennt - das ist der umgekehrte Fall).
 }
 
 /**
@@ -176,11 +179,9 @@ enum class TargetType {
 @Serializable
 enum class ActionType {
     TURN_ON,
-    TURN_OFF,
-    DIM,
-    BRIGHTEN,
-    SET_COLOR,
-    SET_TEMPERATURE,
-    PULSE,
-    COLOR_LOOP
+    TURN_OFF
+    // ENTFERNT (nach v1.39.5): DIM, BRIGHTEN, SET_COLOR, SET_TEMPERATURE, PULSE und COLOR_LOOP
+    // hatten nie einen Erzeuger (`git log -S` = 0 Commits je Name), und [actionType] hat
+    // ueberhaupt keinen Leser - ein `when` konnte also nicht brechen. Helligkeit und Farbe
+    // stehen in eigenen Feldern, nicht in diesem Enum.
 }

@@ -137,10 +137,13 @@ class DndScheduleUseCase @Inject constructor(
 
     /** Fenster-Ergebnis samt der beiden Gruende, aus denen es LEER sein kann (siehe [fallbackTick]). */
     private data class WindowSet(
-        val ranges: List<LongRange>,
+        val fenster: List<DndFenster>,
         val alarmReadFailed: Boolean,
         val anySourceEnabled: Boolean
-    )
+    ) {
+        /** Die reinen Zeitbereiche - alles ausser der Diagnose rechnet nur damit weiter. */
+        val ranges: List<LongRange> get() = fenster.map { it.range }
+    }
 
     /** Nur ab Android 11 (API 30) - configurationActivity-Ownership ohne ConditionProviderService. */
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.R)
@@ -179,7 +182,7 @@ class DndScheduleUseCase @Inject constructor(
         // Pause, um die Zen-Regel + Tick-Kette dauerhaft wieder anzuwerfen. disable() bleibt
         // bewusst UNgegatet, damit MasterPauseUseCase.pause() weiter durchkommt.
         if (masterPausePrefs.pausedNow()) {
-            Logger.d(LogTags.DND, "Master-Pause aktiv - Zen-Regel bleibt inaktiv")
+            protokolliereZustand(null, DndDiagnostik.AusGrund.MASTER_PAUSE, 0)
             disable()
             return
         }
@@ -190,16 +193,63 @@ class DndScheduleUseCase @Inject constructor(
         }
         val ruleId = ensureZenRule(nm) ?: return
         val now = System.currentTimeMillis()
+        val set = computeWindows()
         // Halb offen, siehe isActiveAt (dort steht das WARUM, und dort ist es getestet).
-        val active = windows().any { isActiveAt(it, now) }
+        val aktivesFenster = set.fenster.firstOrNull { isActiveAt(it.range, now) }
+        val active = aktivesFenster != null
         try {
             nm.setAutomaticZenRuleState(
                 ruleId,
                 Condition(CONDITION_ID, "", if (active) Condition.STATE_TRUE else Condition.STATE_FALSE)
             )
+            // ERST NACH dem erfolgreichen Setzen: die Zeile behauptet einen Zustand des GERAETS,
+            // nicht bloss eine Absicht dieser App.
+            protokolliereZustand(
+                aktivesFenster,
+                when {
+                    !set.anySourceEnabled -> DndDiagnostik.AusGrund.KEINE_QUELLE
+                    set.fenster.isEmpty() -> DndDiagnostik.AusGrund.KEIN_FENSTER_TROTZ_QUELLE
+                    else -> DndDiagnostik.AusGrund.AUSSERHALB
+                },
+                set.fenster.size
+            )
         } catch (e: SecurityException) {
             Logger.e(LogTags.DND, "setAutomaticZenRuleState ohne Freigabe aufgerufen", e)
         }
+    }
+
+    /**
+     * Der zuletzt PROTOKOLLIERTE Zustand - nicht der zuletzt gesetzte.
+     *
+     * Dient nur dazu, aus dem rollenden Tick (der auch ohne Wechsel feuert - Keep-alive alle 6 h,
+     * Retry nach 15 min, dazu jeder ViewModel-Setter) eine Zeile PRO WECHSEL zu machen statt einer
+     * pro Tick. Bewusst nur im Speicher: stirbt der Prozess, wird die Zeile einmal wiederholt -
+     * das ist die harmlose Richtung. Sie zu persistieren hiesse, fuer eine Log-Zeile im CE-Storage
+     * zu lesen und zu schreiben.
+     */
+    @Volatile
+    private var letzteZustandszeile: String? = null
+
+    /**
+     * Schreibt die Zustandszeile ins Release-Log - aber nur, wenn sich etwas geaendert hat.
+     *
+     * WARN und nicht INFO, weil genau das der Zweck ist: Release-Logs tragen nur WARN und hoeher,
+     * und die Frage "war die Ruhezeit gestern Nacht an?" stellt sich immer erst hinterher. Ein
+     * Wechsel pro Fenstergrenze sind an einem gewoehnlichen Tag vier Zeilen; dieselbe Abwaegung
+     * wie beim Vorwecken und bei visibilitySnapshot().
+     */
+    private fun protokolliereZustand(
+        aktiv: DndFenster?,
+        grund: DndDiagnostik.AusGrund,
+        fensterGesamt: Int
+    ) {
+        val zeile = DndDiagnostik.zustandszeile(aktiv, grund, fensterGesamt, ZoneId.systemDefault())
+        if (zeile == letzteZustandszeile) {
+            Logger.d(LogTags.DND, "unveraendert: $zeile")
+            return
+        }
+        letzteZustandszeile = zeile
+        Logger.w(LogTags.DND, zeile)
     }
 
     suspend fun scheduleNextTransition() {
@@ -244,7 +294,7 @@ class DndScheduleUseCase @Inject constructor(
             return WindowSet(emptyList(), alarmReadFailed = false, anySourceEnabled = false)
         }
 
-        val out = mutableListOf<LongRange>()
+        val out = mutableListOf<DndFenster>()
         var alarmReadFailed = false
 
         if (toggles.followDimmerEnabled) {
@@ -256,7 +306,7 @@ class DndScheduleUseCase @Inject constructor(
             // sich planmaessig nach 15 Minuten und dimmte die Nacht, DND kam erst 6 Stunden spaeter
             // wieder - also praktisch erst morgens.
             val preview = dimSchedule.previewTimelineWithStatus()
-            out += preview.intervals.map { it.range }
+            out += preview.intervals.map { DndFenster(it.range, DndQuelle.FOLGT_DIMMER) }
             if (preview.alarmReadFailed) alarmReadFailed = true
         }
 
@@ -297,6 +347,7 @@ class DndScheduleUseCase @Inject constructor(
                 DndShiftSpanResolver.AlarmSlot(it.shiftName, it.startTime, it.endTime)
             }
             out += DndShiftSpanResolver.buildShiftSpans(slots, excluded)
+                .map { DndFenster(it, DndQuelle.DIENSTZEIT) }
         }
 
         if (onCallShifts.isNotEmpty() && out.isNotEmpty()) {
@@ -307,8 +358,24 @@ class DndScheduleUseCase @Inject constructor(
             val cutoffs = DndOnCallCutoffResolver.cutoffInstants(
                 cutoffSlots, onCallShifts, cutoffMinutes, ZoneId.systemDefault()
             )
+            // clip() bildet 1:1 und reihenfolgetreu ab (es kuerzt, teilt nicht und fasst nicht
+            // zusammen) - nur deshalb laesst sich die Herkunft per Index zurueckheften. Die
+            // Groessenpruefung ist der Waechter dafuer: wer clip() spaeter teilen laesst, faellt
+            // hier auf die ungeklippten Fenster zurueck, statt Herkunft und Zeit zu vertauschen.
+            val geklippteRanges = DndOnCallCutoffResolver.clip(out.map { it.range }, cutoffs)
+            val mitHerkunft = if (geklippteRanges.size == out.size) {
+                out.mapIndexed { i, f ->
+                    f.copy(range = geklippteRanges[i], geklippt = geklippteRanges[i] != f.range)
+                }
+            } else {
+                Logger.w(
+                    LogTags.DND,
+                    "clip() bildet nicht mehr 1:1 ab - Herkunft der Fenster nicht zuordenbar"
+                )
+                out
+            }
             return WindowSet(
-                DndOnCallCutoffResolver.clip(out, cutoffs),
+                mitHerkunft,
                 alarmReadFailed = alarmReadFailed,
                 anySourceEnabled = anySourceEnabled
             )

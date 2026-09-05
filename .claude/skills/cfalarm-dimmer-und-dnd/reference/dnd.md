@@ -19,6 +19,7 @@
 - Nur ab API 30 (Android 11)
 - Policy ist vollständig Nutzer-konfigurierbar (`DndPrefs.Policy`), NICHTS hart codiert
 - `ensureZenRule()` aktualisiert eine bereits registrierte Regel bei JEDEM Tick mit
+- Der DND-Zustand gehört ins eigene Log — Androids Zen-Protokoll wird geflutet
 - Mehrere gleichzeitig aktive Zen-Regeln kombinieren sich vermutlich „freizügigste gewinnt" pro
 - Eigener Request-Code `REQ_DND_TICK = 7712`
 - `DndScheduleUseCase.CONDITION_ID` ist `by lazy`
@@ -222,3 +223,84 @@ plausibel aus. Aufgefallen ist sie erst beim Messen zum richtigen Zeitpunkt.
 **Regel daraus:** Jeden Trigger, der aus dem Alarm-Bestand abgeleitet ist, mindestens einmal NACH
 dem Feuern des Alarms messen — vorher misst man nur den halben Tag. Und: eine Code-Prüfrunde
 ersetzt die Geräteverifikation nicht; das ist inzwischen der dritte Beleg dafür.
+
+## Der DND-Zustand gehört ins eigene Log — Androids Zen-Protokoll wird geflutet
+
+Seit **1.39.6** (05.09.2026). Betrifft `DndDiagnostik` und `DndScheduleUseCase.applyCurrentState`.
+
+**Der Anlass war eine Frage, die sich nicht beantworten ließ.** Am Morgen des 05.09.2026 lief auf
+dem Fairphone der Frühschicht-Wecker (05:30). Für den Dimmer war der Fall in einer Zeile geklärt —
+`Dimmen aus - Grund=KEIN_FENSTER_TROTZ_REGELN`, also endete das Dimmen mit der Weckzeit statt erst
+um 06:00, genau wie der Anker `ALARM_SONST_CLOCK` es soll. Für DND stand im Datei-Log des ganzen
+Tages **nur viermal** `Naechster DND-Wechsel geplant: …`. Ob „Nicht stören" um 05:30 tatsächlich
+ausging, war daraus nicht zu lesen, nur zu erschließen: aus der Lage der Grenzen (05:30 → 06:00 →
+14:12 → 22:00) und aus `lastActivation=2026-09-05T04:00:00Z` der Zen-Regel, also 06:00 Ortszeit.
+Der Eigentümer bestätigte, dass es gepasst hat — aber eine Bestätigung aus dem Gedächtnis ist
+kein Beleg, und beim nächsten Mal ist es vielleicht keine Bestätigung, sondern eine Beschwerde.
+
+**Warum Androids eigenes Protokoll nicht einspringt.** `dumpsys notification` führt ein „Zen Log"
+aus zwei Unterlogs mit je **100 Plätzen** — das ist keine Messung, sondern AOSP-Konstante
+(`ZenLog.java`: `SIZE = Build.IS_DEBUGGABLE ? 200 : 100`, dazu je ein `LocalLog` für
+`STATE_CHANGES` und `INTERCEPTION_EVENTS`). Ein Debug-Build verdoppelt nur auf ~66 Minuten und
+hilft für eine Frage vom Vortag also auch nicht. Nur eines davon beantwortet „war die Regel an oder aus":
+**State Changes** — und genau das flutet Googles Digital Wellbeing
+(`com.google.android.apps.wellbeing`, Regel „Schlafenszeit") **im Minutentakt** mit
+`config: setAzrState … (ORIGIN_APP) no changes`, auf seiner eigenen Regel, die dabei
+`enabled=FALSE, state=STATE_FALSE, disabledOrigin=3` ist und seit `lastActivation=2026-07-28` nicht
+mehr lief. Drei Einträge pro Minute gegen 100 Plätze — der Abschnitt reichte in der Nachmessung vom
+05.09.2026 von 14:49:43 bis 15:20:46, also **31 Minuten**. Die halbe Stunde ist damit keine
+FP6-Eigenheit, sondern ausgerechnet.
+
+Dass es drei Einträge je Aufruf sind, erklärt `ZenModeHelper.setConfigLocked`: bei unveränderter
+Konfiguration kehrt es NICHT früh zurück, sondern überspringt nur `dispatchOnConfigChanged()` und
+die Policy-Anwendung und ruft weiterhin `evaluateZenModeLocked(...)`, das seinerseits
+`set_zen_mode` protokolliert. Das „no changes" beschreibt die Config, nicht den Aufwand.
+
+**Das Geschwister-Unterlog `Interception Events` ist NICHT betroffen.** In derselben Messung reichte
+es von 04.09. 23:00 bis 05.09. 13:43 zurück — knapp 15 Stunden, inklusive des Weckers dieses Morgens
+(`05:01:01 … com.google.android.deskclock`). Die Aussage „`dumpsys notification` reicht nur eine
+halbe Stunde zurück" wäre also zu breit und würde ein brauchbares Werkzeug wegwerfen: unbrauchbar
+ist es für *war die Regel an*, brauchbar bleibt es für *welche Benachrichtigung wurde unterdrückt*.
+
+**Schaden für uns: keiner, nachgeprüft.** Wellbeing ändert den Zen-Zustand nicht (`no changes`, DND
+blieb aus) und fasst unsere Regel nicht an — von den 100 Einträgen des Fensters trug kein einziger
+unsere Regel-ID. Die Kosten trägt das Gerät: `dumpsys batterystats --charged` zählte über 2 d 5 h
+**1340** Wakeups auf `…wellbeing.action.TASK_MANAGER_URGENT_ALARM` gegen **16** für unsere gesamte
+App (Wartung, beide Ticks, Wecker). Dass genau dieser Alarm die Zen-Zeilen schreibt, ist nicht
+bewiesen — der Takt passt, mehr nicht. Abstellen lässt sich nichts davon; es heißt nur, dass eigenes
+Protokollieren nicht optional war.
+
+**Und es ist nirgends dokumentiert.** Weder `setAzrState` im Minutentakt noch der Alarm-Tag
+`TASK_MANAGER_URGENT_ALARM` liefern öffentlich einen Treffer — kein Issue, kein Bugreport. Es gibt
+nur die allgemeine Foren-Folklore „Digital Wellbeing zieht Akku, schalt es ab". Wer hier später
+nach einer Quelle sucht, findet keine: diese Notiz IST die Quelle. Und weil niemand es gemeldet
+hat, ist auch nicht damit zu rechnen, dass es verschwindet.
+
+**Was jetzt passiert.** `applyCurrentState()` schreibt nach dem erfolgreichen
+`setAutomaticZenRuleState` eine Zeile:
+
+```
+🔕 Ruhezeit AN - Fenster 22:00-05:30 (folgt dem Dimmer)
+🔕 Ruhezeit AN - Fenster 06:00-14:12 (Dienstzeit)
+🔔 Ruhezeit AUS - ausserhalb aller 17 Fenster
+```
+
+**Auf WARN, und das ist der Punkt** — Release-Logs tragen nur WARN und höher, und diese Frage
+stellt sich ausschließlich hinterher. Dieselbe Abwägung wie beim Vorwecken und bei
+`visibilitySnapshot()`. Ein gewöhnlicher Tag kostet vier Zeilen, weil die Zeile über die zuletzt
+protokollierte **entprellt** ist; ohne das schriebe jeder Keep-alive-Tick (6 h), jeder Retry
+(15 min) und jeder ViewModel-Setter dieselbe Aussage erneut. Der Merker lebt bewusst nur im
+Speicher: nach einem Prozesstod wiederholt sich die Zeile einmal — für eine Log-Zeile im
+CE-Storage zu lesen und zu schreiben wäre der schlechtere Tausch.
+
+**Die Herkunft eines Fensters (`DndQuelle`) ist reine Diagnose.** DND bleibt binär, jede aktive
+Quelle genügt; wer aus der Herkunft eine Vorrang-Regel baut, ändert das Verhalten. Sie überlebt den
+Rufbereitschaft-Cutoff nur deshalb, weil `DndOnCallCutoffResolver.clip()` **1:1 und
+reihenfolgetreu** abbildet (es kürzt, teilt nicht, fasst nicht zusammen) — deshalb steht im Code
+eine Größenprüfung als Wächter: wer `clip()` später teilen lässt, fällt auf die ungeklippten
+Fenster zurück, statt Herkunft und Zeit zu vertauschen.
+
+**Am Gerät verifiziert** (05.09.2026, FP6, echte Konfiguration): erster Aufruf nach dem
+App-Ersetzen schrieb `W … 🔔 Ruhezeit AUS - ausserhalb aller 17 Fenster`, der zweite vier Sekunden
+später nur noch `D … unveraendert: …`. Beide Hälften — die Zeile und ihre Entprellung — damit
+belegt, nicht nur unit-getestet.

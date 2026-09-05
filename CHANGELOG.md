@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.5 (Aktuell – interne Alpha)
+## 🆕 Version 1.39.6 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_„Nicht stören" schreibt jetzt mit, wann es an- und ausgeht — damit sich das im Nachhinein noch nachvollziehen lässt._
+
+### 🔧 Unter der Haube
+
+- **Die Ruhezeit protokolliert ihren Zustand.** Bisher notierte die App nur, wann der nächste Wechsel ansteht — ob „Nicht stören" nachts tatsächlich aktiv war, liess sich am Tag danach nicht mehr feststellen. Jetzt steht bei jedem Wechsel eine Zeile im Protokoll: an oder aus, das zugehörige Zeitfenster und warum. Das ändert nichts daran, WANN die Ruhezeit schaltet — nur daran, dass man es hinterher nachlesen kann.
+
+## Version 1.39.5
 
 **Stand:** September 2026
 

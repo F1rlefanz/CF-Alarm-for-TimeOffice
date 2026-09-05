@@ -110,7 +110,7 @@ class DimBedienungshilfenWunschTest {
         assertFalse(
             "Die Benachrichtigung fuehrt direkt in die Bedienungshilfen-Einstellungen - damit " +
                 "faellt die Play-Pflicht-Offenlegung aus, die nur die Karte zeigt",
-            notifier.contains("ACTION_ACCESSIBILITY")
+            notifier.contains("ACCESSIBILITY")
         )
     }
 
@@ -201,14 +201,17 @@ class DimBedienungshilfenWunschTest {
     fun `der Knopf fuehrt auf die Seite DIESES Dienstes - mit Rueckfall auf die Liste`() {
         val karten = ohneKommentare("ui/screens/tabs/StatusPermissionCards.kt")
 
+        // Aktion und Extra stehen als TEXT im Code, nicht als Settings-/Intent-Konstante: die
+        // gibt es im SDK nicht (in AOSP @hide, der Uebersetzer meldet "Unresolved reference" -
+        // in der CI belegt). Deshalb prueft der Test die Zeichenketten selbst.
         assertTrue(
-            "Ohne ACTION_ACCESSIBILITY_DETAILS_SETTINGS landet der Nutzer in der Liste ALLER " +
+            "Ohne die Aktion ACCESSIBILITY_DETAILS_SETTINGS landet der Nutzer in der Liste ALLER " +
                 "Bedienungshilfen und sucht den Eintrag der App selbst",
-            karten.contains("Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS")
+            karten.contains("\"android.settings.ACCESSIBILITY_DETAILS_SETTINGS\"")
         )
         assertTrue(
             "Die Detailseite braucht die Kennung des Dienstes, sonst zeigt sie nichts an",
-            karten.contains("Intent.EXTRA_COMPONENT_NAME") &&
+            karten.contains("\"android.intent.extra.COMPONENT_NAME\"") &&
                 karten.contains("ComponentName(context, DimAccessibilityService::class.java)")
         )
         assertTrue(

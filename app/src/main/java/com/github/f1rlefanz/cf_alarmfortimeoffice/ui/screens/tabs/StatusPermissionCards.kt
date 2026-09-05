@@ -1188,14 +1188,32 @@ internal fun DndPermissionCard() {
 }
 
 /**
+ * Die Seite EINES Bedienungshilfen-Dienstes, ab Android 11.
+ *
+ * ALS TEXT UND NICHT ALS `Settings.`-KONSTANTE, weil es die Konstante im SDK nicht gibt: sie ist
+ * in AOSP `@hide`, und `Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS` scheitert beim
+ * Uebersetzen mit „Unresolved reference" (in der CI belegt, 05.09.2026). Dasselbe gilt fuer den
+ * Extra-Schluessel. Das ZIEL gibt es trotzdem — die Einstellungen-App verarbeitet die Aktion seit
+ * Android 11; sie steht nur nicht in `android.jar`. Wer die beiden Zeilen „aufraeumen" und durch
+ * Konstanten ersetzen will, bricht damit den Build.
+ *
+ * Fehlt die Aktion auf einem Geraet, wirft `startActivity` — dafuer gibt es den Rueckfall auf die
+ * Liste, siehe [openAccessibilitySettings].
+ */
+private const val AKTION_BEDIENUNGSHILFEN_DETAILS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+
+/** Kennung des Dienstes fuer [AKTION_BEDIENUNGSHILFEN_DETAILS], flach geschriebener ComponentName. */
+private const val EXTRA_BEDIENUNGSHILFEN_KOMPONENTE = "android.intent.extra.COMPONENT_NAME"
+
+/**
  * Fuehrt in die Bedienungshilfen — moeglichst auf die Seite GENAU DIESES Dienstes.
  *
  * WARUM ZWEISTUFIG: `ACTION_ACCESSIBILITY_SETTINGS` oeffnet die Liste ALLER Bedienungshilfen;
  * dort steht der Eintrag der App zwischen Systemdiensten und, je nach Hersteller, hinter einer
  * Unterrubrik wie „Heruntergeladene Apps" — der Nutzer kommt aus einer Meldung, die ihm sagt,
- * was zu tun ist, und muss den Schalter dann trotzdem suchen. Ab Android 11 gibt es
- * `ACTION_ACCESSIBILITY_DETAILS_SETTINGS`, das direkt auf die Seite eines benannten Dienstes
- * fuehrt (Kennung als flach geschriebener [ComponentName] im Extra).
+ * was zu tun ist, und muss den Schalter dann trotzdem suchen. Ab Android 11 fuehrt
+ * [AKTION_BEDIENUNGSHILFEN_DETAILS] direkt auf die Seite eines benannten Dienstes (Kennung als
+ * flach geschriebener [ComponentName] im Extra).
  *
  * Die Liste bleibt als Rueckfallebene: das Detail-Ziel ist nicht auf jedem Geraet vorhanden, und
  * eine Bedienungshilfen-Einstellung, die sich gar nicht oeffnet, waere schlechter als eine, in
@@ -1206,8 +1224,8 @@ private fun openAccessibilitySettings(context: android.content.Context) {
         val dienst = ComponentName(context, DimAccessibilityService::class.java).flattenToString()
         try {
             context.startActivity(
-                Intent(Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS)
-                    .putExtra(Intent.EXTRA_COMPONENT_NAME, dienst)
+                Intent(AKTION_BEDIENUNGSHILFEN_DETAILS)
+                    .putExtra(EXTRA_BEDIENUNGSHILFEN_KOMPONENTE, dienst)
             )
             return
         } catch (e: Exception) {

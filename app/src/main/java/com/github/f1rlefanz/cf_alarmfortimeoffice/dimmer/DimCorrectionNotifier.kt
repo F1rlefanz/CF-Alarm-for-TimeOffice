@@ -181,9 +181,10 @@ class DimCorrectionNotifier @Inject constructor(
      * fuehrt damit auf den Status-Tab, rollt die Bedienungshilfen-Karte ins Bild und laesst sie
      * die Offenlegung zeigen. Ohne das Extra endete der Tipp auf dem zuletzt benutzten Tab, und
      * die Karte, um die es geht, stand ungesehen weiter unten — eine Meldung mit Ausweg, den
-     * man suchen muss, ist nur die halbe Meldung. Von der Offenlegung aus geht es dann direkt auf
-     * die Detailseite DIESES Dienstes (siehe `openAccessibilitySettings`), nicht in die lange
-     * Liste aller Bedienungshilfen.
+     * man suchen muss, ist nur die halbe Meldung. Von der Offenlegung aus geht es in die
+     * Bedienungshilfen-Einstellungen; den Eintrag dieser App waehlt der Nutzer dort selbst — die
+     * Detailseite eines Dienstes ist fuer Fremd-Apps gesperrt (Hergang bei
+     * `openAccessibilitySettings`).
      *
      * `FLAG_ACTIVITY_SINGLE_TOP` gehoert zwingend dazu: ohne es wirft `FLAG_ACTIVITY_CLEAR_TOP`
      * eine bereits laufende MainActivity (Start-Modus `standard`) weg und legt sie neu an — der

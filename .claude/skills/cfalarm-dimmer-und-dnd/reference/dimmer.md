@@ -352,7 +352,7 @@
   Testen zwischen Versionen springt, muss es kennen, sonst sieht es wie ein kaputtes Loeschen aus.
 - **Das Verschwinden des Overlays muss eine Spur hinterlassen (seit v1.34.1) — und der Vorfall,
   der das erzwang, war KEIN App-Fehler.** Am 24.08.2026 meldete der Eigentuemer, der Bildschirm sei
-  waehrend einer per adb ferngesteuerten Sitzung „mal heller und mal dunkler" geworden. Ursache
+  waehrend einer per adb ferngesteuerten Sitzung „mail heller und mal dunkler" geworden. Ursache
   gemessen: `uiautomator` verbindet sich als `UiAutomation` und **unterdrueckt dabei alle anderen
   Bedienungshilfen-Dienste**, also auch `DimAccessibilityService`. Beleg: die SurfaceFlinger-Layer-ID
   des `CFAlarmDimLayer` wechselte bei JEDEM Automations-Aufruf (64604 → 64609 → 64614), im Leerlauf
@@ -594,6 +594,48 @@
   Versatz jetzt **erst, wenn die Spalte vermessen ist** (`spalteVermessen`, ein eigenes Signal und
   nicht `spalteOben != 0f` — null ist eine legitime Lage). Im warmen Fall war der Fehler klein
   genug, um als Schönheitsfehler durchzugehen; erst der Kaltstart machte ihn sichtbar.
+
+  **Danach blieb ein Sockel — und der hatte eine ganz andere Ursache** (Issue #68, 06.09.2026).
+  Die Karte stand im Bild, die Titelzeile aber weiter um rund eine Textzeile darüber, warm wie
+  kalt in gleicher Größenordnung: der kaltstart-spezifische Anteil war weg, ein Rest nicht. Über
+  der Bedienungshilfen-Karte stehen nämlich Karten, deren Inhalt **asynchron** entsteht —
+  `UnusedAppRestrictionsCard` fragt über einen `ListenableFuture`, `TimeOfficeHealthCard` rendert
+  gar nichts, solange TimeOffice fehlt. Fällt eine davon nachträglich weg, rückt die Karte im
+  INHALT nach oben: das Ziel war im Moment der Messung richtig und ist es danach nicht mehr.
+
+  **Ein einmal angefahrenes Ziel reicht also nicht.** Der Effekt beobachtet den Versatz nach dem
+  Anfahren weitere zwei Sekunden (`KARTE_NACHFUEHREN_MS`) und korrigiert den Stand, sobald er sich
+  ändert. Drei Dinge tragen daran, und jedes davon sieht für sich wie wegoptimierbar aus:
+  **(1)** Während des Rollens ändert sich der Versatz NICHT — die Karte wandert im Fenster genau
+  so weit nach oben, wie `scrollState.value` wächst, und beides hebt sich in ihrer Rechnung auf.
+  Nur deshalb heißt eine Änderung wirklich „der Inhalt darüber ist ein anderer geworden", und nur
+  deshalb ist dieses Nachführen nicht seine eigene Endlosschleife. **(2)** Korrigiert wird mit
+  `scrollTo`, nicht `animateScrollTo`: die Karte soll STEHEN bleiben, während sich der Inhalt
+  hinter ihr sortiert — eine Animation wäre genau die sichtbare Bewegung, die hier nicht sein
+  soll. **(3)** Weicht der Stand von dem ab, den wir gesetzt haben, hat der Nutzer selbst gerollt,
+  und das Nachführen endet; sonst risse es ihn zurück.
+
+  **Punkt (3) hatte im ersten Wurf genau den Fehler, gegen den der ganze Absatz steht** — gefunden
+  von einem Review-Bot am PR, nicht am Gerät. `ScrollState` zieht `value` **von selbst** herunter,
+  sobald der Inhalt kürzer wird: sein `maxValue`-Setter klemmt den Stand auf das neue Ende, ohne
+  jedes Zutun des Nutzers. Und kürzer wird der Inhalt genau dann, wenn eine Karte darüber
+  wegfällt — also im ANLASSFALL dieses Nachführens. Die erste Fassung verglich schlicht
+  `scrollState.value != gerollt`, hielt die Klemmung für einen Bildlauf des Nutzers und schaltete
+  die Korrektur damit dort ab, wo sie gebraucht wird; weil `gerollt` nur im Korrekturzweig
+  nachgezogen wurde, blieb der Vergleich danach dauerhaft schief und ließ **jede** spätere
+  Korrektur ausfallen. Heute gilt der Stand auch dann als unserer, wenn er auf `maxValue` steht,
+  und `gerollt` wird bei jeder Emission nachgezogen, nicht nur beim Korrigieren. Bewusst in Kauf
+  genommen: wer selbst ganz nach unten rollt, steht ebenfalls auf `maxValue` und wird einmal
+  nachgeführt — eine Bewegung, kein Dauerzustand.
+
+  **Verworfen: `BringIntoViewRequester`.** Er kennt die Layout-Zeitpunkte selbst, ist aber
+  experimentelles Opt-in — und ebenfalls ein Einmal-Anfahren, löst also gerade das Nachsetzen
+  nicht. Ebenso verworfen ein fester Vorhalt auf das Ziel: er behebt die Ursache nicht und wäre
+  bei anderer Schriftgröße wieder falsch.
+
+  **Am Emulator belegt (06.09.2026):** Kaltstart über `am force-stop` und anschließendes
+  `am start … --es …EINSTIEG dimmer_bedienungshilfen` — Titelzeile, Statuszeile und Knopf stehen
+  vollständig im Bild.
 - **„Kurz hell, dann von allein wieder dunkel" — warum das Verschwinden NIE im App-Log stehen kann
   (29.08.2026).** Unmittelbar nach dem obigen Fix meldete der Eigentümer beim Einspielen der neuen
   Version genau das. Im Systemlog stand der Grund lückenlos: `23:06:07.619 Killing 18584 … due to
@@ -624,4 +666,3 @@
 - **`DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
   vor `notify()`** (Fix v1.22.1) — ohne POST_NOTIFICATIONS-Berechtigung verschluckt `notify()` sonst
   lautlos, ohne Log oder Exception, und sieht im Logcat identisch aus wie der obige Toggle-Bug.
-

@@ -74,4 +74,33 @@ class ConfigBackupTypeAndRangeTest {
         assertNotNull(ConfigBackupUseCase.typeMismatch(prefs, "dnd_oncall_shifts", "string"))
         assertNull(ConfigBackupUseCase.typeMismatch(prefs, "dnd_oncall_shifts", "stringSet"))
     }
+
+    /**
+     * Die Bereichspruefung des Weckton-Anstiegs.
+     *
+     * WARUM DIESE BEIDEN SCHLUESSEL: Sie bestimmen, wie leise und wie lange der Wecker anlaeuft.
+     * Eine Datei mit `3600` Sekunden oder `1` Prozent ergibt einen Wecker, den man nicht hoert -
+     * und beides sind fuer sich genommen voellig gueltige Zahlen, die keine Typpruefung und kein
+     * `?:`-Default abfaengt. Der Lesepfad klemmt sie zwar zusaetzlich, aber nur hier erfaehrt der
+     * Nutzer nach einem Import ueberhaupt davon.
+     */
+    @Test
+    fun `unplausible Anstiegswerte werden abgelehnt`() {
+        assertNotNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_sekunden", 3600))
+        assertNotNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_sekunden", 0))
+        assertNotNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_start_prozent", 0))
+        assertNotNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_start_prozent", 101))
+    }
+
+    @Test
+    fun `plausible Anstiegswerte kommen durch`() {
+        assertNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_sekunden", 30))
+        assertNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_start_prozent", 15))
+        // Beide Raender sind gueltig: 5 s ist der kuerzeste sinnvolle Anlauf, 100 % heisst
+        // "kein Anstieg" - wirkungslos, aber harmlos.
+        assertNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_sekunden", 5))
+        assertNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_sekunden", 120))
+        assertNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_start_prozent", 1))
+        assertNull(ConfigBackupFilter.rangeRejection("weckton_anstieg_start_prozent", 100))
+    }
 }

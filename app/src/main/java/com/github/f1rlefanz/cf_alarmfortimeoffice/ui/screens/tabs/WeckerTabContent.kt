@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
@@ -63,6 +64,24 @@ import java.util.Locale
 
 /** Auswahlmoeglichkeiten fuer die Schlummer-Dauer-Dropdown - deckt die ueblichen Werte ab. */
 private val SNOOZE_MINUTES_OPTIONS = listOf(3, 5, 10, 15)
+
+/**
+ * Anlaufzeiten des sanften Weckton-Anstiegs, in Sekunden.
+ *
+ * Die Liste endet bei 120 s, weil
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs.MAX_ANSTIEG_SEKUNDEN] dort endet - ein laengerer
+ * Anlauf ist kein sanfterer Wecker mehr, sondern ein spaeterer.
+ */
+private val ANSTIEG_SEKUNDEN_OPTIONS = listOf(10, 15, 30, 45, 60, 90, 120)
+
+/**
+ * Startlautstaerken in Prozent der am Geraet eingestellten Alarm-Lautstaerke.
+ *
+ * Kein Wert unter 5 %: darunter ist der Anfang auf den meisten Geraeten schlicht nicht mehr zu
+ * hoeren, und ein Wecker, dessen erste Sekunden wirkungslos verstreichen, ist kein sanfter
+ * Wecker, sondern ein kuerzerer.
+ */
+private val ANSTIEG_START_PROZENT_OPTIONS = listOf(5, 10, 15, 25, 40, 60)
 
 /** Beschreibung des Schalters im Normalfall - beschreibt, was ein Umlegen wirklich tut. */
 internal const val AUTO_ALARM_BESCHREIBUNG_NORMAL: String =
@@ -157,6 +176,7 @@ fun WeckerTabContent(
     skipState: AlarmSkipUiState,
     tagFreigabeState: TagFreigabeUiState,
     snoozeMinutes: Int,
+    wecktonAnstieg: WecktonAnstieg,
     masterPausePaused: Boolean,
     onUpdateShiftConfig: (ShiftConfig) -> Unit,
     onSkipNextAlarm: () -> Unit,
@@ -164,7 +184,10 @@ fun WeckerTabContent(
     onTagFreigeben: (LocalDate) -> Unit,
     onFreigabeZuruecknehmen: (LocalDate) -> Unit,
     onShowShiftConfig: () -> Unit,
-    onSnoozeMinutesChange: (Int) -> Unit
+    onSnoozeMinutesChange: (Int) -> Unit,
+    onAnstiegAktivChange: (Boolean) -> Unit,
+    onAnstiegSekundenChange: (Int) -> Unit,
+    onAnstiegStartProzentChange: (Int) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -219,6 +242,15 @@ fun WeckerTabContent(
                 SnoozeMinutesRow(
                     snoozeMinutes = snoozeMinutes,
                     onSnoozeMinutesChange = onSnoozeMinutesChange
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = SpacingConstants.SPACING_MEDIUM))
+
+                WecktonAnstiegAbschnitt(
+                    anstieg = wecktonAnstieg,
+                    onAktivChange = onAnstiegAktivChange,
+                    onSekundenChange = onAnstiegSekundenChange,
+                    onStartProzentChange = onAnstiegStartProzentChange
                 )
             }
         }
@@ -615,6 +647,101 @@ private fun SnoozeMinutesRow(
     snoozeMinutes: Int,
     onSnoozeMinutesChange: (Int) -> Unit
 ) {
+    AuswahlRow(
+        titel = "Schlummer-Dauer",
+        beschreibung = "Gilt für Vollbild und Benachrichtigung",
+        optionen = SNOOZE_MINUTES_OPTIONS,
+        beschriftung = { "$it Min" },
+        aktuellerWert = snoozeMinutes,
+        aenderungsBeschreibung = "Schlummer-Dauer ändern",
+        onAuswahl = onSnoozeMinutesChange
+    )
+}
+
+/**
+ * Der sanfte Weckton-Anstieg: Schalter plus die beiden Werte, die ihn beschreiben.
+ *
+ * ## Warum es diesen Abschnitt gibt - und warum daneben KEINE Ton- oder Lautstaerkeauswahl steht
+ *
+ * Weckton und Lautstaerke kommen vollstaendig aus den Android-Einstellungen: der Ton ist der
+ * Standard-Alarmton des Geraets, die Lautstaerke der Alarm-Regler. Eine eigene Auswahl daneben
+ * waere eine zweite Wahrheit ohne Gewinn - und eine Stelle, an der die App leiser sein kann, als
+ * der Nutzer glaubt. Das EINE, was Android nicht anbietet, ist ein sanfter Anstieg. Nur der steht
+ * hier.
+ *
+ * ## Warum die beiden Werte nur bei eingeschaltetem Anstieg erscheinen
+ *
+ * Ausgeschaltet beschreiben sie nichts, was passiert. Ein bedienbares Dropdown, das folgenlos
+ * bleibt, ist genau die Art Oberflaeche, die man einmal einstellt und danach fuer wirksam haelt.
+ */
+@Composable
+private fun WecktonAnstiegAbschnitt(
+    anstieg: WecktonAnstieg,
+    onAktivChange: (Boolean) -> Unit,
+    onSekundenChange: (Int) -> Unit,
+    onStartProzentChange: (Int) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_MEDIUM)
+    ) {
+        SwitchRow(
+            title = "Sanft lauter werden",
+            // Nennt beide Halbwahrheiten, auf die man sonst kommt: dass die App eine eigene
+            // Lautstaerke haette, und dass sie die des Geraets veraendert. Beides ist falsch -
+            // der Anstieg endet bei dem, was am Alarm-Regler eingestellt ist.
+            description = "Der Wecker beginnt leise und wird bis zu deiner eingestellten " +
+                "Alarm-Lautstärke lauter. Die Lautstärke des Geräts bleibt unverändert.",
+            checked = anstieg.aktiv,
+            onCheckedChange = onAktivChange,
+            titleStyle = MaterialTheme.typography.titleMedium
+        )
+
+        if (anstieg.aktiv) {
+            AuswahlRow(
+                titel = "Anlaufzeit",
+                beschreibung = "Bis zur vollen Lautstärke",
+                optionen = ANSTIEG_SEKUNDEN_OPTIONS,
+                beschriftung = { "$it s" },
+                aktuellerWert = anstieg.sekunden,
+                aenderungsBeschreibung = "Anlaufzeit ändern",
+                onAuswahl = onSekundenChange
+            )
+
+            AuswahlRow(
+                titel = "Startlautstärke",
+                beschreibung = "Anteil deiner Alarm-Lautstärke am Anfang",
+                optionen = ANSTIEG_START_PROZENT_OPTIONS,
+                beschriftung = { "$it %" },
+                aktuellerWert = anstieg.startProzent,
+                aenderungsBeschreibung = "Startlautstärke ändern",
+                onAuswahl = onStartProzentChange
+            )
+        }
+    }
+}
+
+/**
+ * Beschriftete Zeile mit Auswahlknopf rechts - eine Bauart fuer alle drei Wecker-Einstellungen.
+ *
+ * Zusammengefasst, als der Anstieg die zweite und dritte Zeile dieser Form brauchte: dieselbe
+ * Row, dasselbe Dropdown, dieselbe Barrierefreiheits-Falle dreimal nebeneinander waere dreimal
+ * die Gelegenheit, sie an einer Stelle zu vergessen.
+ *
+ * @param aktuellerWert wird auch dann angezeigt, wenn er nicht in [optionen] steht - der Wert kann
+ *   aus einem Import oder einer aelteren Version stammen. Ihn stillschweigend als eine der
+ *   Optionen darzustellen, waere eine Anzeige, die luegt.
+ */
+@Composable
+private fun AuswahlRow(
+    titel: String,
+    beschreibung: String,
+    optionen: List<Int>,
+    beschriftung: (Int) -> String,
+    aktuellerWert: Int,
+    aenderungsBeschreibung: String,
+    onAuswahl: (Int) -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
 
     Row(
@@ -623,12 +750,9 @@ private fun SnoozeMinutesRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
+            Text(titel, style = MaterialTheme.typography.titleMedium)
             Text(
-                "Schlummer-Dauer",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                "Gilt für Vollbild und Benachrichtigung",
+                beschreibung,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -636,19 +760,19 @@ private fun SnoozeMinutesRow(
 
         Box {
             OutlinedButton(onClick = { expanded = true }) {
-                Text("$snoozeMinutes Min")
-                // Nicht dekorativ: die Beschriftung des Knopfes ist nur "5 Min" - die Ueberschrift
-                // "Schlummer-Dauer" steht daneben in einer eigenen Spalte und wird nicht
-                // mitgelesen. Ohne diese Beschreibung meldet der Screenreader den Knopf als
-                // blosses "5 Min", ohne zu sagen, was er aendert.
-                Icon(Icons.Default.ArrowDropDown, contentDescription = "Schlummer-Dauer ändern")
+                Text(beschriftung(aktuellerWert))
+                // Nicht dekorativ: die Beschriftung des Knopfes ist nur der Wert - die
+                // Ueberschrift steht daneben in einer eigenen Spalte und wird nicht mitgelesen.
+                // Ohne diese Beschreibung meldet der Screenreader den Knopf als blosses "5 Min",
+                // ohne zu sagen, was er aendert.
+                Icon(Icons.Default.ArrowDropDown, contentDescription = aenderungsBeschreibung)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                SNOOZE_MINUTES_OPTIONS.forEach { minutes ->
+                optionen.forEach { wert ->
                     DropdownMenuItem(
-                        text = { Text("$minutes Min") },
+                        text = { Text(beschriftung(wert)) },
                         onClick = {
-                            onSnoozeMinutesChange(minutes)
+                            onAuswahl(wert)
                             expanded = false
                         }
                     )

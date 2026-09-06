@@ -120,6 +120,9 @@ fun MainContentScreen(
     val tagFreigabeState by alarmViewModel.tagFreigabeState.collectAsStateWithLifecycle()
     val manualAlarmState by alarmViewModel.manualAlarmState.collectAsStateWithLifecycle() // NEU
     val snoozeMinutes by alarmViewModel.snoozeMinutes.collectAsStateWithLifecycle()
+    // Wie snoozeMinutes: reine Anzeige. Beim Feuern liest AlarmReceiver die Werte einmal
+    // direkt aus AlarmPrefs - der Wecker haengt nicht an diesem Flow.
+    val wecktonAnstieg by alarmViewModel.wecktonAnstieg.collectAsStateWithLifecycle()
     // EINE Sammelstelle fuer die Master-Pause, von hier an drei Tabs verteilt (Home, Wecker,
     // Status). WARUM UEBERHAUPT: Die Pause loescht alle Wecker, stoppt die 6h-Wartung, Dimmer,
     // "Nicht stoeren" und Hue - und war bis dahin ausschliesslich am Schalter ganz unten im
@@ -365,6 +368,7 @@ fun MainContentScreen(
                         skipState = skipState,
                         tagFreigabeState = tagFreigabeState,
                         snoozeMinutes = snoozeMinutes,
+                        wecktonAnstieg = wecktonAnstieg,
                         masterPausePaused = masterPausePaused,
                         onUpdateShiftConfig = shiftViewModel::updateShiftConfig,
                         onSkipNextAlarm = alarmViewModel::skipNextAlarm,
@@ -392,7 +396,10 @@ fun MainContentScreen(
                             }
                         },
                         onShowShiftConfig = onShowShiftConfig,
-                        onSnoozeMinutesChange = alarmViewModel::setSnoozeMinutes
+                        onSnoozeMinutesChange = alarmViewModel::setSnoozeMinutes,
+                        onAnstiegAktivChange = alarmViewModel::setAnstiegAktiv,
+                        onAnstiegSekundenChange = alarmViewModel::setAnstiegSekunden,
+                        onAnstiegStartProzentChange = alarmViewModel::setAnstiegStartProzent
                     )
                 }
                 MainTab.STATUS -> {

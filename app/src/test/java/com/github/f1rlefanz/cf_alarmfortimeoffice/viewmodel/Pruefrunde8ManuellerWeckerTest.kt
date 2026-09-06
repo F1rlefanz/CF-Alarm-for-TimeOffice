@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -145,6 +146,10 @@ class Pruefrunde8ManuellerWeckerTest {
 
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
+        // Pflicht, nicht Kosmetik: AlarmViewModel liest diesen Flow im
+        // Property-Initializer. Ohne Stub liefert der Mock null und das Konstruieren
+        // scheitert mit einer NPE - noch vor dem ersten Testschritt.
+        whenever(alarmPrefs.wecktonAnstieg).thenReturn(flowOf(WecktonAnstieg.AUS))
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub { on { pausedNow() } doReturn false }
 

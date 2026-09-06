@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
@@ -15,7 +16,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Einstellungen der Schlummer-Dauer (im bestehenden [MainDataStore]).
+ * Einstellungen der Schlummer-Dauer und des sanften Weckton-Anstiegs (im bestehenden
+ * [MainDataStore]).
  *
  * Uebernimmt die frühere Rolle von `AlarmManagerService.SNOOZE_MINUTES` als EINE Quelle fuer
  * Vollbild-Button UND Notification-Button - aber NICHT indem beide Ausloeser diesen DataStore
@@ -52,6 +54,51 @@ class AlarmPrefs @Inject constructor(
          */
         const val MIN_SNOOZE_MINUTES = 1
         const val MAX_SNOOZE_MINUTES = 120
+
+        // ---- Sanfter Weckton-Anstieg -------------------------------------------------------
+        //
+        // WARUM ES DIESE EINSTELLUNGEN GIBT: Ton und Lautstaerke des Weckers kommen vollstaendig
+        // aus den Android-Einstellungen (Standard-Alarmton, Alarm-Regler) - bewusst, denn eine
+        // eigene Auswahl daneben waere eine zweite Wahrheit ohne Gegenwert. Das EINE, was Android
+        // dort nicht anbietet, ist ein sanfter Anstieg. Genau der wird hier konfiguriert, und
+        // sonst nichts: der Anstieg SKALIERT die eingestellte Lautstaerke, er ersetzt sie nicht.
+
+        private val KEY_ANSTIEG_AKTIV = booleanPreferencesKey("weckton_anstieg_aktiv")
+        private val KEY_ANSTIEG_SEKUNDEN = intPreferencesKey("weckton_anstieg_sekunden")
+        private val KEY_ANSTIEG_START_PROZENT = intPreferencesKey("weckton_anstieg_start_prozent")
+
+        /**
+         * AUS als Vorgabe - und das ist eine Entscheidung, keine Bequemlichkeit.
+         *
+         * Wer die App aktualisiert, hat sich an sein Weckverhalten gewoehnt. Eine stille
+         * Umstellung auf "startet leise" waere eine Aenderung am Wecker selbst, die niemand
+         * bestellt hat und die man erst bemerkt, wenn man verschlafen hat.
+         */
+        const val DEFAULT_ANSTIEG_AKTIV = false
+
+        /** Vorgabe, sobald der Nutzer den Anstieg einschaltet. */
+        const val DEFAULT_ANSTIEG_SEKUNDEN = 30
+        const val DEFAULT_ANSTIEG_START_PROZENT = 15
+
+        /**
+         * Grenzen, geklemmt beim LESEN und beim SCHREIBEN - aus demselben Grund wie bei der
+         * Schlummer-Dauer (Android-Backup, Export/Import, aeltere Versionen), aber mit einem
+         * zusaetzlichen: hier haengt die Weckwirkung selbst daran.
+         *
+         * Die OBERgrenze der Dauer ist der eigentliche Schutz. Ein Anstieg ueber viele Minuten
+         * ist kein sanfter Wecker mehr, sondern ein spaeterer - wer um 04:30 zur Fruehschicht
+         * muss, verliert die Zeit ersatzlos. 120 s sind laut Erfahrungswerten deutlich mehr, als
+         * ein Anstieg braucht, und trotzdem eine Grenze, hinter der die Weckzeit noch die
+         * Weckzeit ist.
+         *
+         * Der Startpegel darf 100 sein (dann ist der Anstieg wirkungslos, aber harmlos) und nie
+         * 0: `0` bliebe bis zum letzten Schritt stumm und wuerde dann schlagartig laut - siehe
+         * [LautstaerkeAnstieg.MIN_STARTPEGEL].
+         */
+        const val MIN_ANSTIEG_SEKUNDEN = 5
+        const val MAX_ANSTIEG_SEKUNDEN = 120
+        const val MIN_ANSTIEG_START_PROZENT = 1
+        const val MAX_ANSTIEG_START_PROZENT = 100
     }
 
     /**
@@ -95,5 +142,88 @@ class AlarmPrefs @Inject constructor(
 
     suspend fun setSnoozeMinutes(v: Int) = dataStore.edit {
         it[KEY_SNOOZE_MINUTES] = v.coerceIn(MIN_SNOOZE_MINUTES, MAX_SNOOZE_MINUTES)
+    }
+
+    // ---- Sanfter Weckton-Anstieg -----------------------------------------------------------
+
+    /**
+     * Die drei Werte des Anstiegs als EIN Flow.
+     *
+     * Zusammen und nicht einzeln, weil sie zusammen gelesen werden: `AlarmReceiver` holt sie
+     * einmal pro Alarm-Feuern und reicht sie als Intent-Extras an den `AlarmSoundService` durch -
+     * derselbe Weg wie bei der Schlummer-Dauer und aus demselben Grund (der Service darf im
+     * Weckpfad keinen DataStore-Read bekommen). Drei einzelne `first()`-Aufrufe waeren drei
+     * Gelegenheiten zu scheitern, wo eine reicht.
+     *
+     * Das `.catch` steht HINTER dem `.map` (die Reihenfolge ist tragend, siehe CLAUDE.md,
+     * "Persistenz"). Degradiert wird auf [WecktonAnstieg.AUS], also auf volle Lautstaerke ab der
+     * ersten Sekunde: Ein Lesefehler darf den Wecker lauter machen, niemals leiser.
+     */
+    val wecktonAnstieg: Flow<WecktonAnstieg> = dataStore.data
+        .map { prefs ->
+            WecktonAnstieg(
+                aktiv = prefs[KEY_ANSTIEG_AKTIV] ?: DEFAULT_ANSTIEG_AKTIV,
+                sekunden = (prefs[KEY_ANSTIEG_SEKUNDEN] ?: DEFAULT_ANSTIEG_SEKUNDEN)
+                    .coerceIn(MIN_ANSTIEG_SEKUNDEN, MAX_ANSTIEG_SEKUNDEN),
+                startProzent = (prefs[KEY_ANSTIEG_START_PROZENT] ?: DEFAULT_ANSTIEG_START_PROZENT)
+                    .coerceIn(MIN_ANSTIEG_START_PROZENT, MAX_ANSTIEG_START_PROZENT)
+            )
+        }
+        .catch { e ->
+            Logger.e(
+                LogTags.ALARM,
+                "Weckton-Anstieg nicht lesbar - der Wecker klingelt ohne Anstieg, also sofort laut",
+                e
+            )
+            emit(WecktonAnstieg.AUS)
+        }
+
+    suspend fun wecktonAnstiegNow(): WecktonAnstieg = wecktonAnstieg.first()
+
+    suspend fun setAnstiegAktiv(v: Boolean) = dataStore.edit {
+        it[KEY_ANSTIEG_AKTIV] = v
+    }
+
+    suspend fun setAnstiegSekunden(v: Int) = dataStore.edit {
+        it[KEY_ANSTIEG_SEKUNDEN] = v.coerceIn(MIN_ANSTIEG_SEKUNDEN, MAX_ANSTIEG_SEKUNDEN)
+    }
+
+    suspend fun setAnstiegStartProzent(v: Int) = dataStore.edit {
+        it[KEY_ANSTIEG_START_PROZENT] = v.coerceIn(MIN_ANSTIEG_START_PROZENT, MAX_ANSTIEG_START_PROZENT)
+    }
+}
+
+/**
+ * Die Einstellung des sanften Weckton-Anstiegs, wie sie beim Feuern gilt.
+ *
+ * @param aktiv Ist der Anstieg eingeschaltet?
+ * @param sekunden Dauer bis zur vollen Lautstaerke.
+ * @param startProzent Anfangspegel in Prozent der eingestellten Alarm-Lautstaerke.
+ */
+data class WecktonAnstieg(
+    val aktiv: Boolean,
+    val sekunden: Int,
+    val startProzent: Int
+) {
+    /**
+     * Dauer fuer [LautstaerkeAnstieg.pegel] - `0`, solange der Anstieg aus ist. Damit gibt es nur
+     * EINE Stelle, an der "aus" in "keine Dauer" uebersetzt wird, statt eines `if (aktiv)` an
+     * jedem Nutzungsort.
+     */
+    val dauerMs: Long get() = if (aktiv) sekunden * 1000L else 0L
+
+    /** Startpegel als Faktor fuer `MediaPlayer.setVolume()`. */
+    val startAnteil: Float get() = startProzent / 100f
+
+    companion object {
+        /**
+         * Kein Anstieg: volle Lautstaerke ab der ersten Sekunde. Das Ziel jeder Degradation und
+         * der Zustand im Direct Boot, wo der DataStore nicht lesbar ist.
+         */
+        val AUS = WecktonAnstieg(
+            aktiv = false,
+            sekunden = AlarmPrefs.DEFAULT_ANSTIEG_SEKUNDEN,
+            startProzent = AlarmPrefs.DEFAULT_ANSTIEG_START_PROZENT
+        )
     }
 }

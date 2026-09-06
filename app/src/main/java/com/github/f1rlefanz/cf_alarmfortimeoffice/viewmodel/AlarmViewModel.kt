@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreigabeZurueckgenommenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.TagFreigabeUseCase
@@ -181,6 +182,16 @@ class AlarmViewModel @Inject constructor(
     val snoozeMinutes: StateFlow<Int> =
         alarmPrefs.snoozeMinutes
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlarmPrefs.DEFAULT_SNOOZE_MINUTES)
+
+    /**
+     * Der eingestellte sanfte Weckton-Anstieg - nur fuer die ANZEIGE im Wecker-Tab.
+     *
+     * Der Wecker haengt nicht daran: beim Feuern liest [com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmReceiver]
+     * die Werte einmal direkt aus [AlarmPrefs] (gleiche Aufteilung wie bei [snoozeMinutes]).
+     */
+    val wecktonAnstieg: StateFlow<WecktonAnstieg> =
+        alarmPrefs.wecktonAnstieg
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WecktonAnstieg.AUS)
 
     private val _skipState = MutableStateFlow(AlarmSkipUiState())
     val skipState: StateFlow<AlarmSkipUiState> = _skipState.asStateFlow()
@@ -454,6 +465,22 @@ class AlarmViewModel @Inject constructor(
         viewModelScope.launch {
             alarmPrefs.setSnoozeMinutes(minutes.coerceIn(1, 30))
         }
+    }
+
+    // ---- Sanfter Weckton-Anstieg ---------------------------------------------------------
+    // Geklemmt wird in AlarmPrefs (beim Schreiben UND beim Lesen) - hier bewusst kein zweiter
+    // Katalog von Grenzen, der mit dem ersten auseinanderlaufen kann.
+
+    fun setAnstiegAktiv(aktiv: Boolean) {
+        viewModelScope.launch { alarmPrefs.setAnstiegAktiv(aktiv) }
+    }
+
+    fun setAnstiegSekunden(sekunden: Int) {
+        viewModelScope.launch { alarmPrefs.setAnstiegSekunden(sekunden) }
+    }
+
+    fun setAnstiegStartProzent(prozent: Int) {
+        viewModelScope.launch { alarmPrefs.setAnstiegStartProzent(prozent) }
     }
 
     /**

@@ -149,6 +149,40 @@ Saetze: `reference/vorwecken.md`.
   Der Zaehler faellt bei jedem sauberen Wecker auf 0 — das ist jetzt gefahrlos und war es
   vorher nicht.
 
+## Sanfter Weckton-Anstieg — Kurzregeln
+
+Optional, ab Werk AUS. Schalter, Anlaufzeit und Startpegel im Wecker-Tab; Rechenkern
+`alarm/LautstaerkeAnstieg.kt` (rein, unter Test), Werte in `AlarmPrefs`.
+
+- **Der Anstieg fasst die System-Lautstaerke NICHT an.** Er skaliert ausschliesslich den eigenen
+  Player per `MediaPlayer.setVolume()`. `AudioManager.setStreamVolume(STREAM_ALARM, ...)` ist
+  verboten: stirbt der Prozess mitten im Anstieg — nachts, ohne Zeugen — bliebe die
+  Alarm-Lautstaerke des GERAETS dauerhaft auf dem Anfangswert stehen, und das naechste Wecken
+  waere leise, ohne dass irgendetwas darauf hinweist.
+- **Ton und Melodie bleiben Sache von Android.** Es gibt bewusst KEINE App-eigene Ton- oder
+  Lautstaerkeauswahl daneben — sie waere eine zweite Wahrheit und eine Stelle, an der die App
+  leiser sein kann, als der Nutzer glaubt. Der Anstieg ist die einzige Ausnahme, weil Android
+  genau ihn nicht anbietet.
+- **Jede Unklarheit degradiert auf VOLLE Lautstaerke**, nie auf einen leisen Wecker: unlesbarer
+  DataStore, fehlende Intent-Extras, unbrauchbare Eingaben. Auch Direct Boot faellt darunter —
+  der Receiver liest den CE-Storage dort nicht, der Anstieg entfaellt also.
+- **Der Anstieg braucht einen BACKSTOP, der nicht an der Schrittkette haengt.** Ein zweiter,
+  unabhaengiger `postDelayed` stellt am Ende bedingungslos auf voll. Ohne ihn friert ein
+  abgerissener Schritt den Wecker auf dem Anfangspegel ein — das ist ein verschlafener Dienst.
+- **Jeder Anstiegs-Callback prueft `playerGeneration`**, sonst dreht ein Anstieg des VORIGEN
+  Players den neuen leiser (stop -> snooze -> start).
+- **Der Anstieg hat einen EIGENEN Handler**, nicht den `vorweckHandler`: beide raeumen mit
+  `removeCallbacksAndMessages(null)` auf, und der ausstehende Vordergrund-Start darf dabei nicht
+  mitgeloescht werden.
+- **Der Startpegel darf nie 0 sein** (`LautstaerkeAnstieg.MIN_STARTPEGEL`): `0` hoch irgendwas
+  ist 0 — der Wecker bliebe bis zum letzten Schritt stumm und wuerde dann schlagartig laut.
+- **Die Kurve ist geometrisch, nicht linear.** `setVolume()` nimmt eine Amplitude, das Ohr hoert
+  logarithmisch; linear klingt, als sei der Anstieg nach einem Viertel der Zeit vorbei.
+- **Die Obergrenze der Anlaufzeit (120 s) ist Absicht.** Ein laengerer Anlauf ist kein sanfterer
+  Wecker, sondern ein spaeterer.
+- **Die Vibration ist NICHT Teil des Anstiegs** — sie startet weiterhin sofort in voller Staerke.
+  Bewusst offen gelassen; wer das aendert, aendert die Weckwirkung selbst.
+
 ## Master-Pause — Kurzregeln
 
 - **Eigenständig neben `autoAlarmEnabled`** — `pause()`/`resume()` rühren den Flag NICHT an, sondern

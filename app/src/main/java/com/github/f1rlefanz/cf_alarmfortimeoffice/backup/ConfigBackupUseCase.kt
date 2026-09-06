@@ -348,7 +348,12 @@ class ConfigBackupUseCase @Inject constructor(
         }
 
         /** Schluessel, deren Typ auch ohne lokalen Bestand feststeht (beide zusaetzlich geklemmt). */
-        private val KNOWN_INT_KEYS = setOf("snooze_minutes", "dnd_oncall_cutoff_min")
+        private val KNOWN_INT_KEYS = setOf(
+            "snooze_minutes",
+            "dnd_oncall_cutoff_min",
+            "weckton_anstieg_sekunden",
+            "weckton_anstieg_start_prozent"
+        )
 
         private fun typeNameOf(value: Any?): String? = when (value) {
             is Boolean -> "boolean"

@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -599,10 +600,12 @@ class AlarmReceiver : BroadcastReceiver() {
      * @param alarmId Unique alarm identifier
      *
      * SUSPEND: liest [alarmPrefs] EINMAL hier - der einzige Ort, der die konfigurierte
-     * Schlummer-Dauer aus dem DataStore holt. Beide Snooze-Ausloeser (Vollbild-Button,
-     * Notification-Button) bleiben synchron und lesen den Wert stattdessen aus dem Intent-Extra
-     * [AlarmSoundService.EXTRA_SNOOZE_MINUTES], das hier gesetzt wird. Der einzige Aufrufer laeuft
-     * bereits in receiverScope.launch, also ist der suspend-Read hier sicher.
+     * Schlummer-Dauer UND den Weckton-Anstieg aus dem DataStore holt. Beide Snooze-Ausloeser
+     * (Vollbild-Button, Notification-Button) bleiben synchron und lesen den Wert stattdessen aus
+     * dem Intent-Extra [AlarmSoundService.EXTRA_SNOOZE_MINUTES], das hier gesetzt wird; fuer den
+     * Anstieg gilt dasselbe ueber [AlarmSoundService.EXTRA_ANSTIEG_AKTIV] und seine beiden
+     * Nachbarn. Der einzige Aufrufer laeuft bereits in receiverScope.launch, also ist der
+     * suspend-Read hier sicher.
      *
      * DIRECT BOOT: [alarmPrefs] liegt im @MainDataStore (CE-Storage) und ist vor der ersten
      * Entsperrung NICHT lesbar - genau wie der Skip- und Silent-Check weiter oben in onReceive().
@@ -611,6 +614,10 @@ class AlarmReceiver : BroadcastReceiver() {
      * true - sonst waere ein CE-Storage-Read hier fatal statt bloss uebersprungen: der try/catch
      * darunter haette eine Exception (oder ein Haengen) abgefangen, ohne dass startForegroundService()
      * je erreicht wird - der Wecker bliebe nach einem Reboot vor der ersten Entsperrung stumm.
+     *
+     * Fuer den Anstieg ist das Ueberspringen zusaetzlich die inhaltlich richtige Entscheidung: er
+     * entfaellt dann, der Wecker startet sofort in voller Lautstaerke. Nach einem Neustart ohne
+     * Entsperrung ist ein leiser Anlauf das Letzte, was jemand gebrauchen kann.
      *
      * @return true, wenn der Vordergrunddienst wirklich gestartet wurde; false, wenn nur der
      *   Notausgang greift (siehe [starteWeckerMitNotausgang]).
@@ -640,12 +647,32 @@ class AlarmReceiver : BroadcastReceiver() {
             AlarmPrefs.DEFAULT_SNOOZE_MINUTES
         }
 
+        // Eigenes try/catch aus demselben Grund wie oben: ein Lesefehler kostet den Anstieg,
+        // nicht den Wecker. Degradiert wird auf WecktonAnstieg.AUS - volle Lautstaerke.
+        val anstieg = if (userUnlocked) {
+            try {
+                alarmPrefs.wecktonAnstiegNow()
+            } catch (e: Exception) {
+                Logger.w(
+                    LogTags.ALARM_RECEIVER,
+                    "⚠️ Weckton-Anstieg nicht lesbar - Wecker startet sofort in voller Lautstaerke",
+                    e
+                )
+                WecktonAnstieg.AUS
+            }
+        } else {
+            WecktonAnstieg.AUS
+        }
+
         val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
             action = AlarmSoundService.ACTION_START_ALARM
             putExtra(AlarmSoundService.EXTRA_SHIFT_NAME, shiftName)
             putExtra(AlarmSoundService.EXTRA_SHIFT_START_TIME, shiftStartTime)
             putExtra(AlarmSoundService.EXTRA_ALARM_ID, alarmId)
             putExtra(AlarmSoundService.EXTRA_SNOOZE_MINUTES, snoozeMinutes)
+            putExtra(AlarmSoundService.EXTRA_ANSTIEG_AKTIV, anstieg.aktiv)
+            putExtra(AlarmSoundService.EXTRA_ANSTIEG_SEKUNDEN, anstieg.sekunden)
+            putExtra(AlarmSoundService.EXTRA_ANSTIEG_START_PROZENT, anstieg.startProzent)
         }
 
         val gestartet = starteWeckerMitNotausgang(

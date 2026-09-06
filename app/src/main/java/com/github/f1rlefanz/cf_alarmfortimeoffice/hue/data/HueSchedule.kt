@@ -107,7 +107,7 @@ data class SunriseConfig(
 @Serializable
 data class HueLightAction(
     val targetType: TargetType,
-    val targetId: String, // Light ID, Group ID, or Zone ID
+    val targetId: String, // Light ID or Group ID
     val targetName: String? = null, // For display purposes
     val actionType: ActionType,
     val on: Boolean? = null, // Turn on/off state
@@ -136,7 +136,8 @@ data class HueLightAction(
 
     /**
      * Der EINE Diskriminator fuer ein Szenen-Ziel. Nicht [targetType] - der ist seit jeher
-     * dekorativ (`ZONE`/`ROOM` werden nirgends gesetzt, entschieden wird ueber [isGroup]).
+     * dekorativ: er wird gesetzt, aber an keiner Stelle im Baum GELESEN; entschieden wird ueber
+     * [isGroup].
      *
      * Fuer eine Szenen-Aktion gilt verbindlich: [targetType] = GROUP, [targetId]/[targetName] =
      * die Gruppe, [isGroup] = true, [on] = true und alle Helligkeits-/Farbfelder = null.
@@ -165,9 +166,14 @@ data class HueColor(
 @Serializable
 enum class TargetType {
     LIGHT,
-    GROUP,
-    ZONE,
-    ROOM
+    GROUP
+    // ENTFERNT (Runde 18): ZONE und ROOM. Erzeugt wurden sie nie - `zieleAlsAktionen()` in
+    // HueRuleFormState vergibt ausschliesslich LIGHT und GROUP, und `git log -S"TargetType.ZONE"`
+    // bzw. `..ROOM` findet ueber die gesamte Historie keinen Commit, der einen Erzeuger anlegt
+    // oder entfernt. Deshalb greift die TokenData-Leitplanke ("ein gespeichertes Format ist kein
+    // toter Code") hier NICHT: was nie geschrieben wurde, kann in keinem Bestands-JSON stehen.
+    // Das ist die tragende Bedingung - die Hue-Dekoder laufen mit `ignoreUnknownKeys`, aber OHNE
+    // `coerceInputValues`, ein unbekannter ENUM-WERT waere also ein harter Dekodierfehler.
 }
 
 /**
@@ -176,11 +182,11 @@ enum class TargetType {
 @Serializable
 enum class ActionType {
     TURN_ON,
-    TURN_OFF,
-    DIM,
-    BRIGHTEN,
-    SET_COLOR,
-    SET_TEMPERATURE,
-    PULSE,
-    COLOR_LOOP
+    TURN_OFF
+    // ENTFERNT (Runde 18): DIM, BRIGHTEN, SET_COLOR, SET_TEMPERATURE, PULSE, COLOR_LOOP. Alle sechs
+    // beschrieben Absichten, die es nie gab - erzeugt werden nur TURN_ON und TURN_OFF
+    // (HueRuleFormState), und ueber die gesamte Historie legt kein Commit einen Erzeuger an.
+    // Helligkeit und Farbe reist die Aktion ohnehin in eigenen Feldern (`brightness`, `hue`,
+    // `colorTemperature`) - ein eigener ActionType dafuer waere eine zweite Wahrheit gewesen.
+    // Persistenzfrage wie bei [TargetType]: nie geschrieben, also in keinem Bestands-JSON.
 }

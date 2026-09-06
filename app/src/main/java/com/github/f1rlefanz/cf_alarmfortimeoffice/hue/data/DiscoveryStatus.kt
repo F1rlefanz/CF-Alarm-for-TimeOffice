@@ -23,12 +23,22 @@ data class DiscoveryStatus(
  * Discovery method being used (Enhanced 2025 Edition)
  */
 enum class DiscoveryMethod {
-    // Die drei, die es wirklich gibt - je ein Erzeuger in den Discovery-Diensten.
-    ONLINE_DISCOVERY, N_UPNP, MDNS
+    // Die zwei, die es wirklich gibt. Erzeuger gezaehlt in OfficialHueDiscoveryService:
+    // ONLINE_DISCOVERY an vier Stellen (60, 113, 141, 156), MDNS an fuenf (74, 92, 156, 167, 184).
+    ONLINE_DISCOVERY, MDNS
     // ENTFERNT (v1.34.3): LOCAL_NETWORK und IP_TEST waren im Code selbst als deprecated markiert,
     // MANUAL und CACHE hatten nie einen Erzeuger. Ein `when` ueber die Werte gibt es nicht,
     // Exhaustiveness konnte also nicht brechen. MANUAL beschrieb eine manuelle IP-Eingabe, die es
     // in der Oberflaeche nicht gibt - vor dem Loeschen geprueft.
+    // ENTFERNT (Runde 18): N_UPNP - und zwar mit einem ANDEREN Hergang als die vier oben, denn
+    // einen Erzeuger hatte es sehr wohl: HueNUpnpDiscoveryService setzte
+    // `discoveryMethod = DiscoveryMethod.N_UPNP`, bis 5a48374 (25.08.2026) das Feld
+    // `HueBridge.discoveryMethod` entfernte. Genau dieser Commit schrieb die Zeile "Die drei, die
+    // es wirklich gibt - je ein Erzeuger" - sie war bei der Geburt veraltet UND zaehlte falsch.
+    // Deshalb steht oben jetzt eine nachpruefbare Zahl statt einer Behauptung.
+    // NICHT zu verwechseln mit [DiscoveryStage.N_UPNP_SEARCH] und der gleichnamigen Zeichenkette:
+    // die N-UPnP-Suche laeuft weiter (Phase 2, Cloud-Fallback), meldet sich aber als
+    // ONLINE_DISCOVERY. Entfernt ist der Enum-Eintrag, nicht die Funktion.
 }
 
 /**

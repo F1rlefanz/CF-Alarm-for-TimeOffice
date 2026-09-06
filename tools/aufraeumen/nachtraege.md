@@ -125,3 +125,38 @@ leer") ist kein Beleg für die **Namen**. Beide Messungen oben waren zahlenmäß
 (`Enum: [EINTRAG, …]`) und sieh es mit dem Auge an; das kostet dreißig Sekunden und ist die
 einzige Prüfung, die diese Klasse von Fehler fängt. Der allgemeine Satz dazu: **prüfe nicht, ob
 dein Parser etwas gefunden hat, sondern ob das Gefundene aussieht wie das Gesuchte.**
+
+### 06.09.2026, Runde 18 (Issue #19 zum dritten Mal — der Schnitt ist durch)
+
+Der Schnitt ist wiedergekommen wie vom Torwächter freigegeben, allein und ohne Gatter. Eigene
+Messung: **37 Enums, 152 Einträge, 9 Rohbefunde, 9 am Code bestätigt, 0 Fehlalarme**; nach dem
+Schnitt 0 Rohbefunde. Die drei Textkorrekturen aus dem #63-Urteil sind eingearbeitet.
+**Punkt 4 des Urteils ist bereits erledigt** — der Eigentümer hat die widerlegte Passage am
+05.09.2026 selbst richtiggestellt (`ab12d87`); wer sie noch einmal „korrigiert", schreibt daneben.
+
+**Die neue Lehre — sie ergänzt Runde 16 und 17 um die dritte Achse: Vollständigkeit.**
+
+Meine Zahlen wichen von denen der Vorrunde ab (37/152 gegen 35/146). Nach Runde 17 ist der erste
+Gedanke „einer der beiden Parser hat eine Blindstelle" — und genau der wäre hier falsch gewesen.
+`git grep -c "enum class" <ref> -- '*.kt'` aufsummiert:
+
+```
+d463025 (Runde 16/17) 35      ab12d87 (heute) 37      origin/main 37
+```
+
+Die zwei Enums kamen mit `DimBedienungshilfenWunschTest` und `DndDiagnostikTest` dazu — **echte
+Baumbewegung, kein Fehler auf beiden Seiten.** Ohne diesen Einzeiler hätte ich der Vorrunde einen
+Parserdefekt unterstellt, den sie nicht hatte; mit ihm war es eine Minute.
+
+**Die verallgemeinerbare Regel:** Prüfe die **Anzahl** deiner Strukturen zusätzlich gegen eine
+naive Stichwortzählung (`git grep -c` auf das Deklarationsschlüsselwort) — **und zwar auf dem Ref
+der Vorrunde, nicht nur auf deinem.** Das trennt die beiden Ursachen, die sich sonst nicht
+unterscheiden lassen: Blindstelle im Parser gegen Bewegung im Baum. Die drei Selbstprüfungen
+zusammen decken jetzt jede Achse ab — Runde 16 fängt **leere** Ergebnisse, Runde 17 falsche
+**Namen**, Runde 18 unvollständige **Mengen**. Namen und Zahlen können beide stimmen, während
+dein Muster ganze Dateien nie zu Gesicht bekommt; nur der Abgleich gegen eine zweite, dumme
+Zählung sieht das.
+
+**Zum Stand der Werkzeuge, nachgemessen am 06.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen, und der Konfliktzustands-Wächter fehlt allen sechs (`grep -c` → 0). Issue #60 gilt
+unverändert.

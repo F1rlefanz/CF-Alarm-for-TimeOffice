@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
@@ -95,6 +96,10 @@ class AlarmViewModelSkipRestoreTest {
         }
         val alarmPrefs = mock<AlarmPrefs>()
         whenever(alarmPrefs.snoozeMinutes).thenReturn(flowOf(9))
+        // Pflicht, nicht Kosmetik: AlarmViewModel liest diesen Flow im
+        // Property-Initializer. Ohne Stub liefert der Mock null und das Konstruieren
+        // scheitert mit einer NPE - noch vor dem ersten Testschritt.
+        whenever(alarmPrefs.wecktonAnstieg).thenReturn(flowOf(WecktonAnstieg.AUS))
         val masterPausePrefs = mock<MasterPausePrefs>()
         masterPausePrefs.stub {
             on { pausedNow() } doReturn masterPaused

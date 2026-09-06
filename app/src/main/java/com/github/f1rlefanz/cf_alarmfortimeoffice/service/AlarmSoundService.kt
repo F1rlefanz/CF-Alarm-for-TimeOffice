@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -26,7 +27,10 @@ import androidx.core.app.NotificationManagerCompat
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.LautstaerkeAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.VorweckEntscheidung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,6 +102,21 @@ class AlarmSoundService : Service() {
         // AlarmFullScreenActivity) lesen sie synchron aus dem Intent statt selbst den DataStore
         // anzufassen - siehe AlarmPrefs-Klassenkommentar.
         const val EXTRA_SNOOZE_MINUTES = "snooze_minutes"
+
+        /**
+         * Der sanfte Weckton-Anstieg, aufgeteilt in drei Extras.
+         *
+         * Wie [EXTRA_SNOOZE_MINUTES] ueber den Intent und nicht per DataStore-Read hier im
+         * Dienst: Der Weckpfad darf keine Lesezugriffe bekommen, die scheitern oder haengen
+         * koennen (Hergang bei `AlarmPrefs`). `AlarmReceiver` liest die Werte einmal pro Feuern.
+         *
+         * FEHLEN sie, gilt "kein Anstieg" - volle Lautstaerke ab der ersten Sekunde. Genau das
+         * ist der Direct-Boot-Fall: dort liest der Receiver den CE-Storage bewusst nicht, und
+         * ein Wecker vor der ersten Entsperrung soll ohnehin nicht leise anlaufen.
+         */
+        const val EXTRA_ANSTIEG_AKTIV = "weckton_anstieg_aktiv"
+        const val EXTRA_ANSTIEG_SEKUNDEN = "weckton_anstieg_sekunden"
+        const val EXTRA_ANSTIEG_START_PROZENT = "weckton_anstieg_start_prozent"
 
         private const val VORWECK_LOCK_TAG = "CFAlarm:VorweckenFuerWeckbildschirm"
 
@@ -262,6 +281,22 @@ class AlarmSoundService : Service() {
     // OnPreparedListener callbacks from a previous player can never start playback.
     @Volatile
     private var playerGeneration = 0
+
+    /**
+     * Eigener Handler NUR fuer den Lautstaerke-Anstieg - bewusst nicht der [vorweckHandler].
+     *
+     * Beide raeumen mit `removeCallbacksAndMessages(null)` auf, was ALLE Nachrichten des
+     * Handlers loescht. Auf einem gemeinsamen Handler wuerde das Abbrechen des Anstiegs damit
+     * auch den ausstehenden Vordergrund-Start abraeumen - und das ist die eine Nachricht, die
+     * niemals verlorengehen darf.
+     */
+    private val anstiegHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Der Anstieg des LAUFENDEN Weckvorgangs. Wird bei jedem ACTION_START_ALARM aus dem Intent
+     * neu gesetzt, damit ein zweiter Wecker nicht die Einstellung des ersten erbt.
+     */
+    private var anstieg: WecktonAnstieg = WecktonAnstieg.AUS
     
     /**
      * Reiner Started-Service, kein Binding.
@@ -282,6 +317,24 @@ class AlarmSoundService : Service() {
                 val snoozeMinutes = intent.getIntExtra(
                     EXTRA_SNOOZE_MINUTES,
                     AlarmManagerService.SNOOZE_MINUTES.toInt()
+                )
+
+                // Fehlende Extras ergeben WecktonAnstieg.AUS - siehe [EXTRA_ANSTIEG_AKTIV].
+                // Erneut geklemmt, obwohl AlarmPrefs beim Lesen schon klemmt: Der Wert kommt
+                // hier aus einem Intent, und die Klemme kostet nichts.
+                anstieg = WecktonAnstieg(
+                    aktiv = intent.getBooleanExtra(EXTRA_ANSTIEG_AKTIV, false),
+                    sekunden = intent.getIntExtra(
+                        EXTRA_ANSTIEG_SEKUNDEN,
+                        AlarmPrefs.DEFAULT_ANSTIEG_SEKUNDEN
+                    ).coerceIn(AlarmPrefs.MIN_ANSTIEG_SEKUNDEN, AlarmPrefs.MAX_ANSTIEG_SEKUNDEN),
+                    startProzent = intent.getIntExtra(
+                        EXTRA_ANSTIEG_START_PROZENT,
+                        AlarmPrefs.DEFAULT_ANSTIEG_START_PROZENT
+                    ).coerceIn(
+                        AlarmPrefs.MIN_ANSTIEG_START_PROZENT,
+                        AlarmPrefs.MAX_ANSTIEG_START_PROZENT
+                    )
                 )
 
                 Logger.business(
@@ -586,6 +639,7 @@ class AlarmSoundService : Service() {
         // Guaranteed cleanup on service destruction
         _alarmActive.value = false
         vorweckHandler.removeCallbacksAndMessages(null)
+        anstiegHandler.removeCallbacksAndMessages(null)
         gibVorweckLockFrei()
         stopAlarmSound()
         stopVibration()
@@ -722,6 +776,9 @@ class AlarmSoundService : Service() {
                         // Guard: only start if this is still the active player
                         if (!isShuttingDown && myGeneration == playerGeneration) {
                             try {
+                                // Startpegel VOR start(): andernfalls waere der erste Moment
+                                // voll laut und der Anstieg begaenne mit einem Knall.
+                                starteAnstieg(player, myGeneration)
                                 player.start()
                                 Logger.business(LogTags.ALARM, "✅ MediaPlayer started successfully in service")
                             } catch (e: Exception) {
@@ -764,6 +821,89 @@ class AlarmSoundService : Service() {
     }
 
     /**
+     * Startet den sanften Lautstaerke-Anstieg fuer [player] - oder stellt sofort auf volle
+     * Lautstaerke, wenn keiner eingestellt ist.
+     *
+     * ## Drei Sicherungen, und warum jede einzelne noetig ist
+     *
+     * Ein Anstieg ist die einzige Stelle dieser App, an der der Wecker ABSICHTLICH leise
+     * anfaengt. Bleibt er dort haengen, ist das Ergebnis ein Wecker, den man verschlaeft - und
+     * niemand steht daneben, um es zu bemerken. Deshalb:
+     *
+     * 1. **Generationsschutz**: Jeder Callback prueft [playerGeneration]. Ein Anstieg, der noch
+     *    zum vorigen Player gehoert, darf den neuen nicht leiser drehen (Fall: stop -> snooze ->
+     *    start in schneller Folge, derselbe Race, gegen den der OnPreparedListener sich schuetzt).
+     * 2. **Backstop**: Ein zweiter, von der Schrittkette UNABHAENGIGER Handler-Aufruf stellt am
+     *    Ende bedingungslos auf volle Lautstaerke. Reisst die Kette unterwegs ab - eine Exception
+     *    in einem Schritt, ein verworfener Callback -, waere der Wecker sonst dauerhaft auf dem
+     *    Anfangspegel eingefroren. Die Kette darf ausfallen, das Ergebnis nicht.
+     * 3. **Kein `return` in den Fehlerzweig**: Scheitert [setzePegel], laeuft die Kette weiter.
+     *    Der naechste Schritt liegt hoeher, nicht tiefer - ein misslungener Schritt darf den
+     *    Anstieg nicht auf dem aktuellen Stand festnageln.
+     *
+     * @param generation die Generation des Players, fuer den dieser Anstieg gilt.
+     */
+    private fun starteAnstieg(player: MediaPlayer, generation: Int) {
+        anstiegHandler.removeCallbacksAndMessages(null)
+
+        val dauerMs = anstieg.dauerMs
+        if (dauerMs <= 0L) {
+            // Kein Anstieg: ausdruecklich auf voll stellen statt sich auf die Vorgabe des
+            // MediaPlayers zu verlassen. Der Player ist zwar frisch, aber "volle Lautstaerke"
+            // ist bei einem Wecker nichts, was man voraussetzt.
+            setzePegel(player, LautstaerkeAnstieg.VOLL)
+            return
+        }
+
+        val startAnteil = anstieg.startAnteil
+        val beginn = SystemClock.elapsedRealtime()
+        setzePegel(player, LautstaerkeAnstieg.pegel(startAnteil, dauerMs, 0L))
+
+        val schritt = object : Runnable {
+            override fun run() {
+                if (isShuttingDown || generation != playerGeneration) return
+                val vergangen = SystemClock.elapsedRealtime() - beginn
+                setzePegel(player, LautstaerkeAnstieg.pegel(startAnteil, dauerMs, vergangen))
+                if (vergangen < dauerMs) {
+                    anstiegHandler.postDelayed(this, LautstaerkeAnstieg.SCHRITT_MS)
+                }
+            }
+        }
+        anstiegHandler.postDelayed(schritt, LautstaerkeAnstieg.SCHRITT_MS)
+
+        anstiegHandler.postDelayed(
+            {
+                if (!isShuttingDown && generation == playerGeneration) {
+                    setzePegel(player, LautstaerkeAnstieg.VOLL)
+                }
+            },
+            LautstaerkeAnstieg.backstopVerzoegerungMs(dauerMs)
+        )
+
+        Logger.business(
+            LogTags.ALARM,
+            "🔉 Weckton-Anstieg: ${anstieg.startProzent} % -> 100 % in ${anstieg.sekunden} s"
+        )
+    }
+
+    /**
+     * Setzt den Pegel des Players - relativ zur Alarm-Lautstaerke des Systems, die dabei
+     * unangetastet bleibt (siehe [LautstaerkeAnstieg]).
+     *
+     * Der Fehler wird geschluckt und nur geloggt: `setVolume()` wirft auf einem bereits
+     * freigegebenen Player, und das passiert im normalen Ablauf, wenn Abstellen und Anstieg sich
+     * um Millisekunden ueberschneiden. Eine Exception aus einem Handler-Callback wuerde den
+     * Prozess reissen - waehrend der Wecker klingelt.
+     */
+    private fun setzePegel(player: MediaPlayer, pegel: Float) {
+        try {
+            player.setVolume(pegel, pegel)
+        } catch (e: Exception) {
+            Logger.w(LogTags.ALARM, "⚠️ Lautstaerke nicht setzbar (Pegel $pegel)", e)
+        }
+    }
+
+    /**
      * Stops alarm sound and releases MediaPlayer.
      *
      * Sets isShuttingDown first, then increments playerGeneration so that any
@@ -772,6 +912,10 @@ class AlarmSoundService : Service() {
     private fun stopAlarmSound() {
         isShuttingDown = true
         playerGeneration++ // invalidate any pending OnPreparedListener callbacks
+        // Schrittkette UND Backstop des Anstiegs abraeumen. Beide pruefen zwar zusaetzlich die
+        // Generation, aber ein Callback auf einem freigegebenen MediaPlayer soll gar nicht erst
+        // laufen muessen.
+        anstiegHandler.removeCallbacksAndMessages(null)
 
         try {
             alarmMediaPlayer?.let { player ->

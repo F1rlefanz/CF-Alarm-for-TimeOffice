@@ -51,7 +51,23 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.39.7 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.40.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Der Wecker kann jetzt leise anfangen und langsam lauter werden — wenn du es einschaltest.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Sanft geweckt werden.</strong> Weckton und Lautstärke kommen weiterhin aus den Android-Einstellungen; das Einzige, was Android dort nicht anbietet, ist ein sanfter Start. Genau den gibt es jetzt: Der Wecker beginnt leise und wird über eine einstellbare Zeit auf die Lautstärke hoch, die in Android eingestellt ist. Zu finden im Wecker-Bereich unter der Schlummer-Dauer — ein Schalter, die Anlaufzeit (10 bis 120 Sekunden) und die Startlautstärke (5 bis 60 Prozent). <strong>Ab Werk ist der Anstieg aus.</strong> Dass ein Wecker plötzlich leise anfängt, wäre eine Änderung am Wecken selbst, und die merkt man im Zweifel erst, wenn man verschlafen hat; deshalb schaltest du ihn selbst ein.</li>
+            </ul>
+
+            <h4>🧰 Für Tester</h4>
+            <ul>
+                <li><strong>Was der Anstieg bewusst nicht tut.</strong> Die App stellt <strong>nie</strong> die Alarm-Lautstärke deines Geräts um, sondern regelt nur ihren eigenen Ton — sonst könnte ein Absturz mitten im Anstieg die Lautstärke des Geräts dauerhaft leise stehen lassen, und der nächste Wecker wäre still, ohne dass etwas darauf hinweist. Die <strong>Vibration</strong> ist ebenfalls nicht Teil des Anstiegs: sie beginnt weiterhin sofort in voller Stärke. Und wenn irgendetwas unklar ist — die Einstellung nicht lesbar, das Gerät nach einem Neustart noch nicht entsperrt —, weckt die App <strong>in voller Lautstärke</strong>, nie leise.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.39.7</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Der Hinweis „Dimmt nicht“ führt jetzt bis zu der Stelle, an der sich der Dienst einschalten lässt.</em></p>
 

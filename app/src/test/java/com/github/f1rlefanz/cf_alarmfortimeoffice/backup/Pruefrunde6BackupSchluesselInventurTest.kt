@@ -33,7 +33,8 @@ class Pruefrunde6BackupSchluesselInventurTest {
 
     /**
      * Alle heute bewusst EXPORTIERBAREN Schluessel: die vom Nutzer eingestellten Groessen
-     * (Dimmer-Regeln, Nacht-Standard, DND-Politik, Hue-Zeitplan, Schlummer-Dauer, Hinweistexte).
+     * (Dimmer-Regeln, Nacht-Standard, DND-Politik, Hue-Zeitplan, Schlummer-Dauer, Weckton-Anstieg,
+     * Hinweistexte).
      */
     private val bewusstExportierbar = setOf(
         "bridge_id",
@@ -70,7 +71,10 @@ class Pruefrunde6BackupSchluesselInventurTest {
         "dnd_shift_excluded_shifts",
         "hue_schedule_rules",
         "shift_change_notification_enabled",
-        "snooze_minutes"
+        "snooze_minutes",
+        "weckton_anstieg_aktiv",
+        "weckton_anstieg_sekunden",
+        "weckton_anstieg_start_prozent"
     )
 
     @Test

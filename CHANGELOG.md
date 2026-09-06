@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.39.7 (Aktuell – interne Alpha)
+## 🆕 Version 1.40.0 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Der Wecker kann jetzt leise anfangen und langsam lauter werden — wenn du es einschaltest._
+
+### ✨ Neu
+
+- **Sanft geweckt werden.** Weckton und Lautstärke kommen weiterhin aus den Android-Einstellungen; das Einzige, was Android dort nicht anbietet, ist ein sanfter Start. Genau den gibt es jetzt: Der Wecker beginnt leise und wird über eine einstellbare Zeit auf die Lautstärke hoch, die in Android eingestellt ist. Zu finden im Wecker-Bereich unter der Schlummer-Dauer — ein Schalter, die Anlaufzeit (10 bis 120 Sekunden) und die Startlautstärke (5 bis 60 Prozent). **Ab Werk ist der Anstieg aus.** Dass ein Wecker plötzlich leise anfängt, wäre eine Änderung am Wecken selbst, und die merkt man im Zweifel erst, wenn man verschlafen hat; deshalb schaltest du ihn selbst ein.
+
+### 🧰 Für Tester
+
+- **Was der Anstieg bewusst nicht tut.** Die App stellt **nie** die Alarm-Lautstärke deines Geräts um, sondern regelt nur ihren eigenen Ton — sonst könnte ein Absturz mitten im Anstieg die Lautstärke des Geräts dauerhaft leise stehen lassen, und der nächste Wecker wäre still, ohne dass etwas darauf hinweist. Die **Vibration** ist ebenfalls nicht Teil des Anstiegs: sie beginnt weiterhin sofort in voller Stärke. Und wenn irgendetwas unklar ist — die Einstellung nicht lesbar, das Gerät nach einem Neustart noch nicht entsperrt —, weckt die App **in voller Lautstärke**, nie leise.
+
+## Version 1.39.7
 
 **Stand:** September 2026
 

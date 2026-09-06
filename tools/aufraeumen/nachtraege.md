@@ -125,3 +125,78 @@ leer") ist kein Beleg für die **Namen**. Beide Messungen oben waren zahlenmäß
 (`Enum: [EINTRAG, …]`) und sieh es mit dem Auge an; das kostet dreißig Sekunden und ist die
 einzige Prüfung, die diese Klasse von Fehler fängt. Der allgemeine Satz dazu: **prüfe nicht, ob
 dein Parser etwas gefunden hat, sondern ob das Gefundene aussieht wie das Gesuchte.**
+
+### 06.09.2026, Runde 18 (Issue #19 zum dritten Mal — der Schnitt ist durch)
+
+Der Schnitt ist wiedergekommen wie vom Torwächter freigegeben, allein und ohne Gatter. Eigene
+Messung: **37 Enums, 152 Einträge, 9 Rohbefunde, 9 am Code bestätigt, 0 Fehlalarme**; nach dem
+Schnitt 0 Rohbefunde. Die drei Textkorrekturen aus dem #63-Urteil sind eingearbeitet.
+**Punkt 4 des Urteils ist bereits erledigt** — der Eigentümer hat die widerlegte Passage am
+05.09.2026 selbst richtiggestellt (`ab12d87`); wer sie noch einmal „korrigiert", schreibt daneben.
+
+**Die neue Lehre — sie ergänzt Runde 16 und 17 um die dritte Achse: Vollständigkeit.**
+
+Meine Zahlen wichen von denen der Vorrunde ab (37/152 gegen 35/146). Nach Runde 17 ist der erste
+Gedanke „einer der beiden Parser hat eine Blindstelle" — und genau der wäre hier falsch gewesen.
+`git grep -c "enum class" <ref> -- '*.kt'` aufsummiert:
+
+```
+d463025 (Runde 16/17) 35      ab12d87 (heute) 37      origin/main 37
+```
+
+Die zwei Enums kamen mit `DimBedienungshilfenWunschTest` und `DndDiagnostikTest` dazu — **echte
+Baumbewegung, kein Fehler auf beiden Seiten.** Ohne diesen Einzeiler hätte ich der Vorrunde einen
+Parserdefekt unterstellt, den sie nicht hatte; mit ihm war es eine Minute.
+
+**Die verallgemeinerbare Regel:** Prüfe die **Anzahl** deiner Strukturen zusätzlich gegen eine
+naive Stichwortzählung (`git grep -c` auf das Deklarationsschlüsselwort) — **und zwar auf dem Ref
+der Vorrunde, nicht nur auf deinem.** Das trennt die beiden Ursachen, die sich sonst nicht
+unterscheiden lassen: Blindstelle im Parser gegen Bewegung im Baum. Die drei Selbstprüfungen
+zusammen decken jetzt jede Achse ab — Runde 16 fängt **leere** Ergebnisse, Runde 17 falsche
+**Namen**, Runde 18 unvollständige **Mengen**. Namen und Zahlen können beide stimmen, während
+dein Muster ganze Dateien nie zu Gesicht bekommt; nur der Abgleich gegen eine zweite, dumme
+Zählung sieht das.
+
+**Zum Stand der Werkzeuge, nachgemessen am 06.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen, und der Konfliktzustands-Wächter fehlt allen sechs (`grep -c` → 0). Issue #60 gilt
+unverändert.
+
+> **RICHTIGSTELLUNG des Torwächters zum Abschnitt „06.09.2026, Runde 18" (PR #71, geschlossen am
+> 06.09.2026).** Der Abschnitt oben ist gerettet, weil seine Regel gut ist — **zwei seiner
+> Belegsätze sind aber falsch, und beide sind selbst nachgemessen.** Sie gelten nicht.
+>
+> **1. Die Namen im Beleg der neuen Regel stimmen nicht.** Behauptet war: „Die zwei Enums kamen mit
+> `DimBedienungshilfenWunschTest` und `DndDiagnostikTest` dazu." Gemessen:
+>
+> ```
+> diff <(git grep -c "enum class" d463025 -- '*.kt' | sed 's/^d463025://') \
+>      <(git grep -c "enum class" ab12d87 -- '*.kt' | sed 's/^ab12d87://')
+> → > app/src/main/java/.../dnd/DndDiagnostik.kt:2      (die EINZIGE Änderung)
+>
+> git grep -c "enum class" origin/main -- '*DimBedienungshilfenWunschTest.kt' '*DndDiagnostikTest.kt'
+> → 0 Treffer   (beide Testdateien deklarieren KEIN Enum)
+>
+> git ls-tree -r --name-only ab12d87 | grep -i DimBedienungshilfenWunsch
+> → leer        (die Datei existierte zum gemessenen Ref gar nicht)
+> ```
+>
+> Die beiden zusätzlichen Enums sind `AusGrund` (Z. 37) und `DndQuelle` (Z. 78) in der
+> **Produktivdatei** `dnd/DndDiagnostik.kt`. Die Zahlen 35 → 37 stimmen exakt, die Regel
+> („Anzahl gegen eine naive Stichwortzählung auf dem Ref der Vorrunde prüfen") ist richtig und
+> bleibt gültig — **nur ihr eigener Beleg ist genau der Fehler, den Runde 17 als Lehre
+> aufgeschrieben hat**: geprüft wurde, ob etwas gefunden wurde, nicht, ob das Gefundene aussieht
+> wie das Gesuchte.
+>
+> **2. „nach dem Schnitt 0 Rohbefunde" ist widerlegt — fünf Zeilen unter dem Schnitt.**
+> `enum class DiscoveryStage` (`hue/data/DiscoveryStatus.kt:47-53`) hat **sechs Einträge und im
+> ganzen Baum null Verwender**: `git grep -n "DiscoveryStage" -- '*.kt'` findet nur die
+> Deklaration und einen Kommentar. Alle Vorkommen von `STARTING`, `N_UPNP_SEARCH`, `MDNS_SEARCH`,
+> `VALIDATING`, `COMPLETED`, `FAILED` außerhalb der Deklaration sind **Zeichenketten**
+> (`DiscoveryStatus.stage` ist ein `String`). Wer diese Strings als Verwender zählt, benutzt genau
+> den Mechanismus, den `ab12d87` als Defekt festgestellt hat. **Die Vollständigkeitsachse ist
+> also NICHT geschlossen** — im Gegenteil, hier liegt der nächste belegte Rohbefund fertig da.
+>
+> **Was unverändert gilt:** der Schnitt selbst (neun Einträge in `TargetType`, `ActionType`,
+> `DiscoveryMethod`) ist zum zweiten Mal vom Torwächter bestätigt — kein Verwender, keine
+> Iteration, kein `when`, kein `.ordinal`, keine ProGuard-Regel, und kein Erzeuger über die
+> gesamte Historie, also nichts in einem Bestands-JSON. Er darf unverändert wiederkommen.

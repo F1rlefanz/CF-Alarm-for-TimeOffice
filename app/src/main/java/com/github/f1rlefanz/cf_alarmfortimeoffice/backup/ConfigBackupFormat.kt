@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.AlarmPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
@@ -246,14 +247,27 @@ object ConfigBackupFilter {
      *   - `dnd_oncall_cutoff_min`: `DndOnCallCutoffResolver` rechnet
      *     `LocalTime.ofSecondOfDay(cutoffMinutes * 60L)`. Negativ oder >= 1440 wirft eine
      *     `DateTimeException` - der DND-Tick stirbt dann bei jedem Lauf.
+     *   - `weckton_anstieg_sekunden` / `weckton_anstieg_start_prozent`: beide bestimmen, WIE LEISE
+     *     und WIE LANGE der Wecker anlaeuft. Eine Datei mit `3600` Sekunden oder `1` Prozent
+     *     ergaebe einen Wecker, den man nicht hoert - und zwar ohne jede Fehlermeldung, denn beide
+     *     Werte sind fuer sich genommen gueltige Zahlen. Der Lesepfad klemmt sie zwar (`AlarmPrefs`),
+     *     aber hier wird der Nutzer nach einem Import auch DARUEBER INFORMIERT, statt den Wert
+     *     stillschweigend zurechtzubiegen.
      *
-     * Bewusst NUR diese beiden: fuer alles andere ist eine Klemme im Lesepfad die richtige Ebene,
+     * Bewusst NUR diese vier: fuer alles andere ist eine Klemme im Lesepfad die richtige Ebene,
      * und die ist dort vorhanden. Dieser Katalog ist keine zweite Validierungsschicht fuer alles,
      * sondern der Schutz an der Stelle, an der FREMDE Daten hereinkommen.
      */
     private val PLAUSIBLE_INT_RANGES: Map<String, IntRange> = mapOf(
         "snooze_minutes" to 1..120,
-        "dnd_oncall_cutoff_min" to 0..(24 * 60 - 1)
+        "dnd_oncall_cutoff_min" to 0..(24 * 60 - 1),
+        // Die Grenzen kommen aus AlarmPrefs statt als Zahlen hierher: `const val` wird beim
+        // Uebersetzen eingesetzt, kostet also nichts - aber eine spaetere Aenderung dort kann
+        // nicht mehr an diesem Katalog vorbeilaufen.
+        "weckton_anstieg_sekunden" to
+            AlarmPrefs.MIN_ANSTIEG_SEKUNDEN..AlarmPrefs.MAX_ANSTIEG_SEKUNDEN,
+        "weckton_anstieg_start_prozent" to
+            AlarmPrefs.MIN_ANSTIEG_START_PROZENT..AlarmPrefs.MAX_ANSTIEG_START_PROZENT
     )
 
     /**

@@ -182,7 +182,7 @@ class DimBedienungshilfenWunschTest {
             "Nach dem Anfahren wird nicht mehr nachgemessen - ein Kartenwegfall darueber laesst " +
                 "den Bildlauf zu weit stehen (Issue #68)",
             Regex(
-                """animateScrollTo\(ziel\)[\s\S]{0,600}?withTimeoutOrNull\([\s\S]{0,400}?scrollState\.scrollTo\("""
+                """animateScrollTo\(ziel\)[\s\S]{0,600}?withTimeoutOrNull\([\s\S]{0,800}?scrollState\.scrollTo\("""
             ).containsMatchIn(statusTab)
         )
         assertTrue(
@@ -192,7 +192,21 @@ class DimBedienungshilfenWunschTest {
         )
         assertTrue(
             "Ein eigener Bildlauf des Nutzers beendet das Nachfuehren nicht - es risse ihn zurueck",
-            statusTab.contains("scrollState.value != gerollt")
+            statusTab.contains("nochUnserStand")
+        )
+        // Compose zieht scrollState.value SELBST auf maxValue herunter, sobald der Inhalt kuerzer
+        // wird - also genau dann, wenn eine Karte darueber wegfaellt. Eine Wache, die das fuer den
+        // Nutzer haelt, schaltet die Korrektur im Anlassfall ab (Befund am PR, 06.09.2026).
+        assertTrue(
+            "Die Wache kennt die Klemmung nicht - sie haelt ein automatisches Herunterziehen des " +
+                "Bildlaufs fuer einen Nutzer-Bildlauf und schaltet genau im Zielfall ab",
+            statusTab.contains("scrollState.maxValue")
+        )
+        assertTrue(
+            "Der zuletzt gesetzte Stand wird nur im Korrekturzweig nachgezogen - nach einer " +
+                "Klemmung bliebe der Vergleich dauerhaft schief und JEDE spaetere Korrektur aus",
+            Regex("""if \(nochUnserStand\)\s*\{\s*gerollt = scrollState\.value""")
+                .containsMatchIn(statusTab)
         )
     }
 

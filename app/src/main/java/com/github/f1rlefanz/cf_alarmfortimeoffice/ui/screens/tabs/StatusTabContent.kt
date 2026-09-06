@@ -152,10 +152,26 @@ fun StatusTabContent(
                     // Steht der Bildlauf nicht mehr dort, wo wir ihn hingesetzt haben, hat ihn
                     // der Nutzer selbst bewegt - dann gehoert ihm der Bildschirm, und
                     // Nachfuehren waere Zurueckreissen.
-                    val nutzerHatGerollt = scrollState.value != gerollt
-                    if (versatz >= 0 && versatz != gerollt && !nutzerHatGerollt) {
-                        scrollState.scrollTo(versatz)
+                    //
+                    // ABER NICHT JEDER SPRUNG IST DER NUTZER: `ScrollState` zieht `value` von
+                    // SELBST herunter, sobald der Inhalt kuerzer wird - sein `maxValue`-Setter
+                    // klemmt den Stand auf das neue Ende. Genau das passiert hier im Regelfall,
+                    // denn der ANLASS des Nachfuehrens ist eine wegfallende Karte darueber. Ohne
+                    // diese Unterscheidung schaltet die Wache die Korrektur in genau dem Fall ab,
+                    // fuer den sie gebaut ist. Preis der einfachen Form: wer selbst ganz nach
+                    // unten rollt, steht ebenfalls auf `maxValue` und wird noch einmal
+                    // nachgefuehrt - eine Bewegung, kein Dauerzustand.
+                    val nochUnserStand =
+                        scrollState.value == gerollt || scrollState.value == scrollState.maxValue
+                    if (nochUnserStand) {
+                        // Den Stand IMMER nachziehen, nicht nur beim Korrigieren: sonst bleibt
+                        // der Vergleich nach einer Klemmung dauerhaft schief, und jede spaetere
+                        // Korrektur faellt mit aus.
                         gerollt = scrollState.value
+                        if (versatz >= 0 && versatz != gerollt) {
+                            scrollState.scrollTo(versatz)
+                            gerollt = scrollState.value
+                        }
                     }
                 }
             }

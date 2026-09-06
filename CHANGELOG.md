@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.40.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.40.1 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Die Meldung „Dimmt nicht“ führt jetzt sauber bis zu dem Schalter, der sie auflöst._
+
+### 🐛 Behoben
+
+- **Der Sprung aus der Meldung landet nicht mehr halb daneben.** Tippt man auf den Hinweis, dass der Bedienungshilfen-Dienst aus ist, öffnet die App den Status-Bereich und rollt zu der Karte, die ihn einschaltet. Die Überschrift der Karte blieb dabei um etwa eine Zeile angeschnitten: Über der Karte stehen Kacheln, die sich erst nach kurzer Zeit füllen — fällt eine davon weg, rutscht alles darunter nach oben, und die Anzeige stand zu tief. Sie wird jetzt zwei Sekunden lang nachgeführt, bis der Inhalt sich beruhigt hat. Rollst du in der Zeit selbst, hört das Nachführen sofort auf.
+
+## Version 1.40.0
 
 **Stand:** September 2026
 

@@ -32,7 +32,7 @@ coroutines = "1.11.0"
 okhttp = "5.5.0"
 retrofit = "3.0.0"
 # Google API Client dependencies
-googleApiClient = "2.9.0"
+googleApiClient = "2.9.1"
 googleApiServicesCalendar = "v3-rev20220715-2.0.0"
 googleHttpClient = "2.2.0"
 

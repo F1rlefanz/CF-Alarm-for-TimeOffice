@@ -200,3 +200,71 @@ unverändert.
 > `DiscoveryMethod`) ist zum zweiten Mal vom Torwächter bestätigt — kein Verwender, keine
 > Iteration, kein `when`, kein `.ordinal`, keine ProGuard-Regel, und kein Erzeuger über die
 > gesamte Historie, also nichts in einem Bestands-JSON. Er darf unverändert wiederkommen.
+
+### 07.09.2026, Runde 19 (Issue #20, Extension-Funktionen ohne Aufrufer)
+
+**Ergebnis: 29 Kandidaten, 0 Rohbefunde, 0 bestätigte Funde — nichts zu schneiden.** Der
+Blickwinkel ist damit *abgearbeitet*, nicht verworfen: er war billig, vollständig entscheidbar und
+hat eine saubere Null geliefert. Gemessen über 426 Kotlin-Dateien (243 `main`, 176 `test`,
+4 `androidTest`): **29 Extension-Funktionen, davon 11 auf Dateiebene und 18 als Member,
+22 `private` und 7 sichtbar.** Jede einzelne hat eine belegte Aufrufstelle.
+
+Deshalb bringt dieser PR **keinen Schnitt** — nur diesen Nachtrag. Ein Aufräum-PR ohne Schnitt ist
+der richtige Abschluss einer Runde, die ehrlich nichts gefunden hat; die Alternative wäre, etwas zu
+schneiden, damit die Runde nach Arbeit aussieht.
+
+**Neue Lehre 1: Sichtbarkeit ist Teil der Messung, nicht Beiwerk.** Eine `private` Deklaration auf
+Dateiebene ist in Kotlin nur in *ihrer eigenen Datei* aufrufbar — bei 22 von 29 Kandidaten also.
+Wer trotzdem den ganzen Baum nach dem Namen absucht, misst nicht „hat Aufrufer", sondern „kommt der
+Name irgendwo vor", und das ist bei kurzen Namen etwas völlig anderes:
+
+```
+raw          53 Namenstreffer im Baum   ->   4 echte Aufrufe (alles andere: `val raw = …`)
+unresolved   42 Namenstreffer im Baum   ->  10 echte Aufrufe (alles andere: `result.unresolved`)
+validate     10 Namenstreffer im Baum   ->   7 echte Aufrufe (Rest: „could not validate…" im Log)
+```
+
+Die Richtung des Fehlers ist die tückische: eine baumweite Namenssuche **überzählt** Verwender und
+**versteckt damit Funde**, statt falsche zu erzeugen. Eine Runde, die nur so misst, meldet „nichts
+gefunden" und klingt gründlich. Beide Fassungen zu bauen — großzügig über den Baum *und* streng
+über den Sichtbarkeitsbereich — kostete hier zehn Minuten und ist der einzige Grund, warum die Null
+oben belastbar ist. **Wenn beide Fassungen dasselbe sagen, ist das ein Beleg; sagt nur eine etwas,
+ist es eine Vermutung.**
+
+**Neue Lehre 2: Überladungen in derselben Datei trennt nur die Stelligkeit.** `HueTargetReconciler`
+deklariert `HueLightAction.unresolved` **zweimal** (Z. 236 zweistellig, Z. 246 dreistellig). Jeder
+namensbasierte Zähler — auch der strenge — markiert beide als lebendig, sobald *eine* aufgerufen
+wird; eine tote Überladung wäre unsichtbar geblieben. Von Hand nach Argumentzahl aufgelöst: die
+zweistellige läuft in Z. 114/126/130 und aus Z. 250, die dreistellige in Z. 179/186/190/207/225/230.
+Beide leben. **Zähle bei gleichnamigen Deklarationen in einer Datei die Argumente, sonst ist dein
+„lebendig" für alle bis auf eine geraten.**
+
+**Kein Gatter — und diesmal liegt es nicht an den Zahlen.** Die Klasse ist statisch entscheidbar und
+hätte heute 0 % Fehlalarm. Sie taugt trotzdem nicht zur Dauerprüfung: Der Ertrag ist null (29
+Kandidaten, alle lebendig), und die Erkennung hat eine bekannte blinde Stelle, die genau bei neuem
+Code zuschlägt — `infix`- und `operator`-Erweiterungen werden **nicht** als `name(` aufgerufen,
+sondern als `a foo b` bzw. `a + b`. Heute gibt es keine einzige, die erste würde die Prüfung
+fälschlich melden. Ein Gatter mit null Ertrag und einem eingebauten Fehlalarm für den nächsten
+regulären Kotlin-Idiom-Gebrauch ist genau die Sorte, die der Skill fünfmal geschlossen gesehen hat.
+**Nicht bauen.** (Die Messskripte waren Wegwerfcode im Scratchpad, wie vorgesehen.)
+
+**Vorab gemessen, damit niemand eine Runde darauf verwendet: Extension-*Properties* lohnen nicht.**
+Der naheliegende Nachbar-Blickwinkel („`val Typ.name get()` ohne Leser") hat im ganzen Baum
+**8 Kandidaten**, und die Stichprobe entkräftet ihn schon: fünf sind `by preferencesDataStore`-
+Delegates (per Konstruktion in Gebrauch), `HueScheduleRule.modus` hat 61 Vorkommen, und
+`ColorScheme.success`/`ColorScheme.warning` sind über `MaterialTheme.colorScheme.…` in
+`AlarmStatusHeader`, `HueSettingsScreen` und `SettingsTabContent` belegt gelesen. Ich habe dafür
+**kein Issue angelegt** — ein Blickwinkel, den man beim Aufschreiben schon widerlegt hat, gehört
+nicht in die Warteschlange. Merkposten für die Zählung, falls es doch jemand versucht:
+`success` hat baumweit 642 Namenstreffer, praktisch alle `Result.success` — siehe Lehre 1.
+
+**Geprüft und bewusst so — nicht als Fund melden:** `private fun DimRule.betrifftSchicht` steht
+**zweimal** identisch im Baum (`DimRuleUseCase.kt:145`, `DimmerModellMigration.kt:354`). Das ist
+keine Altlast: beide sind dateiprivat, beide werden in ihrer eigenen Datei benutzt, und der KDoc der
+zweiten benennt die Kopie ausdrücklich („Wie `DimRuleUseCase.betrifftSchicht`"). Zusammenlegen wäre
+„schöner machen" und würde die Migration an den lebenden UseCase koppeln — genau das, was eine
+Migration nicht darf. Stehen lassen.
+
+**Zum Stand der Werkzeuge, nachgemessen am 07.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen, und der Konfliktzustands-Wächter fehlt allen sechs (`grep -c 'ls-files", "-u'` → 0).
+**Issue #60 gilt unverändert** und ist inzwischen der dritte Nachtrag in Folge, der ihn meldet.

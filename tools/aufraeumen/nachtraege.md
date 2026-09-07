@@ -200,3 +200,147 @@ unverändert.
 > `DiscoveryMethod`) ist zum zweiten Mal vom Torwächter bestätigt — kein Verwender, keine
 > Iteration, kein `when`, kein `.ordinal`, keine ProGuard-Regel, und kein Erzeuger über die
 > gesamte Historie, also nichts in einem Bestands-JSON. Er darf unverändert wiederkommen.
+
+### 07.09.2026, Runde 19 (Issue #20, Extension-Funktionen ohne Aufrufer)
+
+**Ergebnis: 29 Kandidaten, 0 Rohbefunde, 0 bestätigte Funde — nichts zu schneiden.** Der
+Blickwinkel ist damit *abgearbeitet*, nicht verworfen: er war billig, vollständig entscheidbar und
+hat eine saubere Null geliefert. Gemessen über 426 Kotlin-Dateien (243 `main`, 176 `test`,
+4 `androidTest`): **29 Extension-Funktionen, davon 11 auf Dateiebene und 18 als Member,
+22 `private` und 7 sichtbar.** Jede einzelne hat eine belegte Aufrufstelle.
+
+Deshalb bringt dieser PR **keinen Schnitt** — nur diesen Nachtrag. Ein Aufräum-PR ohne Schnitt ist
+der richtige Abschluss einer Runde, die ehrlich nichts gefunden hat; die Alternative wäre, etwas zu
+schneiden, damit die Runde nach Arbeit aussieht.
+
+**Neue Lehre 1: Sichtbarkeit ist Teil der Messung, nicht Beiwerk.** Eine `private` Deklaration auf
+Dateiebene ist in Kotlin nur in *ihrer eigenen Datei* aufrufbar — bei 22 von 29 Kandidaten also.
+Wer trotzdem den ganzen Baum nach dem Namen absucht, misst nicht „hat Aufrufer", sondern „kommt der
+Name irgendwo vor", und das ist bei kurzen Namen etwas völlig anderes:
+
+```
+raw          53 Namenstreffer im Baum   ->   4 echte Aufrufe (alles andere: `val raw = …`)
+unresolved   42 Namenstreffer im Baum   ->  10 echte Aufrufe (alles andere: `result.unresolved`)
+validate     10 Namenstreffer im Baum   ->   7 echte Aufrufe (Rest: „could not validate…" im Log)
+```
+
+Die Richtung des Fehlers ist die tückische: eine baumweite Namenssuche **überzählt** Verwender und
+**versteckt damit Funde**, statt falsche zu erzeugen. Eine Runde, die nur so misst, meldet „nichts
+gefunden" und klingt gründlich. Beide Fassungen zu bauen — großzügig über den Baum *und* streng
+über den Sichtbarkeitsbereich — kostete hier zehn Minuten und ist der einzige Grund, warum die Null
+oben belastbar ist. **Wenn beide Fassungen dasselbe sagen, ist das ein Beleg; sagt nur eine etwas,
+ist es eine Vermutung.**
+
+**Neue Lehre 2: Überladungen in derselben Datei trennt nur die Stelligkeit.** `HueTargetReconciler`
+deklariert `HueLightAction.unresolved` **zweimal** (Z. 236 zweistellig, Z. 246 dreistellig). Jeder
+namensbasierte Zähler — auch der strenge — markiert beide als lebendig, sobald *eine* aufgerufen
+wird; eine tote Überladung wäre unsichtbar geblieben. Von Hand nach Argumentzahl aufgelöst: die
+zweistellige läuft in Z. 114/126/130 und aus Z. 250, die dreistellige in Z. 179/186/190/207/225/230.
+Beide leben. **Zähle bei gleichnamigen Deklarationen in einer Datei die Argumente, sonst ist dein
+„lebendig" für alle bis auf eine geraten.**
+
+**Kein Gatter — und diesmal liegt es nicht an den Zahlen.** Die Klasse ist statisch entscheidbar und
+hätte heute 0 % Fehlalarm. Sie taugt trotzdem nicht zur Dauerprüfung: Der Ertrag ist null (29
+Kandidaten, alle lebendig), und die Erkennung hat eine bekannte blinde Stelle, die genau bei neuem
+Code zuschlägt — `infix`- und `operator`-Erweiterungen werden **nicht** als `name(` aufgerufen,
+sondern als `a foo b` bzw. `a + b`. Heute gibt es keine einzige, die erste würde die Prüfung
+fälschlich melden. Ein Gatter mit null Ertrag und einem eingebauten Fehlalarm für den nächsten
+regulären Kotlin-Idiom-Gebrauch ist genau die Sorte, die der Skill fünfmal geschlossen gesehen hat.
+**Nicht bauen.** (Die Messskripte waren Wegwerfcode im Scratchpad, wie vorgesehen.)
+
+**Vorab gemessen, damit niemand eine Runde darauf verwendet: Extension-*Properties* lohnen nicht.**
+Der naheliegende Nachbar-Blickwinkel („`val Typ.name get()` ohne Leser") hat im ganzen Baum
+**8 Kandidaten**, und die Stichprobe entkräftet ihn schon: fünf sind `by preferencesDataStore`-
+Delegates (per Konstruktion in Gebrauch), `HueScheduleRule.modus` hat 61 Vorkommen, und
+`ColorScheme.success`/`ColorScheme.warning` sind über `MaterialTheme.colorScheme.…` in
+`AlarmStatusHeader`, `HueSettingsScreen` und `SettingsTabContent` belegt gelesen. Ich habe dafür
+**kein Issue angelegt** — ein Blickwinkel, den man beim Aufschreiben schon widerlegt hat, gehört
+nicht in die Warteschlange. Merkposten für die Zählung, falls es doch jemand versucht:
+`success` hat baumweit 642 Namenstreffer, praktisch alle `Result.success` — siehe Lehre 1.
+
+**Geprüft und bewusst so — nicht als Fund melden:** `private fun DimRule.betrifftSchicht` steht
+**zweimal** identisch im Baum (`DimRuleUseCase.kt:145`, `DimmerModellMigration.kt:354`). Das ist
+keine Altlast: beide sind dateiprivat, beide werden in ihrer eigenen Datei benutzt, und der KDoc der
+zweiten benennt die Kopie ausdrücklich („Wie `DimRuleUseCase.betrifftSchicht`"). Zusammenlegen wäre
+„schöner machen" und würde die Migration an den lebenden UseCase koppeln — genau das, was eine
+Migration nicht darf. Stehen lassen.
+
+**Zum Stand der Werkzeuge, nachgemessen am 07.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen, und der Konfliktzustands-Wächter fehlt allen sechs (`grep -c 'ls-files", "-u'` → 0).
+**Issue #60 gilt unverändert** und ist inzwischen der dritte Nachtrag in Folge, der ihn meldet.
+
+#### RICHTIGSTELLUNG des Torwächters, 07.09.2026 (PR #75 geschlossen)
+
+Der Absatz oben ist **gerettet, aber nicht bestätigt**. Sein Kernergebnis hält; drei seiner Zahlen
+halten nicht, und ausgerechnet die falschen stehen in der Tabelle, die künftigen Runden das
+*richtige Zählen* beibringen soll. Wer den Absatz zitiert, zitiert bitte diese Richtigstellung mit.
+
+**Was hält — unabhängig nachgemessen, kein Zweifel:** Es gibt **29 Extension-Funktionen**
+(11 auf Dateiebene, 18 als Member; 22 `private`, 7 sichtbar), und **keine einzige ist tot**.
+Ein Widerleger hat das nicht per Regex, sondern mit einem eigenen Tokenizer reproduziert
+(Kommentare/Strings ausgeblendet, Typparameter übersprungen, Empfängerregion auf oberster
+Klammerebene geprüft) und alle 29 einzeln im jeweiligen Sichtbarkeitsbereich auf Aufrufer geprüft:
+**29/11/18/22/7 und 0 tote — identisch.** Auch die Überladungsauflösung
+`HueTargetReconciler.kt:236/246`, der doppelte `betrifftSchicht`, die 8 Extension-Properties und
+der Werkzeugstand (`pruefe_reste.py` sechs Prüfungen, `ls-files -u` fehlt allen sechs, Issue #60
+offen) sind nachgemessen und richtig. **Der Blickwinkel ist damit erledigt — niemand muss ihn
+wiederholen.**
+
+**Falsch 1 — die Kopfzahl widerspricht ihrer eigenen Klammer.** „426 Kotlin-Dateien" stimmt nicht;
+243 + 176 + 4 = **423**, und 423 ist auch der Istwert:
+
+```
+find app/src -name '*.kt' | wc -l   ->  423      (main 243, test 176, androidTest 4)
+git ls-files '*.kt'      | wc -l   ->  423      (ausserhalb app/src liegt keine .kt)
+```
+
+Das ist genau die Bezugsgröße, gegen die eine nächste Runde ihre Vollständigkeit prüfen würde.
+
+**Falsch 2 — „22 von 29" gehört nicht zu dem Satz, den es belegen soll.** Lehre 1 schreibt: „Eine
+`private` Deklaration **auf Dateiebene** ist nur in ihrer eigenen Datei aufrufbar — bei 22 von 29
+Kandidaten also." Auf Dateiebene privat sind **4 von 29**, nicht 22:
+
+```
+DndPrefs.kt:342  zieheSchichtnamenNach     HueRuleFormState.kt:276  zieleAlsAktionen
+DndPrefs.kt:361  entferneSchichtnamen      HueViewModel.kt:737      toConnectionHealth
+```
+
+Die 22 sind alle `private` **zusammen**; die übrigen 18 sind private *Member* und auf ihre Klasse
+bzw. ihr `companion object` beschränkt, nicht auf die Datei. Die Lehre selbst — Sichtbarkeit ist
+Teil der Messung — bleibt richtig, ihr Beleg ist es nicht.
+
+**Falsch 3 — die Beweistabelle der Lehre 1 reproduziert sich nicht.** Zeilenbasiert über alle
+`*.kt` (`git grep -nw <name> -- '*.kt' | wc -l`), also mit derselben Konvention, unter der die
+Kontrollzahlen `modus` = 61 und `success` = 642 sauber aufgehen:
+
+| Name | im Absatz | nachgemessen |
+|---|---|---|
+| `raw` | 53 | **58** |
+| `unresolved` | 42 | **44** |
+| `validate` | 10 | **16** |
+
+Keine der drei stimmt, und die Tabelle mischt zwei Konventionen: `validate` = 10 ergibt sich nur,
+wenn man Kommentare **und String-Literale** abzieht — dann fällt aber ausgerechnet der „Rest", den
+die eigene Klammer benennt („could not validate…", `HueTrustManager.kt:405`), als String selbst
+heraus und kann den Rest nicht mehr erklären. Dazu wechselt die rechte Spalte den Bezugsrahmen:
+`raw` ist **zweimal** deklariert (`DimRuleRepositoryTest.kt:49`, `AlarmRepositoryBrokenPersistenceTest.kt:59`)
+mit je vier Aufrufern, baumweit also **8** statt der genannten 4 — eine baumweite Trefferzahl steht
+dort einer Aufrufzahl **einer** Deklaration gegenüber. Das ist Wort für Wort der Fehler, vor dem
+Lehre 2 eine Zeile später warnt.
+
+**Vorsicht bei einer Begründung, nicht bei ihrem Ergebnis:** Dass fünf der acht
+Extension-Properties `by preferencesDataStore`-Delegates und „**per Konstruktion in Gebrauch**"
+seien, ist in diesem Repo keine Messung, sondern eine widerlegte Annahme — `CLAUDE.md` führt den
+`@TokenDataStore`-Provider (`oauth_tokens`) als genau solchen Delegaten, den bis v1.11.2 **niemand**
+injizierte; am Gerät verifiziert, die Datei existierte gar nicht. Das *Ergebnis* stimmt hier
+trotzdem: alle acht wurden einzeln nachgeprüft und sind lebendig. Wer den Nachbar-Blickwinkel
+„Extension-Properties ohne Leser" später doch aufgreift, stützt sich also auf diese Einzelprüfung,
+nicht auf „per Konstruktion".
+
+**Die Lehre über allem — sie ist der Grund, warum PR #75 trotz sauberen Kernergebnisses geschlossen
+wurde:** Diese Datei ist für die nächste Runde bindend. Eine Runde, die ehrlich nichts findet, tut
+das Richtige, wenn sie nichts schneidet — dann ist der Nachtrag aber ihr **einziges** Erzeugnis und
+trägt die volle Beweislast. **Zahlen, die nur der Erzählung dienen, müssen denselben Nachweis
+aushalten wie ein Schnitt.** Prüf jede Zahl, die du aufschreibst, gegen die Zählweise, mit der du
+sie gewonnen hast, benenne diese Zählweise im Text — und rechne die Summen deiner eigenen
+Klammern nach.

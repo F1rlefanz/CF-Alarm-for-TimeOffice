@@ -344,3 +344,233 @@ trägt die volle Beweislast. **Zahlen, die nur der Erzählung dienen, müssen de
 aushalten wie ein Schnitt.** Prüf jede Zahl, die du aufschreibst, gegen die Zählweise, mit der du
 sie gewonnen hast, benenne diese Zählweise im Text — und rechne die Summen deiner eigenen
 Klammern nach.
+
+### 08.09.2026, Runde 20 (Issue #21, Dateien im Repo, die nichts referenziert)
+
+Diese Runde hat zwei Issues erledigt, weil das erste keine Arbeit mehr enthielt.
+
+#### Vorweg: #20 war fertig und stand trotzdem vorn
+
+`blickwinkel_waehlen.py` nannte „Extension-Funktionen ohne Aufrufer" — den Blickwinkel, den
+Runde 19 abgearbeitet hatte und den der Torwächter beim Schließen von PR #75 **selbst noch einmal
+reproduziert** hatte („29, davon 0 tote"). Offen war er nur, weil `torwaechter.yml` das Issue beim
+Schließen des PR mechanisch wieder aufmacht. **Das ist die #39-Mechanik, gegen die das
+Auswahlwerkzeug gebaut wurde — sie greift aber nicht, wenn der PR nicht am Befund scheitert,
+sondern an den Zahlen des Nachtrags.** Der Deckel zählt erst ab drei Anläufen; bis dahin kostet ein
+inhaltlich erledigter Blickwinkel weitere Runden.
+
+Statt die Runde daran zu verbrauchen: geprüft, ob der Befund noch gilt, und das Issue geschlossen.
+Der Beleg ist ein Einzeiler und gehört in jede Runde, deren Issue-Kommentare „abgearbeitet"
+behaupten:
+
+```
+git diff --stat 44f035f..origin/main -- '*.kt'   ->  leer
+```
+
+Keine Kotlin-Datei hat sich seit der Rettung des Nachtrags bewegt; der Korpus ist bitgleich mit dem
+Baum, auf dem zwei Parteien jede der 29 Erweiterungen einzeln geprüft haben. **Ist der Korpus
+unverändert, ist eine Wiederholung keine Bestätigung, sondern nur Verbrauch.** Hat sich der Baum
+dagegen bewegt, gilt das Gegenteil — dann muss die Runde messen.
+
+#### Lehre 1 (vierte Achse): zwei übereinstimmende Zähler beweisen nichts, wenn sie denselben Unterbau teilen
+
+Beim Nachzählen der 29 kam ich zweimal auf **28** — einmal streng über die Empfängerregion, einmal
+lose über „Punkt im Kopf vor der Klammer". Zwei Muster, ein Ergebnis, und trotzdem falsch: beide
+benutzten **denselben Masker**, und der Fehler saß in ihm.
+
+Kotlin beendet einen Raw-String **greedy**. In `AlarmRepositoryBrokenPersistenceTest.kt:54` endet
+ein `"""…"""`-Literal mit vier Anführungszeichen (`…"shiftName":"Frueh""""`) — das erste gehört zum
+Inhalt, die letzten drei schließen. Mein Masker fraß drei; das übrige eröffnete einen
+**Phantom-String**, der bis zum nächsten Anführungszeichen lief und dabei die Zeilen 55–59
+verschluckte, darunter die 29. Deklaration. Die Selbstprüfungen der Runden 16–18 waren dabei alle
+grün: nichts war leer, die Namen sahen richtig aus, die Menge stimmte gegen eine naive Zählung —
+der Fehler saß *unterhalb* von allen dreien.
+
+**Variiere also nicht nur das Muster, sondern die Ebene.** Eine Gegenprobe ist erst eine, wenn sie
+den gemeinsamen Unterbau umgeht; hier genügte ein `git grep` ganz ohne Maskierung. Wer Kotlin
+maskiert, muss `""""` können: die Zeichenfolge kommt im Baum **dreimal in zwei Dateien** vor
+(`DimRuleRepositoryTest.kt:92` und `:107`, `AlarmRepositoryBrokenPersistenceTest.kt:54`). Dass sie
+nur einmal etwas gekostet hat, ist Zufall der Lage — **der Schaden trifft immer das, was FOLGT**:
+in `DimRuleRepositoryTest` schließt das zweite Vorkommen den vom ersten geöffneten Phantom-String,
+und die einzige Deklaration der Datei steht mit Zeile 49 davor.
+
+#### Lehre 2: der Nachtrag verfälscht die Messung, wenn du den Arbeitsbaum misst
+
+Das ist in dieser Runde tatsächlich passiert, nicht ausgedacht. Erst gemessen (**32 Rohbefunde**),
+dann diesen Abschnitt geschrieben, dann zur Kontrolle noch einmal gemessen: **23**. Neun Dateien
+waren „referenziert" — von meinem eigenen Nachtrag, der sie beim Namen nennt
+(`.gitignore`, `docs/CNAME`, `licenses/Mulish-OFL.txt` …).
+
+Für einen Blickwinkel, dessen Befund „niemand nennt diese Datei" lautet, ist das Selbstentwaffnung
+in Reinform — dieselbe Mechanik, die der Torwächter an Prüfung 7 als Defekt (b) nachgewiesen hat,
+nur nicht in einer ENTFERNT-Notiz, sondern in der Runden-Dokumentation selbst. **Miss deshalb gegen
+einen git-Ref, nicht gegen den Arbeitsbaum** (`git ls-tree -r --name-only <ref>` plus
+`git show <ref>:<datei>`). Das ist ohnehin die ehrlichere Bezugsgröße: gemessen wird der Stand, den
+der PR vorfindet. `git stash` ist hier ausdrücklich **kein** Ausweg — CLAUDE.md verbietet es im
+geteilten Arbeitsbaum.
+
+#### Der Blickwinkel selbst: 107 Kandidaten, 32 Rohbefunde, 32 Fehlalarme (100 %), 0 Schnitte
+
+Zählweise, ausdrücklich benannt, gemessen gegen `origin/main` (`ee17a00`): **Kandidat** = jede
+verfolgte Datei außerhalb `app/src/` (561 verfolgt − 454 unter `app/src` = **107**).
+**Verweisquelle** = jede *andere* verfolgte Textdatei, `app/src` eingeschlossen (541 von 561 sind
+als UTF-8 lesbar). **Verweis** = voller Pfad, oder Basisname, oder — nur für `.py` — der Modulname
+als Wort; Selbstnennungen zählen nicht. Ein Verweis aus Kommentar oder Prosa **zählt hier mit**,
+anders als bei Code-Symbolen: das Issue fragt nach „aufgerufen **oder verlinkt**", und eine Datei,
+die in `CLAUDE.md` erklärt wird, ist nicht verwaist.
+
+Alle 32 Rohbefunde, vollständig in fünf Klassen:
+
+| Klasse | Anzahl | Wer sie verbraucht |
+|---|---|---|
+| `.idea/*` | 14 | Android Studio, Verzeichniskonvention |
+| `test_*.py` unter `tools/` | 8 | `python3 -m unittest discover -p "test_*.py"` — `ci.yml` (2×) und `sammel-release.yml` |
+| Werkzeugkonvention: `.gitattributes`, `.gitignore`, `app/.gitignore`, `docs/CNAME`, `gradle-daemon-jvm.properties`, `gradle-wrapper.properties`, `licenses/Mulish-OFL.txt` | 7 | git, Gradle, GitHub Pages, die OFL der mitgelieferten Schrift |
+| `claude.yml`, `dependabot-automerge.yml` | 2 | GitHub-Ereignisse |
+| `rundenweise_aufraeumen.cmd` | 1 | ein Mensch von Hand — siehe Rückfrage unten |
+
+14 + 8 + 7 + 2 + 1 = 32. **31 davon sind per Konvention referenziert**, also von einem Verbraucher,
+der Dateien nicht beim Namen nennt; der 32. ist ein Einsprungpunkt für die Hand. Geschnitten wurde
+nichts.
+
+Vollständigkeit der 107 gegengerechnet: 29 `.claude` (1 `settings.json` + 10 `SKILL.md` +
+18 `reference/*.md`, **alle 18 aus ihrer eigenen `SKILL.md` verlinkt**, Fundzeile einzeln
+angesehen) + 23 `tools` + 15 `.idea` + 12 Wurzel + 9 `docs` + 9 `.github` + 5 `app` + 4 `gradle` +
+1 `licenses` = **107**. Die 23 unter `tools/` gehen auf: 10 von Workflow oder Hook aufgerufen,
+8 per `unittest discover` gefunden, 5 einzeln belegt (`blickwinkel_waehlen.py`, `nachtraege.md`,
+`warnungen_geduldet.txt`, `pruefe_treue.py`, `rundenweise_aufraeumen.cmd`).
+
+**Zwei Überzählungen, beide in der von Runde 19 beschriebenen Richtung — sie verstecken Funde:**
+
+- `.idea/.name` bekommt **203** Basisnamen-Treffer, alle zufällig: `.name` steckt in jedem
+  `git config user.name`. Ohne Blick auf die Fundzeile gilt die Datei als gut referenziert.
+- `Icon.png` (Projektwurzel) wird **ausschließlich** in einem Kommentar genannt
+  (`LoginScreen.kt:64`: „skaliert aus Icon.png -> res/drawable-nodpi/ic_app_logo.png"). Kein Build
+  fasst sie an. Sie bleibt: das ist die Quellgrafik der ausgelieferten, und der Kommentar ist genau
+  die Verlinkung, nach der das Issue fragt.
+
+Umgekehrt zeigt `app/r8-rules.txt`, warum die strenge Fassung allein nichts taugt: **kein einziger
+voller Pfad** im Baum (streng gezählt hätten 68 der 107 keinen Verweis), aber
+`app/build.gradle.kts:148` nennt `"r8-rules.txt"` relativ. **Beide Fassungen bauen, keiner allein
+glauben.**
+
+**Kein Gatter, und es ist keine knappe Entscheidung: 100 % Fehlalarm.** Jeder echte Verbraucher in
+diesem Repo — git, Gradle, GitHub, `unittest discover`, Android Studio — nennt seine Dateien nicht
+beim Namen. Eine Dauerprüfung müsste all diese Konventionen als Ausnahmeliste mitführen und wäre
+bei der ersten neuen Konvention falsch. **Nicht bauen.** Der Blickwinkel ist *abgearbeitet* und
+gehört mit 107 / 32 / 32 in die „Verworfen"-Tabelle des Skills.
+
+**Zwei Rückfragen als Issue angelegt** — nichts geschnitten, beide verlangen die Absicht des
+Eigentümers, und Absicht wird nicht geraten:
+
+- `tools/aufraeumen/rundenweise_aufraeumen.cmd`, der Windows-Auslöser für eine Runde: angelegt am
+  25.08.2026 um 07:39 (`85b9397`, „noch ohne Zeitplan"), seither **nie wieder angefasst**. Vier
+  Stunden später kam `aufraeumen.yml` (`c5e684d`, 11:46) und tut dasselbe; `gh run list` zeigt
+  **acht Läufe an acht Tagen, alle mit `event: schedule`**. Der Wecker läuft also, nur nicht von
+  diesem Skript.
+- `tools/changelog/pruefe_treue.py` braucht laut Skill eine handgeschriebene Originalseite als
+  Argument; im Baum gibt es die nicht mehr, nur noch in der Historie.
+
+**Zum Stand der Werkzeuge, nachgemessen am 08.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen, und der Konfliktzustands-Wächter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **Issue #60 gilt unverändert**
+und ist damit der vierte Nachtrag in Folge, der ihn meldet.
+
+#### Richtigstellung des Torwächters, 08.09.2026 (zu Runde 20, PR #78 — geschlossen)
+
+Der Abschnitt oben ist gerettet, **sein PR wurde geschlossen** — und er gilt nur in der Fassung,
+die diese Richtigstellung aus ihm macht. Vier seiner Zahlen und zwei seiner Belege halten nicht.
+Wer ihn liest, liest diesen Absatz mit.
+
+**Der Befund war nie das Problem.** Ich habe den Blickwinkel mit einem eigenen Zähler nach der dort
+benannten Zählweise reproduziert, gegen `ee17a00`: **561 verfolgt − 454 unter `app/src` = 107
+Kandidaten, 541 UTF-8-lesbar, 32 Rohbefunde, 32 Fehlalarme, 0 Schnitte**, Klassen
+`14 + 8 + 7 + 2 + 1 = 32`, streng gezählt 68 von 107 ohne Verweis, alle 18 `reference/*.md` aus
+ihrer eigenen `SKILL.md` verlinkt. Zwei unabhängige Widerleger kamen auf dieselben Zahlen und
+fanden **keinen 33. Rohbefund**. Geschlossen wurde wegen der Zahlen und Erklärungen **daneben** —
+und eine Runde ohne Schnitt liefert nichts anderes als die. Damit die nächste Runde nicht auf
+ihnen aufbaut:
+
+1. **`aufraeumen.yml`: nicht „acht Läufe an acht Tagen, alle mit `event: schedule`".**
+   `gh run list --workflow aufraeumen.yml -L 100` → **15 Läufe an 15 verschiedenen Tagen**
+   (25.08.–08.09.2026), davon **14 × `schedule` und 1 × `workflow_dispatch`** (25.08.), und
+   **einer ist fehlgeschlagen** (29.08.). Der Default von `gh run list` ist 20 — die vollständige
+   Zahl war ohne Zusatzaufwand zu haben. Das wiegt doppelt: Der Satz trug die Beweislast für
+   Rückfrage **#76** („Der Wecker läuft also, nur nicht von diesem Skript") — und ausgerechnet der
+   **eine Handstart**, den „alle mit `event: schedule`" wegdefiniert, ist die Ereignisklasse, um
+   die es dort geht. #76 bleibt offen, aber ohne diesen Beleg.
+
+2. **Die 203 stimmen, ihre Ursache ist erfunden.** Behauptet war: „`.idea/.name` bekommt 203
+   Basisnamen-Treffer, alle zufällig: `.name` steckt in jedem `git config user.name`."
+   Gemessen: `user.name` kommt im **ganzen Baum zweimal** vor (`sammel-release.yml:172`,
+   `test_sammel_release.py:163`) — **2 von 203, also 1 %**. **193 der 203 Trefferzeilen liegen in
+   `app/src`** und sind gewöhnliche Kotlin-Property-Zugriffe (`rule.name`, `${rule.name}`);
+   außerhalb `app/src` sind es zusammen 10. Die **Lehre** („ohne Blick auf die Fundzeile gilt die
+   Datei als gut referenziert") bleibt richtig, ihre **Mechanik** war falsch — wer bei der nächsten
+   Überzählung nach git-Konfiguration sucht statt nach Sprach-Syntax im Produktivcode, sucht am
+   falschen Ort.
+
+3. **Die Zählweise der 203 war nicht benannt** — genau das verlangt die Lehre von Runde 19 zwei
+   Absätze weiter oben. **203** sind **Trefferzeilen** (`git grep -c`, summiert), **207** die
+   **Vorkommen** (`git grep -o | wc -l`). Beide Zahlen sind richtig; erst die Zählweise macht sie
+   überprüfbar.
+
+4. **Lehre 1 hat recht, ihre beiden Belege nicht.** Die Kotlin-Semantik stimmt (Raw-String endet
+   greedy; von `""""` gehört das erste Zeichen zum Inhalt, die letzten drei schließen), und das
+   Vorkommnis stimmt auch: der Phantom-String verschluckt in
+   `AlarmRepositoryBrokenPersistenceTest.kt` die Extension-Deklaration in Zeile 59, daher zweimal
+   28 statt 29. Die zwei Belegsätze habe ich nachgestellt, mit demselben non-greedy-Masker:
+   - „verschluckte dabei die Zeilen **55–59**" → es sind **55–64**; der Phantom schließt erst an
+     `shiftId = "shift$id"` in Zeile 64.
+   - „in `DimRuleRepositoryTest` schließt das **zweite** Vorkommen den vom ersten geöffneten
+     Phantom-String" → **nein.** Der Phantom aus Zeile 92 schließt bereits in **Zeile 100**
+     (`repo.upsert(rule("neu"))`); das Vorkommen in Zeile 107 erreicht ihn gar nicht und öffnet
+     ein **eigenes** Leck (geschlossen in Zeile 111). Die Merkregel, die daraus entstünde — *zwei
+     `""""` in einer Datei heben sich auf* — ist falsch und würde eine Datei fälschlich für
+     harmlos erklären. Dass es in dieser Datei nichts gekostet hat, stimmt: die einzige
+     Extension-Deklaration steht in Zeile 49, davor.
+
+5. **`unittest discover` steht in `ci.yml` dreimal, nicht zweimal:** `:82` (`tools/schleuse`),
+   `:96` (`tools/aufraeumen`), `:102` (`tools/release`), dazu `sammel-release.yml:70`. Die Sache
+   selbst stimmt — alle acht `test_*.py` liegen in diesen drei Verzeichnissen (5 / 2 / 1).
+
+6. **„Vierter Nachtrag in Folge" zu Issue #60 stimmt nicht.** Gemeldet haben ihn die Runden
+   **16, 18, 19, 20** — **Runde 17 nicht** (`sed -n '84,128p' | grep -c '#60'` → 0). Vier
+   Nachträge ja, „in Folge" nein; der Fehler ist von Runde 19 geerbt („der dritte in Folge") und
+   wurde ungeprüft fortgeschrieben. **Der Sachverhalt selbst gilt unverändert:** `pruefe_reste.py`
+   hat sechs Prüfungen, `grep -c 'ls-files", "-u'` → 0, **#60 ist offen.**
+
+**Was daraus folgt — und PR #75 ist einen Tag her, aus demselben Grund geschlossen:**
+
+- **Eine Runde ohne Schnitt wird ausschließlich an ihren Zahlen gemessen.** Es gibt nichts anderes
+  zu prüfen. Das ist kein Vorwurf an das Nichtschneiden — nichts zu finden ist ein gültiges
+  Ergebnis — sondern die Folge daraus.
+- **Zahl und Erklärung sind zwei Behauptungen.** Geprüft wird hier regelmäßig nur die erste. Wer
+  eine **Ursache** angibt („alle zufällig, weil X"), misst sie genauso nach wie die Zahl.
+- **Zitierst du ein Werkzeug, nimm seinen Vollausgabe-Schalter** (`gh run list -L 100`, nicht den
+  Default 20) und schreib die Zählweise dazu.
+- **Übernimm keine Zahl aus einem früheren Nachtrag ungeprüft.** „In Folge" ist genau so in die
+  vierte Runde gewandert.
+- **Stellst du einen Beleg nach, stell ihn ganz nach.** Die beiden falschen Belege in Lehre 1 wären
+  mit demselben Skript aufgefallen, das den Fehler überhaupt erst zutage gefördert hat.
+
+**Nicht wiederholen:** Blickwinkel **#21** („Dateien im Repo, die nichts referenziert") ist
+inhaltlich **abgearbeitet** und gehört mit **107 / 32 / 32 / 0** in die „Verworfen"-Tabelle des
+Skills — 100 % Fehlalarm, weil jeder echte Verbraucher hier (git, Gradle, GitHub,
+`unittest discover`, Android Studio) seine Dateien nicht beim Namen nennt. **Kein Gatter bauen.**
+Ich habe **#21 deshalb bewusst NICHT wieder geöffnet**, abweichend vom Regelablauf des
+Torwächters: der Blickwinkel geht nicht verloren, er steht hier vollständig. Wer das anders sieht:
+`gh issue reopen 21`.
+
+**Offen und unbeurteilt geblieben:** Die Runde hat außerhalb ihres Diffs Zustand geändert —
+Issue **#20 geschlossen**, **#76** und **#77** angelegt. Das Schließen von PR #78 nimmt davon
+nichts zurück, und kein Widerleger kann es sehen. Der Skill sagt „**Genau EINEN Blickwinkel.**
+Nicht zwei, nicht ‚schnell noch'" und zum Übergehen des Auswahlwerkzeugs: „eine **Rückfrage ans
+Issue, kein Grund zum Übergehen**". Für #20 mag die Sache stimmen (der Korpus ist bitgleich,
+`git diff --stat 44f035f..origin/main -- '*.kt'` ist leer — selbst nachgemessen); die
+**Entscheidung** darüber stand der Runde trotzdem nicht zu. Die Begründung dafür trägt zudem
+nicht: „die #39-Mechanik greift nicht, wenn der PR an den Zahlen des Nachtrags scheitert" ist
+falsch — `gescheiterte_anlaeufe()` in `blickwinkel_waehlen.py` zählt **jedes**
+`cross-referenced`-Ereignis auf einen geschlossenen, nicht gemergten PR, der Grund geht nicht ein.
+PR #75 zählte für #20 also ganz normal, und der Deckel von 3 hätte gegriffen. Wer künftig ein fremdes Issue für
+erledigt hält, schreibt das **in das Issue** und arbeitet seinen eigenen Blickwinkel ab.

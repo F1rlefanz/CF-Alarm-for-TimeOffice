@@ -28,6 +28,7 @@
 - Snooze braucht `snoozeAlarmAction(id)`
 - Ein schwebender Snooze muss einen Reboot überleben
 - NICHTS am Application-Graphen darf WorkManager (oder CE-Storage) beim BAUEN anfassen
+- Ein Funkloch ist kein Anmeldeproblem (Einstufung, Entprellung, Netz-Nachholung)
 - Kein `getSharedPreferences()` und kein CE-Zugriff in einem Property-Initializer einer Klasse am
 - Schlummer-Dauer (`AlarmPrefs`, seit v1.22.0) ist konfigurierbar, aber EINE Quelle für beide
 - `AlarmMaintenanceService`: `stopSelf(startId)`, niemals blankes `stopSelf()`
@@ -483,3 +484,151 @@ weiterer Weckruf". Unterschieden wird jetzt über die Alarm-Kennung (`Weckvorgan
 **bei fehlender Kennung gilt „derselbe Vorgang"**, weil nur der umgekehrte Irrtum einen Wecker
 kostet: hält man einen neuen Wecker fälschlich für denselben, steht eine überflüssige Warnung
 über einem laut klingelnden Wecker, den man weiterhin stoppen kann.
+
+## Ein Funkloch ist kein Anmeldeproblem (09.09.2026, v1.40.3)
+
+**Was der Nutzer sah.** Eine Benachrichtigung: „Anmeldung erforderlich — Dein Kalender kann nicht
+synchronisiert werden. Bitte öffne die App und melde dich an." Es gab nichts anzumelden. Die App
+war angemeldet, blieb angemeldet, und sechs Stunden später synchronisierte sie anstandslos weiter.
+
+**Was das Gerätelog zeigte** (Fairphone 6, `debug_logs_2026-09-09.txt`, Zeilen 1737–1899):
+
+```
+11:48:12.933  🔄 Token expired, attempting refresh...      (Token lief 06:48 ab)
+11:48:29.874  Old token cleared                            (clearToken hing 17 s)
+11:48:29.918  E/Token: Google Play Services refresh failed
+              java.io.IOException: NetworkError
+                at GoogleAuthUtil.getToken(...)
+                at OAuth2TokenManager.refreshViaGooglePlayServices(OAuth2TokenManager.kt:311)
+11:48:29.921  E/Maintenance: Token refresh failed, aborting maintenance
+11:48:30.968  D/Network: Network capabilities changed - hasInternet: false
+17:48:37.377  🔐 Token encrypted and saved ... rotations=282
+17:48:38.266  ✅ Maintenance completed: 4 alarms in sync
+```
+
+Die Zeile eine Sekunde nach dem Fehlschlag ist der Beleg: das Gerät hatte kein Netz. Über neun
+Tage Log war das der **einzige** solche Abbruch — kein beharrlicher Defekt, ein Aussetzer.
+
+**Der Fehler im Code** war eine Zeile Bequemlichkeit: `performMaintenance` behandelte **jedes**
+`isFailure` von `getValidToken()` gleich. Dabei unterscheidet `TokenException` die Fälle längst.
+Es ist genau dieselbe Sorte Fehldiagnose, die zwei Bildschirmseiten weiter unten schon einmal
+behoben wurde — dort steht seither, ein unlesbarer Kalenderauswahl-Read sei „KEINE
+Konfigurations-Meldung, die Auswahl ist nur unlesbar". Auf der Kalenderseite war die Lehre
+gezogen, auf der Token-Seite nicht.
+
+**Warum eine falsche Handlungsaufforderung teuer ist und nicht bloß unschön:** sie verbraucht
+Glaubwürdigkeit. Wer zweimal vergeblich die App geöffnet und nichts vorgefunden hat, öffnet sie
+beim dritten Mal nicht mehr — und beim dritten Mal ist der Zugriff dann wirklich entzogen.
+
+### Die Einstufung folgt dem Vertrag von GoogleAuthUtil
+
+`WartungTokenFehler.einstufe()` rät nicht, sondern liest die zugesicherte Semantik ab:
+`IOException` heißt bei `GoogleAuthUtil` ausdrücklich „vorübergehend, später erneut versuchen",
+`GoogleAuthException` heißt „endgültig, ohne Zutun des Nutzers wird das nichts". Entscheidend ist
+deshalb die **Ursache** eines `RefreshFailed`, nicht sein Typ.
+
+Damit das überhaupt entscheidbar ist, musste `TokenException.RefreshFailed` erst eine `cause`
+bekommen: bis v1.40.2 wurde nur `e.message` in den Text übernommen und die Ursache verworfen. Ein
+Funkloch war danach von einem entzogenen Zugriff nicht mehr zu unterscheiden — die Information war
+zum Zeitpunkt der Entscheidung schlicht weg.
+
+Das `when` über die versiegelte `TokenException` ist **exhaustiv**: ein künftiger Subtyp lässt die
+Stelle nicht mehr übersetzen, statt still in einen Default zu fallen. Die Ursachenkette wird
+durchlaufen (`refresh()` wickelt seinen eigenen Fehlschlag noch einmal ein, die `IOException`
+liegt dann zwei Ebenen tief) und gegen eine im Kreis zeigende `cause`-Kette abgesichert.
+
+**Die Richtung im Zweifel:** Alles, was keine `TokenException` ist, gilt als VORÜBERGEHEND. Eine
+unbekannte Ursache rechtfertigt keine Behauptung über die Anmeldung; sichtbar wird sie über die
+Entprellung trotzdem. Auch `StorageFailed` ist vorübergehend — Tink oder DataStore sind kaputt,
+und eine Neuanmeldung repariert daran nichts.
+
+### „Vorübergehend" heißt entprellt, nicht stumm
+
+Die gefährliche Gegenrichtung wäre, den Netzfall einfach still zu schlucken: Ein Zustand, der den
+Alarm-Sync dauerhaft anhält, muss sichtbar sein, sonst versiegen die Wecker lautlos — dieselbe
+Überlegung wie beim `CalendarUnavailableNotifier`, und die Entprellung ist bewusst dieselbe.
+Gemeldet wird ab dem **zweiten** Fehlschlag in Folge, und dann mit einem Text, der nichts
+Falsches behauptet („Kalender-Synchronisation gestört"). Ein `bereitsGemeldet`-Merker verhindert,
+dass sich dieselbe Störung alle sechs Stunden erneut meldet; ein gültiges Token setzt beides
+zurück.
+
+**Der Text nennt bewusst keine Dauer.** „Seit Stunden" wäre naheliegend und wäre falsch: dank der
+Netz-Nachholung unten können zwei Fehlschläge in Folge auch wenige Minuten auseinanderliegen.
+
+**Das Zurücksetzen hängt am TOKEN, nicht am Gesamterfolg des Laufs.** Der Zähler zählt
+Token-Fehlschläge, und die Wartung steigt danach noch an mehreren Stellen regulär aus (Lade-Gate,
+keine Kalender ausgewählt). Am Ende des Laufs aufgehängt bliebe die Entprellung nach einem
+übersprungenen Lauf fälschlich scharf.
+
+**Der Merker gehört nicht in den Konfigurations-Export** (`ConfigBackupFilter.RUNTIME_KEYS`). Die
+gefährliche Richtung ist das importierte „wurde schon gemeldet": ein frisches Gerät hielte seine
+erste echte Störung für bereits ausgesprochen und bliebe still, während die Synchronisation steht.
+
+**Die Meldung wird wieder eingesammelt, wenn die Ursache weg ist** - eine Stoerungsmeldung ueber
+einer funktionierenden App ist dieselbe Sorte Unwahrheit wie die falsche Anmeldeaufforderung.
+Aber NUR, wenn `bereitsGemeldet` stand: die Notification-ID 1002 teilen sich alle
+Handlungs-Meldungen des Dienstes (auch „Keine Kalender ausgewaehlt" und „Schicht-Konfiguration
+nicht lesbar"), blindes Abraeumen loeschte womoeglich eine fremde, weiterhin zutreffende Meldung.
+Stand der Merker dagegen, war die letzte Meldung nachweislich unsere - jeder Lauf der laufenden
+Serie ist in Schritt 1 ausgestiegen und kam an keiner anderen Meldestelle vorbei.
+
+### Nachgeholt wird, sobald wieder Netz da ist — nicht nach einem geratenen Abstand
+
+Der abgebrochene Lauf hinterließ bis v1.40.2 sechs Stunden Funkstille: `MAX_NACHHOLVERSUCHE`
+greift nur bei einem abgelehnten **Vordergrund-Start**, nicht bei einem inhaltlich gescheiterten
+Lauf. Ein fester Nachholabstand rät ins Blaue — er ist entweder zu kurz (weckt das Gerät im
+Funkloch immer wieder ohne Aussicht auf Erfolg) oder zu lang.
+
+Die Bedingung, auf die es ankommt, kennt das System bereits: `NetworkType.CONNECTED`. WorkManager
+hält sie in seiner eigenen Datenbank vor, also über **Prozesstod und Neustart hinweg** — ein
+`ConnectivityManager`-Callback im laufenden Prozess könnte das nicht, denn der Prozess einer
+Wecker-App ist zwischen zwei Wartungsläufen regelmäßig gar nicht da. Dasselbe Muster fährt
+`CalendarPreAlarmRefreshScheduler` schon.
+
+**Das ist kein zweiter Planer der 6h-Kette** (die Invariante gilt weiter): ein einmaliger Auftrag,
+der sich nicht selbst nachstellt und keinen AlarmManager-Slot belegt. Er startet denselben
+Wartungslauf, den auch `TimezoneChangeReceiver` anstößt; dessen `finally` zieht die Kette
+anschließend regulär weiter. `forceSync = true`, weil der ausgefallene Lauf den Frische-Stempel
+nicht gesetzt hat, der Puffer der bestehenden Wecker aber meist noch weit reicht — ohne Zwang
+übersprünge ausgerechnet der Nachholversuch die Kalender-Abfrage.
+
+**Der Vordergrund-Start aus einem Worker heraus wird abgelehnt** (Android 12+; nur das Feuern
+eines *exakten* Alarms steht auf der Ausnahmeliste, ein WorkManager-Auftrag nicht).
+`AlarmMaintenanceService.start()` fängt das seit jeher selbst ab und holt per exaktem Alarm ~10 s
+später nach. Dieser Rückfallpfad wird deshalb bewusst benutzt statt umgangen — und deshalb geht
+die Nachholung über den Service statt direkt auf `syncAlarms`: es soll EINE
+Wartungsimplementierung geben.
+
+**Der Deckel (`MAX_NETZ_NACHHOLVERSUCHE = 3`) ist nicht optional.** Die Nachholung hängt an
+„Netz verfügbar", und ein Anschluss ohne echten Internetzugang (Hotel-WLAN vor dem Login, Captive
+Portal) erfüllt diese Bedingung dauerhaft. Jeder Lauf scheiterte dann erneut mit `IOException`,
+forderte sofort die nächste Nachholung an und weckte das Gerät im Minutentakt — exakt der Fehler,
+gegen den `WartungsKettenPlanung.darfNachholen` existiert, nur an anderer Stelle. Angefordert wird
+außerdem nur bei **nachgewiesener** Netzursache; sonst wartete der Auftrag auf eine Bedingung, die
+längst erfüllt ist, liefe sofort und scheiterte an derselben Ursache.
+
+### Am Emulator nachgestellt (09.09.2026)
+
+Flugmodus an, Uhr per `cmd alarm set-time` über den Token-Ablauf hinaus gestellt (ohne Root
+möglich, `auto_time` vorher auf 0 — sonst holt NTP die Uhr zurück, sobald das Netz wiederkommt,
+und der Versuch löst sich in Luft auf).
+
+| Was | Beleg aus dem Gerätelog |
+|---|---|
+| 1. Fehlschlag | `W/Maintenance: Token voruebergehend nicht erneuerbar … (Art=VORUEBERGEHEND, 1. Fehlschlag in Folge)` — **keine** Benachrichtigung |
+| 2. Fehlschlag | dieselbe Zeile mit „2. Fehlschlag in Folge", dazu `android.title=String (Kalender-Synchronisation gestört)` in `dumpsys notification` — **nicht** „Anmeldung erforderlich" |
+| Ursache korrekt durchgereicht | `TokenException$RefreshFailed: Google refresh failed: NetworkError` als `cause` im WARN |
+| Netz zurück | `20:48:19.421 Network capabilities changed - hasInternet: true` → `20:48:19.464 🌐 WARTUNG: Netz wieder da - Nachholung startet` — **43 ms** |
+| Nachholung greift durch | `Maintenance service started (erzwungener Lauf)` → `✅ WARTUNG: Stoerungsserie beendet` → `✅ Maintenance completed: 3 alarms in sync in 631ms` |
+| Meldung wird eingesammelt | nach dem geglückten Lauf zählt `dumpsys notification` **0** Treffer auf „Kalender-Synchronisation gestört" |
+
+Zwei Fallen, die beim Nachstellen Zeit gekostet haben und beim nächsten Mal Zeit sparen:
+
+- **Ein Zeitsprung schreibt in eine andere Logdatei.** Springt die Uhr auf den Folgetag und danach
+  (per NTP) zurück, verteilt sich EIN Versuch auf `debug_logs_<beide Tage>.txt`. Ein „das ist nicht
+  im Log" heißt hier erst einmal nur: nicht in dieser Datei.
+- **`dumpsys jobscheduler` bricht mitten im Dump ab** („Failed to write while dumping service
+  jobscheduler: Broken pipe"), wenn die Ausgabe durch eine Pipe läuft. Ein fehlender Job in einem
+  so abgeschnittenen Dump ist kein Befund — gezielt greppen statt filtern und blättern.
+- **Ein großer Zeitsprung lässt regulären Lauf UND Wiederanlauf-Wachhund gemeinsam fällig werden**;
+  jede Zeile steht dann doppelt im Log. Das ist der `ServiceRunTracker`-Fall, kein Doppel-Planer.

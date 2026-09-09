@@ -283,7 +283,9 @@ class OAuth2TokenManager(
             Result.failure(e)
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Token refresh failed", e)
-            Result.failure(TokenException.RefreshFailed(e.message ?: "Unknown error"))
+            // Ursache DURCHREICHEN, nicht nur die Meldung: an ihr haengt die Einstufung in
+            // WartungTokenFehler (IOException = voruebergehend, sonst endgueltig).
+            Result.failure(TokenException.RefreshFailed(e.message ?: "Unknown error", e))
         }
     }
     
@@ -329,7 +331,7 @@ class OAuth2TokenManager(
             )
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "Google Play Services refresh failed", e)
-            throw TokenException.RefreshFailed("Google refresh failed: ${e.message}")
+            throw TokenException.RefreshFailed("Google refresh failed: ${e.message}", e)
         }
     }
     

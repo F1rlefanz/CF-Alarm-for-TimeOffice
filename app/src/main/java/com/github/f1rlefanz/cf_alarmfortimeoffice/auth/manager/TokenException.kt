@@ -26,9 +26,18 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
     class AuthorizationFailed(message: String) : TokenException(message)
     
     /**
-     * Token Refresh fehlgeschlagen
+     * Token Refresh fehlgeschlagen.
+     *
+     * [cause] MUSS mitgegeben werden, wo eine vorliegt — daran haengt eine Entscheidung, nicht
+     * nur die Lesbarkeit des Logs: `WartungTokenFehler` unterscheidet den voruebergehenden vom
+     * endgueltigen Fehlschlag genau an dieser Ursache. GoogleAuthUtil sichert dafuer einen
+     * klaren Vertrag zu — `IOException` heisst "voruebergehend, spaeter erneut versuchen",
+     * `GoogleAuthException` heisst "endgueltig, der Nutzer muss handeln". Bis v1.40.2 wurde nur
+     * `e.message` in den Text uebernommen und die Ursache verworfen; ein Funkloch war danach
+     * nicht mehr von einem entzogenen Zugriff zu unterscheiden, und die Wartung meldete beides
+     * als "Anmeldung erforderlich".
      */
-    class RefreshFailed(message: String) : TokenException(message)
+    class RefreshFailed(message: String, cause: Throwable? = null) : TokenException(message, cause)
 
     /**
      * Der Nutzer muss der App erneut zustimmen (GoogleAuthUtil: "NeedRemoteConsent").

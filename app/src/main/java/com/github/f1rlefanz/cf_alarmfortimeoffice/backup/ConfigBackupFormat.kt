@@ -132,6 +132,14 @@ object ConfigBackupFilter {
         // Frage "woran erkenne ich das?" ehrlich beantworten.
         FeedNeueinlesenStore.KEY_ZEITPUNKT_NAME,
         FeedNeueinlesenStore.KEY_ANZAHL_NAME,
+        // Die Stoerungsserie der Wartung (WartungStoerungPrefs): wie oft der Token-Abruf auf
+        // DIESEM Geraet zuletzt in Folge scheiterte und ob darueber schon gemeldet wurde. Reiner
+        // Laufzeitzustand - jeder gueltige Token setzt ihn zurueck. Die gefaehrliche Richtung ist
+        // das importierte "wurde schon gemeldet": ein frisches Geraet hielte seine erste echte
+        // Stoerung fuer bereits ausgesprochen und bliebe still, waehrend die Synchronisation
+        // steht. Genau die Degradationsrichtung, die WartungStoerungPrefs ausdruecklich vermeidet.
+        "wartung_token_stoerung_zaehler",
+        "wartung_token_stoerung_gemeldet",
         // Zeitstempel der Hintergrundarbeit
         "last_maintenance_time",
         "last_event_load_time",

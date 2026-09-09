@@ -102,6 +102,19 @@ das baut man dieselbe Falle in neuer Form nach.
   Frische-Stempel `last_event_load_time`. Die Leerlisten-Sperre bleibt.
 - **`BootReceiver` liest die Kalenderauswahl über den DataStore**, nicht über den noch nicht
   hydrierten `StateFlow`, und setzt **vor** der langen Recovery einen Wartungs-Anker.
+- **Ein fehlgeschlagener Token-Abruf ist NICHT pauschal ein Anmeldeproblem.** `WartungTokenFehler`
+  stuft nach dem Vertrag von GoogleAuthUtil ein (`IOException` = voruebergehend,
+  `GoogleAuthException` = endgueltig) und entscheidet deshalb an der URSACHE eines
+  `RefreshFailed`, nicht an seinem Typ — dafuer MUSS die `cause` durchgereicht werden. Das `when`
+  ueber die versiegelte `TokenException` bleibt exhaustiv.
+- **„Voruebergehend" heisst entprellt, nicht stumm.** Gemeldet wird ab dem ZWEITEN Fehlschlag in
+  Folge, mit einem Text ohne Anmelde-Behauptung; ein gueltiges Token setzt Zaehler und
+  „bereits gemeldet" zurueck (am TOKEN aufgehaengt, nicht am Gesamterfolg des Laufs). Wer den
+  Netzfall ganz still schaltet, macht eine dauerhaft stehende Synchronisation unsichtbar.
+- **Die Netz-Nachholung ist ein EINMALIGER WorkManager-Auftrag** (`NetworkType.CONNECTED`), kein
+  zweiter Planer der Kette und kein Timer. Nur bei nachgewiesener Netzursache und gedeckelt
+  (`MAX_NETZ_NACHHOLVERSUCHE`) — ein Captive Portal erfuellt „Netz verfuegbar" dauerhaft. Sie geht
+  bewusst ueber `AlarmMaintenanceService.start()`, damit es EINE Wartungsimplementierung gibt.
 - **`TimezoneChangeReceiver` startet die Wartung mit `forceSync=true`** — ein bloßes Re-Arming wäre
   kein Ersatz (es rechnet dieselben Millis hin und zurück).
 - **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.** Der Graph

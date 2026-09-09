@@ -18,6 +18,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
@@ -41,9 +42,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.Collections
 import java.util.Date
+import java.util.IdentityHashMap
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -340,6 +344,160 @@ internal object WartungsKettenPlanung {
 }
 
 /**
+ * Wie reagiert die Wartung auf einen fehlgeschlagenen [OAuth2TokenManager.getValidToken]?
+ *
+ * WELCHER ABLAUF DAS ERZWUNGEN HAT: Bis v1.40.2 behandelte `performMaintenance` JEDES
+ * `isFailure` gleich und poste "Anmeldung erforderlich - bitte oeffne die App und melde dich an".
+ * Am 09.09.2026 um 11:48 war die Ursache am Geraet nachweislich ein Funkloch: GoogleAuthUtil warf
+ * `java.io.IOException: NetworkError`, eine Sekunde spaeter meldete der Netzbeobachter
+ * `hasInternet: false`, und der naechste regulaere Lauf um 17:48 rotierte den Token anstandslos.
+ * Der Nutzer wurde also aufgefordert, ein Anmeldeproblem zu beheben, das es nie gab - dieselbe
+ * Sorte Fehldiagnose, gegen die weiter unten schon der Kalenderauswahl-Read abgesichert ist
+ * ("KEINE Konfigurations-Meldung, die Auswahl ist nur unlesbar").
+ *
+ * DIE EINSTUFUNG FOLGT DEM VERTRAG VON GoogleAuthUtil, nicht einem Bauchgefuehl: dort heisst
+ * `IOException` ausdruecklich "voruebergehend, spaeter erneut versuchen" und `GoogleAuthException`
+ * "endgueltig, ohne Zutun des Nutzers wird das nichts". Deshalb entscheidet die URSACHE eines
+ * [TokenException.RefreshFailed] und nicht sein Typ.
+ *
+ * WARUM "VORUEBERGEHEND" TROTZDEM NICHT STILL BLEIBT: Ein Zustand, der den Alarm-Sync dauerhaft
+ * anhaelt, muss sichtbar sein - sonst versiegen die Wecker lautlos. Gemeldet wird deshalb ab dem
+ * [SCHWELLE_VORUEBERGEHEND]. Fehlschlag in Folge, und dann mit einem Text, der nichts Falsches
+ * behauptet. Genau die Entprellung, die `CalendarUnavailableNotifier` fuer unerreichbare Kalender
+ * schon faehrt.
+ *
+ * Android-frei und damit ohne Emulator pruefbar (wie [MaintenanceLoadDecision]) - Tests in
+ * `WartungTokenFehlerTest`.
+ */
+internal object WartungTokenFehler {
+
+    /** Ab dem wievielten Fehlschlag in Folge eine voruebergehende Stoerung gemeldet wird. */
+    const val SCHWELLE_VORUEBERGEHEND = 2
+
+    /**
+     * Wie oft eine Netz-Nachholung angefordert werden darf, bevor nur noch die regulaere
+     * 6h-Kette uebrig bleibt.
+     *
+     * OHNE DIESEN DECKEL entstuende eine enge Schleife: die Nachholung haengt an der Bedingung
+     * "Netz verfuegbar", und ein Anschluss ohne echten Internetzugang (Hotel-WLAN vor dem Login,
+     * Captive Portal) erfuellt sie dauerhaft. Jeder Lauf scheiterte dann erneut mit IOException,
+     * forderte sofort die naechste Nachholung an und weckte das Geraet im Minutentakt - derselbe
+     * Fehler, gegen den [WartungsKettenPlanung.darfNachholen] existiert, nur an anderer Stelle.
+     */
+    const val MAX_NETZ_NACHHOLVERSUCHE = 3
+
+    /** Wie ernst ist der Fehlschlag - muss der Nutzer sich anmelden, oder war es ein Aussetzer? */
+    enum class Art { ANMELDUNG, VORUEBERGEHEND }
+
+    data class Meldung(val titel: String, val text: String)
+
+    /**
+     * @param meldung was zu posten ist, oder `null` fuer "diesmal nur ins Log".
+     * @param netzNachholen ob eine Wartung angefordert werden soll, sobald wieder Netz da ist.
+     */
+    data class Entscheidung(
+        val art: Art,
+        val meldung: Meldung?,
+        val neuerZaehler: Int,
+        val neuBereitsGemeldet: Boolean,
+        val netzNachholen: Boolean
+    )
+
+    private val ANMELDUNG_MELDUNG = Meldung(
+        titel = "Anmeldung erforderlich",
+        text = "Dein Kalender kann nicht synchronisiert werden. Bitte öffne die App und melde dich an."
+    )
+
+    /**
+     * Der Text behauptet bewusst KEINE Dauer ("seit Stunden"): dank der Netz-Nachholung koennen
+     * zwei Fehlschlaege in Folge auch wenige Minuten auseinanderliegen.
+     */
+    private val STOERUNG_MELDUNG = Meldung(
+        titel = "Kalender-Synchronisation gestört",
+        text = "CF-Alarm konnte den Kalender bei mehreren Versuchen in Folge nicht abrufen — " +
+            "meist liegt das an der Netzverbindung. Bereits gestellte Wecker bleiben; neue " +
+            "Dienstplan-Änderungen kommen erst an, wenn die Verbindung wieder steht."
+    )
+
+    /**
+     * Exhaustives `when` ueber die versiegelte [TokenException]: ein kuenftiger Subtyp laesst
+     * diese Stelle nicht mehr uebersetzen, statt still in einen Default zu fallen.
+     *
+     * Alles, was keine [TokenException] ist, gilt als VORUEBERGEHEND. Das ist die vorsichtigere
+     * Richtung: eine unbekannte Ursache rechtfertigt keine Behauptung ueber die Anmeldung, und
+     * sichtbar wird sie ueber die Entprellung trotzdem.
+     */
+    fun einstufe(fehler: Throwable?): Art = when (fehler) {
+        is TokenException.NoTokenAvailable,
+        is TokenException.AuthorizationExpired,
+        is TokenException.AuthorizationFailed,
+        is TokenException.ConsentRequired,
+        is TokenException.SecurityViolation,
+        is TokenException.PendingAuthorization,
+        is TokenException.NoActivityContext -> Art.ANMELDUNG
+
+        // Speicher kaputt (Tink/DataStore) - eine Neuanmeldung repariert daran nichts.
+        is TokenException.StorageFailed -> Art.VORUEBERGEHEND
+
+        is TokenException.RefreshFailed ->
+            if (istNetzursache(fehler)) Art.VORUEBERGEHEND else Art.ANMELDUNG
+
+        else -> Art.VORUEBERGEHEND
+    }
+
+    /**
+     * Steckt irgendwo im Ursachenpfad eine [java.io.IOException]?
+     *
+     * Die Kette wird durchlaufen, weil `refresh()` seinen eigenen Fehlschlag noch einmal in ein
+     * [TokenException.RefreshFailed] wickelt - die IOException liegt dann zwei Ebenen tief. Der
+     * `gesehen`-Merker schuetzt vor einer im Kreis zeigenden `cause`-Kette (bei fremden
+     * Bibliotheken nicht auszuschliessen, und eine Endlosschleife im Wartungslauf waere teuer).
+     */
+    fun istNetzursache(fehler: Throwable?): Boolean {
+        val gesehen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
+        var aktuell = fehler
+        while (aktuell != null && gesehen.add(aktuell)) {
+            if (aktuell is IOException) return true
+            aktuell = aktuell.cause
+        }
+        return false
+    }
+
+    /**
+     * @param zaehlerVorher Fehlschlaege in Folge VOR diesem Lauf.
+     * @param bereitsGemeldet ob fuer die laufende Stoerungsserie schon gemeldet wurde - verhindert,
+     *   dass dieselbe Stoerung alle sechs Stunden erneut klingelt.
+     */
+    fun entscheide(fehler: Throwable?, zaehlerVorher: Int, bereitsGemeldet: Boolean): Entscheidung {
+        val art = einstufe(fehler)
+        val neuerZaehler = zaehlerVorher + 1
+
+        // Ein echter Anmeldefall meldet SOFORT und bei jedem Lauf: er ist kein Aussetzer, und
+        // ohne Zutun des Nutzers bleibt es dabei. Verhalten unveraendert gegenueber v1.40.2.
+        if (art == Art.ANMELDUNG) {
+            return Entscheidung(
+                art = art,
+                meldung = ANMELDUNG_MELDUNG,
+                neuerZaehler = neuerZaehler,
+                neuBereitsGemeldet = true,
+                netzNachholen = false
+            )
+        }
+
+        val meldenFaellig = neuerZaehler >= SCHWELLE_VORUEBERGEHEND && !bereitsGemeldet
+        return Entscheidung(
+            art = art,
+            meldung = if (meldenFaellig) STOERUNG_MELDUNG else null,
+            neuerZaehler = neuerZaehler,
+            neuBereitsGemeldet = bereitsGemeldet || meldenFaellig,
+            // Nur bei echter Netzursache - sonst wartet die Nachholung auf eine Bedingung, die
+            // laengst erfuellt ist, und liefe sofort in denselben Fehler.
+            netzNachholen = istNetzursache(fehler) && neuerZaehler <= MAX_NETZ_NACHHOLVERSUCHE
+        )
+    }
+}
+
+/**
  * Zaehlt die gleichzeitig laufenden Zyklen eines Service, der pro `onStartCommand` eine Coroutine
  * auf einem GETEILTEN Scope startet, und sagt, WANN mit WELCHER startId abgeraeumt werden darf.
  *
@@ -454,6 +612,10 @@ class AlarmMaintenanceService : Service() {
     @Inject
     lateinit var pendingDeselectionCleanupStore:
         com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
+
+    @Inject lateinit var wartungStoerungPrefs: WartungStoerungPrefs
+
+    @Inject lateinit var wartungNetzNachholer: WartungNetzNachholer
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -1110,6 +1272,88 @@ class AlarmMaintenanceService : Service() {
      *
      * @param forceSync ueberspringt Schritt 2 (Lade-Gate) — siehe [EXTRA_FORCE_SYNC].
      */
+    /**
+     * Ein fehlgeschlagener Token-Abruf ist NICHT gleich ein Anmeldeproblem. Einstufung,
+     * Entprellung und Deckel liegen in [WartungTokenFehler] (Android-frei und dort getestet),
+     * hier steht nur die Ausfuehrung.
+     *
+     * Das Gedaechtnis bekommt eigene try/catch-Klammern: ein unlesbarer oder nicht beschreibbarer
+     * Merker darf die MELDUNG nicht verhindern - das waere die teurere Richtung. Bei einem
+     * Lesefehler wird deshalb mit dem Default weitergerechnet und ein Schreibfehler nur geloggt.
+     */
+    private suspend fun behandleTokenFehlschlag(fehler: Throwable?) {
+        val zustand = try {
+            wartungStoerungPrefs.zustandNow()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.MAINTENANCE, "Stoerungs-Merker nicht lesbar - es wird mit dem Default gerechnet", e)
+            WartungStoerungPrefs.Zustand()
+        }
+
+        val entscheidung = WartungTokenFehler.entscheide(
+            fehler = fehler,
+            zaehlerVorher = zustand.zaehler,
+            bereitsGemeldet = zustand.bereitsGemeldet
+        )
+
+        // Das Log-Level folgt der Einstufung: ein Funkloch ist kein Fehler der App. Auffindbar
+        // bleiben muss es trotzdem, deshalb WARN und nicht DEBUG - Release-Logs fuehren WARN+,
+        // und ohne diese Zeile waere ein spaeterer Vorfall nicht mehr rekonstruierbar.
+        val lage = "Art=${entscheidung.art}, ${entscheidung.neuerZaehler}. Fehlschlag in Folge"
+        if (entscheidung.art == WartungTokenFehler.Art.ANMELDUNG) {
+            Logger.e(LogTags.MAINTENANCE, "Token nicht verfuegbar, Wartung abgebrochen ($lage)", fehler)
+        } else {
+            Logger.w(
+                LogTags.MAINTENANCE,
+                "Token voruebergehend nicht erneuerbar, Wartung abgebrochen ($lage)",
+                fehler
+            )
+        }
+
+        entscheidung.meldung?.let { showActionRequiredNotification(it.titel, it.text) }
+
+        if (entscheidung.netzNachholen) wartungNetzNachholer.merkeVor()
+
+        try {
+            wartungStoerungPrefs.setZustand(
+                zaehler = entscheidung.neuerZaehler,
+                bereitsGemeldet = entscheidung.neuBereitsGemeldet
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.MAINTENANCE, "Stoerungs-Merker nicht schreibbar - die Entprellung beginnt von vorn", e)
+        }
+    }
+
+    /**
+     * Gegenstueck zu [behandleTokenFehlschlag]: ein gueltiges Token beendet die Stoerungsserie.
+     *
+     * Das Zuruecksetzen haengt am TOKEN, nicht am Gesamterfolg des Laufs - der Zaehler zaehlt
+     * Token-Fehlschlaege, und die Wartung steigt danach noch an mehreren Stellen regulaer aus
+     * (Lade-Gate, keine Kalender ausgewaehlt). Waere er an das Ende des Laufs gebunden, bliebe
+     * die Entprellung nach einem uebersprungenen Lauf faelschlich scharf.
+     */
+    private suspend fun quittiereTokenErfolg() {
+        try {
+            if (wartungStoerungPrefs.zuruecksetzenFallsNoetig()) {
+                Logger.business(
+                    LogTags.MAINTENANCE,
+                    "✅ WARTUNG: Stoerungsserie beendet - Token wieder gueltig"
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.MAINTENANCE, "Stoerungs-Merker konnte nicht zurueckgesetzt werden", e)
+        }
+
+        // Ausserhalb des try: eine wartende Nachholung ist auch dann gegenstandslos, wenn der
+        // Merker gerade nicht schreibbar war. verwirf() faengt selbst.
+        wartungNetzNachholer.verwirf()
+    }
+
     private suspend fun performMaintenance(forceSync: Boolean) {
         val startTime = System.currentTimeMillis()
         Logger.business(LogTags.MAINTENANCE, "🔧 Starting maintenance cycle")
@@ -1156,14 +1400,11 @@ class AlarmMaintenanceService : Service() {
         val tokenResult = tokenManager.getValidToken()
         
         if (tokenResult.isFailure) {
-            Logger.e(LogTags.MAINTENANCE, "Token refresh failed, aborting maintenance")
-            showActionRequiredNotification(
-                title = "Anmeldung erforderlich",
-                message = "Dein Kalender kann nicht synchronisiert werden. Bitte öffne die App und melde dich an."
-            )
+            behandleTokenFehlschlag(tokenResult.exceptionOrNull())
             return
         }
-        
+
+        quittiereTokenErfolg()
         Logger.d(LogTags.MAINTENANCE, "✅ Token valid")
         
         // STEP 2: HEALTH CHECK (Time-based v3.0)

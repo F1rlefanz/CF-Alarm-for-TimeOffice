@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.40.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.40.4 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Beim Übertragen der Einstellungen auf ein neues Gerät bleibt die Warnung „Kalender nicht mehr abrufbar" dort scharf._
+
+### 🐛 Behoben
+
+- **Übertragene Einstellungen konnten eine wichtige Warnung stumm schalten:** In der Export-Datei landete bisher auch der interne Vermerk, über welche Kalender die App bereits gewarnt hat. Auf dem neuen Gerät hielt sie eine Störung damit für längst ausgesprochen und schwieg — ausgerechnet über den Zustand, in dem keine neuen Wecker mehr entstehen. Dieser Vermerk bleibt jetzt auf dem Gerät, auf dem er entstanden ist. Deine Einstellung, ob du diese Warnung überhaupt bekommen möchtest, wandert wie bisher mit.
+
+## Version 1.40.3
 
 **Stand:** September 2026
 

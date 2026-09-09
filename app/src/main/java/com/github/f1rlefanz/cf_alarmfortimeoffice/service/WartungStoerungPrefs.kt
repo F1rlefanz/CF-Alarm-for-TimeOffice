@@ -82,12 +82,14 @@ class WartungStoerungPrefs @Inject constructor(
      * Nach einem gueltigen Token aufzurufen. Liest vorher, um den DataStore nicht bei jedem der
      * vier taeglichen Wartungslaeufe ohne Anlass zu beschreiben.
      *
-     * @return `true`, wenn wirklich eine Stoerungsserie beendet wurde.
+     * @return der Zustand VOR dem Zuruecksetzen, oder `null`, wenn es nichts zurueckzusetzen gab.
+     *   Der Aufrufer braucht daraus [Zustand.bereitsGemeldet], um zu entscheiden, ob er die
+     *   Meldung wieder einsammeln darf - siehe `AlarmMaintenanceService.quittiereTokenErfolg`.
      */
-    suspend fun zuruecksetzenFallsNoetig(): Boolean {
+    suspend fun zuruecksetzenFallsNoetig(): Zustand? {
         val zustand = zustandNow()
-        if (zustand.zaehler == 0 && !zustand.bereitsGemeldet) return false
+        if (zustand.zaehler == 0 && !zustand.bereitsGemeldet) return null
         setZustand(zaehler = 0, bereitsGemeldet = false)
-        return true
+        return zustand
     }
 }

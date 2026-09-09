@@ -626,6 +626,14 @@ class AlarmMaintenanceService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "alarm_maintenance"
         private const val NOTIFICATION_ID = 1001
 
+        /**
+         * Die EINE Kennung aller Handlungs-Meldungen dieses Dienstes (Anmeldung, keine Kalender,
+         * Schicht-Konfiguration, Synchronisation gestoert). Sie teilen sie sich bewusst - es soll
+         * immer nur die aktuellste dieser Meldungen stehen. Wer sie abraeumt, muss deshalb wissen,
+         * dass er die eigene abraeumt (siehe [quittiereTokenErfolg]).
+         */
+        internal const val ACTION_REQUIRED_NOTIFICATION_ID = 1002
+
         // Slots, Intervall und Karenz der Kette liegen in WartungsKettenPlanung - Android-frei und
         // damit pruefbar. Der Wachhund-Slot dort traegt die Begruendung, warum es ihn gibt.
 
@@ -1337,11 +1345,30 @@ class AlarmMaintenanceService : Service() {
      */
     private suspend fun quittiereTokenErfolg() {
         try {
-            if (wartungStoerungPrefs.zuruecksetzenFallsNoetig()) {
+            val vorher = wartungStoerungPrefs.zuruecksetzenFallsNoetig()
+            if (vorher != null) {
                 Logger.business(
                     LogTags.MAINTENANCE,
                     "✅ WARTUNG: Stoerungsserie beendet - Token wieder gueltig"
                 )
+                // DIE MELDUNG WIRD WIEDER EINGESAMMELT - eine Stoerungsmeldung ueber einer
+                // funktionierenden App ist dieselbe Sorte Unwahrheit wie die falsche
+                // Anmeldeaufforderung, gegen die dieser ganze Pfad existiert.
+                //
+                // NUR bei `bereitsGemeldet`, und das ist die tragende Bedingung: die ID 1002
+                // teilen sich ALLE Meldungen dieses Dienstes, auch "Keine Kalender ausgewaehlt"
+                // und "Schicht-Konfiguration nicht lesbar". Blind abzuraeumen koennte eine fremde,
+                // weiterhin zutreffende Meldung loeschen. Stand der Merker dagegen auf true, dann
+                // war die letzte Meldung nachweislich unsere: jeder Lauf der laufenden Serie ist
+                // in Schritt 1 ausgestiegen und kam an keiner anderen Meldestelle vorbei.
+                if (vorher.bereitsGemeldet) {
+                    runCatching {
+                        getSystemService(NotificationManager::class.java)
+                            .cancel(ACTION_REQUIRED_NOTIFICATION_ID)
+                    }.onFailure {
+                        Logger.w(LogTags.MAINTENANCE, "Stoerungsmeldung konnte nicht zurueckgenommen werden", it)
+                    }
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -1710,6 +1737,6 @@ class AlarmMaintenanceService : Service() {
             .apply { pendingIntent?.let { setContentIntent(it) } }
             .build()
             
-        notificationManager.notify(1002, notification)
+        notificationManager.notify(ACTION_REQUIRED_NOTIFICATION_ID, notification)
     }
 }

@@ -564,6 +564,14 @@ keine Kalender ausgewählt). Am Ende des Laufs aufgehängt bliebe die Entprellun
 gefährliche Richtung ist das importierte „wurde schon gemeldet": ein frisches Gerät hielte seine
 erste echte Störung für bereits ausgesprochen und bliebe still, während die Synchronisation steht.
 
+**Die Meldung wird wieder eingesammelt, wenn die Ursache weg ist** - eine Stoerungsmeldung ueber
+einer funktionierenden App ist dieselbe Sorte Unwahrheit wie die falsche Anmeldeaufforderung.
+Aber NUR, wenn `bereitsGemeldet` stand: die Notification-ID 1002 teilen sich alle
+Handlungs-Meldungen des Dienstes (auch „Keine Kalender ausgewaehlt" und „Schicht-Konfiguration
+nicht lesbar"), blindes Abraeumen loeschte womoeglich eine fremde, weiterhin zutreffende Meldung.
+Stand der Merker dagegen, war die letzte Meldung nachweislich unsere - jeder Lauf der laufenden
+Serie ist in Schritt 1 ausgestiegen und kam an keiner anderen Meldestelle vorbei.
+
 ### Nachgeholt wird, sobald wieder Netz da ist — nicht nach einem geratenen Abstand
 
 Der abgebrochene Lauf hinterließ bis v1.40.2 sechs Stunden Funkstille: `MAX_NACHHOLVERSUCHE`
@@ -598,3 +606,29 @@ forderte sofort die nächste Nachholung an und weckte das Gerät im Minutentakt 
 gegen den `WartungsKettenPlanung.darfNachholen` existiert, nur an anderer Stelle. Angefordert wird
 außerdem nur bei **nachgewiesener** Netzursache; sonst wartete der Auftrag auf eine Bedingung, die
 längst erfüllt ist, liefe sofort und scheiterte an derselben Ursache.
+
+### Am Emulator nachgestellt (09.09.2026)
+
+Flugmodus an, Uhr per `cmd alarm set-time` über den Token-Ablauf hinaus gestellt (ohne Root
+möglich, `auto_time` vorher auf 0 — sonst holt NTP die Uhr zurück, sobald das Netz wiederkommt,
+und der Versuch löst sich in Luft auf).
+
+| Was | Beleg aus dem Gerätelog |
+|---|---|
+| 1. Fehlschlag | `W/Maintenance: Token voruebergehend nicht erneuerbar … (Art=VORUEBERGEHEND, 1. Fehlschlag in Folge)` — **keine** Benachrichtigung |
+| 2. Fehlschlag | dieselbe Zeile mit „2. Fehlschlag in Folge", dazu `android.title=String (Kalender-Synchronisation gestört)` in `dumpsys notification` — **nicht** „Anmeldung erforderlich" |
+| Ursache korrekt durchgereicht | `TokenException$RefreshFailed: Google refresh failed: NetworkError` als `cause` im WARN |
+| Netz zurück | `20:48:19.421 Network capabilities changed - hasInternet: true` → `20:48:19.464 🌐 WARTUNG: Netz wieder da - Nachholung startet` — **43 ms** |
+| Nachholung greift durch | `Maintenance service started (erzwungener Lauf)` → `✅ WARTUNG: Stoerungsserie beendet` → `✅ Maintenance completed: 3 alarms in sync in 631ms` |
+| Meldung wird eingesammelt | nach dem geglückten Lauf zählt `dumpsys notification` **0** Treffer auf „Kalender-Synchronisation gestört" |
+
+Zwei Fallen, die beim Nachstellen Zeit gekostet haben und beim nächsten Mal Zeit sparen:
+
+- **Ein Zeitsprung schreibt in eine andere Logdatei.** Springt die Uhr auf den Folgetag und danach
+  (per NTP) zurück, verteilt sich EIN Versuch auf `debug_logs_<beide Tage>.txt`. Ein „das ist nicht
+  im Log" heißt hier erst einmal nur: nicht in dieser Datei.
+- **`dumpsys jobscheduler` bricht mitten im Dump ab** („Failed to write while dumping service
+  jobscheduler: Broken pipe"), wenn die Ausgabe durch eine Pipe läuft. Ein fehlender Job in einem
+  so abgeschnittenen Dump ist kein Befund — gezielt greppen statt filtern und blättern.
+- **Ein großer Zeitsprung lässt regulären Lauf UND Wiederanlauf-Wachhund gemeinsam fällig werden**;
+  jede Zeile steht dann doppelt im Log. Das ist der `ServiceRunTracker`-Fall, kein Doppel-Planer.

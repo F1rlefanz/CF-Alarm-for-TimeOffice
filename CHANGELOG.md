@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.40.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.40.3 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Ein Funkloch wird nicht mehr als Anmeldeproblem gemeldet — und ein deswegen ausgefallener Abgleich wird nachgeholt, sobald das Netz wieder da ist._
+
+### 🐛 Behoben
+
+- **„Anmeldung erforderlich", obwohl alles in Ordnung war:** Konnte die App im Hintergrund kurz nicht ins Netz, meldete sie „Bitte öffne die App und melde dich an" — dabei war nichts anzumelden. Jetzt unterscheidet sie eine Störung der Verbindung von einem echten Anmeldeproblem und schickt dich nur noch dann in die App, wenn du dort wirklich etwas tun musst.
+- **Kein Fehlalarm bei einem einzelnen Aussetzer:** Ein kurzer Verbindungsabriss bleibt still. Erst wenn der Abgleich mehrmals hintereinander nicht klappt, meldet sich die App — dann als „Kalender-Synchronisation gestört", und sie sagt dazu, dass deine bereits gestellten Wecker bleiben. Renkt sich alles wieder ein, verschwindet die Meldung von selbst.
+
+### ✨ Neu
+
+- **Der Abgleich wird sofort nachgeholt, wenn das Netz zurück ist:** Bisher blieb nach einem missglückten Versuch bis zu sechs Stunden alles liegen. Jetzt merkt sich die App den ausgefallenen Abgleich und holt ihn nach, sobald wieder eine Verbindung besteht — Dienstplan-Änderungen kommen dadurch deutlich schneller an.
+
+## Version 1.40.2
 
 **Stand:** September 2026
 

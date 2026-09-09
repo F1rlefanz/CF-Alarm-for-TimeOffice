@@ -51,7 +51,24 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.40.2 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.40.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Ein Funkloch wird nicht mehr als Anmeldeproblem gemeldet — und ein deswegen ausgefallener Abgleich wird nachgeholt, sobald das Netz wieder da ist.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>„Anmeldung erforderlich", obwohl alles in Ordnung war:</strong> Konnte die App im Hintergrund kurz nicht ins Netz, meldete sie „Bitte öffne die App und melde dich an" — dabei war nichts anzumelden. Jetzt unterscheidet sie eine Störung der Verbindung von einem echten Anmeldeproblem und schickt dich nur noch dann in die App, wenn du dort wirklich etwas tun musst.</li>
+                <li><strong>Kein Fehlalarm bei einem einzelnen Aussetzer:</strong> Ein kurzer Verbindungsabriss bleibt still. Erst wenn der Abgleich mehrmals hintereinander nicht klappt, meldet sich die App — dann als „Kalender-Synchronisation gestört", und sie sagt dazu, dass deine bereits gestellten Wecker bleiben. Renkt sich alles wieder ein, verschwindet die Meldung von selbst.</li>
+            </ul>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Der Abgleich wird sofort nachgeholt, wenn das Netz zurück ist:</strong> Bisher blieb nach einem missglückten Versuch bis zu sechs Stunden alles liegen. Jetzt merkt sich die App den ausgefallenen Abgleich und holt ihn nach, sobald wieder eine Verbindung besteht — Dienstplan-Änderungen kommen dadurch deutlich schneller an.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.40.2</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Wartungsversion — für die Bedienung ändert sich nichts.</em></p>
 

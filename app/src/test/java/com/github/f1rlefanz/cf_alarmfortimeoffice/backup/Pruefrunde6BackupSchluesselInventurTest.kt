@@ -38,9 +38,7 @@ class Pruefrunde6BackupSchluesselInventurTest {
      */
     private val bewusstExportierbar = setOf(
         "bridge_id",
-        "calendar_unavailable_last_failed",
         "calendar_unavailable_notification_enabled",
-        "calendar_unavailable_notified",
         "dim_correction_notification_enabled",
         "dim_enabled",
         "dim_night_default_enabled",

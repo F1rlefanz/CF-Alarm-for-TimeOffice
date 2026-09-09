@@ -140,6 +140,20 @@ object ConfigBackupFilter {
         // steht. Genau die Degradationsrichtung, die WartungStoerungPrefs ausdruecklich vermeidet.
         "wartung_token_stoerung_zaehler",
         "wartung_token_stoerung_gemeldet",
+        // Das Entprellungs-Gedaechtnis der Kalender-Warnung (CalendarUnavailablePrefs): welche
+        // Kalender beim VORIGEN Lauf gescheitert sind und ueber welche schon gemeldet wurde. Beides
+        // eine Beobachtung DIESES Geraets - der Schalter daneben
+        // (`calendar_unavailable_notification_enabled`) ist dagegen eine echte Einstellung und
+        // bleibt exportierbar. Die gefaehrliche Richtung ist wieder das importierte "wurde schon
+        // gemeldet": `entscheideBenachrichtigung()` rechnet `beharrlich - bereitsGemeldet`, das
+        // neue Geraet hielte also Kalender-IDs fuer erledigt, ueber die es nie etwas gesagt hat -
+        // und schwiege dann ueber genau den Zustand, der die Wecker langsam versiegen laesst. Dass
+        // die Kalenderauswahl selbst nicht exportiert wird, hilft nicht: bei gleichem Google-Konto
+        // sind es dieselben IDs. `calendar_unavailable_last_failed` waere fuer sich harmlos (es
+        // wuerde frueher gewarnt), gehoert aber zum selben Gedaechtnis - ein halb mitgenommenes
+        // waere die unuebersichtlichere Lage.
+        "calendar_unavailable_notified",
+        "calendar_unavailable_last_failed",
         // Zeitstempel der Hintergrundarbeit
         "last_maintenance_time",
         "last_event_load_time",

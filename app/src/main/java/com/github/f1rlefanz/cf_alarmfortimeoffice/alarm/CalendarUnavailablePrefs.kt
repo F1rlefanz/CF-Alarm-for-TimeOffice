@@ -24,6 +24,10 @@ import javax.inject.Singleton
  * - [Zustand.bereitsGemeldet] beantwortet "habe ich das schon gesagt?" - ohne sie meldete sich
  *   dieselbe Stoerung alle sechs Stunden erneut.
  *
+ * Beide Mengen sind eine BEOBACHTUNG dieses Geraets und stehen deshalb in den `RUNTIME_KEYS` von
+ * `ConfigBackupFilter` - Begruendung dort. Kurz: ein importiertes "gilt als bereits gemeldet" ist
+ * genau die Degradationsrichtung, die [safeData] unten ausdruecklich vermeidet.
+ *
  * Der Toggle [enabled] liegt bewusst hier und nicht bei [ShiftChangeNotificationPrefs]: das sind
  * zwei verschiedene Aussagen ("dein Dienstplan hat sich geaendert" vs. "deine Datenquelle ist
  * kaputt"), und wer die eine abschaltet, will die andere nicht mitverlieren. Default AN - es ist

@@ -74,6 +74,11 @@ das baut man dieselbe Falle in neuer Form nach.
   Laufzeitzustand, Gerätebezug/Zugangsdaten, gerätelokale Onboarding-Markierungen. **Der Filter gilt
   in BEIDE Richtungen**, abgelehnte Schlüssel werden BENANNT. Die Liste stammt aus einer Inventur
   ALLER `*PreferencesKey("…")` im Baum.
+- **Der Toggle reist mit, das Gedächtnis bleibt.** Ein „schon gemeldet"-Merker gehört NIE in den
+  Export: Meldelogik rechnet `neu zu melden = beharrlich − bereits gemeldet`, ein importierter
+  Merker macht daraus eine erledigte Warnung, die nie ausgesprochen wurde. Zweimal aufgetreten
+  (`wartung_token_stoerung_gemeldet`, `calendar_unavailable_notified`); die Ein/Aus-Einstellung
+  daneben ist davon nicht betroffen.
 - **Der Import lehnt eine LEERE Definitionsliste ab** (kotlinx.serialization füllt still `emptyList()`).
 - **Der erwartete TYP kommt vom SCHLÜSSEL, nicht aus der Datei** — ein falsch typisierter Wert liegt
   reboot-fest und wirft bei jedem Lesen, bevor ein Default greifen kann.

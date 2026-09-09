@@ -4,6 +4,20 @@
 > Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
 > Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
+## Inhalt
+
+- `DeviceLocalFlagsGuard`: warum ein Waechter und keine Backup-Regel
+- Eine mitgesicherte Master-Pause wird ueber `resume()` aufgehoben, nicht durch Loeschen
+- Der Konfigurations-Export entscheidet durch AUSSCHLUSS, in BEIDE Richtungen
+- Der Toggle reist mit, das Gedaechtnis bleibt: „schon gemeldet"-Merker gehoeren nie in den Export
+- Der Import lehnt eine LEERE Definitionsliste ab
+- Der erwartete TYP kommt vom SCHLUESSEL, nicht aus der Datei
+- Der Schluessel-Filter sagt nichts ueber den WERT (Bereichspruefung, plus Klemme im Lesepfad)
+- Unlesbare Regelwerke werden beim Import BENANNT abgelehnt
+- `ShiftConfig.withCodeAssignedTo()` macht DREI Dinge zusammen
+
+---
+
 - **`DeviceLocalFlagsGuard` (erster Schritt in `initializeApp()`, best-effort) setzt beim erkannten
   Gerätewechsel gerätelokale Flags zurück.** Der `settings`-Store liegt richtigerweise im
   Android-Backup, enthält aber auch vier „schon abgelehnt"-Markierungen
@@ -48,6 +62,29 @@
   der erste Wurf war lückenhaft, der erste echte Export enthielt genau drei Schlüssel und ALLE DREI
   gehörten nicht hinein — darunter `active_alarms`. Wer eine neue Laufzeitgröße einführt, trägt sie
   hier ein; ein Test hält jede Kategorie fest.
+- **Ein „schon gemeldet"-Merker gehört nie in den Export — das ist die wiederkehrende Falle, nicht
+  ein Einzelfall.** Zweimal innerhalb einer Version aufgetreten: `wartung_token_stoerung_gemeldet`
+  (v1.40.3, beim Anlegen gleich richtig einsortiert) und `calendar_unavailable_notified` (v1.40.4,
+  seit v1.26.x exportierbar und niemandem aufgefallen). Beide Male dieselbe Mechanik: die
+  Meldelogik rechnet „was ist neu zu melden = was ist beharrlich − was ist schon gemeldet", also
+  macht ein importierter Merker aus einer nie ausgesprochenen Warnung eine erledigte. Die Folge ist
+  in beiden Fällen genau der Zustand, gegen den die Meldung gebaut wurde: bei der Kalender-Warnung
+  versiegen die Wecker, weil die Vollständigkeits-Sperren zwar das Löschen, damit aber auch jedes
+  Anlegen verhindern — und niemand erfährt davon. **Dass die Kalenderauswahl selbst nicht
+  exportiert wird, entschärft nichts**: bei gleichem Google-Konto (Neuinstallation, zweites Gerät
+  desselben Nutzers — der Normalfall für diese Datei) sind es dieselben Kalender-IDs. Der
+  Nebenschlüssel `calendar_unavailable_last_failed` wäre für sich harmlos (es würde FRÜHER gewarnt),
+  gehört aber zum selben Gedächtnis; ein halb mitgenommenes wäre schwerer zu durchschauen als ein
+  ganz oder gar nicht. Der Schalter daneben (`calendar_unavailable_notification_enabled`) ist eine
+  echte Einstellung und bleibt exportierbar. **Merkregel für neue Meldelogik: der Toggle reist mit,
+  das Gedächtnis bleibt.** Gemessen, nicht hergeleitet: `KalenderWarnungMerkerExportTest` schlug
+  gegen den unveränderten Filter fehl, in beiden Richtungen (Export nahm den Merker mit, Import
+  schrieb ihn). Warum als Rundtrip über die vier reinen Funktionen und nicht über
+  `ConfigBackupUseCase.export()`: dessen Export-/Importmethoden brauchen einen echten DataStore und
+  den halben Hilt-Graphen, die Entscheidung fällt aber vollständig in `isExportable`,
+  `toStoredValue`, `exclusionReason` und `applyValue` — das sind die echten Bausteine, keine
+  Nachbildung. Ein Test am Gerät wäre nur mit dem Google-Konto des Nutzers und einem künstlich
+  über zwei Wartungsläufe hinweg unerreichbaren Kalender zu haben.
 - **Der Import lehnt eine LEERE Definitionsliste ab.** kotlinx.serialization füllt ein fehlendes
   `definitions`-Feld stillschweigend mit `emptyList()`; aus „Datei unvollständig oder von Hand
   verstümmelt" würde lautlos „keine Schichten" — und das ist der dokumentierte Weg zu NULL ALARMEN

@@ -73,22 +73,6 @@ internal val SHIFT_HINT_GENERIC_EXAMPLES = listOf("Frühdienst", "Spätdienst", 
 internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N")
 
 /**
- * Der Hinweistext ueber der Schichtliste.
- *
- * WARUM ER SO GENAU FORMULIERT IST: Er beschrieb bis v1.22.2 zwei Dinge falsch, die derselbe
- * Arbeitsdurchgang geaendert hatte, der ihn eingefuehrt hat. (1) "Erkannt wird ueber die Muster,
- * nicht ueber den Schichtnamen allein" - [ShiftDefinition.matchesKeywords] zaehlt den Namen ab
- * zwei Zeichen ausdruecklich als zusaetzliches Muster, der [ShiftEditDialog] sagt das auch so; zwei
- * Bildschirme derselben App widersprachen sich. (2) "Die Standardmuster (IMCF, IMCS, IMCN, IMCZ)" -
- * die Vorgaben enthalten neben den Stationskuerzeln allgemeine Bezeichnungen, genau um die
- * Stationsabhaengigkeit aufzuloesen; wer nur die Kuerzel liest, haelt die neue
- * Stationsunabhaengigkeit fuer nicht vorhanden und sucht den Fehler an der falschen Stelle.
- *
- * Der Text nennt deshalb KEINE vollstaendige Musterliste (die driftet mit jeder Aenderung der
- * Vorgaben), sondern verweist auf die Karten darunter - dort steht pro Schicht, welche Muster
- * wirklich gelten.
- */
-/**
  * Der erste Satz - die eigentliche Regel. Er steht IMMER da.
  *
  * WARUM GETEILT: der vollstaendige Hinweis fuellte auf einem Geraet mit grosser Schrift die halbe
@@ -117,6 +101,19 @@ internal val SHIFT_RECOGNITION_HINT_DETAIL: String =
  * Der vollstaendige Hinweis. Bleibt als EIN Text bestehen, damit
  * `ShiftConfigScreenTextTest` ihn weiterhin gegen die echte Standardkonfiguration pruefen kann -
  * die Aufteilung ist eine Frage der Darstellung, nicht des Inhalts.
+ *
+ * WARUM ER SO GENAU FORMULIERT IST: Er beschrieb bis v1.22.2 zwei Dinge falsch, die derselbe
+ * Arbeitsdurchgang geaendert hatte, der ihn eingefuehrt hat. (1) "Erkannt wird ueber die Muster,
+ * nicht ueber den Schichtnamen allein" - [ShiftDefinition.matchesKeywords] zaehlt den Namen ab
+ * zwei Zeichen ausdruecklich als zusaetzliches Muster, der [ShiftEditDialog] sagt das auch so; zwei
+ * Bildschirme derselben App widersprachen sich. (2) "Die Standardmuster (IMCF, IMCS, IMCN, IMCZ)" -
+ * die Vorgaben enthalten neben den Stationskuerzeln allgemeine Bezeichnungen, genau um die
+ * Stationsabhaengigkeit aufzuloesen; wer nur die Kuerzel liest, haelt die neue
+ * Stationsunabhaengigkeit fuer nicht vorhanden und sucht den Fehler an der falschen Stelle.
+ *
+ * Der Text nennt deshalb KEINE vollstaendige Musterliste (die driftet mit jeder Aenderung der
+ * Vorgaben), sondern verweist auf die Karten darunter - dort steht pro Schicht, welche Muster
+ * wirklich gelten.
  */
 internal val SHIFT_RECOGNITION_HINT: String =
     SHIFT_RECOGNITION_HINT_KURZ + " " + SHIFT_RECOGNITION_HINT_DETAIL
@@ -553,19 +550,6 @@ fun ShiftConfigScreen(
 }
 
 /**
- * Zeigt die Kürzel, die im Kalender des Nutzers stehen, aber von keinem Erkennungsmuster getroffen
- * werden — nach Häufigkeit sortiert, zum Antippen.
- *
- * WARUM DIESE KARTE EXISTIERT: Die Standardkonfiguration kann die Kürzel einer fremden Station nur
- * raten, und Raten skaliert nicht — am echten Dienstplan ist genau das schiefgegangen. Was im
- * Kalender steht, weiß die App dagegen genau; sie muss es nur zeigen. Für jemanden auf einer
- * anderen Station ist das der Unterschied zwischen „läuft nach zwei Minuten" und „läuft nie, und er
- * merkt es erst nach dem Verschlafen".
- *
- * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) —
- * eine stillschweigend gekürzte Liste liest sich wie Vollständigkeit.
- */
-/**
  * Der Erkennungs-Hinweis, aufklappbar.
  *
  * WARUM AUFKLAPPBAR UND WARUM IN DER LISTE: Der vollstaendige Text fuellte auf einem Geraet mit
@@ -626,6 +610,19 @@ private fun SchichterkennungsHinweis() {
     }
 }
 
+/**
+ * Zeigt die Kürzel, die im Kalender des Nutzers stehen, aber von keinem Erkennungsmuster getroffen
+ * werden — nach Häufigkeit sortiert, zum Antippen.
+ *
+ * WARUM DIESE KARTE EXISTIERT: Die Standardkonfiguration kann die Kürzel einer fremden Station nur
+ * raten, und Raten skaliert nicht — am echten Dienstplan ist genau das schiefgegangen. Was im
+ * Kalender steht, weiß die App dagegen genau; sie muss es nur zeigen. Für jemanden auf einer
+ * anderen Station ist das der Unterschied zwischen „läuft nach zwei Minuten" und „läuft nie, und er
+ * merkt es erst nach dem Verschlafen".
+ *
+ * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) —
+ * eine stillschweigend gekürzte Liste liest sich wie Vollständigkeit.
+ */
 @Composable
 private fun CodeSuggestionCard(
     result: ShiftCodeSuggester.SuggestionResult,

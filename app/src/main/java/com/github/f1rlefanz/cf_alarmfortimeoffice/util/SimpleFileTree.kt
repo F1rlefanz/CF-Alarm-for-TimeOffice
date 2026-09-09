@@ -11,8 +11,7 @@ import java.util.Locale
 /**
  * Simple File-based Timber Tree for persistent logging
  * Stores logs in a file that survives app restarts and device reboots
- */
-/**
+ *
  * @param minPriority Nur Logs ab dieser Prioritaet (android.util.Log-Konstanten) werden
  *   persistiert. In Release WARN, damit INFO/business-Logs mit PII (E-Mail, Kalendertitel)
  *   NICHT im Klartext auf External Storage landen (widersprach sonst der Datenschutzerklaerung).

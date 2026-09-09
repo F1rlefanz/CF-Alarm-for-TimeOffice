@@ -574,3 +574,74 @@ falsch — `gescheiterte_anlaeufe()` in `blickwinkel_waehlen.py` zählt **jedes*
 `cross-referenced`-Ereignis auf einen geschlossenen, nicht gemergten PR, der Grund geht nicht ein.
 PR #75 zählte für #20 also ganz normal, und der Deckel von 3 hätte gegriffen. Wer künftig ein fremdes Issue für
 erledigt hält, schreibt das **in das Issue** und arbeitet seinen eigenen Blickwinkel ab.
+
+### 09.09.2026, Runde 21 (Issue #22, KDoc, dem direkt ein weiterer KDoc folgt)
+
+**Zahlen, Zählweise ausdrücklich benannt, gemessen gegen `2297893` (= `origin/main` beim Start):**
+Korpus **423** `.kt` unter `app/src` (`git ls-tree -r --name-only`), darin **2311 KDoc-Blöcke**
+(eigener Tokenizer, String-Literale maskiert, Rohstring-Regel aus Runde 20 eingebaut). Gegenprobe
+auf anderer Ebene: `git grep -c '/\*\*'` aufsummiert = **2311 Trefferzeilen**, `git grep -o` =
+**2311 Vorkommen** — je ein Marker pro Zeile, und keiner steckt in einem String-Literal, sonst
+läge die Tokenizer-Zahl darunter. **19 Rohbefunde, 2 Fehlalarme (10,5 %), 17 bestätigt**, jeder
+einzeln am Code angesehen. **10 repariert, 7 stehen gelassen** (Weckerkette/`dimmer/`, siehe
+unten). Nachher: **9 Rohbefunde** (die 2 Fehlalarme + die 7 stehen gelassenen), 2305 KDoc-Blöcke
+(−6: vier Zusammenführungen, eine Löschung, eine Verschiebung-mit-Zusammenführung).
+
+**Positivkontrolle, bevor irgendetwas geschnitten wurde:** derselbe Detektor auf `f1ad9ee^` findet
+`HueBridge.kt:28` — genau den Fall, den das Issue als blinden Fleck nennt und der seinerzeit nur
+zufällig beim Lesen auffiel. Ein Blickwinkel-Skript, das den einen bekannten Fund nicht
+reproduziert, misst etwas anderes als die Frage; das ist billiger zu prüfen als zu bereuen.
+
+**Die im Issue vorgeschlagene Einschränkung ist widerlegt — von ihrem eigenen Anlassfall.**
+Vorgeschlagen war „nur INNERHALB eines Klassen-/Objektrumpfs prüfen, nicht auf Dateiebene".
+`HueBridge.kt:28` stand in einer **Konstruktor-Parameterliste**, also in runden, nicht in
+geschweiften Klammern: Klammertiefe 0, die Einschränkung hätte ihn verworfen. Gemessen, falls
+jemand sie mit Klammern beider Art bauen will: von den 19 Rohbefunden liegen **6 auf Tiefe 0 und
+13 auf Tiefe 1**; unter den sechs sind **beide Fehlalarme, aber auch vier echte Funde**. Eine
+Tiefenschranke kauft also 0 % Fehlalarm für den Preis von **4 der 17 echten Funde (23,5 %)**.
+Zahlen und beide Varianten stehen im Gatter-Issue; **gebaut wird hier nichts** (Skill-Regel 4).
+
+**Der Mechanismus ist immer derselbe, und er ist schlimmer als eine Narbe.** Nicht „Doku bleibt
+nach gelöschtem Code liegen" (das ist Prüfung 5), sondern: jemand schreibt eine **neue Deklaration
+samt eigenem KDoc direkt über eine bestehende** — der alte Block verliert seinen Anker und steht
+danach über der **falschen** Deklaration. Drei Fälle am Diff belegt: `10e258e` (05.08.2026, neuer
+Typ dazwischen), `c6176c8` (14.08.2026, zweiter KDoc davorgestapelt), `20f8867` (21.08.2026,
+Deklaration umbenannt und geteilt). Am teuersten in `model/ShiftConfig.kt`: dort stand das KDoc von
+`findDefinitionFor` — der Block, auf dem CLAUDE.mds Warnung „`findDefinitionFor` und
+`matchesKeywords` nicht verwechseln" ruht — über `withCodeAssignedTo`, während `findDefinitionFor`
+selbst undokumentiert war.
+
+**Deshalb war die Reparatur meist kein Schnitt, und das ist Absicht.** Die Regel, nach der jeder
+Einzelfall entschieden wurde: **verschieben**, wenn der Waise eine andere, weiter unten stehende
+und dort undokumentierte Deklaration beschreibt (5×); **zusammenführen**, wenn beide Blöcke
+dieselbe folgende Deklaration beschreiben (4×); **löschen** nur, wenn die beschriebene Deklaration
+nicht mehr existiert (1×: `getEffectiveDaysAhead()` in `CalendarViewModel`, entfernt in `c7ffed7`
+am 25.11.2025 — der Block stand danach **288 Tage** verwaist da). Löschen wäre in den anderen 16
+Fällen Wissensverlust gewesen, und „belegt tot" heißt hier: die Deklaration ist weg, nicht bloß der
+Text wirkt alt.
+
+**Mechanisch belegt statt behauptet** (Wegwerfskript, zwei Fassungen desselben Tokenizers): über
+die 7 geänderten Dateien hat sich **kein einziges Nicht-Kommentar-Zeichen** geändert, und von den
+KDoc-Textzeilen sind **genau drei verschwunden, null hinzugekommen** — die Titelzeile „Der
+Hinweistext ueber der Schichtliste." (im Ziel-KDoc steht bereits „Der vollstaendige Hinweis.", und
+seit `20f8867` steht der Hinweis *in* der Liste) und die zwei Zeilen des toten
+`getEffectiveDaysAhead`-Blocks. Wer einen Kommentar-Umbau liefert, kann diese zwei Zahlen nennen;
+ohne sie ist „nur Kommentare bewegt" eine Behauptung.
+
+**Sieben Funde bewusst NICHT angefasst** (`AlarmUseCase` 2×, `AlarmRepository`, `AlarmViewModel`,
+`DimmerModellMigration` + sein Test, `DimmerRulesViewModel`): Leitplanke „Die Weckerkette fasst du
+nicht an". Die Abgrenzung war mechanisch — Pfad oder Dateiname enthält `alarm`, `service` oder
+`dimmer` —, damit sie nachprüfbar ist und nicht nach Gefühl. Ausgerechnet dort sitzt der wertvollste
+Fall (`clearInternalAlarms`: die allgemeine Beschreibung verwaist, angeheftet ist nur noch der
+`@param keepManualAlarms`-Block, und beide sind CLAUDE.md-Invarianten). Als Issue abgelegt, mit dem
+Vermerk „braucht Rücksprache".
+
+**Gegen die Wiederholung eines Fehlers von Runde 20:** gemessen wurde vorher gegen den git-Ref,
+nachher gegen den Arbeitsbaum — bei diesem Blickwinkel ist das unschädlich, weil ein Fund an der
+**Struktur** hängt und nicht daran, ob irgendwo ein Name genannt wird. Diese Selbstentwaffnung
+trifft nur namensbasierte Blickwinkel; wer sie pauschal fürchtet, misst zweimal umsonst.
+
+**Zum Stand der Werkzeuge, nachgemessen am 09.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen, und der Konfliktzustands-Wächter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unverändert** (fünfter
+Nachtrag, der ihn meldet — gezählt, nicht „in Folge" übernommen: Runden 16, 18, 19, 20, 21).

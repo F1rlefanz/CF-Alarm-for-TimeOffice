@@ -182,8 +182,7 @@ class CalendarUseCase @Inject constructor(
      * PROGRESSIVE LOADING: Verhindert UI-Blockierung durch gestaffelte Verarbeitung
      * 
      * 🔧 OPTION 4 FIX: Defensive token validation before API calls
-     */
-    /**
+     *
      * Unveraenderter Vertrag (Liste oder Fehler) - fuer alle Konsumenten, die nur ANZEIGEN.
      * Wer aus dem Fehlen eines Events auf "Termin geloescht" schliesst, MUSS
      * [getCalendarEventsWithStatus] nehmen: siehe die Begruendung dort.

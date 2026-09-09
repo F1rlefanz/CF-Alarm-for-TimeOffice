@@ -229,11 +229,6 @@ object ConfigBackupFilter {
     fun isExportable(keyName: String): Boolean = exclusionReason(keyName) == null
 
     /**
-     * Der EINE Ort, an dem entschieden wird. [isExportable] leitet sich davon ab, damit Entscheidung
-     * und Begruendung nicht auseinanderlaufen koennen - die Begruendung erscheint nach einem Import
-     * auch in der Rueckmeldung an den Nutzer.
-     */
-    /**
      * PLAUSIBLE WERTEBEREICHE fuer Zahlen, deren Leser einen sinnvollen Bereich VORAUSSETZEN.
      *
      * Der Filter oben entscheidet, WELCHE Schluessel durchkommen - er sagt nichts darueber, ob der
@@ -282,6 +277,11 @@ object ConfigBackupFilter {
         else "Wert $value ausserhalb des sinnvollen Bereichs ${range.first}-${range.last}"
     }
 
+    /**
+     * Der EINE Ort, an dem entschieden wird. [isExportable] leitet sich davon ab, damit Entscheidung
+     * und Begruendung nicht auseinanderlaufen koennen - die Begruendung erscheint nach einem Import
+     * auch in der Rueckmeldung an den Nutzer.
+     */
     fun exclusionReason(keyName: String): String? = when {
         keyName in RUNTIME_KEYS -> "Laufzeitzustand"
         keyName in DEVICE_OR_SECRET_KEYS -> "Geraetebezug oder Zugangsdaten"

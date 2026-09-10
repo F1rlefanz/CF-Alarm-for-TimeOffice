@@ -46,6 +46,12 @@ import org.junit.Test
  * [ConfigBackupFilter.exclusionReason], [ConfigBackupUseCase.applyValue]). Der Rundtrip unten
  * ruft genau diese - er zeigt den Weg von Geraet A nach Geraet B mit den echten Bausteinen,
  * statt nur eine Mengenzugehoerigkeit zu behaupten.
+ *
+ * ## Der Export ist nur EINER der beiden Wege
+ *
+ * Googles Auto-Backup und der Geraetetransfer sichern den kompletten `settings`-Store als Datei
+ * und sehen diesen Filter deshalb nie. Dagegen steht `DeviceLocalFlagsGuard` - siehe
+ * [KalenderWarnungMerkerBackupTest].
  */
 class KalenderWarnungMerkerExportTest {
 

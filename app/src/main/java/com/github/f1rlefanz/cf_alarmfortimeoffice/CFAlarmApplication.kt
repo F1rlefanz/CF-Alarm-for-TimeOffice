@@ -71,8 +71,8 @@ class CFAlarmApplication : Application() {
 
     /**
      * Der "settings"-Store. Gebraucht fuer [DeviceLocalFlagsGuard]: er enthaelt neben den echten
-     * Einstellungen auch geraetelokale Onboarding-Flags, die nach einem Backup-Restore auf ein
-     * neues Geraet nicht gelten duerfen.
+     * Einstellungen auch geraetelokale Merker (Onboarding-Abweisungen und das Gedaechtnis der
+     * Kalender-Warnung), die nach einem Backup-Restore auf ein neues Geraet nicht gelten duerfen.
      */
     @Inject
     @MainDataStore
@@ -218,7 +218,7 @@ class CFAlarmApplication : Application() {
     private fun initializeApp() {
         applicationScope.launch {
             try {
-                // ZUERST: geraetelokale Onboarding-Flags pruefen und den Pausen-Spiegel abgleichen.
+                // ZUERST: geraetelokale Merker pruefen und den Pausen-Spiegel abgleichen.
                 // Muss VOR allem anderen laufen, damit die Onboarding-Gates (Akku-Ausnahme, "Pause
                 // bei Nichtnutzung") auf einem per Backup wiederhergestellten Geraet wieder
                 // greifen - aber NUR bei entsperrtem Nutzer, siehe runDeviceLocalStartupChecks().

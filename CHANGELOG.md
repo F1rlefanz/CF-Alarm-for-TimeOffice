@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.40.4 (Aktuell – interne Alpha)
+## 🆕 Version 1.40.5 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Auch beim Umzug auf ein neues Handy bleibt die Warnung „Kalender nicht mehr abrufbar" dort scharf._
+
+### 🐛 Behoben
+
+- **Nach einem Handy-Umzug konnte eine wichtige Warnung stumm bleiben:** Mit Version 1.40.4 wurde das schon für die Export-Datei behoben — über Googles automatische Sicherung und die Handy-zu-Handy-Übertragung kam der interne Vermerk, über welche Kalender bereits gewarnt wurde, aber weiterhin mit. Ist derselbe Kalender auf dem neuen Gerät ebenfalls nicht abrufbar, hielt die App die Störung damit für längst gemeldet und schwieg dauerhaft — ausgerechnet in dem Zustand, in dem keine neuen Wecker mehr entstehen. Dieser Vermerk beginnt auf einem neuen Gerät jetzt bei null. Deine Einstellung, ob du diese Warnung überhaupt bekommen möchtest, kommt wie bisher mit.
+
+## Version 1.40.4
 
 **Stand:** September 2026
 

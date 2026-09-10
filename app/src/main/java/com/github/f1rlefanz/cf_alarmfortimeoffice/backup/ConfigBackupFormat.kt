@@ -152,6 +152,12 @@ object ConfigBackupFilter {
         // sind es dieselben IDs. `calendar_unavailable_last_failed` waere fuer sich harmlos (es
         // wuerde frueher gewarnt), gehoert aber zum selben Gedaechtnis - ein halb mitgenommenes
         // waere die unuebersichtlichere Lage.
+        // BEIDE STEHEN ZUSAETZLICH IN DeviceLocalFlagsGuard.DEVICE_LOCAL_KEY_PATTERNS, und das ist
+        // KEINE zu bereinigende Dopplung: die Exportdatei ist nur der eine Weg auf ein fremdes
+        // Geraet. Der zweite ist Googles Auto-Backup/Geraetetransfer, der den ganzen
+        // `settings`-Store mitnimmt und diesen Filter per Konstruktion nie sieht. Hier steht die
+        // Entscheidung "gehoert nicht in die Datei", dort "gilt auf dem neuen Geraet nicht mehr".
+        // Wer einen der beiden Eintraege streicht, oeffnet genau einen der beiden Wege wieder.
         "calendar_unavailable_notified",
         "calendar_unavailable_last_failed",
         // Zeitstempel der Hintergrundarbeit
@@ -308,7 +314,12 @@ object ConfigBackupFilter {
         keyName in RUNTIME_KEYS -> "Laufzeitzustand"
         keyName in DEVICE_OR_SECRET_KEYS -> "Geraetebezug oder Zugangsdaten"
         DENIED_SUFFIXES.any { keyName.endsWith(it) } -> "Sicherung unlesbarer Rohdaten"
-        // Dieselbe Liste wie beim Geraetewechsel-Waechter - eine Quelle, kein zweiter Katalog.
+        // Die Onboarding-Markierungen kommen aus dem Geraetewechsel-Waechter - eine Quelle, kein
+        // zweiter Katalog. Seine Liste ist inzwischen ein OBERSATZ: sie enthaelt auch das
+        // Gedaechtnis der Kalender-Warnung, das der Restore-Weg mitbringt. Weil RUNTIME_KEYS oben
+        // zuerst greift, behaelt dieses Gedaechtnis die zutreffende Begruendung
+        // "Laufzeitzustand" - die REIHENFOLGE dieser Zweige ist also Teil der Aussage, die dem
+        // Nutzer nach einem Import angezeigt wird (festgehalten in KalenderWarnungMerkerExportTest).
         DeviceLocalFlagsGuard.isDeviceLocalKey(keyName) -> "geraetelokale Onboarding-Markierung"
         else -> null
     }

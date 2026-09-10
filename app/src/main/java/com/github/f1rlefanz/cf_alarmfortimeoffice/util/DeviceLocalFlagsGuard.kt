@@ -34,7 +34,7 @@ internal class DeviceLocalStartupGate {
 }
 
 /**
- * Setzt GERAETELOKALE Onboarding-Flags zurueck, wenn die App auf einem anderen Geraet aufwacht.
+ * Setzt GERAETELOKALE Merker zurueck, wenn die App auf einem anderen Geraet aufwacht.
  *
  * WARUM DAS NOETIG IST:
  * Vier Flags im @MainDataStore ("settings") merken sich, dass der Nutzer einen Hinweis bereits
@@ -53,6 +53,26 @@ internal class DeviceLocalStartupGate {
  * verschluckt haben (siehe CLAUDE.md und die Status-Karten dazu). Auf dem neuen Geraet ist die
  * Ausnahme naturgemaess NICHT erteilt, der Hinweis waere also faellig gewesen.
  *
+ * ZWEITE GRUPPE, gleiche Mechanik, anderer Anlass - das GEDAECHTNIS DER KALENDER-WARNUNG
+ * (`CalendarUnavailablePrefs`):
+ *   - `calendar_unavailable_notified`          ("ueber diese Kalender habe ich schon gewarnt")
+ *   - `calendar_unavailable_last_failed`       ("diese Kalender sind beim VORIGEN Lauf gescheitert")
+ *
+ * Beide sind eine BEOBACHTUNG dieses Geraets, keine Einstellung - und der "schon gewarnt"-Merker
+ * repariert sich nach einem Restore NICHT von selbst: `entscheideBenachrichtigung()` rechnet
+ * `neuZuMelden = beharrlich - bereitsGemeldet`. Scheitert der mitgewanderte Kalender auf dem neuen
+ * Geraet ebenfalls (also genau der Fall, um den es geht), ist `neuZuMelden` bei JEDEM Lauf leer, es
+ * wird nichts gemeldet, und der abschliessende `intersect jetztGescheitert` haelt die ID im Merker.
+ * Dauerhaft und lautlos - waehrend die Vollstaendigkeits-Sperren zwar das Loeschen von Weckern
+ * verhindern, damit aber auch jedes Anlegen: die Wecker versiegen, und niemand erfaehrt davon. Dass
+ * die Kalenderauswahl selbst nicht im Backup ist, entschaerft nichts - bei gleichem Google-Konto
+ * sind es dieselben Kalender-IDs. Der dritte Schluessel daneben
+ * (`calendar_unavailable_notification_enabled`) ist eine echte Einstellung, reist mit und darf
+ * deshalb NICHT als Praefix mitgefangen werden (siehe die exakten Eintraege unten).
+ * `wartung_token_stoerung_gemeldet` hat dasselbe Muster, aber nicht dasselbe Problem: `auth_prefs`
+ * ist vom Backup ausgenommen, der Nutzer meldet sich neu an, und der erste gueltige Token setzt den
+ * Merker ueber `WartungStoerungPrefs.zuruecksetzenFallsNoetig()` zurueck.
+ *
  * Ein selektiver Backup-Ausschluss ist technisch nicht moeglich: ein DataStore-Preferences-Store
  * ist EINE Datei, einzelne Schluessel lassen sich nicht ausnehmen. Deshalb dieser Waechter.
  *
@@ -65,21 +85,30 @@ internal class DeviceLocalStartupGate {
  * Ein Zurechtsetzen ist harmlos: die Hinweise erscheinen nur, wenn die jeweilige Einstellung
  * tatsaechlich fehlt (`BatteryOptimizationHelper.isExempted`, `UnusedAppRestrictionsHelper.
  * isRestricted`). Ist auf dem neuen Geraet alles in Ordnung, sieht der Nutzer trotz
- * zurueckgesetzter Flags nichts.
+ * zurueckgesetzter Flags nichts. Fuer das Kalender-Gedaechtnis gilt dasselbe in der Richtung, die
+ * `CalendarUnavailablePrefs` fuer sich beansprucht: schlimmstenfalls wird eine bereits
+ * ausgesprochene Warnung ein zweites Mal gezeigt, oder die erste Stoerung braucht wieder zwei
+ * Wartungslaeufe. Im Zweifel warnen.
  */
 object DeviceLocalFlagsGuard {
 
     private val KEY_DEVICE_MARKER = stringPreferencesKey("device_local_flags_marker")
 
     /**
-     * Die Flags, die zum Geraet gehoeren und beim Geraetewechsel wieder offen sein muessen.
+     * Die Merker, die zum Geraet gehoeren und beim Geraetewechsel wieder offen sein muessen.
      * Praefix-Eintraege (mit `*` am Ende) treffen jeden Schluessel mit diesem Anfang.
+     *
+     * Die beiden Kalender-Eintraege stehen BEWUSST exakt und nicht als `calendar_unavailable*`:
+     * ein Praefix faenge `calendar_unavailable_notification_enabled` mit, und das ist die echte
+     * Einstellung "will ich diese Meldung ueberhaupt?" - sie gehoert auf das neue Geraet.
      */
     private val DEVICE_LOCAL_KEY_PATTERNS = listOf(
         "battery_prompt_dismissed",
         "unused_app_restrictions_dismissed",
         "timeoffice_health_prompt_dismissed",
-        "oem_hint_shown*"
+        "oem_hint_shown*",
+        "calendar_unavailable_notified",
+        "calendar_unavailable_last_failed"
     )
 
     /**
@@ -156,9 +185,10 @@ object DeviceLocalFlagsGuard {
 
         Logger.w(
             LogTags.APP,
-            "🔄 GERAETEWECHSEL erkannt - geraetelokale Onboarding-Flags zurueckgesetzt " +
+            "🔄 GERAETEWECHSEL erkannt - geraetelokale Merker zurueckgesetzt " +
                 "(${removed.size}: ${removed.joinToString()}). Akku-Ausnahme und " +
-                "\"Pause bei Nichtnutzung\" muessen auf diesem Geraet neu erteilt werden."
+                "\"Pause bei Nichtnutzung\" muessen auf diesem Geraet neu erteilt werden; das " +
+                "Gedaechtnis der Kalender-Warnung faengt hier neu an (im Zweifel warnen)."
         )
         return true
     }

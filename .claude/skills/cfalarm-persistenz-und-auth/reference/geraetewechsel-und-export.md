@@ -10,6 +10,8 @@
 - Eine mitgesicherte Master-Pause wird ueber `resume()` aufgehoben, nicht durch Loeschen
 - Der Konfigurations-Export entscheidet durch AUSSCHLUSS, in BEIDE Richtungen
 - Der Toggle reist mit, das Gedaechtnis bleibt: „schon gemeldet"-Merker gehoeren nie in den Export
+- Der Export ist nur EINER der beiden Wege - Auto-Backup und Geraetetransfer sieht der Filter nie
+- Am Geraet nachgestellt: wie man einen bestimmten Store-Zustand am Emulator herstellt
 - Der Import lehnt eine LEERE Definitionsliste ab
 - Der erwartete TYP kommt vom SCHLUESSEL, nicht aus der Datei
 - Der Schluessel-Filter sagt nichts ueber den WERT (Bereichspruefung, plus Klemme im Lesepfad)
@@ -31,7 +33,9 @@
   unerwartet stummer. **Bewusste Grenze:** fehlt der Marker (Erstinstallation oder Bestandsinstall
   von vor dieser Version), wird NICHT zurückgesetzt — sonst verliert ein laufender Install seine
   Abweisungen. Die beiden Backup-Regel-Dateien müssen inhaltlich identisch bleiben, sonst sichert
-  dasselbe Gerät je nach Android-Version Unterschiedliches.
+  dasselbe Gerät je nach Android-Version Unterschiedliches. **Seit v1.40.5 hält der Wächter eine
+  ZWEITE Gruppe:** `calendar_unavailable_notified` und `calendar_unavailable_last_failed` — der
+  Bullet weiter unten erklärt, warum ein Filter dafür nicht reicht.
 - **Eine mitgesicherte Master-Pause wird über `MasterPauseUseCase.resume()` aufgehoben, NICHT indem
   `DeviceLocalFlagsGuard` den Schlüssel löscht** — deshalb steht `master_pause_enabled` bewusst
   NICHT in `DEVICE_LOCAL_KEY_PATTERNS`, und `resetIfDeviceChanged()` gibt stattdessen `Boolean`
@@ -83,8 +87,53 @@
   `ConfigBackupUseCase.export()`: dessen Export-/Importmethoden brauchen einen echten DataStore und
   den halben Hilt-Graphen, die Entscheidung fällt aber vollständig in `isExportable`,
   `toStoredValue`, `exclusionReason` und `applyValue` — das sind die echten Bausteine, keine
-  Nachbildung. Ein Test am Gerät wäre nur mit dem Google-Konto des Nutzers und einem künstlich
-  über zwei Wartungsläufe hinweg unerreichbaren Kalender zu haben.
+  Nachbildung. Ein VOLLSTÄNDIGER Test am Gerät wäre nur mit dem Google-Konto des Nutzers und einem
+  künstlich über zwei Wartungsläufe hinweg unerreichbaren Kalender zu haben — für den Restore-Weg
+  gibt es aber einen gleichwertigen, siehe den vorletzten Bullet.
+- **Der Export ist nur EINER der beiden Wege, und den zweiten sieht der Filter per Konstruktion
+  nie** (Issue #84, v1.40.5). `backup_rules.xml` und `data_extraction_rules.xml` sichern
+  `<include domain="file" path="datastore"/>`, also den KOMPLETTEN `settings`-Store — mit allen
+  drei `calendar_unavailable_*`-Schlüsseln. Googles Auto-Backup und der Gerätetransfer wandern
+  damit an `ConfigBackupFilter` vorbei: der Filter ist Code im Export-/Importpfad, das Backup eine
+  Dateikopie. **Die Backup-Regeln stellten genau diese Frage selbst und beantworteten sie falsch:**
+  sie ordneten die Laufzeit-Spiegel im selben Store als harmlos ein („werden beim nächsten
+  `syncAlarms()`/`applyCurrentState()` neu abgeleitet") und kannten als Ausnahme nur die
+  Master-Pause. **Der „schon gemeldet"-Merker ist die zweite Ausnahme — und die unangenehmere: er
+  heilt nicht, er hält sich selbst am Leben.** `entscheideBenachrichtigung()` schreibt ihn als
+  `(bereitsGemeldet + neuZuMelden) intersect jetztGescheitert` fort. Scheitert der mitgewanderte
+  Kalender auf dem neuen Gerät NICHT, fällt seine ID beim ersten Lauf per `intersect` heraus —
+  selbstheilend. Scheitert er DOCH, also genau im Schadensfall, ist
+  `neuZuMelden = beharrlich − bereitsGemeldet` bei JEDEM Lauf leer, es wird nichts gemeldet, und
+  derselbe `intersect` hält die ID fest. Dauerhaft und lautlos, solange die Störung anhält.
+  `wartung_token_stoerung_gemeldet` hat dasselbe Muster, aber nicht dasselbe Problem: `auth_prefs`
+  ist vom Backup ausgenommen, der Nutzer meldet sich neu an, und der erste gültige Token setzt den
+  Merker über `zuruecksetzenFallsNoetig()` zurück. **Die Antwort ist `DeviceLocalFlagsGuard`**, der
+  Mechanismus, der für genau diesen Fall gebaut wurde; Löschen ist die harmlose Richtung
+  (schlimmstenfalls eine zweimal gezeigte Warnung), also die, die `CalendarUnavailablePrefs` für
+  sich beansprucht. Die beiden Einträge stehen dort EXAKT und nicht als Präfix
+  `calendar_unavailable*`: der dritte Schlüssel derselben Klasse ist die echte Einstellung, und ein
+  Präfix setzte eine abgeschaltete Meldung bei jedem Gerätewechsel auf den Default `true` zurück.
+  **Dass beide Schlüssel jetzt in `RUNTIME_KEYS` UND beim Wächter stehen, ist keine zu bereinigende
+  Dopplung**, sondern zwei verschiedene Wege — wer einen Eintrag streicht, öffnet genau einen davon
+  wieder. Weil `RUNTIME_KEYS` in `exclusionReason()` zuerst geprüft wird, behält der Merker beim
+  Import die zutreffende Begründung „Laufzeitzustand"; die Reihenfolge dieser Zweige ist damit Teil
+  der Aussage an den Nutzer und in `KalenderWarnungMerkerExportTest` festgehalten.
+- **Am Gerät nachgestellt, nicht nur hergeleitet** (Emulator, 10.09.2026) — und der Weg lohnt sich
+  zu merken, weil er für JEDEN Fall taugt, in dem ein bestimmter Store-Zustand gebraucht wird und
+  die Oberfläche ihn nicht herstellen kann. `settings.preferences_pb` per
+  `adb exec-out run-as <pkg> cat …` ziehen (`adb shell cat` verfälscht die Bytes: jedes `
+` wird
+  zu `
+`), das Preferences-Protobuf in Python umschreiben — die Struktur ist simpel genug
+  dafür: oben `repeated` Feld 1, je Eintrag `string key = 1` und `Value value = 2`, im `Value`
+  Feld 1 = bool, 5 = string, 6 = StringSet —, per `adb push` nach `/data/local/tmp` und von dort
+  mit `run-as <pkg> cp` an seinen Platz. Eingespielt wurden ein fremder
+  `device_local_flags_marker` („Gerät A"), beide Merker auf `{dienstplan@example.com}` und
+  `calendar_unavailable_notification_enabled` auf `false`. Nach dem Kaltstart stand im Log
+  „GERAETEWECHSEL erkannt - geraetelokale Merker zurueckgesetzt (2:
+  calendar_unavailable_last_failed, calendar_unavailable_notified)", und der zurückgelesene Store
+  hatte GENAU diese beiden Schlüssel weniger, den Schalter unverändert auf `false` und alle
+  übrigen 18 Werte (Dimm-Regeln, `active_alarms`, Schichtspannen) unangetastet.
 - **Der Import lehnt eine LEERE Definitionsliste ab.** kotlinx.serialization füllt ein fehlendes
   `definitions`-Feld stillschweigend mit `emptyList()`; aus „Datei unvollständig oder von Hand
   verstümmelt" würde lautlos „keine Schichten" — und das ist der dokumentierte Weg zu NULL ALARMEN

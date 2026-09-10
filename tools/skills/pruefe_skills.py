@@ -5,6 +5,18 @@ Der wichtigste Fall, den es faengt: ein unquotierter YAML-Skalar bricht am erste
 ': ' - der Parser wirft, und die Oberflaeche zeigt dann die H1-Ueberschrift statt
 der Beschreibung. Der Skill existiert dann, triggert aber praktisch nicht mehr.
 
+HERGANG: Am 17.08.2026 traf genau das DREI VON ACHT Projekt-Skills gleichzeitig, und
+aufgefallen ist es nur zufaellig beim Blick in die geladene Skill-Liste - ein Skill,
+der nicht mehr triggert, meldet sich naemlich nicht. Deshalb steht die Pruefung
+seither an zwei Stellen (CI und PostToolUse-Hook) statt in einem guten Vorsatz. Wer
+einen Skill ergaenzt, braucht dafuer nichts zu tun - ausser die Meldung zu beachten,
+wenn sie kommt.
+
+NEBENAN, gleiche Ecke, aber nichts, was dieses Skript pruefen koennte: ein NEU
+ANGELEGTES Skill-Verzeichnis laedt Claude Code erst nach `/reload-skills`. Beobachtet
+werden nur Verzeichnisse, die beim Sessionstart existierten; Aenderungen an einer
+bestehenden SKILL.md greifen dagegen sofort.
+
 Zwei Betriebsarten:
 
     python tools/skills/pruefe_skills.py .claude/skills

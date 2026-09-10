@@ -224,6 +224,14 @@ und in den Sperren selbst.
 - **Der Notifier wird VOR der `isComplete`-Sperre und AUCH mit leerer Menge aufgerufen.** Stünde er
   dahinter, sähe er ausschließlich Störungen und verstummte nach der ersten nie wieder; ohne die
   leeren Läufe erführe er nie, dass sich ein Kalender erholt hat.
+- **Sein Gedächtnis endet an der Gerätegrenze — auf BEIDEN Wegen.** Ein mitgereistes „schon
+  gemeldet" macht aus einer nie ausgesprochenen Warnung eine erledigte und heilt nicht von selbst:
+  `neuZuMelden = beharrlich − bereitsGemeldet` bleibt leer, solange die Störung anhält, und der
+  abschließende `intersect` hält die ID fest. Der Konfigurations-Export nimmt die beiden Merker
+  deshalb nicht mit (`ConfigBackupFilter`, v1.40.4), Googles Auto-Backup und der Gerätetransfer
+  räumt `DeviceLocalFlagsGuard` beim Gerätewechsel (v1.40.5). Der Schalter daneben ist eine echte
+  Einstellung und reist mit. Hergang: Skill `cfalarm-persistenz-und-auth`,
+  `reference/geraetewechsel-und-export.md`.
 
 **Am Emulator durchgemessen (18.08.2026)**, mit einer nicht existierenden Kalender-ID in der echten
 Auswahl — die API antwortet darauf mit 404, also genau wie bei einem gelöschten Kalender:

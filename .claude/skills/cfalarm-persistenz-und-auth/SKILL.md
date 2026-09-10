@@ -63,10 +63,12 @@ das baut man dieselbe Falle in neuer Form nach.
 
 ## Geraetewechsel und Konfigurations-Datei — Kurzregeln
 
-- **`DeviceLocalFlagsGuard` setzt beim erkannten Gerätewechsel gerätelokale Flags zurück**
+- **`DeviceLocalFlagsGuard` setzt beim erkannten Gerätewechsel gerätelokale Merker zurück**
   (`Build.FINGERPRINT`). Ein selektiver Backup-Ausschluss ist unmöglich — ein Preferences-Store ist
   EINE Datei. Fehlt der Marker, wird NICHT zurückgesetzt. Die beiden Backup-Regel-Dateien müssen
-  inhaltlich identisch bleiben.
+  inhaltlich identisch bleiben. **Er hält zwei Gruppen:** die vier Onboarding-Abweisungen und das
+  „schon gemeldet"-Gedächtnis der Kalender-Warnung. Die Kalender-Einträge stehen EXAKT und nicht
+  als Präfix — `calendar_unavailable_notification_enabled` ist die echte Einstellung und reist mit.
 - **Eine mitgesicherte Master-Pause wird über `resume()` aufgehoben, NICHT durch Löschen des
   Schlüssels** — `master_pause_enabled` steht deshalb bewusst NICHT in `DEVICE_LOCAL_KEY_PATTERNS`.
 - **Der Konfigurations-Export entscheidet durch AUSSCHLUSS, nicht durch Aufzählen**
@@ -74,11 +76,14 @@ das baut man dieselbe Falle in neuer Form nach.
   Laufzeitzustand, Gerätebezug/Zugangsdaten, gerätelokale Onboarding-Markierungen. **Der Filter gilt
   in BEIDE Richtungen**, abgelehnte Schlüssel werden BENANNT. Die Liste stammt aus einer Inventur
   ALLER `*PreferencesKey("…")` im Baum.
-- **Der Toggle reist mit, das Gedächtnis bleibt.** Ein „schon gemeldet"-Merker gehört NIE in den
-  Export: Meldelogik rechnet `neu zu melden = beharrlich − bereits gemeldet`, ein importierter
-  Merker macht daraus eine erledigte Warnung, die nie ausgesprochen wurde. Zweimal aufgetreten
+- **Der Toggle reist mit, das Gedächtnis bleibt — und der Export ist nur EINER der beiden Wege.**
+  Ein „schon gemeldet"-Merker gehört NIE in den Export: Meldelogik rechnet
+  `neu zu melden = beharrlich − bereits gemeldet`, ein importierter Merker macht daraus eine
+  erledigte Warnung, die nie ausgesprochen wurde. Zweimal aufgetreten
   (`wartung_token_stoerung_gemeldet`, `calendar_unavailable_notified`); die Ein/Aus-Einstellung
-  daneben ist davon nicht betroffen.
+  daneben ist davon nicht betroffen. **Der zweite Weg ist Googles Auto-Backup/Gerätetransfer**, der
+  den ganzen `settings`-Store als Datei mitnimmt und den Filter per Konstruktion nie sieht — dagegen
+  hilft nur `DeviceLocalFlagsGuard`. Wer eine neue Meldelogik baut, beantwortet BEIDE Wege.
 - **Der Import lehnt eine LEERE Definitionsliste ab** (kotlinx.serialization füllt still `emptyList()`).
 - **Der erwartete TYP kommt vom SCHLÜSSEL, nicht aus der Datei** — ein falsch typisierter Wert liegt
   reboot-fest und wirft bei jedem Lesen, bevor ein Default greifen kann.

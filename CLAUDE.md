@@ -38,18 +38,12 @@ von allein meldet. Gegen die echte Historie geprüft — hätte am 03.08. angesc
 **Wenn die Meldung kommt, ist Verschieben in einen Skill die Antwort, nicht das Anheben der
 Schwelle.** Dort kostet Wissen erst beim Lesen etwas; `reference/*.md` darf deshalb wachsen.
 
-**Ein `: ` in einer `description` MUSS gequotet werden.** Ein unquotierter YAML-Skalar endet am
-ersten Doppelpunkt-mit-Leerzeichen; das Frontmatter wird dann unlesbar, und die Oberfläche zeigt
-statt der Beschreibung die H1-Überschrift — der Skill existiert, triggert aber praktisch nicht mehr.
-Am 17.08.2026 traf das drei von acht Skills, und aufgefallen ist es nur zufällig beim Blick in die
-geladene Liste. Dagegen stehen jetzt zwei Netze: `python tools/skills/pruefe_skills.py .claude/skills`
-läuft in der CI, und ein `PostToolUse`-Hook (`.claude/settings.json`) prüft nach jedem Schreiben an
-einer `SKILL.md`. Wer einen Skill ergänzt, braucht dafür nichts zu tun — außer die Meldung zu
-beachten, wenn sie kommt.
-
-**Ein neues Skill-Verzeichnis wird erst nach `/reload-skills` geladen.** Claude Code beobachtet nur
-Verzeichnisse, die beim Sessionstart existierten. Ein neu angelegtes `.claude/skills/` erscheint
-also nicht von selbst — Änderungen an bestehenden `SKILL.md` dagegen schon.
+**Ein `: ` in einer `description` MUSS gequotet werden** — sonst endet der YAML-Skalar am ersten
+Doppelpunkt, das Frontmatter wird unlesbar, und der Skill existiert zwar, triggert aber praktisch
+nicht mehr. Zwei Netze fangen das: `tools/skills/pruefe_skills.py` in der CI und ein
+`PostToolUse`-Hook; Hergang und Betriebsarten stehen im Kopf des Skripts. **Ein neu angelegtes
+Skill-Verzeichnis lädt erst nach `/reload-skills`** — Änderungen an bestehenden `SKILL.md` dagegen
+sofort.
 
 ## Git & GitHub Workflow
 
@@ -69,7 +63,7 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
 - **Offene Punkte liegen an zwei Orten; das Kriterium ist, ob es öffentlich stehen darf.** Das Repo
   ist öffentlich und bleibt es (GitHub Pages liefert aus `main` `/docs` die Datenschutz-URL für die
   OAuth-Verifizierung). Deshalb: **belegte, harmlose Aufräumarbeit als GitHub Issue** (so seit
-  24.08.2026, derzeit #15–#18), **unbelegte Fehlerhypothesen über eine Wecker-App im Play Store
+  24.08.2026), **unbelegte Fehlerhypothesen über eine Wecker-App im Play Store
   ins Memory `project_offene_punkte`** — die gehören nicht in ein öffentliches Issue. Die frühere
   Pauschalregel „keine Issues" war zu grob. In eine Datei im Repo gehören sie weiterhin nicht.
   **Vor dem Anlegen BEIDE Orte prüfen** (`gh issue list`): der Sessionstart-Hook zeigt nur die
@@ -353,6 +347,9 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   Kalender dauerhaft unerreichbar, versiegen die Wecker lautlos. Deshalb trägt
   `CalendarFetchOutcome` die `failedCalendarIds` (nicht nur ihre Zahl), die Status-Karte zeigt sie
   mit Folge und Ausweg, und ab dem ZWEITEN Wartungslauf in Folge warnt eine Benachrichtigung.
+  **Ihr „schon gemeldet"-Gedächtnis endet an der Gerätegrenze**, auf BEIDEN Wegen —
+  `ConfigBackupFilter` (Export) und `DeviceLocalFlagsGuard` (Android-Backup). Mitgereist heilt es
+  nicht, es hält sich selbst am Leben.
 - **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — „leer" ist für eine Wecker-App die
   gefährlichste Lüge und löscht ALLE Alarme.
 - **Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden**

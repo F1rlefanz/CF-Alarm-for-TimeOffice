@@ -177,13 +177,6 @@ class CalendarUseCase @Inject constructor(
     }
     
     /**
-     * Lädt Events für spezifische Kalender mit Cache-Support und Force-Refresh Option
-     * CRITICAL PERFORMANCE FIX: Background Threading mit Main-Thread Schonung
-     * PROGRESSIVE LOADING: Verhindert UI-Blockierung durch gestaffelte Verarbeitung
-     * 
-     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
-     */
-    /**
      * Unveraenderter Vertrag (Liste oder Fehler) - fuer alle Konsumenten, die nur ANZEIGEN.
      * Wer aus dem Fehlen eines Events auf "Termin geloescht" schliesst, MUSS
      * [getCalendarEventsWithStatus] nehmen: siehe die Begruendung dort.
@@ -194,6 +187,13 @@ class CalendarUseCase @Inject constructor(
     ): Result<List<CalendarEvent>> =
         getCalendarEventsWithStatus(calendarIds, forceRefresh).map { it.events }
 
+    /**
+     * Lädt Events für spezifische Kalender mit Cache-Support und Force-Refresh Option
+     * CRITICAL PERFORMANCE FIX: Background Threading mit Main-Thread Schonung
+     * PROGRESSIVE LOADING: Verhindert UI-Blockierung durch gestaffelte Verarbeitung
+     *
+     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
+     */
     override suspend fun getCalendarEventsWithStatus(
         calendarIds: Set<String>,
         forceRefresh: Boolean

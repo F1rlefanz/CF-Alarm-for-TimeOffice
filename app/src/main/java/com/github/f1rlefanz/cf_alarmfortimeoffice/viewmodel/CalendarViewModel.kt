@@ -35,14 +35,6 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * IMMUTABLE UI State für optimale Compose Performance
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable verhindert unnötige Recompositions
- * ✅ Strukturelle Gleichheit für distinctUntilChanged()
- * ✅ Memory-efficient durch effiziente Copy-Operations
- */
-/**
  * PURE, TESTBAR: Ergebnis von [CalendarViewModel.resolveCalendarAuthorizationOutcome].
  * Als eigenständiger Typ statt zweier loser Booleans, damit ein Test die Kombination
  * eindeutig gegen beide Felder prüfen kann.
@@ -64,6 +56,14 @@ internal data class MoreEventsMergeResult(
     val hasMoreEvents: Boolean
 )
 
+/**
+ * IMMUTABLE UI State für optimale Compose Performance
+ *
+ * PERFORMANCE OPTIMIZATIONS:
+ * ✅ @Immutable verhindert unnötige Recompositions
+ * ✅ Strukturelle Gleichheit für distinctUntilChanged()
+ * ✅ Memory-efficient durch effiziente Copy-Operations
+ */
 @Immutable
 data class CalendarUiState(
     val isLoading: Boolean = false,
@@ -321,11 +321,8 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * PERFORMANCE OPTIMIZATION: Batched State Updates
-     * Sammelt State-Updates und emmittiert sie als Batch für bessere Performance
-     */
-    /**
      * PERFORMANCE: Advanced Batched State Updates
+     * Sammelt State-Updates und emmittiert sie als Batch für bessere Performance
      * ADAPTIVE TIMING: 16ms für normale Updates, 33ms bei hoher Frequenz
      * FRAME-SYNC: Optimiert für 60fps UI Performance
      */
@@ -1432,12 +1429,6 @@ class CalendarViewModel @Inject constructor(
         }
     }
     
-    /**
-     * FIXED: daysAhead is now always 14 days as per Briefing 4.0
-     * No longer read from ShiftConfig
-     */
-
-
     /**
      * LAZY LOADING: Load more events with pagination
      * FIXED: Always uses DEFAULT_DAYS_AHEAD (14 days) per PROJEKT-BRIEFING 4.0

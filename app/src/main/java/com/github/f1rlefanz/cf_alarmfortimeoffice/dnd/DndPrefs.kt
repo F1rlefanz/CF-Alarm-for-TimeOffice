@@ -153,8 +153,9 @@ class DndPrefs @Inject constructor(
     /** Schichtnamen, die als Rufbereitschaft gelten (z. B. "AD1") - siehe [DndOnCallCutoffResolver]. */
     val onCallShifts: Flow<Set<String>> = safeData.map { it[KEY_ONCALL_SHIFTS] ?: emptySet() }
 
-    /** Cutoff-Uhrzeit an Rufbereitschafts-Tagen, in Minuten seit Mitternacht. Default 05:00. */
     /**
+     * Cutoff-Uhrzeit an Rufbereitschafts-Tagen, in Minuten seit Mitternacht. Default 05:00.
+     *
      * Geklemmt auf einen echten Tageszeitpunkt: [DndOnCallCutoffResolver] rechnet
      * `LocalTime.ofSecondOfDay(cutoffMinutes * 60L)`, und das wirft bei negativem Wert oder ab
      * 1440 eine `DateTimeException` - der DND-Tick wuerde dann bei JEDEM Lauf sterben. Der Wert

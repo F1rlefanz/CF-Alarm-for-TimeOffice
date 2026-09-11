@@ -20,32 +20,6 @@ data class ShiftConfig(
     val definitions: List<ShiftDefinition> = emptyList()
 ) {
     /**
-     * Die Definition, zu der [shiftName] gehoert - streng nach Genauigkeit gestaffelt.
-     * Entscheidet, WELCHE Hue-Regeln ein Alarm ausfuehrt.
-     *
-     * WARUM GESTAFFELT UND NICHT EIN find{} MIT ODER-KETTE:
-     * Genau das stand im AlarmReceiver, und es hat die Hue-Regeln fuer fast jede Schicht
-     * stillgelegt. `find` nimmt den ERSTEN Treffer in Listenreihenfolge, und die Bedingung
-     * enthielt ein `shiftName.contains(keyword)`. Die Standard-Schichten tragen einbuchstabige
-     * Keywords ("F", "S", "N"), und "Spaetschicht" (Keyword "S") steht VOR "S2":
-     *   - "S2"             enthaelt "S"  -> Spaetschicht  (statt S2)
-     *   - "Nachtschicht"   enthaelt "s"  -> Spaetschicht  (statt Nachtschicht)
-     *   - "Zwischendienst" enthaelt "s"  -> Spaetschicht  (statt Zwischendienst)
-     * Nur "Fruehschicht" kam korrekt an, weil es zufaellig als erstes in der Liste steht.
-     * Folge: eine Regel fuer S2 feuerte nie, und eine Regel fuer Spaetschicht feuerte bei JEDER
-     * dieser Schichten - die falschen Lampen zur falschen Zeit. Am Emulator gegen die echte
-     * Standardkonfiguration reproduziert (16.07.2026).
-     *
-     * [shiftName] ist der NAME der Definition (die App setzt ihn beim Anlegen des Alarms aus
-     * [ShiftDefinition.name]) - Stufe 1 trifft also immer. Die Keyword-Stufen sind Notnaegel
-     * fuer den Fall, dass eine Definition nach dem Setzen des Alarms umbenannt wurde.
-     *
-     * Wer hier wieder ein `contains` nach vorne zieht, baut den Fehler neu.
-     *
-     * @return die Definition, oder null wenn keine passt (dann lieber keine Regel als die
-     *         falschen Lampen).
-     */
-    /**
      * Ordnet ein Schichtkuerzel aus dem Kalender GENAU EINER Definition zu (Vorschlags-Karte im
      * Schicht-Konfigurations-Screen). REIN und testbar, damit die drei Fallen unten festgehalten
      * werden koennen.
@@ -90,6 +64,32 @@ data class ShiftConfig(
         return if (updated == definitions) null else copy(definitions = updated)
     }
 
+    /**
+     * Die Definition, zu der [shiftName] gehoert - streng nach Genauigkeit gestaffelt.
+     * Entscheidet, WELCHE Hue-Regeln ein Alarm ausfuehrt.
+     *
+     * WARUM GESTAFFELT UND NICHT EIN find{} MIT ODER-KETTE:
+     * Genau das stand im AlarmReceiver, und es hat die Hue-Regeln fuer fast jede Schicht
+     * stillgelegt. `find` nimmt den ERSTEN Treffer in Listenreihenfolge, und die Bedingung
+     * enthielt ein `shiftName.contains(keyword)`. Die Standard-Schichten tragen einbuchstabige
+     * Keywords ("F", "S", "N"), und "Spaetschicht" (Keyword "S") steht VOR "S2":
+     *   - "S2"             enthaelt "S"  -> Spaetschicht  (statt S2)
+     *   - "Nachtschicht"   enthaelt "s"  -> Spaetschicht  (statt Nachtschicht)
+     *   - "Zwischendienst" enthaelt "s"  -> Spaetschicht  (statt Zwischendienst)
+     * Nur "Fruehschicht" kam korrekt an, weil es zufaellig als erstes in der Liste steht.
+     * Folge: eine Regel fuer S2 feuerte nie, und eine Regel fuer Spaetschicht feuerte bei JEDER
+     * dieser Schichten - die falschen Lampen zur falschen Zeit. Am Emulator gegen die echte
+     * Standardkonfiguration reproduziert (16.07.2026).
+     *
+     * [shiftName] ist der NAME der Definition (die App setzt ihn beim Anlegen des Alarms aus
+     * [ShiftDefinition.name]) - Stufe 1 trifft also immer. Die Keyword-Stufen sind Notnaegel
+     * fuer den Fall, dass eine Definition nach dem Setzen des Alarms umbenannt wurde.
+     *
+     * Wer hier wieder ein `contains` nach vorne zieht, baut den Fehler neu.
+     *
+     * @return die Definition, oder null wenn keine passt (dann lieber keine Regel als die
+     *         falschen Lampen).
+     */
     fun findDefinitionFor(shiftName: String): ShiftDefinition? {
         if (definitions.isEmpty()) return null
 

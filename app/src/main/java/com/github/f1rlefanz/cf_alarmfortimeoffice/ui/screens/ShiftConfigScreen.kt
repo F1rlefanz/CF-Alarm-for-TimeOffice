@@ -73,7 +73,12 @@ internal val SHIFT_HINT_GENERIC_EXAMPLES = listOf("Frühdienst", "Spätdienst", 
 internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N")
 
 /**
- * Der Hinweistext ueber der Schichtliste.
+ * Der erste Satz - die eigentliche Regel. Er steht IMMER da.
+ *
+ * WARUM GETEILT: der vollstaendige Hinweis fuellte auf einem Geraet mit grosser Schrift die halbe
+ * Seite, und weil er ausserhalb der Liste verankert war, scrollte er nicht einmal weg - fuer die
+ * Schichten selbst blieb kaum Platz (vom Nutzer gemeldet, 21.08.2026). Der Rest ist Beiwerk
+ * (Beispiele, Stationswechsel) und liegt jetzt hinter "Mehr anzeigen".
  *
  * WARUM ER SO GENAU FORMULIERT IST: Er beschrieb bis v1.22.2 zwei Dinge falsch, die derselbe
  * Arbeitsdurchgang geaendert hatte, der ihn eingefuehrt hat. (1) "Erkannt wird ueber die Muster,
@@ -87,14 +92,6 @@ internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N")
  * Der Text nennt deshalb KEINE vollstaendige Musterliste (die driftet mit jeder Aenderung der
  * Vorgaben), sondern verweist auf die Karten darunter - dort steht pro Schicht, welche Muster
  * wirklich gelten.
- */
-/**
- * Der erste Satz - die eigentliche Regel. Er steht IMMER da.
- *
- * WARUM GETEILT: der vollstaendige Hinweis fuellte auf einem Geraet mit grosser Schrift die halbe
- * Seite, und weil er ausserhalb der Liste verankert war, scrollte er nicht einmal weg - fuer die
- * Schichten selbst blieb kaum Platz (vom Nutzer gemeldet, 21.08.2026). Der Rest ist Beiwerk
- * (Beispiele, Stationswechsel) und liegt jetzt hinter "Mehr anzeigen".
  */
 internal val SHIFT_RECOGNITION_HINT_KURZ: String =
     "Erkannt wird über die Muster oder den Schichtnamen (ab zwei Zeichen): eines davon muss im " +
@@ -553,19 +550,6 @@ fun ShiftConfigScreen(
 }
 
 /**
- * Zeigt die Kürzel, die im Kalender des Nutzers stehen, aber von keinem Erkennungsmuster getroffen
- * werden — nach Häufigkeit sortiert, zum Antippen.
- *
- * WARUM DIESE KARTE EXISTIERT: Die Standardkonfiguration kann die Kürzel einer fremden Station nur
- * raten, und Raten skaliert nicht — am echten Dienstplan ist genau das schiefgegangen. Was im
- * Kalender steht, weiß die App dagegen genau; sie muss es nur zeigen. Für jemanden auf einer
- * anderen Station ist das der Unterschied zwischen „läuft nach zwei Minuten" und „läuft nie, und er
- * merkt es erst nach dem Verschlafen".
- *
- * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) —
- * eine stillschweigend gekürzte Liste liest sich wie Vollständigkeit.
- */
-/**
  * Der Erkennungs-Hinweis, aufklappbar.
  *
  * WARUM AUFKLAPPBAR UND WARUM IN DER LISTE: Der vollstaendige Text fuellte auf einem Geraet mit
@@ -626,6 +610,19 @@ private fun SchichterkennungsHinweis() {
     }
 }
 
+/**
+ * Zeigt die Kürzel, die im Kalender des Nutzers stehen, aber von keinem Erkennungsmuster getroffen
+ * werden — nach Häufigkeit sortiert, zum Antippen.
+ *
+ * WARUM DIESE KARTE EXISTIERT: Die Standardkonfiguration kann die Kürzel einer fremden Station nur
+ * raten, und Raten skaliert nicht — am echten Dienstplan ist genau das schiefgegangen. Was im
+ * Kalender steht, weiß die App dagegen genau; sie muss es nur zeigen. Für jemanden auf einer
+ * anderen Station ist das der Unterschied zwischen „läuft nach zwei Minuten" und „läuft nie, und er
+ * merkt es erst nach dem Verschlafen".
+ *
+ * Die Deckelung wird BENANNT statt verschwiegen ([ShiftCodeSuggester.SuggestionResult.droppedCount]) —
+ * eine stillschweigend gekürzte Liste liest sich wie Vollständigkeit.
+ */
 @Composable
 private fun CodeSuggestionCard(
     result: ShiftCodeSuggester.SuggestionResult,

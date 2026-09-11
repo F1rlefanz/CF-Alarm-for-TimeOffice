@@ -697,3 +697,113 @@ richtig** (`ShiftConfig`, `ConfigBackupFormat`, `DndPrefs`, `SimpleFileTree`, `S
 verschoben statt zusammengefuehrt: das KDoc ueber `getCalendarEventsWithStatus` (Zeile 196), und
 `getCalendarEventsWithCache` behaelt allein seinen eigenen Vertrags-Block. Die Gatter-Frage bleibt
 in #81, die sieben Weckerketten-Funde in #82.
+
+> **ERLEDIGT in Runde 22 (11.09.2026).** Der Auftrag aus diesem Absatz ist ausgefuehrt — alle zehn
+> Reparaturen sitzen, `CalendarUseCase` verschoben statt zusammengefuehrt. Wer hier weiterliest,
+> arbeitet ihn NICHT noch einmal ab; die Zahlen stehen im Abschnitt darunter.
+
+### 11.09.2026, Runde 22 (Issue #22 zum zweiten Mal — der Schnitt ist durch)
+
+**Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `a9c7473` (= `origin/main` beim Start):**
+Korpus **428** `.kt` unter `app/src` (`git ls-tree -r --name-only`), darin **2344 KDoc-Bloecke**
+(eigener Tokenizer; Kommentare und String-Literale maskiert, Rohstring-Regel aus Runde 20 und
+schachtelnde Blockkommentare eingebaut). **20 Rohbefunde, 2 Fehlalarme (10 %), 18 bestaetigt.**
+Davon **10 repariert**, **8 unangetastet** (Weckerkette, siehe unten). Nachher: **10 Rohbefunde**
+(die 2 Fehlalarme + die 8 stehen gelassenen), **2339 KDoc-Bloecke** (−5: vier Zusammenfuehrungen,
+eine Loeschung; die fuenf Verschiebungen aendern die Zahl nicht).
+
+**Der Korpus hatte sich bewegt — deshalb wurde neu gemessen und nicht abgeschrieben.** Gegen den
+Ref der Vorrunde (`2297893`, Runde 18er Regel): 423 → 428 Dateien, 2311 → 2344 Bloecke. Mein
+Detektor reproduziert auf jenem Ref **exakt die 19 Rohbefunde der Vorrunde** — zwei unabhaengig
+gebaute Detektoren, dieselbe Menge. Der Zuwachs auf 20 ist **eine** echte Neuzugangsstelle
+(`AlarmMaintenanceService.kt:1271`, aus den +282 Zeilen der Wartungskette); `ConfigBackupFormat`
+wanderte nur von Zeile 231 auf 259. **Waere der Korpus bitgleich gewesen, haette die Runde nach
+der Regel von Runde 20 nicht neu messen muessen — er war es nicht.**
+
+**Positivkontrolle vor jedem Schnitt:** derselbe Detektor auf `f1ad9ee^` findet `HueBridge.kt:28`,
+den im Issue benannten blinden Fleck — und zwar auf **Klammertiefe 0**. Die im Issue
+vorgeschlagene Einschraenkung („nur innerhalb eines Klassenrumpfs") haette ihren eigenen Anlassfall
+verworfen. Mit eigenen Zahlen bestaetigt, was Runde 21 dazu schrieb: von den 20 Rohbefunden liegen
+**6 auf Tiefe 0, 14 auf Tiefe 1**; unter den sechs sind **beide Fehlalarme, aber auch vier echte
+Funde**. Eine Tiefenschranke kauft 0 % Fehlalarm fuer den Preis von **4 der 18 echten Funde
+(22 %)**. Gebaut wird hier nichts (Skill-Regel 4), die Frage bleibt in **#81**.
+
+#### Neue Lehre: variiere die Ebene, aber miss die Richtung der Abweichung
+
+Runde 20 verlangt eine Gegenprobe, die den gemeinsamen Unterbau umgeht. Ich habe neben den
+Tokenizer eine rohe `awk`-Zustandsmaschine ganz ohne Maskierung gestellt: **18 statt 20.** Nach
+Runde 17 ist der erste Reflex „einer von beiden hat eine Blindstelle" — richtig ist die Frage,
+**welcher von beiden eine Teilmenge des anderen ist.** Die Differenzliste war zweizeilig
+(`CalendarViewModel.kt:1435`, `HueRuleConfigHelpers.kt:20`), beide von Hand angesehen, beide echt:
+zwischen den zwei KDoc-Bloecken stehen **Leerzeilen**, und mein `awk` verlangte Zeilen-Adjazenz.
+
+**Die verallgemeinerbare Regel:** Eine Gegenprobe, die *weniger* findet, widerlegt nicht — sie ist
+erst dann ein Befund, wenn sie etwas findet, das die Hauptmessung **nicht** hat. Bilde also immer
+die Differenz in **beide** Richtungen und sieh die kurze Liste an. Hier war „awk ⊂ Tokenizer" mit
+leerer Gegenrichtung der eigentliche Beleg dafuer, dass die 20 vollstaendig sind — eine blosse
+Zahlengleichheit waere schwaecher gewesen, nicht staerker. (Runde 19 hat denselben Satz aus der
+anderen Richtung: eine grosszuegige Messung **ueberzaehlt Verwender und versteckt Funde**.)
+
+#### Die Zuordnungsfrage, diesmal fuer alle zehn gestellt
+
+Die Richtigstellung zu PR #80 sagt: bei einem verwaisten KDoc lautet die Frage nicht „welche
+Deklaration steht jetzt darunter", sondern **„wohin ist der Rumpf gewandert, den der Text
+beschreibt"**. Das war die Arbeit dieser Runde — jeder der 18 bestaetigten Funde einzeln, und die
+Zuordnung entschied ueber die Reparaturart. Ergebnis: **5× verschieben, 4× zusammenfuehren,
+1× loeschen.**
+
+| Fund | Der Waise beschreibt | Reparatur |
+|---|---|---|
+| `ShiftConfig.kt:22` | `findDefinitionFor` (Z. 93, undokumentiert) — stand ueber `withCodeAssignedTo` | verschoben |
+| `ConfigBackupFormat.kt:259` | `exclusionReason` (Z. 313, undokumentiert) | verschoben |
+| `ShiftConfigScreen.kt:555` | `CodeSuggestionCard` (Z. 630, undokumentiert) | verschoben |
+| `CalendarViewModel.kt:37` | `@Immutable data class CalendarUiState` (Z. 68, undokumentiert) | verschoben |
+| `CalendarUseCase.kt:179` | `getCalendarEventsWithStatus` (Z. 197) | verschoben |
+| `DndPrefs.kt:156` | dieselbe Deklaration wie der Folgeblock (`onCallCutoffMinutes`) | zusammengefuehrt |
+| `SimpleFileTree.kt:11` | dieselbe (`class SimpleFileTree`) | zusammengefuehrt |
+| `ShiftConfigScreen.kt:75` | dieselbe (`SHIFT_RECOGNITION_HINT_KURZ`) | zusammengefuehrt |
+| `CalendarViewModel.kt:323` | dieselbe (`updateLocalState`) | zusammengefuehrt |
+| `CalendarViewModel.kt:1435` | `getEffectiveDaysAhead()` — in `c7ffed7` entfernt, **0 Vorkommen im Baum** | geloescht |
+
+**`CalendarUseCase` ist der Fall, an dem PR #80 gescheitert ist — hier selbst nachgemessen statt
+uebernommen.** Der Waise verspricht Threading, gestaffeltes Laden und Token-Validierung.
+`getCalendarEventsWithCache` (Z. 191) ist ein zweizeiliger `.map`-Delegat und tut nichts davon;
+`getCalendarEventsWithStatus` (Z. 197) traegt `withContext(Dispatchers.IO)` und die
+`oauth2TokenManager.getValidToken()`-Kette, und `c6176c8` hat genau diese Funktion angelegt. Also
+verschoben, nicht zusammengefuehrt — der Delegat behaelt allein seinen eigenen Vertragsblock.
+
+**Mechanisch belegt statt behauptet** (Wegwerfskript, zwei Fassungen desselben Tokenizers): ueber
+die **7 geaenderten Dateien** hat sich **kein einziges Nicht-Kommentar-Zeichen** geaendert
+(maskieren, alle Whitespaces entfernen, vergleichen). KDoc-Textzeilen: **4 inhaltliche entfernt,
+0 hinzugekommen.** Die vier einzeln, damit sie nachpruefbar sind statt nur gezaehlt:
+
+1. „Der Hinweistext ueber der Schichtliste." — seit `20f8867` steht der Hinweis **in** der Liste,
+   die Zeile war falsch geworden; der Zielblock benennt die Lage selbst.
+2. „PERFORMANCE OPTIMIZATION: Batched State Updates" — dieselbe Ueberschrift wie „PERFORMANCE:
+   Advanced Batched State Updates" im Block, in den sie wanderte. Der Rumpfsatz darunter
+   („Sammelt State-Updates …") ist **erhalten**.
+3./4. die zwei Zeilen des toten `getEffectiveDaysAhead`-Blocks.
+
+**Eine Zaehlfalle fuer den, der das nachrechnet:** das Rohergebnis meines Skripts sagt „9 entfernt,
+1 hinzugekommen". Fuenf der neun sind **Formartefakte**: vier abschliessende `*/`-Zeilen der vier
+zusammengefuehrten Bloecke, und das `-1/+1`-Paar ist der DndPrefs-Einzeiler, der beim
+Zusammenfuehren zu einer Zeile **innerhalb** eines Blocks wurde (Text identisch). Wer nur die
+Rohzahl meldet, behauptet einen Wissensverlust, den es nicht gibt — und wer sie weglaesst, verbirgt
+die Pruefbarkeit. **Beide Zahlen nennen und die Differenz erklaeren.**
+
+**Acht Funde bewusst NICHT angefasst** (`AlarmUseCase` 2×, `AlarmRepository`,
+`AlarmMaintenanceService`, `AlarmViewModel`, `DimmerModellMigration` + sein Test,
+`DimmerRulesViewModel`): Leitplanke „Die Weckerkette fasst du nicht an". Abgrenzung mechanisch wie
+in Runde 21 — Pfad oder Dateiname enthaelt `alarm`, `service` oder `dimmer` —, damit sie
+nachpruefbar ist und nicht nach Gefuehl. Das sind die sieben aus **#82** plus den Neuzugang
+`AlarmMaintenanceService.kt:1271`; **#82 ist entsprechend auf acht ergaenzt.**
+
+**Die zwei Fehlalarme sind dieselbe Bauart** (`HueRuleConfigHelpers.kt:20`,
+`StatusPermissionCards.kt:68`): ein Datei-KDoc, dem das KDoc der ersten Deklaration folgt — genau
+der legitime Fall, den das Issue ausgenommen haben wollte. Beide auf Tiefe 0.
+
+**Zum Stand der Werkzeuge, nachgemessen am 11.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
+(sechster Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19,
+20, 21, 22).

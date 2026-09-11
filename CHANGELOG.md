@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.40.5 (Aktuell – interne Alpha)
+## 🆕 Version 1.40.6 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Wartungsversion — für die Bedienung ändert sich nichts._
+
+### 🔧 Unter der Haube
+
+- **Eine Änderung ohne sichtbare Wirkung:** aktualisierte Fremdbibliotheken und entfernter, ungenutzter Code. Solche Versionen gibt es, damit Wartungsarbeit auch wirklich auf dem Gerät ankommt, statt monatelang unausgeliefert liegen zu bleiben — jede einzelne davon ist vorher gebaut, getestet und gegengeprüft worden.
+
+## Version 1.40.5
 
 **Stand:** September 2026
 

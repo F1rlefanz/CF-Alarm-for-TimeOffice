@@ -76,15 +76,8 @@ class HueBridgeRediscoveryTest {
     }
 
     private fun bridgeConfig(id: String) = HueBridgeConfig(
-        name = "Hue Bridge",
-        datastoreversion = "175",
-        swversion = "1970074010",
-        apiversion = "1.70.0",
         mac = "00:17:88:12:34:56",
         bridgeid = id,
-        factorynew = false,
-        replacesbridgeid = null,
-        modelid = "BSB002",
     )
 
     private fun storedPrefs(withBridgeId: String? = null) = mutablePreferencesOf().apply {

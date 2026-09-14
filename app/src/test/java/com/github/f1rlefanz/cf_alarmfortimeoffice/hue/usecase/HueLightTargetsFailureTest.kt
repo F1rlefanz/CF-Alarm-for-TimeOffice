@@ -105,7 +105,7 @@ class HueLightTargetsFailureTest {
         name = "Gruppe $id",
         type = "Room",
         lights = listOf("1"),
-        state = GroupState(any_on = false, all_on = false),
+        state = GroupState(any_on = false),
         action = GroupAction(on = false)
     )
 

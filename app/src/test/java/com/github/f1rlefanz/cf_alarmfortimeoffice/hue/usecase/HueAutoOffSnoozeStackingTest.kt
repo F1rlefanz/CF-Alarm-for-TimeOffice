@@ -67,7 +67,7 @@ class HueAutoOffSnoozeStackingTest {
             angelegt += name
             val id = (naechsteId++).toString()
             zeitplaene[id] =
-                BridgeSchedule(name = name, description = description, localtime = localtime)
+                BridgeSchedule(name = name, localtime = localtime)
             return Result.success(id)
         }
 

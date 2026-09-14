@@ -35,10 +35,13 @@ data class BridgeScheduleCreate(
 /**
  * Zeitplan, wie die Bridge ihn zurückliefert. Nur die Felder, die wir auswerten —
  * die Bridge liefert zusätzlich `command`, `created`, `starttime`, `time`, `recycle`.
+ *
+ * ENTFERNT (14.09.2026): `description`. Wiedererkannt werden unsere Zeitpläne am Präfix in
+ * [name] ([BridgeTimer.isOwnSchedule]), nicht an der Beschreibung — die las niemand. Beim
+ * ANLEGEN bleibt sie: dort ist sie Nutzlast ([BridgeScheduleCreate.description]).
  */
 data class BridgeSchedule(
     val name: String? = null,
-    val description: String? = null,
     val localtime: String? = null,
     val status: String? = null,
     val autodelete: Boolean? = null

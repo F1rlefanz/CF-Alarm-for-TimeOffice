@@ -92,8 +92,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
                         method = DiscoveryMethod.MDNS,
                         stage = "COMPLETED",
                         message = "Found ${mdnsBridges.size} bridge(s) on local network",
-                        progress = 0.5f,
-                        foundBridges = mdnsBridges.size
+                        progress = 0.5f
                     ))
                 } else {
                     Logger.d(LogTags.HUE_DISCOVERY, "mDNS discovery returned no bridges")
@@ -157,8 +156,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
                     stage = "COMPLETED",
                     message = "Discovery completed: $totalBridges bridge(s) found",
                     progress = 1.0f,
-                    isComplete = true,
-                    foundBridges = totalBridges
+                    isComplete = true
                 ))
                 
                 Logger.i(LogTags.HUE_DISCOVERY, "Official discovery completed successfully: $totalBridges bridges found")
@@ -168,8 +166,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
                     stage = "COMPLETED",
                     message = "No bridges found. Please check your network connection and ensure bridges are powered on.",
                     progress = 1.0f,
-                    isComplete = true,
-                    foundBridges = 0
+                    isComplete = true
                 ))
                 
                 Logger.w(LogTags.HUE_DISCOVERY, "No bridges found with any discovery method")
@@ -184,7 +181,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
                 method = DiscoveryMethod.MDNS,
                 stage = "FAILED",
                 message = "Discovery failed: ${e.message}",
-                isError = true,
                 isComplete = true
             ))
             

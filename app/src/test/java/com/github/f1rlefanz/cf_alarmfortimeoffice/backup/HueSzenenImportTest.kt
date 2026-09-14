@@ -77,7 +77,7 @@ class HueSzenenImportTest {
         type = "Room",
         lights = emptyList(),
         sensors = null,
-        state = GroupState(all_on = false, any_on = false),
+        state = GroupState(any_on = false),
         action = GroupAction(on = false)
     )
 

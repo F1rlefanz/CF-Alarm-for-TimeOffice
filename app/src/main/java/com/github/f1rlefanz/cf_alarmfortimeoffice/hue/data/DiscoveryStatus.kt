@@ -3,8 +3,19 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data
 import androidx.compose.runtime.Immutable
 
 /**
- * Enhanced Discovery status for Hue bridge discovery process with animation support
+ * Fortschrittsmeldung der Bridge-Suche. Erzeugt an acht Stellen in
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.discovery.OfficialHueDiscoveryService],
+ * gelesen in `AnimatedDiscoveryCard` und `HueTabContent`.
  * @Immutable annotation optimizes Compose performance
+ *
+ * ENTFERNT (14.09.2026): `duration`, `foundBridges`, `isError`. Keinen der drei las irgendeine
+ * Stelle im Baum; `duration` wurde ausserdem nie gesetzt und stand auf jeder Meldung auf 0L.
+ * Der Fehlerfall steht weiterhin in [stage] ("FAILED") und [message], die beide GELESEN werden —
+ * `isError` war eine zweite, stille Wahrheit daneben.
+ *
+ * [method] bleibt vorerst, OBWOHL sie ebenfalls keinen Leser hat: sie ist der einzige Verwender
+ * des Enums [DiscoveryMethod], und dessen Schicksal gehoert in den offenen Blickwinkel
+ * "Enum-TYPEN ohne Verwender" (Issue #72), nicht in diese Runde.
  */
 @Immutable
 data class DiscoveryStatus(
@@ -13,10 +24,7 @@ data class DiscoveryStatus(
     val message: String,
     val progress: Float = 0f, // 0.0 to 1.0
     val isComplete: Boolean = false,
-    val isError: Boolean = false,
-    val currentMethod: String? = null, // Current discovery method being used
-    val foundBridges: Int = 0, // Number of bridges found so far
-    val duration: Long = 0L // Discovery duration in milliseconds
+    val currentMethod: String? = null // Current discovery method being used
 )
 
 /**

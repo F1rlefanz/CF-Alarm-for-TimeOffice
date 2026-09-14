@@ -807,3 +807,103 @@ Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 (`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
 (sechster Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19,
 20, 21, 22).
+
+### 14.09.2026, Runde 23 (Issue #23, Hue-Modellfelder ohne Lesezugriff)
+
+**Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `c9e3a4a` (= `origin/main` beim
+Start):** Korpus **428** `.kt` unter `app/src`, davon **9** Dateien in `hue/data` mit **28 Typen
+und 160 Properties** (eigener Tokenizer; Kommentare maskiert, String-Literale behalten, Rohstring-
+und Schachtelungsregel aus Runde 20 eingebaut). **87 geprueft, 22 Fehlalarme (25 %), 65 bestaetigt,
+davon 24 geschnitten.** Nachher: **136 Properties**, Fassung C meldet **60** statt 83.
+
+#### Neue Lehre 1: Bei diesem Blickwinkel misst die Fassungswahl das ERGEBNIS, nicht die Genauigkeit
+
+Runde 19 verlangt zwei Fassungen, grosszuegig und streng. Hier waren es drei, und sie sind nicht
+verschieden *genau*, sondern beantworten drei verschiedene Fragen:
+
+| Fassung | Frage | Ergebnis |
+|---|---|---|
+| A grosszuegig, baumweite Namenssuche | "kommt der Name irgendwo vor?" | **0 Rohbefunde** |
+| B streng, klassengetaktet, `.P` / `P =` / `"P"` | "benutzt jemand das Feld?" | **54 Kandidaten** |
+| C streng, klassengetaktet, nur `.P` | "LIEST jemand das Feld?" | **83 Kandidaten** |
+
+**Fassung A liefert die perfekte Null** — und ist wertlos: `hue` hat 474 Namenstreffer im Baum,
+`id` 396, `name` 192. Haette ich dort aufgehoert, waere die Runde mit "nichts gefunden" fertig
+gewesen. **Der Unterschied zwischen B und C ist aber der eigentliche Punkt:** wer eine
+Schreibstelle als "Verwender" zaehlt, verliert genau die Felder, die nur noch in Testaufbauten
+gesetzt werden — `GroupState.all_on` und die sieben `HueBridgeConfig`-Felder fehlen der Fassung B
+vollstaendig. **Der Blickwinkel heisst "ohne LESEZUGRIFF"; dann darf auch nur ein Lesezugriff
+zaehlen.** Schreib die Frage hin, bevor du das Muster schreibst.
+
+#### Neue Lehre 2: Namensgleichheit ueber Klassen hinweg untererkennt - in JEDER Fassung
+
+`LightState.hue`, `GroupAction.hue`, `GroupUpdate.hue`, `LightStateUpdate.hue`: vier verschiedene
+Properties, ein Name. Jeder namensbasierte Zaehler haelt alle vier fuer lebendig, sobald *eine*
+gelesen wird — und hier wird keine einzige gelesen, die 474 Treffer stammen von
+`HueLightAction.hue`, `HueColor.hue` und dem **Paketnamen** `…cf_alarmfortimeoffice.hue`. Die vier
+standen in keiner der drei Fassungen und sind von Hand ergaenzt. Das ist Runde 19s
+Ueberladungs-Lehre, eine Ebene hoeher: **dort trennte die Stelligkeit, hier trennt nur der Typ des
+Empfaengers — und den kennt kein Regex.** Merkposten fuer die naechste Runde, die Properties
+zaehlt: **erst die Namen gruppieren, die mehrfach vorkommen, und diese Gruppe von Hand aufloesen.**
+In `hue/data` sind das `on`, `bri`, `hue`, `sat`, `xy`, `ct`, `alert`, `effect`, `transitiontime`,
+`name`, `id`, `modelid`, `swversion`, `description`, `recycle`.
+
+**Und deshalb geht die Nachher-Rechnung NICHT auf:** Fassung C meldet nach dem Schnitt 60, nicht
+59 — 83 minus die 23 geschnittenen Felder, die sie ueberhaupt kannte. Das 24. (`LightState.hue`)
+war nie in ihrer Liste. Die Zahl stand zuerst falsch in der Commit-Nachricht; aufgefallen ist es
+nur, weil die Differenz beider Listen gebildet wurde statt nur der Zahlen (Runde-22-Regel, beide
+Richtungen — die Gegenrichtung war leer).
+
+#### Neue Lehre 3: Die Serialisierung ist ein Leser, den man nicht sieht
+
+Neun der 22 Fehlalarme sind Felder, die kein Kotlin-Code liest und die trotzdem leben, weil **Gson
+oder kotlinx sie per Reflexion liest**: `BridgeScheduleCommand.address/method/body` und
+`BridgeScheduleCreate.description` sind die Nutzlast des POST an die Bridge — entfernt man sie,
+verschwindet der Zeitplan aus dem JSON, ohne dass ein Test rot wird. `HueScheduleRule.priority`
+und `HueLightAction.targetType/actionType/color/lightId` stehen im `@Serializable`-Bestand im
+DataStore (Leitplanke "Ein gespeichertes Format ist kein toter Code").
+
+**Die Unterscheidung, die diese Runde tragfaehig macht, ist die RICHTUNG:** Ein Modell, das nur
+*deserialisiert* wird (Bridge-Antwort), darf jedes ungelesene Feld verlieren — Gson ignoriert
+unbekannte Schluessel, die Bridge sendet sie weiter, es faellt nichts aus. Ein Modell, das
+*serialisiert* wird (Anfrage, Bestand), verliert mit dem Feld die Wirkung. **Frag also nicht "wer
+liest das Feld", sondern "in welche Richtung laeuft die Serialisierung dieser Klasse".** Genau
+diese Regel steht im Repo schon zweimal ausformuliert, im KDoc von `HueScene` und `HueSceneDto`
+("Abgebildet wird nur, was auch GELESEN wird") — sie war nur nie auf `LightState` angewandt.
+
+#### Was geschnitten wurde und was bewusst stehen blieb
+
+Geschnitten: **24 Felder** in sechs Bridge-ANTWORT-Modellen, deren Klasse den Schnitt ueberlebt —
+`LightState` 9, `HueBridgeConfig` 7, `HueBridge` 3, `DiscoveryStatus` 3, `GroupState` 1,
+`BridgeSchedule` 1. Jede Klasse traegt jetzt eine ENTFERNT-Notiz nach dem Muster, das
+`HueGroup.roomClass` (v1.34.3) vorgegeben hat.
+
+**41 bestaetigte Funde blieben stehen, jeder mit einem Grund, der nicht "keine Lust" heisst:**
+
+- **`GroupAction` (9 Felder, kein einziges mit Leser)** — der Schnitt leert die Klasse und zoege
+  `HueGroup.action` nach. Klassenebene, eigene Runde.
+- **`GroupUpdate` (14) und `LightStateUpdate` (14)** — beide Klassen werden **nirgends erzeugt**.
+  Ihr einziger Verweis ist der Parameter von `HueApiClient.controlGroup`/`controlLight`, **und die
+  beiden Funktionen haben keinen Aufrufer**: der produktive Weg baut eine Roh-`Map<String, Any>`
+  in `HueLightRepository` und ruft `setGroupAction`/`setLightState`. Das ist ein Fund auf
+  Klassen- UND Funktionsebene und gehoert nicht in eine Feld-Runde.
+- **`BridgeDiscoveryResponse` (2)** — einziger Verbraucher `discoverBridgesOnline()` hat keinen
+  Aufrufer.
+- **`DiscoveryStatus.method`** — ungelesen wie ihre drei geschnittenen Geschwister, aber der
+  **einzige Verwender des Enums `DiscoveryMethod`**. Sie zu schneiden strandet ein Enum und
+  griffe damit in den offenen Blickwinkel **#72** ein. Im KDoc der Klasse steht das jetzt, damit
+  der naechste Leser die Luecke nicht fuer ein Versehen haelt.
+- **`BridgeConnectionInfo.bridgeName`** — geschrieben, nie gelesen, aber **UI-Zustand statt
+  Drahtformat**. Dort kann "kein Leser" auch "die Anzeige fehlt" heissen (Grundregel: eine
+  Faehigkeit ohne Bedienoberflaeche gibt es nicht). Das ist eine Produktentscheidung, kein
+  Aufraeumen.
+
+**Kein Gatter (Skill-Regel 4)**, obwohl die Fehlalarmquote mit 25 % in der Naehe der Faustregel
+liegt: die drei teuersten Fehlalarm-Bauarten (Leser in einer Datei ohne Klassennennung,
+Verwendung ohne Punkt im eigenen Gueltigkeitsbereich, Serialisierung als Leser) verlangen alle
+Typwissen, das ein Regex nicht hat. Zahlen und Bauarten stehen im Gatter-Issue.
+
+**Zum Stand der Werkzeuge, nachgemessen am 14.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
+(siebter Nachtrag, der ihn meldet — gezaehlt: Runden 16, 18, 19, 20, 21, 22, 23).

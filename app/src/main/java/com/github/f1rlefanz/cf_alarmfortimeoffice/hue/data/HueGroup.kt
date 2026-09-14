@@ -27,12 +27,15 @@ data class HueGroup(
 // nimmt EIN Feld mit @SerializedName("class") - nicht diese zwei.
 
 /**
- * Group State - aggregated state of all lights in group
+ * Group State - aggregated state of all lights in group.
+ *
+ * ENTFERNT (14.09.2026): `all_on`. Die Bridge sendet es weiter; gelesen wurde im ganzen Baum
+ * nur [any_on] — die Ziel-Auswahl zeigt "An", sobald EINE Lampe der Gruppe brennt
+ * (`ZielAuswahlInhalt`). Gesetzt war `all_on` nur noch in vier Testaufbauten.
  */
 @Immutable
 data class GroupState(
-    val any_on: Boolean, // True if any light in group is on
-    val all_on: Boolean  // True if all lights in group are on
+    val any_on: Boolean // True if any light in group is on
 )
 
 /**

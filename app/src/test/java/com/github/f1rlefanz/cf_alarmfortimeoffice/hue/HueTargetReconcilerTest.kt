@@ -50,7 +50,7 @@ class HueTargetReconcilerTest {
         name = name,
         type = "Room",
         lights = emptyList(),
-        state = GroupState(any_on = false, all_on = false),
+        state = GroupState(any_on = false),
         action = GroupAction(on = false)
     )
 

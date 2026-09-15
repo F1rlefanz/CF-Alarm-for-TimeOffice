@@ -911,9 +911,30 @@ Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 ### 15.09.2026, Runde 24 (Issue #24, Schnittstellen-Methoden ohne Aufrufer)
 
 **Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `d298909` (= `origin/main` beim
-Start):** Korpus **428** `.kt` unter `app/src`, darin **17** `interfaces/`-Dateien mit **19
+Start):** Korpus **428** `.kt` unter `app/src`, darin **17** `interfaces/`-Dateien mit **18
 Interfaces** und **128 `fun`-Deklarationen**; davon gehoeren **126** wirklich zu einem
-Interface-Rumpf. **24 Rohbefunde, 2 Fehlalarme (8,3 %), 22 bestaetigt, 19 geschnitten, 3 bewusst
+Interface-Rumpf.
+
+> **Vom Torwaechter korrigiert (15.09.2026, beim Merge von PR #93): hier stand „19 Interfaces",
+> es sind 18.** Nachgezaehlt auf BEIDEN Staenden (`d298909` und dem Merge-Commit `9ad506d`),
+> Zaehlweise offengelegt:
+> `git grep -hE "^\s*(fun )?interface [A-Za-z]" -- 'app/src/**/interfaces/*.kt' | wc -l` → **18**.
+> 17 Dateien, davon 16 mit genau einem Interface und `IHueLightUseCase.kt` mit zweien
+> (`IHueLightUseCase`, `IHueLightUseCaseAdvanced`): 16 + 2 = 18.
+>
+> Die Zahl traegt nichts am Befund — 24/2/22 und 128/126/109/107 habe ich selbst nachgerechnet
+> und sie stimmen alle, der Schnitt ist davon unberuehrt. Korrigiert wird sie trotzdem, weil
+> eine Korpuszahl in DIESER Datei fuer die naechste Runde die Ausgangsbasis ihrer eigenen
+> Messung ist; die Datei ist Pflichtlektuere, und eine falsche Basis pflanzt sich fort. Genau
+> das mahnt dieser Nachtrag zwei Absaetze weiter selbst an: **eine Doku-Nennung ist ein
+> Hinweis, nie ein Beleg** — auch dann nicht, wenn sie in einem Nachtrag steht.
+>
+> **Ebenfalls ungeprueft und deshalb nicht als belegt weiterzureichen:** das „hier 19 Paare"
+> weiter unten in Lehre 1. Das ist eine ANDERE Aussage (Namen, die in zwei Interfaces stehen),
+> sie wurde von mir nicht nachgemessen, und sie teilt sich mit der falschen Interface-Zahl
+> nur die Ziffer.
+
+**24 Rohbefunde, 2 Fehlalarme (8,3 %), 22 bestaetigt, 19 geschnitten, 3 bewusst
 stehen gelassen.** Nachher: **109 Deklarationen / 107 Interface-Methoden** (126 − 19 = 107),
 Fassung D meldet **9** Rohbefunde = 2 Fehlalarme + 2 ausserhalb des Blickwinkels + 3 stehen
 gelassene + **2 Folgefunde des Schnitts**. Eigener Tokenizer, Kommentare maskiert,

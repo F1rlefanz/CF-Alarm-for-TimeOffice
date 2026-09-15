@@ -907,3 +907,158 @@ Typwissen, das ein Regex nicht hat. Zahlen und Bauarten stehen im Gatter-Issue.
 Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 (`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
 (siebter Nachtrag, der ihn meldet — gezaehlt: Runden 16, 18, 19, 20, 21, 22, 23).
+
+### 15.09.2026, Runde 24 (Issue #24, Schnittstellen-Methoden ohne Aufrufer)
+
+**Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `d298909` (= `origin/main` beim
+Start):** Korpus **428** `.kt` unter `app/src`, darin **17** `interfaces/`-Dateien mit **19
+Interfaces** und **128 `fun`-Deklarationen**; davon gehoeren **126** wirklich zu einem
+Interface-Rumpf. **24 Rohbefunde, 2 Fehlalarme (8,3 %), 22 bestaetigt, 19 geschnitten, 3 bewusst
+stehen gelassen.** Nachher: **109 Deklarationen / 107 Interface-Methoden** (126 − 19 = 107),
+Fassung D meldet **9** Rohbefunde = 2 Fehlalarme + 2 ausserhalb des Blickwinkels + 3 stehen
+gelassene + **2 Folgefunde des Schnitts**. Eigener Tokenizer, Kommentare maskiert,
+String-Literale behalten, Rohstring- und Schachtelungsregel aus Runde 20 eingebaut.
+
+#### Neue Lehre 1: Bei Schnittstellen zaehlt der EMPFAENGERTYP, und das kostet acht Funde
+
+Vier Fassungen, jede eine andere Frage:
+
+| Fassung | Frage | Ergebnis |
+|---|---|---|
+| A grosszuegig, baumweite Namenssuche | „kommt der Name vor?" | **0 Rohbefunde** |
+| B streng, `name(` / `::name`, ohne Deklarationen | „ruft jemand die Methode?" | **16** |
+| C wie B, nur Aufrufer unter `app/src/main` | „ruft PRODUKTIVCODE sie?" | **+0** |
+| D Aufloesung nach Empfaengertyp | „ruft jemand sie AUF DIESEM Typ?" | **24** |
+
+**Fassung A liefert wieder die perfekte Null** (Runde 23 Lehre 1 bestaetigt sich):
+`isAuthenticated` hat 20 Namenstreffer, `hasSelectedCalendars` **48** — und die stammen
+praktisch alle vom gleichnamigen, **lebenden** UI-Feld
+`CalendarOperationState.hasSelectedCalendars`, das aus `selectedCalendarIds.isNotEmpty()`
+gespeist wird. **Fassung C ergab null Zusatzfunde**; die im Issue vermutete Klasse „lebt nur noch
+im Test" existiert hier nicht: jede Methode mit irgendeinem Aufrufer hat auch einen produktiven.
+
+**Der Sprung von B (16) auf D (24) ist der eigentliche Ertrag.** Acht Funde sind
+UseCase-Methoden, deren Name auch auf dem zugehoerigen Repository steht — `updateAuthData`,
+`isAuthenticated`, `getCurrentAuthData`, `migrateTokenExpiryIfNeeded`, `hasValidConfig`,
+`resetToDefaults`, `getAlarmById`-Umfeld. Jeder namensbasierte Zaehler haelt **beide** Seiten fuer
+lebendig, sobald eine gerufen wird; tatsaechlich ruft **jeder** Konsument am UseCase VORBEI direkt
+das Repository an (`AuthViewModel`, `CalendarUseCase`, `BootReceiver`). Das ist Runde 23s
+Namensgleichheits-Lehre eine Ebene hoeher: **dort trennte die Stelligkeit, hier trennt nur der Typ
+des Empfaengers.** Merkposten fuer die naechste Runde, die Schnittstellen zaehlt: **erst die Namen
+gruppieren, die in zwei Interfaces stehen** — hier 19 Paare — **und diese Gruppe von Hand
+aufloesen.** Das Gegenstueck gilt auch: die 13 `hasValidConfig`-Test-Doubles implementieren
+`IShiftConfigRepository`, NICHT den geschnittenen UseCase, und bleiben unangetastet. Wer nur nach
+dem Namen loescht, reisst sie mit.
+
+#### Neue Lehre 2: Kotlin-Aufrufe brauchen kein `(` — `name {` ist eine Aufrufstelle
+
+Mein erster Zaehler suchte `name\s*\(` und meldete `IHueConfigRepository.updateScheduleRules`
+als Rohbefund. **Es war ein Fehlalarm, und er waere ein Schnitt geworden:** `HueRuleUseCase.kt:756`
+und `:825` rufen `configRepository.updateScheduleRules { current -> … }` — **trailing lambda, keine
+Klammer.** Aufgefallen ist es nur, weil die Gegenprobe mit rohem `git grep` fuer diesen einen
+Namen Treffer hatte, die mein Tokenizer nicht hatte.
+
+**Die verallgemeinerbare Regel:** Ein Aufrufmuster fuer Kotlin muss `name\s*[({]` sein, nicht
+`name\s*\(`. Wer nur die Klammer sucht, meldet jede Funktion mit funktionalem letzten Parameter
+als tot — und das ist in diesem Baum kein Randfall, sondern das Idiom fuer genau die Stellen, die
+eine Transaktion umschliessen (`dataStore.edit {}`, `updateScheduleRules {}`, `runCatching {}`).
+Ebenso stillschweigend teuer: `infix`/`operator` (Runde 19) und `::name`-Referenzen. **Die
+Richtung des Fehlers ist hier die gefaehrliche** — anders als bei Runde 19s Ueberzaehlung, die
+Funde *versteckt*, ERFINDET diese Unterzaehlung Funde und fuehrt zum Schnitt an lebendem Code.
+
+#### Neue Lehre 3: Miss den SCOPE deiner Deklarationen, nicht nur ihre Datei
+
+Von den 128 `fun`-Deklarationen in `interfaces/`-Dateien sind **zwei keine Interface-Methoden**:
+`encode` und `decode` stehen in `object ManualAlarmSnapshot` in `IAlarmSkipUseCase.kt` (Z. 36–80,
+**vor** dem Interface ab Z. 86) und leben — `AlarmSkipUseCase.kt:136` und `AlarmViewModel.kt:892`
+rufen sie. Mein Erstzaehler nahm „Datei liegt unter `interfaces/`" fuer „Deklaration gehoert zu
+einem Interface"; beide wurden als Rohbefund gemeldet, mit `fremd=11` bzw. `fremd=7`
+gross-geschriebenen Empfaengern als einzigem Hinweis.
+
+**Die Regel:** Wenn dein Blickwinkel „X in einem Y-Rumpf" lautet, pruefe die Klammertiefe UND die
+umgebende Deklaration, nicht den Pfad. Eine Zeile Selbstpruefung reicht („welche Deklarationen
+liegen NICHT im gesuchten Rumpf?"); sie hat hier 2 von 128 herausgeholt und die Korpuszahl von
+128 auf 126 richtiggestellt. Das ergaenzt die Achsen der Runden 16–20 um eine fuenfte:
+**Zugehoerigkeit.** Leer (16), Namen (17), Menge (18), Unterbau (20) — und jetzt: liegt das
+Gefundene ueberhaupt dort, wo die Frage es verlangt?
+
+#### „Kein Aufrufer" heisst zweimal etwas anderes — und der Code sagt, welches
+
+Drei bestaetigte Funde stehen bewusst noch, und der Grund war beide Male im Repo schon
+aufgeschrieben:
+
+- **`IShiftUseCase.resetToDefaults`** — kein Aufrufer, aber **drei** Stellen im Produktivcode
+  (`ShiftConfigRepository:356`, `ShiftViewModel:294`, `CalendarViewModel:1642`) nennen
+  `resetToDefaults()` ausdruecklich „den bewussten Weg zum Default", der „dem Nutzer gehoert".
+  Genau **weil** kein Lesefehler mehr still auf den Default zurueckfaellt, braucht es diesen Weg:
+  **was fehlt, ist der Knopf, nicht die Funktion.** Das ist wortgleich die Lage von
+  `BridgeConnectionInfo.bridgeName` in Runde 23 — Produktentscheidung, kein Aufraeumen. Steht
+  jetzt mit `OHNE VERWENDER` im eigenen KDoc.
+- **`IAlarmRepository.getAlarmById` und `alarmExists`** — 13 Test-Doubles tragen sie mit, aber
+  Leitplanke „Die Weckerkette fasst du nicht an". Abgrenzung mechanisch wie in Runde 21/22 (Pfad
+  oder Dateiname enthaelt `alarm`, `service`, `dimmer`). Als Issue mit „braucht Ruecksprache".
+
+**Der Test dafuer ist billig und gehoert in jede Runde dieses Blickwinkels:** `git grep` den
+Methodennamen und **sieh die Kommentartreffer an**. Nennt der Produktivcode die Funktion als
+vorgesehenen Weg, ist „kein Aufrufer" ein fehlendes Bedienelement. Nennt er sie gar nicht — oder
+behauptet er Aufrufer, die es nicht gibt —, ist es Altlast. Beides kam hier vor, im selben
+Durchgang.
+
+#### Eine Doku-Behauptung war der einzige „Verwender" — und sie war falsch
+
+`getCurrentBridgeIp`/`getCurrentUsername` hatten im ganzen Baum **je genau eine** Nennung
+ausserhalb von Deklaration und `override`, und zwar dieselbe: den KDoc von
+`HueBridgeConnectionManager.getCurrentConnectionInfo()`, der sich „public API contract via
+IHueBridgeRepository.getCurrentBridgeIp()/getCurrentUsername(), **called from Compose UI and
+WorkManager workers**" nennt. Nachgemessen: aus Compose oder einem Worker ruft diese Funktion
+niemand, einziger Aufrufer ist `recoverConnection()` **in derselben Datei**. Der Satz ist
+richtiggestellt, die Synchronitaet bleibt (sie ist jetzt eine interne Notwendigkeit, keine
+Zusicherung nach draussen).
+
+**Die Lehre, und sie schneidet in beide Richtungen:** Haette ich Kommentare als Verwender gezaehlt
+(die Fassung, die `nachtraege.md` seit Runde 17 ausdruecklich verwirft), waeren diese zwei Funde
+**durch ihre eigene falsche Dokumentation** unsichtbar geblieben. Das ist der
+Selbstentwaffnungs-Mechanismus, den der Torwaechter an Pruefung 7 als Defekt (b) nachwies — hier
+einmal nicht in einer ENTFERNT-Notiz, sondern in einer Behauptung, die von Anfang an nicht stimmte.
+**Eine Doku-Nennung ist ein Hinweis, wo man nachsieht, nie ein Beleg, dass es jemand benutzt.**
+
+#### Die Folgefunde sind gemessen und bewusst NICHT mitgeschnitten
+
+Der Schnitt macht **vier** Dinge caller-los, die es auf `d298909` nicht waren — deshalb gehoeren
+sie nicht in diese Runde, aber sie gehoeren gezaehlt:
+`IAuthDataStoreRepository.migrateTokenExpiryIfNeeded` und `IShiftConfigRepository.hasValidConfig`
+(einziger Aufrufer war der Rumpf der entfernten UseCase-Methode gleichen Namens — sie sind die
+zwei „neuen" Rohbefunde in der Nachher-Zahl), `HueApiClient.getLight`/`getGroup`
+(Funktions- statt Interface-Ebene) und der Konstruktorparameter `CalendarRepository.context`
+(schrieb nur `setContext`, **gelesen wurde er nie** — jetzt ganz unreferenziert; ihn zu entfernen
+aendert den Hilt-Konstruktor und ist der Blickwinkel #65). **Alle vier tragen eine Notiz im Code.**
+
+**Die Regel, die ich dafuer aufgeschrieben habe** (Praezedenz: Runde 23, `GroupAction`/`GroupUpdate`
+— „Klassenebene, eigene Runde"): Geschnitten wird, was **beim Start der Runde** null Aufrufstellen
+hatte. Was der Schnitt in einer **anderen Datei** toetet, wird gemessen und abgelegt. **Einzige
+Ausnahme:** eine Deklaration in **derselben Datei**, die nur der entfernten Methode diente — hier
+der Rueckgabetyp `EventsPage`. Die stehen zu lassen waere ein Rest des eigenen Schnitts, kein
+neuer Blickwinkel. Die Grenze ist mechanisch nachpruefbar, und das ist ihr ganzer Zweck.
+
+**Nebenbei beantwortet:** Die offene Frage aus Runde 6, ob `EventsPage.hasMorePages` „Teil des
+Vertrags" sei, ist erledigt — es war Teil einer API-level-Pagination, die **nie** einen Aufrufer
+hatte. Das Wissen aus ihrem Rumpf ist nicht weggeworfen, sondern ins KDoc von
+`ICalendarRepository` gewandert: eine SEITE darf nicht unter dem Schluessel landen, aus dem
+`getCalendarEventsWithCache` liest (bis v1.27.0 genau dieser Bug — eine partielle Seite wurde zur
+vollstaendigen Liste und damit zur Loeschgrundlage fuer `syncAlarms()`).
+
+**Kein Gatter (Skill-Regel 4)**, obwohl 8,3 % unter der Faustregel liegen: Fassung D braucht
+Empfaengertypen, und die kennt kein Regex. Meine Annaeherung ueber Bezeichner-Deklarationen hat
+**beide** Fehlalarme selbst erzeugt — `ruleUseCase` ist ein lokaler `val` aus
+`EntryPointAccessors…hueRuleUseCase()` **ohne Typannotation**, und ein Dauergatter wuerde jede
+solche Stelle melden. Dazu kaeme die Unterscheidung „fehlendes Bedienelement gegen Altlast", die
+oben zweimal den Ausschlag gab und Absicht erraten muss. Zahlen und Bauarten stehen im
+Gatter-Issue.
+
+**Zum Stand der Werkzeuge, nachgemessen am 15.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen (`pruefe_tote_importe`, `pruefe_verwaiste_strings`, `pruefe_doku_verweise`,
+`pruefe_composable_ohne_verbraucher`, `pruefe_haengende_kdocs`, `pruefe_ungenutzte_konstanten`),
+und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
+(achter Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19, 20,
+21, 22, 23, 24).

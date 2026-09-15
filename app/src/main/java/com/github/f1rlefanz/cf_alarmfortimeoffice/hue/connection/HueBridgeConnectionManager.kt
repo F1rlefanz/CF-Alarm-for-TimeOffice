@@ -554,13 +554,21 @@ class HueBridgeConnectionManager private constructor(
     }
 
     /**
-     * Get current connection info without validation (for UI display)
+     * Get current connection info without validation
      *
-     * Stays synchronous (public API contract via IHueBridgeRepository.getCurrentBridgeIp()/
-     * getCurrentUsername(), called from Compose UI and WorkManager workers) by reading the
-     * in-memory [currentConnectionState] instead of the (now async) DataStore. That in-memory
-     * state is populated by restoreConnectionFromStorage()/setConnection() and is the same
-     * cache getValidatedConnection() already relies on.
+     * Stays synchronous by reading the in-memory [currentConnectionState] instead of the (now
+     * async) DataStore. That in-memory state is populated by
+     * restoreConnectionFromStorage()/setConnection() and is the same cache
+     * getValidatedConnection() already relies on.
+     *
+     * RICHTIGSTELLUNG (Aufraeumrunde 24): Hier stand, die Synchronitaet sei ein "public API
+     * contract via IHueBridgeRepository.getCurrentBridgeIp()/getCurrentUsername(), called from
+     * Compose UI and WorkManager workers". Beides gemessen falsch: die zwei
+     * Repository-Methoden hatten im ganzen Baum keine Aufrufstelle (dieser Satz WAR ihre einzige
+     * Nennung) und sind entfernt; aus Compose oder einem Worker ruft diese Funktion niemand.
+     * Einziger Aufrufer ist [recoverConnection] in dieser Datei. Die Synchronitaet bleibt
+     * trotzdem richtig - `recoverConnection` braucht den Wert ohne Suspendieren -, sie ist nur
+     * keine Zusicherung nach draussen mehr.
      */
     fun getCurrentConnectionInfo(): Pair<String?, String?> {
         val state = currentConnectionState.get()

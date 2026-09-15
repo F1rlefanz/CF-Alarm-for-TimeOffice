@@ -140,10 +140,6 @@ class HueBridgeRepository @Inject constructor(
     override suspend fun initializeFromConfig(bridgeIp: String, username: String): Result<Unit> =
         connectionManager.setConnection(bridgeIp, username)
     
-    override fun getCurrentBridgeIp(): String? = connectionManager.getCurrentConnectionInfo().first
-    
-    override fun getCurrentUsername(): String? = connectionManager.getCurrentConnectionInfo().second
-    
     override suspend fun validateConnection(): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             // Use the robust connection manager for validation

@@ -92,7 +92,6 @@ class RulePreviewCleanupTest {
         override suspend fun deleteScheduleRule(ruleId: String): Result<Unit> = Result.success(Unit)
         override suspend fun updateScheduleRule(rule: HueSchedule): Result<Unit> = Result.success(Unit)
         override suspend fun updateScheduleRules(transform: (List<HueSchedule>) -> List<HueSchedule>): Result<Unit> = Result.success(Unit)
-        override suspend fun clearConfiguration(): Result<Unit> = Result.success(Unit)
         override suspend fun clearBridgeConfig(): Result<Unit> = Result.success(Unit)
     }
 

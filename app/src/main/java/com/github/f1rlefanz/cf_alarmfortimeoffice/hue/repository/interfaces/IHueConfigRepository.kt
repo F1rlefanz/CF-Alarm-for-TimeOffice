@@ -55,15 +55,14 @@ interface IHueConfigRepository {
     suspend fun updateScheduleRules(transform: (List<HueSchedule>) -> List<HueSchedule>): Result<Unit>
 
     /**
-     * Clear all configuration (for reset/logout)
-     */
-    suspend fun clearConfiguration(): Result<Unit>
-
-    /**
      * Clear ONLY the persisted bridge IP/username (used by "Verbindung trennen / Bridge
-     * vergessen" - UX FEATURE B). Unlike [clearConfiguration], this intentionally keeps the
-     * saved schedule rules so re-pairing the same (or a replacement) bridge doesn't force the
-     * user to recreate them.
+     * vergessen" - UX FEATURE B). This intentionally keeps the saved schedule rules so
+     * re-pairing the same (or a replacement) bridge doesn't force the user to recreate them.
+     *
+     * Es ist der EINZIGE Raeumweg, den es noch gibt: das frueher daneben stehende
+     * `clearConfiguration()` (`preferences.clear()`, also samt Regelbestand) hatte im ganzen Baum
+     * keinen Aufrufer und ist in Aufraeumrunde 24 entfernt. Wer "alles zuruecksetzen" braucht,
+     * baut es bewusst neu - mit einer Antwort darauf, ob die Regeln wirklich mitgehen sollen.
      */
     suspend fun clearBridgeConfig(): Result<Unit>
 }

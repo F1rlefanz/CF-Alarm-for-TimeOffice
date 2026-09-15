@@ -68,7 +68,4 @@ class ShiftUseCase @Inject constructor(
                 invalidateAllCaches()
             }
         }
-    
-    override suspend fun hasValidConfig(): Result<Boolean> =
-        shiftConfigRepository.hasValidConfig()
 }

@@ -295,62 +295,6 @@ class HueLightRepository @Inject constructor(
             Result.failure(e)
         }
     }
-    
-    override suspend fun getLightState(lightId: String): Result<HueLight> = withContext(Dispatchers.IO) {
-        try {
-            // Use robust connection manager instead of bridge repository
-            val (bridgeIp, username) = getValidatedConnectionInfo()
-            
-            Logger.d(LogTags.HUE_LIGHTS, "Getting state for light $lightId")
-            
-            val lightData = apiClient.getLight(bridgeIp, username, lightId)
-            val light = HueLight(
-                id = lightId,
-                name = lightData.name,
-                type = lightData.type,
-                modelid = lightData.modelid,
-                manufacturername = lightData.manufacturername,
-                productname = lightData.productname,
-                state = lightData.state,
-                uniqueid = lightData.uniqueid
-            )
-            
-            Logger.d(LogTags.HUE_LIGHTS, "Successfully retrieved state for light $lightId")
-            Result.success(light)
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_LIGHTS, "Failed to get light state for $lightId", e)
-            Result.failure(e)
-        }
-    }
-    
-    override suspend fun getGroupState(groupId: String): Result<HueGroup> = withContext(Dispatchers.IO) {
-        try {
-            // Use robust connection manager instead of bridge repository
-            val (bridgeIp, username) = getValidatedConnectionInfo()
-            
-            Logger.d(LogTags.HUE_LIGHTS, "Getting state for group $groupId")
-            
-            val groupData = apiClient.getGroup(bridgeIp, username, groupId)
-            val group = HueGroup(
-                id = groupId,
-                name = groupData.name,
-                type = groupData.type,
-                lights = groupData.lights,
-                sensors = groupData.sensors,
-                state = groupData.state,
-                action = groupData.action,
-                recycle = groupData.recycle
-            )
-            
-            Logger.d(LogTags.HUE_LIGHTS, "Successfully retrieved state for group $groupId")
-            Result.success(group)
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_LIGHTS, "Failed to get group state for $groupId", e)
-            Result.failure(e)
-        }
-    }
 
     override suspend fun createBridgeSchedule(
         name: String,

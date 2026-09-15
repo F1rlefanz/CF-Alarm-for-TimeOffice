@@ -4,7 +4,6 @@ import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
-import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.EventsPage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -107,6 +106,13 @@ internal suspend fun <T> collectAllPages(
  * Abruf, der wirklich an die API geht, holt ALLE Seiten des 14-Tage-Fensters ([collectAllPages]).
  * Beides hängt zusammen: was dieses Repository zurückgibt, gilt weiter oben als vollständige Liste
  * und ist damit eine Löschgrundlage für `syncAlarms()`.
+ *
+ * OHNE VERWENDER, bewusst noch nicht angefasst: der Konstruktorparameter `context`. Er wurde
+ * ausschliesslich von `setContext()` geschrieben und NIE gelesen; mit dem Entfernen von
+ * `setContext` (Aufraeumrunde 24, kein Aufrufer im Baum) ist er ganz unreferenziert. Er steht
+ * noch, weil ihn zu entfernen den Hilt-Konstruktor aendert und damit eine andere Frage ist als
+ * "Schnittstellen-Methode ohne Aufrufer" - erfasst als eigener Blickwinkel
+ * ("Properties, die nur geschrieben und nie gelesen werden"). Kein Versehen.
  */
 @Singleton
 class CalendarRepository @Inject constructor(
@@ -121,10 +127,6 @@ class CalendarRepository @Inject constructor(
     
     private var cachedService: Calendar? = null
     private var cachedToken: String? = null
-
-    override fun setContext(context: Context) {
-        this.context = context
-    }
 
     override suspend fun getCalendarsWithToken(accessToken: String): Result<List<CalendarItem>> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("CalendarRepository.getCalendarsWithToken") {
@@ -179,14 +181,6 @@ class CalendarRepository @Inject constructor(
                 throw mapCalendarException(e)
             }
         }
-    }
-
-    override suspend fun getCalendarEventsWithToken(
-        accessToken: String,
-        calendarId: String
-    ): Result<List<CalendarEvent>> {
-        // PHASE 2 CLEANUP: daysAhead fixed at 14 days
-        return getCalendarEventsWithCache(accessToken, calendarId, forceRefresh = false)
     }
 
     override suspend fun getCalendarEventsWithCache(
@@ -269,67 +263,6 @@ class CalendarRepository @Inject constructor(
         }
     }
     
-    override suspend fun getCalendarEventsWithPagination(
-        accessToken: String,
-        calendarId: String,
-        maxResults: Int,
-        pageToken: String?
-    ): Result<EventsPage> = withContext(Dispatchers.IO) {
-        // PHASE 2 CLEANUP: daysAhead fixed at 14 days
-        val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
-        SafeExecutor.safeExecute("CalendarRepository.getCalendarEventsWithPagination") {
-            Logger.d(LogTags.CALENDAR_API, "Loading events with pagination: pageToken=${pageToken?.take(10)}..., maxResults=$maxResults")
-            val service = getCalendarService(accessToken)
-
-            try {
-                val now = LocalDateTime.now()
-                val timeMin = now.atZone(ZoneId.systemDefault()).toInstant().toString()
-                val timeMax = now.plusDays(daysAhead.toLong())
-                    .atZone(ZoneId.systemDefault())
-                    .toInstant()
-                    .toString()
-
-                val eventsRequest = service.events().list(calendarId)
-                    .setTimeMin(com.google.api.client.util.DateTime(timeMin))
-                    .setTimeMax(com.google.api.client.util.DateTime(timeMax))
-                    .setOrderBy("startTime")
-                    .setSingleEvents(true)
-                    .setMaxResults(maxResults)
-                    .setFields("items(id,summary,start,end),nextPageToken")
-
-                if (pageToken != null) {
-                    eventsRequest.pageToken = pageToken
-                }
-
-                val result = eventsRequest.execute()
-                val events = result.items ?: emptyList()
-                val nextPageToken = result.nextPageToken
-
-                Logger.i(LogTags.CALENDAR_API, "${events.size} events loaded for page (maxResults=$maxResults), hasMore=${nextPageToken != null}")
-
-                // PERFORMANCE: Use optimized event processing
-                val calendarEvents = processEventsWithOptimization(events, calendarId)
-
-                // BEWUSST KEIN eventCache.put HIER.
-                //
-                // Diese Funktion liefert eine SEITE, der Cache aber beantwortet die Frage "alle
-                // Events der naechsten 14 Tage". Bis v1.27.0 legte die erste Seite ihr Ergebnis
-                // unter demselben Schluessel ab, aus dem getCalendarEventsWithCache liest - eine
-                // bewusst partielle Seite waere dort zur vollstaendigen Liste geworden und damit
-                // zur Loeschgrundlage fuer syncAlarms(). Aktuell hat die Funktion keinen
-                // Produktivaufrufer; wer sie verdrahtet, soll die Falle nicht miterben.
-
-                EventsPage(
-                    events = calendarEvents,
-                    nextPageToken = nextPageToken,
-                    hasMorePages = nextPageToken != null
-                )
-            } catch (e: Exception) {
-                throw mapCalendarException(e)
-            }
-        }
-    }
-    
     override suspend fun invalidateCalendarCache(calendarId: String) {
         // PHASE 2 CLEANUP: Always invalidate for fixed 14 days
         eventCache.invalidateCalendar(calendarId)
@@ -346,13 +279,7 @@ class CalendarRepository @Inject constructor(
             appendLine("▸ Cache: $cacheStats")
         }
     }
-    
-    override fun cleanup() {
-        Logger.d(LogTags.REPOSITORY, "Clearing CalendarRepository resources")
-        cachedService = null
-        cachedToken = null
-    }
-    
+
     private fun getCalendarService(accessToken: String): Calendar {
         if (cachedService == null || cachedToken != accessToken) {
             Logger.d(LogTags.CALENDAR_API, "🔗 API-SERVICE: Creating Calendar service")

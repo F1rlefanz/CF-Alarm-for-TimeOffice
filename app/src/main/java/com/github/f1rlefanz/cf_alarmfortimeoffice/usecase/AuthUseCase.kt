@@ -42,17 +42,7 @@ class AuthUseCase @Inject constructor(
 ) : IAuthUseCase {
     
     override val authData: Flow<AuthData> = authDataStoreRepository.authData
-    
-    override suspend fun updateAuthData(authData: AuthData): Result<Unit> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("AuthUseCase.updateAuthData") {
-            authDataStoreRepository.updateAuthData(authData).getOrThrow()
-            Logger.business(LogTags.AUTH, "✅ AUTH-UPDATE: Auth data updated successfully for ${authData.email}")
-            
-            // Note: Calendar authorization is now handled by AuthViewModel.requestCalendarAuthorization()
-            // to prevent duplicate authorization attempts
-        }
-    }
-    
+
     /**
      * MODERN: Requests Calendar API authorization for signed-in user
      * 
@@ -231,25 +221,6 @@ class AuthUseCase @Inject constructor(
             }
             authDataStoreRepository.clearAuthData().getOrThrow()
             Logger.business(LogTags.AUTH, "Abgemeldet - Auth-Daten und Kalender-Token verworfen")
-        }
-    }
-    
-    override suspend fun isAuthenticated(): Result<Boolean> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("AuthUseCase.isAuthenticated") {
-            authDataStoreRepository.isAuthenticated().getOrThrow()
-        }
-    }
-    
-    override suspend fun getCurrentAuthData(): Result<AuthData> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("AuthUseCase.getCurrentAuthData") {
-            authDataStoreRepository.getCurrentAuthData().getOrThrow()
-        }
-    }
-    
-    override suspend fun migrateTokenExpiryIfNeeded(): Result<Unit> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("AuthUseCase.migrateTokenExpiryIfNeeded") {
-            authDataStoreRepository.migrateTokenExpiryIfNeeded().getOrThrow()
-            Logger.d(LogTags.DATASTORE, "Token expiry migration completed")
         }
     }
 }

@@ -1,11 +1,9 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
-import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarItem
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
-import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.EventsPage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
 import kotlinx.coroutines.flow.Flow
@@ -53,15 +51,8 @@ class CalendarUseCaseFailureSemanticsTest {
     private class FakeCalendarRepository(
         private val perCalendar: Map<String, Result<List<CalendarEvent>>>
     ) : ICalendarRepository {
-        override fun setContext(context: Context) = Unit
-
         override suspend fun getCalendarsWithToken(accessToken: String): Result<List<CalendarItem>> =
             Result.success(emptyList())
-
-        override suspend fun getCalendarEventsWithToken(
-            accessToken: String,
-            calendarId: String
-        ): Result<List<CalendarEvent>> = getCalendarEventsWithCache(accessToken, calendarId, false)
 
         override suspend fun getCalendarEventsWithCache(
             accessToken: String,
@@ -70,17 +61,9 @@ class CalendarUseCaseFailureSemanticsTest {
         ): Result<List<CalendarEvent>> =
             perCalendar[calendarId] ?: Result.failure(AppError.UnknownError("unbekannter Kalender"))
 
-        override suspend fun getCalendarEventsWithPagination(
-            accessToken: String,
-            calendarId: String,
-            maxResults: Int,
-            pageToken: String?
-        ): Result<EventsPage> = Result.success(EventsPage(emptyList(), null, false))
-
         override suspend fun invalidateCalendarCache(calendarId: String) = Unit
         override suspend fun clearEventCache() = Unit
         override suspend fun getCacheStats(): String = ""
-        override fun cleanup() = Unit
     }
 
     private fun useCase(perCalendar: Map<String, Result<List<CalendarEvent>>>) = CalendarUseCase(

@@ -66,7 +66,6 @@ class Pruefrunde8HueRegelNachzugTest {
             return Result.success(Unit)
         }
 
-        override suspend fun clearConfiguration(): Result<Unit> = Result.success(Unit)
         override suspend fun clearBridgeConfig(): Result<Unit> = Result.success(Unit)
     }
 

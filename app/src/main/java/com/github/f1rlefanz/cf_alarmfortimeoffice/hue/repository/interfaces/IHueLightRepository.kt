@@ -8,6 +8,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 /**
  * Interface for Hue Light repository operations
  * Follows Clean Architecture principles with testable abstractions
+ *
+ * ENTFERNT (Aufraeumrunde 24): `getLightState(lightId)` und `getGroupState(groupId)` - im ganzen
+ * Baum ohne Aufrufstelle, nur Deklaration, Implementierung und zwei Test-Doubles. Der EINZELne
+ * Zustand wurde nie gebraucht: die App liest immer den ganzen Bestand ueber [getLights] bzw.
+ * [getGroups] (so kommt auch die Vorschau an ihre Rueckstellwerte). Mit ihnen verlieren
+ * `HueApiClient.getLight`/`getGroup` ihre einzigen Aufrufer - die stehen noch und sind als
+ * eigener Blickwinkel (Funktionsebene) vermerkt.
  */
 interface IHueLightRepository {
     
@@ -90,16 +97,6 @@ interface IHueLightRepository {
         alert: String? = null
     ): Result<Unit>
     
-    /**
-     * Get current state of a light
-     */
-    suspend fun getLightState(lightId: String): Result<HueLight>
-    
-    /**
-     * Get current state of a group
-     */
-    suspend fun getGroupState(groupId: String): Result<HueGroup>
-
     /**
      * Legt einen Zeitplan auf der Bridge an, den die Bridge selbst ausführt.
      *

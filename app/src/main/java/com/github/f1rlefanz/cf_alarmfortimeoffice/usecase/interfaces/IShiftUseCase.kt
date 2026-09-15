@@ -12,6 +12,12 @@ import kotlinx.coroutines.flow.Flow
  * - Dependency Inversion: ViewModel abhängig von Abstraktion
  * - Testbarkeit: ViewModel kann mit Mock-UseCase getestet werden
  * - Business Logic Separation: Kapselt Shift-spezifische Geschäftslogik
+ *
+ * ENTFERNT (Aufraeumrunde 24): `hasValidConfig` - im ganzen Baum ohne Aufrufstelle, ein reines
+ * Durchreichen an `IShiftConfigRepository.hasValidConfig()`. Wer wissen will, ob eine
+ * Konfiguration taugt, liest sie mit [getCurrentShiftConfig] und sieht ihre Definitionen an;
+ * ein separates Ja/Nein war eine zweite Wahrheit ohne Leser. Nicht zu verwechseln mit
+ * [resetToDefaults], das bewusst ohne Verwender stehen bleibt - Begruendung dort.
  */
 interface IShiftUseCase {
     
@@ -50,15 +56,16 @@ interface IShiftUseCase {
     
     /**
      * Setzt die Schicht-Konfiguration auf Standardwerte zurück
-     * 
+     *
+     * OHNE VERWENDER, und das bleibt so, bis jemand die Oberflaeche dazu baut: Im ganzen Baum
+     * ruft diese Funktion niemand (Aufraeumrunde 24 hat es gemessen). Sie ist trotzdem KEINE
+     * Altlast - drei Stellen im Produktivcode benennen `resetToDefaults()` ausdruecklich als
+     * "den bewussten Weg zum Default", der "dem Nutzer gehoert"
+     * (`ShiftConfigRepository`, `ShiftViewModel`, `CalendarViewModel`): Genau WEIL kein
+     * Lesefehler mehr still auf die Standardkonfiguration zurueckfaellt, braucht es einen
+     * ausdruecklichen Weg dorthin. Was fehlt, ist der Knopf, nicht die Funktion.
+     *
      * @return Result mit Erfolgs- oder Fehlerinformation
      */
     suspend fun resetToDefaults(): Result<Unit>
-    
-    /**
-     * Prüft ob eine gültige Schicht-Konfiguration existiert
-     * 
-     * @return Result mit Boolean (true wenn gültige Config vorhanden) oder Fehler
-     */
-    suspend fun hasValidConfig(): Result<Boolean>
 }

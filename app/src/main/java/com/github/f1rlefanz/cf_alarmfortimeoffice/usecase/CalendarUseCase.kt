@@ -166,17 +166,6 @@ class CalendarUseCase @Inject constructor(
     }
     
     /**
-     * Lädt Events für spezifische Kalender mit automatischer Token-Verwaltung
-     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
-     */
-    override suspend fun getCalendarEvents(
-        calendarIds: Set<String>
-    ): Result<List<CalendarEvent>> {
-        // Delegation an Cache-Methode mit Standard-Verhalten (kein Force-Refresh)
-        return getCalendarEventsWithCache(calendarIds, forceRefresh = false)
-    }
-    
-    /**
      * Unveraenderter Vertrag (Liste oder Fehler) - fuer alle Konsumenten, die nur ANZEIGEN.
      * Wer aus dem Fehlen eines Events auf "Termin geloescht" schliesst, MUSS
      * [getCalendarEventsWithStatus] nehmen: siehe die Begruendung dort.
@@ -577,16 +566,6 @@ class CalendarUseCase @Inject constructor(
     
     override suspend fun getCacheStats(): String {
         return calendarRepository.getCacheStats()
-    }
-    
-    /**
-     * Testet die Kalender-Verbindung durch Laden der verfügbaren Kalender
-     */
-    override suspend fun testCalendarConnection(): Result<Boolean> = withContext(Dispatchers.IO) {
-        SafeExecutor.safeExecute("CalendarUseCase.testCalendarConnection") {
-            val result = getAvailableCalendars()
-            result.isSuccess
-        }
     }
     
     /**

@@ -13,24 +13,27 @@ import kotlinx.coroutines.flow.Flow
  * - Clean Architecture: Domain Layer Interface
  * 
  * MODERN ADDITIONS: Calendar authorization support
+ *
+ * ENTFERNT (Aufraeumrunde 24): `updateAuthData`, `isAuthenticated`, `getCurrentAuthData` und
+ * `migrateTokenExpiryIfNeeded` - alle vier waren reine Durchreichen an
+ * `IAuthDataStoreRepository`, und JEDER Konsument ruft dort direkt an
+ * (`AuthViewModel`, `CalendarUseCase`, `BootReceiver`). Ueber diesen UseCase lief keine einzige
+ * Aufrufstelle. Die Doppelung war die Gefahr: zwei Wege zur selben Auth-Wahrheit, von denen nur
+ * einer benutzt wurde - wer den anderen faende, haette eine zweite Fehlersemantik geerbt
+ * (`getOrThrow()` statt `getOrElse { false }`).
+ *
+ * Was hier BLEIBT, hat Aufrufer: [authData], [signOut], [requestCalendarAuthorization],
+ * [hasCalendarAuthorization].
  */
 interface IAuthUseCase {
-    
+
     /**
      * Flow für reaktive Beobachtung der Authentifizierungsdaten
-     * 
+     *
      * @return Flow<AuthData> der bei Änderungen automatisch emittiert
      */
     val authData: Flow<AuthData>
-    
-    /**
-     * Aktualisiert Authentifizierungsdaten
-     * 
-     * @param authData Neue Authentifizierungsdaten
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
-    suspend fun updateAuthData(authData: AuthData): Result<Unit>
-    
+
     /**
      * Meldet den Nutzer ab: verwirft die Auth-Daten UND das Kalender-Token.
      *
@@ -41,28 +44,7 @@ interface IAuthUseCase {
      * @return Result mit Erfolgs- oder Fehlerinformation
      */
     suspend fun signOut(): Result<Unit>
-    
-    /**
-     * Prüft ob gültige Authentifizierungsdaten vorhanden sind
-     * 
-     * @return Result mit Boolean (true wenn authentifiziert) oder Fehler
-     */
-    suspend fun isAuthenticated(): Result<Boolean>
-    
-    /**
-     * Lädt aktuelle Authentifizierungsdaten (einmalig)
-     * 
-     * @return Result mit aktuellen AuthData oder Fehler
-     */
-    suspend fun getCurrentAuthData(): Result<AuthData>
-    
-    /**
-     * Migriert alte Token-Expiry-Daten falls nötig
-     * 
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
-    suspend fun migrateTokenExpiryIfNeeded(): Result<Unit>
-    
+
     /**
      * MODERN: Requests Calendar API authorization for signed-in user
      * 

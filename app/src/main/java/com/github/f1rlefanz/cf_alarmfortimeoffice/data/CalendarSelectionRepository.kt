@@ -243,19 +243,6 @@ class CalendarSelectionRepository @Inject constructor(
         const val UNLOCK_POLL_MAX_MS = 60_000L
     }
 
-    /**
-     * ATOMIC UPDATE: Kompletter Austausch der ausgewählten Kalender-IDs
-     * Aktualisiert sowohl StateFlow als auch DataStore
-     */
-    override suspend fun saveSelectedCalendarIds(calendarIds: Set<String>): Result<Unit> = 
-        SafeExecutor.safeExecute("CalendarSelectionRepository.saveSelectedCalendarIds") {
-            // StateFlow wird automatisch via DataStore-Collector aktualisiert
-            dataStore.edit { preferences ->
-                preferences[selectedCalendarIdsKey] = calendarIds
-            }
-            Logger.i(LogTags.CALENDAR, "Calendar selection saved: ${calendarIds.size} calendars selected")
-        }
-
     override suspend fun getCurrentSelectedCalendarIds(): Result<Set<String>> =
         SafeExecutor.safeExecute("CalendarSelectionRepository.getCurrentSelectedCalendarIds") {
             // LIEST DEN DATASTORE, NICHT DEN STATEFLOW.
@@ -320,28 +307,5 @@ class CalendarSelectionRepository @Inject constructor(
                 preferences[selectedCalendarIdsKey] = currentIds - calendarId
             }
             Logger.d(LogTags.CALENDAR, "Calendar removed from selection: ${calendarId.take(8)}...")
-        }
-
-    override suspend fun clearSelection(): Result<Unit> = 
-        SafeExecutor.safeExecute("CalendarSelectionRepository.clearSelection") {
-            dataStore.edit { preferences ->
-                preferences.remove(selectedCalendarIdsKey)
-            }
-            Logger.i(LogTags.CALENDAR, "Calendar selection cleared")
-        }
-
-    override suspend fun hasSelectedCalendars(): Result<Boolean> =
-        SafeExecutor.safeExecute("CalendarSelectionRepository.hasSelectedCalendars") {
-            val ids = _selectedCalendarIds.value
-            // "leer" ist nur eine Aussage, wenn der Store lesbar war - im gesperrten Zustand ist
-            // der StateFlow noch gar nicht befuellt (der Collector wartet). Ein `false` waere
-            // hier eine Erfindung, die als "Onboarding laeuft noch" gelesen wird.
-            if (!shouldAcceptSelectionRead(userUnlocked, ids)) {
-                throw AppError.DataStoreError(
-                    message = "Kalenderauswahl vor der ersten Entsperrung unbekannt " +
-                        "(CREDENTIAL-ENCRYPTED Storage) - es wird KEIN 'nichts ausgewaehlt' gemeldet"
-                )
-            }
-            ids.isNotEmpty()
         }
 }

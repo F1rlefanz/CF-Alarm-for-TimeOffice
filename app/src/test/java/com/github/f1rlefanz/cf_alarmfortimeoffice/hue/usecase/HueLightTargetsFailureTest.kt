@@ -67,12 +67,6 @@ class HueLightTargetsFailureTest {
             alert: String?
         ): Result<Unit> = Result.success(Unit)
 
-        override suspend fun getLightState(lightId: String): Result<HueLight> =
-            Result.failure(UnsupportedOperationException())
-
-        override suspend fun getGroupState(groupId: String): Result<HueGroup> =
-            Result.failure(UnsupportedOperationException())
-
         override suspend fun createBridgeSchedule(
             name: String,
             description: String,

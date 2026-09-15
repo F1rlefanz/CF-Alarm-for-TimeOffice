@@ -186,21 +186,6 @@ class HueConfigRepository @Inject constructor(
         }
     }
     
-    override suspend fun clearConfiguration(): Result<Unit> {
-        return try {
-            dataStore.edit { preferences ->
-                preferences.clear()
-            }
-
-            Logger.i(LogTags.HUE_CONFIG, "Successfully cleared all Hue configuration")
-            Result.success(Unit)
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_CONFIG, "Failed to clear configuration", e)
-            Result.failure(e)
-        }
-    }
-
     override suspend fun clearBridgeConfig(): Result<Unit> {
         return try {
             dataStore.edit { preferences ->

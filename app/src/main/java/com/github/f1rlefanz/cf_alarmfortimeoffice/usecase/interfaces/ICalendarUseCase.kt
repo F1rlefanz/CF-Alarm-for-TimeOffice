@@ -64,6 +64,12 @@ data class CalendarFetchOutcome(
  * ✅ Lazy Loading für Events mit Pagination
  * ✅ Pagination für große Kalenderlisten
  * ✅ Erweiterte Cache-Management Funktionen
+ *
+ * ENTFERNT (Aufraeumrunde 24): `getCalendarEvents` und `testCalendarConnection` - im ganzen Baum
+ * ohne Aufrufstelle. `getCalendarEvents` war ein reiner Delegat an
+ * [getCalendarEventsWithCache]; wer Events braucht, nimmt direkt eine der beiden verbliebenen
+ * Fassungen und beantwortet damit die Frage nach der Vollstaendigkeit
+ * ([getCalendarEventsWithStatus] fuer jeden loeschenden Konsumenten).
  */
 interface ICalendarUseCase {
     
@@ -101,18 +107,6 @@ interface ICalendarUseCase {
         maxEvents: Int = CalendarConstants.MAX_EVENTS_PER_QUERY,
         offset: Int = 0
     ): Result<EventPage>
-    
-    /**
-     * Lädt Events für spezifische Kalender
-     * 
-     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
-     * 
-     * @param calendarIds Set der Kalender-IDs für die Events geladen werden sollen
-     * @return Result mit Liste der Calendar Events oder Fehler
-     */
-    suspend fun getCalendarEvents(
-        calendarIds: Set<String>
-    ): Result<List<CalendarEvent>>
     
     /**
      * Überprüft ob ein gültiges Access Token verfügbar ist
@@ -178,11 +172,4 @@ interface ICalendarUseCase {
      * @return String mit Cache-Informationen
      */
     suspend fun getCacheStats(): String
-    
-    /**
-     * Testet die Kalender-Verbindung durch Laden der verfügbaren Kalender
-     * 
-     * @return Result mit Boolean (true wenn Verbindung erfolgreich) oder Fehler
-     */
-    suspend fun testCalendarConnection(): Result<Boolean>
 }

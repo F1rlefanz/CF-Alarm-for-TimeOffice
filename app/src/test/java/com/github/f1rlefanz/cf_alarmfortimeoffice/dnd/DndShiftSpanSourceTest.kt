@@ -3,6 +3,9 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dnd
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
@@ -28,22 +31,37 @@ class DndShiftSpanSourceTest {
     private val now = 1_770_000_000_000L
     private val hour = 60 * 60 * 1000L
 
-    private suspend fun duringShiftPrefs(onCall: Set<String> = emptySet()): DndPrefs {
+    private suspend fun duringShiftPrefs(): DndPrefs {
         val prefs = mock<DndPrefs>()
         whenever(prefs.togglesNow()).thenReturn(
             DndPrefs.Toggles(followDimmerEnabled = false, duringShiftEnabled = true)
         )
-        whenever(prefs.onCallShiftsNow()).thenReturn(onCall)
         whenever(prefs.shiftExcludedShiftsNow()).thenReturn(emptySet())
         whenever(prefs.onCallCutoffMinutesNow()).thenReturn(DndPrefs.DEFAULT_ONCALL_CUTOFF_MIN)
         return prefs
     }
 
-    private fun sut(prefs: DndPrefs, spans: Result<List<ShiftSpan>>): DndScheduleUseCase {
+    /** Welche Schichten Rufbereitschaft sind, sagt seit dem Umbau vom 16.09.2026 die Schicht-Konfiguration. */
+    private fun konfigMitRufbereitschaft(vararg onCall: String): IShiftConfigRepository {
+        val repo = mock<IShiftConfigRepository>()
+        val defs = onCall.map {
+            ShiftDefinition(id = it, name = it, keywords = listOf(it), alarmTime = java.time.LocalTime.of(6, 0), isOnCall = true)
+        }
+        kotlinx.coroutines.runBlocking {
+            whenever(repo.getCurrentShiftConfig()).thenReturn(Result.success(ShiftConfig(definitions = defs)))
+        }
+        return repo
+    }
+
+    private fun sut(
+        prefs: DndPrefs,
+        spans: Result<List<ShiftSpan>>,
+        konfig: IShiftConfigRepository = konfigMitRufbereitschaft()
+    ): DndScheduleUseCase {
         val spanStore = mock<ShiftSpanStore>()
         kotlinx.coroutines.runBlocking { whenever(spanStore.spansNow()).thenReturn(spans) }
         return DndScheduleUseCase(
-            mock<Context>(), spanStore, keineFreienTage(), mock<DimScheduleUseCase>(), prefs, mock<MasterPausePrefs>()
+            mock<Context>(), spanStore, keineFreienTage(), mock<DimScheduleUseCase>(), prefs, mock<MasterPausePrefs>(), konfig
         )
     }
 
@@ -99,7 +117,7 @@ class DndShiftSpanSourceTest {
             alarmTriggerTime = dayStart + 6 * hour
         )
 
-        val next = sut(duringShiftPrefs(onCall = setOf("AD1")), Result.success(listOf(span)))
+        val next = sut(duringShiftPrefs(), Result.success(listOf(span)), konfigMitRufbereitschaft("AD1"))
             .computeNextTransition(dayStart + hour)
 
         assertEquals(

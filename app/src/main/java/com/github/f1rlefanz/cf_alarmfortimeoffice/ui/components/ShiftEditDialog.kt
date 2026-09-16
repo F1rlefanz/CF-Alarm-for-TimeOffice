@@ -66,6 +66,7 @@ fun ShiftEditDialog(
     }
     var isEnabled by remember { mutableStateOf(shift?.isEnabled ?: true) }
     var isSilent by remember { mutableStateOf(shift?.isSilent ?: false) }
+    var isOnCall by remember { mutableStateOf(shift?.isOnCall ?: false) }
 
     /**
      * Wird hier gerade eine BESTEHENDE Schicht umbenannt? Massstab ist der Vergleich, den die
@@ -315,6 +316,34 @@ fun ShiftEditDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Der Text erklaert das WARUM, nicht nur das Was: welches Kuerzel eine
+                            // Rufbereitschaft ist, weiss nur der Nutzer seiner Station - die App
+                            // kann es nicht erraten, und ohne die Begruendung ("kein Stups vom
+                            // Kalender") wirkt der stuendliche Abruf wie Batterieverschwendung.
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Rufbereitschaft",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Text(
+                                    text = ShiftDefinitionTexte.RUFBEREITSCHAFT_HINWEIS,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = isOnCall,
+                                onCheckedChange = { isOnCall = it }
+                            )
+                        }
+                    }
+
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             // weight(1f): ohne das nimmt sich der Text bei großer Systemschrift die
                             // ganze (ohnehin schmale) Dialogbreite und schiebt den Schalter aus dem
                             // Bild - dieselbe Falle wie zuvor in den Hue-Karten.
@@ -385,7 +414,8 @@ fun ShiftEditDialog(
                                         keywords = validKeywords,
                                         alarmTime = parsedAlarmTime,
                                         isEnabled = isEnabled,
-                                        isSilent = isSilent
+                                        isSilent = isSilent,
+                                        isOnCall = isOnCall
                                     )
                                 )
                                 onDismiss()
@@ -407,4 +437,18 @@ fun ShiftEditDialog(
             }
         }
     }
+}
+
+/**
+ * Nutzertexte des Rufbereitschaft-Schalters - als Konstante, damit ein Test festhalten kann,
+ * dass der Text die beiden Wirkungen nennt, die der Schalter WIRKLICH hat (stuendliche
+ * Kalender-Abfrage, DND-Cutoff) und nichts verspricht, was es nicht gibt.
+ */
+object ShiftDefinitionTexte {
+    const val RUFBEREITSCHAFT_HINWEIS =
+        "An Tagen mit dieser Schicht kannst du kurzfristig zu einem Dienst abgerufen werden. " +
+            "CF-Alarm fragt den Kalender dann stündlich ab statt alle 6 Stunden, damit ein " +
+            "nachgetragener Dienst noch rechtzeitig einen Wecker bekommt – Google Kalender und " +
+            "TimeOffice melden Änderungen nicht von selbst. Außerdem endet „Nicht stören“ an " +
+            "diesen Tagen zur Rufbereitschafts-Uhrzeit (einstellbar unter „Nicht stören“)."
 }

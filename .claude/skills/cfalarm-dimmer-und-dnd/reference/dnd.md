@@ -36,8 +36,10 @@
   verworfen. Der On-Call-Cutoff (siehe eigener Punkt unten) ist bewusst KEINE dritte Fenster-Quelle,
   sondern ein Klipp-Schritt, der auf das Ergebnis der beiden Quellen angewendet wird.
 - **Rufbereitschaft-Cutoff (`DndOnCallCutoffResolver`, seit v1.20.0) klippt statt eine eigene
-  Fensterlogik/Policy zu duplizieren.** Der Nutzer markiert bestimmte Schichten (`DndPrefs.
-  onCallShifts`, z. B. „AD1") als On-Call; an einem so erkannten Tag wird JEDES aus den beiden
+  Fensterlogik/Policy zu duplizieren.** Der Nutzer markiert bestimmte Schichten als On-Call —
+  seit dem Umbau vom 16.09.2026 per `ShiftDefinition.isOnCall` im Schicht-Editor (bis dahin die DND-eigene
+  Namensliste `DndPrefs.onCallShifts`, per `RufbereitschaftMigration` übernommen; dieselbe Quelle
+  steuert die stündliche Kalender-Abfrage, Hergang im Kalender-Skill); an einem so erkannten Tag wird JEDES aus den beiden
   bestehenden Quellen berechnete Fenster auf eine feste, konfigurierbare Uhrzeit
   (`DndPrefs.onCallCutoffMinutes`, Default 05:00) gekappt — unabhängig davon, welche Quelle das
   Fenster erzeugt hat. **Keine separate Policy für On-Call-Nächte:** dieselbe `AutomaticZenRule`

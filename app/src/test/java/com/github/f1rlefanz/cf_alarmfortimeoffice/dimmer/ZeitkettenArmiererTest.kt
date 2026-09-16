@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.mockito.kotlin.inOrder
@@ -25,13 +26,37 @@ class ZeitkettenArmiererTest {
     private class Fixture(
         val armierer: ZeitkettenArmierer,
         val dim: DimScheduleUseCase,
-        val dnd: DndScheduleUseCase
+        val dnd: DndScheduleUseCase,
+        val abfrage: RufbereitschaftAbfrage
     )
 
     private fun fixture(): Fixture {
         val dim = mock<DimScheduleUseCase>()
         val dnd = mock<DndScheduleUseCase>()
-        return Fixture(ZeitkettenArmierer({ dim }, { dnd }), dim, dnd)
+        val abfrage = mock<RufbereitschaftAbfrage>()
+        return Fixture(ZeitkettenArmierer({ dim }, { dnd }, { abfrage }), dim, dnd, abfrage)
+    }
+
+    /**
+     * Die stuendliche Rufbereitschafts-Abfrage liest dieselben Eingaenge wie der DND-Cutoff
+     * (Spannen, Flag, freie Tage) - jeder Anlass, der DND neu armiert, verschiebt auch sie.
+     */
+    @Test
+    fun `mit DND wird auch die Rufbereitschafts-Abfrage neu geplant`() = runTest {
+        val f = fixture()
+
+        f.armierer.armiere("TEST", dimmer = false, dnd = true)
+
+        verify(f.abfrage).reschedule()
+    }
+
+    @Test
+    fun `nur Dimmer laesst die Rufbereitschafts-Abfrage in Ruhe`() = runTest {
+        val f = fixture()
+
+        f.armierer.armiere("TEST", dimmer = true, dnd = false)
+
+        verify(f.abfrage, never()).reschedule()
     }
 
     @Test

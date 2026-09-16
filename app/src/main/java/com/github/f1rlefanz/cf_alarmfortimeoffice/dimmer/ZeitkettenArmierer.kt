@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.NonCancellable
@@ -37,11 +38,18 @@ import javax.inject.Singleton
  *
  * `dagger.Lazy`, weil `DndScheduleUseCase` seinerseits am Dimmer hängt — zyklusfrei, aber der Graph
  * soll die Kette erst bauen, wenn wirklich nacharmiert wird.
+ *
+ * DIE DRITTE KETTE, die stündliche Rufbereitschafts-Abfrage ([RufbereitschaftAbfrage]), hängt an
+ * [dnd]: sie liest dieselben Eingänge wie der DND-Cutoff (Schichtspannen, `ShiftDefinition.isOnCall`,
+ * freigegebene Tage). Jeder Anlass, der DND neu armiert (Umbenennung, Freigabe, Import, geändertes
+ * Flag), verschiebt auch ihre nächste Abfrage — ein eigener Schalter wäre eine vierte Stelle, die
+ * jemand vergisst.
  */
 @Singleton
 class ZeitkettenArmierer @Inject constructor(
     private val dimSchedule: dagger.Lazy<DimScheduleUseCase>,
-    private val dndSchedule: dagger.Lazy<DndScheduleUseCase>
+    private val dndSchedule: dagger.Lazy<DndScheduleUseCase>,
+    private val rufbereitschaftAbfrage: dagger.Lazy<RufbereitschaftAbfrage>
 ) {
     /**
      * [anlass] steht als Präfix in der WARN-Zeile und ist die einzige Spur, aus der sich später
@@ -63,6 +71,8 @@ class ZeitkettenArmierer @Inject constructor(
             if (dnd) {
                 runCatching { dndSchedule.get().enable() }
                     .onFailure { Logger.w(LogTags.DND, "⚠️ $anlass: DND-Kette nicht neu armiert", it) }
+                runCatching { rufbereitschaftAbfrage.get().reschedule() }
+                    .onFailure { Logger.w(LogTags.MAINTENANCE, "⚠️ $anlass: Rufbereitschafts-Abfrage nicht neu geplant", it) }
             }
         }
     }

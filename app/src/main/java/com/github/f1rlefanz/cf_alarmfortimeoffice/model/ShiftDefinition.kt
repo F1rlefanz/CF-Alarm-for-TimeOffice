@@ -24,7 +24,19 @@ data class ShiftDefinition(
     // "Stille Schicht" (z.B. Rufbereitschaft AD1): alarmTime bleibt Pflicht-Anker fuer
     // DND/Dimmer/Hue, aber Ton/Vibration/Vollbild-Wecker werden beim Feuern unterdrueckt.
     // Bewusst KEIN Ersatz fuer eine optionale alarmTime - siehe CLAUDE.md "Stille Schicht".
-    val isSilent: Boolean = false
+    val isSilent: Boolean = false,
+    // "Rufbereitschaft": an Tagen mit dieser Schicht kann der Nutzer kurzfristig zu einem
+    // anderen Dienst abgerufen werden. Die EINE Quelle fuer zwei Konsumenten:
+    //  - die stuendliche Kalender-Abfrage an solchen Tagen (service/RufbereitschaftAbfrage) -
+    //    Google Kalender und TimeOffice melden eine Aenderung nicht von selbst, und die 6h-Wartung
+    //    hat den Spaetdienst vom 16.09.2026 (um 08:51 eingetragen, Weckzeit 12:30) erst um 13:26
+    //    gesehen, als der Nutzer die App oeffnete;
+    //  - den Cutoff von "Nicht stoeren" (dnd/DndOnCallCutoffResolver), der bis v1.40.8 an einer
+    //    eigenen Namensliste in DndPrefs hing (`dnd_oncall_shifts`, per RufbereitschaftMigration
+    //    einmalig hierher uebernommen). Zwei Schalter fuer dieselbe Frage waren eine zweite
+    //    Wahrheit und eine weitere ueber den NAMEN gebundene Liste im Umbenennungs-Nachzug.
+    // Unabhaengig von [isSilent]: eine Rufbereitschaft kann still sein (typisch) oder klingeln.
+    val isOnCall: Boolean = false
 ) {
     /**
      * Get alarm time as formatted string for display

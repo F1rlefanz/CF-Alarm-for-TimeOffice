@@ -3,6 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dnd
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.keineFreienTage
 import kotlinx.coroutines.test.runTest
@@ -76,8 +78,13 @@ class DndScheduleTickChainTest {
 
     private fun sut(dimSchedule: DimScheduleUseCase, prefs: DndPrefs): DndScheduleUseCase {
         val masterPausePrefs = mock<MasterPausePrefs>()
+        // Keine Rufbereitschafts-Schichten - dann wird der eigene Spannen-Zweig nicht betreten.
+        val konfig = mock<IShiftConfigRepository>()
+        kotlinx.coroutines.runBlocking {
+            whenever(konfig.getCurrentShiftConfig()).thenReturn(Result.success(ShiftConfig(definitions = emptyList())))
+        }
         return DndScheduleUseCase(
-            mock<Context>(), mock<ShiftSpanStore>(), keineFreienTage(), dimSchedule, prefs, masterPausePrefs
+            mock<Context>(), mock<ShiftSpanStore>(), keineFreienTage(), dimSchedule, prefs, masterPausePrefs, konfig
         )
     }
 
@@ -88,7 +95,6 @@ class DndScheduleTickChainTest {
         whenever(prefs.togglesNow()).thenReturn(
             DndPrefs.Toggles(followDimmerEnabled = true, duringShiftEnabled = false)
         )
-        whenever(prefs.onCallShiftsNow()).thenReturn(emptySet())
         return prefs
     }
 

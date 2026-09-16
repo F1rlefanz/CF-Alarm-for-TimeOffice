@@ -47,12 +47,13 @@ class Pruefrunde8SchichtUmbenennungPlanTest {
      * NACHTRAG 21.08.2026: Genau umgekehrt zur ursprünglichen Fassung dieses Tests.
      *
      * Er hielt fest, eine reine Schreibweisenänderung sei KEINE Umbenennung, weil das Matching der
-     * Dimm-/Hue-REGELN `ignoreCase` ist. Für die Regeln stimmt das - für die drei reinen
-     * NAMENSLISTEN nicht: `DndOnCallCutoffResolver`, `DndShiftSpanResolver` und
-     * `DimScheduleUseCase` prüfen exakte Mengen-Zugehörigkeit. Korrigierte der Nutzer
+     * Dimm-/Hue-REGELN `ignoreCase` ist. Für die Regeln stimmt das - für die reinen
+     * NAMENSLISTEN nicht: `DndShiftSpanResolver` (und damals `DndOnCallCutoffResolver` und
+     * `DimScheduleUseCase`) prüfen exakte Mengen-Zugehörigkeit. Korrigierte der Nutzer
      * „abrufdienst" zu „Abrufdienst", blieb dort der alte Kasus stehen und traf nie wieder: der
      * Rufbereitschaft-Cutoff fiel aus, und „Nicht stören" blieb in der Nacht vor der
-     * Rufbereitschaft über 05:00 hinaus an.
+     * Rufbereitschaft über 05:00 hinaus an. (Die Rufbereitschaft ist seit dem Umbau vom 16.09.2026 ein Flag am
+     * Schichttyp und keine Namensliste mehr; die Dienstzeit-Ausnahmen sind es weiterhin.)
      *
      * OHNE DEN FIX fällt dieser Test: `planeSchichtUmbenennungen` stieg bei
      * `equals(ignoreCase = true)` aus und lieferte eine leere Liste.

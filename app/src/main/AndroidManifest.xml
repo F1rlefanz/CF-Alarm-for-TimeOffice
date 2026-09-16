@@ -181,6 +181,13 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- Stuendliche Kalender-Abfrage an Rufbereitschafts-Tagen (eigene Kette, eigener
+             Request-Code; startet nur den regulaeren Wartungslauf mit forceSync). -->
+        <receiver
+            android:name=".service.RufbereitschaftAbfrageReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- Schicht-Dimmer: Bedienungshilfen-Dienst, der die Dimm-Schicht traegt.
              Liest keine Bildschirminhalte (siehe dim_accessibility_service_config).
              Bis zur manuellen Aktivierung durch den Nutzer inaktiv. -->

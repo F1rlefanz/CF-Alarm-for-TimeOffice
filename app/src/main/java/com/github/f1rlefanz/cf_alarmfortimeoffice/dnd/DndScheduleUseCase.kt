@@ -19,6 +19,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -43,10 +44,12 @@ import javax.inject.Singleton
  * DND ist binaer (an/aus) - anders als beim Dimmer gibt es kein "dunkelste gewinnt", die Vereinigung
  * beider Quellen reicht (irgendeine aktive Quelle => an).
  *
- * Rufbereitschaft ([DndPrefs.onCallShifts]/[DndPrefs.onCallCutoffMinutes]) ist KEINE dritte
+ * Rufbereitschaft (`ShiftDefinition.isOnCall` + [DndPrefs.onCallCutoffMinutes]) ist KEINE dritte
  * Fenster-Quelle mit eigener Policy, sondern klippt beide obigen Quellen als letzten Schritt auf
  * einen festen Cutoff am On-Call-Tag ([DndOnCallCutoffResolver.clip]) - dieselbe Zen-Regel gilt bis
- * dahin unveraendert weiter.
+ * dahin unveraendert weiter. WELCHE Schichten Rufbereitschaft sind, kommt aus der
+ * Schicht-Konfiguration ([IShiftConfigRepository]), nicht aus einer eigenen DND-Liste - dieselbe
+ * Quelle entscheidet auch ueber die stuendliche Kalender-Abfrage (`RufbereitschaftAbfrage`).
  *
  * Nutzt bewusst eine selbst registrierte [AutomaticZenRule] statt rohem
  * `NotificationManager.setInterruptionFilter()`: die Regel ist fuer den Nutzer sichtbar unter
@@ -71,7 +74,8 @@ class DndScheduleUseCase @Inject constructor(
     private val freieTageStore: FreieTageStore,
     private val dimSchedule: DimScheduleUseCase,
     private val prefs: DndPrefs,
-    private val masterPausePrefs: MasterPausePrefs
+    private val masterPausePrefs: MasterPausePrefs,
+    private val shiftConfigRepository: IShiftConfigRepository
 ) {
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DND_SCHED_TICK"
@@ -286,7 +290,15 @@ class DndScheduleUseCase @Inject constructor(
 
     private suspend fun computeWindows(): WindowSet {
         val toggles = prefs.togglesNow()
-        val onCallShifts = prefs.onCallShiftsNow()
+        // Fail-open in dieselbe Richtung wie frueher der `safeData`-Flow der DND-Prefs: ist die
+        // Schicht-Konfiguration gerade nicht lesbar, gibt es keinen Cutoff (DND laeuft bis zum
+        // regulaeren Ende). Das ist die stummere Richtung, deshalb WARN statt still.
+        val onCallShifts = shiftConfigRepository.getCurrentShiftConfig()
+            .map { config -> config.definitions.filter { it.isOnCall }.map { it.name }.toSet() }
+            .getOrElse { error ->
+                Logger.w(LogTags.DND, "Schicht-Konfiguration nicht lesbar - kein Rufbereitschaft-Cutoff in diesem Tick", error)
+                emptySet()
+            }
         // Rufbereitschaft ist KEINE eigene Fenster-Quelle (sie klippt nur) - fuer den Keep-alive
         // zaehlen daher nur die beiden echten Quellen.
         val anySourceEnabled = toggles.followDimmerEnabled || toggles.duringShiftEnabled

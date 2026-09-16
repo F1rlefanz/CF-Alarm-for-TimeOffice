@@ -38,11 +38,21 @@ class DndViewModel @Inject constructor(
         val policy: DndPrefs.Policy = DndPrefs.Policy()
     )
 
+    /**
+     * Rufbereitschaft-Schichten kommen aus der Schicht-Konfiguration (`ShiftDefinition.isOnCall`),
+     * nicht aus einer DND-eigenen Auswahl - der Schalter dafuer steht im Schicht-Editor. Reaktiv,
+     * damit ein dort umgelegter Schalter hier ohne Neustart ankommt. Steht VOR `uiState`, weil
+     * Kotlin in Textreihenfolge initialisiert und `combine` den Flow beim Bauen braucht.
+     */
+    private val onCallShiftNames =
+        shiftUseCase.shiftConfig
+            .map { config -> config.definitions.filter { it.isOnCall }.map { it.name }.toSet() }
+
     val uiState: StateFlow<DndUiState> =
         combine(
             prefs.toggles,
             prefs.shiftExcludedShifts,
-            prefs.onCallShifts,
+            onCallShiftNames,
             prefs.onCallCutoffMinutes,
             prefs.policy
         ) { toggles, excluded, onCallShifts, onCallCutoffMinutes, policy ->
@@ -77,12 +87,6 @@ class DndViewModel @Inject constructor(
     /** Schaltet eine Schicht als Ausnahme vom "Waehrend der Dienstzeit"-Trigger ein/aus. */
     fun toggleShiftExcludedShift(shiftName: String) = viewModelScope.launch {
         prefs.toggleShiftExcludedShift(shiftName)
-        dndSchedule.enable()
-    }
-
-    /** Schaltet eine Schicht als Rufbereitschaft (On-Call-Cutoff) ein/aus. */
-    fun toggleOnCallShift(shiftName: String) = viewModelScope.launch {
-        prefs.toggleOnCallShift(shiftName)
         dndSchedule.enable()
     }
 

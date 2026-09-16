@@ -1083,3 +1083,149 @@ und der Konfliktzustands-Waechter fehlt allen sechs
 (`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
 (achter Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19, 20,
 21, 22, 23, 24).
+
+### 16.09.2026, Runde 25 (Issue #25, Gradle-Abhaengigkeiten ohne Nutzung)
+
+**Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `286ecb2` (= `origin/main` beim
+Start):** Korpus **49 Deklarationen** in `app/build.gradle.kts` (naive Gegenprobe
+`grep -cE '^\s*(implementation|ksp|testImplementation|androidTestImplementation|debugImplementation|coreLibraryDesugaring)\('`
+→ ebenfalls 49) und **48 `[libraries]` / 38 `[versions]` / 5 `[plugins]`** in
+`gradle/libs.versions.toml`. **25 Rohbefunde, 13 Fehlalarme (52 %), 12 bestaetigt, 7 geschnitten,
+5 bewusst stehen gelassen.** Nachher: **42 Deklarationen, 18 Rohbefunde** (= 13 Fehlalarme + 5
+stehen gelassene; die Rechnung geht auf), Katalog **41 / 35 / 5**, und **kein** Katalogeintrag ohne
+Referenz aus einem Buildskript — vorher wie nachher 0.
+
+#### Neue Lehre 1: Bei Abhaengigkeiten steht die Wahrheit nicht im Repo-Text, sondern im aufgeloesten Graphen
+
+Runde 23 und 24 haben beide „Fassung A grosszuegig liefert die perfekte Null" berichtet. Hier ist
+es **umgekehrt und genauso wertlos**: die baumweite Suche nach dem Artefaktnamen meldet **36 von 48
+Bibliotheken als unbenutzt**, darunter `core-ktx`, `material-icons-extended` und `mockito-core` —
+Artefaktnamen kommen in Kotlin-Quelltext schlicht nicht vor. Auch die naheliegende strenge Fassung
+(Artefakt → Import-Praefix von Hand zuordnen) taugt nicht: sie meldete `hilt-navigation-compose`
+als tot, weil `hiltViewModel` aus `androidx.hilt.lifecycle.viewmodel.compose` importiert wird und
+nicht aus `androidx.hilt.navigation.compose`. **Jede Zuordnung Artefakt → Paket, die man selbst
+hinschreibt, ist geraten.**
+
+Der einzige belastbare Korpus ist der **aufgeloeste Klassenpfad**. Beschafft mit einem
+Wegwerf-Initskript (`--init-script`, nichts im Repo), das je Konfiguration
+`configurations.<cfg>.incoming.artifactView { isLenient = true }` dumpt; daraus ein Klassenindex
+aus den 277 Jars und 475 AARs (`classes.jar` im Zip, `lint.jar` ausgenommen): **187 Komponenten,
+47.004 Klassen**. Drei Fallen darin, alle gemessen:
+
+- **`--no-configuration-cache` ist noetig**, sonst scheitert die Task an `Task.project` zur
+  Ausfuehrungszeit.
+- **Die `:app`-Selbstreferenz** laesst `incoming.artifacts` auf den Testkonfigurationen scheitern
+  („cannot choose between variants"); `artifactView { isLenient = true }` loest genau das.
+- **Plattform-Weiterleitung**: `androidx.compose.material3:material3` hat **null** Klassen, die
+  liegen in `material3-android`. Ohne die Variantenaufloesung (`M`, `M-android`, `M-jvm`) meldet
+  der Zaehler halb Compose als tot. Das ist die Runde-16-Selbstpruefung in neuem Gewand — ein
+  leeres Ergebnis ist eine Aussage ueber den Messaufbau, nicht ueber den Baum.
+
+#### Neue Lehre 2: Der Verbraucher kann eine ZEICHENKETTE im Buildskript sein — und das kostet fast den Instrumentationstest
+
+Der Entfernungstest dieser Runde nimmt jedem Kandidaten seine **Deklaration** (Initskript:
+`configurations.forEach { it.dependencies.removeIf { … } }`, transitive Pfade bleiben) und fragt,
+welcher **Import** danach keinen Lieferanten mehr hat. Fuer `espresso-core` lautete die Antwort
+**null** — der Quelltext importiert `androidx.test.espresso` nirgends. Ein Schnitt waere falsch
+gewesen: der Komponenten-Diff derselben Messung zeigt, dass mit `espresso-core` auch
+**`androidx.test:runner:1.7.0`** verschwindet, und den verlangt
+`testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"` in `app/build.gradle.kts:66`
+— als **Zeichenkette**, die kein Import-Zaehler je sieht. `connectedDebugAndroidTest` waere gar
+nicht mehr gestartet, und **kein Unit-Test haette es gemeldet**.
+
+**Die Regel:** Vergleiche bei Abhaengigkeiten nicht nur, was der Quelltext verliert, sondern
+**welche Komponenten verschwinden** — und pruefe fuer jede verschwundene, ob sie in einer
+Buildskript-Zeichenkette, im Manifest oder in einer ProGuard-Regel steht. Der Import ist nur einer
+von vier Verbrauchern.
+
+#### Die drei Fehlalarm-Bauarten, vollstaendig, mit Beispielen
+
+13 der 25 Rohbefunde sind Fehlalarme, und sie fallen restlos in drei Klassen. Wer die nicht kennt,
+schneidet den Wecker weg:
+
+1. **Leeres Weiterleitungs-Artefakt** (5×: `core-ktx`, `lifecycle-runtime-ktx`,
+   `lifecycle-viewmodel-ktx`, `work-runtime-ktx`, dazu die zwei `compose-bom`-Zeilen). Diese AARs
+   enthalten ein `classes.jar` **ohne eine einzige `.class`** — nachgesehen, nicht vermutet. Sie
+   holen das Paket, das der Quelltext benutzt: ohne `work-runtime-ktx` verlieren **30 Importe** von
+   `androidx.work.*` ihren Lieferanten, und das ist die 6h-Wartungskette.
+2. **Lieferant fuer eine andere Bibliothek** (4×). `play-services-base` wird nirgends importiert —
+   nimmt man es heraus, verschwinden `play-services-base`, `-basement` und `-tasks`, und
+   `play-services-auth` (766 Referenzen auf `com/google/android/gms/common/`), `-auth-base` (850)
+   sowie `credentials-play-services-auth` (108 auf `com/google/android/gms/tasks/`) stehen ohne
+   Klassen da. Ebenso `play-services-auth` selbst (einziger Weg zu `GoogleAuthUtil` ueber
+   `-auth-base`), `hilt-navigation-compose` (holt `hilt-lifecycle-viewmodel-compose` →
+   `hiltViewModel`, 7 Importe) und `espresso-core` (siehe oben). Gemessen wurde das mit einer
+   Konstantenpool-Suche ueber die verbleibenden Artefakte, nicht mit einer Vermutung.
+3. **Verbraucher ohne Import** (4×): BOM (`platform(...)`), Annotationsprozessor (`ksp`),
+   `coreLibraryDesugaring`, Laufzeit-Anbieter (`credentials-play-services-auth`).
+
+**Kein Gatter (Skill-Regel 4), und hier ist es keine knappe Entscheidung: 52 % Fehlalarm.** Alle
+drei Bauarten verlangen den aufgeloesten Graphen und einen Klassenindex ueber ~180 Artefakte; das
+sind zwei Gradle-Laeufe und ein Zip-Scan pro Pruefung. Ein Textgatter ueber `build.gradle.kts`
+faellt auf alle drei herein. **Nicht bauen** — der Blickwinkel gehoert mit **49 / 25 / 13 / 7** in
+die „Verworfen"-Tabelle, obwohl er sieben echte Funde hatte: er lohnt als Runde, nicht als Wache.
+
+#### Was geschnitten wurde — und was das WIRKLICH bringt
+
+Sieben Deklarationen, jede mit null Importen ihres Pakets, null Referenzen aus einem verbleibenden
+Artefakt und keiner verschwindenden Fremdkomponente: `retrofit`, `retrofit-converter-gson`
+(der vorab verifizierte Befund aus dem Issue), `okhttp-logging-interceptor`,
+`google-api-client-android`, `google-http-client-android`, `androidx-work-testing`,
+`androidx-lifecycle-viewmodel-compose`. Dazu die sieben verwaisten Katalog-Aliase und drei
+`[versions]`-Eintraege (`retrofit`, `googleApiClient`, `workTesting`) sowie die drei
+retrofit2-Regeln in `proguard-rules.pro`; die `keepattributes` daneben bleiben, sie sind nicht
+Retrofit-spezifisch (Gson braucht `Signature`).
+
+**Die Begruendung des Issues haelt der Messung nur halb stand, und das gehoert hierher:** „Jede
+ungenutzte Abhaengigkeit vergroessert das APK" — gemessen am R8-Release-APK (`assembleRelease`,
+beide Staende, derselbe Rechner): **10.786.558 → 10.770.174 Byte, also 16.384 Byte oder 0,15 %**;
+dex unkomprimiert 24.026.520 → 23.989.360. R8 raeumt das Meiste naemlich schon weg. Der
+Typ-Deskriptor-Diff beider dex sagt genau, was uebrig blieb: **20 Typen weg, 0 neu** — 15 aus den
+beiden `-android`-Erweiterungen (`AndroidJsonFactory`, `GoogleAccountCredential`,
+`FileDataStoreFactory` …), 3 Framework-Typen (`android/util/Json*`), die nur diese referenzierten,
+und **`retrofit2/HttpException`** als einziger Retrofit-Rest. Die 15 waren nur drin, weil
+`-keep class com.google.api.client.** { *; }` (proguard-rules.pro:191, r8-rules.txt:43) sie am
+Leben hielt — **eine Wildcard-keep-Regel macht aus einer ungenutzten Abhaengigkeit ausgelieferten
+Code.** Der belegbare Gewinn liegt woanders: 5 Komponenten weniger im Kompilier- und
+Laufzeitklassenpfad (187 → 182), 6 weniger im Unit-Test-Pfad (196 → 190), 3 Versionseintraege
+weniger, die Dependabot beobachtet. **Ein Diff der dex-Typen ist uebrigens die beste
+Sicherheitspruefung, die dieser Blickwinkel hat**: „0 neu, und alle 20 entfernten gehoeren zum
+Schnitt" schliesst aus, dass R8 nach dem Eingriff etwas anderes anders entscheidet.
+
+#### Fuenf bestaetigte Funde stehen bewusst noch
+
+- **`google-auth-library-oauth2-http` + `-credentials`** — im ganzen Baum kein `com.google.auth.*`,
+  und der Kalenderpfad setzt seinen Token selbst per `HttpRequestInitializer`
+  (`CalendarRepository.kt:307`). Der Schnitt raeumt **7 Komponenten** ab, darunter
+  **Guava 33.6.0-jre** — und `com/google/common/` wird von verbleibenden Artefakten referenziert:
+  `androidx.work:work-runtime` (199×, das ist die Wartungskette), `google-http-client` (30×, das
+  ist der Kalenderabruf), `grpc-api`, `concurrent-futures`. Ob `listenablefuture:1.0` dann
+  einspringt, ist eine Aufloesungsfrage, die ich nicht geraten habe. **Braucht Ruecksprache,
+  Issue angelegt** — das ist der groesste Einzelposten dieses Blickwinkels und der einzige, der die
+  Weckerkette streifen kann.
+- **`ui-tooling`, `ui-tooling-preview`, `ui-test-manifest`** — `@Preview` kommt im ganzen Baum
+  **kein einziges Mal** vor, die drei sind also nach Aktenlage tot. Sie sind aber
+  Entwicklerwerkzeug (Studio-Vorschau, Layout-Inspector, Manifest-Beitrag fuer Compose-Tests), und
+  ob darauf verzichtet wird, ist eine Entscheidung des Eigentuemers, kein Aufraeumen — wortgleich
+  die Lage von `IShiftUseCase.resetToDefaults` in Runde 24: **was fehlt, ist die Nutzung, nicht die
+  Berechtigung.** Bei `ui-test-manifest` kommt dazu, dass sein Beitrag ein Manifest-Merge ist und
+  sich nur am Geraet pruefen laesst. Issue angelegt.
+
+#### Gepruefte Nebenfrage, damit sie niemand doppelt aufmacht
+
+Der Katalog selbst ist sauber: **kein** `[libraries]`-, `[versions]`- oder `[plugins]`-Eintrag ohne
+Referenz aus einem Buildskript — vor dem Schnitt 0, nach dem Schnitt wieder 0 (Accessor-Zaehlung
+mit `libs.<alias mit - und _ zu .>` und negativem Lookahead, damit `libs.androidx.ui` nicht von
+`libs.androidx.ui.graphics` miterschlagen wird). Ein eigener Blickwinkel „verwaiste
+Katalogeintraege" lohnt nicht; ich habe **kein Issue** dafuer angelegt.
+
+**Belege dieser Runde, alle vier vom Issue verlangt und gelaufen:** `assembleDebug`,
+`testDebugUnitTest` (**175 XML-Berichte, 1352 Tests, 0 Failures, 0 Errors**),
+`compileDebugAndroidTestKotlin`, `assembleRelease` mit R8 (gruen, **keine** „Missing class"-Meldung)
+sowie `pruefe_reste.py` → „Keine Reste gefunden".
+
+**Zum Stand der Werkzeuge, nachgemessen am 16.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
+(neunter Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19, 20,
+21, 22, 23, 24, 25).

@@ -197,21 +197,19 @@
 -dontwarn com.google.api.client.http.**
 
 # ==============================
-# NETWORKING - RETROFIT & OKHTTP
+# NETWORKING - OKHTTP
 # ==============================
 
-# Retrofit
+# Diese keepattributes standen unter der Ueberschrift "Retrofit", sind aber nicht
+# Retrofit-spezifisch: generische Signaturen braucht Gson zur Typaufloesung, die
+# Laufzeit-Annotationen braucht kotlinx-serialization. Sie bleiben, die drei
+# retrofit2-Regeln daneben sind mit der Abhaengigkeit weggefallen.
 -keepattributes Signature, InnerClasses, EnclosingMethod
 -keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
 -keepattributes AnnotationDefault
--keepclassmembers,allowshrinking,allowobfuscation interface * {
-    @retrofit2.http.* <methods>;
-}
 -dontwarn org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement
 -dontwarn javax.annotation.**
 -dontwarn kotlin.Unit
--dontwarn retrofit2.KotlinExtensions
--dontwarn retrofit2.KotlinExtensions$*
 
 # OkHttp
 -dontwarn okhttp3.**

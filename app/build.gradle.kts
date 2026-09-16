@@ -285,7 +285,6 @@ dependencies {
 
     // Lifecycle and ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     // Liefert LocalLifecycleOwner (androidx.lifecycle.compose) - die Variante aus
     // androidx.compose.ui.platform ist seit Compose 1.7 deprecated.
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -299,9 +298,12 @@ dependencies {
     implementation(libs.google.auth.library.credentials)
 
     // Google API Client for Calendar
-    implementation(libs.google.api.client.android)
+    // Die beiden `-android`-Artefakte sind bewusst NICHT dabei: sie liefern nur
+    // GoogleAccountCredential bzw. AndroidJsonFactory/AndroidHttp, und der Kalenderpfad benutzt
+    // keines davon (CalendarRepository baut NetHttpTransport + GsonFactory und setzt den Token
+    // selbst per HttpRequestInitializer). Die Kernartefakte google-api-client und
+    // google-http-client kommen ueber google-api-services-calendar.
     implementation(libs.google.api.services.calendar)
-    implementation(libs.google.http.client.android)
     implementation(libs.google.http.client.gson)
 
     // Data storage & serialization
@@ -310,10 +312,9 @@ dependencies {
     implementation(libs.gson)
 
     // Network dependencies for Hue integration
+    // Kein Retrofit: HueApiClient ist handgebautes OkHttp + Gson, weil die V1-Semantik
+    // "HTTP 200 auch bei Ablehnung" die Body-Auswertung in HueV1Envelope braucht.
     implementation(libs.okhttp)
-    implementation(libs.okhttp.logging.interceptor)
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
 
     // Security
     implementation(libs.tink.android)  // ✅ Modern Crypto Library für Token-Verschlüsselung
@@ -327,7 +328,13 @@ dependencies {
     // ==============================
     // 🛠️ FIXED: Using version catalog instead of hardcoded versions
     // ==============================
-    implementation(libs.play.services.base)  // ✅ Now using version catalog (18.9.0)
+    // MUSS BLEIBEN, obwohl der Quelltext kein `com.google.android.gms.common.*` importiert.
+    // Diese Zeile ist der einzige Weg, auf dem play-services-base/-basement/-tasks in den Graphen
+    // kommen: nimmt man sie heraus, verschwinden alle drei - und play-services-auth (766
+    // Referenzen auf com/google/android/gms/common/), play-services-auth-base (850) sowie
+    // credentials-play-services-auth (108 auf com/google/android/gms/tasks/) verlieren ihre
+    // Klassen. Das faellt in keinem Unit-Test auf, sondern erst beim Anmelden am Geraet.
+    implementation(libs.play.services.base)
     // androidx.core:core-ktx already included above via libs.androidx.core.ktx
 
     // Desugaring for LocalDateTime support
@@ -343,8 +350,11 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.kotlin)
-    testImplementation(libs.androidx.work.testing)
     androidTestImplementation(libs.androidx.junit)
+    // Espresso selbst wird nirgends importiert - die Zeile MUSS trotzdem bleiben: sie ist der
+    // einzige Weg, auf dem androidx.test:runner in den androidTest-Klassenpfad kommt, und genau
+    // den verlangt `testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"` oben.
+    // Ohne sie startet connectedDebugAndroidTest gar nicht erst; kein Unit-Test sieht das.
     androidTestImplementation(libs.androidx.espresso.core)
     // Android Studio meldet hier "Dependency 'platform(libs.androidx.compose.bom)' is declared
     // multiple times" - das ist ein FEHLALARM, die Zeile muss bleiben.

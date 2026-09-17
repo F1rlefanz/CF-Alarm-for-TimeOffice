@@ -117,6 +117,14 @@ object BatteryOptimizationHelper {
         // via onResult zurückgegeben; ein persistiertes "pending"-Flag war write-only (nie
         // gelesen) und entfiel mit der cf_alarm_prefs-Auflösung.
         try {
+            // BatteryLife unterdrueckt: Lint haelt jedes
+            // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS fuer einen Verstoss gegen die
+            // Play-Store-Richtlinie. Der Intent wird hier nur aus requestExemption() gestartet,
+            // also auf eine ausdrueckliche Nutzeraktion hin; entschieden wird im Systemdialog
+            // von Android. Nichts davon laeuft automatisch oder im Hintergrund. Fuer eine
+            // Wecker-App ist die Freigabe der Unterschied zwischen klingeln und still bleiben.
+            // Die Unterdrueckung steht HIER und nicht in app/lint.xml - der dortige Block war
+            // wirkungslos und ist in Aufraeum-Runde 26 entfernt worden.
             @Suppress("BatteryLife")
             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                 data = "package:${activity.packageName}".toUri()

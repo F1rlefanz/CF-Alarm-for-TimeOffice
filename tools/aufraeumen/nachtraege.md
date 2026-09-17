@@ -1229,3 +1229,120 @@ Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 (`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
 (neunter Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19, 20,
 21, 22, 23, 24, 25).
+
+### 17.09.2026, Runde 26 (Issue #31 zum zweiten Mal, lint.xml-Eintraege, die nichts treffen)
+
+**Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `c86e401` (= `origin/main` beim
+Start):** Korpus `app/lint.xml` = **21 `<issue>`-Bloecke + 8 `<ignore>` + 0 `<option>` = 29
+Eintraege** (echter XML-Parser; moeglich, seit die Datei am 04.09.2026 wohlgeformt ist).
+**Rohbefund** = jeder dieser 29 Eintraege, wie ihn die naive Textsuche liefert; **bestaetigt** =
+Eintrag, der **strukturell nie** etwas bewirken kann; **Fehlalarm** = jeder Kandidat, der bleiben
+muss. **29 Rohbefunde, 2 bestaetigt und geschnitten, 27 Fehlalarme (93 %).** Nachher: **27
+Eintraege**, Lint-Bericht **identisch** (12 Befunde, Mengendifferenz in beide Richtungen leer),
+und **kein** Block mehr ohne `severity`/`<ignore>`/`<option>`.
+
+Die 27 Fehlalarme zerfallen in zwei Gruppen, beide gemessen: **11 nachweislich wirksam**
+(`CustomX509TrustManager` + sein `<ignore>`; die vier `severity`-Eintraege
+`NewerVersionAvailable`, `GradleDependency`, `TrustAllX509TrustManager`, `ObsoleteSdkInt`;
+`ApplySharedPref` + 1 Pfad; `UseKtx` + 2 Pfade) und **16 heute wirkungslos, aber Vorsorge**
+(die 12 aus **#38**, die 3 von `InvalidPackage`, der `ApplySharedPref`-Pfad auf
+`DimAccessibilityService`). 11 + 16 + 2 = 29.
+
+#### Neue Lehre 1: „Bericht unveraendert" ist die SCHWACHE Richtung des Versuchs — frag, was der Eintrag unterdruecken SOLL
+
+PR #37 ist unter anderem daran gescheitert, dass er „Bericht mit und ohne Eintrag identisch" als
+Beleg nahm — dieselbe Messung, die er bei den 12 Eintraegen aus #38 ausdruecklich **nicht** gelten
+liess. Der Widerspruch loest sich, wenn man die Mutation umdreht: Nicht „was passiert ohne den
+Eintrag", sondern **„was passiert, wenn ich dem Eintrag seine Arbeit gebe?"**
+
+Konkret fuer `<issue id="BatteryLife">`: die beiden `@Suppress("BatteryLife")` im Code entfernen und
+den lint.xml-Block **stehen lassen**. Ergebnis: **zwei BatteryLife-Warnungen** erscheinen prompt
+(`MainScreen.kt:388`, `BatteryOptimizationHelper.kt:121`). Damit ist nicht bloss gezeigt, dass der
+Block heute nichts aendert, sondern dass er **das, wofuer er dasteht, nicht kann**. Das ist der
+Unterschied zwischen „trifft gerade nichts" und „ist wirkungslos", und nur der zweite rechtfertigt
+einen Schnitt.
+
+Dieselbe Umkehrung hat drei Gruppen als **lebendig** bewiesen, die eine reine
+Weglass-Messung nur als „aendert etwas" gekannt haette: ohne den `HueTrustManager`-Pfad erscheint
+`CustomX509TrustManager` (Positivkontrolle, das Verfahren sieht Aenderungen); ohne die
+`ApplySharedPref`/`UseKtx`-Bloecke erscheinen **6** Befunde; ohne die vier `severity`-Attribute
+kippen **9** Befunde von `Hint` auf `Warning` — bei gleicher Anzahl. **Wer nur Zahlen vergleicht,
+haelt den letzten Fall fuer „keine Wirkung".** Verglichen wurden deshalb Mengen aus
+(id, severity, Datei, Zeile, Meldung), Differenz in beide Richtungen.
+
+Kontrolle gegen Drift: derselbe unveraenderte Stand zweimal gefahren → identisch. Das ist hier
+noetig, weil vier der zwoelf Befunde an fremden Veroeffentlichungen haengen (`NewerVersionAvailable`,
+`GradleDependency`); **nur der Vergleich zweier Laeufe DERSELBEN Sitzung zaehlt**, nie eine
+aufgeschriebene Gesamtzahl.
+
+#### Neue Lehre 2: Der Parser trennt Eintrag von Prosa — und genau daran starb das Gatter von PR #37
+
+Naive Textsuche findet **9** `<ignore`, der Parser **8**. Der Ueberzaehler ist `app/lint.xml:80`:
+eine **Prosa-Nennung `<ignore regexp>` in einem Kommentar**. Genau dieser Mechanismus — Text im
+Kommentar als Struktur zu lesen — war Defekt 1 des Gatters aus PR #37. Seit dem 04.09.2026 ist die
+Datei wohlgeformtes XML, ein echter Parser also moeglich; **das allein macht die Messung
+belastbar, nicht die Regexp-Sorgfalt.** Umgekehrt gilt weiter: die neuen Kommentare dieser Runde
+zitieren entfernte Eintraege woertlich, und das ist Absicht (Hergang) — es waere aber ein
+Selbstentwaffner fuer jeden Zaehler, der Rohtext liest.
+
+#### Neue Lehre 3: Zwei Sorten „wirkt nicht" — und die zweite ist ein WAECHTER, kein Rest
+
+- **Strukturell wirkungslos** (geschnitten): `<issue id="BatteryLife">` ohne `severity`, ohne
+  `<ignore>`, ohne `<option>` — kann per Definition nichts bewirken; und der
+  `<ignore regexp>` auf `…impl.Log4JLogger` unter `TrustAllX509TrustManager`: die beiden Meldungen
+  lauten „`checkClientTrusted` is empty" / „`checkServerTrusted` is empty", **nennen keinen
+  Klassennamen**, ihr Ort ist `google-http-client-2.2.0.jar` — und log4j liegt in **keiner**
+  Konfiguration (`./gradlew :app:dependencies` → 0 Treffer, alle Konfigurationen).
+- **Heute wirkungslos, trotzdem Waechter** (nicht angefasst): `InvalidPackage`. Ohne den Block
+  aendert sich der Bericht in keiner Zeile — das ist hier aber **kein** Beleg, wie der Torwaechter
+  zu PR #37 festgehalten hat: `commons-logging:1.2` liegt weiterhin im `debugRuntimeClasspath`
+  (ueber `google-http-client` → `httpclient:4.5.14`, selbst nachgemessen — der Schnitt aus Runde 25
+  hat daran nichts geaendert), `InvalidPackageDetector` ist `Severity.ERROR` und
+  `abortOnError = true`: kippt die Erreichbarkeitsheuristik bei einem Bibliotheks- oder Lint-Bump,
+  bricht CI **und** Schleuse. Der `log4j`-Regexp daneben ist ebenfalls nicht strukturell tot —
+  eine InvalidPackage-Meldung ueber commons-logging nennt `org.apache.log4j` sehr wohl.
+
+#### Eine Begruendung wurde verschoben, nicht geloescht — und dabei richtiggestellt
+
+Der `BatteryLife`-Block trug die einzige schriftliche Rechtfertigung fuer
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`; sie ersatzlos zu streichen war Defekt 2 von PR #37. Sie
+steht jetzt an den **beiden `@Suppress`-Stellen**, also dort, wo die Unterdrueckung wirklich sitzt.
+**Ihr alter Wortlaut war allerdings falsch und ist nicht abgeschrieben worden:** er nannte eine
+Funktion `createBatteryOptimizationIntent()` — auf `c86e401` im ganzen Arbeitsbaum **null Treffer
+ausser in eben dieser Kommentarzeile** — und behauptete, der Intent werde „NICHT direkt
+ausgefuehrt"; beide Stellen
+feuern ihn sehr wohl (`batteryExemptionLauncher.launch`, `startActivityForResult`), nur eben erst
+auf einen ausdruecklichen Tipp. Der wahre Ablauf stand laengst im KDoc von
+`BatteryOnboardingScreen`; darauf verweist der neue Text, statt eine zweite Erzaehlung aufzumachen.
+**Eine gerettete Begruendung ist nur dann eine Rettung, wenn sie stimmt** — sonst verschiebt man
+eine Falschaussage an eine prominentere Stelle.
+
+**Kein Gatter (Skill-Regel 4), und diesmal auch keins zum Vormerken.** Der statisch entscheidbare
+Teil („Block ohne `severity`, ohne `<ignore>`, ohne `<option>`") haette heute **0 %** Fehlalarm —
+und **null Ertrag**: nach diesem Schnitt gibt es keinen solchen Block mehr, und ueber **alle 10
+Fassungen**, die `app/lint.xml` je hatte (`git log --follow`, jede einzeln geparst), war es immer
+**dieselbe eine ID** — `BatteryLife`, vorhanden in 7 der 10 Fassungen seit dem 17.11.2025, nie eine
+zweite. Das ist wortgleich die Lage von Runde 19
+(Extension-Funktionen): eine Dauerpruefung mit null Ertrag, die ausserdem den Konfliktzustand
+kennen muesste (#60), ist genau die Sorte, die der Skill fuenfmal geschlossen gesehen hat. Der
+**Rest** des Blickwinkels ist ohnehin nicht gatterfaehig: ob ein `<ignore regexp>` etwas trifft,
+sagt erst ein mutierender Lint-Lauf (diese Runde: 1 Basislauf + **10 Mutationslaeufe** + Endstand,
+je 2–4 min, dazu `lintVitalRelease` vorher und nachher). Der Blickwinkel gehoert mit
+**29 / 2 / 27** in die „Verworfen"-Tabelle des Skills: er lohnt als Runde, nicht als Wache.
+**Ich habe dafuer kein neues Issue angelegt.**
+
+**#38 bleibt unberuehrt und ist bestaetigt:** die 12 Eintraege wirken auch heute auf keinen einzigen
+Befund. Die Entscheidung darueber gehoert dem Eigentuemer (Runde-20-Lehre: ein fremdes Issue
+entscheidet die Runde nicht).
+
+**Belege:** `assembleDebug` + `testDebugUnitTest` + `lintDebug` gruen (**175 XML-Berichte, 1352
+Tests, 0 Failures, 0 Errors**), `lintVitalRelease` gruen (vorher wie nachher — beide Eintraege
+standen unter der Ueberschrift „LINT VITAL RELEASE CHECKS"), `pruefe_reste.py` → „Keine Reste
+gefunden", Lint-Bericht vorher/nachher als Menge identisch. Alle Messskripte waren Wegwerfcode im
+Scratchpad.
+
+**Zum Stand der Werkzeuge, nachgemessen am 17.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
+(zehnter Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19, 20,
+21, 22, 23, 24, 25, 26).

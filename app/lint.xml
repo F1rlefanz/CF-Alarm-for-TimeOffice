@@ -23,17 +23,24 @@
 
     <!-- ================= KRITISCHE FALSE POSITIVES ================= -->
     
-    <!-- 
-    BatteryLife: REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-    Begründung: Wir verwenden dies nur in createBatteryOptimizationIntent(),
-    welches einen Intent zurückgibt aber NICHT direkt ausführt.
-    Der User muss aktiv zustimmen. Dies ist Play Store konform.
+    <!--
+    BatteryLife: hier steht BEWUSST kein Eintrag mehr.
+
+    Bis September 2026 stand hier ein <issue id="BatteryLife">-Block ohne severity, ohne <ignore>
+    und ohne <option> - der kann per Definition nichts bewirken, und die Messung bestaetigt das:
+    nimmt man die beiden `@Suppress("BatteryLife")` im Code weg und LAESST diesen Block stehen,
+    meldet lintDebug prompt zwei BatteryLife-Warnungen (MainScreen.kt:388,
+    BatteryOptimizationHelper.kt:121). Unterdrueckt haben immer nur die Annotationen; der Block
+    tat so, als gaebe es eine zweite Unterdrueckung.
+
+    Die Begruendung steht jetzt an genau den beiden Annotationen - dort, wo die Unterdrueckung
+    wirklich sitzt. Ihr alter Wortlaut hier war zudem falsch: er nannte eine Funktion
+    `createBatteryOptimizationIntent()`, die es im Repo nicht gibt, und behauptete, der Intent
+    werde "NICHT direkt ausgefuehrt" - beide Stellen feuern ihn sehr wohl, nur eben erst auf
+    einen ausdruecklichen Tipp des Nutzers.
     -->
-    <issue id="BatteryLife">
-        <!-- PHASE 2 CLEANUP: BatteryOptimizationManager.kt removed (obsoleted by BatteryOptimizationHelper) -->
-    </issue>
-    
-    <!-- 
+
+    <!--
     CustomX509TrustManager: Philips Hue Bridge Zertifikat-Handling
     Begründung: Wird ausschließlich für die lokale Kommunikation mit der 
     Philips Hue Bridge verwendet (selbst-signierte Zertifikate).
@@ -77,18 +84,31 @@
     Gemessen am 25.08.2026 (Aufräum-Runde 9): die beiden Treffer stammen aus
     google-http-client-2.2.0.jar, NICHT aus dem HueTrustManager der App - der validiert
     echt und wirft bei Fehlschlag. Bis dahin stand hier, es gehe um Apache Commons
-    Logging / Log4JLogger; das war falsch, und der <ignore regexp> darunter trifft
-    entsprechend nichts. Wirksam ist allein das severity="informational".
-    Der tote regexp ist als Issue #31 vorgemerkt, nicht hier nebenbei entfernt.
+    Logging / Log4JLogger; das war falsch.
+
+    Entsprechend stand hier bis September 2026 ein
+    <ignore regexp=".*org.apache.commons.logging.impl.Log4JLogger.*" />, der nie greifen konnte:
+    die beiden Meldungen lauten "`checkClientTrusted` is empty" bzw. "`checkServerTrusted` is
+    empty" und nennen ueberhaupt keinen Klassennamen, ihr Ort ist die Jar-Datei von
+    google-http-client - und log4j liegt in KEINER Konfiguration dieses Projekts
+    (`./gradlew :app:dependencies` → 0 Treffer). Entfernt in Aufräum-Runde 26.
+    Wirksam ist allein das severity="informational": ohne es melden sich beide Treffer
+    als Warning statt als Hint (gemessen, nicht vermutet).
     -->
-    <issue id="TrustAllX509TrustManager" severity="informational">
-        <ignore regexp=".*org\.apache\.commons\.logging\.impl\.Log4JLogger.*" />
-    </issue>
+    <issue id="TrustAllX509TrustManager" severity="informational" />
     
     <!-- 
     InvalidPackage: Apache Commons Logging's optional dependencies
-    Begründung: org.apache.commons.logging hat optionale Abhängigkeiten 
+    Begründung: org.apache.commons.logging hat optionale Abhängigkeiten
     zu Log4J, die für die Android-Plattform nicht erforderlich sind.
+
+    BLEIBT, obwohl heute nichts gemeldet wird - das ist ein Waechter, kein Rest (gemessen in
+    Aufräum-Runde 26): commons-logging:1.2 liegt weiterhin im debugRuntimeClasspath (ueber
+    google-http-client → httpclient:4.5.14), InvalidPackageDetector hat Severity.ERROR und
+    build.gradle.kts setzt abortOnError = true. Kippt die Erreichbarkeitsheuristik des Detektors
+    bei einem Bibliotheks- oder Lint-Bump, bricht ein einziger Befund CI UND Schleuse.
+    "Der Bericht aendert sich ohne den Block nicht" ist hier deshalb KEIN Beleg fuer tot;
+    entfernen erst, wenn commons-logging aus dem Klassenpfad verschwunden ist.
     -->
     <issue id="InvalidPackage">
         <ignore regexp=".*org\.apache\.commons\.logging.*" />

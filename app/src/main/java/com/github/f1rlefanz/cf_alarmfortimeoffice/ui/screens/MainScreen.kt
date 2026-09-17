@@ -383,6 +383,19 @@ fun MainScreen(
                     onRequestExemption = {
                         // Launch battery exemption request
                         try {
+                            // BatteryLife unterdrueckt: Lint haelt jedes
+                            // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS fuer einen Verstoss
+                            // gegen die Play-Store-Richtlinie. Hier feuert der Intent
+                            // ausschliesslich auf den Knopf "Akku-Freigabe erteilen" im
+                            // Akku-Gate; entschieden wird im Systemdialog, den Android zeigt
+                            // (siehe KDoc von BatteryOnboardingScreen). Nichts davon laeuft
+                            // automatisch oder im Hintergrund. Fuer eine Wecker-App ist das der
+                            // Unterschied zwischen klingeln und still bleiben: eingefroren holt
+                            // die App keine neuen Schichten mehr.
+                            // Die Unterdrueckung steht HIER und nicht in app/lint.xml - der
+                            // dortige Block war wirkungslos und ist in Aufraeum-Runde 26
+                            // entfernt worden; die Begruendung dort nannte ausserdem eine
+                            // Funktion, die es nie gab.
                             @Suppress("BatteryLife")
                             val intent =
                                 android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)

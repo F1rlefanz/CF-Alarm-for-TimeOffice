@@ -73,11 +73,19 @@ class ShiftSpanStore @Inject constructor(
         const val KEY_SHIFT_SPANS_NAME = "shift_spans"
 
         /**
-         * Rueckschau beim Aufraeumen. Entspricht `DimWindowResolver.LOOKBACK_DAYS`: eine am
+         * Rueckschau beim Aufraeumen. Mindestens `DimWindowResolver.LOOKBACK_DAYS`: eine am
          * Vorabend begonnene Spanne muss nach dem Datumswechsel noch da sein, sonst haelt die
          * naechste Neuberechnung nach 00:00 die laufende Nacht fuer "kein Fenster".
+         *
+         * DREI Tage statt einem seit der Blockposition (18.09.2026): ob ein Schicht-Tag der
+         * erste, ein mittlerer oder der letzte einer Folge ist, liest der Resolver an seinen
+         * NACHBARTAGEN ab. Die Fenster eines Tages werden aber bis in den Folgetag hinein
+         * ausgewertet (Nachtdienst: der Vormittagsschlaf liegt am Tag danach) - zu dem Zeitpunkt
+         * muss der VORTAG des Schicht-Tages noch im Bestand sein, also eine Spanne, die bis zu
+         * zwei Tage zurueckliegt. Mit 24 h wurde der letzte von drei Nachtdiensten am Morgen
+         * danach zum "einzelnen", und das Fenster "nur am letzten Tag" fiel weg.
          */
-        const val RETENTION_MS = 24 * 60 * 60 * 1000L
+        const val RETENTION_MS = 3 * 24 * 60 * 60 * 1000L
 
         /**
          * Welche Spannen behalten werden. Reine Funktion, damit die Rueckschau-Grenze testbar ist,
@@ -86,6 +94,24 @@ class ShiftSpanStore @Inject constructor(
          */
         internal fun prune(spans: List<ShiftSpan>, now: Long): List<ShiftSpan> =
             spans.filter { it.endTime > now - RETENTION_MS }
+
+        /**
+         * Mischt den frischen Kalenderstand [neu] mit dem bisherigen Bestand [alt]: fuer alles,
+         * was noch laeuft oder bevorsteht, ist [neu] die einzige Wahrheit (ein gestrichener oder
+         * verschobener Dienst darf nicht als Rest zurueckbleiben); BEENDETE Spannen aus [alt]
+         * bleiben dagegen erhalten, solange [prune] sie behaelt.
+         *
+         * WARUM: Der Kalender-Abruf beginnt bei "jetzt" (`CalendarRepository`, `timeMin = now`)
+         * und liefert beendete Dienste nicht mehr. Ein reiner Vollersatz vergass sie mit dem
+         * naechsten Sync - fuer Dimmer und DND war das lange gleichgueltig, weil ein beendeter
+         * Dienst kein Fenster mehr aufspannt. Fuer die Blockposition ist er aber der NACHBAR,
+         * an dem sich entscheidet, ob heute der erste oder der letzte Tag eines Blocks ist.
+         * Reine Funktion, damit die Regel testbar ist.
+         */
+        internal fun mische(alt: List<ShiftSpan>, neu: List<ShiftSpan>, now: Long): List<ShiftSpan> {
+            val beendeteAlte = alt.filter { it.endTime <= now && it !in neu }
+            return prune(neu + beendeteAlte, now)
+        }
     }
 
     private val json = Json {
@@ -123,14 +149,22 @@ class ShiftSpanStore @Inject constructor(
     }
 
     /**
-     * Ersetzt den Bestand vollstaendig und entfernt dabei Spannen, deren Ende laenger als
-     * [RETENTION_MS] zurueckliegt. Vollersatz statt Read-Modify-Write, weil `syncAlarms()` ohnehin
-     * immer den kompletten erkannten Stand liefert - damit kann kein Rest einer geloeschten
-     * Schicht zurueckbleiben.
+     * Uebernimmt den frischen Kalenderstand: laufende und kuenftige Spannen werden vollstaendig
+     * ersetzt (damit kein Rest einer geloeschten Schicht zurueckbleibt), BEENDETE Spannen des
+     * bisherigen Bestands bleiben bis zur Rueckschau-Grenze [RETENTION_MS] erhalten - siehe
+     * [mische]. Ein nicht dekodierbarer Altbestand wird dabei nicht zum Fehler: dann zaehlt nur
+     * der frische Stand, und die Blockposition ist fuer ein paar Tage ungenau statt der Dimmer
+     * dauerhaft ohne Spannen.
      */
     suspend fun replaceAll(spans: List<ShiftSpan>, now: Long = System.currentTimeMillis()) {
-        val kept = prune(spans, now)
-        dataStore.edit { it[KEY_SHIFT_SPANS] = json.encodeToString(kept) }
-        Logger.d(LogTags.SHIFT, "Schichtspannen gespeichert: ${kept.size} (${spans.size - kept.size} abgelaufen verworfen)")
+        var kept = spans
+        dataStore.edit { prefs ->
+            val alt = prefs[KEY_SHIFT_SPANS]?.takeIf { it.isNotBlank() }?.let { raw ->
+                runCatching { json.decodeFromString<List<ShiftSpan>>(raw) }.getOrElse { emptyList() }
+            }.orEmpty()
+            kept = mische(alt = alt, neu = spans, now = now)
+            prefs[KEY_SHIFT_SPANS] = json.encodeToString(kept)
+        }
+        Logger.d(LogTags.SHIFT, "Schichtspannen gespeichert: ${kept.size} (${spans.size} frisch, Rest beendete aus dem Altbestand)")
     }
 }

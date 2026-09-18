@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
@@ -444,11 +445,13 @@ class DimmerRulesViewModel @Inject constructor(
                     warmth = DimOverlayPrefs.DEFAULT_WARMTH
                 )
 
-                // ZWEI Fenster an EINEM Kalendertag: nach dem Dienst der Vormittagsschlaf (ab
-                // Schichtende bis 14:00), am Nachmittag das Nickerchen vor dem naechsten Dienst
-                // (15:00 bis zur Weckzeit). Weil die Regel spezifisch ist, verdraengt sie an
-                // diesen Tagen die UNIVERSAL-Nachtregel vollstaendig - die Nacht selbst bleibt
-                // also hell, und das ist der Sinn der Sache: da ist der Nutzer im Dienst.
+                // DREI Fenster an EINEM Kalendertag: nach dem Dienst der Vormittagsschlaf (ab
+                // Schichtende bis 14:00 - nach der LETZTEN Nacht des Blocks nur bis 12:00, weil
+                // dort die Umstellung zurueck auf den Tag ansteht), am Nachmittag das Nickerchen
+                // vor dem naechsten Dienst (15:00 bis zur Weckzeit). Weil die Regel spezifisch
+                // ist, verdraengt sie an diesen Tagen die UNIVERSAL-Nachtregel vollstaendig - die
+                // Nacht selbst bleibt also hell, und das ist der Sinn der Sache: da ist der
+                // Nutzer im Dienst. Ein alleinstehender Nachtdienst zaehlt wie ein letzter.
                 SchnellstartVorlage.NACHTDIENST_RHYTHMUS -> DimRule(
                     name = regelName,
                     shiftPattern = schicht!!,
@@ -457,7 +460,15 @@ class DimmerRulesViewModel @Inject constructor(
                             startAnchor = DimAnchor.SHIFT_END,
                             startOffsetMinutes = 0,
                             endAnchor = DimAnchor.CLOCK,
-                            endClockMinutes = 14 * 60
+                            endClockMinutes = 14 * 60,
+                            blockPositionen = setOf(Blockposition.ERSTER, Blockposition.MITTLERER)
+                        ),
+                        DimWindow(
+                            startAnchor = DimAnchor.SHIFT_END,
+                            startOffsetMinutes = 0,
+                            endAnchor = DimAnchor.CLOCK,
+                            endClockMinutes = 12 * 60,
+                            blockPositionen = setOf(Blockposition.LETZTER, Blockposition.EINZELNER)
                         ),
                         DimWindow(
                             startAnchor = DimAnchor.CLOCK,

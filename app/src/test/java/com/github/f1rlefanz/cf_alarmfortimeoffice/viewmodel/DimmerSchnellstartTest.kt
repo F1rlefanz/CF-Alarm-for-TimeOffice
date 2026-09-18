@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
@@ -132,7 +133,7 @@ class DimmerSchnellstartTest {
      * anderes Verhalten: die Stunde dazwischen ist bewusst hell.
      */
     @Test
-    fun `Nachtdienst-Rhythmus legt zwei Fenster auf die gewaehlte Schicht`() {
+    fun `Nachtdienst-Rhythmus legt drei Fenster auf die gewaehlte Schicht`() {
         val regel = baueVorlagenRegel(
             SchnellstartVorlage.NACHTDIENST_RHYTHMUS,
             "Nachtdienst-Rhythmus: ND",
@@ -141,15 +142,28 @@ class DimmerSchnellstartTest {
 
         assertNotNull(regel)
         assertEquals("ND", regel!!.shiftPattern)
-        assertEquals(2, regel.windows.size)
+        assertEquals(3, regel.windows.size)
 
         val vormittagsschlaf = regel.windows[0]
         assertEquals(DimAnchor.SHIFT_END, vormittagsschlaf.startAnchor)
         assertEquals(0, vormittagsschlaf.startOffsetMinutes)
         assertEquals(DimAnchor.CLOCK, vormittagsschlaf.endAnchor)
         assertEquals(14 * 60, vormittagsschlaf.endClockMinutes)
+        assertEquals(setOf(Blockposition.ERSTER, Blockposition.MITTLERER), vormittagsschlaf.blockPositionen)
 
-        val nickerchen = regel.windows[1]
+        // Nach der LETZTEN Nacht des Blocks (und nach einem einzelnen Nachtdienst) ist der
+        // Schlaf kuerzer - die Umstellung zurueck auf den Tag. Der Anlass der Blockposition.
+        val umstellungsschlaf = regel.windows[1]
+        assertEquals(DimAnchor.SHIFT_END, umstellungsschlaf.startAnchor)
+        assertEquals(DimAnchor.CLOCK, umstellungsschlaf.endAnchor)
+        assertEquals(12 * 60, umstellungsschlaf.endClockMinutes)
+        assertEquals(setOf(Blockposition.LETZTER, Blockposition.EINZELNER), umstellungsschlaf.blockPositionen)
+
+        // Beide Vormittags-Fenster zusammen decken JEDE Position ab - kein Tag ohne Vormittagsschlaf.
+        assertEquals(Blockposition.ALLE, vormittagsschlaf.blockPositionen + umstellungsschlaf.blockPositionen)
+
+        val nickerchen = regel.windows[2]
+        assertEquals(Blockposition.ALLE, nickerchen.blockPositionen)
         assertEquals(DimAnchor.CLOCK, nickerchen.startAnchor)
         assertEquals(15 * 60, nickerchen.startClockMinutes)
         assertEquals(DimAnchor.ALARM, nickerchen.endAnchor)

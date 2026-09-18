@@ -44,6 +44,21 @@ das baut man dieselbe Falle in neuer Form nach.
   (scheitert etwas: Dimmer aus, Marker ungesetzt, WARN, Retry), und der **Konfigurations-Import
   nimmt den Marker zurück** — aber nur, wenn die Datei die ALTEN Schlüssel mitbringt UND kein
   `dim_enabled`. Die alten Preference-Schlüssel werden bewusst NICHT gelöscht (eine Version Rückweg).
+- **Ein Fenster traegt seine BLOCKPOSITION** (`DimWindow.blockPositionen`, seit 1.42.0): an
+  welchen Tagen einer Folge gleicher Schichten es gilt — erster, mittlerer, letzter, einzelner.
+  Die vier Werte sind DISJUNKT, ein alleinstehender Tag ist EINZELNER und nicht „erster und
+  letzter zugleich". Default = alle (jedes Altfenster wirkt unveraendert). Der Resolver liest die
+  Position an den NACHBARTAGEN ab (`blockpositionFuerTag`, Schichtname ohne Gross/Klein) — und
+  **genau dafuer haelt der `ShiftSpanStore` beendete Spannen DREI Tage vor und MISCHT sie beim
+  Schreiben unter den frischen Kalenderstand** (`mische`): der Kalender-Abruf beginnt bei
+  „jetzt" und kennt beendete Dienste nicht mehr; ein Vollersatz machte am Morgen nach der
+  dritten Nacht den letzten Tag zum einzelnen. Wer die Rueckschau wieder auf 24 h kuerzt oder
+  den Vollersatz zurueckholt, bricht das lautlos. FREI-Regeln ignorieren das Feld. Der Editor
+  zeigt die Chips nur bei einer benannten Schicht und laesst das letzte Haekchen stehen.
+- **Beim Verbinden des Dimm-Dienstes wird der Soll-Zustand NEU BEWERTET** (Tick-Broadcast aus
+  `onServiceConnected`). Sonst behauptet die Korrektur-Benachrichtigung nach einer
+  Prozess-Rueckkehr bis zur naechsten Fenstergrenze „Dimmt nicht — Dienst ist aus", waehrend das
+  Overlay laengst rendert (am Fairphone gesehen, 18.09.2026).
 - **Ein Kalendertag kann ZWEI Schichten haben.** `buildRuleSpans`
   fragt JEDE Schicht des Tages (`slotsByDate`), nie nur die früheste. Wirksam wird trotzdem
   **pro Kalendertag GENAU eine Regel**; eine spezifische Regel **überschreibt** UNIVERSAL komplett,

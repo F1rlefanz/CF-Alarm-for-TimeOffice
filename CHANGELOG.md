@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.42.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.43.0 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Der Nachtdienst-Dimmer lässt sich jetzt in drei Sätzen einrichten – ohne Anker, Offsets und Fensterlogik._
+
+### ✨ Neu
+
+- **Nachtdienst-Rhythmus in Schlafsprache:** Die Vorlage fragt nach der Schicht nur noch „Nach dem Dienst schlafe ich bis", „Nach der letzten Nacht einer Folge nur bis" und „Vor dem Dienst schlafe ich ab" – je eine Uhrzeit – und baut daraus die Regel. Die Regel steht danach wie gehabt in der Liste und lässt sich dort im Detail ändern.
+
+## Version 1.42.0
 
 **Stand:** September 2026
 

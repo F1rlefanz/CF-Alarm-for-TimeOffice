@@ -165,9 +165,34 @@ class DimmerSchnellstartTest {
         val nickerchen = regel.windows[2]
         assertEquals(Blockposition.ALLE, nickerchen.blockPositionen)
         assertEquals(DimAnchor.CLOCK, nickerchen.startAnchor)
-        assertEquals(15 * 60, nickerchen.startClockMinutes)
+        assertEquals(16 * 60, nickerchen.startClockMinutes)
         assertEquals(DimAnchor.ALARM, nickerchen.endAnchor)
         assertEquals(0, nickerchen.endOffsetMinutes)
+    }
+
+    /**
+     * Die Schlafsprache-Abfrage: drei Saetze, drei Uhrzeiten - und jede landet an genau dem
+     * Fenster, das der Satz meint. Vertauscht, waere "nach der letzten Nacht bis 12" ploetzlich
+     * die Regel fuer jeden Tag.
+     */
+    @Test
+    fun `Die drei Schlafzeiten landen an den richtigen Fenstern`() {
+        val regel = baueVorlagenRegel(
+            SchnellstartVorlage.NACHTDIENST_RHYTHMUS, "x", "ND",
+            DimmerRulesViewModel.NachtdienstRhythmus(
+                schlafNachDienstBis = 13 * 60 + 30,
+                nachLetzterNachtBis = 11 * 60,
+                schlafVorDienstAb = 17 * 60
+            )
+        )!!
+
+        val nachDienst = regel.windows.single { it.blockPositionen == setOf(Blockposition.ERSTER, Blockposition.MITTLERER) }
+        assertEquals(13 * 60 + 30, nachDienst.endClockMinutes)
+        val nachLetzter = regel.windows.single { it.blockPositionen == setOf(Blockposition.LETZTER, Blockposition.EINZELNER) }
+        assertEquals(11 * 60, nachLetzter.endClockMinutes)
+        val vorDienst = regel.windows.single { it.startAnchor == DimAnchor.CLOCK }
+        assertEquals(17 * 60, vorDienst.startClockMinutes)
+        assertEquals(DimAnchor.ALARM, vorDienst.endAnchor)
     }
 
     /**

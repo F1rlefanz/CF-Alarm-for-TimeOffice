@@ -19,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.Blockposition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAnchor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
@@ -193,6 +195,10 @@ fun DimmerRuleConfigScreen(
             itemsIndexed(windows) { index, w ->
                 WindowEditor(
                     window = w,
+                    // Die Blockposition gibt es nur fuer eine benannte Schicht: FREI-Tage haben
+                    // keine Schicht (der Resolver ignoriert das Feld dort), und fuer UNIVERSAL
+                    // waere "Folge gleicher Dienste" nicht erklaerbar - die Regel gilt ja an allen.
+                    schichtbezogen = shiftPattern != DimRule.SHIFT_FREE && shiftPattern != DimRule.SHIFT_UNIVERSAL,
                     onChange = { windows[index] = it },
                     onRemove = { windows.removeAt(index) },
                     onPickTime = { current, cb -> pickTime(context, current, cb) }
@@ -317,6 +323,36 @@ internal fun feldFuerStartAnker(anker: DimAnchor): AnkerFeld = when (anker) {
     DimAnchor.CLOCK, DimAnchor.ALARM_SONST_CLOCK -> AnkerFeld.UHRZEIT
 }
 
+/**
+ * Reihenfolge der Blockpositions-Chips im Editor - alle vier, in der Reihenfolge einer Dienstfolge.
+ * Als Konstante neben dem Composable, damit ein Test sie gegen das Modell halten kann: eine Position,
+ * die das Modell kennt und der Editor nicht anbietet, waere aus einer Vorlage eingeschleust nicht
+ * mehr abwaehlbar.
+ */
+internal val BLOCKPOSITIONEN = listOf(
+    Blockposition.ERSTER, Blockposition.MITTLERER, Blockposition.LETZTER, Blockposition.EINZELNER
+)
+
+/**
+ * Ein Chip-Tipp schaltet EINE Position um - und laesst das letzte Haekchen stehen. Ein Fenster
+ * ohne jede Position gaelte nirgends und stuende trotzdem in der Regel; wer das Fenster nicht
+ * will, entfernt es. Reine Funktion, damit die Regel testbar ist.
+ */
+internal fun blockpositionUmschalten(aktuell: Set<Blockposition>, position: Blockposition): Set<Blockposition> =
+    if (position in aktuell) {
+        if (aktuell.size == 1) aktuell else aktuell - position
+    } else {
+        aktuell + position
+    }
+
+@Composable
+private fun blockpositionLabel(position: Blockposition): String = when (position) {
+    Blockposition.ERSTER -> stringResource(R.string.dimmer_blockposition_erster)
+    Blockposition.MITTLERER -> stringResource(R.string.dimmer_blockposition_mittlerer)
+    Blockposition.LETZTER -> stringResource(R.string.dimmer_blockposition_letzter)
+    Blockposition.EINZELNER -> stringResource(R.string.dimmer_blockposition_einzelner)
+}
+
 @Composable
 private fun ankerLabel(anker: DimAnchor): String = when (anker) {
     DimAnchor.CLOCK -> stringResource(R.string.dimmer_end_clock)
@@ -328,6 +364,7 @@ private fun ankerLabel(anker: DimAnchor): String = when (anker) {
 @Composable
 private fun WindowEditor(
     window: DimWindow,
+    schichtbezogen: Boolean,
     onChange: (DimWindow) -> Unit,
     onRemove: () -> Unit,
     onPickTime: (Int, (Int) -> Unit) -> Unit
@@ -411,6 +448,30 @@ private fun WindowEditor(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+
+            // Blockposition: nur bei einer benannten Schicht (siehe Aufrufer). Chips statt
+            // Radio-Knoepfe, weil ein Fenster an MEHREREN Positionen gelten kann ("erster und
+            // mittlere Tage"); alle vier gesetzt = das bisherige Verhalten, und genau so kommt
+            // jedes bestehende Fenster hier an.
+            if (schichtbezogen) {
+                Text(stringResource(R.string.dimmer_window_blockposition), style = MaterialTheme.typography.bodyMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BLOCKPOSITIONEN.forEach { position ->
+                        FilterChip(
+                            selected = position in window.blockPositionen,
+                            onClick = {
+                                onChange(window.copy(blockPositionen = blockpositionUmschalten(window.blockPositionen, position)))
+                            },
+                            label = { Text(blockpositionLabel(position)) }
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.dimmer_window_blockposition_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             TextButton(onClick = onRemove) {

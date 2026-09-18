@@ -73,6 +73,42 @@ enum class DimAnchor {
 }
 
 /**
+ * Wo im BLOCK aufeinanderfolgender Tage derselben Schicht ein Tag steht.
+ *
+ * WARUM ES DAS GIBT (Nutzerwunsch 18.09.2026, drei Nachtdienste Fr–So): Der Schlaf nach der
+ * LETZTEN Nacht ist kürzer als der zwischen zwei Nächten – wer sich zurück auf den Tag umstellt,
+ * schläft am Montag nur bis 12:00 statt bis 14:00. Bis dahin bekam jeder Tag einer Schicht
+ * dieselben Fenster; "erster" oder "letzter Tag" war im Modell nicht ausdrückbar, obwohl der
+ * Kalender die Antwort kennt. Ein Fenster trägt deshalb die Positionen, an denen es gilt
+ * ([DimWindow.blockPositionen]); der Resolver leitet die Position eines Tages aus seinen
+ * Nachbartagen ab (gleiche Schicht am Vortag? am Folgetag?).
+ *
+ * Die vier Werte sind bewusst DISJUNKT – ein Tag hat genau eine Position. Ein alleinstehender
+ * Tag ist weder "erster" noch "letzter", sondern [EINZELNER]: sonst müsste man entscheiden, ob für
+ * ihn die Erster- oder die Letzter-Fenster gelten (beide zugleich wäre additiv und dimmte mehr
+ * als jede Auswahl für sich). So sagt es der Nutzer selbst, mit einem Häkchen.
+ */
+@Serializable
+enum class Blockposition {
+    /** Vortag ohne diese Schicht, Folgetag mit ihr. */
+    ERSTER,
+
+    /** Vor- und Folgetag mit dieser Schicht. */
+    MITTLERER,
+
+    /** Vortag mit dieser Schicht, Folgetag ohne. */
+    LETZTER,
+
+    /** Weder Vor- noch Folgetag mit dieser Schicht. */
+    EINZELNER;
+
+    companion object {
+        /** Der Default eines Fensters: gilt an jedem Tag des Blocks – das bisherige Verhalten. */
+        val ALLE: Set<Blockposition> = entries.toSet()
+    }
+}
+
+/**
  * Ein Dimm-Fenster einer Regel. Start und Ende sind je unabhängig verankert:
  * - [DimAnchor.CLOCK]: feste Uhrzeit ([startClockMinutes]/[endClockMinutes], 0..1439).
  * - [DimAnchor.ALARM]: Weckzeit + Offset ([startOffsetMinutes]/[endOffsetMinutes]).
@@ -88,5 +124,13 @@ data class DimWindow(
     val startOffsetMinutes: Int = -120,
     val endAnchor: DimAnchor = DimAnchor.ALARM,
     val endClockMinutes: Int = 6 * 60,
-    val endOffsetMinutes: Int = 0
+    val endOffsetMinutes: Int = 0,
+    /**
+     * An welchen Tagen eines Schicht-BLOCKS dieses Fenster gilt (siehe [Blockposition]). Default =
+     * alle, damit jedes bestehende Fenster unverändert weiterwirkt; ein alter Regelbestand ohne
+     * dieses Feld liest sich damit als "wie bisher". Leere Menge = Fenster gilt nirgends (nicht
+     * verboten, aber sinnlos – der Editor lässt das letzte Häkchen deshalb nicht abwählen).
+     * Für FREI-Regeln ohne Schicht wird das Feld ignoriert.
+     */
+    val blockPositionen: Set<Blockposition> = Blockposition.ALLE
 )

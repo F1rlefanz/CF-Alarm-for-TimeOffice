@@ -129,6 +129,7 @@ class DimAccessibilityService : AccessibilityService() {
         // sie war der Vorfall vom 24.08.2026 nicht rekonstruierbar (siehe [DimDiagnostik]).
         Logger.w(LogTags.DIMMER, "Dimm-Dienst verbunden - ${snapshot()}")
         meldeUnterbrechung()
+        zustandNeuBewerten()
         renderJob?.cancel()
         renderJob = scope.launch {
             // renderState ist upstream abgesichert (DimOverlayPrefs.safeData): ein Lesefehler kommt
@@ -359,6 +360,27 @@ class DimAccessibilityService : AccessibilityService() {
      * Merker anschliessend neu. Defensiv gekapselt: eine Diagnostik, die selbst wirft, macht den
      * Vorfall schlimmer statt auswertbar - dieselbe Auflage wie bei [snapshot].
      */
+    /**
+     * Laesst den Scheduler den Soll-Zustand neu bewerten, sobald der Dienst (wieder) da ist.
+     *
+     * WARUM (Befund 18.09.2026, am Fairphone): Waehrend eines laufenden Dimm-Fensters war der
+     * Prozess beendet worden; `applyCurrentState()` lief ohne gebundenen Dienst und stellte die
+     * Benachrichtigung auf "Dimmt nicht - Bedienungshilfen-Dienst ist aus". Dann kam der Dienst
+     * zurueck, das Overlay wurde gerendert - die Benachrichtigung behauptete aber weiter, es
+     * dimme nicht, bis zum naechsten Tick an einer Fenstergrenze, also unter Umstaenden
+     * stundenlang. Niemand rechnete beim Verbinden neu. Der Weg geht ueber den Tick-Receiver
+     * (derselbe Pfad wie der rollende Tick, inklusive Neuplanung), nicht ueber eine direkte
+     * Injektion des Schedulers in diesen Dienst: der Dienst bleibt bewusst ein reiner Renderer.
+     */
+    private fun zustandNeuBewerten() = runCatching {
+        sendBroadcast(
+            android.content.Intent(this, DimScheduleReceiver::class.java)
+                .setAction(DimScheduleUseCase.ACTION_TICK)
+        )
+    }.onFailure {
+        Logger.w(LogTags.DIMMER, "Neubewertung nach Dienst-Verbindung nicht angestossen (${it.javaClass.simpleName})")
+    }
+
     private fun meldeUnterbrechung() = runCatching {
         val p = getSharedPreferences(MERKER_PREFS, Context.MODE_PRIVATE)
         val jetzt = SystemClock.elapsedRealtime()

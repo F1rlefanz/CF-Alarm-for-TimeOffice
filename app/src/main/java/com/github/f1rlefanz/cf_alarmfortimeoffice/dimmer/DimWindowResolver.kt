@@ -279,7 +279,14 @@ object DimWindowResolver {
             if (wahl.verdraengteRegelIds.isNotEmpty()) {
                 konflikte += "$date->${wahl.rule.id} statt ${wahl.verdraengteRegelIds}"
             }
+            // BLOCKPOSITION: Ein Fenster gilt nur an den Tagen des Schicht-Blocks, fuer die es
+            // freigegeben ist (Default: alle). Die Position des Tages haengt an der Schicht, an
+            // der die Regel verankert ist - Nachbartage mit DERSELBEN Schicht bilden den Block.
+            // Bewusst ueber `byDate` (alle bekannten Slots), nicht ueber die Horizont-Schleife:
+            // der Vortag von `today - LOOKBACK_DAYS` entscheidet mit, ob heute der erste Tag ist.
+            val position = blockpositionFuerTag(date, wahl.anker.shiftName, byDate)
             for (w in wahl.rule.windows) {
+                if (position !in w.blockPositionen) continue
                 resolveWindowForDate(w, date, wahl.anker, zone, sortierteWeckzeiten)
                     ?.let { out += DimSpan(it, wahl.rule.strength, wahl.rule.warmth) }
             }
@@ -451,6 +458,39 @@ object DimWindowResolver {
             }
         }
         return out
+    }
+
+    /**
+     * Die Position eines Tages in seinem Block, allein aus "gleiche Schicht am Vortag?" und
+     * "gleiche Schicht am Folgetag?". Rein und vier-wertig (siehe [Blockposition]): ein
+     * alleinstehender Tag ist EINZELNER, nicht zugleich erster und letzter.
+     */
+    fun blockposition(vortag: Boolean, folgetag: Boolean): Blockposition = when {
+        vortag && folgetag -> Blockposition.MITTLERER
+        vortag -> Blockposition.LETZTER
+        folgetag -> Blockposition.ERSTER
+        else -> Blockposition.EINZELNER
+    }
+
+    /**
+     * Blockposition von [date] fuer die Schicht [shiftName]: liegt am Kalendertag davor bzw.
+     * danach ein Slot derselben Schicht? Verglichen wird der Schichtname ohne Ruecksicht auf
+     * Gross-/Kleinschreibung - dieselbe Toleranz wie `findRuleForShift`, sonst zerfiele ein
+     * Block an einem anders geschriebenen Kalendereintrag in Einzeltage.
+     *
+     * DIE DATENBASIS IST DIE FALLE: `byDate` enthaelt nur, was der `ShiftSpanStore` noch
+     * vorhaelt. Wuerde er beendete Spannen nach 24 h verwerfen, saehe am Morgen nach der letzten
+     * von drei Naechten die vorletzte schon nicht mehr aus wie ein Nachbar - der letzte Tag
+     * wuerde zum EINZELNEN. Deshalb behaelt der Store beendete Spannen laenger und mischt sie
+     * beim Schreiben unter den frischen Kalenderstand (`ShiftSpanStore.mische`).
+     */
+    private fun blockpositionFuerTag(
+        date: LocalDate,
+        shiftName: String,
+        byDate: Map<LocalDate, List<AlarmSlot>>
+    ): Blockposition {
+        fun hatSchicht(d: LocalDate) = byDate[d].orEmpty().any { it.shiftName.equals(shiftName, ignoreCase = true) }
+        return blockposition(vortag = hatSchicht(date.minusDays(1)), folgetag = hatSchicht(date.plusDays(1)))
     }
 
     /**

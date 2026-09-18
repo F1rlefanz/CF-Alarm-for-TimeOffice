@@ -36,10 +36,68 @@ class ShiftSpanStoreTest {
         assertEquals(1, kept.size)
     }
 
+    /**
+     * Seit der Blockposition (18.09.2026) reicht ein Tag Rueckschau nicht mehr: ob der heutige
+     * Nachtdienst der LETZTE eines Blocks ist, entscheidet der VORVORTAG mit - am Morgen nach der
+     * dritten Nacht muss die zweite noch sichtbar sein, sonst wird der letzte Tag zum einzelnen.
+     */
     @Test
-    fun `Eine laenger als 24h beendete Schicht wird verworfen`() {
-        val kept = ShiftSpanStore.prune(listOf(span("Alt", now - 25 * hour)), now)
+    fun `Eine vor zwei Tagen beendete Schicht bleibt erhalten - die Blockposition braucht sie`() {
+        val kept = ShiftSpanStore.prune(listOf(span("Vorvorgestern", now - 50 * hour)), now)
+        assertEquals(1, kept.size)
+    }
+
+    @Test
+    fun `Eine laenger als drei Tage beendete Schicht wird verworfen`() {
+        val kept = ShiftSpanStore.prune(listOf(span("Alt", now - 73 * hour)), now)
         assertTrue(kept.isEmpty())
+    }
+
+    // --- mische: der Kalender liefert nur Laufendes und Kuenftiges ---
+
+    /**
+     * Der Kalender-Abruf beginnt bei "jetzt" und kennt beendete Dienste nicht mehr. Ein
+     * Vollersatz wuerfe sie mit jedem Sync weg - und mit ihnen die Nachbarschaft, aus der die
+     * Blockposition entsteht. Beendete Spannen des alten Bestands werden deshalb behalten.
+     */
+    @Test
+    fun `Beendete Spannen des alten Bestands ueberleben den frischen Kalenderstand`() {
+        val gestern = span("Nacht", now - 12 * hour)
+        val heute = span("Nacht", now + 12 * hour)
+
+        val ergebnis = ShiftSpanStore.mische(alt = listOf(gestern), neu = listOf(heute), now = now)
+
+        assertEquals(listOf(heute, gestern), ergebnis)
+    }
+
+    /** Fuer alles, was noch laeuft oder bevorsteht, bleibt der Kalender die einzige Wahrheit. */
+    @Test
+    fun `Laufende und kuenftige Spannen kommen NUR aus dem frischen Stand`() {
+        val altLaufend = span("Gestrichen", now + 2 * hour)
+        val altKuenftig = span("Verschoben", now + 30 * hour)
+        val neu = span("Frueh", now + 20 * hour)
+
+        val ergebnis = ShiftSpanStore.mische(alt = listOf(altLaufend, altKuenftig), neu = listOf(neu), now = now)
+
+        assertEquals(listOf(neu), ergebnis)
+    }
+
+    @Test
+    fun `Eine beendete Spanne, die der frische Stand noch mitbringt, erscheint nur einmal`() {
+        val beendet = span("Nacht", now - hour)
+
+        val ergebnis = ShiftSpanStore.mische(alt = listOf(beendet), neu = listOf(beendet), now = now)
+
+        assertEquals(listOf(beendet), ergebnis)
+    }
+
+    @Test
+    fun `mische raeumt zu alte Spannen des Bestands mit weg`() {
+        val uralt = span("Uralt", now - 100 * hour)
+
+        val ergebnis = ShiftSpanStore.mische(alt = listOf(uralt), neu = emptyList(), now = now)
+
+        assertTrue(ergebnis.isEmpty())
     }
 
     @Test
@@ -54,7 +112,7 @@ class ShiftSpanStoreTest {
     @Test
     fun `Aufraeumen greift pro Eintrag, nicht auf die ganze Liste`() {
         val kept = ShiftSpanStore.prune(
-            listOf(span("Alt", now - 30 * hour), span("Heute", now + hour), span("Gestern", now - 5 * hour)),
+            listOf(span("Alt", now - 80 * hour), span("Heute", now + hour), span("Gestern", now - 5 * hour)),
             now
         )
         assertEquals(listOf("Heute", "Gestern"), kept.map { it.shiftName })

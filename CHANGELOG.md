@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.41.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.42.0 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Der Schicht-Dimmer weiß jetzt, ob ein Dienst der erste, ein mittlerer oder der letzte einer Folge ist – der Schlaf nach dem letzten Nachtdienst darf kürzer sein._
+
+### ✨ Neu
+
+- **Dimm-Fenster nach Position in der Dienstfolge:** Jedes Zeitfenster einer Dimm-Regel lässt sich auf „Erster Tag", „Mittlere Tage", „Letzter Tag" oder „Einzelner Tag" einer Folge gleicher Dienste beschränken. Beispiel drei Nachtdienste: zwischen den Nächten bis 14:00 schlafen, nach der letzten Nacht nur bis 12:00, um sich wieder auf den Tag umzustellen. Bestehende Fenster gelten unverändert an allen Tagen.
+- **Vorlage „Nachtdienst-Rhythmus" legt das gleich mit an:** Vormittagsschlaf bis 14:00 an den ersten und mittleren Tagen, bis 12:00 nach der letzten Nacht (und nach einem einzelnen Nachtdienst), dazu das Nickerchen vor dem Dienst.
+
+### 🐛 Behoben
+
+- **Falscher Hinweis „Dimmt nicht – Bedienungshilfen-Dienst ist aus":** Kehrte der Dimm-Dienst nach einem Neustart der App mitten in einem Dimm-Fenster zurück, blieb die Benachrichtigung bis zur nächsten Fenstergrenze bei dieser Meldung stehen, obwohl der Bildschirm längst wieder gedimmt war. Jetzt wird der Zustand beim Verbinden des Dienstes sofort neu bewertet.
+
+## Version 1.41.1
 
 **Stand:** September 2026
 

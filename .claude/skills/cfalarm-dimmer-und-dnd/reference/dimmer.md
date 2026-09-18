@@ -9,6 +9,8 @@
 - Ein Modell statt drei Quellen — und warum die eigentliche Lehre die KOPPLUNG ist (v1.34.0)
 - Die Modellmigration und warum der App-Start als einziger Anlass zu wenig war (v1.34.0)
 - Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen
+- Die Blockposition eines Schicht-Tages — und warum der Spannen-Speicher dafür länger erinnern muss (1.42.0)
+- Die Dienst-Rückkehr bewertet den Zustand neu (1.42.0)
 - Ein Kalendertag kann ZWEI Schichten haben (Prüfrunde 8)
 - Der Regelkonflikt an einem solchen Tag wird entschieden, nicht aufgelöst (Prüfrunde 8)
 - Dimmer-Regeln binden über den Namen der Schichtdefinition (Prüfrunde 8)
@@ -191,6 +193,60 @@
   `dim_overlay_on` vorher `false` → während der Vorschau `true` → App nach ~1,5 s verlassen → 8 s
   später wieder `false`. Nachweis NICHT über die Layer-Anwesenheit führen: `render(false)` fährt nur
   das Alpha auf 0 und lässt `CFAlarmDimLayer` stehen.
+
+- **Die Blockposition eines Schicht-Tages — und warum der Spannen-Speicher dafür länger erinnern
+  muss** (1.42.0, Nutzerwunsch 18.09.2026). Drei Nachtdienste Fr–So; die Vorschau zeigte nach der
+  letzten Nacht `Mo. 06:45 → 14:00`, gewünscht war 12:00: wer sich zurück auf den Tag umstellt,
+  schläft nach der letzten Nacht kürzer als zwischen zwei Nächten. Das Modell kannte nur „jeder Tag
+  dieser Schicht bekommt dieselben Fenster" — erster, mittlerer, letzter Tag einer Folge waren nicht
+  ausdrückbar, obwohl der Kalender die Antwort kennt. **Erster Wurf verworfen: die Nutzeranfrage
+  wörtlich nehmen und für den ersten Tag ein eigenes Fenster (17:00 statt 16:00) bauen.** Auf
+  Nachfrage stellte sich heraus, dass das dasselbe Vorschlaf-Fenster ist und eine Zeit für alle
+  Tage reicht — die Position bleibt trotzdem im Modell, weil sie die eigentliche Fähigkeit ist.
+
+  **Vier disjunkte Werte statt zweier Flags.** `Blockposition { ERSTER, MITTLERER, LETZTER,
+  EINZELNER }`, ein Fenster trägt eine MENGE davon (Default: alle). Die naheliegende Variante „ein
+  Tag ist erster UND letzter, ein Fenster gilt bei irgendeinem Treffer" wurde verworfen: für einen
+  alleinstehenden Nachtdienst gälten dann das 14:00- und das 12:00-Fenster zugleich, „dunkelste
+  Spanne gewinnt" machte daraus 14:00 — genau das Gegenteil des Bestellten, und niemand hätte es
+  konfiguriert. Mit EINZELNER als eigenem Wert sagt der Nutzer es selbst; die Vorlage setzt
+  `{LETZTER, EINZELNER}` auf das 12:00-Fenster.
+
+  **Die Datenbasis war die eigentliche Falle.** Die Position liest der Resolver an den Nachbartagen
+  ab (`blockpositionFuerTag`: gleiche Schicht am Vortag? am Folgetag?). Der `ShiftSpanStore` warf
+  beendete Spannen aber nach 24 h weg UND `replaceAll` war ein Vollersatz aus dem frischen
+  Kalenderstand — und der Kalender-Abruf beginnt bei `timeMin = now`, kennt beendete Dienste also
+  gar nicht mehr. Folge ohne Fix: am Montag 07:00 (Fenster des Sonntags-Slots) wäre die Samstags-
+  Spanne (Ende So 06:45) längst weg, Sonntag sähe aus wie ein EINZELNER — das 14:00-Fenster
+  `{ERSTER, MITTLERER}` fiele weg, ein „nur letzter Tag"-Fenster ebenso. Deshalb zwei Änderungen
+  am Store: Rückschau DREI Tage (die Fenster eines Tages reichen bis in den Folgetag, dort muss
+  noch der VORTAG des Schicht-Tages sichtbar sein, also bis zu zwei Tage zurück) und `mische()`:
+  laufende/künftige Spannen kommen nur aus dem frischen Stand (ein gestrichener Dienst darf kein
+  Rest bleiben), BEENDETE Spannen des Altbestands bleiben bis zur Rückschau-Grenze. Für Dimmer
+  und DND ist das folgenlos (eine beendete Spanne spannt kein Fenster mehr auf), ein nicht
+  dekodierbarer Altbestand degradiert auf „nur frischer Stand" statt zum Fehler. Test:
+  `DimBlockpositionTest`, `ShiftSpanStoreTest` (mische).
+
+  **Bewusst offen:** die Blockposition kennt nur den Schichtnamen-Nachbarn, nicht „Dienst
+  überhaupt". Fr-N, Sa-F, So-N sind zwei einzelne Nachtdienste, kein Block. Und die Oberfläche ist
+  weiterhin der Anker-Editor plus Chips — der Nutzer hat die Einrichtung als „mehrdeutig,
+  unübersichtlich" beschrieben; eine Vorlage, die in Schlafsprache fragt („Schlaf nach dem Dienst
+  bis", „nach der letzten Nacht bis") und daraus die Regel baut, steht als nächster Schritt im
+  Memory `project_offene_punkte`, nicht hier.
+
+- **Die Dienst-Rückkehr bewertet den Zustand neu** (1.42.0, Befund 18.09.2026 am Fairphone). Um
+  18:50 stand in der Benachrichtigung „Dimmt nicht — Bedienungshilfen-Dienst ist aus", während
+  `dumpsys accessibility` den Dienst als gebunden führte und SurfaceFlinger `CFAlarmDimLayer`
+  zeigte. Hergang: der Prozess war während des laufenden 16:00-Fensters beendet worden
+  (`Dimm-Dienst kehrt nach UNERWARTETEM Ende zurueck`); `applyCurrentState()` lief zuerst OHNE
+  gebundenen Dienst und schrieb den Hinweis, dann verband sich der Dienst und renderte — aber
+  niemand rief `applyCurrentState()` noch einmal, und der nächste Tick lag an der Fenstergrenze
+  19:30. Bis dahin: Overlay dunkel, Benachrichtigung „dimmt nicht". Das ist „angezeigt, wirkt
+  nicht" in der Umkehrung. Fix: `onServiceConnected` schickt den gewöhnlichen Tick-Broadcast
+  (`DimScheduleUseCase.ACTION_TICK` an `DimScheduleReceiver`) — derselbe Pfad wie der rollende
+  Tick, mit Neuplanung; bewusst KEINE Injektion des Schedulers in den Dienst, der bleibt ein
+  reiner Renderer. Idempotent: der Tick plant den nächsten Übergang neu, es entsteht kein zweiter
+  Zyklus (ein Request-Code, `FLAG_UPDATE_CURRENT`).
 
 - **Ein Kalendertag kann ZWEI Schichten haben** (Prüfrunde 8, v1.30.0). `buildRuleSpans` und das
   damalige `buildDefaultNightSpans` bauten sich beide eine `HashMap<LocalDate, AlarmSlot>` mit

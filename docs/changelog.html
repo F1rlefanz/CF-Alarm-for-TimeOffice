@@ -51,7 +51,24 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.41.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.42.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Der Schicht-Dimmer weiß jetzt, ob ein Dienst der erste, ein mittlerer oder der letzte einer Folge ist – der Schlaf nach dem letzten Nachtdienst darf kürzer sein.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Dimm-Fenster nach Position in der Dienstfolge:</strong> Jedes Zeitfenster einer Dimm-Regel lässt sich auf „Erster Tag", „Mittlere Tage", „Letzter Tag" oder „Einzelner Tag" einer Folge gleicher Dienste beschränken. Beispiel drei Nachtdienste: zwischen den Nächten bis 14:00 schlafen, nach der letzten Nacht nur bis 12:00, um sich wieder auf den Tag umzustellen. Bestehende Fenster gelten unverändert an allen Tagen.</li>
+                <li><strong>Vorlage „Nachtdienst-Rhythmus" legt das gleich mit an:</strong> Vormittagsschlaf bis 14:00 an den ersten und mittleren Tagen, bis 12:00 nach der letzten Nacht (und nach einem einzelnen Nachtdienst), dazu das Nickerchen vor dem Dienst.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Falscher Hinweis „Dimmt nicht – Bedienungshilfen-Dienst ist aus":</strong> Kehrte der Dimm-Dienst nach einem Neustart der App mitten in einem Dimm-Fenster zurück, blieb die Benachrichtigung bis zur nächsten Fenstergrenze bei dieser Meldung stehen, obwohl der Bildschirm längst wieder gedimmt war. Jetzt wird der Zustand beim Verbinden des Dienstes sofort neu bewertet.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.41.1</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Der Dimmer-Hauptschalter hinterlässt jetzt eine Spur im Protokoll.</em></p>
 

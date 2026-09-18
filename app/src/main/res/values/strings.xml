@@ -54,7 +54,7 @@
     <string name="dimmer_quickstart_night_hint">Für alle Tage: 22:00 bis „Weckzeit, spätestens“ 07:00.</string>
     <string name="dimmer_quickstart_night_rulename">Nacht-Dimmen</string>
     <string name="dimmer_quickstart_nightshift">Nachtdienst-Rhythmus anlegen</string>
-    <string name="dimmer_quickstart_nightshift_hint">Zwei Fenster am selben Tag: Vormittagsschlaf ab Schichtende bis 14:00 und Nickerchen von 15:00 bis zur Weckzeit. Die Nacht selbst bleibt hell – da bist du im Dienst.</string>
+    <string name="dimmer_quickstart_nightshift_hint">Drei Fenster am selben Tag: Vormittagsschlaf ab Schichtende bis 14:00 (nach der letzten Nacht einer Folge nur bis 12:00, zum Umstellen) und Nickerchen von 15:00 bis zur Weckzeit. Die Nacht selbst bleibt hell – da bist du im Dienst.</string>
     <string name="dimmer_quickstart_nightshift_rulename">Nachtdienst-Rhythmus: %1$s</string>
     <string name="dimmer_quickstart_exclude">Schicht ausnehmen</string>
     <string name="dimmer_quickstart_exclude_hint">Regel ohne Fenster: an Tagen dieser Schicht wird nicht gedimmt.</string>
@@ -93,6 +93,12 @@
     <string name="dimmer_end_offset">Minuten nach Wecker</string>
     <string name="dimmer_shiftend_offset">Minuten nach Schichtende</string>
     <string name="dimmer_window_remove">Fenster entfernen</string>
+    <string name="dimmer_window_blockposition">Gilt an diesen Tagen einer Dienstfolge</string>
+    <string name="dimmer_window_blockposition_hint">Mehrere gleiche Dienste hintereinander bilden eine Folge. So kann z. B. der Schlaf nach dem letzten Nachtdienst kürzer sein als zwischen zwei Nächten.</string>
+    <string name="dimmer_blockposition_erster">Erster Tag</string>
+    <string name="dimmer_blockposition_mittlerer">Mittlere Tage</string>
+    <string name="dimmer_blockposition_letzter">Letzter Tag</string>
+    <string name="dimmer_blockposition_einzelner">Einzelner Tag</string>
     <string name="dimmer_rule_intensity">Intensität dieser Regel</string>
     <string name="dimmer_rule_intensity_hint">Gilt für die Fenster dieser Regel. Jede Regel hat eigene Werte.</string>
     <string name="dimmer_rule_save">Speichern</string>

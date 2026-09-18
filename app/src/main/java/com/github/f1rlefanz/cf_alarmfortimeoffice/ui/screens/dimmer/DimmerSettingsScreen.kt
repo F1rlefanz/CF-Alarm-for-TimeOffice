@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -237,6 +238,102 @@ private fun SchichtAuswahlDialog(
     )
 }
 
+/**
+ * Die Schlafsprache-Abfrage der Nachtdienst-Vorlage: drei Saetze, drei Uhrzeiten, ein Knopf.
+ *
+ * WARUM EIN EIGENER DIALOG statt "Vorlage anlegen, dann im Editor aendern": Der Editor spricht
+ * in Ankern und Minuten-Offsets, und genau daran ist der Eigentuemer gescheitert (18.09.2026,
+ * "mehrdeutig, missverstaendlich, unuebersichtlich"). Hier steht, was er sagen will - "nach dem
+ * Dienst schlafe ich bis" -, die Uebersetzung in Schichtende-Anker und Blockpositionen macht das
+ * ViewModel. Was entsteht, ist trotzdem eine gewoehnliche Regel in der Liste: der Dialog ist
+ * eine Bequemlichkeit AUF der Faehigkeit, keine zweite Quelle (Dimmer-Skill).
+ *
+ * Der Uhrzeit-Waehler ist derselbe wie im Editor ([pickTime]) - ein zweiter Dialog ueber dem
+ * ersten, deshalb kein Compose-TimePicker inline (der braeuchte im AlertDialog eine feste Hoehe).
+ */
+@Composable
+private fun NachtdienstRhythmusDialog(
+    schichtName: String,
+    onAnlegen: (DimmerRulesViewModel.NachtdienstRhythmus) -> Unit,
+    onAbbrechen: () -> Unit
+) {
+    val context = LocalContext.current
+    var rhythmus by remember { mutableStateOf(DimmerRulesViewModel.NachtdienstRhythmus()) }
+
+    AlertDialog(
+        onDismissRequest = onAbbrechen,
+        title = { Text(stringResource(R.string.dimmer_nd_dialog_title)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.dimmer_nd_dialog_intro, schichtName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SchlafzeitZeile(
+                    frage = stringResource(R.string.dimmer_nd_nach_dienst),
+                    minuten = rhythmus.schlafNachDienstBis,
+                    onClick = {
+                        pickTime(context, rhythmus.schlafNachDienstBis) {
+                            rhythmus = rhythmus.copy(schlafNachDienstBis = it)
+                        }
+                    }
+                )
+                SchlafzeitZeile(
+                    frage = stringResource(R.string.dimmer_nd_nach_letzter),
+                    hinweis = stringResource(R.string.dimmer_nd_nach_letzter_hint),
+                    minuten = rhythmus.nachLetzterNachtBis,
+                    onClick = {
+                        pickTime(context, rhythmus.nachLetzterNachtBis) {
+                            rhythmus = rhythmus.copy(nachLetzterNachtBis = it)
+                        }
+                    }
+                )
+                SchlafzeitZeile(
+                    frage = stringResource(R.string.dimmer_nd_vor_dienst),
+                    hinweis = stringResource(R.string.dimmer_nd_vor_dienst_hint),
+                    minuten = rhythmus.schlafVorDienstAb,
+                    onClick = {
+                        pickTime(context, rhythmus.schlafVorDienstAb) {
+                            rhythmus = rhythmus.copy(schlafVorDienstAb = it)
+                        }
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAnlegen(rhythmus) }) {
+                Text(stringResource(R.string.dimmer_nd_anlegen))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onAbbrechen) {
+                Text(stringResource(R.string.dimmer_quickstart_cancel))
+            }
+        }
+    )
+}
+
+/** Ein Satz, darunter die Uhrzeit als Knopf - der Satz ist die Frage, der Knopf die Antwort. */
+@Composable
+private fun SchlafzeitZeile(frage: String, minuten: Int, onClick: () -> Unit, hinweis: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(text = frage, style = MaterialTheme.typography.bodyMedium)
+        // fillMaxWidth: 48dp-Touchziel und keine Chip-Reihe, die mitten im Wort umbricht.
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(fmtClock(minuten)) }
+        if (hinweis != null) {
+            Text(
+                text = hinweis,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DimmerSettingsScreen(
@@ -265,6 +362,9 @@ fun DimmerSettingsScreen(
     var vorlageBrauchtSchicht by remember {
         mutableStateOf<DimmerRulesViewModel.SchnellstartVorlage?>(null)
     }
+    // Die Nachtdienst-Vorlage hat ihre Schicht und wartet auf die drei Schlafzeiten
+    // (Schichtname, Regelname); null = kein Dialog offen.
+    var nachtdienstWartet by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     // Eine angelegte Regel MUSS der Nutzer zu Gesicht bekommen - sonst waere der Schnellstart
     // wieder das unsichtbare Verhalten, das der Umbau gerade abgeschafft hat. Deshalb geht der
@@ -323,9 +423,28 @@ fun DimmerSettingsScreen(
             },
             onWaehlen = { schichtName, regelName ->
                 vorlageBrauchtSchicht = null
-                viewModel.legeVorlageAn(vorlage, regelName, schichtName)
+                if (vorlage == DimmerRulesViewModel.SchnellstartVorlage.NACHTDIENST_RHYTHMUS) {
+                    // Erst die Schlafzeiten erfragen - die Regel entsteht im zweiten Dialog.
+                    nachtdienstWartet = schichtName to regelName
+                } else {
+                    viewModel.legeVorlageAn(vorlage, regelName, schichtName)
+                }
             },
             onAbbrechen = { vorlageBrauchtSchicht = null }
+        )
+    }
+
+    nachtdienstWartet?.let { (schichtName, regelName) ->
+        NachtdienstRhythmusDialog(
+            schichtName = schichtName,
+            onAnlegen = { rhythmus ->
+                nachtdienstWartet = null
+                viewModel.legeVorlageAn(
+                    DimmerRulesViewModel.SchnellstartVorlage.NACHTDIENST_RHYTHMUS,
+                    regelName, schichtName, rhythmus
+                )
+            },
+            onAbbrechen = { nachtdienstWartet = null }
         )
     }
 

@@ -191,6 +191,29 @@ class DimmerRulesViewModel @Inject constructor(
      * keine Regel dazu. Seit dem Ein-Modell gibt es nur noch Regeln; die Vorlagen ersetzen den
      * Komfort, den der Nacht-Standard bot, ohne seine Unsichtbarkeit zurueckzuholen.
      */
+    /**
+     * Die drei Zeiten des Nachtdienst-Rhythmus - in SCHLAFSPRACHE, so wie der Dialog sie abfragt.
+     *
+     * WARUM ES DAS GIBT (18.09.2026): Der Eigentuemer konnte den Nachtdienst-Dimmer nicht
+     * einrichten - "mehrdeutig, missverstaendlich, unuebersichtlich". Der Regel-Editor spricht in
+     * Ankern ("Schichtende", "Zur Weckzeit") und Minuten-Offsets, und dass der Vormittagsschlaf
+     * nach der Nacht Mo->Di zur Regel von MONTAG gehoert, steht nirgends. Was er sagen wollte,
+     * war: "nach dem Dienst schlafe ich bis 14, nach der letzten Nacht bis 12, vor dem Dienst ab
+     * 16". Genau diese drei Saetze sind die Felder hier; die Uebersetzung in Anker und
+     * Blockpositionen macht [baueVorlagenRegel]. Das Ergebnis ist eine gewoehnliche, sichtbare
+     * Regel - die Bequemlichkeit sitzt AUF der Faehigkeit, nicht daneben (Dimmer-Skill).
+     *
+     * Alle Werte in Minuten seit Mitternacht.
+     */
+    data class NachtdienstRhythmus(
+        /** Schlaf nach dem Dienst bis - an ersten und mittleren Tagen einer Folge. */
+        val schlafNachDienstBis: Int = 14 * 60,
+        /** Nach der LETZTEN Nacht (und nach einem einzelnen Nachtdienst) bis - die Umstellung. */
+        val nachLetzterNachtBis: Int = 12 * 60,
+        /** Schlaf vor dem Dienst ab - bis zur Weckzeit. */
+        val schlafVorDienstAb: Int = 16 * 60
+    )
+
     enum class SchnellstartVorlage {
         /** Die komplette bisherige Nacht-Standard-Semantik als EIN Fenster fuer jede Kalendernacht. */
         NACHT_DIMMEN,
@@ -268,9 +291,10 @@ class DimmerRulesViewModel @Inject constructor(
     fun legeVorlageAn(
         vorlage: SchnellstartVorlage,
         regelName: String,
-        schichtName: String? = null
+        schichtName: String? = null,
+        rhythmus: NachtdienstRhythmus = NachtdienstRhythmus()
     ) = viewModelScope.launch {
-        val regel = baueVorlagenRegel(vorlage, regelName, schichtName)
+        val regel = baueVorlagenRegel(vorlage, regelName, schichtName, rhythmus)
         if (regel == null) {
             Logger.w(
                 LogTags.DIMMER,
@@ -421,7 +445,8 @@ class DimmerRulesViewModel @Inject constructor(
         fun baueVorlagenRegel(
             vorlage: SchnellstartVorlage,
             regelName: String,
-            schichtName: String?
+            schichtName: String?,
+            rhythmus: NachtdienstRhythmus = NachtdienstRhythmus()
         ): DimRule? {
             val schicht = schichtName?.takeIf { it.isNotBlank() }
             if (vorlage.brauchtSchicht && schicht == null) return null
@@ -445,10 +470,10 @@ class DimmerRulesViewModel @Inject constructor(
                     warmth = DimOverlayPrefs.DEFAULT_WARMTH
                 )
 
-                // DREI Fenster an EINEM Kalendertag: nach dem Dienst der Vormittagsschlaf (ab
-                // Schichtende bis 14:00 - nach der LETZTEN Nacht des Blocks nur bis 12:00, weil
-                // dort die Umstellung zurueck auf den Tag ansteht), am Nachmittag das Nickerchen
-                // vor dem naechsten Dienst (15:00 bis zur Weckzeit). Weil die Regel spezifisch
+                // DREI Fenster an EINEM Kalendertag, Zeiten aus [rhythmus]: nach dem Dienst der
+                // Vormittagsschlaf (ab Schichtende bis 14:00 - nach der LETZTEN Nacht des Blocks
+                // nur bis 12:00, weil dort die Umstellung zurueck auf den Tag ansteht), am
+                // Nachmittag der Vorschlaf (16:00 bis zur Weckzeit). Weil die Regel spezifisch
                 // ist, verdraengt sie an diesen Tagen die UNIVERSAL-Nachtregel vollstaendig - die
                 // Nacht selbst bleibt also hell, und das ist der Sinn der Sache: da ist der
                 // Nutzer im Dienst. Ein alleinstehender Nachtdienst zaehlt wie ein letzter.
@@ -460,19 +485,19 @@ class DimmerRulesViewModel @Inject constructor(
                             startAnchor = DimAnchor.SHIFT_END,
                             startOffsetMinutes = 0,
                             endAnchor = DimAnchor.CLOCK,
-                            endClockMinutes = 14 * 60,
+                            endClockMinutes = rhythmus.schlafNachDienstBis,
                             blockPositionen = setOf(Blockposition.ERSTER, Blockposition.MITTLERER)
                         ),
                         DimWindow(
                             startAnchor = DimAnchor.SHIFT_END,
                             startOffsetMinutes = 0,
                             endAnchor = DimAnchor.CLOCK,
-                            endClockMinutes = 12 * 60,
+                            endClockMinutes = rhythmus.nachLetzterNachtBis,
                             blockPositionen = setOf(Blockposition.LETZTER, Blockposition.EINZELNER)
                         ),
                         DimWindow(
                             startAnchor = DimAnchor.CLOCK,
-                            startClockMinutes = 15 * 60,
+                            startClockMinutes = rhythmus.schlafVorDienstAb,
                             endAnchor = DimAnchor.ALARM,
                             endOffsetMinutes = 0
                         )

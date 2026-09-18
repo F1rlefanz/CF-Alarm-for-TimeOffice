@@ -54,7 +54,15 @@
     <string name="dimmer_quickstart_night_hint">Für alle Tage: 22:00 bis „Weckzeit, spätestens“ 07:00.</string>
     <string name="dimmer_quickstart_night_rulename">Nacht-Dimmen</string>
     <string name="dimmer_quickstart_nightshift">Nachtdienst-Rhythmus anlegen</string>
-    <string name="dimmer_quickstart_nightshift_hint">Drei Fenster am selben Tag: Vormittagsschlaf ab Schichtende bis 14:00 (nach der letzten Nacht einer Folge nur bis 12:00, zum Umstellen) und Nickerchen von 15:00 bis zur Weckzeit. Die Nacht selbst bleibt hell – da bist du im Dienst.</string>
+    <string name="dimmer_quickstart_nightshift_hint">Fragt dich in drei Sätzen, wann du rund um den Nachtdienst schläfst, und baut daraus die Regel. Die Nacht selbst bleibt hell – da bist du im Dienst.</string>
+    <string name="dimmer_nd_dialog_title">Wann schläfst du?</string>
+    <string name="dimmer_nd_dialog_intro">Für „%1$s“. Gedimmt und ruhig ist es in diesen Zeiten – die Regel steht danach in der Liste und lässt sich dort ändern.</string>
+    <string name="dimmer_nd_nach_dienst">Nach dem Dienst schlafe ich bis</string>
+    <string name="dimmer_nd_nach_letzter">Nach der letzten Nacht einer Folge nur bis</string>
+    <string name="dimmer_nd_nach_letzter_hint">Zum Umstellen zurück auf den Tag. Gilt auch nach einem einzelnen Nachtdienst.</string>
+    <string name="dimmer_nd_vor_dienst">Vor dem Dienst schlafe ich ab</string>
+    <string name="dimmer_nd_vor_dienst_hint">Bis zur Weckzeit – an jedem Tag der Folge.</string>
+    <string name="dimmer_nd_anlegen">Regel anlegen</string>
     <string name="dimmer_quickstart_nightshift_rulename">Nachtdienst-Rhythmus: %1$s</string>
     <string name="dimmer_quickstart_exclude">Schicht ausnehmen</string>
     <string name="dimmer_quickstart_exclude_hint">Regel ohne Fenster: an Tagen dieser Schicht wird nicht gedimmt.</string>

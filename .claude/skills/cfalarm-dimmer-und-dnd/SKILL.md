@@ -29,6 +29,11 @@ das baut man dieselbe Falle in neuer Form nach.
   `CLOCK 22:00 → ALARM_SONST_CLOCK 07:00`, Wellness = `ALARM −X → ALARM +0`). **Wer eine zweite,
   „eingebaute" Quelle daneben stellt, baut die Kopplung wieder auf, an der das alte Modell
   gescheitert ist** (Hergang in `reference/dimmer.md`).
+- **Die Nachtdienst-Vorlage fragt in SCHLAFSPRACHE** (`NachtdienstRhythmusDialog`, seit 1.43.0):
+  drei Saetze, drei Uhrzeiten (`NachtdienstRhythmus`), die Uebersetzung in Schichtende-Anker und
+  Blockpositionen macht `baueVorlagenRegel`. Der Anker-Editor bleibt die Detailansicht — wer dort
+  neue Nutzertexte anbringt, ersetzt damit NICHT die Schlafsprache; der Eigentuemer ist an der
+  Anker-Sprache gescheitert (18.09.2026), nicht an fehlenden Erklaerungen.
 - **Eine Bequemlichkeit gehört AUF die Fähigkeit, nicht NEBEN sie.** Was der Nutzer schnell
   einrichten können soll, wird als Vorlage ausgedrückt, die eine gewöhnliche, danach sichtbare und
   änderbare Regel anlegt (`DimmerRulesViewModel.SchnellstartVorlage`) — nicht als eigene Quelle mit

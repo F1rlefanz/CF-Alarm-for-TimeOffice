@@ -27,6 +27,27 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
+## 🆕 Version 1.41.1 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Der Dimmer-Hauptschalter hinterlässt jetzt eine Spur im Protokoll._
+
+### 🔧 Unter der Haube
+
+- **Dimmer-Hauptschalter im Protokoll:** Wer den Dimmer im Dimmer-Tab aus- oder einschaltet, findet das jetzt als Zeile im Protokoll. Bisher war das der einzige Weg, den Dimmer abzuschalten, der keine Spur hinterließ — und die Frage „warum war heute Nacht kein Dimmen und kein Nicht-stören?" ließ sich nur mühsam rekonstruieren. Zur Erinnerung: Der Hauptschalter gilt dauerhaft, für alle folgenden Nächte. Wer nur eine Nacht aussetzen will, nimmt „Pause" in der Dimmer-Benachrichtigung.
+
+## Version 1.41.0
+
+**Stand:** September 2026
+
+_An Rufbereitschaftstagen schaut die App jede Stunde in den Kalender._
+
+### ✨ Neu
+
+- **Stündliche Kalender-Abfrage an Rufbereitschaftstagen:** Wird während einer Rufbereitschaft kurzfristig ein Dienst eingetragen, prüft die App jetzt jede volle Stunde den Kalender und stellt den Wecker rechtzeitig. Bisher lag zwischen zwei Abfragen bis zu sechs Stunden — ein am Vormittag nachgetragener Spätdienst blieb so stumm. Die Statuskarte zeigt die nächste Abfrage an.
+- **Rufbereitschaft am Schichttyp:** Ob eine Schicht eine Rufbereitschaft ist, wird jetzt direkt im Schicht-Editor eingestellt und in der Schichtliste mit einem Symbol angezeigt. Die bisherige Auswahl im „Nicht stören"-Bereich entfällt; eine vorhandene Auswahl wird einmalig automatisch übernommen.
+
 ## Version 1.40.10
 
 **Stand:** September 2026

@@ -1346,3 +1346,161 @@ Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 (`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
 (zehnter Nachtrag, der ihn meldet — gezaehlt, nicht „in Folge" uebernommen: Runden 16, 18, 19, 20,
 21, 22, 23, 24, 25, 26).
+
+### 18.09.2026, Runde 27 (Issue #38, die 12 lint.xml-Eintraege ohne Wirkung)
+
+**Ergebnis vorweg: 12 Rohbefunde, 0 bestaetigt, 12 Fehlalarme (100 %), 0 geschnitten.** Keiner der
+zwoelf Eintraege ist eine Altlast; elf davon aendern das Ergebnis nachweislich, sobald ihr Check
+etwas zu melden hat. Die beiden Fragen des Issues sind damit beantwortet — **Antwort auf beide:
+alle zwoelf behalten.** Dieser PR bringt deshalb **keinen Schnitt**, nur diesen Nachtrag.
+
+**Daneben zwei Funde, die KEINE Aufraeumfunde sind, sondern Fehlkonfigurationen** — sie stehen
+unten und sind als eigenes Issue mit „braucht Ruecksprache" abgelegt, nicht angefasst.
+
+**Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `ad34e57` (= `origin/main` beim
+Start):** Korpus `app/lint.xml` = **20 `<issue>`-Bloecke + 7 `<ignore>` = 27 Eintraege** (echter
+XML-Parser, `ElementTree`) — genau der Stand, den Runde 26 hinterlassen hat (29 − 2 = 27, die
+Rechnung geht auf). **Rohbefund** = jeder der 12 Kandidaten aus #38 (6 Abwertungen auf
+`informational`, 6 Verschaerfungen auf `error`); **bestaetigt** = Eintrag, der auch dann nichts
+bewirkt, wenn man ihm seine Arbeit gibt; **Fehlalarm** = Eintrag, der bleiben muss.
+
+**Basislauf, sauberer Baum: 13 Befunde, kein `UnknownIssueId`, keine der 12 IDs darunter** — die
+Praemisse des Issues ist damit unabhaengig bestaetigt. Zweimal in derselben Sitzung gefahren,
+Mengendifferenz in beide Richtungen leer. **Schreib die 13 nicht als Sollwert fort:** 7 der 13 sind
+`GradleDependency` (3) und `NewerVersionAvailable` (4) und haengen an fremden Veroeffentlichungen,
+genau wie der Skill es fuer die „akzeptierten Dauermeldungen" sagt.
+
+#### Das Verfahren: Runde 26, Lehre 1, konsequent zu Ende gefuehrt
+
+Runde 26 sagt, die starke Richtung sei nicht „was passiert ohne den Eintrag", sondern **„was
+passiert, wenn ich dem Eintrag seine Arbeit gebe?"** Fuer #38 heisst das: Ausloesercode in den Baum
+legen, den jeder der zwoelf Checks melden muss, und dann A/B fahren. Ausloeser (alle Wegwerf, nach
+der Messung entfernt, `git status` danach leer): eine ungenutzte `<string>`-Ressource, ein
+XML-Layout mit `android:text` und einem `ImageView` ohne `contentDescription`,
+`cleartextTrafficPermitted="true"` in der Network-Security-Config, eine Kotlin-Klasse mit
+statischem `Context`, `TextView.setText("Wert: " + 42)`, `openFileOutput(..., MODE_WORLD_*)`,
+`MutableLiveData.value = null`, ein `Fragment` mit `observe(this, …)` in `onViewCreated`, dazu eine
+Java-Klasse mit `new Integer(42)`, sechs `HashMap<Integer,…>`-Formen und `new SparseArray<Integer>()`.
+
+| Lauf | Befunde |
+|---|---|
+| Basis, sauberer Baum | **13** |
+| Ausloeser + `app/lint.xml` unveraendert | **30** |
+| Ausloeser + `app/lint.xml` ohne die 12 | **30** |
+
+**Gleiche Anzahl, volle Wirkung** — die Mengendifferenz ist **15 raus / 15 rein**, jeder Befund mit
+gewechselter Severity. 15 statt 12, weil `SetTextI18n`, `UnusedResources`, `UseSparseArrays` und
+`UseValueOf` je zweimal ausloesen; und weil `FragmentLiveDataObserve` in **keiner** der beiden
+Richtungen steht (siehe unten).
+
+- **Alle 6 Abwertungen wirksam:** `Warning` → `Hint` (`UnusedResources`, `SetTextI18n`,
+  `HardcodedText`, `UseValueOf`, `UseSparseArrays`, `ContentDescription`).
+- **4 der 6 Verschaerfungen wirksam:** `Warning` → `Error` (`InsecureBaseConfiguration`,
+  `WorldReadableFiles`, `WorldWriteableFiles`, `StaticFieldLeak`).
+- Die restlichen zwei sind die Funde dieser Runde.
+
+#### Fund 1: `NullSafeMutableLiveData` ist als „Verschaerfung" eingetragen und SENKT ab
+
+Der Eintrag steht unter der Ueberschrift „AKTIVIERTE PRUEFUNGEN (STRENGER)" / „Crash-Risiken als
+Error". Gemessen ist seine Voreinstellung aber nicht `Warning`, sondern **`Fatal`** — der Check
+kommt nicht aus AOSP, sondern aus dem `lint.jar` von `androidx.lifecycle`. `severity="error"` ist
+dort also eine **Absenkung**, und die hat eine Folge, die im `lintDebug`-Bericht unsichtbar bleibt:
+
+```
+Ausloeser im Baum, Eintrag VORHANDEN :  ./gradlew lintVitalRelease  -> EXIT 0, BUILD SUCCESSFUL
+Ausloeser im Baum, Eintrag ENTFERNT  :  ./gradlew lintVitalRelease  -> EXIT 1, BUILD FAILED
+                                        "Cannot set non-nullable LiveData value to null"
+```
+
+Der Eintrag nimmt den Check also aus dem **Release-Gatter**. Gemessen ist die Folge (zwei
+Exit-Codes, sonst identischer Baum); die uebliche Erklaerung dafuer — `lintVital` prueft
+ausschliesslich FATAL-Befunde — habe ich **nicht** im Bytecode nachgesehen und reiche sie nicht als
+Beleg weiter. Praktisch kostet es heute nichts: im ganzen Baum kommt `LiveData` **null Mal** vor
+(`git grep -l LiveData -- '*.kt'` → 0). Es zu aendern ist trotzdem kein Aufraeumen, sondern eine
+Entscheidung ueber ein Release-Gatter — deshalb **nicht angefasst**, Issue angelegt.
+
+#### Fund 2: `FragmentLiveDataObserve` ist wirkungslos, auch MIT Arbeit
+
+Der einzige der zwoelf, der in der A/B-Differenz gar nicht auftaucht: mit und ohne Eintrag meldet
+er denselben Befund mit derselben Severity. Seine Voreinstellung ist bereits `Error`, der Eintrag
+setzt also den Wert, der ohnehin gilt. **Das ist trotzdem kein Schnitt-Kandidat** — nach Runde 26s
+eigener Unterscheidung ist er kein Rest, sondern ein Waechter: senkt `androidx.fragment` die
+Voreinstellung, haelt der Eintrag den Wert. Aufgeschrieben, damit die naechste Runde ihn nicht fuer
+einen Fund haelt.
+
+#### Neue Lehre 1: Ein ausbleibender Befund ist eine Aussage ueber den AUSLOESER, nicht ueber den Eintrag
+
+**Drei der zwoelf feuerten im ersten Anlauf nicht.** Haette ich dort aufgehoert, staende hier „drei
+Eintraege sind strukturell tot" — und alle drei waeren falsch gewesen:
+
+- `FragmentLiveDataObserve` braucht den `observe(this, …)`-Aufruf **in `onViewCreated`**; irgendwo
+  sonst in der Fragment-Klasse schweigt der Detektor.
+- `NullSafeMutableLiveData` braucht die **explizite** Typannotation
+  (`val x: MutableLiveData<String> = MutableLiveData()`); bei `val x = MutableLiveData<String>()`
+  meldet er nichts. (Beide Korrekturen liefen in EINEM Lauf; sie betreffen verschiedene Klassen und
+  verschiedene Checks, die Zuordnung ist also baulich, nicht durch getrennte Laeufe belegt.)
+- `UseSparseArrays` braucht `new SparseArray<Integer>()` mit **Typargument an der Aufrufstelle**.
+
+Das ist die Runde-16-Regel eine Ebene hoeher: dort war ein leeres Strukturergebnis eine Aussage
+ueber den Parser, hier ist ein ausbleibender Befund eine Aussage ueber den Ausloeser. **Der Ausweg
+kostet zehn Minuten: im Bytecode des Detektors nachsehen, was er wirklich prueft** —
+`javap -p -c` auf `lint-checks-<version>.jar` aus `~/.gradle/caches`. Hier: AGP 9.4.0 verwendet
+`lint-checks-32.4.0`.
+
+#### Neue Lehre 2: Der ERKLAERUNGSTEXT eines Lint-Issues ist keine Beschreibung seines Codes
+
+`UseSparseArrays` heisst „HashMap can be replaced with SparseArray" und erklaert seitenlang, wann
+man statt `HashMap` lieber `SparseArray` nimmt. Der Kommentar in `app/lint.xml` gibt das getreu
+wieder („HashMap ist oft lesbarer, Performance-Unterschied minimal"). **In `lint-checks-32.4.0`
+gibt es diesen Zweig nicht mehr.** Gemessen:
+
+```
+6 Lehrbuchformen in Java  (new HashMap<Integer,String>() als Rueckgabe und als lokale Variable,
+  <Integer,Integer>, <Integer,Boolean>, <Long,String>, Diamantform)   ->  0 Befunde
+2 Formen in Kotlin (HashMap<Int,String>, HashMap<java.lang.Integer,String>)  ->  0 Befunde
+2 Formen in Java   (new SparseArray<Integer>(), new SparseArray<Boolean>())  ->  2 Befunde
+```
+
+Im Bytecode passt das genau: `JavaPerformanceDetector$PerformanceVisitor.checkSparseArray` liest
+`getTypeArguments()` der Aufrufstelle und vergleicht gegen `java.lang.Integer`/`int` bzw.
+`java.lang.Boolean`/`boolean`; ein `java.util.HashMap`-Literal kommt im ganzen Visitor **nicht**
+vor. Das erklaert auch die Kotlin-Null: `android.util.SparseArray()` mit dem Typ nur in der
+Rueckgabesignatur hat an der Aufrufstelle **keine** Typargumente. (Die Kotlin-Form **mit**
+Typargument habe ich nicht gemessen — wer sie braucht, misst sie.)
+
+**Die Folge fuer den Eintrag ist trotzdem „behalten":** er wirkt, er wirkt nur fuer etwas anderes,
+als sein Kommentar sagt. Ich habe den Kommentar **bewusst nicht umgeschrieben** — ob der Eintrag
+ueberhaupt bleiben soll, ist die Frage, die dem Eigentuemer gehoert, und eine neu formulierte
+Begruendung nimmt sie vorweg. Genau daran ist PR #37 gescheitert (Defekt 2: eine Begruendung
+ersetzt, die dann ins Leere zeigte). Die Messung steht im Issue.
+
+#### Neue Lehre 3 (ergaenzt Runde 26, Lehre 1): bei `severity`-Eintraegen ist Zahlengleichheit der REGELFALL
+
+Runde 26 hat gezeigt, dass vier `severity`-Attribute „9 Befunde von Hint auf Warning kippen — bei
+gleicher Anzahl". Diese Runde verallgemeinert das: bei **elf von zwoelf** Eintraegen ist die
+Befundzahl vor und nach dem Eingriff identisch (30 = 30), und die gesamte Wirkung steckt in der
+Severity. Ein Blickwinkel ueber `severity`-Attribute, der Zahlen vergleicht, misst **strukturell
+nichts**. Vergleichsschluessel muss (id, severity, Datei, Zeile, Meldung) sein, Differenz in beide
+Richtungen — und die Gegenrichtung ist hier nicht Zierde, sondern der ganze Befund.
+
+#### Was daraus fuer die „Verworfen"-Tabelle des Skills folgt
+
+Blickwinkel **#38** gehoert mit **12 / 0 / 12 / 0** hinein: 100 % Fehlalarm, und die Erkennung
+verlangt pro Eintrag einen Ausloeser im Baum plus einen mutierenden Lint-Lauf (diese Runde:
+2 Basislaeufe + 5 Ausloeserlaeufe + 2 `lintVitalRelease`, je 1–3 min). **Kein Gatter, auch keins
+zum Vormerken** — ein Dauergatter muesste Ausloesercode erzeugen, kompilieren und zweimal linten;
+im Schleusen-Hook ueber einem geteilten Arbeitsbaum ist das ausgeschlossen, dieselbe Grenze wie bei
+„totes `@Suppress`" (Runde 9) und dem Rest von #31 (Runde 26). **Ich habe dafuer kein neues Issue
+angelegt.**
+
+**Belege:** `assembleDebug` + `testDebugUnitTest` + `lintDebug` gruen (**177 XML-Berichte, 1374
+Tests, 0 Failures, 0 Errors**), `lintVitalRelease` gruen auf dem unveraenderten Baum,
+`pruefe_reste.py` → „Keine Reste gefunden", Basislauf zweimal als Menge identisch, Arbeitsbaum nach
+dem Entfernen aller Ausloeser wieder leer (`git status --short` ohne Ausgabe). Alle Messskripte
+waren Wegwerfcode im Scratchpad.
+
+**Zum Stand der Werkzeuge, nachgemessen am 18.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
+(elfter Nachtrag, der ihn meldet — selbst ausgezaehlt ueber die `###`-Abschnitte dieser Datei, nicht
+uebernommen: Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27).

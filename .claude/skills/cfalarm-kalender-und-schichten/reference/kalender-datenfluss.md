@@ -17,6 +17,7 @@
 - `loadEventsForSelectedCalendars()` braucht einen Generation-Counter, kein einfaches
 - Neue Properties in `CalendarViewModel` (und jedem anderen ViewModel mit `init{}`-Block)
 - Kein echtes Push möglich, bewusst nicht versucht
+- Rufbereitschaft: stündliche Abfrage statt Warten auf die 6h-Wartung (16.09.2026)
 - Die Notification-Entscheidung lebt INNERHALB von `AlarmUseCase.syncAlarms()`, nicht bei dessen
 - Der allererste Sync (z. B. nach Neuinstallation) flutet nicht
 - Den letzten Kalender abwählen IST eine Löschgrundlage — ein leeres Ladeergebnis nicht
@@ -154,6 +155,30 @@
   weiterhin auf die nächste 6h-Wartung angewiesen. `reschedule()` läuft an denselben zwei Stellen wie
   der bestehende Dimmer-Reschedule (`AlarmMaintenanceService`, `BootReceiver`), jeweils best-effort
   im eigenen try/catch.
+- **Rufbereitschaft: stündliche Abfrage statt Warten auf die 6h-Wartung (16.09.2026).** Der Fall,
+  der die Lücke oben real gekostet hat: Rufbereitschaft (AD1, stiller Wecker 05:00 korrekt
+  gefeuert). 08:10 lief die 6h-Wartung und übersprang die Kalender-Abfrage zu Recht (Daten 6 h
+  alt, Puffer > 7 Tage, nächster Wecker 59 h entfernt). 08:51 rief der Chef an und trug in
+  TimeOffice einen Spätdienst ein (Weckzeit 12:30). Nächster Wartungslauf: 14:10. Der
+  3h-Vorab-Worker kannte den Wecker nicht, weil es ihn noch nicht gab. Um 13:26 öffnete der
+  Nutzer die App: „Skipping alarm in the past: Spätschicht". Kein Fehler in der Weckerkette —
+  es fehlte eine Abfrage im Fenster 08:51–12:30, und zwar an dem Tag, an dem die App WUSSTE, dass
+  ein Abruf wahrscheinlich ist. Das Lade-Gate zu ändern hätte nichts genützt (08:10 lag vor dem
+  Eintrag, 14:10 nach der Weckzeit); es fehlten die Läufe dazwischen. Deshalb
+  `service/RufbereitschaftAbfrage`: solange eine Spanne mit `ShiftDefinition.isOnCall` läuft, jede
+  volle Stunde ab Spannenbeginn ein exakter Alarm, der den regulären Wartungslauf mit
+  `forceSync = true` startet (eine Wartungsimplementierung, eigene Kette — Regeln im
+  Wecker-Skill). Am 16.09. hätten 09:00, 10:00, 11:00 und 12:00 den Dienst gesehen. Rest-Lücke
+  bewusst akzeptiert: ein Abruf weniger als eine Stunde vor der Weckzeit; enger als stündlich
+  wäre an einem ganzen Rufbereitschaftstag ein Akku-Preis für wenig Gewinn.
+  **Warum ein Flag am Schichttyp und keine Liste**: „AD1 ist Rufbereitschaft" weiß nur der Nutzer
+  seiner Station. Die DND-Steuerung hatte dafür schon eine Chip-Auswahl (`dnd_oncall_shifts`);
+  eine zweite daneben für die Abfrage wäre eine zweite Wahrheit und eine weitere über den NAMEN
+  gebundene Liste im Umbenennungs-Nachzug gewesen. Deshalb `ShiftDefinition.isOnCall` als einzige
+  Quelle, der Schalter im Schicht-Editor (mit dem WARUM im Text), die DND-Chips durch eine
+  Auskunft ersetzt, die alte Liste per `RufbereitschaftMigration` übernommen (App-Start,
+  6h-Wartung, Import; Marker ist der Altschlüssel selbst). Sichtbar ist die Kette in der
+  Status-Karte „Hintergrunddienst" („nächste Kalender-Abfrage um HH:MM").
 - **Die Notification-Entscheidung lebt INNERHALB von `AlarmUseCase.syncAlarms()`, nicht bei dessen
   vier Aufrufern.** `ShiftChangeNotifier` wird auf der Implementierung injiziert, NICHT auf
   `IAlarmUseCase` — das Interface bleibt unverändert. Wer einen fünften Aufrufer von `syncAlarms()`

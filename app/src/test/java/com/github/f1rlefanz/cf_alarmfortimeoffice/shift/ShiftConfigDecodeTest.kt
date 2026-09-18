@@ -50,6 +50,24 @@ class ShiftConfigDecodeTest {
         assertEquals(original, (decoded as ShiftConfigDecodeResult.Ok).config)
     }
 
+    /**
+     * Eine Konfiguration von VOR dem Rufbereitschaft-Flag (16.09.2026) traegt das Feld nicht. Sie
+     * muss weiter lesbar sein, und das Flag muss dann AUS sein - sonst waere jede Bestandsschicht
+     * nach dem Update eine Rufbereitschaft mit stuendlicher Kalender-Abfrage.
+     */
+    @Test
+    fun `altes JSON ohne isOnCall wird gelesen und das Flag ist aus`() {
+        val raw = json.encodeToString(ShiftConfig.getDefaultConfig())
+            .replace(Regex(""","isOnCall":(true|false)"""), "")
+        assertTrue("Fixture muss das Feld wirklich entfernt haben", !raw.contains("isOnCall"))
+
+        val decoded = decodeShiftConfig(json, raw)
+
+        assertTrue(decoded is ShiftConfigDecodeResult.Ok)
+        assertTrue((decoded as ShiftConfigDecodeResult.Ok).config.definitions.none { it.isOnCall })
+        assertEquals(ShiftConfig.getDefaultConfig().definitions.size, decoded.config.definitions.size)
+    }
+
     @Test
     fun `abgeschnittenes JSON ist Broken - nicht stillschweigend der Standard`() {
         val raw = json.encodeToString(ShiftConfig.getDefaultConfig()).take(30)

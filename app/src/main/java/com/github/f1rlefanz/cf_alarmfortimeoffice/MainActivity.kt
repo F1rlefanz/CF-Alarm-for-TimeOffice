@@ -28,6 +28,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWunsch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
@@ -90,6 +92,9 @@ class MainActivity : ComponentActivity() {
     // Einmalige Ueberfuehrung der alten Dimmer-Konfiguration ins Ein-Modell - siehe onCreate().
     @Inject lateinit var dimmerModellMigration: DimmerModellMigration
     @Inject lateinit var dndSchedule: DndScheduleUseCase
+    // Einmalige Uebernahme der alten DND-Rufbereitschaft-Auswahl ins Schicht-Flag - siehe onCreate().
+    @Inject lateinit var rufbereitschaftMigration: RufbereitschaftMigration
+    @Inject lateinit var rufbereitschaftAbfrage: RufbereitschaftAbfrage
 
     // HILT MIGRATION: ViewModels via Hilt's viewModels() delegate
     // ✅ Automatically scoped to Activity lifecycle
@@ -153,6 +158,17 @@ class MainActivity : ComponentActivity() {
                 withContext(NonCancellable) {
                     runCatching { dndSchedule.enable() }
                         .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nach der Dimmer-Migration nicht neu armiert", it) }
+                }
+            }
+            // Dieselben zwei Anlaesse wie die Dimmer-Migration (hier + 6h-Wartung), gleiche
+            // Gruende. Ein uebernommenes Flag aendert den DND-Cutoff UND die Rufbereitschafts-
+            // Abfrage - beide lesen es, beide werden danach neu armiert.
+            if (rufbereitschaftMigration.migriereEinmalig()) {
+                withContext(NonCancellable) {
+                    runCatching { dndSchedule.enable() }
+                        .onFailure { Logger.w(LogTags.DND, "⚠️ DND-Kette nach der Rufbereitschaft-Migration nicht neu armiert", it) }
+                    runCatching { rufbereitschaftAbfrage.reschedule() }
+                        .onFailure { Logger.w(LogTags.MAINTENANCE, "⚠️ Rufbereitschafts-Abfrage nach der Migration nicht neu geplant", it) }
                 }
             }
         }

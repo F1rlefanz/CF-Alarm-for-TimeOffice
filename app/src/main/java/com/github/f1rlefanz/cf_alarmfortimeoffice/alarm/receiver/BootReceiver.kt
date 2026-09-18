@@ -175,6 +175,7 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
     @Inject lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
     @Inject lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+    @Inject lateinit var rufbereitschaftAbfrage: com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
     @Inject lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 
     companion object {
@@ -568,6 +569,19 @@ class BootReceiver : BroadcastReceiver() {
                         }
                     } catch (e: Exception) {
                         Logger.w(LogTags.BACKGROUND_WORKER, "Boot: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
+                    }
+
+                    // 12. Stuendliche Rufbereitschafts-Abfrage: ein Neustart loescht alle
+                    //     AlarmManager-Eintraege, also auch diesen Slot. Gleiches Muster wie 9-11,
+                    //     Best-effort, Master-Pause raeumt statt zu planen.
+                    try {
+                        if (paused) {
+                            rufbereitschaftAbfrage.cancel()
+                        } else {
+                            rufbereitschaftAbfrage.reschedule()
+                        }
+                    } catch (e: Exception) {
+                        Logger.w(LogTags.MAINTENANCE, "Boot: Rufbereitschafts-Abfrage nicht neu geplant", e)
                     }
 
                     recoverySuccessful = true

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -759,6 +760,15 @@ private fun ShiftDefinitionCard(
                         Icon(
                             Icons.Default.NotificationsOff,
                             contentDescription = "Stille Schicht - kein Ton/Vibration/Vollbild",
+                            modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (definition.isOnCall) {
+                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+                        Icon(
+                            Icons.Default.PhoneInTalk,
+                            contentDescription = "Rufbereitschaft - Kalender wird an diesen Tagen stündlich abgefragt",
                             modifier = Modifier.size(SpacingConstants.ICON_SIZE_SMALL),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )

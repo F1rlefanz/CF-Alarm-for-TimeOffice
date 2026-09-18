@@ -97,9 +97,11 @@ class ShiftViewModel @Inject constructor(
      */
     private val armierer: ZeitkettenArmierer,
     /**
-     * Die DRITTE Stelle, die ueber den Schichtnamen bindet: die beiden Schicht-Auswahlen von
-     * "Nicht stoeren" ([DndPrefs.renameShiftName]). Sie wurden beim Nachzug in v1.30.0
-     * uebersehen - warum das teuer ist, steht an der Funktion.
+     * Die DRITTE Stelle, die ueber den Schichtnamen bindet: die Dienstzeit-Ausnahmen von
+     * "Nicht stoeren" ([DndPrefs.renameShiftName]). Sie wurde beim Nachzug in v1.30.0
+     * uebersehen - warum das teuer ist, steht an der Funktion. Die Rufbereitschaft-Auswahl war
+     * bis v1.40.8 eine weitere solche Liste; sie ist heute ein Flag AM Schichttyp
+     * (`ShiftDefinition.isOnCall`) und reist bei einer Umbenennung von selbst mit.
      *
      * Die Nacht-Ausnahmen des Dimmers waren einmal eine VIERTE solche Stelle; mit dem
      * eingebauten Nacht-Standard ist auch seine Namensliste entfallen. Der Dimmer bindet nur
@@ -488,7 +490,16 @@ class ShiftViewModel @Inject constructor(
         nachher: ShiftConfig
     ): NacharmierBedarf {
         val plan = planeSchichtUmbenennungen(vorher, nachher)
-        if (plan.umbenennungen.isEmpty() && plan.blockiert.isEmpty()) return NacharmierBedarf.KEINE
+        // Das Rufbereitschaft-Flag ist KEINE Namensliste mehr, aber es hat dieselben Leser: den
+        // DND-Cutoff und die stuendliche Kalender-Abfrage. Aendert sich die Menge der
+        // Rufbereitschafts-Schichten, muss die DND-Kette (und mit ihr die Abfrage, siehe
+        // ZeitkettenArmierer) neu armiert werden - frueher tat das der Chip-Tap im DND-Bildschirm
+        // selbst. Ohne Vorher-Stand (erster Load) gibt es keine Aenderung zu erkennen.
+        val rufbereitschaftGeaendert = vorher != null &&
+            rufbereitschaftsNamen(vorher) != rufbereitschaftsNamen(nachher)
+        if (plan.umbenennungen.isEmpty() && plan.blockiert.isEmpty()) {
+            return NacharmierBedarf(dimmer = false, dnd = rufbereitschaftGeaendert)
+        }
 
         val fehlgeschlagen = mutableListOf<String>()
         // GETRENNT von `fehlgeschlagen`: ein gescheitertes RAEUMEN ist die gefaehrlichere Lage.
@@ -512,9 +523,10 @@ class ShiftViewModel @Inject constructor(
                     .onSuccess { nachgezogen += it }
                     .onFailure { fehlgeschlagen += "Hue" }
 
-                // Die uebersehenen Namenslisten (Befund 21.08.2026): zwei in "Nicht stoeren"
-                // (Rufbereitschaft + Dienstzeit-Ausnahmen). Die dritte lag im Dimmer
-                // (Nacht-Ausnahmen) und ist mit dem eingebauten Nacht-Standard entfallen.
+                // Die uebersehene Namensliste (Befund 21.08.2026): die Dienstzeit-Ausnahmen in
+                // "Nicht stoeren". Die Rufbereitschaft-Auswahl daneben ist seit dem Flag am
+                // Schichttyp keine Liste mehr; die dritte lag im Dimmer (Nacht-Ausnahmen) und ist
+                // mit dem eingebauten Nacht-Standard entfallen.
                 // Der Fehlschlag wird EINZELN gemeldet - eine unlesbare DND-Auswahl darf den
                 // Nachzug der Dimm-Regeln nicht verhindern und umgekehrt. Der Nutzer sieht die
                 // Namen der BILDSCHIRME ("Nicht stören", "Dimmer"), nicht die Speicherschluessel.
@@ -649,17 +661,20 @@ class ShiftViewModel @Inject constructor(
         // Eingang von `DimScheduleUseCase.computeWindows()` (`isExcluded`) - eine Aenderung daran
         // verschiebt die Dimm-Fenster genauso wie eine geaenderte Regel.
         //
-        // WARUM DIE DND-AUSWAHLEN NUR DIE DND-KETTE NACHARMIEREN: `dnd_oncall_shifts` und
-        // `dnd_shift_excluded_shifts` liest ausschliesslich `DndScheduleUseCase` (Dienstzeit-Fenster
+        // WARUM DIE DND-AUSWAHL NUR DIE DND-KETTE NACHARMIERT: `dnd_shift_excluded_shifts` (und
+        // das Rufbereitschaft-Flag) liest ausschliesslich `DndScheduleUseCase` (Dienstzeit-Fenster
         // und Rufbereitschaft-Cutoff). Der Dimmer kennt sie nicht - ihn mit zu armieren
         // dafuer waere Arbeit ohne jede Wirkung. Umgekehrt zieht ein geaendertes Dimm-Fenster die
         // DND-Kette sehr wohl mit: im Modus "folgt dem Dimmer" ist die Dimm-Zeitleiste die
         // Fensterquelle von "Nicht stoeren".
         return NacharmierBedarf(
             dimmer = dimmGeaendert > 0,
-            dnd = dimmGeaendert > 0 || dndGeaendert > 0
+            dnd = dimmGeaendert > 0 || dndGeaendert > 0 || rufbereitschaftGeaendert
         )
     }
+
+    private fun rufbereitschaftsNamen(config: ShiftConfig): Set<String> =
+        config.definitions.filter { it.isOnCall }.map { it.name }.toSet()
 
     /**
      * Armiert die Dimm- und DND-Zeitketten neu, nachdem eine Umbenennung nachgezogen wurde.
@@ -966,12 +981,12 @@ internal data class SchichtUmbenennungsPlan(
  * Bis zum 21.08.2026 stieg diese Funktion hier aus, mit der Begruendung, der Vergleich in
  * `DimRuleUseCase.findRuleForShift` und `HueRuleUseCase.findApplicableRules` sei
  * gross-/kleinschreibungsblind - ein Nachzug also ein Schreibvorgang ohne Nutzen. Fuer die beiden
- * REGELARTEN stimmt das bis heute. Fuer die drei reinen NAMENSLISTEN stimmt es nicht: sie werden
- * EXAKT geprueft (`it.shiftName in onCallShifts` in `DndOnCallCutoffResolver`,
- * `alarm.shiftName in excludedShifts` in `DndShiftSpanResolver` und in `DimScheduleUseCase`).
- * Korrigiert der Nutzer nur den Kasus, bleibt dort der alte stehen und trifft nie wieder - der
- * Rufbereitschaft-Cutoff faellt aus, und "Nicht stoeren" bleibt in der Nacht vor der
- * Rufbereitschaft ueber 05:00 hinaus an. Deshalb gilt jetzt der EXAKTE Vergleich als Abbruch:
+ * REGELARTEN stimmt das bis heute. Fuer die reine NAMENSLISTE der Dienstzeit-Ausnahmen stimmt es
+ * nicht: sie wird EXAKT geprueft (`alarm.shiftName in excludedShifts` in `DndShiftSpanResolver`).
+ * Korrigiert der Nutzer nur den Kasus, bleibt dort der alte stehen und trifft nie wieder - die
+ * Ausnahme faellt aus. (Bis v1.40.8 galt dasselbe fuer die Rufbereitschaft-Auswahl mit dem
+ * teureren Ausfall des Cutoffs; sie ist heute ein Flag am Schichttyp.) Deshalb gilt jetzt der
+ * EXAKTE Vergleich als Abbruch:
  * gleicher Name heisst zeichengleicher Name. Fuer die Regeln bleibt der zusaetzliche
  * Schreibvorgang folgenlos - sie trafen vorher und treffen nachher.
  *

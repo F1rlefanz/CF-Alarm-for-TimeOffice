@@ -209,19 +209,26 @@ fun DndSettingsScreen(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "An Tagen mit einer dieser Schichten endet Nicht stören schon vor der regulären Zeit – du bist ab dem Cutoff erreichbar.",
+                                text = "An Rufbereitschafts-Tagen endet Nicht stören schon vor der regulären Zeit – du bist ab dem Cutoff erreichbar.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                shiftNames.forEach { name ->
-                                    FilterChip(
-                                        selected = name in state.onCallShifts,
-                                        onClick = { viewModel.toggleOnCallShift(name) },
-                                        label = { Text(name) }
-                                    )
-                                }
-                            }
+                            // KEINE Chips mehr: welche Schicht Rufbereitschaft ist, wird im
+                            // Schicht-Editor festgelegt (ShiftDefinition.isOnCall) - EINE Quelle
+                            // fuer Cutoff und stuendliche Kalender-Abfrage. Hier nur die Auskunft,
+                            // welche das gerade sind, und der Weg dorthin.
+                            Text(
+                                text = if (state.onCallShifts.isEmpty()) {
+                                    "Noch keine Schicht als Rufbereitschaft markiert. Das legst du " +
+                                        "im Schicht-Editor fest (Schalter „Rufbereitschaft“ an der " +
+                                        "jeweiligen Schicht)."
+                                } else {
+                                    "Als Rufbereitschaft markiert: " +
+                                        state.onCallShifts.sorted().joinToString(", ") +
+                                        " – änderbar im Schicht-Editor."
+                                },
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                             if (state.onCallShifts.isNotEmpty()) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(

@@ -56,6 +56,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWunsch
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
@@ -920,6 +921,17 @@ internal fun zeitAbstandInWorten(zeitpunkt: Long, jetzt: Long = System.currentTi
     }
 }
 
+/** "um 14:00" fuer heute, sonst mit Datum - der Zeitpunkt liegt in der Zukunft, nie "vor X". */
+internal fun rufbereitschaftsAbfrageInWorten(
+    zeitpunkt: Long,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    heute: java.time.LocalDate = java.time.LocalDate.now(zone)
+): String {
+    val z = java.time.Instant.ofEpochMilli(zeitpunkt).atZone(zone)
+    val uhr = z.format(DateTimeFormatter.ofPattern("HH:mm", Locale.GERMANY))
+    return if (z.toLocalDate() == heute) "um $uhr" else "am ${z.format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))} um $uhr"
+}
+
 @Composable
 private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
     val context = LocalContext.current
@@ -927,15 +939,18 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
     // 30s-Tick (Delegat-Nutzung unveraendert).
     var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
     var letzterTerminabruf by remember { mutableStateOf(0L) }
+    var naechsteRufbereitschaftsAbfrage by remember { mutableLongStateOf(0L) }
 
     // Wartungszeit laden und alle 30s aktualisieren
     LaunchedEffect(Unit) {
         lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
         letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
+        naechsteRufbereitschaftsAbfrage = RufbereitschaftAbfrage.naechsteAbfrageZeit(context)
         while (true) {
             kotlinx.coroutines.delay(30_000)
             lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
-        letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
+            letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
+            naechsteRufbereitschaftsAbfrage = RufbereitschaftAbfrage.naechsteAbfrageZeit(context)
         }
     }
 
@@ -1020,6 +1035,22 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Die stuendliche Rufbereitschafts-Abfrage braucht eine Oberflaeche: hier steht,
+                // DASS sie laeuft und wann sie das naechste Mal nachsieht. Ohne diese Zeile waere
+                // "Rufbereitschaft" am Schichttyp ein Schalter, dessen Wirkung niemand ablesen kann.
+                if (naechsteRufbereitschaftsAbfrage > 0L) {
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    Text(
+                        "Rufbereitschaft: nächste Kalender-Abfrage " +
+                            rufbereitschaftsAbfrageInWorten(naechsteRufbereitschaftsAbfrage),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "Solange eine Rufbereitschaft läuft, wird stündlich nachgesehen, ob TimeOffice einen Dienst nachgetragen hat.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (timeSinceLastMaintenance > TimeUnit.HOURS.toMillis(24)) {
                     Text(
                         "⚠️ Langer Zeitraum - bitte prüfen",

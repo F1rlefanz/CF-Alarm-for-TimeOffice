@@ -617,6 +617,12 @@ class AlarmMaintenanceService : Service() {
 
     @Inject lateinit var wartungNetzNachholer: WartungNetzNachholer
 
+    @Inject lateinit var rufbereitschaftAbfrage: RufbereitschaftAbfrage
+
+    @Inject
+    lateinit var rufbereitschaftMigration:
+        com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Siehe [ServiceRunTracker]: erst der zuletzt endende Zyklus darf den Service abraeumen. */
@@ -1118,6 +1124,15 @@ class AlarmMaintenanceService : Service() {
             Logger.w(LogTags.DIMMER, "Wartung: Dimmer-Modellmigration fehlgeschlagen", e)
         }
 
+        // Gleicher zweiter Anlass fuer die Uebernahme der alten Rufbereitschaft-Auswahl ins
+        // Schicht-Flag - VOR den Bloecken unten, damit DND-Cutoff und Rufbereitschafts-Abfrage
+        // gleich mit dem uebernommenen Flag planen. Idempotent ueber die Existenz des Altschluessels.
+        try {
+            rufbereitschaftMigration.migriereEinmalig()
+        } catch (e: Exception) {
+            Logger.w(LogTags.SHIFT_CONFIG, "Wartung: Rufbereitschaft-Migration fehlgeschlagen", e)
+        }
+
         try {
             if (paused) {
                 dimSchedule.disable()
@@ -1150,6 +1165,21 @@ class AlarmMaintenanceService : Service() {
                 "Wartung: Pre-Alarm-Refresh-Reschedule fehlgeschlagen",
                 e
             )
+        }
+
+        // Die stuendliche Rufbereitschafts-Abfrage: NACH dem Sync, denn sie liest die
+        // Schichtspannen, die syncAlarms() gerade geschrieben hat. Und hier im finally, damit
+        // auch ein uebersprungener oder gescheiterter Lauf sie weiterzieht - genau dieser Lauf
+        // hier IST an einem Rufbereitschaftstag der stuendliche Tick, und ohne Neuplanung an
+        // dieser Stelle risse die Kette nach dem ersten Tick ab.
+        try {
+            if (paused) {
+                rufbereitschaftAbfrage.cancel()
+            } else {
+                rufbereitschaftAbfrage.reschedule()
+            }
+        } catch (e: Exception) {
+            Logger.w(LogTags.MAINTENANCE, "Wartung: Rufbereitschafts-Abfrage nicht neu geplant", e)
         }
     }
     

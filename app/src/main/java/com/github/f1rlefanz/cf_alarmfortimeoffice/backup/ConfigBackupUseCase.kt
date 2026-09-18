@@ -16,6 +16,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.RufbereitschaftMigration
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
@@ -77,6 +78,8 @@ class ConfigBackupUseCase @Inject constructor(
     // Nur fuer den Fall "die Datei stammt aus der Zeit vor dem Ein-Modell-Umbau" - siehe die
     // Stelle im Import und DimmerModellMigration.brauchtNachImportEineMigration.
     private val dimmerModellMigration: DimmerModellMigration,
+    // Gleicher Fall fuer die alte Rufbereitschaft-Namensliste (`dnd_oncall_shifts`, bis v1.40.8).
+    private val rufbereitschaftMigration: RufbereitschaftMigration,
     // Nur fuer den Ziel-Abgleich der importierten Hue-Regeln (siehe
     // reconcileImportedHueTargets). Beide werden ausschliesslich im Import benutzt und beruehren
     // die Bridge nur, wenn sie erreichbar ist.
@@ -186,6 +189,16 @@ class ConfigBackupUseCase @Inject constructor(
         // verschiebt Fenstergrenzen, die anschliessende Armierung soll sie schon sehen.
         runCatching { dimmerModellMigration.migriereNachImport(geschriebeneSettings.toSet()) }
             .onFailure { Logger.w(LogTags.DIMMER, "⚠️ IMPORT: Dimmer-Modellmigration uebersprungen", it) }
+
+        // EINE DATEI AUS DER ZEIT VOR DEM RUFBEREITSCHAFT-FLAG traegt die Auswahl noch als
+        // Namensliste. Der Filter laesst sie durch (sie IST eine Einstellung), und der Schluessel
+        // liegt jetzt wieder im Store - genau der Zustand, den die Migration abarbeitet. Sie ist
+        // idempotent ueber die Existenz des Schluessels, ein Marker muss hier nicht zurueckgesetzt
+        // werden. NACH den Schichtdefinitionen (oben geschrieben), damit die Namen treffen.
+        if (RufbereitschaftMigration.brauchtNachImportEineMigration(geschriebeneSettings.toSet())) {
+            runCatching { rufbereitschaftMigration.migriereEinmalig() }
+                .onFailure { Logger.w(LogTags.SHIFT_CONFIG, "⚠️ IMPORT: Rufbereitschaft-Migration uebersprungen", it) }
+        }
 
         // "Jeder Setter, der einen DimOverlayPrefs-Wert schreibt, MUSS direkt danach
         // DimScheduleUseCase.enable() aufrufen" (CLAUDE.md). Der Import ist ein neuer, generischer

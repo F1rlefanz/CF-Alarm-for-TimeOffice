@@ -64,7 +64,15 @@ das baut man dieselbe Falle in neuer Form nach.
   alle drei Notifier-Aufrufe in eigenem `try/catch`. Der allererste Sync flutet nicht
   (`isFirstSync`), `notifyUpdated()` hat eine eigene Schwelle (≥10 min oder Name geändert).
 - **Pre-Alarm-Refresh**: pro Alarm ein WorkManager-Job 3 h vorher (max. 14 Tage, max. 10 Jobs).
-  Schließt die Lücke NICHT — echtes Push ist auf einem Android-Gerät nicht möglich.
+  Schließt die Lücke NICHT — echtes Push ist auf einem Android-Gerät nicht möglich, und der Job
+  gilt nur für Wecker, die es schon GIBT.
+- **Rufbereitschaft ist ein Flag am Schichttyp (`ShiftDefinition.isOnCall`), EINE Quelle für zwei
+  Leser**: die stündliche Kalender-Abfrage an solchen Tagen (`RufbereitschaftAbfrage`, Regeln im
+  Wecker-Skill) und den DND-Cutoff. Welches Kürzel eine Rufbereitschaft ist, weiß nur der Nutzer
+  seiner Station — deshalb der Schalter im Schicht-Editor mit dem Text, WARUM stündlich gefragt
+  wird (kein Stups vom Kalender). Die alte DND-Namensliste `dnd_oncall_shifts` übernimmt
+  `RufbereitschaftMigration` einmalig (App-Start, 6h-Wartung, Import einer alten Datei);
+  idempotent über die Existenz des Altschlüssels, gelöscht erst nach belegtem Erfolg.
 
 ## Schichterkennung — Kurzregeln
 

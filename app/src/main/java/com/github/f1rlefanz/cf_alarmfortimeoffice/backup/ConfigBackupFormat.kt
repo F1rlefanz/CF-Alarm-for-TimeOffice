@@ -5,6 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
@@ -164,6 +165,8 @@ object ConfigBackupFilter {
         "last_maintenance_time",
         "last_event_load_time",
         "last_success_timestamp",
+        // Naechste geplante Rufbereitschafts-Abfrage - ein AlarmManager-Slot DIESES Geraets.
+        RufbereitschaftAbfrage.KEY_NAECHSTE_ABFRAGE_NAME,
         // Was der Overlay-Dienst gerade rendert
         "dim_overlay_on",
         "dim_render_strength",

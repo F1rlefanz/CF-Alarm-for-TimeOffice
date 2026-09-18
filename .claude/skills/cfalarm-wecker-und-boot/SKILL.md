@@ -111,6 +111,17 @@ das baut man dieselbe Falle in neuer Form nach.
   Folge, mit einem Text ohne Anmelde-Behauptung; ein gueltiges Token setzt Zaehler und
   „bereits gemeldet" zurueck (am TOKEN aufgehaengt, nicht am Gesamterfolg des Laufs). Wer den
   Netzfall ganz still schaltet, macht eine dauerhaft stehende Synchronisation unsichtbar.
+- **Die stuendliche Rufbereitschafts-Abfrage (`service/RufbereitschaftAbfrage`) ist eine EIGENE
+  Kette**: Request-Code 8803, einziger Planer `reschedule()` (rechnet immer vom Ist-Zustand:
+  Schichtspannen mit `ShiftDefinition.isOnCall`, freigegebene Tage, Master-Pause), Empfaenger
+  `RufbereitschaftAbfrageReceiver`, und der startet NUR `AlarmMaintenanceService.start(forceSync =
+  true)`. Neu geplant wird sie im `finally` der Wartung (nach dem Sync, denn sie liest die frisch
+  geschriebenen Spannen), im `BootReceiver` und in `ZeitkettenArmierer` zusammen mit DND. Ein
+  Termin liegt mindestens eine Minute in der Zukunft (`MINDEST_ABSTAND_MS`), sonst plant der Tick
+  sich bei Uhren-Schlupf selbst noch einmal. Exakte Alarme mit inexaktem Fallback wie
+  `scheduleNext()`; kein WorkManager-Periodic, weil Doze den um Stunden schiebt. Hergang im
+  Kalender-Skill `cfalarm-kalender-und-schichten` (Hergang-Datei zum Kalender-Datenfluss,
+  Abschnitt Rufbereitschaft).
 - **Die Netz-Nachholung ist ein EINMALIGER WorkManager-Auftrag** (`NetworkType.CONNECTED`), kein
   zweiter Planer der Kette und kein Timer. Nur bei nachgewiesener Netzursache und gedeckelt
   (`MAX_NETZ_NACHHOLVERSUCHE`) — ein Captive Portal erfuellt „Netz verfuegbar" dauerhaft. Sie geht

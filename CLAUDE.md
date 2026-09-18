@@ -324,6 +324,10 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **Die Hue-Regelausführung im `AlarmReceiver` ist gedeckelt** (`HUE_EXECUTION_BUDGET_MS = 45 s`).
   Nicht kleiner machen: der Batch-Timeout EINER Regel ist schon 30 s, und ein zu knapper Deckel
   lässt das Licht an, ohne dass der Auto-Aus-Zeitplan je entsteht.
+- **Die stündliche Rufbereitschafts-Abfrage (`RufbereitschaftAbfrage`) ist eine EIGENE Kette**,
+  die nur `AlarmMaintenanceService.start(forceSync = true)` anstößt — kein zweiter Planer der
+  6h-Kette. Quelle ist `ShiftDefinition.isOnCall` (auch für den DND-Cutoff). Hergang
+  (16.09.2026) im Kalender-Skill.
 
 ### Master-Pause
 
@@ -361,11 +365,12 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   Wecker gekostet. Ersteres ordnet einem bestehenden Alarm zu (gestaffelt), Letzteres erkennt in
   Kalendertiteln (mit Wortgrenzen über Unicode-Kategorien, NICHT `\b`).
 - **Wer einen Schichtnamen PERSISTENT speichert, traegt ihn in den Umbenennungs-Nachzug ein.**
-  Vier Stellen binden ueber den Namen: Dimmer- und Hue-Regeln (`shiftPattern`), die
-  Rufbereitschaft-Auswahl und die Dienstzeit-Ausnahmen. Die beiden Letzteren
-  vergleichen EXAKT - eine reine Schreibweisen-Aenderung zaehlt deshalb als Umbenennung. Beim
-  Namenstausch wird der falsch gewordene Eintrag geraeumt, ausser beide Namen stehen in derselben
-  Liste (dann stimmt ihr Inhalt weiter). Die vollstaendige Inventur steht im Kalender-Skill.
+  Drei Stellen binden ueber den Namen: Dimmer- und Hue-Regeln (`shiftPattern`) und die
+  Dienstzeit-Ausnahmen. Letztere vergleicht EXAKT - eine reine Schreibweisen-Aenderung zaehlt
+  deshalb als Umbenennung. Beim Namenstausch wird der falsch gewordene Eintrag geraeumt, ausser
+  beide Namen stehen in derselben Liste (dann stimmt ihr Inhalt weiter). Rufbereitschaft ist
+  seit dem Umbau vom 16.09.2026 ein Flag AM Schichttyp (`isOnCall`), keine Liste. Die vollstaendige Inventur
+  steht im Kalender-Skill.
 - **`CalendarStateHolder` ist eine Einbahnstraße**, und Laden gehört ausschließlich dem
   `CalendarViewModel`.
 - **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter** — die Prüfung VOR JEDEM

@@ -27,7 +27,7 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.40.10 (Aktuell – interne Alpha)
+## Version 1.40.10
 
 **Stand:** September 2026
 

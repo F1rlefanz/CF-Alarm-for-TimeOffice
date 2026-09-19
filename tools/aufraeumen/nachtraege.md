@@ -1742,3 +1742,48 @@ Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 (`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
 (zwoelfter Nachtrag, der ihn meldet — selbst ausgezaehlt ueber die `###`-Abschnitte dieser Datei:
 Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28).
+
+### 19.09.2026, Torwaechter zu PR #105 (gemergt): eine Verallgemeinerung in Lehre 2 greift zu weit
+
+**Der PR ist gemergt** — Bau, Tests, Invarianten und Reste gruen, alle Zahlen ziffergenau
+reproduziert (179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors; Lint 14 Befunde, kein
+`UnknownIssueId`), kein Gatter daneben, die Weckerkette nicht beruehrt. Zwei von drei Widerlegern
+kamen mit „nicht widerlegt" zurueck. **Richtigzustellen ist genau ein Satz**, und weil er fett als
+**Regel** dasteht und damit bindend wird, steht die Korrektur hier und nicht nur im PR-Kommentar.
+
+**Falsch ist die Verallgemeinerung in „Neue Lehre 2" (Runde 28):**
+
+> „*jeder* `severity`-Eintrag auf einen Check mit Voreinstellung `fatal` nimmt diesen Check aus dem
+> Release-Gatter — **auch wenn der eingetragene Wert strenger klingt.**"
+
+`severity="fatal"` ist davon **ausgenommen**. Am Bytecode nachgemessen, nicht uebernommen:
+`FlagConfiguration.getDefinedSeverity` aus `lint-api-32.4.0` gibt im `fatalOnly`-Zweig bei Offset
+**105–115** den gesetzten Wert `FATAL` per `areturn` **durch**; erst ab Offset **139–150** wird ein
+gesetzter Wert, der *nicht* `FATAL` ist, zu `IGNORE`. Der Aufzaehlungspunkt unmittelbar ueber der
+Regel sagt das selbst richtig („ist sie **nicht `FATAL`** → `IGNORE`") — die daraus gezogene Regel
+laesst die Ausnahme fallen.
+
+**Richtig lautet sie:** *jeder `severity`-Eintrag, der einen Check mit Voreinstellung `fatal` auf
+einen **anderen Wert als `fatal`** setzt, nimmt ihn aus dem Release-Gatter.* Die Formulierung des
+Gatter-Kandidaten in **#104** („kein `severity`-Eintrag darf eine `fatal`-Voreinstellung
+**absenken**") ist bereits korrekt und bleibt unveraendert gueltig; ebenso der Befund selbst
+(`NullSafeMutableLiveData`, `fatal` → `error`, A/B EXIT 0 gegen EXIT 1).
+
+**Warum das hier steht und nicht nur als Anmerkung:** es ist derselbe Fehlertyp, an dem PR #102
+gescheitert ist — eine Messung ist sauber, und die REGEL, die aus ihr gezogen wird, traegt den
+Beleg nicht mehr ganz. Der Torwaechter-Block zu #102 hat es so formuliert: „eine Verallgemeinerung
+braucht denselben Beleg wie der Befund selbst". Das gilt auch fuer Verallgemeinerungen, die nur um
+ein Wort zu weit gehen.
+
+**Zwei Beobachtungen fuer die naechste Runde, beide gemessen:**
+
+1. **Diese Datei ist durch Runde 28 von 111.863 auf 124.116 Zeichen gewachsen (+11 %), bei
+   0 geschnittenen Zeilen.** Sie ist Pflichtlektuere jeder Runde und damit **4,1×** so gross wie
+   CLAUDE.md (30.398 Zeichen, hartes Limit der Harness-Pruefung bei 40 k). `pruefe_budget.py` misst
+   sie nicht mit (37.106 von 150.000, alle Budgets eingehalten) — **#79 ist offen und wird
+   dringlicher**, nicht kleiner.
+2. **Der Block „18.09.2026, Torwaechter zu PR #102" spricht jetzt teilweise ins Leere.** Er zitiert
+   im Praesens drei Saetze („Dort steht …", „Die Lehre schreibt …", „Die Zahl 12 / 0 / 12 / 0 …"),
+   die Runde 28 oben an ihrer Stelle behoben hat. Das ist **kein Fehler des Merges** — der Block ist
+   ein datierter Protokolleintrag und haelt fest, warum #102 geschlossen wurde. Wer ihn liest,
+   lese die korrigierten Stellen oben dazu; sie tragen die alte Fassung jeweils in Klammern.

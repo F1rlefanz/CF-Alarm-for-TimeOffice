@@ -1349,9 +1349,12 @@ Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 
 ### 18.09.2026, Runde 27 (Issue #38, die 12 lint.xml-Eintraege ohne Wirkung)
 
-**Ergebnis vorweg: 12 Rohbefunde, 0 bestaetigt, 12 Fehlalarme (100 %), 0 geschnitten.** Keiner der
+**Ergebnis vorweg: 12 Rohbefunde, 1 bestaetigt, 11 Fehlalarme (91,7 %), 0 geschnitten.** Keiner der
 zwoelf Eintraege ist eine Altlast; elf davon aendern das Ergebnis nachweislich, sobald ihr Check
-etwas zu melden hat. Die beiden Fragen des Issues sind damit beantwortet — **Antwort auf beide:
+etwas zu melden hat, der zwoelfte (`FragmentLiveDataObserve`) nicht — er ist ein Waechter, aber
+nach der Definition dieses Abschnitts eben doch ein bestaetigter Befund.
+*(Hier stand „0 bestaetigt, 12 Fehlalarme (100 %)"; das widersprach der eigenen Definition drei
+Absaetze weiter unten. Vom Torwaechter zu PR #102 beanstandet, in Runde 28 nachgerechnet.)* Die beiden Fragen des Issues sind damit beantwortet — **Antwort auf beide:
 alle zwoelf behalten.** Dieser PR bringt deshalb **keinen Schnitt**, nur diesen Nachtrag.
 
 **Daneben zwei Funde, die KEINE Aufraeumfunde sind, sondern Fehlkonfigurationen** — sie stehen
@@ -1433,8 +1436,12 @@ einen Fund haelt.
 **Drei der zwoelf feuerten im ersten Anlauf nicht.** Haette ich dort aufgehoert, staende hier „drei
 Eintraege sind strukturell tot" — und alle drei waeren falsch gewesen:
 
-- `FragmentLiveDataObserve` braucht den `observe(this, …)`-Aufruf **in `onViewCreated`**; irgendwo
-  sonst in der Fragment-Klasse schweigt der Detektor.
+- `FragmentLiveDataObserve` braucht den `observe(this, …)`-Aufruf in **einer von vier**
+  Lebenszyklus-Methoden — `onCreateView`, `onViewCreated`, `onActivityCreated`,
+  `onViewStateRestored`; anderswo in der Fragment-Klasse schweigt der Detektor.
+  *(Hier stand „in `onViewCreated`", also eine statt vier. Vom Torwaechter zu PR #102 beanstandet;
+  in Runde 28 an den String-Konstanten von `UnsafeFragmentLifecycleObserverDetector` aus
+  `fragment-1.5.7` selbst nachgezaehlt — der Erklaerungstext des Checks nennt dieselben vier.)*
 - `NullSafeMutableLiveData` braucht die **explizite** Typannotation
   (`val x: MutableLiveData<String> = MutableLiveData()`); bei `val x = MutableLiveData<String>()`
   meldet er nichts. (Beide Korrekturen liefen in EINEM Lauf; sie betreffen verschiedene Klassen und
@@ -1443,9 +1450,20 @@ Eintraege sind strukturell tot" — und alle drei waeren falsch gewesen:
 
 Das ist die Runde-16-Regel eine Ebene hoeher: dort war ein leeres Strukturergebnis eine Aussage
 ueber den Parser, hier ist ein ausbleibender Befund eine Aussage ueber den Ausloeser. **Der Ausweg
-kostet zehn Minuten: im Bytecode des Detektors nachsehen, was er wirklich prueft** —
-`javap -p -c` auf `lint-checks-<version>.jar` aus `~/.gradle/caches`. Hier: AGP 9.4.0 verwendet
-`lint-checks-32.4.0`.
+ist, im Bytecode des Detektors nachzusehen, was er wirklich prueft — aber erst NACH der Frage,
+woher der Check kommt.** Nur AOSP-Checks liegen in `lint-checks-<version>.jar`; Checks einer
+Bibliothek liegen in deren eigenem `lint.jar` unter `~/.gradle/caches/<gradle>/transforms/*/
+transformed/<artefakt>/jars/lint.jar`, **und ihr Klassenname weicht von der Issue-ID ab**
+(`NullSafeMutableLiveData` → `NonNullableMutableLiveDataDetector`, `FragmentLiveDataObserve` →
+`UnsafeFragmentLifecycleObserverDetector`). Wer pauschal im AOSP-Jar greppt, findet fuer diese
+zwei nichts und schliesst falsch.
+*(Hier stand als Rezept nur „`javap -p -c` auf `lint-checks-<version>.jar`" — das zeigt fuer zwei
+seiner eigenen drei Beispiele ins Leere. Vom Torwaechter zu PR #102 beanstandet, in Runde 28
+nachgemessen.)*
+**Und fuer die Frage, um die es bei #38 ueberhaupt geht, braucht man den Detektor gar nicht:**
+ob ein `severity`-Eintrag etwas bewirkt, entscheidet allein der Vergleich mit der
+**Voreinstellung des Checks** — die steht in der Issue-Registry und ist in Sekunden auszulesen
+(Runde 28). Hier: AGP 9.4.0 verwendet `lint-checks-32.4.0`.
 
 #### Neue Lehre 2: Der ERKLAERUNGSTEXT eines Lint-Issues ist keine Beschreibung seines Codes
 
@@ -1474,18 +1492,26 @@ ueberhaupt bleiben soll, ist die Frage, die dem Eigentuemer gehoert, und eine ne
 Begruendung nimmt sie vorweg. Genau daran ist PR #37 gescheitert (Defekt 2: eine Begruendung
 ersetzt, die dann ins Leere zeigte). Die Messung steht im Issue.
 
-#### Neue Lehre 3 (ergaenzt Runde 26, Lehre 1): bei `severity`-Eintraegen ist Zahlengleichheit der REGELFALL
+#### Neue Lehre 3 (ergaenzt Runde 26, Lehre 1): im `lintDebug`-BERICHT ist Zahlengleichheit der REGELFALL
+
+> **Geltungsbereich, in Runde 28 nachgeschaerft:** Diese Lehre gilt **nur fuer den
+> `lintDebug`-Bericht**, nicht fuer Gatter-Exit-Codes. „Fund 1" derselben Runde ist der
+> Gegenbeleg: dort aendert ein `severity`-Eintrag den Exit-Code von `lintVitalRelease`. Wer die
+> Lehre pauschal nimmt und deshalb auf Zahlenvergleiche verzichtet, wird fuer genau diese Klasse
+> blind. Ueberschrift und Schlusssatz sind entsprechend eingegrenzt.
 
 Runde 26 hat gezeigt, dass vier `severity`-Attribute „9 Befunde von Hint auf Warning kippen — bei
 gleicher Anzahl". Diese Runde verallgemeinert das: bei **elf von zwoelf** Eintraegen ist die
 Befundzahl vor und nach dem Eingriff identisch (30 = 30), und die gesamte Wirkung steckt in der
-Severity. Ein Blickwinkel ueber `severity`-Attribute, der Zahlen vergleicht, misst **strukturell
-nichts**. Vergleichsschluessel muss (id, severity, Datei, Zeile, Meldung) sein, Differenz in beide
-Richtungen — und die Gegenrichtung ist hier nicht Zierde, sondern der ganze Befund.
+Severity. Ein Blickwinkel ueber `severity`-Attribute, der **im Bericht** Zahlen vergleicht, misst
+strukturell nichts. Vergleichsschluessel muss (id, severity, Datei, Zeile, Meldung) sein, Differenz
+in beide Richtungen — und die Gegenrichtung ist hier nicht Zierde, sondern der ganze Befund.
+**Am Gatter dagegen zaehlt genau eine Zahl, naemlich der Exit-Code** (siehe Fund 1).
 
 #### Was daraus fuer die „Verworfen"-Tabelle des Skills folgt
 
-Blickwinkel **#38** gehoert mit **12 / 0 / 12 / 0** hinein: 100 % Fehlalarm, und die Erkennung
+Blickwinkel **#38** gehoert mit **12 / 1 / 11 / 0** hinein (Zahl in Runde 28 richtiggestellt,
+siehe „Ergebnis vorweg"): 91,7 % Fehlalarm, und die Erkennung
 verlangt pro Eintrag einen Ausloeser im Baum plus einen mutierenden Lint-Lauf (diese Runde:
 2 Basislaeufe + 5 Ausloeserlaeufe + 2 `lintVitalRelease`, je 1–3 min). **Kein Gatter, auch keins
 zum Vormerken** — ein Dauergatter muesste Ausloesercode erzeugen, kompilieren und zweimal linten;
@@ -1576,3 +1602,143 @@ gegangen waeren.**
 auch. Was fehlt, ist Sorgfalt an den Stellen, an denen aus einer Messung eine REGEL wird — eine
 Verallgemeinerung („der Detektor schweigt sonst", „das Jar liegt dort", „Zahlen messen nichts")
 braucht denselben Beleg wie der Befund selbst, und keine davon hatte ihn.
+
+### 19.09.2026, Runde 28 (Issue #38 zum dritten Mal — die Frage ist statisch entscheidbar)
+
+**Ergebnis: 12 Rohbefunde, 1 bestaetigt, 11 Fehlalarme (91,7 %), 0 geschnitten.** Die Antwort auf
+#38 bleibt, was Runde 27 gemessen hat — **alle zwoelf behalten** —, aber sie ruht jetzt auf einer
+anderen Grundlage: **nicht auf Ausloesercode, sondern auf der Voreinstellung der Checks.** Die drei
+Saetze, wegen derer PR #102 geschlossen wurde, sind oben an ihrer Stelle richtiggestellt, nicht
+danebengeschrieben. Dieser PR bringt **keinen Schnitt**.
+
+**Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `96a987a` (= `origin/main` beim
+Start):** Korpus `app/lint.xml` = **20 `<issue>` + 7 `<ignore>` + 0 `<option>` = 27 Eintraege**
+(`ElementTree`), davon **16 `<issue>`-Bloecke mit `severity`**; die 12 aus #38 sind eine echte
+Teilmenge dieser 16. **Rohbefund** = jeder der 12 Kandidaten aus #38; **bestaetigt** = Eintrag, der
+auch dann nichts bewirkt, wenn man ihm seine Arbeit gibt; **Fehlalarm** = Eintrag, der bleiben muss.
+
+**Der Korpus ist bitgleich mit dem der Vorrunde** (`git diff ad34e57..origin/main -- app/lint.xml`
+→ leer). Nach der Runde-20-Regel waere ein blosses Nachfahren der Vorrundenmessung also
+**Verbrauch, keine Bestaetigung** — deshalb wurde nicht nachgefahren, sondern mit einem anderen
+Verfahren neu gemessen. Das ist der Unterschied, den die Regel meint: eine zweite Messung zaehlt,
+wenn sie eine andere Ebene beruehrt, nicht wenn sie dieselben Knoepfe noch einmal drueckt.
+
+#### Neue Lehre 1: Bei `severity`-Eintraegen ist die REGISTRY der Korpus, nicht der Baum
+
+Runde 27 hat pro Eintrag Ausloesercode geschrieben, kompiliert und A/B gelintet — 5 Ausloeserlaeufe
+plus 2 Basislaeufe — und musste danach in einer eigenen Lehre festhalten, dass drei der zwoelf im
+ersten Anlauf gar nicht feuerten. Das ist der teure Weg zu einer Frage mit **zwei** Werten:
+ein `severity`-Eintrag wirkt genau dann, wenn er von der **Voreinstellung des Checks** abweicht.
+Diese Voreinstellung ist kein Geheimnis, sie steht in `Issue.getDefaultSeverity()`.
+
+Beschafft mit einem Wegwerfprogramm (nichts im Repo): Klassenpfad aus `~/.gradle/caches`
+(`lint-api`/`lint-checks`/`lint-model` 32.4.0, `uast`, `intellij-core`, `kotlin-stdlib`,
+`kotlin-compiler-embeddable`, `kxml2`, `asm`, `gson`), dann jede `IssueRegistry` instanziieren und
+`id`, `defaultSeverity`, `isEnabledByDefault` ausgeben. **Zwei Fallen, beide gemessen:**
+
+- **`LintClient.setClientName(...)` muss vorher gesetzt sein.** Sonst stirbt schon der
+  `<clinit>` von `BuiltinIssueRegistry` an `UninitializedPropertyAccessException: lateinit
+  property clientName has not been initialized` — eine Meldung, die wie ein kaputter Klassenpfad
+  aussieht und keine ist.
+- **Die Bibliotheks-Checks stehen nicht im AOSP-Jar.** `BuiltinIssueRegistry` kennt **512** Issues,
+  darunter **10 der 12**. Die restlichen zwei liegen in den `lint.jar`s der jeweiligen AAR im
+  `transforms`-Baum, mit eigenen Registries: `androidx.fragment.lint.FragmentIssueRegistry`
+  (9 Issues, aus `fragment-1.5.7`) und `androidx.lifecycle.lint.LiveDataCoreIssueRegistry`
+  (1 Issue, aus `lifecycle-livedata-core-2.11.0`).
+
+**Dass diese beiden Jars zu DIESEM Projekt gehoeren, ist nachgesehen und nicht angenommen** — der
+`transforms`-Cache eines Rechners enthaelt auch Fremdes: `androidx.fragment:fragment:1.5.7` und
+`androidx.lifecycle:lifecycle-livedata-core:2.11.0` stehen beide echt aufgeloest (ohne `(c)`) im
+`debugRuntimeClasspath` **und** im `releaseCompileClasspath` von `:app`. Genau die Versionen, deren
+`lint.jar` ausgelesen wurde.
+
+**Das Ergebnis ist eine Tabelle statt einer Erzaehlung** — alle 16 `severity`-Eintraege der Datei,
+nicht nur die 12 aus dem Issue:
+
+| Voreinstellung | Eintrag | Anzahl | Welche |
+|---|---|---|---|
+| `warning` | `informational` | 10 | die 6 Abwertungen aus #38 + `NewerVersionAvailable`, `GradleDependency`, `TrustAllX509TrustManager`, `ObsoleteSdkInt` |
+| `warning` | `error` | 4 | `InsecureBaseConfiguration`, `WorldReadableFiles`, `WorldWriteableFiles`, `StaticFieldLeak` |
+| **`fatal`** | `error` | **1** | `NullSafeMutableLiveData` — **Absenkung**, siehe Lehre 2 |
+| `error` | `error` | **1** | `FragmentLiveDataObserve` — **wirkungslos**, der einzige bestaetigte Befund |
+
+Alle 16 Checks sind registriert und `enabledByDefault=true`; kein Eintrag laeuft ins Leere, keine
+unbekannte ID. 10 + 4 + 1 + 1 = 16. Die Messung dauert nach einem warmen Cache **Sekunden** und
+haengt an keinem Ausloeser, der feuern muss.
+
+#### Neue Lehre 2: In `lintVitalRelease` ist ein `severity`-Eintrag kein Regler, sondern ein AUS-Schalter
+
+Runde 27 hat den Effekt gemessen (zwei Exit-Codes) und ausdruecklich geschrieben, die uebliche
+Erklaerung — „`lintVital` prueft ausschliesslich FATAL-Befunde" — nicht belegt zu haben. Sie ist
+jetzt belegt, und sie ist **schaerfer als ihre Kurzfassung.** `FlagConfiguration.getDefinedSeverity`
+in `lint-api-32.4.0` (`javap -p -c`) tut im `fatalOnly`-Zweig genau dies:
+
+- ist in der Konfiguration eine Severity **gesetzt** und ist sie **nicht `FATAL`** → `IGNORE`;
+- ist **keine** gesetzt → es zaehlt die Voreinstellung, und nur `FATAL` ueberlebt.
+
+Der `fatalOnly`-Schalter kommt aus AGP 9.4.0: `AndroidLintTask$LintVitalCreationAction.getFatalOnly()`
+liefert `iconst_1`, `…$SingleVariantCreationAction.getFatalOnly()` liefert `iconst_0` — `lintVital*`
+laeuft also `fatalOnly`, `lintDebug` nicht.
+
+**Daraus folgt eine Regel, die ueber diesen einen Eintrag hinausgeht:** *jeder* `severity`-Eintrag
+auf einen Check mit Voreinstellung `fatal` nimmt diesen Check aus dem Release-Gatter — **auch
+wenn der eingetragene Wert strenger klingt.** `severity="error"` ist gegenueber `fatal` keine
+Verschaerfung, sondern im Gatter ein `IGNORE`. In dieser Datei trifft das auf genau einen Eintrag
+zu, und er steht unter der Ueberschrift „AKTIVIERTE PRUEFUNGEN (STRENGER)".
+
+Empirisch bestaetigt, beide Laeufe in derselben Sitzung, einziger Unterschied ist die eine Zeile
+in `app/lint.xml` (Ausloeser: eine Wegwerf-Kotlin-Klasse mit **expliziter** Typannotation
+`val daten: MutableLiveData<String> = MutableLiveData()` und `daten.value = null`):
+
+| Lauf | `app/lint.xml` | `./gradlew :app:lintVitalRelease` |
+|---|---|---|
+| A | Eintrag **vorhanden** | **EXIT 0**, BUILD SUCCESSFUL |
+| B | Eintrag **entfernt** | **EXIT 1**, BUILD FAILED, „1 error" |
+
+Praktisch kostet das heute nichts — `git grep -l LiveData -- '*.kt'` → **0** —, aber das Gatter ist
+aus. Es zu aendern ist kein Aufraeumen, sondern eine Entscheidung ueber ein Release-Gatter:
+**nicht angefasst**, die Messung steht in **#103** (das Issue gibt es seit Runde 27; ich habe kein
+zweites angelegt). Ausloeser und Eintrag sind danach zurueckgebaut, `git status --short` ohne
+Ausgabe.
+
+#### Nachgemessen, weil es eine bindende Lehre trug: `UseSparseArrays` meldet kein `HashMap`
+
+Runde 27s Lehre 2 („Der ERKLAERUNGSTEXT eines Lint-Issues ist keine Beschreibung seines Codes")
+haelt — hier unabhaengig am Bytecode nachgesehen statt am Ausloeser. In
+`JavaPerformanceDetector$PerformanceVisitor` (aus `lint-checks-32.4.0`) gibt es `checkSparseArray`,
+die Konstanten `android.util.SparseArray`, `java.lang.Integer`, `java.lang.Boolean`,
+`java.lang.Long` und die Meldungen „Use `new SparseIntArray(...)`" / „Use `new
+SparseBooleanArray(...)`". Die Zeichenfolge `java.util.HashMap` kommt in **keiner** der
+`JavaPerformanceDetector*`-Klassen vor (gezaehlt: 0). Titel des Checks („HashMap can be replaced
+with SparseArray") und der Kommentar in `app/lint.xml` beschreiben also einen Zweig, den es in
+dieser Fassung nicht gibt. **Der Kommentar ist trotzdem nicht umgeschrieben worden** — ob der
+Eintrag bleibt, gehoert dem Eigentuemer, und eine neu formulierte Begruendung nimmt die Antwort
+vorweg (Defekt 2 von PR #37).
+
+#### Zum Gatter: diesmal gibt es einen Kandidaten, und er wird trotzdem nicht hier gebaut
+
+Die Pruefung „**kein `severity`-Eintrag senkt eine `fatal`-Voreinstellung ab**" ist statisch
+entscheidbar, haette heute **0 % Fehlalarm** und haette einen **lebenden** Defekt gefunden — das
+abgeschaltete Release-Gatter oben. Das ist mehr, als die letzten drei Gatter-Kandidaten dieser
+Reihe vorweisen konnten. **Gebaut wird sie hier nicht** (Skill-Regel 4: neun von neun beurteilten
+Aufraeum-PRs); sie liegt als eigenes Issue mit diesen Zahlen. Ehrlich dazu gehoeren ihre Kosten:
+sie braucht die aufgeloeste Registry, also einen JVM-Lauf mit rund zehn Jars aus dem
+Gradle-Cache **und** die `lint.jar`s aus dem `transforms`-Baum — die existieren erst nach einem
+Build. Im Schleusen-Hook ist das nicht umsonst zu haben, und den Konfliktzustand muesste sie
+ausserdem kennen (#60). Eine spaetere Runde entscheidet das mit diesen Zahlen vor Augen.
+
+**Belege:** `assembleDebug` + `testDebugUnitTest` + `lintDebug` gruen; aus den Berichten selbst
+gezaehlt, nicht aus dem Exit-Code: **179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors**.
+`pruefe_reste.py` → „Keine Reste gefunden" (EXIT 0). Lint-Bericht **14 Befunde, kein
+`UnknownIssueId`**, alle aus der Liste der akzeptierten Dauermeldungen (`NewerVersionAvailable` 4,
+`GradleDependency` 3, `TrustAllX509TrustManager` 2, `AndroidGradlePluginVersion`,
+`AutoboxingStateCreation`, `ConfigurationScreenWidthHeight`, `ObsoleteSdkInt`, `PluralsCandidate`
+je 1) — die Zahl schwankt mit fremden Veroeffentlichungen und ist **kein Sollwert**, wie der Skill
+fuer diese Gruppe sagt. Arbeitsbaum nach allen Messungen wieder leer (`git status --short` ohne
+Ausgabe). Alle Messprogramme waren Wegwerfcode im Scratchpad.
+
+**Zum Stand der Werkzeuge, nachgemessen am 19.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unveraendert**
+(zwoelfter Nachtrag, der ihn meldet — selbst ausgezaehlt ueber die `###`-Abschnitte dieser Datei:
+Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28).

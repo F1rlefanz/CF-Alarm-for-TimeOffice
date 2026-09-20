@@ -195,6 +195,11 @@ unverändert.
 > (`DiscoveryStatus.stage` ist ein `String`). Wer diese Strings als Verwender zählt, benutzt genau
 > den Mechanismus, den `ab12d87` als Defekt festgestellt hat. **Die Vollständigkeitsachse ist
 > also NICHT geschlossen** — im Gegenteil, hier liegt der nächste belegte Rohbefund fertig da.
+> *(Dieser letzte Satz gilt nach der Regel, die seit Runde 17 in Kraft ist und in #64 als
+> Vorbedingung 2 steht, NICHT: dort blenden Kommentare aus, **String-Literale zählen mit** — der
+> nachgewiesene Selbstentwaffner war Kommentartext, nicht ein Literal im Produktivcode. Unter der
+> geltenden Regel ist `DiscoveryStage` kein Eintrags-Rohbefund; der Typ ist tot, und das ist
+> **#72**. In Runde 29 nachgemessen, dort auch die Folgen für ein Gatter.)*
 >
 > **Was unverändert gilt:** der Schnitt selbst (neun Einträge in `TargetType`, `ActionType`,
 > `DiscoveryMethod`) ist zum zweiten Mal vom Torwächter bestätigt — kein Verwender, keine
@@ -1787,3 +1792,215 @@ ein Wort zu weit gehen.
    die Runde 28 oben an ihrer Stelle behoben hat. Das ist **kein Fehler des Merges** — der Block ist
    ein datierter Protokolleintrag und haelt fest, warum #102 geschlossen wurde. Wer ihn liest,
    lese die korrigierten Stellen oben dazu; sie tragen die alte Fassung jeweils in Klammern.
+
+### 20.09.2026, Runde 29 (Issue #64, Gatter für Enum-Einträge — es ist heute nicht baubar)
+
+**Ergebnis vorweg: 9 Rohbefunde, 9 bestätigt, 0 Fehlalarme (0 %) — und trotzdem kein Gatter.**
+Die Prüfung ist gebaut und gemessen worden (Wegwerfcode im Scratchpad); sie meldet auf einem
+**sauberen `main`** neun Befunde und beendet `pruefe_reste.py` mit **EXIT 1**. Damit sperrt sie
+Schleuse, CI und Torwächter, solange der Schnitt aus **#19** nicht entschieden ist — und #19 ist
+nach drei Anläufen zurückgestellt, gehört also dem Eigentümer. Dieser PR bringt deshalb **weder
+Gatter noch Schnitt**, nur diesen Nachtrag. `#64` bleibt offen; die Reihenfolge steht jetzt im
+Issue.
+
+**Zahlen, Zählweise ausdrücklich benannt, gemessen gegen `97c75a1` (= `origin/main` beim Start,
+Arbeitsbaum bitgleich):** Korpus **435 `.kt` unter `app/src`**, darin **39 Enums mit 158
+Einträgen** (eigener Tokenizer; Kommentare maskiert, String-Literale behalten, Rohstring- und
+Schachtelungsregel aus Runde 20 eingebaut). **Rohbefund** = Eintrag ohne Verwender nach der Regel
+unten; **bestätigt** = im Baum wirklich nirgends benutzt; **Fehlalarm** = Eintrag, der bleiben
+muss. *Bestätigt heißt hier ausdrücklich NICHT „darf geschnitten werden" — das ist die Frage von
+#19 und hängt an der Historie, nicht am Baum.*
+
+Die vier Selbstprüfungen der Runden 16–20, jede mit ihrem Beleg:
+
+- **leer (16):** 0 Enums ohne geparste Einträge.
+- **Namen (17):** Inventar vollständig ausgedruckt und angesehen — `GOOD_BUT_RISKY` steht als
+  `GOOD_BUT_RISKY` da, nicht als `Y`.
+- **Menge (18):** naive Gegenzählung `git grep -c "enum class"` = **39** = Parserzahl. Auf den Refs
+  der Vorrunden liefert derselbe Parser **`d463025` → 35 / 146** und **`ab12d87` → 37 / 152** —
+  ziffergleich mit dem, was die Runden 16/17 und 18 berichtet haben. Die Differenz zu heute ist
+  Baumbewegung, kein Parserdefekt, und sie geht auf: 146 → 152 sind `AusGrund` (4) + `DndQuelle`
+  (2), 152 → 158 sind `Blockposition` (4) + `Art` (2).
+- **Unterbau (20):** Gegenprobe ohne eigenen Parser und ohne Maskierung,
+  `git grep -c -w -E "<die neun Namen>" -- app/src` → **1 Zeile** in `DiscoveryStatus.kt` +
+  **9 Zeilen** in `HueSchedule.kt` = 10. Das sind die 9 Deklarationen plus **eine** KDoc-Zeile
+  (`HueSchedule.kt:139` nennt `ZONE` und `ROOM` zusammen). Die maskierte Messung ist also exakt die
+  unmaskierte minus Kommentar — Differenz in beide Richtungen erklärt.
+
+#### Neue Lehre 1: Ein namensbasiertes Gatter darf die Rundendokumentation nicht lesen — sonst entwaffnet diese Datei es
+
+Runde 20 hat gemessen, dass der eigene Nachtrag die **Messung einer Runde** verfälscht. Für ein
+**Dauergatter** ist dasselbe keine Momentaufnahme, sondern ein Konstruktionsfehler, und er ist hier
+zum zweiten Mal aufgetreten — in meiner ersten Messfassung. Zwei Läufe desselben Skripts, einziger
+Unterschied ist der Verweis-Korpus:
+
+| Verweis-Korpus | Rohbefunde |
+|---|---|
+| `app/**` (ohne `build`), Kotlin-Kommentare maskiert | **9** |
+| zusätzlich `tools/`, `docs/`, `.claude/`, Wurzel | **0** |
+
+Die Gegenrichtung ist leer (kein Befund, den nur die weite Fassung hat). Die Ursache ist **eine
+einzige Datei**, nachgemessen statt vermutet: `git grep -l -w -E "DIM|BRIGHTEN|SET_COLOR|COLOR_LOOP|N_UPNP" -- . ':(exclude)app'`
+→ **nur `tools/aufraeumen/nachtraege.md`**. Die Runden 17 und 18 haben die neun Namen hier
+aufgeschrieben, um ihren Befund belegbar zu machen — und halten sie damit für jeden Zähler am
+Leben, der diese Datei mitliest. Derselbe Effekt lässt sich datieren: dasselbe Skript mit weitem
+Korpus findet auf **`d463025`** (bevor der Nachtrag die Namen nannte) **9** Befunde und auf
+`origin/main` **0**.
+
+**Die Regel für jedes künftige Gatter:** Der Verweis-Korpus einer Prüfung, deren Befund „niemand
+nennt diesen Namen" lautet, ist **der Quelltext, nicht das Repo.** Rundendoku, Skills und
+CLAUDE.md sind Prosa über den Code; sie halten nichts am Leben. Wer sie mitliest, baut eine Wache,
+die genau dann schweigt, wenn jemand ihren Fund aufschreibt.
+
+#### Neue Lehre 2: Ein blockierendes Gatter braucht einen für SEINE Klasse geräumten Baum — und diese Reihenfolge steht schon im Werkzeug
+
+Der Prototyp (alle vier Vorbedingungen aus #64 umgesetzt) auf dem heutigen Stand:
+
+```
+Pruefung 7            :  9 Befunde  (ActionType 6, TargetType 2, DiscoveryMethod 1)
+Pruefungen 1-6        :  0 Befunde
+=> pruefe_reste.py    :  EXIT 1     auf sauberem main, ohne jede Aenderung am Quelltext
+```
+
+`tools/schleuse/pruefe_schleuse.py:543` ruft das Skript vor jedem `git merge`/`git push`,
+`ci.yml:91` ruft es mit `--ci`, und `torwaechter.yml:126` fährt es selbst und **schließt den PR**,
+wenn es fällt. Ein Gatter, das mit dem PR zusammen in `main` landet, sperrt also ab dem Merge jede
+weitere Auslieferung — dieselbe Wirkung wie der Konfliktzustands-Fehler, an dem PR #56 gescheitert
+ist, nur ohne Merge-Konflikt als Auslöser. **Gemessen, nicht befürchtet.**
+
+Der Ausweg heißt nicht „Gatter weicher machen", sondern **Reihenfolge**, und die steht seit Runde 7
+im Kopf von Prüfung 6 in `pruefe_reste.py`: „*Die Quote stimmt also erst, seit der Baum aufgeräumt
+ist — eine weite Prüfung auf einem ungeräumten Baum wäre ein Fehlalarm-Generator gewesen.*" Für
+Enum-Einträge ist der Baum nicht geräumt: die neun Einträge stehen unverändert da, weil #19 nach
+drei Anläufen zurückgestellt ist. **#64 hängt damit an #19, und zwar zwingend.** Wer das übersieht,
+liefert ein fachlich richtiges Gatter, das das Repo sperrt.
+
+*Die neun sind heute unabhängig nachgeprüft und stehen: keine Iteration, kein `when` über die drei
+Typen, und die einzigen Erzeuger im Baum sind `TargetType.LIGHT/GROUP`, `ActionType.TURN_ON/
+TURN_OFF` und `DiscoveryMethod.ONLINE_DISCOVERY/MDNS`.*
+
+#### Neue Lehre 3: Die „0 % Fehlalarm" in #64 stammen von der SCHNITT-Frage, nicht von der Gatter-Frage
+
+#64 nennt die Klasse gatterfähig, weil Runde 17 „9 Rohbefunde, 9 bestätigt, 0 Fehlalarme" gemessen
+hat. Diese Null gilt für die Frage **„benutzt der Baum den Eintrag?"** — sie ist statisch
+entscheidbar, und mein Lauf reproduziert sie. Die Frage, die ein Gatter beantwortet sehen will,
+ist aber **„darf der Eintrag weg?"**, und die ist es nicht: `TargetType` und `ActionType` sind
+`@Serializable` und stehen im Regelbestand im DataStore. Der KDoc fünf Zeilen darüber
+(`HueSchedule.kt:128`) hält selbst fest, dass `ignoreUnknownKeys` unbekannte **Schlüssel** abdeckt,
+**nicht unbekannte Enum-Werte** — ein Wert, den ein älteres APK geschrieben hat, wird nach dem
+Entfernen zum harten Dekodierfehler. Genau deshalb hat der Torwächter für diese neun einen
+**Erzeugersuchlauf über die gesamte Historie** gemacht; ein Textgatter kann das nicht.
+
+**Also eine fünfte Vorbedingung für #64:** die Prüfung braucht dieselbe Ausstiegsluke wie
+Prüfung 6 — `OHNE VERWENDER` im eigenen KDoc des Eintrags schweigt sie. Ohne sie blockiert der
+erste Alt-Wert, den jemand fürs Dekodieren behalten muss, das ganze Repo, und der einzige Ausweg
+wäre, ihn zu löschen.
+
+#### Der Entwurf, den eine spätere Runde übernehmen kann
+
+Gemessen und lauffähig; er gehört erst in den Baum, wenn #19 entschieden ist.
+
+1. **Konfliktzustand (#60):** `git ls-files -u` nicht leer → schweigen.
+2. **Korpus:** `app/**` ohne `build`, `.kt/.kts/.java` mit maskierten Kommentaren, `.xml/.json/
+   .pro/.txt` roh. Keine `.md`, kein `tools/` (Lehre 1).
+3. **Iterationsausnahme:** `T.entries`, `T.values()`, `T.valueOf(`, `enumValueOf<T>`,
+   `enumValues<T>`, `T::class.java.enumConstants` — heute treffen sie **9 der 39 Typen**. Steht in
+   einem dieser Muster ein Typargument, das **kein bekannter Enum-Typ** ist (reifizierter
+   Typparameter), ist die Frage unentscheidbar und die **ganze Prüfung schweigt**; das ist der
+   Fehlalarm, an dem PR #59 gestorben ist, in die sichere Richtung aufgelöst.
+4. **Zählung:** ein Bezeichner-Index über den Korpus (wie Prüfung 6, sonst Laufzeit), Befund bei
+   `Vorkommen[name] - Deklarationen[name] == 0`. Namensgleichheit über Enums hinweg
+   (`MASTER_PAUSE`, `RULE_TEST`, `VALIDATE`, `NONE`, `UNKNOWN`) **versteckt** dadurch Befunde,
+   statt falsche zu erzeugen — die sichere Richtung (Runde 23, Lehre 2).
+5. **Ausstiegsluke:** `OHNE VERWENDER` im KDoc des Eintrags (Lehre 3).
+6. **Tests:** die Verdrahtung mitprüfen, nicht nur die reine Funktion (Lehre aus PR #48).
+
+**Belege:** `assembleDebug` + `testDebugUnitTest` grün; aus den Berichten selbst gezählt, nicht aus
+dem Exit-Code: **179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors**. `pruefe_reste.py` →
+„Keine Reste gefunden" (EXIT 0), `pruefe_code.py` → EXIT 0. Arbeitsbaum außer diesem Nachtrag
+unberührt; alle Messskripte waren Wegwerfcode im Scratchpad.
+
+**Zu #79, gemessen statt behauptet:** dieser Nachtrag bringt die Datei von **125.679 auf 135.704
+Zeichen (+8,0 %)**, bei 0 geschnittenen Zeilen — die dritte Runde in Folge, die sie um rund 10 k
+wachsen lässt, während sie Pflichtlektüre jeder Runde bleibt. Ich habe sie nicht gekürzt: was hier
+steht, ist entweder Beleg für die Zahlen oben oder der Entwurf, den die nächste Runde braucht.
+**Das Kürzen ist eine Entscheidung des Eigentümers** (welche Lehre in einen Skill wandert und hier
+verschwindet) — genau das, was #79 beantragt.
+
+**Zum Stand der Werkzeuge, nachgemessen am 20.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen, und der Konfliktzustands-Wächter fehlt allen sechs
+(`grep -c 'ls-files", "-u' tools/aufraeumen/pruefe_reste.py` → 0). **#60 gilt unverändert**
+(dreizehnter Nachtrag, der ihn meldet — selbst ausgezählt über die `###`-Abschnitte dieser Datei:
+Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29).
+
+---
+
+### 20.09.2026, Torwaechter zu PR #107 — gerettet, aber vier Stellen richtiggestellt
+
+**PR #107 ist GESCHLOSSEN** (3 von 3 Widerlegern, jeder Punkt vom Torwaechter selbst
+nachgemessen). Der Abschnitt „Runde 29" oben bleibt stehen, weil seine **Messungen ausnahmslos
+halten** — ich habe sie ziffergleich reproduziert: 435 `.kt`, 39 Enums / 158 Eintraege,
+`git grep -c "enum class"` = 39, die neun Rohbefunde (ActionType 6, TargetType 2, DiscoveryMethod
+1) ohne Iteration und ohne `when`, Erzeuger nur `LIGHT/GROUP`, `TURN_ON/TURN_OFF`,
+`ONLINE_DISCOVERY/MDNS`, Gegenprobe 10 Zeilen (9 Deklarationen + `HueSchedule.kt:139`),
+Vorrunden-Refs `d463025` → 35/146 und `ab12d87` → 37/152, die Zeilenverweise
+`pruefe_schleuse.py:543`, `ci.yml:91`, `torwaechter.yml:126`, `pruefe_reste.py` mit sechs
+Pruefungen und `ls-files -u`-Zaehler 0, 179 Berichte / 1393 Tests / 0 Failures / 0 Errors,
+125.679 → 135.704 Zeichen. **Vier Aussagen darin gelten aber NICHT.** Sie stehen hier, weil die
+Datei als Ganzes gerettet werden musste — wer den Abschnitt oben liest, liest diese vier dazu.
+
+**1. „Die Runden 17 und 18 haben die neun Namen hier aufgeschrieben" ist falsch — es war ALLEIN
+Runde 17.** Gemessen ueber die `###`-Abschnitte dieser Datei, Wortgrenzensuche nach allen neun
+Namen: Abschnitt Runde 17 → **9 von 9**, Abschnitt Runde 18 (samt Torwaechter-Block) → **0 von 9**,
+Abschnitt Runde 29 → 7 von 9. Runde 18 nennt nur die drei TYPEN und die Zahl 9, keinen einzigen
+Eintragsnamen. Die eigene Datierung des Nachtrags belegt dasselbe: der weite Lauf findet auf
+`ab12d87` (= Fassung nach Runde 17) bereits **0**. Bitter daran: das ist exakt die Fehlerklasse,
+die fuenf Absaetze weiter oben am Torwaechter-Block zu PR #71 sanktioniert wurde — **ein falsch
+zugeordneter Beleg unter einer richtigen Regel.** Die Regel selbst (Verweis-Korpus eines
+namensbasierten Gatters ist der QUELLTEXT, nicht das Repo) gilt unveraendert und ist gut.
+
+**2. „#64 haengt damit an #19, und zwar zwingend" ist zu stark — die Ausstiegsluke gibt es
+bereits.** `tools/aufraeumen/pruefe_reste.py:442` definiert `BEWUSST_OHNE_VERWENDER = "OHNE
+VERWENDER"`, Zeile 475 ueberspringt damit jeden Fund; der Kopf des Skripts nennt Pruefung 6
+ausdruecklich „blockierend, **mit Begruendungszwang**". Lehre 3 desselben PR macht genau diese
+Luke zur fuenften Vorbedingung — **damit verschwindet das gemessene EXIT 1 ohne jeden Schnitt:**
+neun KDoc-Zeilen an den neun Eintraegen, 0 geloeschte Zeilen, #19 unberuehrt. Das gemessene
+„EXIT 1 auf sauberem `main`" ist eine Eigenschaft des VIER-Vorbedingungen-Prototyps, den der
+Nachtrag drei Absaetze spaeter selbst fuer unvollstaendig erklaert. Auch der zitierte Praezedenzfall
+traegt das „zwingend" nicht: der Satz VOR dem Zitat im Kopf von Pruefung 6 lautet „Nach dem
+Entfernen bleiben DREI, und zwei davon tragen ihre Begruendung im eigenen KDoc" — heute sind es
+**vier** solche Stellen (`TokenData.kt`, `CalendarRepository.kt`, `IShiftUseCase.kt`,
+`NotificationDeliverability.kt`). Pruefung 6 laeuft also auf einem **teils begruendeten**, nicht
+auf einem geraeumten Baum gruen. **Richtig ist: „geraeumt ODER begruendet".** Wer „zwingend" als
+bindend liest, parkt #64 auf unbestimmte Zeit hinter einem zurueckgestellten Issue, obwohl der
+nicht-blockierende Weg danebensteht.
+
+**3. Die Richtigstellung zum #71-Block ist nur halb ausgefuehrt — Danebenschreiben.** Der PR
+entkraeftet den SCHLUSSSATZ von Punkt 2, laesst aber die beiden **fett gesetzten Urteilszeilen
+darueber stehen**, und die sind die Zeilen, die eine eilige Runde liest: „**zwei seiner
+Belegsaetze sind aber falsch**" (es ist jetzt **einer**) und die Ueberschrift „**‚nach dem Schnitt
+0 Rohbefunde' ist widerlegt**" (gilt nach der eigenen Messung des PR **nicht mehr**; Runde 18
+hatte recht). Die inhaltliche Korrektur ist sachlich richtig — `DiscoveryStage` ist tot (#72), alle
+sechs Eintragsnamen stehen als String-Literale im Produktivcode (`OfficialHueDiscoveryService.kt`,
+`AnimatedDiscoveryCard.kt`), vom Torwaechter nachgeprueft —, aber sie gehoert **an die Stelle der
+falschen Saetze**, nicht darunter. Der Skill sagt es woertlich: „Danebenschreiben ist ein Fehler,
+nicht Verlauf."
+
+**4. `HueSchedule.kt:128` ist kein KDoc.** Zeile 128 liegt in einem `//`-Zeilenkommentarblock
+(123–130) INNERHALB der Konstruktor-Parameterliste; der naechste KDoc beginnt bei 137, und bis
+Zeile 139 sind es 11 Zeilen, nicht „fuenf darueber". Das Zitat ist inhaltlich richtig
+(`ignoreUnknownKeys` deckt Schluessel, nicht Enum-Werte; `HueConfigRepository` konfiguriert
+`Json` ohne `coerceInputValues`, und beide Felder haben keinen Default — ein entfernter Wert wird
+zur harten `SerializationException`). In einem Dokument, das „`OHNE VERWENDER` **im KDoc**" zur
+Ausstiegsluke macht, ist die Unterscheidung Kommentar/KDoc aber keine Wortklauberei: ein Gatter,
+das nur KDoc-Bloecke liest, faende die Begruendung an so einer Stelle nicht.
+
+**Was daraus fuer die naechste Runde folgt.** #64 ist durch diese Schliessung beim **zweiten**
+Anlauf (`blickwinkel_waehlen.py` zaehlt nur geschlossene, nicht gemergte PRs — `merged_at` wird
+uebersprungen, Zeile 76). Der Blickwinkel bleibt gut und ist **heute baubar**, wenn die fuenfte
+Vorbedingung aus Lehre 3 mitgebaut wird; er haengt NICHT an #19. Der Entwurf im Abschnitt oben
+(Konfliktzustand, Korpus ohne `tools/` und ohne `.md`, Iterationsausnahme mit Schweigen bei
+reifiziertem Typparameter, Bezeichner-Index, Ausstiegsluke, Verdrahtungstest) ist geprueft und
+uebernehmbar. **Und die Lehre, die diese Runde sich selbst haette geben koennen:** wer einen
+Beleg aus einer frueheren Runde zitiert, misst die Zuordnung nach — dieselbe Datei hat genau
+dafuer schon einen PR gekostet (#71).

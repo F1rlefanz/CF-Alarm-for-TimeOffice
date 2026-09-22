@@ -2004,3 +2004,142 @@ reifiziertem Typparameter, Bezeichner-Index, Ausstiegsluke, Verdrahtungstest) is
 uebernehmbar. **Und die Lehre, die diese Runde sich selbst haette geben koennen:** wer einen
 Beleg aus einer frueheren Runde zitiert, misst die Zuordnung nach — dieselbe Datei hat genau
 dafuer schon einen PR gekostet (#71).
+
+---
+
+### 22.09.2026, Runde 30 (Issue #64, Gatter für Enum-Einträge — der Ertrag ist jetzt gemessen)
+
+**Ergebnis vorweg: 9 Rohbefunde, 9 bestätigt, 0 Fehlalarme — ziffergleich mit Runde 29, aber mit
+einem eigenen Parser gewonnen.** Kein Gatter, und genau **eine** Quelländerung: ein Kommentar, der
+das Gegenteil dessen behauptet, was im Baum steht. Neu an dieser Runde ist die Frage, die an #64
+bisher niemand gestellt hat — **was trägt so ein Gatter eigentlich ein?** Sie ist über die ganze
+Historie beantwortbar, und ihre erste Antwort war falsch.
+
+**Zählweise, ausdrücklich benannt, gemessen gegen `e917087` (= `origin/main` beim Start):** Korpus
+`app/` ohne `build` = **435 `.kt` + 1 `.kts` + 0 `.java`** (Kommentare zeichenlängentreu maskiert,
+String-Literale behalten) plus **16 Rohdateien** (`.xml/.json/.pro/.txt`). Darin **39 Enums mit
+158 Einträgen**. **Rohbefund** = Eintrag, dessen Name im Korpus nur in seiner eigenen Deklaration
+vorkommt, nach Abzug der iterierten Typen; **bestätigt** = im Baum wirklich nirgends benutzt.
+*Bestätigt heißt weiterhin NICHT „darf geschnitten werden" — das ist #19.* Die vier
+Selbstprüfungen:
+
+- **leer (16):** 0 Enums ohne geparste Einträge.
+- **Namen (17):** Inventar vollständig ausgedruckt und angesehen — `GOOD_BUT_RISKY` steht als
+  `GOOD_BUT_RISKY` da, nicht als `Y`.
+- **Menge (18):** naive Gegenzählung `git grep -c -E "enum\s+class"` über den Korpus = **39** =
+  Parserzahl.
+- **Unterbau (20):** `git grep -c -w -E "<die neun Namen>" -- 'app/*'`, ohne Parser und ohne
+  Maskierung → **10 Zeilen** = 9 Deklarationen + `HueSchedule.kt:139` (KDoc, nennt `ZONE`/`ROOM`
+  zusammen). Maskiert = unmaskiert minus Kommentar; Differenz in beide Richtungen erklärt.
+
+Unabhängig mitbestätigt: die **9 von 39** iterierten Typen aus dem Entwurf von Runde 29, und **kein
+einziger reifizierter Typparameter** im Baum (`enumValues<T>`/`enumValueOf<T>` mit unbekanntem
+Argument: keiner). Der Entwurf stimmt also auch in seinen Nebenzahlen.
+
+#### Neue Lehre 1: Den Ertrag eines Gatters misst man an den TODEN, nicht an den Geburten
+
+Erste Messung, und sie klang abschließend: über **574 first-parent-Commits** (968 mit Merges)
+gab es **204 Eintrags-Geburten**, davon **28 ohne Verwender geboren — alle 28 im Initial-Commit
+`34abec2`**, und **0 in den 573 Commits danach**. Daraus folgt scheinbar zwingend „null Ertrag,
+nicht bauen" (Runde 19). Das wäre falsch gewesen: **ein Enum-Eintrag stirbt meistens nicht bei der
+Geburt, sondern wenn jemand seinen letzten Verwender entfernt.** Dieselbe Historie noch einmal,
+diesmal auf Übergänge „benutzt → unbenutzt" gemessen:
+
+| Ereignis nach dem Initial-Commit | Anzahl in 573 Commits |
+|---|---|
+| Eintrag wird TOT GEBOREN | 0 |
+| Eintrag wird nachträglich VERWAIST | **2** |
+
+- `AlarmOutcome.FAILURE`, verwaist in `1cde43d` (25.08.2025). Aufgefallen ist es niemandem; der
+  ganze Typ verschwand später in `4306e34` — durch eine Aufräumrunde, nicht durch ein Gatter.
+- `DiscoveryMethod.N_UPNP`, verwaist mit `5a48374` (25.08.2026, auf `main` über den Merge
+  `c42f9c7`). **Er steht bis heute.**
+
+**Der zweite Fall ist der Grund, warum diese Lehre hier steht.** `5a48374` heißt „chore: toten Code
+aus der Inspektions-Triage abarbeiten" — eine Aufräumrunde. Sie entfernte `HueBridge.discoveryMethod`
+und damit den einzigen Erzeuger von `N_UPNP`, und schrieb **in derselben Änderung in dieselbe
+Datei** den Kommentar „Die drei, die es wirklich gibt - **je ein Erzeuger** in den
+Discovery-Diensten". Der Satz war in dem Moment falsch, in dem er geschrieben wurde, und stand
+**28 Tage**. Das ist wörtlich der Fall, für den es `pruefe_reste.py` gibt („Sucht die Reste, die
+ein Aufräumdurchgang typischerweise hinterlässt") — und weder ein Mensch noch eine der sechs
+Prüfungen hat ihn gesehen.
+
+Die **2 ist eine Untergrenze**: die Todesmessung zählt mit `git grep -o -w` über den **Rohtext**,
+eine Kommentarnennung hält einen Namen also am Leben. Hätte `5a48374` den Namen `N_UPNP` in seinen
+neuen Kommentar geschrieben, wäre der Tod in meiner Messung nicht aufgetaucht. Wer die Zahl
+schärfen will, misst mit Maskierung — sie wird dadurch größer, nie kleiner.
+
+#### Neue Lehre 2: Mein eigener Korrekturkommentar entwaffnet ein unmaskiertes Gatter — heute, nachweisbar
+
+Vorbedingung 2 aus #64 („Kommentare ausblenden, String-Literale mitzählen") war bisher mit PR #59
+belegt und mit Runde 29s Fund über die Rundendoku. Diese Runde liefert den Beleg am eigenen Leib:
+Der korrigierte Kommentar (unten) **muss** `N_UPNP` beim Namen nennen, sonst erklärt er nichts.
+
+```
+                                   vorher     nachher
+git grep -c -w N_UPNP -- 'app/*'   1 Zeile    2 Zeilen
+maskierte Messung                  9 Befunde  9 Befunde
+```
+
+**Ein Gatter, das Kommentare mitzählt, hätte `N_UPNP` ab heute nicht mehr gemeldet — wegen einer
+Zeile, die genau seine Abwesenheit dokumentiert.** Für die Selbstentwaffnung braucht es also weder
+eine ENTFERNT-Notiz noch die Rundendoku; ein ehrlicher Kommentar im Produktivcode genügt.
+
+#### Warum trotzdem kein Gatter in diesem PR
+
+Der Torwächter zu #107 hat recht: die Ausstiegsluke gibt es (`pruefe_reste.py:442`), und neun
+`OHNE VERWENDER`-Zeilen machen die Prüfung ohne einen einzigen Schnitt grün. **Ich habe sie
+trotzdem nicht geschrieben, und zwar aus dem Grund, den Prüfung 6 selbst nennt:** „wer den Text
+`OHNE VERWENDER` in ihrer Doku schreibt, **hat die Entscheidung getroffen** und begründet." Genau
+diese Entscheidung ist #19, #19 ist nach drei Anläufen zurückgestellt und gehört damit dem
+Eigentümer. Dazu kommt, dass die Begründung inhaltlich falsch wäre: der Torwächter zu #71 hat für
+diese neun die **gesamte Historie nach Erzeugern durchsucht und keinen gefunden** — der Befund
+zeigt also zum Schnitt, nicht zum bewussten Behalten. Neun Zeilen „bewusst ohne Verwender" wären
+das Gegenteil des Gemessenen.
+
+**Gemessen, aber bewusst nicht gebaut — damit es niemand neu erfinden muss:** eine Prüfung, die nur
+die gegenüber `merge-base` **NEU verwaisten** Einträge meldet (wie Prüfung 3 ihre Basis nutzt),
+wäre heute grün, ohne die neun anzufassen, und hätte in der Historie **zweimal** geschlagen — genau
+bei den beiden Fällen oben. Sie ist aber ein anderes Gatter als #64 beschreibt, braucht einen
+zweiten vollen Bezeichner-Index über den Basis-Baum und damit deutlich mehr Prüffläche. Wer sie
+will, entscheidet das mit diesen zwei Zahlen vor Augen; wer sie nicht will, hat hier den Grund.
+
+**Die Reihenfolge bleibt: #19 entscheiden, dann ist #64 eine Handbewegung.** Der
+Sechs-Punkte-Entwurf von Runde 29 gilt unverändert und ist oben in seinen Nebenzahlen nachgemessen.
+
+#### Die eine Quelländerung: ein Kommentar, der das Gegenteil behauptet
+
+`hue/data/DiscoveryStatus.kt`. Ausgezählt: von den **acht** `emit(DiscoveryStatus(`-Stellen in
+`OfficialHueDiscoveryService` setzen **vier** `ONLINE_DISCOVERY` und **fünf** `MDNS` (eine wählt
+zur Laufzeit zwischen beiden, daher 4 + 5 auf 8 Stellen) — **`N_UPNP` keine.** Nichts entfernt,
+nichts umbenannt: die falsche Zeile ist durch die Messung ersetzt, nicht danebengeschrieben.
+
+**Entscheidungsrelevant für #19, deshalb dort kommentiert und hier nicht entschieden:** die
+N-UPnP-Phase **gibt es** (`OfficialHueDiscoveryService`, Phase 2). Sie meldet sich über
+`stage = "N_UPNP_SEARCH"` und `currentMethod = "N-UPnP"` und trägt dabei
+`method = ONLINE_DISCOVERY`. Ein Schnitt von `N_UPNP` entfernt also den Wert, der eine
+**existierende** Phase benennen würde — das ist keine reine Altlastfrage mehr, sondern eine über
+die Diagnostik. Der Rest der Runde-29-Lehre 3 gilt unverändert: `TargetType`/`ActionType` sind
+`@Serializable` und stehen im Regelbestand.
+
+**Belege:** `assembleDebug` + `testDebugUnitTest` grün; aus den Berichten selbst gezählt, nicht aus
+dem Exit-Code: **179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors**. `pruefe_reste.py` → „Keine
+Reste gefunden" (EXIT 0), `pruefe_code.py` → EXIT 0, `unittest discover -s tools/aufraeumen` →
+48 Tests OK. Alle Messskripte waren Wegwerfcode im Scratchpad.
+
+**Zum Stand der Werkzeuge, nachgemessen am 22.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Prüfungen (`grep -c "^def pruefe_"` → 6), und der Konfliktzustands-Wächter fehlt allen sechs
+(`grep -c 'ls-files", "-u'` → 0). **#60 ist offen** (`gh issue view 60` → OPEN). Dies ist der
+**vierzehnte** Nachtrag, der ihn meldet — selbst ausgezählt über die `###`-Abschnitte dieser Datei
+(13 vorhandene: Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29), nicht aus Runde 29
+übernommen.
+
+**Zu #79, gemessen — Zaehlweise `wc -c`, also BYTES, wie in den Vorrunden:** dieser
+Nachtrag bringt die Datei von **143.309 auf 152.725 Bytes (+6,6 %)**, die dritte gemessene
+Runde in Folge mit rund +10 k (Runde 28 +12,3 k, Runde 29 +10,0 k). Als Zeichen gezaehlt
+sind es 150.642 — der Unterschied sind die Umlaute, und wer die beiden Masse mischt, bekommt
+eine Wachstumszahl geschenkt, die es nicht gibt. Damit ist sie **5,0x** so gross wie
+CLAUDE.md (30.398 Bytes) und weiterhin Pflichtlektuere jeder Runde, ohne dass
+`pruefe_budget.py` sie misst. Gekuerzt habe ich nichts: was hier steht, ist Beleg fuer die
+Zahlen oben. **Welche Lehre in einen Skill wandert und hier verschwindet, ist die
+Entscheidung, die #79 beantragt** — und sie wird pro Runde teurer.

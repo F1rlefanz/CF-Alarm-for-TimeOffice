@@ -31,7 +31,13 @@ data class DiscoveryStatus(
  * Discovery method being used (Enhanced 2025 Edition)
  */
 enum class DiscoveryMethod {
-    // Die drei, die es wirklich gibt - je ein Erzeuger in den Discovery-Diensten.
+    // ERZEUGER, ausgezaehlt am 22.09.2026: von den acht `emit(DiscoveryStatus(`-Stellen in
+    // OfficialHueDiscoveryService setzen VIER ONLINE_DISCOVERY und FUENF MDNS (eine davon
+    // waehlt zur Laufzeit zwischen beiden) - N_UPNP setzt KEINE. Hier stand bis dahin das
+    // Gegenteil ("je ein Erzeuger"); wer es zurueckschreibt, schreibt eine Messung um.
+    // Die N-UPnP-Phase selbst gibt es sehr wohl: sie meldet sich ueber `stage = "N_UPNP_SEARCH"`
+    // und `currentMethod = "N-UPnP"` und traegt dabei `method = ONLINE_DISCOVERY`. Ob deshalb
+    // der Eintrag weg soll oder die Phase ihn setzen sollte, ist Issue #19 - keine Aufraeumfrage.
     ONLINE_DISCOVERY, N_UPNP, MDNS
     // ENTFERNT (v1.34.3): LOCAL_NETWORK und IP_TEST waren im Code selbst als deprecated markiert,
     // MANUAL und CACHE hatten nie einen Erzeuger. Ein `when` ueber die Werte gibt es nicht,

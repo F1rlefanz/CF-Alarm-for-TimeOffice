@@ -176,8 +176,7 @@ internal class HueSunriseExecutor(
                 on = true,
                 brightness = sunrise.endBrightness,
                 colorTemperature = endCt,
-                transitionTime = HueConstants.Lights.SLOW_TRANSITION_TIME,
-                actionDescription = "Sunrise finalize: ${rule.name}"
+                transitionTime = HueConstants.Lights.SLOW_TRANSITION_TIME
             )
         }
 

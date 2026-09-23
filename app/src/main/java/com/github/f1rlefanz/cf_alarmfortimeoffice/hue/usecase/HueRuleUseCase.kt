@@ -374,8 +374,7 @@ class HueRuleUseCase @Inject constructor(
                         LightAction(
                             targetId = ruleAction.targetId,
                             isGroup = true,
-                            sceneId = ruleAction.sceneId,
-                            actionDescription = "Rule: ${rule.name} - Szene ${ruleAction.sceneName ?: ruleAction.sceneId}"
+                            sceneId = ruleAction.sceneId
                         )
                     )
                     return@forEach
@@ -398,8 +397,7 @@ class HueRuleUseCase @Inject constructor(
                     hue = if (useColorTemperature) null else resolvedHue,
                     saturation = if (useColorTemperature) null else resolvedSaturation,
                     colorTemperature = ruleAction.colorTemperature,
-                    transitionTime = ruleAction.transitionTime,
-                    actionDescription = "Rule: ${rule.name} - ${ruleAction.targetId}"
+                    transitionTime = ruleAction.transitionTime
                 )
                 actions.add(lightAction)
             }

@@ -71,8 +71,7 @@ class RulePreviewCleanupTest {
         private fun batchResult(count: Int) = BatchActionResult(
             totalActions = count,
             successfulActions = count,
-            failedActions = emptyList<LightActionResult>(),
-            overallSuccess = true
+            failedActions = emptyList<LightActionResult>()
         )
 
         // Von executeRuleNow nicht benutzt:

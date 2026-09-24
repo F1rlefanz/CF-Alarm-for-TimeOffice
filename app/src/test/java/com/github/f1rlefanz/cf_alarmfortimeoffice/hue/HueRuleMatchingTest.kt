@@ -68,8 +68,7 @@ class HueRuleMatchingTest {
                 BatchActionResult(
                     totalActions = actions.size,
                     successfulActions = actions.size,
-                    failedActions = emptyList<LightActionResult>(),
-                    overallSuccess = true
+                    failedActions = emptyList<LightActionResult>()
                 )
             )
 

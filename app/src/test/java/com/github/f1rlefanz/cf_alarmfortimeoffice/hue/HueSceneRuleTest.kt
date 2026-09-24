@@ -70,7 +70,7 @@ class HueSceneRuleTest {
         override suspend fun executeBatchLightActions(actions: List<LightAction>): Result<BatchActionResult> {
             batchCalls += actions
             return Result.success(
-                BatchActionResult(actions.size, actions.size, emptyList(), true)
+                BatchActionResult(actions.size, actions.size, emptyList())
             )
         }
 
@@ -80,7 +80,7 @@ class HueSceneRuleTest {
         ): Result<BatchActionResult> {
             batchCalls += actions
             return Result.success(
-                BatchActionResult(actions.size, actions.size, emptyList(), true)
+                BatchActionResult(actions.size, actions.size, emptyList())
             )
         }
 

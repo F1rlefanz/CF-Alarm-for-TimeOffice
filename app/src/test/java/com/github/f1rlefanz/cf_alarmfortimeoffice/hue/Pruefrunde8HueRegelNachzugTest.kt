@@ -78,8 +78,7 @@ class Pruefrunde8HueRegelNachzugTest {
                 BatchActionResult(
                     totalActions = actions.size,
                     successfulActions = actions.size,
-                    failedActions = emptyList(),
-                    overallSuccess = true
+                    failedActions = emptyList()
                 )
             )
 

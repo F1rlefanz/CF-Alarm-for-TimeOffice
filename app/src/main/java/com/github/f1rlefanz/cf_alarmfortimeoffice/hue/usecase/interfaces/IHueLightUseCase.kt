@@ -173,7 +173,6 @@ data class LightAction(
     val saturation: Int? = null,
     val colorTemperature: Int? = null, // White color temperature in mireds (153-500)
     val transitionTime: Int? = null, // Transition duration in deciseconds (0-65535)
-    val actionDescription: String? = null,
 
     /**
      * Gesetzt = diese Aktion wendet eine SZENE an; [targetId] ist dann die Gruppen-Id und
@@ -198,6 +197,5 @@ data class LightActionResult(
 data class BatchActionResult(
     val totalActions: Int,
     val successfulActions: Int,
-    val failedActions: List<LightActionResult>,
-    val overallSuccess: Boolean
+    val failedActions: List<LightActionResult>
 )

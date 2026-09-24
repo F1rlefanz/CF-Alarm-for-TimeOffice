@@ -269,8 +269,7 @@ class HueLightUseCase @Inject constructor(
                     BatchActionResult(
                         totalActions = 0,
                         successfulActions = 0,
-                        failedActions = emptyList(),
-                        overallSuccess = true
+                        failedActions = emptyList()
                     )
                 )
             }
@@ -293,13 +292,11 @@ class HueLightUseCase @Inject constructor(
             val actionResults = results.mapNotNull { it.getOrNull() }
             val successfulActions = actionResults.count { it.success }
             val failedActions = actionResults.filter { !it.success }
-            val overallSuccess = failedActions.isEmpty()
-            
+
             val batchResult = BatchActionResult(
                 totalActions = actions.size,
                 successfulActions = successfulActions,
-                failedActions = failedActions,
-                overallSuccess = overallSuccess
+                failedActions = failedActions
             )
             
             Logger.i(

@@ -818,8 +818,12 @@ Pruefungen, und der Konfliktzustands-Waechter fehlt allen sechs
 **Zahlen, Zaehlweise ausdruecklich benannt, gemessen gegen `c9e3a4a` (= `origin/main` beim
 Start):** Korpus **428** `.kt` unter `app/src`, davon **9** Dateien in `hue/data` mit **28 Typen
 und 160 Properties** (eigener Tokenizer; Kommentare maskiert, String-Literale behalten, Rohstring-
-und Schachtelungsregel aus Runde 20 eingebaut). **87 geprueft, 22 Fehlalarme (25 %), 65 bestaetigt,
-davon 24 geschnitten.** Nachher: **136 Properties**, Fassung C meldet **60** statt 83.
+und Schachtelungsregel aus Runde 20 eingebaut). **87 geprueft, 21 Fehlalarme (24,1 %), 66
+bestaetigt, davon 24 geschnitten.** Nachher: **136 Properties**, Fassung C meldet **60** statt 83.
+*(Hier stand „22 Fehlalarme (25 %), 65 bestaetigt". `HueLightAction.lightId` ist seit Runde 31
+vom Fehlalarm zum bestaetigten Fund umgestuft — siehe die Klammer in Lehre 3 —, und eine
+Umstufung aendert immer BEIDE Zahlen. Vom Torwaechter zu PR #110 beanstandet, in Runde 32
+nachgerechnet; die 24 geschnittenen bleiben, denn Runde 23 hat `lightId` nicht geschnitten.)*
 
 #### Neue Lehre 1: Bei diesem Blickwinkel misst die Fassungswahl das ERGEBNIS, nicht die Genauigkeit
 
@@ -861,15 +865,17 @@ Richtungen — die Gegenrichtung war leer).
 
 #### Neue Lehre 3: Die Serialisierung ist ein Leser, den man nicht sieht
 
-Neun der 22 Fehlalarme sind Felder, die kein Kotlin-Code liest und die trotzdem leben, weil **Gson
+Acht der 21 Fehlalarme sind Felder, die kein Kotlin-Code liest und die trotzdem leben, weil **Gson
 oder kotlinx sie per Reflexion liest**: `BridgeScheduleCommand.address/method/body` und
 `BridgeScheduleCreate.description` sind die Nutzlast des POST an die Bridge — entfernt man sie,
 verschwindet der Zeitplan aus dem JSON, ohne dass ein Test rot wird. `HueScheduleRule.priority`
 und `HueLightAction.targetType/actionType/color` stehen im `@Serializable`-Bestand im
 DataStore (Leitplanke "Ein gespeichertes Format ist kein toter Code").
-*(Hier stand zusaetzlich `HueLightAction.lightId`. Das war falsch: `lightId` war ein
-`get()`-only-Property ohne Hintergrundfeld und damit nie im Bestandsformat — in Runde 31 am
-Serializer-Descriptor gemessen und dort auch geschnitten.)*
+*(Hier stand „Neun" ueber einer Liste mit zusaetzlich `HueLightAction.lightId`. Das war falsch:
+`lightId` war ein `get()`-only-Property ohne Hintergrundfeld und damit nie im Bestandsformat — in
+Runde 31 am Serializer-Descriptor gemessen, in Runde 32 unabhaengig nachgemessen (15 Elemente,
+`lightId` nicht darunter) und dort geschnitten. Die Liste zaehlt seither acht Felder; das Zahlwort
+davor blieb bis Runde 32 stehen und ist mit der Kopfbilanz oben nachgezogen.)*
 
 **Die Unterscheidung, die diese Runde tragfaehig macht, ist die RICHTUNG:** Ein Modell, das nur
 *deserialisiert* wird (Bridge-Antwort), darf jedes ungelesene Feld verlieren — Gson ignoriert
@@ -886,7 +892,11 @@ Geschnitten: **24 Felder** in sechs Bridge-ANTWORT-Modellen, deren Klasse den Sc
 `BridgeSchedule` 1. Jede Klasse traegt jetzt eine ENTFERNT-Notiz nach dem Muster, das
 `HueGroup.roomClass` (v1.34.3) vorgegeben hat.
 
-**41 bestaetigte Funde blieben stehen, jeder mit einem Grund, der nicht "keine Lust" heisst:**
+**42 bestaetigte Funde blieben stehen, jeder mit einem Grund, der nicht "keine Lust" heisst:**
+*(Hier stand „41" — 65 bestaetigte minus 24 geschnittene. Mit der Umstufung von
+`HueLightAction.lightId` sind es 66 − 24 = 42; die Aufzaehlung unten summiert weiterhin auf 41,
+der 42. ist `lightId`, den Runde 23 faelschlich fuer einen Fehlalarm hielt und Runde 31/32
+geschnitten hat. In Runde 32 nachgerechnet.)*
 
 - **`GroupAction` (9 Felder, kein einziges mit Leser)** — der Schnitt leert die Klasse und zoege
   `HueGroup.action` nach. Klassenebene, eigene Runde.
@@ -906,7 +916,7 @@ Geschnitten: **24 Felder** in sechs Bridge-ANTWORT-Modellen, deren Klasse den Sc
   Faehigkeit ohne Bedienoberflaeche gibt es nicht). Das ist eine Produktentscheidung, kein
   Aufraeumen.
 
-**Kein Gatter (Skill-Regel 4)**, obwohl die Fehlalarmquote mit 25 % in der Naehe der Faustregel
+**Kein Gatter (Skill-Regel 4)**, obwohl die Fehlalarmquote mit 24,1 % in der Naehe der Faustregel
 liegt: die drei teuersten Fehlalarm-Bauarten (Leser in einer Datei ohne Klassennennung,
 Verwendung ohne Punkt im eigenen Gueltigkeitsbereich, Serialisierung als Leser) verlangen alle
 Typwissen, das ein Regex nicht hat. Zahlen und Bauarten stehen im Gatter-Issue.
@@ -2493,3 +2503,193 @@ beide haengen an der Liste und altern stumm mit. Die Probe ist billig: nach jede
 einer Aufzaehlung die Eintraege zaehlen und mit dem Zahlwort vergleichen, und im Abschnittskopf nach
 „Fehlalarme"/„bestaetigt" greppen. Eine Umstufung Fehlalarm -> bestaetigt aendert IMMER zwei Zahlen,
 nie eine.
+
+> **ERLEDIGT in Runde 32 (24.09.2026).** Die beiden Zahlen sind an ihrer Stelle richtiggestellt
+> (Kopfbilanz und Zahlwort), die Zeilenverweise oben zeigen auf den Stand vor dieser Korrektur.
+> **Es waren vier, nicht zwei:** an derselben Bilanz haengen „**41** bestaetigte Funde blieben
+> stehen" (66 − 24 = **42**) und die Quote „**25 %**" im Gatter-Absatz (**24,1 %**) — beide in
+> Runde 32 nachgerechnet und mitgezogen. Das schaerft die Lehre darueber: das Zahlwort vor der
+> Liste und die Kopfbilanz sind nicht die einzigen Erben, **jede aus der Bilanz abgeleitete Zahl
+> im selben Abschnitt ist einer** (Differenzen, Quoten). Wer korrigiert, greppt den Abschnitt nach
+> ALLEN Vorkommen der alten Zahlen ab, nicht nach zwei Stellen.
+
+---
+
+### 24.09.2026, Runde 32 (Issue #65 zum dritten Mal — der Schnitt ist durch, mit eigenem Parser)
+
+**Ergebnis: 14 Rohbefunde, 2 Fehlalarme (14,3 %), 12 bestaetigt, 3 geschnitten, 9 stehen
+gelassen — namensgleich mit Runde 31, aber mit einem unabhaengig gebauten Parser gewonnen.**
+Kein Gatter. Die drei Schnitte liegen in `hue/`, keiner in der Weckerkette. Dazu die vier Zahlen
+aus der #110-Richtigstellung, an ihrer Stelle korrigiert (siehe den Block darueber).
+
+**Der Korpus ist bitgleich mit dem der Vorrunde** (`git diff --stat 1fff31c..origin/main -- '*.kt'`
+→ leer; die drei Commits dazwischen sind reine Nachtrags-Rettungen). Nach der Runde-20-Regel waere
+ein Nachfahren der Vorrundenmessung damit **Verbrauch, keine Bestaetigung** — deshalb ist der
+Detektor neu gebaut und nicht uebernommen worden, wie Runde 28 es fuer #38 gemacht hat.
+
+**Zaehlweise, ausdruecklich benannt, gemessen gegen `307d704` (= `origin/main` beim Start,
+Arbeitsbaum bitgleich):** Korpus **435 `.kt` unter `app/src`**, darin **2404 Property-Deklarationen**
+(Klassenrumpf, Dateiebene, Primaerkonstruktor) und **4858 lokale `val`/`var`** (eigener Tokenizer;
+Kommentare zeichenlaengentreu maskiert, String-Literale behalten, Rohstring- und
+Schachtelungsregel aus Runde 20 eingebaut). **Rohbefund** = Property ohne Lesezugriff nach
+Fassung D **und mit mindestens einem Vorkommen ausserhalb aller Deklarationen**; **bestaetigt** =
+am Code nachgesehen und wirklich ohne Leser; **Fehlalarm** = Property, die bleiben muss. Nachher:
+**2401 Deklarationen, 11 Rohbefunde** (= 14 − 3), **kein Folgefund** — die Nachher-Liste ist genau
+die Vorher-Liste minus den drei Schnitten.
+
+Die Fassungen (Runde 19: nie nur eine), Zaehlweise je Zeile:
+
+| Fassung | Frage | Ergebnis |
+|---|---|---|
+| A | „kommt der Name ausserhalb seiner Deklaration ueberhaupt vor?" (Kommentare maskiert) | **6** |
+| B | „wird der NAME gelesen?", ohne Empfaengerregel | **25** |
+| D | „wird die PROPERTY gelesen?" (Punkt/`::`, eigene Datei oder String-Literal; Ausnahme Dateiebene/`object`) | **30** |
+| D ohne die Ausnahme fuer Dateiebene/`object` | dieselbe Frage, falsch gestellt | **64** |
+
+**B ⊂ D, Gegenrichtung leer** (Runde-22-Regel), D \ B sind genau die fuenf, die Runde 31 nennt
+(`ConfigBackup.appVersion/createdAt`, `HueLightAction.lightId`, `BatchActionResult.overallSuccess`,
+`EventPage.hasMore`). **D minus die 16 Properties ohne jedes Vorkommen** (die 10 aus **#89** plus
+die sechs, die Runde 31 als Pruefung-6-Lage beschreibt) **= 14 Rohbefunde, Name fuer Name die
+Liste der Vorrunde.** Zwei unabhaengig gebaute Detektoren, dieselbe Menge — das ist die
+Bestaetigung, die ein Nachfahren nicht gewesen waere. Meine A/B-Zahlen weichen von Runde 31 ab
+(dort 10 / 9), weil ich in A Kommentare maskiere und in beiden Fassungen **alle** Deklarationen
+ausschliesse; die Rohbefundmenge ist davon unberuehrt.
+
+#### Neue Lehre 1: `$name` in einem String ist CODE, kein String-Text — und die Verwechslung versteckt Funde
+
+Die String-Regel seit Runde 17 lautet „String-Literale zaehlen als Verwender" (ein Feldname als
+JSON-Schluessel ist einer). Mein erster Detektor nahm das woertlich und zaehlte **jedes** Vorkommen
+innerhalb von Anfuehrungszeichen — also auch `"Flashing light $lightId"`. Gemessen, einziger
+Unterschied ist die Behandlung der einfachen Template-Referenz:
+
+```
+Fassung D, $name als String-Text :  26 Rohbefunde   (lightId und hasMore FEHLEN)
+Fassung D, $name als Code        :  28 Rohbefunde
+```
+
+`HueLightAction.lightId` hat im Baum 47 Zeilen, und die allermeisten sind `$lightId` in Logtexten
+von **fremden Funktionsparametern** gleichen Namens. Kotlin interpoliert dort einen Bezeichner aus
+dem Gueltigkeitsbereich — das ist ein Lesezugriff auf *diese* lokale Variable, nicht auf die
+Property. **Die Richtung ist die tueckische** (Runde 19): die Verwechslung erzeugt keine falschen
+Funde, sie **versteckt echte**, und eine Runde, die dort aufhoert, meldet „nichts gefunden" und
+klingt gruendlich. Richtig ist: `${...}` und `$name` sind Code und werden wie Code aufgeloest, der
+uebrige Literaltext zaehlt als Verwender.
+
+#### Neue Lehre 2: Zwei gleichnamige Properties in DERSELBEN Datei entwaffnen die „eigene Datei"-Regel
+
+Fassung D zaehlt jedes Vorkommen in der eigenen Datei als Lesezugriff — sonst verlaengert jede
+unqualifizierte Lesestelle im selben Rumpf die Messung ins Unmessbare. Genau diese Grosszuegigkeit
+hat hier zwei Funde verdeckt: `AlarmStatus.batteryOptimizationExempt` (Z. 332) und
+`AlarmPermissionStatus.batteryOptimizationExempt` (Z. 1414) stehen **beide in
+`AlarmManagerService.kt`**. Im ganzen Baum gibt es vier Zeilen mit diesem Namen: zwei
+Deklarationen und zwei Schreibstellen. Jede der beiden Deklarationen galt meinem Zaehler als
+Lesestelle der jeweils anderen; nach dem Ausschluss **aller** Deklarationsorte sprang Fassung D
+von 28 auf 30.
+
+Das ist Runde 23s Namensgleichheits-Lehre eine Stufe weiter: dort trennte nur der Empfaengertyp
+zweier Klassen, hier liegen die Namensvettern in **einer** Datei, und damit trifft es ausgerechnet
+die Ausnahme, die Namensgleichheit sonst entschaerft. **Die Regel: eine Deklaration ist nie ein
+Verwender — auch nicht die Deklaration eines Namensvetters, und schon gar nicht die in der eigenen
+Datei.** Ohne sie bleibt ein Paar gleichnamiger, gleich toter Felder dauerhaft unsichtbar, und
+zwar umso sicherer, je naeher beieinander es steht.
+
+#### Nebenbei, weil es die eigene Messfassung traf: die Rohstring-Regel gilt auch fuer das Messskript
+
+Mein Scanner startete nicht — der Docstring, der die Rohstring-Regel aus Runde 20 *erklaert*, hat
+seine eigenen vier Anfuehrungszeichen enthalten und damit sich selbst beendet. Kosten: eine
+Minute, und der Fehler war laut (`SyntaxError`). Wert der Notiz: die Regel „vier
+Anfuehrungszeichen sind kein Randfall" gilt nicht nur fuer den gemessenen Kotlin-Baum, sondern
+fuer das Python, mit dem gemessen wird — nur faellt sie dort sofort auf und im Korpus erst durch
+einen Phantom-String (Runde 20).
+
+#### Die Selbstpruefungen der Runden 16–20 und 24
+
+- **leer (16):** 128 der 435 Dateien haben keine Property-Deklaration. Liste ausgedruckt und
+  angesehen; Stichprobe `hue/data/HueBridgeConfig.kt` einzeln geprueft — die Datei enthaelt seit
+  ihrer Entkernung nur noch zwei Kommentarzeilen, das Leerergebnis ist echt.
+- **Namen (17):** Inventar vollstaendig ausgedruckt (2404 Zeilen) und angesehen. Der einzige
+  abgeschnitten *wirkende* Name ist `displaySc` (`DimAccessibilityService.kt:77`) — nachgesehen,
+  die Property heisst wirklich so.
+- **Menge (18):** naive Gegenzaehlung `\b(val|var)\s+Bezeichner` ueber denselben maskierten Text =
+  **7207**; mein Tokenizer zaehlt **7262** `val`/`var`-Token. **Die Differenz von 55 ist
+  vollstaendig aufgeloest:** es sind 55 Destrukturierungen (`val (a, b) = …`), die kein
+  Bezeichner-Muster treffen, alle lokal, keine davon eine Property.
+- **Unterbau (20):** roher `git grep -c -w` ohne Parser und ohne Maskierung ueber die drei
+  geschnittenen Namen, vorher gegen nachher: `lightId` **47 → 46**, `actionDescription` **4 → 0**,
+  `overallSuccess` **7 → 0** — ziffergleich mit Runde 31. Die 46 verbliebenen `lightId`-Zeilen sind
+  fremde Funktionsparameter samt ihren Logtexten (siehe Lehre 1).
+- **Zugehoerigkeit (24):** die Trennung Property/lokale Variable haengt an Klammertiefe und Art des
+  oeffnenden `{`, nicht am Pfad. Gegenprobe: nur **26** der 4858 Lokalen liegen in keinem
+  Funktionsrumpf; alle 26 einzeln angesehen, alle sind Lambda-Lokale in einem
+  Property-Initialisierer (`AuthDataStoreRepository` 6, `DimOverlayPrefs` 5, …), keine
+  fehlklassifizierte Klassenproperty.
+
+**Eine Abweichung, die ich benenne statt verschweige:** Runde 31 teilt denselben Korpus in
+**2593 / 4614** statt meiner **2404 / 4858**. Die Summen stimmen beide mit der naiven Zaehlung
+ueberein (7207 + 55 Destrukturierungen), es geht also allein um die Grenze zwischen Property und
+lokaler Variable. Nachpruefbar ist davon eine Zahl: Runde 31 meldet **117** Dateien ohne
+Property-Deklaration, ich **128**. Von meinen 128 enthalten **24** eingerueckte `val`-Zeilen — und
+die liegen samt und sonders in Rumpf-losen Top-Level-`@Composable`-Funktionen
+(`StatusPermissionCards.kt` 36, `StatusTabContent.kt` 35, `MainContentScreen.kt` 18 …), sind also
+Lokale. Ich kann den fremden Parser nicht nachmessen und behaupte deshalb nicht, wo er die Grenze
+zieht; belegt ist nur, dass **meine** Seite der Grenze geprueft ist (die 26 oben) und dass die
+**Rohbefundmenge beider Messungen identisch** ist.
+
+#### Die drei Schnitte, jeder einzeln am Code nachgesehen
+
+| Fund | Belege | Warum der Schnitt traegt |
+|---|---|---|
+| `HueLightAction.lightId` (`HueSchedule.kt:135`) | 0 Leser; die 46 uebrigen Zeilen sind fremde Parameter | **selbst gemessen**, nicht uebernommen: `serializer<HueLightAction>().descriptor` hat **15 Elemente** (`targetType…sceneName`), `lightId` ist **nicht** darunter. Das Bestandsformat aendert sich nachweislich nicht |
+| `LightAction.actionDescription` (`IHueLightUseCase.kt:176`) | 3 Schreibstellen, 0 Leser, im ganzen Baum 4 Zeilen | `LightAction` ist weder `@Serializable` noch Gson-Modell, und **kein** `LightAction`-Wert wird als Ganzes interpoliert: `$action` ohne Punkt kommt in `app/src/main` **viermal** vor, alle vier sind Intent- bzw. Dimmer-Aktionen (`BootReceiver` 2×, `DimNotificationService` 2×, einzeln nachgesehen). Also auch kein `toString`-Leser |
+| `BatchActionResult.overallSuccess` (`IHueLightUseCase.kt:202`) | 7 Schreibstellen, 0 Leser | die Konsumenten lesen `successfulActions`/`failedActions`; die Aussage ist aus `failedActions.isEmpty()` jederzeit wieder herstellbar |
+
+Die Wegwerf-Messung des Descriptors lag als Testklasse im Baum, ist nach dem Lauf entfernt worden
+und taucht in keinem Bericht auf. Mit `overallSuccess` faellt in `HueLightUseCase` die lokale
+`val overallSuccess = failedActions.isEmpty()` weg, die sonst als unbenutzter Rest stehenbliebe;
+mit `actionDescription` die drei Zeichenketten, die sie gefuettert haben.
+
+**Runde 31s Lehre 2 hat sich beim Schneiden bestaetigt:** zwei der sieben `overallSuccess`-
+Schreibstellen sind **positionell** (`HueSceneRuleTest.kt:73` und `:83`,
+`BatchActionResult(actions.size, actions.size, emptyList(), true)`) und tragen den Namen nirgends.
+Wer nach der Namensliste schneidet, laesst sie stehen; hier faengt der Compiler es (ein Argument
+zu viel), bei einem `var` ueber eine Fabrikfunktion gaebe es diesen Fang nicht.
+
+**Neun bestaetigte Funde blieben stehen, unveraendert aus den Gruenden der Runde 31:** fuenf in der
+Weckerkette (`AlarmSkipState.skipActivatedAt/.skipReason`, `AlarmStatus.alarmStatusMessage`,
+`AlarmStatus.batteryOptimizationExempt`, `AlarmPermissionStatus.batteryOptimizationExempt` —
+Leitplanke „Die Weckerkette fasst du nicht an", mechanische Abgrenzung ueber `alarm|service|dimmer`,
+**#111**), `EventPage.hasMore` (**#112**, struktureller Marker fuer das Lazy-Praefix), die zwei
+UI-Zustandsfelder (**#113**) und `BridgeConnectionInfo.bridgeName` (**#92**). Die zwei Fehlalarme
+sind `ConfigBackup.appVersion/createdAt` — `@Serializable`-Felder, die in die **exportierte Datei**
+geschrieben werden; das Modell wird serialisiert, nicht nur deserialisiert. **Ich habe kein neues
+Issue angelegt**, alle vier stehen schon.
+
+**Kein Gatter (Skill-Regel 4), und keins zum Vormerken** — die Begruendung der Runde 31 haelt und
+bekommt durch diese Runde zwei weitere Gruende: die Fassung braucht Empfaengertypen, ihre
+mechanische Naeherung erzeugte dort 34 Fehlalarme, und sie muesste zusaetzlich
+Template-Referenzen von Literaltext trennen (Lehre 1) sowie Namensvettern in einer Datei
+aufloesen (Lehre 2). Beides sind stille Fehler in unterschiedliche Richtungen.
+**Der Blickwinkel gehoert mit 14 / 12 / 2 / 3 in die „Verworfen"-Tabelle des Skills: er lohnt als
+Runde, nicht als Wache.** Und falls es doch jemand versucht: der Verweis-Korpus ist `app/src`,
+sonst nichts (Runde 29, Lehre 1) — dieser Nachtrag nennt die drei geschnittenen Namen, ein
+Zaehler, der `tools/` mitlaese, schwiege ab heute genau deswegen.
+
+**Belege:** `assembleDebug` + `testDebugUnitTest --rerun` gruen (das blosse `testDebugUnitTest` kam
+`FROM-CACHE` — dann meldet man den Lauf eines anderen; erzwungen wiederholt). Aus den Berichten
+selbst gezaehlt, nicht aus dem Exit-Code: **179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors**.
+`pruefe_reste.py` → „Keine Reste gefunden" (EXIT 0), `tools/invarianten/pruefe_code.py` → 6
+Invarianten, alle halten (EXIT 0), `unittest discover -s tools/aufraeumen` → 48 Tests OK. Der
+Arbeitsbaum enthaelt ausser Schnitt und Nachtrag nichts. Alle Messskripte waren Wegwerfcode im
+Scratchpad.
+
+**Zum Stand der Werkzeuge, nachgemessen am 24.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen (`grep -c "^def pruefe_"` → 6), und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u'` → 0). **#60 ist offen** (`gh issue view 60` → OPEN). Dies ist der
+**sechzehnte** Nachtrag, der ihn meldet — selbst ausgezaehlt ueber die `###`-Abschnitte dieser
+Datei (15 vorhandene: Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31).
+
+**Zu #79, gemessen — Zaehlweise `wc -c`, also BYTES:** dieser Nachtrag bringt die Datei von
+**178.232** auf **193.547** Bytes; CLAUDE.md liegt unveraendert bei **30.398** Bytes. Die Datei ist
+damit **6,4x** so gross wie die einzige Pflichtdatei mit gemessenem Budget, und das Lesen kostet
+jede Runde mehr als ihr Blickwinkel. **Welche Lehre in einen Skill wandert und hier verschwindet,
+ist die Entscheidung, die #79 beantragt.**

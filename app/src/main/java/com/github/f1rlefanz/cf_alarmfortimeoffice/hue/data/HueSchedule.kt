@@ -131,9 +131,6 @@ data class HueLightAction(
     val sceneId: String? = null,   // BRIDGE-LOKAL - dieselbe Falle wie [targetId]
     val sceneName: String? = null  // Anker Teil 1; Teil 2 ist [targetName] (die Gruppe)
 ) {
-    // Computed property for targetId access
-    val lightId: String get() = targetId
-
     /**
      * Der EINE Diskriminator fuer ein Szenen-Ziel. Nicht [targetType] - der ist seit jeher
      * dekorativ (`ZONE`/`ROOM` werden nirgends gesetzt, entschieden wird ueber [isGroup]).

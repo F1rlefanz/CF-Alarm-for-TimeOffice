@@ -2552,8 +2552,27 @@ Die Fassungen (Runde 19: nie nur eine), Zaehlweise je Zeile:
 die sechs, die Runde 31 als Pruefung-6-Lage beschreibt) **= 14 Rohbefunde, Name fuer Name die
 Liste der Vorrunde.** Zwei unabhaengig gebaute Detektoren, dieselbe Menge — das ist die
 Bestaetigung, die ein Nachfahren nicht gewesen waere. Meine A/B-Zahlen weichen von Runde 31 ab
-(dort 10 / 9), weil ich in A Kommentare maskiere und in beiden Fassungen **alle** Deklarationen
-ausschliesse; die Rohbefundmenge ist davon unberuehrt.
+(dort 10 / 9); die Rohbefundmenge ist davon unberuehrt.
+
+*(Richtiggestellt vom Torwaechter am 24.09.2026, selbst am Code nachgemessen. Hier stand als
+Begruendung der Abweichung: „weil ich in A Kommentare maskiere und in beiden Fassungen **alle**
+Deklarationen ausschliesse". Fuer **B stimmt das nicht**: B springt 9 -> 25 und D 14 -> 30, beide
+Male um **exakt +16** - das ist allein die Verlagerung des Null-Vorkommen-Filters aus der Fassung
+in die Rohbefund-Definition (14 + 16 = 30, 9 + 16 = 25), nicht der Deklarationsausschluss. Und **A
+schliesst gerade NICHT alle Deklarationen aus**: taete es das, waere A = **16** statt 6. Gemessen:
+`briInc`, `satInc`, `hueInc`, `ctInc`, `xyInc` stehen je **zweimal** im Baum, beide Male als
+Deklaration (`HueLight.kt:54-58`, `HueGroup.kt:71-75`); `tokenType`, `issuedAt`,
+`WICHTIGKEIT_NIEDRIG`, `SURFACE_CORNER_RADIUS`, `CARD_CORNER_RADIUS` je **einmal**, nur die eigene
+Deklaration (die zweite Zeile der beiden Radien ist ein Kommentar in `Shape.kt` und faellt unter
+die Maskierung). Die zehn Namensvettern verdecken einander also genau dann, wenn nur die **eigene**
+Deklaration ausgeschlossen wird - und nur so kommen 16 - 10 = **6** zustande. Die Tabellenfrage
+sagt das mit „ausserhalb **seiner** Deklaration" richtig, **die Zahl 6 ist korrekt**, und sie steht
+auch nicht im Widerspruch zu den „16 Properties ohne jedes Vorkommen" zwei Zeilen darueber: das
+sind zwei verschiedene Fragen. Falsch war allein der Erklaersatz, nicht das Ergebnis 14/12/2/3.
+**Die Lehre ist Lehre 2 dieser Runde in eigener Sache:** Fassung A ist selbst ein Beispiel dafuer,
+wie ein Namensvetter eine Deklaration zum Schein-Verwender macht - wer die A-Zeile fuer „alle
+Deklarationen ausgeschlossen" haelt, misst beim naechsten Mal 16 und sucht den Fehler an der
+falschen Stelle.)*
 
 #### Neue Lehre 1: `$name` in einem String ist CODE, kein String-Text — und die Verwechslung versteckt Funde
 

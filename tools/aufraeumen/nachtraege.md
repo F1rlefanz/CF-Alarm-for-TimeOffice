@@ -201,6 +201,10 @@ unverändert.
 > geltenden Regel ist `DiscoveryStage` kein Eintrags-Rohbefund; der Typ ist tot, und das ist
 > **#72**. In Runde 29 nachgemessen, dort auch die Folgen für ein Gatter.)*
 >
+> > **ERLEDIGT in Runde 33 (25.09.2026):** `DiscoveryStage` ist geschnitten. Der Satz „hier liegt
+> > der nächste belegte Rohbefund fertig da" hat gestimmt und ist eingelöst — er war der einzige.
+> > Nach dem Schnitt hat der Blickwinkel „Enum-TYPEN ohne Verwender" **0 Rohbefunde**.
+>
 > **Was unverändert gilt:** der Schnitt selbst (neun Einträge in `TargetType`, `ActionType`,
 > `DiscoveryMethod`) ist zum zweiten Mal vom Torwächter bestätigt — kein Verwender, keine
 > Iteration, kein `when`, kein `.ordinal`, keine ProGuard-Regel, und kein Erzeuger über die
@@ -2712,3 +2716,169 @@ Datei (15 vorhandene: Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
 damit **6,4x** so gross wie die einzige Pflichtdatei mit gemessenem Budget, und das Lesen kostet
 jede Runde mehr als ihr Blickwinkel. **Welche Lehre in einen Skill wandert und hier verschwindet,
 ist die Entscheidung, die #79 beantragt.**
+
+---
+
+### 25.09.2026, Runde 33 (Issue #72, Enum-TYPEN ohne Verwender — der Schnitt ist durch)
+
+**Ergebnis: 1 Rohbefund, 1 bestaetigt, 0 Fehlalarme, 1 geschnitten.** Kein Gatter. Der Schnitt
+liegt in `hue/`, nicht in der Weckerkette. Dazu **eine Richtigstellung an den Zahlen des Issues
+selbst** (unten, Lehre 2) und ein Folgefund als eigenes Issue (**#116**).
+
+**Zaehlweise, ausdruecklich benannt, gemessen gegen `8da05be` (= `origin/main` beim Start,
+Arbeitsbaum bitgleich):** Korpus `app/` ohne `build` = **435 `.kt` + 1 `.kts`** (eigener
+Tokenizer; Kommentare zeichenlaengentreu maskiert, String-Literale behalten, Rohstring- und
+Schachtelungsregel aus Runde 20) plus **16 Rohdateien** (`.xml/.pro/.txt`). Darin **39 Enum-Typen
+mit 158 Eintraegen**. **Rohbefund** = Typname kommt im Korpus nur in seiner eigenen Deklaration
+vor; **bestaetigt** = im Baum wirklich nirgends benutzt; **Fehlalarm** = Typ, der bleiben muss.
+Nachher: **38 Typen, 152 Eintraege, 0 Rohbefunde, kein Folgefund** — die Nachher-Liste ist genau
+die Vorher-Liste minus dem Schnitt.
+
+Die vier Selbstpruefungen der Runden 16–20:
+
+- **leer (16):** 0 Enums ohne geparste Eintraege.
+- **Namen (17):** Inventar aller 39 ausgedruckt und angesehen; `GOOD_BUT_RISKY` steht als
+  `GOOD_BUT_RISKY` da, nicht als `Y`.
+- **Menge (18):** naive Gegenzaehlung `git grep -c -E "enum\s+class"` ueber den Korpus = **39** =
+  Parserzahl. Auf den Refs der Vorrunden liefert derselbe Parser `d463025` → **35/146**,
+  `ab12d87` → **37/152**, `97c75a1` und `e917087` → **39/158** — ziffergleich mit dem, was die
+  Runden 16/17, 18 und 29/30 berichtet haben. Die Differenzen sind Baumbewegung, kein Parserdefekt.
+- **Unterbau (20):** roher `git grep -c -w DiscoveryStage -- 'app/*'` ohne Parser und ohne
+  Maskierung → **1 Zeile** = die Deklaration. Maskiert und unmaskiert stimmen hier ueberein, weil
+  kein Kommentar den Namen nannte; Differenz in beide Richtungen **null**.
+
+**Der Fund:** `enum class DiscoveryStage` (`hue/data/DiscoveryStatus.kt:45`), sechs Eintraege,
+null Verwender. Kein `when`, keine Iteration, kein `enumValues`/`enumValueOf`/`enumConstants` und
+kein `Class.forName` im ganzen Baum. Die sechs Eintragsnamen leben ausschliesslich als
+**Zeichenketten** am Feld `stage: String` weiter (gesetzt in `OfficialHueDiscoveryService`,
+gelesen in `AnimatedDiscoveryCard`) — das ist die Eintrags-Frage und war nie strittig.
+
+*Nebenbefund zur R8-Lage, weil er leicht falsch erzaehlt wird:* `proguard-rules.pro:290` haelt mit
+`-keep class …hue.data.** { *; }` den toten Typ bis heute im APK. Das ist ein Platzhalter, **kein
+Verwender**, und die Regel bleibt nach dem Schnitt unveraendert gueltig (Wildcard, keine
+haengende Referenz).
+
+#### Neue Lehre 1: Fuer „hat das je jemand benutzt?" ist der Kopf der falsche Korpus — und `-S` das falsche Werkzeug
+
+Alle bisherigen Runden haben am **Kopf** gemessen; die Historie kam nur vor, wenn der Torwaechter
+einen Erzeugersuchlauf nachschob (Runde 29) oder Geburten gezaehlt wurden (Runde 30). Fuer einen
+Typ ist die Historie aber die **staerkere** Aussage, und sie ist ein Einzeiler:
+
+```
+git log --all -G "DiscoveryStage" -- 'app/*'   ->  genau 1 Commit: 34abec2 (Initial-Commit)
+```
+
+Bei **974 Commits** heisst das nicht „heute unbenutzt", sondern **nie benutzt gewesen** — der Typ
+wurde tot geboren, zusammen mit dem Feld `stage: String`, das ihn seither ersetzt. Damit ist auch
+die Frage beantwortet, die das Issue ausdruecklich als „**eine Entscheidung, keine Messung**"
+offengelassen hatte (ob der Zeichenketten-Weg der Endzustand ist oder der Enum die Vorlage fuer
+eine Rueckkehr): **es ist eine Messung.** Es gibt keinen Zustand, in den man zurueckkehren
+koennte, weil beide im selben Commit ankamen. Eine als unentscheidbar markierte Frage ist nicht
+immer eine — **pruef erst, ob die Historie sie beantwortet**, bevor du sie dem Eigentuemer
+vorlegst.
+
+**Und dabei ist `-S` nicht `-G`.** `-S` meldet Commits, in denen sich die **Anzahl** der Vorkommen
+aendert, `-G` solche, in denen eine **+/- Zeile** das Muster trifft. Nicht theoretisch: ueber die
+38 verbliebenen Typen, beide Male `--all` und Korpus `app/*`, weichen **16 voneinander ab.**
+
+Die Richtung geht **in beide Richtungen**, und die zweite ist eine Falle dieses Repos:
+
+| Richtung | Faelle | Ursache |
+|---|---|---|
+| `-G` > `-S` | 15 von 16 | zahlneutrale Textaenderungen (Zeile umgeschrieben/verschoben) — `-S` sieht sie nicht |
+| `-S` > `-G` | 1 (`Art`: 22 gegen 14) | **Binaerblobs**: `-S` zaehlt Byte-Vorkommen auch dort, `-G` braucht eine Textzeile und bekommt bei `Bin … bytes` keine |
+
+Die acht Phantom-Commits bei `Art` gehen samt und sonders auf **`app/release/app-release.aab`**,
+ein eingechecktes 27-MB-Bundle: es lag vom **24.08.2025** (`e99225e`) bis zum **29.10.2025**
+(`a545f88`, `.gitignore` schliesst AAB/APK aus) im Baum und wird von **14 Commits** beruehrt. Im
+Kopf liegt es nicht mehr — `git ls-files 'app/release/*'` ist leer —, in der Historie sehr wohl,
+und `-- 'app/*'` fasst es mit an.
+
+**Fuer meinen Fund blieb das folgenlos, und das ist gemessen, nicht gehofft:** eine `.aab` ist ein
+ZIP, die Klassennamen darin sind komprimiert, `git show <ref>:app/release/app-release.aab |
+grep -c DiscoveryStage` → **0**. Bei `Art` reicht dagegen jede zufaellige Bytefolge in 27 MB.
+**Die Regel:** Wer die Historie als Beleg nimmt, nimmt **`-G`** und nennt es so; wer `-S` nimmt,
+muss wissen, ob Binaerblobs im Korpus liegen — in diesem Repo liegen sie das, nur nicht im Kopf,
+wo man nachsieht.
+
+#### Neue Lehre 2: Ein billiger Vorfilter braucht dieselbe Maskierungsdisziplin wie der Hauptzaehler
+
+Issue #72 misst den Blickwinkel in seiner naiven Form ueber „**ohne jede Nennung ausserhalb der
+eigenen Datei**" und nennt **5 Kandidaten, davon 4 Fehlalarme (80 %)**. Auf **seinem eigenen Ref**
+(`ab12d87`) nachgemessen sind es **7 Kandidaten, davon 6 Fehlalarme (85,7 %)** — und heute
+(`8da05be`) ebenfalls 7. Es fehlen:
+
+```
+AlarmPermissionLevel   einzige auswaertige Nennung: StatusPermissionCards.kt:688     // KOMMENTAR
+HueConnectionHealth    einzige auswaertige Nennung: HueBridgeConnectionManager.kt:1187 // KOMMENTAR
+```
+
+**Beide Kommentarzeilen standen schon auf `ab12d87`** (nachgesehen, Zeilen 687 bzw. 1179) — es ist
+also ein Messfehler der Vorrunde, **keine Baumbewegung**. Der Vorfilter zaehlte Kommentartext als
+auswaertigen Verwender, waehrend der Hauptzaehler das (seit Runde 17) nicht tut.
+
+**Die Richtung ist die tueckische, wie bei Runde 19 und Runde 32:** der Vorfilter erzeugt keine
+falschen Kandidaten, er **verwirft echte, bevor der sorgfaeltige Zaehler sie je sieht** — und die
+Runde meldet eine kleinere, sauberer klingende Grundmenge. Dass der eine echte Fund nicht unter
+den zwei Verworfenen war, ist **Glueck, kein Verfahren**. Das ist Runde 29s Lehre 1 (Verweis-Korpus
+eines namensbasierten Zaehlers ist der Quelltext) eine Stufe frueher angesetzt: sie gilt nicht
+erst fuer das Gatter, sondern schon fuer den **Vorfilter, mit dem du die Kandidatenliste
+zusammenstreichst**. Wer zweistufig misst, maskiert auf **beiden** Stufen gleich.
+
+#### Der Folgefund ist gemessen und bewusst NICHT mitgeschnitten (#116)
+
+`DiscoveryMethod` **hat Verwender** — Feldtyp von `DiscoveryStatus.method`, acht Erzeugerstellen in
+`OfficialHueDiscoveryService` (neun Nennungen, Zeile 155 waehlt ternaer), dazu ein `import`; mein
+Detektor zaehlt 11 Vorkommen. Er ist damit **kein Rohbefund dieses Blickwinkels**. Tot ist die
+ganze **Kette**: `git grep -nE "\.method\b" -- 'app/*.kt'` ist **leer**, das Feld wird achtmal
+geschrieben und nie gelesen. Das ist die Frage von **#65** und braucht deren Detektor, nicht
+diesen — deshalb steht sie als **#116** und nicht in diesem Schnitt (Praezedenzfall Runde 24,
+„Die Folgefunde sind gemessen und bewusst NICHT mitgeschnitten").
+
+Der KDoc der Datei verwies seit Runde 23 fuer `DiscoveryMethod` auf **#72**. Da diese Runde #72
+schliesst, waere das ein Verweis auf ein geschlossenes Issue geworden; er zeigt jetzt auf #116.
+**Ein Verweis, den die eigene Runde ungueltig macht, gehoert mit derselben Runde umgebogen** —
+sonst ist die naechste Runde diejenige, die ihn fuer einen offenen Punkt haelt.
+
+#### Kein Gatter (Skill-Regel 4), und auch keins zum Vormerken
+
+Die **naive** Fassung ist mit **85,7 % Fehlalarm** (Lehre 2) weit jenseits der ~10-%-Faustregel.
+Die **geschaerfte** Fassung (eigene Datei mitzaehlen, Deklarationsstelle abziehen — genau die
+Leitplanke „Zaehle die eigene Datei mit" aus Runde 6) hat heute 0 % Fehlalarm, aber **nach diesem
+Schnitt einen Ertrag von null**: 0 Rohbefunde, und die Historie sagt, warum. Ueber alle 974
+Commits ist `DiscoveryStage` der einzige Typ, der je ohne Verwender dastand, und er stammt aus dem
+Initial-Commit — dieselbe Lage, die Runde 30 fuer Eintraege gemessen hat (**28 ohne Verwender
+geboren, alle 28 in `34abec2`**). Ein Enum-**Typ** ohne Verwender entsteht in diesem Repo nicht im
+laufenden Betrieb; der Compiler und die Oberflaeche halten ihn fest. **Ein Gatter mit null Ertrag
+ist genau die Sorte, die der Skill fuenfmal geschlossen gesehen hat** (PR #40, #48, #56, #58, #59
+— alle fuenf beurteilten Aufraeum-PRs mit blockierendem Gatter, gegen vier gemergte ohne).
+**Nicht bauen.**
+
+Der Blickwinkel gehoert mit **39 / 1 / 0 / 1** (geprueft / Rohbefunde / Fehlalarme / geschnitten)
+in die „Verworfen"-Tabelle des Skills, mit derselben Formel wie Runde 32: **er lohnte als Runde,
+nicht als Wache.**
+
+**Und falls es doch jemand versucht — Runde 30s Lehre 2, heute erneut nachweisbar in eigener
+Sache:** mein `ENTFERNT`-Kommentar in `DiscoveryStatus.kt` nennt den geschnittenen Namen, roh
+gezaehlt **2 Zeilen** (vorher 1, die Deklaration). Ein **unmaskiertes** Gatter saehe den Namen
+also ab heute „lebendig". Hier kostet das nichts, weil die Deklaration weg ist und es nichts mehr
+zu finden gibt — aber es ist derselbe Mechanismus, und er trifft beim naechsten Mal einen Typ, den
+es noch gibt. Verweis-Korpus bleibt `app/`, Kommentare bleiben maskiert.
+
+**Belege:** `assembleDebug` + `testDebugUnitTest --rerun-tasks` gruen. Aus den Berichten selbst
+gezaehlt, nicht aus dem Exit-Code: **179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors**.
+`pruefe_reste.py` → „Keine Reste gefunden" (EXIT 0), `tools/invarianten/pruefe_code.py` → 6
+Invarianten, alle halten (EXIT 0). Der Arbeitsbaum enthaelt ausser Schnitt und Nachtrag nichts;
+alle Messskripte waren Wegwerfcode im Scratchpad.
+
+**Zum Stand der Werkzeuge, nachgemessen am 25.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen (`grep -c "^def pruefe_"` → 6), und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u'` → 0). **#60 ist offen** (`gh issue view 60` → OPEN). Dies ist der
+**siebzehnte** Nachtrag, der ihn meldet — ausgezaehlt ueber die `###`-Abschnitte dieser Datei, die
+`#60` nennen (16 vorhandene: Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32).
+
+**Zu #79, gemessen — Zaehlweise `wc -c`, also BYTES:** die Datei stand beim Start dieser Runde bei
+**195.207** Bytes (Runde 32 meldete 193.547; die Differenz ist der Torwaechter-Block zu PR #114).
+CLAUDE.md liegt unveraendert bei **30.398** Bytes. Auch diese Runde laesst die Datei wachsen, und
+auch sie kuerzt nicht: **welche Lehre in einen Skill wandert und hier verschwindet, ist die
+Entscheidung, die #79 beantragt.**

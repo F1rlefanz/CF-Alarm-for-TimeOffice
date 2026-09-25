@@ -2753,6 +2753,20 @@ kein `Class.forName` im ganzen Baum. Die sechs Eintragsnamen leben ausschliessli
 **Zeichenketten** am Feld `stage: String` weiter (gesetzt in `OfficialHueDiscoveryService`,
 gelesen in `AnimatedDiscoveryCard`) — das ist die Eintrags-Frage und war nie strittig.
 
+> **RICHTIGGESTELLT vom Torwaechter (25.09.2026):** **fuenf**, nicht sechs Eintragsnamen werden
+> gesetzt. `git grep -n 'stage = ' -- 'app/*.kt'` nennt acht Stellen in
+> `OfficialHueDiscoveryService` mit STARTING, MDNS_SEARCH, N_UPNP_SEARCH, COMPLETED (3x) und
+> FAILED (2x). `"VALIDATING"` kommt im **ganzen Baum** nur als Lesezweig vor
+> (`AnimatedDiscoveryCard.kt:242,252`) und ist damit unerreichbar. Der Satz „gesetzt in
+> `OfficialHueDiscoveryService`" steht wortgleich auch im neuen Quelltext-Kommentar
+> (`DiscoveryStatus.kt:32-33`) — **dort gehoert er von der naechsten Runde richtiggestellt**, an
+> derselben Stelle, an der nachgesehen wird. Am Schnitt aendert das nichts: ein toter Lesezweig
+> ist kein Verwender des Enums.
+>
+> Vorbestehend und **nicht** dieser Runde zuzurechnen, gehoert aber nach #116: `DiscoveryStatus.kt`
+> behauptet fuer `DiscoveryMethod` „je ein Erzeuger in den Discovery-Diensten" —
+> `git grep -n "DiscoveryMethod.N_UPNP" -- 'app/*'` ist **leer**.
+
 *Nebenbefund zur R8-Lage, weil er leicht falsch erzaehlt wird:* `proguard-rules.pro:290` haelt mit
 `-keep class …hue.data.** { *; }` den toten Typ bis heute im APK. Das ist ein Platzhalter, **kein
 Verwender**, und die Regel bleibt nach dem Schnitt unveraendert gueltig (Wildcard, keine
@@ -2845,11 +2859,39 @@ sonst ist die naechste Runde diejenige, die ihn fuer einen offenen Punkt haelt.
 Die **naive** Fassung ist mit **85,7 % Fehlalarm** (Lehre 2) weit jenseits der ~10-%-Faustregel.
 Die **geschaerfte** Fassung (eigene Datei mitzaehlen, Deklarationsstelle abziehen — genau die
 Leitplanke „Zaehle die eigene Datei mit" aus Runde 6) hat heute 0 % Fehlalarm, aber **nach diesem
-Schnitt einen Ertrag von null**: 0 Rohbefunde, und die Historie sagt, warum. Ueber alle 974
-Commits ist `DiscoveryStage` der einzige Typ, der je ohne Verwender dastand, und er stammt aus dem
-Initial-Commit — dieselbe Lage, die Runde 30 fuer Eintraege gemessen hat (**28 ohne Verwender
-geboren, alle 28 in `34abec2`**). Ein Enum-**Typ** ohne Verwender entsteht in diesem Repo nicht im
-laufenden Betrieb; der Compiler und die Oberflaeche halten ihn fest. **Ein Gatter mit null Ertrag
+Schnitt einen Ertrag von null**: 0 Rohbefunde.
+
+> **RICHTIGGESTELLT vom Torwaechter (25.09.2026, PR #117 gemergt).** Hier stand: „Ueber alle 974
+> Commits ist `DiscoveryStage` der einzige Typ, der je ohne Verwender dastand … Ein Enum-**Typ**
+> ohne Verwender entsteht in diesem Repo nicht im laufenden Betrieb; der Compiler und die
+> Oberflaeche halten ihn fest." **Das ist falsch, und das Repo widerlegt es selbst.** In `4306e34`
+> (18.08.2026) wurde `service/AlarmTypes.kt` mit **fuenf** Enum-Typen geloescht, und alle fuenf
+> standen am Eltern-Commit mit **null** Vorkommen ausserhalb ihrer eigenen Deklaration — selbst
+> nachgemessen, nicht uebernommen:
+>
+> ```
+> git grep -c -w AlarmOutcome              4306e34^ -- 'app/*'  ->  service/AlarmTypes.kt:1
+> git grep -c -w EscalationLevel           4306e34^ -- 'app/*'  ->  service/AlarmTypes.kt:1
+> git grep -c -w FallbackActivationReason  4306e34^ -- 'app/*'  ->  service/AlarmTypes.kt:1
+> git grep -c -w VerificationFailureReason 4306e34^ -- 'app/*'  ->  service/AlarmTypes.kt:1
+> git grep -c -w VerificationSource        4306e34^ -- 'app/*'  ->  service/AlarmTypes.kt:1
+> ```
+>
+> Der historische Ertrag dieses Blickwinkels ist damit **mindestens 6, nicht 1**. Der Fehler ist
+> nicht die Zahl, sondern ihre Herkunft: die Historie wurde **nur fuer den eigenen Fund** abgefragt
+> (`git log --all -G DiscoveryStage`) und das Ergebnis als Aussage ueber **alle** Typen verkauft —
+> genau der Schluss von der Stichprobe 1 auf ein Gesetz, den Lehre 1 desselben Nachtrags anderen
+> vorhaelt. Wer eine Aussage ueber *alle* Typen braucht, fragt *alle* ab.
+>
+> **Und der verschwiegene Praezedenzfall ist der lehrreichere:** fuenf der sechs lagen in
+> `service/`, mitten in der **Weckerkette** — dort, wo die Leitplanke Nicht-Schneiden und ein
+> Issue verlangt. Wie dieser Blickwinkel im Weckerpfad zu behandeln ist, ist an `4306e34`
+> abzulesen (dessen Commit-Nachricht nennt die Attrappe beim Namen), nicht an `DiscoveryStage`.
+>
+> **Was unveraendert gilt:** der Schnitt selbst, seine Zahlen (39 / 1 / 0 / 1) und das Urteil
+> **kein Gatter**. Fuer den Ertrag heute ist die 6 unerheblich — alle sechs Typen sind geschnitten,
+> am Kopf stehen 0 Rohbefunde. Ein Gatter mit null Ertrag bleibt die Sorte, die fuenfmal
+> geschlossen wurde. **Ein Gatter mit null Ertrag
 ist genau die Sorte, die der Skill fuenfmal geschlossen gesehen hat** (PR #40, #48, #56, #58, #59
 — alle fuenf beurteilten Aufraeum-PRs mit blockierendem Gatter, gegen vier gemergte ohne).
 **Nicht bauen.**

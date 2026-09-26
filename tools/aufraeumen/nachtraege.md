@@ -2924,3 +2924,150 @@ Pruefungen (`grep -c "^def pruefe_"` → 6), und der Konfliktzustands-Waechter f
 CLAUDE.md liegt unveraendert bei **30.398** Bytes. Auch diese Runde laesst die Datei wachsen, und
 auch sie kuerzt nicht: **welche Lehre in einen Skill wandert und hier verschwindet, ist die
 Entscheidung, die #79 beantragt.**
+
+---
+
+### 26.09.2026, Runde 34 (Issue #76, Handstart `rundenweise_aufraeumen.cmd`)
+
+**Ergebnis: 0 Rohbefunde, 0 Schnitte, keine Quellaenderung, kein Gatter.** #76 ist eine Rueckfrage
+und bleibt eine — aber ihr Belegfundament war leer: der Torwaechter hat es zu PR #78 gestrichen
+(„#76 bleibt offen, **aber ohne diesen Beleg**"). Diese Runde stellt es wieder her, damit der
+Eigentuemer ueberhaupt entscheiden kann. Der Nachtrag ist bewusst kurz gehalten (#79).
+
+**Zaehlweise, gemessen gegen `f52bc95` (= `origin/main` beim Start, Arbeitsbaum sauber).** Die
+Laufhistorie mit dem Vollausgabe-Schalter, wie es die Runde-20-Lehre verlangt
+(`gh run list --workflow aufraeumen.yml -L 100`, 33 < 100, also vollstaendig):
+
+```
+33 Laeufe   33 verschiedene Tage   25.08.-26.09.2026   Spanne 33 Kalendertage   Luecken: keine
+Ereignis:   32 schedule + 1 workflow_dispatch (25.08.)
+Ergebnis:   30 success + 2 failure (29.08., 21.09.) + 1 ohne (der Lauf von heute laeuft noch)
+```
+
+Beide Summen gehen auf 33 auf. Die eine `workflow_dispatch`-Zeile ist der Erstlauf am Anlegetag,
+kein spaeterer Handstart.
+
+#### Der `.cmd` ist heute funktionsfaehig — zwei vermutete Defekte sind gemessen keine
+
+Ich hatte zwei Fehler im Skript vermutet. Beide fielen, und das gehoert hierher, weil beide als
+Befund ueberzeugend ausgesehen haetten:
+
+1. `set LOGDIR=..Projektdateien\aufraeum-protokolle` sieht wie ein verlorener Backslash aus. Ist
+   keiner: `..Projektdateien` ist ein bewusster Verzeichnisname dieses Repos, in `.gitignore:92`
+   als `/..Projektdateien` verankert und an **fuenf weiteren Zeilen in vier Dateien** genannt
+   (`pruefe_schleuse.py:211`, `sitzungsstart.py:6` und `:55`, zwei Skill-Referenzdateien). Das
+   Protokoll landet wirklich ungetrackt. **Ein Pfad, der wie ein Tippfehler aussieht, wird gegen
+   `.gitignore` UND den restlichen Baum gemessen, bevor er ein Befund ist.** Gezaehlt ist dabei
+   gegen `f52bc95`, nicht gegen den Arbeitsbaum: dort nennt inzwischen **dieser Absatz** den Namen
+   dreimal mit, und aus fuenf Zeilen in vier Dateien wuerden acht in fuenf. Das ist Runde 20s
+   Selbstentwaffnung, hier in eigener Sache und zum Nachzaehlen.
+2. `--permission-mode dontAsk` hielt ich fuer abgekuendigt. Claude Code 2.1.283 nennt auf einen
+   unsinnigen Wert hin selbst die erlaubten: `acceptEdits, auto, bypassPermissions, manual,
+   dontAsk, plan` — **`dontAsk` ist gueltig**, ebenso `--disallowedTools` und `-p`. **Der
+   Fehlerpfad eines Werkzeugs ist der billigste Weg zu seiner Werteliste**, und er kostet hier
+   keine Sitzung; `--help` fuehrt die Werte nicht.
+
+Ebenfalls geprueft und haltend: der Freitext-Auftrag des Skripts („Raeum weiter auf: …") trifft die
+Skill-Beschreibung, die genau diese Wendung fuehrt. Das Skript wuerde heute starten.
+
+#### Zwei Aussagen in seinem Kopf sind dagegen falsch bzw. ueberholt
+
+- „braucht aber **ANTHROPIC_API_KEY** und kostet extra": `git grep -n ANTHROPIC_API_KEY` findet den
+  Namen im **ganzen Baum genau einmal — in eben dieser Kommentarzeile**. Die vier Workflows, die
+  Claude starten, benutzen `CLAUDE_CODE_OAUTH_TOKEN` (5 Zeilen in 4 Dateien). Das ist die Bauart
+  von Runde 26 (`createBatteryOptimizationIntent()`): eine Begruendung, deren einziger Beleg sie
+  selbst ist.
+- „Die **Alternative** waere GitHub Actions": keine Alternative, sondern seit 33 lueckenlosen Tagen
+  der Regelbetrieb.
+
+#### Eine Faehigkeit hat nur der Handweg — das ist der Teil, der fuer die Entscheidung fehlte
+
+`rundenweise_aufraeumen.cmd pruefen` faehrt alle Vorbedingungen und haelt **vor** der Runde an
+(„Ein Ausloeser, den man nie gefahrlos ausprobieren kann, wird nie ausprobiert"). `aufraeumen.yml`
+hat `workflow_dispatch:` **ohne jede Eingabe** (`grep -c "inputs:"` → 0), also keinen Trockenlauf.
+Das Repo kennt das Gegenstueck: `sammel-release.yml` traegt fuer genau diesen Zweck die Boolesche
+Eingabe `nur_rauchtest`. Und es kennt die Konvention fuer ein Handskript, das neben einer
+Automatik lebt: `tools/geraet/rauchtest.sh` ist **eine** Datei, von `sammel-release.yml:127`
+aufgerufen und im eigenen Kopf ausdruecklich „ausserdem lesbar und einzeln aufrufbar" — nicht zwei
+parallele Fassungen. **Wer den `.cmd` entfernt, entfernt den einzigen Trockenlauf der
+Aufraeumkette.** Das ist kein Argument fuers Behalten, sondern die Information, die in der
+Entscheidung fehlte.
+
+#### Warum diese Runde die falsche Kopfzeile NICHT korrigiert
+
+#76 verlangt es ausdruecklich fuer den Behalten-Fall („dann gehoert in den Kopfkommentar ein Satz,
+dass der Regelbetrieb ueber `aufraeumen.yml` laeuft"). Dagegen steht der Praezedenzfall in dieser
+Datei: Runde 27 und 28 haben den gemessen falschen `UseSparseArrays`-Kommentar **stehen gelassen**,
+weil „ob der Eintrag ueberhaupt bleiben soll, die Frage ist, die dem Eigentuemer gehoert, und eine
+neu formulierte Begruendung sie vorwegnimmt" — Defekt 2, an dem PR #37 starb. Der Kopfkommentar des
+`.cmd` **ist** die Begruendung seiner Existenz (das Kostenargument); ihn umzuschreiben, waehrend
+seine Existenz die offene Frage ist, ist derselbe Fehler in neuem Gewand.
+
+**Die Lehre: ein Auftrag im Issue ist nicht bindender als eine Leitplanke.** Kollidieren sie,
+gewinnt die Leitplanke — und die Kollision gehoert in das Issue, nicht stillschweigend in einen
+Diff. Ein Issue ist von einer frueheren Runde geschrieben und kann irren; die Leitplanken sind aus
+geschlossenen PRs bezahlt.
+
+#### Der eigentliche Befund dieser Runde ist die Warteschlange selbst
+
+Gemessen, `gh issue list --label aufraeumen --state open -L 100`, klassiert nach Titelpraefix:
+
+| Klasse | Anzahl | kann eine Runde sie abschliessen? |
+|---|---|---|
+| `Rueckfrage:` / `(Braucht) Ruecksprache:` | **12** | nein — per Konstruktion Entscheidung des Eigentuemers |
+| `Gatter …` | 6 | nein — Skill-Regel 4, und 5 von 5 Gatter-PRs wurden geschlossen |
+| `Blickwinkel:` | **6** | ja |
+| Werkzeug/Meta (#60, #79) | 2 | teils |
+
+12 + 6 + 6 + 2 = 26. **Nur 6 der 26 offenen Issues (23 %) sind Arbeit, die eine Runde abschliessen
+kann** — und die Warteschlange ist aeltestenzuerst sortiert, die zwoelf Entscheidungsissues liegen
+also vorn. Das ist die #39-Mechanik in neuem Gewand: nicht ein gescheiterter Blickwinkel sperrt den
+Kopf der Liste, sondern eine Frage, die keine Runde beantworten **darf**. Diese Runde ist der
+Beleg — sie konnte messen, aber nichts entscheiden. Als eigenes Issue abgelegt.
+
+Dazu die Vorbedingung 4 des `.cmd`, die das nicht sieht: sie zaehlt offene `aufraeumen`-Issues
+(heute **26**) und startet, waehrend das Auswahlwerkzeug **23** waehlbare fuehrt und **3**
+zurueckstellt (#19, #60, #64). Heute harmlos, weil 23 > 0; die Lage, in der es beisst, ist „alles
+Uebrige zurueckgestellt" — dann startet eine Sitzung, die nichts ziehen kann. Das Skript ist vier
+Stunden aelter als `aufraeumen.yml` und kennt den Deckel nicht. **Nicht angefasst**, denn es ist
+dieselbe Datei, ueber deren Existenz #76 entscheidet.
+
+**#76 bleibt offen, und zwar begruendet:** die Messung ist vollstaendig, es fehlt ausschliesslich
+die Entscheidung, und die darf eine Runde nicht treffen („Eine Runde kann das nicht beantworten",
+letzter Satz des Issues). Das kostet nach heutigem Stand eine weitere Runde —
+`blickwinkel_waehlen.py` ueberspringt gemergte PRs (Zeile 76), der Anlaufzaehler bleibt bei 1, #76
+bleibt der aelteste Waehlbare. **Wer nach mir #76 zieht: nichts neu messen, die Zahlen stehen hier
+und im Issue — melden und aufhoeren.**
+
+**Belege:** `assembleDebug` + `testDebugUnitTest --rerun-tasks` gruen; aus den Berichten selbst
+gezaehlt, nicht aus dem Exit-Code: **179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors**.
+`pruefe_reste.py` → „Keine Reste gefunden" (EXIT 0), `tools/invarianten/pruefe_code.py` → 6
+Invarianten, alle halten (EXIT 0), `unittest discover -s tools/aufraeumen` → 48 Tests OK. Der
+Arbeitsbaum enthaelt ausser diesem Nachtrag nichts; alle Messungen waren Einzeiler im Scratchpad.
+
+**Zum Stand der Werkzeuge, nachgemessen am 26.09.2026:** `pruefe_reste.py` hat weiterhin **sechs**
+Pruefungen (`grep -c "^def pruefe_"` → 6), und der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u'` → 0). **#60 ist offen** (`gh issue view 60` → OPEN). Dies ist der
+**achtzehnte** Nachtrag, der ihn meldet — selbst ausgezaehlt ueber die `###`-Abschnitte dieser
+Datei, die `#60` nennen (17 vorhandene: Runden 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+30, 31, 32, 33).
+
+**Zu #79, gemessen — Zaehlweise `wc -c`, also BYTES:** die Datei stand beim Start dieser Runde bei
+**209.704** Bytes (Runde 33 meldete 195.207 zum Start ihrer eigenen Runde; die Differenz sind ihr
+Nachtrag und der Torwaechter-Block zu PR #117). Mit diesem Nachtrag sind es **219.696** Bytes,
+also **+9.992** — CLAUDE.md liegt unveraendert bei **30.398** Bytes, das Verhaeltnis steigt von
+**6,9x auf 7,2x**.
+
+**Eine Rangfolge steht hier bewusst nicht — und der Weg dahin ist die Lehre.** Mein erster Entwurf
+dieses Absatzes schrieb „kleinster gemessener Zuwachs": damals stand die Datei bei +8.625, und die
+Vergleichswerte der Runden 28 (+12.253) und 29 (+10.025) hatte ich aus dieser Datei uebernommen,
+**ohne zu bemerken, dass sie dort in Zeichen stehen und nicht in Bytes** — genau die Vermischung,
+vor der Runde 30 warnt. Nach Abzug der beiden bleiben als Byte-Werte Runde 30 **+9.416**, Runde 31
+**+17.799**, Runde 32 **+15.315**; und weil jede weitere Korrektur den eigenen Zuwachs mitbewegt,
+liegt er am Ende bei **+9.992** und damit **ueber** Runde 30. Die Bestenmarke hat sich also
+waehrend des Schreibens selbst aufgeloest. **Eine Zahl, die sich durch das Aufschreiben aendert,
+taugt nicht zur Rangfolge** — sie braucht einen Fixpunkt, und den hat hier nur der Startwert.
+Runde 19 und 20 haben fuer Zahlen, die nur der Erzaehlung dienten, je einen PR bezahlt. Gegen #79
+kann eine Runde ohnehin nur kurz schreiben:
+**kuerzer werden kann die Datei nur durch Loeschen, und was hier geloescht werden darf, gehoert dem
+Eigentuemer.**

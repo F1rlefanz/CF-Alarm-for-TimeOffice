@@ -3023,7 +3023,10 @@ Gemessen, `gh issue list --label aufraeumen --state open -L 100`, klassiert nach
 kann** — und die Warteschlange ist aeltestenzuerst sortiert, die zwoelf Entscheidungsissues liegen
 also vorn. Das ist die #39-Mechanik in neuem Gewand: nicht ein gescheiterter Blickwinkel sperrt den
 Kopf der Liste, sondern eine Frage, die keine Runde beantworten **darf**. Diese Runde ist der
-Beleg — sie konnte messen, aber nichts entscheiden. Als eigenes Issue abgelegt.
+Beleg — sie konnte messen, aber nichts entscheiden. Als **#119** abgelegt, mit drei Wegen zur
+Auswahl und ohne einen davon zu raten. Der Deckel hilft dagegen nicht: `blickwinkel_waehlen.py:76`
+ueberspringt gemergte PRs beim Anlaufzaehlen, ein gemergter Nachtrags-PR ist also kein „Anlauf",
+und das Issue bleibt der aelteste Waehlbare.
 
 Dazu die Vorbedingung 4 des `.cmd`, die das nicht sieht: sie zaehlt offene `aufraeumen`-Issues
 (heute **26**) und startet, waehrend das Auswahlwerkzeug **23** waehlbare fuehrt und **3**
@@ -3054,8 +3057,8 @@ Datei, die `#60` nennen (17 vorhandene: Runden 16, 18, 19, 20, 21, 22, 23, 24, 2
 
 **Zu #79, gemessen — Zaehlweise `wc -c`, also BYTES:** die Datei stand beim Start dieser Runde bei
 **209.704** Bytes (Runde 33 meldete 195.207 zum Start ihrer eigenen Runde; die Differenz sind ihr
-Nachtrag und der Torwaechter-Block zu PR #117). Mit diesem Nachtrag sind es **219.696** Bytes,
-also **+9.992** — CLAUDE.md liegt unveraendert bei **30.398** Bytes, das Verhaeltnis steigt von
+Nachtrag und der Torwaechter-Block zu PR #117). Mit diesem Nachtrag sind es **219.955** Bytes,
+also **+10.251** — CLAUDE.md liegt unveraendert bei **30.398** Bytes, das Verhaeltnis steigt von
 **6,9x auf 7,2x**.
 
 **Eine Rangfolge steht hier bewusst nicht — und der Weg dahin ist die Lehre.** Mein erster Entwurf
@@ -3064,7 +3067,7 @@ Vergleichswerte der Runden 28 (+12.253) und 29 (+10.025) hatte ich aus dieser Da
 **ohne zu bemerken, dass sie dort in Zeichen stehen und nicht in Bytes** — genau die Vermischung,
 vor der Runde 30 warnt. Nach Abzug der beiden bleiben als Byte-Werte Runde 30 **+9.416**, Runde 31
 **+17.799**, Runde 32 **+15.315**; und weil jede weitere Korrektur den eigenen Zuwachs mitbewegt,
-liegt er am Ende bei **+9.992** und damit **ueber** Runde 30. Die Bestenmarke hat sich also
+liegt er am Ende bei **+10.251** und damit **ueber** Runde 30. Die Bestenmarke hat sich also
 waehrend des Schreibens selbst aufgeloest. **Eine Zahl, die sich durch das Aufschreiben aendert,
 taugt nicht zur Rangfolge** — sie braucht einen Fixpunkt, und den hat hier nur der Startwert.
 Runde 19 und 20 haben fuer Zahlen, die nur der Erzaehlung dienten, je einen PR bezahlt. Gegen #79

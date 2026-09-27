@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik.AbschaltGrund
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik.DienstLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik.RueckkehrArt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik.OverlayWeg
 import org.junit.Assert.assertEquals
@@ -346,5 +347,73 @@ class DimDiagnostikTest {
 
         listOf(RueckkehrArt.ERSTMALIG, RueckkehrArt.SAUBER, RueckkehrArt.NACH_NEUSTART)
             .forEach { assertFalse("$it ist kein Vorfall", DimDiagnostik.istUnerwartet(it)) }
+    }
+
+    // ------------------------------------------------ Schalter an, aber nicht verbunden
+
+    // HERGANG (26./27.09.2026, Fairphone): Der Dienst wurde ordentlich entbunden und kam nicht
+    // zurueck - ein verwaister mobile-mcp-Server hielt eine UiAutomation. Die App meldete
+    // "Dienst ist aus - aktivieren", in den Android-Bedienungshilfen stand der Eintrag auf "An".
+    // Die Tests unten halten die beiden Lagen auseinander.
+
+    private val paket = "com.github.f1rlefanz.cf_alarmfortimeoffice"
+    private val klasse = "$paket.dimmer.DimAccessibilityService"
+
+    @Test
+    fun `die Bindung gewinnt - ein gebundener Dienst ist verbunden, egal was der Schalter liest`() {
+        assertEquals(DienstLage.VERBUNDEN, DimDiagnostik.dienstLage(gebunden = true, eingeschaltet = true))
+        // Schalter nicht lesbar (-> false), Dienst aber gebunden: er dimmt, also verbunden.
+        assertEquals(DienstLage.VERBUNDEN, DimDiagnostik.dienstLage(gebunden = true, eingeschaltet = false))
+    }
+
+    @Test
+    fun `Schalter an ohne Bindung ist eine eigene Lage, nicht ausgeschaltet`() {
+        assertEquals(
+            DienstLage.EINGESCHALTET_NICHT_VERBUNDEN,
+            DimDiagnostik.dienstLage(gebunden = false, eingeschaltet = true)
+        )
+        assertEquals(
+            DienstLage.AUSGESCHALTET,
+            DimDiagnostik.dienstLage(gebunden = false, eingeschaltet = false)
+        )
+    }
+
+    @Test
+    fun `die volle Form im Einstellungswert wird erkannt, auch zwischen fremden Diensten`() {
+        // Genau die Form, die am Fairphone in "Enabled services" stand - samt NachtDimmer daneben.
+        val wert = "$paket/$klasse:com.chris.nachtdimmer/com.chris.nachtdimmer.DimAccessibilityService"
+        assertTrue(DimDiagnostik.istInEingeschaltetenDiensten(wert, paket, klasse))
+    }
+
+    @Test
+    fun `die Kurzform mit fuehrendem Punkt wird erkannt - so setzt sie ein adb settings put`() {
+        assertTrue(
+            DimDiagnostik.istInEingeschaltetenDiensten("$paket/.dimmer.DimAccessibilityService", paket, klasse)
+        )
+    }
+
+    @Test
+    fun `leer, null oder nur fremde Dienste heisst ausgeschaltet`() {
+        assertFalse(DimDiagnostik.istInEingeschaltetenDiensten(null, paket, klasse))
+        assertFalse(DimDiagnostik.istInEingeschaltetenDiensten("", paket, klasse))
+        assertFalse(
+            DimDiagnostik.istInEingeschaltetenDiensten(
+                "com.chris.nachtdimmer/com.chris.nachtdimmer.DimAccessibilityService", paket, klasse
+            )
+        )
+    }
+
+    @Test
+    fun `ein Paket mit gleichem Praefix oder eine andere Klasse im eigenen Paket zaehlt nicht`() {
+        // Etwa eine Debug-Variante mit Suffix neben der Release-App: deren Schalter ist nicht unserer.
+        assertFalse(DimDiagnostik.istInEingeschaltetenDiensten("$paket.debug/$klasse", paket, klasse))
+        assertFalse(DimDiagnostik.istInEingeschaltetenDiensten("$paket/$paket.AndererDienst", paket, klasse))
+    }
+
+    @Test
+    fun `die entbunden-Zeile sagt, ob der Schalter noch an ist`() {
+        assertTrue(DimDiagnostik.entbundenZusatz(nochEingeschaltet = true).contains("AN"))
+        assertFalse(DimDiagnostik.entbundenZusatz(nochEingeschaltet = true).contains("AUS"))
+        assertTrue(DimDiagnostik.entbundenZusatz(nochEingeschaltet = false).contains("AUS"))
     }
 }

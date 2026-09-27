@@ -49,6 +49,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimAccessibilityService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceEntryPoint
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
@@ -986,13 +987,17 @@ internal fun TimeOfficeHealthCard() {
  * Feature; die Karte steht hier, damit der Dienst-Status an einer Stelle ablesbar ist und der
  * Nutzer den Dienst (nach der Play-Pflicht-Offenlegung) direkt aktivieren kann.
  *
+ * Drei Lagen, nicht zwei ([DimDiagnostik.DienstLage]): verbunden, ausgeschaltet — und
+ * eingeschaltet, aber nicht verbunden. Die dritte sieht in den Android-Bedienungshilfen aus wie
+ * alles in Ordnung („An") und braucht deshalb einen eigenen Text mit eigener Abhilfe.
+ *
  * Wie die Nachbarkarten wird der Zustand bei jedem ON_RESUME frisch gelesen — nach der Rueckkehr
  * aus den Bedienungshilfen-Einstellungen springt die Karte so sofort auf gruen. Android startet
  * den Dienst nicht automatisch neu, wenn der Nutzer ihn dort abschaltet.
  *
  * @param aktivierungsAnfragen zaehlt die Einstiege aus der Dimmer-Benachrichtigung „Dimmt nicht —
- *   Bedienungshilfen-Dienst ist aus" (siehe `StatusTabContent`). Jeder Anstieg oeffnet die
- *   Offenlegung, ohne dass die Karte einen Verbrauch zurueckmelden muesste. Laeuft der Dienst
+ *   Bedienungshilfen-Dienst ist aus / nicht verbunden" (siehe `StatusTabContent`). Jeder Anstieg
+ *   oeffnet die Offenlegung, ohne dass die Karte einen Verbrauch zurueckmelden muesste. Laeuft der Dienst
  *   inzwischen doch, passiert nichts — die Meldung hat sich dann von selbst erledigt.
  */
 @Composable
@@ -1003,7 +1008,19 @@ internal fun DimmerAccessibilityCard(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var isActive by remember { mutableStateOf(DimAccessibilityService.isRunning()) }
+    // Die LAGE statt nur der Bindung (Vorfall 26.09.2026): Android zeigt in den Bedienungshilfen
+    // den Schalter, diese Karte die Bindung. Steht der Schalter auf "An" und der Dienst ist
+    // trotzdem nicht gebunden, schickte die Karte den Nutzer zum Einschalten eines Schalters, der
+    // schon an war - und wurde danach nicht gruen. Hergang bei DimDiagnostik.DienstLage.
+    var lage by remember { mutableStateOf(DimAccessibilityService.lage(context)) }
+    val isActive = lage == DimDiagnostik.DienstLage.VERBUNDEN
+    val eingeschaltetNichtVerbunden = lage == DimDiagnostik.DienstLage.EINGESCHALTET_NICHT_VERBUNDEN
+    // Dieselbe Beschriftung auf Karte und Offenlegung: im Fall "an, aber nicht verbunden" gibt es
+    // nichts zu AKTIVIEREN, der Nutzer soll aus- und wieder einschalten.
+    val oeffnenText = stringResource(
+        if (eingeschaltetNichtVerbunden) R.string.dimmer_open_accessibility_neu_verbinden
+        else R.string.dimmer_open_accessibility
+    )
     // rememberSaveable: eine Drehung darf die Offenlegung nicht wegnehmen — sie ist der einzige
     // Weg zum Aktivieren, und ein erneuter Einstieg aus der Benachrichtigung kommt nach der
     // Drehung bewusst nicht noch einmal (siehe MainActivity.onCreate).
@@ -1021,7 +1038,7 @@ internal fun DimmerAccessibilityCard(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                isActive = DimAccessibilityService.isRunning()
+                lage = DimAccessibilityService.lage(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -1037,7 +1054,7 @@ internal fun DimmerAccessibilityCard(
                 TextButton(onClick = {
                     showDisclosure = false
                     openAccessibilitySettings(context)
-                }) { Text(stringResource(R.string.dimmer_open_accessibility)) }
+                }) { Text(oeffnenText) }
             },
             dismissButton = {
                 TextButton(onClick = { showDisclosure = false }) {
@@ -1083,10 +1100,14 @@ internal fun DimmerAccessibilityCard(
                     color = if (isActive) Color.Unspecified else MaterialTheme.colorScheme.onErrorContainer
                 )
                 Text(
-                    if (isActive) {
-                        "Bedienungshilfen-Dienst aktiv — das Dimm-Overlay kann erscheinen"
-                    } else {
-                        "Bedienungshilfen-Dienst nicht aktiv — das Dimmen wirkt erst nach dem Aktivieren"
+                    when (lage) {
+                        DimDiagnostik.DienstLage.VERBUNDEN ->
+                            "Bedienungshilfen-Dienst aktiv — das Dimm-Overlay kann erscheinen"
+                        DimDiagnostik.DienstLage.EINGESCHALTET_NICHT_VERBUNDEN ->
+                            "Bedienungshilfen-Dienst eingeschaltet, aber nicht verbunden — Android " +
+                                "hat ihn nicht gestartet, deshalb wird nicht gedimmt"
+                        DimDiagnostik.DienstLage.AUSGESCHALTET ->
+                            "Bedienungshilfen-Dienst nicht aktiv — das Dimmen wirkt erst nach dem Aktivieren"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isActive) Color.Unspecified else MaterialTheme.colorScheme.onErrorContainer
@@ -1099,7 +1120,15 @@ internal fun DimmerAccessibilityCard(
                     // einen Fehler behauptet, der nicht eingetreten ist, entwertet genau die roten
                     // Karten daneben, an denen der Wecker wirklich haengt.
                     Text(
-                        "Wird gebraucht, sobald du den Schicht-Dimmer benutzt",
+                        if (eingeschaltetNichtVerbunden) {
+                            // Wortgleich mit dem Eintrag in den Android-Bedienungshilfen, und mit
+                            // Handlungsrichtung: der Schalter steht schon auf "An".
+                            "Abhilfe: in den Bedienungshilfen „" +
+                                stringResource(R.string.dim_accessibility_label) +
+                                "“ aus- und wieder einschalten. Hilft das nicht, das Handy neu starten."
+                        } else {
+                            "Wird gebraucht, sobald du den Schicht-Dimmer benutzt"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         fontWeight = FontWeight.Bold
@@ -1107,7 +1136,7 @@ internal fun DimmerAccessibilityCard(
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
                     SettingsLinkButton(
                         onClick = { showDisclosure = true },
-                        text = stringResource(R.string.dimmer_open_accessibility)
+                        text = oeffnenText
                     )
                 }
             }

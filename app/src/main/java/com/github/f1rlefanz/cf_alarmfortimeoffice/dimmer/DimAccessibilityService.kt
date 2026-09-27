@@ -7,6 +7,7 @@ import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.os.Build
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.Display
 import android.view.Gravity
 import android.view.Surface
@@ -107,6 +108,28 @@ class DimAccessibilityService : AccessibilityService() {
 
         /** Ist der Bedienungshilfen-Dienst gerade verbunden/aktiv? */
         fun isRunning(): Boolean = running
+
+        /**
+         * Steht der Schalter dieses Dienstes in den Android-Bedienungshilfen auf „An"?
+         *
+         * NICHT dasselbe wie [isRunning]: Android kann einen eingeschalteten Dienst trennen, ohne
+         * den Schalter anzufassen — Hergang bei [DimDiagnostik.DienstLage]. Ein Lesefehler ergibt
+         * `false`, also die bisherige Aussage „ausgeschaltet".
+         */
+        fun istEingeschaltet(context: Context): Boolean = runCatching {
+            DimDiagnostik.istInEingeschaltetenDiensten(
+                Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ),
+                context.packageName,
+                DimAccessibilityService::class.java.name
+            )
+        }.getOrDefault(false)
+
+        /** Bindung und Schalter zusammen — die Lage, die Karte und Benachrichtigung anzeigen. */
+        internal fun lage(context: Context): DimDiagnostik.DienstLage =
+            DimDiagnostik.dienstLage(gebunden = isRunning(), eingeschaltet = istEingeschaltet(context))
     }
 
     /**
@@ -337,7 +360,11 @@ class DimAccessibilityService : AccessibilityService() {
      */
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         running = false
-        Logger.w(LogTags.DIMMER, "Dimm-Dienst entbunden - Overlay verschwindet - ${snapshot()}")
+        Logger.w(
+            LogTags.DIMMER,
+            "Dimm-Dienst entbunden - Overlay verschwindet - ${snapshot()} - " +
+                DimDiagnostik.entbundenZusatz(istEingeschaltet(this))
+        )
         merkerAus()
         return super.onUnbind(intent)
     }

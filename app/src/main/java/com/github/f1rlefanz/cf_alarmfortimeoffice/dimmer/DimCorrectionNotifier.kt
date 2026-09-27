@@ -143,18 +143,31 @@ class DimCorrectionNotifier @Inject constructor(
      * gerade"), und zwei nebeneinander stehende Dimmer-Meldungen waeren genau die Doppelaussage,
      * die hier korrigiert werden soll. Der naechste Tick mit gebundenem Dienst ersetzt sie
      * lautlos durch die normale Korrektur-Ansicht.
+     *
+     * ZWEI TEXTE, weil es zwei Lagen mit verschiedener Abhilfe sind (Vorfall 26.09.2026, Hergang
+     * bei [DimDiagnostik.DienstLage]): Steht der Schalter in den Android-Bedienungshilfen schon auf
+     * „An", waere „Dienst ist aus … zum Aktivieren tippen" eine falsche Auskunft — der Nutzer fand
+     * dort einen eingeschalteten Schalter und keinen Weg weiter.
      */
     private fun zeigeDienstFehltHinweis() {
+        val eingeschaltet = DimAccessibilityService.istEingeschaltet(context)
+        val kurz: String
+        val lang: String
+        if (eingeschaltet) {
+            kurz = "Dimmt nicht — Bedienungshilfen-Dienst nicht verbunden"
+            lang = "Das Dimm-Fenster läuft, und der Bedienungshilfen-Dienst ist in den " +
+                "Android-Einstellungen eingeschaltet — Android hat ihn aber nicht gestartet, " +
+                "deshalb wird nicht verdunkelt. Zum Beheben tippen."
+        } else {
+            kurz = "Dimmt nicht — Bedienungshilfen-Dienst ist aus"
+            lang = "Das Dimm-Fenster läuft gerade, aber der Bedienungshilfen-Dienst ist nicht " +
+                "aktiv — ohne ihn kann der Bildschirm nicht verdunkelt werden. " +
+                "Zum Aktivieren tippen."
+        }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Schicht-Dimmer")
-            .setContentText("Dimmt nicht — Bedienungshilfen-Dienst ist aus")
-            .setStyle(
-                NotificationCompat.BigTextStyle().bigText(
-                    "Das Dimm-Fenster laeuft gerade, aber der Bedienungshilfen-Dienst ist nicht " +
-                        "aktiv — ohne ihn kann der Bildschirm nicht verdunkelt werden. " +
-                        "Zum Aktivieren tippen."
-                )
-            )
+            .setContentText(kurz)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(lang))
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)

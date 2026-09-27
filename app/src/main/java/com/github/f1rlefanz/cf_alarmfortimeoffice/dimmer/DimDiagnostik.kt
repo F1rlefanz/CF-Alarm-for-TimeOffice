@@ -146,6 +146,78 @@ internal object DimDiagnostik {
     ): Boolean = fensterAktiv && !overridePausiert && !dienstGebunden
 
     /**
+     * In welcher Lage ist der Bedienungshilfen-Dienst — aus Sicht des NUTZERS, nicht nur der App?
+     *
+     * WARUM ES DAS GIBT (Vorfall 26./27.09.2026, Fairphone): Um 20:25 wurde der Dienst ordentlich
+     * entbunden und zerstoert (`onUnbind` + `onDestroy` im Log, kein Prozess-Tod) und kam nicht
+     * zurueck. Um 22:00 lief das Fenster wirkungslos, die Benachrichtigung meldete „Dienst ist
+     * aus", die Status-Karte stand auf rot mit „Bedienungshilfen-Dienst aktivieren" — und in den
+     * Android-Bedienungshilfen stand der Eintrag auf **„An"**. Der Nutzer wurde also zum Einschalten
+     * eines Schalters geschickt, der schon an war; Aus- und Wiedereinschalten half auch nicht.
+     *
+     * Beide Anzeigen sagten die Wahrheit, nur ueber VERSCHIEDENE Dinge: Android zeigt den SCHALTER
+     * (`Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`), die App die BINDUNG
+     * ([DimAccessibilityService.isRunning]). Nur die Bindung dimmt. Die Ursache war am Geraet
+     * belegt eine `UiAutomation` (der Geraete-Server von mobile-mcp, verwaist am Fairphone), die
+     * ALLE Bedienungshilfen trennt, solange sie verbunden ist, ohne den Schalter anzufassen. Die
+     * Abhilfe ist dann eine ANDERE als beim ausgeschalteten Dienst — aus/ein, notfalls Neustart —
+     * und genau deshalb muss die Anzeige die beiden Lagen auseinanderhalten.
+     */
+    enum class DienstLage {
+        /** Gebunden — das Overlay kann erscheinen. */
+        VERBUNDEN,
+
+        /** In den Android-Einstellungen nicht eingeschaltet (oder nicht lesbar). */
+        AUSGESCHALTET,
+
+        /** Schalter steht auf „An", Android hat den Dienst aber nicht gebunden. */
+        EINGESCHALTET_NICHT_VERBUNDEN
+    }
+
+    /**
+     * Die Bindung gewinnt: ist der Dienst gebunden, ist der Schalter unerheblich. Ist der Schalter
+     * nicht lesbar, liefert der Aufrufer `false` — dann bleibt es bei der bisherigen Aussage
+     * „ausgeschaltet", der Nutzer landet also nie schlechter als vor dieser Unterscheidung.
+     */
+    fun dienstLage(gebunden: Boolean, eingeschaltet: Boolean): DienstLage = when {
+        gebunden -> DienstLage.VERBUNDEN
+        eingeschaltet -> DienstLage.EINGESCHALTET_NICHT_VERBUNDEN
+        else -> DienstLage.AUSGESCHALTET
+    }
+
+    /**
+     * Steht der Dienst [paket]/[klasse] im Wert von `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`?
+     *
+     * Der Wert ist eine mit `:` getrennte Liste geplaetteter `ComponentName`s. Android schreibt die
+     * volle Form (`paket/paket.dimmer.Klasse`); die Kurzform mit fuehrendem Punkt
+     * (`paket/.dimmer.Klasse`) entsteht, wenn jemand den Wert per `adb shell settings put` von Hand
+     * setzt, und wird von Android ebenso angenommen — deshalb erkennt dieser Vergleich beide.
+     * Bewusst als Zeichenketten-Vergleich statt ueber `ComponentName.unflattenFromString`: so
+     * bleibt die Entscheidung ohne Android-Framework testbar.
+     */
+    fun istInEingeschaltetenDiensten(einstellungsWert: String?, paket: String, klasse: String): Boolean =
+        einstellungsWert.orEmpty().split(':').any { eintrag ->
+            val teile = eintrag.trim().split('/', limit = 2)
+            if (teile.size != 2 || teile[0] != paket) return@any false
+            val eingetrageneKlasse = if (teile[1].startsWith('.')) paket + teile[1] else teile[1]
+            eingetrageneKlasse == klasse
+        }
+
+    /**
+     * Zusatz zur „entbunden"-Zeile: wer hat getrennt? Steht der Schalter danach noch auf „An",
+     * hat NICHT der Nutzer abgeschaltet — genau die Frage, die am 26.09.2026 aus dem Log nicht zu
+     * beantworten war. Der Schalter wird in `onUnbind` gelesen; beim Abschalten ueber die
+     * Einstellungen ist er dort schon geschrieben, weil Android erst auf die geaenderte Einstellung
+     * hin entbindet.
+     */
+    fun entbundenZusatz(nochEingeschaltet: Boolean): String = if (nochEingeschaltet) {
+        "Schalter steht weiter auf AN - das System hat getrennt (z. B. UiAutomation/adb), " +
+            "kommt kein 'verbunden' nach, bleibt das Dimmen wirkungslos"
+    } else {
+        "Schalter in den Bedienungshilfen ist AUS"
+    }
+
+    /**
      * Wie endete der VORIGE Lauf des Dimm-Dienstes?
      *
      * WARUM ES DAS GIBT (Vorfall 29.08.2026, zweiter Teil): Beim Einspielen einer neuen Version

@@ -27,6 +27,7 @@
 - Jeder Setter, der einen `DimOverlayPrefs`-Wert schreibt, MUSS direkt danach
 - `DimAccessibilityService.isRunning()` (der einzige echte Bound-Status) wird seit v1.22.1 in
 - Diese Log-Zeile allein genuegte NICHT — ein wirkungsloses Dimm-Fenster muss SICHTBAR sein
+- „Nicht gebunden" hat ZWEI Lagen — Schalter aus, oder Schalter an und trotzdem getrennt (26./27.09.2026)
 - „Kurz hell, dann wieder dunkel“ — das Verschwinden ist nicht loggbar, die Rueckkehr schon
 - `DimCorrectionNotifier.show()` prüft `NotificationManagerCompat.areNotificationsEnabled()`
 
@@ -540,6 +541,39 @@
   Dimmer-Meldungen nebeneinander wären genau die Doppelaussage, die hier korrigiert wird. Am Emulator
   beidseitig belegt (Fenster 22:00–07:00, Zeit 23:30): Dienst nicht gebunden ⇒ `actions=0` und genau
   ein WARN; Dienst gebunden ⇒ „Verdunkelung: 55 %, Wärme: 40 %", `actions=3`, kein WARN.
+- **„Nicht gebunden" hat ZWEI Lagen, und Android zeigt nur eine davon (26./27.09.2026).** Der
+  Eigentümer bekam um 22:12 „Dimmt nicht — Bedienungshilfen-Dienst ist aus", tippte, fand die
+  Karte rot mit „Bedienungshilfen-Dienst aktivieren" — und in den Android-Bedienungshilfen stand
+  „CF-Alarm Schicht-Dimmer" auf **„An"**. Aus- und Wiedereinschalten half nicht, die Karte blieb
+  rot. Das Datei-Log (v1.42.0-DEBUG) zeigt: `20:25:43.305 entbunden` → `20:25:43.337 zerstoert`,
+  **danach kein `verbunden` mehr** — über zwei Kaltstarts hinweg. Kein Update, kein Neustart, kein
+  Absturz: `onUnbind` + `onDestroy` sind das ORDENTLICHE Trennen durch das System.
+
+  **Am Gerät belegt (27.09.2026):** `dumpsys accessibility` zeigte beide Dimmer-Dienste (auch den
+  separaten NachtDimmer) unter `Enabled services`, `Bound`, `Binding` und `Crashed services` leer
+  — und eine registrierte `Ui Automation`. Gehalten wurde sie von
+  `app_process / com.mobilenext.mobilecli.DeviceServer`, dem Geräte-Server von **mobile-mcp**,
+  verwaist (Elternprozess 1, User `shell`) und seit Stunden laufend. Nach einem Neustart des
+  Fairphones: keine UiAutomation, Dienst sofort wieder unter `Bound services`. Anders als
+  `uiautomator dump` (Sekundenbruchteile, Rückkehr nach ~1,1 s, siehe 24.08.2026) hält dieser
+  Server die Automation **dauerhaft** und überlebt die Sitzung, die ihn gestartet hat. Der
+  Vorfall vom Vorabend ist nicht mehr direkt belegbar, trägt aber exakt dieselbe Signatur.
+  **Folge für die Arbeit am Gerät: am Fairphone kein mobile-mcp** — dort `android-device`
+  (kurzlebige Aufrufe); am Emulator ist es egal.
+
+  **Beide Anzeigen sagten die Wahrheit, nur über verschiedene Dinge.** Android zeigt den
+  SCHALTER (`Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`), die App die BINDUNG
+  (`isRunning()`). Gedimmt wird nur mit Bindung, die Karte lag also richtig — ihr Text aber
+  schickte den Nutzer zum Einschalten eines Schalters, der schon an war, und bot keinen Weg
+  weiter. **Folge im Code:** `DimDiagnostik.DienstLage` unterscheidet `VERBUNDEN`, `AUSGESCHALTET`
+  und `EINGESCHALTET_NICHT_VERBUNDEN`; Karte und Benachrichtigung zeigen für die dritte Lage einen
+  eigenen Text mit passender Abhilfe („aus- und wieder einschalten, hilft das nicht: neu
+  starten" — Aus/Ein räumt hängende Binde-Zustände im System, der Neustart beendet eine hängende
+  Automation), der Knopf heißt dort „Bedienungshilfen öffnen". Die Offenlegung bleibt davor. Die
+  `entbunden`-Zeile trägt jetzt, ob der Schalter danach noch auf AN steht — „Nutzer oder System?"
+  ist damit beim nächsten Mal aus dem Release-Log beantwortbar. Ein Lesefehler des Schalters ergibt
+  „ausgeschaltet", also die alte Aussage. **Selbst heilen kann die App das nicht**: gegen eine
+  UiAutomation hilft nichts, was eine Store-App darf.
 - **Die Meldung sagte, WAS zu tun ist — nicht, WO (04.09.2026).** Der Eigentümer fragte, ob die
   Benachrichtigung „nicht direkt zum Bedienungshilfen-aktivieren-Ort verlinken kann, oder
   wenigstens auf die Karte in der App". Der Hinweis endete mit „Zum Aktivieren tippen", und der

@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.43.2 (Aktuell – interne Alpha)
+## 🆕 Version 1.43.3 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Der Schicht-Dimmer sagt jetzt ehrlich, warum er nicht dimmt – auch wenn der Schalter in den Android-Einstellungen schon an ist._
+
+### 🐛 Behoben
+
+- **„Dienst ist aus", obwohl er an ist:** Android kann den Bedienungshilfen-Dienst des Dimmers trennen, ohne den Schalter in den Einstellungen umzulegen. Bisher meldeten Status-Karte und Benachrichtigung dann „Bedienungshilfen-Dienst aktivieren" – man fand aber einen Schalter, der schon auf „An" stand, und kam nicht weiter. Jetzt steht dort „eingeschaltet, aber nicht verbunden" mit der passenden Abhilfe: in den Bedienungshilfen einmal aus- und wieder einschalten, und hilft das nicht, das Handy neu starten.
+
+## Version 1.43.2
 
 **Stand:** September 2026
 

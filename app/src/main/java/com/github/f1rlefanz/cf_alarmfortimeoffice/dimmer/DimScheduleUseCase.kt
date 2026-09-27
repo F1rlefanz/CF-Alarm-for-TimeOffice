@@ -100,11 +100,14 @@ class DimScheduleUseCase @Inject constructor(
     private val zaehler = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
-     * Ob zuletzt "Fenster aktiv, aber Dienst nicht gebunden" galt - gegen WARN-Spam. `false` ist
-     * der richtige Startwert: nach einem Prozessstart soll der Fall wieder einmal geloggt werden.
+     * In welcher Dienst-Lage zuletzt "Fenster aktiv, aber Dienst nicht gebunden" gemeldet wurde -
+     * gegen WARN-Spam; `null` = zuletzt nicht wirkungslos. `null` ist der richtige Startwert: nach
+     * einem Prozessstart soll der Fall wieder einmal geloggt werden. Die Lage statt eines Booleans,
+     * damit ein Wechsel von "ausgeschaltet" zu "eingeschaltet, aber nicht verbunden" (der Nutzer hat
+     * den Schalter umgelegt, Android bindet trotzdem nicht) eine eigene Zeile bekommt.
      */
     @Volatile
-    private var zuletztGemeldetWirkungslos = false
+    private var zuletztGemeldeteWirkungsloseLage: DimDiagnostik.DienstLage? = null
 
     private val zone: ZoneId get() = ZoneId.systemDefault()
 
@@ -244,13 +247,26 @@ class DimScheduleUseCase @Inject constructor(
         val wirkungslos = DimDiagnostik.dimmenWirkungslos(
             fensterAktiv = true, overridePausiert = isPaused, dienstGebunden = dienstGebunden
         )
-        if (wirkungslos != zuletztGemeldetWirkungslos) {
-            zuletztGemeldetWirkungslos = wirkungslos
-            if (wirkungslos) {
+        // Die Lage nur lesen, wenn es etwas zu melden gibt - der Normalfall (gebunden) kostet so
+        // keinen Einstellungs-Zugriff je Tick.
+        val wirkungsloseLage = if (wirkungslos) DimAccessibilityService.lage(context) else null
+        if (wirkungsloseLage != zuletztGemeldeteWirkungsloseLage) {
+            zuletztGemeldeteWirkungsloseLage = wirkungsloseLage
+            if (wirkungsloseLage != null) {
+                // Die Klammer unterscheidet die beiden Ursachenklassen - am 26.09.2026 fehlte genau
+                // das: der Schalter stand auf "An", die Zeile riet "Dienst deaktiviert".
+                val ursache =
+                    if (wirkungsloseLage == DimDiagnostik.DienstLage.EINGESCHALTET_NICHT_VERBUNDEN) {
+                        "Schalter steht auf AN, aber das System hat den Dienst nicht gebunden - z. B. " +
+                            "UiAutomation/adb, oder ein haengender Binde-Zustand"
+                    } else {
+                        "Schalter in den Bedienungshilfen ist AUS - abgeschaltet, Neuinstallation " +
+                            "oder ECM-Sperre nach Sideload"
+                    }
                 Logger.w(
                     LogTags.DIMMER,
                     "Dimm-Fenster aktiv, aber Bedienungshilfen-Dienst NICHT gebunden - es wird " +
-                        "nichts verdunkelt (Dienst deaktiviert oder ECM-Sperre nach Sideload)"
+                        "nichts verdunkelt (Lage=$wirkungsloseLage: $ursache)"
                 )
             }
         }

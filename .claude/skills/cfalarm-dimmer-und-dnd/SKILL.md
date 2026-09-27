@@ -137,6 +137,15 @@ das baut man dieselbe Falle in neuer Form nach.
   Entscheidung in `DimDiagnostik.dimmenWirkungslos()`, bewusst nur bei aktivem, nicht pausiertem
   Fenster. Vorher stand der Dienst-Zustand NUR in einer DEBUG-Zeile, während die Benachrichtigung
   einen Verdunkelungswert behauptete — Hergang in `reference/dimmer.md`.
+- **„Nicht gebunden" hat ZWEI Lagen, und Android zeigt nur den Schalter** (`DimDiagnostik.DienstLage`,
+  seit 27.09.2026): Schalter AUS, oder Schalter AN und trotzdem vom System getrennt (Signatur:
+  ordentliches `entbunden`+`zerstoert` ohne folgendes `verbunden`; belegt: eine `UiAutomation`,
+  die ALLE Bedienungshilfen trennt). Karte und Benachrichtigung sagen für die zweite Lage
+  „eingeschaltet, aber nicht verbunden" mit eigener Abhilfe (aus/ein, sonst Neustart) — wer das
+  wieder zu „nicht aktiv — aktivieren" zusammenlegt, schickt den Nutzer zu einem Schalter, der
+  schon an ist. Die `entbunden`-Zeile trägt, ob der Schalter danach noch AN steht.
+  **Am Fairphone kein mobile-mcp**: sein Geräte-Server hält die UiAutomation dauerhaft und
+  überlebt die Sitzung. Hergang in `reference/dimmer.md`.
 - **Und dieser Hinweis muss AN DIE STELLE FÜHREN, an der man ihn auflöst.** Ein Tipp darauf öffnet
   den Status-Tab, rollt die Bedienungshilfen-Karte ins Bild und zeigt deren Offenlegung; ihr Knopf
   führt über `ACTION_ACCESSIBILITY_SETTINGS` in die Bedienungshilfen. **Die Offenlegung bleibt

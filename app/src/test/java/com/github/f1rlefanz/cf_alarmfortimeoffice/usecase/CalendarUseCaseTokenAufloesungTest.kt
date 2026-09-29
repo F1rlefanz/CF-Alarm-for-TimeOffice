@@ -20,8 +20,8 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
 /**
- * Fixiert die Token-Aufloesung von [CalendarUseCase] im OAuth2-Zweig (der Legacy-Zweig steht in
- * [CalendarUseCaseFailureSemanticsTest]): welcher Text je [TokenException]-Fall geworfen wird,
+ * Fixiert die Token-Aufloesung von [CalendarUseCase] im OAuth2-Zweig: welcher Text je
+ * [TokenException]-Fall geworfen wird,
  * dass der Fehler generisch bleibt (KEIN [AppError.AuthenticationError] - daran haengt
  * `invalidateTokenIfRejectedByGoogle`, siehe Skill cfalarm-persistenz-und-auth) und dass das
  * geholte Token beim Repository ankommt. Fuer alle drei Aufrufer.

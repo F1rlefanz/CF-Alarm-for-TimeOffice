@@ -3039,8 +3039,10 @@ dieselbe Datei, ueber deren Existenz #76 entscheidet.
 die Entscheidung, und die darf eine Runde nicht treffen („Eine Runde kann das nicht beantworten",
 letzter Satz des Issues). Das kostet nach heutigem Stand eine weitere Runde —
 `blickwinkel_waehlen.py` ueberspringt gemergte PRs (Zeile 76), der Anlaufzaehler bleibt bei 1, #76
-bleibt der aelteste Waehlbare. **Wer nach mir #76 zieht: nichts neu messen, die Zahlen stehen hier
-und im Issue — melden und aufhoeren.**
+bleibt der aelteste Waehlbare. ~~Wer nach mir #76 zieht: nichts neu messen, die Zahlen stehen hier
+und im Issue — melden und aufhoeren.~~ **Dieser Satz ist ersetzt** (Runde 35, 29.09.2026): der
+Torwaechter hat ihm die Grundlage entzogen (Punkt 1 unten), die fehlende Messung hat Runde 35
+nachgeholt. Was jetzt gilt, steht dort unter „An Runde 36".
 
 **Belege:** `assembleDebug` + `testDebugUnitTest --rerun-tasks` gruen; aus den Berichten selbst
 gezaehlt, nicht aus dem Exit-Code: **179 XML-Berichte, 1393 Tests, 0 Failures, 0 Errors**.
@@ -3146,3 +3148,158 @@ Byte-Zahlen zu #79 stimmen auf das Byte (209.704 → 219.955 = +10.251; CLAUDE.m
 einem bindenden Text.** Das ist die eigentliche Lehre: bei einem Nachtrag OHNE Schnitt ist der Text
 das Erzeugnis — er wird so scharf geprueft wie sonst der Diff, denn ein Schnitt faellt der naechsten
 Runde auf, eine falsche Zahl nicht.
+
+---
+
+### 29.09.2026, Runde 35 (Issue #76 zum zweiten Mal — der Beleg ueber den Handweg selbst)
+
+**Ergebnis: keine Quellaenderung, kein Schnitt, kein Gatter. 0 Schnittkandidaten** (eine Rueckfrage
+hat keine), **7 Messungen zum Handweg, 7 bestaetigt, 1 eigene Hypothese gemessen und WIDERLEGT**
+(Abschnitt C). Der Torwaechter hat zu PR #118 benannt, was fehlt: „was fehlt, ist ein Beleg ueber
+den Handweg **selbst**". Der steht jetzt hier. **Gemessen gegen `f2d1030`** (= `origin/main` beim
+Start, Arbeitsbaum sauber); wo die eigene Runde eine Zahl bewegt, steht es dabei.
+
+#### A. Der Handweg ist im Repo strukturell spurlos — und das ist die Antwort auf „hat er je gelaufen?"
+
+Was ein echter Lauf hinterlaesst: **eine** Protokolldatei
+`..Projektdateien\aufraeum-protokolle\<Zeitstempel>.log` (`.cmd` Zeile 83-89) — und dieser Ordner
+ist als `/..Projektdateien` in `.gitignore:92` ausgeschlossen,
+`git ls-files | grep -c '\.\.Projektdateien'` → **0**. Was `pruefen` hinterlaesst: **nichts**
+(Zeile 77-80, Abbruch vor dem `claude`-Aufruf). Alles Uebrige, was ein Lauf erzeugt — Branch,
+Commit, PR —, erzeugt eine interaktive Sitzung genauso.
+
+**Das ist eine Abbruchbedingung, nicht bloss ein Befund: keine kuenftige Runde kann diese Frage aus
+dem Repo beantworten.** Die Akte liegt auf dem Rechner des Eigentuemers und ist mit einem Befehl
+gelesen: `dir ..Projektdateien\aufraeum-protokolle` — je echter Lauf eine Datei mit Zeitstempel, je
+`pruefen` keine. Fehlender oder leerer Ordner heisst: nie unbeaufsichtigt gelaufen.
+
+Dazu die Grenze der Automatik: `aufraeumen.yml:28` ist `runs-on: ubuntu-latest`, und dort gibt es
+weder `cmd` noch `cmd.exe`, `wine`, `wine64` oder `dosbox` (alle fuenf mit `command -v` geprueft,
+alle fehlen). **Eine Runde kann den Handausloeser nicht einmal starten, um ihn zu pruefen** — sie
+kann nur ueber ihn lesen. Wer von einer Runde einen Funktionsbeleg erwartet, erwartet Unmoegliches.
+
+#### B. Die obere Schranke, die das Repo doch hergibt: ein einziger Kandidat, und er liegt im 4-Stunden-Fenster
+
+PRs aus Branches `chore/aufraeumen-*`: **28**, davon **27 von `app/claude`** (die App der
+`claude-code-action`, also `aufraeumen.yml`) und **genau einer von `F1rlefanz`** — **PR #28**
+(„Runde 8"). Zeitleiste, durchgaengig UTC:
+
+| Zeitpunkt (UTC) | Ereignis |
+|---|---|
+| 25.08. 05:39:29 | `85b9397` legt den `.cmd` an — bis heute dessen einziger Commit |
+| 25.08. 09:25:15 | `ac326bb`, der Commit der Runde 8 |
+| 25.08. 09:25:58 | PR #28 eroeffnet, Autor `F1rlefanz` (43 s spaeter) |
+| 25.08. 09:46:24 | `c5e684d` legt `aufraeumen.yml` an — **20 min 26 s nach PR #28** |
+| 25.08. 10:11:21 | erster Lauf des Workflows (`workflow_dispatch`, success) |
+
+**Zeitzonenfalle, weil sie hier zwei Stunden wert ist:** `git log --date=format:…` zeigt die
+Ortszeit des Autors (+02:00), `gh` liefert UTC. Runde 34s „07:39" und „11:46" sind dieselben
+Commits wie 05:39 und 09:46 oben; wer beide Quellen mischt, verschiebt die ganze Kette.
+
+Der eine Nicht-App-PR liegt also in dem Fenster von **4 h 06 min 55 s**, in dem der `.cmd` der
+einzige Ausloeser im Repo war. Ob ihn der `.cmd` gestartet hat oder eine interaktive Sitzung, ist
+nach A **nicht entscheidbar**. Belastbar ist allein die Schranke: **hoechstens eine** der 28 Runden
+stammt vom Handweg, und **seit es den Workflow gibt, keine** — 36 Laeufe an 36 verschiedenen Tagen,
+25.08.–29.09.2026, Spanne 36 Kalendertage, **keine Luecke**; 35 `schedule` + 1 `workflow_dispatch`;
+der einzige Lauf ohne Ergebnis ist der, der diese Runde ausfuehrt.
+
+#### C. Die eigene Hypothese, gemessen und gefallen: es gibt keine Drift
+
+Ich hielt fuer wahrscheinlich, dass der Handweg Korrekturen verpasst hat, die der Regelbetrieb
+bekam — ein einziger Commit gegen 36 Laeufe legt das nahe. **Falsch.**
+`git log -- .github/workflows/aufraeumen.yml` → **4** Commits: die Anlage und drei
+Dependabot-Bumps am 02.09. Der Diff `c5e684d..HEAD` besteht **ausschliesslich** aus
+`actions/checkout@v6→v7`, `setup-python@v5→v7`, `setup-java@v5→v6` — kein Kommentar, kein
+Schalter, kein Auftrag hat sich geaendert. **Auch der Regelbetrieb wurde nie inhaltlich
+korrigiert.** „Das Handskript traegt die alte, unreparierte Konfiguration" haette sich gut gelesen
+und ist unwahr; die Leitplanke „Messen, bevor du etwas glaubst" hat hier in eigener Sache gegriffen.
+
+#### D. Gleich waren sie aber nie — und darin besteht die Entscheidung
+
+| | `.cmd` (Handweg) | `aufraeumen.yml` (Regelbetrieb) |
+|---|---|---|
+| Auftrag | Freitext, ein Satz (Zeile 104); der Skill kommt ueber seine Beschreibung, die „raeum weiter auf" woertlich fuehrt (`SKILL.md:3`) | `/cfalarm-altlasten-abtragen`, also Skill-Aufruf (yml:75) |
+| Modell | **nicht festgelegt** (`grep -c -- --model` → 0) | `--model claude-opus-5` (yml:77) |
+| Werkzeuge | alles, nur `Bash(git merge*)` verboten (106) | Allowlist `Bash,Read,Write,Edit,Glob,Grep,TodoWrite` (78); `git merge` **nicht** verboten (`grep -c disallowedTools` → 0) |
+| Trockenlauf | `pruefen` (77-80) | keiner (`grep -c "inputs:"` → 0) |
+| Vorbedingungen | 4: sauberer Baum, auf `main`, aktuell, Warteschlange nicht leer | frischer Checkout; keine Warteschlangenpruefung |
+| Zeitlimit | keins | `timeout-minutes: 60` |
+| Sperre | keine | `concurrency: aufraeumrunde` |
+| Protokoll | Datei ausserhalb des Repos | Lauf-Log bei GitHub |
+
+Zwei Zeilen davon sind mehr als Geschmack:
+
+- Das Merge-Verbot, das der `.cmd` im eigenen Kopf „die eigentliche Sicherung" nennt (96-98), hat
+  **nur der Handweg**. Der Weg, der 36-mal gelaufen ist, hat es nicht — dort tragen die
+  Skill-Anweisung und der Mensch am PR diese Last allein.
+- Die Modellbindung hat **nur der Regelbetrieb**. Ein Handstart laeuft auf dem Vorgabemodell des
+  Rechners, was immer das an dem Tag ist.
+
+#### E. Die beiden Ausloeser sehen einander nicht — aus dem Code gelesen, nicht vermutet
+
+`concurrency: aufraeumrunde` (yml:22-24) gilt je **Workflow-Lauf**; ein lokaler Prozess ist keiner.
+Die Vorbedingungen des `.cmd` lesen nur den lokalen Baum (41), den Branch (48) und
+`HEAD..origin/main` (57) — eine laufende Cloud-Runde bewegt keines davon, sie pusht am Ende einen
+Branch, nie `main`. Und `blickwinkel_waehlen.py` zaehlt als Anlauf ausschliesslich einen
+querverlinkten PR, der **geschlossen und nicht gemergt** ist (`gescheiterte_anlaeufe`, Zweig
+`state != "closed"`); ein **offener** PR der gerade laufenden Runde verschiebt die Wahl also nicht.
+**Ein Handstart waehrend der Tagesrunde zieht damit dasselbe Issue und legt einen zweiten PR auf
+denselben Blickwinkel.**
+
+„Dann starte ich eben nicht zur Cron-Zeit" hilft nicht: `cron: "0 3 * * *"`, tatsaechlich gestartet
+wurden die 35 geplanten Laeufe zwischen **03:55 und 15:07 UTC, Median 08:22** — GitHubs
+Verzoegerung reicht von 55 min bis 12 h 07 min. Das Fenster ist nicht vorhersagbar.
+
+#### F. Der Rueckfall-Fall ist diese Woche zweimal eingetreten
+
+Von 35 abgeschlossenen Laeufen sind **4 fehlgeschlagen**: 29.08., 21.09., **27.09. und 28.09.** —
+die beiden letzten unmittelbar vor dieser Runde, zwei Tage hintereinander ohne PR und ohne Runde.
+Beide scheiterten in Schritt 6 (`anthropics/claude-code-action@v1`) **0,35 s nach
+`Claude Code initialized`**, mit `"type":"result","subtype":"success","is_error":true`. Die Ursache
+steht **nicht** im Lauf-Log („full output hidden for security" — `show_full_output` ist nicht
+gesetzt). **Ob ein Handstart an diesen Tagen geholfen haette, ist von hier aus nicht
+entscheidbar**; strukturell verschieden sind die Zugaenge sehr wohl: der `.cmd` laeuft „ueber die
+angemeldete Claude-Sitzung dieses Rechners" (Kopf, 24), der Workflow ueber
+`CLAUDE_CODE_OAUTH_TOKEN` (yml:71). Ob dahinter dasselbe Konto mit demselben Kontingent steht,
+sieht nur der Eigentuemer. Das ist keine Empfehlung, sondern die zweite Haelfte der fehlenden
+Information: **„Rueckfallweg" ist kein hypothetischer Fall mehr.**
+
+#### Was diese Runde bewusst NICHT tut
+
+- **Den Kopfkommentar nicht korrigiert**, auch nicht die eine gemessen falsche Zeile („braucht aber
+  ANTHROPIC_API_KEY und kostet extra": `git grep -n ANTHROPIC_API_KEY` findet den Namen ausserhalb
+  dieser Nachtragsdatei **nur** dort, waehrend die vier Claude-Workflows
+  `CLAUDE_CODE_OAUTH_TOKEN` fuehren, 5 Zeilen in 4 Dateien). #76 macht die Korrektur ausdruecklich
+  vom Behalten-Fall abhaengig, und die Entscheidung steht aus — Warten ist hier das, was das Issue
+  **vorschreibt**, nicht eine Verweigerung. **Die Allgemeinregel, die Runde 34 daraus gemacht hat
+  („Leitplanke schlaegt Issue-Auftrag"), gilt nicht**; der Torwaechter hat sie zu PR #118
+  gestrichen, und sie ist auch nicht noetig.
+- **Das Auswahlwerkzeug nicht angefasst.** Dass #76 nach einem gemergten Nachtrags-PR wieder der
+  aelteste Waehlbare ist, ist die Mechanik aus #119 — und eine Mechanik neben dem Beleg umzubauen
+  ist genau das Muster, das fuenf PRs gekostet hat (Skill-Regel 4).
+- **Kein Gatter und keins zum Vormerken**: hier gibt es keine Klasse, nur einen Einzelfall. Eine
+  Pruefung „genau ein Handausloeser existiert" waechst nichts, was waechst.
+
+#### An Runde 36: #76 ist fertig gemessen
+
+Du wirst #76 ziehen, und diesmal traegt der Satz: **es ist nichts mehr zu messen.** Abschnitt A
+sagt, warum auch keine spaetere Runde etwas finden kann — der Beleg liegt ausserhalb des Repos, auf
+einem Rechner, den keine Runde sieht. Offen ist ausschliesslich die Entscheidung, und die gehoert
+dem Eigentuemer (letzter Satz des Issues). **Kommentiere mit Verweis hierher und hoere auf; der
+strukturelle Ausweg ist #119, nicht ein dritter Anlauf an #76.**
+
+**Belege:** `assembleDebug` + `testDebugUnitTest` und `pruefe_reste.py`, `pruefe_code.py`,
+`unittest discover -s tools/aufraeumen` — Zahlen in der Commit-Nachricht und der PR-Beschreibung,
+aus den Berichten gezaehlt statt aus dem Exit-Code. Der Arbeitsbaum enthaelt ausser diesem Nachtrag
+(und der ersetzten Fallenzeile in Runde 34) nichts; alle Messungen waren Einzeiler im Scratchpad.
+
+**Zu #60, unveraendert:** `pruefe_reste.py` hat weiter **sechs** Pruefungen
+(`grep -c "^def pruefe_"` → 6), der Konfliktzustands-Waechter fehlt allen sechs
+(`grep -c 'ls-files", "-u'` → 0), das Issue ist offen. Dies ist der **neunzehnte** Nachtrag, der
+das meldet.
+
+**Zu #79:** die Datei stand beim Start dieser Runde bei **225.962** Bytes, CLAUDE.md unveraendert
+bei **30.398** (Verhaeltnis 7,43x). **Den Zuwachs nennt die PR-Beschreibung, nicht diese Zeile** —
+eine Zahl, die sich durch ihr eigenes Aufschreiben aendert, hat in einem bindenden Text keinen
+Platz; Runde 34 hat das vorgerechnet und dabei eine Bestmarke verloren, die es nie gab. Ein
+Fixpunkt ist nur der Startwert.

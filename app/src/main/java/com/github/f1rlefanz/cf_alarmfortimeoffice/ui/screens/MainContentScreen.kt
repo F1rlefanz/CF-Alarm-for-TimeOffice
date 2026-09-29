@@ -118,17 +118,12 @@ fun MainContentScreen(
     val alarmState by alarmViewModel.uiState.collectAsStateWithLifecycle()
     val skipState by alarmViewModel.skipState.collectAsStateWithLifecycle()
     val tagFreigabeState by alarmViewModel.tagFreigabeState.collectAsStateWithLifecycle()
-    val manualAlarmState by alarmViewModel.manualAlarmState.collectAsStateWithLifecycle() // NEU
+    val manualAlarmState by alarmViewModel.manualAlarmState.collectAsStateWithLifecycle()
     val snoozeMinutes by alarmViewModel.snoozeMinutes.collectAsStateWithLifecycle()
     // Wie snoozeMinutes: reine Anzeige. Beim Feuern liest AlarmReceiver die Werte einmal
     // direkt aus AlarmPrefs - der Wecker haengt nicht an diesem Flow.
     val wecktonAnstieg by alarmViewModel.wecktonAnstieg.collectAsStateWithLifecycle()
-    // EINE Sammelstelle fuer die Master-Pause, von hier an drei Tabs verteilt (Home, Wecker,
-    // Status). WARUM UEBERHAUPT: Die Pause loescht alle Wecker, stoppt die 6h-Wartung, Dimmer,
-    // "Nicht stoeren" und Hue - und war bis dahin ausschliesslich am Schalter ganz unten im
-    // Einstellungen-Tab abzulesen. Wer nach dem Urlaub Home und Wecker prueft, sah dort "Keine
-    // aktiven Alarme" ohne Grund und "Automatische Alarme: an" - und schloss daraus, die Wecker
-    // entstuenden noch. Aus diesem Zustand laeuft die App NIE von allein heraus.
+    // EINE Sammelstelle fuer die Master-Pause, verteilt an Home, Wecker und Status - Hergang Skill cfalarm-ui-und-navigation.
     //
     // Hier oben und nicht in den Tabs: derselbe Flow wuerde sonst mehrfach abonniert, und die
     // Tab-Inhalte bleiben reine Zustandsempfaenger (testbar ohne Hilt).
@@ -169,13 +164,7 @@ fun MainContentScreen(
         }
     }
     // Verwaiste Wecker nach einer Kalender-Abwahl melden sich NICHT hier, sondern als bleibende
-    // Karte im Status-Tab (`VerwaisteWeckerNachAbwahlCard`). Vorher stand hier eine Snackbar mit
-    // `SnackbarDuration.Indefinite` - der einzige Indefinite-Aufruf der App. `showSnackbar`
-    // serialisiert ueber einen Mutex: solange sie stand (und sie ging nur per Aktion oder
-    // Wischen weg), suspendierten alle uebrigen Kanaele dieses Hosts, und die `clearError()`
-    // dahinter liefen ebenfalls nicht - Kalender-, Schicht- und Wecker-Fehler erreichten den
-    // Nutzer gar nicht mehr. Ein bleibender Hinweis gehoert in eine Karte, nicht in den
-    // gemeinsamen Meldungskanal.
+    // Karte im Status-Tab (`VerwaisteWeckerNachAbwahlCard`) - Hergang ui-texte-und-layout.md.
     LaunchedEffect(shiftState.error) {
         shiftState.error?.let { msg ->
             snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
@@ -215,57 +204,23 @@ fun MainContentScreen(
         }
     }
 
-    // NAVIGATION IN EINER SCHUBLADE STATT IN EINER UNTEREN LEISTE (seit v1.38.0).
-    //
-    // WARUM: Sechs Ziele passen nicht in eine Material-3-Navigationsleiste - die ist fuer drei
-    // bis fuenf gebaut. Auf dem Geraet des Eigentuemers (hochgestellte Anzeigegroesse, 320 dp
-    // Breite) blieben 53,3 dp pro Fach, waehrend die aktive Pille hinter dem Symbol 64 dp breit
-    // ist: das erste Element wurde links angeschnitten, benachbarte Pillen ueberschnitten sich,
-    // und die Beschriftungen kuerzten zu "Dimm..." und "Einste...".
-    //
-    // WARUM DIE SCHUBLADE HIER LIEGT UND NICHT IN MainScreen: Die vier Onboarding-Gates
-    // (BatteryExemption, UnusedAppRestrictions, TimeOfficeHealthCheck, OEMWarning) sind Zweige
-    // DESSELBEN `when` wie dieser Bildschirm - sie ERSETZEN ihn. Eine Ebene hoeher liesse sich
-    // per Wischgeste mitten aus einem Gate herausnavigieren, ohne dass dessen Dismissed-Flag
-    // geschrieben wird; handleAuthenticationSuccess() wuerfe den Nutzer beim naechsten Durchlauf
-    // zurueck ins Gate. Hier ist die Schublade waehrend der Gates schlicht nicht komponiert -
-    // deshalb braucht `gesturesEnabled` auch keine Einschraenkung.
+    // Die Schublade liegt HIER und nicht in MainScreen, weil die Onboarding-Gates diesen
+    // Bildschirm ersetzen - waehrend eines Gates ist sie nicht komponiert (Hergang navigation.md).
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val schubladenScope = rememberCoroutineScope()
     val ziel = mainTabZiel(selectedTab)
 
-    // Die Kopfzeile klappt beim Runterscrollen weg und kommt bei der kleinsten
-    // Aufwaertsbewegung zurueck. Sie ersetzt ZWEI frueher gleichzeitig sichtbare Zeilen: die
-    // gepinnte App-Titelzeile ("CF-Alarm for TimeOffice", ~64 dp, scrollte nie weg) und die
-    // Ueberschrift, die jeder Tab-Inhalt zusaetzlich selbst setzte (~40 dp) - zusammen rund
-    // 15 % der Hoehe dafuer, dem Nutzer zu sagen, was er selbst angetippt hat.
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            // ZWINGEND die Ueberladung MIT `drawerState`: nur sie registriert intern den
-            // PredictiveBackHandler(enabled = drawerState.isOpen) (Material3 1.4.0,
-            // NavigationDrawer.kt:633 -> :643 -> :955). ModalNavigationDrawer selbst behandelt
-            // Zurueck NICHT, und die parameterlose ModalDrawerSheet-Ueberladung (:590) auch
-            // nicht. Das ist kein Schoenheitsfehler: auf dem Home-Tab ist der BackHandler in
-            // MainScreen bewusst AUS (dort soll Zurueck die App verlassen) - mit der falschen
-            // Ueberladung wuerde ein Zurueck bei offener Schublade also die App beenden.
+            // ZWINGEND mit `drawerState` - nur diese Ueberladung behandelt Zurueck, sonst beendet
+            // Zurueck auf Home bei offener Schublade die App (navigation.md).
             ModalDrawerSheet(
                 drawerState = drawerState,
-                // BREITE AUSDRUECKLICH BEGRENZEN, sonst gibt es nichts zum Danebentippen.
-                // Compose deckelt die Schublade nur bei 360 dp (`sizeIn(240.dp, 360.dp)`), zieht
-                // aber KEINEN Streifen ab. Auf dem Geraet des Eigentuemers (320 dp Breite, weil
-                // die Anzeigegroesse hochgestellt ist) fuellte sie damit den ganzen Bildschirm -
-                // am 01.09.2026 pixelweise nachgemessen: weiss bis zur letzten Spalte. Von den
-                // vier Schliesswegen fiel damit der wichtigste aus, denn genau der ist der
-                // beworbene: Material gibt der abgedunkelten Flaeche eine eigene
-                // Beschreibung ("Navigationsmenue schliessen") und eine Dismiss-Aktion.
-                //
-                // Die Material-Spezifikation nennt dafuer Bildschirmbreite minus 56 dp; die 56 dp
-                // sind kein Zierrat, sondern das Mindestmass eines Beruehrungsziels. Deshalb ein
-                // fester Abzug statt eines Prozentsatzes: ein Prozentsatz waere auf einem Tablet
-                // Verschwendung und auf einem kleinen Geraet zu schmal zum Treffen.
+                // Breite begrenzen (Bildschirmbreite minus 56 dp), sonst bleibt kein Streifen zum
+                // Danebentippen - Hergang ui-texte-und-layout.md.
                 modifier = Modifier.width(min(360.dp, LocalConfiguration.current.screenWidthDp.dp - 56.dp)),
                 // Die Compose-Wurzel in MainActivity hat die Insets bereits mit
                 // safeDrawingPadding() VERBRAUCHT. Hier nichts aufschlagen - das waere die
@@ -346,12 +301,7 @@ fun MainContentScreen(
                         skipState = skipState,
                         masterPausePaused = masterPausePaused,
                         onJetztAbgleichen = {
-                            // Gleicher Grund wie beim Snackbar-Retry oben: der frueher hier
-                            // gerufene mainViewModel.forceRefreshCalendarEvents() schrieb nur in
-                            // den CalendarStateHolder. Der Knopf lud damit zwar Events (die
-                            // Schichterkennung bekam sie ueber den StateHolder), aber Home zeigte
-                            // weder Ladeanzeige noch die neue Liste noch einen Fehler - er wirkte
-                            // wie ein toter Knopf.
+                            // Grund wie beim Snackbar-Retry oben.
                             calendarViewModel.refreshData(forceRefresh = true)
                         },
                         onNavigateToWecker = { onSelectedTabChange(MainTab.WECKER) },

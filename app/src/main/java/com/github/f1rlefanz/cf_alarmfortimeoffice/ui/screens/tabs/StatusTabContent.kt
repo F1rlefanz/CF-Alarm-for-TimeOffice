@@ -229,7 +229,7 @@ fun StatusTabContent(
         // verfuegbar" (leeres Google-Konto) bleibt ohne Button - nichts, wohin man von hier aus
         // springen koennte.
         //
-        // Der dritte Zustand (Teilerfolg) kam in v1.26.0 dazu und ist der stillste: die
+        // Der dritte Zustand (Teilerfolg) ist der stillste: die
         // Autorisierung ist gueltig, Termine kommen an, nur EIN Kalender antwortet nicht. Die
         // Vollstaendigkeits-Sperren halten dann jeden Alarm-Sync an - richtig, aber ohne diese
         // Karte unsichtbar. Er steht bewusst NACH der Autorisierungs-Pruefung: fallen ALLE
@@ -302,7 +302,6 @@ fun StatusTabContent(
             )
         }
 
-        // Schicht-Erkennung Status
         StatusCard(
             title = "Schicht-Erkennung",
             isOk = shiftState.recognizedShifts.isNotEmpty(),
@@ -341,8 +340,8 @@ fun StatusTabContent(
         TimeOfficeHealthCard()
 
         // Schicht-Dimmer: laeuft der Bedienungshilfen-Dienst? Nur dann kann das Dimm-Overlay
-        // ueberhaupt erscheinen. Der Status stand frueher im Dimmer-Tab; hier neben den anderen
-        // OS-Berechtigungen ist er dauerhaft ablesbar und der Dienst von einer Stelle aus aktivierbar.
+        // ueberhaupt erscheinen. Hier neben den anderen OS-Berechtigungen ist er dauerhaft ablesbar
+        // und der Dienst von einer Stelle aus aktivierbar.
         DimmerAccessibilityCard(
             // positionInRoot beider Seiten, weil der Bildlauf die Karte im Fenster verschiebt:
             // die Differenz plus der aktuelle Stand ergibt den Versatz im INHALT, und nur der
@@ -374,11 +373,9 @@ fun StatusTabContent(
         // Hintergrund getan?") - und ausdruecklich als ruhige Zeile ohne Karte, Farbe oder Icon.
         FeedNeueinlesenZeile(stand = calendarState.feedNeueinlesen)
 
-        // Debug-Informationen
         DebugInfoCard()
         
-        // Netzstatus. WAS HIER FRUEHER STAND und warum es weg ist, siehe Kopf von
-        // CacheStatusCard.
+        // Netzstatus
         CacheStatusCard()
     }
 }
@@ -388,15 +385,8 @@ fun StatusTabContent(
 /**
  * Zeigt an, dass nach einer Kalender-Abwahl Wecker dieses Dienstplans stehengeblieben sind.
  *
- * WARUM EINE KARTE UND KEINE SNACKBAR (die Fassung, die das hier ersetzt): Der Hinweis lief als
- * `SnackbarDuration.Indefinite` auf dem GEMEINSAMEN SnackbarHostState von MainContentScreen -
- * dem einzigen Indefinite-Aufruf der App. `showSnackbar` serialisiert ueber einen Mutex: solange
- * diese eine Snackbar stand (und sie geht nur per Aktion oder Wischen weg), suspendierten ALLE
- * uebrigen Snackbar-Kanaele desselben Hosts, und die `clearError()`-Aufrufe hinter ihnen liefen
- * ebenfalls nicht - ein Kalender-, Schicht- oder Wecker-Fehler erreichte den Nutzer gar nicht
- * mehr und blieb dazu ungeleert im State stehen. Ein bleibender Hinweis darf die uebrigen
- * Meldungen nicht blockieren; die App zeigt bleibende Zustaende ohnehin ueberall sonst als Karte
- * im Status-Tab (Kalender-Teilerfolg, fehlende Berechtigungen, Akku-Ausnahme).
+ * Karte statt Snackbar: ein `Indefinite`-Hinweis blockiert den gemeinsamen Snackbar-Host
+ * (Hergang: cfalarm-ui-und-navigation/reference/ui-texte-und-layout.md).
  *
  * SIE VERSCHWINDET VON SELBST, sobald der Zustand aufgeloest ist - geraeumt, Automatik aus,
  * Master-Pause oder wieder ein Kalender ausgewaehlt (siehe `resolveDeselectionCleanupFailure`).
@@ -728,25 +718,8 @@ internal fun unavailableCalendarDetails(
 /**
  * Zeigt, ob das Geraet gerade Netz hat - mehr nicht, und das ist Absicht.
  *
- * WAS HIER BIS v1.38.0 STAND UND WARUM ES WEG IST: Die Karte trug vier weitere Elemente, von
- * denen drei fuer den Nutzer nichts taten und eines etwas Falsches behauptete.
- *
- * - Ein Aktualisieren-Pfeil rief `getCacheStats()`. Diese Methode WIRFT IHR ERGEBNIS WEG: sie
- *   schreibt eine INFO-Logzeile und gibt nichts zurueck. Die Anzeige aenderte sich nie, und im
- *   Release-Build landete nicht einmal das Log irgendwo (der SimpleFileTree schreibt erst ab
- *   WARN). Ein Knopf, der nichts tut, neben einem zweiten Knopf, der etwas tut - genau die
- *   Verwechslung, die der Eigentuemer gemeldet hat.
- * - "Cache-Details: Cache-Statistiken in Log ausgegeben" behauptete einen Vorgang, dessen
- *   Ergebnis der Nutzer nirgends einsehen kann. Verstoss gegen "kein Text darf eine Anzeige
- *   behaupten, die es nicht gibt".
- * - "Cache leeren" wirkte real, aber ohne jede Rueckmeldung - von einem toten Knopf nicht zu
- *   unterscheiden. Und ueberfluessig: der Abgleich verwirft den Cache ohnehin.
- * - "Neu laden" war Zeichen fuer Zeichen derselbe Aufruf wie der Abgleich-Knopf auf der
- *   Uebersicht. Drei Knoepfe (mit "Jetzt synchronisieren" darunter) fuer EINEN Code-Pfad, unter
- *   drei verschiedenen Namen.
- *
- * Uebrig bleibt die Netzanzeige - die ist live (NetworkCallback, siehe unten), korrekt und
- * beantwortet im Status-Tab eine echte Frage.
+ * Nur Netzstatus - die Cache-Knoepfe sind bewusst entfernt
+ * (Hergang: cfalarm-ui-und-navigation/reference/ui-texte-und-layout.md).
  */
 @Composable
 private fun CacheStatusCard() {
@@ -879,13 +852,10 @@ internal fun rufbereitschaftsAbfrageInWorten(
 @Composable
 private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
     val context = LocalContext.current
-    // mutableLongStateOf statt mutableStateOf(0L): kein Autoboxing des Zeitstempels bei jedem
-    // 30s-Tick (Delegat-Nutzung unveraendert).
     var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
     var letzterTerminabruf by remember { mutableStateOf(0L) }
     var naechsteRufbereitschaftsAbfrage by remember { mutableLongStateOf(0L) }
 
-    // Wartungszeit laden und alle 30s aktualisieren
     LaunchedEffect(Unit) {
         lastMaintenanceTime = AlarmMaintenanceService.getLastMaintenanceTime(context)
         letzterTerminabruf = AlarmMaintenanceService.getLastEventLoadTime(context)
@@ -952,13 +922,8 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
                     style = MaterialTheme.typography.titleMedium
                 )
 
-                // ZWEI WERTE, WEIL SIE ZWEI VERSCHIEDENE FRAGEN BEANTWORTEN - und weil hier bis
-                // v1.38.0 nur der erste stand, unter der Ueberschrift "Letzter Sync". Das war
-                // eine Zusicherung, die er nicht einloest: KEY_LAST_MAINTENANCE wird auch dann
-                // gestempelt, wenn der Lauf UEBERSPRUNGEN wurde (Puffer reichte), und
-                // zusaetzlich aus dem Vordergrund. "Vor 15 Minuten" konnte also heissen "vor 15
-                // Minuten wurde entschieden, nichts zu tun". In einem Tab, dessen Zweck die Frage
-                // "warum kam kein Wecker" ist, ist das die falsche Auskunft.
+                // Zwei Werte: KEY_LAST_MAINTENANCE stempelt auch uebersprungene Laeufe
+                // (Hergang: cfalarm-ui-und-navigation/reference/ui-texte-und-layout.md).
                 Text(
                     "Zuletzt nachgesehen: $lastMaintenanceText",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1039,7 +1004,6 @@ private fun DebugInfoCard() {
                 fontWeight = FontWeight.Bold
             )
             
-            // Logging-Beschreibung
             Text(
                 "Wie funktioniert das Logging?",
                 style = MaterialTheme.typography.labelMedium,
@@ -1055,7 +1019,6 @@ private fun DebugInfoCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             
-            // Log-Datei Info
             com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogEmailUtil.getLogFileInfo(context)?.let { info ->
                 HorizontalDivider()
                 Text(
@@ -1069,7 +1032,6 @@ private fun DebugInfoCard() {
                 )
             }
             
-            // Button zum E-Mail-Versand
             Button(
                 onClick = {
                     val result = com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogEmailUtil.sendLogFileViaEmail(context)
@@ -1092,7 +1054,6 @@ private fun DebugInfoCard() {
                 Text("Logs an Entwickler senden")
             }
             
-            // Erfolgs-/Fehlermeldungen
             if (showEmailSuccess) {
                 Text(
                     "✅ E-Mail-App geöffnet",
@@ -1173,14 +1134,9 @@ private fun DebugInfoCard() {
     }
 }
 
-/**
- * Überprüft die Netzwerkverbindung
- */
 private fun isNetworkAvailable(context: Context): Boolean {
     val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    // Kein SDK_INT-Zweig mehr: minSdk ist 26, der frühere else-Zweig (deprecated
-    // activeNetworkInfo, nur < API 23) war unerreichbar.
     val activeNetwork = connectivityManager.activeNetwork ?: return false
     val networkCapabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
 

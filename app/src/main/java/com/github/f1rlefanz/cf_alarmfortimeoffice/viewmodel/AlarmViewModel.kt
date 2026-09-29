@@ -85,7 +85,6 @@ data class AlarmSkipUiState(
     val isNextAlarmSkipped: Boolean = false,
     val skippedAlarmId: Int? = null,
     val isLoading: Boolean = false,
-    val error: AppErrorState? = null,
     /**
      * Nutzertext zum Ausgang des letzten Skip-Vorgangs, sofern er NICHT einfach aufging:
      *
@@ -95,9 +94,8 @@ data class AlarmSkipUiState(
      *   Alarm nicht loeschen liess (siehe `SkipRolledBackException`).
      *
      * Ohne diesen Text waere der schlechteste Fall stumm: der Nutzer drueckt einen Knopf, die
-     * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. `error` taugt dafuer nicht,
-     * das zeigt die Oberflaeche nirgends an. Wird beim naechsten Ueberspringen bzw. Aufheben
-     * wieder geleert.
+     * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. Wird beim naechsten
+     * Ueberspringen bzw. Aufheben wieder geleert.
      */
     val restoreNotice: String? = null
 )
@@ -668,9 +666,9 @@ class AlarmViewModel @Inject constructor(
                     }
                     .onFailure { error ->
                         Logger.e(LogTags.ALARM_SKIP, "❌ Failed to skip next alarm", error)
-                        // Ein halb durchgefuehrtes Ueberspringen muss der Nutzer SEHEN: skipState.error
-                        // zeigt die Oberflaeche nirgends an, restoreNotice schon (und zwar auch dann,
-                        // wenn es gerade weder aktiven Alarm noch aktives Ueberspringen gibt).
+                        // Ein halb durchgefuehrtes Ueberspringen muss der Nutzer SEHEN: restoreNotice
+                        // ist der einzige Kanal, den die Oberflaeche zeigt (und zwar auch dann, wenn
+                        // es gerade weder aktiven Alarm noch aktives Ueberspringen gibt).
                         //
                         // DER TEXT ENTSTEHT VOR DER ZUWEISUNG, und die laeuft ueber `update {}`:
                         // stelleNachAbgebrochenemSkipWiederHer() suspendiert (DataStore-Lesen und
@@ -706,9 +704,6 @@ class AlarmViewModel @Inject constructor(
                         _skipState.update {
                             it.copy(
                                 isLoading = false,
-                                error = AppErrorState.validationError(
-                                    error.message ?: "Failed to skip alarm"
-                                ),
                                 restoreNotice = hinweis
                             )
                         }

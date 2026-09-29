@@ -1,5 +1,3 @@
-@file:Suppress("UnusedImport") // encodeToString/decodeFromString werden reified genutzt
-
 package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
 import android.content.Context
@@ -8,8 +6,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton

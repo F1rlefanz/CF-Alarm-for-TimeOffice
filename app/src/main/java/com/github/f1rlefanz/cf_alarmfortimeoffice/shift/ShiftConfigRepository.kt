@@ -400,29 +400,4 @@ class ShiftConfigRepository @Inject constructor(
             
             Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-RESET: Shift config reset to defaults and cache updated")
         }
-    
-    override suspend fun hasValidConfig(): Result<Boolean> = 
-        SafeExecutor.safeExecute("ShiftConfigRepository.hasValidConfig") {
-            // SINGLETON OPTIMIZATION: Try cache first for performance
-            cachedConfig?.let { cached ->
-                val cacheAge = System.currentTimeMillis() - cacheTimestamp
-                if (cacheAge < CACHE_VALIDITY_MS) {
-                    val isValid = cached.definitions.isNotEmpty() && 
-                                 cached.definitions.any { it.name.isNotBlank() }
-                    Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-VALID-CHECK: Using cached config for validation - valid=$isValid")
-                    return@safeExecute isValid
-                }
-            }
-            
-            val config = getCurrentShiftConfig().getOrElse { 
-                return@safeExecute false
-            }
-            
-            // Validierung: Mindestens eine Schichtdefinition mit gültigem Namen
-            val isValid = config.definitions.isNotEmpty() && 
-                         config.definitions.any { it.name.isNotBlank() }
-            
-            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-VALID-CHECK: Fresh validation completed - valid=$isValid")
-            isValid
-        }
 }

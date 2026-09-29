@@ -223,7 +223,6 @@
 -keepnames class * extends androidx.work.ListenableWorker
 
 # Lifecycle
--keep class androidx.lifecycle.** { *; }
 -keep class * extends androidx.lifecycle.ViewModel
 -keepclassmembers class * extends androidx.lifecycle.ViewModel {
     <init>(...);

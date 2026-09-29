@@ -5,40 +5,18 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 
 /**
- * Gedaechtnis dafuer, dass der Weckbildschirm beim Klingeln verdraengt wurde - Grundlage des
- * HINWEISES im Status-Tab.
+ * Gedaechtnis dafuer, dass der Weckbildschirm beim Klingeln verdraengt wurde (Gesichtsentsperrung
+ * des Fairphone 6, trifft jede Wecker-App) - traegt nur den HINWEIS im Status-Tab, nicht das Gate
+ * fuers Vorwecken ([VorweckEntscheidung]). **Wer hier wieder ein Gate einbaut, holt sich die Falle
+ * zurueck: ein Merker, der im Direct Boot nicht lesbar ist, schuetzt ausgerechnet den Wecker nach
+ * einem naechtlichen Neustart nicht.**
  *
- * WOFUER: Auf dem Fairphone 6 (Android 16) startet die herstellereigene Gesichtsentsperrung
- * `com.android.settings/.anc.unlock.UnlockActivity` als gewoehnliche Activity rund 100 ms nach
- * dem Weckbildschirm und draengt ihn hinter den Sperrbildschirm. Der Wecker klingelt weiter, hat
- * aber keine Bedienoberflaeche mehr, bis der Nutzer selbst entsperrt. Am 29.08.2026 mit der
- * vorinstallierten Google Uhr gegengeprueft - es trifft JEDE Wecker-App auf diesem Geraet, ist
- * also ein Geraetedefekt und nicht unserer.
+ * SharedPreferences mit `commit()`, weil aus `onStop` der
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity] geschrieben wird und der
+ * Prozesstod unmittelbar folgen kann. Zaehler statt Flag: erst [SCHWELLE] Verdraengungen in Folge
+ * zeigen den Hinweis, [meldeSauberenLauf] stellt ihn zurueck.
  *
- * WARUM DER FULL-SCREEN-INTENT NICHT NACHGEREICHT WIRD: Vier Messlaeufe haben belegt, dass er sich
- * nicht nachreichen laesst - weder ueber eine zweite Notification (auch nicht mit Verzoegerung 0)
- * noch als Update der bestehenden. Das System wertet ihn ausschliesslich beim ERSTEN Posten aus.
- * Was hilft, ist der ZEITPUNKT des ersten Postens: [VorweckEntscheidung].
- *
- * WAS DIESE DATEI SEIT 1.39.5 NICHT MEHR IST: das Gate fuers Vorwecken. Bis 1.39.4 lag hier
- * zusaetzlich ein bleibender Merker `je_verdraengt`, der entschied, OB vorgeweckt wird. Er ist
- * gestrichen - das Vorwecken haengt jetzt nur noch am Systemzustand (Bildschirm aus UND gesperrt)
- * und braucht deshalb gar keinen gespeicherten Wert mehr. Warum das die bessere Abwaegung ist,
- * steht in [VorweckEntscheidung]; der Hergang der zwei Selbstabschaltungen, die der Merker
- * verursacht hat, in `reference/vorwecken.md`. **Wer hier wieder ein Gate einbaut, holt sich die
- * Falle zurueck: ein Merker, der im Direct Boot nicht lesbar ist, schuetzt ausgerechnet den
- * Wecker nach einem naechtlichen Neustart nicht.**
- *
- * WARUM SharedPreferences UND NICHT DataStore: Geschrieben wird aus `onStop` der
- * [com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity] - einem
- * Lebenszyklus-Callback, dem der Prozesstod unmittelbar folgen kann. Dieselbe Ueberlegung wie
- * beim Schlummer-Merker: synchron mit `commit()`, nicht `apply()`.
- *
- * WARUM EIN ZAEHLER UND KEIN FLAG: Ein einzelner Aussetzer soll den Nutzer nicht behelligen.
- * Erst [SCHWELLE] aufeinanderfolgende Weckvorgaenge machen daraus einen Zustand, den er kennen
- * sollte. Und weil [meldeSauberenLauf] bei jedem unauffaelligen Wecker zurueckstellt, verschwindet
- * der Hinweis von allein, sobald es aufhoert - etwa weil der Nutzer die Gesichtsentsperrung
- * entfernt oder Fairphone es repariert.
+ * Hergang: .claude/skills/cfalarm-wecker-und-boot/reference/vorwecken.md.
  */
 object WeckbildschirmVerdraengungPrefs {
 
@@ -69,9 +47,7 @@ object WeckbildschirmVerdraengungPrefs {
                 "Weckbildschirm verdraengt - $neu. Mal in Folge (Hinweis ab $SCHWELLE)"
             )
         } catch (e: Exception) {
-            // Folgenlos: der Hinweis erscheint dann eben nicht. Der Wecker selbst haengt nicht
-            // daran - insbesondere nicht das Vorwecken, das seit 1.39.5 nichts mehr hier liest -,
-            // und ein Absturz im onStop des Weckbildschirms waere ungleich schlimmer.
+            // Folgenlos: kein Hinweis; der Wecker haengt nicht daran, ein Absturz in onStop schon.
             Logger.e(LogTags.ALARM, "Verdraengungs-Zaehler nicht schreibbar", e)
         }
     }
@@ -83,10 +59,7 @@ object WeckbildschirmVerdraengungPrefs {
      * ("auf diesem Geraet passiert das"), nicht eine Statistik. Sobald ein Wecker sauber
      * durchlaeuft, stimmt die Behauptung nicht mehr.
      *
-     * Dass dieses Zuruecksetzen frueher gefaehrlich war, lag am Gate: solange der Zaehler auch
-     * entschied, OB vorgeweckt wird, schaltete der saubere Lauf den Schutz fuer den naechsten
-     * Wecker ab. Seit 1.39.5 gibt es dieses Gate nicht mehr - der Zaehler traegt nur noch den
-     * Hinweis, und Zuruecksetzen ist genau das Richtige.
+     * Gefahrlos, seit der Zaehler kein Gate mehr fuers Vorwecken ist (1.39.5).
      */
     fun meldeSauberenLauf(context: Context) {
         try {

@@ -380,14 +380,6 @@ class DimAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Beantwortet beim Verbinden die Frage „warum war der Bildschirm vorhin kurz hell?" - siehe
-     * [DimDiagnostik.rueckkehrArt] fuer den Hergang und die Neustart-Falle.
-     *
-     * Laeuft NACH der „verbunden"-Zeile, damit die beiden im Log zusammenstehen, und setzt den
-     * Merker anschliessend neu. Defensiv gekapselt: eine Diagnostik, die selbst wirft, macht den
-     * Vorfall schlimmer statt auswertbar - dieselbe Auflage wie bei [snapshot].
-     */
-    /**
      * Laesst den Scheduler den Soll-Zustand neu bewerten, sobald der Dienst (wieder) da ist.
      *
      * WARUM (Befund 18.09.2026, am Fairphone): Waehrend eines laufenden Dimm-Fensters war der
@@ -408,6 +400,14 @@ class DimAccessibilityService : AccessibilityService() {
         Logger.w(LogTags.DIMMER, "Neubewertung nach Dienst-Verbindung nicht angestossen (${it.javaClass.simpleName})")
     }
 
+    /**
+     * Beantwortet beim Verbinden die Frage „warum war der Bildschirm vorhin kurz hell?" - siehe
+     * [DimDiagnostik.rueckkehrArt] fuer den Hergang und die Neustart-Falle.
+     *
+     * Laeuft NACH der „verbunden"-Zeile, damit die beiden im Log zusammenstehen, und setzt den
+     * Merker anschliessend neu. Defensiv gekapselt: eine Diagnostik, die selbst wirft, macht den
+     * Vorfall schlimmer statt auswertbar - dieselbe Auflage wie bei [snapshot].
+     */
     private fun meldeUnterbrechung() = runCatching {
         val p = getSharedPreferences(MERKER_PREFS, Context.MODE_PRIVATE)
         val jetzt = SystemClock.elapsedRealtime()

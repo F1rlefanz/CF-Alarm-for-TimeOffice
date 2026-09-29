@@ -380,15 +380,6 @@ class DimmerModellMigration @Inject constructor(
     internal data class Plan(val dimEnabled: Boolean, val regeln: List<DimRule>)
 
     /**
-     * Führt die Migration aus, falls sie noch nicht gelaufen ist.
-     *
-     * @return true, wenn sich dabei etwas an den Fenstergrenzen geändert hat - dann muss der
-     *         Aufrufer auch die DND-Kette neu armieren (Invariante seit v1.32.1: ein Setter, der
-     *         Dimm-FENSTERGRENZEN verschiebt, armiert BEIDE Ketten). Die DIMM-Kette armiert diese
-     *         Funktion selbst; die DND-Kette kann sie nicht anfassen, weil `dnd/` von `dimmer/`
-     *         liest und niemals umgekehrt.
-     */
-    /**
      * Übersetzt eine gerade IMPORTIERTE Alt-Konfiguration - der einzige Anlass, der den
      * Versions-Marker bewusst zurücknimmt.
      *
@@ -432,6 +423,15 @@ class DimmerModellMigration @Inject constructor(
     private fun nutzerEntsperrt(): Boolean =
         context.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
 
+    /**
+     * Führt die Migration aus, falls sie noch nicht gelaufen ist.
+     *
+     * @return true, wenn sich dabei etwas an den Fenstergrenzen geändert hat - dann muss der
+     *         Aufrufer auch die DND-Kette neu armieren (Invariante seit v1.32.1: ein Setter, der
+     *         Dimm-FENSTERGRENZEN verschiebt, armiert BEIDE Ketten). Die DIMM-Kette armiert diese
+     *         Funktion selbst; die DND-Kette kann sie nicht anfassen, weil `dnd/` von `dimmer/`
+     *         liest und niemals umgekehrt.
+     */
     suspend fun migriereEinmalig(): Boolean = withContext(NonCancellable) {
         // NonCancellable: die Migration stellt einen Zustand HER. Angestossen wird sie aus dem
         // lifecycleScope einer Activity - eine Drehung des Geraets im falschen Moment duerfte

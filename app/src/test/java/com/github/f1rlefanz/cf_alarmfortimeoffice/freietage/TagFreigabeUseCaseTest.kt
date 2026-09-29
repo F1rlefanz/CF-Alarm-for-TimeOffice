@@ -61,12 +61,18 @@ class TagFreigabeUseCaseTest {
     private inner class FakeAlarmRepository(
         initial: List<AlarmInfo>,
         private val loeschenScheitert: Boolean = false,
-        private val persistenzGesperrt: Boolean = false
+        private val persistenzGesperrt: Boolean = false,
+        /** Die ersten N deleteAlarm()-Aufrufe scheitern (voruebergehender Schreibfehler). */
+        private val ersteLoeschFehler: Int = 0,
+        /** Die Persistenz sperrt erst NACH dem ersten deleteAlarm() (nach der Vorpruefung). */
+        private val gesperrtNachLoeschen: Boolean = false
     ) : IAlarmRepository {
         private val state = MutableStateFlow(initial)
+        private var loeschAufrufe = 0
         val current: List<AlarmInfo> get() = state.value
         override val activeAlarms: Flow<List<AlarmInfo>> = state
-        override suspend fun isPersistenceBlocked(): Boolean = persistenzGesperrt
+        override suspend fun isPersistenceBlocked(): Boolean =
+            persistenzGesperrt || (gesperrtNachLoeschen && loeschAufrufe > 0)
         override suspend fun istLetzterSchreibvorgangGescheitert(): Boolean = false
         override suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit> {
             state.value = state.value.filterNot { it.id == alarmInfo.id } + alarmInfo
@@ -75,7 +81,8 @@ class TagFreigabeUseCaseTest {
         override suspend fun getAllAlarms(): Result<List<AlarmInfo>> = Result.success(state.value)
         override suspend fun deleteAlarm(alarmId: Int): Result<Unit> {
             protokoll += "delete:$alarmId"
-            if (loeschenScheitert) return Result.failure(IllegalStateException("Schreibfehler"))
+            loeschAufrufe++
+            if (loeschenScheitert || loeschAufrufe <= ersteLoeschFehler) return Result.failure(IllegalStateException("Schreibfehler"))
             state.value = state.value.filterNot { it.id == alarmId }
             return Result.success(Unit)
         }
@@ -219,6 +226,33 @@ class TagFreigabeUseCaseTest {
         assertEquals(listOf(1), fehler.alarmIds)
         assertTrue(fehler.freigabeZurueckgenommen)
         assertTrue("Markierung muss weg sein", tage.isEmpty())
+    }
+
+    @Test
+    fun `Ein voruebergehender Loeschfehler wird genau einmal nachgefasst`() = runTest {
+        val repo = FakeAlarmRepository(listOf(weckerAm(1, tag)), ersteLoeschFehler = 1)
+        val tage = mutableSetOf<LocalDate>()
+        val ergebnis = sut(repo, storeMit(tage), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
+            .freigeben(tag, zone)
+
+        assertTrue(ergebnis.isSuccess)
+        assertEquals(setOf(tag), tage)
+        assertEquals(2, protokoll.count { it == "delete:1" })
+        assertTrue(repo.current.isEmpty())
+    }
+
+    @Test
+    fun `Loeschen nur im Arbeitsspeicher zaehlt als Fehlschlag`() = runTest {
+        // deleteAlarm() meldet Erfolg, aber die Persistenz ist inzwischen gesperrt: Bestand und
+        // Direct-Boot-Spiegel behalten den Wecker. Die Sperre entsteht erst NACH der Vorpruefung.
+        val repo = FakeAlarmRepository(listOf(weckerAm(1, tag)), gesperrtNachLoeschen = true)
+        val tage = mutableSetOf<LocalDate>()
+        val ergebnis = sut(repo, storeMit(tage), FakeSkipUseCase(AlarmSkipState()), alarmManagerMit())
+            .freigeben(tag, zone)
+
+        assertTrue(ergebnis.exceptionOrNull() is FreigabeZurueckgenommenException)
+        assertTrue("Markierung muss weg sein", tage.isEmpty())
+        assertEquals(2, protokoll.count { it == "delete:1" })
     }
 
     @Test

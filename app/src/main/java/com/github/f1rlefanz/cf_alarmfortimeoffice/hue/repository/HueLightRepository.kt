@@ -139,30 +139,15 @@ class HueLightRepository @Inject constructor(
         try {
             val (bridgeIp, username) = getValidatedConnectionInfo()
 
-            val stateChange = buildMap<String, Any> {
-                on?.let { put("on", it) }
-                brightness?.let {
-                    if (it in 0..254) put("bri", it)
-                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid brightness value: $it (must be 0-254)")
-                }
-                hue?.let {
-                    if (it in 0..65535) put("hue", it)
-                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid hue value: $it (must be 0-65535)")
-                }
-                saturation?.let {
-                    if (it in 0..254) put("sat", it)
-                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid saturation value: $it (must be 0-254)")
-                }
-                colorTemperature?.let {
-                    if (it in HueConstants.Lights.MIN_COLOR_TEMPERATURE..HueConstants.Lights.MAX_COLOR_TEMPERATURE) put("ct", it)
-                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid color temperature: $it (must be ${HueConstants.Lights.MIN_COLOR_TEMPERATURE}-${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds)")
-                }
-                transitionTime?.let {
-                    if (it in 0..65535) put("transitiontime", it)
-                    else Logger.w(LogTags.HUE_LIGHTS, "Invalid transition time: $it (must be 0-65535 deciseconds)")
-                }
-                alert?.let { put("alert", it) }
-            }
+            val stateChange = buildStateChange(
+                on = on,
+                brightness = brightness,
+                hue = hue,
+                saturation = saturation,
+                colorTemperature = colorTemperature,
+                transitionTime = transitionTime,
+                alert = alert
+            )
 
             if (stateChange.isEmpty()) {
                 Logger.w(LogTags.HUE_LIGHTS, "No valid state changes provided for light $lightId")
@@ -303,4 +288,41 @@ class HueLightRepository @Inject constructor(
             Result.failure(e)
         }
     }
+}
+
+/**
+ * Baut den V1-Zustandskoerper fuer Lampe UND Gruppe. Werte ausserhalb des gueltigen Bereichs
+ * werden mit WARN verworfen statt gesendet; eine leere Map heisst: nichts zu senden.
+ */
+internal fun buildStateChange(
+    on: Boolean?,
+    brightness: Int?,
+    hue: Int?,
+    saturation: Int?,
+    colorTemperature: Int?,
+    transitionTime: Int?,
+    alert: String?
+): Map<String, Any> = buildMap {
+    on?.let { put("on", it) }
+    brightness?.let {
+        if (it in 0..254) put("bri", it)
+        else Logger.w(LogTags.HUE_LIGHTS, "Invalid brightness value: $it (must be 0-254)")
+    }
+    hue?.let {
+        if (it in 0..65535) put("hue", it)
+        else Logger.w(LogTags.HUE_LIGHTS, "Invalid hue value: $it (must be 0-65535)")
+    }
+    saturation?.let {
+        if (it in 0..254) put("sat", it)
+        else Logger.w(LogTags.HUE_LIGHTS, "Invalid saturation value: $it (must be 0-254)")
+    }
+    colorTemperature?.let {
+        if (it in HueConstants.Lights.MIN_COLOR_TEMPERATURE..HueConstants.Lights.MAX_COLOR_TEMPERATURE) put("ct", it)
+        else Logger.w(LogTags.HUE_LIGHTS, "Invalid color temperature: $it (must be ${HueConstants.Lights.MIN_COLOR_TEMPERATURE}-${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds)")
+    }
+    transitionTime?.let {
+        if (it in 0..65535) put("transitiontime", it)
+        else Logger.w(LogTags.HUE_LIGHTS, "Invalid transition time: $it (must be 0-65535 deciseconds)")
+    }
+    alert?.let { put("alert", it) }
 }

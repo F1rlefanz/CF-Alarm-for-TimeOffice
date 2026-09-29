@@ -14,7 +14,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
-import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPauseUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.BackgroundServiceManager
@@ -105,8 +104,6 @@ class CFAlarmApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-
-        ErrorHandler.initialize(this)
 
         // Lokaler Crash-Handler: schreibt Abstürze in last_crash.txt (Alpha-Test-Diagnose)
         installCrashHandler()

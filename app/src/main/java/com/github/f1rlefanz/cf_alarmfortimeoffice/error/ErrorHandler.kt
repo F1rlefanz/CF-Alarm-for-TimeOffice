@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.error
 
-import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -16,19 +15,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
  * ✅ Memory-efficient error handling
  */
 object ErrorHandler {
-    
-    private lateinit var appContext: Context
-    private var isInitialized = false
-    
-    /**
-     * REQUIRED: Initialize ErrorHandler with Application Context
-     * Call this in CFAlarmApplication.onCreate()
-     */
-    fun initialize(context: Context) {
-        appContext = context.applicationContext
-        isInitialized = true
-        Logger.i(LogTags.ERROR, "🔧 ErrorHandler initialized")
-    }
     
     /**
      * SIMPLIFIED error handling with structured logging
@@ -102,7 +88,7 @@ object ErrorHandler {
      * SECURITY: Sanitized messages that don't expose internal details
      * PERFORMANCE: Pre-computed message mapping for fast lookup
      */
-    fun getUserMessage(error: AppError): String = when (error) {
+    private fun getUserMessage(error: AppError): String = when (error) {
         // NETWORK ERRORS
         is AppError.NetworkError -> "Keine Internetverbindung. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut."
         

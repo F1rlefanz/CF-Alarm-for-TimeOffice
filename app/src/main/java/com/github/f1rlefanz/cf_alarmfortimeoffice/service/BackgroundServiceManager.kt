@@ -142,8 +142,8 @@ class BackgroundServiceManager @Inject constructor(
      *      laengst gewaehlt, und der Sofort-Lauf ist der Sinn der Sache: direkt nachsynchronisieren.
      *
      * Die Kalender-Auswahl trennt beide Faelle sauber. Ist sie leer, ist Onboarding im Gang; die
-     * 6h-Kette wird ohnehin an jedem Onboarding-Ausgang per [scheduleInitialAlarmMaintenance]
-     * gestellt — hier faellt also nichts aus, nur der Leerlauf weg.
+     * 6h-Kette stellt MainScreen an jedem Onboarding-Ausgang per AlarmMaintenanceService.scheduleNext()
+     * - hier faellt also nichts aus, nur der Leerlauf weg.
      *
      * Die Notification bleibt damit ehrlich: Sie kann jetzt nur noch einen Nutzer erreichen, der
      * das Onboarding abgeschlossen und danach alle Kalender abgewaehlt hat — dann stimmt sie auch.
@@ -191,29 +191,6 @@ class BackgroundServiceManager @Inject constructor(
             Logger.business(LogTags.MAINTENANCE, "✅ AlarmMaintenanceService initialized")
         } catch (e: Exception) {
             Logger.e(LogTags.MAINTENANCE, "❌ Failed to initialize maintenance service", e)
-        }
-    }
-    
-    /**
-     * PHASE 1 MIGRATION: Schedules initial AlarmMaintenanceService after login
-     * This replaces the old BackgroundTokenRefreshWorker
-     */
-    fun scheduleInitialAlarmMaintenance() {
-        Logger.business(LogTags.MAINTENANCE, "📅 INITIAL ALARM: Scheduling first maintenance run")
-        
-        try {
-            // Schedule the next maintenance run
-            AlarmMaintenanceService.scheduleNext(context)
-            
-            // Store initial scheduling info
-            preferences.edit {
-                putLong("initial_alarm_scheduled", System.currentTimeMillis())
-                putBoolean("alarm_maintenance_enabled", true)
-            }
-            
-            Logger.business(LogTags.MAINTENANCE, "✅ INITIAL ALARM: First maintenance run scheduled")
-        } catch (e: Exception) {
-            Logger.e(LogTags.MAINTENANCE, "❌ INITIAL ALARM: Failed to schedule maintenance", e)
         }
     }
 }

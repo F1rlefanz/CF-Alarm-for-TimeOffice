@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
-import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.PermissionState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.CalendarOperationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.AppErrorState
 import kotlinx.coroutines.flow.flow
@@ -32,29 +31,21 @@ class StateSynchronisationTest {
             accessToken = "valid_token"
         )
         
-        val permissions = PermissionState.granted()
-        val calendarOps = CalendarOperationState.configured()
+        val calendarOps = CalendarOperationState(hasSelectedCalendars = true, hasValidToken = true, tokenChecked = true)
         val errors = AppErrorState.EMPTY
-        
+
         // ACT: Create AuthState
         val authState = AuthState(
             userAuth = userAuth,
-            permissions = permissions,
             calendarOps = calendarOps,
             errors = errors
         )
-        
+
         // ASSERT: Check sub-state properties
         assertTrue("Should be signed in", authState.isSignedIn)
-        assertTrue("Should be fully authenticated", authState.isFullyAuthenticated)
-        assertTrue("Should have calendar permissions", authState.androidCalendarPermissionGranted)
-        assertTrue("Should be operational", authState.isOperational)
-        assertTrue("Should be ready for calendar selection", authState.canProceedToCalendarSelection)
-        
-        // ASSERT: Check backward compatibility
         assertEquals("Email should match", "test@example.com", authState.userEmail)
-        assertEquals("Display name should match", "Test User", authState.displayName)
-        assertEquals("Access token should match", "valid_token", authState.accessToken)
+        assertNull("Should have no error", authState.error)
+        assertFalse("Should not need calendar authorization", authState.calendarOps.needsCalendarAuthorization)
     }
 
     @Test
@@ -64,8 +55,8 @@ class StateSynchronisationTest {
             emit(AuthState.EMPTY)
             emit(AuthState.EMPTY) // Duplicate - should be filtered by distinctUntilChanged()
             emit(AuthState.EMPTY) // Duplicate - should be filtered by distinctUntilChanged()
-            emit(AuthState.authenticated("test@example.com", "Test", "token"))
-            emit(AuthState.authenticated("test@example.com", "Test", "token")) // Duplicate - should be filtered
+            emit(AuthState(userAuth = UserAuthState.authenticated("test@example.com", "Test", "token")))
+            emit(AuthState(userAuth = UserAuthState.authenticated("test@example.com", "Test", "token"))) // Duplicate - should be filtered
         }.distinctUntilChanged()
         
         // ACT: Collect all emissions
@@ -78,85 +69,21 @@ class StateSynchronisationTest {
     }
 
     @Test
-    fun `sub-states should have computed properties`() {
-        // ARRANGE & ACT: Test UserAuthState
-        val userAuth = UserAuthState.authenticated(
-            email = "test@example.com",
-            displayName = "Test User",
-            accessToken = "valid_token"
-        )
-        
-        // ASSERT: UserAuthState computed properties
-        assertTrue("Should be authenticated", userAuth.isAuthenticated)
-        assertTrue("Should have user info", userAuth.hasUserInfo)
-        assertTrue("Should be fully authenticated", userAuth.isFullyAuthenticated)
-        
-        // ARRANGE & ACT: Test PermissionState
-        val permissions = PermissionState.granted()
-        
-        // ASSERT: PermissionState computed properties
-        assertTrue("Should have permission granted", permissions.isPermissionGranted)
-        assertFalse("Should not need permission request", permissions.needsPermissionRequest)
-        assertFalse("Should not be permanently denied", permissions.isPermanentlyDenied)
-        
-        // ARRANGE & ACT: Test CalendarOperationState
-        val calendarOps = CalendarOperationState.configured()
-        
-        // ASSERT: CalendarOperationState computed properties
-        assertTrue("Should be operational", calendarOps.isOperational)
-        assertTrue("Should be fully configured", calendarOps.isFullyConfigured)
-        assertFalse("Should not need calendar selection", calendarOps.needsCalendarSelection)
-    }
-
-    @Test
     fun `error state should handle different error types`() {
         // ARRANGE & ACT: Create different error types
         val authError = AppErrorState.authenticationError("Auth failed")
-        val permissionError = AppErrorState.permissionError("Permission denied")
         val networkError = AppErrorState.networkError("Network error")
-        
+
         // ASSERT: Error types should be correctly set
         assertEquals("Auth error type", AppErrorState.ErrorType.AUTHENTICATION, authError.errorType)
-        assertEquals("Permission error type", AppErrorState.ErrorType.PERMISSION, permissionError.errorType)
         assertEquals("Network error type", AppErrorState.ErrorType.NETWORK, networkError.errorType)
-        
+
         // ASSERT: Recovery flags should be correct
         assertTrue("Auth error should be recoverable", authError.isRecoverable)
-        assertFalse("Permission error should not be recoverable", permissionError.isRecoverable)
         assertTrue("Network error should be recoverable", networkError.isRecoverable)
-        
-        // ASSERT: Error handling properties
-        assertTrue("Should have error", authError.hasError)
-        assertTrue("Should show error", authError.showError)
-        assertTrue("Should be able to retry", authError.canRetry)
-        assertTrue("Permission error should need user action", permissionError.needsUserAction)
-    }
 
-    @Test
-    fun `factory methods should create correct states`() {
-        // ARRANGE & ACT: Use factory methods
-        val authenticatedState = AuthState.authenticated(
-            email = "test@example.com",
-            displayName = "Test User", 
-            accessToken = "token"
-        )
-        
-        val permissionState = AuthState.withPermissions()
-        
-        val fullyConfiguredState = AuthState.fullyConfigured(
-            email = "test@example.com",
-            displayName = "Test User",
-            accessToken = "token"
-        )
-        
-        // ASSERT: Factory methods should create correct states
-        assertTrue("Authenticated state should be signed in", authenticatedState.isSignedIn)
-        assertEquals("Email should match", "test@example.com", authenticatedState.userEmail)
-        
-        assertTrue("Permission state should have permissions", permissionState.androidCalendarPermissionGranted)
-        
-        assertTrue("Fully configured should be ready", fullyConfiguredState.isReadyForAlarms)
-        assertTrue("Fully configured should be operational", fullyConfiguredState.isOperational)
+        // ASSERT: Error handling properties
+        assertTrue("Should show error", authError.showError)
     }
 
     @Test
@@ -184,18 +111,13 @@ class StateSynchronisationTest {
         )
         
         state = state.copy(
-            permissions = PermissionState.granted()
+            calendarOps = CalendarOperationState(hasSelectedCalendars = true, hasValidToken = true, tokenChecked = true)
         )
-        
-        state = state.copy(
-            calendarOps = CalendarOperationState.configured()
-        )
-        
+
         // ASSERT: All updates should be reflected atomically
         assertTrue("Should be signed in", state.isSignedIn)
-        assertTrue("Should have permissions", state.androidCalendarPermissionGranted)
-        assertTrue("Should be operational", state.isOperational)
-        assertTrue("Should be ready for alarms", state.isReadyForAlarms)
+        assertTrue("Should have selected calendars", state.calendarOps.hasSelectedCalendars)
+        assertFalse("Should not need calendar authorization", state.calendarOps.needsCalendarAuthorization)
     }
     
     @Test 

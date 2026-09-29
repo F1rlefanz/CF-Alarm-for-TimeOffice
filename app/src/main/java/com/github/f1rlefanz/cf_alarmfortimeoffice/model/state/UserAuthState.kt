@@ -11,10 +11,6 @@ data class UserAuthState(
     val accessToken: String? = null,
     val hasValidToken: Boolean = false
 ) {
-    val isAuthenticated: Boolean get() = isSignedIn && hasValidToken
-    val hasUserInfo: Boolean get() = userEmail != null && displayName != null
-    val isFullyAuthenticated: Boolean get() = isAuthenticated && hasUserInfo
-    
     companion object {
         val EMPTY = UserAuthState()
         

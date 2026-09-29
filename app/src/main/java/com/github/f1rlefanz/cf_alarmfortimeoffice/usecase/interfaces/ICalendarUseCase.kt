@@ -5,7 +5,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstants
 
 /**
- * PAGINATION SUPPORT: Data classes für paginierte Ergebnisse
+ * Data classes für paginierte Ergebnisse
  */
 data class CalendarPage(
     val calendars: List<AndroidCalendar>,
@@ -54,16 +54,6 @@ data class CalendarFetchOutcome(
 
 /**
  * Interface für Calendar UseCase Operations
- * 
- * TESTING IMPROVEMENT: Interface ermöglicht Mock-Implementierungen
- * - Dependency Inversion: ViewModel abhängig von Abstraktion
- * - Testbarkeit: ViewModel kann mit Mock-UseCase getestet werden
- * - Business Logic Separation: Kapselt Calendar-spezifische Geschäftslogik
- * 
- * OPTIMIZATION ENHANCEMENTS:
- * ✅ Lazy Loading für Events mit Pagination
- * ✅ Pagination für große Kalenderlisten
- * ✅ Erweiterte Cache-Management Funktionen
  *
  * ENTFERNT (Aufraeumrunde 24): `getCalendarEvents` und `testCalendarConnection` - im ganzen Baum
  * ohne Aufrufstelle. `getCalendarEvents` war ein reiner Delegat an
@@ -75,17 +65,13 @@ interface ICalendarUseCase {
     
     /**
      * Lädt verfügbare Kalender für den aktuell authentifizierten User
-     * 
-     * @return Result mit Liste der verfügbaren Kalender oder Fehler
      */
     suspend fun getAvailableCalendars(): Result<List<AndroidCalendar>>
     
     /**
-     * PAGINATION: Lädt verfügbare Kalender mit Pagination Support
-     * 
+     * Lädt verfügbare Kalender seitenweise.
+     *
      * @param page Seiten-Nummer (beginnend bei 0)
-     * @param pageSize Anzahl Kalender pro Seite (Standard: 20)
-     * @return Result mit paginiertem CalendarPage oder Fehler
      */
     suspend fun getAvailableCalendarsPaginated(
         page: Int = 0,
@@ -93,14 +79,7 @@ interface ICalendarUseCase {
     ): Result<CalendarPage>
     
     /**
-     * LAZY LOADING: Lädt Events mit erweiterten Optionen
-     * 
-     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
-     *
-     * @param calendarIds Set der Kalender-IDs
-     * @param maxEvents Maximale Anzahl Events (für Lazy Loading)
-     * @param offset Offset für Pagination von Events
-     * @return Result mit paginiertem EventPage oder Fehler
+     * Lädt Events gestaffelt ([offset], höchstens [maxEvents]).
      */
     suspend fun getCalendarEventsLazy(
         calendarIds: Set<String>,
@@ -110,19 +89,11 @@ interface ICalendarUseCase {
     
     /**
      * Überprüft ob ein gültiges Access Token verfügbar ist
-     * 
-     * @return Boolean - true wenn gültiges Token verfügbar
      */
     suspend fun hasValidAccessToken(): Boolean
     
     /**
-     * Lädt Events für spezifische Kalender mit Cache-Support
-     * 
-     * PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
-     * 
-     * @param calendarIds Set der Kalender-IDs für die Events geladen werden sollen
-     * @param forceRefresh Bypass Cache und lade Events direkt von API
-     * @return Result mit Liste der Calendar Events oder Fehler
+     * Lädt Events für spezifische Kalender mit Cache-Support; [forceRefresh] umgeht den Cache.
      */
     suspend fun getCalendarEventsWithCache(
         calendarIds: Set<String>,
@@ -157,8 +128,6 @@ interface ICalendarUseCase {
     
     /**
      * Invalidiert Cache für spezifische Kalender
-     * 
-     * @param calendarIds Set der Kalender-IDs deren Cache invalidiert werden soll
      */
     suspend fun invalidateCalendarCache(calendarIds: Set<String>)
 }

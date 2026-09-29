@@ -2,13 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
 import androidx.compose.runtime.Immutable
 
-/**
- * IMMUTABLE Android Calendar Model
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable annotation prevents unnecessary recompositions in Compose
- * ✅ Optimiert für Listen-Performance in UI
- */
+/** Ein Kalender des Geraets bzw. Google-Kontos, wie ihn die Kalenderauswahl zeigt. */
 @Immutable
 data class AndroidCalendar(
     val id: String,

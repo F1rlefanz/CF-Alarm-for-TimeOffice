@@ -30,23 +30,9 @@ interface BatteryOptimizationHelperEntryPoint {
     fun mainDataStore(): DataStore<Preferences>
 }
 
-/**
- * Battery Optimization Helper with OEM-specific detection
- *
- * FEATURES:
- * - Battery exemption check and request
- * - OEM-specific detection (Xiaomi, OnePlus, Samsung, etc.)
- * - Educational dialogs for users
- * - Direct links to dontkillmyapp.com guides
- */
+/** Akku-Ausnahme pruefen und anfragen, OEM-Erkennung und dontkillmyapp.com-Anleitungen. */
 object BatteryOptimizationHelper {
 
-    // MIGRATION (Juli 2026): Die "hint shown"-Flags liegen im @MainDataStore ("settings")
-    // statt in den alten "cf_alarm_prefs" SharedPreferences. Damit ist die dritte
-    // "cf_alarm_prefs"-Insel vollständig aufgelöst (last_maintenance_time zog bereits in den
-    // @MainDataStore um, siehe AlarmMaintenanceService).
-    // BEWUSST kein Migrationscode für Altwerte – aktuell nutzt nur der Entwickler die App
-    // (Projekt-Konvention). Im schlimmsten Fall erscheint ein Hinweis einmalig erneut.
     private const val KEY_OEM_HINT_SHOWN_PREFIX = "oem_hint_shown"
     private val KEY_BATTERY_PROMPT_DISMISSED = booleanPreferencesKey("battery_prompt_dismissed")
 
@@ -197,10 +183,7 @@ object BatteryOptimizationHelper {
     }
 
     /**
-     * Oeffnet die dontkillmyapp.com-Anleitung fuer den gegebenen OEM. War vorher in
-     * [com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.OEMWarningScreen] und
-     * [com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent]
-     * fast wortgleich dupliziert.
+     * Oeffnet die dontkillmyapp.com-Anleitung fuer den OEM.
      */
     fun openOEMHelpUrl(context: Context, oemType: OEMType) {
         try {
@@ -252,11 +235,8 @@ object BatteryOptimizationHelper {
     
     /**
      * True wenn der volle OEM-Warnscreen fuer diesen Typ noch nie gezeigt wurde UND das
-     * Geraet ueberhaupt einen der bekannten aggressiven Hersteller hat. Einzige verbliebene
-     * OEM-Hinweis-Logik (Konsolidierung Juli 2026): frueher gab es vier unabhaengige, teils
-     * ungegatete Auslösepunkte (Dialog beim Landen auf dem Akku-Screen, vollflaechiger Screen
-     * ungegatet, ein zweiter Dialog gegated, ein dritter OnePlus-spezifischer Dialog gegated) -
-     * jetzt genau ein Weg über [NavigationState.OEMWarning], mit dieser Sperre.
+     * Geraet ueberhaupt einen der bekannten aggressiven Hersteller hat. Einziger Ausloeseweg
+     * ist [NavigationState.OEMWarning], mit dieser Sperre.
      */
     suspend fun shouldNavigateToOemWarningScreen(context: Context, oemType: OEMType): Boolean {
         if (!shouldShowOEMWarning(oemType)) return false

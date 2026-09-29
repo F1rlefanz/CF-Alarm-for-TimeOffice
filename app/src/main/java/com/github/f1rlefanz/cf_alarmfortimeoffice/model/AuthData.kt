@@ -3,13 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 
-/**
- * IMMUTABLE Auth Data Model
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable annotation für Compose-Performance
- * ✅ Serializable für DataStore-Persistence
- */
+/** Anmeldezustand des Google-Kontos. */
 @Immutable
 @Serializable
 data class AuthData(

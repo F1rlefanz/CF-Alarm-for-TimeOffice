@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-// PHASE 2 CLEANUP: NetworkRequest import removed (unused)
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -13,22 +12,9 @@ import java.net.Inet4Address
 import java.net.InetAddress
 
 /**
- * Network State Monitor für Offline-Support Optimierungen
- *
- * PERFORMANCE FEATURES:
- * ✅ Reactive Network State Monitoring mit Flow
- * ✅ Automatische Background-Sync bei Netzwerk-Wiederherstellung
- * ✅ Intelligente Offline-Erkennung
- * ✅ Battery-efficient monitoring
- *
- * Note: minSdk is 26, so all modern network APIs are available
- *
- * [isNetworkAvailable] wird seit v1.17.0 von [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager]
- * fuer die autonome Wiederverbindung genutzt (Netzwerk kommt zurueck -> Bridge-Reconnect-Versuch).
- * `isCurrentlyConnected` liefert den Anfangswert fuer [isNetworkAvailable] und ist deshalb
- * private. Die frueher hier vermerkten `isMeteredConnection`/`isWifiConnected` waren
- * KEINE "fertige API fuer spaeter", sondern hatten nie einen Aufrufer - am 22.08.2026
- * entfernt. Die Subnetz-Frage beantwortet [isReachableSubnet], nicht "sind wir im WLAN".
+ * Netz-Verfuegbarkeit als Flow ([isNetworkAvailable]) - genutzt von
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager] fuer die
+ * Bridge-Wiederverbindung - und die Subnetz-Pruefung [isReachableSubnet].
  */
 class NetworkStateMonitor(private val connectivityManager: ConnectivityManager) {
 
@@ -60,10 +46,8 @@ class NetworkStateMonitor(private val connectivityManager: ConnectivityManager) 
             }
         }
         
-        // Register network callback - registerDefaultNetworkCallback is available since API 24, we have 26
         connectivityManager.registerDefaultNetworkCallback(networkCallback)
-        
-        // Send initial state
+
         trySend(isCurrentlyConnected())
         
         awaitClose {
@@ -73,7 +57,6 @@ class NetworkStateMonitor(private val connectivityManager: ConnectivityManager) 
     
     /**
      * Get current network state synchronously
-     * Since minSdk is 26, we can use the modern API directly
      */
     private fun isCurrentlyConnected(): Boolean {
         val activeNetwork = connectivityManager.activeNetwork ?: return false

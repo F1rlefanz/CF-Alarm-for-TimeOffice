@@ -3,14 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 import androidx.compose.runtime.Immutable
 import java.time.LocalDateTime
 
-/**
- * IMMUTABLE Calendar Event Model
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable annotation prevents unnecessary recompositions in Compose
- * ✅ Strukturelle Gleichheit für effiziente distinctUntilChanged() in Flows
- * ✅ Memory-efficient data class für GC-Optimierung
- */
+/** Ein Termin aus den ausgewaehlten Kalendern. */
 @Immutable
 data class CalendarEvent(
     val id: String,

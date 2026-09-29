@@ -51,7 +51,6 @@ class CalendarEventCache(
             timestamp.plusMinutes(CalendarEventCache.TTL_MINUTES).isBefore(reference)
     }
 
-    // Coroutine-Mutex fuer bessere Performance als @Synchronized
     private val cacheMutex = Mutex()
     private val cache = mutableMapOf<String, CacheEntry>()
 
@@ -82,7 +81,6 @@ class CalendarEventCache(
         val entry = cache[calendarId]
 
         return@withLock if (entry != null && !entry.isExpired(now())) {
-            Logger.d(LogTags.CALENDAR_CACHE, "Returning ${entry.events.size} cached events")
             entry.events
         } else {
             if (entry != null) {

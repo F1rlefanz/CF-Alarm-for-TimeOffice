@@ -29,14 +29,8 @@ import javax.inject.Singleton
 /**
  * Stuendliche Kalender-Abfrage an Rufbereitschafts-Tagen.
  *
- * DER VORFALL (16.09.2026, Fairphone, Log ausgewertet): Rufbereitschaft (AD1) den ganzen Tag. Um
- * 08:51 ruft der Chef an und traegt in TimeOffice einen Spaetdienst ein; Weckzeit dafuer 12:30.
- * Die 6h-Wartung lief um 08:10 (Kalender-Abfrage uebersprungen: Daten 6h alt, Puffer > 7 Tage,
- * naechster Wecker 59h entfernt) und haette erst um 14:10 wieder gefragt. Der 3h-Vorab-Worker
- * (`CalendarPreAlarmRefreshScheduler`) plant nur fuer Wecker, die es schon GIBT. Dazwischen hat
- * niemand nachgesehen. Um 13:26 oeffnete der Nutzer die App: "Skipping alarm in the past:
- * Spaetschicht". Kein Fehler in der Weckerkette - der App fehlte eine Abfrage im richtigen
- * Zeitfenster, und zwar an genau dem Tag, an dem sie wusste, dass ein Abruf wahrscheinlich ist.
+ * Anlass: Rufbereitschaftstag 16.09.2026, Spaetdienst per Anruf eingetragen, keine Abfrage
+ * dazwischen - Hergang Kalender-Skill, Abschnitt Rufbereitschaft.
  *
  * WAS DAS HIER TUT: Solange eine Schichtspanne mit `ShiftDefinition.isOnCall` laeuft, feuert
  * jede volle Stunde ein exakter Alarm auf [RufbereitschaftAbfrageReceiver], und der startet den
@@ -50,9 +44,7 @@ import javax.inject.Singleton
  * [reschedule] ist der EINZIGE Planer dieser Kette und rechnet immer vom Ist-Zustand aus
  * (selbstkorrigierend wie der DND-Tick): es gibt nichts zu "nachstellen".
  *
- * WARUM NICHT EINFACH DAS LADE-GATE DER 6h-WARTUNG AENDERN: Das Gate entscheidet nur, ob ein
- * ohnehin laufender Lauf laedt. Der Lauf um 08:10 lag VOR dem Eintrag um 08:51, der um 14:10
- * NACH der Weckzeit. Es fehlte nicht die Entscheidung zu laden, es fehlten die Laeufe dazwischen.
+ * WARUM NICHT DAS LADE-GATE DER 6h-WARTUNG AENDERN: es fehlte nicht die Entscheidung zu laden, sondern die Laeufe dazwischen.
  *
  * WARUM EXAKTE ALARME UND KEIN WORKMANAGER-PERIODIC: Ein PeriodicWorkRequest darf im Doze um
  * Stunden verschoben werden, und genau die Stunde ist hier der Punkt. Die Vorlage ist die

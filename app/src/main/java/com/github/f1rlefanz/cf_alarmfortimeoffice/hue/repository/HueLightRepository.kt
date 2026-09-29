@@ -51,18 +51,7 @@ class HueLightRepository @Inject constructor(
             val (bridgeIp, username) = getValidatedConnectionInfo()
             
             val lightsResponse = apiClient.getLights(bridgeIp, username)
-            val lights = lightsResponse.map { (id, lightData) ->
-                HueLight(
-                    id = id,
-                    name = lightData.name,
-                    type = lightData.type,
-                    modelid = lightData.modelid,
-                    manufacturername = lightData.manufacturername,
-                    productname = lightData.productname,
-                    state = lightData.state,
-                    uniqueid = lightData.uniqueid
-                )
-            }
+            val lights = lightsResponse.map { (id, lightData) -> lightData.copy(id = id) }
             
             Logger.i(LogTags.HUE_LIGHTS, "Successfully retrieved ${lights.size} lights")
             Result.success(lights)
@@ -78,18 +67,7 @@ class HueLightRepository @Inject constructor(
             val (bridgeIp, username) = getValidatedConnectionInfo()
             
             val groupsResponse = apiClient.getGroups(bridgeIp, username)
-            val groups = groupsResponse.map { (id, groupData) ->
-                HueGroup(
-                    id = id,
-                    name = groupData.name,
-                    type = groupData.type,
-                    lights = groupData.lights,
-                    sensors = groupData.sensors,
-                    state = groupData.state,
-                    action = groupData.action,
-                    recycle = groupData.recycle
-                )
-            }
+            val groups = groupsResponse.map { (id, groupData) -> groupData.copy(id = id) }
             
             Logger.i(LogTags.HUE_LIGHTS, "Successfully retrieved ${groups.size} groups")
             Result.success(groups)

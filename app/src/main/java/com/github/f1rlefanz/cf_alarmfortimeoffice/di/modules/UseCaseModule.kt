@@ -24,17 +24,10 @@ import dagger.hilt.components.SingletonComponent
 
 /**
  * Hilt Module für UseCase Bindings
- * 
- * WICHTIG: UseCases sind STATELESS - daher kein @Singleton!
- * Sie werden von Services und ViewModels verwendet
  */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class UseCaseModule {
-    
-    // ==============================
-    // Core UseCases
-    // ==============================
     
     @Binds
     abstract fun bindAlarmUseCase(
@@ -60,10 +53,6 @@ abstract class UseCaseModule {
     abstract fun bindAuthUseCase(
         impl: AuthUseCase
     ): IAuthUseCase
-    
-    // ==============================
-    // Hue UseCases
-    // ==============================
     
     @Binds
     abstract fun bindHueBridgeUseCase(

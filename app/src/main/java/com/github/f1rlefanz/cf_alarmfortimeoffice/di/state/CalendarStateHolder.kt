@@ -1,5 +1,3 @@
-// app/src/main/java/com/github/f1rlefanz/cf_alarmfortimeoffice/di/state/CalendarStateHolder.kt
-
 package com.github.f1rlefanz.cf_alarmfortimeoffice.di.state
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -16,15 +14,10 @@ import javax.inject.Singleton
  * - Single Source of Truth für die Event-Liste, geteilt zwischen CalendarViewModel und
  *   ShiftViewModel (keine direkten VM-zu-VM-Abhängigkeiten).
  * - Thread-safe über StateFlow.
- *
- * HINWEIS (Audit): Die Kalender-Auswahl und -Verfügbarkeit lebt in [CalendarSelectionRepository]
- * (DataStore). Die frueher hier gespiegelten availableCalendars/selectedCalendarIds waren ein
- * toter Parallel-Zustand (Writer nie aufgerufen) und sind entfernt.
  */
 @Singleton
 class CalendarStateHolder @Inject constructor() {
 
-    // Calendar Events (der einzige geteilte Zustand)
     private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
 

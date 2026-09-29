@@ -29,15 +29,10 @@ import dagger.hilt.components.SingletonComponent
  * Hilt Module für Repository Bindings
  * 
  * Bindet alle Repository-Implementierungen an ihre Interfaces
- * Ermöglicht einfaches Mocking für Tests
  */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
-    
-    // ==============================
-    // Core Repositories
-    // ==============================
     
     @Binds
     abstract fun bindAlarmRepository(
@@ -73,10 +68,6 @@ abstract class RepositoryModule {
     abstract fun bindTokenRepository(
         impl: DataStoreTokenRepository
     ): TokenRepository
-    
-    // ==============================
-    // Hue Repositories
-    // ==============================
     
     @Binds
     abstract fun bindHueBridgeRepository(

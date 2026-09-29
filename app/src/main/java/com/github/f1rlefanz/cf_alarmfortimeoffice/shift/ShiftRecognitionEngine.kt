@@ -26,12 +26,9 @@ class ShiftRecognitionEngine(
     
     /**
      * Der komplette Cache-Stand in EINEM unveraenderlichen Objekt: Event-Schluessel, Ergebnis,
-     * Veroeffentlichungszeit und die [cacheEpoch], unter der er entstanden ist.
-     *
-     * WARUM EIN OBJEKT UND NICHT DREI FELDER (Fix v1.22.2): Drei einzelne `@Volatile`-Felder haben
-     * keine gemeinsame Atomizitaet - jeder Leser kann eine Mischung aus altem und neuem Stand
-     * sehen. Eine einzige `@Volatile`-Referenz zu veroeffentlichen ist dagegen unteilbar: entweder
-     * der Leser sieht den ganzen alten Stand oder den ganzen neuen.
+     * Veroeffentlichungszeit und die [cacheEpoch], unter der er entstanden ist. Eine einzige
+     * `@Volatile`-Referenz ist unteilbar, drei einzelne Felder waeren es nicht.
+     * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
      */
     private data class RecognitionCache(
         val eventsHash: Int,
@@ -40,33 +37,18 @@ class ShiftRecognitionEngine(
         val epoch: Int
     )
 
-    /**
-     * PERFORMANCE OPTIMIZATION: Enhanced recognition with intelligent caching
-     * Caches results for identical event sets and prevents concurrent calls
-     */
     @Volatile
     private var cache: RecognitionCache? = null
 
     /**
-     * INVARIANTE (Fix v1.22.2): Der Zaehler, mit dem [clearRecognitionCache] eine Invalidierung
-     * OHNE Mutex durchsetzen kann.
+     * INVARIANTE: Der Zaehler, mit dem [clearRecognitionCache] eine Invalidierung OHNE Mutex
+     * durchsetzen kann. [clearRecognitionCache] ist bewusst NICHT `suspend` (synchroner Aufrufer
+     * `ShiftUseCase.invalidateAllCaches()`).
      *
-     * [clearRecognitionCache] ist bewusst NICHT `suspend`: der einzige Aufrufer ist
-     * `ShiftUseCase.invalidateAllCaches()`, eine normale (nicht-suspend) private Funktion. Ein
-     * `suspend`-Umbau hier wuerde diese Signatur und damit fremde Dateien mitziehen - und der
-     * Mutex allein wuerde das Problem gar nicht loesen (siehe unten).
-     *
-     * Das Problem ohne Epoche: ein Lauf haelt den Mutex und hat die ALTE Konfiguration gelesen;
-     * mitten darin loescht der Nutzer per Speichern den Cache; danach veroeffentlicht der laufende
-     * Lauf seinen ueberholten Stand samt frischem Zeitstempel - die Invalidierung ist verpufft und
-     * der alte Stand gilt fuer die volle adaptive Cache-Dauer (2-30s) als Treffer. Genau darueber
-     * behielt eine gerade deaktivierte Schicht ihren Wecker.
-     *
-     * Die Loesung: jeder veroeffentlichte Stand traegt die Epoche, unter der er ENTSTANDEN ist.
-     * [clearRecognitionCache] zaehlt sie hoch (und zwar VOR dem Nullen des Standes). Ein Leser
-     * akzeptiert nur einen Stand, dessen Epoche noch die aktuelle ist. Damit ist selbst ein
-     * Lauf, der zwischen Pruefung und Schreiben ueberholt wird, harmlos: sein Stand ist mit der
-     * alten Epoche gestempelt und wird von jedem Leser verworfen.
+     * Jeder veroeffentlichte Stand traegt die Epoche, unter der er ENTSTANDEN ist; ein Leser
+     * akzeptiert nur einen Stand mit der aktuellen Epoche. So wird auch ein Lauf harmlos, der
+     * zwischen Pruefung und Schreiben ueberholt wird.
+     * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
      */
     @Volatile
     private var cacheEpoch = 0
@@ -76,28 +58,12 @@ class ShiftRecognitionEngine(
     private var configChangeCount = 0
 
     /**
-     * INVARIANTE (Fix v1.22.2): Cache-Pruefung UND Cache-Veroeffentlichung liegen gemeinsam
-     * hinter diesem Mutex. Der Mehrfeld-Cache (`lastRecognitionHash`/`cachedMatches`/
-     * `lastCacheTime`) hat keine gemeinsame Atomizitaet - `@Volatile` schuetzt nur jedes Feld
-     * einzeln. Vorher wurde `lastRecognitionHash` VOR der Erkennung gesetzt und `cachedMatches`
-     * erst danach; ein nebenlaeufiger Aufrufer mit identischem Event-Hash traf in diesem Fenster
-     * die Cache-Treffer-Bedingung und bekam den ALTEN Stand - im frischen Prozess bzw. direkt
-     * nach `clearRecognitionCache()` eine LEERE Liste. `AlarmUseCase.syncAlarms()` versteht eine
-     * leere Trefferliste als "keine Schichten" und loescht daraufhin ALLE Alarme.
-     *
-     * Es gibt mindestens drei voneinander unabhaengige Aufrufer dieser einen Singleton-Instanz
-     * (`AlarmUseCase.syncAlarms()`, `ShiftUseCase.recognizeShiftsInEvents()`,
-     * `AlarmMaintenanceService`), die letzten beiden ausserhalb jedes Alarm-Mutex - die
-     * Ueberlappung ist der Normalfall, nicht der Ausnahmefall.
-     *
-     * Der Mutex deckt Pruefung und Veroeffentlichung ab, NICHT die Invalidierung: die laeuft ueber
-     * [clearRecognitionCache] aus synchronem Kontext und kann den Mutex nicht nehmen. Dafuer sorgt
-     * [cacheEpoch] - siehe dort.
-     *
-     * Der Mutex ersetzt die frueheren Felder `recognitionInProgress` + `MAX_CONCURRENT_WAIT_MS`
-     * (Polling mit 200ms-Timeout, das "zur Sicherheit" trotzdem weiterlief und damit genau den
-     * halbfertigen Zustand las, den es verhindern sollte). Wer hier wieder ein Boolean-Flag mit
-     * Timeout einbaut, holt sich den Fehler zurueck.
+     * INVARIANTE: Cache-Pruefung UND Cache-Veroeffentlichung liegen gemeinsam hinter diesem
+     * Mutex - sonst liest ein nebenlaeufiger Aufrufer eine leere Liste, und `syncAlarms()` loescht
+     * darauf ALLE Alarme. Mehrere unabhaengige Aufrufer dieser Singleton-Instanz laufen ausserhalb
+     * jedes Alarm-Mutex; Ueberlappung ist der Normalfall. Die Invalidierung deckt [cacheEpoch] ab.
+     * Kein Boolean-Flag mit Timeout.
+     * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
      */
     private val recognitionMutex = Mutex()
 
@@ -137,7 +103,6 @@ class ShiftRecognitionEngine(
     /**
      * Clears the recognition cache to force re-processing of events.
      * This should be called when shift configuration changes.
-     * PERFORMANCE: Optimized cache management with lifecycle callbacks
      *
      * REIHENFOLGE IST TRAGEND: erst [cacheEpoch] hochzaehlen, dann den Stand nullen. Ein Lauf, der
      * gerade im kritischen Abschnitt steckt, sieht die neue Epoche damit spaetestens beim
@@ -153,9 +118,7 @@ class ShiftRecognitionEngine(
         configChangeCount++
         cacheHitCount = 0 // Reset hit count on config change
         
-        Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 CACHE-CLEAR: Clearing recognition cache before config update")
         Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 ADAPTIVE-CACHE-CLEAR: Recognition cache cleared due to configuration change (change #$configChangeCount)")
-        Logger.d(LogTags.SHIFT_RECOGNITION, "✅ CACHE-CLEAR: Recognition cache cleared successfully")
     }
     
     suspend fun getAllMatchingShifts(events: List<CalendarEvent>): List<ShiftMatch> {
@@ -175,12 +138,7 @@ class ShiftRecognitionEngine(
         // Abschnitt bleibt unveraendert EIN Block. Pruefung und Veroeffentlichung liegen weiterhin
         // gemeinsam darin, `epochAtStart` wird weiterhin innerhalb des Locks genommen. Ein Mutex
         // ist dispatcher-unabhaengig - die Reihenfolge der Wartenden aendert sich nicht dadurch,
-        // auf welchem Thread sie warten.
-        //
-        // Cache-Pruefung und -Veroeffentlichung liegen bewusst BEIDE im selben kritischen
-        // Abschnitt - siehe Kommentar an `recognitionMutex`. Ein nebenlaeufiger Aufrufer wartet
-        // hier auf das FERTIGE Ergebnis des ersten und bekommt es danach als Cache-Treffer,
-        // statt einen halbfertigen Zwischenzustand zu lesen.
+        // auf welchem Thread sie warten. Zum kritischen Abschnitt selbst: siehe `recognitionMutex`.
         return withContext(recognitionDispatcher) {
             recognitionMutex.withLock {
                 // Die Epoche, unter der DIESER Lauf arbeitet - festgehalten, BEVOR die Erkennung
@@ -233,24 +191,14 @@ class ShiftRecognitionEngine(
     }
     
     private suspend fun performRecognition(events: List<CalendarEvent>): List<ShiftMatch> {
-        // Ein gescheiterter Read darf NICHT zu "0 Definitionen" degradieren. Der echte
-        // Repository-Pfad fuer eine vorhandene, aber nicht dekodierbare Konfiguration liefert
-        // genau ein Result.failure (keine Exception) - mit `getOrNull() ?: emptyList()` wurde
-        // daraus lautlos eine leere Trefferliste, und AlarmUseCase.syncAlarms() versteht "leer"
-        // als "keine Schichten" und loescht ALLE Alarme. Fuer eine Wecker-App ist "leer" die
-        // gefaehrlichste Luege (CLAUDE.md): sie ist nicht von "du hast frei" zu unterscheiden.
-        // getOrThrow() reicht den Fehler an den Aufrufer durch; der Cache-Schluessel bleibt dabei
-        // unangetastet (siehe getAllMatchingShifts), der naechste Versuch laeuft also frisch.
+        // Ein gescheiterter Read darf NICHT zu "0 Definitionen" degradieren - "leer" loescht in
+        // syncAlarms() ALLE Alarme. getOrThrow() reicht den Fehler durch, der Cache bleibt
+        // unangetastet. Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
         val allDefinitions = shiftConfigRepository.getCurrentShiftConfig().getOrThrow().definitions
 
-        // Der Schalter "Schichtdefinition aktiviert" (`ShiftDefinition.isEnabled`) muss die
-        // Erkennung wirklich abschalten. Bis v1.22.1 las ihn NIEMAND ausser der Auswahl-UI
-        // (AlarmViewModel-Liste, Hue-Regel-Editor) - die Erkennung lief ueber ALLE Definitionen.
-        // Folge: eine deaktivierte Schicht verschwand aus den Auswahllisten, erzeugte aber
-        // weiterhin Alarme und klingelte. Bewusst NUR hier gefiltert, NICHT in
-        // `ShiftConfig.findDefinitionFor()`: dort wird ein BESTEHENDER Alarm einer Definition
-        // zugeordnet (Hue-Regeln, stille Schicht) - ein Filter wuerde einem Alarm, der noch aus
-        // der Zeit vor dem Deaktivieren stammt, seine Regeln entziehen.
+        // `ShiftDefinition.isEnabled` schaltet die Erkennung wirklich ab. Bewusst NUR hier
+        // gefiltert, NICHT in `ShiftConfig.findDefinitionFor()`: ein BESTEHENDER Alarm aus der
+        // Zeit vor dem Deaktivieren behielte sonst seine Regeln nicht. Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
         val shiftDefinitions = allDefinitions.filter { it.isEnabled }
         val matches = mutableListOf<ShiftMatch>()
 
@@ -309,18 +257,10 @@ class ShiftRecognitionEngine(
         // Mitternachts-Fall (Schicht 00:30, Weckzeit 23:30 Vortag) betraegt die rohe Differenz
         // ~23h, die tatsaechliche Vorlaufzeit nach Abzug aber nur 1h.
         //
-        // GANZTAEGIGE TERMINE SIND AUSGENOMMEN. Ein ganztaegiger Eintrag (Google: `start.date`
-        // ohne Uhrzeit) hat gar keinen Schichtbeginn - die 00:00 sind nur der Anker des
-        // Kalendertags. Es gibt also nichts, gegen das "danach" sinnvoll pruefbar waere, und die
-        // Heuristik wuerde bei JEDER Weckzeit ab 12:00 zuschlagen (ab 00:00 gerechnet bleibt die
-        // Vorlaufzeit nach dem Tagesabzug dann unter 12h). Die Standard-Spaetschicht 12:30 waere
-        // dadurch einen ganzen Tag zu frueh geweckt worden, und am eigentlichen Schichttag haette
-        // es gar keinen Wecker gegeben. Vor der korrigierten Ganztags-Umrechnung fiel das nicht
-        // auf, weil dort UTC-Mitternacht stand (in Europe/Berlin 01:00/02:00) und die Grenze
-        // damit zufaellig erst bei 13:00/14:00 lag - eine Zonenabhaengigkeit, die es nie geben
-        // sollte. `ShiftRecognitionEngineTest` haelt beide Seiten fest: Ganztags weckt am Tag des
-        // Termins, die echte zeitgebundene Nachtschicht (Beginn 00:30, Weckzeit 23:30) weiter am
-        // Vortag.
+        // GANZTAEGIGE TERMINE SIND AUSGENOMMEN: sie haben keinen Schichtbeginn (00:00 ist nur der
+        // Anker des Kalendertags), die Heuristik schluege sonst bei jeder Weckzeit ab 12:00 zu.
+        // `ShiftRecognitionEngineTest` haelt beide Seiten fest.
+        // Hergang: Skill cfalarm-kalender-und-schichten, reference/kalender-datenfluss.md.
         if (!event.isAllDay && alarmDateTime.isAfter(shiftStartTime)) {
             val previousDayAlarm = alarmDateTime.minusDays(1)
             if (Duration.between(previousDayAlarm, shiftStartTime) <= MAX_NIGHT_SHIFT_LEAD_TIME) {

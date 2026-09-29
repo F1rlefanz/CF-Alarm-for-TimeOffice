@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
@@ -724,61 +723,6 @@ internal fun unavailableCalendarDetails(
             "⚠️ ${unavailableIds.size} ausgewählte Kalender sind zurzeit nicht abrufbar"
     }
     return wer + folge
-}
-
-@Composable
-private fun StatusCard(
-    title: String,
-    isOk: Boolean,
-    details: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-    actionEnabled: Boolean = true
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: `details` daneben benennt den Zustand bereits in Worten
-                // (z. B. "Nicht angemeldet", "Kein Kalender ausgewählt")
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (isOk)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    details,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!isOk && actionLabel != null && onAction != null) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(onClick = onAction, text = actionLabel, enabled = actionEnabled)
-                }
-            }
-        }
-    }
 }
 
 /**

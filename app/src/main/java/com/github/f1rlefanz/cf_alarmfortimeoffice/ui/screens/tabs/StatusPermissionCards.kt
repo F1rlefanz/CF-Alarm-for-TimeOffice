@@ -142,93 +142,53 @@ internal fun NotificationsEnabledCard() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (enabled) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich ("Erlaubt — …" bzw.
-                // "⚠️ Blockiert — …"), das Icon spiegelt ihn nur
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (enabled)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
+    StatusCard(
+        title = "Benachrichtigungen",
+        isOk = enabled,
+        // Jeder Fall benennt AUSDRUECKLICH, was abgeschaltet ist - "blockiert" allein
+        // schickt den Nutzer in die falschen Einstellungen, wenn nur der eine Kanal
+        // betroffen ist.
+        details = when (zustand) {
+            NotificationDeliverability.Zustellbarkeit.ERREICHBAR ->
+                "Erlaubt — Weck-Bildschirm und Wecker-Knöpfe können erscheinen"
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Benachrichtigungen",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    // Jeder Fall benennt AUSDRUECKLICH, was abgeschaltet ist - "blockiert" allein
-                    // schickt den Nutzer in die falschen Einstellungen, wenn nur der eine Kanal
-                    // betroffen ist.
-                    when (zustand) {
-                        NotificationDeliverability.Zustellbarkeit.ERREICHBAR ->
-                            "Erlaubt — Weck-Bildschirm und Wecker-Knöpfe können erscheinen"
+            NotificationDeliverability.Zustellbarkeit.APP_BLOCKIERT ->
+                "⚠️ Blockiert — der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm " +
+                    "und ohne Knöpfe zum Stoppen oder Schlummern"
 
-                        NotificationDeliverability.Zustellbarkeit.APP_BLOCKIERT ->
-                            "⚠️ Blockiert — der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm " +
-                                "und ohne Knöpfe zum Stoppen oder Schlummern"
+            NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT ->
+                "⚠️ Die Kategorie \"$weckerKanalName\" ist abgeschaltet — der Wecker " +
+                    "klingelt dann zwar, aber ohne Weck-Bildschirm und ohne Knöpfe zum " +
+                    "Stoppen oder Schlummern. Sie muss wieder eingeschaltet werden."
 
-                        NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT ->
-                            "⚠️ Die Kategorie \"$weckerKanalName\" ist abgeschaltet — der Wecker " +
-                                "klingelt dann zwar, aber ohne Weck-Bildschirm und ohne Knöpfe zum " +
-                                "Stoppen oder Schlummern. Sie muss wieder eingeschaltet werden."
+            NotificationDeliverability.Zustellbarkeit.GRUPPE_BLOCKIERT ->
+                "⚠️ Die Gruppe, in der \"$weckerKanalName\" liegt, ist abgeschaltet — " +
+                    "der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm und ohne " +
+                    "Knöpfe zum Stoppen oder Schlummern."
 
-                        NotificationDeliverability.Zustellbarkeit.GRUPPE_BLOCKIERT ->
-                            "⚠️ Die Gruppe, in der \"$weckerKanalName\" liegt, ist abgeschaltet — " +
-                                "der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm und ohne " +
-                                "Knöpfe zum Stoppen oder Schlummern."
-
-                        NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
-                            "⚠️ Die Kategorie \"$weckerKanalName\" steht zu niedrig — dann kommt " +
-                                "der Weck-Bildschirm nicht mehr von selbst hoch. Sie muss " +
-                                "$geforderteStufe."
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!enabled) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        // Bei einem Kanal-Problem direkt in dessen Einstellungen: die App-Ebene
-                        // ist dort in Ordnung, und der Nutzer muesste sich sonst selbst durch die
-                        // Kategorienliste suchen. Bei APP_BLOCKIERT/GRUPPE_BLOCKIERT bleibt es bei
-                        // der App-Uebersicht - dort liegen beide Schalter.
-                        onClick = {
-                            when (zustand) {
-                                NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT,
-                                NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
-                                    openChannelNotificationSettings(
-                                        context,
-                                        NotificationDeliverability.WECKER_KANAL_ID
-                                    )
-
-                                else -> openAppNotificationSettings(context)
-                            }
-                        },
-                        text = "Einstellung öffnen"
+            NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
+                "⚠️ Die Kategorie \"$weckerKanalName\" steht zu niedrig — dann kommt " +
+                    "der Weck-Bildschirm nicht mehr von selbst hoch. Sie muss " +
+                    "$geforderteStufe."
+        },
+        actionLabel = "Einstellung öffnen",
+        // Bei einem Kanal-Problem direkt in dessen Einstellungen: die App-Ebene
+        // ist dort in Ordnung, und der Nutzer muesste sich sonst selbst durch die
+        // Kategorienliste suchen. Bei APP_BLOCKIERT/GRUPPE_BLOCKIERT bleibt es bei
+        // der App-Uebersicht - dort liegen beide Schalter.
+        onAction = {
+            when (zustand) {
+                NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT,
+                NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
+                    openChannelNotificationSettings(
+                        context,
+                        NotificationDeliverability.WECKER_KANAL_ID
                     )
-                }
+
+                else -> openAppNotificationSettings(context)
             }
         }
-    }
+    )
 }
 
 /**
@@ -266,57 +226,18 @@ internal fun FullScreenIntentCard() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (canUseFsi) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (canUseFsi)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Vollbild-Wecker",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (canUseFsi) {
-                        "Der Weck-Bildschirm darf angezeigt werden"
-                    } else {
-                        "⚠️ Nicht erlaubt — der Wecker erscheint nur als Banner, " +
-                            "der Weck-Bildschirm kommt nicht von selbst hoch"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!canUseFsi) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = { openFullScreenIntentSettings(context) },
-                        text = "Einstellung öffnen"
-                    )
-                }
-            }
-        }
-    }
+    StatusCard(
+        title = "Vollbild-Wecker",
+        isOk = canUseFsi,
+        details = if (canUseFsi) {
+            "Der Weck-Bildschirm darf angezeigt werden"
+        } else {
+            "⚠️ Nicht erlaubt — der Wecker erscheint nur als Banner, " +
+                "der Weck-Bildschirm kommt nicht von selbst hoch"
+        },
+        actionLabel = "Einstellung öffnen",
+        onAction = { openFullScreenIntentSettings(context) }
+    )
 }
 
 /**
@@ -365,54 +286,24 @@ internal fun WeckbildschirmVerdraengtCard() {
 
     if (!faellig) return
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Weck-Bildschirm wird verdrängt",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Beim Klingeln erschien der Weck-Bildschirm kurz und verschwand wieder. " +
-                        "Der Wecker lief weiter — zum Stoppen oder Schlummern musstest du die " +
-                        "Benachrichtigung aufklappen oder das Gerät entsperren.\n\n" +
-                        "Ursache ist die Gesichtsentsperrung deines Geräts: sie legt sich über " +
-                        "den Weck-Bildschirm. Das betrifft jede Wecker-App, auch die " +
-                        "vorinstallierte Uhr — es liegt nicht an dieser App.\n\n" +
-                        "Diese App steuert dagegen: sie weckt den Bildschirm kurz vorher selbst, " +
-                        "damit der Weck-Bildschirm oben bleibt. Das greift bei jedem Wecker, auch " +
-                        "beim ersten nach einem Neustart.\n\n" +
-                        "Wenn es weiter passiert, hilft nur: das eingelernte Gesicht in den " +
-                        "Geräte-Einstellungen unter „Entsperrung per Gesichtserkennung“ " +
-                        "löschen. Der Fingerabdruck ist nicht betroffen.\n\n" +
-                        "Dieser Hinweis verschwindet von selbst, sobald wieder ein Wecker " +
-                        "normal durchläuft.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-    }
+    StatusCard(
+        title = "Weck-Bildschirm wird verdrängt",
+        isOk = false,
+        details = "Beim Klingeln erschien der Weck-Bildschirm kurz und verschwand wieder. " +
+            "Der Wecker lief weiter — zum Stoppen oder Schlummern musstest du die " +
+            "Benachrichtigung aufklappen oder das Gerät entsperren.\n\n" +
+            "Ursache ist die Gesichtsentsperrung deines Geräts: sie legt sich über " +
+            "den Weck-Bildschirm. Das betrifft jede Wecker-App, auch die " +
+            "vorinstallierte Uhr — es liegt nicht an dieser App.\n\n" +
+            "Diese App steuert dagegen: sie weckt den Bildschirm kurz vorher selbst, " +
+            "damit der Weck-Bildschirm oben bleibt. Das greift bei jedem Wecker, auch " +
+            "beim ersten nach einem Neustart.\n\n" +
+            "Wenn es weiter passiert, hilft nur: das eingelernte Gesicht in den " +
+            "Geräte-Einstellungen unter „Entsperrung per Gesichtserkennung“ " +
+            "löschen. Der Fingerabdruck ist nicht betroffen.\n\n" +
+            "Dieser Hinweis verschwindet von selbst, sobald wieder ein Wecker " +
+            "normal durchläuft."
+    )
 }
 
 /**
@@ -567,67 +458,27 @@ internal fun ExactAlarmPermissionCard() {
 
     val erteilt = zustand == ExaktAlarmKartenZustand.ERTEILT
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (erteilt) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (erteilt) {
-                    MaterialTheme.colorScheme.success
-                } else {
-                    MaterialTheme.colorScheme.error
-                }
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Alarme & Erinnerungen",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (erteilt) {
-                        "Wecker werden auf die Minute genau gestellt"
-                    } else {
-                        // Der Text nennt genau das, was die Wieder-Erteilung wirklich ausloest —
-                        // Schicht-Wecker ueber einen erzwungenen Wartungslauf, den Schlummer
-                        // ueber restorePendingSnoozes(). Ein MANUELL angelegter Wecker wird
-                        // nirgends nachgestellt (syncAlarms schont ihn nur), deshalb steht er
-                        // ausdruecklich als Aufgabe des Nutzers da: eine Anzeige, die einen
-                        // Wecker ankuendigt, den es nicht gibt, ist die gefaehrlichste Variante.
-                        "⚠️ Android hat beim Abschalten ALLE gestellten Wecker geloescht — auch " +
-                            "einen laufenden Schlummer und die Hintergrund-Wartung. Erlaube die " +
-                            "Berechtigung wieder: Schicht-Wecker und Schlummer holt die App dann " +
-                            "umgehend zurück (für die Schicht-Wecker braucht sie kurz Netz). " +
-                            "Einen manuell angelegten Wecker musst du selbst neu stellen."
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!erteilt) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = { oeffneExactAlarmEinstellung(context) },
-                        text = "Einstellung öffnen"
-                    )
-                }
-            }
-        }
-    }
+    StatusCard(
+        title = "Alarme & Erinnerungen",
+        isOk = erteilt,
+        details = if (erteilt) {
+            "Wecker werden auf die Minute genau gestellt"
+        } else {
+            // Der Text nennt genau das, was die Wieder-Erteilung wirklich ausloest —
+            // Schicht-Wecker ueber einen erzwungenen Wartungslauf, den Schlummer
+            // ueber restorePendingSnoozes(). Ein MANUELL angelegter Wecker wird
+            // nirgends nachgestellt (syncAlarms schont ihn nur), deshalb steht er
+            // ausdruecklich als Aufgabe des Nutzers da: eine Anzeige, die einen
+            // Wecker ankuendigt, den es nicht gibt, ist die gefaehrlichste Variante.
+            "⚠️ Android hat beim Abschalten ALLE gestellten Wecker geloescht — auch " +
+                "einen laufenden Schlummer und die Hintergrund-Wartung. Erlaube die " +
+                "Berechtigung wieder: Schicht-Wecker und Schlummer holt die App dann " +
+                "umgehend zurück (für die Schicht-Wecker braucht sie kurz Netz). " +
+                "Einen manuell angelegten Wecker musst du selbst neu stellen."
+        },
+        actionLabel = "Einstellung öffnen",
+        onAction = { oeffneExactAlarmEinstellung(context) }
+    )
 }
 
 /**
@@ -706,61 +557,22 @@ internal fun BatteryOptimizationCard() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isExempt) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (isExempt)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Akku-Ausnahme",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (isExempt) {
-                        "Der Wecker darf jederzeit im Hintergrund laufen"
-                    } else {
-                        "⚠️ Android darf die App einfrieren — dann werden keine Schichten mehr " +
-                            "abgeholt und der Wecker bleibt still"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!isExempt) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = {
-                            (context as? android.app.Activity)?.let {
-                                BatteryOptimizationHelper.requestExemption(it)
-                            }
-                        },
-                        text = "Ausnahme erlauben"
-                    )
-                }
+    StatusCard(
+        title = "Akku-Ausnahme",
+        isOk = isExempt,
+        details = if (isExempt) {
+            "Der Wecker darf jederzeit im Hintergrund laufen"
+        } else {
+            "⚠️ Android darf die App einfrieren — dann werden keine Schichten mehr " +
+                "abgeholt und der Wecker bleibt still"
+        },
+        actionLabel = "Ausnahme erlauben",
+        onAction = {
+            (context as? android.app.Activity)?.let {
+                BatteryOptimizationHelper.requestExemption(it)
             }
         }
-    }
+    )
 }
 
 /**
@@ -798,69 +610,30 @@ internal fun UnusedAppRestrictionsCard() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (isOk)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Nicht verwendete Apps",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+    StatusCard(
+        title = "Nicht verwendete Apps",
+        isOk = isOk,
+        details = if (isOk) {
+            "\"Bei Nichtnutzung pausieren\" ist aus - der Wecker bleibt aktiv"
+        } else {
+            "⚠️ Android darf die App pausieren — dabei gehen alle gesetzten " +
+                "Wecker-Alarme verloren"
+        },
+        actionLabel = "Einstellung öffnen",
+        onAction = {
+            try {
+                context.startActivity(
+                    UnusedAppRestrictionsHelper.createSettingsIntent(context)
                 )
-                Text(
-                    if (isOk) {
-                        "\"Bei Nichtnutzung pausieren\" ist aus - der Wecker bleibt aktiv"
-                    } else {
-                        "⚠️ Android darf die App pausieren — dabei gehen alle gesetzten " +
-                            "Wecker-Alarme verloren"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
+            } catch (e: Exception) {
+                Logger.e(
+                    LogTags.UNUSED_APP_RESTRICTIONS,
+                    "Failed to open unused-app-restrictions settings",
+                    e
                 )
-
-                if (!isOk) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = {
-                            try {
-                                context.startActivity(
-                                    UnusedAppRestrictionsHelper.createSettingsIntent(context)
-                                )
-                            } catch (e: Exception) {
-                                Logger.e(
-                                    LogTags.UNUSED_APP_RESTRICTIONS,
-                                    "Failed to open unused-app-restrictions settings",
-                                    e
-                                )
-                            }
-                        },
-                        text = "Einstellung öffnen"
-                    )
-                }
             }
         }
-    }
+    )
 }
 
 /**
@@ -1170,9 +943,33 @@ internal fun DndPermissionCard() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    StatusCard(
+        title = stringResource(R.string.dnd_status_title),
+        isOk = !isSupported || isGranted,
+        details = when {
+            !isSupported -> stringResource(R.string.dnd_unsupported)
+            isGranted -> stringResource(R.string.dnd_status_ok)
+            else -> stringResource(R.string.dnd_status_missing)
+        },
+        actionLabel = stringResource(R.string.dnd_permission_grant),
+        onAction = { DndPermissionHelper.requestAccess(context) }
+    )
+}
+
+@Composable
+internal fun StatusCard(
+    title: String,
+    isOk: Boolean,
+    details: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    actionEnabled: Boolean = true
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
@@ -1183,33 +980,31 @@ internal fun DndPermissionCard() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (!isSupported || isGranted) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Statustext daneben (dnd_status_ok / dnd_status_missing /
-                // dnd_unsupported) sagt den Zustand ausdruecklich
+                imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: `details` daneben benennt den Zustand bereits in Worten
+                // (z. B. "Nicht angemeldet", "Kein Kalender ausgewählt")
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (!isSupported || isGranted) MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error
+                tint = if (isOk)
+                    MaterialTheme.colorScheme.success
+                else
+                    MaterialTheme.colorScheme.error
             )
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.dnd_status_title),
+                    title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    when {
-                        !isSupported -> stringResource(R.string.dnd_unsupported)
-                        isGranted -> stringResource(R.string.dnd_status_ok)
-                        else -> stringResource(R.string.dnd_status_missing)
-                    },
+                    details,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                if (isSupported && !isGranted) {
+
+                if (!isOk && actionLabel != null && onAction != null) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = { DndPermissionHelper.requestAccess(context) },
-                        text = stringResource(R.string.dnd_permission_grant)
-                    )
+                    SettingsLinkButton(onClick = onAction, text = actionLabel, enabled = actionEnabled)
                 }
             }
         }

@@ -43,12 +43,8 @@ internal object BootAlarmValidation {
      * EINMAL oben, holt danach Kalender-Events (Sekunden) und entscheidet erst dann pro Alarm.
      *
      * Der teure Fall: der Anker korrigiert in diesem Fenster einen verschobenen Alarm (gleiche
-     * `id` — sie bleibt beim Aktualisieren erhalten; frueher stand hier "denn
-     * `id = calendarEvent.id.hashCode()` ist pro Event stabil", das gilt seit der stabilen
-     * Wecker-Identitaet nicht mehr: wechselt der Kalender-Feed seine Kennungen, wandert die id
-     * des gepaarten Vorgaengers mit, statt neu aus der Kennung berechnet zu werden. Fuer diesen
-     * Absatz aendert das nichts, die id bleibt so oder so gleich; neuer `triggerTime` +
-     * neuer `eventChecksum`) und stellt den System-Alarm korrekt. Die Recovery vergleicht danach
+     * `id` — sie bleibt beim Aktualisieren erhalten, auch bei einem Kennungswechsel;
+     * neuer `triggerTime` + neuer `eventChecksum`) und stellt den System-Alarm korrekt. Die Recovery vergleicht danach
      * ihre VERALTETE Kopie gegen den frischen Event-Checksum, sieht einen Mismatch und loescht den
      * gerade korrigierten Alarm — ohne ihn neu anzulegen (`continue`).
      *
@@ -132,36 +128,10 @@ internal object BootAlarmValidation {
 }
 
 /**
- * 🛡️ SMART MAINTENANCE CHAIN Level 4: Enhanced Boot Receiver
- *
- * COMPLETE SYSTEM RECOVERY nach Device-Neustarts:
- * - Vollständige Alarm-Wiederherstellung aus persistenter Speicherung
- * - Neuinitialisierung aller Smart Maintenance Chain Levels (1-3)
- * - Comprehensive Health Diagnostics und System-Validation
- * - Emergency Repair-Mechanismen bei kritischen Fehlern
- * - Integration mit bestehender App-Infrastruktur
- *
- * SELF-HEALING CAPABILITIES:
- * - Automatic detection of system inconsistencies
- * - Repair of broken alarm schedules
- * - Recovery of lost calendar connections
- * - Restoration of background services
- * - Health monitoring and alerting
- *
- * POST-BOOT SEQUENCE:
- * 1. System Health Diagnostics
- * 2. Alarm Repository Recovery
- * 3. Calendar Integration Restoration
- * 4. Smart Maintenance Chain Reinitialization (L1-L3)
- * 5. Background Services Restart
- * 6. Verification & Health Monitoring
- *
- * INTEGRATION:
- * - Final safety net für alle anderen Smart Maintenance Levels
- * - Ensures system integrity after any critical system events
- * - Maintains consistency with existing architecture patterns
- * 
- * HILT MIGRATION: Now uses Hilt dependency injection instead of AppContainer
+ * Boot-/Update-Empfaenger (directBootAware). LOCKED_BOOT_COMPLETED: nur Restore aus dem
+ * Device-Protected-Spiegel. BOOT_COMPLETED/MY_PACKAGE_REPLACED: Restore, Wartungs-Anker, dann
+ * CE-Recovery (Validierung, Nachplanung von 6h-Kette, Dimmer, DND, Pre-Alarm, Rufbereitschaft).
+ * Hergang: Skill cfalarm-wecker-und-boot.
  */
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
@@ -179,7 +149,6 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 
     companion object {
-        // 🛡️ Level 4 Configuration
         private const val BOOT_RECOVERY_DELAY_MS = 5000L  // 5 seconds delay for system stability
         private const val MAX_RECOVERY_ATTEMPTS = 3
         private const val RECOVERY_RETRY_DELAY_MS = 10000L  // 10 seconds between retries
@@ -408,19 +377,8 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     /**
-     * 🛡️ SMART MAINTENANCE CHAIN Level 4: Complete System Recovery
-     *
-     * Vollständige Wiederherstellung des Alarm-Systems nach kritischen System-Events.
-     * Dies ist das finale Sicherheitsnetz der Smart Maintenance Chain.
-     *
-     * RECOVERY SEQUENCE:
-     * 1. System stability wait
-     * 2. Health diagnostics
-     * 3. Alarm recovery from persistent storage
-     * 4. Calendar integration restoration
-     * 5. Smart Maintenance Chain reinitialization (L1-L3)
-     * 6. Background services restart
-     * 7. Post-recovery validation
+     * CE-Recovery nach Boot/Update: Alarme validieren und nachplanen, danach 6h-Kette, Dimmer,
+     * DND, Pre-Alarm-Refresh und Rufbereitschaft neu setzen (bis zu [MAX_RECOVERY_ATTEMPTS] Versuche).
      */
     private fun performCompleteSystemRecovery(context: Context, reason: String) {
         recoveryScope.launch {
@@ -468,8 +426,6 @@ class BootReceiver : BroadcastReceiver() {
                     // 1. System Stability Wait
                     Logger.d(LogTags.MAINTENANCE_L4, "⏱️ LEVEL 4: Waiting for system stability...")
                     delay(BOOT_RECOVERY_DELAY_MS)
-
-                    // 2. HILT MIGRATION: Dependencies are now injected, no AppContainer needed
 
                     // 3. Comprehensive Health Diagnostics
                     val healthStatus = performHealthDiagnostics(reason)
@@ -626,8 +582,6 @@ class BootReceiver : BroadcastReceiver() {
 
     /**
      * 🔍 Comprehensive Health Diagnostics
-     * 
-     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
     private suspend fun performHealthDiagnostics(
         reason: String
@@ -695,8 +649,6 @@ class BootReceiver : BroadcastReceiver() {
      * ✅ Löscht: Alarme, deren Termin wirklich weg ist - NICHT solche, deren Kalender-Kennung nur
      *    gewechselt hat (siehe [BootAlarmValidation.beurteile])
      * ✅ Löscht: Alarme für geänderte Events (der nächste Sync legt sie neu an)
-     * 
-     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
     private suspend fun performAlarmRecovery(): String {
         return try {
@@ -723,7 +675,6 @@ class BootReceiver : BroadcastReceiver() {
             var nichtArmiertCount = 0
 
             // Get current calendar events for validation
-            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
             //
             // getCurrentSelectedCalendarIds() (DataStore-Read) statt selectedCalendarIds.first()
             // (StateFlow): der StateFlow startet auf emptySet() und wird erst durch den in init{}
@@ -1034,8 +985,6 @@ class BootReceiver : BroadcastReceiver() {
 
     /**
      * 📅 Calendar Integration Restoration
-     * 
-     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
     private suspend fun performCalendarIntegrationRestoration(): String {
         return try {
@@ -1046,7 +995,6 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // 2. Test calendar connection by trying to get calendar events
-            // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
             //
             // getCurrentSelectedCalendarIds() (DataStore) statt selectedCalendarIds.first()
             // (StateFlow, startet leer) - gleiche Begruendung wie in performAlarmRecovery(). Ein
@@ -1143,8 +1091,6 @@ class BootReceiver : BroadcastReceiver() {
 
     /**
      * 🔍 Schedule Post-Recovery Health Check
-     * 
-     * HILT MIGRATION: Now uses injected dependencies instead of AppContainer
      */
     private fun schedulePostRecoveryHealthCheck(context: Context, reason: String) {
         recoveryScope.launch {

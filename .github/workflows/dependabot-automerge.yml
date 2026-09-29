@@ -3,9 +3,9 @@ name: Dependabot automatisch mergen
 # WARUM ES DIESEN WORKFLOW GIBT:
 #
 # Fuenf Dependabot-PRs lagen wochenlang offen, obwohl die CI auf allen gruen durchlief. Sie
-# blieben liegen, weil ein zweiter Check rot war, der ueber den Code gar nichts aussagt (siehe
-# claude-code-review.yml: Dependabot-Laeufe bekommen die Secrets aus einem eigenen Speicher, in
-# dem das Claude-Token nicht liegt). Liegengebliebene Abhaengigkeits-Updates sind kein
+# blieben liegen, weil ein zweiter Check rot war, der ueber den Code gar nichts aussagt (der
+# Claude-Code-Review, seit 29.09.2026 entfernt: Dependabot-Laeufe bekamen das Claude-Token aus
+# ihrem eigenen Secret-Speicher nicht). Liegengebliebene Abhaengigkeits-Updates sind kein
 # Schoenheitsfehler - sie sammeln sich, kollidieren miteinander, und irgendwann macht sie niemand
 # mehr einzeln auf.
 #

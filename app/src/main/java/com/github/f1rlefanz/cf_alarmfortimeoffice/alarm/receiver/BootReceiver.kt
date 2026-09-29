@@ -21,7 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
 import java.time.ZoneId
 import javax.inject.Inject
 
@@ -427,13 +426,6 @@ class BootReceiver : BroadcastReceiver() {
                     Logger.d(LogTags.MAINTENANCE_L4, "⏱️ LEVEL 4: Waiting for system stability...")
                     delay(BOOT_RECOVERY_DELAY_MS)
 
-                    // 3. Comprehensive Health Diagnostics
-                    val healthStatus = performHealthDiagnostics(reason)
-                    Logger.business(
-                        LogTags.MAINTENANCE_L4,
-                        "🔍 LEVEL 4: Health diagnostics completed - $healthStatus"
-                    )
-
                     // 4. Alarm Repository Recovery
                     //    Master-Pause: weder gespeicherte Alarme re-armen noch neue aus dem
                     //    Kalender anlegen (performAlarmRecovery() faellt sonst bei restoredCount<3
@@ -480,7 +472,7 @@ class BootReceiver : BroadcastReceiver() {
                             "⏸️ LEVEL 4: Post-Recovery-Health-Check uebersprungen (Master-Pause aktiv)"
                         )
                     } else {
-                        schedulePostRecoveryHealthCheck(context, reason)
+                        schedulePostRecoveryHealthCheck(context)
                     }
 
                     // 8. Schicht-Dimmer: rollenden Dimm-Tick nach dem Boot neu setzen.
@@ -576,67 +568,6 @@ class BootReceiver : BroadcastReceiver() {
                 }
             }
         }
-    }
-
-    /**
-     * 🔍 Comprehensive Health Diagnostics
-     */
-    private suspend fun performHealthDiagnostics(
-        reason: String
-    ): String {
-        val diagnosticResults = mutableListOf<String>()
-
-        try {
-            // Check UseCase Availability
-            diagnosticResults.add("Alarm UseCase: ✅ Available")
-            diagnosticResults.add("Calendar UseCase: ✅ Available")
-            diagnosticResults.add("Shift UseCase: ✅ Available")
-
-            // Check Repository Health
-            diagnosticResults.add("Calendar Selection Repository: ✅ Available")
-
-            // Check Authentication Status
-            val authStatus = try {
-                authDataStoreRepository.isAuthenticated().getOrElse { false }
-            } catch (e: Exception) {
-                Logger.w(LogTags.MAINTENANCE_L4, "Failed to check auth status", e)
-                false
-            }
-            diagnosticResults.add("Authentication: ${if (authStatus) "✅ Authenticated" else "⚠️ Not Authenticated"}")
-
-            // Check Calendar Selection
-            // getCurrentSelectedCalendarIds() (DataStore) statt selectedCalendarIds.first()
-            // (StateFlow, startet leer): sonst diagnostiziert der prozess-kaelteste Aufrufer von
-            // allen faelschlich "0 calendars" - und "nicht lesbar" ist bewusst als eigene Aussage
-            // sichtbar, nicht als 0 getarnt.
-            diagnosticResults.add(
-                calendarSelectionRepository.getCurrentSelectedCalendarIds().fold(
-                    onSuccess = { ids -> "Selected Calendars: ${ids.size} calendars" },
-                    onFailure = { error ->
-                        Logger.w(LogTags.MAINTENANCE_L4, "Failed to check calendar selection", error)
-                        "Selected Calendars: ⚠️ nicht lesbar (${error.message})"
-                    }
-                )
-            )
-
-            // Check Current Alarm Count
-            val currentAlarms = try {
-                alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
-            } catch (e: Exception) {
-                Logger.w(LogTags.MAINTENANCE_L4, "Failed to check alarm count", e)
-                emptyList()
-            }
-            val futureAlarms = currentAlarms.filter { it.triggerTime > System.currentTimeMillis() }
-            diagnosticResults.add("Active Alarms: ${futureAlarms.size} future alarms")
-
-            diagnosticResults.add("Recovery Reason: $reason")
-            diagnosticResults.add("System Time: ${LocalDateTime.now()}")
-
-        } catch (e: Exception) {
-            diagnosticResults.add("❌ Diagnostics Error: ${e.message}")
-        }
-
-        return diagnosticResults.joinToString(", ")  // Diagnostic results summary
     }
 
     /**
@@ -1024,16 +955,11 @@ class BootReceiver : BroadcastReceiver() {
                 false
             }
 
-            val connectionResult = if (connectionTest) {
+            if (connectionTest) {
                 "✅ Calendar connection healthy"
             } else {
                 "⚠️ Calendar connection issues detected"
             }
-
-            // 3. Get cache info (simplified)
-            val cacheStats = "Cache operational"
-
-            "$connectionResult, Cache: $cacheStats"
 
         } catch (e: Exception) {
             Logger.e(
@@ -1048,7 +974,7 @@ class BootReceiver : BroadcastReceiver() {
     /**
      * 🔍 Schedule Post-Recovery Health Check
      */
-    private fun schedulePostRecoveryHealthCheck(context: Context, reason: String) {
+    private fun schedulePostRecoveryHealthCheck(context: Context) {
         recoveryScope.launch {
             try {
                 Logger.d(
@@ -1057,13 +983,6 @@ class BootReceiver : BroadcastReceiver() {
                 )
 
                 delay(POST_BOOT_HEALTH_CHECK_DELAY_MS)
-
-                val healthStatus = performHealthDiagnostics("POST_RECOVERY_CHECK")
-
-                Logger.business(
-                    LogTags.MAINTENANCE_L4,
-                    "🔍 LEVEL 4: Post-recovery health check completed - Original reason: $reason, Status: $healthStatus"
-                )
 
                 // Check alarm count and trigger maintenance if needed
                 val currentAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()

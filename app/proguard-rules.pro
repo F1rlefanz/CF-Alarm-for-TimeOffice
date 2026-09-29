@@ -310,36 +310,6 @@
 -dontnote org.apache.log4j.**
 
 # ==============================
-# 🛠️ CRITICAL FIX: ASHMEM PINNING COMPATIBILITY
-# ==============================
-
-# Fix for "Pinning is deprecated since Android Q" warning
-# Suppress ashmem-related warnings and obfuscate problematic methods
--dontwarn android.os.SharedMemory
--dontwarn dalvik.system.VMRuntime
--dontwarn libcore.io.AshmemPinning
--dontwarn android.os.PinningHelperHooks
-
-# WARUM `-keepclassmembers` statt `-keep`: bis v1.27.0 stand hier `-keep,allowobfuscation class *`.
-# `allowobfuscation` erlaubt lediglich das Umbenennen, es hebt die Wurzel-Wirkung von `-keep` nicht
-# auf - die Klassenspezifikation `*` machte also auch hier JEDE Klasse des Programms un-entfernbar,
-# voellig unabhaengig davon, ob sie pin/unpin/setPinned besitzt. Zusammen mit der Compose-Regel
-# oben war das der zweite Grund, warum R8 keine einzige Klasse entfernt hat.
-# Die Regel bleibt in der Member-Form stehen statt ersatzlos zu verschwinden, weil ihr erklaerter
-# Zweck (die pin/unpin-Methoden nicht festnageln) davon unberuehrt bleibt. Wirkung hat sie
-# vermutlich keine: im eigenen Code existiert keine solche Methode, und die Meldung
-# "Pinning is deprecated since Android Q" kommt aus der Plattform, nicht aus App-Code - dagegen
-# helfen die -dontwarn-Zeilen darueber, kein Keep.
--keepclassmembers,allowobfuscation class * {
-    *** pin(...);
-    *** unpin(...);
-    *** setPinned(...);
-}
-
-# Additional compatibility for Android Q+ memory management
--dontwarn android.os.**$$*
-
-# ==============================
 # OPTIMIZATIONS FOR APK SIZE
 # ==============================
 
@@ -352,7 +322,7 @@
 # ACHTUNG, gelernt in Pruefrunde 6: Diese beiden Zeilen sind NICHT die einzige Tuer zur Attrappe.
 # Vom 10.08. bis 18.08.2026 war Minify trotz auskommentiertem `-dontshrink` auf Klassenebene
 # wirkungslos - nicht wegen einer Global-Direktive, sondern wegen zweier `-keep class *`-Regeln
-# (Compose-Block und ashmem-Block, beide weiter oben), die jede Klasse zur Wurzel machten. Wer die
+# (je eine im damaligen Compose- und ashmem-Block), die jede Klasse zur Wurzel machten. Wer die
 # Wirksamkeit von R8 pruefen will, prueft deshalb das ARTEFAKT, nicht die Konfiguration:
 #   mapping/release/seeds.txt darf nicht annaehernd so viele Klassen fuehren wie mapping.txt.
 # NICHT mehr ueber Umbenennungen pruefen: seit `-dontobfuscate` (siehe Begruendung ganz oben)

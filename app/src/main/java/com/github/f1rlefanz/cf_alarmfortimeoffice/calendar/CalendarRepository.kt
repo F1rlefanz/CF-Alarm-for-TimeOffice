@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.calendar
 
-import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -16,7 +15,6 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.calendar.Calendar
 import com.google.api.services.calendar.model.CalendarList
 import com.google.api.services.calendar.model.Events
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -103,18 +101,9 @@ internal suspend fun <T> collectAllPages(
  * Abruf, der wirklich an die API geht, holt ALLE Seiten des 14-Tage-Fensters ([collectAllPages]).
  * Beides hängt zusammen: was dieses Repository zurückgibt, gilt weiter oben als vollständige Liste
  * und ist damit eine Löschgrundlage für `syncAlarms()`.
- *
- * OHNE VERWENDER, bewusst noch nicht angefasst: der Konstruktorparameter `context`. Er wurde
- * ausschliesslich von `setContext()` geschrieben und NIE gelesen; mit dem Entfernen von
- * `setContext` (Aufraeumrunde 24, kein Aufrufer im Baum) ist er ganz unreferenziert. Er steht
- * noch, weil ihn zu entfernen den Hilt-Konstruktor aendert und damit eine andere Frage ist als
- * "Schnittstellen-Methode ohne Aufrufer" - erfasst als eigener Blickwinkel
- * ("Properties, die nur geschrieben und nie gelesen werden"). Kein Versehen.
  */
 @Singleton
-class CalendarRepository @Inject constructor(
-    @param:ApplicationContext private var context: Context
-) : ICalendarRepository {
+class CalendarRepository @Inject constructor() : ICalendarRepository {
     
     private val transport = NetHttpTransport()
     private val jsonFactory = GsonFactory.getDefaultInstance()

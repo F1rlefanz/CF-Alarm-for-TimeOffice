@@ -8,11 +8,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
 /**
  * Interface for Hue Light repository operations
  * Follows Clean Architecture principles with testable abstractions
- *
- * ENTFERNT (Aufraeumrunde 24): `getLightState(lightId)` und `getGroupState(groupId)` - im ganzen
- * Baum ohne Aufrufstelle, nur Deklaration, Implementierung und zwei Test-Doubles. Der EINZELne
- * Zustand wurde nie gebraucht: die App liest immer den ganzen Bestand ueber [getLights] bzw.
- * [getGroups] (so kommt auch die Vorschau an ihre Rueckstellwerte).
  */
 interface IHueLightRepository {
     

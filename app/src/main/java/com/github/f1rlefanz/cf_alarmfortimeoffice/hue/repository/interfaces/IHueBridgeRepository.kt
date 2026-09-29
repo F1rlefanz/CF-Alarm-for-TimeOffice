@@ -6,14 +6,6 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Interface for Hue Bridge repository operations
- *
- * ENTFERNT (Aufraeumrunde 24): `getCurrentBridgeIp()` und `getCurrentUsername()` - im ganzen Baum
- * ohne Aufrufstelle. Der KDoc von `HueBridgeConnectionManager.getCurrentConnectionInfo()` behauptet
- * das Gegenteil ("public API contract via IHueBridgeRepository.getCurrentBridgeIp()/
- * getCurrentUsername(), called from Compose UI and WorkManager workers") - diese Behauptung war
- * die EINZIGE Nennung der beiden Namen ausserhalb von Deklaration und `override` und ist dort
- * richtiggestellt. Wer IP und Username braucht, nimmt `getCurrentConnectionInfo()` direkt; die
- * lebt und hat Aufrufer.
  */
 interface IHueBridgeRepository {
     

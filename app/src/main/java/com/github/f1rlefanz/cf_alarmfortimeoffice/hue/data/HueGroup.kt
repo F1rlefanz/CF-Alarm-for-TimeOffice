@@ -18,19 +18,10 @@ data class HueGroup(
     val recycle: Boolean? = null
 )
 
-// KEIN Raumtyp mehr (bis v1.34.3 `roomClass` + `classField`): Die Bridge sendet ihn unter dem
-// JSON-Schluessel `class`, und `classField` trug ihn per @SerializedName auch herein - gelesen hat
-// ihn NIE jemand. `roomClass` daneben hatte gar kein @SerializedName und war deshalb IMMER null;
-// zwei Kopierzeilen im Repository schoben folglich null nach null. Ein Feld, das aussieht, als
-// truege es den Raumtyp, und immer leer ist, ist schlimmer als keines. Wer ihn spaeter braucht,
-// nimmt EIN Feld mit @SerializedName("class") - nicht diese zwei.
+// Raumtyp bei Bedarf als EIN Feld mit @SerializedName("class").
 
 /**
  * Group State - aggregated state of all lights in group.
- *
- * ENTFERNT (14.09.2026): `all_on`. Die Bridge sendet es weiter; gelesen wurde im ganzen Baum
- * nur [any_on] — die Ziel-Auswahl zeigt "An", sobald EINE Lampe der Gruppe brennt
- * (`ZielAuswahlInhalt`). Gesetzt war `all_on` nur noch in vier Testaufbauten.
  */
 @Immutable
 data class GroupState(

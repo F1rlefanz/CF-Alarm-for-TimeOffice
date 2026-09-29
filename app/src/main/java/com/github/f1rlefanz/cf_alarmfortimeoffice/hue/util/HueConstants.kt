@@ -163,12 +163,4 @@ object HueConstants {
             return "rule_${System.currentTimeMillis()}_${(1000..9999).random()}"
         }
     }
-
-    // ENTFERNT (v1.34.3): 17 Konstanten ohne Verwender. Die Endpunkt-Konstanten waren dabei
-    // nicht nur ungenutzt, sondern FALSCH - HueApiClient baut die Pfade inline als
-    // "/api/<user>/config", die Konstanten trugen nur "/config". Wer sie benutzt haette, haette
-    // eine kaputte URL gebaut.
-    // NICHT entfernt: MIN_XY_VALUE/MAX_XY_VALUE. Sie sehen ungenutzt aus, werden aber zwei
-    // Zeilen weiter in DIESER Datei verwendet - ein Referenz-Check, der die Definitionsdatei
-    // ausblendet, uebersieht das. Genau darauf ist der erste Anlauf hereingefallen.
 }

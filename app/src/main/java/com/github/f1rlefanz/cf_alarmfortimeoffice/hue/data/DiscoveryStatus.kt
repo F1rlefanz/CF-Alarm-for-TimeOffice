@@ -5,12 +5,8 @@ import androidx.compose.runtime.Immutable
 /**
  * Fortschrittsmeldung der Bridge-Suche. Erzeugt an acht Stellen in
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.discovery.OfficialHueDiscoveryService],
- * gelesen in `AnimatedDiscoveryCard` und `HueTabContent`.
- *
- * ENTFERNT (14.09.2026): `duration`, `foundBridges`, `isError`. Keinen der drei las irgendeine
- * Stelle im Baum; `duration` wurde ausserdem nie gesetzt und stand auf jeder Meldung auf 0L.
- * Der Fehlerfall steht weiterhin in [stage] ("FAILED") und [message], die beide GELESEN werden —
- * `isError` war eine zweite, stille Wahrheit daneben.
+ * gelesen in `AnimatedDiscoveryCard` und `HueTabContent`. Der Fehlerfall steht in [stage]
+ * ("FAILED") und [message].
  *
  * [method] bleibt vorerst, OBWOHL sie ebenfalls keinen Leser hat: sie ist der einzige Verwender
  * des Enums [DiscoveryMethod]. Der Blickwinkel "Enum-TYPEN ohne Verwender" (Issue #72) hat das
@@ -23,13 +19,7 @@ import androidx.compose.runtime.Immutable
 @Immutable
 data class DiscoveryStatus(
     val method: DiscoveryMethod,
-    // ENTFERNT (25.09.2026): der Enum `DiscoveryStage`, der diese Zeile einmal typisiert haette.
-    // Er stand seit dem Initial-Commit `34abec2` im Baum und hatte in der GESAMTEN Historie
-    // (974 Commits) nie einen Verwender: `git log --all -G DiscoveryStage -- app/*` nennt genau
-    // jenen einen Commit, und keine Datei ausser dieser hat den Namen je enthalten. Sein KDoc
-    // ("keeping enum for new implementations") war von Anfang an eine Absicht, kein Zustand.
-    // Die sechs Eintragsnamen leben unveraendert als Zeichenketten weiter (gesetzt in
-    // `OfficialHueDiscoveryService`, gelesen in `AnimatedDiscoveryCard`) — an DIESEM Feld.
+    // Zeichenkette, gesetzt in `OfficialHueDiscoveryService`, gelesen in `AnimatedDiscoveryCard`.
     val stage: String,
     val message: String,
     val progress: Float = 0f, // 0.0 to 1.0
@@ -43,8 +33,4 @@ data class DiscoveryStatus(
 enum class DiscoveryMethod {
     // Die drei, die es wirklich gibt - je ein Erzeuger in den Discovery-Diensten.
     ONLINE_DISCOVERY, N_UPNP, MDNS
-    // ENTFERNT (v1.34.3): LOCAL_NETWORK und IP_TEST waren im Code selbst als deprecated markiert,
-    // MANUAL und CACHE hatten nie einen Erzeuger. Ein `when` ueber die Werte gibt es nicht,
-    // Exhaustiveness konnte also nicht brechen. MANUAL beschrieb eine manuelle IP-Eingabe, die es
-    // in der Oberflaeche nicht gibt - vor dem Loeschen geprueft.
 }

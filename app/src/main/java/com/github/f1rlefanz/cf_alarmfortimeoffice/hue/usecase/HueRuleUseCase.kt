@@ -307,13 +307,6 @@ class HueRuleUseCase @Inject constructor(
      * wegwerfen, deren `shiftPattern` per Definition NICHT dem Schichtnamen gleicht: sie
      * verloeren ihr Auto-Aus, das Licht blieb an. Diese Funktion besitzt nur den Rechenweg
      * (welche Ziele, welche Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
-     *
-     * (Hier stand bis zu diesem Fix als Begruendung, [findApplicableRules] matche "auch ueber die
-     * KEYWORDS einer Schicht" - das tut es seit dem Keyword-Fix in v1.11.0 nicht mehr, siehe
-     * den Kommentar dort und `HueSunriseExecutor.matchingPreAlarmSunriseRules`. Die Entscheidung
-     * "kein zweiter Filter" war richtig, nur die Begruendung war veraltet - und eine veraltete Begruendung
-     * verleitet dazu, das Keyword-Matching "wiederherzustellen", also genau die Fehlerfamilie
-     * neu zu bauen, die der Skill cfalarm-kalender-und-schichten festhaelt.)
      */
     private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {

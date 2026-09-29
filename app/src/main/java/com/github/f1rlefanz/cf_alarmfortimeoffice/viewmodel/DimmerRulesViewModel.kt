@@ -145,12 +145,12 @@ class DimmerRulesViewModel @Inject constructor(
      * das erst beim nächsten Dimm-Tick — und wer die Vorschau zum Ausprobieren nutzt, hat
      * typischerweise noch gar keine Fenster-Quelle aktiv, es kommt also unter Umständen keiner.
      *
-     * Deshalb dieselben drei Maßnahmen wie nebenan: eigener [previewScope], Zurücksetzen im
+     * Deshalb drei Maßnahmen: eigener [previewScope], Zurücksetzen im
      * `finally` (greift auch bei Exception und Cancellation) und dort `NonCancellable`.
      * Vorbild ist `HueLightUseCase.followUpScope` — auch dort muss das Aufräumen feuern, wenn
      * der auslösende Bildschirm längst verlassen wurde.
      *
-     * Und ebenfalls wie nebenan: die drei decken nur Coroutine-Cancellation ab. Ein PROZESSTOD im
+     * Die drei decken nur Coroutine-Cancellation ab. Ein PROZESSTOD im
      * Vorschau-Fenster führt kein `finally` aus, der neu gebundene `DimAccessibilityService` liest
      * den persistierten `overlayOn = true` und verdunkelt weiter. Deshalb schreibt
      * [DimOverlayPrefs.setPreviewOverlay] den Ablaufzeitpunkt mit auf die Platte — jeder spätere
@@ -218,7 +218,7 @@ class DimmerRulesViewModel @Inject constructor(
         /** Die komplette bisherige Nacht-Standard-Semantik als EIN Fenster fuer jede Kalendernacht. */
         NACHT_DIMMEN,
 
-        /** Zwei Fenster an EINEM Kalendertag, gekoppelt an eine Nachtdienst-Schicht. */
+        /** Drei Fenster an EINEM Kalendertag, gekoppelt an eine Nachtdienst-Schicht. */
         NACHTDIENST_RHYTHMUS,
 
         /** Regel mit leerer Fensterliste - Unterdrueckung an den Tagen dieser Schicht. */

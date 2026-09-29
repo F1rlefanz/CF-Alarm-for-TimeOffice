@@ -827,7 +827,8 @@ class AlarmViewModel @Inject constructor(
                     // vernichtet einen Wecker, den er nicht einmal lesen konnte. Ein Lesefehler ist
                     // typischerweise voruebergehend; der Skip bleibt bestehen und der naechste Versuch
                     // hat wieder alles. Andere Wecker kostet das nichts: das Skip-Gate ist auf
-                    // skippedAlarmId gemuenzt (AlarmUseCase.kt:279) und betrifft nur diesen einen.
+                    // skippedAlarmId gemuenzt (AlarmUseCase.istUebersprungen: Kennung bzw.
+                    // Weckzeitpunkt) und betrifft nur diesen einen.
                     Logger.e(
                         LogTags.ALARM_SKIP,
                         "❌ Skip-Zustand beim Aufheben nicht lesbar - Aufheben abgebrochen, damit ein " +
@@ -1105,10 +1106,6 @@ class AlarmViewModel @Inject constructor(
             "✅ Manueller Wecker ${alarm.id} nach 'Aufheben' wiederhergestellt und gestellt (${alarm.formattedTime})"
         )
     }
-
-    // ========================================
-    // MANUAL ALARM FUNCTIONALITY
-    // ========================================
 
     private companion object {
         /** Neue Anlaeufe fuer [observeSkipStatus], nachdem der Skip-Flow geendet ist. */

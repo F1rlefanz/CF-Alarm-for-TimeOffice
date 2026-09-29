@@ -341,7 +341,7 @@ class HueViewModel @Inject constructor(
      *
      * Damit laeuft er genau dann, wenn er etwas aussagen kann - beim Oeffnen des Hue-Bereichs,
      * nach einer bestaetigten Verbindung, nach "Lichter aktualisieren". Bewusst NICHT im
-     * Weckpfad: der Hue-Zweig im `AlarmReceiver` ist auf 20 s gedeckelt, weil dahinter
+     * Weckpfad: der Hue-Zweig im `AlarmReceiver` ist durch `HUE_EXECUTION_BUDGET_MS` gedeckelt, weil dahinter
      * `pendingResult.finish()` kommt.
      *
      * ist ein Regel-Editor offen, wird NICHT abgeglichen. Das Formular haelt einen Schnappschuss
@@ -624,8 +624,7 @@ data class HueUiState(
 
 /**
  * Simplified, UI-facing view of [HueBridgeConnectionManager.ConnectionState] (UX FIX E).
- * Collapses CONNECTING into UNKNOWN (no banner shown while a connection attempt is in
- * flight) and keeps DISCONNECTED/ERROR as the two "show a warning banner" states.
+ * Collapses CONNECTING into UNKNOWN.
  */
 enum class HueConnectionHealth {
     UNKNOWN,

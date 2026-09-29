@@ -345,13 +345,10 @@ class ShiftViewModel @Inject constructor(
                         // muss die Alarme sofort raeumen, nicht nur wenn gerade Events geladen sind.
                         triggerAlarmCreationFromConfigUpdate(config, nacharmieren)
                     } finally {
-                        // Im Normalfall laeuft das Nacharmieren dadurch ZWEIMAL: einmal im finally
-                        // von `triggerAlarmCreationFromConfigUpdate`, einmal hier. Das ist bewusst
-                        // in Kauf genommen und folgenlos - `enable()` rechnet den Zustand aus den
-                        // aktuellen Daten neu und setzt den naechsten Tick; zweimal dasselbe zu
-                        // rechnen kostet Arbeit, aendert aber nichts. Der Bedarf ist ein
-                        // unveraenderlicher Wert, es gibt also kein "schon erledigt"-Merken.
-                        // Der zweite Aufruf ist die Versicherung fuer den Fall, dass der Abbruch
+                        // Beide finally-Bloecke (dieser und der von
+                        // `triggerAlarmCreationFromConfigUpdate`) stossen das Nacharmieren an;
+                        // `NacharmierBedarf.beanspruche()` sorgt dafuer, dass genau einmal armiert
+                        // wird. Dieser Aufruf ist die Versicherung fuer den Fall, dass der Abbruch
                         // im `delay` darueber zuschlug und das erste finally nie erreicht wurde.
                         armiereZeitkettenNeu(nacharmieren)
                     }
@@ -537,10 +534,6 @@ class ShiftViewModel @Inject constructor(
         }
 
         // WAS NEU ARMIERT WERDEN MUSS - aber NICHT hier, siehe [armiereZeitkettenNeu].
-        //
-        // WARUM DIE AUSNAHMENLISTE DES NACHT-STANDARDS IN `dimmGeaendert` ZAEHLT: sie ist ein
-        // Eingang von `DimScheduleUseCase.computeWindows()` (`isExcluded`) - eine Aenderung daran
-        // verschiebt die Dimm-Fenster genauso wie eine geaenderte Regel.
         //
         // WARUM DIE DND-AUSWAHL NUR DIE DND-KETTE NACHARMIERT: `dnd_shift_excluded_shifts` (und
         // das Rufbereitschaft-Flag) liest ausschliesslich `DndScheduleUseCase` (Dienstzeit-Fenster
@@ -820,7 +813,7 @@ internal fun planeSchichtUmbenennungen(
         val neuerName = neu.name
         if (alterName.isBlank() || neuerName.isBlank()) return@forEach
         // EXAKT, nicht `ignoreCase`: siehe KDoc - eine reine Schreibweisenaenderung MUSS nachgezogen
-        // werden, weil die drei Namenslisten exakt vergleichen.
+        // werden, weil die Namensliste (Dienstzeit-Ausnahmen) exakt vergleicht.
         if (alterName == neuerName) return@forEach
 
         val andereJetzt = nachher.definitions.filter { it.id != neu.id }.map { it.name }

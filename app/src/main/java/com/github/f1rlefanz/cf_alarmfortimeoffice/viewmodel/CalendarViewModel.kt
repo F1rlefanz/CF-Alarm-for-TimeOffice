@@ -188,10 +188,10 @@ class CalendarViewModel @Inject constructor(
     /**
      * RACE-GUARD: Monotonic generation counter für loadEventsForSelectedCalendars().
      *
-     * loadAvailableCalendars() (oben) wehrt sich mit einem simplen In-Flight-Flag gegen
+     * loadAvailableCalendars() wehrt sich mit einem simplen In-Flight-Flag gegen
      * Überlappung - das passt dort, weil ein zweiter Aufruf während des ersten schlicht
      * verworfen wird. Bei loadEventsForSelectedCalendars() geht das nicht: observeCalendarSelection()
-     * (Zeile ~249) UND refreshData(forceRefresh = true) (Zeile ~686, z.B. "Aktualisieren"-Button)
+     * UND refreshData(forceRefresh = true) (z.B. "Aktualisieren"-Button)
      * dürfen beide legitim feuern, und ein simples Boolean-Gate würde den zweiten Aufruf einfach
      * schlucken statt seine - eigentlich aktuelleren - Ergebnisse durchzulassen.
      *

@@ -66,20 +66,9 @@ class DimRuleRepository @Inject constructor(
     }
 
     /**
-     * Das `runCatching` weiter unten umfasst NUR `decodeFromString`, nicht den Store-Read davor -
-     * das war bis zum 18.08.2026 die Luecke. Eine IOException aus `dataStore.data` (voller
-     * Speicher, EACCES, transienter Lesefehler; der `ReplaceFileCorruptionHandler` faengt nur
-     * Korruption) flog ungebremst durch `getRules()` und damit durch `DimRuleUseCase
-     * .getAllRules()` in `DimScheduleUseCase.computeWindows()` - also mitten in den Dimm-Tick.
-     *
-     * Deshalb hier zusaetzlich ein `.catch` auf dem LESE-Flow, gleiche Richtung wie der
-     * Dekodier-Fehler darunter: leere Regelliste. Fuer den Dimmer heisst das "diese Nacht kein
-     * Dimmen" - dieselbe fail-safe Richtung, die [DimOverlayPrefs.safeData] mit ausfuehrlicher
-     * Begruendung waehlt (ein unerwartet dunkler Bildschirm ist schlimmer als ein heller).
-     *
-     * Der SCHREIB-Pfad bleibt davon unberuehrt: `editRules()` liest in seinem eigenen
-     * `dataStore.edit{}` erneut und stuetzt sich nie auf diesen Flow. Genau deshalb darf er
-     * degradieren, ohne dass die Notlage-Leere zur Schreibwahrheit wird.
+     * `.catch` auf dem LESE-Flow, nicht nur um `decodeFromString`: eine IOException aus dem Store
+     * flog sonst mitten in den Dimm-Tick. Degradiert wird auf die leere Liste (diese Nacht kein
+     * Dimmen); `editRules()` liest in `dataStore.edit{}` selbst, die Leere wird nie Schreibwahrheit.
      */
     val rules: Flow<List<DimRule>> = dataStore.data.map { prefs ->
         prefs[KEY_RULES]?.let { raw ->
@@ -108,11 +97,7 @@ class DimRuleRepository @Inject constructor(
 
     suspend fun getRules(): List<DimRule> = rules.first()
 
-    // Es gibt bewusst KEIN oeffentliches saveRules(list): das war das Muster "getRules() +
-    // Ganzliste zurueckschreiben", das genau die zwei Fehler mitbringt, die editRules() unten
-    // ausschliesst (verlorene Aenderung bei Doppel-Tap, degradierte leere Liste loescht alles).
-    // Bis v1.22.x stand es hier ohne Aufrufer herum - ein Nebeneingang, der nur darauf wartete,
-    // wieder benutzt zu werden. Wer einen Massen-Schreibpfad braucht, baut ihn auf editRules() auf.
+    // Kein oeffentliches saveRules(list) - Massen-Schreibpfade bauen auf editRules() auf.
 
     suspend fun upsert(rule: DimRule) = editRules("upsert(${rule.id})") { current ->
         val idx = current.indexOfFirst { it.id == rule.id }

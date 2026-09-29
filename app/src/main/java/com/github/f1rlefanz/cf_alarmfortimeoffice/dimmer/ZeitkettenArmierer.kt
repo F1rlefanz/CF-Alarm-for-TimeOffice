@@ -12,11 +12,7 @@ import javax.inject.Singleton
 /**
  * Armiert die beiden Zeitketten neu — **Dimmer zuerst, dann DND**.
  *
- * WARUM ES DAS GEBEN MUSS: Dieselbe Handvoll Zeilen stand bis v1.34.3 an **fünf** Stellen von Hand
- * (`DimmerViewModel`, `DimmerRulesViewModel`, `TagFreigabeUseCase`, `ShiftViewModel`,
- * `ConfigBackupUseCase`) — jede mit eigenem Log-Präfix, zwei davon wortgleich. Sie tragen aber
- * keine Formalie, sondern eine belastbare Zusicherung, und wer eine davon anfasst, lässt die
- * übrigen driften.
+ * Die EINZIGE Stelle dafuer - verstreute Kopien liessen die Zusicherung driften.
  *
  * DIE REIHENFOLGE IST DIE ZUSICHERUNG. „Nicht stören" hat im Modus „folgt dem Dimmer" keine eigene
  * Fensterquelle — es liest die Dimm-Zeitleiste LIVE über

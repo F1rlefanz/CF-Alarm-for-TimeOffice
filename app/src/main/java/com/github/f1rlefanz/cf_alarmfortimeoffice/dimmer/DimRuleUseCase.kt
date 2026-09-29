@@ -45,14 +45,8 @@ class DimRuleUseCase @Inject constructor(
      * Zieht die Regeln einer UMBENANNTEN Schichtdefinition auf den neuen Namen nach.
      * Liefert die Anzahl der geänderten Regeln, oder einen Fehlschlag.
      *
-     * WARUM ES DAS GEBEN MUSS (Prüfrunde 8, Befund 2): [DimRule.shiftPattern] bindet über den
-     * NAMEN der Definition, nicht über deren stabile `id` — [findRuleForShift] vergleicht gegen
-     * `ShiftSpan.shiftName`, und der trägt ab dem nächsten Sync den NEUEN Namen. Der
-     * Schichtname ist aber frei änderbar (`ShiftEditDialog` behält die `id`). Eine reine
-     * Beschriftungsänderung ("AD1" → "Abrufdienst") legte damit die Dimm-Regel dieser Schicht
-     * lautlos still: [findRuleForShift] findet nichts mehr und fällt auf UNIVERSAL bzw. `null`
-     * zurück, während die Regelliste sie unverändert als aktiv anzeigt. Läuft „Nicht stören" im
-     * Modus „folgt dem Dimmer", fällt dessen Nachtfenster gleich mit weg.
+     * WARUM: [DimRule.shiftPattern] bindet über den NAMEN der Definition; ohne Nachzug legt eine
+     * Umbenennung die Regel lautlos still. Hergang reference/schichterkennung.md.
      *
      * SONDERMUSTER BLEIBEN UNBERÜHRT: [DimRule.SHIFT_UNIVERSAL] und [DimRule.SHIFT_FREE] sind
      * keine Schichtnamen, sondern Tages-Kategorien. Sie mitzuziehen würde aus einer Regel für

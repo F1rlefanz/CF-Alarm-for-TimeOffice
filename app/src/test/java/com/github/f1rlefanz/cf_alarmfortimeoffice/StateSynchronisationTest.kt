@@ -213,4 +213,24 @@ class StateSynchronisationTest {
         assertEquals("Hash codes should match for equal states", state1.hashCode(), state2.hashCode())
         assertNotEquals("Hash codes should differ for different states", state1.hashCode(), state3.hashCode())
     }
+
+    @Test
+    fun `Kalender-Gates folgen tokenChecked, hasValidToken und calendarsLoading`() {
+        fun gate(tokenChecked: Boolean, hasValidToken: Boolean) =
+            CalendarOperationState(tokenChecked = tokenChecked, hasValidToken = hasValidToken)
+                .needsCalendarAuthorization
+
+        assertFalse("vor der ersten Pruefung kein Gate", gate(tokenChecked = false, hasValidToken = false))
+        assertTrue("geprueft ohne Token: Gate", gate(tokenChecked = true, hasValidToken = false))
+        assertFalse("geprueft mit Token: kein Gate", gate(tokenChecked = true, hasValidToken = true))
+        assertFalse("ungeprueft mit Token: kein Gate", gate(tokenChecked = false, hasValidToken = true))
+
+        fun reauth(hasValidToken: Boolean, calendarsLoading: Boolean) =
+            CalendarOperationState(hasValidToken = hasValidToken, calendarsLoading = calendarsLoading)
+                .needsTokenReauthorization
+
+        assertTrue("ohne Token, nicht ladend", reauth(hasValidToken = false, calendarsLoading = false))
+        assertFalse("ohne Token, aber ladend", reauth(hasValidToken = false, calendarsLoading = true))
+        assertFalse("mit Token", reauth(hasValidToken = true, calendarsLoading = false))
+    }
 }

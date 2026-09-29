@@ -205,9 +205,7 @@ class HueViewModel @Inject constructor(
                             bridgeConnectionInfo = BridgeConnectionInfo(
                                 isConnected = true,
                                 bridgeIp = bridge.internalipaddress,
-                                bridgeName = bridge.name,
-                                username = result.getOrNull(),
-                                lastValidated = System.currentTimeMillis()
+                                bridgeName = bridge.name
                             )
                         )
                     }
@@ -239,10 +237,7 @@ class HueViewModel @Inject constructor(
                         // again, so any stale error banner (e.g. from a previous failed pairing
                         // attempt or a transient disconnect) no longer applies.
                         error = if (isValid) null else currentState.error,
-                        bridgeConnectionInfo = currentState.bridgeConnectionInfo?.copy(
-                            isConnected = isValid,
-                            lastValidated = System.currentTimeMillis()
-                        )
+                        bridgeConnectionInfo = currentState.bridgeConnectionInfo?.copy(isConnected = isValid)
                     )
                 }
 

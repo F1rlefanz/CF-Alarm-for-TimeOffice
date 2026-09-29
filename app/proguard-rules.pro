@@ -147,12 +147,14 @@
 # ==============================
 
 # Google Play Services
--keep class com.google.android.gms.** { *; }
 -dontwarn com.google.android.gms.**
 
-# Credentials API
--keep class androidx.credentials.** { *; }
--keep class com.google.android.libraries.identity.googleid.** { *; }
+# Credential Manager findet den Play-Services-Anbieter per Reflexion ueber Manifest-Metadaten;
+# die schmale Regel dafuer aus der androidx.credentials-Dokumentation.
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** {
+    *;
+}
 
 # ==============================
 # GOOGLE CALENDAR API

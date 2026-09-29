@@ -16,12 +16,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * anbieten. Ohne dieses Signal landet der Nutzer irgendwo im Status-Tab, waehrend die Karte, die
  * er sucht, unterhalb von sechs anderen steht.
  *
- * WARUM EIN PROZESSWEITES OBJEKT UND KEIN DURCHGEREICHTER PARAMETER: Die Karte liest den
- * Dienst-Zustand ohnehin direkt an der Quelle ([DimAccessibilityService.isRunning]) statt ihn
- * durch drei Composables zu schleusen, die mit dem Dimmer nichts zu tun haben; dieses Signal
- * nimmt denselben Weg. Ein ViewModel-Feld waere die Alternative gewesen — es haette
- * `MainScreen` und `MainContentScreen` je zwei Parameter mehr gegeben, ohne dass einer der
- * beiden davon etwas wuesste.
+ * Prozessweites Objekt statt durchgereichtem Parameter: die Karte liest den Dienst-Zustand ohnehin
+ * direkt an der Quelle ([DimAccessibilityService.isRunning]); dieses Signal nimmt denselben Weg.
  *
  * EINMAL heisst einmal: [verbrauchen] wird von der ersten Stelle gerufen, die das Signal
  * auswertet (dem Status-Tab). Bleibt es stehen, weil der Nutzer den Status-Tab gar nicht

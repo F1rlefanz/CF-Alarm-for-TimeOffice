@@ -70,11 +70,6 @@ class DimCorrectionNotifier @Inject constructor(
             actionIntent(DimNotificationService.ACTION_PAUSE, 2)
         }
 
-        // WARUM DIE WAERME MIT DRINSTEHT: Sie wurde bis v1.34.3 uebergeben und nie gelesen - ein
-        // toter Parameter. Loeschen waere die eine Antwort gewesen, anzeigen ist die bessere: der
-        // Nutzer stellt die Waerme pro Regel ein, sah aber nirgends, welcher Wert gerade WIRKT.
-        // Und genau hier steht der wirkende Wert schon zur Verfuegung - inklusive dem, was ein
-        // Korrektur-Override daraus gemacht hat.
         val statusText = if (paused) {
             "Dimmer pausiert"
         } else {
@@ -186,23 +181,14 @@ class DimCorrectionNotifier @Inject constructor(
     }
 
     /**
-     * Tipp-Ziel des Dienst-fehlt-Hinweises: die App selbst. Der Sprung direkt in die
-     * Bedienungshilfen-Einstellungen waere kuerzer, ginge aber an der Play-Pflicht-Offenlegung
-     * vorbei, die die Status-Karte vor dem Aktivieren zeigt (siehe `DimmerAccessibilityCard`).
+     * Tipp-Ziel des Dienst-fehlt-Hinweises: die App, nicht direkt die Bedienungshilfen-Einstellungen -
+     * sonst ginge es an der Play-Pflicht-Offenlegung der Status-Karte vorbei (`DimmerAccessibilityCard`).
+     * Das Extra EINSTIEG sagt MainActivity, weshalb geoeffnet wurde: sie fuehrt auf den Status-Tab und
+     * rollt die Bedienungshilfen-Karte ins Bild, statt auf dem zuletzt benutzten Tab zu enden.
      *
-     * ABER NICHT NUR „die App": das Extra sagt MainActivity, WESHALB geoeffnet wurde, und die
-     * fuehrt damit auf den Status-Tab, rollt die Bedienungshilfen-Karte ins Bild und laesst sie
-     * die Offenlegung zeigen. Ohne das Extra endete der Tipp auf dem zuletzt benutzten Tab, und
-     * die Karte, um die es geht, stand ungesehen weiter unten — eine Meldung mit Ausweg, den
-     * man suchen muss, ist nur die halbe Meldung. Von der Offenlegung aus geht es in die
-     * Bedienungshilfen-Einstellungen; den Eintrag dieser App waehlt der Nutzer dort selbst — die
-     * Detailseite eines Dienstes ist fuer Fremd-Apps gesperrt (Hergang bei
-     * `openAccessibilitySettings`).
-     *
-     * `FLAG_ACTIVITY_SINGLE_TOP` gehoert zwingend dazu: ohne es wirft `FLAG_ACTIVITY_CLEAR_TOP`
-     * eine bereits laufende MainActivity (Start-Modus `standard`) weg und legt sie neu an — der
-     * Nutzer verlaere dabei den Zustand, in dem er die App zuletzt verlassen hat. Mit dem Flag
-     * bekommt die laufende Instanz stattdessen `onNewIntent()`.
+     * `FLAG_ACTIVITY_SINGLE_TOP` gehoert zwingend dazu: ohne es wirft `FLAG_ACTIVITY_CLEAR_TOP` eine
+     * laufende MainActivity (Start-Modus `standard`) weg und legt sie neu an; mit dem Flag bekommt sie
+     * `onNewIntent()`.
      */
     private fun appIntent(): PendingIntent =
         PendingIntent.getActivity(
@@ -240,6 +226,5 @@ class DimCorrectionNotifier @Inject constructor(
         }
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(channel)
-        Logger.d(LogTags.DIMMER, "Dimmer-Korrektur-Channel angelegt/aktualisiert: $CHANNEL_ID")
     }
 }

@@ -347,16 +347,9 @@ class DimAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     /**
-     * DER FIX FUER EINE LUEGENDE AUSKUNFT. Bis hierher wurde [running] ausschliesslich in
-     * [onDestroy] zurueckgesetzt. Wird der Dienst ENTBUNDEN, ohne zerstoert zu werden - genau das
-     * passiert, wenn eine `UiAutomation` ihn unterdrueckt -, blieb [isRunning] faelschlich `true`.
-     * Zwei Stellen glaubten das: die Diagnosezeile in `DimScheduleUseCase.applyCurrentState()`
-     * schrieb `accessibilityServiceBound=true`, obwohl nichts zeichnete, und die Status-Karte
-     * zeigte dem Nutzer einen gruenen Dienst, waehrend der Dimmer tot war - „angezeigt, wirkt
-     * nicht", die Fehlerklasse, gegen die dieses Projekt sonst ueberall Netze spannt.
-     *
-     * Das Overlay wird hier NICHT abgeraeumt: das erledigt das System mit dem Fenster-Token, und
-     * ein Aufraeumen im Entbinden wuerde bei einem folgenden [onDestroy] doppelt laufen.
+     * Setzt [running] auch beim ENTBINDEN zurueck (etwa durch eine `UiAutomation`), nicht nur in
+     * [onDestroy] - sonst zeigten Diagnose und Status-Karte einen Dienst, der nicht zeichnet.
+     * Overlay hier NICHT abraeumen: das System raeumt mit dem Fenster-Token, sonst doppelt bei [onDestroy].
      */
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         running = false
@@ -380,16 +373,9 @@ class DimAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Laesst den Scheduler den Soll-Zustand neu bewerten, sobald der Dienst (wieder) da ist.
-     *
-     * WARUM (Befund 18.09.2026, am Fairphone): Waehrend eines laufenden Dimm-Fensters war der
-     * Prozess beendet worden; `applyCurrentState()` lief ohne gebundenen Dienst und stellte die
-     * Benachrichtigung auf "Dimmt nicht - Bedienungshilfen-Dienst ist aus". Dann kam der Dienst
-     * zurueck, das Overlay wurde gerendert - die Benachrichtigung behauptete aber weiter, es
-     * dimme nicht, bis zum naechsten Tick an einer Fenstergrenze, also unter Umstaenden
-     * stundenlang. Niemand rechnete beim Verbinden neu. Der Weg geht ueber den Tick-Receiver
-     * (derselbe Pfad wie der rollende Tick, inklusive Neuplanung), nicht ueber eine direkte
-     * Injektion des Schedulers in diesen Dienst: der Dienst bleibt bewusst ein reiner Renderer.
+     * Laesst den Scheduler den Soll-Zustand neu bewerten, sobald der Dienst (wieder) da ist - sonst
+     * behauptete die Benachrichtigung bis zum naechsten Fenster-Tick weiter "Dimmt nicht". Weg ueber
+     * den Tick-Receiver: der Dienst bleibt bewusst ein reiner Renderer.
      */
     private fun zustandNeuBewerten() = runCatching {
         sendBroadcast(

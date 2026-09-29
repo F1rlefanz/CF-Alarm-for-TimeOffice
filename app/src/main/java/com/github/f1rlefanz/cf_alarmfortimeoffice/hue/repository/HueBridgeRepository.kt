@@ -42,15 +42,12 @@ class HueBridgeRepository @Inject constructor(
     
     init {
         connectionManager.initialize()
-        Logger.i(LogTags.HUE_BRIDGE, "🔗 BRIDGE-REPOSITORY: Initialized with robust connection management")
     }
     
     override fun getDiscoveryStatus(): Flow<DiscoveryStatus> = 
         officialDiscoveryService.getDiscoveryStatus()
     
     override suspend fun discoverBridges(): Result<List<HueBridge>> = withContext(Dispatchers.IO) {
-        Logger.i(LogTags.HUE_DISCOVERY, "Starting official Hue bridge discovery")
-        
         try {
             val discoveryResult = officialDiscoveryService.discoverBridges()
             
@@ -124,7 +121,6 @@ class HueBridgeRepository @Inject constructor(
     override suspend fun validateConnection(): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             connectionManager.getValidatedConnection()
-            Logger.d(LogTags.HUE_BRIDGE, "Connection validation successful via ConnectionManager")
             Result.success(true)
 
         } catch (e: Exception) {

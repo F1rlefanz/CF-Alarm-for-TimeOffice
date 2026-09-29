@@ -50,8 +50,6 @@ class HueLightRepository @Inject constructor(
         try {
             val (bridgeIp, username) = getValidatedConnectionInfo()
             
-            Logger.d(LogTags.HUE_LIGHTS, "Fetching lights from bridge $bridgeIp")
-            
             val lightsResponse = apiClient.getLights(bridgeIp, username)
             val lights = lightsResponse.map { (id, lightData) -> lightData.copy(id = id) }
             
@@ -68,8 +66,6 @@ class HueLightRepository @Inject constructor(
         try {
             val (bridgeIp, username) = getValidatedConnectionInfo()
             
-            Logger.d(LogTags.HUE_LIGHTS, "Fetching groups from bridge $bridgeIp")
-            
             val groupsResponse = apiClient.getGroups(bridgeIp, username)
             val groups = groupsResponse.map { (id, groupData) -> groupData.copy(id = id) }
             
@@ -85,8 +81,6 @@ class HueLightRepository @Inject constructor(
     override suspend fun getScenes(): Result<List<HueScene>> = withContext(Dispatchers.IO) {
         try {
             val (bridgeIp, username) = getValidatedConnectionInfo()
-
-            Logger.d(LogTags.HUE_LIGHTS, "Fetching scenes from bridge $bridgeIp")
 
             val roh = apiClient.getScenes(bridgeIp, username).values.toList()
 

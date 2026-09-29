@@ -61,7 +61,6 @@ class HueBridgeUseCase @Inject constructor(
     }
     
     override fun getDiscoveryStatus(): Flow<DiscoveryStatus> {
-        Logger.d(LogTags.HUE_USECASE, "Providing discovery status stream")
         return bridgeRepository.getDiscoveryStatus()
     }
     
@@ -74,7 +73,6 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.failure(IllegalArgumentException("Bridge IP address cannot be empty"))
             }
             
-            Logger.d(LogTags.HUE_USECASE, "Testing bridge connectivity")
             val connectivityResult = withTimeoutOrNull(CONNECTION_TIMEOUT_MS.milliseconds) {
                 bridgeRepository.testBridgeConnection(bridge)
             }
@@ -89,7 +87,6 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.failure(Exception("Cannot reach bridge at ${bridge.internalipaddress}. Please check your network."))
             }
             
-            Logger.d(LogTags.HUE_USECASE, "Attempting bridge connection and user creation")
             val connectionResult = bridgeRepository.connectToBridge(bridge)
             
             if (connectionResult.isFailure) {
@@ -115,7 +112,6 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.failure(Exception("Failed to create user on bridge"))
             }
             
-            Logger.d(LogTags.HUE_USECASE, "Saving bridge configuration")
             val saveResult = configRepository.saveBridgeConfig(bridge.internalipaddress, username)
             
             if (saveResult.isFailure) {
@@ -123,7 +119,6 @@ class HueBridgeUseCase @Inject constructor(
                 // Don't fail the setup, just log the warning
             }
             
-            Logger.d(LogTags.HUE_USECASE, "Validating final bridge connection")
             val validationResult = bridgeRepository.validateConnection()
             
             if (validationResult.isFailure || validationResult.getOrNull() != true) {
@@ -174,8 +169,6 @@ class HueBridgeUseCase @Inject constructor(
     }
     
     override suspend fun getBridgeConnectionInfo(): Result<BridgeConnectionInfo> {
-        Logger.d(LogTags.HUE_USECASE, "Getting bridge connection information")
-        
         return try {
             val config = configRepository.getConfiguration().first()
             
@@ -201,7 +194,6 @@ class HueBridgeUseCase @Inject constructor(
                 )
             }
             
-            Logger.d(LogTags.HUE_USECASE, "Bridge connection info: connected=${connectionInfo.isConnected}")
             Result.success(connectionInfo)
             
         } catch (e: Exception) {

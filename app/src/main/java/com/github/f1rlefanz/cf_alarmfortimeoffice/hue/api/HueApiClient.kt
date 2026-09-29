@@ -103,7 +103,6 @@ class HueApiClient(context: Context? = null) {
         
         try {
             val url = "https://$bridgeIp$endpoint"
-            Logger.d(LogTags.HUE_NETWORK, "Making $method request to $url")
             
             val requestBuilder = Request.Builder()
                 .url(url)
@@ -131,7 +130,6 @@ class HueApiClient(context: Context? = null) {
             client.newCall(requestBuilder.build()).execute().use { response ->
                 if (response.isSuccessful) {
                     val responseBody = response.body.string()
-                    Logger.i(LogTags.HUE_NETWORK, "✅ Secure HTTPS request successful: ${response.code}")
                     Result.success(responseBody)
                 } else {
                     val error = "HTTPS ${response.code}: ${response.message}"
@@ -274,7 +272,6 @@ class HueApiClient(context: Context? = null) {
             
             if (result.isSuccess) {
                 val responseBody = result.getOrNull() ?: "{}"
-                Logger.d(LogTags.HUE_LIGHTS, "Lights API response: $responseBody")
 
                 // Fehlerhuelle (HTTP 200 + JSON-Array) VOR dem try werfen, statt sie im catch zu
                 // "0 Lampen" zu machen. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
@@ -310,7 +307,6 @@ class HueApiClient(context: Context? = null) {
             
             if (result.isSuccess) {
                 val responseBody = result.getOrNull() ?: "{}"
-                Logger.d(LogTags.HUE_LIGHTS, "Groups API response: $responseBody")
 
                 // Gleiche Falle wie in [getLights]: HTTP 200 + Fehlerhuelle wurde zu "0 Gruppen".
                 if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
@@ -449,7 +445,6 @@ class HueApiClient(context: Context? = null) {
 
             // Body auswerten, nicht nur den HTTP-Status - siehe [wasAccepted].
             val accepted = wasAccepted(result, "Lampe $lightId")
-            Logger.d(LogTags.HUE_LIGHTS, "Light state update result: $accepted")
             return@withContext accepted
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Error setting light state for $lightId", e)
@@ -472,7 +467,6 @@ class HueApiClient(context: Context? = null) {
 
             // Body auswerten, nicht nur den HTTP-Status - siehe [wasAccepted].
             val accepted = wasAccepted(result, "Gruppe $groupId")
-            Logger.d(LogTags.HUE_LIGHTS, "Group action update result: $accepted")
             return@withContext accepted
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Error setting group action for $groupId", e)

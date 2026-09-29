@@ -58,8 +58,6 @@ class HueLightUseCase @Inject constructor(
     }
     
     override suspend fun getAllLightTargets(): Result<LightTargets> {
-        Logger.d(LogTags.HUE_USECASE, "Getting all light targets with business logic")
-        
         return try {
             coroutineScope {
                 val lightsDeferred = async { lightRepository.getLights() }
@@ -134,8 +132,6 @@ class HueLightUseCase @Inject constructor(
     }
     
     override suspend fun executeLightAction(action: LightAction): Result<LightActionResult> {
-        Logger.d(LogTags.HUE_USECASE, "Executing light action for ${action.targetId}")
-        
         return try {
             val validationResult = validateLightAction(action)
             if (validationResult.isFailure) {
@@ -193,7 +189,6 @@ class HueLightUseCase @Inject constructor(
             }
             
             val actionResult = if (result.isSuccess) {
-                Logger.i(LogTags.HUE_USECASE, "Light action successful for ${action.targetId}")
                 LightActionResult(
                     success = true,
                     targetId = action.targetId

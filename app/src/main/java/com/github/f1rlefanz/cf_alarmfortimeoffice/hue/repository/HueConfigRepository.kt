@@ -79,7 +79,6 @@ class HueConfigRepository @Inject constructor(
             
             val scheduleRules = json.decodeFromString<List<HueSchedule>>(scheduleRulesJson)
             
-            Logger.d(LogTags.HUE_CONFIG, "Retrieved ${scheduleRules.size} schedule rules")
             Result.success(scheduleRules)
             
         } catch (e: Exception) {

@@ -68,7 +68,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
             // Internet-Zugang UND aufloesbares discovery.meethue.com braucht. Im Log vom
             // 14.07. scheiterte genau das (UnknownHostException), obwohl die Bridge lokal
             // sofort da war - 10s Wartezeit fuer nichts.
-            Logger.d(LogTags.HUE_DISCOVERY, "Phase 1: Attempting mDNS discovery (local)")
 
             _discoveryStatus.emit(DiscoveryStatus(
                 method = DiscoveryMethod.MDNS,
@@ -106,8 +105,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
             // Bridge lokal schon gefunden, liefert die Cloud dieselbe Bridge und kostet nur
             // Zeit - deshalb ueberspringen.
             if (allBridges.isEmpty()) {
-                Logger.d(LogTags.HUE_DISCOVERY, "Phase 2: Attempting N-UPnP discovery (cloud fallback)")
-
                 _discoveryStatus.emit(DiscoveryStatus(
                     method = DiscoveryMethod.ONLINE_DISCOVERY,
                     stage = "N_UPNP_SEARCH",

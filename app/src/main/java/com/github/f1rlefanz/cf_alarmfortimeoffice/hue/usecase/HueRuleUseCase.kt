@@ -65,14 +65,11 @@ class HueRuleUseCase @Inject constructor(
     }
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
-        Logger.d(LogTags.HUE_USECASE, "Getting all schedule rules")
-        
         return try {
             val rulesResult = configRepository.getScheduleRules()
             
             if (rulesResult.isSuccess) {
                 val rules = rulesResult.getOrNull() ?: emptyList()
-                Logger.i(LogTags.HUE_USECASE, "Retrieved ${rules.size} schedule rules")
                 Result.success(rules)
             } else {
                 Logger.w(LogTags.HUE_USECASE, "Failed to get schedule rules", rulesResult.exceptionOrNull())
@@ -355,7 +352,6 @@ class HueRuleUseCase @Inject constructor(
                 actions.add(lightAction)
             }
             
-            Logger.d(LogTags.HUE_USECASE, "Converted rule ${rule.name} to ${actions.size} light actions")
             Result.success(actions)
             
         } catch (e: Exception) {
@@ -407,8 +403,6 @@ class HueRuleUseCase @Inject constructor(
     }
     
     override suspend fun getRule(ruleId: String): Result<HueSchedule> {
-        Logger.d(LogTags.HUE_USECASE, "Getting schedule rule: $ruleId")
-        
         return try {
             val allRulesResult = getAllRules()
             
@@ -423,7 +417,6 @@ class HueRuleUseCase @Inject constructor(
             val rule = allRules.find { it.id == ruleId }
             
             if (rule != null) {
-                Logger.d(LogTags.HUE_USECASE, "Found rule: $ruleId")
                 Result.success(rule)
             } else {
                 Logger.w(LogTags.HUE_USECASE, "Rule not found: $ruleId")
@@ -460,8 +453,6 @@ class HueRuleUseCase @Inject constructor(
     }
 
     override suspend fun validateRule(rule: HueSchedule): Result<RuleValidationResult> {
-        Logger.d(LogTags.HUE_USECASE, "Validating rule: ${rule.id}")
-        
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
         

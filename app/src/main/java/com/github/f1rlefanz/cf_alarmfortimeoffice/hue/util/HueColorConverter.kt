@@ -39,8 +39,6 @@ object HueColorConverter {
      * @return HueColor with hue (0-65535), saturation (0-254), and RGB hex
      */
     fun rgbToHueColor(red: Int, green: Int, blue: Int): HueColor {
-        Logger.d(LogTags.HUE_LIGHTS, "Converting RGB($red, $green, $blue) to Hue color")
-        
         try {
             // Normalize RGB values to 0-1 range
             val r = red / 255.0f
@@ -67,7 +65,6 @@ object HueColorConverter {
                 rgb = rgbHex
             )
             
-            Logger.d(LogTags.HUE_LIGHTS, "RGB conversion result: hue=$hue, sat=$saturation, xy=[${xy.first}, ${xy.second}]")
             return hueColor
             
         } catch (e: Exception) {
@@ -89,8 +86,6 @@ object HueColorConverter {
      * @return Triple of RGB values (0-255)
      */
     fun hueColorToRgb(hueColor: HueColor): Triple<Int, Int, Int> {
-        Logger.d(LogTags.HUE_LIGHTS, "Converting Hue color to RGB")
-        
         try {
             // Parse RGB from hex if available
             hueColor.rgb?.let { rgbHex ->

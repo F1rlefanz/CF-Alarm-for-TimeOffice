@@ -936,30 +936,6 @@ class AlarmViewModel @Inject constructor(
     }
 
     /**
-     * Baut einen uebersprungenen MANUELLEN Wecker aus seinem Schnappschuss wieder auf.
-     *
-     * Nur er braucht das: kalenderbasierte Alarme entstehen beim naechsten Sync von selbst neu
-     * (fuer sie ist [alarm] null), ein von Hand gestellter aus keiner Quelle.
-     *
-     * REIHENFOLGE: erst speichern, dann armieren - ein armierter Wecker ohne Repository-Eintrag
-     * waere weder sichtbar noch abbrechbar. Beide Schritte melden ihren Fehlschlag dem Nutzer,
-     * statt in einem Log zu verschwinden.
-     *
-     * Ist die Weckzeit inzwischen verstrichen, wird NICHTS angelegt und NICHTS armiert - ein
-     * Wecker in der Vergangenheit klingelt nicht, und ein stumm im Bestand liegender Eintrag
-     * waere genau die Luege, die eine Wecker-App nicht erzaehlen darf. Eine "Schicht
-     * entfernt"-Meldung entsteht dabei nicht - eine verstrichene Weckzeit ist keine entfernte
-     * Schicht.
-     *
-     * Scheitert das Armieren, wird der gerade gespeicherte Eintrag wieder zurueckgenommen - die
-     * Begruendung steht an der Stelle selbst.
-     *
-     * Die BEHEBBAREN Hindernisse (Master-Pause, "Automatische Alarme" aus, ein zweiter manueller
-     * Wecker) sind hier bewusst NICHT mehr geprueft: sie gehoeren nach
-     * [behebbaresRestoreHindernis] und damit VOR das Aufheben des Skips, weil sonst Flag und
-     * Schnappschuss schon weg waeren, wenn das Hindernis auffaellt.
-     */
-    /**
      * Nennt das Hindernis, das eine Wiederherstellung JETZT unmoeglich macht, aber SPAETER von
      * selbst oder durch den Nutzer verschwindet - oder null, wenn nichts im Weg steht.
      *
@@ -1064,6 +1040,30 @@ class AlarmViewModel @Inject constructor(
             deleteAlarm = { alarmUseCase.deleteAlarm(it) }
         )
 
+    /**
+     * Baut einen uebersprungenen MANUELLEN Wecker aus seinem Schnappschuss wieder auf.
+     *
+     * Nur er braucht das: kalenderbasierte Alarme entstehen beim naechsten Sync von selbst neu
+     * (fuer sie ist [alarm] null), ein von Hand gestellter aus keiner Quelle.
+     *
+     * REIHENFOLGE: erst speichern, dann armieren - ein armierter Wecker ohne Repository-Eintrag
+     * waere weder sichtbar noch abbrechbar. Beide Schritte melden ihren Fehlschlag dem Nutzer,
+     * statt in einem Log zu verschwinden.
+     *
+     * Ist die Weckzeit inzwischen verstrichen, wird NICHTS angelegt und NICHTS armiert - ein
+     * Wecker in der Vergangenheit klingelt nicht, und ein stumm im Bestand liegender Eintrag
+     * waere genau die Luege, die eine Wecker-App nicht erzaehlen darf. Eine "Schicht
+     * entfernt"-Meldung entsteht dabei nicht - eine verstrichene Weckzeit ist keine entfernte
+     * Schicht.
+     *
+     * Scheitert das Armieren, wird der gerade gespeicherte Eintrag wieder zurueckgenommen - die
+     * Begruendung steht an der Stelle selbst.
+     *
+     * Die BEHEBBAREN Hindernisse (Master-Pause, "Automatische Alarme" aus, ein zweiter manueller
+     * Wecker) sind hier bewusst NICHT mehr geprueft: sie gehoeren nach
+     * [behebbaresRestoreHindernis] und damit VOR das Aufheben des Skips, weil sonst Flag und
+     * Schnappschuss schon weg waeren, wenn das Hindernis auffaellt.
+     */
     private suspend fun restoreSkippedManualAlarm(alarm: AlarmInfo?) {
         if (alarm == null) return
 

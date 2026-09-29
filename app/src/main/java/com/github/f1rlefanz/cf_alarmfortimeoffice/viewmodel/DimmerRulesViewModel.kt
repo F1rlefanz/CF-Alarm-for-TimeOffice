@@ -82,14 +82,6 @@ class DimmerRulesViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * Regel zu einer Kennung - fuer den Editor.
-     *
-     * Der Rueckfall auf [zuletztAngelegteRegel] ist kein Zierrat: [rules] ist ein `stateIn` ueber
-     * dem DataStore-Fluss und traegt die neue Regel erst, nachdem der Store sie emittiert hat.
-     * Der Schnellstart oeffnet den Editor unmittelbar nach dem Schreiben; ohne den Rueckfall
-     * traefe er ein leeres Formular an - und der Nutzer saehe genau NICHT, was entstanden ist.
-     */
-    /**
      * Ist der Dimmer-Hauptschalter ueberhaupt an?
      *
      * WARUM DIE REGELLISTE DAS WISSEN MUSS: Ohne diesen Zustand kann der Nutzer hier Regeln bauen -
@@ -115,6 +107,14 @@ class DimmerRulesViewModel @Inject constructor(
         armierer.armiere("REGEL")
     }
 
+    /**
+     * Regel zu einer Kennung - fuer den Editor.
+     *
+     * Der Rueckfall auf [zuletztAngelegteRegel] ist kein Zierrat: [rules] ist ein `stateIn` ueber
+     * dem DataStore-Fluss und traegt die neue Regel erst, nachdem der Store sie emittiert hat.
+     * Der Schnellstart oeffnet den Editor unmittelbar nach dem Schreiben; ohne den Rueckfall
+     * traefe er ein leeres Formular an - und der Nutzer saehe genau NICHT, was entstanden ist.
+     */
     fun ruleById(id: String?): DimRule? = id?.let { rid ->
         rules.value.firstOrNull { it.id == rid }
             ?: zuletztAngelegteRegel?.takeIf { it.id == rid }
@@ -181,17 +181,6 @@ class DimmerRulesViewModel @Inject constructor(
     // --- Schnellstart -------------------------------------------------------------------------
 
     /**
-     * Eine Schnellstart-Vorlage. Sie ist ausdruecklich KEINE zweite Fenster-Quelle, sondern nur
-     * eine Vorbelegung: der Knopf legt eine ganz gewoehnliche [DimRule] an, die anschliessend in
-     * der Regelliste steht und sich aendern und loeschen laesst.
-     *
-     * GENAU DAS IST DER UNTERSCHIED ZUM ALTEN NACHT-STANDARD. Der war ein eingebautes Verhalten
-     * mit eigenen Schaltern, eigener Verdunkelung und eigener Ausnahmenliste - wirksam, aber in
-     * der Regelliste unsichtbar. Wer wissen wollte, warum um 07:00 noch gedimmt wird, fand dort
-     * keine Regel dazu. Seit dem Ein-Modell gibt es nur noch Regeln; die Vorlagen ersetzen den
-     * Komfort, den der Nacht-Standard bot, ohne seine Unsichtbarkeit zurueckzuholen.
-     */
-    /**
      * Die drei Zeiten des Nachtdienst-Rhythmus - in SCHLAFSPRACHE, so wie der Dialog sie abfragt.
      *
      * WARUM ES DAS GIBT (18.09.2026): Der Eigentuemer konnte den Nachtdienst-Dimmer nicht
@@ -214,6 +203,17 @@ class DimmerRulesViewModel @Inject constructor(
         val schlafVorDienstAb: Int = 16 * 60
     )
 
+    /**
+     * Eine Schnellstart-Vorlage. Sie ist ausdruecklich KEINE zweite Fenster-Quelle, sondern nur
+     * eine Vorbelegung: der Knopf legt eine ganz gewoehnliche [DimRule] an, die anschliessend in
+     * der Regelliste steht und sich aendern und loeschen laesst.
+     *
+     * GENAU DAS IST DER UNTERSCHIED ZUM ALTEN NACHT-STANDARD. Der war ein eingebautes Verhalten
+     * mit eigenen Schaltern, eigener Verdunkelung und eigener Ausnahmenliste - wirksam, aber in
+     * der Regelliste unsichtbar. Wer wissen wollte, warum um 07:00 noch gedimmt wird, fand dort
+     * keine Regel dazu. Seit dem Ein-Modell gibt es nur noch Regeln; die Vorlagen ersetzen den
+     * Komfort, den der Nacht-Standard bot, ohne seine Unsichtbarkeit zurueckzuholen.
+     */
     enum class SchnellstartVorlage {
         /** Die komplette bisherige Nacht-Standard-Semantik als EIN Fenster fuer jede Kalendernacht. */
         NACHT_DIMMEN,

@@ -340,8 +340,6 @@ fun DimmerSettingsScreen(
     onCreateRule: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
-    // collectAsStateWithLifecycle, nicht collectAsState: reine Listen-Anzeige ohne Seiteneffekt -
-    // das Abo darf unterhalb von STARTED ruhen (Speichern/Loeschen laeuft ueber das ViewModel).
     val rules by viewModel.rules.collectAsStateWithLifecycle()
 
     // Welche Regel an welchen Tagen hinter einer anderen zurueckstehen muss. Neu gerechnet, sobald

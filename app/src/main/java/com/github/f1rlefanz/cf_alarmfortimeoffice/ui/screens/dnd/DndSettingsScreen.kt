@@ -55,9 +55,7 @@ fun DndSettingsScreen(
     onNavigateBack: () -> Unit,
     viewModel: DndViewModel = hiltViewModel()
 ) {
-    // collectAsStateWithLifecycle, nicht collectAsState: beides ist reiner Anzeige-Zustand dieses
-    // Bildschirms. Die eigentliche DND-Steuerung haengt an [DndScheduleUseCase] (rollierender
-    // Tick-Alarm), nicht an diesen Abos - sie duerfen unterhalb von STARTED ruhen.
+    // DND steuert DndScheduleUseCase (Tick-Alarm), nicht diese Abos - sie duerfen unter STARTED ruhen.
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
     val context = LocalContext.current

@@ -38,9 +38,6 @@ fun DimmerPreviewScreen(
     onNavigateBack: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
-    // collectAsStateWithLifecycle, nicht collectAsState: die Zeitleiste ist ein reiner
-    // Anzeige-Zustand ohne Seiteneffekt (berechnet wird sie ausschliesslich vom LaunchedEffect
-    // darunter) - das Abo darf unterhalb von STARTED ruhen.
     val timeline by viewModel.timeline.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.refreshTimeline() }

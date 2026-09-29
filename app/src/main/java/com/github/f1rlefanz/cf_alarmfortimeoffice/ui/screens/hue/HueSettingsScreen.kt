@@ -79,9 +79,6 @@ fun HueSettingsScreen(
     onCreateNewRule: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // collectAsStateWithLifecycle statt collectAsState: der Zustand speist nur diesen Bildschirm,
-    // das Abo darf unterhalb von STARTED ruhen. Kein Seiteneffekt haengt daran - die einmaligen
-    // Meldungen laufen ueber den LaunchedEffect auf `userMessages`.
     val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 

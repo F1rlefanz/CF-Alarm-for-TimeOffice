@@ -75,11 +75,6 @@ fun HueRuleConfigScreen(
     onSaveComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // collectAsStateWithLifecycle statt collectAsState: beide Flows speisen ausschliesslich diesen
-    // Bildschirm. Das Sammeln pausiert damit unterhalb von STARTED - im Hintergrund gibt es hier
-    // nichts nachzuhalten, und ein `stateIn(WhileSubscribed)`-Timeout weiter unten kann ueberhaupt
-    // erst ablaufen. Kein Seiteneffekt haengt daran (die einmaligen Meldungen laufen ueber den
-    // LaunchedEffect auf `userMessages`, den das nicht beruehrt).
     val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
     val toastContext = LocalContext.current

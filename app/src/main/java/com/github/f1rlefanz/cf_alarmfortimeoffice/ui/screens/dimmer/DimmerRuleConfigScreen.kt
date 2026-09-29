@@ -60,9 +60,6 @@ fun DimmerRuleConfigScreen(
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    // collectAsStateWithLifecycle, nicht collectAsState: reiner Anzeige-Zustand (Namen der
-    // Schicht-Definitionen fuers Dropdown). Das Abo darf im Hintergrund ruhen - es haengt kein
-    // Seiteneffekt daran, und `WhileSubscribed` kann den Upstream nur so wirklich freigeben.
     val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
     val existing = remember(ruleId) { viewModel.ruleById(ruleId) }
 

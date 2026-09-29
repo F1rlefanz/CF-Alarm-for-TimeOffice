@@ -144,9 +144,7 @@ class HueRuleUseCase @Inject constructor(
 
             val matchingRules = allRules.filter { rule ->
                 // Vom Nutzer deaktivierte Regeln bleiben aussen vor.
-                rule.enabled &&
-                    (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
-                        rule.shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true))
+                rule.enabled && rule.passtAufSchicht(shiftName)
             }
 
             Logger.i(LogTags.HUE_USECASE, "Found ${matchingRules.size} rules matching shift '$shiftName'")
@@ -789,3 +787,12 @@ class HueRuleUseCase @Inject constructor(
         return "rule_${UUID.randomUUID().toString().take(8)}_${System.currentTimeMillis()}"
     }
 }
+
+/**
+ * Gilt die Regel fuer die Schicht [shiftName] (exakter Definitionsname, ohne Gross-/Kleinschreibung)
+ * oder fuer alle Schichten? Gemeinsamer Massstab von [HueRuleUseCase.findApplicableRules] und
+ * [HueSunriseExecutor]; `betrifftSchicht` schliesst das Universalmuster bewusst aus.
+ */
+internal fun HueSchedule.passtAufSchicht(shiftName: String): Boolean =
+    shiftPattern.equals(shiftName, ignoreCase = true) ||
+        shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true)

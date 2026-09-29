@@ -579,28 +579,6 @@ class HueRuleUseCase @Inject constructor(
         return Result.success(result)
     }
     
-    override suspend fun testRuleExecution(rule: HueSchedule): Result<List<LightAction>> {
-        Logger.d(LogTags.HUE_USECASE, "Testing rule execution: ${rule.id}")
-        
-        return try {
-            // Convert rule to actions (dry run)
-            val actionsResult = convertRuleToLightActions(rule)
-            
-            if (actionsResult.isSuccess) {
-                val actions = actionsResult.getOrNull() ?: emptyList()
-                Logger.i(LogTags.HUE_USECASE, "Rule test successful: ${actions.size} actions would be executed")
-                Result.success(actions)
-            } else {
-                Logger.w(LogTags.HUE_USECASE, "Rule test failed", actionsResult.exceptionOrNull())
-                actionsResult
-            }
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to test rule execution", e)
-            Result.failure(e)
-        }
-    }
-    
     /**
      * Fuehrt [rule] sofort aus, damit der Nutzer im Formular sieht, was sie tut.
      *

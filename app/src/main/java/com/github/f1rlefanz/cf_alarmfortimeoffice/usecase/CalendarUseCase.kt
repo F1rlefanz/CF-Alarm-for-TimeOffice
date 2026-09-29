@@ -453,15 +453,6 @@ class CalendarUseCase @Inject constructor(
         Logger.i(LogTags.CALENDAR_CACHE, "Invalidated cache for ${calendarIds.size} calendars")
     }
     
-    override suspend fun clearEventCache() {
-        calendarRepository.clearEventCache()
-        Logger.i(LogTags.CALENDAR_CACHE, "Cleared complete event cache")
-    }
-    
-    override suspend fun getCacheStats(): String {
-        return calendarRepository.getCacheStats()
-    }
-    
     /**
      * Access-Token fuer einen Kalenderabruf. Wirft bei Token-Fehlern bewusst ein generisches
      * Exception(text), KEIN AppError.AuthenticationError - Skill cfalarm-persistenz-und-auth.

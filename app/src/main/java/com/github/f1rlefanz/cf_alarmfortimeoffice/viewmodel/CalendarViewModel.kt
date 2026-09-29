@@ -1560,20 +1560,6 @@ class CalendarViewModel @Inject constructor(
             }
         }
     }
-    
-    fun getCacheStats() {
-        viewModelScope.launch {
-            val stats = calendarUseCase.getCacheStats()
-            Logger.i(LogTags.CALENDAR_CACHE, stats)
-        }
-    }
-    
-    fun clearEventCache() {
-        viewModelScope.launch {
-            calendarUseCase.clearEventCache()
-            Logger.i(LogTags.CALENDAR_CACHE, "Event cache cleared by user")
-        }
-    }
 
     /**
      * 🚨 CRITICAL FIX: Automatically create alarms from loaded events

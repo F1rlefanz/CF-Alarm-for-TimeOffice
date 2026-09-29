@@ -267,18 +267,6 @@ class CalendarRepository @Inject constructor(
         // PHASE 2 CLEANUP: Always invalidate for fixed 14 days
         eventCache.invalidateCalendar(calendarId)
     }
-    
-    override suspend fun clearEventCache() {
-        eventCache.clear()
-    }
-    
-    override suspend fun getCacheStats(): String {
-        val cacheStats = eventCache.getCacheStats()
-        return buildString {
-            appendLine("📊 CALENDAR CACHE STATS:")
-            appendLine("▸ Cache: $cacheStats")
-        }
-    }
 
     private fun getCalendarService(accessToken: String): Calendar {
         if (cachedService == null || cachedToken != accessToken) {

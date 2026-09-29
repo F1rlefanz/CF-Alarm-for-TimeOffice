@@ -132,15 +132,6 @@ class CalendarEventCache(
     }
 
     /**
-     * Leert den kompletten Cache
-     */
-    suspend fun clear() = cacheMutex.withLock {
-        val size = cache.size
-        cache.clear()
-        Logger.i(LogTags.CALENDAR_CACHE, "Cleared complete event cache ($size entries)")
-    }
-
-    /**
      * Cache statistics for debugging
      */
     suspend fun getCacheStats(): String = cacheMutex.withLock {

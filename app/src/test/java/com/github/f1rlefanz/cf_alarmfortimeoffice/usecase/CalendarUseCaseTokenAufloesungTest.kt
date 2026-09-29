@@ -56,8 +56,6 @@ class CalendarUseCaseTokenAufloesungTest {
         }
 
         override suspend fun invalidateCalendarCache(calendarId: String) = Unit
-        override suspend fun clearEventCache() = Unit
-        override suspend fun getCacheStats(): String = ""
     }
 
     private enum class Aufrufer { CALENDARS, WITH_STATUS, LAZY }

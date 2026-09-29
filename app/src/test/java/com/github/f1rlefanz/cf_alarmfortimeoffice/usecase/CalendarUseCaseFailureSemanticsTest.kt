@@ -62,8 +62,6 @@ class CalendarUseCaseFailureSemanticsTest {
             perCalendar[calendarId] ?: Result.failure(AppError.UnknownError("unbekannter Kalender"))
 
         override suspend fun invalidateCalendarCache(calendarId: String) = Unit
-        override suspend fun clearEventCache() = Unit
-        override suspend fun getCacheStats(): String = ""
     }
 
     private fun useCase(perCalendar: Map<String, Result<List<CalendarEvent>>>) = CalendarUseCase(

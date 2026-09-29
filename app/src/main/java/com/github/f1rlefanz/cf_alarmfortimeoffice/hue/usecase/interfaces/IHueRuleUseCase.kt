@@ -80,12 +80,6 @@ interface IHueRuleUseCase {
      * Business logic validation for rule creation/update
      */
     suspend fun validateRule(rule: HueSchedule): Result<RuleValidationResult>
-    
-    /**
-     * Test rule execution without actually triggering lights
-     * Dry-run for rule testing
-     */
-    suspend fun testRuleExecution(rule: HueSchedule): Result<List<LightAction>>
 
     /**
      * Execute a rule immediately for previewing ("Regel testen"): applies the configured

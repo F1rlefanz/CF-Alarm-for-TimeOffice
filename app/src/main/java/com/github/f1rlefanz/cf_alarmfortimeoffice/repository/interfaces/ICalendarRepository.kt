@@ -60,15 +60,4 @@ interface ICalendarRepository {
      * @param calendarId ID des Kalenders, dessen Cache invalidiert werden soll
      */
     suspend fun invalidateCalendarCache(calendarId: String)
-    
-    /**
-     * Leert den kompletten Event-Cache
-     */
-    suspend fun clearEventCache()
-    
-    /**
-     * Cache-Statistiken für Debugging
-     * @return String mit Cache-Informationen
-     */
-    suspend fun getCacheStats(): String
 }

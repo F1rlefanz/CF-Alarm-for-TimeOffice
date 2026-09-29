@@ -161,15 +161,4 @@ interface ICalendarUseCase {
      * @param calendarIds Set der Kalender-IDs deren Cache invalidiert werden soll
      */
     suspend fun invalidateCalendarCache(calendarIds: Set<String>)
-    
-    /**
-     * Leert den kompletten Event-Cache
-     */
-    suspend fun clearEventCache()
-    
-    /**
-     * Cache-Statistiken für Debugging
-     * @return String mit Cache-Informationen
-     */
-    suspend fun getCacheStats(): String
 }

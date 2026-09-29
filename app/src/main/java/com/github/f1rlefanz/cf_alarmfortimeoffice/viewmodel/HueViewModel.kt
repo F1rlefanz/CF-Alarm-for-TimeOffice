@@ -12,7 +12,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -414,37 +413,6 @@ class HueViewModel @Inject constructor(
         }
     }
 
-    fun executeLightAction(action: LightAction) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Executing light action for ${action.targetId}")
-        
-        viewModelScope.launch {
-            try {
-                val result = hueLightUseCase.executeLightAction(action)
-                
-                if (result.isSuccess) {
-                    val actionResult = result.getOrNull()
-                    if (actionResult?.success == true) {
-                        Logger.i(LogTags.HUE_VIEWMODEL, "Light action executed successfully")
-                        // Optionally refresh light states
-                        refreshLightTargets()
-                    } else {
-                        val error = actionResult?.error ?: "Light action failed"
-                        _uiState.update { it.copy(error = error) }
-                        Logger.w(LogTags.HUE_VIEWMODEL, "Light action failed: $error")
-                    }
-                } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to execute light action"
-                    _uiState.update { it.copy(error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Light action execution failed: $error")
-                }
-            } catch (e: Exception) {
-                val error = "Light action failed: ${e.message}"
-                _uiState.update { it.copy(error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Light action exception", e)
-            }
-        }
-    }
-    
     /**
      * "Test"-Knopf in [HueTabContent]/[HueSettingsScreen]: laesst jede bekannte Lampe blinken,
      * damit der Nutzer SIEHT, dass die App die Bridge wirklich erreicht.

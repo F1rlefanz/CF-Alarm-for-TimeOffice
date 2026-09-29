@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.backup
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.ActionType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLightAction
@@ -73,8 +74,11 @@ class HueSzenenImportTest {
     private fun gruppe(id: String, name: String) = HueGroup(
         id = id,
         name = name,
+        type = "Room",
         lights = emptyList(),
-        state = GroupState(any_on = false)
+        sensors = null,
+        state = GroupState(any_on = false),
+        action = GroupAction(on = false)
     )
 
     // --- Teil 1: die Datei ---------------------------------------------------------------------

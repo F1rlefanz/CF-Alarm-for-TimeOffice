@@ -10,8 +10,12 @@ import androidx.compose.runtime.Immutable
 data class HueGroup(
     val id: String,
     val name: String,
+    val type: String, // "Room", "Zone", "Entertainment"
     val lights: List<String>, // List of light IDs in this group
-    val state: GroupState
+    val sensors: List<String>? = null, // List of sensor IDs
+    val state: GroupState,
+    val action: GroupAction,
+    val recycle: Boolean? = null
 )
 
 // Raumtyp bei Bedarf als EIN Feld mit @SerializedName("class").
@@ -22,4 +26,20 @@ data class HueGroup(
 @Immutable
 data class GroupState(
     val any_on: Boolean // True if any light in group is on
+)
+
+/**
+ * Group Action - last action applied to group
+ */
+@Immutable
+data class GroupAction(
+    val on: Boolean,
+    val bri: Int? = null,
+    val hue: Int? = null,
+    val sat: Int? = null,
+    val xy: List<Float>? = null,
+    val ct: Int? = null,
+    val alert: String? = null,
+    val effect: String? = null,
+    val transitiontime: Int? = null
 )

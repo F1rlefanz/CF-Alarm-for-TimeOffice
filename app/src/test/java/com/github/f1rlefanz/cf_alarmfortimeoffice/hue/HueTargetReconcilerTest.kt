@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.ActionType
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
@@ -35,14 +36,21 @@ class HueTargetReconcilerTest {
     private fun light(id: String, name: String) = HueLight(
         id = id,
         name = name,
-        state = LightState(on = false)
+        type = "Extended color light",
+        modelid = null,
+        manufacturername = null,
+        productname = null,
+        state = LightState(on = false),
+        uniqueid = "uid-$id"
     )
 
     private fun group(id: String, name: String) = HueGroup(
         id = id,
         name = name,
+        type = "Room",
         lights = emptyList(),
-        state = GroupState(any_on = false)
+        state = GroupState(any_on = false),
+        action = GroupAction(on = false)
     )
 
     private fun action(

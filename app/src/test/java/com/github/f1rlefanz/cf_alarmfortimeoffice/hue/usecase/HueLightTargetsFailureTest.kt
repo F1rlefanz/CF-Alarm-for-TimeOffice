@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
@@ -85,14 +86,21 @@ class HueLightTargetsFailureTest {
     private fun light(id: String) = HueLight(
         id = id,
         name = "Lampe $id",
-        state = LightState(on = false)
+        type = "Extended color light",
+        modelid = null,
+        manufacturername = null,
+        productname = null,
+        state = LightState(on = false),
+        uniqueid = "uid-$id"
     )
 
     private fun group(id: String) = HueGroup(
         id = id,
         name = "Gruppe $id",
+        type = "Room",
         lights = listOf("1"),
-        state = GroupState(any_on = false)
+        state = GroupState(any_on = false),
+        action = GroupAction(on = false)
     )
 
     private fun useCase(

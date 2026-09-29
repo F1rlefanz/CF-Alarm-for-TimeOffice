@@ -56,8 +56,8 @@ class ZeitkettenArmierer @Inject constructor(
      * ableiten lässt, WELCHE Änderung ihre Kette nicht nachgezogen bekam. Kurz halten und in
      * Grossbuchstaben, wie die bisherigen Präfixe (`IMPORT`, `FREIGABE`, `UMBENENNUNG`).
      *
-     * [dimmer] und [dnd] einzeln schaltbar: Ändert sich ausschliesslich eine DND-eigene Namensliste
-     * (Rufbereitschaft, Dienstzeit-Ausnahmen), wäre ein Dimmer-`enable()` eine vollständige
+     * [dimmer] und [dnd] einzeln schaltbar: Ändert sich ausschliesslich etwas, das nur DND liest
+     * (Dienstzeit-Ausnahmen, Rufbereitschafts-Flag am Schichttyp), wäre ein Dimmer-`enable()` eine vollständige
      * Fensterberechnung ohne jede Wirkung. Umgekehrt gilt das NICHT — ein geändertes Dimm-Fenster
      * zieht DND immer mit.
      */

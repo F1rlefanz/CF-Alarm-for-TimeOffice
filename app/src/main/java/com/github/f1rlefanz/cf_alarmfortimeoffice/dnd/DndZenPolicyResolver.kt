@@ -7,7 +7,7 @@ import android.service.notification.ZenPolicy
  * ohne Robolectric (die referenzierten ZenPolicy.PEOPLE_TYPE_* und CONVERSATION_SENDERS_*-Konstanten
  * sind einfache statische Int-Werte, die auch im reinen JVM-Unit-Test-Stub aufloesbar sind; nur
  * echte Methodenaufrufe auf Android-Klassen brauchen Mocking/Robolectric). [DndScheduleUseCase]
- * wendet das Ergebnis auf den echten Builder an. Siehe CLAUDE.md "DND-Steuerung" fuer den Vorfall
+ * wendet das Ergebnis auf den echten Builder an. Siehe Skill cfalarm-dimmer-und-dnd, reference/dnd.md fuer den Vorfall
  * (hartcodiertes/invertiertes allowMedia(false) schaltete am 28.07.2026 live einen Podcast stumm),
  * der zu dieser Trennung fuehrte - eine falsch invertierte Kategorie soll hier von einem Unit-Test
  * gefangen werden, nicht erst live.

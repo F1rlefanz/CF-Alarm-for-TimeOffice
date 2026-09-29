@@ -60,7 +60,7 @@ data class TagFreigabeResult(
  *   in `AlarmUseCase`).
  * - **"Nicht stoeren"** und **Schicht-Dimmer**: `FreieTageStore.filtereSpannen` nimmt die
  *   Schichtspannen des Tages aus beiden Fensterquellen; der Tag verhaelt sich danach wie jeder
- *   andere freie Tag (FREI-Regel, Nacht-Standard).
+ *   andere freie Tag (FREI-Regel).
  * - **Hue**: braucht keinen eigenen Zweig. `HueSmartScheduler` zieht seine Zeiten ausschliesslich
  *   aus `getAllAlarms()`, und die Regelausfuehrung haengt am `AlarmReceiver` - ohne Wecker kein
  *   Sonnenaufgang und kein Licht.
@@ -218,9 +218,7 @@ class TagFreigabeUseCase @Inject constructor(
 
     /**
      * Nimmt die Freigabe zurueck. Die Wecker baut der Aufrufer ueber einen Kalender-Refresh neu
-     * auf - denselben Weg geht `cancelSkip` im `AlarmViewModel`. Von hier aus ginge es nicht:
-     * `AlarmUseCase` haengt fuer sein Gate bereits an diesem UseCase, die Gegenrichtung waere ein
-     * Zyklus im DI-Graphen.
+     * auf - denselben Weg geht `cancelSkip` im `AlarmViewModel`.
      */
     suspend fun zuruecknehmen(datum: LocalDate): Result<Unit> =
         SafeExecutor.safeExecute("TagFreigabeUseCase.zuruecknehmen") {

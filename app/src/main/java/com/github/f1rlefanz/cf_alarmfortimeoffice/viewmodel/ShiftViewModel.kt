@@ -69,7 +69,7 @@ data class ShiftUiState(
 @HiltViewModel
 class ShiftViewModel @Inject constructor(
     private val shiftUseCase: IShiftUseCase,
-    private val alarmUseCase: IAlarmUseCase,  // NEW: For alarm creation
+    private val alarmUseCase: IAlarmUseCase,
     private val calendarStateHolder: CalendarStateHolder,
     private val errorHandler: ErrorHandler,
     /**
@@ -112,20 +112,11 @@ class ShiftViewModel @Inject constructor(
 
     /**
      * Die Konfiguration, die DIESES ViewModel gerade selbst schreibt - damit
-     * [observeExternalConfigChanges] sie nicht fuer eine fremde Aenderung haelt.
+     * [observeExternalConfigChanges] sie nicht fuer eine fremde Aenderung haelt. Gesetzt VOR dem
+     * Write (DataStore veroeffentlicht vor `onSuccess`), geloescht beim ersten Treffer.
+     * Hergang: schichterkennung.md.
      *
-     * Gesetzt VOR dem Write, geloescht beim ersten Treffer im Beobachter. Ein Vergleich gegen
-     * `uiState.currentShiftConfig` kann das nicht leisten: DataStore veroeffentlicht seinen neuen
-     * Wert typischerweise, bevor `edit{}` zurueckkehrt - der Beobachter laeuft also potenziell
-     * VOR dem `onSuccess`, das den UI-State setzt. Folge waere ein zweiter, nebenlaeufiger Lauf von
-     * Erkennung und Alarm-Sync auf derselben ShiftRecognitionEngine.
-     *
-     * `@Volatile`, weil der Setter (viewModelScope, Main) und der Collector (ebenfalls Main, aber
-     * ueber einen anderen Suspend-Punkt eingeplant) nicht in derselben Ausfuehrung liegen.
-     *
-     * Steht VOR dem `init{}`-Block - Kotlin initialisiert in Textreihenfolge, und der Collector im
-     * `init{}` kann synchron bis zum ersten echten Suspend-Punkt laufen (siehe die
-     * Initialisierungsfalle in CLAUDE.md, die im August einen Crash-on-Launch verursacht hat).
+     * MUSS VOR dem `init{}`-Block stehen - der Collector im `init{}` kann synchron anlaufen.
      */
     @Volatile
     private var selfWrittenConfig: ShiftConfig? = null
@@ -138,58 +129,25 @@ class ShiftViewModel @Inject constructor(
 
     /**
      * Faengt Konfigurationsaenderungen auf, die NICHT ueber [updateShiftConfig] dieses ViewModels
-     * kamen - und zieht Anzeige, Schichterkennung UND Alarme nach.
-     *
-     * WARUM DAS NOETIG WURDE (am Geraet gefunden, 11.08.2026): Der Konfigurations-Import
-     * ([com.github.f1rlefanz.cf_alarmfortimeoffice.backup.ConfigBackupUseCase]) schreibt direkt
-     * ueber das Repository. Der Store war danach korrekt - nach einem App-Neustart stand das
-     * importierte Muster da - aber die LAUFENDE App zeigte weiter den alten Stand, weil
-     * `currentShiftConfig` nur beim Start und in `updateShiftConfig()` gesetzt wurde. Der Nutzer
-     * importiert, sieht nichts und haelt es fuer gescheitert.
-     * Schlimmer noch: die ALARME wurden nicht neu gesetzt. Eine importierte Konfiguration mit
-     * anderen Weckzeiten haette bis zur naechsten 6h-Wartung die alten Zeiten weitergeweckt - bei
-     * einer Wecker-App der ernstere Teil des Fehlers.
-     *
-     * Bewusst ein Beobachter am gemeinsamen Datenfluss statt eines Aufrufs im Import: das ist
-     * dieselbe Lehre wie beim Master-Pause-Backstop in `syncAlarms()` - ein zentraler Punkt am
-     * geteilten Einstieg deckt JEDEN heutigen und kuenftigen Schreiber ab, waehrend ein Gate pro
-     * Aufrufer beim naechsten uebersehen wird. `IShiftUseCase.shiftConfig` existierte bereits und
-     * wurde von diesem ViewModel schlicht nicht beobachtet.
-     *
-     * KEINE DOPPELARBEIT: Eigene Aenderungen ueber [updateShiftConfig] setzen `currentShiftConfig`
-     * selbst; die daraufhin folgende Flow-Emission ist dann gleich und wird uebersprungen. Nur
-     * fremde Aenderungen loesen hier Arbeit aus. Ohne diesen Vergleich liefen Erkennung und
-     * Alarm-Sync bei jeder Nutzeraenderung zweimal - und zwar nebenlaeufig auf derselben
-     * Engine-Instanz, was CLAUDE.md ausdruecklich als Race-Ursache festhaelt.
+     * kamen (z.B. Import), und zieht Anzeige, Schichterkennung UND Alarme nach. Ein zentraler
+     * Beobachter deckt jeden Schreiber ab; eigene Writes werden uebersprungen, sonst liefen
+     * Erkennung und Sync doppelt und nebenlaeufig. Hergang: schichterkennung.md.
      */
     private fun observeExternalConfigChanges() {
         viewModelScope.launch {
             shiftUseCase.shiftConfig
                 .drop(1) // Erste Emission ist der Ist-Zustand, den loadShiftConfig() ohnehin holt.
                 .collect { flowConfig ->
-                    // EIGENE Schreibvorgaenge erkennen - ueber den VOR dem Write gesetzten Merker,
-                    // nicht ueber `currentShiftConfig`. Letzteres verliert das Rennen: DataStore
-                    // veroeffentlicht seinen neuen Wert typischerweise, BEVOR `edit{}` zurueckkehrt,
-                    // also bevor `onSuccess` den UI-State aktualisiert hat. Der Vergleich gegen den
-                    // UI-State sah die eigene Aenderung deshalb als fremde an und liess Erkennung
-                    // UND Alarm-Sync ein zweites Mal laufen - nebenlaeufig auf derselben
-                    // ShiftRecognitionEngine, also genau die Race-Ursache, die CLAUDE.md als
-                    // "0 Alarme trotz korrekt erkannter Schichten" festhaelt.
+                    // EIGENEN Write ueber den VOR dem Write gesetzten Merker erkennen, nicht ueber
+                    // `currentShiftConfig` (verliert das Rennen gegen DataStore).
                     if (flowConfig == selfWrittenConfig) {
                         selfWrittenConfig = null
                         return@collect
                     }
                     if (flowConfig == _uiState.value.currentShiftConfig) return@collect
 
-                    // DIE VIERTE TUER, die dieser Beobachter selbst geoeffnet hatte: der Flow
-                    // `shiftConfig` DEGRADIERT bei einer vorhandenen, aber unlesbaren Konfiguration
-                    // bewusst auf die Standardwerte (damit die Dimmer-/DND-Screens nicht abstuerzen).
-                    // Ungefiltert haette dieser Collector das als "externe Aenderung" gelesen, die
-                    // Standardwerte in den UI-State geschrieben UND einen Alarm-Sync mit ihnen
-                    // ausgeloest - also genau das getan, was in CalendarViewModel, ShiftViewModel
-                    // und CFAlarmApplication gerade abgeschafft wurde.
-                    // `getCurrentShiftConfig()` ist der maßgebliche Pfad: er SCHEITERT im
-                    // Defektfall. Nur ein Erfolg gilt als echte Aenderung.
+                    // DIE VIERTE TUER: der Flow degradiert bei Defekt auf Standardwerte - nur ein
+                    // Erfolg von `getCurrentShiftConfig()` gilt als echte Aenderung.
                     val authoritative = shiftUseCase.getCurrentShiftConfig().getOrElse { error ->
                         Logger.e(
                             LogTags.SHIFT_CONFIG,
@@ -262,7 +220,6 @@ class ShiftViewModel @Inject constructor(
 
     private fun loadShiftConfig() {
         viewModelScope.launch {
-            // SINGLETON OPTIMIZATION: Enhanced startup with cache awareness
             Logger.d(LogTags.SHIFT_CONFIG, "🔄 SINGLETON-STARTUP: Loading ShiftConfig with singleton pattern...")
             
             shiftUseCase.getCurrentShiftConfig()
@@ -271,19 +228,9 @@ class ShiftViewModel @Inject constructor(
                     Logger.business(LogTags.SHIFT_CONFIG, "✅ SINGLETON-STARTUP: ShiftConfig loaded successfully - autoAlarm=${config.autoAlarmEnabled}, definitions=${config.definitions.size}")
                 }
                 .onFailure { error ->
-                    // KEIN Default-Fallback, der SCHREIBT - siehe die identische Stelle in
-                    // CalendarViewModel.createAlarmsFromLoadedEvents() und in
-                    // CFAlarmApplication.initializeApp(): dieselbe Fehlerklasse hatte DREI
-                    // Schreibstellen.
-                    //
-                    // Seit ShiftConfigRepository zwischen "noch nie konfiguriert" und "vorhanden,
-                    // aber unlesbar" unterscheidet, kann getCurrentShiftConfig() nur noch aus
-                    // EINEM Grund fehlschlagen: die Konfiguration ist defekt. Der
-                    // Nicht-konfiguriert-Fall liefert die Standardkonfiguration bereits als
-                    // Erfolg. Genau im Defektfall ist Ueberschreiben Datenverlust - und diese
-                    // Funktion laeuft im init{}-Block, also bei JEDER ViewModel-Erzeugung.
-                    // Der bewusste Weg zum Default heisst resetToDefaults() und gehoert dem
-                    // Nutzer; die Rohdaten liegen als shift_config_broken gesichert.
+                    // KEIN Default-Fallback, der SCHREIBT: Fehlschlag heisst "Konfiguration defekt",
+                    // Ueberschreiben waere Datenverlust; resetToDefaults() gehoert dem Nutzer.
+                    // Hergang: schichterkennung.md.
                     _uiState.value = _uiState.value.copy(
                         error = errorHandler.getErrorMessage(error)
                     )
@@ -389,8 +336,6 @@ class ShiftViewModel @Inject constructor(
                     // Keep-alive oder zur 6h-Wartung auf dem Plan von VORHER: neue Liste, alter
                     // Tick. Genau die Nacht dazwischen ist die, um die es geht.
                     try {
-                        // REACTIVE FIX: Re-run shift recognition with updated config
-                        // HILT MIGRATION: Now uses CalendarStateHolder instead of direct ViewModel reference
                         val currentEvents = calendarStateHolder.events.value
                         if (currentEvents.isNotEmpty()) {
                             val eventCount = currentEvents.size
@@ -434,41 +379,13 @@ class ShiftViewModel @Inject constructor(
 
     /**
      * Zieht ALLE ueber den Schichtnamen gebundenen Einstellungen nach, wenn eine Schichtdefinition
-     * UMBENANNT wurde: Dimm-Regeln, Hue-Regeln, die beiden DND-Schichtauswahlen und die
-     * Ausnahmenliste des Nacht-Standards.
+     * UMBENANNT wurde: Dimm-Regeln, Hue-Regeln und die Dienstzeit-Ausnahmen von "Nicht stoeren".
+     * Wer eine WEITERE Stelle ergaenzt, die einen Schichtnamen persistent speichert, gehoert hierher.
      *
-     * WARUM (Pruefrunde 8, Befund 2): Alle diese Stellen binden ueber den NAMEN der Definition
-     * (`DimRule.shiftPattern`, `HueSchedule.shiftPattern`, `dnd_oncall_shifts`,
-     * `dnd_shift_excluded_shifts`, `dim_night_default_excluded_shifts`), waehrend der Editor den
-     * Namen bei gleichbleibender `id` frei aendern laesst. Ohne diesen Nachzug legt eine reine
-     * Beschriftungsaenderung sie lautlos still - die Regellisten zeigen sie weiter als
-     * aktiv, das Licht bleibt am Wecktag aus, das Dimm-Fenster verschwindet, und im DND-Modus
-     * "folgt dem Dimmer" faellt das Nachtfenster gleich mit weg.
-     *
-     * NACHTRAG 21.08.2026: Die drei Namenslisten kamen erst hier dazu - v1.30.0 hat nur die beiden
-     * Regelarten mitgezogen. Am teuersten war `dnd_oncall_shifts`: Sie steuert den
-     * Rufbereitschaft-Cutoff, und ihr Ins-Leere-Zeigen liess "Nicht stoeren" in der Nacht VOR der
-     * Rufbereitschaft ueber 05:00 hinaus an - der Nutzer war nicht erreichbar, ohne dass irgendwo
-     * etwas darauf hinwies (die Chips werden aus den AKTUELLEN Namen gebaut, der Alt-Name ist
-     * unsichtbar). Genau dieser Zustand lag am Geraet vor. Wer eine WEITERE Stelle ergaenzt, die
-     * einen Schichtnamen persistent speichert, gehoert hierher.
-     *
-     * `NonCancellable`: Das hier stellt einen konsistenten Zustand HER - dieselbe Begruendung wie
-     * bei `MasterPauseUseCase.pause()/resume()`. Bricht der `viewModelScope` mittendrin ab (der
-     * Nutzer verlaesst den Screen), bliebe sonst ein halb migrierter Bestand liegen: Dimmer
-     * nachgezogen, Hue nicht - und niemand erfuehre davon.
-     *
-     * FEHLER WERDEN GEMELDET, nicht geschluckt: eine nicht nachgezogene Regel ist eine Funktion,
-     * die der Nutzer bewusst eingerichtet hat und die ab jetzt nichts mehr tut. Die Meldung geht
-     * ueber [ShiftUiState.regelNachzugHinweis] - NICHT ueber `error`; warum, steht dort.
-     *
-     * Aufgerufen aus [updateShiftConfig] UND aus [observeExternalConfigChanges]. Letzteres ist der
-     * zentrale Einstieg fuer FREMDE Schreiber (Konfigurations-Import, also auch die
-     * Backup-Ruecksicherung und der Geraetewechsel) - genau dort kommt eine Definition mit
-     * gleicher `id` und anderem Namen an, und ohne diesen zweiten Aufruf umginge ausgerechnet
-     * dieser Fall die Migration. Doppelt laeuft dadurch nichts: eigene Schreibvorgaenge erkennt
-     * der Beobachter am Merker `selfWrittenConfig` bzw. am Vergleich mit `currentShiftConfig` und
-     * steigt vorher aus.
+     * `NonCancellable`: stellt einen konsistenten Zustand HER (sonst halb migriert).
+     * Fehler werden ueber [ShiftUiState.regelNachzugHinweis] gemeldet, NICHT ueber `error`.
+     * Zwei Aufrufer: [updateShiftConfig] UND [observeExternalConfigChanges] (fremde Schreiber wie
+     * Import und Ruecksicherung).
      *
      * @return was danach neu armiert werden muss. Diese Funktion armiert bewusst NICHT selbst -
      *   das Nacharmieren braucht die Schichtspannen mit dem NEUEN Namen, und die schreibt erst
@@ -528,21 +445,9 @@ class ShiftViewModel @Inject constructor(
             // uebrigen wurden korrekt mitgezogen" auftauchen.
             nachgezogen += dimmGeaendert + dndGeaendert
 
-            // DIE BLOCKIERTEN UMBENENNUNGEN - und warum Nichtstun hier NICHT reicht.
-            //
-            // Fuer eine Dimm-/Hue-REGEL ist Nichtstun ehrlich: sie wird wirkungslos und steht dabei
-            // sichtbar in ihrer Regelliste, der Nutzer kann sie dort neu zuordnen. Die reinen
-            // NAMENSLISTEN haben diese Sichtbarkeit nicht - ihre Chips werden aus den AKTUELLEN
-            // Definitionsnamen gebaut. Gehoert der gespeicherte Altname nach einem Namenstausch
-            // inzwischen einer ANDEREN Definition, ist der Eintrag deshalb nicht tot, sondern
-            // scharf fuer die falsche Schicht: "Nicht stoeren" endet an deren Tagen frueher
-            // (On-Call-Cutoff), waehrend die echte Rufbereitschaftsnacht durchgehend stumm bleibt.
-            //
-            // NUR DANN GERAEUMT: Bei den uebrigen Blockaden (mehrdeutiger Zielname, reserviertes
-            // Muster, Zielname war frueher ein anderer Name) zeigt der Altname auf GAR KEINE
-            // Definition mehr. Ein solcher Eintrag wirkt nirgends, und er wird von selbst wieder
-            // richtig, sobald der Nutzer die Umbenennung zuruecknimmt - ihn zu loeschen waere
-            // Datenverlust ohne Gegenwert.
+            // BLOCKIERTE UMBENENNUNGEN: Gehoert der Altname jetzt einer ANDEREN Definition, ist ein
+            // Namenslisten-Eintrag scharf fuer die falsche Schicht und wird geraeumt. Bei den
+            // uebrigen Blockaden zeigt er auf keine Definition mehr - Loeschen waere Datenverlust.
             for (blockade in plan.blockiert) {
                 if (!blockade.alterNameGehoertJetztAnderer) continue
                 val alterName = blockade.umbenennung.alterName
@@ -587,13 +492,8 @@ class ShiftViewModel @Inject constructor(
         // Der Nutzer erfaehrt es - sonst haelt er eine Regel fuer aktiv, die es nicht mehr ist.
         // Beschreibt die WIRKUNG, nicht die Innerei, und sagt, was zu tun ist.
         //
-        // ZUSAMMENGESETZT statt `when`-Auswahl (Befund 21.08.2026): Beide Listen des Plans koennen
-        // gleichzeitig gefuellt sein - eine Schicht wandert sauber mit, eine zweite ist blockiert.
-        // Ein `when` nannte in diesem Fall nur den ersten Zweig und behauptete pauschal, es sei
-        // NICHTS mitgezogen worden. Der Text sagt jetzt, was wirklich passiert ist, und er nennt
-        // die betroffene Schicht - ohne ihren Namen weiss der Nutzer nicht, wo er nachbessern soll.
-        // Die Bezeichner sind die Namen der BILDSCHIRME ("Dimmer", "Hue", "Nicht stören"), nicht
-        // die der Speicherschlüssel dahinter.
+        // ZUSAMMENGESETZT statt `when`: beide Planlisten koennen gleichzeitig gefuellt sein. Der
+        // Text nennt die betroffene Schicht und die BILDSCHIRME, nicht die Speicherschluessel.
         val teile = mutableListOf<String>()
 
         if (fehlgeschlagen.isNotEmpty()) {
@@ -666,50 +566,18 @@ class ShiftViewModel @Inject constructor(
         config.definitions.filter { it.isOnCall }.map { it.name }.toSet()
 
     /**
-     * Armiert die Dimm- und DND-Zeitketten neu, nachdem eine Umbenennung nachgezogen wurde.
-     *
-     * WARUM NICHT DIREKT IN [zieheRegelmusterNach] (Befund 21.08.2026): Dort lief es unmittelbar
-     * nach dem Umschreiben der Namenslisten - also BEVOR `syncAlarms()` die Schichtspannen mit dem
-     * neuen Namen neu geschrieben hat. Der [com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore]
-     * wird ausschliesslich dort beschrieben, und `syncAlarms()` armiert die Ketten nicht selbst.
-     * `enable()` mischte damit frisch nachgezogene Listen (NEUER Name) mit Spannen, die noch den
-     * ALTEN trugen: das Fenster entstand ohne Rufbereitschaft-Cutoff und ohne Dienstzeit-Ausnahme,
-     * und weil der naechste Tick genau auf dieses (zu spaete) Ende faellt, blieb der falsche Plan
-     * fuer die ganze Nacht stehen. Erst die Spannen, dann das Nacharmieren.
-     *
-     * DESHALB AUCH DANN, WENN DER SYNC NICHT LAEUFT: Ein Aufruf im Erfolgszweig von `syncAlarms()`
-     * waere der halbe Fix. Der Sync faellt regelmaessig aus - "Automatische Alarme" ist aus, es
-     * liegen keine Termine vor, die Eventliste ist nur ein Ausschnitt, oder er scheitert. Dann sind
-     * die Spannen zwar alt, aber die LISTEN sind bereits neu, und der armierte Tick steht noch auf
-     * dem Stand von davor. Nicht nachzuarmieren waere in diesem Fall nicht neutral, sondern der
-     * schlechtere von zwei alten Staenden. Deshalb haengt der Aufruf im `finally` von
-     * [triggerAlarmCreationFromConfigUpdate] - er laeuft auf JEDEM Ausgang.
-     *
-     * `NonCancellable` und einzeln gefangen (Vorbild ConfigBackupUseCase): das hier stellt einen
-     * Zustand HER, und beide `enable()` haben ihren eigenen Master-Pause-Backstop. Ein Fehlschlag
-     * darf die bereits erfolgreich umgeschriebene Regel nicht als gescheitert melden.
+     * Armiert die Dimm- und DND-Zeitketten neu, nachdem eine Umbenennung nachgezogen wurde:
+     * erst die Spannen (`syncAlarms()`), dann armieren - im `finally` von
+     * [triggerAlarmCreationFromConfigUpdate], weil der Sync oft ausfaellt. Hergang: schichterkennung.md.
      */
     private suspend fun armiereZeitkettenNeu(bedarf: NacharmierBedarf) {
         if (!bedarf.beanspruche()) return
         armierer.armiere("UMBENENNUNG", dimmer = bedarf.dimmer, dnd = bedarf.dnd)
     }
 
-    // REMOVED: updateDaysAhead() - daysAhead is now fixed at 14 days as per Briefing 4.0
-    // REMOVED: updateSyncInterval() - syncIntervalHours is now fixed at 6 hours as per Briefing 4.0
-
     /**
-     * WICHTIG: `suspend`, nicht mehr selbst `viewModelScope.launch` - beide Aufrufer
-     * (`observeCalendarEvents()`s `collect`, `updateShiftConfig()`s `.onSuccess`) laufen
-     * bereits in einer eigenen Coroutine. Ein zusätzlicher, fire-and-forget verschachtelter
-     * `launch` hier ließ diesen Aufruf nebenläufig zu `triggerAlarmCreationFromConfigUpdate()`s
-     * eigenem `ShiftRecognitionEngine`-Zugriff laufen - dieselbe Engine-Instanz cached ihren
-     * Zustand aber in einzelnen `@Volatile`-Feldern ohne gemeinsame Atomizität
-     * (`lastRecognitionHash`/`cachedMatches`/`recognitionInProgress`), sodass die beiden
-     * nebenläufigen Aufrufe sich gegenseitig einen falschen (leeren) Zwischenzustand
-     * unterschieben konnten - am Fairphone reproduziert: "Automatische Alarme" wieder
-     * einschalten erzeugte trotz korrekt erkannter Schichten 0 Alarme. Als `suspend` läuft
-     * dieser Aufruf im Aufrufer-Coroutine vollständig ab, BEVOR `triggerAlarmCreationFromConfigUpdate()`
-     * überhaupt startet - keine Überlappung mehr auf der gemeinsamen Engine.
+     * `suspend`, kein fire-and-forget `launch`: damit die Erkennung endet, bevor
+     * `triggerAlarmCreationFromConfigUpdate()` startet. Hergang: schichterkennung.md.
      */
     suspend fun processCalendarEvents(events: List<CalendarEvent>) {
         _uiState.value = _uiState.value.copy(isLoading = true, error = null)
@@ -731,7 +599,7 @@ class ShiftViewModel @Inject constructor(
                     )
                 }
 
-                // Upcoming shift calculation - legacy method
+                // Upcoming shift calculation
                 val upcomingShift = shifts
                     .filter { it.startTime.isAfter(java.time.LocalDateTime.now()) }
                     .minByOrNull { it.startTime }
@@ -778,10 +646,7 @@ class ShiftViewModel @Inject constructor(
     }
 
     /**
-     * 🚨 CRITICAL FIX: Triggers alarm creation after shift config updates
-     * This ensures that when new shift definitions are added, alarms are automatically created
-     *
-     * NOW USES: CalendarStateHolder events instead of direct CalendarViewModel reference
+     * Triggers alarm creation after shift config updates.
      *
      * `suspend` STATT `viewModelScope.launch` (Befund 21.08.2026): Beide Aufrufer laufen bereits
      * in einer eigenen Coroutine, und [nacharmieren] MUSS nach dem Sync ablaufen - ein
@@ -814,15 +679,8 @@ class ShiftViewModel @Inject constructor(
                 return
             }
 
-            // Events aus dem CalendarStateHolder - aber NUR, wenn sie nachweislich der
-            // vollstaendige Bestand sind.
-            //
-            // Der fruehere Kommentar hier nannte sie pauschal den "vollstaendigen Soll-Zustand
-            // fuer den Delta-Sync". Das stimmte nicht: CalendarViewModel legt dort im Normalfall
-            // das LAZY-PRAEFIX ab (pro Kalender die ersten 10 Events), und ein ausgefallener
-            // Kalender fehlt darin ebenfalls. syncAlarms() loescht jeden Alarm, dessen eventId in
-            // der uebergebenen Liste fehlt - jede Aenderung an der Schicht-Konfiguration hat damit
-            // bei mehr als zehn Terminen in 14 Tagen die spaetesten Wecker entfernt.
+            // Events aus dem CalendarStateHolder - aber NUR, wenn sie nachweislich der vollstaendige
+            // Bestand sind (dort liegt oft das Lazy-Praefix). Hergang: kalender-datenfluss.md.
             val currentEvents = calendarStateHolder.events.value
 
             if (currentEvents.isEmpty()) {
@@ -945,33 +803,14 @@ internal data class SchichtUmbenennungsPlan(
  * ausdruecklich KEINE Umbenennung: ihre Regeln sollen dort stehen bleiben, wo sie sind, statt
  * auf eine fremde Schicht zu wandern.
  *
- * AUCH EINE REINE SCHREIBWEISENAENDERUNG ("abrufdienst" -> "Abrufdienst") IST EINE UMBENENNUNG.
- * Bis zum 21.08.2026 stieg diese Funktion hier aus, mit der Begruendung, der Vergleich in
- * `DimRuleUseCase.findRuleForShift` und `HueRuleUseCase.findApplicableRules` sei
- * gross-/kleinschreibungsblind - ein Nachzug also ein Schreibvorgang ohne Nutzen. Fuer die beiden
- * REGELARTEN stimmt das bis heute. Fuer die reine NAMENSLISTE der Dienstzeit-Ausnahmen stimmt es
- * nicht: sie wird EXAKT geprueft (`alarm.shiftName in excludedShifts` in `DndShiftSpanResolver`).
- * Korrigiert der Nutzer nur den Kasus, bleibt dort der alte stehen und trifft nie wieder - die
- * Ausnahme faellt aus. (Bis v1.40.8 galt dasselbe fuer die Rufbereitschaft-Auswahl mit dem
- * teureren Ausfall des Cutoffs; sie ist heute ein Flag am Schichttyp.) Deshalb gilt jetzt der
- * EXAKTE Vergleich als Abbruch:
- * gleicher Name heisst zeichengleicher Name. Fuer die Regeln bleibt der zusaetzliche
- * Schreibvorgang folgenlos - sie trafen vorher und treffen nachher.
+ * AUCH EINE REINE SCHREIBWEISENAENDERUNG IST EINE UMBENENNUNG: die Dienstzeit-Ausnahmen
+ * vergleichen EXAKT (`DndShiftSpanResolver`); fuer die Regeln ist der Schreibvorgang folgenlos.
  *
- * DIE VIER BLOCKADEN sind kein Beiwerk, sondern der Unterschied zwischen "Regel gerettet" und
- * "Regel bei der falschen Schicht":
- *  - Sondermuster ("alle Schichten", "freie Tage") meinen KEINEN Namen. Zoege man sie mit, wuerde
- *    aus einer Regel fuer alle Tage eine fuer genau eine Schicht - der Nutzer verloere still das
- *    Dimmen/Licht an allen uebrigen.
- *  - Heisst eine ANDERE Definition jetzt genauso, waere die Zuordnung mehrdeutig (beide Schichten
- *    zoegen dieselbe Regel).
- *  - Gehoert der ALTE Name jetzt einer anderen Definition (Namenstausch), gehoeren die Regeln mit
- *    diesem Muster ab sofort ihr - sie duerfen nicht mitwandern.
- *  - Hiess bisher eine andere Definition so wie diese jetzt, tragen deren Regeln das Zielmuster
- *    bereits; ein Zusammenlegen waere nicht rueckgaengig zu machen (und
- *    `findRuleForShift` nimmt ohnehin nur den ersten Treffer).
- * In allen vier Faellen ist Nichtstun plus Meldung die einzige ehrliche Antwort - eine falsch
- * zugeordnete Regel schaltet Licht und Verdunkelung zur falschen Zeit.
+ * DIE VIER BLOCKADEN (Nichtstun plus Meldung, sonst schaltet eine Regel zur falschen Schicht):
+ *  - Sondermuster ("alle Schichten", "freie Tage") meinen keinen Namen.
+ *  - Eine ANDERE Definition heisst jetzt genauso (mehrdeutig).
+ *  - Der ALTE Name gehoert jetzt einer anderen Definition (Namenstausch).
+ *  - Der neue Name gehoerte bisher einer anderen Definition (Zusammenlegen nicht umkehrbar).
  */
 internal fun planeSchichtUmbenennungen(
     vorher: ShiftConfig?,

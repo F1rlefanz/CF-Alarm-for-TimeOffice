@@ -1141,26 +1141,4 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
-
-    /**
-     * CRITICAL FIX: Enhanced Lifecycle Management - Properly cancel all ongoing operations
-     * MEMORY LEAK PREVENTION: Clear all callbacks and volatile fields to prevent mutex errors
-     */
-    override fun onCleared() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Starting cleanup...")
-
-            // CRITICAL FIX: Reset volatile fields to prevent stale operations
-            triggerInProgress = false
-            lastCalendarTriggerTime = 0L
-
-            // CRITICAL FIX: Clear state to prevent memory leaks
-            _authState.value = AuthState.EMPTY
-
-            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Cleanup completed successfully")
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel cleanup", e)
-        }
-    }
-
 }

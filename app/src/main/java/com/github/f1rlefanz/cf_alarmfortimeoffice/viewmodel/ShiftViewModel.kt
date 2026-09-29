@@ -877,27 +877,6 @@ class ShiftViewModel @Inject constructor(
     fun clearRegelNachzugHinweis() {
         _uiState.value = _uiState.value.copy(regelNachzugHinweis = null)
     }
-    
-    /**
-     * CRITICAL FIX: Enhanced Memory Leak Prevention - Comprehensive resource cleanup
-     * MUTEX ERROR PREVENTION: Clear all state references that could cause threading issues
-     */
-    override fun onCleared() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Starting cleanup...")
-            
-            // CRITICAL FIX: Clear UI state to release object references
-            _uiState.value = ShiftUiState()
-            
-            Logger.d(LogTags.LIFECYCLE, "ShiftViewModel: Cleanup completed successfully")
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during ShiftViewModel cleanup", e)
-        }
-        
-        // Note: ViewModelScope automatically cancels all coroutines
-        // UseCase cleanup wird durch DI Container gehandhabt
-    }
-    
 }
 
 /** Eine erkannte Umbenennung: dieselbe Definition (gleiche `id`), neuer Name. */

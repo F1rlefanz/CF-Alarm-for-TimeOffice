@@ -1707,36 +1707,6 @@ class CalendarViewModel @Inject constructor(
             }
         }
     }
-    
-    /**
-     * CRITICAL FIX: Enhanced Cleanup Resources on ViewModel destruction
-     * MEMORY LEAK PREVENTION: Proper resource cleanup to prevent mutex errors
-     */
-    override fun onCleared() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Starting cleanup...")
-            
-            // CRITICAL FIX: Cancel ALL pending coroutines immediately
-            batchUpdateJob?.cancel()
-            batchUpdateJob = null
-            pendingStateUpdate = null
-            
-            // CRITICAL FIX: Reset ALL volatile flags to prevent stale operations
-            isCalendarLoadingInProgress = false
-            lastCalendarLoadTime = 0L
-            
-            // CRITICAL FIX: Clear state to prevent memory leaks
-            _localUiState.value = CalendarUiState()
-            
-            Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Cleanup completed successfully")
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during CalendarViewModel cleanup", e)
-        }
-        
-        // Note: ViewModelScope automatically cancels all coroutines
-        // CalendarRepository cleanup wird durch DI Container gehandhabt
-    }
 
     companion object {
         /**

@@ -77,18 +77,4 @@ class MainViewModel @Inject constructor(
             }
         }
     }
-
-    /**
-     * MEMORY LEAK PREVENTION: Comprehensive resource cleanup
-     * PERFORMANCE OPTIMIZATION: Clear all state and references
-     */
-    override fun onCleared() {
-        try {
-            _uiState.value = MainUiState()
-            Logger.d(LogTags.LIFECYCLE, "MainViewModel cleared - cleaning up state references and resources")
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during MainViewModel cleanup", e)
-        }
-    }
-    
 }

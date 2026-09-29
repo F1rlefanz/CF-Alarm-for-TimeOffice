@@ -131,8 +131,6 @@
 # ==============================
 
 # Hilt
--keep class dagger.hilt.** { *; }
--keep class javax.inject.** { *; }
 -keep @dagger.hilt.android.lifecycle.HiltViewModel class * { *; }
 -keep @dagger.Module class * { *; }
 -keep @dagger.hilt.InstallIn class * { *; }

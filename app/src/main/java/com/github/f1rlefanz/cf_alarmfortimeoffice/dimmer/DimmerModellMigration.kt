@@ -55,22 +55,11 @@ import javax.inject.Singleton
  * Ein Zugriff auf den [MainDataStore] im Property-Initializer einer Graph-Klasse tötet den
  * Direct-Boot-Prozess, der die Wecker hält.
  *
- * ZWEI ANLÄSSE, NICHT NUR DER APP-START: `MainActivity.onCreate` (der schnelle Weg) UND der
- * 6h-Wartungslauf (`AlarmMaintenanceService.rescheduleSideChannels`). Nur der App-Start zu nehmen
- * war ein Fehler: `dim_enabled` ist ein NEUER Schlüssel, den es auf einem Bestandsgerät nicht gibt,
- * und sein Default ist `false` — bis die Migration lief, steigt `computeWindows()` sofort mit
- * leerer Fensterliste aus. Wer die App nur zum Wecken benutzt und sie nach einem
- * Play-Auto-Update tagelang nicht öffnet, hätte also ab der ersten Nacht nach dem Update gar kein
- * Dimmen mehr — und bei DND-Modus 1 fiele das Nachtfenster von „Nicht stören" gleich mit weg, ohne
- * dass er etwas umgestellt hat. Der Marker macht jeden weiteren Aufruf zum No-op, die Reihenfolge
- * der beiden Anlässe ist also gleichgültig.
+ * ZWEI ANLÄSSE, NICHT NUR DER APP-START: `MainActivity.onCreate` UND der 6h-Wartungslauf - sonst
+ * dimmte ein nie geöffnetes Bestandsgerät nach dem Update gar nicht. Hergang reference/dimmer.md, Modellmigration.
  *
- * DESHALB DAS ENTSPERRUNGS-GATE: Der [MainDataStore] liegt im CE-Storage und liefert vor der ersten
- * Entsperrung still LEERE Preferences, ohne zu werfen (siehe `AlarmRepository`). Eine Migration in
- * diesem Zustand sähe eine leere Alt-Konfiguration, schriebe `dim_enabled = false` und setzte den
- * Marker — der Dimmer wäre dauerhaft aus, und niemand sähe je wieder nach. `MainActivity` kann gar
- * nicht vor der Entsperrung laufen; der Wartungsdienst ist nicht `directBootAware`, aber auf diese
- * Eigenschaft eines ANDEREN Aufrufers darf sich eine so folgenschwere Entscheidung nicht verlassen.
+ * DESHALB DAS ENTSPERRUNGS-GATE: vor der ersten Entsperrung liefert der CE-Store still LEERE Preferences;
+ * migriert wäre der Dimmer dauerhaft aus. Hergang reference/dimmer.md, Modellmigration.
  */
 @Singleton
 class DimmerModellMigration @Inject constructor(
@@ -168,19 +157,9 @@ class DimmerModellMigration @Inject constructor(
         /**
          * Bringt ein Import eine ALTE Dimmer-Konfiguration mit, die noch übersetzt werden muss?
          *
-         * WARUM DIE FRAGE ÜBERHAUPT AUFKOMMT: Der Marker steht auf dem Zielgerät längst - schon der
-         * ERSTE Start einer frischen Installation setzt ihn (leere Prefs → nichts zu übersetzen →
-         * `dim_enabled = false`, Marker = STAND). Er ist zu Recht vom Backup ausgeschlossen, aber
-         * damit fehlt jeder Weg, eine importierte Alt-Konfiguration noch zu übersetzen: die alten
-         * Schlüssel landen im Store, und danach liest sie niemand mehr.
-         *
-         * Ausfall ohne diese Prüfung (Gerätewechsel): Altgerät auf v1.33.x, Nacht-Standard an,
-         * Regelquelle aus, zwei inerte Regeln. Export. Neues Handy, frische Installation der
-         * Ein-Modell-Version: erster Start setzt Marker und `dim_enabled = false`. Danach Import →
-         * die alten Schlüssel und `dim_rules` werden geschrieben, `dim_enabled` bleibt `false`. Es
-         * dimmt nichts, die eingestellte Nachtruhe ist unsichtbar verloren; und legt der Nutzer den
-         * Hauptschalter um, werden die auf dem Altgerät INERTEN Regeln scharf - also weder der alte
-         * noch ein von ihm bestellter Zustand.
+         * Der Marker steht auf dem Zielgerät längst (schon der erste Start setzt ihn) und ist vom
+         * Backup ausgeschlossen - ohne diese Prüfung bliebe eine importierte Alt-Konfiguration
+         * unübersetzt. Hergang reference/dimmer.md, Modellmigration.
          *
          * Der Test ist bewusst zweiseitig: Enthält die Datei den NEUEN Schlüssel `dim_enabled`,
          * stammt sie aus dem Ein-Modell und ist bereits übersetzt - dann wäre ein zweiter

@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Interface for Hue Bridge repository operations
- * Follows Clean Architecture principles with testable abstractions
  *
  * ENTFERNT (Aufraeumrunde 24): `getCurrentBridgeIp()` und `getCurrentUsername()` - im ganzen Baum
  * ohne Aufrufstelle. Der KDoc von `HueBridgeConnectionManager.getCurrentConnectionInfo()` behauptet
@@ -20,7 +19,6 @@ interface IHueBridgeRepository {
     
     /**
      * Discover Hue bridges on the network
-     * @return Flow of discovery status updates
      */
     suspend fun discoverBridges(): Result<List<HueBridge>>
     
@@ -39,8 +37,7 @@ interface IHueBridgeRepository {
     /**
      * Initialize the repository connection from a persisted configuration.
      *
-     * Replaces the legacy fire-and-forget setUsername()/setBridgeIp() setters:
-     * sets bridge IP and username atomically and suspends until the connection
+     * Sets bridge IP and username atomically and suspends until the connection
      * is persisted, so callers can rely on the connection being ready afterwards.
      */
     suspend fun initializeFromConfig(bridgeIp: String, username: String): Result<Unit>
@@ -56,7 +53,7 @@ interface IHueBridgeRepository {
     suspend fun testBridgeConnection(bridge: HueBridge): Result<Boolean>
 
     /**
-     * "Verbindung trennen / Bridge vergessen" (UX FEATURE B): clears the persisted connection
+     * "Verbindung trennen / Bridge vergessen": clears the persisted connection
      * (IP/username) and TLS trust pin, resetting the repository to the disconnected state.
      */
     suspend fun forgetConnection(): Result<Unit>

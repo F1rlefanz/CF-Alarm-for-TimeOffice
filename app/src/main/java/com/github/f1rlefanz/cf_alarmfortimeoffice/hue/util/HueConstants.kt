@@ -2,12 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util
 
 /**
  * Central constants for Philips Hue integration
- * 
- * Contains all configuration values, limits, and defaults used throughout
- * the Hue integration system. Centralized for easy maintenance and consistency.
- * 
- * @author CF-Alarm Development Team
- * @since Hue Integration v2.1
  */
 object HueConstants {
     

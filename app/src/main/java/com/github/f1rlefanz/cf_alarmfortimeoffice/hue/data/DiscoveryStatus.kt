@@ -6,7 +6,6 @@ import androidx.compose.runtime.Immutable
  * Fortschrittsmeldung der Bridge-Suche. Erzeugt an acht Stellen in
  * [com.github.f1rlefanz.cf_alarmfortimeoffice.hue.discovery.OfficialHueDiscoveryService],
  * gelesen in `AnimatedDiscoveryCard` und `HueTabContent`.
- * @Immutable annotation optimizes Compose performance
  *
  * ENTFERNT (14.09.2026): `duration`, `foundBridges`, `isError`. Keinen der drei las irgendeine
  * Stelle im Baum; `duration` wurde ausserdem nie gesetzt und stand auf jeder Meldung auf 0L.
@@ -31,11 +30,11 @@ data class DiscoveryStatus(
     // ("keeping enum for new implementations") war von Anfang an eine Absicht, kein Zustand.
     // Die sechs Eintragsnamen leben unveraendert als Zeichenketten weiter (gesetzt in
     // `OfficialHueDiscoveryService`, gelesen in `AnimatedDiscoveryCard`) — an DIESEM Feld.
-    val stage: String, // Changed from enum to String for backward compatibility
+    val stage: String,
     val message: String,
     val progress: Float = 0f, // 0.0 to 1.0
     val isComplete: Boolean = false,
-    val currentMethod: String? = null // Current discovery method being used
+    val currentMethod: String? = null
 )
 
 /**

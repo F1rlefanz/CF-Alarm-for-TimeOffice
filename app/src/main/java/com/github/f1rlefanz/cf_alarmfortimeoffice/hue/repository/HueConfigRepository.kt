@@ -21,7 +21,6 @@ import javax.inject.Singleton
 
 /**
  * Repository for Hue Configuration operations using DataStore
- * Implements Clean Architecture with Interface-based DI and Logger integration
  */
 @Singleton
 class HueConfigRepository @Inject constructor(
@@ -103,14 +102,10 @@ class HueConfigRepository @Inject constructor(
             dataStore.edit { preferences ->
                 val currentRulesJson = preferences[SCHEDULE_RULES_KEY] ?: "[]"
                 val currentRules = json.decodeFromString<List<HueSchedule>>(currentRulesJson).toMutableList()
-                
-                // Remove existing rule with same ID if it exists
+
                 currentRules.removeAll { it.id == rule.id }
-                
-                // Add the new/updated rule
                 currentRules.add(rule)
-                
-                // Save back to preferences
+
                 val updatedRulesJson = json.encodeToString(currentRules)
                 preferences[SCHEDULE_RULES_KEY] = updatedRulesJson
             }
@@ -130,11 +125,9 @@ class HueConfigRepository @Inject constructor(
                 val currentRulesJson = preferences[SCHEDULE_RULES_KEY] ?: "[]"
                 val currentRules = json.decodeFromString<List<HueSchedule>>(currentRulesJson).toMutableList()
                 
-                // Remove rule with matching ID
                 val removed = currentRules.removeAll { it.id == ruleId }
                 
                 if (removed) {
-                    // Save back to preferences
                     val updatedRulesJson = json.encodeToString(currentRules)
                     preferences[SCHEDULE_RULES_KEY] = updatedRulesJson
                     Logger.i(LogTags.HUE_CONFIG, "Successfully deleted schedule rule: $ruleId")

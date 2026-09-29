@@ -17,11 +17,6 @@ import kotlin.math.sqrt
  * - RGB → XY (CIE 1931 color space)
  * - Color temperature calculations
  * - Hue-specific color mappings
- * 
- * Implementation follows Philips Hue API specifications and color science standards.
- * 
- * @author CF-Alarm Development Team
- * @since Hue Integration v2.1
  */
 object HueColorConverter {
     

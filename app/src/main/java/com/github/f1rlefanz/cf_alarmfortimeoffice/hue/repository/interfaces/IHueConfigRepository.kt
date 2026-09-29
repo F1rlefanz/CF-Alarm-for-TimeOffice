@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Interface for Hue Configuration repository operations
- * Follows Clean Architecture principles with testable abstractions
  */
 interface IHueConfigRepository {
     
@@ -56,7 +55,7 @@ interface IHueConfigRepository {
 
     /**
      * Clear ONLY the persisted bridge IP/username (used by "Verbindung trennen / Bridge
-     * vergessen" - UX FEATURE B). This intentionally keeps the saved schedule rules so
+     * vergessen"). This intentionally keeps the saved schedule rules so
      * re-pairing the same (or a replacement) bridge doesn't force the user to recreate them.
      *
      * Es ist der EINZIGE Raeumweg, den es noch gibt: das frueher daneben stehende

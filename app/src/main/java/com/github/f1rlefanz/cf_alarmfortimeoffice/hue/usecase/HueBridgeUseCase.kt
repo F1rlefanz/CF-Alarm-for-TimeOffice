@@ -16,7 +16,6 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * UseCase for Hue Bridge operations
- * Implements business logic layer with validation and error handling
  */
 class HueBridgeUseCase @Inject constructor(
     private val bridgeRepository: IHueBridgeRepository,
@@ -32,7 +31,6 @@ class HueBridgeUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Starting bridge discovery with business logic validation")
         
         return try {
-            // Apply timeout to discovery process
             val discoveryResult = withTimeoutOrNull(DISCOVERY_TIMEOUT_MS.milliseconds) {
                 bridgeRepository.discoverBridges()
             }
@@ -42,7 +40,6 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.failure(Exception("Discovery timed out. Please check your network connection."))
             }
             
-            // Validate discovery result
             if (discoveryResult.isFailure) {
                 Logger.w(LogTags.HUE_USECASE, "Discovery failed at repository level")
                 return discoveryResult
@@ -50,7 +47,6 @@ class HueBridgeUseCase @Inject constructor(
             
             val bridges = discoveryResult.getOrNull() ?: emptyList()
             
-            // Business logic validation
             if (bridges.isEmpty()) {
                 Logger.i(LogTags.HUE_USECASE, "No bridges found during discovery")
             } else {
@@ -73,13 +69,11 @@ class HueBridgeUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Starting bridge setup process for ${bridge.internalipaddress}")
         
         return try {
-            // 1. Validate bridge parameter
             if (bridge.internalipaddress.isBlank()) {
                 Logger.w(LogTags.HUE_USECASE, "Invalid bridge IP address provided")
                 return Result.failure(IllegalArgumentException("Bridge IP address cannot be empty"))
             }
             
-            // 2. Test connectivity first
             Logger.d(LogTags.HUE_USECASE, "Testing bridge connectivity")
             val connectivityResult = withTimeoutOrNull(CONNECTION_TIMEOUT_MS.milliseconds) {
                 bridgeRepository.testBridgeConnection(bridge)
@@ -95,7 +89,6 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.failure(Exception("Cannot reach bridge at ${bridge.internalipaddress}. Please check your network."))
             }
             
-            // 3. Attempt to connect and create user
             Logger.d(LogTags.HUE_USECASE, "Attempting bridge connection and user creation")
             val connectionResult = bridgeRepository.connectToBridge(bridge)
             
@@ -103,7 +96,6 @@ class HueBridgeUseCase @Inject constructor(
                 val error = connectionResult.exceptionOrNull()
                 Logger.w(LogTags.HUE_USECASE, "Bridge connection failed", error)
                 
-                // Provide user-friendly error messages
                 val userMessage = when {
                     error?.message?.contains("link button", ignoreCase = true) == true ->
                         "Please press the link button on your Hue bridge and try again."
@@ -123,7 +115,6 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.failure(Exception("Failed to create user on bridge"))
             }
             
-            // 4. Save configuration for persistence
             Logger.d(LogTags.HUE_USECASE, "Saving bridge configuration")
             val saveResult = configRepository.saveBridgeConfig(bridge.internalipaddress, username)
             
@@ -132,7 +123,6 @@ class HueBridgeUseCase @Inject constructor(
                 // Don't fail the setup, just log the warning
             }
             
-            // 5. Validate the connection once more
             Logger.d(LogTags.HUE_USECASE, "Validating final bridge connection")
             val validationResult = bridgeRepository.validateConnection()
             
@@ -154,7 +144,6 @@ class HueBridgeUseCase @Inject constructor(
         Logger.d(LogTags.HUE_USECASE, "Validating bridge connection with business logic")
         
         return try {
-            // 1. Check if configuration exists
             val config = configRepository.getConfiguration().first()
             
             if (!config.isConfigured) {
@@ -162,10 +151,8 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.success(false)
             }
             
-            // 2. Initialize repository connection from saved config
             bridgeRepository.initializeFromConfig(config.bridgeIp, config.username)
             
-            // 3. Test actual connection
             val validationResult = withTimeoutOrNull(CONNECTION_TIMEOUT_MS.milliseconds) {
                 bridgeRepository.validateConnection()
             }
@@ -193,10 +180,8 @@ class HueBridgeUseCase @Inject constructor(
             val config = configRepository.getConfiguration().first()
             
             val connectionInfo = if (config.isConfigured) {
-                // Initialize repository connection from saved config before validation
                 bridgeRepository.initializeFromConfig(config.bridgeIp, config.username)
                 
-                // Test if connection is still valid
                 val isConnected = validateBridgeConnection().getOrNull() ?: false
                 
                 BridgeConnectionInfo(

@@ -23,7 +23,6 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * UseCase for Hue Rule operations with shift integration
- * Implements business logic layer with validation and rule engine
  */
 @Singleton
 class HueRuleUseCase @Inject constructor(
@@ -97,17 +96,14 @@ class HueRuleUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Creating new schedule rule: ${rule.name}")
         
         return try {
-            // Validate rule
             requireValidRule(rule).onFailure { return Result.failure(it) }
 
-            // Check for duplicate IDs
             val existingRules = configRepository.getScheduleRules().getOrNull() ?: emptyList()
             if (existingRules.any { it.id == rule.id }) {
                 Logger.w(LogTags.HUE_USECASE, "Rule with ID ${rule.id} already exists")
                 return Result.failure(IllegalArgumentException("Rule with ID ${rule.id} already exists"))
             }
             
-            // Check rule count limit per shift
             val shiftRuleCount = existingRules.count { it.shiftPattern == rule.shiftPattern }
             if (shiftRuleCount >= MAX_RULES_PER_SHIFT) {
                 Logger.w(LogTags.HUE_USECASE, "Maximum rules per shift exceeded for ${rule.shiftPattern}")
@@ -116,14 +112,12 @@ class HueRuleUseCase @Inject constructor(
                 )
             }
             
-            // Create rule with generated ID if needed
             val ruleToSave = if (rule.id.isBlank()) {
                 rule.copy(id = generateRuleId())
             } else {
                 rule
             }
             
-            // Save rule
             val saveResult = configRepository.saveScheduleRule(ruleToSave)
             
             if (saveResult.isSuccess) {
@@ -144,7 +138,6 @@ class HueRuleUseCase @Inject constructor(
         Logger.d(LogTags.HUE_USECASE, "Finding applicable rules for shift: ${shift.shiftDefinition.name} at ${currentTime}")
         
         return try {
-            // Get all rules
             val allRulesResult = getAllRules()
             if (allRulesResult.isFailure) {
                 return allRulesResult.fold(
@@ -194,7 +187,6 @@ class HueRuleUseCase @Inject constructor(
             var totalActions = 0
             var successfulActions = 0
             
-            // Execute each rule
             for (rule in applicableRules) {
                 try {
                     // SUNRISE: a sunrise rule overrides the plain on/off/brightness actions.
@@ -216,7 +208,6 @@ class HueRuleUseCase @Inject constructor(
                         continue
                     }
 
-                    // Convert rule to light actions
                     val actionsResult = convertRuleToLightActions(rule)
                     
                     if (actionsResult.isFailure) {
@@ -229,14 +220,12 @@ class HueRuleUseCase @Inject constructor(
                     val actions = actionsResult.getOrNull() ?: emptyList()
                     totalActions += actions.size
                     
-                    // Execute actions via light use case
                     val batchResult = lightUseCase.executeBatchLightActions(actions)
                     
                     if (batchResult.isSuccess) {
                         batchResult.getOrNull()?.let { result ->
                             successfulActions += result.successfulActions
                             
-                            // Add any failed actions to errors
                             result.failedActions.forEach { failedAction ->
                                 failedAction.error?.let { error ->
                                     errors.add("Action failed for ${failedAction.targetId}: $error")
@@ -329,17 +318,11 @@ class HueRuleUseCase @Inject constructor(
     private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {
             rules.asSequence()
-                // UX FIX (D): sunrise rules can ALSO configure auto-off now (they reach
-                // their own bright end state via the ramp, then this schedules the
-                // separate "turn back off after N minutes" job on top of that end state).
-                // Only the light actions' explicit `duration` field decides whether
-                // auto-off applies - no need to special-case sunrise here anymore.
+                // Only the light actions' `duration` decides whether auto-off applies -
+                // sunrise rules included (auto-off then counts from the ramp's end state).
                 .flatMap { rule ->
-                    // UX FIX (D-timing): a sunrise ramp that starts AT the alarm time
-                    // (startBeforeAlarm == false) only reaches full brightness after
-                    // sunrise.durationMinutes. Delay the auto-off by that ramp duration so it
-                    // can never fire mid-ramp. For startBeforeAlarm == true the ramp already
-                    // ends at the alarm time, so no offset is needed (same as a plain on-rule).
+                    // A ramp starting AT the alarm time (startBeforeAlarm == false) is only bright
+                    // after durationMinutes - delay the auto-off by that so it never fires mid-ramp.
                     val sunriseOffsetMinutes = rule.sunrise
                         ?.takeIf { it.enabled && !it.startBeforeAlarm }
                         ?.durationMinutes ?: 0
@@ -362,7 +345,6 @@ class HueRuleUseCase @Inject constructor(
         return try {
             val actions = mutableListOf<LightAction>()
             
-            // Convert each light action in the rule
             rule.lightActions.forEach { ruleAction ->
                 // SZENE: Es faehrt AUSSCHLIESSLICH die Szene mit. Kein on, keine Helligkeit,
                 // keine Farbe, keine Uebergangszeit - die Szene bestimmt das alles selbst, und
@@ -415,10 +397,8 @@ class HueRuleUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Updating schedule rule: ${rule.id}")
         
         return try {
-            // Validate rule
             requireValidRule(rule).onFailure { return Result.failure(it) }
 
-            // Update rule
             val updateResult = configRepository.updateScheduleRule(rule)
             
             if (updateResult.isSuccess) {
@@ -522,7 +502,6 @@ class HueRuleUseCase @Inject constructor(
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
         
-        // Validate rule name
         if (rule.name.length < MIN_RULE_NAME_LENGTH) {
             errors.add("Rule name must be at least $MIN_RULE_NAME_LENGTH characters long")
         }
@@ -531,12 +510,10 @@ class HueRuleUseCase @Inject constructor(
             errors.add("Rule name must be at most $MAX_RULE_NAME_LENGTH characters long")
         }
         
-        // Validate shift pattern
         if (rule.shiftPattern.isBlank()) {
             errors.add("Shift pattern cannot be empty")
         }
         
-        // Validate light actions
         if (rule.lightActions.isEmpty()) {
             errors.add("Rule must have at least one light action")
         }
@@ -548,7 +525,6 @@ class HueRuleUseCase @Inject constructor(
             errors.add("Sonnenaufgang und Szene schliessen sich aus - waehle eines von beidem")
         }
 
-        // Validate individual light actions
         rule.lightActions.forEach { action ->
             if (action.targetId.isBlank()) {
                 errors.add("Light action must have a valid target ID")
@@ -884,9 +860,6 @@ class HueRuleUseCase @Inject constructor(
         !shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true) &&
             shiftPattern.equals(shiftName, ignoreCase = true)
 
-    /**
-     * Generates a unique rule ID
-     */
     private fun generateRuleId(): String {
         return "rule_${UUID.randomUUID().toString().take(8)}_${System.currentTimeMillis()}"
     }

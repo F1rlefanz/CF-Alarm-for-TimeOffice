@@ -73,17 +73,8 @@ internal interface SmartSchedulerHandle {
 }
 
 /**
- * OPTIMIZED Hue Bridge Connection Manager
- * 
- * EFFICIENCY IMPROVEMENTS:
- * ❌ BEFORE: 2,880 health checks per day (every 30s)
- * ✅ AFTER: ~5-15 health checks per day (event-driven + smart scheduling)
- * 🔋 99.5% reduction in battery usage and network traffic
- * 
- * PHASE 1: Event-driven health checks (foreground/background awareness)
- * PHASE 2: Smart scheduling (pre-alarm health checks via WorkManager)
- * 
- * MEMORY LEAK FIX: Uses WeakReference to Context to prevent memory leaks
+ * Persistent Hue bridge connection plus its health checks: event-driven (foreground/background
+ * aware), and pre-alarm checks via [HueSmartScheduler].
  */
 class HueBridgeConnectionManager private constructor(
     context: Context,
@@ -129,11 +120,9 @@ class HueBridgeConnectionManager private constructor(
             testBridgeDiscovery
         )
 
-        // Configuration constants
-        // CONSOLIDATION: moved off the standalone "hue_bridge_connection" SharedPreferences
-        // file and into the existing Hilt @HueDataStore (see HueBridgeConnectionManagerEntryPoint).
-        // NO MIGRATION: only the developer uses the app right now, so the old SharedPreferences
-        // values are intentionally left behind - re-pairing the bridge is trivial.
+        // Stored in the Hilt @HueDataStore (see HueBridgeConnectionManagerEntryPoint). The old
+        // "hue_bridge_connection" SharedPreferences are intentionally NOT migrated - re-pairing
+        // the bridge is trivial.
         private val KEY_BRIDGE_IP = stringPreferencesKey("bridge_ip")
         private val KEY_USERNAME = stringPreferencesKey("username")
         private val KEY_LAST_SUCCESS = longPreferencesKey("last_success_timestamp")
@@ -146,7 +135,7 @@ class HueBridgeConnectionManager private constructor(
          */
         private val KEY_BRIDGE_ID = stringPreferencesKey("bridge_id")
         
-        // OPTIMIZED: Event-driven health check intervals
+        // Event-driven health check intervals
         private val CRITICAL_RECOVERY_TIMEOUT = 10.seconds
         private val CONNECTION_CACHE_VALIDITY = 30.minutes  // Extended from 5 minutes
         private val FOREGROUND_HEALTH_CHECK_INTERVAL = 5.minutes  // Only when app visible
@@ -181,11 +170,10 @@ class HueBridgeConnectionManager private constructor(
         private val REDISCOVERY_MIN_INTERVAL = 15.minutes
     }
     
-    // Use WeakReference to prevent memory leaks
     private val contextRef = java.lang.ref.WeakReference(context.applicationContext)
 
-    // PHASE 2: Smart Scheduler integration (ueber [SmartSchedulerHandle], damit die Kopplung
-    // testbar ist - der echte Scheduler braucht WorkManager und den Hilt-Graphen).
+    // Ueber [SmartSchedulerHandle], damit die Kopplung testbar ist - der echte Scheduler
+    // braucht WorkManager und den Hilt-Graphen.
     private val smartScheduler: SmartSchedulerHandle? by lazy {
         testSmartScheduler ?: contextRef.get()?.let { context ->
             val real = HueSmartScheduler.getInstance(context)
@@ -273,14 +261,11 @@ class HueBridgeConnectionManager private constructor(
             ErrorHandler.createCoroutineExceptionHandler("HueBridgeConnectionManager.healthCheckScope")
     )
     
-    // OPTIMIZATION: App lifecycle state tracking
     private var isAppInForeground = false
     private var lastForegroundCheck = 0L
     private var lastManualCheck = 0L
     
-    // Connection state flow for reactive UI updates (UX FIX E: now exposed via
-    // [connectionStatus] so HueViewModel can surface disconnects/errors in the UI instead of
-    // only updating this in-memory value).
+    // Exposed via [connectionStatus] so HueViewModel can surface disconnects/errors in the UI.
     private val _connectionStatus = MutableStateFlow<ConnectionState>(ConnectionState.DISCONNECTED)
 
     /**
@@ -305,8 +290,7 @@ class HueBridgeConnectionManager private constructor(
     }
     
     /**
-     * CRITICAL: Initialize connection manager and restore persistent connection
-     * This should be called during app startup to ensure bridge connectivity
+     * Initialize connection manager and restore persistent connection.
      *
      * IDEMPOTENT — und das muss es sein: Es gibt zwei Aufrufer, deren Reihenfolge NICHT
      * feststeht.
@@ -360,9 +344,8 @@ class HueBridgeConnectionManager private constructor(
     }
     
     /**
-     * CRITICAL FOR ALARM EXECUTION: Get current connection with automatic recovery
-     * 
-     * OPTIMIZED: Uses extended connection caching and optimistic validation
+     * Current connection with automatic recovery (used by alarm execution); cached, validated
+     * optimistically.
      */
     suspend fun getValidatedConnection(): Pair<String, String> = withContext(Dispatchers.IO) {
         Logger.d(LogTags.HUE_BRIDGE, "🔍 BRIDGE-MANAGER: Requesting validated connection")
@@ -392,7 +375,6 @@ class HueBridgeConnectionManager private constructor(
                     throw IllegalStateException("Bridge unreachable: not on the bridge's local network (${currentState.bridgeIp})")
                 }
 
-                // OPTIMIZATION: Extended cache validity - trust connection longer
                 val isRecent = (System.currentTimeMillis() - currentState.lastValidated) < CONNECTION_CACHE_VALIDITY.inWholeMilliseconds
 
                 if (isRecent) {
@@ -401,7 +383,7 @@ class HueBridgeConnectionManager private constructor(
                 } else {
                     Logger.d(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Cache expired, trying optimistic connection")
                     
-                    // OPTIMIZATION: Optimistic connection - assume it works, validate in background
+                    // Optimistic: assume it works, validate in background
                     healthCheckScope.launch {
                         val isValid = validateConnectionCredentials(currentState.bridgeIp, currentState.username)
                         if (isValid) {
@@ -596,9 +578,6 @@ class HueBridgeConnectionManager private constructor(
         return dataStore.data.first()[KEY_BRIDGE_IP] != null
     }
 
-    /**
-     * OPTIMIZATION: App lifecycle awareness
-     */
     fun onAppForeground() {
         isAppInForeground = true
         Logger.d(LogTags.HUE_BRIDGE, "📱 BRIDGE-MANAGER: App entered foreground")
@@ -630,7 +609,7 @@ class HueBridgeConnectionManager private constructor(
     }
     
     /**
-     * OPTIMIZATION: Manual health check (for UI refresh, rule testing, etc.)
+     * Manual health check (for UI refresh, rule testing, etc.)
      */
     suspend fun forceHealthCheck(): Boolean {
         Logger.i(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Manual health check requested")
@@ -818,10 +797,7 @@ class HueBridgeConnectionManager private constructor(
     }
 
     /**
-     * OPTIMIZATION: Smart health monitoring - Event-driven instead of continuous polling
-     * 
-     * BEFORE: Health check every 30 seconds = 2,880 checks/day
-     * AFTER: Event-driven checks = ~10-20 checks/day (95% reduction)
+     * Event-driven health monitoring instead of continuous polling.
      */
     private fun startSmartHealthMonitoring() {
         healthCheckJob?.cancel()
@@ -837,7 +813,7 @@ class HueBridgeConnectionManager private constructor(
                 val currentState = currentConnectionState.get()
                 if (!paused && currentState is ConnectionState.CONNECTED) {
 
-                    // OPTIMIZATION: Only check if app is in foreground AND enough time passed
+                    // Only check if app is in foreground AND enough time passed
                     if (isAppInForeground) {
                         val timeSinceLastCheck = System.currentTimeMillis() - lastForegroundCheck
                         if (timeSinceLastCheck > FOREGROUND_HEALTH_CHECK_INTERVAL.inWholeMilliseconds) {
@@ -847,7 +823,7 @@ class HueBridgeConnectionManager private constructor(
                         }
                     }
                     
-                    // OPTIMIZATION: Rare background checks only for critical scenarios
+                    // Rare background checks only
                     else {
                         val timeSinceLastCheck = maxOf(lastForegroundCheck, lastManualCheck)
                         val timeDiff = System.currentTimeMillis() - timeSinceLastCheck
@@ -859,7 +835,6 @@ class HueBridgeConnectionManager private constructor(
                     }
                 }
                 
-                // OPTIMIZATION: Variable sleep interval based on app state
                 val sleepInterval = if (isAppInForeground) 1.minutes else 10.minutes
                 delay(sleepInterval)
             }
@@ -1128,9 +1103,6 @@ class HueBridgeConnectionManager private constructor(
             ?: emptyList()
     }
 
-    /**
-     * INTERNAL: Perform actual health check (extracted for reusability)
-     */
     private suspend fun performHealthCheck(): Boolean {
         val currentState = currentConnectionState.get()
         if (currentState !is ConnectionState.CONNECTED) {
@@ -1226,7 +1198,6 @@ class HueBridgeConnectionManager private constructor(
         try {
             Logger.d(LogTags.HUE_BRIDGE, "🧹 BRIDGE-MANAGER: Starting comprehensive cleanup to prevent mutex errors...")
 
-            // CRITICAL FIX: Cancel all background jobs immediately
             healthCheckJob?.cancel()
             healthCheckJob = null
 
@@ -1236,15 +1207,12 @@ class HueBridgeConnectionManager private constructor(
             // Ein spaeteres initialize() darf wieder greifen.
             initialized.set(false)
 
-            // CRITICAL FIX: Clear connection state to prevent stale references
             updateConnectionState(ConnectionState.DISCONNECTED)
             
-            // CRITICAL FIX: Reset volatile fields
             isAppInForeground = false
             lastForegroundCheck = 0L
             lastManualCheck = 0L
             
-            // PHASE 2: Cleanup smart scheduler
             smartScheduler?.cleanup()
             
             Logger.d(LogTags.HUE_BRIDGE, "✅ BRIDGE-MANAGER: Comprehensive cleanup completed successfully")

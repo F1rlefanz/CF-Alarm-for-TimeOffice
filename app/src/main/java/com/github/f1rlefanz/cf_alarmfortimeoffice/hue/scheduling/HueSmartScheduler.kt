@@ -56,19 +56,9 @@ interface HueSmartSchedulerEntryPoint {
 }
 
 /**
- * PHASE 2: Smart Scheduler for Hue Bridge Health Checks
- *
- * EFFICIENCY GOALS:
- * - Health checks only before actual alarm times
- * - Driven by the REAL alarms the app has scheduled (single source of truth)
- * - WorkManager for reliable background execution
- * - Further reduction: ~10-20 calls/day → ~5-15 calls/day
- *
- * FEATURES:
- * - Pre-alarm health checks (10 minutes before)
- * - Backed by IAlarmUseCase (the actually-set alarms), no hardcoded guessing
- * - Generic periodic fallback when no alarms are set
- * - Battery-optimized background tasks
+ * Hue bridge health checks driven by the REAL alarms the app has scheduled (IAlarmUseCase):
+ * pre-alarm checks 10 minutes before each alarm via WorkManager, and a generic periodic
+ * fallback check when no alarms are set.
  */
 class HueSmartScheduler private constructor() {
     companion object {
@@ -168,8 +158,7 @@ class HueSmartScheduler private constructor() {
      * Dedicated coroutine scope for background scheduling.
      *
      * SupervisorJob: a failure in one scheduling job is isolated and does NOT
-     * tear down the whole scope (replaces the previous CoroutineScope(Dispatchers.IO)).
-     * cleanup() only cancels the children, so this process-lifetime singleton
+     * tear down the whole scope. cleanup() only cancels the children, so this process-lifetime singleton
      * stays reusable after an Activity teardown/restart cycle.
      */
     private val schedulerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -298,7 +287,7 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
-     * MAIN API: Initialize smart scheduling system
+     * Initialize smart scheduling system
      */
     fun initializeSmartScheduling() {
         if (!isWorkManagerAvailable) {
@@ -387,7 +376,7 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
-     * OPTIMIZATION: Calculate next alarm times and schedule health checks accordingly
+     * Calculate next alarm times and schedule health checks accordingly
      */
     suspend fun calculateAndScheduleNextHealthChecks() = withContext(Dispatchers.IO) {
         Logger.d(LogTags.HUE_BRIDGE, "🔮 SMART-SCHEDULER: Calculating next alarm times for health check scheduling")
@@ -476,11 +465,8 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
-     * CORE FEATURE: Next health-check times derived from the alarms the app has
-     * ACTUALLY scheduled (single source of truth = IAlarmUseCase).
-     *
-     * No more hardcoded shift-pattern guessing: when there are no real alarms the
-     * caller falls back to a generic periodic health check.
+     * Next health-check times derived from the alarms the app has ACTUALLY scheduled
+     * (IAlarmUseCase). Without real alarms the caller falls back to a generic periodic check.
      */
     private suspend fun getNextAlarmTimes(): List<LocalDateTime> = withContext(Dispatchers.IO) {
         try {
@@ -520,7 +506,7 @@ class HueSmartScheduler private constructor() {
         Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDateTime()
 
     /**
-     * WORKMANAGER: Schedule pre-alarm health check
+     * Schedule pre-alarm health check
      */
     private fun schedulePreAlarmHealthCheck(alarmTime: LocalDateTime, index: Int) {
         val checkTime = alarmTime.minus(PRE_ALARM_CHECK_WINDOW.toJavaDuration())
@@ -639,7 +625,7 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
-     * FALLBACK: Generic health checks when no alarms are found
+     * Generic health checks when no alarms are found
      */
     private fun scheduleGenericHealthChecks() {
         Logger.d(LogTags.HUE_BRIDGE, "🔄 SMART-SCHEDULER: Using fallback generic health check schedule")
@@ -662,7 +648,7 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
-     * DAILY PLANNING: Schedule daily recalculation of health checks
+     * Schedule daily recalculation of health checks
      */
     private fun scheduleDailyPlanning() {
         val dailyWork = PeriodicWorkRequestBuilder<DailySchedulePlanningWorker>(1, TimeUnit.DAYS)
@@ -681,7 +667,7 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
-     * PUBLIC API: Manual trigger for schedule recalculation
+     * Manual trigger for schedule recalculation
      */
     fun recalculateSchedule() {
         Logger.i(LogTags.HUE_BRIDGE, "🔄 SMART-SCHEDULER: Manual schedule recalculation triggered")
@@ -699,7 +685,7 @@ class HueSmartScheduler private constructor() {
     }
 
     /**
-     * CLEANUP: Cancel all scheduled work
+     * Cancel all scheduled work
      */
     fun cleanup() {
         // Cancel only in-flight jobs, NOT the scope's SupervisorJob itself,

@@ -75,31 +75,12 @@ class HueApiClient(context: Context? = null) {
         built
     }
 
-    /**
-     * CORRECT MODERN SOLUTION: Philips Hue Bridge API with Signify Certificate Authority
-     * 
-     * OFFICIAL PHILIPS/SIGNIFY APPROACH (2025):
-     * ✅ HTTPS-Only (no HTTP fallback for modern bridges)
-     * ✅ Certificate Pinning with Signify CA
-     * ✅ Hostname Verification with Bridge ID as Common Name
-     * ✅ Automatic Bridge ID discovery and validation
-     * 
-     * SECURITY: Follows official Philips Hue developer guidelines
-     * 
-     * @param bridgeIp Bridge IP address
-     * @param endpoint API endpoint (e.g., "/api/config")
-     * @param method HTTP method (GET, POST, PUT, DELETE)
-     * @param body Request body for POST/PUT requests
-     * @return Result<String> containing response body or error
-     */
     private suspend fun makeSecureHueRequest(
         bridgeIp: String,
         endpoint: String,
         method: String,
         body: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
-        
-        // Validate private network address first
         if (!isPrivateNetworkAddress(bridgeIp)) {
             // EHRLICHE FEHLERKLASSE: Eine IPv6-Adresse ist KEIN Sicherheitsvorfall, sondern ein
             // Adressfamilien-Problem - der komplette Hue-Pfad ist IPv4 (Praefix-Pruefung hier,
@@ -121,7 +102,6 @@ class HueApiClient(context: Context? = null) {
             )
         }
 
-        // Modern Philips Hue approach: HTTPS with certificate validation
         Logger.d(LogTags.HUE_NETWORK, "🔒 Making secure HTTPS request to Hue Bridge $bridgeIp")
         
         try {
@@ -248,7 +228,7 @@ class HueApiClient(context: Context? = null) {
         }
 
     /**
-     * Create user on bridge (requires link button press) with HTTPS-First approach
+     * Create user on bridge (requires link button press)
      */
     suspend fun createUser(bridgeIp: String, appName: String): String =
         withContext(Dispatchers.IO) {
@@ -265,7 +245,6 @@ class HueApiClient(context: Context? = null) {
                 responseList.firstOrNull()?.let { firstResponse ->
                     when {
                         firstResponse.containsKey("success") -> {
-                            // TYPE SAFE: Eliminiert unchecked cast warning
                             val successMap = firstResponse["success"]
                             if (successMap is Map<*, *>) {
                                 val username = successMap["username"] as? String
@@ -277,7 +256,6 @@ class HueApiClient(context: Context? = null) {
                         }
 
                         firstResponse.containsKey("error") -> {
-                            // TYPE SAFE: Eliminiert unchecked cast warning
                             val errorMap = firstResponse["error"]
                             if (errorMap is Map<*, *>) {
                                 val errorType = errorMap["type"] as? Double
@@ -300,7 +278,7 @@ class HueApiClient(context: Context? = null) {
         }
 
     /**
-     * Get all lights from bridge with HTTPS-First approach
+     * Get all lights from bridge
      */
     suspend fun getLights(bridgeIp: String, username: String): Map<String, HueLight> =
         withContext(Dispatchers.IO) {
@@ -343,7 +321,7 @@ class HueApiClient(context: Context? = null) {
         }
 
     /**
-     * Get all groups from bridge with HTTPS-First approach
+     * Get all groups from bridge
      */
     suspend fun getGroups(bridgeIp: String, username: String): Map<String, HueGroup> =
         withContext(Dispatchers.IO) {
@@ -488,7 +466,7 @@ class HueApiClient(context: Context? = null) {
     }
 
     /**
-     * Set light state using raw Map (for Repository compatibility) with HTTPS-First approach
+     * Set light state using raw Map
      */
     suspend fun setLightState(
         bridgeIp: String,
@@ -511,7 +489,7 @@ class HueApiClient(context: Context? = null) {
     }
 
     /**
-     * Set group action using raw Map (for Repository compatibility) with HTTPS-First approach
+     * Set group action using raw Map
      */
     suspend fun setGroupAction(
         bridgeIp: String,

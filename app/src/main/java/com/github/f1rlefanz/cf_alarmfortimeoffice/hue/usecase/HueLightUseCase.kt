@@ -26,16 +26,10 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Enhanced UseCase for Hue Light operations
- * 
- * Implements business logic layer with:
+ * UseCase for Hue Light operations:
  * - Validation and batch operations
  * - Sunrise wake-up ramp and rule-preview auto-off (executeActionsWithAutoRevert)
  * - Bridge-seitiges Auto-Aus zur Weckzeit (scheduleBridgeAutoOff)
- * - Advanced error handling and resilience
- * 
- * @author CF-Alarm Development Team
- * @since Hue Integration v2.1
  */
 class HueLightUseCase @Inject constructor(
     private val lightRepository: IHueLightRepository
@@ -74,7 +68,6 @@ class HueLightUseCase @Inject constructor(
         
         return try {
             coroutineScope {
-                // Execute both operations concurrently
                 val lightsDeferred = async { lightRepository.getLights() }
                 val groupsDeferred = async { lightRepository.getGroups() }
                 val scenesDeferred = async { lightRepository.getScenes() }
@@ -115,7 +108,6 @@ class HueLightUseCase @Inject constructor(
                     return@coroutineScope Result.failure(error)
                 }
 
-                // Handle partial failures gracefully
                 val lights = if (lightsResult.isSuccess) {
                     lightsResult.getOrNull() ?: emptyList()
                 } else {
@@ -166,7 +158,6 @@ class HueLightUseCase @Inject constructor(
         Logger.d(LogTags.HUE_USECASE, "Executing light action for ${action.targetId}")
         
         return try {
-            // Validate action parameters
             val validationResult = validateLightAction(action)
             if (validationResult.isFailure) {
                 val error = validationResult.exceptionOrNull()?.message ?: "Invalid action"
@@ -179,7 +170,6 @@ class HueLightUseCase @Inject constructor(
                 )
             }
             
-            // Execute action with timeout
             val result = withTimeoutOrNull(LIGHT_OPERATION_TIMEOUT_MS) {
                 // Der Szenen-Zweig steht VOR der isGroup-Verzweigung: eine Szenen-Aktion traegt
                 // zwar isGroup = true (sie geht an /groups/<id>/action), aber sie schickt
@@ -257,7 +247,6 @@ class HueLightUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Executing batch light actions: ${actions.size} actions")
         
         return try {
-            // Validate batch size
             if (actions.size > MAX_BATCH_SIZE) {
                 Logger.w(LogTags.HUE_USECASE, "Batch size ${actions.size} exceeds maximum $MAX_BATCH_SIZE")
                 return Result.failure(IllegalArgumentException("Batch size exceeds maximum of $MAX_BATCH_SIZE"))
@@ -274,7 +263,6 @@ class HueLightUseCase @Inject constructor(
                 )
             }
             
-            // Execute all actions concurrently with overall timeout
             val results = withTimeoutOrNull(BATCH_OPERATION_TIMEOUT_MS) {
                 coroutineScope {
                     actions.map { action ->
@@ -288,7 +276,6 @@ class HueLightUseCase @Inject constructor(
                 return Result.failure(Exception("Batch operation timed out after ${BATCH_OPERATION_TIMEOUT_MS}ms"))
             }
             
-            // Process results
             val actionResults = results.mapNotNull { it.getOrNull() }
             val successfulActions = actionResults.count { it.success }
             val failedActions = actionResults.filter { !it.success }
@@ -594,12 +581,10 @@ class HueLightUseCase @Inject constructor(
      */
     private fun validateLightAction(action: LightAction): Result<Unit> {
         return try {
-            // Validate target ID
             if (action.targetId.isBlank()) {
                 return Result.failure(IllegalArgumentException("Target ID cannot be empty"))
             }
             
-            // Validate brightness range
             action.brightness?.let { brightness ->
                 if (!HueConstants.Validation.isValidBrightness(brightness)) {
                     return Result.failure(
@@ -608,7 +593,6 @@ class HueLightUseCase @Inject constructor(
                 }
             }
             
-            // Validate hue range
             action.hue?.let { hue ->
                 if (!HueConstants.Validation.isValidHue(hue)) {
                     return Result.failure(
@@ -617,7 +601,6 @@ class HueLightUseCase @Inject constructor(
                 }
             }
             
-            // Validate saturation range
             action.saturation?.let { saturation ->
                 if (!HueConstants.Validation.isValidSaturation(saturation)) {
                     return Result.failure(
@@ -626,7 +609,6 @@ class HueLightUseCase @Inject constructor(
                 }
             }
 
-            // Validate color temperature range (mireds)
             action.colorTemperature?.let { ct ->
                 if (!HueConstants.Validation.isValidColorTemperature(ct)) {
                     return Result.failure(
@@ -635,7 +617,7 @@ class HueLightUseCase @Inject constructor(
                 }
             }
 
-            // Validate transition time range (deciseconds)
+            // transition time in deciseconds
             action.transitionTime?.let { tt ->
                 if (!HueConstants.Validation.isValidTransitionTime(tt)) {
                     return Result.failure(

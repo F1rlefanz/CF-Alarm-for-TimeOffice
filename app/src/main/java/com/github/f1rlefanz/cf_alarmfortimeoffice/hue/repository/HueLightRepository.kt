@@ -22,19 +22,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * UPDATED Repository for Hue Light operations with ROBUST connection management
- * 
- * FIXES THE CRITICAL ALARM PROBLEM:
- * ❌ BEFORE: Relied on volatile bridge repository connection state
- * ✅ AFTER: Uses HueBridgeConnectionManager for guaranteed connection availability
- * 
- * KEY IMPROVEMENTS:
- * 🔄 Direct integration with HueBridgeConnectionManager
- * 💓 Automatic connection recovery for critical operations (alarm execution)
- * 🚀 Guaranteed connection availability during light control
- * 📊 Comprehensive error handling and logging
- * 
- * Implements Clean Architecture with Interface-based DI and Logger integration
+ * Repository for Hue Light operations; takes its connection from [HueBridgeConnectionManager].
  */
 @Singleton
 class HueLightRepository @Inject constructor(
@@ -44,12 +32,10 @@ class HueLightRepository @Inject constructor(
     // Context enables the bridge-ID pinning audit layer in HueTrustManager
     private val apiClient = HueApiClient(context)
     
-    // ROBUST Connection Manager for guaranteed connection availability
     private val connectionManager = HueBridgeConnectionManager.getInstance(context)
     
     /**
-     * CRITICAL HELPER: Get validated connection with automatic recovery
-     * This ensures alarm operations never fail due to connection issues
+     * Validated connection with automatic recovery.
      */
     private suspend fun getValidatedConnectionInfo(): Pair<String, String> {
         return try {
@@ -62,7 +48,6 @@ class HueLightRepository @Inject constructor(
     
     override suspend fun getLights(): Result<List<HueLight>> = withContext(Dispatchers.IO) {
         try {
-            // Use robust connection manager instead of bridge repository
             val (bridgeIp, username) = getValidatedConnectionInfo()
             
             Logger.d(LogTags.HUE_LIGHTS, "Fetching lights from bridge $bridgeIp")
@@ -92,7 +77,6 @@ class HueLightRepository @Inject constructor(
     
     override suspend fun getGroups(): Result<List<HueGroup>> = withContext(Dispatchers.IO) {
         try {
-            // Use robust connection manager instead of bridge repository
             val (bridgeIp, username) = getValidatedConnectionInfo()
             
             Logger.d(LogTags.HUE_LIGHTS, "Fetching groups from bridge $bridgeIp")
@@ -181,10 +165,8 @@ class HueLightRepository @Inject constructor(
         alert: String?
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            // CRITICAL: Use robust connection manager for alarm operations
             val (bridgeIp, username) = getValidatedConnectionInfo()
 
-            // Build state change object
             val stateChange = buildMap<String, Any> {
                 on?.let { put("on", it) }
                 brightness?.let {
@@ -244,10 +226,8 @@ class HueLightRepository @Inject constructor(
         alert: String?
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            // CRITICAL: Use robust connection manager for alarm operations
             val (bridgeIp, username) = getValidatedConnectionInfo()
 
-            // Build action change object
             val actionChange = buildMap<String, Any> {
                 on?.let { put("on", it) }
                 brightness?.let {

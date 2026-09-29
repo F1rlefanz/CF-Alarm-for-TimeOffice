@@ -10,10 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * WorkManager Worker for Generic Health Checks
- * 
- * PHASE 2: Fallback health checks when no specific alarms are scheduled
- * Runs every 6 hours as a safety net to maintain basic connection health
+ * Fallback health check every 6 hours when no specific alarms are scheduled.
  */
 class GenericHealthCheckWorker(
     context: Context,
@@ -26,7 +23,6 @@ class GenericHealthCheckWorker(
         Logger.d(LogTags.HUE_BRIDGE, "🔄 GENERIC-WORKER: Starting fallback health check")
         
         return@withContext try {
-            // Perform basic health check
             val healthCheckResult = bridgeManager.forceHealthCheck()
             
             if (healthCheckResult) {
@@ -35,14 +31,11 @@ class GenericHealthCheckWorker(
                 Logger.w(LogTags.HUE_BRIDGE, "⚠️ GENERIC-WORKER: Fallback health check failed")
             }
             
-            // Always return success for generic checks
-            // These are non-critical maintenance checks
+            // Non-critical maintenance check - never fail or retry the work
             Result.success()
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_BRIDGE, "❌ GENERIC-WORKER: Health check failed with exception", e)
-            
-            // Don't retry generic health checks aggressively
             Result.success()
         }
     }

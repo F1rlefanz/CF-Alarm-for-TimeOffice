@@ -18,19 +18,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * UPDATED Repository for Hue Bridge operations with ROBUST connection management
- * 
- * FIXES THE CRITICAL ALARM PROBLEM:
- * ❌ BEFORE: In-memory connection state lost during alarm execution
- * ✅ AFTER: Persistent connection with automatic recovery
- * 
- * KEY IMPROVEMENTS:
- * 🔄 Uses HueBridgeConnectionManager for persistent storage
- * 💓 Automatic connection recovery for critical operations
- * 🚀 Guaranteed connection availability during alarm execution
- * 📊 Connection state monitoring and health checks
- * 
- * Implements Clean Architecture with Interface-based DI and Logger integration
+ * Repository for Hue Bridge operations; the connection state lives persistently in
+ * [HueBridgeConnectionManager], not in memory here.
  */
 @Singleton
 class HueBridgeRepository @Inject constructor(
@@ -41,20 +30,17 @@ class HueBridgeRepository @Inject constructor(
         private const val APP_NAME = "CFAlarmForTimeOffice"
     }
     
-    // API Client for Hue communication (context enables bridge-ID pinning audit layer)
+    // context enables the bridge-ID pinning audit layer
     private val apiClient = HueApiClient(context)
     
-    // Official Discovery Service (replaces primitive IP scanning)
     private val officialDiscoveryService = OfficialHueDiscoveryService(context)
     
-    // ROBUST Connection Manager (replaces in-memory variables)
     private val connectionManager = HueBridgeConnectionManager.getInstance(context)
 
-    // TOFU trust pin store (UX FEATURE B: cleared together with the connection on "forget bridge")
+    // TOFU trust pin store, cleared together with the connection on "forget bridge"
     private val pinningStore = HueBridgePinningStore(context)
     
     init {
-        // Initialize connection manager on repository creation
         connectionManager.initialize()
         Logger.i(LogTags.HUE_BRIDGE, "🔗 BRIDGE-REPOSITORY: Initialized with robust connection management")
     }
@@ -62,14 +48,10 @@ class HueBridgeRepository @Inject constructor(
     override fun getDiscoveryStatus(): Flow<DiscoveryStatus> = 
         officialDiscoveryService.getDiscoveryStatus()
     
-    /**
-     * IMPROVED: Uses official Philips discovery methods instead of IP scanning
-     */
     override suspend fun discoverBridges(): Result<List<HueBridge>> = withContext(Dispatchers.IO) {
         Logger.i(LogTags.HUE_DISCOVERY, "Starting official Hue bridge discovery")
         
         try {
-            // Use official discovery service (N-UPnP + mDNS)
             val discoveryResult = officialDiscoveryService.discoverBridges()
             
             if (discoveryResult.isSuccess) {
@@ -114,7 +96,6 @@ class HueBridgeRepository @Inject constructor(
         try {
             val username = apiClient.createUser(bridge.internalipaddress, APP_NAME)
             
-            // Store connection using robust connection manager
             val connectionResult = connectionManager.setConnection(bridge.internalipaddress, username)
             
             if (connectionResult.isSuccess) {
@@ -142,7 +123,6 @@ class HueBridgeRepository @Inject constructor(
     
     override suspend fun validateConnection(): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            // Use the robust connection manager for validation
             connectionManager.getValidatedConnection()
             Logger.d(LogTags.HUE_BRIDGE, "Connection validation successful via ConnectionManager")
             Result.success(true)

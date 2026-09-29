@@ -19,10 +19,9 @@ import androidx.compose.runtime.Immutable
 @Immutable
 data class HueBridge(
     val id: String,
-    val ipAddress: String, // Renamed from internalipaddress for clarity
+    val ipAddress: String,
     val name: String? = null
 ) {
-    // Legacy compatibility property
     val internalipaddress: String
         get() = ipAddress
 }

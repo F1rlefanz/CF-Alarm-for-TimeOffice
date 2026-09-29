@@ -7,25 +7,10 @@ import java.time.format.DateTimeFormatter
 /**
  * Die Zustandszeile der Ruhezeit - eine Zeile pro Wechsel, im Release-Log.
  *
- * WARUM ES DAS GIBT (05.09.2026): Die App protokollierte vom DND ausschliesslich den NAECHSTEN
- * Wechsel (`Naechster DND-Wechsel geplant: …`), nie den gesetzten ZUSTAND. Die Frage "war
- * 'Nicht stoeren' heute frueh um 05:30 aus, zusammen mit dem Dimmer?" liess sich am Tag danach
- * deshalb nicht beantworten - nur erschliessen: aus der Lage der geplanten Grenzen und aus
- * `lastActivation` der Zen-Regel.
- *
- * **Androids eigenes Zen-Protokoll taugt als Ersatz NICHT.** Am Fairphone 6 gemessen: Googles
- * Digital Wellbeing ("Schlafenszeit", `com.google.android.apps.wellbeing`) ruft im MINUTENTAKT
- * `setAutomaticZenRuleState` auf seiner eigenen, sogar abgeschalteten Regel auf
- * (`config: setAzrState … (ORIGIN_APP) no changes`). Der Abschnitt `State Changes` im Zen Log von
- * `dumpsys notification` fasst 100 Eintraege und ist bei drei Eintraegen je Minute nach gut einer
- * halben Stunde ueberschrieben - fuer eine Frage vom Vortag ist er leer. Wer sich darauf
- * verlaesst, steht ohne Beleg da. (Das Unterlog `Interception Events` daneben wird nicht geflutet
- * und reicht weiter zurueck, beantwortet aber nur, WELCHE Benachrichtigung unterdrueckt wurde -
- * nicht, ob die Regel an war.)
- *
- * Das Vorbild ist [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik]: der Dimmer
- * protokolliert seit laengerem jeden Aus-Weg mit GRUND, und genau deshalb war die Dimmer-Frage
- * desselben Morgens in einer Zeile beantwortet (`Dimmen aus - Grund=KEIN_FENSTER_TROTZ_REGELN`).
+ * Ohne sie liess sich die Frage "war Nicht stoeren heute frueh aus?" am Tag danach nicht
+ * beantworten: die App protokollierte nur den naechsten Wechsel, und Androids Zen-Log ist nach
+ * einer halben Stunde ueberschrieben (Logcat-Fallstrick, Skill cfalarm-dimmer-und-dnd).
+ * Vorbild ist [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimDiagnostik].
  *
  * Reine Funktion ohne Android-Abhaengigkeit, damit der Text ohne Geraet pruefbar ist.
  */

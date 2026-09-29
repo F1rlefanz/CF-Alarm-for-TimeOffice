@@ -58,14 +58,8 @@ import javax.inject.Singleton
  * fremden Automatisierungen (Bixby/Tasker), statt sie zu ueberschreiben. Nur ab API 30 verfuegbar
  * (configurationActivity-Ownership ohne ConditionProviderService), siehe [isSupported].
  *
- * Was konkret stummgeschaltet wird, ist NICHT hart codiert, sondern kommt aus [DndPrefs.Policy] -
- * siehe deren Klassenkommentar fuer den Vorfall (Medien/Wecker per Default blockiert), der zu
- * dieser Entscheidung fuehrte. Beobachtung vom 28.07.2026: ist gleichzeitig ein ANDERER,
- * permissiverer Systemmodus aktiv (z. B. Android/Herstellers eigene "Schlafenszeit"), gewinnt fuer
- * eine Kategorie offenbar die freizuegigere Einstellung ueber alle aktiven Regeln hinweg - unsere
- * Regel kann eine Kategorie also nicht zuverlaessig strenger machen, als es die am wenigsten
- * strenge gleichzeitig aktive Regel erlaubt. Kein Bug in diesem Code, sondern wie Android mehrere
- * gleichzeitig aktive Zen-Regeln konsolidiert - nicht durch eigenen Code umgehbar.
+ * Was stummgeschaltet wird, kommt aus [DndPrefs.Policy]. Android konsolidiert gleichzeitig aktive
+ * Zen-Regeln zugunsten der freizuegigsten - Hergang reference/dnd.md.
  */
 @Singleton
 class DndScheduleUseCase @Inject constructor(
@@ -85,14 +79,8 @@ class DndScheduleUseCase @Inject constructor(
         private const val REQ_DND_TICK = 7712
 
         /**
-         * Bewusst `by lazy`, nicht eager: `toUri()` ruft `Uri.parse()`, und das ist im Unit-Test-JVM
-         * (`isReturnDefaultValues`) ein Stub, der `null` liefert - an Kotlins Nicht-Null-Check von
-         * `toUri()` scheitert das mit einer NPE WAEHREND der Companion-Initialisierung. Eager
-         * ausgewertet reisst das jeden Zugriff auf irgendein Companion-Mitglied dieser Klasse mit
-         * (`ExceptionInInitializerError`) - und weil eine gescheiterte Klassen-Initialisierung im
-         * selben JVM dauerhaft ist, danach auch jeden fremden Test, der die Klasse nur mocken will
-         * (`NoClassDefFoundError`, real passiert mit `MasterPauseUseCaseTest`). Lazy zieht `Uri.parse`
-         * erst beim tatsaechlichen Gebrauch auf dem Geraet - Produktionsverhalten unveraendert.
+         * Bewusst `by lazy`: `Uri.parse()` ist im Unit-Test-JVM ein Stub, eager risse das die ganze
+         * Companion-Initialisierung mit - Hergang reference/dnd.md.
          */
         private val CONDITION_ID: Uri by lazy { "condition://com.github.f1rlefanz.cf_alarmfortimeoffice/dnd".toUri() }
         private const val RULE_NAME = "CFAlarm Ruhezeit"
@@ -124,15 +112,9 @@ class DndScheduleUseCase @Inject constructor(
         }
 
         /**
-         * Fenster-Zugehoerigkeit HALB OFFEN (`first <= now < last`), identisch zu
-         * `DimWindowResolver.activeSpan`. Bewusst eine eigene, aber benannte und getestete Funktion
-         * statt eines Inline-Ausdrucks: der naechste Wechsel wird strikt auf "> now" geplant. Traefe
-         * ein Tick exakt auf ein Fenster-Ende (0 ms Zustellungs-Latenz, real bei
-         * `setExactAndAllowWhileIdle`), waere das Fenster bei inklusiver Pruefung noch aktiv,
-         * waehrend als naechster Wechsel schon die Grenze DANACH gesetzt wird - der Zustand "aus"
-         * wuerde fuer diesen Rand nie berechnet und "Nicht stoeren" blieb bis zum naechsten
-         * Fensterstart haengen. Wer das zum idiomatischeren `now in range` zurueckbaut, holt sich
-         * genau das zurueck - `DndScheduleTickChainTest` haelt die drei Raender fest.
+         * Fenster-Zugehoerigkeit HALB OFFEN (`first <= now < last`), nicht `now in range`: ein Tick
+         * exakt auf dem Fensterende liesse DND sonst bis zum naechsten Fensterstart haengen.
+         * `DndScheduleTickChainTest` haelt die drei Raender fest.
          */
         @VisibleForTesting
         internal fun isActiveAt(range: LongRange, now: Long): Boolean =
@@ -325,12 +307,8 @@ class DndScheduleUseCase @Inject constructor(
         // Schichtspannen werden auch NUR fuer den On-Call-Cutoff geholt (unabhaengig von
         // duringShiftEnabled) - der Cutoff klippt auch das "Folgt dem Dimmer"-Fenster.
         //
-        // Quelle ist seit v1.25.2 der ShiftSpanStore und NICHT mehr der Alarm-Bestand: der
-        // ueberlebt die Weckzeit nicht (AlarmRepository verwirft abgelaufene Alarme in beiden
-        // Ladepfaden), wodurch das Dienstzeit-Fenster genau dann verschwand, wenn der Dienst
-        // begann. Am Emulator gemessen: 20.08. 08:00, mitten in der Frueschicht, zen_mode=0.
-        // Eine Spanne kennt bewusst kein `isActive` - ein deaktivierter oder uebersprungener
-        // Wecker aendert nichts daran, dass der Dienst stattfindet.
+        // Quelle ist der ShiftSpanStore, nicht der Alarm-Bestand (der ueberlebt die Weckzeit nicht);
+        // eine Spanne kennt bewusst kein `isActive` - der Dienst findet trotzdem statt.
         val spans = if (toggles.duringShiftEnabled || onCallShifts.isNotEmpty()) {
             shiftSpanStore.spansNow().getOrElse {
                 Logger.w(LogTags.DND, "Schichtspannen nicht lesbar - keine Dienstzeit-/On-Call-Fenster (fail-open)")

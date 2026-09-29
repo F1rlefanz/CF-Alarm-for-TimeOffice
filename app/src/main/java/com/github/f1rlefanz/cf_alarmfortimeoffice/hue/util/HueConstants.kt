@@ -13,11 +13,6 @@ object HueConstants {
      * Philips Hue Bridge discovery and connection
      */
     object Bridge {
-        const val DISCOVERY_TIMEOUT_MS = 10_000L
-        const val CONNECTION_TIMEOUT_MS = 5_000L
-        
-        // Standard Hue Bridge mDNS service
-        
         // Hue Bridge API endpoints
         const val API_BASE_PATH = "/api"
         const val SCHEDULES_ENDPOINT = "/schedules"
@@ -51,8 +46,6 @@ object HueConstants {
         // Alert types
         const val ALERT_NONE = "none"
         const val ALERT_LSELECT = "lselect"    // Multiple flashes
-        
-        // Effect types
         
         // XY color space limits (CIE 1931)
         const val MIN_XY_VALUE = 0.0f
@@ -154,13 +147,6 @@ object HueConstants {
         fun brightnessToPercentage(brightness: Int): Int {
             val clamped = clampBrightness(brightness)
             return ((clamped - Lights.MIN_BRIGHTNESS).toFloat() / (Lights.MAX_BRIGHTNESS - Lights.MIN_BRIGHTNESS) * 100).toInt()
-        }
-        
-        /**
-         * Creates a unique rule ID
-         */
-        fun generateRuleId(): String {
-            return "rule_${System.currentTimeMillis()}_${(1000..9999).random()}"
         }
     }
 }

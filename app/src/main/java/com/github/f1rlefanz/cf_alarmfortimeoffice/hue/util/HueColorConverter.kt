@@ -31,12 +31,6 @@ object HueColorConverter {
     )
     
     /**
-     * Color temperature range for Philips Hue bulbs
-     */
-    const val MIN_COLOR_TEMPERATURE = 153 // ~6500K (cool white)
-    const val MAX_COLOR_TEMPERATURE = 500 // ~2000K (warm white)
-    
-    /**
      * Converts RGB color to Hue HSV values
      * 
      * @param red Red component (0-255)
@@ -347,7 +341,7 @@ object HueColorConverter {
      */
     fun kelvinToHueMireds(kelvin: Int): Int {
         val mireds = 1_000_000 / kelvin.coerceIn(2000, 6500)
-        return mireds.coerceIn(MIN_COLOR_TEMPERATURE, MAX_COLOR_TEMPERATURE)
+        return mireds.coerceIn(HueConstants.Lights.MIN_COLOR_TEMPERATURE, HueConstants.Lights.MAX_COLOR_TEMPERATURE)
     }
     
     /**
@@ -357,7 +351,7 @@ object HueColorConverter {
      * @return Color temperature in Kelvin
      */
     fun hueMiredsToKelvin(mireds: Int): Int {
-        return 1_000_000 / mireds.coerceIn(MIN_COLOR_TEMPERATURE, MAX_COLOR_TEMPERATURE)
+        return 1_000_000 / mireds.coerceIn(HueConstants.Lights.MIN_COLOR_TEMPERATURE, HueConstants.Lights.MAX_COLOR_TEMPERATURE)
     }
     
     /**

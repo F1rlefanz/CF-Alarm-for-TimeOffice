@@ -114,7 +114,6 @@ import dagger.hilt.android.EntryPointAccessors
 @Composable
 internal fun NotificationsEnabledCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     var zustand by remember { mutableStateOf(weckerZustellbarkeit(context)) }
     val enabled = zustand.erreicht
@@ -132,15 +131,7 @@ internal fun NotificationsEnabledCard() {
         NotificationDeliverability.WICHTIGKEIT_HOCH
     )
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                zustand = weckerZustellbarkeit(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { zustand = weckerZustellbarkeit(context) }
 
     StatusCard(
         title = "Benachrichtigungen",
@@ -201,7 +192,7 @@ internal fun NotificationsEnabledCard() {
  * still zu einem Banner — der Wecker klingelt, aber der Weck-Screen kommt nie hoch, und nichts
  * weist darauf hin. Ein reiner Hinweistext ohne Absprung waere hier wertlos.
  *
- * Der Zustand wird bei jedem ON_RESUME neu gelesen (`remember` + `DisposableEffect`, siehe unten),
+ * Der Zustand wird bei jedem ON_RESUME neu gelesen (`remember` + `BeiJedemResume`, siehe unten),
  * damit die Karte nach der Rueckkehr aus den Einstellungen sofort umspringt. NICHT "kein
  * remember": der Code benutzt eines. Der frueher hier stehende Satz verleitete dazu, den
  * ON_RESUME-Refresh als redundant zu entfernen ("liest doch bei jedem Aufruf neu") - danach fror
@@ -210,21 +201,12 @@ internal fun NotificationsEnabledCard() {
 @Composable
 internal fun FullScreenIntentCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Bei jedem ON_RESUME neu pruefen: der Nutzer kann die Berechtigung ausserhalb der App
     // aendern, und danach muss die Karte stimmen.
     var canUseFsi by remember { mutableStateOf(checkFullScreenIntentAllowed(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                canUseFsi = checkFullScreenIntentAllowed(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { canUseFsi = checkFullScreenIntentAllowed(context) }
 
     StatusCard(
         title = "Vollbild-Wecker",
@@ -268,21 +250,12 @@ internal fun FullScreenIntentCard() {
 @Composable
 internal fun WeckbildschirmVerdraengtCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Bei jedem ON_RESUME neu lesen: der Zaehler aendert sich waehrend eines Weckvorgangs,
     // also waehrend diese Karte nicht sichtbar ist.
     var faellig by remember { mutableStateOf(WeckbildschirmVerdraengungPrefs.hinweisFaellig(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                faellig = WeckbildschirmVerdraengungPrefs.hinweisFaellig(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { faellig = WeckbildschirmVerdraengungPrefs.hinweisFaellig(context) }
 
     if (!faellig) return
 
@@ -543,19 +516,10 @@ internal fun BatteryOptimizationCard() {
     ExactAlarmPermissionCard()
 
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     var isExempt by remember { mutableStateOf(BatteryOptimizationHelper.isExempted(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                isExempt = BatteryOptimizationHelper.isExempted(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { isExempt = BatteryOptimizationHelper.isExempted(context) }
 
     StatusCard(
         title = "Akku-Ausnahme",
@@ -589,7 +553,6 @@ internal fun BatteryOptimizationCard() {
 @Composable
 internal fun UnusedAppRestrictionsCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     var isOk by remember { mutableStateOf(true) }
     // mutableIntStateOf statt mutableStateOf(0): kein Autoboxing des Zaehlers (Delegat-Nutzung
@@ -600,15 +563,7 @@ internal fun UnusedAppRestrictionsCard() {
         isOk = !UnusedAppRestrictionsHelper.isRestricted(context)
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                refreshTrigger++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { refreshTrigger++ }
 
     StatusCard(
         title = "Nicht verwendete Apps",
@@ -655,22 +610,13 @@ internal fun UnusedAppRestrictionsCard() {
 @Composable
 internal fun TimeOfficeHealthCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     val isInstalled = remember { TimeOfficeHealthHelper.isInstalled(context) }
     if (!isInstalled) return
 
     var isBatteryExempt by remember { mutableStateOf(TimeOfficeHealthHelper.isBatteryExempted(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                isBatteryExempt = TimeOfficeHealthHelper.isBatteryExempted(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { isBatteryExempt = TimeOfficeHealthHelper.isBatteryExempted(context) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -779,7 +725,6 @@ internal fun DimmerAccessibilityCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Die LAGE statt nur der Bindung (Vorfall 26.09.2026): Android zeigt in den Bedienungshilfen
     // den Schalter, diese Karte die Bindung. Steht der Schalter auf "An" und der Dienst ist
@@ -808,15 +753,7 @@ internal fun DimmerAccessibilityCard(
         }
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                lage = DimAccessibilityService.lage(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { lage = DimAccessibilityService.lage(context) }
 
     if (showDisclosure) {
         AlertDialog(
@@ -926,21 +863,14 @@ internal fun DimmerAccessibilityCard(
 @Composable
 internal fun DndPermissionCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val isSupported = remember { DndPermissionHelper.isFeatureSupported() }
 
     var isGranted by remember {
         mutableStateOf(isSupported && DndPermissionHelper.isGranted(context))
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && isSupported) {
-                isGranted = DndPermissionHelper.isGranted(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    BeiJedemResume {
+        if (isSupported) isGranted = DndPermissionHelper.isGranted(context)
     }
 
     StatusCard(
@@ -954,6 +884,20 @@ internal fun DndPermissionCard() {
         actionLabel = stringResource(R.string.dnd_permission_grant),
         onAction = { DndPermissionHelper.requestAccess(context) }
     )
+}
+
+@Composable
+private fun BeiJedemResume(aktion: () -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                aktion()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 }
 
 @Composable

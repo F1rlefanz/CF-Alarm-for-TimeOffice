@@ -154,19 +154,10 @@ class HueLightUseCase @Inject constructor(
                         groupId = action.targetId,
                         sceneId = action.sceneId
                     )
-                } else if (action.isGroup) {
-                    lightRepository.controlGroup(
-                        groupId = action.targetId,
-                        on = action.on,
-                        brightness = action.brightness,
-                        hue = action.hue,
-                        saturation = action.saturation,
-                        colorTemperature = action.colorTemperature,
-                        transitionTime = action.transitionTime
-                    )
                 } else {
-                    lightRepository.controlLight(
-                        lightId = action.targetId,
+                    controlTarget(
+                        targetId = action.targetId,
+                        isGroup = action.isGroup,
                         on = action.on,
                         brightness = action.brightness,
                         hue = action.hue,
@@ -497,23 +488,14 @@ class HueLightUseCase @Inject constructor(
                 .coerceAtMost(HueConstants.Lights.MAX_TRANSITION_TIME)
 
             // Step 1: jump to dim + warm immediately.
-            val initial = if (isGroup) {
-                lightRepository.controlGroup(
-                    groupId = targetId,
-                    on = true,
-                    brightness = HueConstants.Lights.MIN_BRIGHTNESS,
-                    colorTemperature = startCt,
-                    transitionTime = 0
-                )
-            } else {
-                lightRepository.controlLight(
-                    lightId = targetId,
-                    on = true,
-                    brightness = HueConstants.Lights.MIN_BRIGHTNESS,
-                    colorTemperature = startCt,
-                    transitionTime = 0
-                )
-            }
+            val initial = controlTarget(
+                targetId = targetId,
+                isGroup = isGroup,
+                on = true,
+                brightness = HueConstants.Lights.MIN_BRIGHTNESS,
+                colorTemperature = startCt,
+                transitionTime = 0
+            )
 
             if (initial.isFailure) {
                 Logger.w(LogTags.HUE_USECASE, "Sunrise initial state failed for $targetId", initial.exceptionOrNull())
@@ -524,26 +506,50 @@ class HueLightUseCase @Inject constructor(
             delay(SUNRISE_STEP_DELAY_MS)
 
             // Step 2: long native transition to bright + cooler.
-            if (isGroup) {
-                lightRepository.controlGroup(
-                    groupId = targetId,
-                    brightness = targetBri,
-                    colorTemperature = endCt,
-                    transitionTime = transitionDs
-                )
-            } else {
-                lightRepository.controlLight(
-                    lightId = targetId,
-                    brightness = targetBri,
-                    colorTemperature = endCt,
-                    transitionTime = transitionDs
-                )
-            }
+            controlTarget(
+                targetId = targetId,
+                isGroup = isGroup,
+                brightness = targetBri,
+                colorTemperature = endCt,
+                transitionTime = transitionDs
+            )
 
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to start sunrise for $targetId", e)
             Result.failure(e)
         }
+    }
+
+    /** Eine Weiche fuer Lampe/Gruppe; der Szenen-Zweig liegt beim Aufrufer davor. */
+    private suspend fun controlTarget(
+        targetId: String,
+        isGroup: Boolean,
+        on: Boolean? = null,
+        brightness: Int? = null,
+        hue: Int? = null,
+        saturation: Int? = null,
+        colorTemperature: Int? = null,
+        transitionTime: Int? = null
+    ): Result<Unit> = if (isGroup) {
+        lightRepository.controlGroup(
+            groupId = targetId,
+            on = on,
+            brightness = brightness,
+            hue = hue,
+            saturation = saturation,
+            colorTemperature = colorTemperature,
+            transitionTime = transitionTime
+        )
+    } else {
+        lightRepository.controlLight(
+            lightId = targetId,
+            on = on,
+            brightness = brightness,
+            hue = hue,
+            saturation = saturation,
+            colorTemperature = colorTemperature,
+            transitionTime = transitionTime
+        )
     }
 
     /**

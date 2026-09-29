@@ -94,14 +94,10 @@ object BatteryOptimizationHelper {
     }
     
     /**
-     * Requests battery exemption from user with result callback
+     * Requests battery exemption from user
      * @param activity Activity to launch permission request
-     * @param onResult Callback with result after user action
      */
-    fun requestExemption(activity: Activity, onResult: ((Boolean) -> Unit)? = null) {
-        // Das tatsächliche Ergebnis wird unten per postDelayed + isExempted() geprüft und
-        // via onResult zurückgegeben; ein persistiertes "pending"-Flag war write-only (nie
-        // gelesen) und entfiel mit der cf_alarm_prefs-Auflösung.
+    fun requestExemption(activity: Activity) {
         try {
             // BatteryLife unterdrueckt: Lint haelt jedes
             // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS fuer einen Verstoss gegen die
@@ -118,14 +114,6 @@ object BatteryOptimizationHelper {
             
             activity.startActivityForResult(intent, REQUEST_CODE_BATTERY_EXEMPTION)
             
-            // Schedule a check after returning from settings
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                val isExempted = isExempted(activity)
-                onResult?.invoke(isExempted)
-            }, 500) // Small delay to ensure settings are applied
-            
-            Logger.d(LogTags.BATTERY, "Battery exemption request launched")
-            
         } catch (e: Exception) {
             Logger.e(LogTags.BATTERY, "Failed to request battery exemption, opening settings", e)
             
@@ -133,15 +121,8 @@ object BatteryOptimizationHelper {
             try {
                 val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                 activity.startActivity(intent)
-                
-                // Schedule check for fallback case
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    val isExempted = isExempted(activity)
-                    onResult?.invoke(isExempted)
-                }, 1000)
             } catch (e2: Exception) {
                 Logger.e(LogTags.BATTERY, "Failed to open battery settings", e2)
-                onResult?.invoke(false)
             }
         }
     }

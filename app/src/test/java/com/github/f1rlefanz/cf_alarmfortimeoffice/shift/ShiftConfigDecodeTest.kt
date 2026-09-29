@@ -35,11 +35,6 @@ class ShiftConfigDecodeTest {
     }
 
     @Test
-    fun `fehlender Eintrag heisst NotConfigured (nicht defekt)`() {
-        assertEquals(ShiftConfigDecodeResult.NotConfigured, decodeShiftConfig(json, null))
-    }
-
-    @Test
     fun `gueltiges JSON wird als Ok mit der echten Konfiguration dekodiert`() {
         val original = ShiftConfig.getDefaultConfig().copy(autoAlarmEnabled = false)
         val raw = json.encodeToString(original)

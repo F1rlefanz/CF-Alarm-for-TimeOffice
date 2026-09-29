@@ -9,9 +9,6 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
-// ==============================
-// 🔐 SECURE KEYSTORE PROPERTIES LOADING
-// ==============================
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
@@ -22,9 +19,6 @@ android {
     namespace = "com.github.f1rlefanz.cf_alarmfortimeoffice"
     compileSdk = 37
 
-    // ==============================
-    // 🔐 SECURE SIGNING CONFIGURATION
-    // ==============================
     // SIGNIERUNG NUR, WENN DER SCHLUESSEL DA IST. Ohne das scheitert `assembleRelease` in der CI am
     // fehlenden Keystore - und genau deshalb hat die CI den Release-Pfad bisher gar nicht gebaut,
     // obwohl dort das eigentliche Risiko liegt (R8, lintVitalRelease). Fehlt der Schluessel, entsteht
@@ -36,17 +30,15 @@ android {
 
     signingConfigs {
         create("release") {
-            // Secure production signing - NO hardcoded passwords!
             storeFile = project.file(keystoreProperties["storeFile"] as String? ?: "../cf-alarm-release.keystore")
             storePassword = keystoreProperties["storePassword"] as String? ?: System.getenv("KEYSTORE_PASSWORD")
             keyAlias = keystoreProperties["keyAlias"] as String? ?: "cf-alarm-key"
             keyPassword = keystoreProperties["keyPassword"] as String? ?: System.getenv("KEY_PASSWORD")
 
-            // Enhanced security settings
-            enableV1Signing = true  // JAR Signature (for older Android versions)
-            enableV2Signing = true  // APK Signature Scheme v2 (Android 7.0+)
-            enableV3Signing = true  // APK Signature Scheme v3 (Android 9.0+)
-            enableV4Signing = true  // APK Signature Scheme v4 (Android 11+)
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
         }
 
         // Debug signing config (uses default Android debug keystore)
@@ -68,9 +60,6 @@ android {
             useSupportLibrary = true
         }
         
-        // ==============================
-        // 🚫 EXPLICIT AD_ID REMOVAL
-        // ==============================
         // CRITICAL: Remove AD_ID permission added by play-services-auth
         // This must be done at build time via androidResources
         androidResources {
@@ -80,9 +69,6 @@ android {
         // Additional manifest placeholder (belt and suspenders approach)
         manifestPlaceholders["excludeAdIdPermission"] = "true"
 
-        // ==============================
-        // 🔐 SECURE OAUTH CLIENT ID CONFIGURATION
-        // ==============================
         // SECURITY: OAuth Client ID must be configured in keystore.properties or environment variables
         // NO hardcoded fallback to prevent accidental credential leakage in version control
         val googleWebClientId = keystoreProperties["googleWebClientId"] as String?
@@ -108,38 +94,17 @@ android {
 
     buildTypes {
         release {
-            // ==============================
-            // 🚀 PRODUCTION BUILD CONFIGURATION
-            // ==============================
-
             // SIGNING: Produktions-Keystore, wenn vorhanden - siehe releaseSigningAvailable oben.
             signingConfig =
                 if (releaseSigningAvailable) signingConfigs.getByName("release") else null
 
-            // R8 IST AN, seit 10.08.2026 (AGP 9.3.1). Vorher stand hier `false` mit dem Vermerk
-            // "Re-enable after AGP upgrade fixes R8 9.2.14 NPE bug (core:1.19.0 + compileSdk 37)".
-            // Der NPE tritt mit AGP 9.3.1 nicht mehr auf; nachgemessen und am Geraet verifiziert:
-            //  - `assembleRelease` laeuft durch, `minifyReleaseWithR8` ohne Fehler
-            //  - APK 19,8 MB → 10,9 MB (-45%)
-            //  - Release-APK auf dem Emulator (Android 16) durch den vollen Happy Path: Anmeldung
-            //    ueber Google, Kalenderliste, Kalenderauswahl speichern, 5 Schichten erkannt,
-            //    5 Alarme gesetzt, alle sechs Tabs gerendert - kein ClassNotFoundException,
-            //    NoSuchMethodError, NoClassDefFoundError oder VerifyError im Logcat.
-            //    Damit sind die klassischen R8-Opfer mitgeprueft: der Google-HTTP-Client (Reflection),
-            //    Gson, Retrofit und kotlinx-serialization.
-            // Einzige Warnung: R8 meldet, dass `Log4JLogger.<clinit>()` aus commons-logging nicht
-            // typ-prueft und als unerreichbar gilt - eine transitive Abhaengigkeit des
-            // Google-HTTP-Clients, die die App nie benutzt. Harmlos.
-            //
-            // WICHTIG, falls das je wieder abgeschaltet wird: Dann MUESSEN auch `-dontshrink` und
-            // `-dontoptimize` in proguard-rules.pro wieder aktiviert werden - oder eben nicht.
-            // Beides halb ist der schlechteste Zustand: Mit gesetztem `-dontshrink` waere
-            // `isMinifyEnabled = true` eine Attrappe, die Bauzeit kostet und nichts bringt.
-            //
-            // `assembleRelease` braucht NETZ: Die nur mit Minify laufende Task
-            // `produceReleaseComposeMapping` zieht eine Abhaengigkeit, die nicht im Offline-Cache
-            // liegt. `--offline` scheitert daran mit einem irrefuehrenden
-            // "Configuration cache state could not be cached" - kein R8-Problem.
+            // R8 an seit 10.08.2026 (AGP 9.3.1); vorher aus wegen eines R8-9.2.14-NPE (core 1.19.0 +
+            // compileSdk 37). Release-APK am Emulator mit vollem Happy Path verifiziert. Die R8-Warnung zu
+            // `Log4JLogger.<clinit>()` aus commons-logging (transitiv ueber den Google-HTTP-Client,
+            // ungenutzt) ist harmlos.
+            // Minify und `-dontshrink`/`-dontoptimize` in proguard-rules.pro nur gemeinsam umschalten:
+            // mit gesetztem `-dontshrink` waere `isMinifyEnabled = true` eine Attrappe.
+            // `assembleRelease` braucht Netz, siehe CLAUDE.md.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -147,63 +112,26 @@ android {
                 "proguard-rules.pro"
             )
 
-            // SECURITY: Disable debugging in release builds
             isDebuggable = false
             isJniDebuggable = false
 
-            // SECURITY: Enable dead code elimination
             isPseudoLocalesEnabled = false
-
-            // APP IDENTIFICATION: Clear production naming
-            // No suffix - this is the production version
         }
 
         debug {
-            // ==============================
-            // 🛠️ DEVELOPMENT BUILD CONFIGURATION
-            // ==============================
-
-            // SIGNING: Uses default debug keystore (automatic)
-            // signingConfig = signingConfigs.getByName("debug") // Not needed, automatic
-
             // Development settings
             isMinifyEnabled = false
             isDebuggable = true
 
             // APP IDENTIFICATION: Clear debug identification
-            // applicationIdSuffix = ".debug"  // TEMP: Disabled for Google Services compatibility
+            // kein applicationIdSuffix: Google-Anmeldung hängt am Paketnamen
             versionNameSuffix = "-DEBUG"
         }
-
-        // ==============================
-        // 🧪 OPTIONAL: STAGING BUILD TYPE (DISABLED)
-        // ==============================
-        // Uncomment if you need staging builds with separate package ID
-        /*
-        create("staging") {
-            // Hybrid configuration: Production signing + Limited debugging
-            initWith(getByName("release"))
-
-            // Override for staging-specific settings
-            isDebuggable = true
-            applicationIdSuffix = ".staging"
-            versionNameSuffix = "-STAGING"
-
-            // IMPORTANT: Disable minification for staging to allow proper debugging
-            isMinifyEnabled = false
-            isShrinkResources = false
-
-            // Produktions-Signierung fuer realistisches Testen - dieselbe Bedingung wie release.
-            signingConfig =
-                if (releaseSigningAvailable) signingConfigs.getByName("release") else null
-        }
-        */
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // Enable desugaring for LocalDateTime support on API < 26
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -214,22 +142,17 @@ android {
     }
 
     lint {
-        // Production-ready lint configuration
         abortOnError = true
         warningsAsErrors = false
         checkReleaseBuilds = true
 
-        // Use our custom lint configuration
         lintConfig = project.file("lint.xml")
 
         // BEWUSST KEINE Baseline: Es gibt keine lint-baseline.xml mehr (August 2026 gelöscht).
         // Die alte enthielt nur 27 FullBackupContent-Einträge zu <exclude>-Zeilen, die es in
-        // den Backup-Regeln längst nicht mehr gab, und wurde durch diese auskommentierte Zeile
+        // den Backup-Regeln längst nicht mehr gab, und wurde ohne gesetztes `baseline = file(...)`
         // ohnehin nie gelesen - halb verdrahteter toter Ballast. Wer eine Baseline will:
-        // frisch erzeugen UND diese Zeile aktivieren, nicht das eine ohne das andere.
-
-        // HTML/XML reports werden seit AGP 9 immer erzeugt (Standardpfad
-        // build/reports/lint-results-<variant>.*) - kein Opt-in mehr noetig.
+        // frisch erzeugen UND `baseline = file(...)` setzen, nicht das eine ohne das andere.
     }
 
     packaging {
@@ -240,9 +163,6 @@ android {
         }
     }
 
-    // ==============================
-    // 🧪 TEST CONFIGURATION
-    // ==============================
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -252,11 +172,8 @@ android {
     }
 }
 
-// `kotlin { }` ist eine Extension auf PROJECT, nicht auf ApplicationExtension. Bis zum
-// 18.08.2026 stand dieser Block INNERHALB von `android { }` - er wirkte trotzdem, weil Kotlin
-// stillschweigend auf den aeusseren Project-Receiver auswich. Android Studio meldet das als
-// "Suspicious receiver type": es las sich wie eine AGP-Einstellung, war aber immer eine
-// projektweite. Hier steht es dort, wo es hingehoert.
+// `kotlin { }` ist eine Project-Extension, nicht Teil von `android { }` (dort innen meldet
+// Android Studio "Suspicious receiver type").
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -316,17 +233,13 @@ dependencies {
     implementation(libs.okhttp)
 
     // Security
-    implementation(libs.tink.android)  // ✅ Modern Crypto Library für Token-Verschlüsselung
+    implementation(libs.tink.android)
 
     // Logging
     implementation(libs.timber)
 
-    // 🚀 PHASE 3: WorkManager für Background-Services
     implementation(libs.androidx.work.runtime.ktx)
 
-    // ==============================
-    // 🛠️ FIXED: Using version catalog instead of hardcoded versions
-    // ==============================
     // MUSS BLEIBEN, obwohl der Quelltext kein `com.google.android.gms.common.*` importiert.
     // Diese Zeile ist der einzige Weg, auf dem play-services-base/-basement/-tasks in den Graphen
     // kommen: nimmt man sie heraus, verschwinden alle drei - und play-services-auth (766
@@ -334,9 +247,7 @@ dependencies {
     // credentials-play-services-auth (108 auf com/google/android/gms/tasks/) verlieren ihre
     // Klassen. Das faellt in keinem Unit-Test auf, sondern erst beim Anmelden am Geraet.
     implementation(libs.play.services.base)
-    // androidx.core:core-ktx already included above via libs.androidx.core.ktx
 
-    // Desugaring for LocalDateTime support
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // Dependency Injection

@@ -21,11 +21,8 @@ import androidx.compose.ui.platform.LocalContext
 /** Die Berechtigung, ohne die ab Android 17 (API 37) kein Paket mehr ins lokale Netz darf. */
 const val ACCESS_LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
 
-/**
- * Ab dieser API-Ebene erzwingt Android die lokale Netzwerkberechtigung. Als Zahl und nicht als
- * `Build.VERSION_CODES`-Konstante, weil die Konstante erst mit einem neueren compileSdk existiert.
- */
-const val SDK_MIT_LOKALER_NETZWERKFREIGABE = 37
+/** Ab dieser API-Ebene erzwingt Android die lokale Netzwerkberechtigung. */
+const val SDK_MIT_LOKALER_NETZWERKFREIGABE = Build.VERSION_CODES.CINNAMON_BUN
 
 /**
  * Reine Entscheidung: Muss vor dieser Aktion erst der Systemdialog kommen?

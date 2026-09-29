@@ -316,9 +316,6 @@
 # TINK CRYPTO ENCRYPTION (AES-256-GCM)
 # ==============================
 
-# Keep Tink classes and methods
--keep class com.google.crypto.tink.** { *; }
-
 # Keep AEAD primitive
 -keep class * extends com.google.crypto.tink.Aead { *; }
 

@@ -30,7 +30,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -151,13 +150,6 @@ class AuthViewModel @Inject constructor(
      */
     @Volatile
     private var signOutInProgress = false
-
-    // CRITICAL FIX: Triggers calendar reload after successful authentication/authorization
-    @Volatile
-    private var lastCalendarTriggerTime = 0L
-
-    @Volatile
-    private var triggerInProgress = false
 
     private fun updateAuthState(updateFunc: (AuthState) -> AuthState) {
         val currentState = _authState.value
@@ -298,11 +290,6 @@ class AuthViewModel @Inject constructor(
                                 hasValidToken = !authData.accessToken.isNullOrEmpty()
                             )
                         )
-                    }
-
-                    // PERFORMANCE: Background calendar trigger without UI thread switch
-                    if (authData.isLoggedIn && !authData.accessToken.isNullOrEmpty()) {
-                        triggerCalendarReloadAfterAuth()
                     }
                 }
         }
@@ -939,7 +926,6 @@ class AuthViewModel @Inject constructor(
                                     LogTags.AUTH,
                                     "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful, hasValidToken=true"
                                 )
-                                triggerCalendarReloadAfterAuth()
 
                                 // Initialize maintenance service after successful authorization
                                 viewModelScope.launch {
@@ -997,10 +983,7 @@ class AuthViewModel @Inject constructor(
                                 "✅ MODERN-FLOW: Calendar authorization successful: $authorized, hasValidToken=$authorized"
                             )
 
-                            // CRITICAL FIX: Auto-trigger calendar loading after successful authorization
                             if (authorized) {
-                                triggerCalendarReloadAfterAuth()
-
                                 // Initialize maintenance service after successful authorization
                                 backgroundServiceManager.initializeMaintenanceService()
                                 Logger.business(
@@ -1027,47 +1010,6 @@ class AuthViewModel @Inject constructor(
                     )
                 }
                 Logger.e(LogTags.AUTH, "❌ MODERN-FLOW: Exception during calendar authorization", e)
-            }
-        }
-    }
-
-    private fun triggerCalendarReloadAfterAuth() {
-        // PERFORMANCE: Prevent concurrent triggers with atomic check
-        if (triggerInProgress) {
-            Logger.d(LogTags.AUTH, "🔄 UI-THREAD-OPT: Calendar reload already in progress, skipping")
-            return
-        }
-
-        viewModelScope.launch(Dispatchers.Default) { // UI THREAD OPTIMIZATION: Pure background
-            try {
-                val currentTime = System.currentTimeMillis()
-                val timeSinceLastTrigger = currentTime - lastCalendarTriggerTime
-
-                // DEDUPLICATION: Prevent multiple triggers within 2 seconds (optimized)
-                if (timeSinceLastTrigger < 2000) {
-                    Logger.d(
-                        LogTags.AUTH,
-                        "🔄 UI-THREAD-OPT: Calendar reload trigger debounced ($timeSinceLastTrigger ms since last)"
-                    )
-                    return@launch
-                }
-
-                triggerInProgress = true
-                lastCalendarTriggerTime = currentTime
-
-                // UI THREAD OPTIMIZATION: Reduced delay from 100ms to 50ms
-                delay(50.milliseconds)
-
-                Logger.business(
-                    LogTags.AUTH,
-                    "🔄 UI-THREAD-OPT: Calendar reload triggered after successful authentication"
-                )
-                // NOTE: Calendar reload now happens automatically via CalendarStateHolder observation
-
-            } catch (e: Exception) {
-                Logger.e(LogTags.AUTH, "❌ UI-THREAD-OPT: Failed to trigger calendar reload", e)
-            } finally {
-                triggerInProgress = false
             }
         }
     }

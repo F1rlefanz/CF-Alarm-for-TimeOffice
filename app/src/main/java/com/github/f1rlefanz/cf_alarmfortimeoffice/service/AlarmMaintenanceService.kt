@@ -1217,18 +1217,6 @@ class AlarmMaintenanceService : Service() {
     }
 
     /**
-     * Main maintenance logic
-     *
-     * STEPS:
-     * 1. Token Refresh (2-5s)
-     * 2. Health Check - Time-based (1s)
-     * 3. Event Loading if needed (5-10s)
-     * 4. Shift Recognition (1-2s)
-     * 5. Alarm Creation (1-2s)
-     *
-     * @param forceSync ueberspringt Schritt 2 (Lade-Gate) — siehe [EXTRA_FORCE_SYNC].
-     */
-    /**
      * Ein fehlgeschlagener Token-Abruf ist NICHT gleich ein Anmeldeproblem. Einstufung,
      * Entprellung und Deckel liegen in [WartungTokenFehler] (Android-frei und dort getestet),
      * hier steht nur die Ausfuehrung.
@@ -1329,6 +1317,12 @@ class AlarmMaintenanceService : Service() {
         wartungNetzNachholer.verwirf()
     }
 
+    /**
+     * Ein Wartungslauf: Aufraeumen (Logs, freie Tage), Master-Pause, Raeumauftrag, Token,
+     * Lade-Gate, Kalender, Fail-safe-Sperren, Delta-Sync.
+     *
+     * @param forceSync ueberspringt das Lade-Gate - siehe [EXTRA_FORCE_SYNC].
+     */
     private suspend fun performMaintenance(forceSync: Boolean) {
         val startTime = System.currentTimeMillis()
         Logger.business(LogTags.MAINTENANCE, "🔧 Starting maintenance cycle")

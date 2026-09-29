@@ -210,7 +210,6 @@
 # ==============================
 
 # DataStore
--keep class androidx.datastore.** { *; }
 -keep class * extends androidx.datastore.core.Serializer { *; }
 
 # WorkManager

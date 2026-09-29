@@ -50,8 +50,6 @@ internal enum class PendingHueAction { VALIDATE, DISCOVER, PAIR, LIGHT_TEST }
 /**
  * Fixed Hue Tab Content with proper scrolling and layout
  * Resolved: UI overflow, scrolling issues, layout problems, missing navigation
- *
- * HILT MIGRATION: Now receives HueViewModel directly instead of ViewModelFactory
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,13 +105,11 @@ fun HueTabContent(
         }
     }
 
-    // Use LazyColumn for proper scrolling and performance
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp), // Single padding point
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Error Display
         uiState.error?.let { error ->
             item {
                 ErrorMessage(
@@ -130,7 +126,6 @@ fun HueTabContent(
         // Warnsymbole fuer eine Aussage). Der einzige echte Mehrwert des Banners - die Folge
         // ("Lichtaktionen koennten ausfallen") - steht jetzt in der Karte selbst.
 
-        // Connected Features & Next Steps (show first when connected)
         uiState.bridgeConnectionInfo?.let { connectionInfo ->
             if (connectionInfo.isConnected) {
                 // Regel-Ziele, die auf DIESER Bridge nicht existieren (Konfigurations-Import,
@@ -148,9 +143,7 @@ fun HueTabContent(
                     }
                 }
 
-                // Show appropriate interface based on rules
                 if (uiState.scheduleRules.isNotEmpty()) {
-                    // Rules exist: Show management overview instead of auto-navigating
                     item {
                         ConnectedManagementCard(
                             rulesCount = uiState.scheduleRules.size,
@@ -162,7 +155,6 @@ fun HueTabContent(
                         )
                     }
                 } else {
-                    // Show loading indicator briefly while rules are being loaded
                     if (uiState.isLoading) {
                         item {
                             Card(
@@ -205,12 +197,10 @@ fun HueTabContent(
                         }
                     }
                 }
-                // When connected, skip the rest of the setup UI
                 return@LazyColumn
             }
         }
 
-        // Discovery Card (only show when discovering and not connected)
         discoveryStatus?.let { currentDiscoveryStatus ->
             if (!currentDiscoveryStatus.isComplete) {
                 item {
@@ -223,8 +213,6 @@ fun HueTabContent(
             }
         }
 
-        // Connection Status Section (only when not connected)
-        //
         // Die Karte beantwortet genau eine Frage: "Habe ich schon eine Bridge?". Als Einstieg
         // ist das richtig - aber sobald die Suche laeuft oder Treffer da sind, beantwortet der
         // Rest des Screens sie besser, und "Noch keine Bridge eingerichtet" steht nur noch als
@@ -247,8 +235,6 @@ fun HueTabContent(
             }
         }
 
-        // Bridge Discovery & Connection Section (only when not connected)
-        //
         // Waehrend ein Scan LAEUFT, sagt die animierte "Netzwerk-Scan"-Karte oben bereits, dass
         // gesucht wird - die "Bridge-Suche"-Karte mit dem "Bridges suchen"-Knopf daneben ist dann
         // nur Doppelung (und einen zweiten Scan anzustossen, waehrend einer laeuft, ergibt keinen
@@ -269,7 +255,6 @@ fun HueTabContent(
             }
         }
 
-        // Add some bottom padding for better UX
         item {
             Spacer(modifier = Modifier.height(32.dp))
         }

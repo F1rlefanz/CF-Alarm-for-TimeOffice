@@ -13,7 +13,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcess
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -71,9 +70,9 @@ class AlarmSkipUseCase @Inject constructor(
         internal fun isManualAlarm(alarmInfo: AlarmInfo): Boolean =
             alarmInfo.shiftId.startsWith(MANUAL_SHIFT_ID_PREFIX)
 
-        /** Loeschversuche beim Ueberspringen, inklusive des ersten - siehe [loescheMitNachfassen]. */
-        internal const val DELETE_ATTEMPTS = 2
-        internal const val DELETE_RETRY_DELAY_MS = 250L
+        /** Loeschversuche beim Ueberspringen - siehe [loescheDauerhaftMitNachfassen]. */
+        internal const val DELETE_ATTEMPTS = DauerhaftesLoeschen.VERSUCHE
+        internal const val DELETE_RETRY_DELAY_MS = DauerhaftesLoeschen.WARTEZEIT_MS
     }
 
     override val skipStatusFlow: Flow<AlarmSkipState> = alarmSkipRepository.skipStatusFlow
@@ -109,7 +108,7 @@ class AlarmSkipUseCase @Inject constructor(
             // Ab hier NICHT MEHR ABBRECHBAR - genau wie `pause()`/`resume()` der Master-Pause.
             //
             // Die Schritte 2 bis 4 stellen einen Zustand HER, und zwischen ihnen liegt mit dem
-            // Nachfass-Warten in [loescheMitNachfassen] ein echter Abbruchpunkt. Zu diesem
+            // Nachfass-Warten in [loescheDauerhaftMitNachfassen] ein echter Abbruchpunkt. Zu diesem
             // Zeitpunkt ist der Systemalarm bereits gecancelt und der Merker gesetzt; ein
             // Abbruch des aufrufenden `viewModelScope` (Activity endgueltig beendet, ViewModel
             // geraeumt) verliesse die Kette als CancellationException - `SafeExecutor` wirft die
@@ -176,7 +175,12 @@ class AlarmSkipUseCase @Inject constructor(
                 // den Systemalarm sofort wieder. Von HIER aus geht das nicht und kann es nicht gehen -
                 // `AlarmUseCase` haengt fuer seinen Skip-Backstop bereits an diesem UseCase, die
                 // Gegenrichtung waere ein Zyklus im DI-Graphen.
-                val geloescht = loescheMitNachfassen(nextAlarm.id)
+                val geloescht = alarmRepository.loescheDauerhaftMitNachfassen(
+                    alarmId = nextAlarm.id,
+                    logTag = LogTags.ALARM_SKIP,
+                    versuchsText = "SKIP: Loeschen des uebersprungenen Alarms ${nextAlarm.id}",
+                    nomen = "Alarm"
+                )
                 if (geloescht.isFailure) {
                     val merkerZurueckgenommen = alarmSkipRepository.clearSkipStatus()
                     if (merkerZurueckgenommen.isFailure) {
@@ -283,57 +287,6 @@ class AlarmSkipUseCase @Inject constructor(
 
             isExpired
         }
-
-    /**
-     * Loescht den uebersprungenen Alarm und fasst bei einem Fehlschlag genau einmal nach.
-     *
-     * Der haeufige Fall ist ein voruebergehender DataStore-Schreibfehler; ihn sofort in die
-     * Ruecknahme laufen zu lassen, wuerde dem Nutzer ein funktionierendes Ueberspringen ohne Not
-     * verweigern. Bleibt es beim Fehlschlag, entscheidet die Aufrufstelle (siehe [skipNextAlarm]).
-     */
-    private suspend fun loescheMitNachfassen(alarmId: Int): Result<Unit> {
-        var ergebnis = loescheUndPruefeDauerhaftigkeit(alarmId)
-        var versuch = 1
-        while (ergebnis.isFailure && versuch < DELETE_ATTEMPTS) {
-            Logger.w(
-                LogTags.ALARM_SKIP,
-                "⚠️ SKIP: Loeschen des uebersprungenen Alarms $alarmId fehlgeschlagen " +
-                    "(Versuch $versuch/$DELETE_ATTEMPTS) - wird wiederholt",
-                ergebnis.exceptionOrNull()
-            )
-            delay(DELETE_RETRY_DELAY_MS)
-            ergebnis = loescheUndPruefeDauerhaftigkeit(alarmId)
-            versuch++
-        }
-        return ergebnis
-    }
-
-    /**
-     * Loescht einmal und prueft, ob das Loeschen ueberhaupt dauerhaft sein KONNTE.
-     *
-     * `AlarmRepository.deleteAlarm()` meldet auch dann Erfolg, wenn nur der Arbeitsspeicher
-     * geraeumt wurde: bei gesperrter Persistenz (gescheiterter Init-Load) kehrt
-     * `persistToDataStore()` sofort zurueck, ohne zu schreiben und ohne zu werfen. Ohne diese
-     * Nachfrage wuerde die Ruecknahme in [skipNextAlarm] genau im wichtigsten Fall nicht anspringen
-     * - Preferences-Datei und Direct-Boot-Spiegel behielten den Alarm, der BootReceiver armierte
-     * ihn nach einem naechtlichen Neustart ungefiltert wieder, und der "uebersprungene" Wecker
-     * klingelte doch. Die Sperre kann zwischen [skipNextAlarm]s Vorpruefung und hier auch erst
-     * entstehen (ein Nachlade-Versuch scheitert nebenlaeufig), deshalb wird sie hier erneut gefragt.
-     */
-    private suspend fun loescheUndPruefeDauerhaftigkeit(alarmId: Int): Result<Unit> {
-        val ergebnis = alarmRepository.deleteAlarm(alarmId)
-        if (ergebnis.isFailure) return ergebnis
-        return if (alarmRepository.isPersistenceBlocked()) {
-            Result.failure(
-                IllegalStateException(
-                    "Alarm $alarmId wurde nur aus dem Arbeitsspeicher entfernt - die Persistenz " +
-                        "ist gesperrt, Alarm-Bestand und Direct-Boot-Spiegel behalten ihn"
-                )
-            )
-        } else {
-            ergebnis
-        }
-    }
 
     private suspend fun findNextAlarm(): AlarmInfo? {
         val currentTime = System.currentTimeMillis()

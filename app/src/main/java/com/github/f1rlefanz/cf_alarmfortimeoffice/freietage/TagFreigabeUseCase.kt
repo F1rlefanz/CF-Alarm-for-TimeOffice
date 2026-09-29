@@ -6,10 +6,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.loescheDauerhaftMitNachfassen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -78,10 +78,6 @@ class TagFreigabeUseCase @Inject constructor(
     private val armierer: ZeitkettenArmierer
 ) {
     companion object {
-        /** Loeschversuche je Wecker, inklusive des ersten - Vorbild `AlarmSkipUseCase`. */
-        internal const val DELETE_ATTEMPTS = 2
-        internal const val DELETE_RETRY_DELAY_MS = 250L
-
         /**
          * Gehoert dieser Wecker zum freigegebenen Tag?
          *
@@ -159,7 +155,12 @@ class TagFreigabeUseCase @Inject constructor(
                         Logger.e(LogTags.ALARM, "❌ FREIGABE: Systemalarm ${alarm.id} nicht abbrechbar", e)
                     }
 
-                    val geloescht = loescheMitNachfassen(alarm.id)
+                    val geloescht = alarmRepository.loescheDauerhaftMitNachfassen(
+                        alarmId = alarm.id,
+                        logTag = LogTags.ALARM,
+                        versuchsText = "FREIGABE: Loeschen von Wecker ${alarm.id}",
+                        nomen = "Wecker"
+                    )
                     if (geloescht.isFailure) {
                         // 4. Ein Wecker, der nicht weggeht, macht die ganze Freigabe zur Luege:
                         // der Direct-Boot-Spiegel armiert ihn nach einem naechtlichen Neustart
@@ -249,47 +250,4 @@ class TagFreigabeUseCase @Inject constructor(
     }
 
     private suspend fun werfeNebenkettenAn() = armierer.armiere("FREIGABE")
-
-    /**
-     * Loescht einen Wecker und fasst bei einem Fehlschlag genau einmal nach - Wortlaut und
-     * Begruendung wie `AlarmSkipUseCase.loescheMitNachfassen`: der haeufige Fall ist ein
-     * voruebergehender DataStore-Schreibfehler.
-     */
-    private suspend fun loescheMitNachfassen(alarmId: Int): Result<Unit> {
-        var ergebnis = loescheUndPruefeDauerhaftigkeit(alarmId)
-        var versuch = 1
-        while (ergebnis.isFailure && versuch < DELETE_ATTEMPTS) {
-            Logger.w(
-                LogTags.ALARM,
-                "⚠️ FREIGABE: Loeschen von Wecker $alarmId fehlgeschlagen " +
-                    "(Versuch $versuch/$DELETE_ATTEMPTS) - wird wiederholt",
-                ergebnis.exceptionOrNull()
-            )
-            delay(DELETE_RETRY_DELAY_MS)
-            ergebnis = loescheUndPruefeDauerhaftigkeit(alarmId)
-            versuch++
-        }
-        return ergebnis
-    }
-
-    /**
-     * `deleteAlarm()` meldet auch dann Erfolg, wenn nur der Arbeitsspeicher geraeumt wurde (bei
-     * gesperrter Persistenz kehrt `persistToDataStore()` sofort zurueck). Ohne diese Nachfrage
-     * spraenge die Ruecknahme genau im wichtigsten Fall nicht an. Die Sperre kann auch erst nach
-     * der Vorpruefung entstehen, deshalb wird sie hier erneut gefragt.
-     */
-    private suspend fun loescheUndPruefeDauerhaftigkeit(alarmId: Int): Result<Unit> {
-        val ergebnis = alarmRepository.deleteAlarm(alarmId)
-        if (ergebnis.isFailure) return ergebnis
-        return if (alarmRepository.isPersistenceBlocked()) {
-            Result.failure(
-                IllegalStateException(
-                    "Wecker $alarmId wurde nur aus dem Arbeitsspeicher entfernt - die Persistenz " +
-                        "ist gesperrt, Alarm-Bestand und Direct-Boot-Spiegel behalten ihn"
-                )
-            )
-        } else {
-            ergebnis
-        }
-    }
 }

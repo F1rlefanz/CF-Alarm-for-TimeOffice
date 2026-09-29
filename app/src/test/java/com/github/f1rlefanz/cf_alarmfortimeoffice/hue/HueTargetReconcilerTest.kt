@@ -13,7 +13,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueTargetReconcile
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedReason
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -90,7 +89,7 @@ class HueTargetReconcilerTest {
         val outcome = HueTargetReconciler.reconcile(rules, targets)
 
         assertEquals(0, outcome.remapped)
-        assertFalse(outcome.changed)
+        assertEquals(0, outcome.namesRefreshed)
         assertEquals("3", firstAction(outcome).targetId)
         assertEquals(UnresolvedReason.AMBIGUOUS, outcome.unresolved.single().reason)
     }
@@ -114,7 +113,8 @@ class HueTargetReconcilerTest {
 
         val outcome = HueTargetReconciler.reconcile(rules, targets)
 
-        assertFalse(outcome.changed)
+        assertEquals(0, outcome.remapped)
+        assertEquals(0, outcome.namesRefreshed)
         assertEquals(UnresolvedReason.NO_NAME, outcome.unresolved.single().reason)
     }
 
@@ -125,7 +125,8 @@ class HueTargetReconcilerTest {
         val outcome = HueTargetReconciler.reconcile(rules, LightTargets())
 
         assertEquals(1, outcome.unresolved.size)
-        assertFalse(outcome.changed)
+        assertEquals(0, outcome.remapped)
+        assertEquals(0, outcome.namesRefreshed)
         assertEquals("3", firstAction(outcome).targetId)
         assertEquals("Schlafzimmer", firstAction(outcome).targetName)
     }
@@ -179,7 +180,8 @@ class HueTargetReconcilerTest {
         val first = HueTargetReconciler.reconcile(rules, targets)
         val second = HueTargetReconciler.reconcile(first.rules, targets)
 
-        assertFalse(second.changed)
+        assertEquals(0, second.remapped)
+        assertEquals(0, second.namesRefreshed)
         assertEquals(first.rules, second.rules)
     }
 

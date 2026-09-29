@@ -15,13 +15,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Einstellungen der Schicht-Aenderungs-Notification (Feature B, im bestehenden [MainDataStore]).
- *
- * Der Toggle-Key ist bereits hier angelegt, aber noch NICHT an einen Settings-Screen angebunden -
- * das uebernimmt das separate Integrations-Paket danach (siehe Plan "Gemeinsame UI-Anbindung
- * (Feature B + C)"). Default AN: anders als die Dimmer-Korrektur (Default AUS, ein reines
- * Komfort-Werkzeug) soll die Schicht-Aenderungs-Notification von Anfang an ohne Zutun des Nutzers
- * warnen - genau das TimeOffice-Sync-Problem, das diesen Feature-Bereich ausgeloest hat.
+ * Einstellungen der Schicht-Aenderungs-Notification (im bestehenden [MainDataStore]).
+ * Default AN: anders als die Dimmer-Korrektur (ein reines Komfort-Werkzeug) gilt hier
+ * "im Zweifel melden".
  */
 @Singleton
 class ShiftChangeNotificationPrefs @Inject constructor(
@@ -32,8 +28,7 @@ class ShiftChangeNotificationPrefs @Inject constructor(
     }
 
     /**
-     * Das `.catch` umschliesst den Store-Read selbst - es war bis v1.26.2 die einzige der drei
-     * Notification-Prefs OHNE eines (CalendarUnavailablePrefs und DimOverlayPrefs haben es).
+     * Das `.catch` umschliesst den Store-Read selbst.
      *
      * Der Weg des Wurfs: [enabledNow] ist ein `first()` hierauf, `ShiftChangeNotifier.notifyX()`
      * ruft es als erste Anweisung, und die drei notify-Methoden laufen MITTEN IN

@@ -19,15 +19,9 @@ import javax.inject.Singleton
  * Einstellungen der Schlummer-Dauer und des sanften Weckton-Anstiegs (im bestehenden
  * [MainDataStore]).
  *
- * Uebernimmt die frühere Rolle von `AlarmManagerService.SNOOZE_MINUTES` als EINE Quelle fuer
- * Vollbild-Button UND Notification-Button - aber NICHT indem beide Ausloeser diesen DataStore
- * direkt lesen. `AlarmSoundService.onStartCommand`s `ACTION_SNOOZE_ALARM`-Zweig ist bewusst ein
- * synchroner, schneller Notausgang (siehe Klassenkommentar dort) und
- * `AlarmFullScreenActivity.snoozeAlarm()` ist ebenfalls synchron - beide duerfen keine
- * DataStore-Reads bekommen. Stattdessen liest [AlarmReceiver] den Wert EINMAL pro Alarm-Feuern
- * (schon in einer Coroutine, `receiverScope.launch`) und reicht ihn als Intent-Extra
- * (`AlarmSoundService.EXTRA_SNOOZE_MINUTES`) an beide Ausloeser durch - bis dahin ist der Wert
- * synchron aus dem Intent verfuegbar.
+ * EINE Quelle fuer Vollbild- und Notification-Button, aber beide lesen synchron aus dem Intent:
+ * [AlarmReceiver] liest einmal pro Feuern und reicht den Wert als Extra durch. Hergang
+ * reference/wecker-boot-und-wartung.md.
  */
 @Singleton
 class AlarmPrefs @Inject constructor(

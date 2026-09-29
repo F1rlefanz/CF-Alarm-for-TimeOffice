@@ -56,14 +56,6 @@ internal data class MoreEventsMergeResult(
     val hasMoreEvents: Boolean
 )
 
-/**
- * IMMUTABLE UI State für optimale Compose Performance
- *
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable verhindert unnötige Recompositions
- * ✅ Strukturelle Gleichheit für distinctUntilChanged()
- * ✅ Memory-efficient durch effiziente Copy-Operations
- */
 @Immutable
 data class CalendarUiState(
     val isLoading: Boolean = false,
@@ -148,21 +140,8 @@ data class CalendarUiState(
 )
 
 /**
- * CalendarViewModel - REFACTORED with Single Source of Truth
- * 
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ CalendarStateHolder integriert für ViewModel-Entkopplung
- * ✅ Alle Dependencies über Interfaces
- * 
- * STATE SYNCHRONISATION FIXES:
- * ✅ Verwendet ICalendarSelectionRepository als Single Source of Truth
- * ✅ Keine temporären States mehr - nur persistente Speicherung
- * ✅ Debounced + distinctUntilChanged für Performance
- * ✅ Reactive State Management mit Flow Kombinationen
- * ✅ Interface-basierte Abhängigkeiten für bessere Testbarkeit
- * ✅ Eliminiert Race Conditions durch atomare Updates
+ * CalendarViewModel - laedt Kalender und Events; die Kalenderauswahl kommt aus
+ * ICalendarSelectionRepository, Events gehen zusaetzlich in den CalendarStateHolder.
  */
 @OptIn(FlowPreview::class)
 @HiltViewModel
@@ -184,9 +163,7 @@ class CalendarViewModel @Inject constructor(
     private val _localUiState = MutableStateFlow(CalendarUiState())
     
     /**
-     * PERFORMANCE OPTIMIZATION: Advanced State Update Batching
-     * THREAD-SAFE: Volatile fields für Thread-Safety bei State Updates
-     * ADAPTIVE: Dynamische Batch-Delays basierend auf Update-Frequenz
+     * State-Update-Batching mit dynamischen Batch-Delays je nach Update-Frequenz.
      */
     @Volatile
     private var pendingStateUpdate: CalendarUiState? = null
@@ -196,9 +173,7 @@ class CalendarViewModel @Inject constructor(
     private var lastBatchTime = 0L
     
     /**
-     * SINGLE SOURCE OF TRUTH: Kombiniert lokalen State mit persistiertem Selection State
-     * PERFORMANCE: debounce(30) und distinctUntilChanged() verhindern excessive Updates
-     * EFFICIENCY: Optimierte Debounce-Zeit für bessere Responsiveness und reduzierte GC-Last
+     * Kombiniert lokalen State mit dem persistierten Selection State.
      */
     val uiState: StateFlow<CalendarUiState> = combine(
         _localUiState.asStateFlow(),
@@ -321,10 +296,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * PERFORMANCE: Advanced Batched State Updates
-     * Sammelt State-Updates und emmittiert sie als Batch für bessere Performance
-     * ADAPTIVE TIMING: 16ms für normale Updates, 33ms bei hoher Frequenz
-     * FRAME-SYNC: Optimiert für 60fps UI Performance
+     * Sammelt State-Updates und emittiert sie als Batch: 16ms normal, 33ms bei hoher Frequenz.
      */
     private fun updateLocalState(updateFunc: (CalendarUiState) -> CalendarUiState) {
         batchUpdateJob?.cancel()
@@ -383,9 +355,7 @@ class CalendarViewModel @Inject constructor(
     }
     
     /**
-     * DEDUPLICATION: Intelligent Calendar Loading Decision
-     * THREAD-SAFE: Atomic reads und time-based guards
-     * PERFORMANCE: Verhindert redundante API-Calls durch Event-Deduplication
+     * Zeitbasierte Drossel gegen redundante Kalender-Ladevorgaenge.
      */
     private fun shouldLoadCalendars(): Boolean {
         val currentTime = System.currentTimeMillis()
@@ -402,10 +372,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * REACTIVE PATTERN: Beobachtet Änderungen der Calendar Selection
-     * AUTOMATIC LOADING: Lädt Events automatisch bei Selection-Änderungen
-     * BUG FIX: Lädt Events mit aktueller daysAhead-Konfiguration neu
-     * LAZY LOADING: Initial nur begrenzte Anzahl Events für bessere Performance
+     * Beobachtet die Calendar Selection und lädt Events bei Änderungen automatisch.
      */
     private fun observeCalendarSelection() {
         viewModelScope.launch {
@@ -811,9 +778,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * PROGRESSIVE CALENDAR LOADING: Verhindert Main-Thread-Blockierung
-     * YIELD-BASED: Gibt Control an UI-Thread zwischen Verarbeitungsschritten ab
-     * BATCHED: Verarbeitet Kalender in kleinen Chunks für bessere Responsiveness
+     * Lädt die verfügbaren Kalender seitenweise.
      */
     fun loadAvailableCalendars(pageSize: Int = 20, resetPagination: Boolean = true) {
         viewModelScope.launch {
@@ -977,11 +942,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * PERFORMANCE CRITICAL: Background Event Loading mit progressiven UI Updates
-     * MAIN-THREAD OPTIMIZATION: Komplett asynchrone Event-Loading ohne UI-Blockierung
-     * LAZY LOADING: Progressive Event-Darstellung für bessere User Experience
-     * 
-     * PHASE 2 CLEANUP: daysAhead parameter removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     * Lädt die Events der ausgewählten Kalender im Hintergrund.
      *
      * @param forceRefresh Ob Cache umgangen werden soll
      * @param initialPageSize Initiale Anzahl Events (LAZY LOADING)

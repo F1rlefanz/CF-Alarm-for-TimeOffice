@@ -63,13 +63,7 @@ data class ShiftUiState(
 )
 
 /**
- * ShiftViewModel - REFACTORED mit Hilt und CalendarStateHolder
- *
- * MIGRATION:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ CalendarStateHolder statt CalendarViewModel
- * ✅ Keine direkte ViewModel-zu-ViewModel Dependency mehr!
+ * ShiftViewModel - liest Kalender-Events aus dem CalendarStateHolder, nicht vom CalendarViewModel.
  */
 @OptIn(FlowPreview::class)
 @HiltViewModel
@@ -243,13 +237,8 @@ class ShiftViewModel @Inject constructor(
     }
 
     /**
-     * REACTIVE PATTERN: Observiert Calendar Events vom StateHolder
-     * PERFORMANCE: Enhanced debouncing strategy für different scenarios
-     * DECOUPLED: Nutzt CalendarStateHolder statt direkte ViewModel-Referenz
-     * MEMORY SAFE: Proper cleanup über viewModelScope
-     * 
-     * NOTE: distinctUntilChanged() removed - StateFlow already provides this behavior
-     * (Operator Fusion - see StateFlow documentation)
+     * Observiert Calendar Events vom StateHolder.
+     * distinctUntilChanged() entfernt - StateFlow ist bereits distinct.
      */
     private fun observeCalendarEvents() {
         viewModelScope.launch {

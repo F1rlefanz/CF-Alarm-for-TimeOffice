@@ -123,8 +123,6 @@ data class TagFreigabeUiState(
 )
 
 /**
- * MANUAL ALARM UI STATE
- *
  * State für manuelle Alarm-Erstellung nach Schichttausch
  */
 data class ManualAlarmUiState(
@@ -140,19 +138,7 @@ data class ManualAlarmUiState(
 )
 
 /**
- * MEMORY LEAK FIXED: AlarmViewModel with proper resource cleanup
- *
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ Alle Dependencies über Interfaces
- * ✅ Keine Abhängigkeiten zu anderen ViewModels
- *
- * CRITICAL FIXES:
- * ✅ Added onCleared() for proper cleanup
- * ✅ Job tracking for Flow collections
- * ✅ Resource cleanup on destruction
- * ✅ Memory leak prevention
+ * AlarmViewModel - Anzeige und Verwaltung der Alarme, inklusive manueller Wecker.
  */
 @HiltViewModel
 class AlarmViewModel @Inject constructor(
@@ -294,9 +280,6 @@ class AlarmViewModel @Inject constructor(
         }
     }
 
-    /**
-     * MEMORY LEAK FIX: Proper Job tracking für Flow collections
-     */
     private fun observeAlarmStatus() {
         alarmObservationJob?.cancel() // Cancel any existing observation
 

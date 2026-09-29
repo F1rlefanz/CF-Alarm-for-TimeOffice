@@ -29,14 +29,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel for Hue Integration following Clean Architecture
- * Manages state for Bridge Setup, Light Control, and Rule Management
- *
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ Isolierte Hue-Dependencies
- * ✅ Keine Abhängigkeiten zu anderen ViewModels
+ * ViewModel for Hue Integration: state for Bridge Setup, Light Control, and Rule Management
  */
 @HiltViewModel
 class HueViewModel @Inject constructor(
@@ -59,10 +52,6 @@ class HueViewModel @Inject constructor(
             Logger.w(LogTags.HUE_VIEWMODEL, "Failed to trigger Hue rescheduling after rule change", e)
         }
     }
-    
-    // ==============================
-    // STATE MANAGEMENT
-    // ==============================
     
     private val _uiState = MutableStateFlow(HueUiState())
     val uiState: StateFlow<HueUiState> = _uiState.asStateFlow()
@@ -97,10 +86,6 @@ class HueViewModel @Inject constructor(
     private val aktualisierenFehlgeschlagen =
         "Bridge nicht erreichbar – Lichter und Szenen nicht aktualisiert."
 
-    // ==============================
-    // INITIALIZATION
-    // ==============================
-    
     init {
         Logger.i(LogTags.HUE_VIEWMODEL, "HueViewModel initialized")
         
@@ -170,10 +155,6 @@ class HueViewModel @Inject constructor(
             }
         }
     }
-    
-    // ==============================
-    // BRIDGE OPERATIONS
-    // ==============================
     
     fun discoverBridges() {
         Logger.i(LogTags.HUE_VIEWMODEL, "Starting bridge discovery")
@@ -331,10 +312,6 @@ class HueViewModel @Inject constructor(
         }
     }
 
-    // ==============================
-    // LIGHT OPERATIONS
-    // ==============================
-    
     /**
      * @param userInitiated true = der Nutzer hat auf ein Aktualisieren-Symbol getippt.
      *
@@ -468,10 +445,6 @@ class HueViewModel @Inject constructor(
             }
         }
     }
-    
-    // ==============================
-    // RULE OPERATIONS
-    // ==============================
     
     fun refreshRules() {
         Logger.d(LogTags.HUE_VIEWMODEL, "Refreshing schedule rules")
@@ -638,10 +611,6 @@ class HueViewModel @Inject constructor(
             }
         }
     }
-    
-    // ==============================
-    // ERROR HANDLING
-    // ==============================
     
     fun clearError() {
         _uiState.update { it.copy(error = null) }

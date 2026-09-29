@@ -46,21 +46,8 @@ import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * MODERNIZED: AuthViewModel with CredentialAuthManager
- *
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ Alle Dependencies über Interfaces
- * ✅ Keine Abhängigkeiten zu anderen ViewModels
- *
- * PERFORMANCE FIXES:
- * ✅ Uses modern androidx.credentials API
- * ✅ Atomic state updates (no mutex blocking)
- * ✅ Debounced flows prevent rapid UI updates
- * ✅ Single Source of Truth für Authentication
- * ✅ Memory leak prevention
- * ✅ REACTIVE CALENDAR SELECTION: Auto-syncs hasSelectedCalendars flag
+ * AuthViewModel - Anmeldung über CredentialAuthManager (androidx.credentials); hält
+ * hasSelectedCalendars mit der Kalenderauswahl synchron.
  */
 @HiltViewModel
 class AuthViewModel @Inject constructor(
@@ -179,15 +166,10 @@ class AuthViewModel @Inject constructor(
     @Volatile
     private var triggerInProgress = false
 
-    /**
-     * PERFORMANCE OPTIMIZATION: Non-blocking Atomic State Updates
-     * Ersetzt Mutex durch atomare Vergleich-und-Tausch Operationen
-     */
     private fun updateAuthState(updateFunc: (AuthState) -> AuthState) {
         val currentState = _authState.value
         val newState = updateFunc(currentState)
 
-        // ATOMIC UPDATE: Thread-safe ohne Mutex-Blocking
         if (currentState != newState) {
             _authState.value = newState
         }
@@ -276,9 +258,7 @@ class AuthViewModel @Inject constructor(
 
     /**
      * Observes auth data changes from DataStore.
-     * PERFORMANCE FIX: Eliminates UI Thread blocking durch improved background processing
-     * CALENDAR AUTO-RELOAD: Automatically loads calendars after successful authorization
-     * UI THREAD OPTIMIZATION: Pure background processing mit atomic state updates
+     * Automatically loads calendars after successful authorization.
      */
     @OptIn(FlowPreview::class)
     private fun observeAuthState() {

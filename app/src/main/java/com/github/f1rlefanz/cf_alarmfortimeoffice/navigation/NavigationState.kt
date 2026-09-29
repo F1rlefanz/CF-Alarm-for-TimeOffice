@@ -5,8 +5,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 /**
  * Navigation State für die Main App
  * Ersetzt primitive Boolean-Navigation durch typisierte sealed classes
- *
- * PHASE 1 MIGRATION: Added Battery Exemption and OEM Warning states for onboarding flow
  */
 sealed class NavigationState {
 
@@ -16,7 +14,7 @@ sealed class NavigationState {
     data class ShiftConfig(val returnToTab: MainTab = MainTab.WECKER) : NavigationState()
     data class EventList(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
 
-    // Onboarding-Screens (PHASE 1 MIGRATION)
+    // Onboarding-Screens
     data class BatteryExemption(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
     data class UnusedAppRestrictions(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
     data class TimeOfficeHealthCheck(val returnToTab: MainTab = MainTab.HOME) : NavigationState()
@@ -59,20 +57,18 @@ enum class MainTab {
     HOME, WECKER, STATUS, SETTINGS, HUE, DIMMER
 }
 
-// Extension functions for NavigationState
 fun NavigationState.isMainContent(): Boolean = this is NavigationState.MainContent
 fun NavigationState.asMainContent(): NavigationState.MainContent? = this as? NavigationState.MainContent
 
 /**
  * Navigation Actions für State-Änderungen
- * PHASE 1 MIGRATION: Added Battery and OEM navigation actions
  */
 sealed class NavigationAction {
     data class NavigateToCalendarSelection(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToShiftConfig(val fromTab: MainTab = MainTab.SETTINGS) : NavigationAction()
     data class NavigateToEventList(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
 
-    // Onboarding Navigation Actions (PHASE 1 MIGRATION)
+    // Onboarding Navigation Actions
     data class NavigateToBatteryExemption(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToUnusedAppRestrictions(val fromTab: MainTab = MainTab.HOME) : NavigationAction()
     data class NavigateToTimeOfficeHealthCheck(val fromTab: MainTab = MainTab.HOME) : NavigationAction()

@@ -158,8 +158,6 @@
 # GOOGLE CALENDAR API
 # ==============================
 
-# Google Auth Library
--keep class com.google.auth.** { *; }
 -keep class com.google.api.client.** { *; }
 
 # HTTP Client
@@ -266,17 +264,6 @@
 -keep interface com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.** { *; }
 -keep class * implements com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.**
 -keep class * implements com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.**
-
-# ==============================
-# LOGGING LIBRARIES & SLF4J FIX
-# ==============================
-
-# SLF4J Logging (Fix for Google Auth Libraries)
--dontwarn org.slf4j.**
--dontwarn ch.qos.logback.**
-
-# Google Auth OAuth2 Library specific
--dontwarn com.google.auth.oauth2.Slf4jUtils**
 
 # ==============================
 # SUPPRESS WARNINGS

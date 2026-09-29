@@ -209,8 +209,6 @@ dependencies {
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.gpsAuth)
     implementation(libs.googleid)
-    implementation(libs.google.auth.library.oauth2.http)
-    implementation(libs.google.auth.library.credentials)
 
     // Google API Client for Calendar
     // Die beiden `-android`-Artefakte sind bewusst NICHT dabei: sie liefern nur

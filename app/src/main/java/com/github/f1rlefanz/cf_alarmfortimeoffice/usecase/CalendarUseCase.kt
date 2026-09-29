@@ -304,7 +304,6 @@ class CalendarUseCase @Inject constructor(
             CalendarPage(
                 calendars = pageCalendars,
                 page = page,
-                pageSize = pageSize,
                 totalCalendars = allCalendars.size,
                 hasNextPage = hasNextPage
             )
@@ -334,8 +333,6 @@ class CalendarUseCase @Inject constructor(
                 Logger.w(LogTags.CALENDAR, "No calendar IDs provided for lazy loading")
                 return@safeExecute EventPage(
                     events = emptyList(),
-                    offset = offset,
-                    maxEvents = maxEvents,
                     totalEvents = 0,
                     hasMore = false
                 )
@@ -403,8 +400,6 @@ class CalendarUseCase @Inject constructor(
             
             EventPage(
                 events = pageEvents,
-                offset = offset,
-                maxEvents = maxEvents,
                 totalEvents = sortedEvents.size,
                 hasMore = hasMore
             )

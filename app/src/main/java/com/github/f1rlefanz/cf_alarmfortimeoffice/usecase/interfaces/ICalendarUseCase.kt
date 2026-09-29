@@ -10,15 +10,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.CalendarConstant
 data class CalendarPage(
     val calendars: List<AndroidCalendar>,
     val page: Int,
-    val pageSize: Int,
     val totalCalendars: Int,
     val hasNextPage: Boolean
 )
 
 data class EventPage(
     val events: List<CalendarEvent>,
-    val offset: Int,
-    val maxEvents: Int,
     val totalEvents: Int,
     val hasMore: Boolean
 )

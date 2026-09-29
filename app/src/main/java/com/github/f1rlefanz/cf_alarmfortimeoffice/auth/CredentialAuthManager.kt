@@ -25,14 +25,7 @@ data class SignInResult(
 )
 
 /**
- * Modern Credential Authentication Manager - OAuth2 Modernized
- * 
- * ✅ MODERNIZED: Uses pure androidx.credentials approach with JWT token decoding
- * ✅ NO DEPRECATED APIs: Removed GoogleSignInClient.silentSignIn() hybrid flow
- * ✅ STANDARD APPROACH: Extracts email directly from JWT ID Token payload
- * 
- * This is the industry-standard method for extracting user information from
- * Google OAuth2 credentials without requiring deprecated APIs or additional permissions.
+ * Google-Anmeldung ueber androidx.credentials; die E-Mail kommt aus dem ID-Token.
  */
 class CredentialAuthManager(context: Context) {
 
@@ -164,11 +157,7 @@ class CredentialAuthManager(context: Context) {
     }
 
     /**
-     * ✅ MODERNIZED: Extract user information using JWT token decoding
-     * 
-     * This is the standard, modern approach used by most Android apps.
-     * The email is extracted directly from the JWT ID Token payload,
-     * eliminating the need for deprecated GoogleSignIn APIs.
+     * Liefert (userId, displayName, E-Mail) aus der Google-ID-Token-Credential.
      */
     fun extractUserInfo(response: GetCredentialResponse?): Triple<String?, String?, String?> {
         val credential = response?.credential
@@ -181,8 +170,7 @@ class CredentialAuthManager(context: Context) {
                 val displayName = googleIdTokenCredential.displayName
                 
                 Logger.d(LogTags.AUTH, "🔍 EXTRACT-START: Raw userId=$userId, displayName=$displayName")
-                
-                // ✅ MODERN JWT-BASED EMAIL EXTRACTION
+
                 val email = extractEmailFromIdToken(googleIdTokenCredential.idToken)
                 
                 if (!email.isNullOrEmpty()) {
@@ -203,20 +191,9 @@ class CredentialAuthManager(context: Context) {
     }
 
     /**
-     * ✅ STANDARD MODERN APPROACH: Extract email from JWT ID Token
-     * 
-     * This is how most Android apps extract user information from Google OAuth2 credentials.
-     * 
-     * JWT Structure: Header.Payload.Signature
-     * The Payload contains user claims including:
-     * - email: User's email address
-     * - email_verified: Whether email is verified
-     * - name: User's display name
-     * - picture: User's profile picture URL
-     * - sub: User's unique Google ID
-     * 
-     * @param idToken The JWT ID Token from GoogleIdTokenCredential
-     * @return The user's email address, or null if extraction fails
+     * Liest den `email`-Claim aus dem Payload des JWT-ID-Tokens.
+     *
+     * @return die E-Mail-Adresse, oder null, wenn das Dekodieren scheitert
      */
     private fun extractEmailFromIdToken(idToken: String): String? {
         return try {

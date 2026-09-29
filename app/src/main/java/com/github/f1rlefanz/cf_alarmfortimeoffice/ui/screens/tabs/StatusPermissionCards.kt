@@ -66,25 +66,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import dagger.hilt.android.EntryPointAccessors
 
-/**
- * Die BERECHTIGUNGS- UND ZUSTANDSKARTEN des Status-Tabs.
- *
- * Herausgeloest aus `StatusTabContent.kt` (1389 Zeilen), weil sie eine geschlossene Gruppe
- * bilden: jede Karte liest genau EINE Geraeteeinstellung, zeigt gruen/rot und fuehrt bei Bedarf
- * in die zustaendige Systemeinstellung. Sie teilen kein Zustandsobjekt mit dem Rest des Tabs
- * (kein ViewModel-Parameter), und sie lesen ihren Zustand alle nach demselben Muster bei jedem
- * `ON_RESUME` neu - der Nutzer kann ihn ausserhalb der App aendern.
- *
- * Bewusst KEINE Verhaltensaenderung: dieselben Funktionen, dieselbe Reihenfolge im Tab,
- * dieselbe Sichtbarkeit (`internal`, damit `StatusTabContent` sie weiterhin aufrufen kann -
- * Kotlin kennt kein package-private).
- *
- * WARUM DIESE KARTEN UEBERHAUPT EXISTIEREN: jede von ihnen deckt eine Einstellung ab, die in
- * diesem Projekt nachweislich schon einmal einen Wecker verschluckt hat (Akku-Optimierung,
- * "Pause bei Nichtnutzung", blockierte Benachrichtigungen, entzogene
- * Vollbild-Berechtigung) oder eine Abhaengigkeit ausserhalb der App betrifft (TimeOffice,
- * Dimmer-Dienst, Nicht-stoeren-Zugriff). Sie sind Diagnose fuer den Nutzer, nicht Deko.
- */
+// Die Berechtigungs- und Zustandskarten des Status-Tabs: jede liest EINE Geraeteeinstellung bei
+// jedem ON_RESUME neu, zeigt gruen/rot und fuehrt in die zustaendige Systemeinstellung. Jede deckt
+// eine Einstellung ab, die nachweislich schon einmal einen Wecker verschluckt hat, oder eine
+// Abhaengigkeit ausserhalb der App - Diagnose fuer den Nutzer, nicht Deko.
+
 /**
  * Meldet, ob die App ueberhaupt Benachrichtigungen zeigen darf - die Voraussetzung fuer ALLES
  * daran, inklusive der Vollbild-Karte darunter.
@@ -120,13 +106,8 @@ internal fun NotificationsEnabledCard() {
     // Wortgleich mit dem, was in den Systemeinstellungen steht - der Text darf keine Bezeichnung
     // erfinden, die der Nutzer dort nicht findet.
     val weckerKanalName = stringResource(R.string.alarm_channel_name)
-    // Die Reparaturanweisung wird ABGELEITET, nicht hingeschrieben - und sie nennt eine WIRKUNG
-    // statt eines Stufennamens: bis v1.29.0 stand hier fest "Standard oder hoeher", danach kurz
-    // ein aus einer eigenen Tabelle geholtes "Hoch". Beides schickte den Nutzer auf
-    // IMPORTANCE_DEFAULT - in der deutschen Liste von Android 8/9 heisst "Hoch" genau dieser Wert,
-    // den dieselbe Karte als zu niedrig verwirft, und auf neueren Versionen gibt es den Eintrag
-    // gar nicht. Wer der Anweisung folgte, sah unveraendert das Warndreieck und wurde weiter ohne
-    // Weck-Bildschirm geweckt.
+    // Anweisung nennt eine WIRKUNG, keinen Stufennamen
+    // (Hergang: cfalarm-wecker-und-boot/reference/wecker-boot-und-wartung.md).
     val geforderteStufe = NotificationDeliverability.mindeststufeBeschreibung(
         NotificationDeliverability.WICHTIGKEIT_HOCH
     )
@@ -192,11 +173,7 @@ internal fun NotificationsEnabledCard() {
  * still zu einem Banner — der Wecker klingelt, aber der Weck-Screen kommt nie hoch, und nichts
  * weist darauf hin. Ein reiner Hinweistext ohne Absprung waere hier wertlos.
  *
- * Der Zustand wird bei jedem ON_RESUME neu gelesen (`remember` + `BeiJedemResume`, siehe unten),
- * damit die Karte nach der Rueckkehr aus den Einstellungen sofort umspringt. NICHT "kein
- * remember": der Code benutzt eines. Der frueher hier stehende Satz verleitete dazu, den
- * ON_RESUME-Refresh als redundant zu entfernen ("liest doch bei jedem Aufruf neu") - danach fror
- * die Karte auf ihrem Startwert ein und behauptete eine Berechtigung, die es nicht mehr gibt.
+ * Der ON_RESUME-Refresh ist nicht redundant - ohne ihn friert die Karte auf ihrem Startwert ein.
  */
 @Composable
 internal fun FullScreenIntentCard() {
@@ -232,13 +209,8 @@ internal fun FullScreenIntentCard() {
  * schlummern. Am 29.08.2026 mit der vorinstallierten Google Uhr gegengeprueft - es trifft jede
  * Wecker-App auf diesem Geraet.
  *
- * WARUM ES DEN HINWEIS NEBEN DER ABHILFE GIBT: Vier Messlaeufe haben belegt, dass sich der
- * Full-Screen-Intent nicht NACHREICHEN laesst (weder ueber eine zweite Notification noch als
- * Update, auch nicht ohne Verzoegerung). Der Satz "app-seitig ist nichts zu gewinnen", der hier
- * stand, war daraus zu weit verallgemeinert: er galt fuers Nachreichen, nicht fuer den ZEITPUNKT
- * des ersten Postens. Genau dort setzt das Vorwecken an (seit 1.39.3, ohne Geraete-Unterscheidung
- * seit 1.39.5). Der Hinweis bleibt daneben bestehen - er meldet, wenn es TROTZ Vorwecken
- * passiert, und ist die einzige Stelle, an der der Nutzer davon erfaehrt.
+ * Der Hinweis meldet, wenn es TROTZ Vorwecken passiert
+ * (Hergang: cfalarm-wecker-und-boot/reference/vorwecken.md).
  *
  * WARUM KEIN KNOPF ZUR EINSTELLUNG: Es gibt keine. Die Gesichtsentsperrung des FP6 kennt nur
  * "einlernen" und "loeschen" - ein Schalter existiert nicht (im Fairphone-Forum unabhaengig
@@ -555,8 +527,6 @@ internal fun UnusedAppRestrictionsCard() {
     val context = LocalContext.current
 
     var isOk by remember { mutableStateOf(true) }
-    // mutableIntStateOf statt mutableStateOf(0): kein Autoboxing des Zaehlers (Delegat-Nutzung
-    // unveraendert - `refreshTrigger++` und der LaunchedEffect-Key bleiben, wie sie sind).
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refreshTrigger) {
@@ -959,35 +929,10 @@ internal fun StatusCard(
  * Fuehrt in die Bedienungshilfen-Liste. Mehr ist von einer normalen App aus nicht erreichbar -
  * und das ist gemessen, nicht vermutet.
  *
- * WARUM NICHT AUF DIE DETAILSEITE DIESES DIENSTES:
- * `android.settings.ACCESSIBILITY_DETAILS_SETTINGS` (ab Android 11) fuehrt zwar dorthin, ist fuer
- * diese App aber dauerhaft unerreichbar - nicht nur auf manchen Geraeten. Die Ziel-Activity
- * `Settings$AccessibilityDetailsSettingsActivity` traegt in AOSP seit Android 11, also seit es die
- * Aktion ueberhaupt gibt, `android:permission="android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"`;
- * die Berechtigung steht auf `signature|installer` und ist dort ausdruecklich als „Not for use by
- * third-party applications" (`@hide`) gekennzeichnet. Eine nicht plattformsignierte App kann sie
- * NIE halten. Am 05.09.2026 an BEIDEN Geraeten gemessen (Fairphone 6 / Android 16 und Emulator /
- * API 36): die Aktion loest sauber auf die Settings-Activity auf und wird dann mit
- * „Permission Denial ... requires OPEN_ACCESSIBILITY_DETAILS_SETTINGS" abgewiesen.
- * **Wer den Direktsprung wieder einbaut, baut einen Zweig, der garantiert immer nur seinen
- * Rueckfall erreicht - und dabei bei JEDEM Tipp eine sinnlose Zeile ins Release-Log schreibt.**
- *
- * WARUM AUCH KEIN HERVORHEBEN DES EINTRAGS: der uebliche Kniff dafuer ist
- * `:settings:fragment_args_key` (in AOSP `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY`) mit der flach
- * geschriebenen Kennung des Dienstes. Aus der Shell gestartet wirkt er auch - der Eintrag steht
- * dann markiert unter „Downloaded apps", nachgemessen im A/B und ueber 20 s stabil. **Aus DIESER
- * App heraus wirkt er nicht**, und daran lag es an nichts, was sich am Intent aendern liesse: mit
- * und ohne Argument-Buendel, mit und ohne `FLAG_ACTIVITY_NEW_TASK`, mit frisch geleerter
- * Einstellungen-App - immer ohne Hervorhebung, waehrend `dumpsys activity activities` fuer beide
- * Wege denselben Intent zeigt (`act=...ACCESSIBILITY_SETTINGS flg=0x10000000 xflg=0x4`, „has
- * extras"). Der Unterschied ist der Aufrufer selbst; AOSP liest den Schluessel primaer aus den
- * Fragment-Argumenten und nur hinter einem Feature-Flag aus dem Intent
- * (`SettingsPreferenceFragment.onCreateAdapter`).
- *
- * Deshalb steht hier der schlichte Aufruf ohne Extra: ein Zusatz, der im einzigen Kontext, in dem
- * er laeuft, nachweislich nichts bewirkt, ist kein Sicherheitsnetz, sondern Ballast mit einer
- * Erklaerung daneben, die etwas verspricht. Wer es erneut versucht, misst zuerst - und zwar aus
- * der App, nicht aus der Shell.
+ * Die Detailseite braucht eine Signatur-Berechtigung (ein Direktsprung erreicht nur seinen Rueckfall
+ * und schreibt bei jedem Tipp eine sinnlose Zeile ins Release-Log), `fragment_args_key` wirkt aus
+ * der App nicht - beides gemessen, Hergang: cfalarm-dimmer-und-dnd/reference/dimmer.md. Vor einem
+ * erneuten Versuch aus der App messen, nicht aus der Shell.
  */
 private fun openAccessibilitySettings(context: android.content.Context) {
     try {

@@ -12,7 +12,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueBridgeUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueLightUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightAction
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.LightTargets
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.UnresolvedRuleTarget
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -30,14 +29,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel for Hue Integration following Clean Architecture
- * Manages state for Bridge Setup, Light Control, and Rule Management
- *
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ Isolierte Hue-Dependencies
- * ✅ Keine Abhängigkeiten zu anderen ViewModels
+ * ViewModel for Hue Integration: state for Bridge Setup, Light Control, and Rule Management
  */
 @HiltViewModel
 class HueViewModel @Inject constructor(
@@ -60,10 +52,6 @@ class HueViewModel @Inject constructor(
             Logger.w(LogTags.HUE_VIEWMODEL, "Failed to trigger Hue rescheduling after rule change", e)
         }
     }
-    
-    // ==============================
-    // STATE MANAGEMENT
-    // ==============================
     
     private val _uiState = MutableStateFlow(HueUiState())
     val uiState: StateFlow<HueUiState> = _uiState.asStateFlow()
@@ -98,10 +86,6 @@ class HueViewModel @Inject constructor(
     private val aktualisierenFehlgeschlagen =
         "Bridge nicht erreichbar – Lichter und Szenen nicht aktualisiert."
 
-    // ==============================
-    // INITIALIZATION
-    // ==============================
-    
     init {
         Logger.i(LogTags.HUE_VIEWMODEL, "HueViewModel initialized")
         
@@ -171,10 +155,6 @@ class HueViewModel @Inject constructor(
             }
         }
     }
-    
-    // ==============================
-    // BRIDGE OPERATIONS
-    // ==============================
     
     fun discoverBridges() {
         Logger.i(LogTags.HUE_VIEWMODEL, "Starting bridge discovery")
@@ -332,10 +312,6 @@ class HueViewModel @Inject constructor(
         }
     }
 
-    // ==============================
-    // LIGHT OPERATIONS
-    // ==============================
-    
     /**
      * @param userInitiated true = der Nutzer hat auf ein Aktualisieren-Symbol getippt.
      *
@@ -414,37 +390,6 @@ class HueViewModel @Inject constructor(
         }
     }
 
-    fun executeLightAction(action: LightAction) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Executing light action for ${action.targetId}")
-        
-        viewModelScope.launch {
-            try {
-                val result = hueLightUseCase.executeLightAction(action)
-                
-                if (result.isSuccess) {
-                    val actionResult = result.getOrNull()
-                    if (actionResult?.success == true) {
-                        Logger.i(LogTags.HUE_VIEWMODEL, "Light action executed successfully")
-                        // Optionally refresh light states
-                        refreshLightTargets()
-                    } else {
-                        val error = actionResult?.error ?: "Light action failed"
-                        _uiState.update { it.copy(error = error) }
-                        Logger.w(LogTags.HUE_VIEWMODEL, "Light action failed: $error")
-                    }
-                } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to execute light action"
-                    _uiState.update { it.copy(error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Light action execution failed: $error")
-                }
-            } catch (e: Exception) {
-                val error = "Light action failed: ${e.message}"
-                _uiState.update { it.copy(error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Light action exception", e)
-            }
-        }
-    }
-    
     /**
      * "Test"-Knopf in [HueTabContent]/[HueSettingsScreen]: laesst jede bekannte Lampe blinken,
      * damit der Nutzer SIEHT, dass die App die Bridge wirklich erreicht.
@@ -500,10 +445,6 @@ class HueViewModel @Inject constructor(
             }
         }
     }
-    
-    // ==============================
-    // RULE OPERATIONS
-    // ==============================
     
     fun refreshRules() {
         Logger.d(LogTags.HUE_VIEWMODEL, "Refreshing schedule rules")
@@ -561,83 +502,65 @@ class HueViewModel @Inject constructor(
         _uiState.update { it.copy(editingRule = null) }
     }
     
-    fun createRule(rule: HueSchedule) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Creating new rule: ${rule.name}")
-        
+    fun createRule(rule: HueSchedule) = regelAktion(
+        eintrittsLog = "Creating new rule: ${rule.name}",
+        erfolgsLog = "Rule created successfully: ${rule.name}",
+        standardFehler = "Failed to create rule",
+        fehlerLog = "Rule creation failed",
+        ausnahmeLog = "Rule creation exception"
+    ) { hueRuleUseCase.createRule(rule) }
+
+    fun updateRule(rule: HueSchedule) = regelAktion(
+        eintrittsLog = "Updating rule: ${rule.id}",
+        erfolgsLog = "Rule updated successfully: ${rule.id}",
+        standardFehler = "Failed to update rule",
+        fehlerLog = "Rule update failed",
+        ausnahmeLog = "Rule update exception"
+    ) { hueRuleUseCase.updateRule(rule) }
+
+    fun deleteRule(ruleId: String) = regelAktion(
+        eintrittsLog = "Deleting rule: $ruleId",
+        erfolgsLog = "Rule deleted successfully: $ruleId",
+        standardFehler = "Failed to delete rule",
+        fehlerLog = "Rule deletion failed",
+        ausnahmeLog = "Rule deletion exception"
+    ) { hueRuleUseCase.deleteRule(ruleId) }
+
+    /**
+     * Gemeinsamer Ablauf von Anlegen, Aendern und Loeschen einer Regel. Im Erfolg werden die
+     * Regelliste und die vorgeplanten Hue-Jobs sofort nachgezogen. [fehlerLog] dient zugleich
+     * als Praefix der Fehlermeldung im catch-Zweig.
+     */
+    private fun regelAktion(
+        eintrittsLog: String,
+        erfolgsLog: String,
+        standardFehler: String,
+        fehlerLog: String,
+        ausnahmeLog: String,
+        block: suspend () -> Result<*>
+    ) {
+        Logger.i(LogTags.HUE_VIEWMODEL, eintrittsLog)
+
         _uiState.update { it.copy(isLoading = true, error = null) }
-        
+
         viewModelScope.launch {
             try {
-                val result = hueRuleUseCase.createRule(rule)
-                
+                val result = block()
+
                 if (result.isSuccess) {
                     _uiState.update { it.copy(isLoading = false) }
-                    refreshRules() // Refresh to show new rule
-                    recalculateHueSchedule() // Reflect the new rule in pre-scheduled jobs now
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule created successfully: ${rule.name}")
+                    refreshRules()
+                    recalculateHueSchedule()
+                    Logger.i(LogTags.HUE_VIEWMODEL, erfolgsLog)
                 } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to create rule"
+                    val error = result.exceptionOrNull()?.message ?: standardFehler
                     _uiState.update { it.copy(isLoading = false, error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Rule creation failed: $error")
+                    Logger.w(LogTags.HUE_VIEWMODEL, "$fehlerLog: $error")
                 }
             } catch (e: Exception) {
-                val error = "Rule creation failed: ${e.message}"
+                val error = "$fehlerLog: ${e.message}"
                 _uiState.update { it.copy(isLoading = false, error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Rule creation exception", e)
-            }
-        }
-    }
-    
-    fun updateRule(rule: HueSchedule) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Updating rule: ${rule.id}")
-        
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        
-        viewModelScope.launch {
-            try {
-                val result = hueRuleUseCase.updateRule(rule)
-                
-                if (result.isSuccess) {
-                    _uiState.update { it.copy(isLoading = false) }
-                    refreshRules() // Refresh to show updated rule
-                    recalculateHueSchedule() // Reflect the change in pre-scheduled jobs now
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule updated successfully: ${rule.id}")
-                } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to update rule"
-                    _uiState.update { it.copy(isLoading = false, error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Rule update failed: $error")
-                }
-            } catch (e: Exception) {
-                val error = "Rule update failed: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Rule update exception", e)
-            }
-        }
-    }
-    
-    fun deleteRule(ruleId: String) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Deleting rule: $ruleId")
-        
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        
-        viewModelScope.launch {
-            try {
-                val result = hueRuleUseCase.deleteRule(ruleId)
-                
-                if (result.isSuccess) {
-                    _uiState.update { it.copy(isLoading = false) }
-                    refreshRules() // Refresh to remove deleted rule
-                    recalculateHueSchedule() // Drop any pre-scheduled jobs for the removed rule
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule deleted successfully: $ruleId")
-                } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to delete rule"
-                    _uiState.update { it.copy(isLoading = false, error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Rule deletion failed: $error")
-                }
-            } catch (e: Exception) {
-                val error = "Rule deletion failed: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Rule deletion exception", e)
+                Logger.e(LogTags.HUE_VIEWMODEL, ausnahmeLog, e)
             }
         }
     }
@@ -670,10 +593,6 @@ class HueViewModel @Inject constructor(
             }
         }
     }
-    
-    // ==============================
-    // ERROR HANDLING
-    // ==============================
     
     fun clearError() {
         _uiState.update { it.copy(error = null) }

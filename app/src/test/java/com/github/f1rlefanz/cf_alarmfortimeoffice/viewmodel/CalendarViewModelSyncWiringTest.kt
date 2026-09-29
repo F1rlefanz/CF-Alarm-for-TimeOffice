@@ -101,8 +101,6 @@ class CalendarViewModelSyncWiringTest {
             on { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
                 EventPage(
                     events = pageEvents,
-                    offset = 0,
-                    maxEvents = 10,
                     totalEvents = totalEvents,
                     hasMore = totalEvents > pageEvents.size
                 )

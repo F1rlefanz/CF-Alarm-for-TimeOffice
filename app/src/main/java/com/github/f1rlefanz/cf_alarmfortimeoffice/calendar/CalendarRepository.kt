@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.calendar
 
-import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
@@ -16,7 +15,6 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.calendar.Calendar
 import com.google.api.services.calendar.model.CalendarList
 import com.google.api.services.calendar.model.Events
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -99,25 +97,13 @@ internal suspend fun <T> collectAllPages(
 }
 
 /**
- * CalendarRepository implementiert ICalendarRepository Interface
- * für die Google-Calendar-Anbindung.
- *
  * Der kurzlebige [CalendarEventCache] fasst nur Abrufe DESSELBEN Bedienvorgangs zusammen; jeder
  * Abruf, der wirklich an die API geht, holt ALLE Seiten des 14-Tage-Fensters ([collectAllPages]).
  * Beides hängt zusammen: was dieses Repository zurückgibt, gilt weiter oben als vollständige Liste
  * und ist damit eine Löschgrundlage für `syncAlarms()`.
- *
- * OHNE VERWENDER, bewusst noch nicht angefasst: der Konstruktorparameter `context`. Er wurde
- * ausschliesslich von `setContext()` geschrieben und NIE gelesen; mit dem Entfernen von
- * `setContext` (Aufraeumrunde 24, kein Aufrufer im Baum) ist er ganz unreferenziert. Er steht
- * noch, weil ihn zu entfernen den Hilt-Konstruktor aendert und damit eine andere Frage ist als
- * "Schnittstellen-Methode ohne Aufrufer" - erfasst als eigener Blickwinkel
- * ("Properties, die nur geschrieben und nie gelesen werden"). Kein Versehen.
  */
 @Singleton
-class CalendarRepository @Inject constructor(
-    @param:ApplicationContext private var context: Context
-) : ICalendarRepository {
+class CalendarRepository @Inject constructor() : ICalendarRepository {
     
     private val transport = NetHttpTransport()
     private val jsonFactory = GsonFactory.getDefaultInstance()
@@ -157,10 +143,8 @@ class CalendarRepository @Inject constructor(
 
                 if (calendarEntries.isEmpty()) {
                     Logger.w(LogTags.CALENDAR_API, "No calendars found in Google Calendar API response")
-                    Logger.i(LogTags.CALENDAR_API, "DIAGNOSTIC: User account appears to have no calendars or calendar access is restricted")
                 } else {
                     Logger.d(LogTags.CALENDAR_API, "Found calendars: ${calendarEntries.map { "${it.summary} (${it.id})" }}")
-                    Logger.i(LogTags.CALENDAR_API, "DIAGNOSTIC: Successfully loaded ${calendarEntries.size} calendars")
                 }
 
                 val calendars = calendarEntries.mapNotNull { calendarEntry ->
@@ -188,7 +172,6 @@ class CalendarRepository @Inject constructor(
         calendarId: String,
         forceRefresh: Boolean
     ): Result<List<CalendarEvent>> = withContext(Dispatchers.IO) {
-        // PHASE 2 CLEANUP: daysAhead fixed at 14 days
         val daysAhead = CalendarConstants.DEFAULT_DAYS_AHEAD
         SafeExecutor.safeExecute("CalendarRepository.getEventsWithCache") {
             
@@ -216,18 +199,7 @@ class CalendarRepository @Inject constructor(
                     .toInstant()
                     .toString()
 
-                // DIESE LISTE MUSS VOLLSTAENDIG SEIN - sie ist eine Loeschgrundlage.
-                //
-                // Bis v1.27.0 stand hier eine EINZELNE Abfrage mit `setMaxResults(50)`, und
-                // `nextPageToken` fehlte in der Feldmaske: eine bei 50 Treffern abgeschnittene
-                // Liste war von einer vollstaendigen nicht zu unterscheiden. Sie wanderte
-                // unveraendert in `CalendarFetchOutcome`, dessen `isComplete` nur nach
-                // fehlgeschlagenen Kalendern fragt - der gekappte Abruf galt also als
-                // VOLLSTAENDIG. Genau das ist in dieser App die Erlaubnis zu loeschen:
-                // `syncAlarms()` entfernt jeden Alarm, dessen eventId in der Liste fehlt, cancelt
-                // den Systemalarm, raeumt den Direct-Boot-Spiegel und meldet dem Nutzer "Schicht
-                // entfernt" - obwohl der Termin unveraendert im Kalender steht. Ein Kalender mit
-                // mehr als 50 Terminen in 14 Tagen (Dienstplan plus private Eintraege) reicht.
+                // Muss vollstaendig sein (Loeschgrundlage) - siehe collectAllPages.
                 val rawEvents = collectAllPages(
                     maxPages = CalendarConstants.MAX_EVENT_PAGES_PER_CALENDAR,
                     label = "Events von Kalender ${calendarId.take(8)}..."
@@ -250,7 +222,6 @@ class CalendarRepository @Inject constructor(
 
                 Logger.i(LogTags.CALENDAR_API, "${rawEvents.size} events loaded for next $daysAhead days")
 
-                // PERFORMANCE: Use optimized event processing
                 val calendarEvents = processEventsWithOptimization(rawEvents, calendarId)
 
                 eventCache.put(calendarId, calendarEvents)
@@ -264,46 +235,16 @@ class CalendarRepository @Inject constructor(
     }
     
     override suspend fun invalidateCalendarCache(calendarId: String) {
-        // PHASE 2 CLEANUP: Always invalidate for fixed 14 days
         eventCache.invalidateCalendar(calendarId)
-    }
-    
-    override suspend fun clearEventCache() {
-        eventCache.clear()
-    }
-    
-    override suspend fun getCacheStats(): String {
-        val cacheStats = eventCache.getCacheStats()
-        return buildString {
-            appendLine("📊 CALENDAR CACHE STATS:")
-            appendLine("▸ Cache: $cacheStats")
-        }
     }
 
     private fun getCalendarService(accessToken: String): Calendar {
         if (cachedService == null || cachedToken != accessToken) {
-            Logger.d(LogTags.CALENDAR_API, "🔗 API-SERVICE: Creating Calendar service")
-            Logger.d(LogTags.CALENDAR_API, "📊 TOKEN-INFO: Token length=${accessToken.length}")
-            
-            // DIAGNOSTIC: Check if this looks like a real OAuth2 token
-            when {
-                accessToken == "valid_credential_token" -> {
-                    Logger.e(LogTags.CALENDAR_API, "❌ CRITICAL: Still using placeholder token 'valid_credential_token'!")
-                    Logger.e(LogTags.CALENDAR_API, "💡 FIX-HINT: OAuth2 token integration is broken - check AuthViewModel and ModernOAuth2TokenManager")
-                }
-                accessToken.startsWith("ya29.") -> {
-                    Logger.business(LogTags.CALENDAR_API, "✅ TOKEN-OK: Real Google OAuth2 access token detected (ya29.)")
-                }
-                accessToken.length < 10 -> {
-                    Logger.w(LogTags.CALENDAR_API, "⚠️ TOKEN-SUSPICIOUS: Token seems too short (${accessToken.length} chars)")
-                }
-                else -> {
-                    Logger.d(LogTags.CALENDAR_API, "🔍 TOKEN-INFO: Using token of ${accessToken.length} chars")
-                }
+            if (accessToken.length < 10) {
+                Logger.w(LogTags.CALENDAR_API, "⚠️ TOKEN-SUSPICIOUS: Token seems too short (${accessToken.length} chars)")
             }
-            
+
             // Use standard OAuth2 Bearer token authentication
-            Logger.d(LogTags.CALENDAR_API, "🔐 AUTH-METHOD: Using OAuth2 Bearer token authentication")
             val requestInitializer = HttpRequestInitializer { request: HttpRequest ->
                 request.headers.authorization = "Bearer $accessToken"
             }
@@ -312,8 +253,6 @@ class CalendarRepository @Inject constructor(
                 .setApplicationName("CF-Alarm for TimeOffice")
                 .build()
             cachedToken = accessToken
-            
-            Logger.d(LogTags.CALENDAR_API, "✅ API-SERVICE: Calendar service ready for API calls")
         }
         return cachedService!!
     }

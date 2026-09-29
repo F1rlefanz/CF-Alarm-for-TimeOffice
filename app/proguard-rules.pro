@@ -1,24 +1,10 @@
 # ==============================
-# CF ALARM FOR TIME OFFICE - PROGUARD RULES
-# ==============================
-# Production-ready ProGuard configuration
-# Version: 2.0 - Optimized for Play Store Release
-# Last Updated: January 2025
-
-# ==============================
 # GLOBAL OPTIMIZATION SETTINGS
 # ==============================
 
-# Moderate optimization for stability (reduced from 5 to 3)
--optimizationpasses 3
--dontusemixedcaseclassnames
--dontskipnonpubliclibraryclasses
--verbose
-
-# Safe optimizations that won't break Google APIs
--optimizations !code/simplification/arithmetic,!code/simplification/cast,!field/*,!class/merging/*
-
 # Keep important attributes for debugging
+# Lesbare Stacktraces fuers app-eigene Crash-Logging (last_crash.txt); Signature braucht
+# Gson zur Typaufloesung, die Laufzeit-Annotationen braucht kotlinx-serialization.
 -keepattributes SourceFile,LineNumberTable,*Annotation*,Signature,InnerClasses,EnclosingMethod
 
 # Rename source files for security
@@ -58,8 +44,6 @@
 # CRASH REPORTING & DEBUGGING
 # ==============================
 
-# Lesbare Stacktraces fuers app-eigene Crash-Logging (last_crash.txt)
--keepattributes SourceFile,LineNumberTable
 -keep public class * extends java.lang.Exception
 
 # Keep error and warning logs for production debugging
@@ -90,9 +74,6 @@
 -keep class kotlin.Metadata { *; }
 -keep class kotlin.reflect.** { *; }
 -dontwarn kotlin.reflect.**
--keepclassmembers class kotlin.Metadata {
-    public <methods>;
-}
 
 # Kotlin Coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
@@ -119,9 +100,6 @@
 -keep class androidx.compose.foundation.** { *; }
 -keep class androidx.compose.material3.** { *; }
 -keep class androidx.compose.animation.** { *; }
-
-# Compose Compiler
--dontwarn androidx.compose.**
 
 # WARUM hier kein `-keep @androidx.compose.runtime.Composable class * { *; }` mehr steht:
 # `@Composable` traegt `@Target(FUNCTION, TYPE, TYPE_PARAMETER, PROPERTY_GETTER)` -
@@ -151,7 +129,6 @@
 # Hilt
 -keep class dagger.hilt.** { *; }
 -keep class javax.inject.** { *; }
--keep class * extends dagger.hilt.android.lifecycle.HiltViewModel
 -keep @dagger.hilt.android.lifecycle.HiltViewModel class * { *; }
 -keep @dagger.Module class * { *; }
 -keep @dagger.hilt.InstallIn class * { *; }
@@ -171,12 +148,7 @@
 
 # Google Play Services
 -keep class com.google.android.gms.** { *; }
--keep interface com.google.android.gms.** { *; }
 -dontwarn com.google.android.gms.**
-
-# Google Sign-In
--keep class com.google.android.gms.auth.** { *; }
--keep class com.google.android.gms.common.** { *; }
 
 # Credentials API
 -keep class androidx.credentials.** { *; }
@@ -189,24 +161,14 @@
 # Google Auth Library
 -keep class com.google.auth.** { *; }
 -keep class com.google.api.client.** { *; }
--keep class com.google.api.services.calendar.** { *; }
 
 # HTTP Client
--keep class com.google.api.client.http.** { *; }
--keep class com.google.api.client.json.** { *; }
 -dontwarn com.google.api.client.http.**
 
 # ==============================
 # NETWORKING - OKHTTP
 # ==============================
 
-# Diese keepattributes standen unter der Ueberschrift "Retrofit", sind aber nicht
-# Retrofit-spezifisch: generische Signaturen braucht Gson zur Typaufloesung, die
-# Laufzeit-Annotationen braucht kotlinx-serialization. Sie bleiben, die drei
-# retrofit2-Regeln daneben sind mit der Abhaengigkeit weggefallen.
--keepattributes Signature, InnerClasses, EnclosingMethod
--keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
--keepattributes AnnotationDefault
 -dontwarn org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement
 -dontwarn javax.annotation.**
 -dontwarn kotlin.Unit
@@ -214,7 +176,6 @@
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
--dontwarn javax.annotation.**
 -keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
@@ -225,8 +186,6 @@
 # ==============================
 
 # Gson
--keepattributes Signature
--keepattributes *Annotation*
 -dontwarn sun.misc.**
 -keep class com.google.gson.** { *; }
 -keep class * extends com.google.gson.TypeAdapter
@@ -238,7 +197,6 @@
 }
 
 # Kotlin Serialization
--keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
 -keepclassmembers class kotlinx.serialization.json.** {
     *** Companion;
@@ -257,7 +215,6 @@
 
 # WorkManager
 -keep class androidx.work.** { *; }
--keep class * extends androidx.work.Worker
 -keep class * extends androidx.work.ListenableWorker
 -keepnames class * extends androidx.work.ListenableWorker
 
@@ -288,11 +245,8 @@
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.data.** { *; }
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.** { *; }
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.** { *; }
--keep class com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.data.** { *; }
--keep class com.github.f1rlefanz.cf_alarmfortimeoffice.shift.data.** { *; }
 
 # Keep UI states
--keep class **.*UiState { *; }
 -keep class **.*State { *; }
 -keep class **.*Event { *; }
 
@@ -323,11 +277,8 @@
 # SLF4J Logging (Fix for Google Auth Libraries)
 -dontwarn org.slf4j.**
 -dontwarn ch.qos.logback.**
--keep class org.slf4j.** { *; }
--keep class ch.qos.logback.** { *; }
 
 # Google Auth OAuth2 Library specific
--keep class com.google.auth.oauth2.** { *; }
 -dontwarn com.google.auth.oauth2.Slf4jUtils**
 
 # ==============================
@@ -335,7 +286,6 @@
 # ==============================
 
 # Common warnings that can be safely ignored
--dontwarn javax.annotation.**
 -dontwarn org.apache.commons.**
 -dontwarn org.apache.http.**
 -dontwarn com.google.errorprone.annotations.**
@@ -350,12 +300,10 @@
 
 # Fix for Log4J warnings from Apache Commons Logging
 # The Log4JLogger is an optional implementation that we don't use
--dontwarn org.apache.commons.logging.impl.Log4JLogger
 -dontwarn org.apache.log4j.**
 
 # Keep Commons Logging interfaces but allow implementation removal
 -keep interface org.apache.commons.logging.Log { *; }
--keep interface org.apache.commons.logging.LogFactory { *; }
 
 # Safely ignore missing Log4J classes (we use Android logging instead)
 -dontnote org.apache.commons.logging.impl.Log4JLogger
@@ -389,7 +337,6 @@
 }
 
 # Additional compatibility for Android Q+ memory management
--keep class android.os.** { *; }
 -dontwarn android.os.**$$*
 
 # ==============================
@@ -412,46 +359,21 @@
 # benennt R8 bewusst nichts mehr um - eine mapping.txt ohne verschleierte Namen ist hier also
 # der SOLL-Zustand und kein Hinweis auf eine Attrappe.
 
-# Enable R8 full mode optimizations in gradle
-# android.enableR8.fullMode=true
-
 # ==============================
 # TINK CRYPTO ENCRYPTION (AES-256-GCM)
 # ==============================
 
 # Keep Tink classes and methods
 -keep class com.google.crypto.tink.** { *; }
--keep interface com.google.crypto.tink.** { *; }
 
 # Keep AEAD primitive
 -keep class * extends com.google.crypto.tink.Aead { *; }
 
-# Keep Tink config and registration
--keep class * extends com.google.crypto.tink.config.TinkFips { *; }
--keepclassmembers class com.google.crypto.tink.config.** {
-    public static *** register(...);
-}
-
-# Keep Android integration
--keep class com.google.crypto.tink.integration.android.** { *; }
--keep class * extends com.google.crypto.tink.integration.android.** { *; }
-
-# Keep key templates
--keep class com.google.crypto.tink.KeyTemplate { *; }
--keep class com.google.crypto.tink.KeyTemplates { *; }
--keepclassmembers class com.google.crypto.tink.KeyTemplates {
-    public static *** get(...);
-}
-
 # Keep Protobuf classes used by Tink
--keep class com.google.crypto.tink.proto.** { *; }
--keep class com.google.protobuf.** { *; }
 -dontwarn com.google.protobuf.**
 
 # Suppress warnings from Tink
 -dontwarn com.google.crypto.tink.**
--dontwarn com.google.errorprone.annotations.**
--dontwarn javax.annotation.**
 
 # ==============================
 # TOKEN ENCRYPTION SPECIFIC
@@ -462,6 +384,21 @@
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory { *; }
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionException { *; }
 
-# Keep DataStore serializers
--keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory$* { *; }
--keep class * extends androidx.datastore.core.Serializer { *; }
+# Google API Client
+-keep class com.google.api.services.** { *; }
+-assumenosideeffects class com.google.api.client.util.LoggingStreamingContent {
+    <init>(...);
+}
+
+# Ungenutzte Log4J-Implementierung aus commons-logging
+-assumenosideeffects class org.apache.commons.logging.impl.Log4JLogger {
+    <init>(...);
+    public void trace(...);
+    public void debug(...);
+    public void info(...);
+}
+
+# Generierte Klassen
+-keep class **_Impl { *; }
+-keep class **_Factory { *; }
+-keep class **_MembersInjector { *; }

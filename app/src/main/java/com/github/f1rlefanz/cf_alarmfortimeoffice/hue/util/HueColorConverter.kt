@@ -17,11 +17,6 @@ import kotlin.math.sqrt
  * - RGB → XY (CIE 1931 color space)
  * - Color temperature calculations
  * - Hue-specific color mappings
- * 
- * Implementation follows Philips Hue API specifications and color science standards.
- * 
- * @author CF-Alarm Development Team
- * @since Hue Integration v2.1
  */
 object HueColorConverter {
     
@@ -34,12 +29,6 @@ object HueColorConverter {
         floatArrayOf(0.4091f, 0.518f), // Green  
         floatArrayOf(0.167f, 0.04f)    // Blue
     )
-    
-    /**
-     * Color temperature range for Philips Hue bulbs
-     */
-    const val MIN_COLOR_TEMPERATURE = 153 // ~6500K (cool white)
-    const val MAX_COLOR_TEMPERATURE = 500 // ~2000K (warm white)
     
     /**
      * Converts RGB color to Hue HSV values
@@ -352,7 +341,7 @@ object HueColorConverter {
      */
     fun kelvinToHueMireds(kelvin: Int): Int {
         val mireds = 1_000_000 / kelvin.coerceIn(2000, 6500)
-        return mireds.coerceIn(MIN_COLOR_TEMPERATURE, MAX_COLOR_TEMPERATURE)
+        return mireds.coerceIn(HueConstants.Lights.MIN_COLOR_TEMPERATURE, HueConstants.Lights.MAX_COLOR_TEMPERATURE)
     }
     
     /**
@@ -362,7 +351,7 @@ object HueColorConverter {
      * @return Color temperature in Kelvin
      */
     fun hueMiredsToKelvin(mireds: Int): Int {
-        return 1_000_000 / mireds.coerceIn(MIN_COLOR_TEMPERATURE, MAX_COLOR_TEMPERATURE)
+        return 1_000_000 / mireds.coerceIn(HueConstants.Lights.MIN_COLOR_TEMPERATURE, HueConstants.Lights.MAX_COLOR_TEMPERATURE)
     }
     
     /**

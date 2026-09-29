@@ -7,16 +7,9 @@
    (<cloud-backup> UND <device-transfer>) gepflegt werden. Sonst sichert dasselbe Geraet je
    nach Android-Version bzw. Uebertragungsweg Unterschiedliches.
 
-   WARUM DIESE DATEI 2026-08 KOMPLETT NEU GESCHRIEBEN WURDE:
-   Vorher standen in beiden Bloecken ausschliesslich Pfade, die diese App NIE angelegt hat -
-   shift_config.xml, alarm_settings.xml, ui_preferences.xml, app_preferences.xml
-   (domain="sharedpref") und app_database.db (domain="database"). Die Einstellungen liegen
-   real in DataStore-Dateien unter files/datastore/*.preferences_pb (domain="file"), eine
-   Room-/SQLite-Datenbank gibt es in dieser App gar nicht. Weil eine reine <include>-Liste
-   alles Nicht-Genannte ausschliesst, war die effektive Backup-/Transfer-Menge LEER: der
-   Kommentar versprach "Same safe configuration for better user experience", uebertragen
-   wurde aber NICHTS. Die Pfade unten sind am Emulator per `run-as <pkg> ls -R` gegen die
-   tatsaechlich angelegten Dateien geprueft.
+   Frueher standen hier nur nie angelegte Pfade; die effektive Backup-Menge war dadurch LEER.
+   Die Pfade unten sind am Emulator per `run-as <pkg> ls -R` gegen die tatsaechlich
+   angelegten Dateien geprueft; BackupRulesConsistencyTest verbietet die Altpfade.
 
    GRUNDSATZ: Gesichert wird nur, was der Nutzer selbst konfiguriert hat (Schichten,
    Dimm-/DND-/Hue-Regeln, Kalenderauswahl). Anmelde- und Verschluesselungsartefakte sind
@@ -37,29 +30,10 @@
              harmlos: sie werden beim naechsten syncAlarms()/applyCurrentState() aus Kalender +
              Konfiguration neu abgeleitet, und eine restaurierte, auf dem Zielgeraet unbekannte
              Zen-Regel-ID legt ensureZenRule() einfach neu an.
-             ZWEI AUSNAHMEN, die das NICHT sind. Einzelne Schluessel lassen sich aus einem
-             Preferences-Store nicht ausnehmen (er ist EINE Datei), deshalb behandelt sie
-             DeviceLocalFlagsGuard beim erkannten Geraetewechsel:
-             1. Die Master-Pause (master_pause_enabled) wird NICHT neu abgeleitet - sie ist
-                massgeblicher Zustand und gated Wecker, Dimmer, DND und die 6h-Wartung. Nach einem
-                Restore waere eine aktive Pause wieder aktiv, und auf dem neuen Geraet bliebe der
-                Wecker STILL, ohne dass jemand die Ursache in einer Wiederherstellung sucht. Sie
-                wird nicht geloescht, sondern ueber MasterPauseUseCase.resume() aufgehoben - eine
-                Pause ist mehr als das Flag.
-             2. Das Gedaechtnis der Kalender-Warnung (calendar_unavailable_notified,
-                calendar_unavailable_last_failed - CalendarUnavailablePrefs) leitet sich ebenfalls
-                nicht neu ab, und der "schon gewarnt"-Merker heilt ausdruecklich NICHT: wandert er
-                mit und scheitert derselbe Kalender auf dem neuen Geraet weiter, rechnet
-                entscheideBenachrichtigung() bei jedem Lauf "neu zu melden = beharrlich - bereits
-                gemeldet" = leer, meldet nichts, und der abschliessende intersect haelt die ID
-                fest. Dann versiegen die Wecker lautlos (die Vollstaendigkeits-Sperren verhindern
-                das Loeschen UND das Anlegen), und die einzige Meldung darueber bleibt aus. Bei
-                gleichem Google-Konto sind es dieselben Kalender-IDs - dass die Kalenderauswahl
-                selbst nicht gesichert wird, hilft also nicht. Der Schalter daneben
-                (calendar_unavailable_notification_enabled) ist eine echte Einstellung und reist
-                mit.
-             Beide Male ist die harmlose Richtung gewaehlt: ein unerwartet klingelnder Wecker oder
-             eine zweimal gezeigte Warnung ist harmloser als ein unerwartet stummer Wecker. -->
+             ZWEI AUSNAHMEN (einzelne Schluessel lassen sich aus EINER Datei nicht ausnehmen):
+             master_pause_enabled und calendar_unavailable_* behandelt DeviceLocalFlagsGuard beim
+             Geraetewechsel (Master-Pause via MasterPauseUseCase.resume()). Hergang: Skill
+             cfalarm-persistenz-und-auth, reference/geraetewechsel-und-export.md. -->
         <include domain="file" path="datastore"/>
 
         <!-- AUSSCHLUSS 1 - Token-Store: mit einem Tink-AES256-GCM-Keyset verschluesselt,
@@ -78,10 +52,8 @@
         <!-- SharedPreferences: Domain aufgenommen, damit die folgenden <exclude>-Regeln
              wirksam (und Lint-konform) sind - ein <exclude> ausserhalb eines <include>-Pfades
              ist ein No-Op und wird von Lint als FullBackupContent gemeldet; genau das erzeugte
-             die alte lint-baseline.xml. Faktisch bleibt von domain="sharedpref" heute NICHTS
-             uebrig, weil alle drei real existierenden Dateien unten ausgeschlossen sind. WER
-             EINE NEUE SharedPreferences-DATEI ANLEGT, muss hier bewusst entscheiden, ob sie
-             ins Backup darf. -->
+             die alte lint-baseline.xml. WER EINE NEUE SharedPreferences-DATEI ANLEGT, muss
+             hier bewusst entscheiden, ob sie ins Backup darf. -->
         <include domain="sharedpref" path="."/>
 
         <!-- AUSSCHLUSS 3 - token_encryption_prefs.xml: haelt das Tink-Keyset
@@ -109,9 +81,7 @@
              HARDWARE, nicht der Nutzerkonfiguration: der Defekt steckt in Fairphones
              Gesichtsentsperrung. Wandert der Zaehler mit, zeigt ein gesundes Nachfolgegeraet
              einen Hinweis ueber einen Defekt, den es nicht hat - und raet dem Nutzer, sein
-             eingelerntes Gesicht zu loeschen. Der frueher hier mitgenannte Merker
-             je_verdraengt ist mit 1.39.5 entfallen; das Vorwecken haengt an keinem
-             gespeicherten Wert mehr. -->
+             eingelerntes Gesicht zu loeschen. -->
         <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
     </cloud-backup>
 
@@ -127,15 +97,7 @@
         <exclude domain="sharedpref" path="hue_trust_pinning.xml"/>
         <exclude domain="sharedpref" path="background_services.xml"/>
 
-        <!-- weckbildschirm_verdraengung.xml: die Aussage "DIESES Geraet verdraengt den
-             Weckbildschirm" - der Zaehler hinter dem Hinweis im Status-Tab (siehe Skill
-             cfalarm-wecker-und-boot, reference/vorwecken.md). Das ist eine Eigenschaft der
-             HARDWARE, nicht der Nutzerkonfiguration: der Defekt steckt in Fairphones
-             Gesichtsentsperrung. Wandert der Zaehler mit, zeigt ein gesundes Nachfolgegeraet
-             einen Hinweis ueber einen Defekt, den es nicht hat - und raet dem Nutzer, sein
-             eingelerntes Gesicht zu loeschen. Der frueher hier mitgenannte Merker
-             je_verdraengt ist mit 1.39.5 entfallen; das Vorwecken haengt an keinem
-             gespeicherten Wert mehr. -->
+        <!-- Begruendung wie im Block <cloud-backup>. -->
         <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
     </device-transfer>
 </data-extraction-rules>

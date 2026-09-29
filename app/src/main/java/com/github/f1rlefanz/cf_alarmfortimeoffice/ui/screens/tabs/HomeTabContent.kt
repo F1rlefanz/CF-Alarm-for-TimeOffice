@@ -187,8 +187,8 @@ fun HomeTabContent(
     masterPausePaused: Boolean,
     onJetztAbgleichen: () -> Unit,
     onNavigateToWecker: () -> Unit,
-    onShowEventList: (() -> Unit)? = null,
-    onReauthorize: (() -> Unit)? = null
+    onShowEventList: () -> Unit,
+    onReauthorize: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -257,11 +257,12 @@ fun HomeTabContent(
                         // Nicht nur "Keine Schicht erkannt", sondern WARUM: der Satz allein galt fuer
                         // sechs verschiedene Ursachen und liess den Nutzer ohne Anhaltspunkt zurueck.
                         val shiftConfig = shiftState.currentShiftConfig
+                        val ladeFehler = calendarState.error ?: shiftState.error
                         val reason = noShiftReason(
                             hasSelectedCalendars = calendarState.selectedCalendarIds.isNotEmpty(),
                             calendarAuthorizationValid = calendarState.calendarAuthorizationValid,
                             unavailableCalendarCount = calendarState.unavailableCalendarIds.size,
-                            errorMessage = calendarState.error ?: shiftState.error,
+                            errorMessage = ladeFehler,
                             eventCount = calendarState.events.size,
                             shiftConfigLoaded = shiftConfig != null,
                             enabledShiftTypeCount = shiftConfig?.definitions?.count { it.isEnabled } ?: 0,
@@ -275,7 +276,7 @@ fun HomeTabContent(
                         Text(
                             noShiftExplanation(
                                 reason = reason,
-                                errorMessage = calendarState.error ?: shiftState.error,
+                                errorMessage = ladeFehler,
                                 // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
                                 // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
                                 sampleEventTitles = calendarState.events
@@ -321,12 +322,14 @@ fun HomeTabContent(
         }
 
         // Kalender Events Summary
+        val zugriffVerloren =
+            !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()
         Card(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { onShowEventList?.invoke() }, // LAZY LOADING: Make card clickable for event list
+            onClick = onShowEventList, // LAZY LOADING: Make card clickable for event list
             colors = CardDefaults.cardColors(
                 // PHASE 2 FIX: Show error color if authorization lost
-                containerColor = if (!calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()) {
+                containerColor = if (zugriffVerloren) {
                     MaterialTheme.colorScheme.errorContainer
                 } else {
                     CardDefaults.cardColors().containerColor
@@ -350,7 +353,7 @@ fun HomeTabContent(
                         // ("⚠️ Kalender-Autorisierung verloren"), nicht dieses Icon
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                        tint = if (!calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()) {
+                        tint = if (zugriffVerloren) {
                             MaterialTheme.colorScheme.onErrorContainer
                         } else {
                             MaterialTheme.colorScheme.primary
@@ -366,7 +369,7 @@ fun HomeTabContent(
                 HorizontalDivider()
                 
                 // PHASE 2 FIX: Show authorization error prominently
-                if (!calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()) {
+                if (zugriffVerloren) {
                     Text(
                         "⚠️ Kalender-Autorisierung verloren",
                         style = MaterialTheme.typography.titleMedium,
@@ -378,17 +381,15 @@ fun HomeTabContent(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
-                    onReauthorize?.let { reauthorize ->
-                        Button(
-                            onClick = reauthorize,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
-                            )
-                        ) {
-                            Text("Kalender-Zugriff erneuern")
-                        }
+                    Button(
+                        onClick = onReauthorize,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
+                    ) {
+                        Text("Kalender-Zugriff erneuern")
                     }
                 } else if (calendarState.events.isNotEmpty()) {
                     // LAZY LOADING: Show limited events overview in home tab

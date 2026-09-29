@@ -3,16 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Repository-Interface für Token-Persistence
- * 
- * Ermöglicht verschiedene Storage-Implementationen:
- * - DataStoreTokenRepository (Production)
- * - LegacyTokenRepository (Migration)
- * - InMemoryTokenRepository (Testing)
- * 
- * Design Pattern: Repository Pattern für Separation of Concerns
- */
+/** Repository-Interface für Token-Persistence (Implementierung: DataStoreTokenRepository). */
 interface TokenRepository {
     
     /**

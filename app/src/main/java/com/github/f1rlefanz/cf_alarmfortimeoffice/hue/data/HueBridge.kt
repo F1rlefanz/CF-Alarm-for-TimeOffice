@@ -9,20 +9,15 @@ import androidx.compose.runtime.Immutable
  * von Gson; die Felder sind also kein Drahtformat, sondern genau das, was die App fuehrt.
  * @Immutable annotation optimizes Compose performance by preventing unnecessary recompositions
  *
- * ENTFERNT (14.09.2026): `modelid`, `swversion`, `isReachable`. Keine der beiden Erzeugungs-
- * stellen setzte sie je, gelesen hat sie niemand — `isReachable` war damit auf JEDER Bridge
- * dauerhaft `false` und behauptete trotzdem, die Erreichbarkeit zu fuehren. Die gilt es hier
- * gar nicht zu fuehren: darueber urteilt `HueBridgeConnectionManager.probeBridge()` mit einem
- * echten Request. Mit den Feldern ist die "Enhanced Features"-Liste dieses KDoc gefallen; sie
- * zaehlte vier Faehigkeiten auf, von denen drei nie ein Feld hatten.
+ * Die Erreichbarkeit fuehrt das Modell bewusst nicht - darueber urteilt
+ * `HueBridgeConnectionManager.probeBridge()` mit einem echten Request.
  */
 @Immutable
 data class HueBridge(
     val id: String,
-    val ipAddress: String, // Renamed from internalipaddress for clarity
+    val ipAddress: String,
     val name: String? = null
 ) {
-    // Legacy compatibility property
     val internalipaddress: String
         get() = ipAddress
 }
@@ -34,22 +29,9 @@ data class HueBridge(
  * geraeteuebergreifende Anker der Bridge, [mac] der Rueckfall dafuer. Beide werden in
  * `HueApiClient.getBridgeConfig` geprueft — ueber nullable Zwischenwerte, denn Gson erzwingt
  * die Non-Null-Deklarationen hier NICHT.
- *
- * ENTFERNT (14.09.2026): `name`, `datastoreversion`, `swversion`, `apiversion`, `factorynew`,
- * `replacesbridgeid`, `modelid` — die Bridge sendet sie weiter, gelesen hat sie niemand. Der
- * angezeigte Bridge-Name kommt aus [HueBridge.name] und damit aus der Discovery, nicht von hier.
  */
 @Immutable
 data class HueBridgeConfig(
     val mac: String,
     val bridgeid: String
-)
-
-/**
- * Bridge discovery response
- */
-@Immutable
-data class BridgeDiscoveryResponse(
-    val id: String,
-    val internalipaddress: String
 )

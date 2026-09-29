@@ -2,18 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 
 import androidx.compose.runtime.Immutable
 
-/**
- * IMMUTABLE Alarm Information Model
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable annotation für Compose-Performance
- * ✅ Strukturelle Gleichheit für effiziente Flow-Operations
- * 
- * 🔧 SYNC-FIX: Event-Tracking für intelligente Alarm-Synchronisation
- * ✅ eventId: Google Calendar Event-ID (erkennt gelöschte Events)
- * ✅ eventChecksum: Hash des Events (erkennt Änderungen)
- * ✅ Löst Bug: "Alter Alarm klingelt nach Event-Änderung"
- */
 @Immutable
 data class AlarmInfo(
     val id: Int,
@@ -23,7 +11,6 @@ data class AlarmInfo(
     val formattedTime: String,
     val isActive: Boolean = true,
     
-    // 🔧 SYNC-FIX: Event-Tracking für intelligente Synchronisation
     val eventId: String = "",  // Google Calendar Event-ID
     val eventChecksum: String = "",  // Hash: startTime+endTime+title (erkennt Änderungen)
 

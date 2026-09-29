@@ -555,26 +555,8 @@ internal class ServiceRunTracker {
 }
 
 /**
- * AlarmMaintenanceService - Short-Lived Foreground Service
- *
- * ARCHITECTURE (Briefing 4.0):
- * - Runs as Foreground Service (visible notification for 10-30 seconds)
- * - Triggered by Exact Alarm every 6 hours
- * - Performs: Token Refresh → Health Check → Event Loading → Alarm Creation
- * - Self-Healing: Schedules next run before stopping
- *
- * HEALTH CHECK (siehe [MaintenanceLoadDecision.shouldLoadEvents]):
- * - Puffer des letzten geplanten Alarms (< 7 Tage → laden)
- * - Alter der letzten echten Kalender-Abfrage (>= 12h → laden)
- * - Naehe des naechsten Alarms (<= 48h → laden)
- * - Erzwungener Lauf (Zeitzonen-Wechsel, Boot) → immer laden
- *
- * LIFECYCLE:
- * 1. BroadcastReceiver starts service
- * 2. startForeground() - notification appears
- * 3. performMaintenance() in coroutine
- * 4. stopSelf() - notification disappears
- * 5. Service returns START_NOT_STICKY
+ * Kurzlebiger Vordergrunddienst der 6h-Wartungskette, ausgeloest per exaktem Alarm; einziger
+ * Planer ist [scheduleNext]. Ablauf: [performMaintenance], Lade-Gate: [MaintenanceLoadDecision].
  */
 @AndroidEntryPoint
 class AlarmMaintenanceService : Service() {
@@ -667,10 +649,6 @@ class AlarmMaintenanceService : Service() {
          */
         const val EXTRA_WACHHUND = "wachhund"
 
-        // CONSOLIDATION: moved off the standalone "cf_alarm_prefs" SharedPreferences file
-        // and into the existing Hilt @MainDataStore.
-        // NO MIGRATION: only the developer uses the app right now, so the old SharedPreferences
-        // value is intentionally left behind - losing the last-maintenance timestamp once is harmless.
         private val KEY_LAST_MAINTENANCE = longPreferencesKey("last_maintenance_time")
 
         /**
@@ -731,29 +709,11 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Startet den Wartungslauf. FAENGT den Fehlschlag - und zwar HIER, nicht bei den Aufrufern.
-         *
-         * `startForegroundService()` wirft ab Android 12 eine
-         * `ForegroundServiceStartNotAllowedException` (eine `IllegalStateException`), wenn die App
-         * im Hintergrund ist und der Anlass nicht auf Androids Ausnahmeliste steht. Auf der Liste
-         * stehen u. a. BOOT_COMPLETED, LOCKED_BOOT_COMPLETED, MY_PACKAGE_REPLACED und das Feuern
-         * eines Exact-Alarms - **`ACTION_TIMEZONE_CHANGED` steht dort NICHT**. Von den sechs
-         * Aufrufstellen fing genau eine nicht (`TimezoneChangeReceiver`), und eine Exception aus
-         * `onReceive()` reisst den Prozess mit: doppelter Schaden, denn ausgefallen waere damit
-         * genau die Neuberechnung der Weckzeiten, fuer die dieser Receiver als einzige
-         * Verteidigungslinie existiert.
-         *
-         * Der Fang steht deshalb an DIESER Stelle: sie deckt alle heutigen und kuenftigen Aufrufer
-         * ab, statt sich darauf zu verlassen, dass jeder von ihnen daran denkt - dieselbe
-         * Ueberlegung wie beim Master-Pause-Backstop in `syncAlarms()`.
-         *
-         * Statt es dabei zu belassen, wird per EXAKTEM Alarm nachgeholt: das Feuern eines exakten
-         * Alarms IST ein erlaubter Anlass, der Lauf kommt also ~10 s spaeter doch zustande. Ohne
-         * das waere die Zeitzonen-Korrektur bis zum naechsten regulaeren 6h-Lauf verzoegert.
-         *
-         * "EXAKT" ist dabei die tragende Bedingung und keine Feinheit — ein inexakt gestellter
-         * Nachholversuch traegt die Freigabe NICHT und wuerde sich endlos selbst nachstellen.
-         * Deshalb entscheidet [WartungsKettenPlanung.darfNachholen], ob ueberhaupt nachgeholt wird.
+         * Startet den Wartungslauf. FAENGT den abgelehnten Vordergrund-Start HIER, nicht bei den
+         * Aufrufern: `ACTION_TIMEZONE_CHANGED` ist nicht von Androids Hintergrund-Startverbot
+         * ausgenommen, und eine Exception aus `onReceive()` reisst den Prozess mit. Nachgeholt wird
+         * nur per EXAKTEM Alarm (ein inexakter traegt die Freigabe nicht), gedeckelt durch
+         * [WartungsKettenPlanung.darfNachholen]. Hergang: Skill cfalarm-wecker-und-boot.
          *
          * @param forceSync ueberspringt das Lade-Gate ([MaintenanceLoadDecision.shouldLoadEvents])
          *   und erzwingt Kalender-Abfrage + Delta-Sync. Default false — die regulaere 6h-Kette
@@ -826,26 +786,11 @@ class AlarmMaintenanceService : Service() {
         }
 
         /**
-         * Stellt den naechsten Wartungslauf (+6h) — der EINZIGE Planer der Kette.
-         *
-         * Frueher gab es einen zweiten: die Instanzmethode scheduleNextAlarm() stellte denselben
-         * Alarm noch einmal, nur mit Request-Code 9999 statt 0. Verschiedene Request-Codes heissen
-         * verschiedene PendingIntents, also ZWEI unabhaengige AlarmManager-Eintraege. Da der
-         * finally-Block von [onStartCommand] ohnehin immer hier landet, plante jeder erfolgreiche
-         * Lauf beide — Ergebnis: dauerhaft zwei Wartungszyklen alle 6h, im Abstand von
-         * Millisekunden. Doppelte Google-Kalender-Abfragen, doppelte Arbeit, und genau die zwei
-         * ueberlappenden Starts, gegen die stopSelf(startId) haerten musste.
-         *
-         * Die Pruefung auf canScheduleExactAlarms() stammt aus der geloeschten Methode und bleibt:
-         * setExactAndAllowWhileIdle() wirft eine SecurityException, wenn die Berechtigung fehlt.
-         * Ab API 33 traegt die App USE_EXACT_ALARM (bei Installation erteilt, nicht entziehbar),
-         * auf 31/32 greift nur SCHEDULE_EXACT_ALARM — und das darf der Nutzer abschalten. Vorher
-         * stand hier ein ungeprueftes setExactAndAllowWhileIdle().
-         *
-         * Seit dieser Runde stellt dieselbe Funktion zusaetzlich den Wiederanlauf-Wachhund
-         * ([armiereWiederanlauf]). Das bleibt EIN Planer: beide Alarme entstehen hier und nur
-         * hier, der Wachhund liegt immer hinter dem regulaeren Lauf und wird von jedem Lauf
-         * mitverschoben. Warum es ihn braucht, steht an [WartungsKettenPlanung.WACHHUND_REQUEST_CODE].
+         * Stellt den naechsten Wartungslauf (+6h) — der EINZIGE Planer der Kette (ein zweiter auf
+         * Request-Code 9999 lief frueher parallel; Hergang: Skill cfalarm-wecker-und-boot).
+         * canScheduleExactAlarms() wird geprueft, weil setExactAndAllowWhileIdle() ohne die
+         * Berechtigung wirft (API 31/32). Stellt auch den Wachhund [armiereWiederanlauf] - bleibt
+         * EIN Planer, siehe [WartungsKettenPlanung.WACHHUND_REQUEST_CODE].
          */
         fun scheduleNext(context: Context) {
             val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
@@ -1021,15 +966,9 @@ class AlarmMaintenanceService : Service() {
             } catch (e: Exception) {
                 Logger.e(LogTags.MAINTENANCE, "Maintenance failed with exception", e)
             } finally {
-                // withContext(NonCancellable): der Abschluss MUSS auch dann vollstaendig laufen,
-                // wenn die Coroutine gecancelt wurde (onDestroy -> serviceScope.cancel(), z.B.
-                // weil das System den Foreground-Service unter Speicherdruck stoppt). Vorher stand
-                // hier als ERSTE Anweisung der suspendierende Read masterPausePrefs.pausedNow():
-                // in einer gecancelten Coroutine wirft der sofort CancellationException, wodurch
-                // WEDER scheduleNext() NOCH stopSelf(startId) je liefen. Damit war die Annahme der
-                // Invariante "die 6h-Kette hat genau einen Planer, und der finally-Block deckt
-                // jeden Pfad ab" verletzt: Request-Code 0 ist der einzige Slot - ohne
-                // scheduleNext() war die rollierende Kette bis zum naechsten Boot/Re-Login tot.
+                // withContext(NonCancellable): der Abschluss MUSS auch nach einer Cancellation laufen -
+                // sonst laufen weder scheduleNext() noch stopSelf(startId), und die Kette ist bis
+                // zum naechsten Boot tot (Skill cfalarm-wecker-und-boot).
                 withContext(NonCancellable) {
                     // Eigenes try/catch um den DataStore-Read: ist @MainDataStore gerade nicht
                     // lesbar (IOException, korrupte Datei), darf das die Neuplanung nicht
@@ -1058,32 +997,11 @@ class AlarmMaintenanceService : Service() {
                         Logger.e(LogTags.MAINTENANCE, "Neuplanung der Wartungskette fehlgeschlagen", e)
                     }
 
-                    // Dimmer/DND/Pre-Alarm-Refresh laufen hier - NICHT mehr nur im tiefsten
-                    // Erfolgszweig von performMaintenance(). Dort waren sie hinter fuenf Returns
-                    // versteckt (Puffer reicht, keine Kalender, Ladefehler, keine neuen Schichten,
-                    // Auto-Alarm aus), also gerade bei den HAEUFIGSTEN Laeufen unerreichbar - und
-                    // der Zeitzonen-Wechsel-Pfad, der genau diese Neuberechnung braucht, lief
-                    // dadurch praktisch immer ins Leere. Gleiches Argument wie bei scheduleNext():
-                    // der finally-Block ist die einzige Stelle, die jeden Pfad abdeckt.
+                    // Dimmer/DND/Pre-Alarm-Refresh hier im finally, weil nur er jeden Pfad abdeckt.
                     rescheduleSideChannels(paused)
 
-                    // Abraeumen erst, wenn KEIN Zyklus mehr arbeitet - siehe [ServiceRunTracker].
-                    //
-                    // Wird der Service zweimal gestartet (z.B. der 6h-Alarm faellt mit einem Start
-                    // nach der Autorisierung oder einem Zeitzonen-Wechsel zusammen), laufen zwei
-                    // Zyklen auf demselben serviceScope. Das blanke stopSelf() des ERSTEN, der
-                    // fertig wurde, loeste onDestroy() -> serviceScope.cancel() aus und riss den
-                    // zweiten mitten in der Arbeit ab (JobCancellationException, Log 14.07.
-                    // 22:07:30). Fuer eine Wecker-App ist das gefaehrlich: der abgeschnittene
-                    // Zyklus koennte gerade zwischen deleteAlarm() und saveAlarm() stehen.
-                    //
-                    // Das damals eingesetzte stopSelf(startId) deckte davon nur eine Richtung ab -
-                    // "der FRUEHERE Lauf wird zuerst fertig". Wird der SPAETERE zuerst fertig
-                    // (regulaerer Lauf kehrt sofort mit "Puffer reicht" zurueck, waehrend ein
-                    // forceSync-Lauf im Netz haengt), IST seine startId die zuletzt vergebene -
-                    // Android zerstoerte den Service, und derselbe Abriss passierte doch. Deshalb
-                    // entscheidet jetzt der Zaehler, und nur der zuletzt endende Zyklus ruft
-                    // stopSelf - weiterhin mit startId, nie blank.
+                    // Abraeumen erst, wenn KEIN Zyklus mehr arbeitet - siehe [ServiceRunTracker];
+                    // stopSelf immer mit startId, nie blank.
                     runTracker.onFinish()?.let { stopSelf(it) }
                 }
             }
@@ -1299,18 +1217,6 @@ class AlarmMaintenanceService : Service() {
     }
 
     /**
-     * Main maintenance logic
-     *
-     * STEPS:
-     * 1. Token Refresh (2-5s)
-     * 2. Health Check - Time-based (1s)
-     * 3. Event Loading if needed (5-10s)
-     * 4. Shift Recognition (1-2s)
-     * 5. Alarm Creation (1-2s)
-     *
-     * @param forceSync ueberspringt Schritt 2 (Lade-Gate) — siehe [EXTRA_FORCE_SYNC].
-     */
-    /**
      * Ein fehlgeschlagener Token-Abruf ist NICHT gleich ein Anmeldeproblem. Einstufung,
      * Entprellung und Deckel liegen in [WartungTokenFehler] (Android-frei und dort getestet),
      * hier steht nur die Ausfuehrung.
@@ -1411,6 +1317,12 @@ class AlarmMaintenanceService : Service() {
         wartungNetzNachholer.verwirf()
     }
 
+    /**
+     * Ein Wartungslauf: Aufraeumen (Logs, freie Tage), Master-Pause, Raeumauftrag, Token,
+     * Lade-Gate, Kalender, Fail-safe-Sperren, Delta-Sync.
+     *
+     * @param forceSync ueberspringt das Lade-Gate - siehe [EXTRA_FORCE_SYNC].
+     */
     private suspend fun performMaintenance(forceSync: Boolean) {
         val startTime = System.currentTimeMillis()
         Logger.business(LogTags.MAINTENANCE, "🔧 Starting maintenance cycle")
@@ -1464,7 +1376,7 @@ class AlarmMaintenanceService : Service() {
         quittiereTokenErfolg()
         Logger.d(LogTags.MAINTENANCE, "✅ Token valid")
         
-        // STEP 2: HEALTH CHECK (Time-based v3.0)
+        // STEP 2: HEALTH CHECK
         Logger.d(LogTags.MAINTENANCE, "Step 2: Health check (time-based)")
         
         val allAlarms = alarmUseCase.getAllAlarms().getOrNull() ?: emptyList()
@@ -1529,7 +1441,6 @@ class AlarmMaintenanceService : Service() {
             return
         }
         
-        // PHASE 2 CLEANUP: daysAhead removed - fixed 14 days per PROJEKT-BRIEFING 4.0
         // forceRefresh nur beim erzwungenen Lauf: der Cache haelt CalendarEvents als
         // LocalDateTime, also in der Zone, die beim Abruf galt. Nach einem Zeitzonen-Wechsel waere
         // ein Cache-Treffer wertlos (dieselben falschen Wanduhr-Zeiten) - genau deshalb muss der
@@ -1683,11 +1594,8 @@ class AlarmMaintenanceService : Service() {
         // Delta-Sync erwartet den VOLLSTAENDIGEN Soll-Zustand. Nur die neu erkannten Schichten
         // zu uebergeben wuerde alle bereits geplanten Wecker loeschen, deren Event nicht in der
         // Teilliste steht (syncAlarms entfernt Alarme ohne passendes Event).
-        // Orchestrator: syncAlarms setzt die System-Alarme INTERN (Delta-Sync + idempotentes
-        // Re-Arming). Kein separates scheduleSystemAlarm mehr noetig (frueher: Doppel-Scheduling).
-        // Dimmer-/DND-/Pre-Alarm-Reschedule stehen bewusst NICHT mehr hier, sondern im
-        // finally-Block von onStartCommand (siehe rescheduleSideChannels) - hier waren sie hinter
-        // allen Early-Returns unerreichbar.
+        // syncAlarms armiert die System-Alarme selbst - kein zusaetzliches scheduleSystemAlarm
+        // (sonst Doppel-Planung).
         val syncResult = alarmUseCase.syncAlarms(events, shiftConfig)
 
         if (syncResult.isSuccess) {
@@ -1703,9 +1611,6 @@ class AlarmMaintenanceService : Service() {
         }
     }
     
-    /**
-     * Creates notification for foreground service
-     */
     private fun createNotification(): Notification {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
@@ -1730,9 +1635,6 @@ class AlarmMaintenanceService : Service() {
             .build()
     }
     
-    /**
-     * Shows a user-facing notification indicating action is required (e.g. login or calendar selection)
-     */
     private fun showActionRequiredNotification(title: String, message: String) {
         val notificationManager = getSystemService(NotificationManager::class.java)
         

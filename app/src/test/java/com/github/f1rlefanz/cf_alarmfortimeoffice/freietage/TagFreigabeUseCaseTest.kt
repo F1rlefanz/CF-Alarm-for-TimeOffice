@@ -73,8 +73,6 @@ class TagFreigabeUseCaseTest {
             return Result.success(Unit)
         }
         override suspend fun getAllAlarms(): Result<List<AlarmInfo>> = Result.success(state.value)
-        override suspend fun getAlarmById(alarmId: Int): Result<AlarmInfo?> =
-            Result.success(state.value.find { it.id == alarmId })
         override suspend fun deleteAlarm(alarmId: Int): Result<Unit> {
             protokoll += "delete:$alarmId"
             if (loeschenScheitert) return Result.failure(IllegalStateException("Schreibfehler"))
@@ -85,8 +83,6 @@ class TagFreigabeUseCaseTest {
             state.value = emptyList()
             return Result.success(Unit)
         }
-        override suspend fun alarmExists(alarmId: Int): Result<Boolean> =
-            Result.success(state.value.any { it.id == alarmId })
     }
 
     private class FakeSkipUseCase(private val zustand: AlarmSkipState) : IAlarmSkipUseCase {

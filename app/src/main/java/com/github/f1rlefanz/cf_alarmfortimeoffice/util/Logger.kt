@@ -4,19 +4,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import timber.log.Timber
 
 /**
- * Intelligentes Logging-System zur Reduzierung von Log Spam
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ Conditional Logging basierend auf Build-Type
- * ✅ Strukturierte Log-Level-Strategie
- * ✅ Performance-optimiert für Production-Builds
- * ✅ Thread-safe Operations ohne Blocking
+ * Logcat nur im Debug; Datei-Log im Debug alles, im Release nur WARN+
+ * (siehe Skill `cfalarm-bauen-und-testen`).
  */
 object Logger {
 
     /**
-     * ERROR: Nur für echte Fehler, die die App-Funktionalität beeinträchtigen
-     * Wird in ALLEN Builds geloggt
+     * ERROR: Nur für echte Fehler, die die App-Funktionalität beeinträchtigen.
+     * Steht auch im Release-Datei-Log.
      */
     fun e(tag: String, message: String, throwable: Throwable? = null) {
         if (throwable != null) {
@@ -27,8 +22,8 @@ object Logger {
     }
     
     /**
-     * WARN: Für potenzielle Probleme oder unerwartete Situationen
-     * Wird in ALLEN Builds geloggt
+     * WARN: Für potenzielle Probleme oder unerwartete Situationen.
+     * Steht auch im Release-Datei-Log.
      */
     fun w(tag: String, message: String, throwable: Throwable? = null) {
         if (throwable != null) {
@@ -39,8 +34,8 @@ object Logger {
     }
     
     /**
-     * INFO: Für wichtige Business-Events und User-Aktionen
-     * Wird in ALLEN Builds geloggt
+     * INFO: Für wichtige Business-Events und User-Aktionen.
+     * Nur im Debug sichtbar - das Release-Datei-Log nimmt erst WARN+.
      */
     fun i(tag: String, message: String) {
         Timber.tag(tag).i(message)
@@ -57,7 +52,7 @@ object Logger {
     }
     
     /**
-     * Business-Event: Für wichtige User-Aktionen (immer geloggt, aber strukturiert)
+     * Business-Event: Für wichtige User-Aktionen, auf INFO - also nur im Debug sichtbar.
      */
     fun business(tag: String, event: String, details: String? = null) {
         val message = if (details != null) {
@@ -74,27 +69,6 @@ object Logger {
     fun cache(tag: String, operation: String, result: String) {
         if (BuildConfig.DEBUG) {
             Timber.tag(tag).d("💾 Cache $operation: $result")
-        }
-    }
-    
-    /**
-     * Network-Event: Für API-Aufrufe und Netzwerk-Operationen
-     */
-    fun network(tag: String, operation: String, details: String? = null) {
-        val message = if (details != null) {
-            "🌐 $operation: $details"
-        } else {
-            "🌐 $operation"
-        }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.tag(tag).d(message)
-        } else {
-            // In Production nur wichtige Network-Events
-            if (operation.contains("failed", ignoreCase = true) || 
-                operation.contains("error", ignoreCase = true)) {
-                Timber.tag(tag).w(message)
-            }
         }
     }
 }

@@ -33,10 +33,8 @@ import androidx.compose.ui.res.pluralStringResource
  * INHALT, KEINE KARTE: Den Rahmen setzt [SonnenaufgangCard] in `ModusKarten.kt` - dort steht auch
  * die Ueberschrift, und dort sitzt der Innenabstand einmal fuer beide Teile.
  *
- * KEIN eigener An/Aus-Schalter: Der Sonnenaufgang war frueher ein Schalter INNERHALB dieses
- * Blocks, stellte faktisch aber den gesamten Regel-Modus um (die manuelle Einstellung verschwand
- * ja mit). Seit es die [RuleModeCard] gibt, gehoert dieser Zustand dorthin - ein Zustand, ein
- * Ort. Angezeigt wird dieser Block nur noch im Modus SONNENAUFGANG.
+ * Kein eigener An/Aus-Schalter - der Modus gehoert der [RuleModeCard]; angezeigt wird dieser
+ * Block nur im Modus SONNENAUFGANG.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,81 +61,79 @@ internal fun SonnenaufgangInhalt(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        run {
-            // Gradient preview from start to end temperature
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(previewColorForKelvin(startKelvin), previewColorForKelvin(endKelvin))
-                        )
+        // Gradient preview from start to end temperature
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(previewColorForKelvin(startKelvin), previewColorForKelvin(endKelvin))
                     )
-            )
-
-            Text(pluralStringResource(R.plurals.hue_sunrise_duration, durationMinutes, durationMinutes), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Slider(
-                value = durationMinutes.toFloat(),
-                onValueChange = { onDurationChange(it.toInt().coerceIn(1, 90)) },
-                valueRange = 1f..90f,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ColorSwatch(previewColorForKelvin(startKelvin))
-                Text(stringResource(R.string.hue_sunrise_start_k, startKelvin), style = MaterialTheme.typography.bodyMedium)
-            }
-            Slider(
-                value = startKelvin.toFloat(),
-                onValueChange = { onStartKelvinChange(it.toInt()) },
-                valueRange = 2000f..6500f,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ColorSwatch(previewColorForKelvin(endKelvin))
-                Text(stringResource(R.string.hue_sunrise_end_k, endKelvin), style = MaterialTheme.typography.bodyMedium)
-            }
-            Slider(
-                value = endKelvin.toFloat(),
-                onValueChange = { onEndKelvinChange(it.toInt()) },
-                valueRange = 2000f..6500f,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Text(stringResource(R.string.hue_sunrise_end_brightness, endBrightness * 100 / 254), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Slider(
-                value = endBrightness.toFloat(),
-                onValueChange = { onEndBrightnessChange(it.toInt()) },
-                valueRange = 1f..254f,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Text(stringResource(R.string.hue_sunrise_when), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = startBeforeAlarm,
-                    onClick = { onStartBeforeAlarmChange(true) },
-                    label = { Text(stringResource(R.string.hue_sunrise_before_alarm)) }
                 )
-                FilterChip(
-                    selected = !startBeforeAlarm,
-                    onClick = { onStartBeforeAlarmChange(false) },
-                    label = { Text(stringResource(R.string.hue_sunrise_at_alarm)) }
-                )
-            }
-            Text(
-                if (startBeforeAlarm) {
-                    pluralStringResource(R.plurals.hue_sunrise_before_hint, durationMinutes, durationMinutes)
-                } else {
-                    stringResource(R.string.hue_sunrise_at_hint)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium
+        )
+
+        Text(pluralStringResource(R.plurals.hue_sunrise_duration, durationMinutes, durationMinutes), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        Slider(
+            value = durationMinutes.toFloat(),
+            onValueChange = { onDurationChange(it.toInt().coerceIn(1, 90)) },
+            valueRange = 1f..90f,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ColorSwatch(previewColorForKelvin(startKelvin))
+            Text(stringResource(R.string.hue_sunrise_start_k, startKelvin), style = MaterialTheme.typography.bodyMedium)
+        }
+        Slider(
+            value = startKelvin.toFloat(),
+            onValueChange = { onStartKelvinChange(it.toInt()) },
+            valueRange = 2000f..6500f,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ColorSwatch(previewColorForKelvin(endKelvin))
+            Text(stringResource(R.string.hue_sunrise_end_k, endKelvin), style = MaterialTheme.typography.bodyMedium)
+        }
+        Slider(
+            value = endKelvin.toFloat(),
+            onValueChange = { onEndKelvinChange(it.toInt()) },
+            valueRange = 2000f..6500f,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(stringResource(R.string.hue_sunrise_end_brightness, endBrightness * 100 / 254), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        Slider(
+            value = endBrightness.toFloat(),
+            onValueChange = { onEndBrightnessChange(it.toInt()) },
+            valueRange = 1f..254f,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(stringResource(R.string.hue_sunrise_when), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = startBeforeAlarm,
+                onClick = { onStartBeforeAlarmChange(true) },
+                label = { Text(stringResource(R.string.hue_sunrise_before_alarm)) }
+            )
+            FilterChip(
+                selected = !startBeforeAlarm,
+                onClick = { onStartBeforeAlarmChange(false) },
+                label = { Text(stringResource(R.string.hue_sunrise_at_alarm)) }
             )
         }
+        Text(
+            if (startBeforeAlarm) {
+                pluralStringResource(R.plurals.hue_sunrise_before_hint, durationMinutes, durationMinutes)
+            } else {
+                stringResource(R.string.hue_sunrise_at_hint)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Medium
+        )
     }
 }

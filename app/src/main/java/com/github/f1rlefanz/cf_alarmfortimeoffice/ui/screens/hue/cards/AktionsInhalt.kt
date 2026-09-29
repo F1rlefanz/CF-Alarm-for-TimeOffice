@@ -53,10 +53,6 @@ internal fun AktionsInhalt(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
 
-        // Der Ein/Aus-Schalter IST die Ueberschrift dieser Karte (kraeftiger gesetzt, analog
-        // zur Sunrise-Karte). Kein eigener "Aktionskonfiguration"-Titel mehr: der las sich wie
-        // ein Oberbegriff fuer beides, obwohl der Sunrise-Lichtwecker eine eigene, gleichrangige
-        // Karte ist. Ist Sunrise an, wird diese Karte gar nicht erst gezeigt (siehe Aufrufer).
         SwitchRow(
             title = stringResource(if (targetOn) R.string.hue_action_on else R.string.hue_action_off),
             description = stringResource(if (targetOn) R.string.hue_action_hint_on else R.string.hue_action_hint_off),

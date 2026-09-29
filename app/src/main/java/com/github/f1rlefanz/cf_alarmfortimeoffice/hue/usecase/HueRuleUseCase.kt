@@ -23,7 +23,6 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * UseCase for Hue Rule operations with shift integration
- * Implements business logic layer with validation and rule engine
  */
 @Singleton
 class HueRuleUseCase @Inject constructor(
@@ -42,22 +41,15 @@ class HueRuleUseCase @Inject constructor(
         private const val MAX_RULES_PER_SHIFT = 10
 
         /**
-         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt. Seit v1.24.0 bietet der
-         * Regel-Editor das als Eintrag "Alle Schichten" an (davor wertete nur der UseCase es
-         * aus, ohne dass es je jemand setzen konnte).
-         *
+         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt (Editor: "Alle Schichten").
          * `internal` statt `private`, weil [HueSunriseExecutor] und die Regel-UI dasselbe Muster
-         * auswerten muessen - ein zweites Literal waere eine zweite Wahrheit, und genau daran
-         * haengt, ob eine Universal-Regel ihr Auto-Aus behaelt.
+         * auswerten muessen - ein zweites Literal waere eine zweite Wahrheit.
+         * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
          */
         internal const val UNIVERSAL_SHIFT_PATTERN = "ALL"
 
-        // War 3 - eine willkuerliche Schwelle, die nie greifen konnte, weil der Validierungs-
-        // Check kaputt war (siehe requireValidRule). Mit der Reparatur wuerde sie ploetzlich
-        // scharf: Die UI verlangt seit jeher nur isNotBlank(), und eine Regel namens "FS" fuer
-        // die Fruehschicht ist voellig legitim - sie existiert real. Bei 3 waere sie ab sofort
-        // nicht mehr speicher- UND nicht mehr bearbeitbar gewesen (updateRule validiert auch).
-        // 1 bringt UI und UseCase auf dieselbe Regel: der Name darf nicht leer sein.
+        // 1 wie die UI (isNotBlank): eine reale Regel heisst "FS", und updateRule validiert
+        // ebenfalls. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
         private const val MIN_RULE_NAME_LENGTH = 1
         private const val MAX_RULE_NAME_LENGTH = 50
 
@@ -97,17 +89,14 @@ class HueRuleUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Creating new schedule rule: ${rule.name}")
         
         return try {
-            // Validate rule
             requireValidRule(rule).onFailure { return Result.failure(it) }
 
-            // Check for duplicate IDs
             val existingRules = configRepository.getScheduleRules().getOrNull() ?: emptyList()
             if (existingRules.any { it.id == rule.id }) {
                 Logger.w(LogTags.HUE_USECASE, "Rule with ID ${rule.id} already exists")
                 return Result.failure(IllegalArgumentException("Rule with ID ${rule.id} already exists"))
             }
             
-            // Check rule count limit per shift
             val shiftRuleCount = existingRules.count { it.shiftPattern == rule.shiftPattern }
             if (shiftRuleCount >= MAX_RULES_PER_SHIFT) {
                 Logger.w(LogTags.HUE_USECASE, "Maximum rules per shift exceeded for ${rule.shiftPattern}")
@@ -116,14 +105,12 @@ class HueRuleUseCase @Inject constructor(
                 )
             }
             
-            // Create rule with generated ID if needed
             val ruleToSave = if (rule.id.isBlank()) {
                 rule.copy(id = generateRuleId())
             } else {
                 rule
             }
             
-            // Save rule
             val saveResult = configRepository.saveScheduleRule(ruleToSave)
             
             if (saveResult.isSuccess) {
@@ -144,7 +131,6 @@ class HueRuleUseCase @Inject constructor(
         Logger.d(LogTags.HUE_USECASE, "Finding applicable rules for shift: ${shift.shiftDefinition.name} at ${currentTime}")
         
         return try {
-            // Get all rules
             val allRulesResult = getAllRules()
             if (allRulesResult.isFailure) {
                 return allRulesResult.fold(
@@ -155,12 +141,8 @@ class HueRuleUseCase @Inject constructor(
             
             val allRules = allRulesResult.getOrNull() ?: emptyList()
 
-            // `rule.shiftPattern` ist IMMER ein Definitionsname: die Regel-UI bietet nichts
-            // anderes an (HueRuleConfigScreen: definitions.map { it.name }). Ein Vergleich
-            // gegen das erste KEYWORD der Definition stand hier mal daneben - er konnte nie
-            // etwas Richtiges treffen, aber sehr wohl etwas Falsches: eine Regel mit dem
-            // Muster "S" haette auf die Spaetschicht gepasst. Dieselbe Fehlerfamilie wie in
-            // ShiftConfig.findDefinitionFor() - einbuchstabige Keywords passen auf zu vieles.
+            // `rule.shiftPattern` ist IMMER ein Definitionsname - exakter Vergleich, nie ueber
+            // Keywords. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
             val shiftName = shift.shiftDefinition.name
 
             val matchingRules = allRules.filter { rule ->
@@ -194,7 +176,6 @@ class HueRuleUseCase @Inject constructor(
             var totalActions = 0
             var successfulActions = 0
             
-            // Execute each rule
             for (rule in applicableRules) {
                 try {
                     // SUNRISE: a sunrise rule overrides the plain on/off/brightness actions.
@@ -216,7 +197,6 @@ class HueRuleUseCase @Inject constructor(
                         continue
                     }
 
-                    // Convert rule to light actions
                     val actionsResult = convertRuleToLightActions(rule)
                     
                     if (actionsResult.isFailure) {
@@ -229,14 +209,12 @@ class HueRuleUseCase @Inject constructor(
                     val actions = actionsResult.getOrNull() ?: emptyList()
                     totalActions += actions.size
                     
-                    // Execute actions via light use case
                     val batchResult = lightUseCase.executeBatchLightActions(actions)
                     
                     if (batchResult.isSuccess) {
                         batchResult.getOrNull()?.let { result ->
                             successfulActions += result.successfulActions
                             
-                            // Add any failed actions to errors
                             result.failedActions.forEach { failedAction ->
                                 failedAction.error?.let { error ->
                                     errors.add("Action failed for ${failedAction.targetId}: $error")
@@ -263,16 +241,9 @@ class HueRuleUseCase @Inject constructor(
                 }
             }
 
-            // AUTO-AUS: jetzt, im selben Atemzug, auf der BRIDGE hinterlegen.
-            //
-            // Genau hier sind die Lampen gerade angegangen - die Bridge ist also nachweislich
-            // erreichbar. Damit schaltet sie selbst wieder aus, unabhaengig davon, wo das Handy
-            // spaeter ist. (Frueher fuhr ein WorkManager-Job das Auto-Aus; der erreichte die
-            // Bridge nur aus dem Heim-WLAN und liess die Lampen an, sobald jemand nach dem
-            // Wecken das Haus verliess.)
-            //
-            // autoOffTargetsOf() besitzt die Verzoegerungsrechnung inkl. Sonnenaufgangs-Versatz
-            // als einzige Stelle. Ein zweiter Rechenweg waere eine zweite Wahrheit.
+            // AUTO-AUS: jetzt, im selben Atemzug, auf der BRIDGE hinterlegen - die Lampen sind
+            // gerade angegangen, die Bridge ist also erreichbar. autoOffTargetsOf() ist der
+            // einzige Rechenweg. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
             //
             // Best-effort: ein Fehler darf den Weckvorgang NIEMALS kippen. Er landet in
             // `errors` (und im Log), aber die Regelausfuehrung selbst gilt als erfolgt - das
@@ -310,36 +281,19 @@ class HueRuleUseCase @Inject constructor(
         sunriseExecutor.getPreAlarmSunriseLeadMinutes(rules, shiftName)
 
     /**
-     * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln.
-     *
-     * Bewusst OHNE eigenen Schicht-Filter: die Auswahl gehoert allein [findApplicableRules]
-     * (exakter Definitionsname ODER [UNIVERSAL_SHIFT_PATTERN]). Ein zweiter Filter gegen den
-     * Schichtnamen waere eine zweite Wahrheit - und wuerde konkret die UNIVERSAL-Regeln wieder
-     * wegwerfen, deren `shiftPattern` per Definition NICHT dem Schichtnamen gleicht: sie
-     * verloeren ihr Auto-Aus, das Licht blieb an. Diese Funktion besitzt nur den Rechenweg
-     * (welche Ziele, welche Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
-     *
-     * (Hier stand bis zu diesem Fix als Begruendung, [findApplicableRules] matche "auch ueber die
-     * KEYWORDS einer Schicht" - das tut es seit dem Keyword-Fix in v1.11.0 nicht mehr, siehe
-     * den Kommentar dort und `HueSunriseExecutor.matchingPreAlarmSunriseRules`. Die Entscheidung
-     * "kein zweiter Filter" war richtig, nur die Begruendung war veraltet - und eine veraltete Begruendung
-     * verleitet dazu, das Keyword-Matching "wiederherzustellen", also genau die Fehlerfamilie
-     * neu zu bauen, die der Skill cfalarm-kalender-und-schichten festhaelt.)
+     * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln - bewusst OHNE eigenen Schicht-Filter
+     * (die Auswahl gehoert allein [findApplicableRules]), sonst verloeren UNIVERSAL-Regeln ihr
+     * Auto-Aus. Besitzt nur den Rechenweg inkl. Sonnenaufgangs-Versatz.
+     * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      */
     private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {
             rules.asSequence()
-                // UX FIX (D): sunrise rules can ALSO configure auto-off now (they reach
-                // their own bright end state via the ramp, then this schedules the
-                // separate "turn back off after N minutes" job on top of that end state).
-                // Only the light actions' explicit `duration` field decides whether
-                // auto-off applies - no need to special-case sunrise here anymore.
+                // Only the light actions' `duration` decides whether auto-off applies -
+                // sunrise rules included (auto-off then counts from the ramp's end state).
                 .flatMap { rule ->
-                    // UX FIX (D-timing): a sunrise ramp that starts AT the alarm time
-                    // (startBeforeAlarm == false) only reaches full brightness after
-                    // sunrise.durationMinutes. Delay the auto-off by that ramp duration so it
-                    // can never fire mid-ramp. For startBeforeAlarm == true the ramp already
-                    // ends at the alarm time, so no offset is needed (same as a plain on-rule).
+                    // A ramp starting AT the alarm time (startBeforeAlarm == false) is only bright
+                    // after durationMinutes - delay the auto-off by that so it never fires mid-ramp.
                     val sunriseOffsetMinutes = rule.sunrise
                         ?.takeIf { it.enabled && !it.startBeforeAlarm }
                         ?.durationMinutes ?: 0
@@ -362,7 +316,6 @@ class HueRuleUseCase @Inject constructor(
         return try {
             val actions = mutableListOf<LightAction>()
             
-            // Convert each light action in the rule
             rule.lightActions.forEach { ruleAction ->
                 // SZENE: Es faehrt AUSSCHLIESSLICH die Szene mit. Kein on, keine Helligkeit,
                 // keine Farbe, keine Uebergangszeit - die Szene bestimmt das alles selbst, und
@@ -415,10 +368,8 @@ class HueRuleUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Updating schedule rule: ${rule.id}")
         
         return try {
-            // Validate rule
             requireValidRule(rule).onFailure { return Result.failure(it) }
 
-            // Update rule
             val updateResult = configRepository.updateScheduleRule(rule)
             
             if (updateResult.isSuccess) {
@@ -486,20 +437,12 @@ class HueRuleUseCase @Inject constructor(
     }
     
     /**
-     * Lehnt eine Regel ab, die die Validierung nicht besteht.
+     * Lehnt eine Regel ab, die die Validierung nicht besteht. [validateRule] hat zwei Ebenen:
+     * `isFailure` = die Prüfung selbst ist gescheitert, `isValid` = die Regel ist gültig.
+     * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      *
-     * WARUM ES DAS BRAUCHT: An beiden Aufrufstellen stand `if (validateRule(rule).isFailure)`.
-     * Das prüft die falsche Ebene. [validateRule] liefert `Result<RuleValidationResult>` und gibt
-     * IMMER `Result.success` zurück, sobald die Prüfung durchgelaufen ist — ob die Regel gültig
-     * ist, steht eine Ebene tiefer in `isValid`. Eine ungültige Regel war also ein *erfolgreiches*
-     * Result: die Abfrage konnte gar nicht greifen, und die Regel wurde gespeichert, obwohl das
-     * Log daneben "INVALID (1 errors)" meldete (Gerätelog 14.07., 14:56:03).
-     *
-     * `isFailure` bleibt hier trotzdem sinnvoll — aber nur für den Fall, dass die Prüfung selbst
-     * scheitert. Beides ist jetzt sauber getrennt.
-     *
-     * Die konkreten Fehler wandern in die Meldung: "Validation failed" hätte niemandem geholfen,
-     * die Ursache steht in [RuleValidationResult.errors].
+     * Die konkreten Fehler wandern in die Meldung - die Ursache steht in
+     * [RuleValidationResult.errors].
      */
     private suspend fun requireValidRule(rule: HueSchedule): Result<Unit> {
         val validation = validateRule(rule).getOrElse { error ->
@@ -522,7 +465,6 @@ class HueRuleUseCase @Inject constructor(
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
         
-        // Validate rule name
         if (rule.name.length < MIN_RULE_NAME_LENGTH) {
             errors.add("Rule name must be at least $MIN_RULE_NAME_LENGTH characters long")
         }
@@ -531,12 +473,10 @@ class HueRuleUseCase @Inject constructor(
             errors.add("Rule name must be at most $MAX_RULE_NAME_LENGTH characters long")
         }
         
-        // Validate shift pattern
         if (rule.shiftPattern.isBlank()) {
             errors.add("Shift pattern cannot be empty")
         }
         
-        // Validate light actions
         if (rule.lightActions.isEmpty()) {
             errors.add("Rule must have at least one light action")
         }
@@ -548,7 +488,6 @@ class HueRuleUseCase @Inject constructor(
             errors.add("Sonnenaufgang und Szene schliessen sich aus - waehle eines von beidem")
         }
 
-        // Validate individual light actions
         rule.lightActions.forEach { action ->
             if (action.targetId.isBlank()) {
                 errors.add("Light action must have a valid target ID")
@@ -603,37 +542,11 @@ class HueRuleUseCase @Inject constructor(
         return Result.success(result)
     }
     
-    override suspend fun testRuleExecution(rule: HueSchedule): Result<List<LightAction>> {
-        Logger.d(LogTags.HUE_USECASE, "Testing rule execution: ${rule.id}")
-        
-        return try {
-            // Convert rule to actions (dry run)
-            val actionsResult = convertRuleToLightActions(rule)
-            
-            if (actionsResult.isSuccess) {
-                val actions = actionsResult.getOrNull() ?: emptyList()
-                Logger.i(LogTags.HUE_USECASE, "Rule test successful: ${actions.size} actions would be executed")
-                Result.success(actions)
-            } else {
-                Logger.w(LogTags.HUE_USECASE, "Rule test failed", actionsResult.exceptionOrNull())
-                actionsResult
-            }
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_USECASE, "Failed to test rule execution", e)
-            Result.failure(e)
-        }
-    }
-    
     /**
      * Fuehrt [rule] sofort aus, damit der Nutzer im Formular sieht, was sie tut.
      *
      * DIE VORSCHAU RAEUMT IMMER HINTER SICH AUF - unabhaengig davon, ob die Regel ein Auto-Aus
-     * konfiguriert hat. Vorher haing das am Auto-Aus der Regel, und das steht bei einer neuen
-     * Regel auf "aus": Der Vorschau-Knopf schaltete das Licht an und liess es an, ohne Weg
-     * zurueck ausser der Hue-App. Eine Vorschau, die den Zustand der Wohnung dauerhaft
-     * veraendert, ist keine Vorschau - der Nutzer probiert hier eine Regel aus, er schaltet
-     * nicht sein Licht ein. Wer das wieder ans Auto-Aus koppelt, baut genau das zurueck.
+     * konfiguriert hat. Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
      *
      * Die verkuerzten Zeiten gelten NUR hier; die echte Regel nutzt die konfigurierten Werte
      * (bzw. bridge-seitige Zeitplaene, siehe executeRulesForAlarm).
@@ -648,11 +561,8 @@ class HueRuleUseCase @Inject constructor(
                 val testSunrise = sunrise.copy(durationMinutes = SUNRISE_TEST_DURATION_MINUTES)
                 val result = sunriseExecutor.runSunriseForRule(rule, testSunrise)
 
-                // Das Aus kommt NACH der (verkuerzten) Rampe, nicht mittendrin: Die Rampe
-                // laeuft als native Bridge-Transition ueber SUNRISE_TEST_DURATION_MINUTES -
-                // ein Aus nach AUTO_OFF_TEST_DURATION_SECONDS wuerde sie mitten im Aufblenden
-                // abwuergen. Derselbe Gedanke wie der sunriseOffset in autoOffTargetsOf(): das
-                // Auto-Aus haengt hinten an, es faellt nicht in die Rampe hinein.
+                // Das Aus kommt NACH der (verkuerzten) Rampe, nicht mittendrin.
+                // Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
                 //
                 // Nur ein blankes on=true (kein Helligkeit/Farbe): alles andere wuerde gegen
                 // die laufende Transition der Bridge arbeiten.
@@ -884,9 +794,6 @@ class HueRuleUseCase @Inject constructor(
         !shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true) &&
             shiftPattern.equals(shiftName, ignoreCase = true)
 
-    /**
-     * Generates a unique rule ID
-     */
     private fun generateRuleId(): String {
         return "rule_${UUID.randomUUID().toString().take(8)}_${System.currentTimeMillis()}"
     }

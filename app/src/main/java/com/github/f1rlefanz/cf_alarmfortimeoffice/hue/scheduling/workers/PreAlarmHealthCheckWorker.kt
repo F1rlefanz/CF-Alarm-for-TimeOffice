@@ -10,10 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * WorkManager Worker for Pre-Alarm Health Checks
- * 
- * PHASE 2: Smart Scheduling - Critical health check before alarm execution
- * Ensures Hue Bridge connection is validated 10 minutes before alarm time
+ * Validates the Hue Bridge connection 10 minutes before an alarm.
  */
 class PreAlarmHealthCheckWorker(
     context: Context,
@@ -30,15 +27,10 @@ class PreAlarmHealthCheckWorker(
         Logger.d(LogTags.HUE_BRIDGE, "⏰ PRE-ALARM-WORKER: Alarm time: $alarmTimeString, Index: $checkIndex")
         
         return@withContext try {
-            // Perform critical health check
             val healthCheckResult = bridgeManager.forceHealthCheck()
             
             if (healthCheckResult) {
                 Logger.i(LogTags.HUE_BRIDGE, "✅ PRE-ALARM-WORKER: Health check successful - Bridge ready for alarm")
-                
-                // Optional: Pre-load light targets for faster alarm execution
-                // This could be added later to further optimize alarm response time
-                
                 Result.success()
             } else {
                 Logger.w(LogTags.HUE_BRIDGE, "⚠️ PRE-ALARM-WORKER: Health check failed - Bridge may not be ready")

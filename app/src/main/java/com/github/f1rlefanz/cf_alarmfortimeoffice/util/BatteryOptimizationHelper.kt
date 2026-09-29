@@ -30,23 +30,9 @@ interface BatteryOptimizationHelperEntryPoint {
     fun mainDataStore(): DataStore<Preferences>
 }
 
-/**
- * Battery Optimization Helper with OEM-specific detection
- *
- * FEATURES:
- * - Battery exemption check and request
- * - OEM-specific detection (Xiaomi, OnePlus, Samsung, etc.)
- * - Educational dialogs for users
- * - Direct links to dontkillmyapp.com guides
- */
+/** Akku-Ausnahme pruefen und anfragen, OEM-Erkennung und dontkillmyapp.com-Anleitungen. */
 object BatteryOptimizationHelper {
 
-    // MIGRATION (Juli 2026): Die "hint shown"-Flags liegen im @MainDataStore ("settings")
-    // statt in den alten "cf_alarm_prefs" SharedPreferences. Damit ist die dritte
-    // "cf_alarm_prefs"-Insel vollständig aufgelöst (last_maintenance_time zog bereits in den
-    // @MainDataStore um, siehe AlarmMaintenanceService).
-    // BEWUSST kein Migrationscode für Altwerte – aktuell nutzt nur der Entwickler die App
-    // (Projekt-Konvention). Im schlimmsten Fall erscheint ein Hinweis einmalig erneut.
     private const val KEY_OEM_HINT_SHOWN_PREFIX = "oem_hint_shown"
     private val KEY_BATTERY_PROMPT_DISMISSED = booleanPreferencesKey("battery_prompt_dismissed")
 
@@ -108,14 +94,10 @@ object BatteryOptimizationHelper {
     }
     
     /**
-     * Requests battery exemption from user with result callback
+     * Requests battery exemption from user
      * @param activity Activity to launch permission request
-     * @param onResult Callback with result after user action
      */
-    fun requestExemption(activity: Activity, onResult: ((Boolean) -> Unit)? = null) {
-        // Das tatsächliche Ergebnis wird unten per postDelayed + isExempted() geprüft und
-        // via onResult zurückgegeben; ein persistiertes "pending"-Flag war write-only (nie
-        // gelesen) und entfiel mit der cf_alarm_prefs-Auflösung.
+    fun requestExemption(activity: Activity) {
         try {
             // BatteryLife unterdrueckt: Lint haelt jedes
             // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS fuer einen Verstoss gegen die
@@ -132,14 +114,6 @@ object BatteryOptimizationHelper {
             
             activity.startActivityForResult(intent, REQUEST_CODE_BATTERY_EXEMPTION)
             
-            // Schedule a check after returning from settings
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                val isExempted = isExempted(activity)
-                onResult?.invoke(isExempted)
-            }, 500) // Small delay to ensure settings are applied
-            
-            Logger.d(LogTags.BATTERY, "Battery exemption request launched")
-            
         } catch (e: Exception) {
             Logger.e(LogTags.BATTERY, "Failed to request battery exemption, opening settings", e)
             
@@ -147,15 +121,8 @@ object BatteryOptimizationHelper {
             try {
                 val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                 activity.startActivity(intent)
-                
-                // Schedule check for fallback case
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    val isExempted = isExempted(activity)
-                    onResult?.invoke(isExempted)
-                }, 1000)
             } catch (e2: Exception) {
                 Logger.e(LogTags.BATTERY, "Failed to open battery settings", e2)
-                onResult?.invoke(false)
             }
         }
     }
@@ -197,10 +164,7 @@ object BatteryOptimizationHelper {
     }
 
     /**
-     * Oeffnet die dontkillmyapp.com-Anleitung fuer den gegebenen OEM. War vorher in
-     * [com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.OEMWarningScreen] und
-     * [com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.SettingsTabContent]
-     * fast wortgleich dupliziert.
+     * Oeffnet die dontkillmyapp.com-Anleitung fuer den OEM.
      */
     fun openOEMHelpUrl(context: Context, oemType: OEMType) {
         try {
@@ -252,11 +216,8 @@ object BatteryOptimizationHelper {
     
     /**
      * True wenn der volle OEM-Warnscreen fuer diesen Typ noch nie gezeigt wurde UND das
-     * Geraet ueberhaupt einen der bekannten aggressiven Hersteller hat. Einzige verbliebene
-     * OEM-Hinweis-Logik (Konsolidierung Juli 2026): frueher gab es vier unabhaengige, teils
-     * ungegatete Auslösepunkte (Dialog beim Landen auf dem Akku-Screen, vollflaechiger Screen
-     * ungegatet, ein zweiter Dialog gegated, ein dritter OnePlus-spezifischer Dialog gegated) -
-     * jetzt genau ein Weg über [NavigationState.OEMWarning], mit dieser Sperre.
+     * Geraet ueberhaupt einen der bekannten aggressiven Hersteller hat. Einziger Ausloeseweg
+     * ist [NavigationState.OEMWarning], mit dieser Sperre.
      */
     suspend fun shouldNavigateToOemWarningScreen(context: Context, oemType: OEMType): Boolean {
         if (!shouldShowOEMWarning(oemType)) return false

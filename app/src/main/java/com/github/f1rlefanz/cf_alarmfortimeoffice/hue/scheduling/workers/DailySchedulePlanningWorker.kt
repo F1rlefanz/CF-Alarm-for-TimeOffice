@@ -10,10 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * WorkManager Worker for Daily Schedule Planning
- * 
- * PHASE 2: Runs once daily to recalculate and reschedule health checks
- * based on updated alarm times and shift patterns
+ * Runs once daily to recalculate and reschedule the Hue health checks from the current alarms.
  */
 class DailySchedulePlanningWorker(
     context: Context,
@@ -26,7 +23,6 @@ class DailySchedulePlanningWorker(
         Logger.i(LogTags.HUE_BRIDGE, "📅 DAILY-PLANNER: Starting daily schedule recalculation")
         
         return@withContext try {
-            // Recalculate and reschedule health checks for the next period
             smartScheduler.calculateAndScheduleNextHealthChecks()
             
             Logger.i(LogTags.HUE_BRIDGE, "✅ DAILY-PLANNER: Daily schedule planning completed successfully")
@@ -34,8 +30,6 @@ class DailySchedulePlanningWorker(
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_BRIDGE, "❌ DAILY-PLANNER: Failed to complete daily planning", e)
-            
-            // Retry once after 1 hour if planning fails
             Result.retry()
         }
     }

@@ -3,19 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 /**
  * Diagnostik des Schicht-Dimmers: **eine Zeile, ohne PII, ohne Android-Abhängigkeit.**
  *
- * WARUM ES DAS GIBT (Vorfall 24.08.2026): Der Eigentümer meldete, der Bildschirm sei „mal heller
- * und mal dunkler" geworden. Die Ursache liess sich aus dem Datei-Log **nicht rekonstruieren** —
- * [DimAccessibilityService] hatte keine einzige Log-Zeile beim Verbinden, Trennen oder Abräumen
- * des Overlays, und der häufigste Aus-Weg in [DimScheduleUseCase.applyCurrentState] („kein
- * aktives Fenster") kehrte kommentarlos zurück. Bei einer Funktion, deren ganzer Zweck sichtbar
- * auf dem Bildschirm liegt, ist das eine Lücke: man sieht hinterher nur, wann gedimmt WURDE, nie
- * wann und warum es aufhörte.
- *
- * Die Ursache war am Ende gar kein App-Fehler — die UI-Automation (`uiautomator`) verbindet sich
- * als `UiAutomation` und unterdrückt dabei alle anderen Bedienungshilfen-Dienste, also auch
- * diesen. Am Gerät belegt: die SurfaceFlinger-Layer-ID wechselte bei JEDEM Automations-Aufruf, im
- * Leerlauf nie. Genau deshalb braucht es diese Spur: **die nächste solche Beobachtung soll in
- * Minuten beantwortbar sein statt gar nicht.**
+ * Zweck: wann und warum das Dimmen aufhörte, soll aus dem Log in Minuten beantwortbar sein.
+ * Hergang: Skill cfalarm-dimmer-und-dnd, reference/dimmer.md.
  *
  * BAUART wie [com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmFullScreenActivity] sie für den
  * Weckbildschirm vorgibt (`visibilitySnapshot()`): eine Zeile, damit sie im Release-Log neben der
@@ -118,19 +107,8 @@ internal object DimDiagnostik {
      * Laeuft gerade ein Fenster, das gar nichts bewirken KANN, weil der Bedienungshilfen-Dienst
      * nicht gebunden ist?
      *
-     * WARUM ES DAS GIBT (Vorfall 29.08.2026): Der Eigentuemer meldete, um 22:00 habe "Nicht
-     * stoeren" geschaltet, die Korrektur-Benachrichtigung "Verdunkelung: 67 %" gemeldet — und der
-     * Bildschirm sei hell geblieben. Am Geraet gemessen war die App fehlerfrei: Tick gefeuert,
-     * Fenster aktiv, ZenRule `STATE_TRUE`. Nur [DimAccessibilityService] stand nach einer
-     * Neuinstallation nicht mehr in `Enabled services`, und in SurfaceFlinger existierte kein
-     * `CFAlarmDimLayer`.
-     *
-     * Der Dienst-Zustand hing bis dahin nur an einer DEBUG-Logzeile in
-     * [DimScheduleUseCase.applyCurrentState] — im Release-Log also gar nicht, und auf keiner
-     * Bedienoberflaeche. Die einzige Flaeche, die nachts sichtbar ist, behauptete stattdessen eine
-     * Verdunkelung, die technisch garantiert nicht stattfinden konnte. Das ist die Umkehrung
-     * dessen, wofuer diese Diagnostik da ist: es fuehrte die Fehlersuche aktiv in die falsche
-     * Richtung (gesucht wurde in der Fensterlogik).
+     * Sonst meldet die Korrektur-Benachrichtigung eine Verdunkelung, die nicht stattfinden kann.
+     * Hergang: Skill cfalarm-dimmer-und-dnd, reference/dimmer.md.
      *
      * Bewusst NUR bei aktivem, nicht pausiertem Fenster. Ohne Fenster soll ohnehin nicht gedimmt
      * werden — dort waere ein fehlender Dienst kein Vorfall, sondern eine Dauerwarnung bei jedem
@@ -148,20 +126,11 @@ internal object DimDiagnostik {
     /**
      * In welcher Lage ist der Bedienungshilfen-Dienst — aus Sicht des NUTZERS, nicht nur der App?
      *
-     * WARUM ES DAS GIBT (Vorfall 26./27.09.2026, Fairphone): Um 20:25 wurde der Dienst ordentlich
-     * entbunden und zerstoert (`onUnbind` + `onDestroy` im Log, kein Prozess-Tod) und kam nicht
-     * zurueck. Um 22:00 lief das Fenster wirkungslos, die Benachrichtigung meldete „Dienst ist
-     * aus", die Status-Karte stand auf rot mit „Bedienungshilfen-Dienst aktivieren" — und in den
-     * Android-Bedienungshilfen stand der Eintrag auf **„An"**. Der Nutzer wurde also zum Einschalten
-     * eines Schalters geschickt, der schon an war; Aus- und Wiedereinschalten half auch nicht.
-     *
-     * Beide Anzeigen sagten die Wahrheit, nur ueber VERSCHIEDENE Dinge: Android zeigt den SCHALTER
-     * (`Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`), die App die BINDUNG
-     * ([DimAccessibilityService.isRunning]). Nur die Bindung dimmt. Die Ursache war am Geraet
-     * belegt eine `UiAutomation` (der Geraete-Server von mobile-mcp, verwaist am Fairphone), die
-     * ALLE Bedienungshilfen trennt, solange sie verbunden ist, ohne den Schalter anzufassen. Die
-     * Abhilfe ist dann eine ANDERE als beim ausgeschalteten Dienst — aus/ein, notfalls Neustart —
-     * und genau deshalb muss die Anzeige die beiden Lagen auseinanderhalten.
+     * Android zeigt den SCHALTER (`Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`), die App die
+     * BINDUNG ([DimAccessibilityService.isRunning]); nur die Bindung dimmt. Eine `UiAutomation`
+     * trennt alle Bedienungshilfen, ohne den Schalter anzufassen - die Abhilfe ist dann eine
+     * andere (aus/ein, notfalls Neustart), deshalb haelt die Anzeige beide Lagen auseinander.
+     * Hergang: Skill cfalarm-dimmer-und-dnd, reference/dimmer.md.
      */
     enum class DienstLage {
         /** Gebunden — das Overlay kann erscheinen. */
@@ -220,14 +189,9 @@ internal object DimDiagnostik {
     /**
      * Wie endete der VORIGE Lauf des Dimm-Dienstes?
      *
-     * WARUM ES DAS GIBT (Vorfall 29.08.2026, zweiter Teil): Beim Einspielen einer neuen Version
-     * meldete der Eigentuemer, der Bildschirm sei „kurz hell und dann von allein wieder dunkel"
-     * geworden. Im Systemlog stand der Grund (`Killing … due to installPackageLI`, sieben Sekunden
-     * spaeter der neue Prozess) — **im App-Log nichts.** Bei einem `SIGKILL` laeuft weder
-     * `onUnbind` noch `onDestroy`; der Moment des Verschwindens ist prinzipiell nicht
-     * protokollierbar, egal wie man es anstellt.
-     *
-     * Protokollierbar ist die RUECKKEHR. [DimAccessibilityService] setzt beim Verbinden einen
+     * Bei einem `SIGKILL` (z. B. App-Update) laufen weder `onUnbind` noch `onDestroy`;
+     * protokollierbar ist nur die RUECKKEHR. Hergang: Skill cfalarm-dimmer-und-dnd,
+     * reference/dimmer.md. [DimAccessibilityService] setzt beim Verbinden einen
      * Merker und raeumt ihn beim sauberen Beenden wieder weg; steht er beim naechsten Verbinden
      * noch, wurde der Prozess dazwischen beendet. Damit ist ein „warum war es kurz hell?"
      * beantwortbar — nicht auf die Sekunde, aber mit Zeitpunkt und Ursachenklasse.

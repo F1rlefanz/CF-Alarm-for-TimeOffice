@@ -30,7 +30,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,21 +45,8 @@ import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * MODERNIZED: AuthViewModel with CredentialAuthManager
- *
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ Alle Dependencies über Interfaces
- * ✅ Keine Abhängigkeiten zu anderen ViewModels
- *
- * PERFORMANCE FIXES:
- * ✅ Uses modern androidx.credentials API
- * ✅ Atomic state updates (no mutex blocking)
- * ✅ Debounced flows prevent rapid UI updates
- * ✅ Single Source of Truth für Authentication
- * ✅ Memory leak prevention
- * ✅ REACTIVE CALENDAR SELECTION: Auto-syncs hasSelectedCalendars flag
+ * AuthViewModel - Anmeldung über CredentialAuthManager (androidx.credentials); hält
+ * hasSelectedCalendars mit der Kalenderauswahl synchron.
  */
 @HiltViewModel
 class AuthViewModel @Inject constructor(
@@ -102,13 +88,8 @@ class AuthViewModel @Inject constructor(
          * kommt aber an keinen Kalender mehr - das Aufraeumen ist trotzdem gelaufen (siehe
          * [signOut], Abschnitt "Punkt ohne Wiederkehr").
          *
-         * Der genannte Ausweg existiert wirklich - und er heisst seit Welle 6 anders, weil die
-         * Oberflaeche in dieser Lage eine andere ist: der Nutzer landet jetzt auf dem
-         * Kalender-Autorisierungsbildschirm (siehe [signOut], Befund B), und dessen Knopf traegt
-         * die Aufschrift "Mit anderem Konto anmelden". Er loest `signOut()` erneut aus, und weil
-         * das Token schon weg ist, bleibt nur noch das Loeschen der Auth-Daten uebrig. Der
-         * frueher hier genannte Knopf "Abmelden" steht in den Einstellungen, die von diesem
-         * Bildschirm aus NICHT erreichbar sind.
+         * Der genannte Knopf steht auf dem Kalender-Autorisierungsbildschirm (siehe [signOut],
+         * Befund B) und loest `signOut()` erneut aus.
          */
         const val FEHLER_ABMELDEN_UNVOLLSTAENDIG: String =
             "Die Abmeldung ist nur halb gelungen: Der Kalender-Zugriff ist bereits entzogen und " +
@@ -134,11 +115,9 @@ class AuthViewModel @Inject constructor(
                 "erneut weg."
     }
 
-    // CONSOLIDATED STATE: Ein einziger State statt AuthState + AuthUiState
     private val _authState = MutableStateFlow(AuthState.EMPTY)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
-    // BACKWARD COMPATIBILITY: Expose als uiState für bestehenden Code
     val uiState: StateFlow<AuthState> = authState
 
     /**
@@ -172,24 +151,36 @@ class AuthViewModel @Inject constructor(
     @Volatile
     private var signOutInProgress = false
 
-    // CRITICAL FIX: Triggers calendar reload after successful authentication/authorization
-    @Volatile
-    private var lastCalendarTriggerTime = 0L
-
-    @Volatile
-    private var triggerInProgress = false
-
-    /**
-     * PERFORMANCE OPTIMIZATION: Non-blocking Atomic State Updates
-     * Ersetzt Mutex durch atomare Vergleich-und-Tausch Operationen
-     */
     private fun updateAuthState(updateFunc: (AuthState) -> AuthState) {
         val currentState = _authState.value
         val newState = updateFunc(currentState)
 
-        // ATOMIC UPDATE: Thread-safe ohne Mutex-Blocking
         if (currentState != newState) {
             _authState.value = newState
+        }
+    }
+
+    private fun markiereTokenUngueltig() {
+        updateAuthState { currentState ->
+            currentState.copy(
+                calendarOps = currentState.calendarOps.copy(
+                    hasValidToken = false,
+                    tokenChecked = true // GATE: Ergebnis steht fest -> das Onboarding-Gate darf entscheiden
+                )
+            )
+        }
+    }
+
+    private fun meldeAutorisierungFehlgeschlagen(error: Throwable) {
+        updateAuthState { currentState ->
+            currentState.copy(
+                calendarOps = currentState.calendarOps.copy(
+                    calendarsLoading = false,
+                    hasValidToken = false,
+                    tokenChecked = true // GATE: Autorisierungsversuch entschieden
+                ),
+                errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
+            )
         }
     }
 
@@ -259,14 +250,7 @@ class AuthViewModel @Inject constructor(
                         "🔑 AUTO-RE-AUTH: Token zur Laufzeit verworfen - fordere Zustimmung neu an"
                     )
 
-                    updateAuthState { currentState ->
-                        currentState.copy(
-                            calendarOps = currentState.calendarOps.copy(
-                                hasValidToken = false,
-                                tokenChecked = true // Ergebnis steht fest -> Gate darf entscheiden
-                            )
-                        )
-                    }
+                    markiereTokenUngueltig()
 
                     // Nur die Activity kann den Dialog starten - MainActivity konsumiert das Event.
                     _reauthRequired.trySend(Unit)
@@ -276,9 +260,7 @@ class AuthViewModel @Inject constructor(
 
     /**
      * Observes auth data changes from DataStore.
-     * PERFORMANCE FIX: Eliminates UI Thread blocking durch improved background processing
-     * CALENDAR AUTO-RELOAD: Automatically loads calendars after successful authorization
-     * UI THREAD OPTIMIZATION: Pure background processing mit atomic state updates
+     * Automatically loads calendars after successful authorization.
      */
     @OptIn(FlowPreview::class)
     private fun observeAuthState() {
@@ -308,11 +290,6 @@ class AuthViewModel @Inject constructor(
                                 hasValidToken = !authData.accessToken.isNullOrEmpty()
                             )
                         )
-                    }
-
-                    // PERFORMANCE: Background calendar trigger without UI thread switch
-                    if (authData.isLoggedIn && !authData.accessToken.isNullOrEmpty()) {
-                        triggerCalendarReloadAfterAuth()
                     }
                 }
         }
@@ -432,14 +409,7 @@ class AuthViewModel @Inject constructor(
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "❌ STUFE-2: Error checking initial token validity", e)
                 // On error, assume token is invalid to be safe
-                updateAuthState { currentState ->
-                    currentState.copy(
-                        calendarOps = currentState.calendarOps.copy(
-                            hasValidToken = false,
-                            tokenChecked = true // GATE: check ran (even on error) -> let the gate handle recovery
-                        )
-                    )
-                }
+                markiereTokenUngueltig()
             }
         }
     }
@@ -521,8 +491,6 @@ class AuthViewModel @Inject constructor(
                         )
 
                         // Auth-Zustand liegt ausschliesslich in authDataStoreRepository (DataStore).
-                        // Der frueher hier geschriebene "cf_alarm_auth"-SharedPrefs-Kanal wurde
-                        // nirgends gelesen (toter Code, Audit) und ist entfernt.
                         authDataStoreRepository.updateAuthData(authData)
                             .onSuccess {
                                 updateAuthState { currentState ->
@@ -600,16 +568,9 @@ class AuthViewModel @Inject constructor(
      * Dienstzeit-Fenster ziehen), die 6h-Wartungskette, die Hue-Planung und den
      * Pre-Alarm-Refresh.
      *
-     * WELCHER FEHLER DAHINTER STECKT (Pruefrunde 8, Befund 3): `signOut()` verwarf bis v1.29.2 nur
-     * Token und Auth-Daten. Die Wecker blieben im AlarmManager armiert, im Repository und im
-     * Direct-Boot-Spiegel stehen - und direkt danach zeigt die App ausschliesslich den
-     * Anmeldebildschirm (`MainActivity`: `!authState.isSignedIn -> "login"`), also weder
-     * Wecker-Tab noch Master-Pause noch den Schalter "Automatische Alarme". Bis zu 14 Tage lang
-     * klingelten Wecker fuer die Schichten eines Kontos, das die App gar nicht mehr kennt, ohne
-     * dass der Nutzer sie noch abstellen konnte; ein Neustart machte es schlimmer, weil der
-     * `BootReceiver` den Bestand aus dem Direct-Boot-Spiegel ungegatet erneut armiert. Die
-     * 6h-Wartung raeumt ihn ebenfalls nicht: sie faellt ohne Token in ihre fail-safe-Zweige, die
-     * bestehende Alarme ausdruecklich stehen lassen.
+     * Abmelden heisst: nichts bleibt zurueck - danach gibt es keine Oberflaeche mehr, ueber die
+     * sich Wecker abstellen liessen (Befund 3).
+     * Hergang: Skill cfalarm-persistenz-und-auth, reference/auth-und-token.md
      *
      * REIHENFOLGE BEIM LOESCHEN: [IAlarmUseCase.deleteAllAlarms] ist der dafuer vorgesehene
      * zentrale Weg und haelt die einzige erlaubte Richtung ein - es bricht ueber
@@ -691,27 +652,10 @@ class AuthViewModel @Inject constructor(
      * hier durch. Wer einen dritten Weg ergaenzt, muss ihn ebenfalls hier durchleiten - sonst
      * bleibt der geraeumte Zustand ein Zufall.
      *
-     * WARUM ERST ABMELDEN, DANN RAEUMEN - und warum die umgekehrte Reihenfolge nicht
-     * zurueckgedreht werden darf: Beide Reihenfolgen haben eine Fehlerklasse, aber nur eine von
-     * beiden erfindet einen Zustand, den es sonst nirgends gibt.
-     *  - ERST RAEUMEN, DANN ABMELDEN (die verworfene Fassung) erzeugt bei einem gescheiterten
-     *    Abmelden "angemeldet, aber saemtliche Wecker geloescht". Diesen Zustand muss die App
-     *    danach vollstaendig selbst wieder aufloesen - und genau daran ist die Fassung in drei
-     *    aufeinanderfolgenden Reviews gescheitert: (1) der Rueckbau konnte die Wecker nur aus
-     *    der zuletzt geladenen Terminliste rekonstruieren, der MANUELLE Wecker steht in keiner
-     *    Terminliste und kam nie zurueck; (2) der [ShiftSpanStore] blieb dabei leer, Dimmer und
-     *    "Nicht stoeren" liefen also ohne Dienstzeiten weiter; (3) der Knopf "Erneut abmelden"
-     *    auf der Warnkarte loeschte die Warnung selbst, weil der Bestand beim zweiten Versuch
-     *    schon 0 war und "leer" dann als "nichts verloren" galt. Jeder Fix zog den naechsten
-     *    Nachbau nach sich (Rueckbau, Verlustpruefung, persistenter Merker, Warnkarte,
-     *    Snackbar) - das Zeichen dafuer, dass nicht eine Stelle fehlte, sondern die Invariante
-     *    falsch aufgegeben war.
-     *  - ERST ABMELDEN, DANN RAEUMEN (diese Wahl) braucht keinen Rueckbau: der Nutzer behaelt in
-     *    jedem Zweig eine Bedienoberflaeche fuer seine Wecker. Entweder er ist abgemeldet und der
-     *    Bestand ist geraeumt, oder er gilt weiter als angemeldet und hat Wecker-Tab und
-     *    Master-Pause. (Frueher stand hier "scheitert das Abmelden, wurde nichts angefasst" -
-     *    das stimmte nie: das Kalender-Token ist dann bereits verworfen. Was daraus folgt, steht
-     *    unten unter "Punkt ohne Wiederkehr".)
+     * ERST ABMELDEN, DANN RAEUMEN - nicht zurueckdrehen: die umgekehrte Reihenfolge erfindet den
+     * Zustand "angemeldet, aber saemtliche Wecker geloescht" und brauchte einen Rueckbau, der in
+     * drei Reviews scheiterte. Merksatz: wenn ein Fix ringsum nachgeruestet werden muss, ist der
+     * Schnitt falsch. Hergang: Skill cfalarm-persistenz-und-auth, reference/auth-und-token.md
      *
      * DER PUNKT OHNE WIEDERKEHR IST DAS VERWERFEN DES TOKENS, NICHT DAS ENDE VON
      * [IAuthUseCase.signOut] - und daran ist alles Weitere ausgerichtet (Pruefrunde 8, Welle 5).
@@ -720,16 +664,8 @@ class AuthViewModel @Inject constructor(
      * Schritt ist die Anmeldung praktisch verloren: das Token ist aus dem Store und aus dem
      * GMS-Cache raus, und es kommt durch keinen Fehlerzweig zurueck. Zwei Konsequenzen:
      *
-     *  1. NICHT ABBRECHBAR AB DA. Der gesamte Block - Abmelden UND Aufraeumen - laeuft in
-     *     `withContext(NonCancellable)`, nicht nur das Aufraeumen. Vorher lag die Sperre allein
-     *     um [stopScheduledWorkForSignOut]; erreicht wurde sie aber erst NACH
-     *     `oauth2TokenManager.invalidate()` -> `GoogleAuthUtil.clearToken()`, einem Netzaufruf,
-     *     der ohne Netz bis zum Timeout haengt. In genau diesem Fenster war die Coroutine des
-     *     `viewModelScope` noch voll abbrechbar - und der Abbruch ist hier besonders
-     *     wahrscheinlich, weil der Nutzer nach "Abmelden" die App verlaesst (Zurueck, Task
-     *     weggewischt -> `onCleared()`). Ergebnis waere gewesen: Token weg, Wecker armiert,
-     *     Anmeldebildschirm ohne Wecker-Tab und ohne Master-Pause - also wieder Befund 3, nur
-     *     ueber den Abbruchweg statt ueber den fehlenden Aufraeumcode.
+     *  1. NICHT ABBRECHBAR AB DA. Der gesamte Block - Abmelden UND Aufraeumen - laeuft in EINEM
+     *     `withContext(NonCancellable)`, weil schon `invalidate()` einen Netzaufruf enthaelt.
      *  2. GERAEUMT WIRD IN BEIDEN ZWEIGEN. Kehrt `authUseCase.signOut()` ueberhaupt zurueck
      *     (statt eine Cancellation zu werfen), wurde das Verwerfen des Tokens versucht; sein
      *     Failure-Zweig heisst ausschliesslich "das Loeschen der Auth-Daten ist gescheitert".
@@ -747,19 +683,8 @@ class AuthViewModel @Inject constructor(
      *     verworfenen Alternativen (Kette wieder anwerfen / `AuthState.EMPTY` behaupten) steht
      *     unten an der Stelle selbst.
      *
-     *  3. DER PROZESSTOD BLEIBT EINE OFFENE LUECKE - BEWUSST. `NonCancellable` schuetzt gegen den
-     *     Abbruch der Coroutine, nicht gegen den Tod des Prozesses. Zwischen dem Verwerfen der
-     *     Anmeldung und dem Ende des Aufraeumens liegen hunderte Millisekunden bis Sekunden, in
-     *     denen die App bereits den Anmeldebildschirm zeigt und damit zum Wegwischen einlaedt.
-     *     Stirbt der Prozess dort (Task weggewischt, Force-Stop, Low-Memory-Kill), bleiben
-     *     armierte Wecker eines Kontos zurueck, das die App nicht mehr kennt, und der
-     *     `BootReceiver` macht sie nach einem Neustart erneut scharf.
-     *
-     *     DER AUSWEG FUER DEN NUTZER IST DIE ERNEUTE ANMELDUNG. Danach steht die volle
-     *     Oberflaeche wieder zur Verfuegung: der naechste Sync raeumt die datengetriebenen Wecker
-     *     auf (die Schichten des alten Kontos stehen in keinem Kalender mehr, den die neue
-     *     Anmeldung sieht), einen von Hand gestellten Wecker findet der Nutzer im Wecker-Tab, und
-     *     das Abmelden laesst sich schlicht wiederholen - diesmal ohne Prozesstod.
+     *  3. DER PROZESSTOD BLEIBT EINE OFFENE LUECKE - BEWUSST (`NonCancellable` schuetzt nicht
+     *     gegen ihn). Ausweg fuer den Nutzer: erneut anmelden oder das Abmelden wiederholen.
      *
      *     WARUM DAGEGEN KEIN DAUERHAFTER MERKER ("Abmelden nicht fertig aufgeraeumt", gelesen vom
      *     `BootReceiver`, abgearbeitet von der 6h-Wartung). Genau das stand hier schon einmal
@@ -830,9 +755,6 @@ class AuthViewModel @Inject constructor(
                     // überlebte die Abmeldung.
                     val abmelden = authUseCase.signOut()
 
-                    // Der frueher hier per Reflection geleerte "cf_alarm_auth"-SharedPrefs-Kanal
-                    // existiert nicht mehr (toter Code, Audit); der Auth-Zustand wird von
-                    // authUseCase.signOut() zurueckgesetzt.
                     if (abmelden.isSuccess) {
                         updateAuthState { AuthState.EMPTY }
                         Logger.business(LogTags.AUTH, "Sign-out successful")
@@ -869,14 +791,7 @@ class AuthViewModel @Inject constructor(
                         // Wimpernschlag wieder weg. Vor allem aber waere der naechste App-Start
                         // in genau diesem Autorisierungs-Zustand, nicht im abgemeldeten; die
                         // laufende Sitzung soll ihn nicht anders darstellen als der Neustart.
-                        updateAuthState { currentState ->
-                            currentState.copy(
-                                calendarOps = currentState.calendarOps.copy(
-                                    hasValidToken = false,
-                                    tokenChecked = true
-                                )
-                            )
-                        }
+                        markiereTokenUngueltig()
                         Logger.e(
                             LogTags.AUTH,
                             "Abmelden: Auth-Daten nicht geloescht - das Kalender-Token ist " +
@@ -1011,7 +926,6 @@ class AuthViewModel @Inject constructor(
                                     LogTags.AUTH,
                                     "✅ ACTIVITY-CONTEXT-FIX: Calendar authorization successful, hasValidToken=true"
                                 )
-                                triggerCalendarReloadAfterAuth()
 
                                 // Initialize maintenance service after successful authorization
                                 viewModelScope.launch {
@@ -1036,16 +950,7 @@ class AuthViewModel @Inject constructor(
                             )
                         },
                         onFailure = { error ->
-                            updateAuthState { currentState ->
-                                currentState.copy(
-                                    calendarOps = currentState.calendarOps.copy(
-                                        calendarsLoading = false,
-                                        hasValidToken = false, // 🔧 STUFE 2: Mark token as invalid on error
-                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
-                                    ),
-                                    errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
-                                )
-                            }
+                            meldeAutorisierungFehlgeschlagen(error)
                             Logger.e(
                                 LogTags.AUTH,
                                 "❌ ACTIVITY-CONTEXT-FIX: Calendar authorization failed",
@@ -1078,10 +983,7 @@ class AuthViewModel @Inject constructor(
                                 "✅ MODERN-FLOW: Calendar authorization successful: $authorized, hasValidToken=$authorized"
                             )
 
-                            // CRITICAL FIX: Auto-trigger calendar loading after successful authorization
                             if (authorized) {
-                                triggerCalendarReloadAfterAuth()
-
                                 // Initialize maintenance service after successful authorization
                                 backgroundServiceManager.initializeMaintenanceService()
                                 Logger.business(
@@ -1091,16 +993,7 @@ class AuthViewModel @Inject constructor(
                             }
                         },
                         onFailure = { error ->
-                            updateAuthState { currentState ->
-                                currentState.copy(
-                                    calendarOps = currentState.calendarOps.copy(
-                                        calendarsLoading = false,
-                                        hasValidToken = false, // 🔧 STUFE 2: Mark token as invalid on error
-                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
-                                    ),
-                                    errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
-                                )
-                            }
+                            meldeAutorisierungFehlgeschlagen(error)
                             Logger.e(
                                 LogTags.AUTH,
                                 "❌ MODERN-FLOW: Calendar authorization failed",
@@ -1120,67 +1013,4 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
-
-    private fun triggerCalendarReloadAfterAuth() {
-        // PERFORMANCE: Prevent concurrent triggers with atomic check
-        if (triggerInProgress) {
-            Logger.d(LogTags.AUTH, "🔄 UI-THREAD-OPT: Calendar reload already in progress, skipping")
-            return
-        }
-
-        viewModelScope.launch(Dispatchers.Default) { // UI THREAD OPTIMIZATION: Pure background
-            try {
-                val currentTime = System.currentTimeMillis()
-                val timeSinceLastTrigger = currentTime - lastCalendarTriggerTime
-
-                // DEDUPLICATION: Prevent multiple triggers within 2 seconds (optimized)
-                if (timeSinceLastTrigger < 2000) {
-                    Logger.d(
-                        LogTags.AUTH,
-                        "🔄 UI-THREAD-OPT: Calendar reload trigger debounced ($timeSinceLastTrigger ms since last)"
-                    )
-                    return@launch
-                }
-
-                triggerInProgress = true
-                lastCalendarTriggerTime = currentTime
-
-                // UI THREAD OPTIMIZATION: Reduced delay from 100ms to 50ms
-                delay(50.milliseconds)
-
-                Logger.business(
-                    LogTags.AUTH,
-                    "🔄 UI-THREAD-OPT: Calendar reload triggered after successful authentication"
-                )
-                // NOTE: Calendar reload now happens automatically via CalendarStateHolder observation
-
-            } catch (e: Exception) {
-                Logger.e(LogTags.AUTH, "❌ UI-THREAD-OPT: Failed to trigger calendar reload", e)
-            } finally {
-                triggerInProgress = false
-            }
-        }
-    }
-
-    /**
-     * CRITICAL FIX: Enhanced Lifecycle Management - Properly cancel all ongoing operations
-     * MEMORY LEAK PREVENTION: Clear all callbacks and volatile fields to prevent mutex errors
-     */
-    override fun onCleared() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Starting cleanup...")
-
-            // CRITICAL FIX: Reset volatile fields to prevent stale operations
-            triggerInProgress = false
-            lastCalendarTriggerTime = 0L
-
-            // CRITICAL FIX: Clear state to prevent memory leaks
-            _authState.value = AuthState.EMPTY
-
-            Logger.d(LogTags.LIFECYCLE, "AuthViewModel: Cleanup completed successfully")
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during AuthViewModel cleanup", e)
-        }
-    }
-
 }

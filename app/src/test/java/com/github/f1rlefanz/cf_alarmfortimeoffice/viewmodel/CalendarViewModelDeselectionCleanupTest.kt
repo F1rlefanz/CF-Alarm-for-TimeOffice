@@ -118,8 +118,6 @@ class CalendarViewModelDeselectionCleanupTest {
             on { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
                 EventPage(
                     events = events,
-                    offset = 0,
-                    maxEvents = 10,
                     totalEvents = events.size, // nichts abgeschnitten -> vollstaendig
                     hasMore = false
                 )

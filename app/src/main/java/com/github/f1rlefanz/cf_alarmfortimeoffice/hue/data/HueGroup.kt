@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data
 
 import androidx.compose.runtime.Immutable
-import com.google.gson.annotations.SerializedName
 
 /**
  * Represents a Philips Hue Group (Room, Zone, Entertainment Area)
@@ -19,19 +18,10 @@ data class HueGroup(
     val recycle: Boolean? = null
 )
 
-// KEIN Raumtyp mehr (bis v1.34.3 `roomClass` + `classField`): Die Bridge sendet ihn unter dem
-// JSON-Schluessel `class`, und `classField` trug ihn per @SerializedName auch herein - gelesen hat
-// ihn NIE jemand. `roomClass` daneben hatte gar kein @SerializedName und war deshalb IMMER null;
-// zwei Kopierzeilen im Repository schoben folglich null nach null. Ein Feld, das aussieht, als
-// truege es den Raumtyp, und immer leer ist, ist schlimmer als keines. Wer ihn spaeter braucht,
-// nimmt EIN Feld mit @SerializedName("class") - nicht diese zwei.
+// Raumtyp bei Bedarf als EIN Feld mit @SerializedName("class").
 
 /**
  * Group State - aggregated state of all lights in group.
- *
- * ENTFERNT (14.09.2026): `all_on`. Die Bridge sendet es weiter; gelesen wurde im ganzen Baum
- * nur [any_on] — die Ziel-Auswahl zeigt "An", sobald EINE Lampe der Gruppe brennt
- * (`ZielAuswahlInhalt`). Gesetzt war `all_on` nur noch in vier Testaufbauten.
  */
 @Immutable
 data class GroupState(
@@ -52,25 +42,4 @@ data class GroupAction(
     val alert: String? = null,
     val effect: String? = null,
     val transitiontime: Int? = null
-)
-
-/**
- * Group action update request
- */
-@Immutable
-data class GroupUpdate(
-    val on: Boolean? = null,
-    val bri: Int? = null,
-    val hue: Int? = null,
-    val sat: Int? = null,
-    val xy: List<Float>? = null,
-    val ct: Int? = null,
-    val alert: String? = null,
-    val effect: String? = null,
-    val transitiontime: Int? = null,
-    @SerializedName("bri_inc") val briInc: Int? = null,
-    @SerializedName("sat_inc") val satInc: Int? = null,
-    @SerializedName("hue_inc") val hueInc: Int? = null,
-    @SerializedName("ct_inc") val ctInc: Int? = null,
-    @SerializedName("xy_inc") val xyInc: List<Float>? = null
 )

@@ -3,9 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data
 import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 
-/**
- * Type alias for backward compatibility
- */
 typealias HueSchedule = HueScheduleRule
 
 /**
@@ -28,8 +25,7 @@ data class HueScheduleRule(
     }
     
     /**
-     * Computed property for compatibility with HueRuleUseCase
-     * Extracts all light actions from time ranges
+     * All light actions across the time ranges
      */
     val lightActions: List<HueLightAction>
         get() = timeRanges.flatMap { it.actions }

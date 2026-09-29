@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Interface for Hue Configuration repository operations
- * Follows Clean Architecture principles with testable abstractions
  */
 interface IHueConfigRepository {
     
@@ -56,13 +55,11 @@ interface IHueConfigRepository {
 
     /**
      * Clear ONLY the persisted bridge IP/username (used by "Verbindung trennen / Bridge
-     * vergessen" - UX FEATURE B). This intentionally keeps the saved schedule rules so
+     * vergessen"). This intentionally keeps the saved schedule rules so
      * re-pairing the same (or a replacement) bridge doesn't force the user to recreate them.
      *
-     * Es ist der EINZIGE Raeumweg, den es noch gibt: das frueher daneben stehende
-     * `clearConfiguration()` (`preferences.clear()`, also samt Regelbestand) hatte im ganzen Baum
-     * keinen Aufrufer und ist in Aufraeumrunde 24 entfernt. Wer "alles zuruecksetzen" braucht,
-     * baut es bewusst neu - mit einer Antwort darauf, ob die Regeln wirklich mitgehen sollen.
+     * Es ist der EINZIGE Raeumweg; die Regeln bleiben bewusst. Wer "alles zuruecksetzen"
+     * braucht, muss beantworten, ob die Regeln wirklich mitgehen sollen.
      */
     suspend fun clearBridgeConfig(): Result<Unit>
 }
@@ -73,6 +70,5 @@ interface IHueConfigRepository {
 data class HueConfiguration(
     val bridgeIp: String = "",
     val username: String = "",
-    val isConfigured: Boolean = false,
-    val scheduleRules: List<HueSchedule> = emptyList()
+    val isConfigured: Boolean = false
 )

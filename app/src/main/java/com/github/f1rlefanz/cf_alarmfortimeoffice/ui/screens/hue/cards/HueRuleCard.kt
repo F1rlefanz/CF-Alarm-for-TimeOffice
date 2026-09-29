@@ -45,12 +45,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueShiftPattern
 import androidx.compose.ui.res.pluralStringResource
 
 /**
- * Eine Regel in der Liste. Aus `HueSettingsScreen` ausgelagert.
+ * Eine Regel in der Liste.
  *
- * Zeigt den MODUS als Abzeichen und darunter, was die Regel konkret tut. Vorher stand dort
- * "N Zeitbereich(e)" - eine Zahl aus einem Modell-Rest, den die Ausfuehrung nie aufgeloest hat
- * (siehe HueTimeRange): sie war fuer den Nutzer immer 1 und sagte nichts. Seit es drei
- * Betriebsarten gibt, waere ein Blick in die Liste ohne Modus vollends blind.
+ * Zeigt den MODUS als Abzeichen und darunter, was die Regel konkret tut - ohne Modus waere ein
+ * Blick in die Liste bei drei Betriebsarten blind.
  */
 @Composable
 internal fun HueRuleCard(
@@ -67,13 +65,7 @@ internal fun HueRuleCard(
     // Aktion "Bridge vergessen" schon nach (BridgeStatusCard), das war ein Widerspruch.
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
 
-    // WARUM KEIN `surfaceVariant` FUER DIE AKTIVE REGEL: In der hellen CSJR-Palette ist
-    // `surfaceVariant` derselbe Farbwert wie `background` (beides `OffWhite`, siehe Theme.kt) —
-    // die eingeschaltete Regel verlor damit ihre Kartenflaeche und verschwamm mit dem
-    // Seitenhintergrund, waehrend die AUSgeschalteten weiss abgesetzt blieben. Ausgerechnet die
-    // wirksame Regel sah also aus, als gehoere sie nicht dazu (am Geraet gesehen, 01.09.2026).
-    // Der Zustand wird jetzt additiv gezeigt — Rand in der Akzentfarbe, passend zum roten
-    // Schalter und zum "Aktiv" darunter —, nicht durch Wegnehmen der Flaeche.
+    // Aktive Regel: Rand statt `surfaceVariant` (= `background` in der hellen Palette) - ui-texte-und-layout.md.
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = if (rule.enabled) {
@@ -154,9 +146,7 @@ internal fun HueRuleCard(
             }
 
 
-            // Hier war "Bearbeiten" zu "Bea/rbei/ten" zerfallen: zwei weight(1f)-Buttons plus
-            // IconButton lassen je ~116dp, davon gehen 48dp allein für den Material3-Innenabstand
-            // ab. CompactOutlinedButton nimmt den zurück und lässt nur eine Zeile zu.
+            // CompactOutlinedButton: zwei weight(1f)-Buttons plus IconButton - siehe CompactActionButton.kt.
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically

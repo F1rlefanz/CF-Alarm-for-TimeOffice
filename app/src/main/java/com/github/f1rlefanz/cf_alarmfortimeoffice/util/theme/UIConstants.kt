@@ -4,16 +4,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * UI Constants für Theme, Spacing, Dimensionen und visuelle Elemente.
- *
- * ENTFERNT (v1.34.3 und v1.34.5): insgesamt 30 Gestaltungs-Konstanten ohne einen einzigen
- * Verwender — Abstände, Eckenradien, Animationsdauern, ein kompletter Warnfarben-Satz
- * (`UIColors`) und der Verlaufsradius (`GraphicsConstants`). Alle auf Vorrat angelegt, keine je
- * gelesen. Dieselbe „fertige API für später"-Falle, die dieses Projekt schon einmal in
- * `NetworkStateMonitor` gefunden hat. **Wer einen Wert braucht, legt ihn an — das ist eine Zeile.**
- *
- * Der zweite Durchgang war nötig, weil der erste die `const val`-Zeilen entfernte und ihre
- * KDoc-Kommentare stehen ließ: elf Blöcke, die nichts mehr beschrieben, und zwei Objekte, die
- * dadurch leer dastanden. Genau daran hängt jetzt eine Prüfung in `tools/aufraeumen/`.
+ * Keine Werte auf Vorrat: **wer einen Wert braucht, legt ihn an — das ist eine Zeile.**
  */
 
 // ============================
@@ -47,10 +38,6 @@ object SpacingConstants {
 
     // Button-Dimensionen
     val BUTTON_HEIGHT_LARGE = 56.dp
-
-    // Card & Surface
-    val SURFACE_CORNER_RADIUS = 8.dp
-    val CARD_CORNER_RADIUS = 12.dp
 }
 
 // ============================

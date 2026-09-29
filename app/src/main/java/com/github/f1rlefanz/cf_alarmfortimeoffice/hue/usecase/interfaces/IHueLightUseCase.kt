@@ -34,15 +34,9 @@ interface IHueLightUseCase {
     
     /**
      * Legt das Auto-Aus als Zeitplan AUF DER BRIDGE ab: pro Ziel ein Timer
-     * ("in +N Minuten ausschalten"), den die Bridge selbst ausführt.
-     *
-     * WARUM NICHT DAS HANDY: Ein Auto-Aus per WorkManager erreicht die Bridge nur aus dem
-     * Heim-WLAN. Wer nach dem Wecken aus dem Haus geht, nimmt das Handy mit — und die Lampen
-     * blieben an. Die Bridge steht dagegen immer im richtigen Netz.
-     *
-     * WARUM DAS SICHER IST: Der Aufruf gehört an die Stelle, an der die Regeln die Lampen gerade
-     * eingeschaltet haben. Ging das Licht an, war die Bridge erreichbar — dann klappt auch der
-     * Zeitplan. War sie nicht erreichbar, ging kein Licht an, und es gibt nichts auszuschalten.
+     * ("in +N Minuten ausschalten"), den die Bridge selbst ausführt. Der Aufruf gehört an die
+     * Stelle, an der die Regeln die Lampen gerade eingeschaltet haben.
+     * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      *
      * Räumt eigene Timer aus einem früheren Lauf vorher ab (Snooze, erneut gefeuerter Alarm),
      * damit nicht ein alter Timer zu früh auslöst.
@@ -55,19 +49,10 @@ interface IHueLightUseCase {
     ): Result<Int>
 
     /**
-     * Laesst EINE Lampe ein paar Sekunden blinken, ohne ihren An/Aus-Zustand oder sonst etwas
-     * dauerhaft zu veraendern. Sichtbarer Beweis, dass der "Test"-Knopf die Bridge wirklich
-     * erreicht - statt eines stillen API-Aufrufs.
-     *
-     * NIMMT BEWUSST NUR EINE LAMPE, KEIN GRUPPEN-FLAG: Gruppen ueberschneiden sich beliebig
-     * (eine Lampe liegt real in drei Gruppen gleichzeitig), ueber Gruppen zu blinken heisst
-     * also mehrere Alerts auf derselben Lampe. Die Lampen-Ebene ist die einzige, auf der "jede
-     * Lampe genau einmal" strukturell gilt. Siehe HueViewModel.runLightTest.
-     *
-     * Bewusst "lselect" und nicht "select": Ein einzelner Blitz ist als Beweis zu leise - er
-     * geht im Zweifel unter, und dann wirkt der Test-Knopf tot. Das anhaltende Blinken ist im
-     * Hue-Umfeld ausserdem das gelernte "diese Lampe meine ich". Die Implementierung bricht
-     * es nach ein paar Sekunden aktiv ab, statt die vollen 15s von lselect stehenzulassen.
+     * Laesst EINE Lampe ein paar Sekunden blinken ("lselect", aktiv abgebrochen), ohne ihren
+     * An/Aus-Zustand dauerhaft zu veraendern - sichtbarer Beweis, dass der "Test"-Knopf die
+     * Bridge erreicht. Bewusst KEIN Gruppen-Flag: nur auf Lampen-Ebene blinkt jede Lampe genau
+     * einmal. Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
      */
     suspend fun flashLight(lightId: String): Result<Unit>
 }

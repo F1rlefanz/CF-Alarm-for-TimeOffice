@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -100,43 +101,12 @@ fun SettingsTabContent(
 
         
         // Kalender-Einstellungen
-        Card(
-            modifier = Modifier.fillMaxWidth(),
+        WeiterKarte(
+            icon = Icons.Default.CalendarMonth,
+            titel = "Kalender auswählen",
+            text = "Wähle die Kalender für Schichterkennung",
             onClick = onShowCalendarSelection
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.CalendarMonth,
-                    // dekorativ: Text daneben sagt es bereits ("Kalender auswählen")
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Kalender auswählen",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Wähle die Kalender für Schichterkennung",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
-                    // Element und traegt ihre Beschriftung selbst
-                    Icons.AutoMirrored.Default.KeyboardArrowRight,
-                    contentDescription = null
-                )
-            }
-        }
+        )
 
         // 🔧 STUFE 2 FIX: Calendar Authorization/Re-Authorization Card
         // Shows when user needs to authorize Calendar OR re-authorize due to invalid token
@@ -144,11 +114,7 @@ fun SettingsTabContent(
             (!authState.calendarOps.hasSelectedCalendars || authState.calendarOps.needsTokenReauthorization)
         ) {
 
-            // Dynamically adapt card appearance based on state
             val needsReauth = authState.calendarOps.needsTokenReauthorization
-            // CTA-Karte: weiße Fläche mit rotem Akzent (statt getöntem Container).
-            val cardColor = MaterialTheme.colorScheme.surface
-            val iconColor = MaterialTheme.colorScheme.primary
             val titleText = if (needsReauth) {
                 "Kalender-Zugriff erneuern"
             } else {
@@ -172,8 +138,9 @@ fun SettingsTabContent(
                     val activity = context as? android.app.Activity
                     authViewModel.requestCalendarAuthorization(activity)
                 },
+                // CTA-Karte: weiße Fläche mit rotem Akzent (statt getöntem Container).
                 colors = CardDefaults.cardColors(
-                    containerColor = cardColor
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             ) {
                 Row(
@@ -189,7 +156,7 @@ fun SettingsTabContent(
                         // ("Kalender-Zugriff erneuern" bzw. "Calendar-Berechtigung")
                         contentDescription = null,
                         modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                        tint = iconColor
+                        tint = MaterialTheme.colorScheme.primary
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -206,7 +173,7 @@ fun SettingsTabContent(
                     if (authState.calendarOps.calendarsLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = iconColor
+                            color = MaterialTheme.colorScheme.primary
                         )
                     } else {
                         Icon(
@@ -214,7 +181,7 @@ fun SettingsTabContent(
                             // dekorativ: descriptionText daneben sagt bereits, dass der Zugriff
                             // autorisiert bzw. erneuert werden muss
                             contentDescription = null,
-                            tint = iconColor
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -222,43 +189,12 @@ fun SettingsTabContent(
         }
 
         // Nicht stören (DND) - eigener, getrennter Bereich (nicht im Dimmer-Tab)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
+        WeiterKarte(
+            icon = Icons.Default.DoNotDisturbOn,
+            titel = "Nicht stören",
+            text = "Schaltet Nicht-stören automatisch nach Schicht",
             onClick = onShowDndSettings
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.DoNotDisturbOn,
-                    // dekorativ: Text daneben sagt es bereits ("Nicht stören")
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Nicht stören",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Schaltet Nicht-stören automatisch nach Schicht",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
-                    // Element und traegt ihre Beschriftung selbst
-                    Icons.AutoMirrored.Default.KeyboardArrowRight,
-                    contentDescription = null
-                )
-            }
-        }
+        )
 
         // Benachrichtigungen (Schicht-Aenderung + Dimmer-Korrektur)
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -289,69 +225,27 @@ fun SettingsTabContent(
 
                 HorizontalDivider()
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Schicht-Änderung",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "Benachrichtigt, wenn TimeOffice eine Schicht ändert/hinzufügt/entfernt",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = notificationState.shiftChangeNotificationEnabled,
-                        onCheckedChange = { notificationSettingsViewModel.setShiftChangeNotificationEnabled(it) }
-                    )
-                }
+                BenachrichtigungsSchalter(
+                    titel = "Schicht-Änderung",
+                    text = "Benachrichtigt, wenn TimeOffice eine Schicht ändert/hinzufügt/entfernt",
+                    checked = notificationState.shiftChangeNotificationEnabled,
+                    onCheckedChange = { notificationSettingsViewModel.setShiftChangeNotificationEnabled(it) }
+                )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Kalender nicht abrufbar",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "Warnt, wenn ein gewählter Kalender dauerhaft nicht mehr antwortet — " +
-                                "dann entstehen keine neuen Wecker mehr",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = notificationState.calendarUnavailableNotificationEnabled,
-                        onCheckedChange = { notificationSettingsViewModel.setCalendarUnavailableNotificationEnabled(it) }
-                    )
-                }
+                BenachrichtigungsSchalter(
+                    titel = "Kalender nicht abrufbar",
+                    text = "Warnt, wenn ein gewählter Kalender dauerhaft nicht mehr antwortet — " +
+                        "dann entstehen keine neuen Wecker mehr",
+                    checked = notificationState.calendarUnavailableNotificationEnabled,
+                    onCheckedChange = { notificationSettingsViewModel.setCalendarUnavailableNotificationEnabled(it) }
+                )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Dimmer-Korrektur",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "Zeigt Heller/Dunkler/Pause, solange der Schicht-Dimmer aktiv ist",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = notificationState.dimCorrectionNotificationEnabled,
-                        onCheckedChange = { notificationSettingsViewModel.setDimCorrectionNotificationEnabled(it) }
-                    )
-                }
+                BenachrichtigungsSchalter(
+                    titel = "Dimmer-Korrektur",
+                    text = "Zeigt Heller/Dunkler/Pause, solange der Schicht-Dimmer aktiv ist",
+                    checked = notificationState.dimCorrectionNotificationEnabled,
+                    onCheckedChange = { notificationSettingsViewModel.setDimCorrectionNotificationEnabled(it) }
+                )
             }
         }
 
@@ -691,6 +585,77 @@ private fun ConfigBackupCard() {
             confirmButton = {
                 TextButton(onClick = { viewModel.dismissResult() }) { Text("OK") }
             }
+        )
+    }
+}
+
+/** Navigationskarte: Icon, Titel, Beschreibung und Weiter-Pfeil; die ganze Karte ist das Ziel. */
+@Composable
+internal fun WeiterKarte(icon: ImageVector, titel: String, text: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(SpacingConstants.PADDING_CARD),
+            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                // dekorativ: der Titel daneben sagt es bereits
+                contentDescription = null,
+                modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    titel,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
+                // Element und traegt ihre Beschriftung selbst
+                Icons.AutoMirrored.Default.KeyboardArrowRight,
+                contentDescription = null
+            )
+        }
+    }
+}
+
+@Composable
+private fun BenachrichtigungsSchalter(
+    titel: String,
+    text: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                titel,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
         )
     }
 }

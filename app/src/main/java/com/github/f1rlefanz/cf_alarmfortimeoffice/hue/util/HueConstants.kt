@@ -2,12 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util
 
 /**
  * Central constants for Philips Hue integration
- * 
- * Contains all configuration values, limits, and defaults used throughout
- * the Hue integration system. Centralized for easy maintenance and consistency.
- * 
- * @author CF-Alarm Development Team
- * @since Hue Integration v2.1
  */
 object HueConstants {
     
@@ -19,11 +13,6 @@ object HueConstants {
      * Philips Hue Bridge discovery and connection
      */
     object Bridge {
-        const val DISCOVERY_TIMEOUT_MS = 10_000L
-        const val CONNECTION_TIMEOUT_MS = 5_000L
-        
-        // Standard Hue Bridge mDNS service
-        
         // Hue Bridge API endpoints
         const val API_BASE_PATH = "/api"
         const val SCHEDULES_ENDPOINT = "/schedules"
@@ -57,8 +46,6 @@ object HueConstants {
         // Alert types
         const val ALERT_NONE = "none"
         const val ALERT_LSELECT = "lselect"    // Multiple flashes
-        
-        // Effect types
         
         // XY color space limits (CIE 1931)
         const val MIN_XY_VALUE = 0.0f
@@ -161,20 +148,5 @@ object HueConstants {
             val clamped = clampBrightness(brightness)
             return ((clamped - Lights.MIN_BRIGHTNESS).toFloat() / (Lights.MAX_BRIGHTNESS - Lights.MIN_BRIGHTNESS) * 100).toInt()
         }
-        
-        /**
-         * Creates a unique rule ID
-         */
-        fun generateRuleId(): String {
-            return "rule_${System.currentTimeMillis()}_${(1000..9999).random()}"
-        }
     }
-
-    // ENTFERNT (v1.34.3): 17 Konstanten ohne Verwender. Die Endpunkt-Konstanten waren dabei
-    // nicht nur ungenutzt, sondern FALSCH - HueApiClient baut die Pfade inline als
-    // "/api/<user>/config", die Konstanten trugen nur "/config". Wer sie benutzt haette, haette
-    // eine kaputte URL gebaut.
-    // NICHT entfernt: MIN_XY_VALUE/MAX_XY_VALUE. Sie sehen ungenutzt aus, werden aber zwei
-    // Zeilen weiter in DIESER Datei verwendet - ein Referenz-Check, der die Definitionsdatei
-    // ausblendet, uebersieht das. Genau darauf ist der erste Anlauf hereingefallen.
 }

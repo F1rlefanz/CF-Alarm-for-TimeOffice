@@ -98,10 +98,7 @@ internal fun ZielAuswahlInhalt(
                     )
                 } else {
                     lightTargets.groups.forEach { group ->
-                        // Ganze Zeile als Ziel - Begruendung siehe Schichtmuster-Auswahl
-                        // (ShiftPatternCard); heightIn(MIN_TOUCH_TARGET) ist Pflicht, weil die
-                        // Checkbox mit onCheckedChange = null ihre eigene Mindestgroesse
-                        // nicht mehr mitbringt.
+                        // Ganze Zeile als Ziel, 48dp-Klemme Pflicht: MIN_TOUCH_TARGET, ui-texte-und-layout.md.
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -144,8 +141,7 @@ internal fun ZielAuswahlInhalt(
                     )
                 } else {
                     lightTargets.lights.forEach { light ->
-                        // Ganze Zeile als Ziel - Begruendung siehe Schichtmuster-Auswahl
-                        // (ShiftPatternCard); dieselbe 48dp-Klemme wie oben.
+                        // Ganze Zeile als Ziel, 48dp-Klemme Pflicht: MIN_TOUCH_TARGET, ui-texte-und-layout.md.
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

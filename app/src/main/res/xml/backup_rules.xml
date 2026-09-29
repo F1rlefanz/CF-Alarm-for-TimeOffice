@@ -5,18 +5,8 @@
 
    BEIDE DATEIEN MUESSEN INHALTLICH IDENTISCH BLEIBEN. Sonst sichert dasselbe Geraet je
    nach Android-Version Unterschiedliches, und ein Fehler faellt nur auf einer Haelfte der
-   Installationsbasis auf.
-
-   WARUM DIESE DATEI 2026-08 KOMPLETT NEU GESCHRIEBEN WURDE:
-   Vorher standen hier ausschliesslich Pfade, die diese App NIE angelegt hat -
-   shift_config.xml, alarm_settings.xml, ui_preferences.xml, app_preferences.xml
-   (domain="sharedpref") und app_database.db (domain="database"). Die Einstellungen liegen
-   real in DataStore-Dateien unter files/datastore/*.preferences_pb (domain="file"), und
-   eine Room-/SQLite-Datenbank gibt es in dieser App gar nicht. Weil eine reine
-   <include>-Liste alles Nicht-Genannte ausschliesst, war die effektive Backup-Menge LEER:
-   allowBackup="true" war gesetzt, uebertragen wurde bei einem Geraetewechsel aber NICHTS.
-   Die Pfade unten sind am Emulator per `run-as <pkg> ls -R` gegen die tatsaechlich
-   angelegten Dateien geprueft.
+   Installationsbasis auf. Die Gleichheit erzwingt BackupRulesConsistencyTest; die volle
+   Begruendung je Ausschluss steht in data_extraction_rules.xml im Block <cloud-backup>.
 
    GRUNDSATZ: Gesichert wird nur, was der Nutzer selbst konfiguriert hat (Schichten,
    Dimm-/DND-/Hue-Regeln, Kalenderauswahl). Anmelde- und Verschluesselungsartefakte sind
@@ -25,88 +15,31 @@
    See https://developer.android.com/guide/topics/data/autobackup
 -->
 <full-backup-content>
-    <!-- Alle DataStore-Dateien (files/datastore/*.preferences_pb):
-         - settings ................. Dimmer-Regeln, Nacht-Standard, DND-Toggles/-Policy,
-                                      Schlummer-Dauer, Notification-Toggles, Master-Pause
-         - shift_prefs .............. Schichtdefinitionen (Weckzeiten, Keywords, Flags)
-         - hue_settings ............. Bridge-Zugang + Hue-Regeln
-         - calendar_selection_prefs . ausgewaehlte Google-Kalender
-         Reine Laufzeit-Spiegel in "settings" (active_alarms, dim_render_*, dnd_zen_rule_id,
-         last_maintenance_time, Skip-Keys) werden mitgesichert und sind harmlos: sie werden
-         beim naechsten syncAlarms()/applyCurrentState() aus Kalender + Konfiguration neu
-         abgeleitet, und eine restaurierte, auf dem Zielgeraet unbekannte Zen-Regel-ID legt
-         ensureZenRule() einfach neu an.
-         ZWEI AUSNAHMEN, die das NICHT sind. Einzelne Schluessel lassen sich aus einem
-         Preferences-Store nicht ausnehmen (er ist EINE Datei), deshalb behandelt sie
-         DeviceLocalFlagsGuard beim erkannten Geraetewechsel:
-         1. Die Master-Pause (master_pause_enabled) wird NICHT neu abgeleitet - sie ist
-            massgeblicher Zustand und gated Wecker, Dimmer, DND und die 6h-Wartung. Nach einem
-            Restore waere eine aktive Pause wieder aktiv, und auf dem neuen Geraet bliebe der
-            Wecker STILL, ohne dass jemand die Ursache in einer Wiederherstellung sucht. Sie wird
-            nicht geloescht, sondern ueber MasterPauseUseCase.resume() aufgehoben - eine Pause ist
-            mehr als das Flag.
-         2. Das Gedaechtnis der Kalender-Warnung (calendar_unavailable_notified,
-            calendar_unavailable_last_failed - CalendarUnavailablePrefs) leitet sich ebenfalls
-            nicht neu ab, und der "schon gewarnt"-Merker heilt ausdruecklich NICHT: wandert er mit
-            und scheitert derselbe Kalender auf dem neuen Geraet weiter, rechnet
-            entscheideBenachrichtigung() bei jedem Lauf "neu zu melden = beharrlich - bereits
-            gemeldet" = leer, meldet nichts, und der abschliessende intersect haelt die ID fest.
-            Dann versiegen die Wecker lautlos (die Vollstaendigkeits-Sperren verhindern das
-            Loeschen UND das Anlegen), und die einzige Meldung darueber bleibt aus. Bei gleichem
-            Google-Konto sind es dieselben Kalender-IDs - dass die Kalenderauswahl selbst nicht
-            gesichert wird, hilft also nicht. Der Schalter daneben
-            (calendar_unavailable_notification_enabled) ist eine echte Einstellung und reist mit.
-         Beide Male ist die harmlose Richtung gewaehlt: ein unerwartet klingelnder Wecker oder eine
-         zweimal gezeigte Warnung ist harmloser als ein unerwartet stummer Wecker. -->
+    <!-- Alle DataStore-Dateien (settings, shift_prefs, hue_settings, calendar_selection_prefs).
+         master_pause_enabled und calendar_unavailable_* behandelt DeviceLocalFlagsGuard beim
+         Geraetewechsel (Master-Pause via MasterPauseUseCase.resume()). -->
     <include domain="file" path="datastore"/>
 
-    <!-- AUSSCHLUSS 1 - Token-Store: mit einem Tink-AES256-GCM-Keyset verschluesselt, dessen
-         Masterkey unter android-keystore://token_master_key im Keystore des ALTEN Geraets
-         liegt und dieses nie verlaesst. Restauriertes Ciphertext ist auf dem Zielgeraet
-         dauerhaft unentschluesselbar und wuerde bei jedem Read eine TinkEncryptionException
-         erzeugen. Der Token wird stattdessen ueber GoogleAuthUtil neu geholt. -->
+    <!-- AUSSCHLUSS 1 - Token-Store: Masterkey im Keystore des alten Geraets, hier unentschluesselbar. -->
     <exclude domain="file" path="datastore/token_data_v2_encrypted.preferences_pb"/>
 
-    <!-- AUSSCHLUSS 2 - Anmeldezustand: auth_prefs enthaelt login_status, Kontoidentitaet und
-         Token-Felder. Ein restauriertes login_status=true OHNE gueltiges Token ist ein
-         Zustand, den die Auth-Gate-Logik nicht kennt (siehe observeTokenLoss/signOut-
-         Invarianten in CLAUDE.md). Neu anmelden ist der einzige saubere Weg. -->
+    <!-- AUSSCHLUSS 2 - Anmeldezustand: login_status=true ohne gueltiges Token kennt das Auth-Gate nicht. -->
     <exclude domain="file" path="datastore/auth_prefs.preferences_pb"/>
 
     <!-- SharedPreferences: Domain aufgenommen, damit die folgenden <exclude>-Regeln wirksam
-         (und Lint-konform) sind - ein <exclude> ausserhalb eines <include>-Pfades ist ein
-         No-Op und wird von Lint als FullBackupContent gemeldet; genau das erzeugte die alte
-         lint-baseline.xml. Faktisch bleibt von domain="sharedpref" heute NICHTS uebrig, weil
-         alle drei real existierenden Dateien unten ausgeschlossen sind. WER EINE NEUE
-         SharedPreferences-DATEI ANLEGT, muss hier bewusst entscheiden, ob sie ins Backup darf. -->
+         (und Lint-konform) sind. WER EINE NEUE SharedPreferences-DATEI ANLEGT, muss hier
+         bewusst entscheiden, ob sie ins Backup darf. -->
     <include domain="sharedpref" path="."/>
 
-    <!-- AUSSCHLUSS 3 - token_encryption_prefs.xml: haelt das Tink-Keyset
-         (token_master_keyset). Es ist GERAETEGEBUNDEN; ein restaurierter Token ohne passendes
-         Keyset ist unentschluesselbar und erzeugt eine Anmeldeschleife. Zudem ein
-         Sicherheitsartefakt, das grundsaetzlich nicht in eine Cloud gehoert. -->
+    <!-- AUSSCHLUSS 3 - Tink-Keyset: geraetegebunden, Sicherheitsartefakt. -->
     <exclude domain="sharedpref" path="token_encryption_prefs.xml"/>
 
-    <!-- AUSSCHLUSS 4 - hue_trust_pinning.xml: Trust-On-First-Use-Basislinie einer BESTIMMTEN
-         physischen Bridge (Bridge-ID-Pinning), also geraete- und netzspezifisch. Ein fremder
-         Pin erzeugt auf dem Zielgeraet nur die "Bridge identity changed"-Warnung. -->
+    <!-- AUSSCHLUSS 4 - Bridge-ID-Pinning: geraete- und netzspezifisch. -->
     <exclude domain="sharedpref" path="hue_trust_pinning.xml"/>
 
-    <!-- background_services.xml: reine Diagnosedaten des ALTEN Geraets (device_info,
-         Startzeitpunkt, Version) - auf dem Zielgeraet irrefuehrend, wird beim ersten Start
-         ohnehin neu geschrieben.
-         Nicht aufgefuehrt, weil gar nicht in dieser Domain: direct_boot_alarms.xml liegt im
-         Device-Protected Storage (/data/user_de/) und ist ein Spiegel der Alarme. -->
+    <!-- Diagnosedaten des alten Geraets. -->
     <exclude domain="sharedpref" path="background_services.xml"/>
 
-    <!-- weckbildschirm_verdraengung.xml: die Aussage "DIESES Geraet verdraengt den
-         Weckbildschirm" - der Zaehler hinter dem Hinweis im Status-Tab (siehe Skill
-         cfalarm-wecker-und-boot, reference/vorwecken.md). Das ist eine Eigenschaft der
-         HARDWARE, nicht der Nutzerkonfiguration: der Defekt steckt in Fairphones
-         Gesichtsentsperrung. Wandert der Zaehler mit, zeigt ein gesundes Nachfolgegeraet
-         einen Hinweis ueber einen Defekt, den es nicht hat - und raet dem Nutzer, sein
-         eingelerntes Gesicht zu loeschen. Der frueher hier mitgenannte Merker
-         je_verdraengt ist mit 1.39.5 entfallen; das Vorwecken haengt an keinem
-         gespeicherten Wert mehr. -->
+    <!-- Eigenschaft der Hardware (Weckbildschirm-Verdraengung), nicht der Nutzerkonfiguration. -->
     <exclude domain="sharedpref" path="weckbildschirm_verdraengung.xml"/>
 </full-backup-content>

@@ -18,13 +18,6 @@ import javax.inject.Inject
 /**
  * ViewModel für Navigation State Management
  * Ersetzt primitive Boolean-Navigation durch typisierte sealed classes
- * 
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor mit @Inject
- * ✅ Keine Dependencies - perfekt für ersten Test
- * 
- * MEMORY LEAK FIXED: Added proper cleanup to prevent pthread_mutex_lock errors
  */
 @HiltViewModel
 class NavigationViewModel @Inject constructor() : ViewModel() {
@@ -52,7 +45,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 NavigationState.EventList(action.fromTab)
             }
             
-            // PHASE 1 MIGRATION: Battery and OEM navigation
+            // Battery and OEM navigation
             is NavigationAction.NavigateToBatteryExemption -> {
                 Logger.d(LogTags.NAVIGATION, "Main -> Battery Exemption (from ${action.fromTab})")
                 NavigationState.BatteryExemption(action.fromTab)
@@ -173,7 +166,7 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun navigateToEventList(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToEventList(fromTab))
     
-    // PHASE 1 MIGRATION: Battery and OEM navigation convenience methods
+    // Battery and OEM navigation convenience methods
     fun navigateToBatteryExemption(fromTab: MainTab = MainTab.HOME) = 
         handleNavigationAction(NavigationAction.NavigateToBatteryExemption(fromTab))
     
@@ -270,22 +263,4 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
             navigateToTimeOfficeHealthCheck()
         }
     }
-    
-    /**
-     * CRITICAL FIX: NavigationViewModel Cleanup to prevent pthread_mutex_lock errors
-     * MEMORY LEAK PREVENTION: Clear navigation state on destruction
-     */
-    override fun onCleared() {
-        try {
-            // CRITICAL FIX: Reset navigation state to prevent memory leaks
-            _navigationState.value = NavigationState.MainContent(MainTab.HOME)
-            
-            Logger.d(LogTags.LIFECYCLE, "NavigationViewModel cleared - cleaning up navigation state")
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during NavigationViewModel cleanup", e)
-        }
-        
-        // Note: NavigationViewModel has no coroutines to cancel
-    }
-    
 }

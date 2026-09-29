@@ -44,10 +44,6 @@ class SkipRolledBackException(
  * Use case implementation for alarm skip functionality.
  * Handles business logic for skipping alarms.
  *
- * CRITICAL FIX: Ensures system alarm is cancelled when alarm is skipped
- * ✅ Prevents "ghost alarms" that trigger despite being skipped
- * ✅ Properly cleans up both DataStore state AND Android AlarmManager
- *
  * EIN UEBERSPRUNGENER ALARM IST WEG - fuer JEDE Alarmart (siehe [skipNextAlarm]). Damit
  * "Aufheben" trotzdem umkehrbar bleibt, wird ein MANUELLER Wecker vorher als
  * [ManualAlarmSnapshot] im Skip-Zustand gesichert; ein kalenderbasierter braucht das nicht, er
@@ -143,7 +139,7 @@ class AlarmSkipUseCase @Inject constructor(
                     manualAlarmSnapshot = manualSnapshot
                 ).getOrThrow()
             
-                // 3. ✅ UX-FIX: Systemalarm SOFORT löschen für direktes User-Feedback
+                // 3. Systemalarm SOFORT löschen für direktes User-Feedback
                 // User erwartet dass der Alarm aus der Statusleiste verschwindet wenn er "überspringen" drückt
                 Logger.business(LogTags.ALARM_SKIP, "⏭️ SKIP-IMMEDIATE: Deleting system alarm ${nextAlarm.id} immediately for better UX")
                 try {
@@ -225,7 +221,7 @@ class AlarmSkipUseCase @Inject constructor(
             if (isSkipped) {
                 Logger.business(LogTags.ALARM_SKIP, "⏭️ SKIP-FIX: Processing skip for alarm $alarmId")
                 
-                // CRITICAL FIX Step 1: Cancel the system alarm (Android AlarmManager)
+                // Step 1: Cancel the system alarm (Android AlarmManager)
                 // This prevents the alarm from triggering again
                 try {
                     alarmManagerService.cancelSystemAlarm(alarmId)
@@ -235,7 +231,7 @@ class AlarmSkipUseCase @Inject constructor(
                     // Continue anyway - we still want to clear the skip status
                 }
                 
-                // CRITICAL FIX Step 2: Delete the alarm from repository
+                // Step 2: Delete the alarm from repository
                 // This removes it from the app's internal alarm list
                 //
                 // HIER WIRD DER FEHLSCHLAG BEWUSST NUR GELOGGT - anders als in [skipNextAlarm],
@@ -255,7 +251,7 @@ class AlarmSkipUseCase @Inject constructor(
                     // Continue anyway - we still want to clear the skip status
                 }
                 
-                // CRITICAL FIX Step 3: Clear skip status after successful processing
+                // Step 3: Clear skip status after successful processing
                 // This prevents the skip from affecting other alarms
                 alarmSkipRepository.clearSkipStatus().getOrThrow()
                 Logger.business(LogTags.ALARM_SKIP, "✅ SKIP-FIX: Alarm $alarmId successfully skipped and cleaned up")

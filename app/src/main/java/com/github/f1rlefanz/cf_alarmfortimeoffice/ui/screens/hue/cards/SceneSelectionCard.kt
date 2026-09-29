@@ -50,15 +50,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.SzenenAuswahl
  * Raumwahl davor macht beides weg. Genau dieselbe Zweistufigkeit ist auch der Anker, mit dem der
  * `HueTargetReconciler` die Auswahl auf einer anderen Bridge wiederfindet.
  *
- * MEHRERE RAEUME, ABER HOECHSTENS EINE SZENE JE RAUM: Eine Regel darf das Wohnzimmer auf
- * "Nachtlicht" und das Schlafzimmer auf "Lesen" setzen - die Ausfuehrung schickt dann zwei PUTs,
- * und das Auto-Aus legt zwei Bridge-Timer an. Die Kette darunter konnte das von Anfang an
- * (`convertRuleToLightActions` laeuft ueber alle Aktionen, `autoOffTargetsOf()` flatMapt und
- * dedupliziert); die frueher einzelne Auswahl war eine reine Oberflaechen-Begrenzung.
- *
- * Zwei Szenen auf DEMSELBEN Raum waeren dagegen zwei PUTs auf denselben Endpunkt: der zweite
- * gewaenne, die Einstellung widerspraeche sich selbst. Deshalb ersetzt eine neue Wahl im selben
- * Raum die alte.
+ * MEHRERE RAEUME, ABER HOECHSTENS EINE SZENE JE RAUM - eine neue Wahl im selben Raum ersetzt die
+ * alte. Hergang: Skill cfalarm-hue.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 
-/** Statischer Fehler-Banner (errorContainer-Karte). Fuer schwerere Faelle mit Icon/Dismiss/Retry: [ErrorMessage]. */
+/** Statischer Fehler-Banner (errorContainer-Karte). Fuer schwerere Faelle mit Icon/Dismiss: [ErrorMessage]. */
 @Composable
 fun InlineErrorCard(message: String, modifier: Modifier = Modifier) {
     Card(

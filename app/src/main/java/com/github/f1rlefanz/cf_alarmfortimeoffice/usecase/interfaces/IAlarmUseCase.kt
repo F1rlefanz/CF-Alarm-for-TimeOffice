@@ -5,21 +5,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Interface für Alarm UseCase Operations
- * 
- * TESTING IMPROVEMENT: Interface ermöglicht Mock-Implementierungen
- * - Dependency Inversion: ViewModel abhängig von Abstraktion
- * - Testbarkeit: ViewModel kann mit Mock-UseCase getestet werden
- * - Business Logic Separation: Kapselt Alarm-spezifische Geschäftslogik
- */
+/** Alarm-Operationen; Interface fuer Mock-Implementierungen in ViewModel-Tests. */
 interface IAlarmUseCase {
     
-    /**
-     * Flow für reaktive Beobachtung aktiver Alarme
-     * 
-     * @return Flow<List<AlarmInfo>> der bei Änderungen automatisch emittiert
-     */
+    /** Flow für reaktive Beobachtung aktiver Alarme */
     val activeAlarms: Flow<List<AlarmInfo>>
     
     /**
@@ -45,49 +34,21 @@ interface IAlarmUseCase {
         shiftConfig: ShiftConfig
     ): Result<List<AlarmInfo>>
     
-    /**
-     * Speichert oder aktualisiert einen Alarm
-     * 
-     * @param alarmInfo Alarm-Information die gespeichert werden soll
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
+    /** Speichert oder aktualisiert einen Alarm */
     suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit>
     
-    /**
-     * Löscht einen Alarm anhand der ID
-     * 
-     * @param alarmId Eindeutige ID des zu löschenden Alarms
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
+    /** Löscht einen Alarm anhand der ID */
     suspend fun deleteAlarm(alarmId: Int): Result<Unit>
     
-    /**
-     * Löscht alle Alarme
-     * 
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
+    /** Löscht alle Alarme */
     suspend fun deleteAllAlarms(): Result<Unit>
     
-    /**
-     * Aktiviert einen System-Alarm für die angegebene Alarm-Info
-     * 
-     * @param alarmInfo Alarm-Information für die der System-Alarm gesetzt werden soll
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
+    /** Aktiviert einen System-Alarm für die angegebene Alarm-Info */
     suspend fun scheduleSystemAlarm(alarmInfo: AlarmInfo): Result<Unit>
     
-    /**
-     * Deaktiviert einen System-Alarm
-     * 
-     * @param alarmId ID des zu deaktivierenden Alarms
-     * @return Result mit Erfolgs- oder Fehlerinformation
-     */
+    /** Deaktiviert einen System-Alarm */
     suspend fun cancelSystemAlarm(alarmId: Int): Result<Unit>
     
-    /**
-     * Lädt alle aktiven Alarme (einmalig)
-     * 
-     * @return Result mit Liste aller aktiven Alarme oder Fehler
-     */
+    /** Lädt alle aktiven Alarme (einmalig) */
     suspend fun getAllAlarms(): Result<List<AlarmInfo>>
 }

@@ -56,14 +56,6 @@ internal data class MoreEventsMergeResult(
     val hasMoreEvents: Boolean
 )
 
-/**
- * IMMUTABLE UI State für optimale Compose Performance
- *
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable verhindert unnötige Recompositions
- * ✅ Strukturelle Gleichheit für distinctUntilChanged()
- * ✅ Memory-efficient durch effiziente Copy-Operations
- */
 @Immutable
 data class CalendarUiState(
     val isLoading: Boolean = false,
@@ -148,21 +140,8 @@ data class CalendarUiState(
 )
 
 /**
- * CalendarViewModel - REFACTORED with Single Source of Truth
- * 
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ CalendarStateHolder integriert für ViewModel-Entkopplung
- * ✅ Alle Dependencies über Interfaces
- * 
- * STATE SYNCHRONISATION FIXES:
- * ✅ Verwendet ICalendarSelectionRepository als Single Source of Truth
- * ✅ Keine temporären States mehr - nur persistente Speicherung
- * ✅ Debounced + distinctUntilChanged für Performance
- * ✅ Reactive State Management mit Flow Kombinationen
- * ✅ Interface-basierte Abhängigkeiten für bessere Testbarkeit
- * ✅ Eliminiert Race Conditions durch atomare Updates
+ * CalendarViewModel - laedt Kalender und Events; die Kalenderauswahl kommt aus
+ * ICalendarSelectionRepository, Events gehen zusaetzlich in den CalendarStateHolder.
  */
 @OptIn(FlowPreview::class)
 @HiltViewModel
@@ -184,9 +163,7 @@ class CalendarViewModel @Inject constructor(
     private val _localUiState = MutableStateFlow(CalendarUiState())
     
     /**
-     * PERFORMANCE OPTIMIZATION: Advanced State Update Batching
-     * THREAD-SAFE: Volatile fields für Thread-Safety bei State Updates
-     * ADAPTIVE: Dynamische Batch-Delays basierend auf Update-Frequenz
+     * State-Update-Batching mit dynamischen Batch-Delays je nach Update-Frequenz.
      */
     @Volatile
     private var pendingStateUpdate: CalendarUiState? = null
@@ -196,9 +173,7 @@ class CalendarViewModel @Inject constructor(
     private var lastBatchTime = 0L
     
     /**
-     * SINGLE SOURCE OF TRUTH: Kombiniert lokalen State mit persistiertem Selection State
-     * PERFORMANCE: debounce(30) und distinctUntilChanged() verhindern excessive Updates
-     * EFFICIENCY: Optimierte Debounce-Zeit für bessere Responsiveness und reduzierte GC-Last
+     * Kombiniert lokalen State mit dem persistierten Selection State.
      */
     val uiState: StateFlow<CalendarUiState> = combine(
         _localUiState.asStateFlow(),
@@ -321,10 +296,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * PERFORMANCE: Advanced Batched State Updates
-     * Sammelt State-Updates und emmittiert sie als Batch für bessere Performance
-     * ADAPTIVE TIMING: 16ms für normale Updates, 33ms bei hoher Frequenz
-     * FRAME-SYNC: Optimiert für 60fps UI Performance
+     * Sammelt State-Updates und emittiert sie als Batch: 16ms normal, 33ms bei hoher Frequenz.
      */
     private fun updateLocalState(updateFunc: (CalendarUiState) -> CalendarUiState) {
         batchUpdateJob?.cancel()
@@ -383,9 +355,7 @@ class CalendarViewModel @Inject constructor(
     }
     
     /**
-     * DEDUPLICATION: Intelligent Calendar Loading Decision
-     * THREAD-SAFE: Atomic reads und time-based guards
-     * PERFORMANCE: Verhindert redundante API-Calls durch Event-Deduplication
+     * Zeitbasierte Drossel gegen redundante Kalender-Ladevorgaenge.
      */
     private fun shouldLoadCalendars(): Boolean {
         val currentTime = System.currentTimeMillis()
@@ -402,10 +372,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * REACTIVE PATTERN: Beobachtet Änderungen der Calendar Selection
-     * AUTOMATIC LOADING: Lädt Events automatisch bei Selection-Änderungen
-     * BUG FIX: Lädt Events mit aktueller daysAhead-Konfiguration neu
-     * LAZY LOADING: Initial nur begrenzte Anzahl Events für bessere Performance
+     * Beobachtet die Calendar Selection und lädt Events bei Änderungen automatisch.
      */
     private fun observeCalendarSelection() {
         viewModelScope.launch {
@@ -418,26 +385,10 @@ class CalendarViewModel @Inject constructor(
                     // LAZY LOADING: Auto-load events with lazy loading when selection changes
                     if (selectedIds.isNotEmpty()) {
                         hasSeenNonEmptySelection = true
-                        // HIER WIRD NICHTS AUFGELOEST - weder der Hinweis noch der dauerhafte
-                        // Raeumauftrag. Bis v1.29.2 geschah beides an dieser Stelle, begruendet
-                        // damit, dass der Delta-Sync des gleich folgenden Ladevorgangs jeden
-                        // Alarm raeumt, dessen Termin fehlt. Dieser Sync laeuft aber NICHT in
-                        // jedem Fall: er sitzt hinter der Pruefung "Eventliste nicht leer" und
-                        // steigt zusaetzlich fail-safe aus, wenn die Liste nicht nachweislich
-                        // vollstaendig ist. Liefert der neu gewaehlte Kalender null Termine
-                        // (anderer Kalender, Dienstplan-Feed gerade leer), passiert gar nichts -
-                        // und mit dem geloeschten Auftrag faengt es auch die 6h-Wartung nicht
-                        // mehr auf: die Wecker des abgewaehlten Dienstplans klingeln bis zu
-                        // 14 Tage weiter, ohne Hinweis und ohne Wiedereinstieg.
-                        //
-                        // Aufgeloest wird deshalb erst, wo es BELEGT ist: nach einem gelungenen
-                        // Sync ueber einer nachweislich vollstaendigen Eventliste
-                        // (siehe createAlarmsFromLoadedEvents).
-                        //
-                        // GEGENRICHTUNG: Der Auftrag bleibt dadurch nicht ewig stehen und kann
-                        // auch keine wieder gewollten Wecker loeschen - die 6h-Wartung prueft die
-                        // Auswahl selbst erneut und verwirft ihn als hinfaellig, sobald wieder
-                        // ein Kalender ausgewaehlt ist (AlarmMaintenanceService, AbwahlRaeumauftrag).
+                        // Hier nichts aufloesen (weder Hinweis noch Raeumauftrag): aufgeloest wird erst
+                        // nach gelungenem Sync ueber vollstaendiger Liste (createAlarmsFromLoadedEvents);
+                        // die Wartung verwirft hinfaellige Auftraege. Hergang: Skill
+                        // cfalarm-kalender-und-schichten, kalender-datenfluss.md.
                         loadEventsForSelectedCalendars(
                             loadAll = false, // LAZY LOADING: Start with lazy loading
                             initialPageSize = 10 // LAZY LOADING: Load only 10 events initially
@@ -484,45 +435,12 @@ class CalendarViewModel @Inject constructor(
     /**
      * Raeumt die kalenderbasierten Wecker, nachdem der Nutzer den LETZTEN Kalender abgewaehlt hat.
      *
-     * DER FEHLER, den das schliesst: Der else-Zweig von [observeCalendarSelection] leerte bisher
-     * nur Anzeige und [CalendarStateHolder] - ohne jeden Alarm-Sync. Das Abwaehlen EINES von
-     * mehreren Kalendern raeumte dessen Wecker korrekt ab (der Delta-Sync des naechsten
-     * Ladevorgangs entfernt jeden Alarm, dessen eventId fehlt), das Abwaehlen des LETZTEN dagegen
-     * nicht. Danach gab es auch keinen nachholenden Pfad mehr: die 6h-Wartung, der
-     * Pre-Alarm-Worker und der ShiftViewModel-Pfad steigen bei leerer Auswahl bzw. leerer
-     * Eventliste alle VOR `syncAlarms()` aus, und der `BootReceiver` armiert die gespeicherten
-     * Alarme sogar aktiv neu. Folge: Die Oberflaeche zeigte "kein Kalender ausgewaehlt" und null
-     * Termine, waehrend das Geraet bis zu 14 Tage lang weiter nach dem entfernten Dienstplan
-     * weckte und der Bildschirm zu dessen Dienstzeiten gedimmt wurde. Abstellen liess sich das nur
-     * durch Einzelloeschung jedes Weckers oder die Master-Pause.
-     *
-     * WARUM DAS HIER AUSDRUECKLICH ERLAUBT IST, obwohl "leer" fuer diese App sonst die
-     * gefaehrlichste Luege ist: Diese Leere stammt nicht aus einem Abruf, sondern aus einer
-     * ausdruecklichen Nutzeraktion. Die `isComplete`-/Leerlisten-Sperren der uebrigen Aufrufer
-     * bleiben davon unberuehrt - sie schuetzen gegen einen GESCHEITERTEN Abruf, und ein
-     * gescheiterter Abruf kann diesen Pfad nicht ausloesen. Abgesichert ist das doppelt:
-     *  1. [hasSeenNonEmptySelection] - es muss ein Uebergang "war ausgewaehlt -> ist es nicht mehr"
-     *     sein, nicht der leere Startwert des noch nicht hydrierten StateFlows.
-     *  2. Eine Rueckfrage direkt beim DataStore ueber `getCurrentSelectedCalendarIds()`. Sie
-     *     unterscheidet "wirklich leer" von "nicht lesbar" (Result.failure) - bei Zweifel wird
-     *     NICHT geraeumt.
-     *
-     * Geraeumt wird ueber `syncAlarms(emptyList(), config)`, nicht ueber ein eigenes Loeschen:
-     * dessen Leerlisten-Zweig ist genau der schonende - er schreibt `persistShiftSpans(emptyList())`
-     * (sonst dimmen Dimmer und DND weiter nach dem alten Dienstplan, denn `syncAlarms()` ist der
-     * EINZIGE Schreiber des `ShiftSpanStore`) und raeumt mit `keepManualAlarms = true`. Manuelle
-     * Wecker stammen nicht aus dem Kalender und duerfen eine Kalender-Abwahl ueberleben. Und der
-     * Weg ueber `syncAlarms()` haelt zugleich die Loeschreihenfolge ein (erst `cancelSystemAlarm()`,
-     * dann `deleteAlarm()`), die ein eigenes Loeschen hier neu haette nachbauen muessen.
-     *
-     * DER AUFTRAG UEBERLEBT DEN PROZESSTOD: Sobald die Rueckfrage beim Speicher die Abwahl belegt
-     * hat, wird sie im [PendingDeselectionCleanupStore] festgehalten - VOR dem Raeumen - und erst
-     * nach nachweislichem Erfolg wieder geloescht. `NonCancellable` schuetzt nur gegen den Abbruch
-     * der Coroutine; wird der Prozess getoetet (App weggewischt, Force-Stop, "App bei Nichtnutzung
-     * pausieren"), war der Auftrag bis dahin restlos weg: der Fehlerzustand lag im
-     * Arbeitsspeicher, und der Uebergangs-Merker [hasSeenNonEmptySelection] ist beim naechsten
-     * App-Start per Konstruktion falsch, weil die Auswahl dann von Anfang an leer ist.
-     * Abgearbeitet wird der Auftrag danach von der 6h-Wartung, ganz ohne die App.
+     * Erlaubt, obwohl "leer" sonst keine Loeschgrundlage ist: die Leere stammt aus einer
+     * Nutzeraktion, belegt durch [hasSeenNonEmptySelection] UND eine lesbar leere Auswahl im
+     * Speicher. Geraeumt wird ueber `syncAlarms(emptyList(), config)` (Schichtspannen leeren,
+     * manuelle Wecker schonen, Loeschreihenfolge). Der Auftrag liegt VOR dem Raeumen im
+     * [PendingDeselectionCleanupStore] und faellt erst nach belegtem Erfolg; die 6h-Wartung holt
+     * ihn nach. Hergang: Skill cfalarm-kalender-und-schichten, kalender-datenfluss.md.
      *
      * @param deselectGeneration Die beim Abwaehlen gezogene Generation. Waehlt der Nutzer waehrend
      *   der Rueckfragen oben schon wieder einen Kalender an, hat dessen Ladevorgang eine hoehere
@@ -533,14 +451,8 @@ class CalendarViewModel @Inject constructor(
      */
     private fun clearAlarmsAfterCalendarDeselection(deselectGeneration: Long?) {
         viewModelScope.launch {
-            // NonCancellable: Das hier stellt einen Zustand HER ("die Wecker der entfernten Quelle
-            // sind weg"). Verlaesst der Nutzer die App unmittelbar nach dem Abwaehlen, wird der
-            // viewModelScope gecancelt - ein auf halbem Weg abgebrochener Lauf liesse den
-            // Wecker-Bestand verwaist zurueck, und dieses ViewModel selbst holt das nie nach: beim
-            // naechsten App-Start ist die Auswahl von Anfang an leer, also greift der
-            // Uebergangs-Merker nicht mehr. Gegen den TOD DES PROZESSES hilft NonCancellable
-            // dagegen nicht - dafuer gibt es den dauerhaften Auftrag im
-            // [PendingDeselectionCleanupStore] weiter unten.
+            // NonCancellable: stellt einen Zustand HER und ueberlebt so das Verlassen der App;
+            // gegen den Prozesstod hilft der dauerhafte Auftrag im PendingDeselectionCleanupStore.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 try {
                     // 1) Rueckfrage an die QUELLE, nicht an den StateFlow: unterscheidet
@@ -746,11 +658,8 @@ class CalendarViewModel @Inject constructor(
      * kalenderbasierter Wecker. Ein stehengebliebener Hinweis waere dann eine Falschmeldung - der
      * Nutzer suchte Wecker, die es nicht mehr gibt.
      *
-     * NICHT AUFGELOEST wird dagegen, sobald wieder ein Kalender ausgewaehlt ist. Das war bis
-     * v1.29.2 so und war falsch: gedeckt sind die alten Wecker erst, wenn der Delta-Sync des
-     * Ladevorgangs wirklich gelaufen ist - und der laeuft bei leerer oder unvollstaendiger
-     * Eventliste gerade nicht. Der Beleg liegt deshalb im `onSuccess` von
-     * [createAlarmsFromLoadedEvents].
+     * NICHT aufgeloest wird schon bei Wieder-Auswahl eines Kalenders - erst im `onSuccess` von
+     * [createAlarmsFromLoadedEvents] (Hergang: kalender-datenfluss.md).
      */
     private fun resolveDeselectionCleanupFailure() {
         updateDeselectionCleanupFailures { 0 }
@@ -811,9 +720,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * PROGRESSIVE CALENDAR LOADING: Verhindert Main-Thread-Blockierung
-     * YIELD-BASED: Gibt Control an UI-Thread zwischen Verarbeitungsschritten ab
-     * BATCHED: Verarbeitet Kalender in kleinen Chunks für bessere Responsiveness
+     * Lädt die verfügbaren Kalender seitenweise.
      */
     fun loadAvailableCalendars(pageSize: Int = 20, resetPagination: Boolean = true) {
         viewModelScope.launch {
@@ -977,11 +884,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * PERFORMANCE CRITICAL: Background Event Loading mit progressiven UI Updates
-     * MAIN-THREAD OPTIMIZATION: Komplett asynchrone Event-Loading ohne UI-Blockierung
-     * LAZY LOADING: Progressive Event-Darstellung für bessere User Experience
-     * 
-     * PHASE 2 CLEANUP: daysAhead parameter removed - fixed 14 days per PROJEKT-BRIEFING 4.0
+     * Lädt die Events der ausgewählten Kalender im Hintergrund.
      *
      * @param forceRefresh Ob Cache umgangen werden soll
      * @param initialPageSize Initiale Anzahl Events (LAZY LOADING)
@@ -1135,33 +1038,9 @@ class CalendarViewModel @Inject constructor(
                     finalSortedEvents.size >= (initialPageSize * selectedIds.size) || totalEventCount > finalSortedEvents.size
                 }
                 
-                // Sind ALLE Kalender gescheitert, war das kein erfolgreicher Ladevorgang -
-                // egal, was der bisherige Code behauptete.
-                //
-                // calendarAuthorizationValid DARF NICHT MEHR BEDINGUNGSLOS true SEIN.
-                //
-                // Frueher stand hier hart `calendarAuthorizationValid = true`, waehrend die
-                // Fehler der einzelnen Kalender oben nur weggeloggt wurden. Scheiterten also
-                // alle Kalender an einem toten Token, war der Zustand danach:
-                // events=leer, error=null, calendarAuthorizationValid=TRUE.
-                //
-                // Fatal, weil HomeTabContent genau daran den Warnhinweis UND den Knopf
-                // "Kalender-Zugriff erneuern" aufhaengt (!calendarAuthorizationValid &&
-                // selectedCalendarIds.isNotEmpty()). Der einzige Weg zurueck war damit
-                // ausgerechnet im Fehlerfall unsichtbar - und weil der Default false ist,
-                // schaltete ein fehlgeschlagener Ladevorgang eine bereits korrekt
-                // angezeigte Warnung sogar wieder AUS.
-                //
-                // Fuer eine Wecker-App ist das die gefaehrlichste Variante: eine leere
-                // Schichtliste ohne Hinweis ist von "du hast frei" nicht zu unterscheiden.
-                // Mindestens ein Kalender geladen => der Zugriff funktioniert grundsaetzlich.
-                // Nur wenn ALLE scheitern, ist die Autorisierung als kaputt zu melden. Ein
-                // einzelner fehlschlagender Kalender (geloescht, nicht mehr freigegeben) darf
-                // nicht die ganze Anmeldung in Frage stellen.
-                //
-                // Ausgelagert in resolveCalendarAuthorizationOutcome() (siehe companion object
-                // unten) - pur und testbar, damit dieser bereits einmal reale Bug nicht
-                // unbemerkt zurueckkehren kann. Siehe CalendarViewModelTest.
+                // calendarAuthorizationValid NIE bedingungslos true: HomeTabContent haengt daran
+                // Warnung und "Kalender-Zugriff erneuern". Nur wenn ALLE Kalender scheitern, gilt
+                // die Autorisierung als kaputt - Begruendung am KDoc von resolveCalendarAuthorizationOutcome.
                 val failure = firstFailure
                 val (everythingFailed, authStillValid) = resolveCalendarAuthorizationOutcome(
                     failedCalendars = failedCalendarIds.size,
@@ -1430,31 +1309,10 @@ class CalendarViewModel @Inject constructor(
     }
     
     /**
-     * LAZY LOADING: Load more events with pagination
-     * FIXED: Always uses DEFAULT_DAYS_AHEAD (14 days) per PROJEKT-BRIEFING 4.0
-     * PERFORMANCE FIX: Verbesserte Race Condition Prevention
-     *
-     * OFFSET-SEMANTIK: Nachgeladen wird immer ein PRAEFIX der Vereinigung aller
-     * ausgewaehlten Kalender (offset = 0, maxEvents = bereits geladen + limit) - NICHT
-     * eine Seite ab [offset].
-     *
-     * Warum: getCalendarEventsLazy() bildet intern erst die Vereinigung ALLER uebergebenen
-     * calendarIds, sortiert sie nach startTime und schneidet daraus subList(offset,
-     * offset+maxEvents) heraus. Der Erst-Ladevorgang (loadEventsForSelectedCalendars) laedt
-     * dagegen PRO Kalender die ersten initialPageSize Events - bei mehr als einem Kalender
-     * ist das eben KEIN Praefix der Vereinigung. Mit dem alten
-     * "offset = bisherige Listenlaenge" mischten sich damit zwei unvereinbare
-     * Offset-Semantiken: die zurueckgegebene Seite enthielt Events, die bereits in der
-     * Liste standen (doppelte LazyColumn-Keys -> IllegalArgumentException "Key was already
-     * used" -> Crash; und doppelte Schichten in Home ueber den CalendarStateHolder),
-     * waehrend ein Block dazwischen komplett fehlte.
-     *
-     * Das Praefix ist die einzige Slice, die mit der Erst-Ladung ueberhaupt vergleichbar
-     * ist, und kostet nichts: getCalendarEventsLazy() holt intern ohnehin alle Events jedes
-     * Kalenders und schneidet erst danach - ein hoeherer offset spart also keinen
-     * Netzwerk-Call. Zusaetzlich wird defensiv nach id dedupliziert und neu sortiert
-     * (mergeMoreEvents, pur + testbar), damit ein kuenftiger Umbau nicht wieder Duplikate
-     * in dieselben zwei Senken schreibt.
+     * Laedt weitere Events nach: immer ein PRAEFIX der Vereinigung aller ausgewaehlten Kalender
+     * (offset = 0, maxEvents = bereits geladen + limit), NICHT eine Seite ab [offset]; danach
+     * Dedup und Sortierung ueber [mergeMoreEvents]. Hergang: Skill cfalarm-kalender-und-schichten,
+     * kalender-datenfluss.md.
      */
     fun loadMoreEvents(offset: Int = 0, limit: Int = 50) {
         viewModelScope.launch {
@@ -1560,20 +1418,6 @@ class CalendarViewModel @Inject constructor(
             }
         }
     }
-    
-    fun getCacheStats() {
-        viewModelScope.launch {
-            val stats = calendarUseCase.getCacheStats()
-            Logger.i(LogTags.CALENDAR_CACHE, stats)
-        }
-    }
-    
-    fun clearEventCache() {
-        viewModelScope.launch {
-            calendarUseCase.clearEventCache()
-            Logger.i(LogTags.CALENDAR_CACHE, "Event cache cleared by user")
-        }
-    }
 
     /**
      * 🚨 CRITICAL FIX: Automatically create alarms from loaded events
@@ -1594,12 +1438,8 @@ class CalendarViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Master-Pause: dies ist der primaere, bei jedem Kalender-Ladevorgang (App-Start,
-                // Vordergrund-Sync) durchlaufene Alarm-Erstellungspfad - unabhaengig vom
-                // ShiftViewModel-getriebenen Pfad. Ohne dieses Gate reaktiviert ein simples
-                // Oeffnen der App waehrend einer aktiven Master-Pause lautlos alle Wecker (am
-                // Fairphone nach einem Reboot-Test reproduziert: 0 Alarme direkt nach dem Boot,
-                // aber 5 Alarme nach dem ersten App-Start trotz weiterhin aktiver Pause).
+                // Master-Pause-Gate: sonst reaktiviert jedes App-Oeffnen waehrend der Pause alle
+                // Wecker. Hergang: Skill cfalarm-wecker-und-boot, master-pause.md.
                 if (masterPausePrefs.pausedNow()) {
                     Logger.business(LogTags.ALARM, "⏸️ Master-Pause aktiv - Alarm-Erstellung aus geladenen Events uebersprungen")
                     return@launch
@@ -1628,23 +1468,9 @@ class CalendarViewModel @Inject constructor(
                 }
                 
                 if (shiftConfig == null) {
-                    // KEIN Default-Fallback mehr, und zwar bewusst: bis v1.22.1 schrieb dieser
-                    // Zweig `ShiftConfig.getDefaultConfig()` PERSISTENT in den Store. Seit
-                    // `ShiftConfigRepository` zwischen "noch nie konfiguriert" und "vorhanden,
-                    // aber unlesbar" unterscheidet, kann `getCurrentShiftConfig()` hier nur noch
-                    // aus EINEM Grund fehlschlagen: der Store ist defekt oder unlesbar. Der
-                    // Not-konfiguriert-Fall liefert die Standardkonfiguration bereits als Erfolg.
-                    //
-                    // Genau in diesem Defektfall war der Fallback fatal: er hat die Weckzeiten des
-                    // Nutzers mit den Standardzeiten ueberschrieben - lautlos, bei JEDEM
-                    // Kalender-Ladevorgang, also bei jedem App-Start. Damit war die Sicherung im
-                    // Repository ("die echte Konfiguration wird NICHT ueberschrieben") im Betrieb
-                    // wirkungslos. Der bewusste Weg zum Default heisst `resetToDefaults()` und
-                    // gehoert dem Nutzer.
-                    //
-                    // Stattdessen fail-safe: diesen Sync auslassen. Bestehende Alarme bleiben
-                    // gesetzt, die Rohdaten liegen als `shift_config_broken` gesichert im Store,
-                    // und der naechste Ladevorgang versucht es erneut.
+                    // Kein Default-Fallback (bis v1.22.1 ueberschrieb er die Nutzerzeiten); fail-safe:
+                    // Sync auslassen, Rohdaten in `shift_config_broken`; `resetToDefaults()` gehoert
+                    // dem Nutzer. Hergang: Skill cfalarm-kalender-und-schichten, schichterkennung.md.
                     Logger.e(
                         LogTags.ALARM,
                         "❌ SHIFT-CONFIG: nach $maxAttempts Versuchen nicht lesbar - Alarm-Sync wird " +
@@ -1664,15 +1490,8 @@ class CalendarViewModel @Inject constructor(
                     alarmUseCase.syncAlarms(events, shiftConfig)
                         .onSuccess { syncedAlarms ->
                             Logger.business(LogTags.ALARM, "✅ AUTO-ALARM: Alarm-Sync erfolgreich - ${syncedAlarms.size} Alarme aktiv")
-                            // HIER, und nur hier, ist "nichts ist mehr verwaist" BELEGT: der
-                            // Delta-Sync ist ueber einer nachweislich VOLLSTAENDIGEN Eventliste
-                            // durchgelaufen (die einzige Aufrufstelle uebergibt nur eine solche)
-                            // und hat damit jeden Alarm entfernt, dessen Termin fehlt - auch die
-                            // des zuvor abgewaehlten Dienstplans. Ein blosses "es ist wieder ein
-                            // Kalender ausgewaehlt" ist dieser Beleg NICHT: laeuft der Sync nicht
-                            // (leere oder unvollstaendige Liste), bleiben die alten Wecker
-                            // armiert. Deshalb faellt der dauerhafte Raeumauftrag erst an dieser
-                            // Stelle - und mit ihm der Hinweis in der Oberflaeche.
+                            // Nur hier ist "nichts mehr verwaist" belegt (Sync ueber vollstaendiger
+                            // Liste) - deshalb fallen erst hier Raeumauftrag und Hinweis.
                             resolveDeselectionCleanupFailure()
                             pendingDeselectionCleanupStore.clearIfPending()
                             // "Letzter Sync"-Zeitstempel auch im Vordergrund setzen, damit die
@@ -1760,36 +1579,6 @@ class CalendarViewModel @Inject constructor(
             }
         }
     }
-    
-    /**
-     * CRITICAL FIX: Enhanced Cleanup Resources on ViewModel destruction
-     * MEMORY LEAK PREVENTION: Proper resource cleanup to prevent mutex errors
-     */
-    override fun onCleared() {
-        try {
-            Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Starting cleanup...")
-            
-            // CRITICAL FIX: Cancel ALL pending coroutines immediately
-            batchUpdateJob?.cancel()
-            batchUpdateJob = null
-            pendingStateUpdate = null
-            
-            // CRITICAL FIX: Reset ALL volatile flags to prevent stale operations
-            isCalendarLoadingInProgress = false
-            lastCalendarLoadTime = 0L
-            
-            // CRITICAL FIX: Clear state to prevent memory leaks
-            _localUiState.value = CalendarUiState()
-            
-            Logger.d(LogTags.LIFECYCLE, "CalendarViewModel: Cleanup completed successfully")
-            
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during CalendarViewModel cleanup", e)
-        }
-        
-        // Note: ViewModelScope automatically cancels all coroutines
-        // CalendarRepository cleanup wird durch DI Container gehandhabt
-    }
 
     companion object {
         /**
@@ -1852,23 +1641,10 @@ class CalendarViewModel @Inject constructor(
          * PURE, TESTBAR: Darf die geladene Eventliste in die Alarm-Pipeline
          * ([AlarmUseCase.syncAlarms]) gegeben werden?
          *
-         * WARUM DAS NOETIG IST: Der Vordergrund-Ladevorgang laeuft im Normalfall LAZY - pro
-         * Kalender nur die ersten [initialPageSize] (10) Events, waehrend `totalEventCount` den
-         * vollen 14-Tage-Bestand mitzaehlt. Genau diese abgeschnittene Liste ging bis hierher
-         * unveraendert an syncAlarms(), und dessen Delta-Sync loescht JEDEN bestehenden Alarm,
-         * dessen eventId in der uebergebenen Liste fehlt - er kann "Termin geloescht" nicht von
-         * "Termin lag hinter dem 10er-Praefix" unterscheiden. Bei mehr als zehn Schichten in 14
-         * Tagen (fuer einen Schichtplan der Normalfall) loeschte damit JEDES App-Oeffnen die
-         * spaetesten Wecker, samt "Schicht entfaellt"-Notification, bis die naechste 6h-Wartung
-         * sie wieder anlegte.
-         *
-         * Zweiter Fall, gleiche Fehlerklasse: hat auch nur EIN Kalender nicht geantwortet, fehlen
-         * dessen Events - und der Delta-Sync liest das als "alle diese Termine sind weg".
-         *
-         * Regel deshalb: synchronisiert wird NUR auf einer nachweislich vollstaendigen Liste.
-         * Fehlt die Vollstaendigkeit, ist das kein Grund zu loeschen - die 6h-Wartung, der
-         * Pre-Alarm-Refresh und ein "Aktualisieren" mit vollem Abruf holen das nach (lieber ein
-         * veralteter Wecker als gar keiner).
+         * Synchronisiert wird NUR auf einer nachweislich vollstaendigen Liste: kein gescheiterter
+         * Kalender und kein abgeschnittenes Lazy-Praefix, denn der Delta-Sync loescht jeden Alarm,
+         * dessen eventId fehlt. Fehlendes holen Wartung, Pre-Alarm-Refresh und "Aktualisieren" nach.
+         * Hergang: Skill cfalarm-kalender-und-schichten, kalender-datenfluss.md.
          */
         internal fun isEventListCompleteForAlarmSync(
             loadedEventCount: Int,
@@ -1898,24 +1674,9 @@ class CalendarViewModel @Inject constructor(
          * PURE, TESTBAR: Fuehrt die bereits angezeigten Events mit der nachgeladenen
          * Vereinigungs-Seite zusammen.
          *
-         * Deduplizierung nach [CalendarEvent.id] ist hier NICHT kosmetisch: die Liste landet
-         * unverändert in einer LazyColumn mit `key = { event -> event.id }`. Zwei Eintraege
-         * mit derselben id lassen SubcomposeLayout mit
-         * IllegalArgumentException("Key ... was already used") abstuerzen - und ueber den
-         * CalendarStateHolder erkennt ShiftViewModel dieselbe Schicht zweimal.
-         *
-         * Neu sortiert wird, weil die Vereinigungs-Seite Events enthalten kann, die
-         * zeitlich VOR bereits angezeigten liegen (unterschiedliche Kalender).
-         *
-         * Bei gleicher id gewinnt der Eintrag aus [pageEvents]: er ist frisch aus dem
-         * UseCase, waehrend der bereits angezeigte aus einem aelteren Ladevorgang stammt -
-         * eine verschobene Schicht wuerde sonst bis zum naechsten vollen Refresh mit der
-         * alten Uhrzeit stehenbleiben. Eintraege, die NUR in [currentEvents] stehen
-         * (jenseits des geladenen Praefix), bleiben unangetastet erhalten.
-         *
-         * eventOffset ist die Laenge des Ergebnisses und damit wieder ein gueltiger
-         * Vereinigungs-Offset fuer den naechsten Aufruf; hasMoreEvents leitet sich aus dem
-         * echten Gesamtbestand ab, nicht aus der Seitengroesse.
+         * Dedup nach [CalendarEvent.id] wegen des LazyColumn-key; bei gleicher id gewinnt
+         * [pageEvents] (frischer); danach neu sortiert. Hergang: Skill
+         * cfalarm-kalender-und-schichten, kalender-datenfluss.md.
          */
         internal fun mergeMoreEvents(
             currentEvents: List<CalendarEvent>,

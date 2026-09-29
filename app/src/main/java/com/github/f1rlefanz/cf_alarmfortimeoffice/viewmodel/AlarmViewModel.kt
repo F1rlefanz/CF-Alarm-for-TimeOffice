@@ -22,7 +22,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -123,8 +122,6 @@ data class TagFreigabeUiState(
 )
 
 /**
- * MANUAL ALARM UI STATE
- *
  * State für manuelle Alarm-Erstellung nach Schichttausch
  */
 data class ManualAlarmUiState(
@@ -140,19 +137,7 @@ data class ManualAlarmUiState(
 )
 
 /**
- * MEMORY LEAK FIXED: AlarmViewModel with proper resource cleanup
- *
- * MIGRATION STATUS:
- * ✅ @HiltViewModel annotiert
- * ✅ Constructor Injection mit @Inject
- * ✅ Alle Dependencies über Interfaces
- * ✅ Keine Abhängigkeiten zu anderen ViewModels
- *
- * CRITICAL FIXES:
- * ✅ Added onCleared() for proper cleanup
- * ✅ Job tracking for Flow collections
- * ✅ Resource cleanup on destruction
- * ✅ Memory leak prevention
+ * AlarmViewModel - Anzeige und Verwaltung der Alarme, inklusive manueller Wecker.
  */
 @HiltViewModel
 class AlarmViewModel @Inject constructor(
@@ -198,9 +183,6 @@ class AlarmViewModel @Inject constructor(
 
     private val _manualAlarmState = MutableStateFlow(ManualAlarmUiState())
     val manualAlarmState: StateFlow<ManualAlarmUiState> = _manualAlarmState.asStateFlow()
-
-    // MEMORY LEAK FIX: Track Flow collection job for proper cleanup
-    private var alarmObservationJob: Job? = null
 
     /**
      * Laeuft gerade ein Skip-Vorgang ("Ueberspringen" oder "Aufheben")?
@@ -294,13 +276,8 @@ class AlarmViewModel @Inject constructor(
         }
     }
 
-    /**
-     * MEMORY LEAK FIX: Proper Job tracking für Flow collections
-     */
     private fun observeAlarmStatus() {
-        alarmObservationJob?.cancel() // Cancel any existing observation
-
-        alarmObservationJob = viewModelScope.launch {
+        viewModelScope.launch {
             try {
                 sharedActiveAlarms
                     .collect { alarms ->
@@ -1714,33 +1691,6 @@ class AlarmViewModel @Inject constructor(
     fun clearManualAlarmError() {
         _manualAlarmState.value = _manualAlarmState.value.copy(error = null)
     }
-
-    /**
-     * MEMORY LEAK PREVENTION: Comprehensive resource cleanup
-     * CRITICAL FIX: This was missing and causing memory leaks!
-     */
-    override fun onCleared() {
-        try {
-            // MEMORY LEAK FIX: Cancel alarm observation job
-            alarmObservationJob?.cancel()
-            alarmObservationJob = null
-
-            // MEMORY OPTIMIZATION: Clear state to release references
-            _uiState.value = AlarmUiState()
-            _skipState.value = AlarmSkipUiState()
-            _manualAlarmState.value = ManualAlarmUiState()
-
-            Logger.d(
-                LogTags.LIFECYCLE,
-                "AlarmViewModel cleared - cleaning up alarm observations and resources"
-            )
-        } catch (e: Exception) {
-            Logger.e(LogTags.LIFECYCLE, "Error during AlarmViewModel cleanup", e)
-        }
-
-        // Note: ViewModelScope automatically cancels all remaining coroutines
-    }
-
 }
 
 /**

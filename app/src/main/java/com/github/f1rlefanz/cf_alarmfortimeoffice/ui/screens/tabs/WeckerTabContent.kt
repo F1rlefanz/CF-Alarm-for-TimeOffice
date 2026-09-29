@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BeachAccess
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -268,43 +267,12 @@ fun WeckerTabContent(
         )
 
         // Schichttypen verwalten
-        Card(
-            modifier = Modifier.fillMaxWidth(),
+        WeiterKarte(
+            icon = Icons.Default.Work,
+            titel = "Schichttypen verwalten",
+            text = "Definiere Schichttypen und Erkennungsmuster",
             onClick = onShowShiftConfig
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(SpacingConstants.PADDING_CARD),
-                horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Work,
-                    // dekorativ: Text daneben sagt es bereits ("Schichttypen verwalten")
-                    contentDescription = null,
-                    modifier = Modifier.size(SpacingConstants.ICON_SIZE_STANDARD),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Schichttypen verwalten",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Definiere Schichttypen und Erkennungsmuster",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    // dekorativ: reines Weiter-Zeichen, die ganze Karte ist das bedienbare
-                    // Element und traegt ihre Beschriftung selbst
-                    Icons.AutoMirrored.Default.KeyboardArrowRight,
-                    contentDescription = null
-                )
-            }
-        }
+        )
     }
 }
 

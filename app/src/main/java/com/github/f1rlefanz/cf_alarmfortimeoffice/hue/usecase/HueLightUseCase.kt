@@ -26,30 +26,19 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Enhanced UseCase for Hue Light operations
- * 
- * Implements business logic layer with:
+ * UseCase for Hue Light operations:
  * - Validation and batch operations
  * - Sunrise wake-up ramp and rule-preview auto-off (executeActionsWithAutoRevert)
  * - Bridge-seitiges Auto-Aus zur Weckzeit (scheduleBridgeAutoOff)
- * - Advanced error handling and resilience
- * 
- * @author CF-Alarm Development Team
- * @since Hue Integration v2.1
  */
 class HueLightUseCase @Inject constructor(
     private val lightRepository: IHueLightRepository
 ) : IHueLightUseCaseAdvanced {
     
     /**
-     * Scope fuer die nachgelagerten Schritte, die von selbst passieren muessen: das Auto-Aus
-     * der Vorschau ([executeActionsWithAutoRevert]) und das Beenden des Blinkens
-     * ([scheduleFlashStop]).
-     *
-     * Bewusst getrennt vom Scope des Aufrufers (z.B. ViewModel): Beide Timer muessen auch dann
-     * noch feuern, wenn der Nutzer den Bildschirm laengst verlassen hat, der sie ausgeloest
-     * hat. Ein viewModelScope waere dann gecancelt - und das Licht bliebe an bzw. die Lampe
-     * bliebe am Blinken.
+     * Scope fuer das Auto-Aus der Vorschau ([executeActionsWithAutoRevert]) und das Beenden des
+     * Blinkens ([scheduleFlashStop]) - getrennt vom Aufrufer, damit beide auch nach dem
+     * Verlassen des Bildschirms feuern. Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
      */
     private val followUpScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -62,9 +51,8 @@ class HueLightUseCase @Inject constructor(
         private const val SUNRISE_STEP_DELAY_MS = 250L
 
         /**
-         * Wie lange der Lampentest blinkt. lselect blinkt von sich aus 15 Sekunden - als
-         * Rueckmeldung, auf die jemand wartet, viel zu lang (vom Tester gemeldet). Ein paar
-         * Blinker reichen als Beweis; danach bricht [scheduleFlashStop] aktiv ab.
+         * Wie lange der Lampentest blinkt; danach bricht [scheduleFlashStop] das lselect aktiv ab.
+         * Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
          */
         private val FLASH_DURATION = 4.seconds
     }
@@ -74,7 +62,6 @@ class HueLightUseCase @Inject constructor(
         
         return try {
             coroutineScope {
-                // Execute both operations concurrently
                 val lightsDeferred = async { lightRepository.getLights() }
                 val groupsDeferred = async { lightRepository.getGroups() }
                 val scenesDeferred = async { lightRepository.getScenes() }
@@ -83,26 +70,11 @@ class HueLightUseCase @Inject constructor(
                 val groupsResult = groupsDeferred.await()
                 val scenesResult = scenesDeferred.await()
 
-                // BEIDE ABFRAGEN GESCHEITERT = EHRLICHER FEHLSCHLAG, kein leeres Ergebnis.
-                //
-                // Der Waechter in HueApiClient.getLights()/getGroups() erkennt inzwischen die
-                // V1-Fehlerhuelle (HTTP 200 + `[{"error":{"type":1,"description":"unauthorized
-                // user"}}]`, z.B. nachdem der Nutzer die App in der Hue-App aus der Whitelist
-                // entfernt oder die Bridge getauscht hat) und wirft. Der landete aber genau hier
-                // wieder im "graceful partial failure"-Zweig unten und wurde zu
-                // Result.success(LightTargets(leer, leer)) - also exakt der stillen leeren
-                // Lampenliste bzw. "Keine Lampen gefunden", die der Waechter beseitigen sollte.
-                // Nebeneffekt: HueViewModel.refreshLightTargets() ueberschrieb damit sogar eine
-                // vorher korrekt geladene Liste mit einer leeren.
-                //
-                // Der Teilerfolg-Zweig unten bleibt bewusst erhalten: eine Bridge ganz ohne
-                // Gruppen ist normal, und dann sollen die Lampen trotzdem nutzbar sein. Nur wenn
-                // KEINE der beiden Abfragen durchkam, ist "keine Ziele" keine Aussage ueber die
-                // Bridge, sondern ein Fehler - und ein Fehler muss als Fehler nach oben.
-                // Die Szenen zaehlen hier BEWUSST NICHT mit: eine Bridge ohne nutzbare Szenen
-                // ist voellig normal, und die Lampen-/Gruppenauswahl funktioniert ohne sie
-                // vollstaendig. Ein Szenen-Ausfall ist ein Teilausfall und wird unten in
-                // `scenesFailed` mitgefuehrt - er darf die Bedingung hier nicht verschaerfen.
+                // BEIDE ABFRAGEN GESCHEITERT = EHRLICHER FEHLSCHLAG, kein leeres Ergebnis; der
+                // Teilerfolg-Zweig unten bleibt (eine Bridge ohne Gruppen ist normal).
+                // Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
+                // Die Szenen zaehlen hier BEWUSST NICHT mit: ein Szenen-Ausfall ist ein
+                // Teilausfall und wird unten in `scenesFailed` mitgefuehrt.
                 if (lightsResult.isFailure && groupsResult.isFailure) {
                     val error = lightsResult.exceptionOrNull()
                         ?: groupsResult.exceptionOrNull()
@@ -115,7 +87,6 @@ class HueLightUseCase @Inject constructor(
                     return@coroutineScope Result.failure(error)
                 }
 
-                // Handle partial failures gracefully
                 val lights = if (lightsResult.isSuccess) {
                     lightsResult.getOrNull() ?: emptyList()
                 } else {
@@ -166,7 +137,6 @@ class HueLightUseCase @Inject constructor(
         Logger.d(LogTags.HUE_USECASE, "Executing light action for ${action.targetId}")
         
         return try {
-            // Validate action parameters
             val validationResult = validateLightAction(action)
             if (validationResult.isFailure) {
                 val error = validationResult.exceptionOrNull()?.message ?: "Invalid action"
@@ -179,7 +149,6 @@ class HueLightUseCase @Inject constructor(
                 )
             }
             
-            // Execute action with timeout
             val result = withTimeoutOrNull(LIGHT_OPERATION_TIMEOUT_MS) {
                 // Der Szenen-Zweig steht VOR der isGroup-Verzweigung: eine Szenen-Aktion traegt
                 // zwar isGroup = true (sie geht an /groups/<id>/action), aber sie schickt
@@ -257,7 +226,6 @@ class HueLightUseCase @Inject constructor(
         Logger.i(LogTags.HUE_USECASE, "Executing batch light actions: ${actions.size} actions")
         
         return try {
-            // Validate batch size
             if (actions.size > MAX_BATCH_SIZE) {
                 Logger.w(LogTags.HUE_USECASE, "Batch size ${actions.size} exceeds maximum $MAX_BATCH_SIZE")
                 return Result.failure(IllegalArgumentException("Batch size exceeds maximum of $MAX_BATCH_SIZE"))
@@ -274,7 +242,6 @@ class HueLightUseCase @Inject constructor(
                 )
             }
             
-            // Execute all actions concurrently with overall timeout
             val results = withTimeoutOrNull(BATCH_OPERATION_TIMEOUT_MS) {
                 coroutineScope {
                     actions.map { action ->
@@ -288,7 +255,6 @@ class HueLightUseCase @Inject constructor(
                 return Result.failure(Exception("Batch operation timed out after ${BATCH_OPERATION_TIMEOUT_MS}ms"))
             }
             
-            // Process results
             val actionResults = results.mapNotNull { it.getOrNull() }
             val successfulActions = actionResults.count { it.success }
             val failedActions = actionResults.filter { !it.success }
@@ -485,15 +451,11 @@ class HueLightUseCase @Inject constructor(
     }
 
     /**
-     * Beendet das Blinken nach [FLASH_DURATION], statt lselect seine vollen 15 Sekunden laufen
-     * zu lassen — die sind als Rueckmeldung, auf die jemand wartet, schlicht zu lang.
+     * Beendet das Blinken nach [FLASH_DURATION] per `alert:"none"`, statt lselect seine vollen
+     * 15 Sekunden laufen zu lassen. Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
      *
-     * Gegen die echte Bridge verifiziert (BSB002, 15.07.2026): `alert:"none"` bricht ein
-     * laufendes lselect ab (`state.alert` faellt von "lselect" auf "none" zurueck), und die
-     * Lampe kehrt in ihren vorherigen An/Aus-Zustand zurueck — der Test hinterlaesst nichts.
-     *
-     * Best-effort: Klappt der Abbruch nicht, blinkt die Lampe die vollen 15s zu Ende. Unschoen,
-     * aber harmlos — kein Grund, den Test als gescheitert zu melden.
+     * Best-effort: Klappt der Abbruch nicht, blinkt die Lampe die vollen 15s zu Ende - kein
+     * Grund, den Test als gescheitert zu melden.
      */
     private fun scheduleFlashStop(lightId: String) {
         followUpScope.launch {
@@ -594,12 +556,10 @@ class HueLightUseCase @Inject constructor(
      */
     private fun validateLightAction(action: LightAction): Result<Unit> {
         return try {
-            // Validate target ID
             if (action.targetId.isBlank()) {
                 return Result.failure(IllegalArgumentException("Target ID cannot be empty"))
             }
             
-            // Validate brightness range
             action.brightness?.let { brightness ->
                 if (!HueConstants.Validation.isValidBrightness(brightness)) {
                     return Result.failure(
@@ -608,7 +568,6 @@ class HueLightUseCase @Inject constructor(
                 }
             }
             
-            // Validate hue range
             action.hue?.let { hue ->
                 if (!HueConstants.Validation.isValidHue(hue)) {
                     return Result.failure(
@@ -617,7 +576,6 @@ class HueLightUseCase @Inject constructor(
                 }
             }
             
-            // Validate saturation range
             action.saturation?.let { saturation ->
                 if (!HueConstants.Validation.isValidSaturation(saturation)) {
                     return Result.failure(
@@ -626,7 +584,6 @@ class HueLightUseCase @Inject constructor(
                 }
             }
 
-            // Validate color temperature range (mireds)
             action.colorTemperature?.let { ct ->
                 if (!HueConstants.Validation.isValidColorTemperature(ct)) {
                     return Result.failure(
@@ -635,7 +592,7 @@ class HueLightUseCase @Inject constructor(
                 }
             }
 
-            // Validate transition time range (deciseconds)
+            // transition time in deciseconds
             action.transitionTime?.let { tt ->
                 if (!HueConstants.Validation.isValidTransitionTime(tt)) {
                     return Result.failure(

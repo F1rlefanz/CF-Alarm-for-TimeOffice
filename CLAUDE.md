@@ -28,15 +28,10 @@ erst bei Bedarf.
 **Pflege:** Neue Erkenntnisse mit Hergang gehören in den Skill, hierher nur die normative Zeile —
 und auch die nur, wenn ihr Bruch den Wecker kostet.
 
-**Diese Datei hat ein Budget, und es wird gemessen.** Sie wuchs vom 22.07. bis 14.08.2026 von
-24.763 auf **149.571 Zeichen — 429 unter dem Limit der Harness**, ohne dass es jemand bemerkte;
-am 11.08. allein kamen 53 k dazu. Das war kein Schlamperei-Problem: jede Zeile stammte aus einem
-echten Bug, jede Ergänzung war für sich berechtigt. Gefehlt hat, dass **niemand die Summe angesehen
-hat** — und die Regel dagegen war reine Prosa. Deshalb jetzt `tools/doku/pruefe_budget.py`:
-Warnung ab 30 k, CI-Fehlschlag ab 40 k, plus ein `SessionStart`-Hook, der sich beim Überschreiten
-von allein meldet. Gegen die echte Historie geprüft — hätte am 03.08. angeschlagen.
-**Wenn die Meldung kommt, ist Verschieben in einen Skill die Antwort, nicht das Anheben der
-Schwelle.** Dort kostet Wissen erst beim Lesen etwas; `reference/*.md` darf deshalb wachsen.
+**Diese Datei hat ein Budget, und es wird gemessen:** `tools/doku/pruefe_budget.py` warnt ab 30 k,
+lässt die CI ab 40 k scheitern und meldet sich per `SessionStart`-Hook (Hergang im Kopf des
+Skripts). **Wenn die Meldung kommt, ist Verschieben in einen Skill die Antwort, nicht das Anheben
+der Schwelle.** Dort kostet Wissen erst beim Lesen etwas; `reference/*.md` darf deshalb wachsen.
 
 **Ein `: ` in einer `description` MUSS gequotet werden** — sonst endet der YAML-Skalar am ersten
 Doppelpunkt, das Frontmatter wird unlesbar, und der Skill existiert zwar, triggert aber praktisch
@@ -58,8 +53,7 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
   `git add .` / `commit -a`, kein `git stash`.
 - **Es gibt keine Handoff-Datei mehr, und es soll keine neue geben.** Der Projekt-STAND wird
   abgeleitet (`tools/sitzungsstart.py`: Branch, Arbeitsbaum, Version, Testzahl **mit Alter**,
-  Abstand zu `origin/main`) — von Hand gepflegt veraltete er lautlos und wuchs zweimal zu, zuletzt
-  auf 26.201 Zeichen.
+  Abstand zu `origin/main`) — von Hand gepflegt veraltete er lautlos (Hergang im Kopf des Skripts).
 - **Offene Punkte liegen an zwei Orten; das Kriterium ist, ob es öffentlich stehen darf.** Das Repo
   ist öffentlich und bleibt es (GitHub Pages liefert aus `main` `/docs` die Datenschutz-URL für die
   OAuth-Verifizierung). Deshalb: **belegte, harmlose Aufräumarbeit als GitHub Issue** (so seit
@@ -229,9 +223,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **Der Delta-Sync hat pro Event ein eigenes `try/catch`, das `CancellationException` weiterwirft** —
   sonst bricht ein einzelner abgelehnter Alarm den gesamten Sync ab.
 - **Die Wecker-Identitaet haengt NICHT allein an der Kalender-Kennung.** Ein abonnierter
-  Dienstplan-Feed bekommt von Google alle paar Tage neue Event-IDs fuer dieselben Termine (am
-  Geraet gemessen: 11 geloescht, 11 angelegt, Schnittmenge der IDs null, Schichten und Weckzeiten
-  unveraendert). `syncAlarms()` paart deshalb ERST (Kennung, sonst Weckzeit + Schicht) und
+  Dienstplan-Feed bekommt von Google alle paar Tage neue Event-IDs fuer dieselben Termine.
+  `syncAlarms()` paart deshalb ERST (Kennung, sonst Weckzeit + Schicht) und
   entscheidet DANN; bei reinem Kennungswechsel wird die neue Kennung still uebernommen, die
   `AlarmInfo.id` bleibt. Dieselbe Frage stellt die Boot-Wiederherstellung - sonst loescht ein
   Neustart im Rotationsfenster den GESAMTEN Bestand.
@@ -280,10 +273,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **„Deine Schicht beginnt um" zeigt `AlarmInfo.shiftStartTime`, nicht `triggerTime`.**
 - **Wer die Wichtigkeit eines Notification-Kanals anhebt, braucht eine NEUE Kanal-ID.** Android
   ändert die Importance eines bestehenden Kanals nur nach UNTEN und ignoriert alle übrigen Felder;
-  ein unter derselben ID neu angelegter Kanal kommt mit seinen ALTEN Einstellungen zurück. Der
-  Weckerkanal stand deshalb auf jeder Installation von vor v1.9.7 bis v1.29.0 unbemerkt auf
-  `IMPORTANCE_LOW` — Wecker ohne Vollbild, ohne Knöpfe, ohne DND-Durchgriff. Ein frisch
-  installiertes Gerät zeigt das NIE.
+  ein unter derselben ID neu angelegter Kanal kommt mit seinen ALTEN Einstellungen zurück. Ein
+  frisch installiertes Gerät zeigt das NIE.
 - **Die Schlummer-Beschriftung kommt aus derselben Variablen wie `scheduleSnooze()`**, nie aus
   einem festen Text — sonst verspricht der Knopf am Weckbildschirm eine andere Dauer, als er
   schlummert.
@@ -293,9 +284,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 - **Der Weckton startet sofort, nie im verzoegerten Vorweck-Zweig.** Bei dunklem, gesperrtem
   Bildschirm wartet ausschliesslich `startForeground()` mit der FSI-Notification (600 ms, siehe
   `VorweckEntscheidung`). Wer den Ton mit verzoegert, verzoegert den Weckruf selbst.
-- **Die Vorweck-Bedingung liest NUR Systemzustand, nie etwas Gespeichertes.** Bis 1.39.4 gab ein
-  Merker im CE-Storage das Gate — im Direct Boot nicht lesbar, weshalb der erste Wecker nach
-  einem naechtlichen Neustart ungeschuetzt lief. Seit 1.39.5 gestrichen; Hergang im Wecker-Skill.
+- **Die Vorweck-Bedingung liest NUR Systemzustand, nie etwas Gespeichertes** — ein Merker im
+  CE-Storage ist im Direct Boot nicht lesbar; Hergang im Wecker-Skill.
 
 ### Hintergrundketten und Boot
 
@@ -303,7 +293,7 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   die Gegenrichtung ist gesperrt). `AlarmReceiver`, `AlarmSoundService`, `BootReceiver` und die
   6h-Wartung laufen bei gesperrtem Gerät und im Direct-Boot-Prozess, ohne sichtbare Activity — eine
   Referenz von dort in die Oberfläche ist der kurze Weg zu einem Leak oder Klassenauflösungsfehler,
-  den kein Unit-Test sieht. Beim Anlegen der Regel (22.08.2026) hielten alle 17 Pakete sie bereits.
+  den kein Unit-Test sieht. Geprüft von `tools/invarianten/pruefe_code.py`.
 - **NICHTS am Application-Graphen darf WorkManager oder CE-Storage beim BAUEN anfassen.** Der Graph
   wird auch im Direct-Boot-Prozess aufgebaut; ein Wurf dort tötet den Prozess, und die
   Wiederherstellung der Alarme läuft NIE. **Kein Unit-Test fängt das** — die Prüfung ist ein echter Reboot ohne Entsperrung:
@@ -326,8 +316,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   lässt das Licht an, ohne dass der Auto-Aus-Zeitplan je entsteht.
 - **Die stündliche Rufbereitschafts-Abfrage (`RufbereitschaftAbfrage`) ist eine EIGENE Kette**,
   die nur `AlarmMaintenanceService.start(forceSync = true)` anstößt — kein zweiter Planer der
-  6h-Kette. Quelle ist `ShiftDefinition.isOnCall` (auch für den DND-Cutoff). Hergang
-  (16.09.2026) im Kalender-Skill.
+  6h-Kette. Quelle ist `ShiftDefinition.isOnCall` (auch für den DND-Cutoff). Hergang im
+  Kalender-Skill.
 
 ### Master-Pause
 
@@ -368,23 +358,21 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   Drei Stellen binden ueber den Namen: Dimmer- und Hue-Regeln (`shiftPattern`) und die
   Dienstzeit-Ausnahmen. Letztere vergleicht EXAKT - eine reine Schreibweisen-Aenderung zaehlt
   deshalb als Umbenennung. Beim Namenstausch wird der falsch gewordene Eintrag geraeumt, ausser
-  beide Namen stehen in derselben Liste (dann stimmt ihr Inhalt weiter). Rufbereitschaft ist
-  seit dem Umbau vom 16.09.2026 ein Flag AM Schichttyp (`isOnCall`), keine Liste. Die vollstaendige Inventur
-  steht im Kalender-Skill.
+  beide Namen stehen in derselben Liste (dann stimmt ihr Inhalt weiter). Rufbereitschaft ist ein
+  Flag AM Schichttyp (`isOnCall`), keine Liste. Die vollstaendige Inventur steht im Kalender-Skill.
 - **`CalendarStateHolder` ist eine Einbahnstraße**, und Laden gehört ausschließlich dem
   `CalendarViewModel`.
 - **`loadEventsForSelectedCalendars()` braucht einen Generation-Counter** — die Prüfung VOR JEDEM
   Schreiben, auch vor dem ersten `isLoading = true`.
 - **Neue Properties in ViewModels mit `init{}` gehören VOR den `init{}`-Block** — sonst NPE beim
-  ersten App-Start, die 329 grüne Tests nicht fangen.
+  ersten App-Start, die kein Unit-Test fängt.
 
 ### Persistenz
 
 - **`isPersistenceBlocked()` heisst „der Bestand ist unlesbar", NICHT „der letzte Schreibvorgang
-  ging schief".** Die beiden Lagen zu einem Signal zu verodern klingt sparsam und ist toedlich:
-  `clearInternalAlarms()` ueberspringt bei „unlesbar" bewusst die ganze `cancelSystemAlarm()`-
-  Schleife — nach einem einzigen fehlgeschlagenen Write raeumte die Master-Pause dann den Bestand
-  und liesse jeden Systemalarm scharf zurueck. Ein Schreibfehler bekommt einen eigenen Weg zu
+  ging schief".** Verodert raeumte die Master-Pause nach einem einzigen fehlgeschlagenen Write den
+  Bestand und liesse jeden Systemalarm scharf zurueck (`clearInternalAlarms()` ueberspringt bei
+  „unlesbar" die `cancelSystemAlarm()`-Schleife). Ein Schreibfehler hat einen eigenen Weg zu
   seinem einzigen Konsumenten.
 - **Stille Degradierung darf nie zur Schreibwahrheit werden.** DataStore liest vor jedem Write
   erneut; wer einen Lesefehler auf „leer"/„Default" degradiert, speist die Notlage-Leere in den
@@ -411,8 +399,8 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
 ### Dimmer, DND, Hue
 
 - **Es gibt GENAU EINE Dimm-Fenster-Quelle: die Regeln** (seit v1.34.0, ein Schalter `dim_enabled`).
-  Wer eine zweite, „eingebaute" Quelle daneben stellt, koppelt Schalter aneinander — genau der
-  Konstruktionsfehler, der Wellness und Nacht-Standard gekostet hat (Hergang im Dimmer-Skill).
+  Wer eine zweite, „eingebaute" Quelle daneben stellt, koppelt Schalter aneinander (Hergang im
+  Dimmer-Skill).
 - **Leere Fensterliste = Unterdrückung dieser Nacht**, NICHT „keine Regel". Nicht wegoptimieren.
 - **Die Tick-Kette darf nicht abreißen** — Keep-alive (6 h) plus Retry (15 min) nach Lesefehler.
 - **Das Aufräumen der Dimm-VORSCHAU darf nicht am `viewModelScope` hängen** — sonst bleibt der

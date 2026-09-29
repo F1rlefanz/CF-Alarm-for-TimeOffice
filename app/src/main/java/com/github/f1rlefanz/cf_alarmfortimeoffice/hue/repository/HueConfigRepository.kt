@@ -21,7 +21,6 @@ import javax.inject.Singleton
 
 /**
  * Repository for Hue Configuration operations using DataStore
- * Implements Clean Architecture with Interface-based DI and Logger integration
  */
 @Singleton
 class HueConfigRepository @Inject constructor(
@@ -48,20 +47,11 @@ class HueConfigRepository @Inject constructor(
             .map { preferences ->
                 val bridgeIp = preferences[BRIDGE_IP_KEY] ?: ""
                 val username = preferences[USERNAME_KEY] ?: ""
-                val scheduleRulesJson = preferences[SCHEDULE_RULES_KEY] ?: "[]"
-                
-                val scheduleRules = try {
-                    json.decodeFromString<List<HueSchedule>>(scheduleRulesJson)
-                } catch (e: Exception) {
-                    Logger.w(LogTags.HUE_CONFIG, "Failed to decode schedule rules, using empty list", e)
-                    emptyList()
-                }
                 
                 HueConfiguration(
                     bridgeIp = bridgeIp,
                     username = username,
-                    isConfigured = bridgeIp.isNotEmpty() && username.isNotEmpty(),
-                    scheduleRules = scheduleRules
+                    isConfigured = bridgeIp.isNotEmpty() && username.isNotEmpty()
                 )
             }
     }
@@ -103,14 +93,10 @@ class HueConfigRepository @Inject constructor(
             dataStore.edit { preferences ->
                 val currentRulesJson = preferences[SCHEDULE_RULES_KEY] ?: "[]"
                 val currentRules = json.decodeFromString<List<HueSchedule>>(currentRulesJson).toMutableList()
-                
-                // Remove existing rule with same ID if it exists
+
                 currentRules.removeAll { it.id == rule.id }
-                
-                // Add the new/updated rule
                 currentRules.add(rule)
-                
-                // Save back to preferences
+
                 val updatedRulesJson = json.encodeToString(currentRules)
                 preferences[SCHEDULE_RULES_KEY] = updatedRulesJson
             }
@@ -130,11 +116,9 @@ class HueConfigRepository @Inject constructor(
                 val currentRulesJson = preferences[SCHEDULE_RULES_KEY] ?: "[]"
                 val currentRules = json.decodeFromString<List<HueSchedule>>(currentRulesJson).toMutableList()
                 
-                // Remove rule with matching ID
                 val removed = currentRules.removeAll { it.id == ruleId }
                 
                 if (removed) {
-                    // Save back to preferences
                     val updatedRulesJson = json.encodeToString(currentRules)
                     preferences[SCHEDULE_RULES_KEY] = updatedRulesJson
                     Logger.i(LogTags.HUE_CONFIG, "Successfully deleted schedule rule: $ruleId")
@@ -162,10 +146,8 @@ class HueConfigRepository @Inject constructor(
         return try {
             dataStore.edit { preferences ->
                 val currentRulesJson = preferences[SCHEDULE_RULES_KEY] ?: "[]"
-                // Bewusst OHNE try/catch um das Dekodieren: ein unlesbarer Bestand muss den
-                // ganzen Aufruf scheitern lassen. Der Rueckfall auf eine leere Liste, den
-                // getConfiguration() fuer die ANZEIGE macht, waere hier Datenverlust - er wuerde
-                // als "keine Regeln" zurueckgeschrieben.
+                // Bewusst OHNE try/catch: ein unlesbarer Bestand muss den Aufruf scheitern
+                // lassen, sonst wird er als "keine Regeln" zurueckgeschrieben.
                 val currentRules = json.decodeFromString<List<HueSchedule>>(currentRulesJson)
 
                 val updatedRules = transform(currentRules)

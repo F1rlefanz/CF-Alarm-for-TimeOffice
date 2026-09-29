@@ -66,25 +66,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.UnusedAppRestrictionsHelp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import dagger.hilt.android.EntryPointAccessors
 
-/**
- * Die BERECHTIGUNGS- UND ZUSTANDSKARTEN des Status-Tabs.
- *
- * Herausgeloest aus `StatusTabContent.kt` (1389 Zeilen), weil sie eine geschlossene Gruppe
- * bilden: jede Karte liest genau EINE Geraeteeinstellung, zeigt gruen/rot und fuehrt bei Bedarf
- * in die zustaendige Systemeinstellung. Sie teilen kein Zustandsobjekt mit dem Rest des Tabs
- * (kein ViewModel-Parameter), und sie lesen ihren Zustand alle nach demselben Muster bei jedem
- * `ON_RESUME` neu - der Nutzer kann ihn ausserhalb der App aendern.
- *
- * Bewusst KEINE Verhaltensaenderung: dieselben Funktionen, dieselbe Reihenfolge im Tab,
- * dieselbe Sichtbarkeit (`internal`, damit `StatusTabContent` sie weiterhin aufrufen kann -
- * Kotlin kennt kein package-private).
- *
- * WARUM DIESE KARTEN UEBERHAUPT EXISTIEREN: jede von ihnen deckt eine Einstellung ab, die in
- * diesem Projekt nachweislich schon einmal einen Wecker verschluckt hat (Akku-Optimierung,
- * "Pause bei Nichtnutzung", blockierte Benachrichtigungen, entzogene
- * Vollbild-Berechtigung) oder eine Abhaengigkeit ausserhalb der App betrifft (TimeOffice,
- * Dimmer-Dienst, Nicht-stoeren-Zugriff). Sie sind Diagnose fuer den Nutzer, nicht Deko.
- */
+// Die Berechtigungs- und Zustandskarten des Status-Tabs: jede liest EINE Geraeteeinstellung bei
+// jedem ON_RESUME neu, zeigt gruen/rot und fuehrt in die zustaendige Systemeinstellung. Jede deckt
+// eine Einstellung ab, die nachweislich schon einmal einen Wecker verschluckt hat, oder eine
+// Abhaengigkeit ausserhalb der App - Diagnose fuer den Nutzer, nicht Deko.
+
 /**
  * Meldet, ob die App ueberhaupt Benachrichtigungen zeigen darf - die Voraussetzung fuer ALLES
  * daran, inklusive der Vollbild-Karte darunter.
@@ -114,121 +100,67 @@ import dagger.hilt.android.EntryPointAccessors
 @Composable
 internal fun NotificationsEnabledCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     var zustand by remember { mutableStateOf(weckerZustellbarkeit(context)) }
     val enabled = zustand.erreicht
     // Wortgleich mit dem, was in den Systemeinstellungen steht - der Text darf keine Bezeichnung
     // erfinden, die der Nutzer dort nicht findet.
     val weckerKanalName = stringResource(R.string.alarm_channel_name)
-    // Die Reparaturanweisung wird ABGELEITET, nicht hingeschrieben - und sie nennt eine WIRKUNG
-    // statt eines Stufennamens: bis v1.29.0 stand hier fest "Standard oder hoeher", danach kurz
-    // ein aus einer eigenen Tabelle geholtes "Hoch". Beides schickte den Nutzer auf
-    // IMPORTANCE_DEFAULT - in der deutschen Liste von Android 8/9 heisst "Hoch" genau dieser Wert,
-    // den dieselbe Karte als zu niedrig verwirft, und auf neueren Versionen gibt es den Eintrag
-    // gar nicht. Wer der Anweisung folgte, sah unveraendert das Warndreieck und wurde weiter ohne
-    // Weck-Bildschirm geweckt.
+    // Anweisung nennt eine WIRKUNG, keinen Stufennamen
+    // (Hergang: cfalarm-wecker-und-boot/reference/wecker-boot-und-wartung.md).
     val geforderteStufe = NotificationDeliverability.mindeststufeBeschreibung(
         NotificationDeliverability.WICHTIGKEIT_HOCH
     )
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                zustand = weckerZustellbarkeit(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { zustand = weckerZustellbarkeit(context) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (enabled) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich ("Erlaubt — …" bzw.
-                // "⚠️ Blockiert — …"), das Icon spiegelt ihn nur
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (enabled)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
+    StatusCard(
+        title = "Benachrichtigungen",
+        isOk = enabled,
+        // Jeder Fall benennt AUSDRUECKLICH, was abgeschaltet ist - "blockiert" allein
+        // schickt den Nutzer in die falschen Einstellungen, wenn nur der eine Kanal
+        // betroffen ist.
+        details = when (zustand) {
+            NotificationDeliverability.Zustellbarkeit.ERREICHBAR ->
+                "Erlaubt — Weck-Bildschirm und Wecker-Knöpfe können erscheinen"
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Benachrichtigungen",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    // Jeder Fall benennt AUSDRUECKLICH, was abgeschaltet ist - "blockiert" allein
-                    // schickt den Nutzer in die falschen Einstellungen, wenn nur der eine Kanal
-                    // betroffen ist.
-                    when (zustand) {
-                        NotificationDeliverability.Zustellbarkeit.ERREICHBAR ->
-                            "Erlaubt — Weck-Bildschirm und Wecker-Knöpfe können erscheinen"
+            NotificationDeliverability.Zustellbarkeit.APP_BLOCKIERT ->
+                "⚠️ Blockiert — der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm " +
+                    "und ohne Knöpfe zum Stoppen oder Schlummern"
 
-                        NotificationDeliverability.Zustellbarkeit.APP_BLOCKIERT ->
-                            "⚠️ Blockiert — der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm " +
-                                "und ohne Knöpfe zum Stoppen oder Schlummern"
+            NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT ->
+                "⚠️ Die Kategorie \"$weckerKanalName\" ist abgeschaltet — der Wecker " +
+                    "klingelt dann zwar, aber ohne Weck-Bildschirm und ohne Knöpfe zum " +
+                    "Stoppen oder Schlummern. Sie muss wieder eingeschaltet werden."
 
-                        NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT ->
-                            "⚠️ Die Kategorie \"$weckerKanalName\" ist abgeschaltet — der Wecker " +
-                                "klingelt dann zwar, aber ohne Weck-Bildschirm und ohne Knöpfe zum " +
-                                "Stoppen oder Schlummern. Sie muss wieder eingeschaltet werden."
+            NotificationDeliverability.Zustellbarkeit.GRUPPE_BLOCKIERT ->
+                "⚠️ Die Gruppe, in der \"$weckerKanalName\" liegt, ist abgeschaltet — " +
+                    "der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm und ohne " +
+                    "Knöpfe zum Stoppen oder Schlummern."
 
-                        NotificationDeliverability.Zustellbarkeit.GRUPPE_BLOCKIERT ->
-                            "⚠️ Die Gruppe, in der \"$weckerKanalName\" liegt, ist abgeschaltet — " +
-                                "der Wecker klingelt dann zwar, aber ohne Weck-Bildschirm und ohne " +
-                                "Knöpfe zum Stoppen oder Schlummern."
-
-                        NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
-                            "⚠️ Die Kategorie \"$weckerKanalName\" steht zu niedrig — dann kommt " +
-                                "der Weck-Bildschirm nicht mehr von selbst hoch. Sie muss " +
-                                "$geforderteStufe."
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!enabled) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        // Bei einem Kanal-Problem direkt in dessen Einstellungen: die App-Ebene
-                        // ist dort in Ordnung, und der Nutzer muesste sich sonst selbst durch die
-                        // Kategorienliste suchen. Bei APP_BLOCKIERT/GRUPPE_BLOCKIERT bleibt es bei
-                        // der App-Uebersicht - dort liegen beide Schalter.
-                        onClick = {
-                            when (zustand) {
-                                NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT,
-                                NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
-                                    openChannelNotificationSettings(
-                                        context,
-                                        NotificationDeliverability.WECKER_KANAL_ID
-                                    )
-
-                                else -> openAppNotificationSettings(context)
-                            }
-                        },
-                        text = "Einstellung öffnen"
+            NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
+                "⚠️ Die Kategorie \"$weckerKanalName\" steht zu niedrig — dann kommt " +
+                    "der Weck-Bildschirm nicht mehr von selbst hoch. Sie muss " +
+                    "$geforderteStufe."
+        },
+        actionLabel = "Einstellung öffnen",
+        // Bei einem Kanal-Problem direkt in dessen Einstellungen: die App-Ebene
+        // ist dort in Ordnung, und der Nutzer muesste sich sonst selbst durch die
+        // Kategorienliste suchen. Bei APP_BLOCKIERT/GRUPPE_BLOCKIERT bleibt es bei
+        // der App-Uebersicht - dort liegen beide Schalter.
+        onAction = {
+            when (zustand) {
+                NotificationDeliverability.Zustellbarkeit.KANAL_BLOCKIERT,
+                NotificationDeliverability.Zustellbarkeit.KANAL_LEISE ->
+                    openChannelNotificationSettings(
+                        context,
+                        NotificationDeliverability.WECKER_KANAL_ID
                     )
-                }
+
+                else -> openAppNotificationSettings(context)
             }
         }
-    }
+    )
 }
 
 /**
@@ -241,82 +173,30 @@ internal fun NotificationsEnabledCard() {
  * still zu einem Banner — der Wecker klingelt, aber der Weck-Screen kommt nie hoch, und nichts
  * weist darauf hin. Ein reiner Hinweistext ohne Absprung waere hier wertlos.
  *
- * Der Zustand wird bei jedem ON_RESUME neu gelesen (`remember` + `DisposableEffect`, siehe unten),
- * damit die Karte nach der Rueckkehr aus den Einstellungen sofort umspringt. NICHT "kein
- * remember": der Code benutzt eines. Der frueher hier stehende Satz verleitete dazu, den
- * ON_RESUME-Refresh als redundant zu entfernen ("liest doch bei jedem Aufruf neu") - danach fror
- * die Karte auf ihrem Startwert ein und behauptete eine Berechtigung, die es nicht mehr gibt.
+ * Der ON_RESUME-Refresh ist nicht redundant - ohne ihn friert die Karte auf ihrem Startwert ein.
  */
 @Composable
 internal fun FullScreenIntentCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Bei jedem ON_RESUME neu pruefen: der Nutzer kann die Berechtigung ausserhalb der App
     // aendern, und danach muss die Karte stimmen.
     var canUseFsi by remember { mutableStateOf(checkFullScreenIntentAllowed(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                canUseFsi = checkFullScreenIntentAllowed(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { canUseFsi = checkFullScreenIntentAllowed(context) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (canUseFsi) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (canUseFsi)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Vollbild-Wecker",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (canUseFsi) {
-                        "Der Weck-Bildschirm darf angezeigt werden"
-                    } else {
-                        "⚠️ Nicht erlaubt — der Wecker erscheint nur als Banner, " +
-                            "der Weck-Bildschirm kommt nicht von selbst hoch"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!canUseFsi) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = { openFullScreenIntentSettings(context) },
-                        text = "Einstellung öffnen"
-                    )
-                }
-            }
-        }
-    }
+    StatusCard(
+        title = "Vollbild-Wecker",
+        isOk = canUseFsi,
+        details = if (canUseFsi) {
+            "Der Weck-Bildschirm darf angezeigt werden"
+        } else {
+            "⚠️ Nicht erlaubt — der Wecker erscheint nur als Banner, " +
+                "der Weck-Bildschirm kommt nicht von selbst hoch"
+        },
+        actionLabel = "Einstellung öffnen",
+        onAction = { openFullScreenIntentSettings(context) }
+    )
 }
 
 /**
@@ -329,13 +209,8 @@ internal fun FullScreenIntentCard() {
  * schlummern. Am 29.08.2026 mit der vorinstallierten Google Uhr gegengeprueft - es trifft jede
  * Wecker-App auf diesem Geraet.
  *
- * WARUM ES DEN HINWEIS NEBEN DER ABHILFE GIBT: Vier Messlaeufe haben belegt, dass sich der
- * Full-Screen-Intent nicht NACHREICHEN laesst (weder ueber eine zweite Notification noch als
- * Update, auch nicht ohne Verzoegerung). Der Satz "app-seitig ist nichts zu gewinnen", der hier
- * stand, war daraus zu weit verallgemeinert: er galt fuers Nachreichen, nicht fuer den ZEITPUNKT
- * des ersten Postens. Genau dort setzt das Vorwecken an (seit 1.39.3, ohne Geraete-Unterscheidung
- * seit 1.39.5). Der Hinweis bleibt daneben bestehen - er meldet, wenn es TROTZ Vorwecken
- * passiert, und ist die einzige Stelle, an der der Nutzer davon erfaehrt.
+ * Der Hinweis meldet, wenn es TROTZ Vorwecken passiert
+ * (Hergang: cfalarm-wecker-und-boot/reference/vorwecken.md).
  *
  * WARUM KEIN KNOPF ZUR EINSTELLUNG: Es gibt keine. Die Gesichtsentsperrung des FP6 kennt nur
  * "einlernen" und "loeschen" - ein Schalter existiert nicht (im Fairphone-Forum unabhaengig
@@ -347,72 +222,33 @@ internal fun FullScreenIntentCard() {
 @Composable
 internal fun WeckbildschirmVerdraengtCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Bei jedem ON_RESUME neu lesen: der Zaehler aendert sich waehrend eines Weckvorgangs,
     // also waehrend diese Karte nicht sichtbar ist.
     var faellig by remember { mutableStateOf(WeckbildschirmVerdraengungPrefs.hinweisFaellig(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                faellig = WeckbildschirmVerdraengungPrefs.hinweisFaellig(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { faellig = WeckbildschirmVerdraengungPrefs.hinweisFaellig(context) }
 
     if (!faellig) return
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Weck-Bildschirm wird verdrängt",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Beim Klingeln erschien der Weck-Bildschirm kurz und verschwand wieder. " +
-                        "Der Wecker lief weiter — zum Stoppen oder Schlummern musstest du die " +
-                        "Benachrichtigung aufklappen oder das Gerät entsperren.\n\n" +
-                        "Ursache ist die Gesichtsentsperrung deines Geräts: sie legt sich über " +
-                        "den Weck-Bildschirm. Das betrifft jede Wecker-App, auch die " +
-                        "vorinstallierte Uhr — es liegt nicht an dieser App.\n\n" +
-                        "Diese App steuert dagegen: sie weckt den Bildschirm kurz vorher selbst, " +
-                        "damit der Weck-Bildschirm oben bleibt. Das greift bei jedem Wecker, auch " +
-                        "beim ersten nach einem Neustart.\n\n" +
-                        "Wenn es weiter passiert, hilft nur: das eingelernte Gesicht in den " +
-                        "Geräte-Einstellungen unter „Entsperrung per Gesichtserkennung“ " +
-                        "löschen. Der Fingerabdruck ist nicht betroffen.\n\n" +
-                        "Dieser Hinweis verschwindet von selbst, sobald wieder ein Wecker " +
-                        "normal durchläuft.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-    }
+    StatusCard(
+        title = "Weck-Bildschirm wird verdrängt",
+        isOk = false,
+        details = "Beim Klingeln erschien der Weck-Bildschirm kurz und verschwand wieder. " +
+            "Der Wecker lief weiter — zum Stoppen oder Schlummern musstest du die " +
+            "Benachrichtigung aufklappen oder das Gerät entsperren.\n\n" +
+            "Ursache ist die Gesichtsentsperrung deines Geräts: sie legt sich über " +
+            "den Weck-Bildschirm. Das betrifft jede Wecker-App, auch die " +
+            "vorinstallierte Uhr — es liegt nicht an dieser App.\n\n" +
+            "Diese App steuert dagegen: sie weckt den Bildschirm kurz vorher selbst, " +
+            "damit der Weck-Bildschirm oben bleibt. Das greift bei jedem Wecker, auch " +
+            "beim ersten nach einem Neustart.\n\n" +
+            "Wenn es weiter passiert, hilft nur: das eingelernte Gesicht in den " +
+            "Geräte-Einstellungen unter „Entsperrung per Gesichtserkennung“ " +
+            "löschen. Der Fingerabdruck ist nicht betroffen.\n\n" +
+            "Dieser Hinweis verschwindet von selbst, sobald wieder ein Wecker " +
+            "normal durchläuft."
+    )
 }
 
 /**
@@ -567,67 +403,27 @@ internal fun ExactAlarmPermissionCard() {
 
     val erteilt = zustand == ExaktAlarmKartenZustand.ERTEILT
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (erteilt) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (erteilt) {
-                    MaterialTheme.colorScheme.success
-                } else {
-                    MaterialTheme.colorScheme.error
-                }
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Alarme & Erinnerungen",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (erteilt) {
-                        "Wecker werden auf die Minute genau gestellt"
-                    } else {
-                        // Der Text nennt genau das, was die Wieder-Erteilung wirklich ausloest —
-                        // Schicht-Wecker ueber einen erzwungenen Wartungslauf, den Schlummer
-                        // ueber restorePendingSnoozes(). Ein MANUELL angelegter Wecker wird
-                        // nirgends nachgestellt (syncAlarms schont ihn nur), deshalb steht er
-                        // ausdruecklich als Aufgabe des Nutzers da: eine Anzeige, die einen
-                        // Wecker ankuendigt, den es nicht gibt, ist die gefaehrlichste Variante.
-                        "⚠️ Android hat beim Abschalten ALLE gestellten Wecker geloescht — auch " +
-                            "einen laufenden Schlummer und die Hintergrund-Wartung. Erlaube die " +
-                            "Berechtigung wieder: Schicht-Wecker und Schlummer holt die App dann " +
-                            "umgehend zurück (für die Schicht-Wecker braucht sie kurz Netz). " +
-                            "Einen manuell angelegten Wecker musst du selbst neu stellen."
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!erteilt) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = { oeffneExactAlarmEinstellung(context) },
-                        text = "Einstellung öffnen"
-                    )
-                }
-            }
-        }
-    }
+    StatusCard(
+        title = "Alarme & Erinnerungen",
+        isOk = erteilt,
+        details = if (erteilt) {
+            "Wecker werden auf die Minute genau gestellt"
+        } else {
+            // Der Text nennt genau das, was die Wieder-Erteilung wirklich ausloest —
+            // Schicht-Wecker ueber einen erzwungenen Wartungslauf, den Schlummer
+            // ueber restorePendingSnoozes(). Ein MANUELL angelegter Wecker wird
+            // nirgends nachgestellt (syncAlarms schont ihn nur), deshalb steht er
+            // ausdruecklich als Aufgabe des Nutzers da: eine Anzeige, die einen
+            // Wecker ankuendigt, den es nicht gibt, ist die gefaehrlichste Variante.
+            "⚠️ Android hat beim Abschalten ALLE gestellten Wecker geloescht — auch " +
+                "einen laufenden Schlummer und die Hintergrund-Wartung. Erlaube die " +
+                "Berechtigung wieder: Schicht-Wecker und Schlummer holt die App dann " +
+                "umgehend zurück (für die Schicht-Wecker braucht sie kurz Netz). " +
+                "Einen manuell angelegten Wecker musst du selbst neu stellen."
+        },
+        actionLabel = "Einstellung öffnen",
+        onAction = { oeffneExactAlarmEinstellung(context) }
+    )
 }
 
 /**
@@ -692,75 +488,27 @@ internal fun BatteryOptimizationCard() {
     ExactAlarmPermissionCard()
 
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     var isExempt by remember { mutableStateOf(BatteryOptimizationHelper.isExempted(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                isExempt = BatteryOptimizationHelper.isExempted(context)
+    BeiJedemResume { isExempt = BatteryOptimizationHelper.isExempted(context) }
+
+    StatusCard(
+        title = "Akku-Ausnahme",
+        isOk = isExempt,
+        details = if (isExempt) {
+            "Der Wecker darf jederzeit im Hintergrund laufen"
+        } else {
+            "⚠️ Android darf die App einfrieren — dann werden keine Schichten mehr " +
+                "abgeholt und der Wecker bleibt still"
+        },
+        actionLabel = "Ausnahme erlauben",
+        onAction = {
+            (context as? android.app.Activity)?.let {
+                BatteryOptimizationHelper.requestExemption(it)
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isExempt) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (isExempt)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Akku-Ausnahme",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (isExempt) {
-                        "Der Wecker darf jederzeit im Hintergrund laufen"
-                    } else {
-                        "⚠️ Android darf die App einfrieren — dann werden keine Schichten mehr " +
-                            "abgeholt und der Wecker bleibt still"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!isExempt) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = {
-                            (context as? android.app.Activity)?.let {
-                                BatteryOptimizationHelper.requestExemption(it)
-                            }
-                        },
-                        text = "Ausnahme erlauben"
-                    )
-                }
-            }
-        }
-    }
+    )
 }
 
 /**
@@ -777,90 +525,40 @@ internal fun BatteryOptimizationCard() {
 @Composable
 internal fun UnusedAppRestrictionsCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     var isOk by remember { mutableStateOf(true) }
-    // mutableIntStateOf statt mutableStateOf(0): kein Autoboxing des Zaehlers (Delegat-Nutzung
-    // unveraendert - `refreshTrigger++` und der LaunchedEffect-Key bleiben, wie sie sind).
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refreshTrigger) {
         isOk = !UnusedAppRestrictionsHelper.isRestricted(context)
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                refreshTrigger++
+    BeiJedemResume { refreshTrigger++ }
+
+    StatusCard(
+        title = "Nicht verwendete Apps",
+        isOk = isOk,
+        details = if (isOk) {
+            "\"Bei Nichtnutzung pausieren\" ist aus - der Wecker bleibt aktiv"
+        } else {
+            "⚠️ Android darf die App pausieren — dabei gehen alle gesetzten " +
+                "Wecker-Alarme verloren"
+        },
+        actionLabel = "Einstellung öffnen",
+        onAction = {
+            try {
+                context.startActivity(
+                    UnusedAppRestrictionsHelper.createSettingsIntent(context)
+                )
+            } catch (e: Exception) {
+                Logger.e(
+                    LogTags.UNUSED_APP_RESTRICTIONS,
+                    "Failed to open unused-app-restrictions settings",
+                    e
+                )
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            horizontalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Text daneben sagt den Zustand ausdruecklich
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (isOk)
-                    MaterialTheme.colorScheme.success
-                else
-                    MaterialTheme.colorScheme.error
-            )
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Nicht verwendete Apps",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (isOk) {
-                        "\"Bei Nichtnutzung pausieren\" ist aus - der Wecker bleibt aktiv"
-                    } else {
-                        "⚠️ Android darf die App pausieren — dabei gehen alle gesetzten " +
-                            "Wecker-Alarme verloren"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                if (!isOk) {
-                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = {
-                            try {
-                                context.startActivity(
-                                    UnusedAppRestrictionsHelper.createSettingsIntent(context)
-                                )
-                            } catch (e: Exception) {
-                                Logger.e(
-                                    LogTags.UNUSED_APP_RESTRICTIONS,
-                                    "Failed to open unused-app-restrictions settings",
-                                    e
-                                )
-                            }
-                        },
-                        text = "Einstellung öffnen"
-                    )
-                }
-            }
-        }
-    }
+    )
 }
 
 /**
@@ -882,22 +580,13 @@ internal fun UnusedAppRestrictionsCard() {
 @Composable
 internal fun TimeOfficeHealthCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     val isInstalled = remember { TimeOfficeHealthHelper.isInstalled(context) }
     if (!isInstalled) return
 
     var isBatteryExempt by remember { mutableStateOf(TimeOfficeHealthHelper.isBatteryExempted(context)) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                isBatteryExempt = TimeOfficeHealthHelper.isBatteryExempted(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { isBatteryExempt = TimeOfficeHealthHelper.isBatteryExempted(context) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1006,7 +695,6 @@ internal fun DimmerAccessibilityCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Die LAGE statt nur der Bindung (Vorfall 26.09.2026): Android zeigt in den Bedienungshilfen
     // den Schalter, diese Karte die Bindung. Steht der Schalter auf "An" und der Dienst ist
@@ -1035,15 +723,7 @@ internal fun DimmerAccessibilityCard(
         }
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                lage = DimAccessibilityService.lage(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    BeiJedemResume { lage = DimAccessibilityService.lage(context) }
 
     if (showDisclosure) {
         AlertDialog(
@@ -1153,26 +833,57 @@ internal fun DimmerAccessibilityCard(
 @Composable
 internal fun DndPermissionCard() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val isSupported = remember { DndPermissionHelper.isFeatureSupported() }
 
     var isGranted by remember {
         mutableStateOf(isSupported && DndPermissionHelper.isGranted(context))
     }
 
+    BeiJedemResume {
+        if (isSupported) isGranted = DndPermissionHelper.isGranted(context)
+    }
+
+    StatusCard(
+        title = stringResource(R.string.dnd_status_title),
+        isOk = !isSupported || isGranted,
+        details = when {
+            !isSupported -> stringResource(R.string.dnd_unsupported)
+            isGranted -> stringResource(R.string.dnd_status_ok)
+            else -> stringResource(R.string.dnd_status_missing)
+        },
+        actionLabel = stringResource(R.string.dnd_permission_grant),
+        onAction = { DndPermissionHelper.requestAccess(context) }
+    )
+}
+
+@Composable
+private fun BeiJedemResume(aktion: () -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && isSupported) {
-                isGranted = DndPermissionHelper.isGranted(context)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                aktion()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+}
 
+@Composable
+internal fun StatusCard(
+    title: String,
+    isOk: Boolean,
+    details: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    actionEnabled: Boolean = true
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
@@ -1183,33 +894,31 @@ internal fun DndPermissionCard() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (!isSupported || isGranted) Icons.Default.CheckCircle else Icons.Default.Error,
-                // dekorativ: der Statustext daneben (dnd_status_ok / dnd_status_missing /
-                // dnd_unsupported) sagt den Zustand ausdruecklich
+                imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
+                // dekorativ: `details` daneben benennt den Zustand bereits in Worten
+                // (z. B. "Nicht angemeldet", "Kein Kalender ausgewählt")
                 contentDescription = null,
                 modifier = Modifier.size(SpacingConstants.ICON_SIZE_LARGE),
-                tint = if (!isSupported || isGranted) MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error
+                tint = if (isOk)
+                    MaterialTheme.colorScheme.success
+                else
+                    MaterialTheme.colorScheme.error
             )
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.dnd_status_title),
+                    title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    when {
-                        !isSupported -> stringResource(R.string.dnd_unsupported)
-                        isGranted -> stringResource(R.string.dnd_status_ok)
-                        else -> stringResource(R.string.dnd_status_missing)
-                    },
+                    details,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                if (isSupported && !isGranted) {
+
+                if (!isOk && actionLabel != null && onAction != null) {
                     Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                    SettingsLinkButton(
-                        onClick = { DndPermissionHelper.requestAccess(context) },
-                        text = stringResource(R.string.dnd_permission_grant)
-                    )
+                    SettingsLinkButton(onClick = onAction, text = actionLabel, enabled = actionEnabled)
                 }
             }
         }
@@ -1220,35 +929,10 @@ internal fun DndPermissionCard() {
  * Fuehrt in die Bedienungshilfen-Liste. Mehr ist von einer normalen App aus nicht erreichbar -
  * und das ist gemessen, nicht vermutet.
  *
- * WARUM NICHT AUF DIE DETAILSEITE DIESES DIENSTES:
- * `android.settings.ACCESSIBILITY_DETAILS_SETTINGS` (ab Android 11) fuehrt zwar dorthin, ist fuer
- * diese App aber dauerhaft unerreichbar - nicht nur auf manchen Geraeten. Die Ziel-Activity
- * `Settings$AccessibilityDetailsSettingsActivity` traegt in AOSP seit Android 11, also seit es die
- * Aktion ueberhaupt gibt, `android:permission="android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"`;
- * die Berechtigung steht auf `signature|installer` und ist dort ausdruecklich als „Not for use by
- * third-party applications" (`@hide`) gekennzeichnet. Eine nicht plattformsignierte App kann sie
- * NIE halten. Am 05.09.2026 an BEIDEN Geraeten gemessen (Fairphone 6 / Android 16 und Emulator /
- * API 36): die Aktion loest sauber auf die Settings-Activity auf und wird dann mit
- * „Permission Denial ... requires OPEN_ACCESSIBILITY_DETAILS_SETTINGS" abgewiesen.
- * **Wer den Direktsprung wieder einbaut, baut einen Zweig, der garantiert immer nur seinen
- * Rueckfall erreicht - und dabei bei JEDEM Tipp eine sinnlose Zeile ins Release-Log schreibt.**
- *
- * WARUM AUCH KEIN HERVORHEBEN DES EINTRAGS: der uebliche Kniff dafuer ist
- * `:settings:fragment_args_key` (in AOSP `SettingsActivity.EXTRA_FRAGMENT_ARG_KEY`) mit der flach
- * geschriebenen Kennung des Dienstes. Aus der Shell gestartet wirkt er auch - der Eintrag steht
- * dann markiert unter „Downloaded apps", nachgemessen im A/B und ueber 20 s stabil. **Aus DIESER
- * App heraus wirkt er nicht**, und daran lag es an nichts, was sich am Intent aendern liesse: mit
- * und ohne Argument-Buendel, mit und ohne `FLAG_ACTIVITY_NEW_TASK`, mit frisch geleerter
- * Einstellungen-App - immer ohne Hervorhebung, waehrend `dumpsys activity activities` fuer beide
- * Wege denselben Intent zeigt (`act=...ACCESSIBILITY_SETTINGS flg=0x10000000 xflg=0x4`, „has
- * extras"). Der Unterschied ist der Aufrufer selbst; AOSP liest den Schluessel primaer aus den
- * Fragment-Argumenten und nur hinter einem Feature-Flag aus dem Intent
- * (`SettingsPreferenceFragment.onCreateAdapter`).
- *
- * Deshalb steht hier der schlichte Aufruf ohne Extra: ein Zusatz, der im einzigen Kontext, in dem
- * er laeuft, nachweislich nichts bewirkt, ist kein Sicherheitsnetz, sondern Ballast mit einer
- * Erklaerung daneben, die etwas verspricht. Wer es erneut versucht, misst zuerst - und zwar aus
- * der App, nicht aus der Shell.
+ * Die Detailseite braucht eine Signatur-Berechtigung (ein Direktsprung erreicht nur seinen Rueckfall
+ * und schreibt bei jedem Tipp eine sinnlose Zeile ins Release-Log), `fragment_args_key` wirkt aus
+ * der App nicht - beides gemessen, Hergang: cfalarm-dimmer-und-dnd/reference/dimmer.md. Vor einem
+ * erneuten Versuch aus der App messen, nicht aus der Shell.
  */
 private fun openAccessibilitySettings(context: android.content.Context) {
     try {

@@ -6,9 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import javax.net.ssl.HostnameVerifier
-import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
-import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
@@ -98,20 +96,6 @@ class HueTrustManager internal constructor(
 
             val pinningStore = context?.let { HueBridgePinningStore(it) }
             return HueTrustManager(systemTrustManager, pinningStore)
-        }
-
-        /**
-         * Creates a complete SSLContext configured with this hybrid trust model.
-         *
-         * @param context Application context for bridge-ID pinning (see [create]).
-         */
-        fun createSecureSSLContext(context: Context? = null): SSLContext {
-            val trustManager = create(context)
-            val sslContext = SSLContext.getInstance("TLS")
-            sslContext.init(null, arrayOf<TrustManager>(trustManager), null)
-
-            Logger.i(LogTags.HUE_NETWORK, "🔒 Hue TLS: SSL context ready (hybrid trust model, pinning=${context != null})")
-            return sslContext
         }
 
         /**

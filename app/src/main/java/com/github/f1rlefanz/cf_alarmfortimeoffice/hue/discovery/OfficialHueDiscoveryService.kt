@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.discovery
 
 import android.content.Context
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryMethod
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryStatus
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridge
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -57,7 +56,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
             
             // Emit starting status
             _discoveryStatus.emit(DiscoveryStatus(
-                method = DiscoveryMethod.ONLINE_DISCOVERY,
                 stage = "STARTING",
                 message = "Starting bridge discovery...",
                 progress = 0.0f
@@ -70,7 +68,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
             // sofort da war - 10s Wartezeit fuer nichts.
 
             _discoveryStatus.emit(DiscoveryStatus(
-                method = DiscoveryMethod.MDNS,
                 stage = "MDNS_SEARCH",
                 message = "Scanning local network via mDNS...",
                 progress = 0.1f,
@@ -88,7 +85,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
                     Logger.i(LogTags.HUE_DISCOVERY, "mDNS discovery successful: ${mdnsBridges.size} bridges found")
 
                     _discoveryStatus.emit(DiscoveryStatus(
-                        method = DiscoveryMethod.MDNS,
                         stage = "COMPLETED",
                         message = "Found ${mdnsBridges.size} bridge(s) on local network",
                         progress = 0.5f
@@ -106,7 +102,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
             // Zeit - deshalb ueberspringen.
             if (allBridges.isEmpty()) {
                 _discoveryStatus.emit(DiscoveryStatus(
-                    method = DiscoveryMethod.ONLINE_DISCOVERY,
                     stage = "N_UPNP_SEARCH",
                     message = "Nothing found locally, contacting Philips discovery service...",
                     progress = 0.5f,
@@ -134,7 +129,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
                     Logger.w(LogTags.HUE_DISCOVERY, "N-UPnP discovery failed or timed out")
 
                     _discoveryStatus.emit(DiscoveryStatus(
-                        method = DiscoveryMethod.ONLINE_DISCOVERY,
                         stage = "FAILED",
                         message = "Philips discovery service unavailable",
                         progress = 0.8f
@@ -149,7 +143,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
             
             if (totalBridges > 0) {
                 _discoveryStatus.emit(DiscoveryStatus(
-                    method = if (allBridges.any { it.id.startsWith("mdns_") }) DiscoveryMethod.MDNS else DiscoveryMethod.ONLINE_DISCOVERY,
                     stage = "COMPLETED",
                     message = "Discovery completed: $totalBridges bridge(s) found",
                     progress = 1.0f,
@@ -159,7 +152,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
                 Logger.i(LogTags.HUE_DISCOVERY, "Official discovery completed successfully: $totalBridges bridges found")
             } else {
                 _discoveryStatus.emit(DiscoveryStatus(
-                    method = DiscoveryMethod.MDNS,
                     stage = "COMPLETED",
                     message = "No bridges found. Please check your network connection and ensure bridges are powered on.",
                     progress = 1.0f,
@@ -175,7 +167,6 @@ class OfficialHueDiscoveryService(private val context: Context) {
             Logger.e(LogTags.HUE_DISCOVERY, "Official discovery failed", e)
             
             _discoveryStatus.emit(DiscoveryStatus(
-                method = DiscoveryMethod.MDNS,
                 stage = "FAILED",
                 message = "Discovery failed: ${e.message}",
                 isComplete = true

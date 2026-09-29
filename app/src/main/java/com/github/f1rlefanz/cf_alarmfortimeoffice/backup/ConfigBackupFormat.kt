@@ -87,13 +87,8 @@ data class ConfigBackup(
 object ConfigBackupFilter {
 
     /**
-     * Laufzeitzustand: beschreibt einen Moment, keine Einstellung.
-     *
-     * WIE DIESE LISTE ENTSTANDEN IST - und warum sie vollstaendig ist: Der erste Wurf entstand aus
-     * den Schluesseln von vier Paketen (dimmer/dnd/alarm/masterpause) und war damit LUECKENHAFT. Der
-     * erste echte Export am Geraet enthielt genau drei Schluessel, und ALLE DREI gehoerten nicht
-     * hinein - darunter `active_alarms`, die persistierte Alarmliste. Seither ist die Liste aus einer
-     * vollstaendigen Inventur ALLER `*PreferencesKey("…")` im ganzen Baum abgeleitet.
+     * Laufzeitzustand, keine Einstellung; Liste aus Inventur aller `*PreferencesKey` - Hergang Skill
+     * cfalarm-persistenz-und-auth, reference/geraetewechsel-und-export.md.
      */
     private val RUNTIME_KEYS = setOf(
         // Die persistierte Alarmliste. Sie leitet sich aus DIESEM Kalender ab; importiert wuerde sie
@@ -141,24 +136,10 @@ object ConfigBackupFilter {
         // steht. Genau die Degradationsrichtung, die WartungStoerungPrefs ausdruecklich vermeidet.
         "wartung_token_stoerung_zaehler",
         "wartung_token_stoerung_gemeldet",
-        // Das Entprellungs-Gedaechtnis der Kalender-Warnung (CalendarUnavailablePrefs): welche
-        // Kalender beim VORIGEN Lauf gescheitert sind und ueber welche schon gemeldet wurde. Beides
-        // eine Beobachtung DIESES Geraets - der Schalter daneben
-        // (`calendar_unavailable_notification_enabled`) ist dagegen eine echte Einstellung und
-        // bleibt exportierbar. Die gefaehrliche Richtung ist wieder das importierte "wurde schon
-        // gemeldet": `entscheideBenachrichtigung()` rechnet `beharrlich - bereitsGemeldet`, das
-        // neue Geraet hielte also Kalender-IDs fuer erledigt, ueber die es nie etwas gesagt hat -
-        // und schwiege dann ueber genau den Zustand, der die Wecker langsam versiegen laesst. Dass
-        // die Kalenderauswahl selbst nicht exportiert wird, hilft nicht: bei gleichem Google-Konto
-        // sind es dieselben IDs. `calendar_unavailable_last_failed` waere fuer sich harmlos (es
-        // wuerde frueher gewarnt), gehoert aber zum selben Gedaechtnis - ein halb mitgenommenes
-        // waere die unuebersichtlichere Lage.
-        // BEIDE STEHEN ZUSAETZLICH IN DeviceLocalFlagsGuard.DEVICE_LOCAL_KEY_PATTERNS, und das ist
-        // KEINE zu bereinigende Dopplung: die Exportdatei ist nur der eine Weg auf ein fremdes
-        // Geraet. Der zweite ist Googles Auto-Backup/Geraetetransfer, der den ganzen
-        // `settings`-Store mitnimmt und diesen Filter per Konstruktion nie sieht. Hier steht die
-        // Entscheidung "gehoert nicht in die Datei", dort "gilt auf dem neuen Geraet nicht mehr".
-        // Wer einen der beiden Eintraege streicht, oeffnet genau einen der beiden Wege wieder.
+        // Entprellungs-Gedaechtnis der Kalender-Warnung: Beobachtung DIESES Geraets; ein importiertes
+        // "schon gemeldet" verschwiege Warnungen. BEIDE STEHEN ZUSAETZLICH IN DeviceLocalFlagsGuard -
+        // keine Dopplung, der zweite Weg ist das Auto-Backup; wer einen streicht, oeffnet einen Weg.
+        // Hergang reference/geraetewechsel-und-export.md.
         "calendar_unavailable_notified",
         "calendar_unavailable_last_failed",
         // Zeitstempel der Hintergrundarbeit
@@ -264,15 +245,10 @@ object ConfigBackupFilter {
      *
      * Der Filter oben entscheidet, WELCHE Schluessel durchkommen - er sagt nichts darueber, ob der
      * WERT verwertbar ist. Eine Datei ist aber eine Textdatei: sie kann von Hand bearbeitet, von
-     * einer aelteren Version geschrieben oder unterwegs beschaedigt worden sein. Zwei Leser hatten
-     * bis v1.23.0 keine eigene Klemme (der Dimmer hat ueberall eine, siehe die `coerceIn`-Aufrufe
-     * in `DimOverlayPrefs`):
+     * einer aelteren Version geschrieben oder unterwegs beschaedigt worden sein. Geprueft werden:
      *
-     *   - `snooze_minutes`: `0` oder negativ heisst, der Schlummer-Alarm liegt in der Vergangenheit
-     *     und feuert SOFORT wieder - ein Wecker, den man nicht mehr wegdrueckt.
-     *   - `dnd_oncall_cutoff_min`: `DndOnCallCutoffResolver` rechnet
-     *     `LocalTime.ofSecondOfDay(cutoffMinutes * 60L)`. Negativ oder >= 1440 wirft eine
-     *     `DateTimeException` - der DND-Tick stirbt dann bei jedem Lauf.
+     *   - `snooze_minutes`: <= 0 laesst den Schlummer-Alarm SOFORT wieder feuern.
+     *   - `dnd_oncall_cutoff_min`: ausserhalb 0..1439 wirft `LocalTime.ofSecondOfDay` - der DND-Tick stirbt.
      *   - `weckton_anstieg_sekunden` / `weckton_anstieg_start_prozent`: beide bestimmen, WIE LEISE
      *     und WIE LANGE der Wecker anlaeuft. Eine Datei mit `3600` Sekunden oder `1` Prozent
      *     ergaebe einen Wecker, den man nicht hoert - und zwar ohne jede Fehlermeldung, denn beide

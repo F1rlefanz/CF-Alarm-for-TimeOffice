@@ -83,13 +83,11 @@
 
 # Kotlin
 -keep class kotlin.Metadata { *; }
--keep class kotlin.reflect.** { *; }
 -dontwarn kotlin.reflect.**
 
 # Kotlin Coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
--keep class kotlinx.coroutines.android.** { *; }
 -keepclassmembernames class kotlinx.** {
     volatile <fields>;
 }

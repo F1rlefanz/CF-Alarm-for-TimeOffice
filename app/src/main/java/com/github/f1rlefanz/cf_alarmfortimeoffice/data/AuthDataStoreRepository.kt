@@ -170,22 +170,4 @@ class AuthDataStoreRepository @Inject constructor(
             }
         }
     }
-
-    override suspend fun migrateTokenExpiryIfNeeded(): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.migrateTokenExpiry") {
-            dataStore.edit { preferences ->
-                // Clear any old token_expiry data to prevent conflicts
-                val keysToRemove = preferences.asMap().keys.filter { 
-                    it.name == "token_expiry" && it != TOKEN_EXPIRY_KEY 
-                }
-                keysToRemove.forEach { key ->
-                    @Suppress("UNCHECKED_CAST")
-                    preferences.remove(key as Preferences.Key<Any>)
-                }
-                
-                if (keysToRemove.isNotEmpty()) {
-                    Logger.d(LogTags.DATASTORE, "Cleared ${keysToRemove.size} legacy token_expiry keys")
-                }
-            }
-        }
 }

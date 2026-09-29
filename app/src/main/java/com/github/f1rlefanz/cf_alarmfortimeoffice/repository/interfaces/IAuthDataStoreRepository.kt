@@ -32,9 +32,4 @@ interface IAuthDataStoreRepository {
      * Lädt aktuelle Authentifizierungsdaten (einmalig)
      */
     suspend fun getCurrentAuthData(): Result<AuthData>
-    
-    /**
-     * Migriert alte Token-Expiry-Daten falls nötig
-     */
-    suspend fun migrateTokenExpiryIfNeeded(): Result<Unit>
 }

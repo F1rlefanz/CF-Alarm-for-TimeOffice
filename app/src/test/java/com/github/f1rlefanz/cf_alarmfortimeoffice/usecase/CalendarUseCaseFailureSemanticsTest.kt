@@ -44,7 +44,6 @@ class CalendarUseCaseFailureSemanticsTest {
         override suspend fun clearAuthData(): Result<Unit> = Result.success(Unit)
         override suspend fun isAuthenticated(): Result<Boolean> = Result.success(true)
         override suspend fun getCurrentAuthData(): Result<AuthData> = Result.success(data)
-        override suspend fun migrateTokenExpiryIfNeeded(): Result<Unit> = Result.success(Unit)
     }
 
     /** Liefert pro Kalender-ID ein vorbereitetes Ergebnis. */

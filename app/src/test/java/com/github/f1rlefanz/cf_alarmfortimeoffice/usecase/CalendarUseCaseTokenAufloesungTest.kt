@@ -35,7 +35,6 @@ class CalendarUseCaseTokenAufloesungTest {
         override suspend fun clearAuthData(): Result<Unit> = Result.success(Unit)
         override suspend fun isAuthenticated(): Result<Boolean> = Result.success(false)
         override suspend fun getCurrentAuthData(): Result<AuthData> = Result.success(data)
-        override suspend fun migrateTokenExpiryIfNeeded(): Result<Unit> = Result.success(Unit)
     }
 
     private class RecordingCalendarRepository : ICalendarRepository {

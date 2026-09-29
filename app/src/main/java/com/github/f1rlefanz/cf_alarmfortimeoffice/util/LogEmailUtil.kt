@@ -19,7 +19,6 @@ object LogEmailUtil {
     
     /**
      * Sendet die Log-Datei(en) per E-Mail über die Standard-E-Mail-App
-     * Inkl. Backup-Datei falls vorhanden
      * 
      * @param context Android Context
      * @return Result mit Erfolg oder Fehler
@@ -30,7 +29,7 @@ object LogEmailUtil {
             val filesToSend = mutableListOf<Uri>()
             
             if (logDir != null) {
-                val logFiles = logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+                val logFiles = logDir.listFiles { _, name -> SimpleFileTree.isLogFile(name) }
                     ?.sortedByDescending { it.lastModified() } ?: emptyList()
                     
                 for (file in logFiles) {
@@ -55,7 +54,6 @@ object LogEmailUtil {
             
             Logger.i(LogTags.APP, "📧 Bereite E-Mail-Versand vor: ${filesToSend.size} Datei(en)")
             
-            // 3. E-Mail Intent erstellen
             val emailIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_EMAIL, arrayOf(TARGET_EMAIL))
@@ -66,7 +64,6 @@ object LogEmailUtil {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             
-            // 4. App-Chooser öffnen (inkl. WhatsApp, Telegram, etc.)
             val chooserIntent = Intent.createChooser(emailIntent, "Logs senden")
             chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             
@@ -103,7 +100,7 @@ object LogEmailUtil {
             appendLine("Android-Version: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
             appendLine("Gerät: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
             appendLine()
-            appendLine("Anzahl der Log-Dateien: $fileCount (letzte 8 Tage)")
+            appendLine("Anzahl der Log-Dateien: $fileCount (letzte ${SimpleFileTree.DEFAULT_RETENTION_DAYS} Tage)")
             appendLine("Zeitstempel: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.GERMAN).format(Date())}")
             appendLine()
             appendLine("Die Log-Dateien sind als Anhang beigefügt.")
@@ -126,7 +123,7 @@ object LogEmailUtil {
      */
     fun hasLogFile(context: Context): Boolean {
         val logDir = context.getExternalFilesDir(null) ?: return false
-        val logFiles = logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+        val logFiles = logDir.listFiles { _, name -> SimpleFileTree.isLogFile(name) }
         return logFiles != null && logFiles.any { it.length() > 0 }
     }
     
@@ -142,10 +139,10 @@ object LogEmailUtil {
      */
     fun deleteOldLogs(context: Context): Int {
         val logDir = context.getExternalFilesDir(null) ?: return 0
-        val todayFileName = "debug_logs_${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}.txt"
+        val todayFileName = SimpleFileTree.fileNameFor(Date())
 
         val deleted = logDir.listFiles { _, name ->
-            name.startsWith("debug_logs_") && name.endsWith(".txt") && name != todayFileName
+            SimpleFileTree.isLogFile(name) && name != todayFileName
         }?.count { it.delete() } ?: 0
 
         Logger.i(LogTags.FILE_SYSTEM, "🗑️ Manuelle Log-Bereinigung: $deleted Datei(en) gelöscht (heutige Datei behalten)")
@@ -157,7 +154,7 @@ object LogEmailUtil {
      */
     fun getLogFileInfo(context: Context): String? {
         val logDir = context.getExternalFilesDir(null) ?: return null
-        val logFiles = logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+        val logFiles = logDir.listFiles { _, name -> SimpleFileTree.isLogFile(name) }
             ?.sortedByDescending { it.lastModified() }
             
         if (logFiles.isNullOrEmpty()) return null
@@ -166,6 +163,6 @@ object LogEmailUtil {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.GERMAN)
         val lastModified = dateFormat.format(Date(logFiles.first().lastModified()))
         
-        return "${logFiles.size} Dateien (max 8 Tage), Gesamt: ${formatFileSize(totalSize)}, Aktualisiert: $lastModified"
+        return "${logFiles.size} Dateien (max ${SimpleFileTree.DEFAULT_RETENTION_DAYS} Tage), Gesamt: ${formatFileSize(totalSize)}, Aktualisiert: $lastModified"
     }
 }

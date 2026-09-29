@@ -5,10 +5,9 @@
 
 Seit dem 01.09.2026 laedt `.github/workflows/veroeffentlichen.yml` jede Version in den internen
 Play-Track - ausgeloest von einem erhoehten `versionCode` in `app/build.gradle.kts`. Dependabot
-und die naechtliche Aufraeumrunde fassen diese Datei aber NIE an (am 02.09.2026 ueber die ganze
-Historie geprueft: kein einziger `chore(deps)`- oder `chore(aufraeumen)`-Commit hat sie beruehrt).
-Ihre Aenderungen landen also in `main` und erreichen die Tester erst, wenn ein Mensch das naechste
-Mal eine Version baut - unter Umstaenden Wochen spaeter.
+fasst diese Datei aber NIE an (am 02.09.2026 ueber die ganze Historie geprueft: kein einziger
+`chore(deps)`-Commit hat sie beruehrt). Seine Aenderungen landen also in `main` und erreichen die
+Tester erst, wenn ein Mensch das naechste Mal eine Version baut - unter Umstaenden Wochen spaeter.
 
 Dieses Werkzeug schliesst die Luecke: es erkennt Wartungs-Commits, die noch niemand ausgeliefert
 hat, und schreibt dafuer einen Patch-Bump samt Changelog-Eintrag fort.
@@ -22,8 +21,11 @@ in Nutzersprache schreibt, und sie gehoert vor dem Ausliefern angesehen. Ein Bot
 mitveroeffentlicht, wuerde beides ueberspringen - und in diesem Projekt hat ein gruener Build schon
 einmal einen Absturz beim Start durchgelassen (05.08.2026, Property nach `init{}`).
 
-Wartung heisst hier ausschliesslich: Abhaengigkeits-Bumps von Dependabot und Aufraeum-PRs, die der
-Torwaechter bereits selbst gebaut, getestet und von drei Widerlegern hat pruefen lassen.
+Wartung heisst hier ausschliesslich: Abhaengigkeits-Bumps von Dependabot (`chore(deps)`,
+`chore(ci)`). `chore(aufraeumen)` gehoerte bis zum 29.09.2026 dazu - vertretbar nur, weil der
+Torwaechter jeden Aufraeum-PR vorher selbst gebaut, getestet und von drei Widerlegern hat pruefen
+lassen. Mit den Aufraeumrunden ist er eingestellt; ein Aufraeum-Commit geht seither wie jede
+andere Aenderung ueber einen Menschen.
 """
 from __future__ import annotations
 
@@ -39,15 +41,14 @@ CHANGELOG = WURZEL / "CHANGELOG.md"
 
 # Betreffzeilen, die als Wartung gelten. Bewusst eng: was hier nicht steht, blockiert die
 # automatische Auslieferung, statt stillschweigend mitzufahren.
-WARTUNG_PRAEFIXE = ("chore(deps)", "chore(aufraeumen)", "chore(ci)")
+WARTUNG_PRAEFIXE = ("chore(deps)", "chore(ci)")
 
 # Merge-Commits von Wartungszweigen. `unausgelieferte_commits()` filtert Merges inzwischen ohnehin
 # heraus - dieses Muster ist der zweite Riegel, nicht der erste: es greift, wenn jemand die Liste
-# ohne `--no-merges` auswertet (etwa beim Nachrechnen von Hand). Der Torwaechter merged mit
-# `--merge`, Dependabot squasht; in der Historie kommen beide Formen vor (725fb90 gegen 580f549).
+# ohne `--no-merges` auswertet (etwa beim Nachrechnen von Hand).
 MERGE_MUSTER = re.compile(
     r"^Merge (?:pull request #\d+ from |branch .)"
-    r"(?:[\w.-]+/)?(?:chore/aufraeumen-|dependabot/)"
+    r"(?:[\w.-]+/)?dependabot/"
 )
 
 # Pfade, die eine gebaute APK NICHT veraendern koennen. Ein Commit, der ausschliesslich hier

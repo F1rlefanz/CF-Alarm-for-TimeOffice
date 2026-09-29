@@ -26,20 +26,19 @@ class WartungsErkennung(unittest.TestCase):
         self.assertTrue(ist_wartungscommit("chore(deps): Bump com.google.android.gms:play-services-auth (#47)"))
         self.assertTrue(ist_wartungscommit("chore(deps): Bump the libraries group with 2 updates (#43)"))
 
-    def test_aufraeumrunde(self):
-        # 7f4760d
-        self.assertTrue(ist_wartungscommit(
+    def test_aufraeum_commit_ist_seit_dem_ende_des_torwaechters_keine_wartung(self):
+        # Bis 29.09.2026 Wartung, solange der Torwaechter jeden Aufraeum-PR selbst pruefte.
+        self.assertFalse(ist_wartungscommit(
             "chore(aufraeumen): bewusstes commit() in der Weckerkette gegen Lint verankern (#53)"))
 
     def test_ci_bumps(self):
         # 67766a5 - Dependabot fuer Actions, aendert nur .github/workflows.
         self.assertTrue(ist_wartungscommit("chore(ci): Bump actions/setup-java from 5 to 6 (#46)"))
 
-    def test_merge_commit_des_torwaechters(self):
-        # 725fb90 - der Torwaechter merged mit `--merge`, es entsteht ein Merge-Commit.
-        self.assertTrue(ist_wartungscommit(
+    def test_merge_eines_aufraeumzweigs_ist_keine_wartung(self):
+        self.assertFalse(ist_wartungscommit(
             "Merge pull request #35 from F1rlefanz/chore/aufraeumen-ueberholte-suppress-notizen"))
-        self.assertTrue(ist_wartungscommit(
+        self.assertFalse(ist_wartungscommit(
             "Merge branch 'chore/aufraeumen-tote-suppress'"))
 
     def test_dependabot_merge_commit(self):
@@ -203,15 +202,16 @@ class GitSicht(unittest.TestCase):
 
     def test_wartung_nach_einem_release_wird_erkannt(self):
         self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)
-        self.git("checkout", "-q", "-b", "chore/aufraeumen-tote-importe")
-        self.commit("chore(aufraeumen): tote Importe entfernt")
+        self.git("checkout", "-q", "-b", "dependabot/gradle/okhttp-5.4.0")
+        self.commit("chore(deps): Bump com.squareup.okhttp3:okhttp from 5.3.0 to 5.4.0")
         self.git("checkout", "-q", "main")
-        self.git("merge", "--no-ff", "-q", "chore/aufraeumen-tote-importe",
-                 "-m", "Merge branch 'chore/aufraeumen-tote-importe'")
+        self.git("merge", "--no-ff", "-q", "dependabot/gradle/okhttp-5.4.0",
+                 "-m", "Merge branch 'dependabot/gradle/okhttp-5.4.0'")
 
         ausliefern, commits, begruendung = sammel_release_modul.ermitteln()
         self.assertTrue(ausliefern, begruendung)
-        self.assertEqual([b for _, b in commits], ["chore(aufraeumen): tote Importe entfernt"])
+        self.assertEqual([b for _, b in commits],
+                         ["chore(deps): Bump com.squareup.okhttp3:okhttp from 5.3.0 to 5.4.0"])
 
     def test_ein_inhaltlicher_commit_haelt_alles_an(self):
         self.commit("chore(release): v1.0.2 (versionCode 2)", code=2)

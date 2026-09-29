@@ -76,8 +76,10 @@ fun ShiftEditDialog(
         name.trim().isNotBlank() &&
         !name.trim().equals(shift.name, ignoreCase = true)
 
-    // Time formatter (siehe Hinweis oben: ANZEIGE-Format, nicht das Persistenzformat)
-    val timeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
+    val timeFormatter = remember { DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY) }
+    val parsedAlarmTime = remember(alarmTimeString) {
+        runCatching { LocalTime.parse(alarmTimeString, timeFormatter) }.getOrNull()
+    }
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -249,12 +251,7 @@ fun ShiftEditDialog(
                                 label = { Text("Zeit (HH:mm)") },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
-                                isError = try {
-                                    LocalTime.parse(alarmTimeString, timeFormatter)
-                                    false
-                                } catch (_: Exception) {
-                                    true
-                                }
+                                isError = parsedAlarmTime == null
                             )
                             
                             Text(
@@ -376,11 +373,6 @@ fun ShiftEditDialog(
                                 .map { it.trim() }
                                 .filter { it.isNotEmpty() }
                                 .distinct()
-                            val parsedAlarmTime = try {
-                                LocalTime.parse(alarmTimeString, timeFormatter)
-                            } catch (_: Exception) {
-                                null
-                            }
                             
                             if (name.isNotBlank() && validKeywords.isNotEmpty() && parsedAlarmTime != null) {
                                 onSave(
@@ -398,14 +390,9 @@ fun ShiftEditDialog(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = name.isNotBlank() && 
-                                 keywords.any { it.isNotBlank() } && 
-                                 try {
-                                     LocalTime.parse(alarmTimeString, timeFormatter)
-                                     true
-                                 } catch (_: Exception) {
-                                     false
-                                 }
+                        enabled = name.isNotBlank() &&
+                                 keywords.any { it.isNotBlank() } &&
+                                 parsedAlarmTime != null
                     ) {
                         Text(if (isNewShift) "Erstellen" else "Speichern")
                     }

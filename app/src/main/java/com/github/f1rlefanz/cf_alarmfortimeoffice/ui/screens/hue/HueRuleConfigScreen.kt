@@ -142,9 +142,7 @@ fun HueRuleConfigScreen(
         id = id,
         lightNames = uiState.lightTargets.lights.associate { it.id to it.name },
         groupNames = uiState.lightTargets.groups.associate { it.id to it.name },
-        // Rueckfall auf die bereits gespeicherten Namen: Beim Bearbeiten einer Regel, deren Ids
-        // auf DIESER Bridge unbekannt sind, liefert die Bridge-Liste keinen Namen - ein blosses
-        // `bridgeName` wuerde beim Speichern genau den Anker loeschen, der die Regel rettet.
+        // Rueckfall: siehe toRule(@param storedNames)
         storedNames = uiState.editingRule?.lightActions
             ?.mapNotNull { action -> action.targetName?.let { action.targetId to it } }
             ?.toMap()
@@ -249,10 +247,6 @@ fun HueRuleConfigScreen(
             // Szene bringt Helligkeit und Farbe selbst mit, eine Rampe erzeugt sie ueber die
             // Zeit, manuell stellt sie der Nutzer ein. Deshalb steht immer genau EIN Zielblock
             // da, statt Karten zu entkernen oder Felder auszugrauen.
-            // GENAU EINE Karte je Modus. Vorher trug die Szene eine Karte, waehrend Manuell
-            // und Sonnenaufgang sich auf zwei verteilten - die Zielauswahl schob sich zwischen
-            // Umschalter und Einstellung. Derselbe Gedanke sah damit in drei Modi verschieden
-            // aus. Siehe ModusKarten.kt.
             when (form.modus) {
                 HueRuleModus.SZENE -> item {
                     SceneSelectionCard(

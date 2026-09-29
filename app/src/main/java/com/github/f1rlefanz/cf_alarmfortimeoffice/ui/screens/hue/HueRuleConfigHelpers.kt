@@ -20,10 +20,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
 /**
  * Gemeinsame Hilfen des Hue-Regel-Editors: Farbdarstellung, Farb-Presets und die Beschriftung
  * des Schichtmusters.
- *
- * Ausgelagert aus `HueRuleConfigScreen`, weil die einzelnen Karten (Unterpaket `cards/`) sie
- * teilen. Reine Verschiebung - keine Verhaltensaenderung; nur die Sichtbarkeit musste von
- * `private` auf `internal` wachsen (Kotlin kennt kein package-private).
  */
 
 /**
@@ -33,9 +29,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueColorConverter
  * nicht der Knopf) ihre eingebaute Mindestgroesse NICHT mehr mitbringen. Ohne diese Klemme
  * schrumpfen die Zeilen auf ~32dp - breiter als vorher, aber flacher als Materials Minimum.
  *
- * Liegt hier statt in einer der Karten, weil sie an DREI Stellen gebraucht wird
- * (Schichtmuster-Auswahl, Gruppen-Auswahl, Lichter-Auswahl). Wer sie entfernt, macht die
- * Bedienzeilen wieder zu flach.
+ * Liegt hier, weil sie an allen Auswahlzeilen mit `onClick = null` gebraucht wird.
  */
 internal val MIN_TOUCH_TARGET = 48.dp
 

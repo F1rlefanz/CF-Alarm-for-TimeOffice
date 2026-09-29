@@ -131,13 +131,13 @@ class DimRuleUseCase @Inject constructor(
             error
         )
     }
-
-    /**
-     * Trägt diese Regel den Schichtnamen [shiftName]? Sondermuster (FREI/UNIVERSAL) zählen
-     * bewusst NIE mit - sie meinen keinen Namen (siehe [renameShiftPattern]).
-     */
-    private fun DimRule.betrifftSchicht(shiftName: String): Boolean =
-        shiftPattern != DimRule.SHIFT_UNIVERSAL &&
-            shiftPattern != DimRule.SHIFT_FREE &&
-            shiftPattern.equals(shiftName, ignoreCase = true)
 }
+
+/**
+ * Trägt diese Regel den Schichtnamen [shiftName]? Sondermuster (FREI/UNIVERSAL) zählen
+ * bewusst NIE mit - sie meinen keinen Namen (siehe [DimRuleUseCase.renameShiftPattern]).
+ */
+internal fun DimRule.betrifftSchicht(shiftName: String): Boolean =
+    shiftPattern != DimRule.SHIFT_UNIVERSAL &&
+        shiftPattern != DimRule.SHIFT_FREE &&
+        shiftPattern.equals(shiftName, ignoreCase = true)

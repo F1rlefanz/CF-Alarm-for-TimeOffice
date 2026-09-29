@@ -328,12 +328,6 @@ class DimmerModellMigration @Inject constructor(
 
             return Plan(dimEnabled = dimEnabled, regeln = geplant)
         }
-
-        /** Wie `DimRuleUseCase.betrifftSchicht`: Sondermuster sind keine Schichtnamen. */
-        private fun DimRule.betrifftSchicht(shiftName: String): Boolean =
-            shiftPattern != DimRule.SHIFT_UNIVERSAL &&
-                shiftPattern != DimRule.SHIFT_FREE &&
-                shiftPattern.equals(shiftName, ignoreCase = true)
     }
 
     /** Die gelesene ALTE Konfiguration - genau die Werte, aus denen das Altmodell seine Fenster baute. */

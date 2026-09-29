@@ -204,7 +204,6 @@ class ShiftViewModel @Inject constructor(
                 .debounce(400) // ENHANCED: Längeres Debouncing für teure Shift-Recognition (400ms)
                 .collect { events: List<CalendarEvent> ->
                     if (events.isNotEmpty()) {
-                        Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: Calendar events changed via StateHolder, triggering shift recognition for ${events.size} events")
                         processCalendarEvents(events)
                     } else {
                         // Clear recognized shifts wenn keine Events vorhanden
@@ -212,7 +211,6 @@ class ShiftViewModel @Inject constructor(
                             recognizedShifts = emptyList(),
                             upcomingShift = null
                         )
-                        Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: No calendar events in StateHolder, clearing recognized shifts")
                     }
                 }
         }
@@ -220,8 +218,6 @@ class ShiftViewModel @Inject constructor(
 
     private fun loadShiftConfig() {
         viewModelScope.launch {
-            Logger.d(LogTags.SHIFT_CONFIG, "🔄 SINGLETON-STARTUP: Loading ShiftConfig with singleton pattern...")
-            
             shiftUseCase.getCurrentShiftConfig()
                 .onSuccess { config ->
                     _uiState.value = _uiState.value.copy(currentShiftConfig = config)
@@ -338,9 +334,6 @@ class ShiftViewModel @Inject constructor(
                     try {
                         val currentEvents = calendarStateHolder.events.value
                         if (currentEvents.isNotEmpty()) {
-                            val eventCount = currentEvents.size
-                            Logger.d(LogTags.SHIFT_RECOGNITION, "Shift config updated, re-processing $eventCount calendar events with new definitions")
-
                             // Small delay to ensure config is fully persisted
                             kotlinx.coroutines.delay(200)
 
@@ -350,7 +343,6 @@ class ShiftViewModel @Inject constructor(
                         // 🚨 CRITICAL FIX: Trigger automatic alarm creation after shift config update!
                         // Unconditional (auch ohne Events): ein Ausschalten von "Automatische Alarme"
                         // muss die Alarme sofort raeumen, nicht nur wenn gerade Events geladen sind.
-                        Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation after shift config change")
                         triggerAlarmCreationFromConfigUpdate(config, nacharmieren)
                     } finally {
                         // Im Normalfall laeuft das Nacharmieren dadurch ZWEIMAL: einmal im finally

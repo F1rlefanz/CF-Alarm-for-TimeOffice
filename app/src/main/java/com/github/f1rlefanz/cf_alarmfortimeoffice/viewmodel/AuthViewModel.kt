@@ -185,10 +185,6 @@ class AuthViewModel @Inject constructor(
     }
 
     init {
-        Logger.d(
-            LogTags.AUTH,
-            "🚀 REACTIVE-CALENDAR: AuthViewModel initialized with CalendarSelectionRepository"
-        )
         observeAuthState()
         checkInitialAuthState()
         observeCalendarSelection() // REACTIVE CALENDAR: Observer für Calendar-Selection-Änderungen
@@ -274,11 +270,6 @@ class AuthViewModel @Inject constructor(
                             old.accessToken == new.accessToken
                 }
                 .collect { authData ->
-                    Logger.d(
-                        LogTags.AUTH,
-                        "🔄 UI-THREAD-OPT: Auth data updated - isLoggedIn=${authData.isLoggedIn}"
-                    )
-
                     // UI THREAD OPTIMIZATION: Atomic update without context switching
                     updateAuthState { currentState ->
                         currentState.copy(
@@ -323,7 +314,6 @@ class AuthViewModel @Inject constructor(
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Normal lifecycle cancellation - rethrow for proper structured concurrency
-                Logger.d(LogTags.AUTH, "Auth state check cancelled (app lifecycle)")
                 throw e
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "Error checking initial auth state", e)
@@ -341,12 +331,6 @@ class AuthViewModel @Inject constructor(
                 val selectedIds = calendarSelectionRepository.getCurrentSelectedCalendarIds()
                     .getOrElse { emptySet() }
                 val hasSelectedCalendars = selectedIds.isNotEmpty()
-                val calendarCount = selectedIds.size
-
-                Logger.d(
-                    LogTags.AUTH,
-                    "🔍 INITIAL-CALENDAR: Found $calendarCount selected calendars on startup, hasSelected=$hasSelectedCalendars"
-                )
 
                 updateAuthState { currentState ->
                     currentState.copy(
@@ -373,7 +357,6 @@ class AuthViewModel @Inject constructor(
     private fun checkInitialTokenValidity() {
         viewModelScope.launch {
             try {
-                Logger.d(LogTags.AUTH, "🔍 STUFE-2: Checking initial Calendar API token validity")
 
                 // Check if we have a valid Calendar token
                 val tokenValidResult = authUseCase.hasCalendarAuthorization()
@@ -424,12 +407,6 @@ class AuthViewModel @Inject constructor(
                 }
                 .collect { selectedIds ->
                     val hasSelectedCalendars = selectedIds.isNotEmpty()
-                    val calendarCount = selectedIds.size
-
-                    Logger.d(
-                        LogTags.AUTH,
-                        "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars selected, hasSelected=$hasSelectedCalendars"
-                    )
 
                     // UI THREAD OPTIMIZATION: Atomic update without context switching
                     updateAuthState { currentState ->
@@ -889,11 +866,6 @@ class AuthViewModel @Inject constructor(
 
                 // CRITICAL FIX: Use Activity-based authorization if activity is provided
                 if (activity != null && authUseCase is com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AuthUseCase) {
-                    Logger.business(
-                        LogTags.AUTH,
-                        "✅ ACTIVITY-CONTEXT-FIX: Using Activity-based authorization flow"
-                    )
-
                     authUseCase.requestCalendarAuthorizationWithActivity(
                         userEmail = userEmail,
                         activity = activity,
@@ -930,22 +902,14 @@ class AuthViewModel @Inject constructor(
                                 )
                             }
                         }
-                    ).fold(
-                        onSuccess = {
-                            Logger.business(
-                                LogTags.AUTH,
-                                "✅ ACTIVITY-CONTEXT-FIX: Authorization request initiated successfully"
-                            )
-                        },
-                        onFailure = { error ->
-                            meldeAutorisierungFehlgeschlagen(error)
-                            Logger.e(
-                                LogTags.AUTH,
-                                "❌ ACTIVITY-CONTEXT-FIX: Calendar authorization failed",
-                                error
-                            )
-                        }
-                    )
+                    ).onFailure { error ->
+                        meldeAutorisierungFehlgeschlagen(error)
+                        Logger.e(
+                            LogTags.AUTH,
+                            "❌ ACTIVITY-CONTEXT-FIX: Calendar authorization failed",
+                            error
+                        )
+                    }
                 } else {
                     // Fallback to old method without Activity context
                     Logger.w(

@@ -129,7 +129,6 @@
 # Hilt
 -keep class dagger.hilt.** { *; }
 -keep class javax.inject.** { *; }
--keep class * extends dagger.hilt.android.lifecycle.HiltViewModel
 -keep @dagger.hilt.android.lifecycle.HiltViewModel class * { *; }
 -keep @dagger.Module class * { *; }
 -keep @dagger.hilt.InstallIn class * { *; }
@@ -246,8 +245,6 @@
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.data.** { *; }
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.** { *; }
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.** { *; }
--keep class com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.data.** { *; }
--keep class com.github.f1rlefanz.cf_alarmfortimeoffice.shift.data.** { *; }
 
 # Keep UI states
 -keep class **.*State { *; }
@@ -280,8 +277,6 @@
 # SLF4J Logging (Fix for Google Auth Libraries)
 -dontwarn org.slf4j.**
 -dontwarn ch.qos.logback.**
--keep class org.slf4j.** { *; }
--keep class ch.qos.logback.** { *; }
 
 # Google Auth OAuth2 Library specific
 -dontwarn com.google.auth.oauth2.Slf4jUtils**
@@ -309,7 +304,6 @@
 
 # Keep Commons Logging interfaces but allow implementation removal
 -keep interface org.apache.commons.logging.Log { *; }
--keep interface org.apache.commons.logging.LogFactory { *; }
 
 # Safely ignore missing Log4J classes (we use Android logging instead)
 -dontnote org.apache.commons.logging.impl.Log4JLogger
@@ -343,7 +337,6 @@
 }
 
 # Additional compatibility for Android Q+ memory management
--keep class android.os.** { *; }
 -dontwarn android.os.**$$*
 
 # ==============================
@@ -376,14 +369,7 @@
 # Keep AEAD primitive
 -keep class * extends com.google.crypto.tink.Aead { *; }
 
-# Keep Tink config and registration
--keep class * extends com.google.crypto.tink.config.TinkFips { *; }
-
-# Keep Android integration
--keep class * extends com.google.crypto.tink.integration.android.** { *; }
-
 # Keep Protobuf classes used by Tink
--keep class com.google.protobuf.** { *; }
 -dontwarn com.google.protobuf.**
 
 # Suppress warnings from Tink
@@ -397,9 +383,6 @@
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionHelper { *; }
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory { *; }
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionException { *; }
-
-# Keep DataStore serializers
--keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.EncryptedDataStoreFactory$* { *; }
 
 # Google API Client
 -keep class com.google.api.services.** { *; }

@@ -144,8 +144,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-                "r8-rules.txt"  // Additional R8-specific rules
+                "proguard-rules.pro"
             )
 
             // SECURITY: Disable debugging in release builds

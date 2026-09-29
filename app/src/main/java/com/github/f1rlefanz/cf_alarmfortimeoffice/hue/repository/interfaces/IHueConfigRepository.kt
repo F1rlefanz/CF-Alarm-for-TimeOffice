@@ -70,6 +70,5 @@ interface IHueConfigRepository {
 data class HueConfiguration(
     val bridgeIp: String = "",
     val username: String = "",
-    val isConfigured: Boolean = false,
-    val scheduleRules: List<HueSchedule> = emptyList()
+    val isConfigured: Boolean = false
 )

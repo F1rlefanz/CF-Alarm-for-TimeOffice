@@ -36,33 +36,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 /**
- * MODERNIZED Application class with Hilt Dependency Injection
- * 
- * ARCHITECTURE UPGRADE:
- * ✅ Hilt DI for compile-time dependency resolution
- * ✅ Automatic dependency injection (no manual AppContainer)
- * ✅ Better testability and maintainability
- * 
- * FEATURES:
- * 🔄 HueBridgeConnectionManager initialization at app startup
- * 💓 Automatic connection health monitoring and recovery
- * 🚀 Guaranteed Hue Bridge availability for alarm operations
- * 📱 Background service initialization for alarm maintenance
- * 🔐 OAuth2 token system with encryption
- * 
- * Core Features:
- * - Lokaler Crash-Handler (schreibt letzten Absturz in last_crash.txt)
- * - Hilt dependency injection
- * - OAuth2 token system initialization
- * - Clean resource management
+ * Hilt-Wurzel der App: lokaler Crash-Handler (last_crash.txt), Datei-Log, Start von
+ * Hue-Verbindungsverwaltung und Hintergrunddiensten sowie der geraetelokale Startblock.
  */
 @HiltAndroidApp
 class CFAlarmApplication : Application() {
-    
-    // Application scope for long-running operations
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    
-    // Hilt-injected dependencies
+
     @Inject
     lateinit var backgroundServiceManager: BackgroundServiceManager
     
@@ -81,19 +62,9 @@ class CFAlarmApplication : Application() {
     /**
      * Fuer das Aufheben einer Master-Pause beim Geraetewechsel - siehe initializeApp().
      *
-     * BEWUSST `dagger.Lazy`, NICHT der Typ direkt. Der erste Wurf injizierte
-     * `MasterPauseUseCase` unmittelbar - und der zieht ueber seinen Konstruktor
-     * `HueSmartScheduler` in den Graphen, der wiederum `WorkManager.getInstance()` aufrief.
-     * Ergebnis (am Emulator reproduziert, 11.08.2026): der Prozess, den das System VOR der ersten
-     * Entsperrung fuer den directBootAware BootReceiver startet, starb mit "Unable to create
-     * application / WorkManager is not initialized properly" - und damit lief der
-     * Direct-Boot-Restore der Alarme nie. Dieselbe Falle, die CLAUDE.md fuer
-     * `TinkEncryptionHelper` beschreibt: was am Application-Graphen haengt, wird in JEDEM
-     * Prozessstart gebaut, auch im gesperrten.
-     *
-     * Mit `Lazy` entsteht die Instanz erst, wenn ein Geraetewechsel wirklich erkannt wurde - und
-     * das setzt einen erfolgreichen Read aus dem CE-Storage voraus, also ein entsperrtes Geraet.
-     * Wer diesen Wrapper entfernt, baut den Absturz zurueck.
+     * BEWUSST `dagger.Lazy`: sonst zieht die Konstruktion WorkManager in den Graphen und toetet den
+     * Direct-Boot-Prozess. Wer den Wrapper entfernt, baut den Absturz zurueck.
+     * Hergang: Skill cfalarm-wecker-und-boot, reference/wecker-boot-und-wartung.md.
      */
     @Inject
     lateinit var masterPauseUseCase: dagger.Lazy<MasterPauseUseCase>
@@ -134,14 +105,12 @@ class CFAlarmApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        
-        // Initialize ErrorHandler first
+
         ErrorHandler.initialize(this)
 
         // Lokaler Crash-Handler: schreibt Abstürze in last_crash.txt (Alpha-Test-Diagnose)
         installCrashHandler()
-        
-        // ✅ WICHTIG: File-Logging IMMER aktivieren (DEBUG + RELEASE)
+
         // Der Logcat-Baum steht ZUERST und unabhaengig vom Datei-Baum: er braucht kein
         // Verzeichnis und darf deshalb nicht mit dem Datei-Log zusammen ausfallen.
         if (BuildConfig.DEBUG) {
@@ -152,7 +121,6 @@ class CFAlarmApplication : Application() {
         }
         plantFileLogTree("Kaltstart")
 
-        // Initialize app components
         initializeApp()
         
         Logger.i(LogTags.APP, "✅ CFAlarmApplication initialized with Hilt DI - Modern and reliable!")
@@ -232,7 +200,6 @@ class CFAlarmApplication : Application() {
                     Logger.e(LogTags.APP, "❌ STARTUP: Entsperr-Ueberwachung konnte nicht aufgebaut werden", e)
                 }
 
-                // CRITICAL: Initialize Hue Bridge Connection Manager first
                 Logger.i(LogTags.HUE_BRIDGE, "🔄 STARTUP: Initializing robust Hue Bridge connection management")
                 try {
                     val connectionManager = HueBridgeConnectionManager.getInstance(this@CFAlarmApplication)
@@ -242,7 +209,6 @@ class CFAlarmApplication : Application() {
                     Logger.e(LogTags.HUE_BRIDGE, "❌ STARTUP: Failed to initialize Hue Bridge connection manager", e)
                 }
 
-                // ✅ CRITICAL FIX: Initialize WorkManager for automatic alarm synchronization
                 Logger.business(LogTags.TOKEN, "🔄 STARTUP: Initializing background services")
                 try {
                     backgroundServiceManager.initializeBackgroundServices()
@@ -250,16 +216,13 @@ class CFAlarmApplication : Application() {
                 } catch (e: Exception) {
                     Logger.e(LogTags.TOKEN, "❌ STARTUP: Failed to initialize WorkManager", e)
                 }
-                
-                // Initialize ShiftConfig early to prevent race conditions
+
                 Logger.d(LogTags.SHIFT_CONFIG, "🔄 STARTUP: Initializing ShiftConfig early to prevent timing issues")
                 launch {
                     try {
                         if (!userUnlocked) {
-                            // Vor der ersten Entsperrung liegt shift_prefs im nicht lesbaren
-                            // CE-Storage. Ein Read dort liefert still "leer" und vergiftet den
-                            // DataStore-Cache fuer die restliche Prozesslaufzeit - dieses
-                            // Vorwaermen hat also nichts zu gewinnen und alles zu verlieren.
+                            // Vor der ersten Entsperrung liefert ein CE-Read still "leer" und
+                            // vergiftet den Cache - siehe runDeviceLocalStartupChecks().
                             Logger.i(
                                 LogTags.SHIFT_CONFIG,
                                 "🔒 STARTUP: Schicht-Konfiguration wird im gesperrten Zustand nicht gelesen"
@@ -271,10 +234,7 @@ class CFAlarmApplication : Application() {
                         if (currentConfig != null) {
                             Logger.business(LogTags.SHIFT_CONFIG, "✅ STARTUP: ShiftConfig loaded successfully - autoAlarm=${currentConfig.autoAlarmEnabled}")
                         } else {
-                            // KEIN Default-Fallback, der SCHREIBT. Dieselbe Fehlerklasse hatte drei
-                            // Schreibstellen (hier, ShiftViewModel.loadShiftConfig() und
-                            // CalendarViewModel.createAlarmsFromLoadedEvents()); alle drei sind
-                            // geschlossen.
+                            // KEIN Default-Fallback, der SCHREIBT.
                             //
                             // `null` bedeutet hier NICHT mehr "noch nie konfiguriert": seit
                             // ShiftConfigRepository die Faelle trennt, liefert der
@@ -293,8 +253,7 @@ class CFAlarmApplication : Application() {
                         Logger.e(LogTags.SHIFT_CONFIG, "❌ STARTUP: Exception during ShiftConfig initialization", e)
                     }
                 }
-                
-                // ✅ Token encryption active (no migration needed - never released unencrypted version)
+
                 Logger.d(LogTags.TOKEN, "🔐 STARTUP: Tink encryption active for OAuth2 tokens")
                 
                 Logger.i(LogTags.APP, "✅ App initialization completed successfully (with Hilt DI + WorkManager + Encryption)")
@@ -466,25 +425,13 @@ class CFAlarmApplication : Application() {
      * `UserManager`, nicht ueber den Anlass selbst.
      *
      * Meldet der `UserManager` weiterhin "gesperrt", bleiben beide Netze scharf und es passiert
-     * NICHTS: ein Lauf im gesperrten Zustand waere teurer als ein verpasster: er liest den
-     * `settings`-Store still leer und vergiftet damit den DataStore-Cache fuer die restliche
-     * Prozesslaufzeit - siehe [runDeviceLocalStartupChecks].
+     * NICHTS - siehe [runDeviceLocalStartupChecks].
      */
     private fun onUnlockOpportunity(anlass: String) {
         handleUnlockOpportunity(
             isUserUnlocked = { userUnlocked },
-            // NICHT synchron: `plantFileLogTree` macht echtes Platten-I/O -
-            // `getExternalFilesDir(null)` prueft den Mount-Zustand und legt Verzeichnisse an, und
-            // der `SimpleFileTree`-Konstruktor raeumt in seinem `init` alte Logdateien weg
-            // (`listFiles()` + `delete()`). Beide Anlaesse dieses Aufrufs liegen auf dem
-            // Hauptthread: der `ACTION_USER_UNLOCKED`-Empfaenger (10-Sekunden-Budget von
-            // `onReceive`) und die Activity-Lifecycle-Rueckrufe - und sie treffen genau den
-            // Moment mit der hoechsten I/O-Last, die erste Entsperrung nach einem Neustart.
-            // Derselbe Aufruf aus `runDeviceLocalStartupChecks()` liegt laengst im
-            // `applicationScope` (Dispatchers.IO); das hier war die einzige Ausnahme.
-            // Die Reihenfolge bleibt: angestossen wird VOR dem Gate-Check, nur eben nebenlaeufig.
-            // `FileLogTreeInstaller` sichert das Pflanzen per CAS ab, mehrere Anlaesse
-            // gleichzeitig sind also unbedenklich.
+            // NICHT synchron: plantFileLogTree macht Platten-I/O, beide Anlaesse liegen auf dem
+            // Hauptthread (Pruefrunde6LoggingDirectBootTest). Mehrfach gleichzeitig ist per CAS sicher.
             ensureFileLog = { applicationScope.launch { plantFileLogTree("entsperrt: $anlass") } },
             startupAlreadyRan = { startupGate.hasRun },
             disarmWatchers = { disarmUnlockWatchers() },
@@ -553,8 +500,7 @@ class CFAlarmApplication : Application() {
         }
     }
 
-    // onTerminate() removed - it only runs in emulator and causes pthread_mutex crashes
-    // Android handles all cleanup automatically when the app terminates
+    // Kein onTerminate(): laeuft nur im Emulator.
 }
 
 /**
@@ -564,10 +510,8 @@ class CFAlarmApplication : Application() {
  * DER GRUND FUER DIE NACHPRUEFUNG (und fuer das `finally`):
  * Die Abfrage `isUserUnlocked()` und das Aufsetzen der Netze liegen zeitlich auseinander - der
  * ganze Block laeuft asynchron im Application-Scope. Entsperrt der Nutzer genau dazwischen, ist
- * `ACTION_USER_UNLOCKED` bereits verschickt; der Broadcast ist NICHT sticky und wird nicht
- * nachgeliefert. Ohne die zweite Abfrage liefe [runChecks] in diesem Prozess dann NIE, waehrend
- * der Prozess als normaler App-Prozess weiterlebt: kein Geraetewechsel-Check (eine mitgesicherte
- * Master-Pause bliebe aktiv) und vor allem kein Abgleich des Direct-Boot-Spiegels.
+ * `ACTION_USER_UNLOCKED` bereits verschickt und wird nicht nachgeliefert - ohne die zweite Abfrage
+ * liefe [runChecks] in diesem Prozess NIE (Folgen: siehe `armUnlockWatchers` in [CFAlarmApplication]).
  *
  * Dasselbe gilt, wenn [armUnlockWatchers] scheitert - deshalb steht die Nachpruefung im
  * `finally`: Nichtstun waere die schlechteste Antwort. Gegen einen doppelten Lauf schuetzt
@@ -596,14 +540,11 @@ internal suspend fun ensureDeviceLocalStartupRuns(
  * nachgeholt werden, die NICHT dieselbe Bedingung haben.
  *
  * DER UNTERSCHIED, der die Reihenfolge traegt: der geraetelokale Startblock laeuft je Prozess
- * hoechstens einmal und ist danach fuer immer erledigt (Gate). Das Datei-Log haengt dagegen an
- * `getExternalFilesDir()` und kann auch dann noch fehlen, wenn der Startblock ueber einen anderen
- * Anlass laengst gelaufen ist. Stuende das Nachruesten des Logs hinter dem Gate-Check, faende ein
- * Direct-Boot-Prozess nie mehr zu einer Log-Senke - genau der Zustand, den
- * [CFAlarmApplication.plantFileLogTree] beschreibt.
+ * hoechstens einmal (Gate), das Datei-Log kann dagegen auch danach noch fehlen. Deshalb steht das
+ * Nachruesten des Logs VOR dem Gate-Check - siehe [CFAlarmApplication.plantFileLogTree].
  *
- * Im gesperrten Zustand passiert weiterhin NICHTS: External Storage ist dann ohnehin nicht da,
- * und ein Lauf des Startblocks waere teurer als ein verpasster (vergifteter DataStore-Cache).
+ * Im gesperrten Zustand passiert weiterhin NICHTS (vergifteter DataStore-Cache, siehe
+ * `runDeviceLocalStartupChecks` in [CFAlarmApplication]).
  */
 internal fun handleUnlockOpportunity(
     isUserUnlocked: () -> Boolean,
@@ -624,14 +565,8 @@ internal fun handleUnlockOpportunity(
 
 /**
  * Pflanzt den Datei-Log-Baum genau EINMAL je Prozess - und wertet einen Fehlversuch ausdruecklich
- * NICHT als erledigt.
- *
- * WARUM DAS DER KERN DES FIXES IST: die alte Fassung pflanzte einmalig in `onCreate()`. Lieferte
- * `getExternalFilesDir(null)` dort `null` - der Normalfall im Direct-Boot-Prozess, weil External
- * Storage vor der ersten Entsperrung nicht gemountet ist -, gab es nie einen zweiten Versuch. Der
- * Release-Prozess lief dann fuer den Rest seines Lebens ohne jede Log-Senke, obwohl er die
- * Entsperrung ueberlebt und danach die App bedient. Deshalb wird der Merker erst gesetzt, wenn ein
- * Verzeichnis WIRKLICH vorlag, und bei einem Wurf des Pflanzens wieder zurueckgenommen.
+ * NICHT als erledigt: der Merker wird erst gesetzt, wenn ein Verzeichnis WIRKLICH vorlag, und bei
+ * einem Wurf des Pflanzens wieder zurueckgenommen. Warum: [CFAlarmApplication.plantFileLogTree].
  */
 internal class FileLogTreeInstaller {
 

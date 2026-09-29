@@ -36,8 +36,6 @@ import java.time.LocalTime
 import javax.inject.Inject
 
 /**
- * Enhanced BroadcastReceiver with Hilt DI.
- *
  * ROLLE: Entscheiden, ob geweckt wird - nicht, WIE geweckt wird.
  *
  * Der Receiver prueft den Skip-Status, startet den [AlarmSoundService] und stoesst die
@@ -50,19 +48,6 @@ import javax.inject.Inject
  * (ID 9999) und der WECK-NOTAUSGANG (ID 2003, siehe [posteWeckNotausgang]). Letzterer greift nur,
  * wenn das System den Vordergrund-Start des [AlarmSoundService] abgelehnt hat - dann gibt es
  * keinen Wecker-Besitzer, den man doppeln koennte, und ohne ihn bliebe der Wecker komplett stumm.
- *
- * CORE FEATURES:
- * - Reliable wake lock management
- * - Skip-Check vor dem Wecken, Direct-Boot-fest
- * - 🎨 HUE INTEGRATION: Automatic light control based on shift patterns
- * - 🏗️ HILT DI: Modern dependency injection
- *
- * Die Alarm-Wartung (genügend zukünftige Alarme vorhalten) übernimmt seit
- * Briefing 4.0 vollständig der AlarmMaintenanceService (Exact Alarm alle 6h,
- * zeitbasierter 7-Tage-Puffer); die frühere count-basierte Opportunistic-Variante
- * im Receiver wurde als redundant entfernt.
- *
- * Philosophy: If the alarm works (and it does!), keep it simple.
  */
 @AndroidEntryPoint
 class AlarmReceiver : BroadcastReceiver() {
@@ -80,7 +65,7 @@ class AlarmReceiver : BroadcastReceiver() {
          * WARUM NICHT KLEINER: `executeRulesForAlarm()` schaltet erst in der Regel-Schleife alle
          * Lampen ein und legt das Auto-Aus als Bridge-Zeitplan ERST DANACH an. Schneidet der Deckel
          * dazwischen, ist das Licht an und es gibt keinen Mechanismus mehr, der es ausschaltet -
-         * CLAUDE.md begruendet das ersatzlose Entfernen des `AutoOffWorker` genau damit, dass
+         * Skill cfalarm-hue begruendet das ersatzlose Entfernen des `AutoOffWorker` genau damit, dass
          * "ging das Licht an, war die Bridge erreichbar und der Zeitplan entsteht". Ein zu knappes
          * Budget hebt diese Invariante auf. 20 s waren zu knapp: allein der Batch-Timeout einer
          * einzigen Regel ist 30 s.
@@ -94,8 +79,7 @@ class AlarmReceiver : BroadcastReceiver() {
          * und einer nicht antwortenden Bridge kann der Schnitt weiterhin zwischen "an" und
          * "Auto-Aus" fallen; dann bleibt das Licht an und der Nutzer braucht die Hue-App. Die
          * saubere Loesung waere, die Hue-Ausfuehrung in den `AlarmSoundService` zu verlegen (ein
-         * Vordergrunddienst hat kein Broadcast-Fenster) - das ist ein Umbau am Weckpfad und
-         * bewusst nicht Teil dieser Runde.
+         * Vordergrunddienst hat kein Broadcast-Fenster) (Umbau am Weckpfad).
          */
         private const val HUE_EXECUTION_BUDGET_MS = 45_000L
         const val EXTRA_SHIFT_NAME = "shift_name"
@@ -114,20 +98,9 @@ class AlarmReceiver : BroadcastReceiver() {
         fun isSilentAlarm(alarmInfo: AlarmInfo?): Boolean = alarmInfo?.isSilent == true
 
         /**
-         * MUSS "shift_start_time_formatted" heissen. AlarmManagerService.
-         * createEnhancedAlarmIntent(), scheduleSnooze() und rescheduleFromDirectBoot()
-         * schreiben die Uhrzeit unter genau diesem Schluessel (frueher "shift_time" - ein
-         * Schluessel, den niemand je gesetzt hat; die Uhrzeit war dadurch immer leer).
-         *
-         * Der Wert ist der tatsaechliche SCHICHTBEGINN (Kalender-Event-Start), NICHT die
-         * Weckzeit. Bis v1.20.0 stand hier "alarm_time" befuellt mit
-         * ShiftMatch.calculatedAlarmTime (der Weckzeit) - die Notification/das Vollbild
-         * zeigten "Deine Schicht beginnt um" dann faelschlich die Weckzeit (bei S2 z.B. die
-         * Default-Weckzeit 14:30 statt des echten Schichtbeginns). Wer hier wieder die
-         * Weckzeit eintraegt, holt sich den Fehler zurueck. Der eigentlich dominante Bugherd war
-         * NICHT die Erstplanung (AlarmManagerService.createEnhancedAlarmIntent), sondern das weit
-         * haeufigere Re-Arming ueber AlarmUseCase.scheduleSystemAlarm() (jeder syncAlarms()-Zweig,
-         * also praktisch jeder App-Start/jede 6h-Wartung) - siehe CLAUDE.md "Wecker".
+         * MUSS "shift_start_time_formatted" heissen - AlarmManagerService schreibt unter genau
+         * diesem Schluessel. Wert ist der SCHICHTBEGINN, NICHT die Weckzeit; Hergang Skill
+         * cfalarm-wecker-und-boot.
          */
         const val EXTRA_SHIFT_START_TIME = "shift_start_time_formatted"
         const val EXTRA_ALARM_ID = "alarm_id"
@@ -266,7 +239,6 @@ class AlarmReceiver : BroadcastReceiver() {
                                     LogTags.ALARM_RECEIVER,
                                     "✅ SKIP-CHECK: Alarm $alarmId ($shiftName) will execute normally"
                                 )
-                                // Continue with normal alarm logic below
                             }
 
                             null -> {
@@ -274,7 +246,6 @@ class AlarmReceiver : BroadcastReceiver() {
                                     LogTags.ALARM_RECEIVER,
                                     "⚠️ SKIP-CHECK: Check failed, executing alarm $alarmId normally"
                                 )
-                                // Continue with normal alarm logic
                             }
                         }
                     } catch (e: Exception) {
@@ -283,7 +254,6 @@ class AlarmReceiver : BroadcastReceiver() {
                             "❌ SKIP-CHECK: Error during skip check for alarm $alarmId, executing alarm normally",
                             e
                         )
-                        // Continue with normal alarm logic
                     }
                 } else {
                     Logger.business(
@@ -292,7 +262,6 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                 }
 
-                // Existing alarm logic continues here...
                 Logger.business(LogTags.ALARM_RECEIVER, "📱 ALARM TRIGGERED! Shift: $shiftName")
 
                 // STILLE SCHICHT: Ton/Vibration/Vollbild-Wecker UND Hue bleiben aus, wenn diese
@@ -333,28 +302,13 @@ class AlarmReceiver : BroadcastReceiver() {
                 try {
                     val shiftStartTime = intent.getStringExtra(EXTRA_SHIFT_START_TIME).orEmpty()
 
-                    // 🔊 EINZIGER Einstiegspunkt fuer Ton UND Sichtbarkeit.
-                    // Der Service startet den MediaPlayer, holt den Audio-Fokus und postet die
-                    // Notification mit dem Full-Screen-Intent. Der Receiver postet bewusst KEINE
-                    // eigene Notification mehr und startet die Activity NICHT mehr direkt:
-                    // - Die fruehere zweite Notification (2001) brachte ueber ihren Channel einen
-                    //   zweiten Klingelton mit.
-                    // - Ein direktes startActivity() aus einem Receiver ist seit Android 10 kein
-                    //   erlaubter Background-Activity-Start (AlarmManager-Broadcasts stehen NICHT
-                    //   auf der Ausnahmeliste) und wird stillschweigend verworfen. Der einzige
-                    //   sanktionierte Weg ist der vom System gesendete Full-Screen-PendingIntent.
-                    // AUSNAHME: lehnt das System den Vordergrund-Start des Dienstes ab, postet der
-                    //   Receiver den Notausgang (ID 2003) - siehe posteWeckNotausgang(). Dann gibt
-                    //   es keinen Dienst, der doppeln koennte, und es waere sonst gar kein Wecker.
+                    // Einziger Einstiegspunkt fuer Ton und Sichtbarkeit - keine eigene Notification, kein
+                    // startActivity (Klassen-KDoc); Ausnahme Notausgang 2003.
                     val dienstLaeuft = startAlarmSoundService(
                         context, shiftName, shiftStartTime, alarmId, userUnlocked
                     )
 
-                    // Die Erfolgsmeldung haengt am tatsaechlichen Ausgang. Vorher stand sie
-                    // unbedingt hier, waehrend startAlarmSoundService() den abgelehnten
-                    // Vordergrund-Start intern wegfing: im Log standen dann eine Fehlerzeile und
-                    // "triggered successfully" nebeneinander - unauswertbar genau in dem Fall, in
-                    // dem der Nutzer nicht geweckt wurde.
+                    // Erfolgsmeldung nur bei tatsaechlich gestartetem Dienst, siehe [starteWeckerMitNotausgang].
                     if (dienstLaeuft) {
                         Logger.business(
                             LogTags.ALARM_RECEIVER,
@@ -373,22 +327,8 @@ class AlarmReceiver : BroadcastReceiver() {
                     // Sound + Full-Screen-Intent nicht verzögert.
                     // Direct Boot: Hue braucht Netz + CE/Hue-Storage - vor Entsperrung ueberspringen.
                     if (userUnlocked) {
-                        // GEDECKELT, weil `pendingResult.finish()` erst danach kommt.
-                        //
-                        // Ein BroadcastReceiver muss sein `finish()` innerhalb des
-                        // Broadcast-Zeitfensters erreichen; danach protokolliert das System ein
-                        // "Broadcast of Intent"-ANR und darf den Prozess abwuergen. Der Hue-Pfad
-                        // hat aber KEINE Gesamtschranke: `executeRulesForAlarm()` laeuft ueber
-                        // ALLE passenden Regeln, jede mit eigenem 30-s-Batch-Timeout, danach folgt
-                        // `scheduleBridgeAutoOff()` voellig ohne Timeout (GET + n DELETEs + ein POST
-                        // pro Ziel, je 10 s OkHttp). Zwei Regeln und eine Bridge, die nicht
-                        // antwortet (Handy nicht im Heim-WLAN - der Normalfall auf Reisen), reichen
-                        // fuer eine Minute und mehr.
-                        //
-                        // Der Wecker selbst ist davon unabhaengig: Ton, Vibration und
-                        // Full-Screen-Intent laufen ueber den bereits gestarteten
-                        // AlarmSoundService, nicht ueber diese Coroutine. Licht, das nicht angeht,
-                        // ist ein hinnehmbarer Verlust; ein abgewuergter Prozess ist es nicht.
+                        // GEDECKELT, weil `pendingResult.finish()` erst danach kommt - Begruendung an
+                        // [HUE_EXECUTION_BUDGET_MS]; der Wecker selbst haengt nicht daran.
                         val hueDone = withTimeoutOrNull(HUE_EXECUTION_BUDGET_MS) {
                             executeHueRulesForAlarm(shiftName)
                             true
@@ -408,13 +348,11 @@ class AlarmReceiver : BroadcastReceiver() {
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM_RECEIVER, "❌ Error handling alarm", e)
                 } finally {
-                    // Release wake lock
                     if (wakeLock.isHeld) {
                         wakeLock.release()
                     }
                 }
             } finally {
-                // GARANTIERT: BroadcastReceiver-Lebenszyklus beenden
                 pendingResult.finish()
             }
         }
@@ -460,9 +398,6 @@ class AlarmReceiver : BroadcastReceiver() {
      *
      * Creates a synthetic ShiftMatch from available alarm data and executes
      * any applicable Hue rules configured for this shift pattern.
-     * 
-     * HILT MIGRATION: Now uses injected dependencies instead of appContainer
-     * NOTE: context parameter removed - all dependencies injected via Hilt
      */
     private suspend fun executeHueRulesForAlarm(shiftName: String) {
         try {
@@ -590,14 +525,6 @@ class AlarmReceiver : BroadcastReceiver() {
 
     /**
      * Starts AlarmSoundService to handle audio playback independently
-     * 
-     * CRITICAL: Service must start BEFORE Activity to ensure sound begins immediately
-     * and survives Activity lifecycle events.
-     *
-     * @param context Context for starting the service
-     * @param shiftName Name of the shift for notification display
-     * @param shiftStartTime Formatierte Startzeit der Schicht (Notification-Text)
-     * @param alarmId Unique alarm identifier
      *
      * SUSPEND: liest [alarmPrefs] EINMAL hier - der einzige Ort, der die konfigurierte
      * Schlummer-Dauer UND den Weckton-Anstieg aus dem DataStore holt. Beide Snooze-Ausloeser
@@ -607,13 +534,8 @@ class AlarmReceiver : BroadcastReceiver() {
      * Nachbarn. Der einzige Aufrufer laeuft bereits in receiverScope.launch, also ist der
      * suspend-Read hier sicher.
      *
-     * DIRECT BOOT: [alarmPrefs] liegt im @MainDataStore (CE-Storage) und ist vor der ersten
-     * Entsperrung NICHT lesbar - genau wie der Skip- und Silent-Check weiter oben in onReceive().
-     * Diese Funktion wird dort aber UNGEGATET aufgerufen (der Wecker muss auch im Direct-Boot-Fall
-     * klingeln), deshalb bekommt sie [userUnlocked] durchgereicht und liest den DataStore nur bei
-     * true - sonst waere ein CE-Storage-Read hier fatal statt bloss uebersprungen: der try/catch
-     * darunter haette eine Exception (oder ein Haengen) abgefangen, ohne dass startForegroundService()
-     * je erreicht wird - der Wecker bliebe nach einem Reboot vor der ersten Entsperrung stumm.
+     * DIRECT BOOT: liest [alarmPrefs] nur bei [userUnlocked] - CE-Storage; ungegatet bliebe der
+     * Wecker nach einem Reboot vor der ersten Entsperrung stumm (Skill cfalarm-wecker-und-boot).
      *
      * Fuer den Anstieg ist das Ueberspringen zusaetzlich die inhaltlich richtige Entscheidung: er
      * entfaellt dann, der Wecker startet sofort in voller Lautstaerke. Nach einem Neustart ohne
@@ -728,8 +650,8 @@ class AlarmReceiver : BroadcastReceiver() {
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Channel MUSS vor dem Posten existieren (siehe showSkipNotification), und er MUSS
-        // IMPORTANCE_HIGH tragen: darunter ignoriert das System den Full-Screen-Intent - und der
-        // ist hier der einzige verbliebene Weckweg.
+        // IMPORTANCE_HIGH tragen: nur dann Heads-up, Ton durch Nicht-stoeren und Sichtbarkeit am
+        // Sperrbildschirm - einen Full-Screen-Intent hat der Notausgang bewusst nicht, siehe KDoc.
         notificationManager.createNotificationChannel(
             android.app.NotificationChannel(
                 NOTAUSGANG_CHANNEL_ID,

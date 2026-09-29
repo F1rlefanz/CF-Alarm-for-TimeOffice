@@ -668,7 +668,6 @@ private fun CodeSuggestionCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ShiftDefinitionCard(
     definition: ShiftDefinition,

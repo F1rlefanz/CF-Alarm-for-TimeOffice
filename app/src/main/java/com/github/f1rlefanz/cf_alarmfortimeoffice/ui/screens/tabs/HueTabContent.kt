@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import android.widget.Toast
@@ -51,7 +50,6 @@ internal enum class PendingHueAction { VALIDATE, DISCOVER, PAIR, LIGHT_TEST }
  * Fixed Hue Tab Content with proper scrolling and layout
  * Resolved: UI overflow, scrolling issues, layout problems, missing navigation
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HueTabContent(
     hueViewModel: HueViewModel,

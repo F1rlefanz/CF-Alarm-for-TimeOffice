@@ -1,5 +1,3 @@
-@file:Suppress("UnusedImport") // encodeToString/decodeFromString werden reified genutzt
-
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import androidx.datastore.core.DataStore
@@ -13,8 +11,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton

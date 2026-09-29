@@ -77,16 +77,7 @@ class FreigegebenerTagNichtArmiertException(
     "Alarm $alarmId ($shiftName) faellt auf einen freigegebenen Tag und wurde deshalb nicht gestellt"
 )
 
-/**
- * UseCase für alle Alarm-bezogenen Operationen - implementiert IAlarmUseCase
- *
- * REFACTORED:
- * ✅ Implementiert IAlarmUseCase Interface für bessere Testbarkeit
- * ✅ Verwendet Repository-Interfaces statt konkrete Implementierungen
- * ✅ Erweiterte Business Logic für Event-zu-Alarm Transformation
- * ✅ Result-basierte API für konsistente Fehlerbehandlung
- * ✅ Integration mit ShiftRecognitionEngine für intelligente Alarm-Erstellung
- */
+/** UseCase für alle Alarm-bezogenen Operationen. */
 @Singleton
 class AlarmUseCase @Inject constructor(
     private val alarmRepository: IAlarmRepository,
@@ -94,26 +85,14 @@ class AlarmUseCase @Inject constructor(
     private val shiftConfigRepository: IShiftConfigRepository,
     private val shiftRecognitionEngine: ShiftRecognitionEngine,
     private val alarmSkipUseCase: IAlarmSkipUseCase,
-    // Feature B: Schicht-Aenderungs-Notification. Bewusst auf der Implementierung, nicht auf
-    // IAlarmUseCase - vermeidet Aenderungen an allen 4 Call-Sites des Interfaces.
+    // ShiftChangeNotifier, MasterPausePrefs, ShiftSpanStore, SyncHorizonStore, FeedNeueinlesenStore
+    // und FreieTageStore haengen an der Implementierung, damit jeder syncAlarms()-Aufrufer sie
+    // erbt, ohne das Interface zu aendern.
     private val shiftChangeNotifier: ShiftChangeNotifier,
-    // Master-Pause: aus demselben Grund auf der Implementierung, nicht auf IAlarmUseCase.
     private val masterPausePrefs: MasterPausePrefs,
-    // Schichtspannen: ebenfalls bewusst auf der Implementierung statt auf IAlarmUseCase - das
-    // Interface bleibt unveraendert, und jeder kuenftige syncAlarms()-Aufrufer schreibt die
-    // Spannen automatisch mit, ohne selbst etwas tun zu muessen (gleiche Ueberlegung wie beim
-    // ShiftChangeNotifier und beim Master-Pause-Backstop).
     private val shiftSpanStore: ShiftSpanStore,
-    // Bezugspunkt fuer "war diese Schicht beim letzten Sync ueberhaupt sichtbar?" - siehe
-    // SyncHorizonStore. Aus demselben Grund wie die drei Abhaengigkeiten darueber bewusst auf der
-    // Implementierung statt auf IAlarmUseCase.
     private val syncHorizonStore: SyncHorizonStore,
-    // Merker fuer die stille Statuszeile "Dienstplan-Kalender zuletzt neu eingelesen" - aus
-    // demselben Grund wie die vier Abhaengigkeiten darueber bewusst auf der Implementierung statt
-    // auf IAlarmUseCase.
     private val feedNeueinlesenStore: FeedNeueinlesenStore,
-    // Vom Nutzer freigegebene Tage ("heute faellt der Dienst aus") - aus demselben Grund wie die
-    // fuenf Abhaengigkeiten darueber bewusst auf der Implementierung statt auf IAlarmUseCase.
     private val freieTageStore: FreieTageStore
 ) : IAlarmUseCase {
 
@@ -197,19 +176,9 @@ class AlarmUseCase @Inject constructor(
         }
     }
     
-    /**
-     * REACTIVE OPTIMIZATION: Direct repository StateFlow for immediate UI updates
-     * 
-     * FIXED: Replaced polling-based Flow with reactive StateFlow from repository
-     * ✅ Eliminates 10-second delay for UI updates
-     * ✅ Provides immediate reactivity when alarms change
-     * ✅ Better performance (no unnecessary polling)
-     * ✅ Follows reactive programming principles
-     */
     override val activeAlarms: Flow<List<AlarmInfo>> = 
         alarmRepository.activeAlarms
             .distinctUntilChanged { old, new -> 
-                // PERFORMANCE: Only emit when alarm list actually changes
                 old.size == new.size && old.zip(new).all { (a, b) -> a.id == b.id && a.triggerTime == b.triggerTime }
             }
     
@@ -284,8 +253,6 @@ class AlarmUseCase @Inject constructor(
                 
                 Logger.business(LogTags.ALARM, "🔄 SYNC: Starting intelligent alarm synchronization for ${events.size} events")
                 
-                // 🔧 SYNC-FIX: INTELLIGENT SYNCHRONIZATION statt blind clearing
-                //
                 // Ein nicht lesbarer Bestand ist keine leere Liste - und `getAllAlarms()` sagt
                 // einem das NICHT: es liefert immer `Result.success(_activeAlarms.value)`, im
                 // Notfall eben die Leere. Der einzige ehrliche Zeuge ist `isPersistenceBlocked()`
@@ -414,7 +381,7 @@ class AlarmUseCase @Inject constructor(
                     alarm.id to kandidatJeEventId.getValue(eventId)
                 }
 
-                // 🔧 SYNC-FIX Step 1: Alarme loeschen, fuer die es keinen Kandidaten mehr gibt
+                // Step 1: Alarme loeschen, fuer die es keinen Kandidaten mehr gibt
                 var deletedCount = 0
                 for (existingAlarm in existingAlarms) {
                     // Manuelle Alarme (leere eventId) bleiben unberuehrt - sie sind die einzigen,
@@ -445,14 +412,8 @@ class AlarmUseCase @Inject constructor(
                     } else {
                         Logger.business(LogTags.ALARM, "🗑️ SYNC: Deleting alarm for deleted event: ${existingAlarm.shiftName} (eventId: ${existingAlarm.eventId})")
                     }
-                    // ERST cancellen, DANN loeschen - wie an allen anderen Loeschstellen
-                    // (`deleteAlarm()`, `clearInternalAlarms()` Step 1, `AlarmSkipUseCase`).
-                    // Umgekehrt gab es ein Fenster, in dem der Alarm im AlarmManager noch
-                    // armiert war, aber weder Repository noch Direct-Boot-Spiegel ihn kannten:
-                    // ALLE Cancel-Wege der App iterieren ueber den Repository-Bestand, es gibt
-                    // also keinen zweiten Anker. Bricht die Sequenz dort ab (Prozess-Tod,
-                    // DataStore-Fehler), ist der Wecker unsichtbar UND unabbrechbar - er feuert
-                    // bis zum naechsten Geraete-Neustart, und ein Handy laeuft Wochen.
+                    // ERST cancellen, DANN loeschen - sonst bleibt ein unabbrechbarer Waise
+                    // (Skill cfalarm-wecker-und-boot, reference/wecker-boot-und-wartung.md).
                     alarmManagerService.cancelSystemAlarm(existingAlarm.id)
                     alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
                     deletedCount++
@@ -467,7 +428,7 @@ class AlarmUseCase @Inject constructor(
                     }
                 }
 
-                // 🔧 SYNC-FIX Step 2: Update changed alarms & create new ones
+                // Step 2: Update changed alarms & create new ones
                 var updatedCount = 0
                 var createdCount = 0
                 var skippedCount = 0
@@ -666,16 +627,9 @@ class AlarmUseCase @Inject constructor(
                             // wenn zwei Dinge gleichzeitig passieren.
                             if (nurNeueKennung) neueKennungCount++
 
-                            // Delete old - ERST cancellen, DANN loeschen, genau wie im
-                            // Loeschzweig oben und an jeder anderen Loeschstelle. Umgekehrt gab
-                            // es hier ein Fenster: nach `deleteAlarm()` kennen weder Repository
-                            // noch Direct-Boot-Spiegel den Alarm, waehrend er im AlarmManager
-                            // noch scharf steht. Stirbt der Prozess dort (Low-Memory-Kill des
-                            // kurzlebigen Wartungs-Service, Force-Stop, Akku leer), erreicht ihn
-                            // kein Cancel-Weg mehr - alle iterieren ueber den Repository-Bestand.
-                            // Wird der Termin danach aus dem Kalender gestrichen, vergibt der
-                            // Sync die ID nie wieder, und der Waise klingelt an einem freien Tag
-                            // bis zum naechsten Geraete-Neustart.
+                            // Delete old - ERST cancellen, DANN loeschen, sonst bleibt ein
+                            // unabbrechbarer Waise (Skill cfalarm-wecker-und-boot,
+                            // reference/wecker-boot-und-wartung.md).
                             alarmManagerService.cancelSystemAlarm(existingAlarm.id)
                             alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
 
@@ -827,7 +781,7 @@ class AlarmUseCase @Inject constructor(
     }
 
     /**
-     * 🔧 SYNC-FIX: Calculate event checksum for change detection
+     * Calculate event checksum for change detection
      */
     private fun calculateEventChecksum(event: CalendarEvent): String {
         // Simple checksum: hash of critical fields
@@ -845,15 +799,10 @@ class AlarmUseCase @Inject constructor(
      * Internes Clearing (System-Alarme + Repository). Kein eigener Guard: läuft immer
      * unter [alarmSyncMutex] (aufgerufen aus [syncAlarms], [deleteAllAlarms], Legacy-Pfad).
      *
-     * [alsoCancelPendingSnoozes] NUR bei ausdruecklichem Nutzer-Willen setzen (Master-Pause,
-     * "Automatische Alarme aus", [deleteAllAlarms]). Der Snooze liegt bewusst in einem eigenen
-     * PendingIntent-Slot, damit ihn der Maintenance-Sync NICHT mit abraeumt (siehe
-     * AlarmManagerService.snoozeAlarmAction) - genau deshalb darf er in datengetriebenen
-     * Aufraeumzweigen ("Kalender liefert gerade keine Events / keine passende Schicht", direkt
-     * nach dem Boot oder ohne Netz der Normalfall) auf keinen Fall mitgeloescht werden. Sonst
-     * haette der Nutzer "5 Minuten schlummern" gedrueckt und wuerde nie wieder geweckt.
-     */
-    /**
+     * @param alsoCancelPendingSnoozes NUR bei ausdruecklichem Nutzer-Willen (Master-Pause,
+     *   "Automatische Alarme aus", [deleteAllAlarms]) - nie in datengetriebenen Zweigen, sonst
+     *   raeumt ein leerer Kalenderlauf einen schwebenden Schlummer ab und der Nutzer wird nie
+     *   wieder geweckt (Skill cfalarm-wecker-und-boot, reference/wecker-boot-und-wartung.md).
      * @param keepManualAlarms Manuelle Alarme (leere `eventId`) NICHT anfassen. Pflicht in den
      *   DATENGETRIEBENEN Zweigen ("keine Events" / "keine passende Schicht"): dort geht es um
      *   Kalenderinhalte, und ein manuell gestellter Wecker hat damit nichts zu tun. Der
@@ -872,40 +821,13 @@ class AlarmUseCase @Inject constructor(
     ): List<AlarmInfo> {
         Logger.d(LogTags.ALARM, "🧹 INTERNAL-CLEAR: Fast internal clearing (system + repository)")
 
-        // Step 1: Cancel system alarms
-        //
-        // BEWUSST getAllAlarms() und NICHT activeAlarms.first(): activeAlarms ist ein StateFlow,
-        // dessen Startwert emptyList() ist, bis der asynchrone Init-Load des Repositories
-        // zurueckkommt - first() liefert genau diesen leeren Wert sofort, ohne zu warten. In einem
-        // frisch gestarteten Prozess (Wartungs-Service/Worker/Boot) wurde deshalb KEIN System-Alarm
-        // gecancelt, waehrend deleteAllAlarms() gleich danach Repository UND Direct-Boot-Spiegel
-        // leerraeumte: der verwaiste AlarmManager-Eintrag feuerte spaeter trotzdem - bei aktiver
-        // Master-Pause klingelte der Wecker also trotz Pause. getAllAlarms() wartet auf den
-        // Init-Load (siehe AlarmRepository.awaitInitialLoad) und ist damit die einzige verlaessliche
-        // Quelle fuer "welche Alarme kennt die App gerade".
-        // getOrThrow, nicht getOrNull: laesst sich der Bestand gerade nicht lesen, darf NICHT
-        // stillschweigend "nichts zu cancels" daraus werden - dann lieber laut scheitern (der
-        // Aufrufer laeuft in safeExecute) und das Repository unangetastet lassen, statt es zu leeren
-        // und armierte System-Alarme zurueckzulassen, von denen die App nichts mehr weiss.
-        // ZUERST die Sperre pruefen - `getAllAlarms()` allein kann den Fall nicht melden.
-        //
-        // Der Kommentar unten sicherte "lieber laut scheitern" zu, konnte das aber nicht halten:
-        // nach einem gescheiterten Init-Load steht der Cache auf einer leeren Liste, und
-        // `getAllAlarms()` gibt genau die als ERFOLG heraus (die Sperre wird nur intern vermerkt).
-        // `getOrThrow()` warf also nie, die Cancel-Schleife lief ins Leere - und `deleteAllAlarms()`
-        // leerte Store UND Direct-Boot-Spiegel trotzdem, weil es bewusst mit `force = true`
-        // schreibt. Ergebnis war exakt die Kombination, die hier ausgeschlossen sein sollte:
-        // verwaiste, armierte System-Alarme, von denen die App nichts mehr weiss - bei aktiver
-        // Master-Pause klingelt der Wecker dann trotz Pause.
-        // GENAU EINE BEDEUTUNG WIRD HIER GEBRAUCHT: "der Bestand ist in diesem Prozess nicht
-        // lesbar". Nur dann ist die Cancel-Schleife weiter unten wirkungslos, und nur dann ist das
-        // Ueberspringen unten vertretbar. Ein gescheiterter SCHREIBvorgang (voller Speicher,
-        // IOException) gehoert ausdruecklich NICHT hierher - der Bestand ist dabei vollstaendig
-        // lesbar, die Schleife MUSS laufen. Diese beiden Lagen waren einmal zu einem Signal
-        // verodert; die Master-Pause leerte dann Repository und Direct-Boot-Spiegel und liess alle
-        // System-Alarme armiert zurueck, wo sie trotz Pause feuerten und ohne Bestandsliste durch
-        // nichts mehr abbrechbar waren. Wer hier eine weitere Bedingung ergaenzen will, muss zuerst
-        // beantworten, ob sie den Bestand UNLESBAR macht.
+        // Step 1: Cancel system alarms - ueber getAllAlarms() (wartet auf den Init-Load), nicht
+        // activeAlarms.first() (Startwert leer); getOrThrow: lieber laut scheitern als leeren.
+        // ZUERST die Sperre pruefen: nach gescheitertem Init-Load liefert getAllAlarms() die Leere
+        // als Erfolg. Sie heisst NUR "Bestand unlesbar", nie "Schreibfehler" (Skill
+        // cfalarm-persistenz-und-auth, reference/persistenz.md).
+        // Wer hier eine weitere Bedingung ergaenzen will, muss zuerst beantworten, ob sie den
+        // Bestand UNLESBAR macht.
         if (alarmRepository.isPersistenceBlocked()) {
             // GESPERRT - aber die Reaktion haengt davon ab, WARUM geraeumt wird.
             //
@@ -1115,9 +1037,6 @@ class AlarmUseCase @Inject constructor(
         alarmRepository.getAllAlarms()
     
     /**
-     * Erstellt AlarmInfo aus ShiftMatch mit Event-Tracking
-     */
-    /**
      * Schreibt den Schichtspannen-Bestand ([ShiftSpanStore]) - die Quelle, aus der Dimmer und
      * "Nicht stoeren" ihre Dienstzeit-Fenster beziehen, seit klar ist, dass der Alarm-Bestand die
      * Weckzeit nicht ueberlebt.
@@ -1294,7 +1213,7 @@ class AlarmUseCase @Inject constructor(
     }
     
     /**
-     * Formatiert Alarm-Zeit für Anzeige - public für ViewModel-Zugriff
+     * Formatiert Alarm-Zeit für Anzeige (AlarmInfo.formattedTime)
      */
     fun formatAlarmTime(timeInMillis: Long): String {
         val instant = java.time.Instant.ofEpochMilli(timeInMillis)

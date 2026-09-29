@@ -44,10 +44,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
- * Manual Alarm Card Component
- * 
- * Ermöglicht Benutzern das manuelle Erstellen von Alarmen nach Schichttausch.
- * Integriert sich nahtlos in das bestehende Card-Design der App.
+ * Karte zum manuellen Anlegen eines Weckers, etwa nach einem Schichttausch.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,7 +73,6 @@ fun ManualAlarmCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -101,7 +97,6 @@ fun ManualAlarmCard(
             }
             
             if (manualAlarmState.hasActiveManualAlarm) {
-                // Aktiver Alarm Anzeige
                 manualAlarmState.activeManualAlarm?.let { alarm ->
                     HorizontalDivider()
                     
@@ -153,10 +148,8 @@ fun ManualAlarmCard(
                     ManualAlarmFehlerHinweis(error = error, onClearError = onClearError)
                 }
             } else {
-                // Alarm Erstellung UI
                 HorizontalDivider()
                 
-                // Datum Auswahl
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -182,7 +175,6 @@ fun ManualAlarmCard(
                     }
                 }
                 
-                // Schicht Auswahl
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -211,7 +203,6 @@ fun ManualAlarmCard(
                     }
                 }
                 
-                // Berechnete Alarm-Zeit Anzeige
                 manualAlarmState.calculatedAlarmTime?.let { alarmTime ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -243,12 +234,10 @@ fun ManualAlarmCard(
                     }
                 }
                 
-                // Error Display
                 manualAlarmState.error?.let { error ->
                     ManualAlarmFehlerHinweis(error = error, onClearError = onClearError)
                 }
 
-                // Erstellen Button
                 Button(
                     onClick = onCreate,
                     modifier = Modifier.fillMaxWidth(),
@@ -279,7 +268,6 @@ fun ManualAlarmCard(
         }
     }
     
-    // Date Picker Dialog
     if (showDatePicker) {
         DatePickerDialog(
             selectedDate = manualAlarmState.selectedDate,
@@ -291,7 +279,6 @@ fun ManualAlarmCard(
         )
     }
     
-    // Shift Selector Dialog
     if (showShiftSelector) {
         ShiftSelectorDialog(
             availableShifts = manualAlarmState.availableShifts,

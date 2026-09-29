@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data
 
 import androidx.compose.runtime.Immutable
-import com.google.gson.annotations.SerializedName
 
 /**
  * Represents a Philips Hue Group (Room, Zone, Entertainment Area)
@@ -52,25 +51,4 @@ data class GroupAction(
     val alert: String? = null,
     val effect: String? = null,
     val transitiontime: Int? = null
-)
-
-/**
- * Group action update request
- */
-@Immutable
-data class GroupUpdate(
-    val on: Boolean? = null,
-    val bri: Int? = null,
-    val hue: Int? = null,
-    val sat: Int? = null,
-    val xy: List<Float>? = null,
-    val ct: Int? = null,
-    val alert: String? = null,
-    val effect: String? = null,
-    val transitiontime: Int? = null,
-    @SerializedName("bri_inc") val briInc: Int? = null,
-    @SerializedName("sat_inc") val satInc: Int? = null,
-    @SerializedName("hue_inc") val hueInc: Int? = null,
-    @SerializedName("ct_inc") val ctInc: Int? = null,
-    @SerializedName("xy_inc") val xyInc: List<Float>? = null
 )

@@ -1,15 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api
 
 import android.content.Context
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeDiscoveryResponse
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeSchedule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.BridgeScheduleCreate
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.GroupUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridgeConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
-import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.LightStateUpdate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.HueTrustManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -43,7 +40,6 @@ import javax.net.ssl.TrustManager
 class HueApiClient(context: Context? = null) {
 
     companion object {
-        private const val DISCOVERY_URL = "https://discovery.meethue.com"
         private const val TIMEOUT_SECONDS = 10L
     }
 
@@ -195,43 +191,6 @@ class HueApiClient(context: Context? = null) {
             false
         }
     }
-
-    /**
-     * Discover bridges using Philips online service
-     */
-    suspend fun discoverBridgesOnline(): List<BridgeDiscoveryResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                Logger.d(LogTags.HUE_DISCOVERY, "Attempting online bridge discovery")
-
-                val request = Request.Builder()
-                    .url("$DISCOVERY_URL/api/nupnp")
-                    .get()
-                    .build()
-
-                // .use { }: Der else-Zweig wirft, ohne den Body zu lesen - ohne use bliebe die
-                // Antwort offen. Das `return@withContext` aus dem Block heraus ist zulaessig, use
-                // schliesst trotzdem (finally).
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val responseBody = response.body.string().ifBlank { "[]" }
-                        val type = object : TypeToken<List<BridgeDiscoveryResponse>>() {}.type
-                        val bridges = gson.fromJson<List<BridgeDiscoveryResponse>>(responseBody, type)
-
-                        Logger.i(
-                            LogTags.HUE_DISCOVERY,
-                            "Online discovery successful: ${bridges.size} bridges"
-                        )
-                        return@withContext bridges
-                    } else {
-                        throw IOException("Discovery service unavailable: ${response.code}")
-                    }
-                }
-            } catch (e: Exception) {
-                Logger.e(LogTags.HUE_DISCOVERY, "Online discovery failed", e)
-                throw e
-            }
-        }
 
     /**
      * Get bridge configuration with modern HTTPS approach
@@ -487,47 +446,9 @@ class HueApiClient(context: Context? = null) {
     }
 
     /**
-     * Control a light with HTTPS-First approach
-     */
-    suspend fun controlLight(
-        bridgeIp: String,
-        username: String,
-        lightId: String,
-        update: LightStateUpdate
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val json = gson.toJson(update)
-            val result = makeSecureHueRequest(bridgeIp, "/api/$username/lights/$lightId/state", "PUT", json)
-            wasAccepted(result, "Lampe $lightId")
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_LIGHTS, "Error controlling light $lightId", e)
-            false
-        }
-    }
-
-    /**
-     * Control a group with HTTPS-First approach
-     */
-    suspend fun controlGroup(
-        bridgeIp: String,
-        username: String,
-        groupId: String,
-        update: GroupUpdate
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val json = gson.toJson(update)
-            val result = makeSecureHueRequest(bridgeIp, "/api/$username/groups/$groupId/action", "PUT", json)
-            wasAccepted(result, "Gruppe $groupId")
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_LIGHTS, "Error controlling group $groupId", e)
-            false
-        }
-    }
-
-    /**
      * Hat die Bridge diesen Steuer-PUT wirklich ANGENOMMEN?
      *
-     * Vor diesem Fix gaben [setLightState]/[setGroupAction]/[controlLight]/[controlGroup] blank
+     * Vor diesem Fix gaben [setLightState]/[setGroupAction] blank
      * `result.isSuccess` zurueck - also nur den HTTP-Status. Die V1-API antwortet aber auch bei
      * ABLEHNUNG mit HTTP 200 (`[{"error":{"type":1,"description":"unauthorized user"}}]`), genau
      * die Falle, fuer die [HueV1Envelope] existiert - sie war nur auf die Zeitplaene angewandt,
@@ -565,60 +486,6 @@ class HueApiClient(context: Context? = null) {
             }
         )
     }
-
-    /**
-     * Get specific light from bridge with HTTPS-First approach
-     */
-    suspend fun getLight(bridgeIp: String, username: String, lightId: String): HueLight =
-        withContext(Dispatchers.IO) {
-            val result = makeSecureHueRequest(bridgeIp, "/api/$username/lights/$lightId", "GET")
-            
-            if (result.isSuccess) {
-                val responseBody = result.getOrNull() ?: "{}"
-                Logger.d(LogTags.HUE_LIGHTS, "Light $lightId API response: $responseBody")
-
-                return@withContext try {
-                    gson.fromJson(responseBody, HueLight::class.java)
-                        ?: throw IOException("Failed to parse light response")
-                } catch (e: Exception) {
-                    Logger.e(
-                        LogTags.HUE_LIGHTS,
-                        "Failed to parse light $lightId response: $responseBody",
-                        e
-                    )
-                    throw IOException("Failed to parse light $lightId: ${e.message}", e)
-                }
-            } else {
-                throw result.exceptionOrNull() ?: IOException("Failed to get light $lightId")
-            }
-        }
-
-    /**
-     * Get specific group from bridge with HTTPS-First approach
-     */
-    suspend fun getGroup(bridgeIp: String, username: String, groupId: String): HueGroup =
-        withContext(Dispatchers.IO) {
-            val result = makeSecureHueRequest(bridgeIp, "/api/$username/groups/$groupId", "GET")
-            
-            if (result.isSuccess) {
-                val responseBody = result.getOrNull() ?: "{}"
-                Logger.d(LogTags.HUE_LIGHTS, "Group $groupId API response: $responseBody")
-
-                return@withContext try {
-                    gson.fromJson(responseBody, HueGroup::class.java)
-                        ?: throw IOException("Failed to parse group response")
-                } catch (e: Exception) {
-                    Logger.e(
-                        LogTags.HUE_LIGHTS,
-                        "Failed to parse group $groupId response: $responseBody",
-                        e
-                    )
-                    throw IOException("Failed to parse group $groupId: ${e.message}", e)
-                }
-            } else {
-                throw result.exceptionOrNull() ?: IOException("Failed to get group $groupId")
-            }
-        }
 
     /**
      * Set light state using raw Map (for Repository compatibility) with HTTPS-First approach

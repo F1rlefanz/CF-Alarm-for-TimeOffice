@@ -12,9 +12,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
  * ENTFERNT (Aufraeumrunde 24): `getLightState(lightId)` und `getGroupState(groupId)` - im ganzen
  * Baum ohne Aufrufstelle, nur Deklaration, Implementierung und zwei Test-Doubles. Der EINZELne
  * Zustand wurde nie gebraucht: die App liest immer den ganzen Bestand ueber [getLights] bzw.
- * [getGroups] (so kommt auch die Vorschau an ihre Rueckstellwerte). Mit ihnen verlieren
- * `HueApiClient.getLight`/`getGroup` ihre einzigen Aufrufer - die stehen noch und sind als
- * eigener Blickwinkel (Funktionsebene) vermerkt.
+ * [getGroups] (so kommt auch die Vorschau an ihre Rueckstellwerte).
  */
 interface IHueLightRepository {
     

@@ -44,12 +44,3 @@ data class HueBridgeConfig(
     val mac: String,
     val bridgeid: String
 )
-
-/**
- * Bridge discovery response
- */
-@Immutable
-data class BridgeDiscoveryResponse(
-    val id: String,
-    val internalipaddress: String
-)

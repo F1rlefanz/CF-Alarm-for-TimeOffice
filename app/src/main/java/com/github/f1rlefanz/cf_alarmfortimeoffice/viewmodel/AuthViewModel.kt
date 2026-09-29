@@ -315,13 +315,6 @@ class AuthViewModel @Inject constructor(
                         )
                     }
 
-                    val isAuthenticated = authData.isLoggedIn
-                    val userEmail = authData.email
-                    Logger.d(
-                        LogTags.AUTH,
-                        "Initial auth state - authenticated=$isAuthenticated, user=$userEmail"
-                    )
-
                     // REACTIVE CALENDAR: Check initial calendar selection status
                     checkInitialCalendarSelection()
 
@@ -477,11 +470,6 @@ class AuthViewModel @Inject constructor(
                         signInResult.credentialResponse
                     )
 
-                    Logger.business(
-                        LogTags.AUTH,
-                        "📊 EMAIL-EXTRACTION: initial=$initialEmail, final=$initialEmail"
-                    )
-
                     if (!initialEmail.isNullOrEmpty()) {
                         val authData = AuthData(
                             isLoggedIn = true,
@@ -503,7 +491,7 @@ class AuthViewModel @Inject constructor(
                                         calendarOps = currentState.calendarOps.copy(calendarsLoading = false)
                                     )
                                 }
-                                Logger.business(LogTags.AUTH, "✅ Sign-in successful: $initialEmail")
+                                Logger.business(LogTags.AUTH, "✅ Sign-in successful")
 
                                 // Automatically trigger Calendar authorization
                                 Logger.business(
@@ -896,7 +884,7 @@ class AuthViewModel @Inject constructor(
 
                 Logger.business(
                     LogTags.AUTH,
-                    "🔐 ACTIVITY-CONTEXT-FIX: Requesting Calendar authorization for $userEmail with Activity=${activity != null}"
+                    "🔐 ACTIVITY-CONTEXT-FIX: Requesting Calendar authorization with Activity=${activity != null}"
                 )
 
                 // CRITICAL FIX: Use Activity-based authorization if activity is provided

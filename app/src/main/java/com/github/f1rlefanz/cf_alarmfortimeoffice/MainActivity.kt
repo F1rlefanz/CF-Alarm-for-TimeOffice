@@ -52,15 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-/**
- * MainActivity - FULLY MIGRATED to Hilt DI
- * 
- * MIGRATION COMPLETE:
- * ✅ @AndroidEntryPoint for Hilt injection
- * ✅ ViewModels via Hilt's viewModels() delegate
- * ✅ No more AppContainer or ViewModelFactory
- * ✅ Clean Architecture with proper DI
- */
+/** Compose-Wurzel: Auth-Gate, Einstiegs-Extras, Kalender-Autorisierung, Hue-Lebenszyklus. */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -96,10 +88,6 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var rufbereitschaftMigration: RufbereitschaftMigration
     @Inject lateinit var rufbereitschaftAbfrage: RufbereitschaftAbfrage
 
-    // HILT MIGRATION: ViewModels via Hilt's viewModels() delegate
-    // ✅ Automatically scoped to Activity lifecycle
-    // ✅ Dependencies injected by Hilt
-    // ✅ No manual ViewModelFactory needed
     private val authViewModel: AuthViewModel by viewModels()
     private val calendarViewModel: CalendarViewModel by viewModels()
     private val shiftViewModel: ShiftViewModel by viewModels()
@@ -128,28 +116,10 @@ class MainActivity : ComponentActivity() {
         // Systemleisten-Symbole in hellem wie dunklem Design.
         enableEdgeToEdge()
 
-        // HILT MIGRATION: No more AppContainer needed - dependencies injected automatically
-        Logger.d(LogTags.AUTH, "🔍 OAUTH2-DIAGNOSTIC: Hilt DI active - dependencies auto-injected")
-
-        // EINMALIGE DIMMER-MODELLMIGRATION - der SCHNELLE der beiden Anlaesse. Der zweite ist der
-        // 6h-Wartungslauf (AlarmMaintenanceService.rescheduleSideChannels); er erreicht auch den
-        // Nutzer, der die App nach einem Play-Auto-Update tagelang nicht oeffnet. Der Marker macht
-        // den jeweils zweiten Aufruf zum No-op.
-        //
-        // WARUM DIESE STELLE (fuer den schnellen Weg):
-        //  - Sie liegt zwingend NACH der ersten Entsperrung. MainActivity ist nicht
-        //    `directBootAware`, kann also gar nicht vorher laufen; der MainDataStore liegt im
-        //    CE-Storage und lieferte davor still LEERE Preferences (siehe AlarmRepository) - die
-        //    Migration wuerde dann eine leere Alt-Konfiguration sehen und den Dimmer stillegen.
-        //  - Sie laeuft bei JEDEM App-Start, unabhaengig davon, welchen Tab der Nutzer oeffnet.
-        //    Im DimmerViewModel oder in der Dimmer-Karte aufgehaengt, bliebe der Dimmer bei
-        //    jemandem, der die App nur zum Wecken benutzt, unbegrenzt lange unmigriert - also aus.
-        //    Genau diesen Nutzer faengt zusaetzlich der Wartungslauf ab, denn er oeffnet die App
-        //    unter Umstaenden ueberhaupt nicht.
-        //  - Sie ist KEIN Teil des Hilt-Graphenaufbaus: injiziert wird nur die Referenz, gearbeitet
-        //    wird erst in dieser Coroutine. Ein CE-Zugriff beim BAUEN des Graphen wuerde den
-        //    Direct-Boot-Prozess toeten, der die Wecker wiederherstellt.
-        // Der Marker im DataStore macht jeden weiteren Aufruf (Rotation, Neustart) zum No-op.
+        // EINMALIGE DIMMER-MODELLMIGRATION - der schnelle der zwei Anlaesse (zweiter: 6h-Wartung).
+        // Liegt zwingend nach der ersten Entsperrung; injiziert ist nur die Referenz, gearbeitet
+        // wird in der Coroutine - kein CE-Zugriff beim Graphenbau. Der Marker macht jeden weiteren
+        // Aufruf zum No-op. Hergang: Skill cfalarm-dimmer-und-dnd, reference/dimmer.md.
         lifecycleScope.launch {
             if (dimmerModellMigration.migriereEinmalig()) {
                 // Die Migration verschiebt DIMM-FENSTERGRENZEN, also muss auch die DND-Kette neu
@@ -181,9 +151,7 @@ class MainActivity : ComponentActivity() {
             verarbeiteEinstieg(intent)
         }
 
-        // POST_NOTIFICATIONS wird NICHT mehr hier (vor dem Login, kontextlos) abgefragt, sondern
-        // erst wenn der Nutzer den Hauptbereich erreicht (LaunchedEffect im "main"-Screen unten) -
-        // dort ist der Bezug zum Wecker gegeben. Verhindert die Dialog-Kaskade beim Erststart.
+        // POST_NOTIFICATIONS wird erst im Hauptbereich abgefragt (LaunchedEffect im "main"-Screen).
 
         setContent {
             CFAlarmForTimeOfficeTheme {
@@ -201,9 +169,6 @@ class MainActivity : ComponentActivity() {
                     // dieselben Insets ab und bekommen deshalb null - sie polstern nicht ein
                     // zweites Mal nach.
                     Box(modifier = Modifier.safeDrawingPadding()) {
-                        // MEMORY LEAK FIX: Consolidated State Collection für MainActivity
-                        // Reduziert excessive Recompositions durch weniger collectAsState() calls
-                        //
                         // collectAsStateWithLifecycle, nicht collectAsState: authState waehlt nur den
                         // anzuzeigenden Screen (loading/login/calendar_auth/main). Unterhalb von
                         // STARTED gibt es nichts zu zeichnen, das Sammeln darf also pausieren; der
@@ -236,8 +201,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        // PERFORMANCE OPTIMIZATION: Memoized Screen Selection
-                        // Verhindert unnötige Recompositions bei State-Changes
                         // ONBOARDING GATE: A signed-in user without a valid Calendar token is routed to
                         // CalendarAuthorizationScreen instead of the (half-broken) main UI. tokenChecked
                         // guards against flashing the gate before the initial token check has completed.
@@ -283,8 +246,7 @@ class MainActivity : ComponentActivity() {
                             "login" -> {
                                 LoginScreen(
                                     authViewModel = authViewModel,
-                                    onSignIn = { 
-                                        // MODERN AUTH: Use CredentialAuthManager with context
+                                    onSignIn = {
                                         authViewModel.signIn(this@MainActivity)
                                     }
                                 )
@@ -297,9 +259,6 @@ class MainActivity : ComponentActivity() {
         
         // OPTIMIZATION: Initialize Hue Bridge lifecycle tracking
         bridgeConnectionManager.onAppForeground()
-        
-        // PHASE 2: Initialize Smart Scheduling on app startup
-        Logger.d(LogTags.LIFECYCLE, "MainActivity: Initializing Hue Smart Scheduling system")
     }
 
     /**
@@ -351,22 +310,14 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         bridgeConnectionManager.onAppForeground()
-        
-        Logger.d(LogTags.LIFECYCLE, "MainActivity: App resumed - Bridge manager notified")
     }
     
     override fun onPause() {
         super.onPause()
         bridgeConnectionManager.onAppBackground()
-        Logger.d(LogTags.LIFECYCLE, "MainActivity: App paused - Bridge manager notified")
     }
     
-    /**
-     * CRITICAL FIX: Handle Calendar authorization permission result
-     * 
-     * This method is called when the user responds to the Calendar permission dialog
-     * launched by OAuth2TokenManager. It's essential for the permission flow to work.
-     */
+    /** Ergebnis des von OAuth2TokenManager gestarteten Kalender-Zustimmungsdialogs. */
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -444,9 +395,6 @@ class MainActivity : ComponentActivity() {
         }
     }
     
-    // Kein onDestroy-Cleanup mehr: der fruehere Block lief auf dem bereits gecancelten
-    // lifecycleScope (also faktisch nie) und haette, wuerde er laufen, Prozess-Singletons
-    // (bridgeConnectionManager, ViewModels) bei jeder Rotation lahmgelegt. ViewModel-Aufraeumung
-    // uebernimmt das Framework via onCleared(); Hue-Lifecycle haengt an onResume/onPause. (Audit)
+    // Kein onDestroy-Cleanup: Prozess-Singletons überleben Rotation; Hue-Lifecycle hängt an onResume/onPause.
 
 }

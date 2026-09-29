@@ -126,22 +126,8 @@ fun ShiftEditDialog(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             isError = name.isBlank(),
-                            // Umbenennen ist keine reine Beschriftungsaenderung: Dimmer- und
-                            // Hue-Regeln merken sich die Schicht ueber ihren NAMEN. Bis
-                            // Pruefrunde 8 legte eine Umbenennung beide lautlos stumm - das
-                            // Licht ging zur Weckzeit nicht mehr an, das Dimm-Fenster fiel weg,
-                            // waehrend die Regellisten sie weiter als aktiv zeigten. Jetzt
-                            // werden sie beim Speichern mitgezogen; dieser Hinweis sagt es an
-                            // der Stelle, an der es passiert.
-                            //
-                            // BEWUSST KEINE UNBEDINGTE ZUSAGE: `planeSchichtUmbenennungen()`
-                            // blockiert den Nachzug in vier Faellen (reserviertes Regelmuster,
-                            // doppelter neuer Name, vergebener alter Name, Namenstausch) - dort
-                            // waere Umschreiben schlimmer als Stehenlassen. Der Dialog kennt die
-                            // uebrigen Definitionen nicht und kann das hier nicht entscheiden,
-                            // also verspricht er es auch nicht. Was wirklich passiert ist, meldet
-                            // die App direkt nach dem Speichern (ShiftUiState.regelNachzugHinweis,
-                            // sichtbar als Karte auf dem Schicht-Bildschirm).
+                            // Keine unbedingte Zusage: planeSchichtUmbenennungen() kann den Nachzug
+                            // blockieren, das Ergebnis meldet regelNachzugHinweis - Hergang schichterkennung.md.
                             supportingText = if (istUmbenennung) {
                                 {
                                     Text(
@@ -196,11 +182,8 @@ fun ShiftEditDialog(
                                     modifier = Modifier.weight(1f),
                                     singleLine = true,
                                     isError = keyword.isBlank(),
-                                    // Ein einzelner Buchstabe ist kein Tippfehler, sondern eine
-                                    // Falle: die Erkennung laeuft ueber ALLE ausgewaehlten
-                                    // Kalender, und "Kino mit F" hat damit einen echten Wecker
-                                    // um 05:30 erzeugt. Deshalb sichtbar warnen statt verbieten -
-                                    // wer sein Kuerzel wirklich einbuchstabig braucht, darf das.
+                                    // Warnen statt verbieten: einbuchstabige Muster treffen
+                                    // fremde Termine - schichterkennung.md.
                                     supportingText = if (keyword.trim().length == 1) {
                                         {
                                             Text(
@@ -390,12 +373,7 @@ fun ShiftEditDialog(
                     
                     Button(
                         onClick = {
-                            // TRIMMEN ist Pflicht, nicht Kosmetik: ein per Tastatur/
-                            // Autovervollstaendigung angehaengtes Leerzeichen wurde als " IMCF"
-                            // gespeichert und legte die Schicht lautlos still (Wortgrenzen-Regex,
-                            // siehe ShiftDefinition.matchesKeywords). `isNotBlank()` allein hat
-                            // das durchgelassen, weil " IMCF" nicht blank ist. `distinct()`
-                            // verhindert doppelte Muster nach dem Trimmen.
+                            // Trimmen ist Pflicht (Wortgrenzen-Regex), distinct gegen Doppel - schichterkennung.md.
                             val validKeywords = keywords
                                 .map { it.trim() }
                                 .filter { it.isNotEmpty() }

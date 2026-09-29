@@ -67,9 +67,9 @@ im Kopf von `veroeffentlichen.yml`.
 
 ## Sammel-Release: Wartung liefert sich selbst aus
 
-`sammel-release.yml` läuft täglich um 09:00 UTC — nach der Aufräumrunde und dem Torwächter. Es
-schließt die Lücke, dass Dependabot und die Aufräumrunde **nie** `app/build.gradle.kts` anfassen
-und ihre Arbeit deshalb unausgeliefert in `main` lag, bis zufällig ein Mensch eine Version baute.
+`sammel-release.yml` läuft täglich um 09:00 UTC. Es schließt die Lücke, dass Dependabot **nie**
+`app/build.gradle.kts` anfasst und seine Arbeit deshalb unausgeliefert in `main` lag, bis zufällig
+ein Mensch eine Version baute.
 
 Der Ablauf, in dieser Reihenfolge: **prüfen → Rauchtest → bumpen und pushen → ausliefern.**
 
@@ -81,10 +81,12 @@ wohl**: sie sehen nach Bauwerk aus, bestimmen aber, was in der APK landet — do
 Dependabot.
 
 **Dann erst die Grenze, und sie ist der Kern.** Ausgeliefert wird nur, wenn **alle**
-unausgelieferten Commits Wartung sind (`chore(deps)`, `chore(aufraeumen)`, `chore(ci)` und die
-zugehörigen Merge-Commits). Ein einziger inhaltlicher Commit hält die Automatik an — der gehört in
+unausgelieferten Commits Wartung sind (`chore(deps)`, `chore(ci)` und die zugehörigen
+Dependabot-Merge-Commits). `chore(aufraeumen)` gehörte nur dazu, solange der Torwächter jeden
+Aufräum-PR selbst gebaut, getestet und widerlegt hat — mit den Aufräumrunden am 29.09.2026
+eingestellt. Ein einziger inhaltlicher Commit hält die Automatik an — der gehört in
 einen Changelog-Eintrag, den ein Mensch in Nutzersprache schreibt, und er gehört vor dem Ausliefern
-angesehen. Die Entscheidung trifft `tools/release/sammel_release.py`, sie ist mit 18 Tests belegt
+angesehen. Die Entscheidung trifft `tools/release/sammel_release.py`, sie ist mit Tests belegt
 und läuft in `ci.yml` bei jedem Push mit. **Wer diese Liste erweitert, veröffentlicht ungeprüfte
 Inhalte an echte Tester** — insbesondere darf `chore(release)` nie hinein, das wäre eine Schleife.
 

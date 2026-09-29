@@ -74,7 +74,7 @@ Es gilt der globale Default aus `~/.claude/CLAUDE.md`. Projekt-spezifisch:
   bloß eine Nummer: ein grüner Build ist in diesem Projekt nachweislich keine auslieferbare
   Version (05.08.2026, Crash-on-Launch nach grünen Tests). Der Produktions-Track bleibt Handarbeit.
 - **Reine Wartung bumpt sich selbst** (`sammel-release.yml`, täglich 09:00 UTC): liegen in `main`
-  ausschließlich Dependabot- und Aufräum-Commits unausgeliefert, startet der Sammel-Release die
+  ausschließlich Dependabot-Commits unausgeliefert, startet der Sammel-Release die
   App auf einem Emulator, bumpt den Patch, schreibt den Changelog und liefert aus. **Ein einziger
   inhaltlicher Commit hält das an** — der gehört in einen Changelog-Eintrag in Nutzersprache und
   vor dem Ausliefern angesehen. Die Grenze zieht `tools/release/sammel_release.py`; wer sie

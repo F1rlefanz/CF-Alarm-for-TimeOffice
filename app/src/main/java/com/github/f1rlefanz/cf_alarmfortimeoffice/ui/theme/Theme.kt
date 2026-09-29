@@ -20,12 +20,8 @@ val ColorScheme.warning: Color
     @Composable get() = if (isSystemInDarkTheme()) WarningAmberDark else WarningAmber
 
 /**
- * Corporate-Design Farbschemata.
- *
- * dynamicColor (Material You) wurde bewusst standardmäßig AUSGESCHALTET:
- * die App soll auf jedem Gerät in den Unternehmensfarben erscheinen statt im
- * Wallpaper-Farbschema des Nutzers. Wer das dynamische Verhalten testen will,
- * kann dynamicColor = true übergeben.
+ * Corporate-Design-Farbschemata - bewusst statt Material You, damit die App auf jedem Geraet in
+ * den Unternehmensfarben erscheint.
  */
 private val LightColorScheme = lightColorScheme(
     primary = BrandRed,
@@ -118,17 +114,9 @@ private val DarkColorScheme = darkColorScheme(
 @Composable
 fun CFAlarmForTimeOfficeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Corporate Design > Material You
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor -> {
-            // bewusst deaktiviert per Default — siehe Doku oben.
-            if (darkTheme) DarkColorScheme else LightColorScheme
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

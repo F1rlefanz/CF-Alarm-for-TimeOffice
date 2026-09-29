@@ -175,6 +175,30 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    private fun markiereTokenUngueltig() {
+        updateAuthState { currentState ->
+            currentState.copy(
+                calendarOps = currentState.calendarOps.copy(
+                    hasValidToken = false,
+                    tokenChecked = true // GATE: Ergebnis steht fest -> das Onboarding-Gate darf entscheiden
+                )
+            )
+        }
+    }
+
+    private fun meldeAutorisierungFehlgeschlagen(error: Throwable) {
+        updateAuthState { currentState ->
+            currentState.copy(
+                calendarOps = currentState.calendarOps.copy(
+                    calendarsLoading = false,
+                    hasValidToken = false,
+                    tokenChecked = true // GATE: Autorisierungsversuch entschieden
+                ),
+                errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
+            )
+        }
+    }
+
     init {
         Logger.d(
             LogTags.AUTH,
@@ -241,14 +265,7 @@ class AuthViewModel @Inject constructor(
                         "🔑 AUTO-RE-AUTH: Token zur Laufzeit verworfen - fordere Zustimmung neu an"
                     )
 
-                    updateAuthState { currentState ->
-                        currentState.copy(
-                            calendarOps = currentState.calendarOps.copy(
-                                hasValidToken = false,
-                                tokenChecked = true // Ergebnis steht fest -> Gate darf entscheiden
-                            )
-                        )
-                    }
+                    markiereTokenUngueltig()
 
                     // Nur die Activity kann den Dialog starten - MainActivity konsumiert das Event.
                     _reauthRequired.trySend(Unit)
@@ -412,14 +429,7 @@ class AuthViewModel @Inject constructor(
             } catch (e: Exception) {
                 Logger.e(LogTags.AUTH, "❌ STUFE-2: Error checking initial token validity", e)
                 // On error, assume token is invalid to be safe
-                updateAuthState { currentState ->
-                    currentState.copy(
-                        calendarOps = currentState.calendarOps.copy(
-                            hasValidToken = false,
-                            tokenChecked = true // GATE: check ran (even on error) -> let the gate handle recovery
-                        )
-                    )
-                }
+                markiereTokenUngueltig()
             }
         }
     }
@@ -849,14 +859,7 @@ class AuthViewModel @Inject constructor(
                         // Wimpernschlag wieder weg. Vor allem aber waere der naechste App-Start
                         // in genau diesem Autorisierungs-Zustand, nicht im abgemeldeten; die
                         // laufende Sitzung soll ihn nicht anders darstellen als der Neustart.
-                        updateAuthState { currentState ->
-                            currentState.copy(
-                                calendarOps = currentState.calendarOps.copy(
-                                    hasValidToken = false,
-                                    tokenChecked = true
-                                )
-                            )
-                        }
+                        markiereTokenUngueltig()
                         Logger.e(
                             LogTags.AUTH,
                             "Abmelden: Auth-Daten nicht geloescht - das Kalender-Token ist " +
@@ -1016,16 +1019,7 @@ class AuthViewModel @Inject constructor(
                             )
                         },
                         onFailure = { error ->
-                            updateAuthState { currentState ->
-                                currentState.copy(
-                                    calendarOps = currentState.calendarOps.copy(
-                                        calendarsLoading = false,
-                                        hasValidToken = false, // 🔧 STUFE 2: Mark token as invalid on error
-                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
-                                    ),
-                                    errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
-                                )
-                            }
+                            meldeAutorisierungFehlgeschlagen(error)
                             Logger.e(
                                 LogTags.AUTH,
                                 "❌ ACTIVITY-CONTEXT-FIX: Calendar authorization failed",
@@ -1071,16 +1065,7 @@ class AuthViewModel @Inject constructor(
                             }
                         },
                         onFailure = { error ->
-                            updateAuthState { currentState ->
-                                currentState.copy(
-                                    calendarOps = currentState.calendarOps.copy(
-                                        calendarsLoading = false,
-                                        hasValidToken = false, // 🔧 STUFE 2: Mark token as invalid on error
-                                        tokenChecked = true // GATE: auth attempt resolved -> gate decision is well-defined
-                                    ),
-                                    errors = AppErrorState.authenticationError("Calendar-Autorisierung fehlgeschlagen: ${error.message}")
-                                )
-                            }
+                            meldeAutorisierungFehlgeschlagen(error)
                             Logger.e(
                                 LogTags.AUTH,
                                 "❌ MODERN-FLOW: Calendar authorization failed",

@@ -502,83 +502,65 @@ class HueViewModel @Inject constructor(
         _uiState.update { it.copy(editingRule = null) }
     }
     
-    fun createRule(rule: HueSchedule) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Creating new rule: ${rule.name}")
-        
+    fun createRule(rule: HueSchedule) = regelAktion(
+        eintrittsLog = "Creating new rule: ${rule.name}",
+        erfolgsLog = "Rule created successfully: ${rule.name}",
+        standardFehler = "Failed to create rule",
+        fehlerLog = "Rule creation failed",
+        ausnahmeLog = "Rule creation exception"
+    ) { hueRuleUseCase.createRule(rule) }
+
+    fun updateRule(rule: HueSchedule) = regelAktion(
+        eintrittsLog = "Updating rule: ${rule.id}",
+        erfolgsLog = "Rule updated successfully: ${rule.id}",
+        standardFehler = "Failed to update rule",
+        fehlerLog = "Rule update failed",
+        ausnahmeLog = "Rule update exception"
+    ) { hueRuleUseCase.updateRule(rule) }
+
+    fun deleteRule(ruleId: String) = regelAktion(
+        eintrittsLog = "Deleting rule: $ruleId",
+        erfolgsLog = "Rule deleted successfully: $ruleId",
+        standardFehler = "Failed to delete rule",
+        fehlerLog = "Rule deletion failed",
+        ausnahmeLog = "Rule deletion exception"
+    ) { hueRuleUseCase.deleteRule(ruleId) }
+
+    /**
+     * Gemeinsamer Ablauf von Anlegen, Aendern und Loeschen einer Regel. Im Erfolg werden die
+     * Regelliste und die vorgeplanten Hue-Jobs sofort nachgezogen. [fehlerLog] dient zugleich
+     * als Praefix der Fehlermeldung im catch-Zweig.
+     */
+    private fun regelAktion(
+        eintrittsLog: String,
+        erfolgsLog: String,
+        standardFehler: String,
+        fehlerLog: String,
+        ausnahmeLog: String,
+        block: suspend () -> Result<*>
+    ) {
+        Logger.i(LogTags.HUE_VIEWMODEL, eintrittsLog)
+
         _uiState.update { it.copy(isLoading = true, error = null) }
-        
+
         viewModelScope.launch {
             try {
-                val result = hueRuleUseCase.createRule(rule)
-                
+                val result = block()
+
                 if (result.isSuccess) {
                     _uiState.update { it.copy(isLoading = false) }
-                    refreshRules() // Refresh to show new rule
-                    recalculateHueSchedule() // Reflect the new rule in pre-scheduled jobs now
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule created successfully: ${rule.name}")
+                    refreshRules()
+                    recalculateHueSchedule()
+                    Logger.i(LogTags.HUE_VIEWMODEL, erfolgsLog)
                 } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to create rule"
+                    val error = result.exceptionOrNull()?.message ?: standardFehler
                     _uiState.update { it.copy(isLoading = false, error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Rule creation failed: $error")
+                    Logger.w(LogTags.HUE_VIEWMODEL, "$fehlerLog: $error")
                 }
             } catch (e: Exception) {
-                val error = "Rule creation failed: ${e.message}"
+                val error = "$fehlerLog: ${e.message}"
                 _uiState.update { it.copy(isLoading = false, error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Rule creation exception", e)
-            }
-        }
-    }
-    
-    fun updateRule(rule: HueSchedule) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Updating rule: ${rule.id}")
-        
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        
-        viewModelScope.launch {
-            try {
-                val result = hueRuleUseCase.updateRule(rule)
-                
-                if (result.isSuccess) {
-                    _uiState.update { it.copy(isLoading = false) }
-                    refreshRules() // Refresh to show updated rule
-                    recalculateHueSchedule() // Reflect the change in pre-scheduled jobs now
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule updated successfully: ${rule.id}")
-                } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to update rule"
-                    _uiState.update { it.copy(isLoading = false, error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Rule update failed: $error")
-                }
-            } catch (e: Exception) {
-                val error = "Rule update failed: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Rule update exception", e)
-            }
-        }
-    }
-    
-    fun deleteRule(ruleId: String) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Deleting rule: $ruleId")
-        
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        
-        viewModelScope.launch {
-            try {
-                val result = hueRuleUseCase.deleteRule(ruleId)
-                
-                if (result.isSuccess) {
-                    _uiState.update { it.copy(isLoading = false) }
-                    refreshRules() // Refresh to remove deleted rule
-                    recalculateHueSchedule() // Drop any pre-scheduled jobs for the removed rule
-                    Logger.i(LogTags.HUE_VIEWMODEL, "Rule deleted successfully: $ruleId")
-                } else {
-                    val error = result.exceptionOrNull()?.message ?: "Failed to delete rule"
-                    _uiState.update { it.copy(isLoading = false, error = error) }
-                    Logger.w(LogTags.HUE_VIEWMODEL, "Rule deletion failed: $error")
-                }
-            } catch (e: Exception) {
-                val error = "Rule deletion failed: ${e.message}"
-                _uiState.update { it.copy(isLoading = false, error = error) }
-                Logger.e(LogTags.HUE_VIEWMODEL, "Rule deletion exception", e)
+                Logger.e(LogTags.HUE_VIEWMODEL, ausnahmeLog, e)
             }
         }
     }

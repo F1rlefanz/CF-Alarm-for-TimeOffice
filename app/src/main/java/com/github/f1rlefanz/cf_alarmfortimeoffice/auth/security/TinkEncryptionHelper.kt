@@ -9,21 +9,8 @@ import com.google.crypto.tink.aead.AeadConfig
 import com.google.crypto.tink.integration.android.AndroidKeysetManager
 
 /**
- * Tink Crypto Encryption Helper für sichere Token-Verschlüsselung
- * 
- * Features:
- * - ✅ AES-256-GCM Verschlüsselung (AEAD)
- * - ✅ Android Keystore Integration (Hardware-backed wenn verfügbar)
- * - ✅ Master Key Management
- * - ✅ Automatische Keyset-Rotation (optional)
- * 
- * Security Properties:
- * - Confidentiality: AES-256-GCM
- * - Authenticity: GCM authentication tag
- * - Integrity: Tampering detection
- * - Hardware-backed: Android Keystore (wenn verfügbar)
- * 
- * @property context Application context
+ * Tink-AEAD (AES-256-GCM) für die Token-Verschlüsselung; das Keyset ist mit einem
+ * Android-Keystore-Master-Key geschützt (hardware-backed, wenn verfügbar).
  */
 class TinkEncryptionHelper private constructor(
     private val context: Context
@@ -70,11 +57,9 @@ class TinkEncryptionHelper private constructor(
         try {
             Logger.d(LogTags.TOKEN, "🔐 Initializing Tink Crypto for token encryption")
             
-            // 1. Register Tink AEAD primitive
             AeadConfig.register()
             Logger.d(LogTags.TOKEN, "✅ Tink AEAD registered")
             
-            // 2. Create or load Android Keystore-backed master key
             val keysetHandle = AndroidKeysetManager.Builder()
                 .withSharedPref(context, KEYSET_NAME, KEYSET_PREF_NAME)
                 .withKeyTemplate(KeyTemplates.get("AES256_GCM"))
@@ -84,7 +69,6 @@ class TinkEncryptionHelper private constructor(
             
             Logger.d(LogTags.TOKEN, "✅ Master key initialized (Android Keystore-backed)")
             
-            // 3. Get AEAD primitive for encryption/decryption
             @Suppress("DEPRECATION") // Tink Java API - no Kotlin alternative yet
             val aead = keysetHandle.getPrimitive(Aead::class.java)
             

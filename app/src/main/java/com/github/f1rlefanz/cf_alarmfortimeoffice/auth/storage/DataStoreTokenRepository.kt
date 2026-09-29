@@ -21,25 +21,7 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * DataStore-basierte Token-Repository Implementation mit Tink-Verschlüsselung
- *
- * Vorteile gegenüber EncryptedSharedPreferences:
- * - ✅ Async by design (keine Race Conditions)
- * - ✅ Type-safe Preferences API
- * - ✅ Atomare Operationen
- * - ✅ Native Flow-Support
- * - ✅ Bessere Performance
- * - ✅ Keine Verification-Race-Conditions
- * - ✅ Tink AEAD-Verschlüsselung (AES-256-GCM)
- * - ✅ Android Keystore-backed Master Key
- *
- * Security:
- * - Verschlüsselung: AES-256-GCM via Tink Crypto
- * - Master Key: Android Keystore (Hardware-backed wenn verfügbar)
- * - Authentifizierung: GCM authentication tag
- * - Tampering Detection: Automatisch durch AEAD
- */
+/** Token-Repository auf einem mit Tink (AES-256-GCM, Keystore-Master-Key) verschlüsselten DataStore. */
 @Singleton
 class DataStoreTokenRepository @Inject constructor(
     @param:ApplicationContext private val context: Context
@@ -58,7 +40,7 @@ class DataStoreTokenRepository @Inject constructor(
         encodeDefaults = true
     }
     
-    // ✅ VERSCHLÜSSELTER DataStore mit Tink Crypto (Lazy initialization)
+    // Selbst gebaut (lazy), bewusst kein injizierter @TokenDataStore - siehe CLAUDE.md.
     private val tokenDataStore: DataStore<Preferences> by lazy {
         EncryptedDataStoreFactory.create(
             context = context,
@@ -124,37 +106,10 @@ class DataStoreTokenRepository @Inject constructor(
     }
     
     override fun observe(): Flow<TokenData?> {
-        // ✅ Muss wie get() degradieren, nicht crashen. Der Store hat inzwischen einen
-        // corruptionHandler und `EncryptedPreferencesSerializer.readFrom()` uebersetzt einen
-        // Tink-Fehler in eine CorruptionException (siehe EncryptedDataStoreFactory) - das .catch{}
-        // ist dadurch NICHT ueberfluessig geworden:
-        //  * Der Handler greift ausschliesslich bei CorruptionException. Ein IO-Fehler oder eine
-        //    gescheiterte Verschluesselung beim (Ersatz-)Schreiben laeuft weiterhin als Exception
-        //    aus tokenDataStore.data heraus.
-        //  * readFrom() wirft einen unerwarteten Lesefehler seit dem Fix bewusst weiter, statt
-        //    still leere Preferences zu liefern (ein stiller Default wuerde beim naechsten Write
-        //    ueber den intakten Token geschrieben).
-        // Ungefangen landet so ein Fehler direkt in AuthViewModel.observeTokenLoss()s collect{}
-        // (viewModelScope.launch ohne try/catch, laeuft ab init{}) und beendet die App bei JEDEM
-        // Start. Der Flow muss also degradieren - aber NICHT nach "kein Token":
-        //
-        // 1. WOHIN degradiert wird, ist hier die eigentliche Entscheidung. Der einzige Konsument
-        //    (AuthViewModel.observeTokenLoss) wertet ausschliesslich das NEGATIVE Signal aus: ein
-        //    emittiertes "kein Token" heisst fuer ihn "Google hat den Zugriff entzogen" und loest
-        //    einen Zustimmungsdialog samt hasValidToken=false aus. Ein einmaliger IO-Fehler auf
-        //    token_data_v2_encrypted.preferences_pb (Speicherdruck, Storage-Haenger - genau der
-        //    Fall, fuer den EncryptedPreferencesSerializer.readFrom() bewusst weiterwirft) haette
-        //    damit einem Nutzer mit voellig intaktem Token eine Neuanmeldung aufgedraengt.
-        //    Deshalb: im Fehlerfall wird NICHTS emittiert. Kein Signal ist hier richtiger als ein
-        //    falsches - der Wecker haengt nicht an diesem Flow, die Notlage-Neuanmeldung schon.
-        //
-        // 2. Ein blosses .catch{} BEENDET den Flow (es faengt, emittiert und laesst normal
-        //    abschliessen). Der Wuerfel faellt also nur einmal: danach war der Token-Verlust-
-        //    Waechter fuer die gesamte Prozesslaufzeit tot, und ein SPAETERER, echter
-        //    Token-Verlust wurde nie mehr bemerkt - die App lief bis zum naechsten Kaltstart
-        //    weiter, als sei alles in Ordnung, waehrend kein Kalender mehr abrufbar war.
-        //    Deshalb retryWhen mit wachsendem Abstand, exakt wie beim Gegenstueck
-        //    CalendarSelectionRepository: ein transienter Fehler heilt sich selbst.
+        // Ungefangen beendete ein Lesefehler die App bei jedem Start (observeTokenLoss collect ohne
+        // try/catch). Im Fehlerfall wird NICHTS emittiert - kein Signal statt falschem "kein Token"
+        // (das erzwaenge eine Neuanmeldung); retryWhen statt .catch, weil .catch den Flow beendet.
+        // Hergang: Skill cfalarm-persistenz-und-auth, reference/auth-und-token.md.
         return tokenDataStore.data
             .retryWhen { cause, attempt ->
                 if (attempt >= OBSERVE_RETRY_ATTEMPTS) {

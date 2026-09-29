@@ -20,23 +20,7 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
-/**
- * Factory für verschlüsselte DataStore-Instanzen mit Tink Crypto
- * 
- * Features:
- * - ✅ Transparente Verschlüsselung via Custom Serializer
- * - ✅ Tink AEAD (AES-256-GCM)
- * - ✅ Keine API-Änderungen für DataStore-Nutzer
- * - ✅ Backward-kompatibel (mit Migration)
- * 
- * Usage:
- * ```kotlin
- * val dataStore = EncryptedDataStoreFactory.create(
- *     context = context,
- *     name = "my_secure_data"
- * )
- * ```
- */
+/** Factory für Preferences-DataStores, deren Datei komplett mit Tink AEAD (AES-256-GCM) verschlüsselt ist. */
 object EncryptedDataStoreFactory {
     
     /**
@@ -59,18 +43,10 @@ object EncryptedDataStoreFactory {
         
         return DataStoreFactory.create(
             serializer = EncryptedPreferencesSerializer(encryptionHelper),
-            // corruptionHandler: PFLICHT, nicht Kosmetik. DataStore liest VOR JEDEM Schreiben erneut
-            // (DataStoreImpl.transformAndWrite -> readDataOrHandleCorruption); ein Lesefehler macht
-            // den Store deshalb nicht nur lese-, sondern dauerhaft SCHREIB-tot. Ohne Handler wäre
-            // ein kaputter Ciphertext (abgebrochener Schreibvorgang, Speicherfehler) eine
-            // Endlosschleife: Re-Login gelingt, `save()` scheitert am internen Read, der
-            // Token-Verlust-Watcher schlägt sofort wieder zu — dauerhaft, ohne Selbstheilung.
-            //
-            // Abwägung bewusst so entschieden: Der Handler WIRFT den (nicht entschlüsselbaren und
-            // damit ohnehin wertlosen) Token weg und erzwingt EINE Neuanmeldung. Das ist das
-            // kleinere Übel gegenüber einer App, die nie wieder einen Token speichern kann.
-            // Sicherheitsargument bleibt gewahrt: es wird nichts entschlüsselt ausgeliefert, die
-            // unlesbare Datei wird durch einen LEEREN Zustand ersetzt.
+            // corruptionHandler: PFLICHT, DataStore liest vor jedem Schreiben - ohne Handler macht
+            // ein kaputter Ciphertext den Store dauerhaft SCHREIB-tot. Er wirft den wertlosen Token
+            // weg, erzwingt EINE Neuanmeldung (Skill cfalarm-persistenz-und-auth,
+            // reference/persistenz.md).
             //
             // ZWEI Ursachen, EIN Handler — und sie heilen NICHT gleich weit (deshalb der
             // isAvailable()-Log, der sie im Nachhinein unterscheidbar macht):
@@ -125,7 +101,6 @@ internal class EncryptedPreferencesSerializer(
      */
     override suspend fun readFrom(input: InputStream): Preferences {
         return try {
-            // 1. Lese verschlüsselte Bytes
             val encryptedBytes = input.readBytes()
             
             if (encryptedBytes.isEmpty()) {
@@ -134,11 +109,9 @@ internal class EncryptedPreferencesSerializer(
                 return defaultValue
             }
             
-            // 2. Entschlüssle mit Tink
             val decryptedBytes = encryptionHelper.decrypt(encryptedBytes)
             Logger.d(LogTags.TOKEN, "🔓 Decrypted ${encryptedBytes.size} bytes -> ${decryptedBytes.size} bytes")
             
-            // 3. Deserialisiere Preferences mit delegateSerializer
             // PreferencesSerializer benötigt BufferedSource (Okio)
             val decryptedStream = decryptedBytes.inputStream()
             val decryptedSource = decryptedStream.source().buffer()
@@ -157,18 +130,10 @@ internal class EncryptedPreferencesSerializer(
             Logger.e(LogTags.TOKEN, "❌ SECURITY: Decryption failed - possible tampering!", e)
             throw CorruptionException("Verschluesselte Preferences nicht entschluesselbar", e)
         } catch (e: Exception) {
-            // KEIN stilles `defaultValue` mehr. Ein zurückgegebener Default ist für DataStore der
-            // GÜLTIGE Ist-Zustand: er cacht "kein Token" und der nächste Write schreibt diesen
-            // leeren Stand über den noch intakten Ciphertext — Token weg, obwohl er nie unlesbar war.
-            //
-            // Stattdessen unverändert weiterwerfen (NICHT in eine CorruptionException umdeuten):
-            //  * Ein defektes Preferences-Protobuf meldet der delegateSerializer bereits selbst als
-            //    CorruptionException — die läuft hier durch und der corruptionHandler heilt sie.
-            //  * Ein transienter IO-Fehler (Speicherdruck, Storage-Hänger) und eine
-            //    CancellationException dürfen dagegen NIEMALS den Handler auslösen: der würde die
-            //    intakte Datei durch einen leeren Zustand ersetzen. Als IOException/Cancellation
-            //    propagiert, degradieren `get()` (try/catch) und `observe()` (.catch) wie bisher auf
-            //    "kein Token", ohne etwas zu überschreiben.
+            // Kein stilles `defaultValue` (der nächste Write überschriebe den intakten Ciphertext) und
+            // unverändert weiterwerfen: IO/Cancellation dürfen den Handler nie auslösen, ein defektes
+            // Protobuf meldet der delegateSerializer schon selbst als CorruptionException
+            // (Skill cfalarm-persistenz-und-auth, reference/persistenz.md).
             Logger.e(LogTags.TOKEN, "❌ Failed to read encrypted preferences", e)
             throw e
         }
@@ -179,7 +144,6 @@ internal class EncryptedPreferencesSerializer(
      */
     override suspend fun writeTo(t: Preferences, output: OutputStream) {
         try {
-            // 1. Serialisiere Preferences zu Bytes
             // PreferencesSerializer benötigt BufferedSink (Okio)
             val byteArrayOutputStream = java.io.ByteArrayOutputStream()
             val bufferedSink = byteArrayOutputStream.sink().buffer()
@@ -187,7 +151,6 @@ internal class EncryptedPreferencesSerializer(
             bufferedSink.flush()
             val preferencesBytes = byteArrayOutputStream.toByteArray()
             
-            // 2. Verschlüssele mit Tink
             val encryptedBytes = try {
                 encryptionHelper.encrypt(preferencesBytes)
             } catch (e: TinkEncryptionException) {
@@ -217,7 +180,6 @@ internal class EncryptedPreferencesSerializer(
             }
             Logger.d(LogTags.TOKEN, "🔐 Encrypted ${preferencesBytes.size} bytes -> ${encryptedBytes.size} bytes")
             
-            // 3. Schreibe verschlüsselte Bytes
             output.write(encryptedBytes)
             output.flush()
             

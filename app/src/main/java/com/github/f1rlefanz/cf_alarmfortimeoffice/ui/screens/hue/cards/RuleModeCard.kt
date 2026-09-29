@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -33,7 +32,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueRuleModusLab
  * FlowRow statt Row: drei Chips mit deutschen Beschriftungen passen auf schmalen Geraeten nicht
  * zwingend nebeneinander, und ein abgeschnittener Chip waere unbedienbar.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RuleModeCard(
     modus: HueRuleModus,

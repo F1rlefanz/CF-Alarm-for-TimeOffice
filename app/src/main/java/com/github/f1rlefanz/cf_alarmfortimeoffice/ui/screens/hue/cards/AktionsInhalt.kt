@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -34,7 +33,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.previewColorFor
  *
  * Der Ein/Aus-Schalter ist zugleich die Ueberschrift dieses Blocks - deshalb kraeftiger gesetzt.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AktionsInhalt(
     targetOn: Boolean,

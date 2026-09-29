@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -51,7 +50,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DndViewModel
  * Freigabe-Pruefung lebt hier (Composable-Ebene), nicht im ViewModel - Refresh bei ON_RESUME, analog
  * zur Bedienungshilfen-Karte des Dimmers.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DndSettingsScreen(
     onNavigateBack: () -> Unit,

@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.cards
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,7 +52,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.SzenenAuswahl
  * MEHRERE RAEUME, ABER HOECHSTENS EINE SZENE JE RAUM - eine neue Wahl im selben Raum ersetzt die
  * alte. Hergang: Skill cfalarm-hue.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SceneSelectionCard(
     lightTargets: LightTargets,

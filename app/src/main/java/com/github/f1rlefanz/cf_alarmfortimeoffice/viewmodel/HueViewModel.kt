@@ -87,8 +87,6 @@ class HueViewModel @Inject constructor(
         "Bridge nicht erreichbar – Lichter und Szenen nicht aktualisiert."
 
     init {
-        Logger.i(LogTags.HUE_VIEWMODEL, "HueViewModel initialized")
-        
         // Start observing discovery status
         viewModelScope.launch {
             hueBridgeUseCase.getDiscoveryStatus().collect { status ->
@@ -157,8 +155,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun discoverBridges() {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Starting bridge discovery")
-        
         _uiState.update { it.copy(isLoading = true, error = null) }
         
         viewModelScope.launch {
@@ -232,8 +228,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun validateBridgeConnection() {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Validating bridge connection")
-
         viewModelScope.launch {
             try {
                 val result = hueBridgeUseCase.validateBridgeConnection()
@@ -327,8 +321,6 @@ class HueViewModel @Inject constructor(
      * Aussage darueber, welche Lampen es gibt (siehe getAllLightTargets).
      */
     fun refreshLightTargets(userInitiated: Boolean = false) {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Refreshing light targets")
-        
         viewModelScope.launch {
             try {
                 val result = hueLightUseCase.getAllLightTargets()
@@ -404,8 +396,6 @@ class HueViewModel @Inject constructor(
      * wie die Gruppen geschnitten sind.
      */
     fun runLightTest() {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Running visible light test")
-
         viewModelScope.launch {
             try {
                 // Die Lampenliste notfalls JETZT laden und DARAUF WARTEN.
@@ -447,8 +437,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun refreshRules() {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Refreshing schedule rules")
-        
         viewModelScope.launch {
             try {
                 val result = hueRuleUseCase.getAllRules()
@@ -498,7 +486,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun clearEditingRule() {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Clearing editing rule")
         _uiState.update { it.copy(editingRule = null) }
     }
     

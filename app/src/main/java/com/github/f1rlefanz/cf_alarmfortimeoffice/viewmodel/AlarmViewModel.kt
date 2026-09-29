@@ -242,30 +242,24 @@ class AlarmViewModel @Inject constructor(
     private fun cleanupExpiredAlarmsOnStartup() {
         viewModelScope.launch {
             try {
-                // Cast to concrete implementation to access cleanup method
-                val repository =
-                    alarmUseCase as? com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
-                if (repository != null) {
-                    // For now, trigger cleanup via deleteAll -> rebuild pattern
-                    Logger.d(LogTags.ALARM, "Startup cleanup: checking for expired alarms")
+                Logger.d(LogTags.ALARM, "Startup cleanup: checking for expired alarms")
 
-                    // Get all alarms and check for expired ones
-                    alarmUseCase.getAllAlarms().onSuccess { allAlarms ->
-                        val currentTime = System.currentTimeMillis()
-                        val expiredAlarms = allAlarms.filter { it.triggerTime <= currentTime }
+                // Get all alarms and check for expired ones
+                alarmUseCase.getAllAlarms().onSuccess { allAlarms ->
+                    val currentTime = System.currentTimeMillis()
+                    val expiredAlarms = allAlarms.filter { it.triggerTime <= currentTime }
 
-                        if (expiredAlarms.isNotEmpty()) {
-                            Logger.w(
-                                LogTags.ALARM,
-                                "Found ${expiredAlarms.size} expired alarms on startup, cleaning up"
-                            )
-                            // Delete each expired alarm
-                            expiredAlarms.forEach { alarm ->
-                                alarmUseCase.deleteAlarm(alarm.id)
-                            }
-                        } else {
-                            Logger.d(LogTags.ALARM, "No expired alarms found on startup")
+                    if (expiredAlarms.isNotEmpty()) {
+                        Logger.w(
+                            LogTags.ALARM,
+                            "Found ${expiredAlarms.size} expired alarms on startup, cleaning up"
+                        )
+                        // Delete each expired alarm
+                        expiredAlarms.forEach { alarm ->
+                            alarmUseCase.deleteAlarm(alarm.id)
                         }
+                    } else {
+                        Logger.d(LogTags.ALARM, "No expired alarms found on startup")
                     }
                 }
             } catch (e: Exception) {

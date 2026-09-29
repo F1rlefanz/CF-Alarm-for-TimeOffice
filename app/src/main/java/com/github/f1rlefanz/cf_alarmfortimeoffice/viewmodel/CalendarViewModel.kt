@@ -379,9 +379,6 @@ class CalendarViewModel @Inject constructor(
             // NOTE: distinctUntilChanged() entfernt - StateFlow ist bereits distinct by design
             calendarSelectionRepository.selectedCalendarIds
                 .collect { selectedIds ->
-                    val calendarCount = selectedIds.size
-                    Logger.d(LogTags.CALENDAR, "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars")
-                    
                     // LAZY LOADING: Auto-load events with lazy loading when selection changes
                     if (selectedIds.isNotEmpty()) {
                         hasSeenNonEmptySelection = true
@@ -798,13 +795,6 @@ class CalendarViewModel @Inject constructor(
                     // DIAGNOSTIC: Log special case when no calendars are found
                     if (resetPagination && totalCalendars == 0) {
                         Logger.w(LogTags.CALENDAR, "🔍 CALENDAR-DIAGNOSIS: Google account has no calendars accessible via Calendar API")
-                        Logger.i(LogTags.CALENDAR, "🔍 CALENDAR-DIAGNOSIS: This could mean:")
-                        Logger.i(LogTags.CALENDAR, "   - User's Google account has no calendars created")
-                        Logger.i(LogTags.CALENDAR, "   - Calendar access is restricted by organization policy")  
-                        Logger.i(LogTags.CALENDAR, "   - API permissions are insufficient")
-                        Logger.i(LogTags.CALENDAR, "💡 CALENDAR-DIAGNOSIS: User should create a calendar in Google Calendar first")
-                    } else if (resetPagination && totalCalendars > 0) {
-                        Logger.i(LogTags.CALENDAR, "✅ CALENDAR-DIAGNOSIS: Successfully found $totalCalendars calendars - user can proceed with calendar selection")
                     }
                     
                 }.onFailure { error ->
@@ -1109,9 +1099,6 @@ class CalendarViewModel @Inject constructor(
                 // [isEventListCompleteForAlarmSync]. Die ANZEIGE darf ein Praefix sein, die
                 // Grundlage einer Loeschentscheidung nicht.
                 if (finalSortedEvents.isNotEmpty()) {
-                    // DEBUGGING: Log current state before alarm creation
-                    logCurrentStateForDebugging(finalSortedEvents)
-
                     val eventsForAlarmSync = if (displayedListIsComplete) {
                         finalSortedEvents
                     } else {
@@ -1170,11 +1157,7 @@ class CalendarViewModel @Inject constructor(
                     }
                 }
                 
-                if (forceRefresh) {
-                    Logger.i(LogTags.CALENDAR, "Progressive calendar events force refreshed - ${finalSortedEvents.size} events loaded for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days${if (!loadAll) " (lazy loaded)" else ""}")
-                } else {
-                    Logger.d(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days${if (!loadAll) " (lazy loaded)" else ""}")
-                }
+                Logger.i(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, forceRefresh=$forceRefresh${if (!loadAll) " (lazy loaded)" else ""}")
                 
             } catch (e: Exception) {
                 updateLocalStateImmediate { 
@@ -1430,8 +1413,6 @@ class CalendarViewModel @Inject constructor(
     private fun createAlarmsFromLoadedEvents(events: List<CalendarEvent>) {
         viewModelScope.launch {
             try {
-                val eventCount = events.size
-                
                 // CRITICAL FIX: Don't create alarms if no events exist
                 if (events.isEmpty()) {
                     Logger.business(LogTags.ALARM, "✅ NO-EVENTS: No calendar events found - no alarms to create")
@@ -1445,13 +1426,6 @@ class CalendarViewModel @Inject constructor(
                     return@launch
                 }
 
-                Logger.business(LogTags.ALARM, "🚨 TIMING-FIX: Starting alarm creation for $eventCount loaded events")
-                
-                // 🔍 DEBUGGING: Log details about the events we found
-                events.forEach { event ->
-                    Logger.business(LogTags.ALARM, "🔍 FOUND-EVENT: '${event.title}' on ${event.startTime.toLocalDate()} at ${event.startTime.toLocalTime()} (Calendar: ${event.calendarId.take(8)}...)")
-                }
-                
                 // TIMING FIX: Wait for ShiftConfig with retry logic
                 var shiftConfig: com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig? = null
                 var attempts = 0
@@ -1462,7 +1436,6 @@ class CalendarViewModel @Inject constructor(
                     
                     if (shiftConfig == null) {
                         attempts++
-                        Logger.d(LogTags.ALARM, "⏳ TIMING-FIX: ShiftConfig not ready yet, attempt $attempts/$maxAttempts")
                         kotlinx.coroutines.delay(500) // Wait 500ms before next attempt
                     }
                 }
@@ -1480,8 +1453,6 @@ class CalendarViewModel @Inject constructor(
                 }
                 
                 if (shiftConfig?.autoAlarmEnabled == true) {
-                    Logger.business(LogTags.ALARM, "✅ TIMING-FIX: ShiftConfig available with autoAlarm enabled, creating alarms...")
-                    
                     // Orchestrator: syncAlarms fuehrt einen eventId-basierten Delta-Sync durch,
                     // der bestehende UND manuelle Alarme (eventId leer) schont, nur wirklich
                     // entfernte Events loescht und die System-Alarme INTERN setzt (inkl.
@@ -1511,34 +1482,6 @@ class CalendarViewModel @Inject constructor(
         }
     }
 
-    /**
-     * DEBUGGING: Logs current state to help diagnose timing issues
-     */
-    private suspend fun logCurrentStateForDebugging(events: List<CalendarEvent>) {
-        try {
-            val eventCount = events.size
-            Logger.business(LogTags.ALARM, "🔍 DEBUG-STATE: Starting alarm creation process")
-            Logger.business(LogTags.ALARM, "🔍 DEBUG-STATE: Events loaded: $eventCount")
-            
-            events.take(3).forEach { event ->
-                Logger.d(LogTags.ALARM, "🔍 DEBUG-STATE: Event: '${event.title}' at ${event.startTime}")
-            }
-            
-            val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-            if (shiftConfig != null) {
-                val definitionCount = shiftConfig.definitions.size
-                Logger.business(LogTags.ALARM, "🔍 DEBUG-STATE: ShiftConfig available - autoAlarm=${shiftConfig.autoAlarmEnabled}, definitions=$definitionCount")
-                shiftConfig.definitions.forEach { def ->
-                    Logger.d(LogTags.ALARM, "🔍 DEBUG-STATE: ShiftDef: '${def.name}' enabled=${def.isEnabled}, keywords=${def.keywords}")
-                }
-            } else {
-                Logger.w(LogTags.ALARM, "🔍 DEBUG-STATE: ⚠️ ShiftConfig is NULL - this is the problem!")
-            }
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "🔍 DEBUG-STATE: Exception during debugging", e)
-        }
-    }
-    
     /**
      * BACKGROUND SYNC: Intelligente Hintergrund-Synchronisation
      * Aktualisiert stale Cache-Einträge ohne die UI zu blockieren

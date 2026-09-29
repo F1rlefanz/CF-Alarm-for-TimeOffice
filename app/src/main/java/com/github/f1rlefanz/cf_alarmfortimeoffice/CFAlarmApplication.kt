@@ -12,7 +12,6 @@ import android.os.UserManager
 import androidx.core.content.ContextCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import com.github.f1rlefanz.cf_alarmfortimeoffice.BuildConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.connection.HueBridgeConnectionManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPauseUseCase
@@ -112,15 +111,10 @@ class CFAlarmApplication : Application() {
         // Verzeichnis und darf deshalb nicht mit dem Datei-Log zusammen ausfallen.
         if (BuildConfig.DEBUG) {
             try { Timber.plant(Timber.DebugTree()) } catch (_: Exception) { /* ignore */ }
-            Logger.d(LogTags.APP, "Timber initialized in DEBUG mode with file logging")
-        } else {
-            Logger.i(LogTags.APP, "Timber initialized in RELEASE mode with file logging")
         }
         plantFileLogTree("Kaltstart")
 
         initializeApp()
-        
-        Logger.i(LogTags.APP, "✅ CFAlarmApplication initialized with Hilt DI - Modern and reliable!")
     }
     
     /**
@@ -197,21 +191,18 @@ class CFAlarmApplication : Application() {
                     Logger.e(LogTags.APP, "❌ STARTUP: Entsperr-Ueberwachung konnte nicht aufgebaut werden", e)
                 }
 
-                Logger.i(LogTags.HUE_BRIDGE, "🔄 STARTUP: Initializing robust Hue Bridge connection management")
                 try {
                     val connectionManager = HueBridgeConnectionManager.getInstance(this@CFAlarmApplication)
                     connectionManager.initialize()
-                    Logger.i(LogTags.HUE_BRIDGE, "✅ STARTUP: Hue Bridge connection manager initialized - alarm operations guaranteed")
                 } catch (e: Exception) {
                     Logger.e(LogTags.HUE_BRIDGE, "❌ STARTUP: Failed to initialize Hue Bridge connection manager", e)
                 }
 
-                Logger.business(LogTags.TOKEN, "🔄 STARTUP: Initializing background services")
                 try {
                     backgroundServiceManager.initializeBackgroundServices()
                     Logger.business(LogTags.TOKEN, "✅ STARTUP: Background-Services aktiv – Wartung/Alarm-Sync via Exact Alarm (6h)")
                 } catch (e: Exception) {
-                    Logger.e(LogTags.TOKEN, "❌ STARTUP: Failed to initialize WorkManager", e)
+                    Logger.e(LogTags.TOKEN, "❌ STARTUP: Failed to initialize background services", e)
                 }
 
                 Logger.d(LogTags.SHIFT_CONFIG, "🔄 STARTUP: Initializing ShiftConfig early to prevent timing issues")
@@ -251,9 +242,7 @@ class CFAlarmApplication : Application() {
                     }
                 }
 
-                Logger.d(LogTags.TOKEN, "🔐 STARTUP: Tink encryption active for OAuth2 tokens")
-                
-                Logger.i(LogTags.APP, "✅ App initialization completed successfully (with Hilt DI + WorkManager + Encryption)")
+                Logger.i(LogTags.APP, "✅ App initialization completed")
             } catch (e: Exception) {
                 Logger.e(LogTags.APP, "Error during app initialization", e)
             }

@@ -5,27 +5,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.CoroutineExceptionHandler
 
 /**
- * SIMPLIFIED Central Error Handler - Focus on Logging
- * 
- * CORE FEATURES:
- * ✅ Structured Error Categorization
- * ✅ Integration with centralized Logger system
- * ✅ User-friendly German error messages
- * ✅ Security-conscious error reporting
- * ✅ Memory-efficient error handling
+ * Zentrale Fehlerbehandlung: ordnet Ausnahmen einem [AppError] zu, loggt nach Schwere und liefert
+ * deutsche Nutzertexte.
  */
 object ErrorHandler {
     
-    /**
-     * SIMPLIFIED error handling with structured logging
-     * 
-     * Uses centralized Logger system for consistent error reporting
-     * Provides detailed context while maintaining security
-     */
+    /** Ordnet [error] einem [AppError] zu und loggt ihn mit passendem Level; [context] erscheint im Log. */
     fun handleError(error: Throwable, context: String = ""): AppError {
         val appError = error.toAppError()
         
-        // PERFORMANCE: Build error context efficiently
         val contextInfo = if (context.isNotEmpty()) " in $context" else ""
         val errorContext = "Error$contextInfo: ${appError.message}"
         
@@ -71,23 +59,12 @@ object ErrorHandler {
         return appError
     }
     
-    /**
-     * PERFORMANCE-OPTIMIZED user-friendly error message retrieval
-     * 
-     * Provides German error messages optimized for end users
-     * Handles security-sensitive information appropriately
-     */
+    /** Deutscher, fuer Nutzer bestimmter Text zu [error] - ohne interne Details. */
     fun getErrorMessage(error: Throwable): String {
         val appError = (error as? AppError) ?: error.toAppError()
         return getUserMessage(appError)
     }
     
-    /**
-     * LOCALIZED user-friendly error messages (German)
-     * 
-     * SECURITY: Sanitized messages that don't expose internal details
-     * PERFORMANCE: Pre-computed message mapping for fast lookup
-     */
     private fun getUserMessage(error: AppError): String = when (error) {
         // NETWORK ERRORS
         is AppError.NetworkError -> "Keine Internetverbindung. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut."
@@ -122,12 +99,8 @@ object ErrorHandler {
      * Erzeugt einen CoroutineExceptionHandler, der die Ausnahme durch die zentrale
      * Fehlerbehandlung schickt.
      *
-     * NICHT ENTFERNEN. Bis zum 22.08.2026 stand hier "Currently not used but kept for future
-     * needs" plus ein @Suppress("unused") - beides war falsch: `HueBridgeConnectionManager`
-     * benutzt die Funktion fuer seinen `healthCheckScope` (dort Zeile 273), und CLAUDE.md
-     * verlangt sie ausdruecklich. Ein `SupervisorJob` allein faengt die Ausnahme NICHT - sie
-     * beendet dann den Prozess. Die falsche Notiz haette bei der naechsten Aufraeumrunde fast
-     * genau das ausgeloest.
+     * NICHT ENTFERNEN: `HueBridgeConnectionManager.healthCheckScope` nutzt sie; ein `SupervisorJob`
+     * allein laesst die Ausnahme den Prozess beenden (CLAUDE.md).
      */
     fun createCoroutineExceptionHandler(
         context: String,

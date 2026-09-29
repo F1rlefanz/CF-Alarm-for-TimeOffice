@@ -29,66 +29,25 @@ internal class DeviceLocalStartupGate {
     /** Liefert GENAU EINMAL je Instanz `true`; jeder weitere Aufruf `false`. */
     fun claimRun(): Boolean = done.compareAndSet(false, true)
 
-    /** Nur fuer Diagnose/Tests: ist der Lauf bereits beansprucht? */
+    /** Ist der Lauf bereits beansprucht? Liest auch der Startsequenzer in `CFAlarmApplication`. */
     val hasRun: Boolean get() = done.get()
 }
 
 /**
  * Setzt GERAETELOKALE Merker zurueck, wenn die App auf einem anderen Geraet aufwacht.
  *
- * WARUM DAS NOETIG IST:
- * Vier Flags im @MainDataStore ("settings") merken sich, dass der Nutzer einen Hinweis bereits
- * weggetippt hat:
- *   - `battery_prompt_dismissed`               (Akku-Optimierung ausnehmen)
- *   - `unused_app_restrictions_dismissed`      ("Pause bei Nichtnutzung")
- *   - `timeoffice_health_prompt_dismissed`     (TimeOffice-Hintergrundsync)
- *   - `oem_hint_shown_<OEM>`                   (herstellerspezifischer Hinweis)
+ * Zwei Gruppen im @MainDataStore beschreiben den Zustand EINES Geraets, keine Einstellung: die
+ * "Hinweis schon weggetippt"-Flags (Akku-Ausnahme, "Pause bei Nichtnutzung", TimeOffice, OEM) und
+ * das Gedaechtnis der Kalender-Warnung (`CalendarUnavailablePrefs` - mitgereist heilt es nicht, es
+ * haelt sich selbst am Leben, und die Wecker versiegen lautlos). Der `settings`-Store ist EINE Datei
+ * im Backup, einzelne Schluessel lassen sich nicht ausnehmen - deshalb ein Waechter statt einer
+ * Backup-Regel. `wartung_token_stoerung_gemeldet` braucht ihn nicht (`auth_prefs` ist vom Backup
+ * ausgenommen).
  *
- * Diese Flags beschreiben KEINE Nutzerkonfiguration, sondern den Zustand EINES Geraets: welche
- * Ausnahme dort erteilt ist, welcher Hersteller es ist, ob TimeOffice dort installiert ist. Der
- * `settings`-Store liegt aber - richtigerweise, denn er enthaelt auch Wecker-, Dimmer- und
- * DND-Einstellungen - im Android-Backup. Nach einem Restore auf ein NEUES Geraet kamen damit die
- * "schon abgelehnt"-Flags mit, und die App fragte nie wieder nach Akku-Ausnahme und "Pause bei
- * Nichtnutzung" - genau die zwei Einstellungen, die in diesem Projekt nachweislich Wecker
- * verschluckt haben (siehe CLAUDE.md und die Status-Karten dazu). Auf dem neuen Geraet ist die
- * Ausnahme naturgemaess NICHT erteilt, der Hinweis waere also faellig gewesen.
- *
- * ZWEITE GRUPPE, gleiche Mechanik, anderer Anlass - das GEDAECHTNIS DER KALENDER-WARNUNG
- * (`CalendarUnavailablePrefs`):
- *   - `calendar_unavailable_notified`          ("ueber diese Kalender habe ich schon gewarnt")
- *   - `calendar_unavailable_last_failed`       ("diese Kalender sind beim VORIGEN Lauf gescheitert")
- *
- * Beide sind eine BEOBACHTUNG dieses Geraets, keine Einstellung - und der "schon gewarnt"-Merker
- * repariert sich nach einem Restore NICHT von selbst: `entscheideBenachrichtigung()` rechnet
- * `neuZuMelden = beharrlich - bereitsGemeldet`. Scheitert der mitgewanderte Kalender auf dem neuen
- * Geraet ebenfalls (also genau der Fall, um den es geht), ist `neuZuMelden` bei JEDEM Lauf leer, es
- * wird nichts gemeldet, und der abschliessende `intersect jetztGescheitert` haelt die ID im Merker.
- * Dauerhaft und lautlos - waehrend die Vollstaendigkeits-Sperren zwar das Loeschen von Weckern
- * verhindern, damit aber auch jedes Anlegen: die Wecker versiegen, und niemand erfaehrt davon. Dass
- * die Kalenderauswahl selbst nicht im Backup ist, entschaerft nichts - bei gleichem Google-Konto
- * sind es dieselben Kalender-IDs. Der dritte Schluessel daneben
- * (`calendar_unavailable_notification_enabled`) ist eine echte Einstellung, reist mit und darf
- * deshalb NICHT als Praefix mitgefangen werden (siehe die exakten Eintraege unten).
- * `wartung_token_stoerung_gemeldet` hat dasselbe Muster, aber nicht dasselbe Problem: `auth_prefs`
- * ist vom Backup ausgenommen, der Nutzer meldet sich neu an, und der erste gueltige Token setzt den
- * Merker ueber `WartungStoerungPrefs.zuruecksetzenFallsNoetig()` zurueck.
- *
- * Ein selektiver Backup-Ausschluss ist technisch nicht moeglich: ein DataStore-Preferences-Store
- * ist EINE Datei, einzelne Schluessel lassen sich nicht ausnehmen. Deshalb dieser Waechter.
- *
- * BEWUSSTE GRENZE: Fehlt der Marker (Erstinstallation, oder ein Bestandsinstall aus der Zeit vor
- * diesem Waechter), wird NICHT zurueckgesetzt - nur der Marker geschrieben. Sonst wuerde ein
- * laufender Bestandsinstall seine Abweisungen einmalig verlieren. Der Preis: ein Restore aus einem
- * Backup, das VOR dieser Version entstanden ist, faellt noch in die alte Falle. Ab dem ersten
- * Start mit dieser Version ist der Marker gesetzt und jeder weitere Geraetewechsel greift.
- *
- * Ein Zurechtsetzen ist harmlos: die Hinweise erscheinen nur, wenn die jeweilige Einstellung
- * tatsaechlich fehlt (`BatteryOptimizationHelper.isExempted`, `UnusedAppRestrictionsHelper.
- * isRestricted`). Ist auf dem neuen Geraet alles in Ordnung, sieht der Nutzer trotz
- * zurueckgesetzter Flags nichts. Fuer das Kalender-Gedaechtnis gilt dasselbe in der Richtung, die
- * `CalendarUnavailablePrefs` fuer sich beansprucht: schlimmstenfalls wird eine bereits
- * ausgesprochene Warnung ein zweites Mal gezeigt, oder die erste Stoerung braucht wieder zwei
- * Wartungslaeufe. Im Zweifel warnen.
+ * BEWUSSTE GRENZE: fehlt der Marker (Erstinstallation, Bestand von vor diesem Waechter), wird nur
+ * der Marker geschrieben, nichts zurueckgesetzt. Zuruecksetzen ist harmlos: die Hinweise erscheinen
+ * nur, wenn die Einstellung wirklich fehlt; im Zweifel wird einmal zu viel gewarnt.
+ * Hergang: Skill cfalarm-persistenz-und-auth, reference/geraetewechsel-und-export.md.
  */
 object DeviceLocalFlagsGuard {
 
@@ -148,17 +107,9 @@ object DeviceLocalFlagsGuard {
      * holt den Aufruf nach `ACTION_USER_UNLOCKED` nach - abgesichert gegen Doppellauf ueber
      * [DeviceLocalStartupGate].
      *
-     * @return true, wenn ein Geraetewechsel erkannt wurde. Der Aufrufer muss daraufhin auch die
-     *         Master-Pause aufheben - und zwar ueber [com.github.f1rlefanz.cf_alarmfortimeoffice
-     *         .masterpause.MasterPauseUseCase.resume], NICHT indem er hier einen Schluessel
-     *         entfernt. Das war der erste, falsche Wurf dieses Waechters: eine Pause besteht aus
-     *         MEHR als dem DataStore-Flag - `pause()` schreibt zusaetzlich den
-     *         Device-Protected-Spiegel (den der BootReceiver VOR der ersten Entsperrung liest),
-     *         loescht die Alarme und reisst 6h-Wartung, Dimmer-Tick, DND-Tick, Hue-Planung und den
-     *         Pre-Alarm-Refresh ab. Wer nur `master_pause_enabled` loescht, hinterlaesst eine App,
-     *         die "nicht pausiert" ANZEIGT, deren Boot-Wiederherstellung aber dauerhaft gesperrt
-     *         bleibt und deren Hintergrundketten nie wieder anlaufen. Genau deshalb steht die
-     *         Master-Pause NICHT in [DEVICE_LOCAL_KEY_PATTERNS].
+     * @return true, wenn ein Geraetewechsel erkannt wurde. Der Aufrufer hebt dann die Master-Pause
+     *         ueber `MasterPauseUseCase.resume()` auf, nie per Schluessel (eine Pause ist mehr als
+     *         das Flag - Hergang im Skill); deshalb steht sie NICHT in [DEVICE_LOCAL_KEY_PATTERNS].
      */
     suspend fun resetIfDeviceChanged(dataStore: DataStore<Preferences>): Boolean {
         val current = currentDeviceMarker()

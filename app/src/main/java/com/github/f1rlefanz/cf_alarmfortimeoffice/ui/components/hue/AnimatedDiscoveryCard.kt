@@ -33,13 +33,10 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -58,18 +55,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.DiscoveryStatus
 
-/**
- * Simplified animated discovery card with optimized layout
- * Fixed: Layout overflow, scrolling issues, excessive spacing
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Fortschrittskarte waehrend der Bridge-Suche. */
 @Composable
 fun AnimatedDiscoveryCard(
     discoveryStatus: DiscoveryStatus?,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Simple pulse animation
     val pulseScale by rememberInfiniteTransition(label = "pulse").animateFloat(
         initialValue = 1f,
         targetValue = 1.1f,
@@ -98,16 +90,14 @@ fun AnimatedDiscoveryCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp), // Reduced padding
+                        .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp) // Reduced spacing
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Simplified Icon Section
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier.height(80.dp) // Fixed height to prevent overflow
                     ) {
-                        // Smaller pulsing circle
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
@@ -148,7 +138,6 @@ fun AnimatedDiscoveryCard(
                         }
                     }
 
-                    // Status Text - Simplified
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -169,7 +158,6 @@ fun AnimatedDiscoveryCard(
                         )
                     }
 
-                    // Progress Indicator - Simplified
                     if (status.progress > 0) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -191,7 +179,6 @@ fun AnimatedDiscoveryCard(
                         }
                     }
 
-                    // Method indicator - Compact
                     status.currentMethod?.let { method ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -212,7 +199,6 @@ fun AnimatedDiscoveryCard(
                         }
                     }
 
-                    // Cancel Button - Compact
                     OutlinedButton(
                         onClick = onCancel,
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -239,7 +225,6 @@ private fun getDiscoveryIcon(stage: String): ImageVector = when (stage) {
     "STARTING" -> Icons.Default.Search
     "N_UPNP_SEARCH" -> Icons.Default.CloudSync
     "MDNS_SEARCH" -> Icons.Default.Router
-    "VALIDATING" -> Icons.Default.Verified
     "COMPLETED" -> Icons.Default.CheckCircle
     "FAILED" -> Icons.Default.Error
     else -> Icons.Default.Search
@@ -249,7 +234,6 @@ private fun getDiscoveryTitle(stage: String): String = when (stage) {
     "STARTING" -> "Starte Suche..."
     "N_UPNP_SEARCH" -> "Online-Suche"
     "MDNS_SEARCH" -> "Netzwerk-Scan"
-    "VALIDATING" -> "Validierung"
     "COMPLETED" -> "Fertig!"
     "FAILED" -> "Fehler"
     else -> "Bridge-Suche"
@@ -258,6 +242,5 @@ private fun getDiscoveryTitle(stage: String): String = when (stage) {
 private fun getMethodIcon(method: String): ImageVector = when (method.lowercase()) {
     "n-upnp" -> Icons.Default.Cloud
     "mdns" -> Icons.Default.Wifi
-    "validation" -> Icons.Default.VerifiedUser
     else -> Icons.Default.Search
 }

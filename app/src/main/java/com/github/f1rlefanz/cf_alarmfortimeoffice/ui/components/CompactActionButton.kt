@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
@@ -60,14 +59,13 @@ fun CompactOutlinedButton(
     text: String,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
-    enabled: Boolean = true,
-    colors: ButtonColors = ButtonDefaults.outlinedButtonColors()
+    enabled: Boolean = true
 ) {
     OutlinedButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        colors = colors,
+        colors = ButtonDefaults.outlinedButtonColors(),
         contentPadding = CompactContentPadding
     ) {
         CompactLabel(icon = icon, text = text)

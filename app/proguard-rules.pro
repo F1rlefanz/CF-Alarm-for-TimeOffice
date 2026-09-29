@@ -158,7 +158,18 @@
 # GOOGLE CALENDAR API
 # ==============================
 
--keep class com.google.api.client.** { *; }
+# google-http-client liest und befuellt die Modelle (Event, EventDateTime, Request-Parameter,
+# Fehlerantworten) per Reflexion ueber ihre @Key-Felder und erzeugt sie ueber den parameterlosen
+# Konstruktor. Eigene Consumer-Regeln dafuer bringt die Bibliothek nicht mit.
+-keepclassmembers class * {
+    @com.google.api.client.util.Key <fields>;
+}
+-keepclassmembers class * extends com.google.api.client.json.GenericJson {
+    <init>();
+}
+-keepclassmembers enum * {
+    @com.google.api.client.util.Value <fields>;
+}
 
 # HTTP Client
 -dontwarn com.google.api.client.http.**
@@ -335,7 +346,6 @@
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionException { *; }
 
 # Google API Client
--keep class com.google.api.services.** { *; }
 -assumenosideeffects class com.google.api.client.util.LoggingStreamingContent {
     <init>(...);
 }

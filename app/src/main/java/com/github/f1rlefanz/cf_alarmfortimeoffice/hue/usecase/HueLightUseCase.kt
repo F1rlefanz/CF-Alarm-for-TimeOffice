@@ -36,14 +36,9 @@ class HueLightUseCase @Inject constructor(
 ) : IHueLightUseCaseAdvanced {
     
     /**
-     * Scope fuer die nachgelagerten Schritte, die von selbst passieren muessen: das Auto-Aus
-     * der Vorschau ([executeActionsWithAutoRevert]) und das Beenden des Blinkens
-     * ([scheduleFlashStop]).
-     *
-     * Bewusst getrennt vom Scope des Aufrufers (z.B. ViewModel): Beide Timer muessen auch dann
-     * noch feuern, wenn der Nutzer den Bildschirm laengst verlassen hat, der sie ausgeloest
-     * hat. Ein viewModelScope waere dann gecancelt - und das Licht bliebe an bzw. die Lampe
-     * bliebe am Blinken.
+     * Scope fuer das Auto-Aus der Vorschau ([executeActionsWithAutoRevert]) und das Beenden des
+     * Blinkens ([scheduleFlashStop]) - getrennt vom Aufrufer, damit beide auch nach dem
+     * Verlassen des Bildschirms feuern. Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
      */
     private val followUpScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -56,9 +51,8 @@ class HueLightUseCase @Inject constructor(
         private const val SUNRISE_STEP_DELAY_MS = 250L
 
         /**
-         * Wie lange der Lampentest blinkt. lselect blinkt von sich aus 15 Sekunden - als
-         * Rueckmeldung, auf die jemand wartet, viel zu lang (vom Tester gemeldet). Ein paar
-         * Blinker reichen als Beweis; danach bricht [scheduleFlashStop] aktiv ab.
+         * Wie lange der Lampentest blinkt; danach bricht [scheduleFlashStop] das lselect aktiv ab.
+         * Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
          */
         private val FLASH_DURATION = 4.seconds
     }
@@ -76,26 +70,11 @@ class HueLightUseCase @Inject constructor(
                 val groupsResult = groupsDeferred.await()
                 val scenesResult = scenesDeferred.await()
 
-                // BEIDE ABFRAGEN GESCHEITERT = EHRLICHER FEHLSCHLAG, kein leeres Ergebnis.
-                //
-                // Der Waechter in HueApiClient.getLights()/getGroups() erkennt inzwischen die
-                // V1-Fehlerhuelle (HTTP 200 + `[{"error":{"type":1,"description":"unauthorized
-                // user"}}]`, z.B. nachdem der Nutzer die App in der Hue-App aus der Whitelist
-                // entfernt oder die Bridge getauscht hat) und wirft. Der landete aber genau hier
-                // wieder im "graceful partial failure"-Zweig unten und wurde zu
-                // Result.success(LightTargets(leer, leer)) - also exakt der stillen leeren
-                // Lampenliste bzw. "Keine Lampen gefunden", die der Waechter beseitigen sollte.
-                // Nebeneffekt: HueViewModel.refreshLightTargets() ueberschrieb damit sogar eine
-                // vorher korrekt geladene Liste mit einer leeren.
-                //
-                // Der Teilerfolg-Zweig unten bleibt bewusst erhalten: eine Bridge ganz ohne
-                // Gruppen ist normal, und dann sollen die Lampen trotzdem nutzbar sein. Nur wenn
-                // KEINE der beiden Abfragen durchkam, ist "keine Ziele" keine Aussage ueber die
-                // Bridge, sondern ein Fehler - und ein Fehler muss als Fehler nach oben.
-                // Die Szenen zaehlen hier BEWUSST NICHT mit: eine Bridge ohne nutzbare Szenen
-                // ist voellig normal, und die Lampen-/Gruppenauswahl funktioniert ohne sie
-                // vollstaendig. Ein Szenen-Ausfall ist ein Teilausfall und wird unten in
-                // `scenesFailed` mitgefuehrt - er darf die Bedingung hier nicht verschaerfen.
+                // BEIDE ABFRAGEN GESCHEITERT = EHRLICHER FEHLSCHLAG, kein leeres Ergebnis; der
+                // Teilerfolg-Zweig unten bleibt (eine Bridge ohne Gruppen ist normal).
+                // Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
+                // Die Szenen zaehlen hier BEWUSST NICHT mit: ein Szenen-Ausfall ist ein
+                // Teilausfall und wird unten in `scenesFailed` mitgefuehrt.
                 if (lightsResult.isFailure && groupsResult.isFailure) {
                     val error = lightsResult.exceptionOrNull()
                         ?: groupsResult.exceptionOrNull()
@@ -472,15 +451,11 @@ class HueLightUseCase @Inject constructor(
     }
 
     /**
-     * Beendet das Blinken nach [FLASH_DURATION], statt lselect seine vollen 15 Sekunden laufen
-     * zu lassen — die sind als Rueckmeldung, auf die jemand wartet, schlicht zu lang.
+     * Beendet das Blinken nach [FLASH_DURATION] per `alert:"none"`, statt lselect seine vollen
+     * 15 Sekunden laufen zu lassen. Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
      *
-     * Gegen die echte Bridge verifiziert (BSB002, 15.07.2026): `alert:"none"` bricht ein
-     * laufendes lselect ab (`state.alert` faellt von "lselect" auf "none" zurueck), und die
-     * Lampe kehrt in ihren vorherigen An/Aus-Zustand zurueck — der Test hinterlaesst nichts.
-     *
-     * Best-effort: Klappt der Abbruch nicht, blinkt die Lampe die vollen 15s zu Ende. Unschoen,
-     * aber harmlos — kein Grund, den Test als gescheitert zu melden.
+     * Best-effort: Klappt der Abbruch nicht, blinkt die Lampe die vollen 15s zu Ende - kein
+     * Grund, den Test als gescheitert zu melden.
      */
     private fun scheduleFlashStop(lightId: String) {
         followUpScope.launch {

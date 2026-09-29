@@ -41,22 +41,15 @@ class HueRuleUseCase @Inject constructor(
         private const val MAX_RULES_PER_SHIFT = 10
 
         /**
-         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt. Seit v1.24.0 bietet der
-         * Regel-Editor das als Eintrag "Alle Schichten" an (davor wertete nur der UseCase es
-         * aus, ohne dass es je jemand setzen konnte).
-         *
+         * Schichtmuster einer Regel, die fuer JEDE Schicht gilt (Editor: "Alle Schichten").
          * `internal` statt `private`, weil [HueSunriseExecutor] und die Regel-UI dasselbe Muster
-         * auswerten muessen - ein zweites Literal waere eine zweite Wahrheit, und genau daran
-         * haengt, ob eine Universal-Regel ihr Auto-Aus behaelt.
+         * auswerten muessen - ein zweites Literal waere eine zweite Wahrheit.
+         * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
          */
         internal const val UNIVERSAL_SHIFT_PATTERN = "ALL"
 
-        // War 3 - eine willkuerliche Schwelle, die nie greifen konnte, weil der Validierungs-
-        // Check kaputt war (siehe requireValidRule). Mit der Reparatur wuerde sie ploetzlich
-        // scharf: Die UI verlangt seit jeher nur isNotBlank(), und eine Regel namens "FS" fuer
-        // die Fruehschicht ist voellig legitim - sie existiert real. Bei 3 waere sie ab sofort
-        // nicht mehr speicher- UND nicht mehr bearbeitbar gewesen (updateRule validiert auch).
-        // 1 bringt UI und UseCase auf dieselbe Regel: der Name darf nicht leer sein.
+        // 1 wie die UI (isNotBlank): eine reale Regel heisst "FS", und updateRule validiert
+        // ebenfalls. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
         private const val MIN_RULE_NAME_LENGTH = 1
         private const val MAX_RULE_NAME_LENGTH = 50
 
@@ -148,12 +141,8 @@ class HueRuleUseCase @Inject constructor(
             
             val allRules = allRulesResult.getOrNull() ?: emptyList()
 
-            // `rule.shiftPattern` ist IMMER ein Definitionsname: die Regel-UI bietet nichts
-            // anderes an (HueRuleConfigScreen: definitions.map { it.name }). Ein Vergleich
-            // gegen das erste KEYWORD der Definition stand hier mal daneben - er konnte nie
-            // etwas Richtiges treffen, aber sehr wohl etwas Falsches: eine Regel mit dem
-            // Muster "S" haette auf die Spaetschicht gepasst. Dieselbe Fehlerfamilie wie in
-            // ShiftConfig.findDefinitionFor() - einbuchstabige Keywords passen auf zu vieles.
+            // `rule.shiftPattern` ist IMMER ein Definitionsname - exakter Vergleich, nie ueber
+            // Keywords. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
             val shiftName = shift.shiftDefinition.name
 
             val matchingRules = allRules.filter { rule ->
@@ -252,16 +241,9 @@ class HueRuleUseCase @Inject constructor(
                 }
             }
 
-            // AUTO-AUS: jetzt, im selben Atemzug, auf der BRIDGE hinterlegen.
-            //
-            // Genau hier sind die Lampen gerade angegangen - die Bridge ist also nachweislich
-            // erreichbar. Damit schaltet sie selbst wieder aus, unabhaengig davon, wo das Handy
-            // spaeter ist. (Frueher fuhr ein WorkManager-Job das Auto-Aus; der erreichte die
-            // Bridge nur aus dem Heim-WLAN und liess die Lampen an, sobald jemand nach dem
-            // Wecken das Haus verliess.)
-            //
-            // autoOffTargetsOf() besitzt die Verzoegerungsrechnung inkl. Sonnenaufgangs-Versatz
-            // als einzige Stelle. Ein zweiter Rechenweg waere eine zweite Wahrheit.
+            // AUTO-AUS: jetzt, im selben Atemzug, auf der BRIDGE hinterlegen - die Lampen sind
+            // gerade angegangen, die Bridge ist also erreichbar. autoOffTargetsOf() ist der
+            // einzige Rechenweg. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
             //
             // Best-effort: ein Fehler darf den Weckvorgang NIEMALS kippen. Er landet in
             // `errors` (und im Log), aber die Regelausfuehrung selbst gilt als erfolgt - das
@@ -299,14 +281,10 @@ class HueRuleUseCase @Inject constructor(
         sunriseExecutor.getPreAlarmSunriseLeadMinutes(rules, shiftName)
 
     /**
-     * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln.
-     *
-     * Bewusst OHNE eigenen Schicht-Filter: die Auswahl gehoert allein [findApplicableRules]
-     * (exakter Definitionsname ODER [UNIVERSAL_SHIFT_PATTERN]). Ein zweiter Filter gegen den
-     * Schichtnamen waere eine zweite Wahrheit - und wuerde konkret die UNIVERSAL-Regeln wieder
-     * wegwerfen, deren `shiftPattern` per Definition NICHT dem Schichtnamen gleicht: sie
-     * verloeren ihr Auto-Aus, das Licht blieb an. Diese Funktion besitzt nur den Rechenweg
-     * (welche Ziele, welche Verzoegerung inkl. Sonnenaufgangs-Versatz), nicht die Auswahl.
+     * Auto-Aus-Ziele von BEREITS AUSGEWAEHLTEN Regeln - bewusst OHNE eigenen Schicht-Filter
+     * (die Auswahl gehoert allein [findApplicableRules]), sonst verloeren UNIVERSAL-Regeln ihr
+     * Auto-Aus. Besitzt nur den Rechenweg inkl. Sonnenaufgangs-Versatz.
+     * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      */
     private fun autoOffTargetsOf(rules: List<HueSchedule>): List<AutoOffTarget> {
         return try {
@@ -459,20 +437,12 @@ class HueRuleUseCase @Inject constructor(
     }
     
     /**
-     * Lehnt eine Regel ab, die die Validierung nicht besteht.
+     * Lehnt eine Regel ab, die die Validierung nicht besteht. [validateRule] hat zwei Ebenen:
+     * `isFailure` = die Prüfung selbst ist gescheitert, `isValid` = die Regel ist gültig.
+     * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      *
-     * WARUM ES DAS BRAUCHT: An beiden Aufrufstellen stand `if (validateRule(rule).isFailure)`.
-     * Das prüft die falsche Ebene. [validateRule] liefert `Result<RuleValidationResult>` und gibt
-     * IMMER `Result.success` zurück, sobald die Prüfung durchgelaufen ist — ob die Regel gültig
-     * ist, steht eine Ebene tiefer in `isValid`. Eine ungültige Regel war also ein *erfolgreiches*
-     * Result: die Abfrage konnte gar nicht greifen, und die Regel wurde gespeichert, obwohl das
-     * Log daneben "INVALID (1 errors)" meldete (Gerätelog 14.07., 14:56:03).
-     *
-     * `isFailure` bleibt hier trotzdem sinnvoll — aber nur für den Fall, dass die Prüfung selbst
-     * scheitert. Beides ist jetzt sauber getrennt.
-     *
-     * Die konkreten Fehler wandern in die Meldung: "Validation failed" hätte niemandem geholfen,
-     * die Ursache steht in [RuleValidationResult.errors].
+     * Die konkreten Fehler wandern in die Meldung - die Ursache steht in
+     * [RuleValidationResult.errors].
      */
     private suspend fun requireValidRule(rule: HueSchedule): Result<Unit> {
         val validation = validateRule(rule).getOrElse { error ->
@@ -576,11 +546,7 @@ class HueRuleUseCase @Inject constructor(
      * Fuehrt [rule] sofort aus, damit der Nutzer im Formular sieht, was sie tut.
      *
      * DIE VORSCHAU RAEUMT IMMER HINTER SICH AUF - unabhaengig davon, ob die Regel ein Auto-Aus
-     * konfiguriert hat. Vorher haing das am Auto-Aus der Regel, und das steht bei einer neuen
-     * Regel auf "aus": Der Vorschau-Knopf schaltete das Licht an und liess es an, ohne Weg
-     * zurueck ausser der Hue-App. Eine Vorschau, die den Zustand der Wohnung dauerhaft
-     * veraendert, ist keine Vorschau - der Nutzer probiert hier eine Regel aus, er schaltet
-     * nicht sein Licht ein. Wer das wieder ans Auto-Aus koppelt, baut genau das zurueck.
+     * konfiguriert hat. Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
      *
      * Die verkuerzten Zeiten gelten NUR hier; die echte Regel nutzt die konfigurierten Werte
      * (bzw. bridge-seitige Zeitplaene, siehe executeRulesForAlarm).
@@ -595,11 +561,8 @@ class HueRuleUseCase @Inject constructor(
                 val testSunrise = sunrise.copy(durationMinutes = SUNRISE_TEST_DURATION_MINUTES)
                 val result = sunriseExecutor.runSunriseForRule(rule, testSunrise)
 
-                // Das Aus kommt NACH der (verkuerzten) Rampe, nicht mittendrin: Die Rampe
-                // laeuft als native Bridge-Transition ueber SUNRISE_TEST_DURATION_MINUTES -
-                // ein Aus nach AUTO_OFF_TEST_DURATION_SECONDS wuerde sie mitten im Aufblenden
-                // abwuergen. Derselbe Gedanke wie der sunriseOffset in autoOffTargetsOf(): das
-                // Auto-Aus haengt hinten an, es faellt nicht in die Rampe hinein.
+                // Das Aus kommt NACH der (verkuerzten) Rampe, nicht mittendrin.
+                // Hergang: Skill cfalarm-hue, reference/vorschau-und-lampentest.md
                 //
                 // Nur ein blankes on=true (kein Helligkeit/Farbe): alles andere wuerde gegen
                 // die laufende Transition der Bridge arbeiten.

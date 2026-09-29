@@ -82,11 +82,8 @@ class HueApiClient(context: Context? = null) {
         body: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         if (!isPrivateNetworkAddress(bridgeIp)) {
-            // EHRLICHE FEHLERKLASSE: Eine IPv6-Adresse ist KEIN Sicherheitsvorfall, sondern ein
-            // Adressfamilien-Problem - der komplette Hue-Pfad ist IPv4 (Praefix-Pruefung hier,
-            // URL-Bau ohne eckige Klammern unten, isBridgeReachableNow im ConnectionManager).
-            // Als "🚨 SECURITY" geloggt sucht man im Log einen Angriff statt einer Adressfamilie.
-            // Die Klemme selbst bleibt bewusst so streng wie sie ist: nur lokale Geraete.
+            // IPv6 ist eine Adressfamilie, kein Sicherheitsvorfall: der Hue-Pfad ist IPv4-only,
+            // die Klemme bleibt streng. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
             if (bridgeIp.contains(":")) {
                 Logger.w(
                     LogTags.HUE_NETWORK,
@@ -175,20 +172,11 @@ class HueApiClient(context: Context? = null) {
     /**
      * Get bridge configuration with modern HTTPS approach
      *
-     * PRUEFT DIE ANTWORT, statt sie nur zu deserialisieren. Beide Aufrufer benutzen diese
-     * Funktion als "hat sie geworfen?"-Orakel (HueBridgeConnectionManager.
-     * validateConnectionCredentials, HueBridgeRepository.testBridgeConnection) - sie ist damit
-     * de facto die Zugangsdaten-/Bridge-Pruefung der App. Ohne Feldpruefung galt aber JEDES
-     * JSON-Objekt als gesunde Bridge: Gson baut Objekte per Unsafe und erzwingt Kotlins
-     * Non-Null-Deklarationen NICHT, `fromJson("{}", …)` liefert also ein Objekt mit lauter
-     * nulls und wirft nicht. Wandert der DHCP-Lease der Bridge, haette ein beliebiges anderes
-     * Geraet an derselben IP (Router-Webinterface, NAS) als "unsere Bridge" gegolten.
-     * `bridgeid`/`mac` stehen auch in der oeffentlichen, unauthentifizierten Teilmenge von
-     * /api/config - die Pruefung funktioniert deshalb auf beiden Endpunkten.
-     *
-     * Zusaetzlich: bei ungueltigem Username antwortet die Bridge mit HTTP 200 und der
-     * V1-Fehlerhuelle (`[{"error":{"type":1,"description":"unauthorized user"}}]`). Die wird
-     * jetzt gezielt als solche gemeldet, statt als kryptischer Gson-Syntaxfehler.
+     * PRUEFT DIE ANTWORT (`bridgeid` oder `mac` muessen da sein), statt sie nur zu
+     * deserialisieren - beide Aufrufer nutzen sie als Bridge-/Zugangsdaten-Pruefung.
+     * `bridgeid`/`mac` stehen auch in der unauthentifizierten Teilmenge von /api/config - die
+     * Pruefung wirkt deshalb auf beiden Endpunkten. Eine V1-Fehlerhuelle (HTTP 200, ungueltiger
+     * Username) wird als solche gemeldet. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      */
     suspend fun getBridgeConfig(bridgeIp: String, username: String? = null): HueBridgeConfig =
         withContext(Dispatchers.IO) {
@@ -288,15 +276,8 @@ class HueApiClient(context: Context? = null) {
                 val responseBody = result.getOrNull() ?: "{}"
                 Logger.d(LogTags.HUE_LIGHTS, "Lights API response: $responseBody")
 
-                // FEHLERHUELLE STATT LAMPEN: Ist der Whitelist-Eintrag der App weg (Nutzer hat
-                // sie in der Hue-App entfernt, Bridge zurueckgesetzt/getauscht), antwortet die
-                // Bridge mit HTTP 200 und einem JSON-ARRAY
-                // (`[{"error":{"type":1,"description":"unauthorized user"}}]`). Das Map-Parsing
-                // unten scheitert daran zwangsläufig, und der catch machte daraus "0 Lampen" -
-                // also einen ERFOLG mit leerem Ergebnis. Der Nutzer sah eine leere Lampenliste
-                // bzw. "Keine Lampen gefunden", ohne jeden Hinweis, dass die Bridge neu
-                // gekoppelt werden muss. Deshalb VOR dem try: die Huelle auswerten und werfen -
-                // HueLightRepository faengt das und liefert ein ehrliches Result.failure.
+                // Fehlerhuelle (HTTP 200 + JSON-Array) VOR dem try werfen, statt sie im catch zu
+                // "0 Lampen" zu machen. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
                 if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
                     val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
                         ?: IOException("Bridge antwortete mit einer Huelle statt mit Lampen: $responseBody")
@@ -424,23 +405,11 @@ class HueApiClient(context: Context? = null) {
     }
 
     /**
-     * Hat die Bridge diesen Steuer-PUT wirklich ANGENOMMEN?
-     *
-     * Vor diesem Fix gaben [setLightState]/[setGroupAction] blank
-     * `result.isSuccess` zurueck - also nur den HTTP-Status. Die V1-API antwortet aber auch bei
-     * ABLEHNUNG mit HTTP 200 (`[{"error":{"type":1,"description":"unauthorized user"}}]`), genau
-     * die Falle, fuer die [HueV1Envelope] existiert - sie war nur auf die Zeitplaene angewandt,
-     * nicht auf die Steuerung. Folge: nach einem entzogenen Whitelist-Eintrag meldete die Kette
-     * "✅ ALARM-CRITICAL: Successfully controlled light" und "5/5 actions successful", ohne dass
-     * eine einzige Lampe anging - aus dem Log nicht diagnostizierbar, weil das Log Erfolg behauptet.
-     *
-     * [HueV1Envelope.parseControl] und nicht `parseFirst`: ein PUT auf /state liefert EINEN
-     * EINTRAG PRO GEAENDERTEM ATTRIBUT (`[{"success":{"…/on":true}},{"success":{"…/bri":200}}]`).
-     * Und auch nicht [HueV1Envelope.parseAll]: dessen strenge Regel "KEIN Eintrag enthaelt error"
-     * macht aus einem TEILERFOLG einen Totalausfall - siehe [HueV1Envelope.parseControl].
-     * Angenommen heisst hier deshalb "mindestens ein Eintrag meldet success"; abgelehnte
-     * Einzelattribute werden geloggt, damit ein Teilerfolg im Log nicht als glatter Erfolg
-     * erscheint.
+     * Hat die Bridge diesen Steuer-PUT wirklich ANGENOMMEN? Der HTTP-Status reicht nicht, die
+     * V1-API antwortet auch bei Ablehnung mit 200. Angenommen = mindestens ein `success`
+     * ([HueV1Envelope.parseControl]); abgelehnte Einzelattribute werden geloggt, damit ein
+     * Teilerfolg im Log nicht als glatter Erfolg erscheint.
+     * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      */
     private fun wasAccepted(result: Result<String>, targetLabel: String): Boolean {
         val responseBody = result.getOrElse { error ->
@@ -552,12 +521,10 @@ class HueApiClient(context: Context? = null) {
         )
         val responseBody = result.getOrElse { return@withContext Result.failure(it) }
 
-        // Gleiche Falle wie in [getLights]/[getGroups]: HTTP 200 + Fehlerhuelle bei entzogenem
-        // Whitelist-Eintrag. Ohne diesen Waechter wirft erst Gson im Map-Parsing ("Expected
-        // BEGIN_ARRAY but was BEGIN_OBJECT"), und im Log stand ein kryptischer Parserfehler statt
-        // der Beschreibung der Bridge - fuer das Aufraeumen der eigenen Auto-Aus-Timer
-        // ([HueLightUseCase.clearOwnBridgeSchedules]) die einzige Diagnosequelle. Eine Bridge
-        // OHNE Zeitplaene antwortet mit `{}`, also einem Objekt - kein Fehlalarm.
+        // Fehlerhuelle wie in [getLights]: sonst stuende statt der Beschreibung der Bridge ein
+        // Gson-Parserfehler im Log - fuer [HueLightUseCase.clearOwnBridgeSchedules] die einzige
+        // Diagnosequelle. Keine Zeitplaene = `{}`, kein Fehlalarm.
+        // Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
         if (HueV1Envelope.looksLikeEnvelope(responseBody)) {
             val failure = HueV1Envelope.parseAll(responseBody).exceptionOrNull()
                 ?: IOException("Bridge antwortete mit einer Huelle statt mit Zeitplaenen: $responseBody")
@@ -600,12 +567,9 @@ class HueApiClient(context: Context? = null) {
  * Auswertung der ANTWORT-HUELLE der Hue-V1-API - rein, ohne Netzwerk, deshalb testbar
  * (siehe HueV1EnvelopeTest; der Rest dieser Datei laeuft nur gegen eine echte Bridge).
  *
- * ACHTUNG, die zentrale Falle dieser API: Sie antwortet **auch bei Ablehnung mit HTTP 200**.
- * Das Urteil steht ausschliesslich im Body — `[{"success":…}]` oder
- * `[{"error":{"type":7,"description":"…"}}]`. [HueApiClient.makeSecureHueRequest] kennt nur den
- * HTTP-Status; wer sich darauf verlaesst, haelt einen abgelehnten Zeitplan fuer angelegt (das
- * Licht geht nie wieder aus) bzw. eine abgelehnte Lampen-Steuerung fuer ausgefuehrt.
- * [HueApiClient.createUser] parst aus demselben Grund den Body.
+ * Die V1-API antwortet **auch bei Ablehnung mit HTTP 200**; das Urteil steht nur im Body,
+ * [HueApiClient.makeSecureHueRequest] kennt nur den Status.
+ * Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
  *
  * DREI AUSWERTUNGEN, WEIL DIE API MEHRERE ANTWORT-FORMEN HAT:
  * - [parseFirst] fuer Endpunkte mit GENAU EINEM Ergebnis (POST/DELETE /schedules).
@@ -633,17 +597,10 @@ internal object HueV1Envelope {
      *
      * @return den Wert unter "success" oder ein Failure mit der Fehlerbeschreibung der Bridge.
      *
-     * "success" ist je Endpunkt ein OBJEKT ODER EIN STRING: ein DELETE auf /schedules antwortet
-     * mit `[{"success":"/schedules/1 deleted"}]`. Ein `as? Map<*, *>` darauf schlug fehl, fiel in
-     * den "weder success noch error"-Zweig und machte aus einem erfolgreichen Loeschen ein
-     * Failure - im Log stand `WARN Alt-Zeitplan id=1 nicht entfernt`, obwohl die Bridge ihn
-     * wirklich geloescht hatte (echtes Geraetelog 05.08.2026). Doppelt schaedlich: die
-     * Aufraeum-Logik war falsch informiert (und aufgeraeumt werden MUSS - sonst haeuft jeder
-     * Snooze einen Timer an und der aelteste schaltet zu frueh aus), und echte Fehlschlaege
-     * gingen im Rauschen falscher Warnungen unter. Seither gilt: JEDES vorhandene
-     * "success"-Feld ist ein Erfolg. Ein String-Erfolg wird in eine Map verpackt
-     * (Schluessel [KEY_MESSAGE]), damit die Signatur - und damit jeder Aufrufer - unveraendert
-     * bleibt.
+     * "success" ist je Endpunkt ein OBJEKT ODER EIN STRING (DELETE:
+     * `[{"success":"/schedules/1 deleted"}]`) - JEDES vorhandene "success"-Feld ist ein Erfolg.
+     * Ein String-Erfolg wird unter [KEY_MESSAGE] in eine Map verpackt, damit die Signatur fuer
+     * alle Aufrufer gleich bleibt. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      */
     fun parseFirst(responseBody: String): Result<Map<*, *>> {
         val entries = entriesOf(responseBody).getOrElse { return Result.failure(it) }
@@ -692,29 +649,13 @@ internal object HueV1Envelope {
     }
 
     /**
-     * STEUER-PUTs: ein TEILERFOLG ist ein Erfolg.
+     * STEUER-PUTs: ein TEILERFOLG ist ein Erfolg - angenommen = MINDESTENS EIN `success`-Eintrag.
+     * Ein PUT auf /state liefert einen Eintrag pro Attribut, und die Bridge lehnt einzelne ab,
+     * waehrend sie die anderen anwendet; die strenge Regel von [parseAll] braeche sonst die
+     * Sonnenaufgangs-Rampe ab. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
      *
-     * Ein PUT auf /lights/<id>/state liefert einen Eintrag PRO ATTRIBUT - und die Bridge darf
-     * einzelne Attribute ABLEHNEN, waehrend sie die anderen anwendet: `ct`/`hue`/`sat` an einer
-     * Lampe ohne diese Faehigkeit (Hue White, Fremdlampe im ZigBee-Netz) → error type 6,
-     * `bri`/`alert` an einer ausgeschalteten Lampe → error type 201. Eine reale Antwort ist dann
-     * `[{"success":{"…/on":true}},{"success":{"…/bri":1}},{"error":{"type":6,"address":"…/ct"}}]`
-     * - das Licht IST an, nur die Farbtemperatur wurde ignoriert.
-     *
-     * Die strenge Regel von [parseAll] wuerde das zum kompletten Fehlschlag machen, und der
-     * schlaegt bis in die Kette durch: `HueLightRepository.controlLight` liefert dann
-     * `Result.failure`, und `HueLightUseCase.startSunrise` steigt nach Schritt 1 mit
-     * `return initial` aus - die eigentliche Aufhell-Transition (Schritt 2) liefe NIE, die Lampe
-     * bliebe am Wecktag auf `bri=1` stehen. Genau davor warnt CLAUDE.md beim Sonnenaufgang: ein zu
-     * strenges Urteil bricht die Rampe mitten im Aufblenden ab.
-     *
-     * Angenommen = MINDESTENS EIN `success`-Eintrag. Erst wenn KEIN Eintrag Erfolg meldet, ist es
-     * ein echter Fehlschlag - der eigentliche Zielfall "unauthorized user" (ausschliesslich
-     * error-Eintraege) bleibt damit unveraendert vollstaendig abgedeckt.
-     *
-     * @return bei Erfolg die Meldungen der ABGELEHNTEN Attribute (meist leer). Der Aufrufer loggt
-     *         sie als Warnung - sonst waere ein Teilerfolg im Log von einem glatten Erfolg nicht zu
-     *         unterscheiden, und genau diese Log-Ehrlichkeit war der Zweck der Body-Auswertung.
+     * @return bei Erfolg die Meldungen der ABGELEHNTEN Attribute (meist leer); der Aufrufer loggt
+     *         sie als Warnung, damit ein Teilerfolg im Log nicht als glatter Erfolg erscheint.
      */
     fun parseControl(responseBody: String): Result<List<String>> {
         val entries = entriesOf(responseBody).getOrElse { return Result.failure(it) }

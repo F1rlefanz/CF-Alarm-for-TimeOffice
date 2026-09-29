@@ -27,9 +27,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueRuleModusLab
  * Er ist der eine neue Bedienknopf, der die Szenen-Faehigkeit fuer den Nutzer ueberhaupt
  * existieren laesst - eine Faehigkeit ohne Bedienoberflaeche gibt es nicht.
  *
- * Er ERSETZT zugleich den eigenen An/Aus-Schalter der Sonnenaufgangs-Karte. Vorher war der
- * Sonnenaufgang ein Schalter INNERHALB einer Karte, waehrend er faktisch den gesamten
- * Regel-Modus umstellte (die manuelle Karte verschwand ja). Ein Zustand, ein Ort.
+ * Er ERSETZT zugleich den eigenen An/Aus-Schalter der Sonnenaufgangs-Karte: der Sonnenaufgang
+ * stellt den gesamten Regel-Modus um. Ein Zustand, ein Ort.
  *
  * FlowRow statt Row: drei Chips mit deutschen Beschriftungen passen auf schmalen Geraeten nicht
  * zwingend nebeneinander, und ein abgeschnittener Chip waere unbedienbar.

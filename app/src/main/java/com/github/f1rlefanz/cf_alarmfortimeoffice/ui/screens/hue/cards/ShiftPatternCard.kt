@@ -29,12 +29,11 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.UNIVERSAL_SHIFT
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.isUniversalShiftPattern
 
 /**
- * Auswahl des Schichtmusters einer Hue-Regel. Aus `HueRuleConfigScreen` ausgelagert.
+ * Auswahl des Schichtmusters einer Hue-Regel.
  *
  * Neben den Namen der aktivierten Schichtdefinitionen steht hier auch
- * [HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN] ("Alle Schichten") zur Wahl. Der UseCase wertet dieses
- * Muster seit v1.11.0 aus (`findApplicableRules`, `HueSunriseExecutor`), der Editor bot es bis
- * v1.24.0 nicht an - es war nur ueber eine von Hand gebaute Regel erreichbar.
+ * [HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN] ("Alle Schichten") zur Wahl (`findApplicableRules`,
+ * `HueSunriseExecutor`).
  *
  * WICHTIG: Diese Karte aendert ausschliesslich die AUSWAHL. Am Abgleich selbst wird nichts
  * gedreht - der matcht EXAKTEN Definitionsnamen ODER das Universalmuster, kein Keyword und kein
@@ -92,19 +91,7 @@ internal fun ShiftPatternCard(
             // diesem Zustand eine Sackgasse.
             Column(modifier = Modifier.selectableGroup()) {
                 availableShiftPatterns.forEach { pattern ->
-                    // Die GANZE Zeile ist das Ziel, nicht nur der Knopf: `selectable` am Row
-                    // + `onClick = null` am RadioButton ist das Compose-Standardmuster
-                    // dafuer. Vorher traf nur der Knopf selbst (~48dp am linken Rand) - auf
-                    // dem Handy fummelig, und ein Tipp auf den Namen tat schlicht nichts.
-                    // Nebeneffekt: selectable fasst die Zeile semantisch zu EINEM Element
-                    // zusammen, TalkBack liest also "S2, Optionsfeld" statt eines
-                    // unbeschrifteten Knopfs neben losem Text.
-                    //
-                    // heightIn(48dp) ist dabei PFLICHT und kein Schoenheitsfehler: ein
-                    // RadioButton mit onClick = null ist nicht mehr klickbar und bringt
-                    // daher auch seine eigene 48dp-Mindestgroesse nicht mehr mit. Ohne die
-                    // Zeile hier schrumpfte die Reihe auf ~32dp (am Emulator gemessen) -
-                    // die Zeile waere breiter, aber flacher als Materials Minimum.
+                    // Ganze Zeile als Ziel, 48dp-Klemme Pflicht: MIN_TOUCH_TARGET, ui-texte-und-layout.md.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -126,15 +113,9 @@ internal fun ShiftPatternCard(
                     }
                 }
 
-                // Universalmuster. Gleiche Zeilen-Mechanik wie oben, inklusive der
-                // 48dp-Klemme (der RadioButton hat auch hier onClick = null).
-                //
-                // Die Ruecklese-Bedingung geht ueber isUniversalShiftPattern(), NICHT ueber
-                // `== UNIVERSAL_SHIFT_PATTERN`: der Abgleich im UseCase ist
-                // gross-/kleinschreibungsunabhaengig, eine von Hand oder von einer aelteren
-                // Version gespeicherte Regel mit "all" wuerde sonst zur Laufzeit feuern, im
-                // Editor aber als "nichts ausgewaehlt" erscheinen - und beim Speichern still
-                // ihr Muster verlieren.
+                // Universalmuster, gleiche Zeilen-Mechanik samt 48dp-Klemme. Ruecklese ueber
+                // isUniversalShiftPattern(), nicht `==`: der UseCase vergleicht ohne Gross-/
+                // Kleinschreibung, sonst verloere eine "all"-Regel beim Speichern still ihr Muster.
                 val universalSelected = isUniversalShiftPattern(selectedShiftPattern)
                 Row(
                     modifier = Modifier

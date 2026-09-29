@@ -31,13 +31,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.hueRuleModusLab
 /**
  * EINE Karte je Betriebsart, und sie traegt den Namen der Betriebsart.
  *
- * Vorher lag unter dem Modus-Umschalter je nach Modus etwas anderes: die Szene brachte EINE Karte
- * mit, die Raum UND Licht enthielt, waehrend Manuell und Sonnenaufgang sich auf ZWEI Karten
- * verteilten - die Zielauswahl schob sich zwischen den Umschalter und das eigentliche
- * Einstellen. Und selbst danach stand ueber der Karte "Zielauswahl" statt des gewaehlten Modus:
- * wer "Manuell" antippte, fand darunter keine Karte, die "Manuell" hiess.
- *
- * Jetzt gilt fuer alle drei dasselbe: Umschalter, darunter genau eine Karte, deren Ueberschrift
+ * Fuer alle drei gilt dasselbe: Umschalter, darunter genau eine Karte, deren Ueberschrift
  * die Auswahl wiederholt. Die Trennlinie darin sagt "erst wohin, dann wie" - ohne dass es zwei
  * Dinge werden.
  *

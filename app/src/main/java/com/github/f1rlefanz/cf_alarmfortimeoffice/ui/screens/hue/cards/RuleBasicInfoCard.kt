@@ -16,7 +16,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SwitchRow
 import androidx.compose.ui.res.stringResource
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 
-/** Name und Aktiv-Schalter einer Hue-Regel. Aus `HueRuleConfigScreen` ausgelagert. */
+/** Name und Aktiv-Schalter einer Hue-Regel. */
 @Composable
 internal fun RuleBasicInfoCard(
     ruleName: String,

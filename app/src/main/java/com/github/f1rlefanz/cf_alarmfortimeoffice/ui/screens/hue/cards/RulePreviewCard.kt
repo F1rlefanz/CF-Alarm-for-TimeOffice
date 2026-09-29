@@ -79,7 +79,7 @@ internal fun RulePreviewCard(
 
                 CompactButton(
                     onClick = {
-                        // OPTIMIZATION: Manual health check before rule test
+                        // Verbindungszustand vor dem Test auffrischen (laeuft ungeordnet parallel)
                         scope.launch {
                             bridgeManager.forceHealthCheck()
                         }
@@ -108,9 +108,6 @@ internal fun RulePreviewCard(
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
-            }
-
-            if (form.shiftPattern.isNotBlank()) {
                 Text(stringResource(R.string.hue_preview_at_alarm), style = MaterialTheme.typography.bodyMedium)
             }
 
@@ -125,9 +122,8 @@ internal fun RulePreviewCard(
                 val autoOffZusatz = autoOffText?.let { " " + it } ?: ""
 
                 // Jede Szene bekommt ihre eigene Zeile: eine Zusammenfassung wie "2 Szenen"
-                // verschwiege genau das, was der Nutzer hier nachlesen will. Die Zeilen werden
-                // VOR dem Zusammenfuegen aufgeloest - stringResource ist @Composable und darf in
-                // einem gewoehnlichen Lambda (joinToString) nicht aufgerufen werden.
+                // verschwiege genau das, was der Nutzer hier nachlesen will. Aufgeloest VOR dem
+                // joinToString - aus demselben Grund wie oben.
                 val szenenZeilen = form.szenen.map { auswahl ->
                     stringResource(R.string.hue_preview_scene, auswahl.sceneName, auswahl.groupName)
                 }

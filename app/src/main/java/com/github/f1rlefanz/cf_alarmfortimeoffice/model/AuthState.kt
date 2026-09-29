@@ -5,23 +5,13 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.CalendarOperationS
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.PermissionState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.state.UserAuthState
 
-/**
- * REFACTORED: Modular AuthState with Sub-States
- * 
- * GRANULAR STATE MODELING:
- * ✅ Aufgeteilt in logische Sub-States für bessere Wartbarkeit
- * ✅ Single Responsibility: Jeder Sub-State hat klare Verantwortung
- * ✅ Strukturelle Gleichheit: Data class ermöglicht effiziente Vergleiche
- * ✅ Computed Properties: Delegiert an Sub-States für bessere API
- * ✅ Reduzierte Komplexität: Statt 15+ Properties jetzt 4 logische Gruppen
- */
+/** Auth-Zustand der Oberfläche, gegliedert in vier Sub-States. */
 data class AuthState(
     val userAuth: UserAuthState = UserAuthState.EMPTY,
     val permissions: PermissionState = PermissionState.EMPTY,
     val calendarOps: CalendarOperationState = CalendarOperationState.EMPTY,
     val errors: AppErrorState = AppErrorState.EMPTY
 ) {
-    // BACKWARD COMPATIBILITY: Legacy API für bestehenden Code
     val isSignedIn: Boolean get() = userAuth.isSignedIn
     val userEmail: String? get() = userAuth.userEmail
     val displayName: String? get() = userAuth.displayName
@@ -29,7 +19,6 @@ data class AuthState(
     val androidCalendarPermissionGranted: Boolean get() = permissions.androidCalendarPermissionGranted
     val error: String? get() = errors.error
     
-    // ENHANCED API: Neue computed properties für bessere Business Logic
     val isFullyAuthenticated: Boolean get() = userAuth.isFullyAuthenticated
     val isOperational: Boolean get() = calendarOps.isOperational
     val canProceedToCalendarSelection: Boolean get() = 
@@ -40,7 +29,6 @@ data class AuthState(
     companion object {
         val EMPTY = AuthState()
         
-        // FACTORY METHODS: Für häufige State-Kombinationen
         fun authenticated(
             email: String,
             displayName: String,

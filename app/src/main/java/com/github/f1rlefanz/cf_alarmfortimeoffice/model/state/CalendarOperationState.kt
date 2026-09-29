@@ -2,37 +2,27 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model.state
 
 import androidx.compose.runtime.Immutable
 
-/**
- * IMMUTABLE Sub-State für Calendar Operations
- *
- * PERFORMANCE OPTIMIZATIONS:
- * ✅ @Immutable annotation für Compose-Performance
- * ✅ GRANULAR STATE MODELING: Fokussiert auf Calendar-spezifische Operations
- * ✅ Single Responsibility: Nur Calendar Operation States
- * ✅ Loading States: Granular loading indicators
- * ✅ Business Logic: Calendar-specific state logic
- */
+/** Sub-State: Kalender-Laden, Auswahl, Auto-Alarm und Token-Gültigkeit. */
 @Immutable
 data class CalendarOperationState(
     val calendarsLoading: Boolean = false,
     val autoAlarmEnabled: Boolean = false,
     val hasSelectedCalendars: Boolean = false,
     val eventsLoading: Boolean = false,
-    val hasValidToken: Boolean = false, // 🔧 STUFE 2: Track token validity for UI recovery
+    val hasValidToken: Boolean = false,
     val tokenChecked: Boolean = false // GATE: true once the initial token validity check has completed
 ) {
-    // Computed properties für Business Logic
     val isOperational: Boolean get() =
-        !calendarsLoading && autoAlarmEnabled && hasSelectedCalendars && hasValidToken // 🔧 STUFE 2: Include token check
+        !calendarsLoading && autoAlarmEnabled && hasSelectedCalendars && hasValidToken
 
     val isFullyConfigured: Boolean get() =
-        hasSelectedCalendars && autoAlarmEnabled && hasValidToken // 🔧 STUFE 2: Include token check
+        hasSelectedCalendars && autoAlarmEnabled && hasValidToken
 
     val needsCalendarSelection: Boolean get() =
         !hasSelectedCalendars && !calendarsLoading
 
     val needsTokenReauthorization: Boolean get() =
-        !hasValidToken && !calendarsLoading // 🔧 STUFE 2: New property for token re-auth check
+        !hasValidToken && !calendarsLoading
 
     // GATE: signed-in users without a valid calendar token must (re-)authorize before the main UI.
     // Guarded by tokenChecked so we never gate before the initial check has run.
@@ -45,12 +35,10 @@ data class CalendarOperationState(
     companion object {
         val EMPTY = CalendarOperationState()
 
-        fun loading() = CalendarOperationState(calendarsLoading = true)
-
         fun configured(
             autoAlarmEnabled: Boolean = true,
             hasSelectedCalendars: Boolean = true,
-            hasValidToken: Boolean = true // 🔧 STUFE 2: Default to true for backward compatibility
+            hasValidToken: Boolean = true
         ) = CalendarOperationState(
             calendarsLoading = false,
             autoAlarmEnabled = autoAlarmEnabled,

@@ -137,8 +137,8 @@ di/modules/                           ← Hilt-Module
 `DataStore<Preferences>`: `@MainDataStore` = `settings`, `@HueDataStore` = `hue_settings`, beide mit
 `ReplaceFileCorruptionHandler`, plus `ErrorHandler` — **kein** Token-Store, **kein**
 `TinkEncryptionHelper`), `RepositoryModule`, `UseCaseModule`, `HueModule`, `ServiceModule` (genau
-vier Provider; `BackgroundServiceManager` hat bewusst seinen eigenen `@Singleton @Inject`-Konstruktor),
-`StateModule` (`CalendarStateHolder`). Alle injizierten `Service`/`BroadcastReceiver` sind
+vier Provider; `BackgroundServiceManager` hat bewusst seinen eigenen `@Singleton @Inject`-Konstruktor).
+Alle injizierten `Service`/`BroadcastReceiver` sind
 `@AndroidEntryPoint`.
 
 **Auth** (`auth/`): `CredentialAuthManager` (Google Sign-In via `androidx.credentials`),
@@ -164,7 +164,8 @@ drei Arten: Szene, manuell oder Sonnenaufgang. Hue-Konfiguration im `@HueDataSto
 DIMMER`), **kein** Navigation-Compose. `MainScreen` ist die Compose-Wurzel (Unterscreens,
 Onboarding-Gates, `BackHandler`), `MainContentScreen` verteilt die Tab-Inhalte.
 
-**Shared State**: `di/state/CalendarStateHolder` — Hilt-Singleton mit `StateFlow`.
+**Shared State**: `di/state/CalendarStateHolder` — Hilt-Singleton mit `StateFlow`, gebunden über
+`@Singleton @Inject constructor` (kein Modul).
 `CalendarViewModel` **schreibt**, `ShiftViewModel` **liest** (Einbahnstraße).
 
 ## Key Constraints

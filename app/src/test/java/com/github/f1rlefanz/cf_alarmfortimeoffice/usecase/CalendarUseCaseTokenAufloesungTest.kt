@@ -28,8 +28,9 @@ import org.mockito.kotlin.whenever
  */
 class CalendarUseCaseTokenAufloesungTest {
 
-    private class FakeAuthDataStoreRepository : IAuthDataStoreRepository {
-        private val data = AuthData(isLoggedIn = false)
+    private class FakeAuthDataStoreRepository(
+        private val data: AuthData = AuthData(isLoggedIn = false)
+    ) : IAuthDataStoreRepository {
         override val authData: Flow<AuthData> = flowOf(data)
         override suspend fun updateAuthData(authData: AuthData): Result<Unit> = Result.success(Unit)
         override suspend fun clearAuthData(): Result<Unit> = Result.success(Unit)
@@ -67,11 +68,12 @@ class CalendarUseCaseTokenAufloesungTest {
 
     private suspend fun useCaseMit(
         tokenResult: Result<TokenData>,
-        repo: ICalendarRepository = RecordingCalendarRepository()
+        repo: ICalendarRepository = RecordingCalendarRepository(),
+        authData: AuthData = AuthData(isLoggedIn = false)
     ): CalendarUseCase {
         val manager = mock<OAuth2TokenManager>()
         whenever(manager.getValidToken()).thenReturn(tokenResult)
-        return CalendarUseCase(repo, FakeAuthDataStoreRepository(), manager)
+        return CalendarUseCase(repo, FakeAuthDataStoreRepository(authData), manager)
     }
 
     private suspend fun pruefeFehlertext(aufrufer: Aufrufer, fehler: Throwable, erwartet: String) {
@@ -143,5 +145,43 @@ class CalendarUseCaseTokenAufloesungTest {
         val useCase = useCaseMit(Result.failure(TokenException.NoTokenAvailable("x")))
         assertTrue(useCase.getCalendarEventsWithStatus(emptySet(), forceRefresh = false).isFailure)
         assertTrue(useCase.getCalendarEventsLazy(emptySet(), maxEvents = 10, offset = 0).isFailure)
+    }
+
+    private val eineStunde = 60 * 60 * 1000L
+    private val tokenFehler = Result.failure<TokenData>(TokenException.NoTokenAvailable("x"))
+
+    @Test
+    fun `hasValidAccessToken ist wahr bei gueltigem OAuth2-Token`() = runTest {
+        val token = TokenData(
+            accessToken = "oauth-token",
+            expiresAt = System.currentTimeMillis() + eineStunde,
+            scope = "calendar"
+        )
+        assertTrue(useCaseMit(Result.success(token)).hasValidAccessToken())
+    }
+
+    @Test
+    fun `hasValidAccessToken faellt bei Token-Fehler auf das gespeicherte Token zurueck`() = runTest {
+        val gespeichert = AuthData(
+            isLoggedIn = true,
+            accessToken = "alt",
+            tokenExpiryTime = System.currentTimeMillis() + eineStunde
+        )
+        assertTrue(useCaseMit(tokenFehler, authData = gespeichert).hasValidAccessToken())
+    }
+
+    @Test
+    fun `hasValidAccessToken ohne gespeichertes Token ist falsch`() = runTest {
+        assertFalse(useCaseMit(tokenFehler, authData = AuthData(isLoggedIn = false)).hasValidAccessToken())
+    }
+
+    @Test
+    fun `hasValidAccessToken mit abgelaufenem gespeichertem Token ist falsch`() = runTest {
+        val abgelaufen = AuthData(
+            isLoggedIn = true,
+            accessToken = "alt",
+            tokenExpiryTime = System.currentTimeMillis() - 1
+        )
+        assertFalse(useCaseMit(tokenFehler, authData = abgelaufen).hasValidAccessToken())
     }
 }

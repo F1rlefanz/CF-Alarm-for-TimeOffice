@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarItem
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
@@ -12,6 +14,8 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import java.time.LocalDateTime
 
 /**
@@ -27,8 +31,8 @@ import java.time.LocalDateTime
  * kaputter Zweitkalender den ganzen Sync blockieren), und ein wirklich leerer Kalender bleibt ein
  * legitimer Erfolg mit leerer Liste.
  *
- * Getestet wird der Legacy-Auth-Pfad (`oauth2TokenManager = null`) - er fuehrt durch exakt denselben
- * Sammel-/Fehlerpfad und braucht keine Google-Play-Services.
+ * Der [OAuth2TokenManager] ist ein Mockito-Mock mit gueltigem Token - so laeuft derselbe
+ * Sammel-/Fehlerpfad wie in der App, ohne Google-Play-Services.
  */
 class CalendarUseCaseFailureSemanticsTest {
 
@@ -63,11 +67,24 @@ class CalendarUseCaseFailureSemanticsTest {
         override suspend fun invalidateCalendarCache(calendarId: String) = Unit
     }
 
-    private fun useCase(perCalendar: Map<String, Result<List<CalendarEvent>>>) = CalendarUseCase(
-        calendarRepository = FakeCalendarRepository(perCalendar),
-        authDataStoreRepository = FakeAuthDataStoreRepository(),
-        oauth2TokenManager = null
-    )
+    private suspend fun useCase(perCalendar: Map<String, Result<List<CalendarEvent>>>): CalendarUseCase {
+        val manager = mock<OAuth2TokenManager>()
+        whenever(manager.getValidToken()).thenReturn(
+            Result.success(
+                TokenData(
+                    accessToken = "test-access-token",
+                    expiresAt = System.currentTimeMillis() + 60 * 60 * 1000L,
+                    scope = "calendar"
+                )
+            )
+        )
+        whenever(manager.invalidate()).thenReturn(Result.success(Unit))
+        return CalendarUseCase(
+            calendarRepository = FakeCalendarRepository(perCalendar),
+            authDataStoreRepository = FakeAuthDataStoreRepository(),
+            oauth2TokenManager = manager
+        )
+    }
 
     private fun event(id: String) = CalendarEvent(
         id = id,

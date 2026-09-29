@@ -12,20 +12,7 @@ on:
 
 jobs:
   claude-review:
-    # Die autonomen Aufraeum-PRs sind hier ausgenommen - aus zwei Gruenden.
-    #
-    # 1. Es geht ohnehin nicht: Die Action lehnt Bot-Ausloeser ab, um Schleifen
-    #    zu verhindern (`allowed_bots` ist leer). Unsere Aufraeum-PRs oeffnet
-    #    `claude[bot]`, der Lauf endet also nach ~12 s als ROT. Am 25.08.2026 auf
-    #    PR #32 gemessen. Das ist kein Fehler, sieht aber wie einer aus - und ein
-    #    rotes Kreuz, das nichts bedeutet, ist schlimmer als gar keins.
-    # 2. Es waere doppelt: Ueber diese PRs urteilt torwaechter.yml, und zwar
-    #    gruendlicher (eigener Build, Leitplanken, drei widerlegende Agenten).
-    #
-    # Wer das aufheben will, braucht `allowed_bots: "claude[bot]"` am Action-
-    # Schritt - dann aber bewusst, mit Blick auf die Schleifengefahr.
-    #
-    # DEPENDABOT ist aus einem DRITTEN Grund ausgenommen, und der ist noch handfester:
+    # DEPENDABOT ist ausgenommen:
     # GitHub gibt Dependabot-Laeufen die Secrets aus einem EIGENEN Speicher
     # (Settings -> Secrets -> Dependabot), nicht aus den normalen Actions-Secrets. Der
     # CLAUDE_CODE_OAUTH_TOKEN ist dort nicht hinterlegt, die Action startet also mit einem
@@ -38,8 +25,7 @@ jobs:
     # will, hinterlegt das Token zusaetzlich unter den Dependabot-Secrets; er bezahlt es dann
     # mit einem Modell-Lauf pro Versions-Bump.
     if: >-
-      ${{ !startsWith(github.event.pull_request.head.ref, 'chore/aufraeumen-')
-          && github.actor != 'dependabot[bot]' }}
+      ${{ github.actor != 'dependabot[bot]' }}
 
     runs-on: ubuntu-latest
     permissions:

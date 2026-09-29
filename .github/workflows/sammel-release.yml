@@ -2,10 +2,10 @@
 #
 # DAS PROBLEM
 # `veroeffentlichen.yml` laedt eine Version in den internen Play-Track, sobald der `versionCode`
-# in `app/build.gradle.kts` steigt. Dependabot und die naechtliche Aufraeumrunde fassen diese
-# Datei aber NIE an - am 02.09.2026 ueber die ganze Historie geprueft, kein einziger
-# `chore(deps)`- oder `chore(aufraeumen)`-Commit hat sie beruehrt. Ihre Arbeit landete damit in
-# `main` und erreichte die Tester erst, wenn zufaellig ein Mensch eine Version baute.
+# in `app/build.gradle.kts` steigt. Dependabot fasst diese Datei aber NIE an - am 02.09.2026
+# ueber die ganze Historie geprueft, kein einziger `chore(deps)`-Commit hat sie beruehrt. Seine
+# Arbeit landete damit in `main` und erreichte die Tester erst, wenn zufaellig ein Mensch eine
+# Version baute.
 #
 # DIE GRENZE, UND SIE IST DER KERN
 # Automatisch ausgeliefert wird NUR, wenn ALLE unausgelieferten Commits Wartung sind. Ein
@@ -31,8 +31,7 @@ name: Sammel-Release (Wartung ausliefern)
 
 on:
   schedule:
-    # 09:00 UTC = 11:00 Europe/Berlin. Nach der Aufraeumrunde (03:00) UND nach dem Torwaechter
-    # (06:00, bis zu 45 min) - was heute Nacht gemergt wurde, ist also drin.
+    # 09:00 UTC = 11:00 Europe/Berlin.
     - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:

@@ -25,8 +25,7 @@ on:
       - 'app/build.gradle.kts'
   # Aufgerufen vom Sammel-Release (`sammel-release.yml`), nachdem der seinen Bump nach `main`
   # gepusht hat. Der Umweg ueber `workflow_call` statt eines zweiten Push-Ausloesers ist noetig,
-  # weil ein Push mit dem Standard-GITHUB_TOKEN bewusst KEINE Workflows ausloest - derselbe
-  # Umstand, der oben schon den Torwaechter zwingt, selbst zu bauen.
+  # weil ein Push mit dem Standard-GITHUB_TOKEN bewusst KEINE Workflows ausloest.
   workflow_call:
     inputs:
       track:

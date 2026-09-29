@@ -88,7 +88,7 @@ fun StatusTabContent(
     authState: AuthState,
     calendarState: CalendarUiState,
     shiftState: ShiftUiState,
-    calendarViewModel: CalendarViewModel?,
+    calendarViewModel: CalendarViewModel,
     authViewModel: AuthViewModel,
     onShowCalendarSelection: () -> Unit,
     masterPausePaused: Boolean,
@@ -195,8 +195,7 @@ fun StatusTabContent(
         // anderen Status auf diesem Bildschirm.
         VerwaisteWeckerNachAbwahlCard(
             fehlversuche = calendarState.deselectionCleanupFailures,
-            onErneutVersuchen = { calendarViewModel?.retryDeselectionCleanup() },
-            erneutVersuchenMoeglich = calendarViewModel != null
+            onErneutVersuchen = { calendarViewModel.retryDeselectionCleanup() }
         )
 
         // Direkt danach und vor allen Einzel-Diagnosen: Ist alles pausiert, sind saemtliche
@@ -255,7 +254,7 @@ fun StatusTabContent(
                 calendarActionLabel = "Kalender wählen"
                 onCalendarAction = onShowCalendarSelection
             }
-            teilerfolg && calendarViewModel != null -> {
+            teilerfolg -> {
                 calendarActionLabel = "Aus Auswahl entfernen"
                 onCalendarAction = {
                     if (entfernenLeertAuswahl) entfernenBestaetigen = true
@@ -288,7 +287,7 @@ fun StatusTabContent(
             actionEnabled = !authState.calendarOps.calendarsLoading
         )
 
-        if (entfernenBestaetigen && calendarViewModel != null) {
+        if (entfernenBestaetigen) {
             LetzteAuswahlEntfernenDialog(
                 onAbbrechen = { entfernenBestaetigen = false },
                 onKalenderWaehlen = {
@@ -392,15 +391,11 @@ fun StatusTabContent(
  * Master-Pause oder wieder ein Kalender ausgewaehlt (siehe `resolveDeselectionCleanupFailure`).
  * Ein Wegtippen gibt es bewusst nicht: solange die Wecker klingeln koennen, hat die Karte etwas
  * zu sagen.
- *
- * @param erneutVersuchenMoeglich ohne CalendarViewModel gibt es niemanden, der den zweiten
- *   Anlauf ausfuehren koennte - dann bleibt der Knopf abgeblendet statt nur so zu tun.
  */
 @Composable
 private fun VerwaisteWeckerNachAbwahlCard(
     fehlversuche: Int,
-    onErneutVersuchen: () -> Unit,
-    erneutVersuchenMoeglich: Boolean
+    onErneutVersuchen: () -> Unit
 ) {
     if (fehlversuche <= 0) return
 
@@ -443,8 +438,7 @@ private fun VerwaisteWeckerNachAbwahlCard(
             CompactButton(
                 onClick = onErneutVersuchen,
                 text = CalendarViewModel.DESELECTION_CLEANUP_RETRY_ACTION,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = erneutVersuchenMoeglich
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }
@@ -850,7 +844,7 @@ internal fun rufbereitschaftsAbfrageInWorten(
 }
 
 @Composable
-private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
+private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
     val context = LocalContext.current
     var lastMaintenanceTime by remember { mutableLongStateOf(0L) }
     var letzterTerminabruf by remember { mutableStateOf(0L) }
@@ -966,13 +960,11 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel?) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
-                    if (calendarViewModel != null) {
-                        Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
-                        SettingsLinkButton(
-                            onClick = { calendarViewModel.refreshData(forceRefresh = true) },
-                            text = "Jetzt synchronisieren"
-                        )
-                    }
+                    Spacer(Modifier.height(SpacingConstants.SPACING_SMALL))
+                    SettingsLinkButton(
+                        onClick = { calendarViewModel.refreshData(forceRefresh = true) },
+                        text = "Jetzt synchronisieren"
+                    )
                 }
             }
         }

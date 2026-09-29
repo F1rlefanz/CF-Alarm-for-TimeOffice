@@ -64,22 +64,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *   Service mit intent == null, und der else-Zweig unten kann daraus nichts wiederherstellen (kein
  *   startForeground, kein Ton) - uebrig blieb ein stummer Zombie-Service, waehrend das Log wie ein
  *   funktionierender Wecker aussah.
- * - Foreground: No background execution limits, reliable alarm execution
- * - onDestroy: Guaranteed cleanup hook for all resources
  * - onTaskRemoved bewusst NICHT ueberschrieben (siehe Kommentar unten)
- *
- * CRITICAL FEATURES:
- * - isShuttingDown flag prevents MediaPlayer race conditions
- * - OnPreparedListener checks shutdown state before starting playback
- * - Defensive cleanup in multiple lifecycle hooks
- * - Foreground service ensures Android doesn't kill during alarm
- *
- * FIXES SNOOZE BUG:
- * Previous issue: MediaPlayer.prepareAsync() completed AFTER Activity.finish()
- * Solution: Service-managed MediaPlayer with shutdown flag guards
- *
- * @author CF-Alarm Development Team
- * @since 1.4.4 - Snooze Bug Fix Release
  */
 class AlarmSoundService : Service() {
     
@@ -123,10 +108,7 @@ class AlarmSoundService : Service() {
         /** Nur eine Ueberbrueckung bis zum eigenen Lock des Weckbildschirms. */
         private const val VORWECK_LOCK_TIMEOUT_MS = 10_000L
 
-        // Notification Configuration
-        // EINZIGE Alarm-Notification der App. Der AlarmReceiver postete frueher eine zweite
-        // (ID 2001) mit eigenem Channel-Sound - das ergab zwei Klingeltoene und zwei Eintraege
-        // in der Leiste. Ton + Sichtbarkeit haengen jetzt an genau diesem Service.
+        // EINZIGE Alarm-Notification der App (Invariante siehe Klassen-KDoc).
         const val NOTIFICATION_ID = 2002
 
         // VERSIONIERTE Kanal-ID, und das "_v2" ist kein Schoenheitsfehler: Android aendert an einem
@@ -356,11 +338,7 @@ class AlarmSoundService : Service() {
                 // Create notification channel (idempotent, safe to call multiple times)
                 createNotificationChannel()
 
-                // Start as foreground service (Android 8+ requirement).
-                // Diese Notification traegt auch den Full-Screen-Intent: der vom SYSTEM gesendete
-                // PendingIntent ist auf Android 10+ der einzige erlaubte Weg, aus dem Hintergrund
-                // eine Activity zu starten (ein direktes startActivity() aus dem Receiver wird
-                // verworfen und ist deshalb kein tragfaehiger Fallback mehr).
+                // Traegt den Full-Screen-Intent - siehe Klassen-KDoc SICHTBARKEIT.
                 val notification = createAlarmNotification(shiftName, shiftStartTime, alarmId, snoozeMinutes)
 
                 // VORWECKEN (seit 1.39.3, ohne Geraete-Unterscheidung seit 1.39.5): bei dunklem,
@@ -944,12 +922,8 @@ class AlarmSoundService : Service() {
         }
     }
     
-    /**
-     * Starts vibration pattern for alarm
-     */
     private fun startVibration() {
         try {
-            // Get vibrator using appropriate API for Android version
             vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 // Android 12+ (API 31): Use VibratorManager
                 val vibratorManager = getSystemService(VibratorManager::class.java)
@@ -960,15 +934,9 @@ class AlarmSoundService : Service() {
                 getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
             
-            // Enhanced vibration pattern for alarm (in milliseconds)
-            // Pattern: [delay, vibrate, pause, vibrate, pause, ...]
-            //
-            // DAS HIER IST DAS EINZIGE ECHTE MUSTER - bitte keine Konstante daraus machen, ohne
-            // sie auch zu benutzen. Bis v1.26.1 gab es ZWEI ungenutzte `ALARM_VIBRATION_PATTERN`
-            // (in util/timing/TimingConstants.kt und util/theme/UIConstants.kt, unterschiedlich
-            // lang) - beide las niemand, weil der Dienst schon immer dieses Muster inline
-            // aufbaute. Wer eine der Konstanten "korrigiert" haette, haette am Wecker nichts
-            // veraendert und es erst am Geraet gemerkt.
+            // Muster in ms: [Verzoegerung, Vibration, Pause, ...]. Einzige Quelle des Musters -
+            // keine Konstante daneben anlegen, die niemand liest: ihre Korrektur aenderte am
+            // Wecker nichts.
             val alarmVibrationPattern = longArrayOf(
                 0,    // Start immediately
                 1000, // Vibrate for 1 second
@@ -1001,9 +969,6 @@ class AlarmSoundService : Service() {
         }
     }
     
-    /**
-     * Stops vibration
-     */
     private fun stopVibration() {
         try {
             vibrator?.cancel()
@@ -1036,8 +1001,6 @@ class AlarmSoundService : Service() {
         // IMPORTANCE_HIGH ist Pflicht: Ein Full-Screen-Intent wird vom System ignoriert, wenn der
         // Channel darunter liegt. Der Channel bleibt aber bewusst STUMM und vibrationsfrei -
         // Ton und Vibration kommen ausschliesslich vom MediaPlayer bzw. startVibration().
-        // Frueher setzte der AlarmReceiver auf seinem eigenen Channel zusaetzlich einen
-        // Klingelton: das ergab zwei gleichzeitig laufende Weckertoene.
         val channel = NotificationChannel(
             CHANNEL_ID,
             getString(R.string.alarm_channel_name),

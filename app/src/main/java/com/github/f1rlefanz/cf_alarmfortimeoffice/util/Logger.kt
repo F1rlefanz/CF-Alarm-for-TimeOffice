@@ -71,25 +71,4 @@ object Logger {
             Timber.tag(tag).d("💾 Cache $operation: $result")
         }
     }
-    
-    /**
-     * Network-Event: Für API-Aufrufe und Netzwerk-Operationen
-     */
-    fun network(tag: String, operation: String, details: String? = null) {
-        val message = if (details != null) {
-            "🌐 $operation: $details"
-        } else {
-            "🌐 $operation"
-        }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.tag(tag).d(message)
-        } else {
-            // In Production nur wichtige Network-Events
-            if (operation.contains("failed", ignoreCase = true) || 
-                operation.contains("error", ignoreCase = true)) {
-                Timber.tag(tag).w(message)
-            }
-        }
-    }
 }

@@ -38,10 +38,6 @@ object SpacingConstants {
 
     // Button-Dimensionen
     val BUTTON_HEIGHT_LARGE = 56.dp
-
-    // Card & Surface
-    val SURFACE_CORNER_RADIUS = 8.dp
-    val CARD_CORNER_RADIUS = 12.dp
 }
 
 // ============================

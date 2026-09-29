@@ -5,8 +5,7 @@ import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
 /**
- * Eckenradien passend zu SpacingConstants.CARD_CORNER_RADIUS (12dp) /
- * SURFACE_CORNER_RADIUS (8dp), damit Material3-Defaultkomponenten
+ * Eckenradien 12dp (Card) / 8dp (Surface), damit Material3-Defaultkomponenten
  * (Buttons, Dialoge, Sheets) zum bestehenden Card-Design passen.
  */
 val AppShapes = Shapes(

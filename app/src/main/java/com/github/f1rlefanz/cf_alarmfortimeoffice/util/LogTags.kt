@@ -56,7 +56,6 @@ object LogTags {
 
     // === DATA PERSISTENCE ===
     const val DATASTORE = "CFAlarm.DataStore"
-    const val REPOSITORY = "CFAlarm.Repository"
 
     // === SYSTEM & LIFECYCLE ===
     const val APP = "CFAlarm.App"
@@ -83,5 +82,4 @@ object LogTags {
     const val VALIDATION = "CFAlarm.Validation"
     const val SYSTEM = "CFAlarm.System"
     const val FILE_SYSTEM = "CFAlarm.FileSystem"
-    const val PREFERENCES = "CFAlarm.Preferences"
 }

@@ -14,12 +14,6 @@ sealed class AppError(
         override val cause: Throwable? = null
     ) : AppError(message, cause)
     
-    data class ApiError(
-        val code: Int? = null,
-        override val message: String = "API request failed",
-        override val cause: Throwable? = null
-    ) : AppError(message, cause)
-    
     // Storage Errors
     data class FileSystemError(
         override val message: String = "File system access failed",
@@ -28,11 +22,6 @@ sealed class AppError(
     
     data class DataStoreError(
         override val message: String = "DataStore operation failed",
-        override val cause: Throwable? = null
-    ) : AppError(message, cause)
-    
-    data class PreferencesError(
-        override val message: String = "SharedPreferences operation failed",
         override val cause: Throwable? = null
     ) : AppError(message, cause)
     
@@ -54,22 +43,10 @@ sealed class AppError(
         override val cause: Throwable? = null
     ) : AppError(message, cause)
     
-    data class CalendarNotFoundError(
-        val calendarId: String? = null,
-        override val message: String = "Calendar not found",
-        override val cause: Throwable? = null
-    ) : AppError(message, cause)
-    
     // Validation Errors
     data class ValidationError(
         val field: String? = null,
         override val message: String = "Validation failed",
-        override val cause: Throwable? = null
-    ) : AppError(message, cause)
-    
-    // System Errors
-    data class SystemError(
-        override val message: String = "System operation failed",
         override val cause: Throwable? = null
     ) : AppError(message, cause)
     

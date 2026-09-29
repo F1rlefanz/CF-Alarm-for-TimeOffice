@@ -50,17 +50,10 @@ object ErrorHandler {
                 Logger.w(LogTags.NETWORK, "🌐❌ $errorContext", appError)
                 appError.cause?.let { Logger.d(LogTags.NETWORK, "Network error cause: ${it.message}") }
             }
-            is AppError.ApiError -> {
-                Logger.w(LogTags.NETWORK, "🔌❌ API $errorContext", appError)
-                appError.cause?.let { Logger.d(LogTags.NETWORK, "API error details: ${it.message}") }
-            }
             
             // STORAGE ERRORS: Critical for app functionality, log as errors
             is AppError.DataStoreError -> {
                 Logger.e(LogTags.DATASTORE, "💾❌ $errorContext", appError)
-            }
-            is AppError.PreferencesError -> {
-                Logger.e(LogTags.PREFERENCES, "⚙️❌ $errorContext", appError)
             }
             is AppError.FileSystemError -> {
                 Logger.e(LogTags.FILE_SYSTEM, "📁❌ $errorContext", appError)
@@ -79,16 +72,10 @@ object ErrorHandler {
             is AppError.CalendarAccessError -> {
                 Logger.w(LogTags.CALENDAR, "📅❌ $errorContext", appError)
             }
-            is AppError.CalendarNotFoundError -> {
-                Logger.w(LogTags.CALENDAR, "📅❌ Calendar not found$contextInfo: ${appError.calendarId}", appError)
-            }
             
             // VALIDATION & SYSTEM ERRORS: Unexpected issues, log as errors
             is AppError.ValidationError -> {
                 Logger.e(LogTags.VALIDATION, "✅❌ $errorContext", appError)
-            }
-            is AppError.SystemError -> {
-                Logger.e(LogTags.SYSTEM, "⚡❌ $errorContext", appError)
             }
             is AppError.UnknownError -> {
                 Logger.e(LogTags.ERROR, "❓❌ Unknown $errorContext", appError)
@@ -118,11 +105,9 @@ object ErrorHandler {
     fun getUserMessage(error: AppError): String = when (error) {
         // NETWORK ERRORS
         is AppError.NetworkError -> "Keine Internetverbindung. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut."
-        is AppError.ApiError -> "Serverfehler (${error.code ?: "Unbekannt"}). Der Service ist möglicherweise vorübergehend nicht verfügbar."
         
         // STORAGE ERRORS
         is AppError.DataStoreError -> "Einstellungen konnten nicht gespeichert werden. Bitte starten Sie die App neu."
-        is AppError.PreferencesError -> "Konfiguration konnte nicht geladen werden. Die App wird mit Standardeinstellungen fortgesetzt."
         is AppError.FileSystemError -> "Dateizugriff fehlgeschlagen. Überprüfen Sie den verfügbaren Speicherplatz."
         
         // AUTHENTICATION & PERMISSIONS
@@ -141,11 +126,9 @@ object ErrorHandler {
         
         // CALENDAR ERRORS
         is AppError.CalendarAccessError -> "Auf den Kalender konnte nicht zugegriffen werden. Überprüfen Sie die Berechtigung."
-        is AppError.CalendarNotFoundError -> "Der Kalender '${error.calendarId ?: "Unbekannt"}' wurde nicht gefunden oder ist nicht verfügbar."
         
         // VALIDATION & SYSTEM ERRORS
         is AppError.ValidationError -> "Ungültige Eingabe: ${error.field ?: "Unbekanntes Feld"}. Bitte überprüfen Sie Ihre Daten."
-        is AppError.SystemError -> "Systemfehler aufgetreten. Bitte starten Sie die App neu."
         is AppError.UnknownError -> "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
     }
     

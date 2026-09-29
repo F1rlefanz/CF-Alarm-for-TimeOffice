@@ -215,11 +215,4 @@ object NotificationDeliverability {
         Logger.w(LogTags.SYSTEM, "Zustellbarkeit von '$kanalId' nicht pruefbar - nehme erreichbar an: ${e.message}")
         Zustellbarkeit.ERREICHBAR
     }
-
-    /** Kurzform von [bestimme] fuer Aufrufer, die nur ja/nein brauchen. */
-    fun kannZustellen(
-        context: Context,
-        kanalId: String,
-        mindestwichtigkeit: Int = WICHTIGKEIT_KEINE + 1
-    ): Boolean = bestimme(context, kanalId, mindestwichtigkeit).erreicht
 }

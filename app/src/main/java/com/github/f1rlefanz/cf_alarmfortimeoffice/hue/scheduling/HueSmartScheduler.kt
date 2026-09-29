@@ -68,13 +68,8 @@ class HueSmartScheduler private constructor() {
         private var INSTANCE: HueSmartScheduler? = null
 
         /**
-         * INSTANCE wird erst NACH erfolgreichem [initialize] veroeffentlicht.
-         *
-         * Vorher stand `INSTANCE = it` VOR dem `initialize()`-Aufruf. Warf der (bis v1.23.0 tat er
-         * das bei jedem Direct-Boot-Prozess, siehe unten), blieb ein halb initialisiertes Singleton
-         * zurueck: `getInstance()` gab es danach fuer den ganzen Prozess kommentarlos heraus, und
-         * jeder Zugriff auf `workManager` schlug fehl - heilbar nur durch Prozess-Neustart.
-         * Dieselbe Fehlerklasse wie beim `cleanup()`-auf-Singleton-Scopes (siehe CLAUDE.md).
+         * INSTANCE wird erst NACH erfolgreichem [initialize] veroeffentlicht - sonst bleibt nach
+         * einem Wurf ein halb initialisiertes Singleton. Hergang: Skill cfalarm-hue.
          */
         fun getInstance(context: Context): HueSmartScheduler {
             return INSTANCE ?: synchronized(this) {
@@ -197,27 +192,9 @@ class HueSmartScheduler private constructor() {
      */
     private fun initialize(context: Context) {
         appContext = context
-        // BEWUSST KEIN WorkManager.getInstance() HIER.
-        //
-        // Diese Klasse haengt am Hilt-Graphen (HueModule.provideHueSmartScheduler), und der wird in
-        // JEDEM Prozessstart gebaut - auch in dem, den das System VOR der ersten Entsperrung fuer
-        // den directBootAware BootReceiver startet. In so einem Prozess ist WorkManager NICHT
-        // initialisiert: seine Initialisierung haengt am `androidx.startup.InitializationProvider`,
-        // und ContentProvider ohne `directBootAware` werden vor dem Entsperren gar nicht
-        // instanziiert. `WorkManager.getInstance()` wirft dort "WorkManager is not initialized
-        // properly".
-        //
-        // Genau das ist am 11.08.2026 am Emulator passiert: der Wurf schlug aus der Feld-Injektion
-        // der Application nach oben durch, der ganze Prozess starb mit "Unable to create
-        // application" - und damit lief der Direct-Boot-Restore der Alarme (und der schwebenden
-        // Snoozes) NIE. Die Wecker kamen erst zurueck, nachdem der Nutzer das Geraet entsperrt
-        // hatte. Fuer eine Wecker-App ist das der schlimmste denkbare Ausfall: Geraet startet
-        // nachts neu (Systemupdate, leerer Akku am Kabel), niemand entsperrt, kein Wecker.
-        //
-        // WorkManager wird deshalb erst beim GEBRAUCH aufgeloest (siehe Getter oben). Ein
-        // Direct-Boot-Prozess baut den Graphen dann klaglos, benutzt WorkManager aber nicht -
-        // was richtig ist, denn dessen Datenbank liegt im CE-Storage und waere dort ohnehin
-        // unlesbar.
+        // BEWUSST KEIN WorkManager.getInstance() HIER - der Graph wird auch im Direct-Boot-Prozess
+        // gebaut; WorkManager wird erst beim GEBRAUCH aufgeloest (Getter oben). Hergang: Skill
+        // cfalarm-wecker-und-boot, wecker-boot-und-wartung.md.
     }
 
     /**
@@ -291,16 +268,9 @@ class HueSmartScheduler private constructor() {
      */
     fun initializeSmartScheduling() {
         if (!isWorkManagerAvailable) {
-            // Normalfall in einem Direct-Boot-Prozess (vor der ersten Entsperrung): dort gibt es
-            // keinen WorkManager, und die Hue-Planung hat dort auch nichts zu tun.
-            //
-            // ABER: dieser Prozess STIRBT NICHT beim Entsperren - er ist genau der Prozess, in dem
-            // der Nutzer die App danach bedient. Und der einzige Aufrufer
-            // (HueBridgeConnectionManager.initialize()) ist per Waechter idempotent, ruft also nicht
-            // erneut. Ein frueherer Kommentar behauptete hier "ein spaeterer Aufruf plant normal" -
-            // das war falsch: taegliche Planung, Pre-Alarm-Health-Checks und der Alarm-Beobachter
-            // fehlten fuer die gesamte Lebensdauer dieses Prozesses. Deshalb wird das Ueberspringen
-            // VORGEMERKT und ueber [retrySkippedSchedulingIfNeeded] nachgeholt.
+            // Direct-Boot-Prozess: kein WorkManager. Der Prozess ueberlebt das Entsperren, deshalb
+            // wird das Ueberspringen VORGEMERKT und ueber [retrySkippedSchedulingIfNeeded]
+            // nachgeholt. Hergang: Skill cfalarm-hue, hue-api-und-regeln.md.
             schedulingSkipped = true
             Logger.w(LogTags.HUE_BRIDGE, "⚠️ SMART-SCHEDULER: WorkManager in diesem Prozess nicht verfuegbar (Direct Boot?) - Planung vorgemerkt und uebersprungen")
             return
@@ -403,15 +373,9 @@ class HueSmartScheduler private constructor() {
             return@withContext
         }
 
-        // Ohne eingerichtete Bridge ist JEDER Job hier sinnlos: Health-Checks, Sonnenaufgang und
-        // Auto-Off sprechen alle die Bridge an. Frueher lief das trotzdem los und der
-        // Fallback-Health-Check meldete bei jedem Start "⚠️ GENERIC-WORKER: Fallback health check
-        // failed" — ein WARN fuer einen Normalzustand, das in Release-Logs (nur WARN+) echte
-        // Warnungen zudeckt. Ursache: forceHealthCheck() gibt fuer "keine Bridge eingerichtet" und
-        // "Bridge nicht erreichbar" dasselbe false zurueck.
-        //
-        // hasStoredBridge() statt getCurrentConnectionInfo(): siehe dort — "eingerichtet" darf
-        // nicht an einem gescheiterten Health-Check haengen.
+        // Ohne eingerichtete Bridge ist jeder Job sinnlos; forceHealthCheck liefert fuer "keine
+        // Bridge" und "nicht erreichbar" dasselbe false. hasStoredBridge() statt
+        // getCurrentConnectionInfo(): "eingerichtet" haengt nicht am Health-Check. Hergang: Skill cfalarm-hue.
         if (!isBridgeConfigured()) {
             // Nicht nur "nichts neu planen", sondern auch abraeumen: WorkManager-Jobs ueberleben
             // das App-Update. Ein Fallback-Check, den eine fruehere Version ohne diesen Waechter

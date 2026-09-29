@@ -85,24 +85,18 @@ class HueLightUseCase @Inject constructor(
                     return@coroutineScope Result.failure(error)
                 }
 
-                val lights = if (lightsResult.isSuccess) {
-                    lightsResult.getOrNull() ?: emptyList()
-                } else {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to get lights", lightsResult.exceptionOrNull())
+                val lights = lightsResult.getOrElse {
+                    Logger.w(LogTags.HUE_USECASE, "Failed to get lights", it)
                     emptyList()
                 }
                 
-                val groups = if (groupsResult.isSuccess) {
-                    groupsResult.getOrNull() ?: emptyList()
-                } else {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to get groups", groupsResult.exceptionOrNull())
+                val groups = groupsResult.getOrElse {
+                    Logger.w(LogTags.HUE_USECASE, "Failed to get groups", it)
                     emptyList()
                 }
 
-                val scenes = if (scenesResult.isSuccess) {
-                    scenesResult.getOrNull() ?: emptyList()
-                } else {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to get scenes", scenesResult.exceptionOrNull())
+                val scenes = scenesResult.getOrElse {
+                    Logger.w(LogTags.HUE_USECASE, "Failed to get scenes", it)
                     emptyList()
                 }
                 
@@ -556,71 +550,66 @@ class HueLightUseCase @Inject constructor(
      * Validates a light action for business logic compliance
      */
     private fun validateLightAction(action: LightAction): Result<Unit> {
-        return try {
-            if (action.targetId.isBlank()) {
-                return Result.failure(IllegalArgumentException("Target ID cannot be empty"))
-            }
-            
-            action.brightness?.let { brightness ->
-                if (!HueConstants.Validation.isValidBrightness(brightness)) {
-                    return Result.failure(
-                        IllegalArgumentException("Brightness must be between ${HueConstants.Lights.MIN_BRIGHTNESS} and ${HueConstants.Lights.MAX_BRIGHTNESS}")
-                    )
-                }
-            }
-            
-            action.hue?.let { hue ->
-                if (!HueConstants.Validation.isValidHue(hue)) {
-                    return Result.failure(
-                        IllegalArgumentException("Hue must be between ${HueConstants.Lights.MIN_HUE} and ${HueConstants.Lights.MAX_HUE}")
-                    )
-                }
-            }
-            
-            action.saturation?.let { saturation ->
-                if (!HueConstants.Validation.isValidSaturation(saturation)) {
-                    return Result.failure(
-                        IllegalArgumentException("Saturation must be between ${HueConstants.Lights.MIN_SATURATION} and ${HueConstants.Lights.MAX_SATURATION}")
-                    )
-                }
-            }
-
-            action.colorTemperature?.let { ct ->
-                if (!HueConstants.Validation.isValidColorTemperature(ct)) {
-                    return Result.failure(
-                        IllegalArgumentException("Color temperature must be between ${HueConstants.Lights.MIN_COLOR_TEMPERATURE} and ${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds")
-                    )
-                }
-            }
-
-            // transition time in deciseconds
-            action.transitionTime?.let { tt ->
-                if (!HueConstants.Validation.isValidTransitionTime(tt)) {
-                    return Result.failure(
-                        IllegalArgumentException("Transition time must be between ${HueConstants.Lights.MIN_TRANSITION_TIME} and ${HueConstants.Lights.MAX_TRANSITION_TIME} deciseconds")
-                    )
-                }
-            }
-
-            // Ensure at least one action is specified.
-            //
-            // `sceneId` MUSS hier mitzaehlen: eine reine Szenen-Aktion setzt bewusst keine
-            // einzige dieser Eigenschaften (die Szene bringt sie selbst mit). Ohne diese
-            // Bedingung scheitert JEDE Szenenregel mit "At least one light property must be
-            // specified" - das Feature waere komplett tot, und zwar erst zur Weckzeit.
-            if (action.sceneId == null &&
-                action.on == null && action.brightness == null && action.hue == null &&
-                action.saturation == null && action.colorTemperature == null
-            ) {
+        if (action.targetId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Target ID cannot be empty"))
+        }
+        
+        action.brightness?.let { brightness ->
+            if (!HueConstants.Validation.isValidBrightness(brightness)) {
                 return Result.failure(
-                    IllegalArgumentException("At least one light property must be specified")
+                    IllegalArgumentException("Brightness must be between ${HueConstants.Lights.MIN_BRIGHTNESS} and ${HueConstants.Lights.MAX_BRIGHTNESS}")
                 )
             }
-            
-            Result.success(Unit)
-            
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+        
+        action.hue?.let { hue ->
+            if (!HueConstants.Validation.isValidHue(hue)) {
+                return Result.failure(
+                    IllegalArgumentException("Hue must be between ${HueConstants.Lights.MIN_HUE} and ${HueConstants.Lights.MAX_HUE}")
+                )
+            }
+        }
+        
+        action.saturation?.let { saturation ->
+            if (!HueConstants.Validation.isValidSaturation(saturation)) {
+                return Result.failure(
+                    IllegalArgumentException("Saturation must be between ${HueConstants.Lights.MIN_SATURATION} and ${HueConstants.Lights.MAX_SATURATION}")
+                )
+            }
+        }
+
+        action.colorTemperature?.let { ct ->
+            if (!HueConstants.Validation.isValidColorTemperature(ct)) {
+                return Result.failure(
+                    IllegalArgumentException("Color temperature must be between ${HueConstants.Lights.MIN_COLOR_TEMPERATURE} and ${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds")
+                )
+            }
+        }
+
+        // transition time in deciseconds
+        action.transitionTime?.let { tt ->
+            if (!HueConstants.Validation.isValidTransitionTime(tt)) {
+                return Result.failure(
+                    IllegalArgumentException("Transition time must be between ${HueConstants.Lights.MIN_TRANSITION_TIME} and ${HueConstants.Lights.MAX_TRANSITION_TIME} deciseconds")
+                )
+            }
+        }
+
+        // Ensure at least one action is specified.
+        //
+        // `sceneId` MUSS hier mitzaehlen: eine reine Szenen-Aktion setzt bewusst keine
+        // einzige dieser Eigenschaften (die Szene bringt sie selbst mit). Ohne diese
+        // Bedingung scheitert JEDE Szenenregel mit "At least one light property must be
+        // specified" - das Feature waere komplett tot, und zwar erst zur Weckzeit.
+        if (action.sceneId == null &&
+            action.on == null && action.brightness == null && action.hue == null &&
+            action.saturation == null && action.colorTemperature == null
+        ) {
+            return Result.failure(
+                IllegalArgumentException("At least one light property must be specified")
+            )
+        }
+        
+        return Result.success(Unit)
     }
 }

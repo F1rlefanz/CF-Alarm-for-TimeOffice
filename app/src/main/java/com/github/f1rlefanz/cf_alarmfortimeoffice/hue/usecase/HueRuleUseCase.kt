@@ -66,16 +66,9 @@ class HueRuleUseCase @Inject constructor(
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
         return try {
-            val rulesResult = configRepository.getScheduleRules()
-            
-            if (rulesResult.isSuccess) {
-                val rules = rulesResult.getOrNull() ?: emptyList()
-                Result.success(rules)
-            } else {
-                Logger.w(LogTags.HUE_USECASE, "Failed to get schedule rules", rulesResult.exceptionOrNull())
-                rulesResult
+            configRepository.getScheduleRules().onFailure {
+                Logger.w(LogTags.HUE_USECASE, "Failed to get schedule rules", it)
             }
-            
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to get all rules", e)
             Result.failure(Exception("Failed to retrieve schedule rules: ${e.message}", e))
@@ -128,15 +121,7 @@ class HueRuleUseCase @Inject constructor(
         Logger.d(LogTags.HUE_USECASE, "Finding applicable rules for shift: ${shift.shiftDefinition.name} at ${currentTime}")
         
         return try {
-            val allRulesResult = getAllRules()
-            if (allRulesResult.isFailure) {
-                return allRulesResult.fold(
-                    onSuccess = { Result.success(emptyList()) },
-                    onFailure = { Result.failure(it) }
-                )
-            }
-            
-            val allRules = allRulesResult.getOrNull() ?: emptyList()
+            val allRules = getAllRules().getOrElse { return Result.failure(it) }
 
             // `rule.shiftPattern` ist IMMER ein Definitionsname - exakter Vergleich, nie ueber
             // Keywords. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
@@ -402,16 +387,7 @@ class HueRuleUseCase @Inject constructor(
     
     override suspend fun getRule(ruleId: String): Result<HueSchedule> {
         return try {
-            val allRulesResult = getAllRules()
-            
-            if (allRulesResult.isFailure) {
-                return allRulesResult.fold(
-                    onSuccess = { Result.failure(Exception("Rule not found: $ruleId")) },
-                    onFailure = { Result.failure(it) }
-                )
-            }
-            
-            val allRules = allRulesResult.getOrNull() ?: emptyList()
+            val allRules = getAllRules().getOrElse { return Result.failure(it) }
             val rule = allRules.find { it.id == ruleId }
             
             if (rule != null) {

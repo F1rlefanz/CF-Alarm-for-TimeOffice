@@ -14,15 +14,9 @@
     vollstaendig. Wer den TrustManager in HueApiClient entfernt oder durch OkHttp-Defaults
     ersetzt, verliert JEDE Bridge-Verbindung - diese Datei faengt das nicht auf.
 
-    WARUM DER FRUEHERE <domain-config>-BLOCK ENTFERNT WURDE (2026-08):
-    Er trug 21 <domain>-Eintraege als IP-PRAEFIXE ("10.", "172.16." ... "192.168.",
-    "169.254.") und wollte damit RFC-1918-Ausnahmen inkl. <certificates src="user"/>
-    definieren. Androids Network-Security-Config kennt aber KEIN Praefix-/Wildcard-Matching:
-    ein <domain>-Wert wird als vollstaendiger Hostname (bzw. mit includeSubdomains als
-    DNS-Suffix) verglichen. "192.168." hat die echte Bridge-IP 192.168.x.y also nie
-    getroffen - der ganze Block war wirkungslos und behauptete im Header eine Absicherung,
-    die faktisch im Code sitzt. Falls hier je wieder eine XML-Ausnahme gebraucht wird:
-    nur EXAKTE, konkrete IPs eintragen, Praefixe sind kein gueltiges Konstrukt.
+    NSC kennt kein Praefix-/Wildcard-Matching, ein <domain> ist ein vollstaendiger Hostname;
+    ein frueherer <domain-config> mit IP-Praefixen ("192.168.") war deshalb wirkungslos
+    (2026-08 entfernt). Falls je noetig: nur exakte IPs.
 
     cleartextTrafficPermitted="false" bleibt (passend zu android:usesCleartextTraffic="false"
     im Manifest) - verifiziert: es gibt keinen einzigen "http://"-Aufruf im Code.

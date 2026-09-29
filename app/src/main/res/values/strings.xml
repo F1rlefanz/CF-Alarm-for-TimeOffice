@@ -1,14 +1,11 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">CF-Alarm for TimeOffice</string>
-    <!-- CLEANUP 2025: Removed 27 unused OnePlus-specific strings that were never implemented -->
-    <!-- Current OnePlus support: Simple hint dialog in BatteryOptimizationHelper.kt -->
     
     <!-- AlarmFullScreenActivity strings -->
     <string name="alarm_title">⏰ CF-ALARM</string>
     <string name="alarm_dismiss_button">ALARM STOPPEN</string>
-    <!-- Platzhalter statt fester 5: die Schlummer-Dauer ist einstellbar (3/5/10/15), und beide
-         Knoepfe trugen bis v1.29.0 unabhaengig davon "5". Wer 15 Minuten eingestellt hatte, las
-         am Weck-Bildschirm die falsche Zahl. -->
+    <!-- Platzhalter statt fester Zahl: die Dauer ist einstellbar (3/5/10/15), ein fester Text
+         zeigte am Weckbildschirm die falsche Zahl. -->
     <string name="alarm_snooze_button">%1$d MIN SPÄTER</string>
     <string name="alarm_shift_start">Beginn: %1$s</string>
     <string name="alarm_unknown_shift">Unbekannte Schicht</string>
@@ -163,9 +160,7 @@
     <!-- ============================================================================
          Philips Hue
 
-         Bis v1.35.1 fuehrte dieser Bereich als EINZIGER seine Nutzertexte inline im
-         Kotlin-Code (202 Stueck, davon 45 mit Platzhaltern) - der Dimmer hatte 70
-         Ressourcen, Hue null. Wer hier etwas ergaenzt, legt den Text hier an.
+         Wer hier etwas ergaenzt, legt den Text hier an.
 
          DIE GRENZE IST BEWUSST GEZOGEN: Ressourcen gelten fuer die COMPOSE-OBERFLAECHE.
          Text, der in der Fach- oder ViewModel-Schicht entsteht (UnresolvedRuleTarget.label,

@@ -45,17 +45,9 @@ class MasterPauseUseCase @Inject constructor(
 
     /**
      * Bringt den Device-Protected-Spiegel des Pausenzustands mit der CE-Wahrheit in Deckung.
-     *
-     * `KEY_PAUSED` hat genau zwei Schreiber ([pause]/[resume]) und drei Leser, die ALLE im Boot-Pfad
-     * sitzen - der Spiegel ist das einzige, was der `BootReceiver` vor der ersten Entsperrung ueber
-     * die Pause weiss. `savePaused()` schluckt seinen Fehler; faellt ein Schreibvorgang aus,
-     * divergieren beide dauerhaft, denn es gab bisher keinen einzigen Pfad, der sie wieder
-     * abgleicht. Beide Richtungen sind schlecht: ein haengendes `true` sperrt die
-     * Boot-Wiederherstellung dauerhaft (kein Wecker nach dem naechsten Neustart), ein haengendes
-     * `false` re-armt Alarme, die der Nutzer pausiert hat.
-     *
-     * Wird beim App-Start aufgerufen (best effort, nur bei entsperrtem Geraet - vorher ist der
-     * CE-Wert nicht lesbar) und ist billig: ein Read und im Regelfall kein Write.
+     * `savePaused()` schluckt seinen Fehler; ohne Abgleich divergierten beide dauerhaft (haengendes
+     * `true`: kein Wecker nach dem Neustart; `false`: pausierte Alarme re-armiert). Laeuft beim
+     * App-Start, nur bei entsperrtem Geraet. Hergang: Skill cfalarm-wecker-und-boot, master-pause.md.
      */
     suspend fun reconcileDirectBootMirror() {
         val truth = prefs.pausedNow()
@@ -73,37 +65,16 @@ class MasterPauseUseCase @Inject constructor(
     }
 
     /**
-     * NICHT abbrechbar: die Sequenz stellt einen Zustand HER, statt nur einen Schalter umzulegen -
-     * und der Schalter wird als ERSTES geschrieben. Bricht der Aufrufer-Scope mitten dabei ab
-     * (`viewModelScope` des `MasterPauseViewModel`: Activity beendet, Task weggewischt), stehen Flag
-     * und Wirklichkeit auseinander. Beide Richtungen sind gefaehrlich: bei `pause()` zeigt die App
-     * "pausiert", waehrend 6h-Wartung, Dimmer-Tick, DND-Tick und Hue-Planung weiterlaufen; bei
-     * `resume()` zeigt sie "aktiv", waehrend keine dieser Ketten wieder angelaufen ist - der Wecker
-     * bliebe STILL, und beim naechsten Boot liest der `BootReceiver` einen Spiegel, der nicht mehr
-     * zum Flag passt.
+     * NICHT abbrechbar: die Sequenz stellt einen Zustand HER, der Schalter steht als ERSTES - ein
+     * Abbruch mittendrin liesse Flag und Wirklichkeit auseinanderstehen (Hergang: master-pause.md).
      */
     suspend fun pause() = withContext(NonCancellable) {
         prefs.setPaused(true)
         // Device-Protected-Spiegel im selben Atemzug wie das DataStore-Flag - BootReceiver liest
         // ihn bei LOCKED_BOOT_COMPLETED, wo @MainDataStore (CE-Storage) noch nicht lesbar ist.
         directBootAlarmStore.savePaused(true)
-        // EINEN GERADE KLINGELNDEN WECKER BEENDEN (Pruefrunde 8).
-        //
-        // pause() raeumte bisher nur die PLANUNG ab und liess das gerade Laufende in Ruhe: der
-        // Wecker klingelte nach dem Pausieren einfach weiter, waehrend die Oberflaeche
-        // "Hintergrunddienste pausiert" zeigte. Schlimmer noch, seine Notification blieb mitsamt
-        // Schlummer-Knopf stehen - ein Druck darauf armierte einen neuen Wecker mitten in der
-        // Pause, den danach nichts mehr abraeumte (die 6h-Kette ist hier unten gerade gekappt
-        // worden). Der Schlummer-Pfad hat dagegen jetzt seinen eigenen Backstop; diese Zeile
-        // beseitigt den Anlass.
-        //
-        // BEWUSST UNBEDINGT, nicht auf AlarmSoundService.alarmActive gegated: die Richtung ist
-        // fail-safe zu waehlen, und "Pause heisst still" ist die Zusage der Oberflaeche. Laeuft
-        // gar kein Wecker, verarbeitet der Dienst den Stop-Intent und beendet sich sofort wieder;
-        // waere der Zustandsmerker dagegen veraltet, bliebe der Wecker laut.
-        //
-        // try/catch wie bei jedem Schritt unten: aus dem Hintergrund heraus lehnt Android ab
-        // Android 8 einen startService() ab, und das darf die Pause nicht zerreissen.
+        // Laufenden Wecker beenden - unbedingt, nicht auf alarmActive gegated; eigenes try/catch,
+        // ein abgelehnter startService() darf die Pause nicht zerreissen. Hergang: master-pause.md.
         try {
             context.startService(
                 Intent(context, AlarmSoundService::class.java)

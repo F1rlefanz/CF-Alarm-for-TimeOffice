@@ -20,28 +20,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Die vom Nutzer FREIGEGEBENEN Kalendertage: Tage, an denen laut Dienstplan eine Schicht steht,
- * an denen der Dienst aber nicht stattfindet (Chef hat freigegeben, Tausch, Krankmeldung).
- *
- * **Warum das nicht dasselbe ist wie "Wecker ueberspringen".** Eine [ShiftSpan] kennt bewusst kein
- * "uebersprungen": ein ausgelassener Weckruf aendert nichts daran, dass der Dienst stattfindet -
- * wer ohne Wecker wach ist, will trotzdem "Nicht stoeren" und den Schicht-Dimmer. Genau diese
- * Trennung hat am 24.08.2026 am Fairphone zugeschlagen: der Nutzer hatte frei, uebersprang den
- * Wecker (der Wecker blieb korrekt stumm) - und um 14:48 Uhr, dem Beginn der Schicht `S2`, ging
- * "Nicht stoeren" an, weil die Spanne den Dienst weiterhin als stattfindend auswies
- * (`zen_mode=1`, Regel `CFAlarm Ruhezeit` `STATE_TRUE`). Die Geste fuer den umgekehrten Fall -
- * **der Dienst faellt aus** - fehlte, also griff der Nutzer zur einzigen vorhandenen.
- *
- * Deshalb dieser zweite, unabhaengige Speicher: **Ueberspringen betrifft den WECKER, eine
- * Freigabe betrifft den DIENST.**
- *
- * **Gebunden an das DATUM, nicht an eine Schicht oder Kalender-Kennung.** Der Dienstplan kommt aus
- * einem abonnierten Feed, dem Google alle paar Tage neue Event-IDs gibt (am Geraet gemessen:
- * 11 geloescht, 11 angelegt, Schnittmenge null). Eine an der Kennung oder am Schichtnamen
- * haengende Freigabe waere nach so einer Rotation lautlos wirkungslos - und ein lautlos
- * wirkungsloser freier Tag ist ein Wecker am freien Morgen. Ein Datum ueberlebt das.
- *
- * Der Tag gilt fuer den GANZEN Kalendertag: hat ein Tag zwei Schichten, fallen beide weg.
+ * Die vom Nutzer FREIGEGEBENEN Kalendertage: laut Dienstplan steht eine Schicht, der Dienst findet
+ * aber nicht statt (Freigabe, Tausch, Krankmeldung). **Ueberspringen betrifft den WECKER, eine
+ * Freigabe den DIENST** - deshalb ein eigener Speicher. **Gebunden an das DATUM**, nicht an
+ * Schicht oder Kalender-Kennung: der Dienstplan-Feed rotiert seine Event-IDs, ein Datum ueberlebt
+ * das. Gilt fuer den GANZEN Kalendertag (zwei Schichten: beide fallen weg).
+ * Hergang: Skill cfalarm-wecker-und-boot, tag-freigeben.md.
  */
 @Singleton
 class FreieTageStore @Inject constructor(

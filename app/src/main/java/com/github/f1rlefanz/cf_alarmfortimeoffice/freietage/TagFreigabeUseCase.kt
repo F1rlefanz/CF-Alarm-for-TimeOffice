@@ -51,19 +51,11 @@ data class TagFreigabeResult(
 /**
  * "Tag freigeben": ein Kalendertag, an dem laut Dienstplan Dienst waere, findet nicht statt.
  *
- * **Abgrenzung zum Ueberspringen, und warum es beides braucht.** `AlarmSkipUseCase` schaltet den
- * naechsten WECKER ab und laesst den Dienst bestehen - "Nicht stoeren" und der Schicht-Dimmer
- * richten sich weiter nach der Schicht (gedacht fuer den Morgen, an dem man ohne Wecker wach ist).
- * Hier faellt der DIENST weg, und damit alles, was an ihm haengt:
- *
- * - **Wecker**: die Alarme des Tages werden geloescht und entstehen nicht neu (Gate und Backstop
- *   in `AlarmUseCase`).
- * - **"Nicht stoeren"** und **Schicht-Dimmer**: `FreieTageStore.filtereSpannen` nimmt die
- *   Schichtspannen des Tages aus beiden Fensterquellen; der Tag verhaelt sich danach wie jeder
- *   andere freie Tag (FREI-Regel).
- * - **Hue**: braucht keinen eigenen Zweig. `HueSmartScheduler` zieht seine Zeiten ausschliesslich
- *   aus `getAllAlarms()`, und die Regelausfuehrung haengt am `AlarmReceiver` - ohne Wecker kein
- *   Sonnenaufgang und kein Licht.
+ * Anders als `AlarmSkipUseCase` (nur der WECKER faellt weg) faellt hier der DIENST weg und mit ihm
+ * alles, was daran haengt: die Wecker des Tages (Gate und Backstop in `AlarmUseCase`), "Nicht
+ * stoeren" und Schicht-Dimmer (`FreieTageStore.filtereSpannen`; der Tag verhaelt sich wie jeder
+ * freie Tag). Hue braucht keinen eigenen Zweig - es haengt an `getAllAlarms()` und am
+ * `AlarmReceiver`. Hergang: Skill cfalarm-wecker-und-boot, tag-freigeben.md.
  *
  * Der Kalendertermin bleibt unangetastet. Die Freigabe ist eine Aussage des NUTZERS ueber den
  * Dienstplan, kein Abbild des Dienstplans - deshalb liegt sie in einem eigenen Speicher und nicht

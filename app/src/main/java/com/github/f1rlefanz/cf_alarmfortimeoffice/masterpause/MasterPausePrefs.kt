@@ -29,23 +29,12 @@ class MasterPausePrefs @Inject constructor(
     }
 
     /**
-     * **Fehlerbehandlung ist hier keine Kür, sondern die Richtung, in die der Wecker fällt.**
-     *
-     * Der `ReplaceFileCorruptionHandler` des [MainDataStore] fängt NUR eine `CorruptionException`;
-     * eine IOException reicht DataStore unverändert durch. Ohne `.catch` schlug sie damit bei
-     * jedem Leser durch — u. a. beim Master-Pause-Backstop in `AlarmUseCase.syncAlarms()`, den
-     * Gates von `DimScheduleUseCase`/`DndScheduleUseCase` und im `BootReceiver`, wo der Read
-     * außerhalb eines try/catch in einem Scope ohne `CoroutineExceptionHandler` lag und den
-     * PROZESS beendete (damit fiel die gesamte Boot-Wiederherstellung aus). Dasselbe Muster hat
-     * `auth_prefs` bereits: `corruptionHandler` UND `.catch{}` am Flow.
-     *
-     * Degradiert wird auf **`false` = NICHT pausiert**, und diese Richtung ist der eigentliche
-     * Punkt: Ein fälschlich wiederhergestellter Wecker klingelt hörbar und der Nutzer stellt ihn
-     * ab. Ein fälschlich unterdrückter ist STILL, und niemand merkt es, bis er verschlafen hat.
-     * Dieselbe Abwägung trifft `DeviceLocalFlagsGuard` ausdrücklich.
-     *
-     * Der Fehler wird als solcher **geloggt** — sonst ist er im Log von einem normalen,
-     * nicht pausierten Betrieb nicht zu unterscheiden.
+     * **Fehlerbehandlung ist hier die Richtung, in die der Wecker fällt.** Der Corruption-Handler
+     * fängt nur `CorruptionException`; eine IOException reichte ohne `.catch` bis in den
+     * `BootReceiver` durch und beendete den Prozess. Degradiert wird auf **`false` = NICHT
+     * pausiert**: ein fälschlich klingelnder Wecker fällt auf, ein fälschlich stummer nicht. Der
+     * Fehler wird geloggt, sonst gliche er im Log normalem Betrieb.
+     * Hergang: Skill cfalarm-persistenz-und-auth, persistenz.md.
      */
     val paused: Flow<Boolean> = dataStore.data
         .catch { e ->

@@ -513,17 +513,6 @@ class AlarmRepository @Inject constructor(
         }
     }
 
-    override suspend fun getAlarmById(alarmId: Int): Result<AlarmInfo?> {
-        return try {
-            awaitInitialLoad()
-            val alarm = _activeAlarms.value.find { it.id == alarmId }
-            Result.success(alarm)
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "Error getting alarm by ID: $alarmId", e)
-            Result.failure(e)
-        }
-    }
-
     override suspend fun deleteAlarm(alarmId: Int): Result<Unit> {
         return try {
             awaitInitialLoad()
@@ -561,17 +550,6 @@ class AlarmRepository @Inject constructor(
             Result.success(Unit)
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM, "Error clearing all alarms", e)
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun alarmExists(alarmId: Int): Result<Boolean> {
-        return try {
-            awaitInitialLoad()
-            val exists = _activeAlarms.value.any { it.id == alarmId }
-            Result.success(exists)
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "Error checking if alarm exists: $alarmId", e)
             Result.failure(e)
         }
     }

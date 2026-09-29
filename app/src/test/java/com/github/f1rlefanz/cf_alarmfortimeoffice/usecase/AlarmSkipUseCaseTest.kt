@@ -63,8 +63,6 @@ class AlarmSkipUseCaseTest {
         }
 
         override suspend fun getAllAlarms(): Result<List<AlarmInfo>> = Result.success(state.value)
-        override suspend fun getAlarmById(alarmId: Int): Result<AlarmInfo?> =
-            Result.success(state.value.find { it.id == alarmId })
 
         override suspend fun deleteAlarm(alarmId: Int): Result<Unit> {
             state.value = state.value.filterNot { it.id == alarmId }
@@ -75,9 +73,6 @@ class AlarmSkipUseCaseTest {
             state.value = emptyList()
             return Result.success(Unit)
         }
-
-        override suspend fun alarmExists(alarmId: Int): Result<Boolean> =
-            Result.success(state.value.any { it.id == alarmId })
     }
 
     /** Fake-Skip-Repository mit konfigurierbarem "ist uebersprungen"-Zustand und Aufruf-Tracking. */

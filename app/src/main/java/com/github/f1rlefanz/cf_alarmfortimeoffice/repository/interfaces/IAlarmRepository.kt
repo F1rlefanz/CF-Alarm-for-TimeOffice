@@ -32,25 +32,9 @@ interface IAlarmRepository {
     /** Lädt alle gespeicherten Alarm-Informationen */
     suspend fun getAllAlarms(): Result<List<AlarmInfo>>
     
-    /**
-     * Lädt spezifische Alarm-Information anhand der ID
-     * 
-     * @param alarmId Eindeutige ID des Alarms
-     * @return Result mit AlarmInfo oder Fehler wenn nicht gefunden
-     */
-    suspend fun getAlarmById(alarmId: Int): Result<AlarmInfo?>
-    
     /** Löscht einen Alarm anhand der ID */
     suspend fun deleteAlarm(alarmId: Int): Result<Unit>
     
     /** Löscht alle gespeicherten Alarme */
     suspend fun deleteAllAlarms(): Result<Unit>
-    
-    /**
-     * Prüft ob ein Alarm mit der angegebenen ID existiert
-     * 
-     * @param alarmId Eindeutige ID des Alarms
-     * @return Result mit Boolean (true wenn vorhanden) oder Fehler
-     */
-    suspend fun alarmExists(alarmId: Int): Result<Boolean>
 }

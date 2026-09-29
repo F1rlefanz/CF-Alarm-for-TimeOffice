@@ -213,7 +213,6 @@
 -keep class * extends androidx.datastore.core.Serializer { *; }
 
 # WorkManager
--keep class androidx.work.** { *; }
 -keep class * extends androidx.work.ListenableWorker
 -keepnames class * extends androidx.work.ListenableWorker
 

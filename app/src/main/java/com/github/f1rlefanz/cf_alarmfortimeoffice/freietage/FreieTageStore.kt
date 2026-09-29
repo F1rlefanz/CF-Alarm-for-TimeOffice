@@ -150,8 +150,6 @@ class FreieTageStore @Inject constructor(
 
     suspend fun freieTageNow(): Set<LocalDate> = freieTage.first()
 
-    suspend fun istFreigegeben(datum: LocalDate): Boolean = datum in freieTageNow()
-
     /**
      * Read-Modify-Write INNERHALB von `edit{}` - wie `DimOverlayPrefs` es fuer seine
      * Ausschlusslisten tut. Ausserhalb waere zwischen Lesen und Schreiben Platz fuer einen

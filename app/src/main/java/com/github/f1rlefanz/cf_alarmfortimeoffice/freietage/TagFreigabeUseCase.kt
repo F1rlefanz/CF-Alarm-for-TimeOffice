@@ -100,8 +100,6 @@ class TagFreigabeUseCase @Inject constructor(
 
     val freieTage: Flow<Set<LocalDate>> = store.freieTage
 
-    suspend fun freieTageNow(): Set<LocalDate> = store.freieTageNow()
-
     /**
      * Gibt [datum] frei: Markierung setzen, Wecker des Tages abraeumen, ein kollidierendes
      * Ueberspringen aufheben, Neben-Ketten neu anwerfen.

@@ -377,7 +377,6 @@ fun MainScreen(
                                         data = "package:${context.packageName}".toUri()
                                     }
                             batteryExemptionLauncher.launch(intent)
-                            Logger.d(LogTags.BATTERY, "Battery exemption request launched")
                         } catch (e: Exception) {
                             Logger.e(
                                 LogTags.BATTERY,
@@ -410,10 +409,6 @@ fun MainScreen(
                         try {
                             unusedAppRestrictionsLauncher.launch(
                                 UnusedAppRestrictionsHelper.createSettingsIntent(context)
-                            )
-                            Logger.d(
-                                LogTags.UNUSED_APP_RESTRICTIONS,
-                                "Unused-app-restrictions settings opened"
                             )
                         } catch (e: Exception) {
                             Logger.e(
@@ -450,10 +445,6 @@ fun MainScreen(
                         try {
                             timeOfficeSettingsLauncher.launch(
                                 TimeOfficeHealthHelper.createAppInfoIntent()
-                            )
-                            Logger.d(
-                                LogTags.TIMEOFFICE_HEALTH,
-                                "TimeOffice app-info settings opened"
                             )
                         } catch (e: Exception) {
                             Logger.e(

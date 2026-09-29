@@ -117,7 +117,7 @@ fun DimmerRuleConfigScreen(
                 }
             }
 
-            // Intensität pro Regel – gilt für die Fenster DIESER Regel (Wellness nutzt die globale Darstellung).
+            // Intensitaet pro Regel - gilt fuer die Fenster DIESER Regel.
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(

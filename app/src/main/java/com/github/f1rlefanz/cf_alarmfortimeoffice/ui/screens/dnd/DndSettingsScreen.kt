@@ -63,6 +63,7 @@ fun DndSettingsScreen(
 
     val isSupported = remember { DndPermissionHelper.isFeatureSupported() }
     var isGranted by remember { mutableStateOf(isSupported && DndPermissionHelper.isGranted(context)) }
+    val bedienbar = isSupported && isGranted
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -148,7 +149,7 @@ fun DndSettingsScreen(
                             description = stringResource(R.string.dnd_follow_dimmer_hint),
                             checked = state.followDimmerEnabled,
                             onCheckedChange = { viewModel.setFollowDimmerEnabled(it) },
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             titleStyle = MaterialTheme.typography.titleMedium
                         )
                     }
@@ -168,7 +169,7 @@ fun DndSettingsScreen(
                             description = stringResource(R.string.dnd_during_shift_hint),
                             checked = state.duringShiftEnabled,
                             onCheckedChange = { viewModel.setDuringShiftEnabled(it) },
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             titleStyle = MaterialTheme.typography.titleMedium
                         )
                         if (shiftNames.isNotEmpty()) {
@@ -209,10 +210,7 @@ fun DndSettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            // KEINE Chips mehr: welche Schicht Rufbereitschaft ist, wird im
-                            // Schicht-Editor festgelegt (ShiftDefinition.isOnCall) - EINE Quelle
-                            // fuer Cutoff und stuendliche Kalender-Abfrage. Hier nur die Auskunft,
-                            // welche das gerade sind, und der Weg dorthin.
+                            // Rufbereitschaft legt der Schicht-Editor fest (ShiftDefinition.isOnCall) - hier nur Auskunft.
                             Text(
                                 text = if (state.onCallShifts.isEmpty()) {
                                     "Noch keine Schicht als Rufbereitschaft markiert. Das legst du " +
@@ -270,7 +268,7 @@ fun DndSettingsScreen(
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_calls),
                             checked = policy.blockCalls,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockCalls(it) }
                         )
                         if (policy.blockCalls) {
@@ -278,53 +276,53 @@ fun DndSettingsScreen(
                                 label = stringResource(R.string.dnd_policy_repeat_callers),
                                 hint = stringResource(R.string.dnd_policy_repeat_callers_hint),
                                 checked = policy.allowRepeatCallers,
-                                enabled = isSupported && isGranted,
+                                enabled = bedienbar,
                                 onCheckedChange = { viewModel.setAllowRepeatCallers(it) }
                             )
                         }
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_messages),
                             checked = policy.blockMessages,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockMessages(it) }
                         )
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_conversations),
                             hint = stringResource(R.string.dnd_policy_conversations_hint),
                             checked = policy.blockConversations,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockConversations(it) }
                         )
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_reminders),
                             checked = policy.blockReminders,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockReminders(it) }
                         )
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_events),
                             checked = policy.blockEvents,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockEvents(it) }
                         )
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_system),
                             checked = policy.blockSystem,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockSystem(it) }
                         )
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_media),
                             hint = stringResource(R.string.dnd_policy_media_hint),
                             checked = policy.blockMedia,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockMedia(it) }
                         )
                         PolicyRow(
                             label = stringResource(R.string.dnd_policy_alarms),
                             hint = stringResource(R.string.dnd_policy_alarms_hint),
                             checked = policy.blockAlarms,
-                            enabled = isSupported && isGranted,
+                            enabled = bedienbar,
                             onCheckedChange = { viewModel.setBlockAlarms(it) }
                         )
                     }

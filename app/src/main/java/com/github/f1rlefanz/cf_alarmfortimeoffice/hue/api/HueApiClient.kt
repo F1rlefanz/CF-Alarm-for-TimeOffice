@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueBridgeConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueGroup
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueLight
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSceneDto
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.network.HueTrustManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.util.HueConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -711,27 +712,4 @@ internal object HueV1Envelope {
         null -> emptyMap<String, Any>()
         else -> mapOf(KEY_MESSAGE to success)
     }
-}
-
-/**
- * Rohgestalt eines Szenen-Eintrags, wie ihn `GET /api/<user>/scenes` liefert.
- *
- * Eine eigene Klasse, weil die Szenen-Id der SCHLUESSEL der Map ist und nicht im Rumpf steht -
- * `HueScene.id` waere beim direkten Deserialisieren `null`, obwohl es nicht-nullbar deklariert
- * ist (Gson erzwingt das nicht). Der Schluessel wird deshalb in [toDomain] von Hand gesetzt.
- * Abgebildet wird nur, was auch GELESEN wird - Gson ignoriert alle uebrigen Felder der Antwort
- * von sich aus. Siehe den Kommentar an [HueScene]: ein Feld ohne Leser sieht spaeter wie eine
- * vorhandene Faehigkeit aus.
- */
-internal data class HueSceneDto(
-    val name: String? = null,
-    val group: String? = null,
-    val recycle: Boolean? = null
-) {
-    fun toDomain(id: String): HueScene = HueScene(
-        id = id,
-        name = name,
-        group = group,
-        recycle = recycle
-    )
 }

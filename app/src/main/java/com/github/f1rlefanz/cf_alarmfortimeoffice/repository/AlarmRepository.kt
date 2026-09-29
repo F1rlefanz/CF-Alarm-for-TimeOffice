@@ -37,20 +37,6 @@ import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Repository für Alarm-Daten - implementiert IAlarmRepository Interface
- *
- * ✅ FIXED: Verwendet DataStore für persistente Speicherung
- * ✅ Alarme überleben App-Neustarts
- * ✅ Automatisches Laden beim Repository-Init
- * ✅ Typsicher mit Kotlin Serialization
- * ✅ Asynchron & nicht-blockierend
- *
- * CRITICAL FIX für Bug: "Alarme verschwinden nach App-Schließen"
- * - Ersetzt In-Memory Storage durch DataStore
- * - Lädt Alarme automatisch beim Start
- * - Synchronisiert Änderungen sofort in DataStore
- */
 @Serializable
 data class AlarmInfoData(
     val id: Int,
@@ -91,26 +77,17 @@ class AlarmRepository @Inject constructor(
     // In-memory cache für schnellen Zugriff + reaktive UI
     private val _activeAlarms = MutableStateFlow<List<AlarmInfo>>(emptyList())
     /**
-     * `onStart { awaitInitialLoad() }` ist KEIN Beiwerk: der Flow ist die Quelle fuer die UI, und
-     * ohne diesen Haken heilt sich ein im gesperrten Zustand ergebnislos gebliebener Init-Load nur
-     * bei einem METHODEN-Aufruf (`getAllAlarms()` & Co.). Ein Bildschirm, der ausschliesslich
-     * beobachtet, saehe die Notlage-Leere fuer die gesamte Prozesslaufzeit - und dieser Prozess
-     * ueberlebt das Entsperren (am Emulator nachgemessen: pid unveraendert). Der Haken wurde beim
-     * ersten Wurf dieses Fixes vergessen und beim Geraetetest bemerkt: nach dem Entsperren kam kein
-     * Nachladen, weil niemand eine Methode aufrief.
+     * `onStart { awaitInitialLoad() }` ist tragend: ein reiner Beobachter ruft keine Methode, und
+     * ohne den Haken heilte sich ein im gesperrten Zustand ergebnisloser Init-Load fuer ihn nie -
+     * der Prozess ueberlebt das Entsperren. Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
      */
     override val activeAlarms: Flow<List<AlarmInfo>> =
         _activeAlarms.asStateFlow().onStart { awaitInitialLoad() }
 
     /**
-     * BEREIT-SIGNAL für den asynchronen Init-Load.
-     *
-     * Ohne dieses Signal war der leere Start-Cache von `_activeAlarms` nicht von „es gibt keine
-     * Alarme" zu unterscheiden: ein durch einen Hintergrund-Trigger (Wartung/Worker/Boot) frisch
-     * gestarteter Prozess bekam von `getAllAlarms()` eine leere Liste, der Delta-Sync hielt jede
-     * erkannte Schicht für neu — und der danach zurückkehrende Init-Load überschrieb Cache,
-     * DataStore UND Direct-Boot-Spiegel mit seinem alten Snapshot (Last-Writer-Wins gegen den
-     * eigenen Initialisierer).
+     * BEREIT-SIGNAL für den asynchronen Init-Load: sonst ist der leere Start-Cache nicht von
+     * „es gibt keine Alarme" zu unterscheiden, und der spät zurückkehrende Init-Load überschreibt
+     * Cache, DataStore und Direct-Boot-Spiegel mit seinem alten Snapshot. Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
      *
      * Wird in `finally` IMMER erfüllt, damit ein Lesefehler die Aufrufer nicht hängen lässt.
      */
@@ -128,23 +105,11 @@ class AlarmRepository @Inject constructor(
     private val stateMutex = Mutex()
 
     /**
-     * SCHREIBSPERRE nach einem gescheiterten Init-Load.
-     *
-     * Ein Dekodier- oder Lesefehler degradiert den Cache zwangsläufig auf `emptyList()` — mehr ist
-     * nicht bekannt. Was NICHT passieren darf: dass diese Notlage-Leere über die noch vorhandenen
-     * Rohdaten UND über den Direct-Boot-Spiegel geschrieben wird. Genau das tat der Delta-Sync:
-     * `getAllAlarms()` liefert leer → jede erkannte Schicht gilt als neu → `saveAlarm()` →
-     * `persistToDataStore()` überschreibt `active_alarms` und spiegelt per
-     * `directBootAlarmStore.saveAll()`. Verloren gehen dabei genau die Alarme, die sich NICHT aus
-     * dem Kalender rekonstruieren lassen (manuelle Alarme) — und der Direct-Boot-Spiegel, der der
-     * einzige Weg zurück nach einem Reboot vor der ersten Entsperrung ist.
-     *
-     * Dieselbe Entscheidung wie in `DimRuleRepository.editRules()` und
-     * `ShiftConfigRepository.getCurrentShiftConfig()`: nicht speichern ist besser als alles
-     * verlieren. Die System-Alarme werden trotzdem gesetzt (der Wecker klingelt), nur die
-     * Persistenz bleibt für diesen Prozess außen vor. Einzige bewusste Ausnahme:
-     * [deleteAllAlarms] (Master-Pause / autoAlarmEnabled=false) MUSS auch dann wirklich räumen,
-     * sonst re-armt ein Direct-Boot-Restore Alarme, die der Nutzer gerade pausiert hat.
+     * SCHREIBSPERRE nach einem gescheiterten Init-Load: die Notlage-Leere darf weder
+     * `active_alarms` noch den Direct-Boot-Spiegel überschreiben (verloren gingen v. a. manuelle
+     * Alarme). Die System-Alarme werden trotzdem gesetzt, nur die Persistenz bleibt außen vor.
+     * Einzige Ausnahme: [deleteAllAlarms] MUSS auch dann räumen, sonst re-armt ein
+     * Direct-Boot-Restore gerade pausierte Alarme. Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
      */
     @Volatile
     private var persistenceBlocked = false
@@ -152,26 +117,10 @@ class AlarmRepository @Inject constructor(
     /**
      * Wurde der Bestand schon EINMAL im entsperrten Zustand gelesen?
      *
-     * DER GRUND (am Emulator mit PIN im Zustand RUNNING_LOCKED nachgemessen): der `settings`-Store
-     * liegt im CREDENTIAL-ENCRYPTED Storage. Liest man ihn in einem Prozess, der VOR der ersten
-     * Entsperrung gestartet wurde (Android startet genau so einen fuer den `directBootAware`
-     * `BootReceiver`), dann WIRFT DataStore NICHT - die Datei ist nicht oeffenbar, `exists()` ist
-     * false, und die Bibliothek liefert `serializer.defaultValue`, also `emptyPreferences()`, als
-     * ERFOLG. Im Log stand daraufhin "📭 No saved alarms found in DataStore", `persistenceBlocked`
-     * blieb false, und der Cache galt als Wahrheit.
-     *
-     * Und dieser Prozess stirbt beim Entsperren NICHT - er ist derselbe, in dem der Nutzer die App
-     * danach bedient (pid im Test unveraendert). Der Init-Load lief aber nur EINMAL. Folge: die App
-     * hielt dauerhaft "keine Alarme" fuer wahr, obwohl `active_alarms` sie noch enthielt. Der
-     * naechste Sync hielt damit JEDE Schicht fuer neu und schrieb Bestand und Direct-Boot-Spiegel
-     * neu - der manuelle Wecker des Nutzers war weg, und im Log sah das wie ein normaler Erstsync
-     * aus. Auch die beiden anderen Wachen liefen ins Leere: `keepManualAlarms` kann nichts schonen,
-     * was nicht in der Liste steht, und `isPersistenceBlocked()` meldet nichts, weil nie eine
-     * Sperre gesetzt wurde.
-     *
-     * Deshalb wird der Read bei gesperrtem Nutzer NICHT als Ergebnis akzeptiert, sondern beim
-     * naechsten Zugriff nach dem Entsperren WIEDERHOLT (siehe [awaitInitialLoad]). Bis dahin gilt
-     * die Persistenz als gesperrt, damit kein Schreibpfad die Notlage-Leere festschreibt.
+     * Vor der ersten Entsperrung liefert der CE-Store still `emptyPreferences()` als ERFOLG (kein
+     * Wurf), und der Prozess ueberlebt das Entsperren. Deshalb gilt so ein Read nicht als
+     * Ergebnis: die Persistenz bleibt gesperrt, und [awaitInitialLoad] laedt nach dem Entsperren
+     * nach. Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
      */
     @Volatile
     private var loadedWhileUnlocked = false
@@ -180,40 +129,17 @@ class AlarmRepository @Inject constructor(
     private val reloadMutex = Mutex()
 
     /**
-     * IST DER LETZTE SCHREIBVERSUCH GESCHEITERT?
+     * IST DER LETZTE SCHREIBVERSUCH GESCHEITERT (voller Speicher, IOException, beschaedigte
+     * Datei)? Abfragbar ueber [istLetzterSchreibvorgangGescheitert]; einziger Konsument ist die
+     * Anzeige des manuellen Weckers.
      *
-     * Die zweite Art, wie der Bestand nur im Arbeitsspeicher landen kann - und sie war bisher
-     * unsichtbar. [persistenceBlocked] deckt den gescheiterten Init-Load ab; ein voller Speicher,
-     * eine IOException oder eine beschaedigte `preferences_pb` treffen aber erst den SCHREIBWEG:
-     * `persistToDataStore()` faengt die Exception, loggt sie und kehrt zurueck, ohne die Sperre zu
-     * setzen (das waere auch falsch - der naechste Versuch soll wieder schreiben duerfen). Wer
-     * danach `isPersistenceBlocked()` fragte, bekam "nein" und hielt den Wecker fuer dauerhaft
-     * gesichert, obwohl `saveAlarm()` unmittelbar davor "liegt NUR im Arbeitsspeicher" geloggt hat.
-     *
-     * Deshalb wird das Ergebnis JEDES Schreibvorgangs hier festgehalten - abfragbar ueber
-     * [istLetzterSchreibvorgangGescheitert].
-     *
-     * NICHT MIT [persistenceBlocked] VERODERN. Der erste Wurf dieses Merkers tat genau das in
-     * [isPersistenceBlocked], und damit bedeuteten zwei voellig verschiedene Lagen dasselbe
-     * Signal: "der Bestand ist in diesem Prozess nicht lesbar" und "der letzte Schreibvorgang ist
-     * gescheitert". `AlarmUseCase.clearInternalAlarms()` deutet das Signal als das erste und
-     * ueberspringt bei einer ausdruecklichen Abschaltung (Master-Pause, "Automatische Alarme aus",
-     * `deleteAllAlarms`) bewusst die gesamte `cancelSystemAlarm`-Schleife - ohne Bestandsliste
-     * geht es nicht besser. Nach einem geworfenen Schreibvorgang ist der Bestand im Speicher aber
-     * VOLLSTAENDIG lesbar; die Schleife waere faelschlich uebersprungen worden, die Master-Pause
-     * haette Repository und Direct-Boot-Spiegel geleert und alle System-Alarme armiert
-     * zurueckgelassen. Sie feuern dann trotz Pause und sind ohne Bestandsliste durch nichts mehr
-     * abbrechbar - genau die verbotene Kombination "Raeumen ohne Cancellen".
-     *
-     * Dieser Merker sagt NUR: "der zuletzt geschriebene Stand liegt vielleicht nur im
-     * Arbeitsspeicher". Er sagt NICHTS darueber, ob der Bestand lesbar ist, und er darf deshalb
-     * nie einen Raeum- oder Cancel-Weg anhalten. Sein einziger Konsument ist die Anzeige des
-     * manuellen Weckers.
+     * NIE MIT [persistenceBlocked] VERODERN: "unlesbar" laesst `clearInternalAlarms()` die
+     * `cancelSystemAlarm`-Schleife ueberspringen - nach einem Schreibfehler ist der Bestand aber
+     * lesbar, verodert bliebe "Raeumen ohne Cancellen". Anzeigen fragt beide, Raeumen nur
+     * [isPersistenceBlocked]. Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
      *
      * KEINE Dauersperre: ein erfolgreicher Schreibvorgang setzt den Merker sofort wieder auf
-     * `false`. Er beschreibt den LETZTEN Versuch, nicht die Vergangenheit - sonst haette ein
-     * einmaliger, laengst behobener Speicherplatzmangel die Warnung bis zum App-Neustart
-     * stehenlassen.
+     * `false` - er beschreibt den LETZTEN Versuch, nicht die Vergangenheit.
      */
     @Volatile
     private var letzterSchreibvorgangGescheitert = false
@@ -229,14 +155,9 @@ class AlarmRepository @Inject constructor(
         }
 
     init {
-        // CRITICAL: Lade Alarme beim Repository-Init
         loadAlarmsFromDataStore()
     }
 
-    /**
-     * CRITICAL: Lädt Alarme aus DataStore beim Start
-     * Wird im init{} Block aufgerufen
-     */
     private fun loadAlarmsFromDataStore() {
         repositoryScope.launch {
             try {
@@ -299,19 +220,11 @@ class AlarmRepository @Inject constructor(
                         if (validAlarms.size < alarms.size) {
                             persistToDataStore(validAlarms)
                         } else {
-                            // SPIEGEL-ABGLEICH bei JEDEM erfolgreichen Load.
-                            //
-                            // `persistToDataStore()` schreibt zuerst den DataStore (durabel) und
-                            // danach den Device-Protected-Spiegel. Faellt der zweite Schritt aus
-                            // (Prozess-Tod, IO-Fehler), divergieren beide - und die Divergenz war
-                            // PERMANENT: es gibt genau einen Schreiber und einen Leser, und
-                            // nachgespiegelt wurde bisher nur, wenn der Load selbst abgelaufene
-                            // Alarme entfernt hatte. Ein App-Neustart mit intaktem Bestand
-                            // reparierte den Spiegel also NICHT, und der haeufigste Sync-Zweig
-                            // ("unveraendert - nur re-armen") schreibt das Repository gar nicht: der
-                            // Spiegel konnte wochenlang falsch bleiben und nach einem Reboot vor
-                            // der ersten Entsperrung die falschen (oder keine) Alarme
-                            // wiederherstellen. `saveAll` ist idempotent und billig.
+                            // SPIEGEL-ABGLEICH bei JEDEM erfolgreichen Load: faellt nach dem
+                            // DataStore-Write der Spiegel-Write aus, bliebe die Divergenz sonst
+                            // dauerhaft (der haeufigste Sync-Zweig schreibt das Repository nicht).
+                            // `saveAll` ist idempotent und billig. Hergang: Skill
+                            // cfalarm-persistenz-und-auth, reference/persistenz.md.
                             directBootAlarmStore.saveAll(
                                 validAlarms.map {
                                     DirectBootAlarmEntry(
@@ -368,11 +281,6 @@ class AlarmRepository @Inject constructor(
         }
     }
 
-    /**
-     * Wartet auf den Abschluss des Init-Loads. Erste Anweisung JEDER öffentlichen Operation:
-     * Leser bekommen so nie einen noch nicht gefüllten Cache als Wahrheit, und Schreiber können
-     * nicht vom nachträglich zurückkehrenden Init-Load überschrieben werden.
-     */
     /**
      * Wartet auf den Init-Load - und HOLT IHN NACH, wenn er nur deshalb ergebnislos war, weil der
      * Nutzer noch nicht entsperrt hatte (siehe [loadedWhileUnlocked]).
@@ -501,39 +409,14 @@ class AlarmRepository @Inject constructor(
     }
 
     /**
-     * WARUM DIESE FUNKTION AUCH DANN `success` MELDET, WENN NICHTS GESCHRIEBEN WURDE.
-     *
-     * Bei gesperrter Persistenz kehrt [persistToDataStore] ohne zu schreiben und ohne zu werfen
-     * zurück - der Alarm liegt dann nur im Arbeitsspeicher, ohne Preferences-Eintrag und ohne
-     * Direct-Boot-Spiegel, und ist nach einem Prozesstod weg. Das als `Result.failure`
-     * herauszureichen wäre die naheliegende, aber falsche Antwort, und zwar aus zwei Gründen:
-     *
-     * 1. Es bräche die ausdrückliche Zusicherung der Sperre (siehe [persistenceBlocked]): "Die
-     *    System-Alarme werden trotzdem gesetzt (der Wecker klingelt), nur die Persistenz bleibt
-     *    für diesen Prozess außen vor."
-     * 2. Es machte den Kalender-Sync SCHLECHTER, nicht besser. `AlarmUseCase.syncAlarms()` ruft
-     *    `saveAlarm(...).getOrThrow()` und erst DANACH `scheduleSystemAlarm(...)`. Ein Wurf hier
-     *    landet zwar im Pro-Event-`try/catch` (der Sync bricht also nicht ab), lässt den Alarm
-     *    aber im Cache stehen, ohne ihn je zu armieren - genau die Kombination "stummer Wecker MIT
-     *    Anzeige", gegen die anderswo im Projekt eigens zurückgerollt wird. Und ein Rollback des
-     *    Cache-Eintrags hier würde in diesem Prozess ALLE Wecker verhindern, statt sie wenigstens
-     *    klingeln zu lassen.
-     *
-     * Dasselbe gilt fuer den ZWEITEN Weg in den reinen Arbeitsspeicher: wirft der Schreibpfad
-     * (voller Speicher, IOException, beschaedigte Datei), faengt [persistToDataStore] das ebenfalls
-     * und meldet `false`. Dieser Fall hat ein EIGENES Signal
-     * ([istLetzterSchreibvorgangGescheitert]) - bewusst getrennt von [isPersistenceBlocked], die
-     * weiterhin nur "der Bestand ist unlesbar" bedeutet. Wer Dauerhaftigkeit anzeigen will, fragt
-     * beide; wer entscheidet, ob geraeumt werden darf, fragt ausschliesslich [isPersistenceBlocked].
-     *
-     * Wer Dauerhaftigkeit braucht, fragt deshalb NACH dem Speichern [isPersistenceBlocked] - so
-     * wie `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()` für das Löschen und der manuelle
-     * Wecker in `AlarmViewModel.createManualAlarm()` für das Anlegen. Für den Rest bleibt das WARN
-     * unten die Spur; es landet auch im Release-Log.
+     * Meldet bewusst auch dann `success`, wenn der Alarm nur im Arbeitsspeicher liegt (Sperre oder
+     * Schreibfehler): die System-Alarme sollen trotzdem klingeln, und `syncAlarms()` armiert erst
+     * NACH `saveAlarm()` - ein Wurf hier ergaebe einen stummen Wecker MIT Anzeige. Die Spur ist
+     * das WARN unten (Release-Log); wer Dauerhaftigkeit anzeigen will, fragt NACH dem Speichern
+     * [isPersistenceBlocked] und [istLetzterSchreibvorgangGescheitert]. Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
      */
     override suspend fun saveAlarm(alarmInfo: AlarmInfo): Result<Unit> {
         return try {
-            // VALIDATION: Check if alarm is in the future
             val currentTime = System.currentTimeMillis()
             if (alarmInfo.triggerTime <= currentTime) {
                 Logger.w(
@@ -549,19 +432,15 @@ class AlarmRepository @Inject constructor(
                 val existingIndex = currentAlarms.indexOfFirst { it.id == alarmInfo.id }
 
                 if (existingIndex != -1) {
-                    // Update existing alarm
                     currentAlarms[existingIndex] = alarmInfo
                     Logger.d(LogTags.ALARM, "Alarm updated: ${alarmInfo.id}")
                 } else {
-                    // Add new alarm
                     currentAlarms.add(alarmInfo)
                     Logger.business(LogTags.ALARM, "Alarm added", alarmInfo.id.toString())
                 }
 
-                // Update cache
                 _activeAlarms.value = currentAlarms
 
-                // PERSIST to DataStore
                 val dauerhaft = persistToDataStore(currentAlarms)
                 if (!dauerhaft) {
                     Logger.w(
@@ -573,7 +452,6 @@ class AlarmRepository @Inject constructor(
                     )
                 }
 
-                // CLEANUP: Trigger cleanup after save
                 cleanupExpiredAlarms()
             }
 
@@ -585,21 +463,11 @@ class AlarmRepository @Inject constructor(
     }
 
     /**
-     * "IST DER BESTAND IN DIESEM PROZESS UNLESBAR?" - genau das und nichts anderes.
-     *
-     * Bedeutet: der Init-Load ist gescheitert (oder lief vor der ersten Entsperrung und lieferte
-     * still leere Preferences), der Cache ist auf eine Notlage-Leere degradiert, und jeder
-     * Schreibpfad ist gesperrt, damit diese Leere nicht festgeschrieben wird. `getAllAlarms()`
-     * meldet das NICHT als Fehler - deshalb gibt es diese Frage ueberhaupt.
-     *
-     * Bedeutet NICHT "der letzte Schreibvorgang ist gescheitert". Das ist eine ANDERE Lage (voller
-     * Speicher, IOException, beschaedigte Datei), sie hat ihr eigenes Signal
-     * [istLetzterSchreibvorgangGescheitert], und die beiden duerfen nie wieder zu einem Signal
-     * verschmelzen: bei unlesbarem Bestand darf `AlarmUseCase.clearInternalAlarms()` nicht
-     * raeumen (bzw. nur den Direct-Boot-Spiegel), nach einem Schreibfehler dagegen ist der
-     * Bestand vollstaendig lesbar und die `cancelSystemAlarm`-Schleife MUSS laufen. Wer beides
-     * verodert, laesst die Master-Pause armierte System-Alarme zuruecklassen, die niemand mehr
-     * abbrechen kann.
+     * "IST DER BESTAND IN DIESEM PROZESS UNLESBAR?" - genau das: Init-Load gescheitert oder vor
+     * der Entsperrung, Cache degradiert, Schreibpfade gesperrt; `getAllAlarms()` meldet das NICHT
+     * als Fehler. NICHT "letzter Schreibvorgang gescheitert" ([istLetzterSchreibvorgangGescheitert])
+     * - nie verodern, sonst laesst die Master-Pause armierte, unabbrechbare System-Alarme zurueck.
+     * Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
      */
     override suspend fun isPersistenceBlocked(): Boolean {
         // Auf den Init-Load warten: vorher ist die Sperre noch nicht entschieden.
@@ -621,16 +489,9 @@ class AlarmRepository @Inject constructor(
     /**
      * "IST DER ZULETZT GESCHRIEBENE STAND MOEGLICHERWEISE NUR IM ARBEITSSPEICHER?"
      *
-     * Der zweite, bis Pruefrunde 8 stumme Weg dorthin: der Schreibweg selbst wirft (voller
-     * Speicher, IOException, beschaedigte `preferences_pb`). `persistToDataStore()` faengt das
-     * bewusst - der Alarm wird trotzdem armiert und klingelt -, aber ohne diesen Merker konnte es
-     * niemand erfahren.
-     *
-     * NUR FUER ANZEIGE UND WARNUNG gedacht (einziger Konsument: der manuelle Wecker im
-     * `AlarmViewModel`). Diese Antwort darf NIEMALS einen Raeum-, Cancel- oder Loeschweg anhalten:
-     * der Bestand ist in dieser Lage vollstaendig lesbar, und ein uebersprungenes
-     * `cancelSystemAlarm()` hinterliesse armierte Alarme, die niemand mehr abbrechen kann.
-     * Fuer "darf ich raeumen?" ist [isPersistenceBlocked] zustaendig, und nur die.
+     * NUR FUER ANZEIGE UND WARNUNG (einziger Konsument: der manuelle Wecker im `AlarmViewModel`) -
+     * darf NIEMALS einen Raeum-, Cancel- oder Loeschweg anhalten; dafuer ist [isPersistenceBlocked]
+     * zustaendig, und nur die.
      *
      * Kein Warten auf den Init-Load noetig: der Merker beschreibt einen Schreibvorgang, den es
      * ohne abgeschlossenen Init-Load noch gar nicht gegeben haben kann.
@@ -670,7 +531,6 @@ class AlarmRepository @Inject constructor(
                 val updatedAlarms = _activeAlarms.value.filter { it.id != alarmId }
                 _activeAlarms.value = updatedAlarms
 
-                // PERSIST to DataStore
                 persistToDataStore(updatedAlarms)
             }
 
@@ -690,7 +550,7 @@ class AlarmRepository @Inject constructor(
             stateMutex.withLock {
                 _activeAlarms.value = emptyList()
 
-                // PERSIST to DataStore - force: ein ausdrückliches Räumen muss auch bei blockierter
+                // force: ein ausdrückliches Räumen muss auch bei blockierter
                 // Persistenz durchgehen, sonst re-armt ein Direct-Boot-Restore genau die Alarme,
                 // die Master-Pause/autoAlarmEnabled=false gerade abgeschaltet haben. Der defekte
                 // Rohbestand ist unter BROKEN_ALARMS_KEY_NAME gesichert.

@@ -19,10 +19,6 @@ import kotlinx.coroutines.flow.retryWhen
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Repository implementation for alarm skip functionality.
- * Handles persistence of alarm skip state using DataStore.
- */
 @Singleton
 class AlarmSkipRepository @Inject constructor(
     @param:MainDataStore private val dataStore: DataStore<Preferences>

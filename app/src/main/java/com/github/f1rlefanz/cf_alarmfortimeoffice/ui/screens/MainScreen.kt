@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
-// PHASE 2 CLEANUP: Removed unused ShiftUiState and flowOf imports
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,9 +41,8 @@ import kotlinx.coroutines.launch
  * Gemeinsamer Abschluss, sobald Akku-Ausnahme UND Unused-App-Restrictions erledigt oder
  * uebersprungen sind: zum vollflaechigen OEM-Warnscreen navigieren (falls das Geraet betroffen
  * UND der Screen fuer diesen Herstellertyp noch nie gezeigt wurde) oder direkt die Wartungskette
- * anstossen. Einziger verbliebener OEM-Hinweis-Weg nach der Konsolidierung (Juli 2026) - frueher
- * gab es hier zusaetzlich einen separaten, ungegateten Dialog; die richtigen, herstellerspezifischen
- * Schritte gibt es nur im Screen (siehe [OEMWarningScreen]), daher konvergiert alles hierher.
+  * anstossen. Einziger verbliebener OEM-Hinweis-Weg: die herstellerspezifischen Schritte gibt es
+  * nur im Screen (siehe [OEMWarningScreen]), daher konvergiert alles hierher.
  * Aufgerufen von jeder Stelle, die "von einem Gate zurueckgekehrt" ist: Battery-Settings-Result,
  * Unused-App-Restrictions-Settings-Result, und CalendarSelectionScreen.onDone.
  */
@@ -86,14 +84,10 @@ fun MainScreen(
     navigationViewModel: NavigationViewModel,
     hueViewModel: HueViewModel
 ) {
-    // PHASE 1 MIGRATION: Get context for battery exemption checks
     val context = LocalContext.current
     // Scope für den (jetzt suspend) OEM-Warndialog, dessen "shown"-Flag im DataStore liegt
     val coroutineScope = rememberCoroutineScope()
 
-    // MEMORY LEAK FIX: Consolidated State Collection
-    // Reduziert individuelle collectAsState() auf strukturierte Sammlung
-    //
     // collectAsStateWithLifecycle, nicht collectAsState: Diese vier Zustaende steuern
     // ausschliesslich Vordergrund-Verhalten (Screen-Auswahl, BackHandler, die Gate-Kette im
     // LaunchedEffect unten). Unterhalb von STARTED pausiert das Sammeln - genau richtig hier,
@@ -106,13 +100,7 @@ fun MainScreen(
     val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
     val navigationState by navigationViewModel.navigationState.collectAsStateWithLifecycle()
 
-    // PHASE 2 CLEANUP: Removed unused shiftState collection
-    // ShiftViewModel is passed directly to screens that need it
-
-    // PERFORMANCE FIX: Separate LaunchedEffects to prevent reactivity loops
-    // Split authentication handling from daysAhead observation
-
-    // 1. AUTHENTICATION & CALENDAR LOADING - Stable dependencies only
+    // AUTHENTICATION & CALENDAR LOADING - Stable dependencies only
     LaunchedEffect(
         authState.isSignedIn,
         mainState.hasSelectedCalendars,
@@ -138,7 +126,7 @@ fun MainScreen(
             return@LaunchedEffect
         }
 
-        // 1. CALENDAR DATA: Load only if really needed
+        // CALENDAR DATA: Load only if really needed
         //
         // WICHTIG: NICHT nachladen, wenn der letzte Versuch mit einem Fehler endete.
         // Dieser Effect haengt an calendarState.isLoading. Schlaegt das Laden fehl, springt
@@ -160,7 +148,7 @@ fun MainScreen(
             )
         }
 
-        // 3. NAVIGATION: Handle after data operations complete
+        // NAVIGATION: Handle after data operations complete
         if (calendarState.availableCalendars.isNotEmpty()) {
             delay(100) // Minimal delay for UI stability
             val hasBatteryExemption = BatteryOptimizationHelper.isExempted(context)
@@ -191,11 +179,6 @@ fun MainScreen(
             )
         }
     }
-
-    // PHASE 1 MIGRATION: daysAhead is now fixed at 14 days
-    // Removed daysAhead configuration effect as per PROJEKT-BRIEFING 4.0
-    // Events are now loaded with fixed 14 days lookahead
-    // This simplifies the architecture and prevents reactivity loops
 
     // Onboarding-Abschluss an genau einer Stelle: Wartungskette anstossen, dann Home. Sowohl
     // "Verstanden" als auch der Zurueck-Weg muessen das tun - wer hier nur navigiert, laesst
@@ -301,7 +284,6 @@ fun MainScreen(
                         authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
                     },
                     onDone = {
-                        // PHASE 1 MIGRATION: After calendar selection, navigate to battery exemption
                         if (!BatteryOptimizationHelper.isExempted(context)) {
                             Logger.business(
                                 LogTags.NAVIGATION,
@@ -333,14 +315,11 @@ fun MainScreen(
             }
 
             is NavigationState.BatteryExemption -> {
-                // PHASE 1 MIGRATION: Battery Exemption Screen
                 var showEducationalDialog by remember { mutableStateOf(false) }
 
-                // Activity Result Launcher for battery exemption
                 val batteryExemptionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartActivityForResult()
                 ) { _ ->
-                    // After returning from settings, check if exemption was granted
                     val isExempted = BatteryOptimizationHelper.isExempted(context)
                     Logger.d(LogTags.BATTERY, "Battery exemption result: $isExempted")
 
@@ -359,7 +338,6 @@ fun MainScreen(
                             }
                         }
                     } else {
-                        // User didn't grant exemption, show educational dialog
                         showEducationalDialog = true
                     }
                 }
@@ -381,7 +359,6 @@ fun MainScreen(
                         navigationViewModel.dismissBatteryPrompt()
                     },
                     onRequestExemption = {
-                        // Launch battery exemption request
                         try {
                             // BatteryLife unterdrueckt: Lint haelt jedes
                             // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS fuer einen Verstoss
@@ -392,10 +369,7 @@ fun MainScreen(
                             // automatisch oder im Hintergrund. Fuer eine Wecker-App ist das der
                             // Unterschied zwischen klingeln und still bleiben: eingefroren holt
                             // die App keine neuen Schichten mehr.
-                            // Die Unterdrueckung steht HIER und nicht in app/lint.xml - der
-                            // dortige Block war wirkungslos und ist in Aufraeum-Runde 26
-                            // entfernt worden; die Begruendung dort nannte ausserdem eine
-                            // Funktion, die es nie gab.
+                            // Unterdrueckung bewusst hier, nicht in app/lint.xml (dort wirkungslos).
                             @Suppress("BatteryLife")
                             val intent =
                                 android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
@@ -410,7 +384,6 @@ fun MainScreen(
                                 "Failed to request battery exemption, opening settings",
                                 e
                             )
-                            // Fallback: Open battery optimization settings
                             try {
                                 val intent =
                                     android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
@@ -504,7 +477,6 @@ fun MainScreen(
             }
 
             is NavigationState.OEMWarning -> {
-                // PHASE 1 MIGRATION: OEM Warning Screen
                 val oemWarningState = navigationState as NavigationState.OEMWarning
 
                 OEMWarningScreen(

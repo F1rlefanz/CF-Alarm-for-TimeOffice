@@ -234,6 +234,9 @@ fun StatusTabContent(
         // Karte unsichtbar. Er steht bewusst NACH der Autorisierungs-Pruefung: fallen ALLE
         // Kalender aus, ist das kein Teilerfolg, sondern der Autorisierungsfall darueber - oder,
         // war es nur die Verbindung, "nicht erreichbar" (ohne eigene Aktion, siehe unten).
+        // FEHLEN alle (geloescht, nicht mehr freigegeben), landen sie seit v1.43.6 ebenfalls
+        // hier: `teilerfolg` heisst dann "nicht abrufbare Kalender", und die Rueckfrage vor dem
+        // Entfernen greift zwingend, weil danach keiner mehr bliebe.
         val teilerfolg = calendarState.unavailableCalendarIds.isNotEmpty()
         // Wuerde "Aus Auswahl entfernen" die Auswahl LEEREN, ist es keine Bereinigung mehr,
         // sondern eine Abwahl - mit allen Folgen. Dann wird vorher gefragt (siehe Dialog unten).

@@ -222,8 +222,12 @@ und in den Sperren selbst.
   zwei Warnungen für dieselbe Lage sind schlechter als eine.
 - **AUSSER alle FEHLEN (seit v1.43.6)** — 404 oder 403 ohne Scope-Mangel, also gelöscht oder
   nicht mehr freigegeben (`FehlschlagArt.KALENDER_FEHLT`). Dann stehen sie wie beim Teilerfolg in
-  `unavailableCalendarIds`: beim Namen, mit „Aus Auswahl entfernen" und der Rückfrage, wenn danach
-  keiner mehr bliebe; die Übersicht sagt „Kalender nicht gefunden". Vorher hieß das
+  `unavailableCalendarIds` (dazu der Merker `alleKalenderFehlen`): beim Namen, soweit Google ihn
+  noch kennt (ein gelöschter steht nicht mehr in der Kalenderliste, dann die Anzahl), mit „Aus
+  Auswahl entfernen" und der Rückfrage, wenn danach keiner mehr bliebe; die Übersicht sagt
+  „Kalender nicht gefunden". Abruf- und Kontingentgrenzen (403 `rateLimitExceeded` u. a.) zählen
+  NICHT dazu — Google nennt sie vorübergehend, sie kommen als `NetworkError`
+  (`istVoruebergehendeAblehnung`). Vorher hieß das
   „Autorisierung verloren", und „Kalender-Zugriff erneuern" änderte an einem gelöschten Kalender
   nichts. Ein einziger Anmelde-Fehlschlag darunter macht es wieder zum Autorisierungsfall.
 - **AUSSER alle scheiterten nur an der Verbindung (seit v1.43.5).** Dann ist es

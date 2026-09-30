@@ -45,9 +45,10 @@ import javax.inject.Inject
  * Dann ist [everythingFailed] wahr (der Fehlschlag wird gemeldet), [authStillValid] aber AUCH -
  * ein Funkloch belegt keinen verlorenen Zugriff.
  *
- * [nichtAbrufbareZeigen]: die gescheiterten Kalender erscheinen als "nicht abrufbar" (Name,
- * "Aus Auswahl entfernen"). So beim Teilerfolg - und seit v1.43.6 auch, wenn ALLE Kalender
- * fehlen (geloescht, nicht mehr freigegeben), statt als verlorener Zugriff.
+ * [nichtAbrufbareZeigen]: die gescheiterten Kalender erscheinen als "nicht abrufbar" (Name, soweit
+ * Google ihn noch kennt, sonst die Anzahl; "Aus Auswahl entfernen"). So beim Teilerfolg - und seit
+ * v1.43.6 auch, wenn ALLE Kalender fehlen (geloescht, nicht mehr freigegeben), statt als
+ * verlorener Zugriff.
  */
 internal data class CalendarAuthorizationOutcome(
     val everythingFailed: Boolean,
@@ -106,6 +107,15 @@ data class CalendarUiState(
      * Auswahl laedt nichts); deshalb fragt jede Anzeige ZUERST die Auswahl.
      */
     val kalenderNichtErreichbar: Boolean = false,
+    /**
+     * Der letzte Abgleich scheiterte bei ALLEN ausgewaehlten Kalendern, weil es sie nicht (mehr)
+     * gibt - geloescht oder nicht mehr freigegeben. Die IDs stehen dann in
+     * [unavailableCalendarIds]; dieser Merker sagt, dass es der TOTALAUSFALL ist und nicht der
+     * Teilerfolg. Aus `unavailableCalendarIds` plus leerer Terminliste liess sich das nicht
+     * ablesen: auch ein Teilerfolg, dessen funktionierender Kalender in den 14 Tagen leer ist, und
+     * der Beginn eines Neuladens sehen so aus. Setzt jeder abgeschlossene Ladevorgang neu.
+     */
+    val alleKalenderFehlen: Boolean = false,
     val lastAuthorizationCheck: Long = 0L,
     // PAGINATION SUPPORT: Calendar pagination fields
     val currentPage: Int = 0,
@@ -132,7 +142,7 @@ data class CalendarUiState(
      * gescheitert sind: diese Faelle gehoeren [calendarAuthorizationValid] ("Kalender-Autorisierung
      * verloren") bzw. [kalenderNichtErreichbar], beide mit eigener Anzeige - zwei Warnungen fuer
      * dieselbe Lage waeren schlechter als eine. FEHLEN dagegen alle (geloescht, nicht mehr
-     * freigegeben), stehen sie HIER: dann sind sie beim Namen zu nennen und zu entfernen.
+     * freigegeben), stehen sie HIER - und [alleKalenderFehlen] sagt dazu, dass es alle sind.
      */
     val unavailableCalendarIds: Set<String> = emptySet(),
 
@@ -1069,6 +1079,7 @@ class CalendarViewModel @Inject constructor(
                         hasMoreEvents = finalHasMore,
                         calendarAuthorizationValid = authStillValid,
                         kalenderNichtErreichbar = nichtErreichbar,
+                        alleKalenderFehlen = everythingFailed && nichtAbrufbareZeigen,
                         lastAuthorizationCheck = System.currentTimeMillis(),
                         error = failureMessage ?: state.error,
                         // Der TEILERFOLG - und der Totalausfall, bei dem alle Kalender FEHLEN.
@@ -1168,6 +1179,7 @@ class CalendarViewModel @Inject constructor(
                         // Zugriff nur bei einem NICHT netzbedingten Fehler als verloren melden.
                         calendarAuthorizationValid = nurVerbindung,
                         kalenderNichtErreichbar = nurVerbindung,
+                        alleKalenderFehlen = false,
                         lastAuthorizationCheck = System.currentTimeMillis()
                     )
                 }
@@ -1568,8 +1580,9 @@ class CalendarViewModel @Inject constructor(
          *    verlorenen Zugriff ([CalendarAuthorizationOutcome.nichtErreichbar]). Am 30.09.2026
          *    meldete die App im Flugmodus "Kalender-Autorisierung verloren".
          *  - FEHLEN sie (geloescht, nicht mehr freigegeben), erscheinen sie wie beim Teilerfolg
-         *    als "nicht abrufbar" - beim Namen, mit "Aus Auswahl entfernen" und der Rueckfrage,
-         *    wenn danach keiner mehr bliebe. Auch gemischt mit Funkloechern.
+         *    als "nicht abrufbar" - mit "Aus Auswahl entfernen" und der Rueckfrage, wenn danach
+         *    keiner mehr bliebe. Auch gemischt mit Funkloechern. Abruf- und Kontingentgrenzen
+         *    (403 "rateLimitExceeded" u. a.) zaehlen NICHT dazu, sie kommen als NetworkError.
          * Ein einziger Anmelde-Fehlschlag macht den Totalausfall wieder zum Zugriffsverlust:
          * solange die Anmeldung haengt, laesst sich auch nicht pruefen, was wirklich fehlt. Eine
          * leere Artenmenge (sollte es nicht geben) zaehlt ebenso - im Zweifel die alte Warnung.
@@ -1601,9 +1614,11 @@ class CalendarViewModel @Inject constructor(
         /**
          * PURE, TESTBAR: Woran ist ein Kalenderabruf gescheitert?
          *
-         * [AppError.PermissionError] ist hier IMMER ein Kalender-Problem: das CalendarRepository
-         * bildet 404 ("nicht gefunden oder nicht mehr freigegeben") und das 403 OHNE Scope-Mangel
-         * darauf ab; der Scope-Mangel ist ein [AppError.AuthenticationError] und damit Anmeldung.
+         * [AppError.PermissionError] ist hier ein Kalender-Problem: das CalendarRepository bildet
+         * 404 ("nicht gefunden oder nicht mehr freigegeben") und das 403 OHNE Scope-Mangel darauf
+         * ab. Der Scope-Mangel ist ein [AppError.AuthenticationError] (Anmeldung), Abruf- und
+         * Kontingentgrenzen sind ein [AppError.NetworkError] (voruebergehend,
+         * `istVoruebergehendeAblehnung`).
          */
         internal fun fehlschlagArt(fehler: Throwable?): FehlschlagArt = when {
             istNetzbedingterFehlschlag(fehler) -> FehlschlagArt.NETZ

@@ -280,6 +280,13 @@ class CalendarRepository @Inject constructor() : ICalendarRepository {
                         // CalendarUseCase.invalidateTokenIfRejectedByGoogle() greift.
                         AppError.AuthenticationError("Dem Token fehlt die Kalender-Berechtigung")
 
+                    // Der ZWEITE Sonderfall hinter 403: Abruf- und Kontingentgrenzen. Google
+                    // nennt sie ausdruecklich voruebergehend ("retry with backoff") - wie 429,
+                    // das unten ohnehin als NetworkError landet. Als PermissionError hiessen sie
+                    // "Kalender nicht gefunden", und die App boete an, den Kalender zu entfernen.
+                    e.statusCode == 403 && istVoruebergehendeAblehnung(e.details?.errors?.mapNotNull { it.reason }.orEmpty()) ->
+                        AppError.NetworkError("Google Calendar voruebergehend begrenzt: ${e.statusMessage}")
+
                     e.statusCode == 403 ->
                         // Echtes Berechtigungsproblem (z.B. Kalender nicht freigegeben).
                         // Hier wuerde eine Neuanmeldung nichts bringen.
@@ -348,6 +355,25 @@ class CalendarRepository @Inject constructor() : ICalendarRepository {
         return calendarEvents
     }
 }
+
+/**
+ * PURE, TESTBAR: Ist ein 403 der Calendar-API eine VORUEBERGEHENDE Ablehnung (Abruf- oder
+ * Kontingentgrenze) statt eines echten Zugriffsproblems?
+ *
+ * Die Gruende stehen in Googles Fehlerdoku der Calendar-API unter "usageLimits" und sind dort mit
+ * "retry with backoff" versehen. Alles andere hinter einem 403 bleibt, was es war: Scope-Mangel
+ * (Anmeldung) oder kein Zugriff auf DIESEN Kalender.
+ */
+internal fun istVoruebergehendeAblehnung(gruende: List<String>): Boolean =
+    gruende.any { grund -> VORUEBERGEHENDE_403_GRUENDE.any { it.equals(grund, ignoreCase = true) } }
+
+private val VORUEBERGEHENDE_403_GRUENDE = listOf(
+    "rateLimitExceeded",
+    "userRateLimitExceeded",
+    "quotaExceeded",
+    "dailyLimitExceeded",
+    "calendarUsageLimitsExceeded"
+)
 
 /**
  * Wandelt ein Google-Calendar-Event in ein internes [CalendarEvent] um.

@@ -10,12 +10,7 @@ import androidx.compose.runtime.Immutable
 data class HueLight(
     val id: String,
     val name: String,
-    val type: String,
-    val modelid: String?,
-    val manufacturername: String?,
-    val productname: String?,
-    val state: LightState,
-    val uniqueid: String
+    val state: LightState
 )
 
 /**

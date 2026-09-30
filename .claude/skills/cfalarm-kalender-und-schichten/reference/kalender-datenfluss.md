@@ -73,8 +73,8 @@
   **Drei Aufrufer bleiben absichtlich auf `getCalendarEventsWithCache()`, weil sie NICHTS löschen**
   (nachgesehen, nicht vermutet — bitte nicht erneut als Befund melden): der `loadAll`-Zweig von
   `CalendarViewModel.loadEventsForSelectedCalendars()` und `startBackgroundSync()` (beide reine
-  Anzeige bzw. Cache-Wärmung) sowie der Verbindungstest in `BootReceiver.performHealthDiagnostics()`,
-  der ausschließlich `isSuccess` auswertet.
+  Anzeige bzw. Cache-Wärmung) sowie der Verbindungstest in
+  `BootReceiver.performCalendarIntegrationRestoration()`, der ausschließlich `isSuccess` auswertet.
 - **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — für eine Wecker-App ist „leer" die
   gefährlichste Lüge, und `syncAlarms()` deutet eine leere Eventliste als „keine Schichten" und
   löscht ALLE Alarme (System, Repository, Direct-Boot-Spiegel). Vier Stellen sind deshalb festgelegt:

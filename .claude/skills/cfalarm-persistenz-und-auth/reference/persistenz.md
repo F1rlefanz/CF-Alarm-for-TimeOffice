@@ -149,4 +149,5 @@
   den Alarm also im Cache stehen, ohne ihn je zu armieren („stummer Wecker MIT Anzeige"). Stattdessen:
   ein WARN direkt an der Stelle (landet im Release-Log), der getrennte Schreibfehler-Merker, und die
   Stellen, die Dauerhaftigkeit wirklich brauchen, fragen NACH dem Speichern nach
-  (`AlarmViewModel.createManualAlarm()`, `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()`).
+  (`AlarmViewModel.createManualAlarm()`, und fuer Ueberspringen wie Tag-Freigabe gemeinsam
+  `loescheDauerhaftMitNachfassen()` in `usecase/DauerhaftesLoeschen.kt`).

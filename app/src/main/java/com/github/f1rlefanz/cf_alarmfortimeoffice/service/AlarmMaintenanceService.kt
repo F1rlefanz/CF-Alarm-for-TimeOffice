@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -1323,7 +1324,8 @@ class AlarmMaintenanceService : Service() {
      *
      * @param forceSync ueberspringt das Lade-Gate - siehe [EXTRA_FORCE_SYNC].
      */
-    private suspend fun performMaintenance(forceSync: Boolean) {
+    @VisibleForTesting
+    internal suspend fun performMaintenance(forceSync: Boolean) {
         val startTime = System.currentTimeMillis()
         Logger.business(LogTags.MAINTENANCE, "🔧 Starting maintenance cycle")
 

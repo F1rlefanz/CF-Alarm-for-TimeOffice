@@ -121,6 +121,10 @@
   `alarmManagerService.cancelSystemAlarm()` direkt und werten den Status nicht aus. Ein Abbruch des
   EIGENEN PendingIntents lehnt der AlarmManager praktisch nie ab (geloggt wird es als ERROR); die
   drei ausdrücklichen Nutzer-Aktionen daran scheitern zu lassen, stünde in keinem Verhältnis.
+  Aus demselben Grund erbt die Rücknahme eines nie gestellten manuellen Weckers
+  (`nimmAlarmZurueck`) die Weigerung von `deleteAlarm()`: lehnt der AlarmManager sogar den Abbruch
+  ab (praktisch nur, wenn der `system_server` stirbt), bleibt der Eintrag stehen — geloggt als
+  ERROR, seit v1.43.6 auch dann, wenn der Fehlschlag als `Result` statt als Wurf kommt.
 - **Ein schwebender Snooze ist abbrechbar (`cancelSnooze`/`cancelAllSnoozes`) — aber nur auf
   ausdrücklichen Nutzer-Willen.** `cancelSystemAlarm()` baut ausschließlich `enhancedAlarmAction` und
   trifft den eigenen Snooze-Slot nie; ein Snooze lief dadurch durch Master-Pause, „Automatische Alarme

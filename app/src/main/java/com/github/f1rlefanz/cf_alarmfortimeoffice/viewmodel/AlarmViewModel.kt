@@ -611,8 +611,13 @@ class AlarmViewModel @Inject constructor(
         val bestand = bestandGelesen.getOrNull().orEmpty()
         var misslungen = if (bestandGelesen.isFailure) fehler.alarmIds.size else 0
         if (bestandGelesen.isSuccess) {
+            val jetzt = System.currentTimeMillis()
             for (id in fehler.alarmIds) {
                 val alarm = bestand.find { it.id == id }
+                // Eine verstrichene Weckzeit hat nichts mehr zu stellen. Seit G5-05 meldet
+                // scheduleSystemAlarm() sie als Fehlschlag - gezaehlt als "steht nicht mehr"
+                // waere das falsch: dieser Wecker hatte seinen Morgen schon.
+                if (alarm != null && alarm.triggerTime <= jetzt) continue
                 if (alarm == null || alarmUseCase.scheduleSystemAlarm(alarm).isFailure) {
                     misslungen++
                 }
@@ -1742,9 +1747,12 @@ internal suspend fun nimmAlarmZurueck(
     deleteAlarm: suspend (Int) -> Result<Unit>
 ) {
     withContext(NonCancellable) {
-        runCatching { cancelSystemAlarm(alarmId) }
+        // Beide Aufrufe liefern ein Result - ein darin gemeldeter Fehlschlag ist kein Wurf und
+        // lief frueher an `runCatching` vorbei, ohne je im Log zu landen. Das runCatching bleibt
+        // fuer den unerwarteten Wurf; ein gemeldeter Fehlschlag haelt das Loeschen nicht auf.
+        (runCatching { cancelSystemAlarm(alarmId) }.getOrElse { Result.failure(it) })
             .onFailure { Logger.e(logTag, "Ruecknahme: cancelSystemAlarm fehlgeschlagen", it) }
-        runCatching { deleteAlarm(alarmId) }
+        (runCatching { deleteAlarm(alarmId) }.getOrElse { Result.failure(it) })
             .onFailure { Logger.e(logTag, "Ruecknahme: deleteAlarm fehlgeschlagen", it) }
     }
 }

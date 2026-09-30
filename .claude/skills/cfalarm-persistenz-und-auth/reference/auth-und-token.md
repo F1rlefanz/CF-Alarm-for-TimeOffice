@@ -35,6 +35,14 @@
   klappt gerade" inkl. Refresh; „Token liegt im Store" ist schwächer und würde das Gate bei einem
   toten, noch nicht verworfenen Token fälschlich aufmachen. `drop(1)` ist Pflicht: die erste
   Emission ist der Ist-Zustand, kein Verlust.
+- **AUSNAHME seit v1.43.5: ein Refresh, der nur am NETZ scheitert, zählt als autorisiert**
+  (`AuthUseCase.hasCalendarAuthorization()`, ebenso `CalendarUseCase.hasValidAccessToken()`;
+  Einstufung wie `WartungTokenFehler`). Das lokale Token gilt 45 Minuten — danach sperrte das Gate
+  „Kalender-Zugriff erforderlich" beim App-Start OHNE Netz die ganze Oberfläche samt Wecker-Tab
+  und Überspringen, und „Kalender-Zugriff erlauben" scheiterte ebenso (am Emulator mit 1.43.4
+  nachgestellt, 30.09.2026). Ein wirklich totes Token meldet der erste Abruf mit Netz
+  (401 → `invalidate()` → Auto-Re-Auth). Das Gate soll nur sperren, wenn der Zugriff
+  NACHWEISLICH fehlt.
 - **`signOutInProgress` nicht wegoptimieren.** Beim Abmelden verwirft die App das Token selbst;
   ohne das Flag stieße `observeTokenLoss()` direkt danach einen Zustimmungsdialog an. `isSignedIn`
   allein reicht **nicht** — die DataStore-Emission trifft asynchron ein, `observeAuthState` ist
@@ -121,6 +129,10 @@
   Nutzer-Entscheidung).
 - **`calendarAuthorizationValid` nie bedingungslos `true` setzen** — daran hängt der einzige Weg
   zurück („Kalender-Zugriff erneuern"). Gleiche Fehlerklasse wie `getOrElse { emptyList() }`.
+  Und umgekehrt nie bei einem reinen Verbindungsausfall `false` — das ist
+  `kalenderNichtErreichbar` (Hergang im Kalender-Skill, `kalender-datenfluss.md`). Nach jeder
+  GELUNGENEN Autorisierung lädt MainActivity die Termine neu (`kalenderZugriffErneuert`), sonst
+  bleibt die Warnung nach dem Erneuern stehen.
 - **Der GMS-Token-Cache meldet sich als 401 „Invalid Credentials" oder 403
   `ACCESS_TOKEN_SCOPE_INSUFFICIENT`** — für ein Token, das GMS ohne Consent-Dialog herausgibt.
   `getValidToken()` prüft nur die LOKALE Ablaufzeit und merkt davon nichts. Nur

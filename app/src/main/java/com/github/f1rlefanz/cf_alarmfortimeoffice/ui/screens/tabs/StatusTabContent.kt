@@ -232,7 +232,8 @@ fun StatusTabContent(
         // Autorisierung ist gueltig, Termine kommen an, nur EIN Kalender antwortet nicht. Die
         // Vollstaendigkeits-Sperren halten dann jeden Alarm-Sync an - richtig, aber ohne diese
         // Karte unsichtbar. Er steht bewusst NACH der Autorisierungs-Pruefung: fallen ALLE
-        // Kalender aus, ist das kein Teilerfolg, sondern der Autorisierungsfall darueber.
+        // Kalender aus, ist das kein Teilerfolg, sondern der Autorisierungsfall darueber - oder,
+        // war es nur die Verbindung, "nicht erreichbar" (ohne eigene Aktion, siehe unten).
         val teilerfolg = calendarState.unavailableCalendarIds.isNotEmpty()
         // Wuerde "Aus Auswahl entfernen" die Auswahl LEEREN, ist es keine Bereinigung mehr,
         // sondern eine Abwahl - mit allen Folgen. Dann wird vorher gefragt (siehe Dialog unten).
@@ -254,6 +255,12 @@ fun StatusTabContent(
                 calendarActionLabel = "Kalender wählen"
                 onCalendarAction = onShowCalendarSelection
             }
+            // Kein eigener Knopf: der Abgleich hat EINEN Namen an EINER Stelle, der Karte
+            // "Kalender-Events" in der Übersicht - der Text unten nennt sie.
+            calendarState.kalenderNichtErreichbar -> {
+                calendarActionLabel = null
+                onCalendarAction = null
+            }
             teilerfolg -> {
                 calendarActionLabel = "Aus Auswahl entfernen"
                 onCalendarAction = {
@@ -270,11 +277,16 @@ fun StatusTabContent(
             title = "Kalender",
             isOk = calendarState.selectedCalendarIds.isNotEmpty() &&
                 calendarState.calendarAuthorizationValid &&
+                !calendarState.kalenderNichtErreichbar &&
                 !teilerfolg,
             details = when {
                 !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() ->
                     "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
                 calendarState.selectedCalendarIds.isEmpty() -> "Kein Kalender ausgewählt"
+                calendarState.kalenderNichtErreichbar ->
+                    "Google Kalender nicht erreichbar – die gestellten Wecker bleiben. Mit Netz " +
+                        "in der Übersicht, Karte \"Kalender-Events\", auf \"Mit Google Kalender " +
+                        "abgleichen\" tippen."
                 teilerfolg -> unavailableCalendarDetails(
                     unavailableIds = calendarState.unavailableCalendarIds,
                     namesById = calendarState.availableCalendars.associate { it.id to it.name }

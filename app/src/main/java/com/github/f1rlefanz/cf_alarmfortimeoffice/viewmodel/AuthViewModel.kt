@@ -136,6 +136,23 @@ class AuthViewModel @Inject constructor(
     val reauthRequired: Flow<Unit> = _reauthRequired.receiveAsFlow()
 
     /**
+     * Meldet jede GELUNGENE Kalender-Autorisierung - sofort erteilt, nach dem Zustimmungsdialog
+     * oder ohne Activity. MainActivity laedt daran die Termine neu.
+     *
+     * WARUM ES DAS BRAUCHT (30.09.2026, am Fairphone): Die Warnung "Kalender-Autorisierung
+     * verloren" haengt am Ergebnis des letzten Terminabrufs im CalendarViewModel, nicht an
+     * [AuthUiState]. Nach "Kalender-Zugriff erneuern" war der Zugriff da und die Wartung lief an -
+     * die Karte blieb trotzdem rot, weil niemand die Termine neu abrief. Viermal getippt, viermal
+     * "tut nichts". [requestCalendarAuthorization] hat viele Aufrufer (Knoepfe, Gate,
+     * Auto-Re-Auth, nach der Anmeldung); ein Signal HIER erreicht sie alle, statt dass jeder
+     * seinen eigenen Nachlauf braucht - und ein kuenftiger Aufrufer ihn vergisst.
+     *
+     * CONFLATED wie [reauthRequired]: zweimal schnell hintereinander erteilt ist einmal neu laden.
+     */
+    private val _kalenderZugriffErneuert = Channel<Unit>(Channel.CONFLATED)
+    val kalenderZugriffErneuert: Flow<Unit> = _kalenderZugriffErneuert.receiveAsFlow()
+
+    /**
      * Beim Abmelden verwirft die App das Kalender-Token absichtlich selbst.
      *
      * WARUM DAS EIN FLAG BRAUCHT: [observeTokenLoss] deutet ein verschwundenes Token als "Google
@@ -891,6 +908,7 @@ class AuthViewModel @Inject constructor(
                                 viewModelScope.launch {
                                     backgroundServiceManager.initializeMaintenanceService()
                                 }
+                                _kalenderZugriffErneuert.trySend(Unit)
                                 Logger.business(
                                     LogTags.AUTH,
                                     "✅ Maintenance service initialized after authorization"
@@ -936,6 +954,7 @@ class AuthViewModel @Inject constructor(
                             )
 
                             if (authorized) {
+                                _kalenderZugriffErneuert.trySend(Unit)
                                 // Initialize maintenance service after successful authorization
                                 backgroundServiceManager.initializeMaintenanceService()
                                 Logger.business(

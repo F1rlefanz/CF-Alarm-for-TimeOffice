@@ -53,6 +53,7 @@ import java.time.format.DateTimeFormatter
 internal enum class NoShiftReason {
     NO_CALENDAR_SELECTED,
     AUTHORIZATION_LOST,
+    KALENDER_NICHT_ERREICHBAR,
     CALENDAR_PARTIALLY_UNAVAILABLE,
     LOAD_ERROR,
     NO_EVENTS,
@@ -73,6 +74,7 @@ internal enum class NoShiftReason {
 internal fun noShiftReason(
     hasSelectedCalendars: Boolean,
     calendarAuthorizationValid: Boolean,
+    kalenderNichtErreichbar: Boolean,
     unavailableCalendarCount: Int,
     errorMessage: String?,
     eventCount: Int,
@@ -82,6 +84,10 @@ internal fun noShiftReason(
 ): NoShiftReason = when {
     !hasSelectedCalendars -> NoShiftReason.NO_CALENDAR_SELECTED
     !calendarAuthorizationValid -> NoShiftReason.AUTHORIZATION_LOST
+    // VOR Fehlermeldung und leerer Terminliste: offline ist die Liste zwangslaeufig leer, und
+    // sobald die Snackbar den Fehler geraeumt hat, hiesse es sonst "im gewaehlten Kalender steht
+    // nichts" - eine Behauptung ueber den Dienstplan, die niemand pruefen konnte.
+    kalenderNichtErreichbar -> NoShiftReason.KALENDER_NICHT_ERREICHBAR
     // NACH der Autorisierung, VOR allem Weiteren: ist ein Kalender nicht abrufbar, halten die
     // Vollstaendigkeits-Sperren jeden Alarm-Sync an. Jede Ursache darunter (keine Termine, kein
     // Muster) waere dann eine Folge davon, keine eigene Erklaerung - und wuerde den Nutzer an der
@@ -139,6 +145,11 @@ internal fun noShiftExplanation(
             // die im Screen wirklich steht (Karte "Kalender-Events", Knopf darin).
             "Kalender-Zugriff abgelaufen — in der Karte \"Kalender-Events\" auf " +
                 "\"Kalender-Zugriff erneuern\" tippen."
+        NoShiftReason.KALENDER_NICHT_ERREICHBAR ->
+            // Kein Wort von Zugriff oder Anmeldung - genau diese Fehldiagnose stand hier bis
+            // v1.43.4 (Flugmodus = "Kalender-Zugriff abgelaufen"). Knopf und Karte wortgleich.
+            "Google Kalender gerade nicht erreichbar — die gestellten Wecker bleiben. Mit Netz " +
+                "in der Karte \"Kalender-Events\" auf \"Mit Google Kalender abgleichen\" tippen."
         NoShiftReason.CALENDAR_PARTIALLY_UNAVAILABLE ->
             // Verweist auf die Karte, die den Namen des Kalenders UND den Entfernen-Knopf hat -
             // hier stehen die IDs nicht zur Verfuegung, und ein halber Hinweis waere schlechter
@@ -257,6 +268,7 @@ fun HomeTabContent(
                         val reason = noShiftReason(
                             hasSelectedCalendars = calendarState.selectedCalendarIds.isNotEmpty(),
                             calendarAuthorizationValid = calendarState.calendarAuthorizationValid,
+                            kalenderNichtErreichbar = calendarState.kalenderNichtErreichbar,
                             unavailableCalendarCount = calendarState.unavailableCalendarIds.size,
                             errorMessage = ladeFehler,
                             eventCount = calendarState.events.size,
@@ -383,6 +395,26 @@ fun HomeTabContent(
                     ) {
                         Text("Kalender-Zugriff erneuern")
                     }
+                } else if (calendarState.kalenderNichtErreichbar &&
+                    calendarState.selectedCalendarIds.isNotEmpty()
+                ) {
+                    // Eigener Zustand statt "Autorisierung verloren" (bis v1.43.4), siehe
+                    // CalendarUiState.kalenderNichtErreichbar. Bewusst OHNE Fehlerfarbe: kaputt
+                    // ist nichts, die Wecker stehen - es fehlt nur die Verbindung. Der Ausweg ist
+                    // derselbe Abgleich wie sonst, mit demselben Namen. Die Auswahl-Pruefung wie
+                    // bei zugriffVerloren: nach einer Abwahl steht der Merker noch, die Wecker
+                    // sind dann aber geraeumt - "sie bleiben" waere gelogen.
+                    Text(
+                        "Google Kalender nicht erreichbar",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Die Termine konnten gerade nicht abgerufen werden – meist fehlt die " +
+                            "Internetverbindung. Die gestellten Wecker bleiben bestehen.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    KalenderAbgleichKnopf(enabled = !calendarState.isLoading, onClick = onJetztAbgleichen)
                 } else if (calendarState.events.isNotEmpty()) {
                     Text("${calendarState.events.size} Events in den nächsten 14 Tagen")
                     Text(
@@ -446,20 +478,7 @@ fun HomeTabContent(
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = SpacingConstants.SPACING_SMALL)
                     )
-                    OutlinedButton(
-                        onClick = onJetztAbgleichen,
-                        enabled = !calendarState.isLoading,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            // dekorativ: die Beschriftung daneben sagt es vollstaendig
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-                        Text("Mit Google Kalender abgleichen")
-                    }
+                    KalenderAbgleichKnopf(enabled = !calendarState.isLoading, onClick = onJetztAbgleichen)
                     Text(
                         "Holt die Termine aus deinem Google Kalender und stellt die Wecker " +
                             "danach neu. CF-Alarm liest nur den Kalender — was TimeOffice dort " +
@@ -487,5 +506,29 @@ fun HomeTabContent(
                 CircularProgressIndicator()
             }
         }
+    }
+}
+
+/**
+ * Der Abgleich mit dem Google Kalender - EIN Vorgang, EIN Name (ui-texte-und-layout.md). Steht in
+ * der Karte "Kalender-Events" an zwei Stellen: im Normalfall unter der Zusammenfassung und im
+ * Zustand "nicht erreichbar" als Ausweg. Deshalb hier einmal, damit Beschriftung und Aussehen
+ * nicht auseinanderlaufen.
+ */
+@Composable
+private fun KalenderAbgleichKnopf(enabled: Boolean, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            Icons.Default.Refresh,
+            // dekorativ: die Beschriftung daneben sagt es vollstaendig
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
+        Text("Mit Google Kalender abgleichen")
     }
 }

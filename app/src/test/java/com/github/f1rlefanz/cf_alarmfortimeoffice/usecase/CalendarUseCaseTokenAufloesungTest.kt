@@ -126,6 +126,26 @@ class CalendarUseCaseTokenAufloesungTest {
     }
 
     @Test
+    fun `ein Token-Fehler aus einem Funkloch ist ein Netzfehler, keine Aufforderung zur Anmeldung`() = runTest {
+        // Offline mit abgelaufenem Token: GoogleAuthUtil wirft IOException ("voruebergehend"),
+        // refresh() wickelt sie in RefreshFailed. Frueher wurde daraus "Please re-authorize" ohne
+        // Ursache - die Oberflaeche konnte das Funkloch nicht mehr erkennen und meldete den
+        // Zugriff als verloren. Dieselbe Einstufung wie in der Wartung (WartungTokenFehler).
+        val funkloch = TokenException.RefreshFailed(
+            "Google refresh failed: NetworkError",
+            TokenException.RefreshFailed("inner", java.io.IOException("NetworkError"))
+        )
+        Aufrufer.entries.forEach { aufrufer ->
+            val geworfen = rufe(aufrufer, useCaseMit(Result.failure(funkloch))).exceptionOrNull()
+            assertTrue("$aufrufer: erwartet NetworkError, war $geworfen", geworfen is AppError.NetworkError)
+            assertTrue(
+                "$aufrufer: die Ursache muss erhalten bleiben (Log, Einstufung)",
+                geworfen?.cause === funkloch
+            )
+        }
+    }
+
+    @Test
     fun `das geholte OAuth2-Token geht an das Repository`() = runTest {
         val token = TokenData(
             accessToken = "oauth-token",
@@ -168,6 +188,17 @@ class CalendarUseCaseTokenAufloesungTest {
             tokenExpiryTime = System.currentTimeMillis() + eineStunde
         )
         assertTrue(useCaseMit(tokenFehler, authData = gespeichert).hasValidAccessToken())
+    }
+
+    @Test
+    fun `hasValidAccessToken - ein Funkloch ist kein fehlendes Token`() = runTest {
+        // CalendarViewModel.checkTokenValidity() leitet daraus hasValidToken ab, und die
+        // Kalenderauswahl zeigt bei false "Kalender-Zugriff nicht freigegeben" - offline falsch.
+        // Bewusst OHNE gespeichertes Alt-Token: der Legacy-Rueckfall darf das Ergebnis nicht tragen.
+        val funkloch = Result.failure<TokenData>(
+            TokenException.RefreshFailed("x", TokenException.RefreshFailed("y", java.io.IOException("NetworkError")))
+        )
+        assertTrue(useCaseMit(funkloch, authData = AuthData(isLoggedIn = false)).hasValidAccessToken())
     }
 
     @Test

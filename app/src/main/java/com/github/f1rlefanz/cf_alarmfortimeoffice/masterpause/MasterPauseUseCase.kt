@@ -45,17 +45,9 @@ class MasterPauseUseCase @Inject constructor(
 
     /**
      * Bringt den Device-Protected-Spiegel des Pausenzustands mit der CE-Wahrheit in Deckung.
-     *
-     * `KEY_PAUSED` hat genau zwei Schreiber ([pause]/[resume]) und drei Leser, die ALLE im Boot-Pfad
-     * sitzen - der Spiegel ist das einzige, was der `BootReceiver` vor der ersten Entsperrung ueber
-     * die Pause weiss. `savePaused()` schluckt seinen Fehler; faellt ein Schreibvorgang aus,
-     * divergieren beide dauerhaft, denn es gab bisher keinen einzigen Pfad, der sie wieder
-     * abgleicht. Beide Richtungen sind schlecht: ein haengendes `true` sperrt die
-     * Boot-Wiederherstellung dauerhaft (kein Wecker nach dem naechsten Neustart), ein haengendes
-     * `false` re-armt Alarme, die der Nutzer pausiert hat.
-     *
-     * Wird beim App-Start aufgerufen (best effort, nur bei entsperrtem Geraet - vorher ist der
-     * CE-Wert nicht lesbar) und ist billig: ein Read und im Regelfall kein Write.
+     * `savePaused()` schluckt seinen Fehler; ohne Abgleich divergierten beide dauerhaft (haengendes
+     * `true`: kein Wecker nach dem Neustart; `false`: pausierte Alarme re-armiert). Laeuft beim
+     * App-Start, nur bei entsperrtem Geraet. Hergang: Skill cfalarm-wecker-und-boot, master-pause.md.
      */
     suspend fun reconcileDirectBootMirror() {
         val truth = prefs.pausedNow()
@@ -73,37 +65,16 @@ class MasterPauseUseCase @Inject constructor(
     }
 
     /**
-     * NICHT abbrechbar: die Sequenz stellt einen Zustand HER, statt nur einen Schalter umzulegen -
-     * und der Schalter wird als ERSTES geschrieben. Bricht der Aufrufer-Scope mitten dabei ab
-     * (`viewModelScope` des `MasterPauseViewModel`: Activity beendet, Task weggewischt), stehen Flag
-     * und Wirklichkeit auseinander. Beide Richtungen sind gefaehrlich: bei `pause()` zeigt die App
-     * "pausiert", waehrend 6h-Wartung, Dimmer-Tick, DND-Tick und Hue-Planung weiterlaufen; bei
-     * `resume()` zeigt sie "aktiv", waehrend keine dieser Ketten wieder angelaufen ist - der Wecker
-     * bliebe STILL, und beim naechsten Boot liest der `BootReceiver` einen Spiegel, der nicht mehr
-     * zum Flag passt.
+     * NICHT abbrechbar: die Sequenz stellt einen Zustand HER, der Schalter steht als ERSTES - ein
+     * Abbruch mittendrin liesse Flag und Wirklichkeit auseinanderstehen (Hergang: master-pause.md).
      */
     suspend fun pause() = withContext(NonCancellable) {
         prefs.setPaused(true)
         // Device-Protected-Spiegel im selben Atemzug wie das DataStore-Flag - BootReceiver liest
         // ihn bei LOCKED_BOOT_COMPLETED, wo @MainDataStore (CE-Storage) noch nicht lesbar ist.
         directBootAlarmStore.savePaused(true)
-        // EINEN GERADE KLINGELNDEN WECKER BEENDEN (Pruefrunde 8).
-        //
-        // pause() raeumte bisher nur die PLANUNG ab und liess das gerade Laufende in Ruhe: der
-        // Wecker klingelte nach dem Pausieren einfach weiter, waehrend die Oberflaeche
-        // "Hintergrunddienste pausiert" zeigte. Schlimmer noch, seine Notification blieb mitsamt
-        // Schlummer-Knopf stehen - ein Druck darauf armierte einen neuen Wecker mitten in der
-        // Pause, den danach nichts mehr abraeumte (die 6h-Kette ist hier unten gerade gekappt
-        // worden). Der Schlummer-Pfad hat dagegen jetzt seinen eigenen Backstop; diese Zeile
-        // beseitigt den Anlass.
-        //
-        // BEWUSST UNBEDINGT, nicht auf AlarmSoundService.alarmActive gegated: die Richtung ist
-        // fail-safe zu waehlen, und "Pause heisst still" ist die Zusage der Oberflaeche. Laeuft
-        // gar kein Wecker, verarbeitet der Dienst den Stop-Intent und beendet sich sofort wieder;
-        // waere der Zustandsmerker dagegen veraltet, bliebe der Wecker laut.
-        //
-        // try/catch wie bei jedem Schritt unten: aus dem Hintergrund heraus lehnt Android ab
-        // Android 8 einen startService() ab, und das darf die Pause nicht zerreissen.
+        // Laufenden Wecker beenden - unbedingt, nicht auf alarmActive gegated; eigenes try/catch,
+        // ein abgelehnter startService() darf die Pause nicht zerreissen. Hergang: master-pause.md.
         try {
             context.startService(
                 Intent(context, AlarmSoundService::class.java)
@@ -124,35 +95,13 @@ class MasterPauseUseCase @Inject constructor(
             .onFailure { error ->
                 Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Loeschen der Alarme fehlgeschlagen", error)
             }
-        // Jeder Schritt eigenes try/catch (Vorbild: BootReceiver.performCompleteSystemRecovery()) -
-        // sonst reisst ein einzelner Fehler alle NACHFOLGENDEN Schritte mit ab, obwohl das
-        // Pause-Flag oben bereits geschrieben ist: UI und Flag saegen "pausiert", aber ein
-        // spaeterer Schritt (z.B. Hue-Cleanup) liefe unbemerkt weiter.
-        try {
-            AlarmMaintenanceService.cancelNext(context)
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: 6h-Wartung canceln fehlgeschlagen", e)
-        }
-        try {
-            dimSchedule.disable()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Dimmer-Disable fehlgeschlagen", e)
-        }
-        try {
-            dndSchedule.disable()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: DND-Disable fehlgeschlagen", e)
-        }
-        try {
-            hueSmartScheduler.cleanup()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Hue-Cleanup fehlgeschlagen", e)
-        }
-        try {
-            calendarPreAlarmRefreshScheduler.cancelAll()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Pre-Alarm-Refresh-Cancel fehlgeschlagen", e)
-        }
+        // Jeder Schritt einzeln gekapselt (siehe [schritt]): UI und Flag sagen bereits "pausiert",
+        // ein spaeterer Schritt (z.B. Hue-Cleanup) darf nicht unbemerkt weiterlaufen.
+        schritt("6h-Wartung canceln") { AlarmMaintenanceService.cancelNext(context) }
+        schritt("Dimmer-Disable") { dimSchedule.disable() }
+        schritt("DND-Disable") { dndSchedule.disable() }
+        schritt("Hue-Cleanup") { hueSmartScheduler.cleanup() }
+        schritt("Pre-Alarm-Refresh-Cancel") { calendarPreAlarmRefreshScheduler.cancelAll() }
         Logger.business(LogTags.MASTER_PAUSE, "Hintergrunddienste pausiert")
     }
 
@@ -160,40 +109,29 @@ class MasterPauseUseCase @Inject constructor(
     suspend fun resume() = withContext(NonCancellable) {
         prefs.setPaused(false)
         directBootAlarmStore.savePaused(false)
-        // Jeder Schritt eigenes try/catch (Vorbild: BootReceiver.performCompleteSystemRecovery()) -
-        // sonst reisst ein einzelner Fehler alle NACHFOLGENDEN Schritte mit ab, obwohl das
-        // Pause-Flag oben bereits geschrieben ist: UI und Flag saegen "fortgesetzt", aber ein
-        // spaeterer Schritt (z.B. Hue-Init) liefe unbemerkt nicht wieder an.
-        try {
-            AlarmMaintenanceService.scheduleNext(context)
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: 6h-Wartung neu planen fehlgeschlagen", e)
-        }
-        try {
-            AlarmMaintenanceService.start(context)
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: 6h-Wartung starten fehlgeschlagen", e)
-        }
-        try {
-            dimSchedule.enable()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Dimmer-Enable fehlgeschlagen", e)
-        }
-        try {
-            dndSchedule.enable()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: DND-Enable fehlgeschlagen", e)
-        }
-        try {
-            hueSmartScheduler.initializeSmartScheduling()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Hue-Init fehlgeschlagen", e)
-        }
-        try {
-            calendarPreAlarmRefreshScheduler.reschedule()
-        } catch (e: Exception) {
-            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
-        }
+        // Jeder Schritt einzeln gekapselt (siehe [schritt]): UI und Flag sagen bereits
+        // "fortgesetzt", ein spaeterer Schritt (z.B. Hue-Init) darf nicht unbemerkt ausbleiben.
+        schritt("6h-Wartung neu planen") { AlarmMaintenanceService.scheduleNext(context) }
+        schritt("6h-Wartung starten") { AlarmMaintenanceService.start(context) }
+        schritt("Dimmer-Enable") { dimSchedule.enable() }
+        schritt("DND-Enable") { dndSchedule.enable() }
+        schritt("Hue-Init") { hueSmartScheduler.initializeSmartScheduling() }
+        schritt("Pre-Alarm-Refresh-Reschedule") { calendarPreAlarmRefreshScheduler.reschedule() }
         Logger.business(LogTags.MASTER_PAUSE, "Hintergrunddienste fortgesetzt")
+    }
+
+    /**
+     * Ein Schritt von [pause]/[resume] mit eigenem Fang (Vorbild:
+     * BootReceiver.performCompleteSystemRecovery()) - sonst reisst ein einzelner Fehler alle
+     * NACHFOLGENDEN Schritte mit ab, obwohl das Pause-Flag bereits geschrieben ist.
+     * `inline`, damit die suspend-Aufrufe im Block erlaubt sind. Faengt bewusst `Exception`
+     * (auch CancellationException): die Aufrufer laufen unter NonCancellable.
+     */
+    private inline fun schritt(beschreibung: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            Logger.w(LogTags.MASTER_PAUSE, "⚠️ MASTER-PAUSE: $beschreibung fehlgeschlagen", e)
+        }
     }
 }

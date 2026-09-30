@@ -1475,7 +1475,7 @@ class AlarmViewModel @Inject constructor(
                         alarmUseCase.scheduleSystemAlarm(alarmInfo)
                             .onSuccess {
                                 // DAUERHAFTIGKEIT NACHFRAGEN - dasselbe Muster wie
-                                // `AlarmSkipUseCase.loescheUndPruefeDauerhaftigkeit()`.
+                                // `loescheDauerhaftMitNachfassen()` (DauerhaftesLoeschen.kt).
                                 //
                                 // `saveAlarm()` meldet auch dann Erfolg, wenn nur der
                                 // Arbeitsspeicher beschrieben wurde - und zwar aus ZWEI Gruenden:

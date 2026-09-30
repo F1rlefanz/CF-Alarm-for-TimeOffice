@@ -21,8 +21,6 @@ import javax.inject.Singleton
 /**
  * Hilt Module für DataStore und Core Data Dependencies
  *
- * WICHTIG: Nur Preferences DataStore (KEIN Proto DataStore!)
- *
  * HIER LIEGEN NUR DIE UNVERSCHLÜSSELTEN STORES. Der Token-Store gehört bewusst NICHT dazu:
  * `DataStoreTokenRepository` baut ihn sich selbst über `EncryptedDataStoreFactory`
  * (`token_data_v2_encrypted`, Tink-verschlüsselt) und injiziert von hier nur den Context.
@@ -33,8 +31,6 @@ import javax.inject.Singleton
  * inklusive der directBootAware-Komponenten).
  */
 
-// DataStore Extensions - NICHT Proto!
-//
 // corruptionHandler: Ohne ihn blockiert eine beschädigte preferences_pb NICHT nur jedes Lesen,
 // sondern auch jedes Schreiben (DataStore liest vor jedem Write erneut) — und zwar dauerhaft, weil
 // die kaputte Datei liegen bleibt. Im "settings"-Store liegen Alarme, Master-Pause, AlarmPrefs,
@@ -93,7 +89,6 @@ object DataModule {
         @ApplicationContext context: Context
     ): DataStore<Preferences> = context.hueDataStore
     
-    // ErrorHandler ist bereits ein Kotlin object - Singleton by design
     @Provides
     @Singleton
     fun provideErrorHandler(): ErrorHandler = ErrorHandler

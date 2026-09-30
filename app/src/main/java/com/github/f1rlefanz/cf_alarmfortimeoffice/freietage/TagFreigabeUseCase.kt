@@ -6,10 +6,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAlarmRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmSkipUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.loescheDauerhaftMitNachfassen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -51,19 +51,11 @@ data class TagFreigabeResult(
 /**
  * "Tag freigeben": ein Kalendertag, an dem laut Dienstplan Dienst waere, findet nicht statt.
  *
- * **Abgrenzung zum Ueberspringen, und warum es beides braucht.** `AlarmSkipUseCase` schaltet den
- * naechsten WECKER ab und laesst den Dienst bestehen - "Nicht stoeren" und der Schicht-Dimmer
- * richten sich weiter nach der Schicht (gedacht fuer den Morgen, an dem man ohne Wecker wach ist).
- * Hier faellt der DIENST weg, und damit alles, was an ihm haengt:
- *
- * - **Wecker**: die Alarme des Tages werden geloescht und entstehen nicht neu (Gate und Backstop
- *   in `AlarmUseCase`).
- * - **"Nicht stoeren"** und **Schicht-Dimmer**: `FreieTageStore.filtereSpannen` nimmt die
- *   Schichtspannen des Tages aus beiden Fensterquellen; der Tag verhaelt sich danach wie jeder
- *   andere freie Tag (FREI-Regel, Nacht-Standard).
- * - **Hue**: braucht keinen eigenen Zweig. `HueSmartScheduler` zieht seine Zeiten ausschliesslich
- *   aus `getAllAlarms()`, und die Regelausfuehrung haengt am `AlarmReceiver` - ohne Wecker kein
- *   Sonnenaufgang und kein Licht.
+ * Anders als `AlarmSkipUseCase` (nur der WECKER faellt weg) faellt hier der DIENST weg und mit ihm
+ * alles, was daran haengt: die Wecker des Tages (Gate und Backstop in `AlarmUseCase`), "Nicht
+ * stoeren" und Schicht-Dimmer (`FreieTageStore.filtereSpannen`; der Tag verhaelt sich wie jeder
+ * freie Tag). Hue braucht keinen eigenen Zweig - es haengt an `getAllAlarms()` und am
+ * `AlarmReceiver`. Hergang: Skill cfalarm-wecker-und-boot, tag-freigeben.md.
  *
  * Der Kalendertermin bleibt unangetastet. Die Freigabe ist eine Aussage des NUTZERS ueber den
  * Dienstplan, kein Abbild des Dienstplans - deshalb liegt sie in einem eigenen Speicher und nicht
@@ -78,10 +70,6 @@ class TagFreigabeUseCase @Inject constructor(
     private val armierer: ZeitkettenArmierer
 ) {
     companion object {
-        /** Loeschversuche je Wecker, inklusive des ersten - Vorbild `AlarmSkipUseCase`. */
-        internal const val DELETE_ATTEMPTS = 2
-        internal const val DELETE_RETRY_DELAY_MS = 250L
-
         /**
          * Gehoert dieser Wecker zum freigegebenen Tag?
          *
@@ -103,8 +91,6 @@ class TagFreigabeUseCase @Inject constructor(
     }
 
     val freieTage: Flow<Set<LocalDate>> = store.freieTage
-
-    suspend fun freieTageNow(): Set<LocalDate> = store.freieTageNow()
 
     /**
      * Gibt [datum] frei: Markierung setzen, Wecker des Tages abraeumen, ein kollidierendes
@@ -159,7 +145,12 @@ class TagFreigabeUseCase @Inject constructor(
                         Logger.e(LogTags.ALARM, "❌ FREIGABE: Systemalarm ${alarm.id} nicht abbrechbar", e)
                     }
 
-                    val geloescht = loescheMitNachfassen(alarm.id)
+                    val geloescht = alarmRepository.loescheDauerhaftMitNachfassen(
+                        alarmId = alarm.id,
+                        logTag = LogTags.ALARM,
+                        versuchsText = "FREIGABE: Loeschen von Wecker ${alarm.id}",
+                        nomen = "Wecker"
+                    )
                     if (geloescht.isFailure) {
                         // 4. Ein Wecker, der nicht weggeht, macht die ganze Freigabe zur Luege:
                         // der Direct-Boot-Spiegel armiert ihn nach einem naechtlichen Neustart
@@ -219,9 +210,7 @@ class TagFreigabeUseCase @Inject constructor(
 
     /**
      * Nimmt die Freigabe zurueck. Die Wecker baut der Aufrufer ueber einen Kalender-Refresh neu
-     * auf - denselben Weg geht `cancelSkip` im `AlarmViewModel`. Von hier aus ginge es nicht:
-     * `AlarmUseCase` haengt fuer sein Gate bereits an diesem UseCase, die Gegenrichtung waere ein
-     * Zyklus im DI-Graphen.
+     * auf - denselben Weg geht `cancelSkip` im `AlarmViewModel`.
      */
     suspend fun zuruecknehmen(datum: LocalDate): Result<Unit> =
         SafeExecutor.safeExecute("TagFreigabeUseCase.zuruecknehmen") {
@@ -249,47 +238,4 @@ class TagFreigabeUseCase @Inject constructor(
     }
 
     private suspend fun werfeNebenkettenAn() = armierer.armiere("FREIGABE")
-
-    /**
-     * Loescht einen Wecker und fasst bei einem Fehlschlag genau einmal nach - Wortlaut und
-     * Begruendung wie `AlarmSkipUseCase.loescheMitNachfassen`: der haeufige Fall ist ein
-     * voruebergehender DataStore-Schreibfehler.
-     */
-    private suspend fun loescheMitNachfassen(alarmId: Int): Result<Unit> {
-        var ergebnis = loescheUndPruefeDauerhaftigkeit(alarmId)
-        var versuch = 1
-        while (ergebnis.isFailure && versuch < DELETE_ATTEMPTS) {
-            Logger.w(
-                LogTags.ALARM,
-                "⚠️ FREIGABE: Loeschen von Wecker $alarmId fehlgeschlagen " +
-                    "(Versuch $versuch/$DELETE_ATTEMPTS) - wird wiederholt",
-                ergebnis.exceptionOrNull()
-            )
-            delay(DELETE_RETRY_DELAY_MS)
-            ergebnis = loescheUndPruefeDauerhaftigkeit(alarmId)
-            versuch++
-        }
-        return ergebnis
-    }
-
-    /**
-     * `deleteAlarm()` meldet auch dann Erfolg, wenn nur der Arbeitsspeicher geraeumt wurde (bei
-     * gesperrter Persistenz kehrt `persistToDataStore()` sofort zurueck). Ohne diese Nachfrage
-     * spraenge die Ruecknahme genau im wichtigsten Fall nicht an. Die Sperre kann auch erst nach
-     * der Vorpruefung entstehen, deshalb wird sie hier erneut gefragt.
-     */
-    private suspend fun loescheUndPruefeDauerhaftigkeit(alarmId: Int): Result<Unit> {
-        val ergebnis = alarmRepository.deleteAlarm(alarmId)
-        if (ergebnis.isFailure) return ergebnis
-        return if (alarmRepository.isPersistenceBlocked()) {
-            Result.failure(
-                IllegalStateException(
-                    "Wecker $alarmId wurde nur aus dem Arbeitsspeicher entfernt - die Persistenz " +
-                        "ist gesperrt, Alarm-Bestand und Direct-Boot-Spiegel behalten ihn"
-                )
-            )
-        } else {
-            ergebnis
-        }
-    }
 }

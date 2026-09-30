@@ -16,13 +16,8 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * Hilt Module für Service Dependencies
- * 
- * Stellt alle Service-bezogenen Komponenten bereit
- * OAuth2TokenManager, AlarmManagerService, etc.
- * 
- * NOTE: BackgroundServiceManager is not provided here because it has its own
- * @Singleton @Inject constructor and is automatically provided by Hilt.
+ * Hilt Module für Service Dependencies. BackgroundServiceManager fehlt hier bewusst: er hat einen
+ * eigenen @Singleton @Inject-Konstruktor - kein zweiter Provider.
  */
 @Module
 @InstallIn(SingletonComponent::class)

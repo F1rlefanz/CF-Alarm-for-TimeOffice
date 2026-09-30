@@ -69,7 +69,7 @@ class DndPrefs @Inject constructor(
         private val KEY_ONCALL_CUTOFF_MIN = intPreferencesKey("dnd_oncall_cutoff_min")
         private val KEY_ZEN_RULE_ID = stringPreferencesKey("dnd_zen_rule_id")
 
-        /** Default-Cutoff 05:00 - siehe Plan-Kontext (Rufbereitschaft, frueh erreichbar). */
+        /** Default-Cutoff 05:00 (Rufbereitschaft, frueh erreichbar). */
         const val DEFAULT_ONCALL_CUTOFF_MIN = 5 * 60
 
         private val KEY_BLOCK_CALLS = booleanPreferencesKey("dnd_policy_block_calls")
@@ -337,10 +337,7 @@ class DndPrefs @Inject constructor(
  * geschrieben wurde, sonst 0 - siehe [DndPrefs.renameShiftName] fuer das Warum (exakter Vergleich,
  * kein blindes Schreiben).
  *
- * Steht als Datei-private Funktion neben der einzigen Klasse, die sie braucht. Ein gemeinsamer
- * Helfer mit dem gleichnamigen in `DimOverlayPrefs` waere eine Abstraktion ueber fuenf Zeilen und
- * zwei Paketen - die Begruendung, WARUM exakt verglichen wird, haengt dagegen am jeweiligen
- * Konsumenten und gehoert genau dorthin.
+ * Steht als Datei-private Funktion neben der einzigen Klasse, die sie braucht.
  */
 private fun MutablePreferences.zieheSchichtnamenNach(
     key: Preferences.Key<Set<String>>,

@@ -195,7 +195,6 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.material.icons.extended)
 
@@ -210,8 +209,6 @@ dependencies {
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.gpsAuth)
     implementation(libs.googleid)
-    implementation(libs.google.auth.library.oauth2.http)
-    implementation(libs.google.auth.library.credentials)
 
     // Google API Client for Calendar
     // Die beiden `-android`-Artefakte sind bewusst NICHT dabei: sie liefern nur
@@ -279,7 +276,5 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
 
-    // Debug dependencies
-    debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

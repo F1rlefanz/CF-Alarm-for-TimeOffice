@@ -268,8 +268,6 @@ class DndScheduleUseCase @Inject constructor(
 
     // --- Fenster-Berechnung ---
 
-    private suspend fun windows(): List<LongRange> = computeWindows().ranges
-
     private suspend fun computeWindows(): WindowSet {
         val toggles = prefs.togglesNow()
         // Fail-open in dieselbe Richtung wie frueher der `safeData`-Flow der DND-Prefs: ist die

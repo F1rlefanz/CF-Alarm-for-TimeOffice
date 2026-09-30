@@ -438,7 +438,7 @@ class BootReceiver : BroadcastReceiver() {
                     //    Master-Pause: weder gespeicherte Alarme re-armen noch neue aus dem
                     //    Kalender anlegen (performAlarmRecovery() faellt sonst bei restoredCount<3
                     //    und autoAlarmEnabled==true in syncAlarms() - der Wecker klingelt trotz
-                    //    aktiver Pause wieder). Gleiches Gate wie Schritte 6/7/9/10/11 unten.
+                    //    aktiver Pause wieder). Gleiches Gate wie die Schritte 6-11 unten.
                     val alarmRecoveryResult = if (paused) {
                         "Skipped (Master-Pause aktiv)"
                     } else {
@@ -456,23 +456,20 @@ class BootReceiver : BroadcastReceiver() {
                         "📅 LEVEL 4: Calendar restoration completed - $calendarRestorationResult"
                     )
 
-                    // 6. Smart Maintenance Chain Reinitialization (L1-L3)
-                    //    Master-Pause: statt der Chain-Reinitialisierung nur die 6h-Kette kappen.
+                    // 6. 6h-Wartungskette: GENAU ein Planer (scheduleNext); Master-Pause kappt
+                    //    stattdessen die Kette. cancelNext bewusst ungekapselt - ein Wurf laeuft
+                    //    in den Retry-catch unten.
                     if (paused) {
                         AlarmMaintenanceService.cancelNext(context)
                     } else {
-                        performSmartMaintenanceChainReinitialization(context)
+                        try {
+                            AlarmMaintenanceService.scheduleNext(context)
+                        } catch (e: Exception) {
+                            Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: 6h-Wartungskette nicht neu geplant", e)
+                        }
                     }
 
-                    // 7. Background Services Restart
-                    //    Master-Pause: auch hier statt Neustart nur die 6h-Kette kappen.
-                    if (paused) {
-                        AlarmMaintenanceService.cancelNext(context)
-                    } else {
-                        restartBackgroundServices(context)
-                    }
-
-                    // 8. Schedule Post-Recovery Health Check
+                    // 7. Schedule Post-Recovery Health Check
                     //    Master-Pause: der 30s-Nachcheck wuerde sonst selbst bei korrekt leerer
                     //    Alarmliste (pause() hat sie geleert) "futureAlarms.size < 2" ausloesen
                     //    und AlarmMaintenanceService.start() rufen - sichtbare Notification,
@@ -486,7 +483,7 @@ class BootReceiver : BroadcastReceiver() {
                         schedulePostRecoveryHealthCheck(context, reason)
                     }
 
-                    // 9. Schicht-Dimmer: rollenden Dimm-Tick nach dem Boot neu setzen.
+                    // 8. Schicht-Dimmer: rollenden Dimm-Tick nach dem Boot neu setzen.
                     //    Best-effort und eigenes try/catch – darf die Wecker-Recovery NIE stoeren.
                     //    Master-Pause: statt neu zu planen, den Dimmer abschalten.
                     try {
@@ -499,7 +496,7 @@ class BootReceiver : BroadcastReceiver() {
                         Logger.w(LogTags.DIMMER, "Boot: Dimm-Reschedule fehlgeschlagen", e)
                     }
 
-                    // 10. DND-Steuerung: rollenden Tick nach dem Boot neu setzen. Gleiches
+                    // 9. DND-Steuerung: rollenden Tick nach dem Boot neu setzen. Gleiches
                     //     Muster/gleicher try/catch-Gedanke wie beim Dimmer – Best-effort, darf
                     //     die Wecker-Recovery NIE stoeren.
                     //     Master-Pause: statt neu zu planen, die DND-Regel abschalten.
@@ -513,7 +510,7 @@ class BootReceiver : BroadcastReceiver() {
                         Logger.w(LogTags.DND, "Boot: DND-Reschedule fehlgeschlagen", e)
                     }
 
-                    // 11. Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) nach dem Boot neu
+                    // 10. Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) nach dem Boot neu
                     //     planen. Gleiches Muster/gleicher try/catch-Gedanke wie Dimmer/DND –
                     //     Best-effort, darf die Wecker-Recovery NIE stoeren.
                     //     Master-Pause: statt neu zu planen, alle offenen Jobs canceln.
@@ -527,8 +524,8 @@ class BootReceiver : BroadcastReceiver() {
                         Logger.w(LogTags.BACKGROUND_WORKER, "Boot: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
                     }
 
-                    // 12. Stuendliche Rufbereitschafts-Abfrage: ein Neustart loescht alle
-                    //     AlarmManager-Eintraege, also auch diesen Slot. Gleiches Muster wie 9-11,
+                    // 11. Stuendliche Rufbereitschafts-Abfrage: ein Neustart loescht alle
+                    //     AlarmManager-Eintraege, also auch diesen Slot. Gleiches Muster wie 8-10,
                     //     Best-effort, Master-Pause raeumt statt zu planen.
                     try {
                         if (paused) {
@@ -564,9 +561,10 @@ class BootReceiver : BroadcastReceiver() {
                             LogTags.MAINTENANCE_L4,
                             "💥 LEVEL 4: All recovery attempts failed - system may need manual intervention"
                         )
-                        // Emergency fallback - try to at least restart background services
+                        // Notfall: wenigstens die 6h-Kette stellen (bewusst auch unter Master-Pause -
+                        // der naechste Wartungslauf steigt dann aus und kappt sie wieder).
                         try {
-                            restartBackgroundServices(context)
+                            AlarmMaintenanceService.scheduleNext(context)
                         } catch (fallbackError: Exception) {
                             Logger.e(
                                 LogTags.MAINTENANCE_L4,
@@ -1052,48 +1050,6 @@ class BootReceiver : BroadcastReceiver() {
                 e
             )
             "Calendar restoration failed: ${e.message}"
-        }
-    }
-
-    private fun performSmartMaintenanceChainReinitialization(context: Context) {
-        try {
-            Logger.business(
-                LogTags.MAINTENANCE_L4,
-                "🔄 LEVEL 4: Reinitializing Smart Maintenance Chain (Phase 1 - using AlarmMaintenanceService)"
-            )
-
-            // Schedule next maintenance run
-            AlarmMaintenanceService.scheduleNext(context)
-            Logger.business(LogTags.MAINTENANCE_L4, "✅ AlarmMaintenanceService scheduled")
-
-            Logger.business(
-                LogTags.MAINTENANCE_L4,
-                "✅ LEVEL 4: Smart Maintenance Chain reinitialization completed"
-            )
-
-        } catch (e: Exception) {
-            Logger.e(
-                LogTags.MAINTENANCE_L4,
-                "❌ LEVEL 4: Smart Maintenance Chain reinitialization failed",
-                e
-            )
-        }
-    }
-
-    /**
-     * 🔧 Background Services Restart - PHASE 1 MIGRATION
-     */
-    private fun restartBackgroundServices(context: Context) {
-        try {
-            Logger.d(LogTags.MAINTENANCE_L4, "🔧 LEVEL 4: Restarting background services (Phase 1)")
-
-            // Schedule AlarmMaintenanceService
-            AlarmMaintenanceService.scheduleNext(context)
-
-            Logger.d(LogTags.MAINTENANCE_L4, "✅ LEVEL 4: Background services restarted")
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.MAINTENANCE_L4, "❌ LEVEL 4: Background services restart failed", e)
         }
     }
 

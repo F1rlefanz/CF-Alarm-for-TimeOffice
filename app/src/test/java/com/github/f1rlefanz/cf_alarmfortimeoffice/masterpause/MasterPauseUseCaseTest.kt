@@ -11,7 +11,10 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -43,7 +46,8 @@ class MasterPauseUseCaseTest {
         val hueSmartScheduler: HueSmartScheduler,
         val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
         val directBootAlarmStore: DirectBootAlarmStore,
-        val alarmManager: AlarmManager
+        val alarmManager: AlarmManager,
+        val context: Context
     )
 
     private fun buildFixture(): Fixture {
@@ -83,7 +87,8 @@ class MasterPauseUseCaseTest {
             hueSmartScheduler = hueSmartScheduler,
             calendarPreAlarmRefreshScheduler = calendarPreAlarmRefreshScheduler,
             directBootAlarmStore = directBootAlarmStore,
-            alarmManager = alarmManager
+            alarmManager = alarmManager,
+            context = context
         )
     }
 
@@ -146,6 +151,97 @@ class MasterPauseUseCaseTest {
 
         f.useCase.resume()
 
+        verify(f.dndSchedule, times(1)).enable()
+        verify(f.hueSmartScheduler, times(1)).initializeSmartScheduling()
+        verify(f.calendarPreAlarmRefreshScheduler, times(1)).reschedule()
+    }
+
+    // ---- Reihenfolge und Einzelfehler je Schritt ----
+    //
+    // Die Tests oben halten "jeder Schritt genau einmal" fest, aber weder die REIHENFOLGE noch,
+    // dass JEDER Schritt (nicht nur der Dimmer) einzeln scheitern darf. Beides ist tragend: der
+    // Schalter wird ZUERST geschrieben (Flag, dann Direct-Boot-Spiegel), und ein einzelner
+    // gescheiterter Schritt darf keinen nachfolgenden mit abreissen.
+
+    @Test
+    fun `pause - Schritte laufen in fester Reihenfolge`() = runTest {
+        val f = buildFixture()
+
+        f.useCase.pause()
+
+        val o = inOrder(
+            f.prefs, f.directBootAlarmStore, f.context, f.alarmUseCase, f.alarmManager,
+            f.dimSchedule, f.dndSchedule, f.hueSmartScheduler, f.calendarPreAlarmRefreshScheduler
+        )
+        o.verify(f.prefs).setPaused(true)
+        o.verify(f.directBootAlarmStore).savePaused(true)
+        o.verify(f.context).startService(anyOrNull())
+        o.verify(f.alarmUseCase).deleteAllAlarms()
+        o.verify(f.alarmManager, times(2)).cancel(anyOrNull<PendingIntent>())
+        o.verify(f.dimSchedule).disable()
+        o.verify(f.dndSchedule).disable()
+        o.verify(f.hueSmartScheduler).cleanup()
+        o.verify(f.calendarPreAlarmRefreshScheduler).cancelAll()
+    }
+
+    @Test
+    fun `resume - Schritte laufen in fester Reihenfolge`() = runTest {
+        val f = buildFixture()
+
+        f.useCase.resume()
+
+        val o = inOrder(
+            f.prefs, f.directBootAlarmStore, f.context, f.alarmManager,
+            f.dimSchedule, f.dndSchedule, f.hueSmartScheduler, f.calendarPreAlarmRefreshScheduler
+        )
+        o.verify(f.prefs).setPaused(false)
+        o.verify(f.directBootAlarmStore).savePaused(false)
+        o.verify(f.alarmManager).setExactAndAllowWhileIdle(eq(AlarmManager.RTC_WAKEUP), any(), anyOrNull())
+        o.verify(f.dimSchedule).enable()
+        o.verify(f.dndSchedule).enable()
+        o.verify(f.hueSmartScheduler).initializeSmartScheduling()
+        o.verify(f.calendarPreAlarmRefreshScheduler).reschedule()
+    }
+
+    @Test
+    fun `pause - JEDER Schritt darf einzeln scheitern`() = runTest {
+        val f = buildFixture()
+        // Alle gekapselten Schritte werfen gleichzeitig: laeuft trotzdem jeder genau einmal, hat
+        // jeder seinen eigenen Fang - ein gemeinsamer liesse die Nachfolger aus.
+        whenever(f.context.startService(anyOrNull())).thenThrow(IllegalStateException("Hintergrundstart"))
+        whenever(f.context.getSystemService(Context.ALARM_SERVICE)).thenThrow(RuntimeException("boom"))
+        whenever(f.dimSchedule.disable()).thenThrow(RuntimeException("boom"))
+        whenever(f.dndSchedule.disable()).thenThrow(RuntimeException("boom"))
+        whenever(f.hueSmartScheduler.cleanup()).thenThrow(RuntimeException("boom"))
+        whenever(f.calendarPreAlarmRefreshScheduler.cancelAll()).thenThrow(RuntimeException("boom"))
+
+        f.useCase.pause()
+
+        verify(f.prefs, times(1)).setPaused(true)
+        verify(f.directBootAlarmStore, times(1)).savePaused(true)
+        verify(f.context, times(1)).startService(anyOrNull())
+        verify(f.alarmUseCase, times(1)).deleteAllAlarms()
+        verify(f.context, times(1)).getSystemService(Context.ALARM_SERVICE)
+        verify(f.dimSchedule, times(1)).disable()
+        verify(f.dndSchedule, times(1)).disable()
+        verify(f.hueSmartScheduler, times(1)).cleanup()
+        verify(f.calendarPreAlarmRefreshScheduler, times(1)).cancelAll()
+    }
+
+    @Test
+    fun `resume - JEDER Schritt darf einzeln scheitern`() = runTest {
+        val f = buildFixture()
+        whenever(f.context.getSystemService(Context.ALARM_SERVICE)).thenThrow(RuntimeException("boom"))
+        whenever(f.dimSchedule.enable()).thenThrow(RuntimeException("boom"))
+        whenever(f.dndSchedule.enable()).thenThrow(RuntimeException("boom"))
+        whenever(f.hueSmartScheduler.initializeSmartScheduling()).thenThrow(RuntimeException("boom"))
+        whenever(f.calendarPreAlarmRefreshScheduler.reschedule()).thenThrow(RuntimeException("boom"))
+
+        f.useCase.resume()
+
+        verify(f.prefs, times(1)).setPaused(false)
+        verify(f.directBootAlarmStore, times(1)).savePaused(false)
+        verify(f.dimSchedule, times(1)).enable()
         verify(f.dndSchedule, times(1)).enable()
         verify(f.hueSmartScheduler, times(1)).initializeSmartScheduling()
         verify(f.calendarPreAlarmRefreshScheduler, times(1)).reschedule()

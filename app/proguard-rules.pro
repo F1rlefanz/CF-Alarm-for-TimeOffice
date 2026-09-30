@@ -41,6 +41,17 @@
 -dontobfuscate
 
 # ==============================
+# BIBLIOTHEKEN: KEINE KEEP-ALLES-REGELN
+# ==============================
+#
+# Jede Bibliothek bringt ihre eigenen Consumer-Regeln mit (alle zusammen stehen nach einem
+# Release-Build in mapping/release/configuration.txt). Eine `-keep class <bibliothek>.** { *; }`
+# haelt darueber hinaus die GANZE Bibliothek samt ungenutztem Code fest und nimmt R8 Shrinking und
+# Optimierung. Gemessen am 29.09.2026: 20 solche Regeln hielten 14 368 Klassen; ohne sie war das
+# Release-APK 42,7 % kleiner. Eigene Regeln fuer Bibliotheken nur dort, wo App-Code per Reflexion
+# zugreift und keine Consumer-Regel das abdeckt - und dann so schmal wie moeglich.
+
+# ==============================
 # CRASH REPORTING & DEBUGGING
 # ==============================
 
@@ -72,13 +83,11 @@
 
 # Kotlin
 -keep class kotlin.Metadata { *; }
--keep class kotlin.reflect.** { *; }
 -dontwarn kotlin.reflect.**
 
 # Kotlin Coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
--keep class kotlinx.coroutines.android.** { *; }
 -keepclassmembernames class kotlinx.** {
     volatile <fields>;
 }
@@ -93,13 +102,6 @@
 # ==============================
 # JETPACK COMPOSE
 # ==============================
-
-# Compose Runtime
--keep class androidx.compose.runtime.** { *; }
--keep class androidx.compose.ui.** { *; }
--keep class androidx.compose.foundation.** { *; }
--keep class androidx.compose.material3.** { *; }
--keep class androidx.compose.animation.** { *; }
 
 # WARUM hier kein `-keep @androidx.compose.runtime.Composable class * { *; }` mehr steht:
 # `@Composable` traegt `@Target(FUNCTION, TYPE, TYPE_PARAMETER, PROPERTY_GETTER)` -
@@ -127,8 +129,6 @@
 # ==============================
 
 # Hilt
--keep class dagger.hilt.** { *; }
--keep class javax.inject.** { *; }
 -keep @dagger.hilt.android.lifecycle.HiltViewModel class * { *; }
 -keep @dagger.Module class * { *; }
 -keep @dagger.hilt.InstallIn class * { *; }
@@ -147,20 +147,31 @@
 # ==============================
 
 # Google Play Services
--keep class com.google.android.gms.** { *; }
 -dontwarn com.google.android.gms.**
 
-# Credentials API
--keep class androidx.credentials.** { *; }
--keep class com.google.android.libraries.identity.googleid.** { *; }
+# Credential Manager findet den Play-Services-Anbieter per Reflexion ueber Manifest-Metadaten;
+# die schmale Regel dafuer aus der androidx.credentials-Dokumentation.
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** {
+    *;
+}
 
 # ==============================
 # GOOGLE CALENDAR API
 # ==============================
 
-# Google Auth Library
--keep class com.google.auth.** { *; }
--keep class com.google.api.client.** { *; }
+# google-http-client liest und befuellt die Modelle (Event, EventDateTime, Request-Parameter,
+# Fehlerantworten) per Reflexion ueber ihre @Key-Felder und erzeugt sie ueber den parameterlosen
+# Konstruktor. Eigene Consumer-Regeln dafuer bringt die Bibliothek nicht mit.
+-keepclassmembers class * {
+    @com.google.api.client.util.Key <fields>;
+}
+-keepclassmembers class * extends com.google.api.client.json.GenericJson {
+    <init>();
+}
+-keepclassmembers enum * {
+    @com.google.api.client.util.Value <fields>;
+}
 
 # HTTP Client
 -dontwarn com.google.api.client.http.**
@@ -187,7 +198,6 @@
 
 # Gson
 -dontwarn sun.misc.**
--keep class com.google.gson.** { *; }
 -keep class * extends com.google.gson.TypeAdapter
 -keep class * implements com.google.gson.TypeAdapterFactory
 -keep class * implements com.google.gson.JsonSerializer
@@ -210,16 +220,13 @@
 # ==============================
 
 # DataStore
--keep class androidx.datastore.** { *; }
 -keep class * extends androidx.datastore.core.Serializer { *; }
 
 # WorkManager
--keep class androidx.work.** { *; }
 -keep class * extends androidx.work.ListenableWorker
 -keepnames class * extends androidx.work.ListenableWorker
 
 # Lifecycle
--keep class androidx.lifecycle.** { *; }
 -keep class * extends androidx.lifecycle.ViewModel
 -keepclassmembers class * extends androidx.lifecycle.ViewModel {
     <init>(...);
@@ -271,17 +278,6 @@
 -keep class * implements com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.**
 
 # ==============================
-# LOGGING LIBRARIES & SLF4J FIX
-# ==============================
-
-# SLF4J Logging (Fix for Google Auth Libraries)
--dontwarn org.slf4j.**
--dontwarn ch.qos.logback.**
-
-# Google Auth OAuth2 Library specific
--dontwarn com.google.auth.oauth2.Slf4jUtils**
-
-# ==============================
 # SUPPRESS WARNINGS
 # ==============================
 
@@ -310,36 +306,6 @@
 -dontnote org.apache.log4j.**
 
 # ==============================
-# 🛠️ CRITICAL FIX: ASHMEM PINNING COMPATIBILITY
-# ==============================
-
-# Fix for "Pinning is deprecated since Android Q" warning
-# Suppress ashmem-related warnings and obfuscate problematic methods
--dontwarn android.os.SharedMemory
--dontwarn dalvik.system.VMRuntime
--dontwarn libcore.io.AshmemPinning
--dontwarn android.os.PinningHelperHooks
-
-# WARUM `-keepclassmembers` statt `-keep`: bis v1.27.0 stand hier `-keep,allowobfuscation class *`.
-# `allowobfuscation` erlaubt lediglich das Umbenennen, es hebt die Wurzel-Wirkung von `-keep` nicht
-# auf - die Klassenspezifikation `*` machte also auch hier JEDE Klasse des Programms un-entfernbar,
-# voellig unabhaengig davon, ob sie pin/unpin/setPinned besitzt. Zusammen mit der Compose-Regel
-# oben war das der zweite Grund, warum R8 keine einzige Klasse entfernt hat.
-# Die Regel bleibt in der Member-Form stehen statt ersatzlos zu verschwinden, weil ihr erklaerter
-# Zweck (die pin/unpin-Methoden nicht festnageln) davon unberuehrt bleibt. Wirkung hat sie
-# vermutlich keine: im eigenen Code existiert keine solche Methode, und die Meldung
-# "Pinning is deprecated since Android Q" kommt aus der Plattform, nicht aus App-Code - dagegen
-# helfen die -dontwarn-Zeilen darueber, kein Keep.
--keepclassmembers,allowobfuscation class * {
-    *** pin(...);
-    *** unpin(...);
-    *** setPinned(...);
-}
-
-# Additional compatibility for Android Q+ memory management
--dontwarn android.os.**$$*
-
-# ==============================
 # OPTIMIZATIONS FOR APK SIZE
 # ==============================
 
@@ -352,7 +318,7 @@
 # ACHTUNG, gelernt in Pruefrunde 6: Diese beiden Zeilen sind NICHT die einzige Tuer zur Attrappe.
 # Vom 10.08. bis 18.08.2026 war Minify trotz auskommentiertem `-dontshrink` auf Klassenebene
 # wirkungslos - nicht wegen einer Global-Direktive, sondern wegen zweier `-keep class *`-Regeln
-# (Compose-Block und ashmem-Block, beide weiter oben), die jede Klasse zur Wurzel machten. Wer die
+# (je eine im damaligen Compose- und ashmem-Block), die jede Klasse zur Wurzel machten. Wer die
 # Wirksamkeit von R8 pruefen will, prueft deshalb das ARTEFAKT, nicht die Konfiguration:
 #   mapping/release/seeds.txt darf nicht annaehernd so viele Klassen fuehren wie mapping.txt.
 # NICHT mehr ueber Umbenennungen pruefen: seit `-dontobfuscate` (siehe Begruendung ganz oben)
@@ -362,9 +328,6 @@
 # ==============================
 # TINK CRYPTO ENCRYPTION (AES-256-GCM)
 # ==============================
-
-# Keep Tink classes and methods
--keep class com.google.crypto.tink.** { *; }
 
 # Keep AEAD primitive
 -keep class * extends com.google.crypto.tink.Aead { *; }
@@ -385,7 +348,6 @@
 -keep class com.github.f1rlefanz.cf_alarmfortimeoffice.auth.security.TinkEncryptionException { *; }
 
 # Google API Client
--keep class com.google.api.services.** { *; }
 -assumenosideeffects class com.google.api.client.util.LoggingStreamingContent {
     <init>(...);
 }

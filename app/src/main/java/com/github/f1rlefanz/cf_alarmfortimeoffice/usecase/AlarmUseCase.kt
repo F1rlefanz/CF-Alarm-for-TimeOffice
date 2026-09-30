@@ -77,6 +77,34 @@ class FreigegebenerTagNichtArmiertException(
     "Alarm $alarmId ($shiftName) faellt auf einen freigegebenen Tag und wurde deshalb nicht gestellt"
 )
 
+/**
+ * Meldet dem Aufrufer, dass [AlarmUseCase.scheduleSystemAlarm] den Alarm NICHT in den AlarmManager
+ * gelegt hat - weil der das Stellen abgelehnt hat, oder weil es nichts zu stellen gab (Weckzeit
+ * verstrichen, "Automatische Alarme" aus). Die beiden Backstops oben haben eigene Klassen.
+ *
+ * WARUM (Befund G5-05): `AlarmManagerService.setAlarmFromShiftMatch` faengt jeden Fehler und
+ * meldet ihn nur im [AlarmManagerService.AlarmStatus]; das verwarf diese Funktion, und jeder
+ * Aufrufer sah Erfolg. Ein manueller Wecker stand danach als "aktiv" in der Liste, ohne dass im
+ * AlarmManager etwas lag, und der Neustart zaehlte ihn als wiederhergestellt. Die Aufrufer werten
+ * das Ergebnis laengst aus (Ruecknahme, Zaehler, "nicht armiert"-Log) - fuer die Backstops. Jetzt
+ * erreicht sie auch der echte Fehlschlag.
+ */
+class WeckerNichtArmiertException(
+    val alarmId: Int,
+    val shiftName: String,
+    grund: String?
+) : Exception("Alarm $alarmId ($shiftName) wurde nicht gestellt: ${grund ?: "ohne Angabe"}")
+
+/**
+ * Meldet dem Aufrufer, dass [AlarmUseCase.cancelSystemAlarm] den System-Alarm NICHT abbrechen
+ * konnte. Dann darf sein Eintrag nicht geloescht werden - sonst steht ein scharfer Wecker im
+ * AlarmManager, den weder Liste noch Direct-Boot-Spiegel kennen ("erst cancel, dann delete").
+ */
+class WeckerNichtAbgebrochenException(
+    val alarmId: Int,
+    grund: String?
+) : Exception("Alarm $alarmId wurde nicht abgebrochen: ${grund ?: "ohne Angabe"}")
+
 /** UseCase für alle Alarm-bezogenen Operationen. */
 @Singleton
 class AlarmUseCase @Inject constructor(
@@ -383,6 +411,9 @@ class AlarmUseCase @Inject constructor(
 
                 // Step 1: Alarme loeschen, fuer die es keinen Kandidaten mehr gibt
                 var deletedCount = 0
+                // Zaehlt ab hier - auch ein in Schritt 1 nicht abgebrochener Wecker macht den
+                // Sync unvollstaendig (und den Bezugspunkt unten nicht fortschreibbar).
+                var skippedCount = 0
                 for (existingAlarm in existingAlarms) {
                     // Manuelle Alarme (leere eventId) bleiben unberuehrt - sie sind die einzigen,
                     // die sich nicht aus dem Kalender rekonstruieren lassen.
@@ -414,7 +445,18 @@ class AlarmUseCase @Inject constructor(
                     }
                     // ERST cancellen, DANN loeschen - sonst bleibt ein unabbrechbarer Waise
                     // (Skill cfalarm-wecker-und-boot, reference/wecker-boot-und-wartung.md).
-                    alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                    // Lehnt der AlarmManager den Abbruch ab, bleibt der Eintrag - aus demselben
+                    // Grund (G5-05); der naechste Sync versucht es erneut.
+                    val abbruch = alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                    if (abbruch.fehlgeschlagen) {
+                        skippedCount++
+                        Logger.e(
+                            LogTags.ALARM,
+                            "❌ SYNC: Wecker ${existingAlarm.id} (${existingAlarm.shiftName}) liess sich nicht " +
+                                "abbrechen - Eintrag bleibt, naechster Sync versucht es erneut: ${abbruch.alarmStatusMessage}"
+                        )
+                        continue
+                    }
                     alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
                     deletedCount++
                     // Feature B: eigenes try/catch - eine fehlgeschlagene Notification darf die
@@ -431,7 +473,6 @@ class AlarmUseCase @Inject constructor(
                 // Step 2: Update changed alarms & create new ones
                 var updatedCount = 0
                 var createdCount = 0
-                var skippedCount = 0
                 // Wecker, die eine neue Kalender-Kennung bekommen haben (Paarung ueber
                 // Weckzeit+Schicht) - unabhaengig davon, ob daneben noch etwas Echtes anders war.
                 // Muss sichtbar bleiben - siehe die WARN-Zeile unten.
@@ -535,7 +576,7 @@ class AlarmUseCase @Inject constructor(
                     // Fehlklasse wie die verstrichene Weckzeit in Schritt 1.
                     if (istTagFreigegeben(freieTage, newAlarm, zoneFuerFreigaben)) {
                         if (existingAlarm != null) {
-                            alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                            brichAbOderWirf(existingAlarm.id)
                             alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
                         }
                         freigegebenCount++
@@ -630,7 +671,7 @@ class AlarmUseCase @Inject constructor(
                             // Delete old - ERST cancellen, DANN loeschen, sonst bleibt ein
                             // unabbrechbarer Waise (Skill cfalarm-wecker-und-boot,
                             // reference/wecker-boot-und-wartung.md).
-                            alarmManagerService.cancelSystemAlarm(existingAlarm.id)
+                            brichAbOderWirf(existingAlarm.id)
                             alarmRepository.deleteAlarm(existingAlarm.id).getOrThrow()
 
                             // Create new with updated data
@@ -1025,13 +1066,51 @@ class AlarmUseCase @Inject constructor(
             
             val config = shiftConfigRepository.getCurrentShiftConfig().getOrThrow()
             alarmManagerService.setAlarmFromShiftMatch(shiftMatch, config.autoAlarmEnabled, alarmInfo.id)
-        }
+        }.fold(
+            // NICHT GESTELLT IST KEIN ERFOLG (G5-05) - auch nicht, wenn es gewollt war (Weckzeit
+            // verstrichen, Automatik aus): im AlarmManager steht dann nichts, und nur das zaehlt
+            // fuer die Aufrufer. Siehe [WeckerNichtArmiertException].
+            onSuccess = { status ->
+                if (status.systemAlarmSet) {
+                    Result.success(Unit)
+                } else {
+                    Result.failure(
+                        WeckerNichtArmiertException(alarmInfo.id, alarmInfo.shiftName, status.alarmStatusMessage)
+                    )
+                }
+            },
+            onFailure = { Result.failure(it) }
+        )
     }
 
     override suspend fun cancelSystemAlarm(alarmId: Int): Result<Unit> =
         SafeExecutor.safeExecute("AlarmUseCase.cancelSystemAlarm") {
             alarmManagerService.cancelSystemAlarm(alarmId)
+        }.fold(
+            // Ein abgelehnter Abbruch ist keiner (G5-05) - deleteAlarm() bricht daran ab, bevor
+            // es den Eintrag loescht. Siehe [WeckerNichtAbgebrochenException].
+            onSuccess = { status ->
+                if (status.fehlgeschlagen) {
+                    Result.failure(WeckerNichtAbgebrochenException(alarmId, status.alarmStatusMessage))
+                } else {
+                    Result.success(Unit)
+                }
+            },
+            onFailure = { Result.failure(it) }
+        )
+
+    /**
+     * Bricht den System-Alarm im Delta-Sync ab und WIRFT, wenn der AlarmManager ablehnt - dann darf
+     * der Eintrag nicht weg, sonst bleibt ein scharfer Wecker, den niemand mehr kennt. Der Wurf
+     * landet im try/catch des jeweiligen Events: dieses Event gilt als uebersprungen, der naechste
+     * Sync versucht es erneut, der Rest laeuft weiter (G5-05).
+     */
+    private fun brichAbOderWirf(alarmId: Int) {
+        val status = alarmManagerService.cancelSystemAlarm(alarmId)
+        if (status.fehlgeschlagen) {
+            throw WeckerNichtAbgebrochenException(alarmId, status.alarmStatusMessage)
         }
+    }
     
     override suspend fun getAllAlarms(): Result<List<AlarmInfo>> = 
         alarmRepository.getAllAlarms()

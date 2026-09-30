@@ -428,4 +428,122 @@ class AlarmUseCaseSkipAndResilienceTest {
 
         verify(manager).cancelAllSnoozes()
     }
+
+    // --- 3. G5-05: Scheitern ist kein Erfolg ---
+    //
+    // Bis v1.43.5 fing AlarmManagerService jeden Fehler beim Stellen und Abbrechen ab und gab ein
+    // AlarmStatus zurueck, das AlarmUseCase verwarf: scheduleSystemAlarm/cancelSystemAlarm meldeten
+    // IMMER Erfolg. Ein Wecker, der nicht im AlarmManager steht, galt damit als gestellt (manueller
+    // Wecker "aktiv" ohne System-Alarm, Neustart zaehlte ihn als wiederhergestellt), und ein nicht
+    // abgebrochener galt als abgebrochen - danach wurde sein Eintrag geloescht und niemand kannte
+    // den noch scharfen Wecker mehr.
+
+    private fun status(gesetzt: Boolean, fehlgeschlagen: Boolean, text: String) =
+        AlarmManagerService.AlarmStatus(
+            systemAlarmSet = gesetzt,
+            canScheduleExactAlarms = true,
+            alarmStatusMessage = text,
+            fehlgeschlagen = fehlgeschlagen
+        )
+
+    @Test
+    fun `scheduleSystemAlarm - ein im AlarmManager gescheitertes Stellen ist ein Fehler`() = runTest {
+        val manager = mockManager()
+        whenever(manager.setAlarmFromShiftMatch(any(), any(), any()))
+            .thenReturn(status(gesetzt = false, fehlgeschlagen = true, text = "Fehler beim Alarm setzen: kaputt"))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val alarm = existingAlarm(id = 77, eventId = "evX").copy(triggerTime = 9_000_000_000L)
+
+        val result = useCase(FakeAlarmRepository(emptyList()), manager, config).scheduleSystemAlarm(alarm)
+
+        assertTrue("Ein nicht gestellter Wecker darf nicht als gestellt gelten", result.isFailure)
+        assertTrue("${result.exceptionOrNull()}", result.exceptionOrNull() is WeckerNichtArmiertException)
+    }
+
+    @Test
+    fun `scheduleSystemAlarm - auch ein bewusst nicht gestellter Wecker ist kein Erfolg`() = runTest {
+        // Verstrichene Weckzeit: kein Defekt, aber ebenso KEIN Wecker im AlarmManager. Wie beim
+        // Ueberspringen und beim freigegebenen Tag entscheidet der Aufrufer, was daraus folgt.
+        val manager = mockManager()
+        whenever(manager.setAlarmFromShiftMatch(any(), any(), any()))
+            .thenReturn(status(gesetzt = false, fehlgeschlagen = false, text = "Alarm-Zeit liegt in der Vergangenheit"))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val alarm = existingAlarm(id = 77, eventId = "evX").copy(triggerTime = 9_000_000_000L)
+
+        val result = useCase(FakeAlarmRepository(emptyList()), manager, config).scheduleSystemAlarm(alarm)
+
+        assertTrue(result.isFailure)
+        assertTrue("${result.exceptionOrNull()}", result.exceptionOrNull() is WeckerNichtArmiertException)
+    }
+
+    @Test
+    fun `deleteAlarm - scheitert der Abbruch, bleibt der Eintrag stehen`() = runTest {
+        val repo = FakeAlarmRepository(listOf(existingAlarm(id = 5, eventId = "ev5")))
+        val manager = mockManager()
+        whenever(manager.cancelSystemAlarm(any()))
+            .thenReturn(status(gesetzt = false, fehlgeschlagen = true, text = "Fehler beim Alarm abbrechen: kaputt"))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(repo, manager, config).deleteAlarm(5)
+
+        assertTrue("Ein nicht abgebrochener Wecker darf nicht als geloescht gelten", result.isFailure)
+        assertNotNull(
+            "Sonst steht ein scharfer Wecker im AlarmManager, den weder Liste noch Spiegel kennen",
+            repo.current.find { it.id == 5 }
+        )
+    }
+
+    @Test
+    fun `syncAlarms - scheitert der Abbruch eines gestrichenen Termins, bleibt sein Eintrag`() = runTest {
+        val repo = FakeAlarmRepository(listOf(existingAlarm(id = 5, eventId = "evWeg")))
+        val manager = mockManager()
+        whenever(manager.cancelSystemAlarm(eq(5)))
+            .thenReturn(status(gesetzt = false, fehlgeschlagen = true, text = "Fehler beim Alarm abbrechen: kaputt"))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(repo, manager, config).syncAlarms(listOf(futureEvent("evBleibt", "F", 2)), config)
+
+        assertTrue("Der Rest des Syncs laeuft weiter", result.isSuccess)
+        assertNotNull("Der Eintrag muss bleiben - der Wecker ist noch scharf", repo.current.find { it.id == 5 })
+        assertNotNull("Der unbeteiligte Termin wird normal verarbeitet", repo.current.find { it.eventId == "evBleibt" })
+    }
+
+    @Test
+    fun `syncAlarms - ein neuer Wecker, der sich nicht stellen laesst, zaehlt nicht als gestellt`() = runTest {
+        val manager = mockManager()
+        whenever(manager.setAlarmFromShiftMatch(any(), any(), any()))
+            .thenReturn(status(gesetzt = false, fehlgeschlagen = true, text = "Fehler beim Alarm setzen: kaputt"))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(FakeAlarmRepository(emptyList()), manager, config)
+            .syncAlarms(listOf(futureEvent("evNeu", "F", 3)), config)
+
+        assertTrue(result.isSuccess)
+        assertTrue(
+            "Die Liste der gestellten Wecker (BootReceiver zaehlt daraus) darf ihn nicht enthalten",
+            result.getOrThrow().none { it.eventId == "evNeu" }
+        )
+    }
+
+    @Test
+    fun `syncAlarms - laesst sich der alte Wecker eines geaenderten Termins nicht abbrechen, bleibt alles beim Alten`() = runTest {
+        // Aenderungszweig: erst den alten Wecker abbrechen, dann seinen Eintrag loeschen, dann den
+        // neuen stellen. Scheitert schon der Abbruch, darf weder geloescht noch neu angelegt
+        // werden - der alte ist noch scharf, und die Liste muss ihn weiter kennen.
+        val alt = existingAlarm(id = "evA".hashCode(), eventId = "evA")
+        val repo = FakeAlarmRepository(listOf(alt))
+        val manager = mockManager()
+        whenever(manager.cancelSystemAlarm(any()))
+            .thenReturn(status(gesetzt = false, fehlgeschlagen = true, text = "Fehler beim Alarm abbrechen: kaputt"))
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(repo, manager, config).syncAlarms(listOf(futureEvent("evA", "F", 4)), config)
+
+        assertTrue("Der Rest des Syncs laeuft weiter", result.isSuccess)
+        assertEquals(
+            "Der alte Eintrag muss unveraendert stehen bleiben",
+            listOf(alt),
+            repo.current.filter { it.eventId == "evA" }
+        )
+    }
 }

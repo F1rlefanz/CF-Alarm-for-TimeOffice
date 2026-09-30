@@ -428,12 +428,12 @@ fun HomeTabContent(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     KalenderAbgleichKnopf(enabled = !calendarState.isLoading, onClick = onJetztAbgleichen)
-                } else if (calendarState.unavailableCalendarIds.isNotEmpty() &&
-                    calendarState.events.isEmpty() &&
+                } else if (calendarState.alleKalenderFehlen &&
                     calendarState.selectedCalendarIds.isNotEmpty()
                 ) {
-                    // Alle ausgewaehlten Kalender fehlen - beim Teilerfolg kommen Termine an und
-                    // die Zusammenfassung darunter bleibt stehen. Siehe KALENDER_NICHT_GEFUNDEN_TEXT.
+                    // Alle ausgewaehlten Kalender fehlen - ausdruecklicher Merker, NICHT aus
+                    // "nicht abrufbar + keine Termine" abgeleitet (das traefe auch einen Teilerfolg
+                    // mit leerem Rest-Kalender). Siehe KALENDER_NICHT_GEFUNDEN_TEXT.
                     Text(
                         KALENDER_NICHT_GEFUNDEN_TITEL,
                         style = MaterialTheme.typography.titleSmall,

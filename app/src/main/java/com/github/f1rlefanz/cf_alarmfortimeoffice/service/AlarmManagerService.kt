@@ -325,11 +325,18 @@ class AlarmManagerService(
 
     private val alarmManager = application.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
+    /**
+     * @param fehlgeschlagen der AlarmManager hat den Vorgang ABGELEHNT (Ausnahme beim Stellen oder
+     *   Abbrechen). Unterscheidet beim Abbrechen "abgebrochen" von "nicht abgebrochen" - beide
+     *   haben [systemAlarmSet] = false. Bis v1.43.5 war das nicht zu unterscheiden, und
+     *   AlarmUseCase meldete jeden Fehlschlag als Erfolg (Befund G5-05).
+     */
     data class AlarmStatus(
         val systemAlarmSet: Boolean,
         val canScheduleExactAlarms: Boolean,
         val alarmStatusMessage: String?,
-        val batteryOptimizationExempt: Boolean = false
+        val batteryOptimizationExempt: Boolean = false,
+        val fehlgeschlagen: Boolean = false
     )
 
     data class NextAlarmInfo(
@@ -528,13 +535,15 @@ class AlarmManagerService(
             )
             createAlarmStatus(
                 systemAlarmSet = false,
-                message = "Alarm-Berechtigung verweigert: ${e.message}"
+                message = "Alarm-Berechtigung verweigert: ${e.message}",
+                fehlgeschlagen = true
             )
         } catch (e: Exception) {
             Logger.e(LogTags.ALARM_MANAGER, "🔧 ALARM DEBUG: Exception when setting alarm", e)
             createAlarmStatus(
                 systemAlarmSet = false,
-                message = "Fehler beim Alarm setzen: ${e.localizedMessage}"
+                message = "Fehler beim Alarm setzen: ${e.localizedMessage}",
+                fehlgeschlagen = true
             )
         }
     }
@@ -597,13 +606,15 @@ class AlarmManagerService(
      */
     private fun createAlarmStatus(
         systemAlarmSet: Boolean,
-        message: String
+        message: String,
+        fehlgeschlagen: Boolean = false
     ): AlarmStatus {
         return AlarmStatus(
             systemAlarmSet = systemAlarmSet,
             canScheduleExactAlarms = canScheduleExactAlarms(),
             alarmStatusMessage = message,
-            batteryOptimizationExempt = BatteryOptimizationHelper.isExempted(application)
+            batteryOptimizationExempt = BatteryOptimizationHelper.isExempted(application),
+            fehlgeschlagen = fehlgeschlagen
         )
     }
 
@@ -647,7 +658,8 @@ class AlarmManagerService(
             Logger.e(LogTags.ALARM_MANAGER, "❌ Error cancelling system alarm", e)
             createAlarmStatus(
                 systemAlarmSet = false,
-                message = "Fehler beim Alarm abbrechen: ${e.localizedMessage}"
+                message = "Fehler beim Alarm abbrechen: ${e.localizedMessage}",
+                fehlgeschlagen = true
             )
         }
     }

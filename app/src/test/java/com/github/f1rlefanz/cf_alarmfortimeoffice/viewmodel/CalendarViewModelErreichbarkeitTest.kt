@@ -179,6 +179,24 @@ class CalendarViewModelErreichbarkeitTest {
             "Der fehlende Kalender muss beim Namen auftauchen koennen (Status-Tab, Entfernen)",
             state.unavailableCalendarIds == setOf("cal-a")
         )
+        assertTrue("Die Uebersicht braucht den ausdruecklichen Totalausfall-Merker", state.alleKalenderFehlen)
+    }
+
+    @Test
+    fun `Abruflimit ist kein fehlender Kalender`() = runTest(dispatcher) {
+        // Ein 403 "rateLimitExceeded" kommt aus dem Repository als NetworkError - nicht als
+        // "Kalender nicht gefunden" mit dem Angebot, ihn zu entfernen.
+        terminAbruf = Result.failure(AppError.NetworkError("Google Calendar voruebergehend begrenzt: Forbidden"))
+        val vm = buildViewModel()
+        backgroundScope.launch { vm.uiState.collect { } }
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertFalse(state.alleKalenderFehlen)
+        assertTrue(state.unavailableCalendarIds.isEmpty())
+        assertTrue(state.kalenderNichtErreichbar)
     }
 
     @Test

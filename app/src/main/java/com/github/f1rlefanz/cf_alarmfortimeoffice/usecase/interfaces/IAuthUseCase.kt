@@ -8,9 +8,10 @@ import kotlinx.coroutines.flow.Flow
  *
  * ENTFERNT (Aufraeumrunde 24): `updateAuthData`, `isAuthenticated`, `getCurrentAuthData` und
  * `migrateTokenExpiryIfNeeded` - alle vier waren reine Durchreichen an
- * `IAuthDataStoreRepository`, und JEDER Konsument ruft dort direkt an
- * (`AuthViewModel`, `CalendarUseCase`, `BootReceiver`). Ueber diesen UseCase lief keine einzige
- * Aufrufstelle. Die Doppelung war die Gefahr: zwei Wege zur selben Auth-Wahrheit, von denen nur
+ * `IAuthDataStoreRepository`, und JEDER Konsument geht dort direkt hin
+ * (`AuthViewModel`, `CalendarUseCase`, `BootReceiver`). `migrateTokenExpiryIfNeeded` hatte auch
+ * dort keinen Aufrufer und ist inzwischen ebenfalls entfernt. Ueber diesen UseCase lief keine
+ * einzige Aufrufstelle. Die Doppelung war die Gefahr: zwei Wege zur selben Auth-Wahrheit, von denen nur
  * einer benutzt wurde - wer den anderen faende, haette eine zweite Fehlersemantik geerbt
  * (`getOrThrow()` statt `getOrElse { false }`).
  *

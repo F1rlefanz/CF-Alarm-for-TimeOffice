@@ -20,6 +20,7 @@ erst bei Bedarf.
 | `cfalarm-ui-und-navigation` | Compose-Layout, Nutzertexte, Zurück-Verhalten |
 | `cfalarm-bauen-und-testen` | Gradle-Eigenheiten, Emulator, Gerätetests |
 | `cfalarm-release-und-changelog` | Versionsbump, Changelog, Release-Ablauf |
+| `cfalarm-altlasten-abtragen` | Toten Code, überholte Kommentare, Duplikate entfernen — und was dabei verworfen ist |
 | `cfalarm-arbeit-abschliessen` | Was Fertigsein heißt — und was die Schleuse NICHT prüfen kann |
 
 **Vor einer Änderung in einem dieser Bereiche den zugehörigen Skill lesen.** Die Regel unten sagt

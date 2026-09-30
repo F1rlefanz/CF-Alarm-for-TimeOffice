@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.Flow
  * Interface für Shift UseCase Operations
  *
  * ENTFERNT (Aufraeumrunde 24): `hasValidConfig` - im ganzen Baum ohne Aufrufstelle, ein reines
- * Durchreichen an `IShiftConfigRepository.hasValidConfig()`. Wer wissen will, ob eine
+ * Durchreichen an `IShiftConfigRepository.hasValidConfig()`, das es inzwischen ebenfalls nicht
+ * mehr gibt (auch dort ohne Aufrufer). Wer wissen will, ob eine
  * Konfiguration taugt, liest sie mit [getCurrentShiftConfig] und sieht ihre Definitionen an;
  * ein separates Ja/Nein war eine zweite Wahrheit ohne Leser. Nicht zu verwechseln mit
  * [resetToDefaults], das bewusst ohne Verwender stehen bleibt - Begruendung dort.

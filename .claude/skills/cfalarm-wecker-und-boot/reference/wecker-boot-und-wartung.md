@@ -107,6 +107,20 @@
   vorher komplett aus, während UI und Repository „Alarme aktiv" zeigten.
   `requestExactAlarmPermission()` gehört NICHT in diesen Pfad — aus 6h-Wartung/Worker kann der
   Systemdialog wegen Background-Activity-Start gar nicht erscheinen.
+- **Nicht gestellt heißt `Result.failure`, auch wenn es gewollt war (seit v1.43.6, Befund G5-05).**
+  `AlarmManagerService` fängt jeden Fehler beim Stellen/Abbrechen und legt ihn nur ins
+  `AlarmStatus`; `AlarmUseCase.scheduleSystemAlarm()`/`cancelSystemAlarm()` verwarfen das bis
+  v1.43.5 und meldeten IMMER Erfolg. Folgen: ein manueller Wecker stand „aktiv" in der Liste, ohne
+  dass im AlarmManager etwas lag (die vorhandene Rücknahme griff nie), und der Neustart zählte ihn
+  als wiederhergestellt. Jetzt: `systemAlarmSet = false` → `WeckerNichtArmiertException` (auch für
+  verstrichene Weckzeit und „Automatik aus" — im AlarmManager steht dann ebenso nichts);
+  `AlarmStatus.fehlgeschlagen` → `WeckerNichtAbgebrochenException`, und `deleteAlarm()` löscht den
+  Eintrag dann NICHT (erst cancel, dann delete). Im Delta-Sync bleibt bei abgelehntem Abbruch der
+  Eintrag stehen, das Event zählt als übersprungen, der nächste Sync versucht es erneut.
+  **Bewusst unverändert:** `clearInternalAlarms()`, Überspringen und Tag-Freigabe rufen
+  `alarmManagerService.cancelSystemAlarm()` direkt und werten den Status nicht aus. Ein Abbruch des
+  EIGENEN PendingIntents lehnt der AlarmManager praktisch nie ab (geloggt wird es als ERROR); die
+  drei ausdrücklichen Nutzer-Aktionen daran scheitern zu lassen, stünde in keinem Verhältnis.
 - **Ein schwebender Snooze ist abbrechbar (`cancelSnooze`/`cancelAllSnoozes`) — aber nur auf
   ausdrücklichen Nutzer-Willen.** `cancelSystemAlarm()` baut ausschließlich `enhancedAlarmAction` und
   trifft den eigenen Snooze-Slot nie; ein Snooze lief dadurch durch Master-Pause, „Automatische Alarme

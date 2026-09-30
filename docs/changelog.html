@@ -51,7 +51,24 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.43.5 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.43.6 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Ein gelöschter Kalender heißt jetzt „nicht gefunden" statt „Zugriff verloren" – und ein Wecker, den Android nicht stellen konnte, gilt nicht mehr als gestellt.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Gelöschter oder nicht mehr freigegebener Kalender hieß „Kalender-Autorisierung verloren":</strong> Gab es keinen der ausgewählten Kalender mehr, riet die App, den Zugriff zu erneuern – das half nicht. Jetzt steht in der Übersicht „Kalender nicht gefunden", und im Status-Tab lässt er sich aus der Auswahl entfernen, mit Rückfrage, wenn danach keiner mehr bliebe. Die gestellten Wecker bleiben bis dahin bestehen. Kurzzeitige Abrufsperren bei Google gelten dabei nicht als „nicht gefunden".</li>
+                <li><strong>Ein Wecker, den Android nicht stellen konnte, galt trotzdem als gestellt:</strong> Lehnte Android das Stellen oder Abbrechen eines Weckers ab, hat die App das bisher nicht bemerkt. Ein manueller Wecker, der sich nicht stellen lässt, wird jetzt zurückgenommen und gemeldet, statt stumm in der Liste zu stehen. Und ein Wecker, der sich nicht abbrechen ließ, verschwindet nicht mehr aus der Liste, solange er noch klingeln könnte.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li><strong>Aufgeräumt:</strong> Ungenutzte Hue-Datenfelder und eine Neustart-Diagnose ohne Leser entfernt – für dich ändert sich dadurch nichts.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.43.5</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Ohne Internet meldet die App keinen verlorenen Kalender-Zugriff mehr – und „Kalender-Zugriff erneuern" wirkt sofort.</em></p>
 

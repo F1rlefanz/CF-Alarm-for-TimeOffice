@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.43.5 (Aktuell – interne Alpha)
+## 🆕 Version 1.43.6 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Ein gelöschter Kalender heißt jetzt „nicht gefunden" statt „Zugriff verloren" – und ein Wecker, den Android nicht stellen konnte, gilt nicht mehr als gestellt._
+
+### 🐛 Behoben
+
+- **Gelöschter oder nicht mehr freigegebener Kalender hieß „Kalender-Autorisierung verloren":** Gab es keinen der ausgewählten Kalender mehr, riet die App, den Zugriff zu erneuern – das half nicht. Jetzt steht in der Übersicht „Kalender nicht gefunden", und im Status-Tab lässt er sich aus der Auswahl entfernen, mit Rückfrage, wenn danach keiner mehr bliebe. Die gestellten Wecker bleiben bis dahin bestehen. Kurzzeitige Abrufsperren bei Google gelten dabei nicht als „nicht gefunden".
+- **Ein Wecker, den Android nicht stellen konnte, galt trotzdem als gestellt:** Lehnte Android das Stellen oder Abbrechen eines Weckers ab, hat die App das bisher nicht bemerkt. Ein manueller Wecker, der sich nicht stellen lässt, wird jetzt zurückgenommen und gemeldet, statt stumm in der Liste zu stehen. Und ein Wecker, der sich nicht abbrechen ließ, verschwindet nicht mehr aus der Liste, solange er noch klingeln könnte.
+
+### 🔧 Unter der Haube
+
+- **Aufgeräumt:** Ungenutzte Hue-Datenfelder und eine Neustart-Diagnose ohne Leser entfernt – für dich ändert sich dadurch nichts.
+
+## Version 1.43.5
 
 **Stand:** September 2026
 

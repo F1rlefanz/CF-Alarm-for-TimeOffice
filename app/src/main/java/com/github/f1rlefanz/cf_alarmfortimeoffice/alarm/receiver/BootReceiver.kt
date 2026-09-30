@@ -902,8 +902,16 @@ class BootReceiver : BroadcastReceiver() {
 
                     for (newAlarm in newAlarms) {
                         try {
+                            // Ergebnis auswerten wie in Schritt 3 - ein abgewiesener Wecker ist
+                            // nicht wiederhergestellt.
                             alarmUseCase.scheduleSystemAlarm(newAlarm)
-                            restoredCount++
+                                .onSuccess { restoredCount++ }
+                                .onFailure { fehler ->
+                                    Logger.w(
+                                        LogTags.MAINTENANCE_L4,
+                                        "⚠️ LEVEL 4: Wecker NICHT armiert: ${newAlarm.shiftName} - ${fehler.message}"
+                                    )
+                                }
                         } catch (e: Exception) {
                             Logger.e(
                                 LogTags.MAINTENANCE_L4,

@@ -346,8 +346,9 @@ class OAuth2TokenManager(
             "refreshToken is required for OAuth2 standard refresh"
         }
         
-        // Not implemented - app uses Google Play Services OAuth2
-        throw NotImplementedError("OAuth2 standard refresh not needed - using Google Play Services")
+        // Nicht umgesetzt - die App nutzt Google Play Services. Eine Exception statt
+        // NotImplementedError: ein Error liefe an den catch-Zweigen vorbei bis in den Aufrufer.
+        throw TokenException.RefreshFailed("OAuth2 standard refresh not supported - using Google Play Services")
     }
     
     /**

@@ -26,11 +26,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,8 +69,10 @@ fun EventListScreen(
     // viewModelScope weiter - am Sammeln haengt kein Seiteneffekt, der im Hintergrund laufen muss.
     val calendarState by calendarViewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -245,17 +251,10 @@ fun EventListScreen(
             }
         }
 
-        // IMPROVED ERROR HANDLING: Show error message and auto-clear
+        // Eigene Anzeige noetig: die Snackbar in MainContentScreen ist hier nicht komponiert.
         calendarState.error?.let { error ->
             LaunchedEffect(error) {
-                // In a real app, this would show a Snackbar:
-                // snackbarHostState.showSnackbar(
-                //     message = error,
-                //     duration = SnackbarDuration.Short
-                // )
-
-                // For now, just log and clear the error
-                kotlinx.coroutines.delay(3000) // Show error for 3 seconds
+                snackbarHostState.showSnackbar(message = error, duration = SnackbarDuration.Short)
                 calendarViewModel.clearError()
             }
         }

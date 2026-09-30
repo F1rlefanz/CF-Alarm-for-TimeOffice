@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.hue.api
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueScene
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSceneDto
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.waehleNutzbareSzenen
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken

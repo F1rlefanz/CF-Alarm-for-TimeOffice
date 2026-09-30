@@ -90,6 +90,17 @@ class Pruefrunde8LetzterKalenderEntfernenTest {
     }
 
     /**
+     * Die Rueckfrage erscheint, sobald das Entfernen die Auswahl LEEREN wuerde - das koennen auch
+     * zwei nicht abrufbare Kalender sein. "Dieser Kalender ist deine einzige Schichtquelle" stimmte
+     * dann nicht; der Text muss fuer jede Anzahl wahr sein.
+     */
+    @Test
+    fun `die Rueckfrage stimmt auch, wenn mehrere Kalender wegfallen`() {
+        assertTrue(entfernenWuerdeAuswahlLeeren(ausgewaehlt = setOf("a", "b"), nichtAbrufbar = setOf("a", "b")))
+        assertTrue(ENTFERNEN_LEERT_AUSWAHL_TEXT.startsWith("Danach hat CF-Alarm keine Schichtquelle mehr"))
+    }
+
+    /**
      * Der Titel muss die Lage benennen, nicht die Aktion - der Nutzer hat gerade "entfernen"
      * getippt und muss erfahren, was das hier bedeutet.
      */

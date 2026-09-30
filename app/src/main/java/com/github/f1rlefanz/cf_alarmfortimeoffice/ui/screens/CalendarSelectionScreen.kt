@@ -34,6 +34,16 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 
 /**
+ * Hinweis der Karte "Kein Kalender ausgewählt". Als Konstante, damit ein Test den Verweis auf den
+ * Status-Bereich gegen dessen echten Namen in der Schublade pruefen kann.
+ */
+internal const val KEIN_KALENDER_AUSGEWAEHLT_TEXT: String =
+    "Ohne Kalender erkennt die App keine Schichten und stellt keine Wecker. Beim Abwählen " +
+        "entfernt sie auch die bereits gestellten; von Hand gestellte Wecker bleiben. Klappt " +
+        "das Aufräumen nicht, sagt es der System-Status. Tippe einen Kalender an, um wieder " +
+        "Schichten zu überwachen."
+
+/**
  * CalendarSelectionScreen - REFACTORED für Single Source of Truth
  * 
  * ✅ CODE CLEANUP: Updated deprecated Material Icons
@@ -218,12 +228,7 @@ fun CalendarSelectionScreen(
                                     // Deshalb steht hier, was die Abwahl TUT, nicht was sie
                                     // getan hat.
                                     Text(
-                                        "Ohne Kalender erkennt die App keine Schichten und stellt " +
-                                                "keine Wecker. Beim Abwählen entfernt sie auch die " +
-                                                "bereits gestellten; von Hand gestellte Wecker " +
-                                                "bleiben. Klappt das Aufräumen nicht, sagt es der " +
-                                                "Status-Tab. Tippe einen Kalender an, um wieder " +
-                                                "Schichten zu überwachen.",
+                                        KEIN_KALENDER_AUSGEWAEHLT_TEXT,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )

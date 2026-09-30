@@ -113,10 +113,10 @@ open class CalendarUnavailableNotifier @Inject constructor(
                     "$anzahl Kalender sind nicht mehr abrufbar"
                 },
                 text = "$FOLGE " + if (anzahl == 1) {
-                    "Im Status-Tab unter \"Kalender\" steht, welcher betroffen ist — dort lässt er " +
+                    "Im System-Status unter \"Kalender\" steht, welcher betroffen ist — dort lässt er " +
                         "sich auch aus der Auswahl entfernen."
                 } else {
-                    "Im Status-Tab unter \"Kalender\" steht, welche betroffen sind — dort lassen sie " +
+                    "Im System-Status unter \"Kalender\" steht, welche betroffen sind — dort lassen sie " +
                         "sich auch aus der Auswahl entfernen."
                 }
             )
@@ -125,7 +125,7 @@ open class CalendarUnavailableNotifier @Inject constructor(
                 titel = "Kalender nicht gefunden",
                 text = "Google findet " +
                     (if (anzahl == 1) "einen ausgewählten Kalender" else "$anzahl ausgewählte Kalender") +
-                    " nicht mehr — gelöscht oder nicht mehr freigegeben? $FOLGE Näheres im Status-Tab " +
+                    " nicht mehr — gelöscht oder nicht mehr freigegeben? $FOLGE Näheres im System-Status " +
                     "unter \"Kalender\"."
             )
 
@@ -133,7 +133,7 @@ open class CalendarUnavailableNotifier @Inject constructor(
                 titel = "Kalender nicht abrufbar",
                 text = "CF-Alarm konnte " +
                     (if (anzahl == 1) "einen ausgewählten Kalender" else "$anzahl ausgewählte Kalender") +
-                    " bei mehreren Versuchen in Folge nicht abrufen. $FOLGE Näheres im Status-Tab " +
+                    " bei mehreren Versuchen in Folge nicht abrufen. $FOLGE Näheres im System-Status " +
                     "unter \"Kalender\"."
             )
         }

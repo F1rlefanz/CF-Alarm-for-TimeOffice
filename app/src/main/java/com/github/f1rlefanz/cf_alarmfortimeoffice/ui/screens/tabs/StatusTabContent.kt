@@ -235,9 +235,9 @@ fun StatusTabContent(
         // Kalender aus, ist das kein Teilerfolg, sondern der Autorisierungsfall darueber - oder,
         // war es nur die Verbindung, "nicht erreichbar" (ohne eigene Aktion, siehe unten).
         // FEHLEN alle (geloescht, nicht mehr freigegeben), landen sie seit v1.43.6 ebenfalls
-        // hier: `teilerfolg` heisst dann "nicht abrufbare Kalender", und die Rueckfrage vor dem
-        // Entfernen greift zwingend, weil danach keiner mehr bliebe.
-        val teilerfolg = calendarState.unavailableCalendarIds.isNotEmpty()
+        // hier, und die Rueckfrage vor dem Entfernen greift zwingend, weil danach keiner mehr
+        // bliebe - deshalb heisst der Zustand nicht (mehr) "Teilerfolg".
+        val nichtAbrufbareKalender = calendarState.unavailableCalendarIds.isNotEmpty()
         // Wuerde "Aus Auswahl entfernen" die Auswahl LEEREN, ist es keine Bereinigung mehr,
         // sondern eine Abwahl - mit allen Folgen. Dann wird vorher gefragt (siehe Dialog unten).
         var entfernenBestaetigen by remember { mutableStateOf(false) }
@@ -264,7 +264,7 @@ fun StatusTabContent(
                 calendarActionLabel = null
                 onCalendarAction = null
             }
-            teilerfolg -> {
+            nichtAbrufbareKalender -> {
                 calendarActionLabel = "Aus Auswahl entfernen"
                 onCalendarAction = {
                     if (entfernenLeertAuswahl) entfernenBestaetigen = true
@@ -281,7 +281,7 @@ fun StatusTabContent(
             isOk = calendarState.selectedCalendarIds.isNotEmpty() &&
                 calendarState.calendarAuthorizationValid &&
                 !calendarState.kalenderNichtErreichbar &&
-                !teilerfolg,
+                !nichtAbrufbareKalender,
             details = when {
                 !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() ->
                     "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
@@ -290,7 +290,7 @@ fun StatusTabContent(
                     "Google Kalender nicht erreichbar – die gestellten Wecker bleiben. Mit Netz " +
                         "in der Übersicht, Karte \"Kalender-Events\", auf \"Mit Google Kalender " +
                         "abgleichen\" tippen."
-                teilerfolg -> unavailableCalendarDetails(
+                nichtAbrufbareKalender -> unavailableCalendarDetails(
                     unavailableIds = calendarState.unavailableCalendarIds,
                     namesById = calendarState.availableCalendars.associate { it.id to it.name }
                 )
@@ -643,9 +643,9 @@ internal fun entfernenWuerdeAuswahlLeeren(
 internal const val ENTFERNEN_LEERT_AUSWAHL_TITEL: String = "Danach wäre kein Kalender ausgewählt"
 
 internal const val ENTFERNEN_LEERT_AUSWAHL_TEXT: String =
-    "Dieser Kalender ist deine einzige Schichtquelle. Entfernst du ihn, werden alle Wecker der " +
-        "nächsten zwei Wochen gelöscht, und der Dimmer sowie \"Nicht stören\" schalten nicht mehr " +
-        "nach deinen Dienstzeiten. Selbst gestellte Wecker bleiben.\n\n" +
+    "Danach hat CF-Alarm keine Schichtquelle mehr: alle Wecker der nächsten zwei Wochen werden " +
+        "gelöscht, und der Dimmer sowie \"Nicht stören\" schalten nicht mehr nach deinen " +
+        "Dienstzeiten. Selbst gestellte Wecker bleiben.\n\n" +
         "Dass ein Kalender gerade nicht abrufbar ist, liegt oft an einer vorübergehenden Störung " +
         "oder einer entzogenen Freigabe. Dann lohnt sich Abwarten: solange du nichts entfernst, " +
         "bleiben deine bestehenden Wecker erhalten."
@@ -707,7 +707,11 @@ internal fun unavailableCalendarDetails(
     namesById: Map<String, String>
 ): String {
     val folge = " — solange werden keine neuen Wecker angelegt (bestehende bleiben). " +
-        "Ist der Kalender dauerhaft weg, hier aus der Auswahl entfernen."
+        if (unavailableIds.size == 1) {
+            "Ist der Kalender dauerhaft weg, hier aus der Auswahl entfernen."
+        } else {
+            "Sind die Kalender dauerhaft weg, hier aus der Auswahl entfernen."
+        }
 
     val namen = unavailableIds.mapNotNull { namesById[it] }.sorted()
 

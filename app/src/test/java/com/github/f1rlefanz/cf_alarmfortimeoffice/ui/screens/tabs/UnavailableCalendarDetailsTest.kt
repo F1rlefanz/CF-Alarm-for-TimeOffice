@@ -71,6 +71,18 @@ class UnavailableCalendarDetailsTest {
     }
 
     @Test
+    fun `der Rat zum Entfernen steht im Plural, wenn mehrere betroffen sind`() {
+        val einer = unavailableCalendarDetails(setOf("a"), mapOf("a" to "Dienstplan"))
+        val zwei = unavailableCalendarDetails(
+            setOf("a", "b"),
+            mapOf("a" to "Dienstplan", "b" to "Bereitschaft")
+        )
+
+        assertTrue(einer, einer.contains("Ist der Kalender dauerhaft weg"))
+        assertTrue(zwei, zwei.contains("Sind die Kalender dauerhaft weg"))
+    }
+
+    @Test
     fun `der Text nennt die Folge und beruhigt ueber die bestehenden Wecker`() {
         val text = unavailableCalendarDetails(
             unavailableIds = setOf("a"),

@@ -54,7 +54,7 @@ internal enum class NoShiftReason {
     NO_CALENDAR_SELECTED,
     AUTHORIZATION_LOST,
     KALENDER_NICHT_ERREICHBAR,
-    CALENDAR_PARTIALLY_UNAVAILABLE,
+    CALENDAR_UNAVAILABLE,
     LOAD_ERROR,
     NO_EVENTS,
     SHIFT_CONFIG_NOT_LOADED,
@@ -92,7 +92,7 @@ internal fun noShiftReason(
     // Vollstaendigkeits-Sperren jeden Alarm-Sync an. Jede Ursache darunter (keine Termine, kein
     // Muster) waere dann eine Folge davon, keine eigene Erklaerung - und wuerde den Nutzer an der
     // falschen Stelle suchen lassen.
-    unavailableCalendarCount > 0 -> NoShiftReason.CALENDAR_PARTIALLY_UNAVAILABLE
+    unavailableCalendarCount > 0 -> NoShiftReason.CALENDAR_UNAVAILABLE
     !errorMessage.isNullOrBlank() -> NoShiftReason.LOAD_ERROR
     eventCount == 0 -> NoShiftReason.NO_EVENTS
     !shiftConfigLoaded -> NoShiftReason.SHIFT_CONFIG_NOT_LOADED
@@ -118,8 +118,8 @@ internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
  */
 internal const val KALENDER_NICHT_GEFUNDEN_TITEL: String = "Kalender nicht gefunden"
 internal const val KALENDER_NICHT_GEFUNDEN_TEXT: String =
-    "Google findet den ausgewählten Kalender nicht mehr – gelöscht oder nicht mehr freigegeben? " +
-        "Solange entstehen keine neuen Wecker, die gestellten bleiben. Näheres im Status-Tab " +
+    "Google findet keinen ausgewählten Kalender mehr – gelöscht oder nicht mehr freigegeben? " +
+        "Solange entstehen keine neuen Wecker, die gestellten bleiben. Näheres im System-Status " +
         "unter \"Kalender\"."
 
 /**
@@ -150,7 +150,7 @@ internal fun noShiftExplanation(
         NoShiftReason.NO_CALENDAR_SELECTED ->
             // "Kalender wählen" ist der Knopf, den der Status-Tab in genau diesem Zustand anbietet
             // (StatusTabContent, Karte "Kalender") - dorthin zeigen, nicht auf einen erfundenen Weg.
-            "Noch kein Kalender ausgewählt — im Status-Tab unter \"Kalender\" den Dienstplan-Kalender wählen."
+            "Noch kein Kalender ausgewählt — im System-Status unter \"Kalender\" den Dienstplan-Kalender wählen."
         NoShiftReason.AUTHORIZATION_LOST ->
             // KEINE Positionsangabe ("in der Karte darunter"): direkt unter dieser Karte liegt die
             // Alarm-Status-Karte, die stattdessen in den Wecker-Tab springt - der Erneuern-Knopf
@@ -163,12 +163,12 @@ internal fun noShiftExplanation(
             // v1.43.4 (Flugmodus = "Kalender-Zugriff abgelaufen"). Knopf und Karte wortgleich.
             "Google Kalender gerade nicht erreichbar — die gestellten Wecker bleiben. Mit Netz " +
                 "in der Karte \"Kalender-Events\" auf \"Mit Google Kalender abgleichen\" tippen."
-        NoShiftReason.CALENDAR_PARTIALLY_UNAVAILABLE ->
+        NoShiftReason.CALENDAR_UNAVAILABLE ->
             // Verweist auf die Karte, die den Namen des Kalenders UND den Entfernen-Knopf hat -
             // hier stehen die IDs nicht zur Verfuegung, und ein halber Hinweis waere schlechter
             // als der Weg zur vollstaendigen Auskunft.
-            "Ein ausgewählter Kalender ist nicht abrufbar — solange werden keine neuen Wecker " +
-                "angelegt. Näheres im Status-Tab unter \"Kalender\"."
+            "Mindestens ein ausgewählter Kalender ist nicht abrufbar — solange werden keine neuen " +
+                "Wecker angelegt. Näheres im System-Status unter \"Kalender\"."
         NoShiftReason.LOAD_ERROR ->
             "Termine konnten nicht geladen werden: ${errorMessage?.takeIf { it.isNotBlank() } ?: "unbekannter Fehler"}"
         NoShiftReason.NO_EVENTS ->
@@ -179,7 +179,7 @@ internal fun noShiftExplanation(
             // liefert dann ein Result.failure und die Rohdaten liegen als `shift_config_broken`).
             // Diese Karte wurde ausdruecklich gebaut, um den WARUM-Zustand ehrlich zu benennen; ein
             // behaupteter laufender Ladevorgang, der nie endet, ist das Gegenteil davon.
-            "Schichttypen sind (noch) nicht lesbar. Bleibt das so, hilft der Status-Tab weiter — " +
+            "Schichttypen sind (noch) nicht lesbar. Bleibt das so, hilft der System-Status weiter — " +
                 "die Konfiguration liegt dann gesichert vor und wird NICHT überschrieben."
         NoShiftReason.NO_SHIFT_TYPES ->
             "Keine aktiven Schichttypen — lege sie im Wecker-Tab unter \"Schichttypen verwalten\" an."

@@ -44,7 +44,7 @@ class NoShiftReasonTest {
         // waere dann eine FOLGE davon und wuerde den Nutzer im Kalender suchen lassen, statt bei
         // dem einen Kalender, der nicht antwortet.
         assertEquals(
-            NoShiftReason.CALENDAR_PARTIALLY_UNAVAILABLE,
+            NoShiftReason.CALENDAR_UNAVAILABLE,
             reason(unavailableCalendarCount = 1, errorMessage = "irgendwas", eventCount = 0)
         )
     }
@@ -218,11 +218,25 @@ class NoShiftReasonTest {
         val text = KALENDER_NICHT_GEFUNDEN_TEXT
         assertTrue("Ursache fehlt: $text", text.contains("gelöscht") && text.contains("freigegeben"))
         assertTrue("Folge fuer die Wecker fehlt: $text", text.contains("Wecker"))
-        assertTrue("Ort des Auswegs fehlt: $text", text.contains("Status-Tab unter \"Kalender\""))
+        assertTrue("Ort des Auswegs fehlt: $text", text.contains("System-Status unter \"Kalender\""))
         assertFalse(
             "Genau diese Fehldiagnose wird behoben: $text",
             text.contains("Autorisierung") || text.contains("erneuern")
         )
+    }
+
+    /**
+     * Seit v1.43.6 koennen ALLE ausgewaehlten Kalender fehlen, und schon vorher konnten mehrere
+     * nicht abrufbar sein. Beide Texte stammen aus der Zeit, als nur EINER fehlen konnte - ein Satz
+     * ueber "den" oder "einen" Kalender stimmte bei zweien nicht.
+     */
+    @Test
+    fun `nicht abrufbar und nicht gefunden stimmen auch fuer mehrere Kalender`() {
+        assertTrue(
+            noShiftExplanation(NoShiftReason.CALENDAR_UNAVAILABLE)
+                .startsWith("Mindestens ein ausgewählter Kalender ist nicht abrufbar")
+        )
+        assertTrue(KALENDER_NICHT_GEFUNDEN_TEXT.startsWith("Google findet keinen ausgewählten Kalender mehr"))
     }
 
     @Test

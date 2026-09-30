@@ -43,7 +43,7 @@ class CalendarUnavailableNotifierTextTest {
                 val text = meldung(ausfall, anzahl).text
                 assertTrue("$ausfall/$anzahl: Folge fehlt", "keine neuen Wecker" in text)
                 assertTrue("$ausfall/$anzahl: Bestand fehlt", "bereits gestellten bleiben" in text)
-                assertTrue("$ausfall/$anzahl: Ort fehlt", "Status-Tab unter \"Kalender\"" in text)
+                assertTrue("$ausfall/$anzahl: Ort fehlt", "System-Status unter \"Kalender\"" in text)
             }
         }
     }

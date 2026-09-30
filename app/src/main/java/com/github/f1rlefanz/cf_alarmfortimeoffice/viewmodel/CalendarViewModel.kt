@@ -6,16 +6,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.FehlschlagArt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.fehlschlagArt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.istNetzbedingterFehlschlag
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
-import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
-import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WartungTokenFehler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -56,18 +57,6 @@ internal data class CalendarAuthorizationOutcome(
     val nichtErreichbar: Boolean,
     val nichtAbrufbareZeigen: Boolean
 )
-
-/** Woran ein Kalenderabruf gescheitert ist - daran haengt, WELCHE Warnung die App zeigt. */
-internal enum class FehlschlagArt {
-    /** Verbindung (Flugmodus, Funkloch, Google nicht erreichbar): kein Beleg fuer irgendetwas. */
-    NETZ,
-
-    /** Google antwortet, DIESEN Kalender gibt es fuer dich nicht (mehr): 404, oder 403 ohne Scope-Mangel. */
-    KALENDER_FEHLT,
-
-    /** Alles uebrige - abgelehntes oder fehlendes Token, unbekannte Ursache. Im Zweifel die Anmeldung. */
-    ANMELDUNG
-}
 
 /**
  * PURE, TESTBAR: Ergebnis von [CalendarViewModel.mergeMoreEvents] - die Liste, die nach dem
@@ -1609,44 +1598,6 @@ class CalendarViewModel @Inject constructor(
                 nichtErreichbar = nurNetz,
                 nichtAbrufbareZeigen = !anmeldung && !nurNetz
             )
-        }
-
-        /**
-         * PURE, TESTBAR: Woran ist ein Kalenderabruf gescheitert?
-         *
-         * [AppError.PermissionError] ist hier ein Kalender-Problem: das CalendarRepository bildet
-         * 404 ("nicht gefunden oder nicht mehr freigegeben") und das 403 OHNE Scope-Mangel darauf
-         * ab. Der Scope-Mangel ist ein [AppError.AuthenticationError] (Anmeldung), Abruf- und
-         * Kontingentgrenzen sind ein [AppError.NetworkError] (voruebergehend,
-         * `istVoruebergehendeAblehnung`).
-         */
-        internal fun fehlschlagArt(fehler: Throwable?): FehlschlagArt = when {
-            istNetzbedingterFehlschlag(fehler) -> FehlschlagArt.NETZ
-            fehler is AppError.PermissionError -> FehlschlagArt.KALENDER_FEHLT
-            else -> FehlschlagArt.ANMELDUNG
-        }
-
-        /**
-         * PURE, TESTBAR: Scheiterte ein Kalenderabruf an der Verbindung (und nicht an der
-         * Anmeldung oder an einem einzelnen Kalender)?
-         *
-         * Zwei Wege fuehren hierher, beide als [AppError.NetworkError]: der Abruf selbst (das
-         * CalendarRepository gibt dabei die Ursache NICHT mit) und ein offline gescheiterter
-         * Token-Refresh (CalendarUseCase.resolveAccessToken). Die Suche nach einer IOException in
-         * der Ursachenkette faengt jede andere Verpackung; sie ist dieselbe Einstufung wie in der
-         * Wartung ([WartungTokenFehler.istNetzursache]) - zwei Stellen, die "Funkloch"
-         * verschieden verstehen, meldeten sonst Verschiedenes.
-         */
-        internal fun istNetzbedingterFehlschlag(fehler: Throwable?): Boolean = when (fehler) {
-            is AppError.NetworkError -> true
-            // Eine ANTWORT von Google ist nie ein Funkloch - auch wenn ihre Ursache eine
-            // IOException ist: GoogleJsonResponseException erbt ueber HttpResponseException von
-            // IOException. Ohne diesen Zweig kippte ein 401 in "nicht erreichbar", sobald das
-            // CalendarRepository einmal die Ursache mitgibt.
-            is AppError.AuthenticationError,
-            is AppError.PermissionError,
-            is AppError.CalendarAccessError -> false
-            else -> WartungTokenFehler.istNetzursache(fehler)
         }
 
         /**

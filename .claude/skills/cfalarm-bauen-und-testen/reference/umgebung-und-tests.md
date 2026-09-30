@@ -141,7 +141,8 @@
   Dependabot-Branches stehen typischerweise auf altem Stand: **`main` in den Branch mergen,
   nicht rebasen** (kein Force-Push nötig, die PR bleibt erhalten). Für alles, was den Build
   anfasst, gilt die Verifikationsliste: `testDebugUnitTest lintDebug` · `assembleRelease` +
-  `lintVitalRelease` **mit Netz** (R8 ist an) · APK-Größe gegen **10,96 MB** vergleichen ·
+  `lintVitalRelease` **mit Netz** (R8 ist an) · APK-Größe gegen **6,27 MB** vergleichen
+  (`app-release.apk` seit v1.43.4, vorher 10,96 MB) ·
   `installDebug` und die App **wirklich starten** (grüne Tests haben hier schon einen
   Crash-on-Launch durchgelassen) · Logcat auf App-`WARN` · CI grün.
 - **`cmd app_hibernation set-state <pkg> true` KOSTET den OAuth-Token.** Das Einfrieren ist genau

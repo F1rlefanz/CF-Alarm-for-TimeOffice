@@ -52,7 +52,8 @@
     Neukopplung.
   - **`parseControl` ist bewusst milder** („mindestens ein `success`"): ein PUT auf `/state` liefert
     einen Eintrag **pro Attribut**, und die Bridge lehnt einzelne ab, während sie die anderen anwendet
-    (`ct` an einer Lampe ohne Farbtemperatur = error 6, an ausgeschalteter = error 201). Mit `parseAll`
+    (Farbtemperatur, Bridge-Attribut ct, an einer Lampe ohne Farbtemperatur = error 6, an
+    ausgeschalteter = error 201). Mit `parseAll`
     wurde daraus ein Fehlschlag, `startSunrise` stieg nach Schritt 1 aus, die Lampe blieb am Wecktag
     auf `bri=1`. Abgelehnte Einzelattribute werden geloggt.
   - **Jedes vorhandene `success`-Feld ist ein Erfolg — auch als String.** Ein DELETE antwortet

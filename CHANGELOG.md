@@ -27,7 +27,24 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.43.4 (Aktuell – interne Alpha)
+## 🆕 Version 1.43.5 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Ohne Internet meldet die App keinen verlorenen Kalender-Zugriff mehr – und „Kalender-Zugriff erneuern" wirkt sofort._
+
+### 🐛 Behoben
+
+- **Offline hieß es fälschlich „Kalender-Autorisierung verloren":** Wer ohne Internetverbindung (etwa im Flugmodus) mit dem Google Kalender abglich, bekam eine rote Warnung und den Rat, den Zugriff zu erneuern – obwohl nur die Verbindung fehlte. Jetzt steht dort „Google Kalender nicht erreichbar", die gestellten Wecker bleiben wie bisher bestehen, und mit Netz genügt ein Tipp auf „Mit Google Kalender abgleichen".
+- **Ohne Netz geöffnet, sperrte „Kalender-Zugriff erforderlich" die ganze App:** Lag die letzte Verbindung zum Google Kalender länger als eine Dreiviertelstunde zurück, kam man ohne Internet nicht einmal an den Wecker-Tab. Jetzt öffnet die App normal und zeigt nur, dass der Kalender gerade nicht erreichbar ist.
+- **„Kalender-Zugriff erneuern" schien nichts zu tun:** Der Zugriff wurde zwar erneuert, die Warnung blieb aber stehen. Jetzt werden die Termine danach sofort neu geladen, und die Warnung verschwindet.
+- **Kalenderauswahl ohne Netz:** Sie meldet dann nicht mehr „Kalender-Zugriff nicht freigegeben".
+
+### 🎨 Feinschliff
+
+- **Hinweise am unteren Rand besser lesbar:** Bei Meldungen mit Knopf (etwa „Wiederholen") steht der Knopf jetzt unter dem Text statt daneben – auf schmalen Bildschirmen bricht der Text nicht mehr unschön um.
+
+## Version 1.43.4
 
 **Stand:** September 2026
 

@@ -51,7 +51,26 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.43.4 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.43.5 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Ohne Internet meldet die App keinen verlorenen Kalender-Zugriff mehr – und „Kalender-Zugriff erneuern" wirkt sofort.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Offline hieß es fälschlich „Kalender-Autorisierung verloren":</strong> Wer ohne Internetverbindung (etwa im Flugmodus) mit dem Google Kalender abglich, bekam eine rote Warnung und den Rat, den Zugriff zu erneuern – obwohl nur die Verbindung fehlte. Jetzt steht dort „Google Kalender nicht erreichbar", die gestellten Wecker bleiben wie bisher bestehen, und mit Netz genügt ein Tipp auf „Mit Google Kalender abgleichen".</li>
+                <li><strong>Ohne Netz geöffnet, sperrte „Kalender-Zugriff erforderlich" die ganze App:</strong> Lag die letzte Verbindung zum Google Kalender länger als eine Dreiviertelstunde zurück, kam man ohne Internet nicht einmal an den Wecker-Tab. Jetzt öffnet die App normal und zeigt nur, dass der Kalender gerade nicht erreichbar ist.</li>
+                <li><strong>„Kalender-Zugriff erneuern" schien nichts zu tun:</strong> Der Zugriff wurde zwar erneuert, die Warnung blieb aber stehen. Jetzt werden die Termine danach sofort neu geladen, und die Warnung verschwindet.</li>
+                <li><strong>Kalenderauswahl ohne Netz:</strong> Sie meldet dann nicht mehr „Kalender-Zugriff nicht freigegeben".</li>
+            </ul>
+
+            <h4>🎨 Feinschliff</h4>
+            <ul>
+                <li><strong>Hinweise am unteren Rand besser lesbar:</strong> Bei Meldungen mit Knopf (etwa „Wiederholen") steht der Knopf jetzt unter dem Text statt daneben – auf schmalen Bildschirmen bricht der Text nicht mehr unschön um.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.43.4</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Hue-Szenen lassen sich wieder auswählen, Ladefehler der Terminliste bleiben sichtbar – und die App ist rund 40 % kleiner.</em></p>
 

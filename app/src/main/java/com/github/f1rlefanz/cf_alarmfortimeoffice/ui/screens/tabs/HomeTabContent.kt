@@ -395,11 +395,15 @@ fun HomeTabContent(
                     ) {
                         Text("Kalender-Zugriff erneuern")
                     }
-                } else if (calendarState.kalenderNichtErreichbar) {
+                } else if (calendarState.kalenderNichtErreichbar &&
+                    calendarState.selectedCalendarIds.isNotEmpty()
+                ) {
                     // Eigener Zustand statt "Autorisierung verloren" (bis v1.43.4), siehe
                     // CalendarUiState.kalenderNichtErreichbar. Bewusst OHNE Fehlerfarbe: kaputt
                     // ist nichts, die Wecker stehen - es fehlt nur die Verbindung. Der Ausweg ist
-                    // derselbe Abgleich wie sonst, mit demselben Namen.
+                    // derselbe Abgleich wie sonst, mit demselben Namen. Die Auswahl-Pruefung wie
+                    // bei zugriffVerloren: nach einer Abwahl steht der Merker noch, die Wecker
+                    // sind dann aber geraeumt - "sie bleiben" waere gelogen.
                     Text(
                         "Google Kalender nicht erreichbar",
                         style = MaterialTheme.typography.titleSmall,

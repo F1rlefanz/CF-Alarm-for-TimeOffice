@@ -84,8 +84,9 @@ data class CalendarUiState(
      * Dienstplan. Die gestellten Wecker bleiben in dieser Lage unberuehrt: ein Fehlschlag ist nie
      * eine Loeschgrundlage.
      *
-     * Jeder abgeschlossene Ladevorgang setzt ihn neu - er verschwindet mit dem naechsten
-     * gelungenen Abgleich von selbst.
+     * Jeder abgeschlossene Ladevorgang MIT Kalenderauswahl setzt ihn neu - er verschwindet mit
+     * dem naechsten gelungenen Abgleich von selbst. Nach einer Abwahl bleibt er stehen (ohne
+     * Auswahl laedt nichts); deshalb fragt jede Anzeige ZUERST die Auswahl.
      */
     val kalenderNichtErreichbar: Boolean = false,
     val lastAuthorizationCheck: Long = 0L,
@@ -111,8 +112,9 @@ data class CalendarUiState(
      * die Zahl der gescheiterten Kalender ausschliesslich im Log und in den Sperren stand.
      *
      * AUSDRUECKLICH LEER, wenn ALLE Kalender gescheitert sind: dieser Fall gehoert
-     * [calendarAuthorizationValid] und hat seine eigene Anzeige ("Kalender-Autorisierung
-     * verloren"). Zwei Warnungen fuer dieselbe Lage waeren schlechter als eine.
+     * [calendarAuthorizationValid] ("Kalender-Autorisierung verloren") bzw. - war es nur die
+     * Verbindung - [kalenderNichtErreichbar], und beide haben ihre eigene Anzeige. Zwei Warnungen
+     * fuer dieselbe Lage waeren schlechter als eine.
      */
     val unavailableCalendarIds: Set<String> = emptySet(),
 
@@ -759,7 +761,9 @@ class CalendarViewModel @Inject constructor(
                             isLoading = false,
                             isLoadingMore = false,
                             error = errorHandler.getErrorMessage(error),
-                            hasValidToken = false
+                            // Offline ist keine fehlende Freigabe - CalendarSelectionScreen leitet
+                            // aus false "Kalender-Zugriff nicht freigegeben" ab.
+                            hasValidToken = istNetzbedingterFehlschlag(error)
                         )
                     }
                     
@@ -776,7 +780,7 @@ class CalendarViewModel @Inject constructor(
                         isLoading = false,
                         isLoadingMore = false,
                         error = errorHandler.getErrorMessage(e),
-                        hasValidToken = false
+                        hasValidToken = istNetzbedingterFehlschlag(e)
                     )
                 }
                 
@@ -1043,8 +1047,9 @@ class CalendarViewModel @Inject constructor(
                         kalenderNichtErreichbar = nichtErreichbar,
                         lastAuthorizationCheck = System.currentTimeMillis(),
                         error = failureMessage ?: state.error,
-                        // Nur der TEILERFOLG. Bei everythingFailed uebernimmt
-                        // calendarAuthorizationValid oben die Anzeige - siehe Feld-Kommentar.
+                        // Nur der TEILERFOLG. Bei everythingFailed uebernehmen
+                        // calendarAuthorizationValid bzw. kalenderNichtErreichbar oben die
+                        // Anzeige - siehe Feld-Kommentar.
                         unavailableCalendarIds = if (everythingFailed) emptySet() else failedCalendarIds
                     )
                 }
@@ -1136,7 +1141,7 @@ class CalendarViewModel @Inject constructor(
                     it.copy(
                         isLoading = false,
                         error = errorHandler.getErrorMessage(e),
-                        // PHASE 2 FIX: Mark authorization as invalid on error
+                        // Zugriff nur bei einem NICHT netzbedingten Fehler als verloren melden.
                         calendarAuthorizationValid = nurVerbindung,
                         kalenderNichtErreichbar = nurVerbindung,
                         lastAuthorizationCheck = System.currentTimeMillis()
@@ -1564,8 +1569,17 @@ class CalendarViewModel @Inject constructor(
          * Wartung ([WartungTokenFehler.istNetzursache]) - zwei Stellen, die "Funkloch"
          * verschieden verstehen, meldeten sonst Verschiedenes.
          */
-        internal fun istNetzbedingterFehlschlag(fehler: Throwable?): Boolean =
-            fehler is AppError.NetworkError || WartungTokenFehler.istNetzursache(fehler)
+        internal fun istNetzbedingterFehlschlag(fehler: Throwable?): Boolean = when (fehler) {
+            is AppError.NetworkError -> true
+            // Eine ANTWORT von Google ist nie ein Funkloch - auch wenn ihre Ursache eine
+            // IOException ist: GoogleJsonResponseException erbt ueber HttpResponseException von
+            // IOException. Ohne diesen Zweig kippte ein 401 in "nicht erreichbar", sobald das
+            // CalendarRepository einmal die Ursache mitgibt.
+            is AppError.AuthenticationError,
+            is AppError.PermissionError,
+            is AppError.CalendarAccessError -> false
+            else -> WartungTokenFehler.istNetzursache(fehler)
+        }
 
         /**
          * PURE, TESTBAR: Darf die geladene Eventliste in die Alarm-Pipeline

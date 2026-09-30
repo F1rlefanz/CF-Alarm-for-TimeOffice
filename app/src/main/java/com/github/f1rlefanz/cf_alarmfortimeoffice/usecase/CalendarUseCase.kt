@@ -347,6 +347,12 @@ class CalendarUseCase @Inject constructor(
             val error = tokenResult.exceptionOrNull()
             Logger.d(LogTags.TOKEN, "Token validation failed: ${error?.message}")
 
+            // Ein Funkloch ist kein fehlendes Token (Einstufung wie resolveAccessToken) - sonst
+            // zeigt die Kalenderauswahl offline "Kalender-Zugriff nicht freigegeben".
+            if (WartungTokenFehler.istNetzursache(error)) {
+                return@withContext true
+            }
+
             // Fallback to legacy system
             val authData = authDataStoreRepository.authData.first()
             val hasToken = authData.accessToken?.isNotEmpty() == true

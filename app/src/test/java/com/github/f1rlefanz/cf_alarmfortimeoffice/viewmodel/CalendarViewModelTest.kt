@@ -187,6 +187,21 @@ class CalendarViewModelTest {
     }
 
     @Test
+    fun `ein Anmeldefehler bleibt einer, auch wenn eine IOException in seiner Kette steckt`() {
+        // GoogleJsonResponseException erbt ueber HttpResponseException von IOException. Reicht
+        // das CalendarRepository einmal die Ursache durch ("Ursache nie verwerfen"), faende die
+        // Kettensuche darin ein "Funkloch" - und ein 401 verloere den Weg zur Neuanmeldung.
+        val antwort = IOException("401 Unauthorized")
+        listOf(
+            AppError.AuthenticationError("Google Calendar authentication failed", antwort),
+            AppError.PermissionError(message = "Kein Zugriff auf diesen Google-Kalender", cause = antwort),
+            AppError.CalendarAccessError("Calendar access failed", antwort)
+        ).forEach { fehler ->
+            assertFalse("$fehler", CalendarViewModel.istNetzbedingterFehlschlag(fehler))
+        }
+    }
+
+    @Test
     fun `Anmelde- und Berechtigungsfehler sind NICHT netzbedingt`() {
         listOf(
             AppError.AuthenticationError("Google Calendar authentication failed"),

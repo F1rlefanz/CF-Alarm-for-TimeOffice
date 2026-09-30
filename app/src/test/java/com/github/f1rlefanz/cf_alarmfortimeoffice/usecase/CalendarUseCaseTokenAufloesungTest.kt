@@ -191,6 +191,17 @@ class CalendarUseCaseTokenAufloesungTest {
     }
 
     @Test
+    fun `hasValidAccessToken - ein Funkloch ist kein fehlendes Token`() = runTest {
+        // CalendarViewModel.checkTokenValidity() leitet daraus hasValidToken ab, und die
+        // Kalenderauswahl zeigt bei false "Kalender-Zugriff nicht freigegeben" - offline falsch.
+        // Bewusst OHNE gespeichertes Alt-Token: der Legacy-Rueckfall darf das Ergebnis nicht tragen.
+        val funkloch = Result.failure<TokenData>(
+            TokenException.RefreshFailed("x", TokenException.RefreshFailed("y", java.io.IOException("NetworkError")))
+        )
+        assertTrue(useCaseMit(funkloch, authData = AuthData(isLoggedIn = false)).hasValidAccessToken())
+    }
+
+    @Test
     fun `hasValidAccessToken ohne gespeichertes Token ist falsch`() = runTest {
         assertFalse(useCaseMit(tokenFehler, authData = AuthData(isLoggedIn = false)).hasValidAccessToken())
     }

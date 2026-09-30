@@ -6,6 +6,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WartungTokenFehler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -122,13 +123,28 @@ class AuthUseCase @Inject constructor(
     
     /**
      * Checks if Calendar authorization is available
-     * 
+     *
+     * FUNKLOCH ZAEHLT ALS AUTORISIERT: das lokale Token gilt 45 Minuten, danach refresht
+     * getValidToken() - offline scheitert das mit einer IOException (dieselbe Einstufung wie in
+     * der Wartung, [WartungTokenFehler]). Als "nicht autorisiert" gelesen, sperrte das Gate
+     * "Kalender-Zugriff erforderlich" beim App-Start ohne Netz die ganze Oberflaeche, samt
+     * Wecker-Tab und Ueberspringen, und "Kalender-Zugriff erlauben" scheiterte ebenfalls.
+     * Ist der Zugriff wirklich tot, meldet das der erste Abruf mit Netz (401 -> invalidate() ->
+     * Auto-Re-Auth).
+     *
      * @return Result with Boolean (true if calendar access authorized) or error
      */
     override suspend fun hasCalendarAuthorization(): Result<Boolean> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("AuthUseCase.hasCalendarAuthorization") {
             val tokenResult = oauth2TokenManager.getValidToken()
-            tokenResult.isSuccess
+            when {
+                tokenResult.isSuccess -> true
+                WartungTokenFehler.istNetzursache(tokenResult.exceptionOrNull()) -> {
+                    Logger.w(LogTags.AUTH, "🌐 Token ohne Verbindung nicht pruefbar - kein Beleg fuer fehlenden Zugriff")
+                    true
+                }
+                else -> false
+            }
         }
     }
     

@@ -110,6 +110,19 @@ internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
     "Hinweis: Alles ist pausiert — es wird kein Wecker gestellt."
 
 /**
+ * Karte "Kalender-Events", wenn ALLE ausgewaehlten Kalender fehlen (geloescht, nicht mehr
+ * freigegeben). Bis v1.43.5 hiess das "Kalender-Autorisierung verloren" samt "Kalender-Zugriff
+ * erneuern" - ein Knopf, der an einem geloeschten Kalender nichts aendert. Der Ausweg (Name,
+ * "Aus Auswahl entfernen", Rueckfrage) steht im Status-Tab; hier nur WAS, FOLGE, WOHIN.
+ * Als Konstanten, damit ein Test die Nennung von Ort und Folge festhalten kann.
+ */
+internal const val KALENDER_NICHT_GEFUNDEN_TITEL: String = "Kalender nicht gefunden"
+internal const val KALENDER_NICHT_GEFUNDEN_TEXT: String =
+    "Google findet den ausgewählten Kalender nicht mehr – gelöscht oder nicht mehr freigegeben? " +
+        "Solange entstehen keine neuen Wecker, die gestellten bleiben. Näheres im Status-Tab " +
+        "unter \"Kalender\"."
+
+/**
  * PURE, TESTBAR: Formuliert Grund + Handlungsschritt.
  *
  * Bei [NoShiftReason.NO_PATTERN_MATCH] werden die tatsaechlich geladenen Termintitel genannt - das
@@ -415,6 +428,21 @@ fun HomeTabContent(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     KalenderAbgleichKnopf(enabled = !calendarState.isLoading, onClick = onJetztAbgleichen)
+                } else if (calendarState.unavailableCalendarIds.isNotEmpty() &&
+                    calendarState.events.isEmpty() &&
+                    calendarState.selectedCalendarIds.isNotEmpty()
+                ) {
+                    // Alle ausgewaehlten Kalender fehlen - beim Teilerfolg kommen Termine an und
+                    // die Zusammenfassung darunter bleibt stehen. Siehe KALENDER_NICHT_GEFUNDEN_TEXT.
+                    Text(
+                        KALENDER_NICHT_GEFUNDEN_TITEL,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        KALENDER_NICHT_GEFUNDEN_TEXT,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 } else if (calendarState.events.isNotEmpty()) {
                     Text("${calendarState.events.size} Events in den nächsten 14 Tagen")
                     Text(

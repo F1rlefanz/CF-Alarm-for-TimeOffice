@@ -51,10 +51,11 @@ class NoShiftReasonTest {
 
     @Test
     fun `verlorene Autorisierung schlaegt den nicht abrufbaren Kalender`() {
-        // Der Totalausfall ALLER Kalender laeuft ueber calendarAuthorizationValid und hat seine
-        // eigene, handlungsfaehige Meldung ("neu anmelden"). Er darf nicht als Teilerfolg
-        // erscheinen - sonst bekaeme der Nutzer den Rat, einen Kalender abzuwaehlen, obwohl in
-        // Wahrheit die Anmeldung haengt.
+        // Der Totalausfall ALLER Kalender aus Anmeldegruenden laeuft ueber
+        // calendarAuthorizationValid und hat seine eigene, handlungsfaehige Meldung ("neu
+        // anmelden"); fehlen dagegen alle nur, stehen sie als nicht abrufbar da. Ein
+        // Anmeldeproblem darf nicht als Teilerfolg erscheinen - sonst bekaeme der Nutzer den
+        // Rat, einen Kalender abzuwaehlen, obwohl in Wahrheit die Anmeldung haengt.
         assertEquals(
             NoShiftReason.AUTHORIZATION_LOST,
             reason(calendarAuthorizationValid = false, unavailableCalendarCount = 2)
@@ -209,6 +210,18 @@ class NoShiftReasonTest {
         assertFalse(
             "Das ist genau die Fehldiagnose, die behoben wird: $text",
             text.contains("abgelaufen") || text.contains("Autorisierung") || text.contains("erneuern")
+        )
+    }
+
+    @Test
+    fun `Kalender nicht gefunden nennt Ursache, Folge und den Ort des Auswegs`() {
+        val text = KALENDER_NICHT_GEFUNDEN_TEXT
+        assertTrue("Ursache fehlt: $text", text.contains("gelöscht") && text.contains("freigegeben"))
+        assertTrue("Folge fuer die Wecker fehlt: $text", text.contains("Wecker"))
+        assertTrue("Ort des Auswegs fehlt: $text", text.contains("Status-Tab unter \"Kalender\""))
+        assertFalse(
+            "Genau diese Fehldiagnose wird behoben: $text",
+            text.contains("Autorisierung") || text.contains("erneuern")
         )
     }
 

@@ -44,12 +44,29 @@ import javax.inject.Inject
  * [nichtErreichbar]: ALLE Kalender scheiterten, und zwar ausschliesslich an der Verbindung.
  * Dann ist [everythingFailed] wahr (der Fehlschlag wird gemeldet), [authStillValid] aber AUCH -
  * ein Funkloch belegt keinen verlorenen Zugriff.
+ *
+ * [nichtAbrufbareZeigen]: die gescheiterten Kalender erscheinen als "nicht abrufbar" (Name,
+ * "Aus Auswahl entfernen"). So beim Teilerfolg - und seit v1.43.6 auch, wenn ALLE Kalender
+ * fehlen (geloescht, nicht mehr freigegeben), statt als verlorener Zugriff.
  */
 internal data class CalendarAuthorizationOutcome(
     val everythingFailed: Boolean,
     val authStillValid: Boolean,
-    val nichtErreichbar: Boolean
+    val nichtErreichbar: Boolean,
+    val nichtAbrufbareZeigen: Boolean
 )
+
+/** Woran ein Kalenderabruf gescheitert ist - daran haengt, WELCHE Warnung die App zeigt. */
+internal enum class FehlschlagArt {
+    /** Verbindung (Flugmodus, Funkloch, Google nicht erreichbar): kein Beleg fuer irgendetwas. */
+    NETZ,
+
+    /** Google antwortet, DIESEN Kalender gibt es fuer dich nicht (mehr): 404, oder 403 ohne Scope-Mangel. */
+    KALENDER_FEHLT,
+
+    /** Alles uebrige - abgelehntes oder fehlendes Token, unbekannte Ursache. Im Zweifel die Anmeldung. */
+    ANMELDUNG
+}
 
 /**
  * PURE, TESTBAR: Ergebnis von [CalendarViewModel.mergeMoreEvents] - die Liste, die nach dem
@@ -111,10 +128,11 @@ data class CalendarUiState(
      * Wecker der Reihe nach aus und nichts waechst nach - bis v1.25.3 ohne jedes Anzeichen, weil
      * die Zahl der gescheiterten Kalender ausschliesslich im Log und in den Sperren stand.
      *
-     * AUSDRUECKLICH LEER, wenn ALLE Kalender gescheitert sind: dieser Fall gehoert
-     * [calendarAuthorizationValid] ("Kalender-Autorisierung verloren") bzw. - war es nur die
-     * Verbindung - [kalenderNichtErreichbar], und beide haben ihre eigene Anzeige. Zwei Warnungen
-     * fuer dieselbe Lage waeren schlechter als eine.
+     * AUSDRUECKLICH LEER, wenn ALLE Kalender an der Anmeldung oder nur an der Verbindung
+     * gescheitert sind: diese Faelle gehoeren [calendarAuthorizationValid] ("Kalender-Autorisierung
+     * verloren") bzw. [kalenderNichtErreichbar], beide mit eigener Anzeige - zwei Warnungen fuer
+     * dieselbe Lage waeren schlechter als eine. FEHLEN dagegen alle (geloescht, nicht mehr
+     * freigegeben), stehen sie HIER: dann sind sie beim Namen zu nennen und zu entfernen.
      */
     val unavailableCalendarIds: Set<String> = emptySet(),
 
@@ -903,9 +921,9 @@ class CalendarViewModel @Inject constructor(
                 // Kalender an einem toten Token gescheitert war - siehe unten.
                 var firstFailure: Throwable? = null
                 val failedCalendarIds = mutableSetOf<String>()
-                // Scheiterten ALLE nur an der Verbindung, ist das kein verlorener Zugriff - siehe
-                // resolveCalendarAuthorizationOutcome. Ein einziger anderer Fehlschlag kippt es.
-                var nurNetzbedingt = true
+                // Woran die Kalender gescheitert sind, entscheidet ueber die Warnung - Funkloch,
+                // fehlender Kalender oder Anmeldung. Siehe resolveCalendarAuthorizationOutcome.
+                val fehlschlagArten = mutableSetOf<FehlschlagArt>()
                 
                 // PERFORMANCE OPTIMIZATION: Process calendars sequentially but with proper async handling
                 selectedIds.forEach { calendarId ->
@@ -970,7 +988,7 @@ class CalendarViewModel @Inject constructor(
                         }.onFailure { error ->
                             Logger.e(LogTags.CALENDAR, "Failed to load events for calendar ${calendarId.take(8)}...", error)
                             if (firstFailure == null) firstFailure = error
-                            if (!istNetzbedingterFehlschlag(error)) nurNetzbedingt = false
+                            fehlschlagArten += fehlschlagArt(error)
                             failedCalendarIds += calendarId
                             processedCalendars++
                         }
@@ -978,7 +996,7 @@ class CalendarViewModel @Inject constructor(
                     } catch (e: Exception) {
                         Logger.e(LogTags.CALENDAR, "Exception loading calendar ${calendarId.take(8)}...", e)
                         if (firstFailure == null) firstFailure = e
-                        if (!istNetzbedingterFehlschlag(e)) nurNetzbedingt = false
+                        fehlschlagArten += fehlschlagArt(e)
                         failedCalendarIds += calendarId
                         processedCalendars++
                     }
@@ -998,11 +1016,12 @@ class CalendarViewModel @Inject constructor(
                 // die Autorisierung als kaputt - und auch dann nicht, wenn es nur die Verbindung
                 // war. Begruendung am KDoc von resolveCalendarAuthorizationOutcome.
                 val failure = firstFailure
-                val (everythingFailed, authStillValid, nichtErreichbar) = resolveCalendarAuthorizationOutcome(
-                    failedCalendars = failedCalendarIds.size,
-                    totalSelectedCalendars = selectedIds.size,
-                    alleFehlschlaegeNetzbedingt = nurNetzbedingt
-                )
+                val (everythingFailed, authStillValid, nichtErreichbar, nichtAbrufbareZeigen) =
+                    resolveCalendarAuthorizationOutcome(
+                        failedCalendars = failedCalendarIds.size,
+                        totalSelectedCalendars = selectedIds.size,
+                        fehlschlagArten = fehlschlagArten
+                    )
 
                 // Fehler sichtbar machen, statt eine leere Liste als Wahrheit zu verkaufen.
                 val failureMessage = if (everythingFailed && failure != null) {
@@ -1015,6 +1034,11 @@ class CalendarViewModel @Inject constructor(
                     Logger.w(
                         LogTags.CALENDAR,
                         "🌐 Alle ${failedCalendarIds.size} Kalender nicht erreichbar (Verbindung) - Zugriff bleibt gueltig, Wecker bleiben"
+                    )
+                } else if (everythingFailed && nichtAbrufbareZeigen) {
+                    Logger.w(
+                        LogTags.CALENDAR,
+                        "📅 Alle ${failedCalendarIds.size} Kalender nicht gefunden/nicht freigegeben - als nicht abrufbar gemeldet, Zugriff bleibt gueltig"
                     )
                 } else if (everythingFailed) {
                     Logger.e(
@@ -1047,10 +1071,10 @@ class CalendarViewModel @Inject constructor(
                         kalenderNichtErreichbar = nichtErreichbar,
                         lastAuthorizationCheck = System.currentTimeMillis(),
                         error = failureMessage ?: state.error,
-                        // Nur der TEILERFOLG. Bei everythingFailed uebernehmen
-                        // calendarAuthorizationValid bzw. kalenderNichtErreichbar oben die
-                        // Anzeige - siehe Feld-Kommentar.
-                        unavailableCalendarIds = if (everythingFailed) emptySet() else failedCalendarIds
+                        // Der TEILERFOLG - und der Totalausfall, bei dem alle Kalender FEHLEN.
+                        // Anmeldung und Funkloch haben ihre eigene Anzeige (oben) - siehe
+                        // Feld-Kommentar.
+                        unavailableCalendarIds = if (nichtAbrufbareZeigen) failedCalendarIds else emptySet()
                     )
                 }
                 
@@ -1538,24 +1562,53 @@ class CalendarViewModel @Inject constructor(
          * als kaputt. Ein einzelner fehlschlagender Kalender (geloescht, nicht mehr freigegeben)
          * darf die Anmeldung nicht in Frage stellen.
          *
-         * AUSNAHME, und zwar nur diese: scheiterten alle ausschliesslich an der VERBINDUNG
-         * ([istNetzbedingterFehlschlag]), ist das kein Beleg fuer einen verlorenen Zugriff.
-         * Am 30.09.2026 meldete die App im Flugmodus "Kalender-Autorisierung verloren"; der
-         * angebotene Knopf erneuerte einen Zugriff, der nie weg war, und die Karte blieb stehen.
-         * Der Fehlschlag selbst bleibt sichtbar ([CalendarAuthorizationOutcome.nichtErreichbar]).
+         * ZWEI AUSNAHMEN, und nur diese - "Kalender-Zugriff erneuern" koennte an beiden nichts
+         * aendern:
+         *  - Scheiterten alle ausschliesslich an der VERBINDUNG, ist das kein Beleg fuer einen
+         *    verlorenen Zugriff ([CalendarAuthorizationOutcome.nichtErreichbar]). Am 30.09.2026
+         *    meldete die App im Flugmodus "Kalender-Autorisierung verloren".
+         *  - FEHLEN sie (geloescht, nicht mehr freigegeben), erscheinen sie wie beim Teilerfolg
+         *    als "nicht abrufbar" - beim Namen, mit "Aus Auswahl entfernen" und der Rueckfrage,
+         *    wenn danach keiner mehr bliebe. Auch gemischt mit Funkloechern.
+         * Ein einziger Anmelde-Fehlschlag macht den Totalausfall wieder zum Zugriffsverlust:
+         * solange die Anmeldung haengt, laesst sich auch nicht pruefen, was wirklich fehlt. Eine
+         * leere Artenmenge (sollte es nicht geben) zaehlt ebenso - im Zweifel die alte Warnung.
          */
         internal fun resolveCalendarAuthorizationOutcome(
             failedCalendars: Int,
             totalSelectedCalendars: Int,
-            alleFehlschlaegeNetzbedingt: Boolean
+            fehlschlagArten: Set<FehlschlagArt>
         ): CalendarAuthorizationOutcome {
             val everythingFailed = failedCalendars > 0 && failedCalendars == totalSelectedCalendars
-            val nichtErreichbar = everythingFailed && alleFehlschlaegeNetzbedingt
+            if (!everythingFailed) {
+                return CalendarAuthorizationOutcome(
+                    everythingFailed = false,
+                    authStillValid = true,
+                    nichtErreichbar = false,
+                    nichtAbrufbareZeigen = failedCalendars > 0
+                )
+            }
+            val anmeldung = fehlschlagArten.isEmpty() || FehlschlagArt.ANMELDUNG in fehlschlagArten
+            val nurNetz = fehlschlagArten == setOf(FehlschlagArt.NETZ)
             return CalendarAuthorizationOutcome(
-                everythingFailed = everythingFailed,
-                authStillValid = !everythingFailed || nichtErreichbar,
-                nichtErreichbar = nichtErreichbar
+                everythingFailed = true,
+                authStillValid = !anmeldung,
+                nichtErreichbar = nurNetz,
+                nichtAbrufbareZeigen = !anmeldung && !nurNetz
             )
+        }
+
+        /**
+         * PURE, TESTBAR: Woran ist ein Kalenderabruf gescheitert?
+         *
+         * [AppError.PermissionError] ist hier IMMER ein Kalender-Problem: das CalendarRepository
+         * bildet 404 ("nicht gefunden oder nicht mehr freigegeben") und das 403 OHNE Scope-Mangel
+         * darauf ab; der Scope-Mangel ist ein [AppError.AuthenticationError] und damit Anmeldung.
+         */
+        internal fun fehlschlagArt(fehler: Throwable?): FehlschlagArt = when {
+            istNetzbedingterFehlschlag(fehler) -> FehlschlagArt.NETZ
+            fehler is AppError.PermissionError -> FehlschlagArt.KALENDER_FEHLT
+            else -> FehlschlagArt.ANMELDUNG
         }
 
         /**

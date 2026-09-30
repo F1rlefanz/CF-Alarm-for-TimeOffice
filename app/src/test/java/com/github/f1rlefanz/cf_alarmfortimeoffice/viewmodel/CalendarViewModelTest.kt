@@ -22,12 +22,16 @@ import java.io.IOException
  */
 class CalendarViewModelTest {
 
+    private val ANMELDUNG = setOf(FehlschlagArt.ANMELDUNG)
+    private val NETZ = setOf(FehlschlagArt.NETZ)
+    private val FEHLT = setOf(FehlschlagArt.KALENDER_FEHLT)
+
     @Test
     fun `alle Kalender fehlgeschlagen - Autorisierung gilt als ungueltig, nicht hart als gueltig`() {
         val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
             failedCalendars = 3,
             totalSelectedCalendars = 3,
-            alleFehlschlaegeNetzbedingt = false
+            fehlschlagArten = ANMELDUNG
         )
 
         assertTrue(
@@ -47,7 +51,7 @@ class CalendarViewModelTest {
         val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
             failedCalendars = 2,
             totalSelectedCalendars = 3,
-            alleFehlschlaegeNetzbedingt = false
+            fehlschlagArten = ANMELDUNG
         )
 
         assertFalse(
@@ -64,7 +68,7 @@ class CalendarViewModelTest {
         val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
             failedCalendars = 0,
             totalSelectedCalendars = 3,
-            alleFehlschlaegeNetzbedingt = false
+            fehlschlagArten = ANMELDUNG
         )
 
         assertFalse(outcome.everythingFailed)
@@ -77,16 +81,17 @@ class CalendarViewModelTest {
         // Randfall: failedCalendars > 0 ist Teil der Bedingung, damit 0-von-0 (z.B. durch
         // einen zukuenftigen Aufrufer mit leerer Auswahl) nicht faelschlich als "alles
         // gescheitert" gilt, obwohl schlicht nichts versucht wurde.
-        listOf(false, true).forEach { netz ->
+        listOf(ANMELDUNG, NETZ, FEHLT).forEach { arten ->
             val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
                 failedCalendars = 0,
                 totalSelectedCalendars = 0,
-                alleFehlschlaegeNetzbedingt = netz
+                fehlschlagArten = arten
             )
 
             assertFalse(outcome.everythingFailed)
             assertTrue(outcome.authStillValid)
-            assertFalse("0 von 0 ist keine Stoerung (netz=$netz)", outcome.nichtErreichbar)
+            assertFalse("0 von 0 ist keine Stoerung ($arten)", outcome.nichtErreichbar)
+            assertFalse("0 von 0 zeigt nichts als nicht abrufbar ($arten)", outcome.nichtAbrufbareZeigen)
         }
     }
 
@@ -95,7 +100,7 @@ class CalendarViewModelTest {
         val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
             failedCalendars = 1,
             totalSelectedCalendars = 1,
-            alleFehlschlaegeNetzbedingt = false
+            fehlschlagArten = ANMELDUNG
         )
 
         assertTrue(outcome.everythingFailed)
@@ -103,7 +108,7 @@ class CalendarViewModelTest {
     }
 
     @Test
-    fun `ohne Netzursache sind everythingFailed und authStillValid exakte Gegenteile`() {
+    fun `bei Anmelde-Fehlschlaegen sind everythingFailed und authStillValid exakte Gegenteile`() {
         val scenarios = listOf(
             0 to 0,
             0 to 5,
@@ -116,7 +121,7 @@ class CalendarViewModelTest {
             val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
                 failed,
                 total,
-                alleFehlschlaegeNetzbedingt = false
+                fehlschlagArten = ANMELDUNG
             )
             assertEquals(
                 "authStillValid muss stets das Gegenteil von everythingFailed sein " +
@@ -134,7 +139,7 @@ class CalendarViewModelTest {
         val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
             failedCalendars = 1,
             totalSelectedCalendars = 1,
-            alleFehlschlaegeNetzbedingt = true
+            fehlschlagArten = NETZ
         )
 
         assertTrue("Der Fehlschlag bleibt ein Fehlschlag - er wird gemeldet", outcome.everythingFailed)
@@ -153,12 +158,99 @@ class CalendarViewModelTest {
         val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
             failedCalendars = 1,
             totalSelectedCalendars = 2,
-            alleFehlschlaegeNetzbedingt = true
+            fehlschlagArten = NETZ
         )
 
         assertFalse(outcome.everythingFailed)
         assertTrue(outcome.authStillValid)
         assertFalse(outcome.nichtErreichbar)
+    }
+
+    // ------------------------------------------------ Kalender fehlt ist kein Zugriffsverlust
+
+    @Test
+    fun `alle Kalender gibt es nicht mehr - kein Zugriffsverlust, sondern nicht abrufbar`() {
+        // Geloescht oder nicht mehr freigegeben (404/403): "Kalender-Zugriff erneuern" haette
+        // daran nichts geaendert. Die Anzeige fuer nicht abrufbare Kalender nennt den Kalender
+        // beim Namen und bietet das Entfernen an (mit Rueckfrage, wenn danach keiner mehr bliebe).
+        val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
+            failedCalendars = 1,
+            totalSelectedCalendars = 1,
+            fehlschlagArten = FEHLT
+        )
+
+        assertTrue(outcome.everythingFailed)
+        assertTrue("Ein fehlender Kalender belegt keinen verlorenen Zugriff", outcome.authStillValid)
+        assertFalse(outcome.nichtErreichbar)
+        assertTrue("Die gescheiterten Kalender muessen als nicht abrufbar erscheinen", outcome.nichtAbrufbareZeigen)
+    }
+
+    @Test
+    fun `fehlt gemischt mit Funkloch - nicht abrufbar, nicht nicht erreichbar`() {
+        val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
+            failedCalendars = 2,
+            totalSelectedCalendars = 2,
+            fehlschlagArten = setOf(FehlschlagArt.NETZ, FehlschlagArt.KALENDER_FEHLT)
+        )
+
+        assertTrue(outcome.authStillValid)
+        assertFalse(outcome.nichtErreichbar)
+        assertTrue(outcome.nichtAbrufbareZeigen)
+    }
+
+    @Test
+    fun `ein einziger Anmelde-Fehlschlag macht den Totalausfall wieder zum Zugriffsverlust`() {
+        // Die Anmeldung zuerst: solange sie haengt, kann der Nutzer auch nicht pruefen, welcher
+        // Kalender wirklich fehlt.
+        val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
+            failedCalendars = 2,
+            totalSelectedCalendars = 2,
+            fehlschlagArten = setOf(FehlschlagArt.KALENDER_FEHLT, FehlschlagArt.ANMELDUNG)
+        )
+
+        assertFalse(outcome.authStillValid)
+        assertFalse(outcome.nichtAbrufbareZeigen)
+    }
+
+    @Test
+    fun `ein Teilerfolg zeigt die gescheiterten Kalender als nicht abrufbar - wie bisher`() {
+        listOf(ANMELDUNG, NETZ, FEHLT).forEach { arten ->
+            val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
+                failedCalendars = 1,
+                totalSelectedCalendars = 2,
+                fehlschlagArten = arten
+            )
+            assertTrue("$arten", outcome.nichtAbrufbareZeigen)
+            assertTrue("$arten", outcome.authStillValid)
+        }
+    }
+
+    @Test
+    fun `Totalausfall aus Anmeldung oder Funkloch zeigt NICHTS als nicht abrufbar`() {
+        // Beide haben ihre eigene Anzeige - zwei Warnungen fuer dieselbe Lage waeren schlechter.
+        listOf(ANMELDUNG, NETZ).forEach { arten ->
+            val outcome = CalendarViewModel.resolveCalendarAuthorizationOutcome(
+                failedCalendars = 2,
+                totalSelectedCalendars = 2,
+                fehlschlagArten = arten
+            )
+            assertFalse("$arten", outcome.nichtAbrufbareZeigen)
+        }
+    }
+
+    @Test
+    fun `die Art eines Fehlschlags`() {
+        assertEquals(FehlschlagArt.NETZ, CalendarViewModel.fehlschlagArt(AppError.NetworkError("No internet connection")))
+        assertEquals(
+            FehlschlagArt.KALENDER_FEHLT,
+            CalendarViewModel.fehlschlagArt(AppError.PermissionError(message = "Kalender nicht gefunden oder nicht mehr freigegeben"))
+        )
+        assertEquals(FehlschlagArt.ANMELDUNG, CalendarViewModel.fehlschlagArt(AppError.AuthenticationError("401")))
+        assertEquals(
+            FehlschlagArt.ANMELDUNG,
+            CalendarViewModel.fehlschlagArt(Exception("Calendar events require authorization. Please sign in."))
+        )
+        assertEquals(FehlschlagArt.ANMELDUNG, CalendarViewModel.fehlschlagArt(null))
     }
 
     // ------------------------------------------------ Welcher Fehlschlag gilt als netzbedingt

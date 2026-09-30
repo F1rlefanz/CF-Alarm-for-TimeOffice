@@ -130,7 +130,8 @@
 - **`calendarAuthorizationValid` nie bedingungslos `true` setzen** — daran hängt der einzige Weg
   zurück („Kalender-Zugriff erneuern"). Gleiche Fehlerklasse wie `getOrElse { emptyList() }`.
   Und umgekehrt nie bei einem reinen Verbindungsausfall `false` — das ist
-  `kalenderNichtErreichbar` (Hergang im Kalender-Skill, `kalender-datenfluss.md`). Nach jeder
+  `kalenderNichtErreichbar` — und nie, wenn alle Kalender nur FEHLEN (dann
+  `unavailableCalendarIds`; Hergang im Kalender-Skill, `kalender-datenfluss.md`). Nach jeder
   GELUNGENEN Autorisierung lädt MainActivity die Termine neu (`kalenderZugriffErneuert`), sonst
   bleibt die Warnung nach dem Erneuern stehen.
 - **Der GMS-Token-Cache meldet sich als 401 „Invalid Credentials" oder 403

@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier.Ausfall
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenData
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
@@ -34,6 +35,8 @@ import java.io.IOException
  * `...ZustellungTest`; hier geht es darum, WAS die Wartung ihr in welcher Lage uebergibt:
  *  - Teilerfolg: die gescheiterten Kennungen, und zwar VOR der isComplete-Sperre.
  *  - voller Erfolg: die leere Menge - daran erkennt die Entprellung die Erholung.
+ *  - Totalausfall (seit 30.09.2026): alle angefragten Kennungen, samt der Art des Ausfalls, die
+ *    den Text bestimmt ("nicht gefunden" oder "nicht abrufbar").
  *  - Funkloch beim Abruf: NICHTS. Ein Aufruf mit Kennungen wuerde nach zwei Laeufen "nicht
  *    abrufbar" melden, einer mit leerer Menge das Gedaechtnis raeumen - beides waere falsch.
  *  - scheitert schon das Token: die Kalender-Warnung wird gar nicht erst befragt.
@@ -92,7 +95,7 @@ class WartungKalenderWarnungTest {
 
         w.performMaintenance(forceSync = true)
 
-        verifyBlocking(w.calendarUnavailableNotifier) { onFetchOutcome(setOf(ZWEITER)) }
+        verifyBlocking(w.calendarUnavailableNotifier) { onFetchOutcome(setOf(ZWEITER), Ausfall.EINZELNE) }
     }
 
     @Test
@@ -103,7 +106,7 @@ class WartungKalenderWarnungTest {
 
         w.performMaintenance(forceSync = true)
 
-        verifyBlocking(w.calendarUnavailableNotifier) { onFetchOutcome(emptySet()) }
+        verifyBlocking(w.calendarUnavailableNotifier) { onFetchOutcome(emptySet(), Ausfall.EINZELNE) }
     }
 
     /**
@@ -122,7 +125,56 @@ class WartungKalenderWarnungTest {
 
             w.performMaintenance(forceSync = true)
 
-            verifyBlocking(w.calendarUnavailableNotifier, never()) { onFetchOutcome(any()) }
+            verifyBlocking(w.calendarUnavailableNotifier, never()) { onFetchOutcome(any(), any()) }
+        }
+    }
+
+    /**
+     * DIE LUECKE (30.09.2026, am Code belegt): Scheiterten ALLE ausgewaehlten Kalender, kehrte die
+     * Wartung zurueck, BEVOR sie die Warnung fragte - die sah nur Teilerfolge. Der Nutzer hat aber
+     * meist genau EINEN Kalender (den Dienstplan-Feed). Fehlt der dauerhaft, zeigte die App das
+     * beim Oeffnen, im Hintergrund versiegten die Wecker lautlos.
+     *
+     * Beim Totalausfall SIND die gescheiterten Kennungen die angefragten.
+     */
+    @Test
+    fun `Totalausfall, weil der Kalender fehlt - die Warnung bekommt die angefragten Kennungen`() = runTest {
+        val w = wartung(
+            abruf = Result.failure(
+                AppError.PermissionError(message = "Kalender nicht gefunden oder nicht mehr freigegeben")
+            ),
+            auswahl = setOf(DIENSTPLAN, ZWEITER)
+        )
+
+        w.performMaintenance(forceSync = true)
+
+        verifyBlocking(w.calendarUnavailableNotifier) {
+            onFetchOutcome(setOf(DIENSTPLAN, ZWEITER), Ausfall.ALLE_NICHT_GEFUNDEN)
+        }
+    }
+
+    /**
+     * Ohne Meldeweg waren auch die UEBRIGEN Nicht-Netz-Ursachen - und die heissen nicht
+     * "Anmeldung, schon abgedeckt": nur ein 401/Scope-Mangel verwirft das Token, sodass der
+     * naechste Lauf im Token-Schritt "Anmeldung erforderlich" meldet. Eine abgeschnittene
+     * Terminliste oder ein unbekannter Fehler laesst das Token stehen - jeder Lauf kaeme wieder
+     * bis hierher und stiege wieder still aus. Der 401 steht trotzdem mit in der Liste: scheitert
+     * das Verwerfen, haelt ihn sonst nichts davon ab, sich unbemerkt zu wiederholen.
+     */
+    @Test
+    fun `Totalausfall aus anderem Grund als der Verbindung - die Warnung bekommt sie ebenfalls`() = runTest {
+        for (fehler in listOf(
+            AppError.CalendarAccessError("nach 10 Seiten sind weitere Eintraege offen"),
+            AppError.UnknownError("Calendar error: unerwartet"),
+            AppError.AuthenticationError("Google Calendar authentication failed")
+        )) {
+            val w = wartung(abruf = Result.failure(fehler))
+
+            w.performMaintenance(forceSync = true)
+
+            verifyBlocking(w.calendarUnavailableNotifier) {
+                onFetchOutcome(setOf(DIENSTPLAN), Ausfall.ALLE_NICHT_ABRUFBAR)
+            }
         }
     }
 
@@ -136,7 +188,7 @@ class WartungKalenderWarnungTest {
         w.performMaintenance(forceSync = true)
 
         verifyBlocking(w.calendarUseCase, never()) { getCalendarEventsWithStatus(any(), any()) }
-        verifyBlocking(w.calendarUnavailableNotifier, never()) { onFetchOutcome(any()) }
+        verifyBlocking(w.calendarUnavailableNotifier, never()) { onFetchOutcome(any(), any()) }
     }
 
     private companion object {

@@ -17,9 +17,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.OAuth2TokenManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.TokenException
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.FehlschlagArt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.fehlschlagArt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
@@ -587,7 +590,7 @@ class AlarmMaintenanceService : Service() {
     lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 
     @Inject
-    lateinit var calendarUnavailableNotifier: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
+    lateinit var calendarUnavailableNotifier: CalendarUnavailableNotifier
 
     @Inject
     lateinit var freieTageStore: com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
@@ -1319,6 +1322,32 @@ class AlarmMaintenanceService : Service() {
     }
 
     /**
+     * Uebergibt der Kalender-Warnung, welche Kalender in DIESEM Lauf gescheitert sind - eine leere
+     * Menge heisst fuer sie "erholt". Das ist der EINZIGE Weg, auf dem der Nutzer von einem
+     * dauerhaft fehlenden Kalender erfaehrt, ohne die App zu oeffnen - und genau das ist der
+     * Fehlerfall: die App laeuft ja scheinbar, waehrend die Wecker einer nach dem anderen
+     * auslaufen.
+     */
+    private suspend fun meldeKalenderWarnung(
+        gescheitert: Set<String>,
+        ausfall: CalendarUnavailableNotifier.Ausfall
+    ) {
+        try {
+            calendarUnavailableNotifier.onFetchOutcome(gescheitert, ausfall)
+        } catch (e: CancellationException) {
+            // KEIN runCatching hier: das faengt Throwable und damit auch die CancellationException,
+            // was der Projekt-Invariante "eine Cancellation laeuft weiter" widerspricht. Wird die
+            // Wartung abgebrochen, muss der Abbruch durchschlagen und nicht als "Benachrichtigung
+            // fehlgeschlagen" weggeloggt werden.
+            throw e
+        } catch (e: Exception) {
+            // Die Wartungskette darf an einer Benachrichtigung NIEMALS scheitern - sie ist
+            // Diagnostik, der Sync darunter ist die eigentliche Aufgabe.
+            Logger.e(LogTags.MAINTENANCE, "Kalender-Warnung fehlgeschlagen - Wartung laeuft weiter", e)
+        }
+    }
+
+    /**
      * Ein Wartungslauf: Aufraeumen (Logs, freie Tage), Master-Pause, Raeumauftrag, Token,
      * Lade-Gate, Kalender, Fail-safe-Sperren, Delta-Sync.
      *
@@ -1453,7 +1482,46 @@ class AlarmMaintenanceService : Service() {
         )
 
         if (eventsResult.isFailure) {
-            Logger.e(LogTags.MAINTENANCE, "Event loading failed", eventsResult.exceptionOrNull())
+            val fehler = eventsResult.exceptionOrNull()
+            // TOTALAUSFALL - alle ausgewaehlten Kalender gescheitert; die gescheiterten Kennungen
+            // SIND also die angefragten. Bis v1.43.6 stieg die Wartung hier aus, ohne die Warnung
+            // zu fragen: sie sah nur Teilerfolge, und der haeufigste Fall - der EINZIGE Kalender,
+            // der Dienstplan-Feed, fehlt dauerhaft - liess die Wecker im Hintergrund lautlos
+            // versiegen.
+            //
+            // AUSGENOMMEN ist nur die Verbindung: ein Funkloch belegt nichts ueber den Kalender,
+            // und die Warnung sagt "nicht abrufbar". Sie wird dann gar nicht erst gefragt - eine
+            // leere Menge hiesse fuer sie "erholt" und raeumte ihr Gedaechtnis. Anhaltende
+            // Netzstoerungen meldet der Token-Schritt ("Kalender-Synchronisation gestoert") -
+            // das Token lebt eine Stunde, ein 6h-Lauf muss es also fast immer erst erneuern.
+            //
+            // Nur die ERSTE Ursache ist bekannt (CalendarUseCase.getCalendarEventsWithStatus wirft
+            // sie). Scheitern mehrere Kalender verschieden, entscheidet sie - schlimmstenfalls
+            // meldet sich ein fehlender Kalender einen Lauf spaeter, wenn zuerst ein Funkloch kam.
+            val ausfall = when (fehlschlagArt(fehler)) {
+                FehlschlagArt.NETZ -> null
+                FehlschlagArt.KALENDER_FEHLT -> CalendarUnavailableNotifier.Ausfall.ALLE_NICHT_GEFUNDEN
+                // "Anmeldung" heisst in der Einstufung "alles uebrige" - also ausdruecklich auch
+                // eine abgeschnittene Terminliste oder Unbekanntes. Nur ein 401/Scope-Mangel
+                // verwirft das Token (CalendarUseCase.invalidateTokenIfRejectedByGoogle), sodass
+                // der naechste Lauf im Token-Schritt "Anmeldung erforderlich" meldet; alles andere
+                // laesst es stehen und kaeme Lauf fuer Lauf still bis hierher.
+                FehlschlagArt.ANMELDUNG -> CalendarUnavailableNotifier.Ausfall.ALLE_NICHT_ABRUFBAR
+            }
+            if (ausfall == null) {
+                Logger.w(
+                    LogTags.MAINTENANCE,
+                    "Kalender nicht erreichbar (Verbindung) - Sync uebersprungen, keine Kalender-Warnung",
+                    fehler
+                )
+            } else {
+                Logger.e(
+                    LogTags.MAINTENANCE,
+                    "Kein ausgewaehlter Kalender abrufbar ($ausfall) - Sync uebersprungen",
+                    fehler
+                )
+                meldeKalenderWarnung(selectedCalendars, ausfall)
+            }
             return
         }
 
@@ -1466,23 +1534,7 @@ class AlarmMaintenanceService : Service() {
         // sie muss ausserdem mitbekommen, wenn sich ein Kalender wieder erholt hat. Stuende der
         // Aufruf hinter dem `return`, saehe der Notifier ausschliesslich Stoerungen und wuerde
         // nach der ersten nie wieder verstummen.
-        //
-        // Das ist der EINZIGE Weg, auf dem der Nutzer von diesem Zustand erfaehrt, ohne die App zu
-        // oeffnen - und genau das ist der Fehlerfall: die App laeuft ja scheinbar, waehrend die
-        // Wecker einer nach dem anderen auslaufen.
-        try {
-            calendarUnavailableNotifier.onFetchOutcome(fetchOutcome.failedCalendarIds)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            // KEIN runCatching hier: das faengt Throwable und damit auch die CancellationException,
-            // was der Projekt-Invariante "eine Cancellation laeuft weiter" widerspricht. Wird die
-            // Wartung abgebrochen, muss der Abbruch durchschlagen und nicht als "Benachrichtigung
-            // fehlgeschlagen" weggeloggt werden.
-            throw e
-        } catch (e: Exception) {
-            // Die Wartungskette darf an einer Benachrichtigung NIEMALS scheitern - sie ist
-            // Diagnostik, der Sync darunter ist die eigentliche Aufgabe.
-            Logger.e(LogTags.MAINTENANCE, "Kalender-Warnung fehlgeschlagen - Wartung laeuft weiter", e)
-        }
+        meldeKalenderWarnung(fetchOutcome.failedCalendarIds, CalendarUnavailableNotifier.Ausfall.EINZELNE)
 
         // FAIL-SAFE, zweiter Teil: NICHT synchronisieren, wenn nur ein TEIL der Kalender
         // geantwortet hat. Ein Teilerfolg ist bewusst Result.success (siehe

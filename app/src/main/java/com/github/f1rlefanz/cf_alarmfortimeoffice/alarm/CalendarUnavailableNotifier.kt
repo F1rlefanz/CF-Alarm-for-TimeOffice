@@ -20,7 +20,10 @@ import javax.inject.Singleton
  * entzogen, Feed-Quelle abgeschaltet), ist jede Eventliste unvollstaendig. Die
  * Vollstaendigkeits-Sperren verhindern dann zu Recht das Loeschen von Alarmen - sie verhindern
  * damit aber auch, dass jemals wieder einer angelegt wird. Die bestehenden Wecker klingeln der
- * Reihe nach und laufen aus, nichts waechst nach.
+ * Reihe nach und laufen aus, nichts waechst nach. Fallen ALLE aus - meist ist es genau einer, der
+ * Dienstplan-Feed -, gibt es gar keine Eventliste mehr, und die Folge ist dieselbe; seit
+ * 30.09.2026 meldet die Wartung auch diesen Fall (vorher sah die Warnung nur Teilausfaelle).
+ * WIE der Abruf ausging, bestimmt nur den Text ([Ausfall], [meldung]).
  *
  * Die Status-Karte im Status-Tab zeigt das - aber nur, wenn der Nutzer die App oeffnet. Und der
  * Fehlerfall ist gerade, dass er das wochenlang nicht tut, weil die App ja "einfach laeuft". Nur
@@ -79,6 +82,61 @@ open class CalendarUnavailableNotifier @Inject constructor(
                 neuerBereitsGemeldet = (bereitsGemeldet + neuZuMelden) intersect jetztGescheitert
             )
         }
+
+        private const val FOLGE =
+            "Solange legt CF-Alarm keine neuen Wecker an; die bereits gestellten bleiben."
+
+        /**
+         * PURE, TESTBAR: Titel und Text der Meldung fuer [anzahl] zu meldende Kalender.
+         *
+         * Jeder Text nennt WAS, die FOLGE und WOHIN - und das WOHIN muss in der App genau das
+         * zeigen, was der Text verspricht (CalendarUnavailableNotifierTextTest):
+         *  - [Ausfall.EINZELNE]: die Karte "Kalender" nennt sie und bietet "Aus Auswahl
+         *    entfernen" an; danach bleibt mindestens ein Kalender, das Entfernen ist harmlos.
+         *  - [Ausfall.ALLE_NICHT_GEFUNDEN]: Titel wortgleich mit der Karte der Uebersicht
+         *    (`KALENDER_NICHT_GEFUNDEN_TITEL`, aus `alarm/` nicht lesbar). KEIN Entfernen-Rat: beim
+         *    letzten Kalender waere das eine Abwahl, die alle Wecker der naechsten zwei Wochen
+         *    raeumt - die App fragt dort nach und bietet zuerst einen anderen Kalender an.
+         *  - [Ausfall.ALLE_NICHT_ABRUFBAR]: die Ursache ist gerade NICHT bekannt, also weder
+         *    "nicht gefunden" noch "melde dich an". In der App steht dann die Anmeldung, kein
+         *    Entfernen-Knopf.
+         *
+         * "einen ausgewaehlten" statt "den ausgewaehlten": gezaehlt sind die GEMELDETEN, nicht die
+         * ausgewaehlten Kalender - bei zweien kann einer schon, der andere erst beim naechsten
+         * Lauf faellig sein.
+         */
+        fun meldung(ausfall: Ausfall, anzahl: Int): Meldung = when (ausfall) {
+            Ausfall.EINZELNE -> Meldung(
+                titel = if (anzahl == 1) {
+                    "Ein Kalender ist nicht mehr abrufbar"
+                } else {
+                    "$anzahl Kalender sind nicht mehr abrufbar"
+                },
+                text = "$FOLGE " + if (anzahl == 1) {
+                    "Im Status-Tab unter \"Kalender\" steht, welcher betroffen ist — dort lässt er " +
+                        "sich auch aus der Auswahl entfernen."
+                } else {
+                    "Im Status-Tab unter \"Kalender\" steht, welche betroffen sind — dort lassen sie " +
+                        "sich auch aus der Auswahl entfernen."
+                }
+            )
+
+            Ausfall.ALLE_NICHT_GEFUNDEN -> Meldung(
+                titel = "Kalender nicht gefunden",
+                text = "Google findet " +
+                    (if (anzahl == 1) "einen ausgewählten Kalender" else "$anzahl ausgewählte Kalender") +
+                    " nicht mehr — gelöscht oder nicht mehr freigegeben? $FOLGE Näheres im Status-Tab " +
+                    "unter \"Kalender\"."
+            )
+
+            Ausfall.ALLE_NICHT_ABRUFBAR -> Meldung(
+                titel = "Kalender nicht abrufbar",
+                text = "CF-Alarm konnte " +
+                    (if (anzahl == 1) "einen ausgewählten Kalender" else "$anzahl ausgewählte Kalender") +
+                    " bei mehreren Versuchen in Folge nicht abrufen. $FOLGE Näheres im Status-Tab " +
+                    "unter \"Kalender\"."
+            )
+        }
     }
 
     /** Ergebnis von [entscheideBenachrichtigung]: was zu melden ist und was zu merken. */
@@ -89,10 +147,33 @@ open class CalendarUnavailableNotifier @Inject constructor(
     )
 
     /**
+     * Wie der Abruf ausging - bestimmt NUR den Text der Meldung ([meldung]), nie die Entprellung:
+     * die zaehlt je Kennung, gleich aus welchem Grund sie scheiterte.
+     */
+    enum class Ausfall {
+        /**
+         * Der Abruf lieferte ein Ergebnis; gescheitert sind hoechstens EINIGE Kalender (auch keiner
+         * - dann ist die Menge leer). Die Ursache je Kalender ist hier nicht bekannt.
+         */
+        EINZELNE,
+
+        /** Alle ausgewaehlten Kalender scheiterten, und Google kennt sie nicht (mehr): 404, 403 ohne Scope-Mangel. */
+        ALLE_NICHT_GEFUNDEN,
+
+        /**
+         * Alle scheiterten aus einem anderen Grund als der Verbindung - abgelehnte Anmeldung,
+         * abgeschnittene Terminliste, Unbekanntes. Ein Funkloch wird gar nicht erst gemeldet.
+         */
+        ALLE_NICHT_ABRUFBAR
+    }
+
+    data class Meldung(val titel: String, val text: String)
+
+    /**
      * Nach jedem Kalenderabruf im Hintergrund aufzurufen - AUCH mit einer leeren Menge, denn
      * genau daran erkennt die Entprellung, dass sich ein Kalender erholt hat.
      */
-    open suspend fun onFetchOutcome(gescheiterteKalenderIds: Set<String>) {
+    open suspend fun onFetchOutcome(gescheiterteKalenderIds: Set<String>, ausfall: Ausfall) {
         val zustand = prefs.zustandNow()
         val entscheidung = entscheideBenachrichtigung(
             jetztGescheitert = gescheiterteKalenderIds,
@@ -105,13 +186,8 @@ open class CalendarUnavailableNotifier @Inject constructor(
         // heraus - nach dem Wiedereinschalten kam die Warnung NIE.
         // Deshalb wird JETZT ERST gemeldet und DANACH gemerkt - nur der bestaetigte Post zaehlt.
         val darfMelden = entscheidung.zuMelden.isNotEmpty() && prefs.enabledNow()
-        val anzahl = entscheidung.zuMelden.size
-        val wurdeGemeldet = darfMelden && zeige(
-            title = if (anzahl == 1) "Ein Kalender ist nicht mehr abrufbar" else "$anzahl Kalender sind nicht mehr abrufbar",
-            text = "Solange legt CF-Alarm keine neuen Wecker an; die bereits gestellten bleiben. " +
-                "Im Status-Tab unter \"Kalender\" steht, welcher betroffen ist — dort lässt er " +
-                "sich auch aus der Auswahl entfernen."
-        )
+        val meldung = meldung(ausfall, entscheidung.zuMelden.size)
+        val wurdeGemeldet = darfMelden && zeige(title = meldung.titel, text = meldung.text)
 
         // Der Beharrlichkeits-Merker wird dagegen IMMER fortgeschrieben - die Entprellung braucht
         // jeden Lauf, auch die stillen, um "dauerhaft" von "Aussetzer" zu unterscheiden und um zu

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier.Ausfall
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -54,8 +55,12 @@ class CalendarUnavailableNotifierZustellungTest {
         var versuche = 0
             private set
 
+        var letzterTitel: String? = null
+            private set
+
         override fun zeige(title: String, text: String): Boolean {
             versuche++
+            letzterTitel = title
             return zustellbar
         }
     }
@@ -70,11 +75,11 @@ class CalendarUnavailableNotifierZustellungTest {
         val (notifier, prefs) = notifier(zustellbar = false)
 
         // Erster Ausfall: Entprellung, noch keine Meldung.
-        notifier.onFetchOutcome(setOf("dienstplan"))
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
         assertEquals("Ein einzelner Aussetzer meldet nicht", 0, notifier.versuche)
 
         // Zweiter Ausfall in Folge: Meldung faellig - aber nicht zustellbar.
-        notifier.onFetchOutcome(setOf("dienstplan"))
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
         assertEquals(1, notifier.versuche)
         assertTrue(
             "Ohne bestaetigte Zustellung darf nichts als gemeldet gelten - genau hier stand der Merker vorher",
@@ -84,7 +89,7 @@ class CalendarUnavailableNotifierZustellungTest {
         // Der Nutzer schaltet die Benachrichtigungen wieder ein: der naechste Lauf muss es
         // erneut versuchen. Vor dem Fix kam die Warnung hier NIE mehr.
         notifier.zustellbar = true
-        notifier.onFetchOutcome(setOf("dienstplan"))
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
         assertEquals("Der erneute Versuch fehlt", 2, notifier.versuche)
         assertEquals(setOf("dienstplan"), prefs.zustandNow().bereitsGemeldet)
     }
@@ -93,13 +98,13 @@ class CalendarUnavailableNotifierZustellungTest {
     fun `eine zugestellte Warnung wiederholt sich nicht`() = runTest {
         val (notifier, prefs) = notifier(zustellbar = true)
 
-        notifier.onFetchOutcome(setOf("dienstplan"))
-        notifier.onFetchOutcome(setOf("dienstplan"))
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
         assertEquals(1, notifier.versuche)
         assertEquals(setOf("dienstplan"), prefs.zustandNow().bereitsGemeldet)
 
         // Dritter Lauf: dieselbe Stoerung darf nicht alle sechs Stunden erneut klingeln.
-        notifier.onFetchOutcome(setOf("dienstplan"))
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
         assertEquals(1, notifier.versuche)
     }
 
@@ -110,20 +115,20 @@ class CalendarUnavailableNotifierZustellungTest {
         // Laeufe, oder eine Erholung wuerde nie bemerkt.
         val (notifier, prefs) = notifier(zustellbar = false)
 
-        notifier.onFetchOutcome(setOf("dienstplan", "bereitschaft"))
+        notifier.onFetchOutcome(setOf("dienstplan", "bereitschaft"), Ausfall.EINZELNE)
         assertEquals(
             setOf("dienstplan", "bereitschaft"),
             prefs.zustandNow().zuletztGescheitert
         )
 
-        notifier.onFetchOutcome(setOf("dienstplan"))
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
         assertEquals(
             "Der erholte Kalender muss aus dem Merker fallen",
             setOf("dienstplan"),
             prefs.zustandNow().zuletztGescheitert
         )
 
-        notifier.onFetchOutcome(emptySet())
+        notifier.onFetchOutcome(emptySet(), Ausfall.EINZELNE)
         assertTrue(prefs.zustandNow().zuletztGescheitert.isEmpty())
     }
 
@@ -132,11 +137,27 @@ class CalendarUnavailableNotifierZustellungTest {
         val (notifier, prefs) = notifier(zustellbar = true)
         prefs.setEnabled(false)
 
-        notifier.onFetchOutcome(setOf("dienstplan"))
-        notifier.onFetchOutcome(setOf("dienstplan"))
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
 
         assertEquals("Der Toggle des Nutzers gilt vor der Zustellbarkeit", 0, notifier.versuche)
         assertTrue(prefs.zustandNow().bereitsGemeldet.isEmpty())
         assertEquals(setOf("dienstplan"), prefs.zustandNow().zuletztGescheitert)
+    }
+
+    /**
+     * Den Text waehlt der Anlass des MELDENDEN Laufs - die Entprellung zaehlt davon unabhaengig
+     * je Kennung. Fehlt der Kalender beim zweiten Lauf ganz, heisst die Meldung so wie die Karte in
+     * der Uebersicht.
+     */
+    @Test
+    fun `die Meldung traegt den Text ihres Anlasses`() = runTest {
+        val (notifier, _) = notifier(zustellbar = true)
+
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+
+        assertEquals(1, notifier.versuche)
+        assertEquals("Kalender nicht gefunden", notifier.letzterTitel)
     }
 }

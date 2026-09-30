@@ -29,7 +29,6 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// Extension property for Context to create DataStore
 // corruptionHandler: eine kaputte Präferenzdatei wird durch einen leeren Zustand ersetzt statt
 // den DataStore.data-Flow dauerhaft (für die gesamte Prozesslaufzeit) zu blockieren - siehe
 // initializeFromDataStore(), deren try/catch sonst der einzige Fangnetz-Punkt wäre und den
@@ -56,20 +55,7 @@ internal fun shouldAcceptSelectionRead(userUnlocked: Boolean, ids: Set<String>):
     userUnlocked || ids.isNotEmpty()
 
 /**
- * CalendarSelectionRepository - Persistente Speicherung der ausgewählten Kalender
- * 
- * SINGLE SOURCE OF TRUTH IMPLEMENTATION:
- * ✅ Zentrale Verwaltung der ausgewählten Kalender-IDs
- * ✅ Persistente Speicherung mit DataStore Preferences
- * ✅ StateFlow-basierte API mit synchronem .value Zugriff
- * ✅ Atomare State Updates - keine Race Conditions
- * ✅ Result-basierte Fehlerbehandlung
- * ✅ Comprehensive CRUD Operations
- * 
- * ARCHITECTURE (HILT MIGRATION):
- * - MutableStateFlow für internen State
- * - Automatische Synchronisation mit DataStore
- * - .value Zugriff für ViewModels ohne Coroutine-Overhead
+ * Persistente Auswahl der Kalender - einzige Quelle der Wahrheit, als StateFlow mit synchronem `.value`.
  */
 @Singleton
 class CalendarSelectionRepository @Inject constructor(
@@ -113,30 +99,15 @@ class CalendarSelectionRepository @Inject constructor(
      */
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
-    /**
-     * INTERNAL STATE: MutableStateFlow für synchronen Zugriff
-     * Wird beim Start aus DataStore initialisiert und bei Änderungen aktualisiert
-     */
+    /** Startet mit emptySet(), bis der Store gelesen ist (siehe Interface). */
     private val _selectedCalendarIds = MutableStateFlow<Set<String>>(emptySet())
 
-    /**
-     * PUBLIC API: StateFlow der ausgewählten Kalender-IDs
-     * 
-     * SYNCHRONER ZUGRIFF: .value liefert aktuellen State sofort
-     * REACTIVE: Kann mit collect() oder collectAsStateWithLifecycle() beobachtet werden
-     * DISTINCT: Nur echte Änderungen werden emittiert
-     */
     override val selectedCalendarIds: StateFlow<Set<String>> = _selectedCalendarIds.asStateFlow()
     
     init {
-        // Initialisierung: Lade persistierte Daten in StateFlow
         initializeFromDataStore()
     }
     
-    /**
-     * Lädt den initialen State aus DataStore in den StateFlow
-     * Wird einmalig beim Repository-Start ausgeführt
-     */
     private fun initializeFromDataStore() {
         repositoryScope.launch {
             // ZUERST WARTEN, DANN LESEN - der Read darf im gesperrten Zustand gar nicht passieren.
@@ -281,9 +252,6 @@ class CalendarSelectionRepository @Inject constructor(
                 .first()
         }
 
-    /**
-     * GRANULAR UPDATE: Hinzufügen einer einzelnen Kalender-ID
-     */
     override suspend fun addCalendarId(calendarId: String): Result<Unit> = 
         SafeExecutor.safeExecute("CalendarSelectionRepository.addCalendarId") {
             if (calendarId.isBlank()) {
@@ -297,9 +265,6 @@ class CalendarSelectionRepository @Inject constructor(
             Logger.d(LogTags.CALENDAR, "Calendar added to selection: ${calendarId.take(8)}...")
         }
 
-    /**
-     * GRANULAR UPDATE: Entfernen einer einzelnen Kalender-ID
-     */
     override suspend fun removeCalendarId(calendarId: String): Result<Unit> = 
         SafeExecutor.safeExecute("CalendarSelectionRepository.removeCalendarId") {
             dataStore.edit { preferences ->

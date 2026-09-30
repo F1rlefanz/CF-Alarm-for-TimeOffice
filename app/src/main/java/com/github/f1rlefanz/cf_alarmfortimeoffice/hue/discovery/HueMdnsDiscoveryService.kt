@@ -104,13 +104,9 @@ class HueMdnsDiscoveryService(private val context: Context) {
                     Logger.w(LogTags.HUE_DISCOVERY, "mDNS discovery stop failed: $errorCode")
                 }
 
-                override fun onDiscoveryStarted(serviceType: String) {
-                    Logger.d(LogTags.HUE_DISCOVERY, "mDNS discovery started for: $serviceType")
-                }
+                override fun onDiscoveryStarted(serviceType: String) {}
 
-                override fun onDiscoveryStopped(serviceType: String) {
-                    Logger.d(LogTags.HUE_DISCOVERY, "mDNS discovery stopped")
-                }
+                override fun onDiscoveryStopped(serviceType: String) {}
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     Logger.d(LogTags.HUE_DISCOVERY, "mDNS service found: ${serviceInfo.serviceName}")
@@ -128,9 +124,7 @@ class HueMdnsDiscoveryService(private val context: Context) {
                     }
                 }
 
-                override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                    Logger.d(LogTags.HUE_DISCOVERY, "mDNS service lost: ${serviceInfo.serviceName}")
-                }
+                override fun onServiceLost(serviceInfo: NsdServiceInfo) {}
             }
 
             nsdManager.discoverServices(HUE_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
@@ -177,14 +171,6 @@ class HueMdnsDiscoveryService(private val context: Context) {
             }
             
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                // Extract hostname/host for logging (backward compatible)
-                val hostInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    serviceInfo.hostAddresses.firstOrNull()?.hostName ?: "unknown"
-                } else {
-                    @Suppress("DEPRECATION")
-                    serviceInfo.host?.hostName ?: "unknown"
-                }
-                Logger.d(LogTags.HUE_DISCOVERY, "Service resolved: ${serviceInfo.serviceName} -> $hostInfo")
                 callback(serviceInfo)
             }
         }

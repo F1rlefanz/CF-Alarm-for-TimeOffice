@@ -202,13 +202,6 @@ class TokenDataTest {
         assertNotEquals(unrelatedRotated.rotationId, original.rotationId)
     }
 
-    @Test
-    fun `identisches Token ohne Rotation ist der Normalfall und keine Verletzung`() {
-        val token = tokenAt(expiresAt = System.currentTimeMillis() - 1000)
-        // storedToken == currentToken (gleiche rotationId): niemand sonst hat rotiert.
-        assertEquals(token.rotationId, token.rotationId)
-    }
-
     // --- isLegitimateSuccessorOf: das vollstaendige Urteil, das refresh() faellt ---
 
     @Test

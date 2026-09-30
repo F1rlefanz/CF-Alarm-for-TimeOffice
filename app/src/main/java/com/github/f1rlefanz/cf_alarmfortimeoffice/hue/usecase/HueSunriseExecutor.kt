@@ -102,23 +102,24 @@ internal class HueSunriseExecutor(
                 sunrise != null &&
                 sunrise.enabled &&
                 sunrise.startBeforeAlarm &&
-                (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
-                    rule.shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true))
+                rule.passtAufSchicht(shiftName)
         }
     }
+
+    // Szenen-Ziele sind hier ausgeschlossen: eine Rampe erzeugt den Lichtzustand ueber die
+    // Zeit, eine Szene bringt ihn fertig mit. validateRule() lehnt die Kombination bereits
+    // ab - dieser Filter ist die zweite Linie fuer Bestandsdaten und kuenftige Editor-Fehler.
+    private fun sunriseTargets(rule: HueSchedule): List<Pair<String, Boolean>> = rule.lightActions
+        .filter { !it.isScene }
+        .map { it.targetId to it.isGroup }
+        .filter { it.first.isNotBlank() }
+        .distinct()
 
     /**
      * Runs the sunrise ramp on every target of [rule] via the light use case.
      */
     suspend fun runSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
-        // Szenen-Ziele sind hier ausgeschlossen: eine Rampe erzeugt den Lichtzustand ueber die
-        // Zeit, eine Szene bringt ihn fertig mit. validateRule() lehnt die Kombination bereits
-        // ab - dieser Filter ist die zweite Linie fuer Bestandsdaten und kuenftige Editor-Fehler.
-        val targets = rule.lightActions
-            .filter { !it.isScene }
-            .map { it.targetId to it.isGroup }
-            .filter { it.first.isNotBlank() }
-            .distinct()
+        val targets = sunriseTargets(rule)
 
         if (targets.isEmpty()) {
             Logger.w(LogTags.HUE_USECASE, "🌅 Sunrise rule ${rule.name} has no targets")
@@ -154,14 +155,7 @@ internal class HueSunriseExecutor(
      * always reach the wake-up state even if the pre-alarm ramp never ran.
      */
     suspend fun finalizeSunriseForRule(rule: HueSchedule, sunrise: SunriseConfig): SunriseRunResult {
-        // Szenen-Ziele sind hier ausgeschlossen: eine Rampe erzeugt den Lichtzustand ueber die
-        // Zeit, eine Szene bringt ihn fertig mit. validateRule() lehnt die Kombination bereits
-        // ab - dieser Filter ist die zweite Linie fuer Bestandsdaten und kuenftige Editor-Fehler.
-        val targets = rule.lightActions
-            .filter { !it.isScene }
-            .map { it.targetId to it.isGroup }
-            .filter { it.first.isNotBlank() }
-            .distinct()
+        val targets = sunriseTargets(rule)
 
         if (targets.isEmpty()) {
             Logger.w(LogTags.HUE_USECASE, "🌅 Sunrise rule ${rule.name} has no targets")

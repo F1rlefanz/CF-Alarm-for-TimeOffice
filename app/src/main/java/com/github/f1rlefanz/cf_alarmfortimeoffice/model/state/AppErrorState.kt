@@ -10,14 +10,9 @@ data class AppErrorState(
     val isRecoverable: Boolean = true,
     val showError: Boolean = false
 ) {
-    val hasError: Boolean get() = error != null && errorType != ErrorType.NONE
-    val canRetry: Boolean get() = hasError && isRecoverable
-    val needsUserAction: Boolean get() = hasError && !isRecoverable
-    
     enum class ErrorType {
         NONE,
         AUTHENTICATION,
-        PERMISSION,
         CALENDAR_API,
         NETWORK,
         VALIDATION,
@@ -31,13 +26,6 @@ data class AppErrorState(
             error = message,
             errorType = ErrorType.AUTHENTICATION,
             isRecoverable = true,
-            showError = true
-        )
-        
-        fun permissionError(message: String) = AppErrorState(
-            error = message,
-            errorType = ErrorType.PERMISSION,
-            isRecoverable = false,
             showError = true
         )
         

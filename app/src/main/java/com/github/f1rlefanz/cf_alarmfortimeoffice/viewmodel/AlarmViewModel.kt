@@ -85,7 +85,6 @@ data class AlarmSkipUiState(
     val isNextAlarmSkipped: Boolean = false,
     val skippedAlarmId: Int? = null,
     val isLoading: Boolean = false,
-    val error: AppErrorState? = null,
     /**
      * Nutzertext zum Ausgang des letzten Skip-Vorgangs, sofern er NICHT einfach aufging:
      *
@@ -95,9 +94,8 @@ data class AlarmSkipUiState(
      *   Alarm nicht loeschen liess (siehe `SkipRolledBackException`).
      *
      * Ohne diesen Text waere der schlechteste Fall stumm: der Nutzer drueckt einen Knopf, die
-     * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. `error` taugt dafuer nicht,
-     * das zeigt die Oberflaeche nirgends an. Wird beim naechsten Ueberspringen bzw. Aufheben
-     * wieder geleert.
+     * Oberflaeche zeigt danach keinen Skip mehr - und keinen Wecker. Wird beim naechsten
+     * Ueberspringen bzw. Aufheben wieder geleert.
      */
     val restoreNotice: String? = null
 )
@@ -244,30 +242,24 @@ class AlarmViewModel @Inject constructor(
     private fun cleanupExpiredAlarmsOnStartup() {
         viewModelScope.launch {
             try {
-                // Cast to concrete implementation to access cleanup method
-                val repository =
-                    alarmUseCase as? com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase
-                if (repository != null) {
-                    // For now, trigger cleanup via deleteAll -> rebuild pattern
-                    Logger.d(LogTags.ALARM, "Startup cleanup: checking for expired alarms")
+                Logger.d(LogTags.ALARM, "Startup cleanup: checking for expired alarms")
 
-                    // Get all alarms and check for expired ones
-                    alarmUseCase.getAllAlarms().onSuccess { allAlarms ->
-                        val currentTime = System.currentTimeMillis()
-                        val expiredAlarms = allAlarms.filter { it.triggerTime <= currentTime }
+                // Get all alarms and check for expired ones
+                alarmUseCase.getAllAlarms().onSuccess { allAlarms ->
+                    val currentTime = System.currentTimeMillis()
+                    val expiredAlarms = allAlarms.filter { it.triggerTime <= currentTime }
 
-                        if (expiredAlarms.isNotEmpty()) {
-                            Logger.w(
-                                LogTags.ALARM,
-                                "Found ${expiredAlarms.size} expired alarms on startup, cleaning up"
-                            )
-                            // Delete each expired alarm
-                            expiredAlarms.forEach { alarm ->
-                                alarmUseCase.deleteAlarm(alarm.id)
-                            }
-                        } else {
-                            Logger.d(LogTags.ALARM, "No expired alarms found on startup")
+                    if (expiredAlarms.isNotEmpty()) {
+                        Logger.w(
+                            LogTags.ALARM,
+                            "Found ${expiredAlarms.size} expired alarms on startup, cleaning up"
+                        )
+                        // Delete each expired alarm
+                        expiredAlarms.forEach { alarm ->
+                            alarmUseCase.deleteAlarm(alarm.id)
                         }
+                    } else {
+                        Logger.d(LogTags.ALARM, "No expired alarms found on startup")
                     }
                 }
             } catch (e: Exception) {
@@ -283,14 +275,8 @@ class AlarmViewModel @Inject constructor(
                     .collect { alarms ->
                         // FIXED: Only consider future alarms for "next alarm" calculation
                         val currentTime = System.currentTimeMillis()
-                        val futureAlarms = alarms.filter { it.triggerTime > currentTime }
 
                         _uiState.value = uebernehmeAlarmAnzeige(_uiState.value, alarms)
-
-                        Logger.d(
-                            LogTags.ALARM,
-                            "Active alarms updated: ${alarms.size} total, ${futureAlarms.size} future"
-                        )
 
                         // CLEANUP: Log expired alarms for debugging
                         val expiredAlarms = alarms.filter { it.triggerTime <= currentTime }
@@ -303,7 +289,6 @@ class AlarmViewModel @Inject constructor(
                     }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Rethrow for proper structured concurrency
-                Logger.d(LogTags.ALARM, "Alarm status observation cancelled (app lifecycle)")
                 throw e
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "Error observing alarm status", e)
@@ -396,7 +381,6 @@ class AlarmViewModel @Inject constructor(
                         }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     // Rethrow for proper structured concurrency
-                    Logger.d(LogTags.ALARM_SKIP, "Skip status observation cancelled (app lifecycle)")
                     throw e
                 } catch (e: Exception) {
                     Logger.e(LogTags.ALARM_SKIP, "Error in skip status observation", e)
@@ -676,9 +660,9 @@ class AlarmViewModel @Inject constructor(
                     }
                     .onFailure { error ->
                         Logger.e(LogTags.ALARM_SKIP, "❌ Failed to skip next alarm", error)
-                        // Ein halb durchgefuehrtes Ueberspringen muss der Nutzer SEHEN: skipState.error
-                        // zeigt die Oberflaeche nirgends an, restoreNotice schon (und zwar auch dann,
-                        // wenn es gerade weder aktiven Alarm noch aktives Ueberspringen gibt).
+                        // Ein halb durchgefuehrtes Ueberspringen muss der Nutzer SEHEN: restoreNotice
+                        // ist der einzige Kanal, den die Oberflaeche zeigt (und zwar auch dann, wenn
+                        // es gerade weder aktiven Alarm noch aktives Ueberspringen gibt).
                         //
                         // DER TEXT ENTSTEHT VOR DER ZUWEISUNG, und die laeuft ueber `update {}`:
                         // stelleNachAbgebrochenemSkipWiederHer() suspendiert (DataStore-Lesen und
@@ -714,9 +698,6 @@ class AlarmViewModel @Inject constructor(
                         _skipState.update {
                             it.copy(
                                 isLoading = false,
-                                error = AppErrorState.validationError(
-                                    error.message ?: "Failed to skip alarm"
-                                ),
                                 restoreNotice = hinweis
                             )
                         }
@@ -846,7 +827,8 @@ class AlarmViewModel @Inject constructor(
                     // vernichtet einen Wecker, den er nicht einmal lesen konnte. Ein Lesefehler ist
                     // typischerweise voruebergehend; der Skip bleibt bestehen und der naechste Versuch
                     // hat wieder alles. Andere Wecker kostet das nichts: das Skip-Gate ist auf
-                    // skippedAlarmId gemuenzt (AlarmUseCase.kt:279) und betrifft nur diesen einen.
+                    // skippedAlarmId gemuenzt (AlarmUseCase.istUebersprungen: Kennung bzw.
+                    // Weckzeitpunkt) und betrifft nur diesen einen.
                     Logger.e(
                         LogTags.ALARM_SKIP,
                         "❌ Skip-Zustand beim Aufheben nicht lesbar - Aufheben abgebrochen, damit ein " +
@@ -935,30 +917,6 @@ class AlarmViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Baut einen uebersprungenen MANUELLEN Wecker aus seinem Schnappschuss wieder auf.
-     *
-     * Nur er braucht das: kalenderbasierte Alarme entstehen beim naechsten Sync von selbst neu
-     * (fuer sie ist [alarm] null), ein von Hand gestellter aus keiner Quelle.
-     *
-     * REIHENFOLGE: erst speichern, dann armieren - ein armierter Wecker ohne Repository-Eintrag
-     * waere weder sichtbar noch abbrechbar. Beide Schritte melden ihren Fehlschlag dem Nutzer,
-     * statt in einem Log zu verschwinden.
-     *
-     * Ist die Weckzeit inzwischen verstrichen, wird NICHTS angelegt und NICHTS armiert - ein
-     * Wecker in der Vergangenheit klingelt nicht, und ein stumm im Bestand liegender Eintrag
-     * waere genau die Luege, die eine Wecker-App nicht erzaehlen darf. Eine "Schicht
-     * entfernt"-Meldung entsteht dabei nicht - eine verstrichene Weckzeit ist keine entfernte
-     * Schicht.
-     *
-     * Scheitert das Armieren, wird der gerade gespeicherte Eintrag wieder zurueckgenommen - die
-     * Begruendung steht an der Stelle selbst.
-     *
-     * Die BEHEBBAREN Hindernisse (Master-Pause, "Automatische Alarme" aus, ein zweiter manueller
-     * Wecker) sind hier bewusst NICHT mehr geprueft: sie gehoeren nach
-     * [behebbaresRestoreHindernis] und damit VOR das Aufheben des Skips, weil sonst Flag und
-     * Schnappschuss schon weg waeren, wenn das Hindernis auffaellt.
-     */
     /**
      * Nennt das Hindernis, das eine Wiederherstellung JETZT unmoeglich macht, aber SPAETER von
      * selbst oder durch den Nutzer verschwindet - oder null, wenn nichts im Weg steht.
@@ -1064,6 +1022,30 @@ class AlarmViewModel @Inject constructor(
             deleteAlarm = { alarmUseCase.deleteAlarm(it) }
         )
 
+    /**
+     * Baut einen uebersprungenen MANUELLEN Wecker aus seinem Schnappschuss wieder auf.
+     *
+     * Nur er braucht das: kalenderbasierte Alarme entstehen beim naechsten Sync von selbst neu
+     * (fuer sie ist [alarm] null), ein von Hand gestellter aus keiner Quelle.
+     *
+     * REIHENFOLGE: erst speichern, dann armieren - ein armierter Wecker ohne Repository-Eintrag
+     * waere weder sichtbar noch abbrechbar. Beide Schritte melden ihren Fehlschlag dem Nutzer,
+     * statt in einem Log zu verschwinden.
+     *
+     * Ist die Weckzeit inzwischen verstrichen, wird NICHTS angelegt und NICHTS armiert - ein
+     * Wecker in der Vergangenheit klingelt nicht, und ein stumm im Bestand liegender Eintrag
+     * waere genau die Luege, die eine Wecker-App nicht erzaehlen darf. Eine "Schicht
+     * entfernt"-Meldung entsteht dabei nicht - eine verstrichene Weckzeit ist keine entfernte
+     * Schicht.
+     *
+     * Scheitert das Armieren, wird der gerade gespeicherte Eintrag wieder zurueckgenommen - die
+     * Begruendung steht an der Stelle selbst.
+     *
+     * Die BEHEBBAREN Hindernisse (Master-Pause, "Automatische Alarme" aus, ein zweiter manueller
+     * Wecker) sind hier bewusst NICHT mehr geprueft: sie gehoeren nach
+     * [behebbaresRestoreHindernis] und damit VOR das Aufheben des Skips, weil sonst Flag und
+     * Schnappschuss schon weg waeren, wenn das Hindernis auffaellt.
+     */
     private suspend fun restoreSkippedManualAlarm(alarm: AlarmInfo?) {
         if (alarm == null) return
 
@@ -1124,10 +1106,6 @@ class AlarmViewModel @Inject constructor(
             "✅ Manueller Wecker ${alarm.id} nach 'Aufheben' wiederhergestellt und gestellt (${alarm.formattedTime})"
         )
     }
-
-    // ========================================
-    // MANUAL ALARM FUNCTIONALITY
-    // ========================================
 
     private companion object {
         /** Neue Anlaeufe fuer [observeSkipStatus], nachdem der Skip-Flow geendet ist. */
@@ -1259,12 +1237,9 @@ class AlarmViewModel @Inject constructor(
                             hasActiveManualAlarm = activeManualAlarm != null,
                             activeManualAlarm = activeManualAlarm
                         )
-
-                        Logger.d(LogTags.ALARM, "Manual alarms updated: ${manualAlarms.size}")
                     }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Rethrow for proper structured concurrency
-                Logger.d(LogTags.ALARM, "Manual alarms observation cancelled (app lifecycle)")
                 throw e
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "Error observing manual alarms", e)
@@ -1278,8 +1253,6 @@ class AlarmViewModel @Inject constructor(
     }
 
     fun selectManualAlarmShift(shift: ShiftDefinition) {
-        Logger.d(LogTags.ALARM, "Manual alarm shift selected: ${shift.name}")
-
         _manualAlarmState.value = _manualAlarmState.value.copy(selectedShift = shift)
         updateCalculatedAlarmTime()
     }
@@ -1290,26 +1263,12 @@ class AlarmViewModel @Inject constructor(
         val selectedDate = state.selectedDate
 
         if (selectedShift != null) {
-            // 🔍 DEBUG: Log die verwendete Schicht-Zeit
-            Logger.business(
-                LogTags.ALARM,
-                "🎯 CALCULATING alarm time for shift: ${selectedShift.name}"
-            )
-            Logger.business(LogTags.ALARM, "   📅 Date: $selectedDate")
-            Logger.business(LogTags.ALARM, "   ⏰ Shift alarmTime: ${selectedShift.alarmTime}")
-            Logger.business(
-                LogTags.ALARM,
-                "   📋 Shift formatted: ${selectedShift.getAlarmTimeFormatted()}"
-            )
-
-            // ✅ KORRIGIERT: Verwende die User-konfigurierte Zeit OHNE bescheuerten Offset
+            // Nutzer-konfigurierte Weckzeit, ohne Versatz
             val alarmDateTime = selectedDate.atTime(selectedShift.alarmTime)
 
             val formattedTime = alarmDateTime.format(
                 DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
             )
-
-            Logger.business(LogTags.ALARM, "   🚨 FINAL calculated alarm: $formattedTime")
 
             _manualAlarmState.value = _manualAlarmState.value.copy(
                 calculatedAlarmTime = formattedTime
@@ -1410,7 +1369,7 @@ class AlarmViewModel @Inject constructor(
             _manualAlarmState.value = state.copy(isCreating = true, error = null)
 
             try {
-                // Berechne Alarm-Zeit - ✅ OHNE bescheuerten Offset
+                // Nutzer-konfigurierte Weckzeit, ohne Versatz
                 val alarmDateTime = selectedDate.atTime(schicht.alarmTime)
                 val alarmTimeMillis = alarmDateTime
                     .atZone(ZoneId.systemDefault())

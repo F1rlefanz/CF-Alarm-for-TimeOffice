@@ -47,7 +47,6 @@ open class CalendarUnavailableNotifier @Inject constructor(
     companion object {
         private const val CHANNEL_ID = "calendar_unavailable_alerts"
 
-        /** Belegt sind 1001 (Wartung), 2002 (Wecker), 2101 (Dimm-Korrektur), 2202 (Schichtwechsel). */
         private const val NOTIFICATION_ID = 2203
 
         /**
@@ -101,17 +100,9 @@ open class CalendarUnavailableNotifier @Inject constructor(
             bereitsGemeldet = zustand.bereitsGemeldet
         )
 
-        // Der "habe ich schon gesagt"-Merker darf NUR wachsen, wenn tatsaechlich etwas gesagt
-        // wurde. Zwei Wege haben das schon gebrochen:
-        //  - bis v1.26.2 wurde er unbedingt geschrieben, noch VOR der Toggle-Pruefung: wer die
-        //    Meldung abgeschaltet hatte, sammelte stumm "bereits gemeldet"-Eintraege an;
-        //  - bis v1.26.3 stand er auch dann, wenn notify() die Warnung verschluckte, weil
-        //    Benachrichtigungen der App ODER dieser Kanal blockiert waren - zeige() pruefte gar
-        //    nichts und meldete nichts zurueck.
-        // In beiden Faellen fiel die ID per intersect nie wieder aus dem Merker, solange der
-        // Kalender scheiterte: nach dem Wiedereinschalten kam die Warnung NIE. Das kehrte die
-        // ausdrueckliche Degradationsrichtung dieser Klasse um ("im Zweifel warnen").
-        //
+        // Der "habe ich schon gesagt"-Merker darf NUR wachsen, wenn tatsaechlich etwas gesagt wurde.
+        // Wuchs er bei abgeschaltetem Toggle oder bei blockiertem Kanal, fiel die ID nie wieder
+        // heraus - nach dem Wiedereinschalten kam die Warnung NIE.
         // Deshalb wird JETZT ERST gemeldet und DANACH gemerkt - nur der bestaetigte Post zaehlt.
         val darfMelden = entscheidung.zuMelden.isNotEmpty() && prefs.enabledNow()
         val anzahl = entscheidung.zuMelden.size

@@ -25,10 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 
 /**
- * Shift Selector Dialog Component
- * 
- * Ermöglicht die Auswahl einer Schichtdefinition aus den user-konfigurierten Optionen.
- * Zeigt Name, Alarmzeit und Keywords für bessere Identifikation.
+ * Auswahl einer konfigurierten Schichtdefinition mit Name, Weckzeit und Mustern.
  */
 @Composable
 fun ShiftSelectorDialog(
@@ -45,7 +42,6 @@ fun ShiftSelectorDialog(
         },
         text = {
             if (availableShifts.isEmpty()) {
-                // Fallback wenn keine Schichten konfiguriert
                 Text(
                     text = "Keine Schichtmuster konfiguriert. Bitte konfigurieren Sie zuerst Ihre Schichtmuster in den Einstellungen.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -85,7 +81,6 @@ fun ShiftSelectorDialog(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    // Zeige Keywords für bessere Identifikation
                                     if (shift.keywords.isNotEmpty()) {
                                         Text(
                                             text = "Keywords: ${shift.keywords.joinToString(", ")}",

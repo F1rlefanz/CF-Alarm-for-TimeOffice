@@ -66,15 +66,8 @@ internal fun alarmStatusZustand(
  * zwischen Home- und Wecker-Tab. `trailingContent` haengt ein optionales drittes Element (z.B. Chevron)
  * an dieselbe Row an - die aufrufende Karte bestimmt Padding/Klickbarkeit selbst.
  *
- * STILLE SCHICHTEN WERDEN AUSGEWIESEN, NICHT VERSTECKT. Diese Karte behauptet den naechsten
- * Wecker - und behauptete ihn bis v1.29.2 auch dann, wenn der fruehste Eintrag eine stille
- * Schicht (Rufbereitschaft) war, an der die App per Konstruktion stumm bleibt: kein Ton, keine
- * Vibration, kein Weckbildschirm. Genau davor warnt der Kommentar in `ShiftConfigScreen` in
- * Grossbuchstaben ("EINE ANGEZEIGTE WECKZEIT, DIE NIE GESTELLT WIRD, IST DIE GEFAEHRLICHSTE
- * ANZEIGE, DIE EINE WECKER-APP HABEN KANN") - dort hat `isSilent` deshalb ein eigenes Icon,
- * hier fehlte jedes Zeichen. Warum gekennzeichnet und nicht gefiltert wird, steht bei
- * `AlarmUiState.nextAlarmIsSilent`; der zusaetzlich genannte naechste KLINGELNDE Wecker sorgt
- * dafuer, dass der stille Eintrag den echten nicht mehr verdeckt.
+  * STILLE SCHICHTEN WERDEN AUSGEWIESEN, NICHT VERSTECKT - gekennzeichnet statt gefiltert, Grund bei
+  * `AlarmUiState.nextAlarmIsSilent` (ui-texte-und-layout.md).
  *
  * @param masterPausePaused sind ALLE Hintergrunddienste pausiert? Dann ist "Keine aktiven Alarme"
  *   nicht die ganze Wahrheit: der Zustand hat eine Ursache, und ohne sie schliesst der Nutzer,
@@ -133,10 +126,7 @@ fun AlarmStatusHeader(
 
             when (zustand) {
                 AlarmStatusZustand.PAUSIERT -> {
-                    // "Keine aktiven Alarme" in Grau war hier bis v1.29.x der einzige Hinweis - ein
-                    // Zustand ohne Ursache, aus dem der Nutzer den falschen Schluss zieht ("kommt
-                    // schon noch"). Ursache UND Ausweg, sonst findet er die Pause nur zufaellig
-                    // wieder.
+                    // Ursache UND Ausweg nennen, sonst findet der Nutzer die Pause nur zufaellig wieder.
                     Text(
                         ALARM_STATUS_PAUSIERT_TEXT,
                         style = MaterialTheme.typography.bodyMedium,

@@ -13,17 +13,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 /**
  * Wie die sechs Hauptbereiche heissen und aussehen - an EINER Stelle.
  *
- * WARUM ES DIESE LISTE GIBT: Bis v1.37.3 lagen Reihenfolge, Symbol und Beschriftung in der
- * unteren Navigationsleiste (`MainContentScreen`), waehrend jeder Tab-Inhalt seine eigene
- * Ueberschrift nochmal selbst setzte - und beide wichen voneinander ab. Die Leiste zeigte
- * "Home / Wecker / Dimmen / Hue / Status / Einstellungen", die Ueberschriften sagten
- * "Uebersicht / Wecker / Schicht-Dimmer / Philips Hue Integration / System-Status /
- * Einstellungen". Dazu kam eine dritte Reihenfolge: das Enum [MainTab] steht
- * HOME, WECKER, STATUS, SETTINGS, HUE, DIMMER. Drei Quellen, von Hand parallel gehalten,
- * ohne dass irgendetwas das gehalten haette.
- *
- * Seit v1.38.0 traegt ein Eintrag beides: den Namen in der Navigationsschublade UND den Titel
- * in der Kopfzeile. Zwei Namen fuer denselben Bereich koennen damit nicht mehr auseinanderlaufen.
+  * Ein Eintrag traegt Schubladen-Name UND Kopfzeilen-Titel, damit beides nicht auseinanderlaeuft -
+  * Hergang navigation.md.
  *
  * WARUM UNTER `ui/` UND NICHT IM PAKET `navigation/`: Dort liegt heute kein einziger
  * Compose-Typ. `ImageVector` gehoert nicht in ein Paket, das auch von Hintergrundkomponenten

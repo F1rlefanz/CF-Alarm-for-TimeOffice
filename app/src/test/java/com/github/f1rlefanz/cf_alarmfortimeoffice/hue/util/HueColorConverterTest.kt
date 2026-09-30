@@ -97,7 +97,7 @@ class HueColorConverterTest {
         assertEquals(0.4092f, result.xy[1], 0.001f)
     }
 
-    // ---- hueColorToRgb: RGB-Hex hat Vorrang vor xy/HSV ----
+    // ---- hueColorToRgb: liest den RGB-Hex ----
 
     @Test
     fun `hueColorToRgb bevorzugt RGB-Hex wenn vorhanden`() {
@@ -111,50 +111,28 @@ class HueColorConverterTest {
     }
 
     @Test
-    fun `hueColorToRgb nutzt xy wenn kein RGB-Hex vorhanden ist`() {
-        // xy = reiner Rotpunkt des Gamuts (0.675, 0.322) -> erwartete RGB (255, 116, 0) nachgerechnet
-        val hueColor = HueColor(hue = null, saturation = null, xy = listOf(0.675f, 0.322f), rgb = null)
+    fun `jede Preset-Farbe liefert ihre Vorschaufarbe aus dem RGB-Hex`() {
+        // Einziger Produktivaufrufer (Regel-Vorschau) gibt nur Presets hinein - alle tragen rgb.
+        val erwartet = mapOf(
+            HueColorConverter.ColorPreset.WARM_WHITE to Triple(255, 180, 107),
+            HueColorConverter.ColorPreset.COOL_WHITE to Triple(255, 255, 255),
+            HueColorConverter.ColorPreset.RED to Triple(255, 0, 0),
+            HueColorConverter.ColorPreset.GREEN to Triple(0, 255, 0),
+            HueColorConverter.ColorPreset.BLUE to Triple(0, 0, 255),
+            HueColorConverter.ColorPreset.YELLOW to Triple(255, 255, 0),
+            HueColorConverter.ColorPreset.PURPLE to Triple(128, 0, 128),
+            HueColorConverter.ColorPreset.ORANGE to Triple(255, 165, 0),
+            HueColorConverter.ColorPreset.PINK to Triple(255, 192, 203),
+            HueColorConverter.ColorPreset.CYAN to Triple(0, 255, 255)
+        )
+        assertEquals(HueColorConverter.ColorPreset.entries.toSet(), erwartet.keys)
 
-        val (r, g, b) = HueColorConverter.hueColorToRgb(hueColor)
+        for (preset in HueColorConverter.ColorPreset.entries) {
+            val color = HueColorConverter.getPresetColor(preset)
 
-        assertEquals(255, r)
-        assertEquals(116, g)
-        assertEquals(0, b)
-    }
-
-    @Test
-    fun `hueColorToRgb nutzt HSV-Fallback wenn weder RGB-Hex noch xy vorhanden sind`() {
-        // hue=0, saturation=254 (voll gesättigt), value wird intern als 1.0 angenommen -> reines Rot
-        val hueColor = HueColor(hue = 0, saturation = 254, xy = null, rgb = null)
-
-        val (r, g, b) = HueColorConverter.hueColorToRgb(hueColor)
-
-        assertEquals(255, r)
-        assertEquals(0, g)
-        assertEquals(0, b)
-    }
-
-    @Test
-    fun `hueColorToRgb mit Saettigung 0 ergibt Weiss`() {
-        val hueColor = HueColor(hue = 0, saturation = 0, xy = null, rgb = null)
-
-        val (r, g, b) = HueColorConverter.hueColorToRgb(hueColor)
-
-        assertEquals(255, r)
-        assertEquals(255, g)
-        assertEquals(255, b)
-    }
-
-    @Test
-    fun `hueColorToRgb mit hue 21845 und voller Saettigung ergibt Gruen`() {
-        // 21845 * 360 / 65535 = 120.0 Grad exakt -> reines Grün
-        val hueColor = HueColor(hue = 21845, saturation = 254, xy = null, rgb = null)
-
-        val (r, g, b) = HueColorConverter.hueColorToRgb(hueColor)
-
-        assertEquals(0, r)
-        assertEquals(255, g)
-        assertEquals(0, b)
+            assertTrue("rgb fehlt fuer $preset: ${color.rgb}", Regex("#[0-9A-F]{6}").matches(color.rgb ?: ""))
+            assertEquals("Vorschaufarbe fuer $preset", erwartet[preset], HueColorConverter.hueColorToRgb(color))
+        }
     }
 
     // ---- Farbtemperatur-Konvertierung (Kelvin <-> Mired) ----

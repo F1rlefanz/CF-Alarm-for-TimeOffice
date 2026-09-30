@@ -19,17 +19,9 @@ import kotlinx.serialization.json.Json
  * Compose-Abhaengigkeit, damit er sich ohne Geraet pruefen laesst (Vorbild: `DimWindowResolver`,
  * `ShiftCodeSuggester`, `HueTargetReconciler`).
  *
- * WARUM NICHT WIE BISHER 19 EINZELFELDER:
- *  - Der Umbau von Formular zu Regel und zurueck lag als zwei lange Funktionen IM Composable und
- *    war damit nur am Geraet pruefbar. Der Rundlauf `rule.toFormState().toRule(...) == rule` ist
- *    jetzt ein Test statt einer Hoffnung.
- *  - Die Ausschliesslichkeit der Modi ist STRUKTURELL statt per Flag: [toRule] liest
- *    ausschliesslich die Felder des aktiven [modus]. Eine im Manuell-Modus eingestellte
- *    Helligkeit kann konstruktiv nicht in eine Szenen-Aktion lecken. Vorher haing dasselbe an
- *    einem Geflecht aus `if (!sunriseEnabled && targetOn && ...)`-Bedingungen an vier Stellen.
- *  - Fuer die Rotation reicht ein einziges `rememberSaveable(stateSaver = HueRuleFormStateSaver)`.
- *    Ein handgeschriebener `listSaver` ueber 19 Felder verliert bei der naechsten Erweiterung
- *    still eines; hier faellt genau das im Rundlauf-Test auf.
+ * Die Ausschliesslichkeit der Modi ist STRUKTURELL: [toRule] liest ausschliesslich die Felder
+ * des aktiven [modus], eine im Manuell-Modus eingestellte Helligkeit kann nicht in eine
+ * Szenen-Aktion lecken. Fuer die Rotation reicht EIN Saver ([HueRuleFormStateSaver]).
  */
 @Immutable
 @Serializable
@@ -43,14 +35,7 @@ internal data class HueRuleFormState(
     val selectedLightIds: Set<String> = emptySet(),
     val selectedGroupIds: Set<String> = emptySet(),
 
-    // Ziele des Modus SZENE. MEHRERE sind ausdruecklich erlaubt: eine Regel darf das Wohnzimmer
-    // auf "Nachtlicht" und das Schlafzimmer auf "Lesen" setzen. Die Kette darunter kann das
-    // laengst - `convertRuleToLightActions` laeuft ueber alle Aktionen, `autoOffTargetsOf()`
-    // flatMapt und dedupliziert, der Ziel-Abgleich behandelt jede Aktion einzeln. Die frueher
-    // einzelne Auswahl war eine reine Oberflaechen-Begrenzung.
-    //
-    // HOECHSTENS EINE Szene JE RAUM: zwei Szenen auf derselben Gruppe waeren zwei PUTs auf
-    // denselben Endpunkt, der zweite gewaenne - eine Einstellung, die sich selbst widerspricht.
+    // Modus SZENE: mehrere Szenen erlaubt, hoechstens eine je Raum (Skill cfalarm-hue).
     val szenen: List<SzenenAuswahl> = emptyList(),
 
     // Modus MANUELL
@@ -112,7 +97,7 @@ internal enum class HueRuleFormFehler { NAME_FEHLT, SCHICHT_FEHLT, ZIEL_FEHLT }
  * @param lightNames/[groupNames] die Namen, wie sie die Bridge JETZT meldet.
  * @param storedNames die bereits in der Regel gespeicherten Namen, nach targetId. Der Rueckfall
  * darauf ist kein Beiwerk: Beim Bearbeiten einer Regel, deren Ids auf DIESER Bridge unbekannt
- * sind, liefert die Bridge-Liste keinen Namen - ein blosses `bridgeName` wuerde beim Speichern
+ * sind, liefert die Bridge-Liste keinen Namen - der Name aus der Bridge-Liste allein wuerde beim Speichern
  * genau den Anker loeschen, der die Regel noch retten kann.
  */
 internal fun HueRuleFormState.toRule(
@@ -249,13 +234,7 @@ internal fun HueRuleFormState.validate(): List<HueRuleFormFehler> = buildList {
     if (!hatZiel) add(HueRuleFormFehler.ZIEL_FEHLT)
 }
 
-/**
- * Saver fuer die Rotation: serialisiert den ganzen Zustand ueber kotlinx zu EINEM String.
- *
- * Bewusst kein `listSaver` ueber die Einzelfelder - der muesste bei jedem neuen Feld von Hand
- * nachgezogen werden, und vergisst man es, verschwindet nach dem Drehen genau dieses eine Feld,
- * lautlos. Hier deckt der Rundlauf-Test das ab.
- */
+/** Saver fuer die Rotation: der ganze Zustand als EIN kotlinx-String (kein listSaver je Feld). */
 internal val HueRuleFormStateSaver: Saver<HueRuleFormState, String> = Saver(
     save = { runCatching { formStateJson.encodeToString(it) }.getOrNull() },
     restore = { runCatching { formStateJson.decodeFromString<HueRuleFormState>(it) }.getOrNull() }

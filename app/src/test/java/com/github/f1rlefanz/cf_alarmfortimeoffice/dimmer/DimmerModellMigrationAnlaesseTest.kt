@@ -97,11 +97,6 @@ class DimmerModellMigrationAnlaesseTest {
     }
 
     /**
-     * DAS ENTSPERRUNGS-GATE. Ohne es hätte ein Aufrufer aus einer Hintergrundkette (Wartung, Boot)
-     * die Alt-Konfiguration eines gesperrten Geräts als „nichts eingestellt" gelesen, den Dimmer
-     * abgeschaltet und den Marker gesetzt - unumkehrbar, weil danach niemand mehr nachsieht.
-     */
-    /**
      * STILLE DEGRADIERUNG DARF NICHT ZUR SCHREIBWAHRHEIT WERDEN (CLAUDE.md, Persistenz).
      *
      * `DimRuleUseCase.getAllRules()` degradiert einen Lesefehler bewusst auf die LEERE Liste - fuer
@@ -181,6 +176,11 @@ class DimmerModellMigrationAnlaesseTest {
         )
     }
 
+    /**
+     * DAS ENTSPERRUNGS-GATE. Ohne es hätte ein Aufrufer aus einer Hintergrundkette (Wartung, Boot)
+     * die Alt-Konfiguration eines gesperrten Geräts als „nichts eingestellt" gelesen, den Dimmer
+     * abgeschaltet und den Marker gesetzt - unumkehrbar, weil danach niemand mehr nachsieht.
+     */
     @Test
     fun `vor der ersten Entsperrung wird NICHTS geschrieben`() = runTest {
         val store = altGeraet()

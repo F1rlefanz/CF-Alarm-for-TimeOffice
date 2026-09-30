@@ -179,8 +179,7 @@ object DimWindowResolver {
     /**
      * Minimal-Info einer Schicht für die Fenster-Berechnung (entkoppelt von Android).
      *
-     * Name historisch: `DimScheduleUseCase` füllt das seit v1.25.2 aus `ShiftSpan`, damit
-     * SHIFT_END-verankerte Fenster nicht verschwinden, sobald der Wecker geklingelt hat.
+     * Name historisch - gefüllt aus `ShiftSpan`, nicht aus dem Alarm-Bestand.
      *
      * **[triggerTime] ist der Tages-Anker**, nicht nur der ALARM-Anker: `buildRuleSpans` leitet
      * den Kalendertag daraus ab. Ein Platzhalter (0) datiert den Slot auf 1970 und zerstört die
@@ -201,14 +200,8 @@ object DimWindowResolver {
      * - **ALARM/SHIFT_END** = schicht-relativ (Wind-down / ND-Tagschlaf) → braucht einen Alarm an
      *   diesem Datum, sonst übersprungen.
      *
-     * **ALLE Schichten eines Kalendertags werden ausgewertet, nicht nur die frueheste** (Fix
-     * Pruefrunde 8). Bis dahin faltete eine `HashMap<LocalDate, AlarmSlot>` mit "first wins" den
-     * Tag auf einen einzigen Slot zusammen; weil die Eingabeliste nach Weckzeit sortiert ankommt,
-     * gewann immer die frueheste Schicht. An einem Tag mit Fruehdienst UND anschliessender
-     * Rufbereitschaft - im Pflege-/Klinikbetrieb der Regelfall - wurde die Rufbereitschaft-Regel
-     * dadurch NIE gefragt: die Regelliste zeigte sie als aktiv, gewirkt hat sie nicht, und ueber
-     * DND-Modus "folgt dem Dimmer" schaltete zusaetzlich "Nicht stoeren" in genau der Nacht ein,
-     * in der Erreichbarkeit der Zweck des Dienstes ist. Auswahl unter mehreren Schichten:
+     * **ALLE Schichten eines Kalendertags werden ausgewertet, nicht nur die frueheste** - Hergang
+     * reference/dimmer.md, "Ein Kalendertag kann ZWEI Schichten haben". Auswahl unter mehreren Schichten:
      *
      * 1. **Unterdrueckung gewinnt.** Findet auch nur EINE Schicht des Tages eine Regel mit leerer
      *    Fensterliste, wird an diesem Tag nicht gedimmt (Nachtdienst-Ausnahme). Nicht zu dimmen
@@ -218,14 +211,8 @@ object DimWindowResolver {
      *    Tages gebildet statt ueber eine zufaellig ausgewaehlte.
      * 3. **Widersprechen sich zwei VERSCHIEDENE spezifische Regeln an einem Tag, gilt die Regel der
      *    Schicht, die als erste weckt** - der Fall wird als WARN protokolliert UND ueber
-     *    [findRuleConflicts] in der Regelliste angezeigt (das Log allein waere wieder "angezeigt,
-     *    wirkt nicht" - der Nutzer liest kein Logcat). Der erste Wurf
-     *    dieses Fixes liess den Tag stattdessen kommentarlos ganz aus; das schaltete das Dimmen fuer
-     *    diesen Kalendertag KOMPLETT ab - Regeln sind seit dem Ein-Modell-Umbau die EINZIGE
-     *    Fenster-Quelle -, waehrend die Regelliste beide Regeln weiter
-     *    als aktiv zeigte - "angezeigt, wirkt nicht", genau die Fehlerklasse, gegen die dieser Fix
-     *    gebaut wurde. Die Fenster zu vereinigen ist keine Alternative: das waere additiv (Bruch von
-     *    "pro Kalendertag GENAU eine Regel") und dimmte mehr als jede Regel fuer sich.
+     *    [findRuleConflicts] in der Regelliste angezeigt. Den Tag nicht auslassen (Regeln sind die
+     *    einzige Quelle), die Fenster nicht vereinigen (additiv).
      * 4. Die gewaehlte Regel wird an der Schicht VERANKERT, zu der sie gehoert - ihre ALARM-/
      *    SHIFT_END-Anker meinen diese Schicht, nicht irgendeine andere des Tages. Treffen mehrere
      *    Schichten dieselbe Regel, gilt die mit der fruehesten Weckzeit: ausdruecklich sortiert
@@ -321,22 +308,8 @@ object DimWindowResolver {
      * Auskunft fuer die Regelliste: an welchen Kalendertagen wird welche Regel von einer anderen
      * verdraengt?
      *
-     * **Warum es das geben muss:** [buildRuleSpans] entscheidet den Konflikt zweier spezifischer
-     * Regeln an einem Tag zugunsten der fruehesten Schicht. Die unterlegene Regel steht in der
-     * Regelliste weiter als aktiv, wirkt an diesem Tag aber nicht - und ueber DND-Modus "folgt dem
-     * Dimmer" haengt daran auch "Nicht stoeren". Solange das nur eine Logzeile war, war es genau
-     * die Fehlerklasse "angezeigt, wirkt nicht", gegen die die Konfliktaufloesung gebaut wurde.
-     * Deshalb dieselbe Auswahl ([regelFuerTag]) noch einmal als reine Auskunft - nicht als zweite
-     * Kopie der Logik, sondern als zweiter Aufrufer derselben Funktion. Waeren es zwei
-     * Implementierungen, koennte die Anzeige von der Wirkung abdriften, und das waere schlimmer
-     * als gar keine Anzeige.
-     *
-     * **Warum die Fenster NICHT vereinigt werden** (die Alternative, die den Hinweis erspart
-     * haette): eine Vereinigung waere additiv, braeche die Zusicherung "pro Kalendertag GENAU eine
-     * Regel" und dimmte MEHR als jede der beiden Regeln fuer sich - "im Zweifel klingeln und hell"
-     * zeigt in die andere Richtung. Bei widersprechenden Parametern (zwei Verdunkelungsstufen fuer
-     * dieselbe Minute) gaebe es ohnehin keine saubere Antwort, sondern nur eine dritte, von
-     * niemandem konfigurierte.
+     * Auskunft für die Regelliste; gleiche Auswahl [regelFuerTag] wie [buildRuleSpans], Punkt 3 dort -
+     * zweiter Aufrufer derselben Funktion, damit Anzeige und Wirkung nicht abdriften.
      *
      * Der Horizont beginnt bei [today] und NICHT - anders als in [buildRuleSpans] - einen Tag
      * davor: der Rueckblick dort haelt eine ueber Mitternacht laufende Nacht am Leben, fuer eine
@@ -496,8 +469,7 @@ object DimWindowResolver {
     /**
      * Alle Schichten je Kalendertag, chronologisch sortiert - die Grundlage von [buildRuleSpans].
      *
-     * Ersetzt die fruehere `HashMap<LocalDate, AlarmSlot>` mit "first wins", die pro Tag alles
-     * ausser der ersten Schicht verwarf (Pruefrunde 8). Die Sortierung nach `triggerTime` und -
+     * Die Sortierung nach `triggerTime` und -
      * bei gleicher Weckzeit - nach `shiftName` ist ausdruecklich Teil der Zusicherung: die Wahl
      * "frueheste Schicht des Tages" soll eine bewusste Entscheidung sein und nicht stillschweigend
      * daran haengen, in welcher Reihenfolge der ShiftSpanStore seine Spannen liefert. Die
@@ -514,10 +486,7 @@ object DimWindowResolver {
      * Mit CLOCK-Start gehen BEIDE Kalendernacht-Enden hier durch — das feste [DimAnchor.CLOCK] und
      * das neue [DimAnchor.ALARM_SONST_CLOCK]. Letzteres braucht bewusst KEINEN Slot dieses Tages:
      * seine Weckzeit sucht es in der Zeitleiste [weckzeiten], nicht im Tages-Slot. Genau das macht
-     * es an einem weckerfreien Tag ebenso auflösbar wie an einem Schicht-Tag. Genau deshalb konnte
-     * der eingebaute Nacht-Standard (Rückwärts-/Vorwärts-Fensterpaar plus Folgetag-Bedingung)
-     * ersatzlos entfallen: ein CLOCK→ALARM_SONST_CLOCK-Fenster einer gewöhnlichen Regel leistet
-     * dasselbe mit EINEM Fenster je Kalendernacht.
+     * es an einem weckerfreien Tag ebenso auflösbar wie an einem Schicht-Tag.
      */
     private fun resolveWindowForDate(
         w: DimWindow,
@@ -552,9 +521,7 @@ object DimWindowResolver {
      * Minuten-Millis". An den beiden DST-Umstellungstagen ist ein Kalendertag 23 h bzw. 25 h lang;
      * der reine Millis-Offset traefe dort die falsche Uhrzeit (aus 22:00 wuerde am
      * Vorspringen-Tag 23:00, am Zurueckspringen-Tag 21:00) und verschob damit Dimmen UND DND
-     * (Modus 1 rechnet ueber dieselben Fenster) um eine Stunde. Genau dieselbe Falle war fuer den
-     * DND-Rufbereitschaft-Cutoff schon dokumentiert und dort behoben
-     * ([com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndOnCallCutoffResolver]).
+     * (Modus 1 rechnet ueber dieselben Fenster) um eine Stunde.
      *
      * `LocalDateTime.plusMinutes` rechnet bewusst auf der LOKALEN Zeitachse - `ZonedDateTime.
      * plusMinutes` wuerde wieder auf der Instant-Achse rechnen und den Fehler zurueckholen.

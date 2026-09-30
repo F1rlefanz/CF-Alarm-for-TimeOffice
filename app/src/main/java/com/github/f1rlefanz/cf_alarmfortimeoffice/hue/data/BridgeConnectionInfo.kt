@@ -10,7 +10,5 @@ import androidx.compose.runtime.Immutable
 data class BridgeConnectionInfo(
     val isConnected: Boolean = false,
     val bridgeIp: String? = null,
-    val bridgeName: String? = null,
-    val username: String? = null,
-    val lastValidated: Long? = null
+    val bridgeName: String? = null
 )

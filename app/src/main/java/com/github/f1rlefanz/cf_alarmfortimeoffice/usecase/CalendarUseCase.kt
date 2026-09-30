@@ -21,75 +21,35 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * UseCase für alle Calendar-bezogenen Operationen mit OAuth2 Token Management
- * 
- * ✅ PHASE 4 MODERNIZED (2025):
- * - Verwendet OAuth2TokenManager statt deprecated TokenRefreshUseCase
- * - Smart Retry Logic mit TokenRefreshStrategy
- * - Token Rotation Support
- * - Improved Exception Handling mit TokenException hierarchy
- * 
- * REFACTORED: 
- * ✅ Implementiert ICalendarUseCase Interface für bessere Testbarkeit
- * ✅ Integriert neues OAuth2TokenManager System
- * ✅ Verwendet Repository-Interfaces statt konkrete Implementierungen
- * ✅ Graceful Error Handling bei Token-Problemen
- * ✅ Backwards compatibility mit bestehendem AuthDataStore
- * ✅ Abstracts Calendar Repository Operations
- * 
- * OPTIMIZATION ENHANCEMENTS:
- * ✅ Lazy Loading für Events mit Batch-Processing
- * ✅ Pagination für große Kalenderlisten
- * ✅ Erweiterte Cache-Management mit Offline-Support
+ * UseCase für alle Calendar-bezogenen Operationen mit OAuth2 Token Management.
  */
 @Singleton
 class CalendarUseCase @Inject constructor(
     private val calendarRepository: ICalendarRepository,
     private val authDataStoreRepository: IAuthDataStoreRepository,
-    private val oauth2TokenManager: OAuth2TokenManager?
+    private val oauth2TokenManager: OAuth2TokenManager
 ) : ICalendarUseCase {
     
     /**
-     * Lädt verfügbare Kalender für den aktuell authentifizierten User
-     * UPDATED: Verwendet neue Token-Management Infrastruktur mit Pagination Support
-     * 
-     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
+     * Lädt verfügbare Kalender für den aktuell authentifizierten User.
      */
     override suspend fun getAvailableCalendars(): Result<List<AndroidCalendar>> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("CalendarUseCase.getAvailableCalendars") {
             
             val accessToken = resolveAccessToken(
                 ohneTokenText = "Calendar access requires authorization. Please sign in.",
-                oauthLogZweck = "calendar access",
-                legacyLogZusatz = "(no OAuth2 available)"
+                oauthLogZweck = "calendar access"
             )
             
             Logger.d(LogTags.CALENDAR_API, "Loading available calendars with token...")
             
-            // PAGINATION SUPPORT: Load calendars in manageable chunks
-            val allCalendars = mutableListOf<AndroidCalendar>()
-            
             calendarRepository.getCalendarsWithToken(accessToken)
                 .fold(
                     onSuccess = { calendarItems ->
-                        // OPTIMIZATION: Process calendars in chunks for better memory management
-                        val chunkSize = 20 // Process max 20 calendars per chunk
-                        
-                        calendarItems.chunked(chunkSize).forEach { chunk ->
-                            val androidCalendars = chunk.map { item ->
-                                AndroidCalendar(
-                                    id = item.id,
-                                    name = item.displayName
-                                )
-                            }
-                            allCalendars.addAll(androidCalendars)
-                            
-                            Logger.d(LogTags.CALENDAR, "Processed ${chunk.size} calendars (chunk)")
-                        }
-                        
-                        // Sort calendars by name for better UX
-                        val sortedCalendars = allCalendars.sortedBy { it.name }
-                        
+                        val sortedCalendars = calendarItems
+                            .map { AndroidCalendar(id = it.id, name = it.displayName) }
+                            .sortedBy { it.name }
+
                         Logger.i(LogTags.CALENDAR, "Loaded ${sortedCalendars.size} calendars")
                         sortedCalendars
                     },
@@ -121,12 +81,11 @@ class CalendarUseCase @Inject constructor(
      */
     private suspend fun invalidateTokenIfRejectedByGoogle(error: Throwable) {
         if (error !is AppError.AuthenticationError) return
-        val manager = oauth2TokenManager ?: return
         Logger.w(
             LogTags.TOKEN,
             "🔐 Google lehnt das Token ab (401) - verwerfe es samt Play-Services-Cache"
         )
-        manager.invalidate()
+        oauth2TokenManager.invalidate()
     }
     
     /**
@@ -141,11 +100,7 @@ class CalendarUseCase @Inject constructor(
         getCalendarEventsWithStatus(calendarIds, forceRefresh).map { it.events }
 
     /**
-     * Lädt Events für spezifische Kalender mit Cache-Support und Force-Refresh Option
-     * CRITICAL PERFORMANCE FIX: Background Threading mit Main-Thread Schonung
-     * PROGRESSIVE LOADING: Verhindert UI-Blockierung durch gestaffelte Verarbeitung
-     *
-     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
+     * Lädt Events der Kalender (Cache oder Force-Refresh) und meldet, welche Kalender scheiterten.
      */
     override suspend fun getCalendarEventsWithStatus(
         calendarIds: Set<String>,
@@ -155,8 +110,7 @@ class CalendarUseCase @Inject constructor(
 
             val accessToken = resolveAccessToken(
                 ohneTokenText = "Calendar events require authorization. Please sign in.",
-                oauthLogZweck = "events access",
-                legacyLogZusatz = "for events"
+                oauthLogZweck = "events access"
             )
             
             if (calendarIds.isEmpty()) {
@@ -169,15 +123,12 @@ class CalendarUseCase @Inject constructor(
                     Logger.d(LogTags.CALENDAR, "Loading events (with cache) for ${calendarIds.size} calendars")
                 }
                 
-                // PROGRESSIVE LOADING: Single calendar at a time to prevent UI blocking
                 val allEvents = mutableListOf<CalendarEvent>()
                 val failedCalendarIds = mutableSetOf<String>()
                 var firstError: Throwable? = null
-                var processedCount = 0
                 
                 for (calendarId in calendarIds) {
                     try {
-                        // BACKGROUND PROCESSING: Ensure we're on IO thread
                             calendarRepository.getCalendarEventsWithCache(
                                 accessToken = accessToken,
                                 calendarId = calendarId,
@@ -185,13 +136,6 @@ class CalendarUseCase @Inject constructor(
                             ).fold(
                             onSuccess = { events ->
                                 allEvents.addAll(events)
-                                processedCount++
-                                Logger.d(LogTags.CALENDAR_API, "Loaded ${events.size} events from calendar ${calendarId.take(8)}...")
-                                
-                                // YIELD TO MAIN THREAD: Allow UI updates between calendars
-                                if (processedCount % 2 == 0) { // Every 2 calendars
-                                    kotlinx.coroutines.delay(50) // 50ms yield for UI thread
-                                }
                             },
                             onFailure = { error ->
                                 Logger.e(LogTags.CALENDAR_API, "Failed to load events for calendar ${calendarId.take(8)}...", error)
@@ -199,18 +143,10 @@ class CalendarUseCase @Inject constructor(
                                 // die restlichen Kalender in denselben Fehler und der naechste
                                 // Sync gleich mit.
                                 invalidateTokenIfRejectedByGoogle(error)
-                                // HIER LANDET AUCH EINE ABGESCHNITTENE LISTE.
-                                //
-                                // Seit v1.27.1 meldet der Abruf einen FEHLER, wenn die Seitenkette
-                                // eines Kalenders nicht zu Ende gelesen werden konnte
-                                // (CalendarRepository.collectAllPages). Das ist Absicht: eine
-                                // gekuerzte Liste als Erfolg zurueckzugeben hiesse
-                                // isComplete == true, und das ist in dieser App die Erlaubnis zu
-                                // loeschen. Ueber failedCalendarIds wird daraus ein sichtbarer,
-                                // benannter Teilausfall statt eines stillen Alarm-Verlusts.
+                                // Auch eine abgeschnittene Seitenkette landet hier als Fehler, nie als Erfolg
+                                // (CalendarRepository.collectAllPages).
                                 failedCalendarIds += calendarId
                                 if (firstError == null) firstError = error
-                                processedCount++
                                 // Continue with other calendars instead of failing completely
                             }
                         )
@@ -219,7 +155,6 @@ class CalendarUseCase @Inject constructor(
                         Logger.e(LogTags.CALENDAR_API, "Exception loading events for calendar ${calendarId.take(8)}...", e)
                         failedCalendarIds += calendarId
                         if (firstError == null) firstError = e
-                        processedCount++
                     }
                 }
 
@@ -248,7 +183,6 @@ class CalendarUseCase @Inject constructor(
                     throw error
                 }
 
-                // FINAL PROCESSING: Sort events by start time
                 val sortedEvents = allEvents.sortedBy { it.startTime }
 
                 // Klammern statt verschachtelter if-Ausdruecke in einer String-Konkatenation:
@@ -274,9 +208,7 @@ class CalendarUseCase @Inject constructor(
         }
     }
     
-    /**
-     * PAGINATION: Lädt verfügbare Kalender mit Pagination Support
-     */
+    /** Lädt verfügbare Kalender seitenweise. */
     override suspend fun getAvailableCalendarsPaginated(
         page: Int,
         pageSize: Int
@@ -299,7 +231,6 @@ class CalendarUseCase @Inject constructor(
             
             val hasNextPage = endIndex < allCalendars.size
             
-            Logger.d(LogTags.CALENDAR, "Paginated calendars: page=$page, size=$pageSize, total=${allCalendars.size}, returned=${pageCalendars.size}")
             
             CalendarPage(
                 calendars = pageCalendars,
@@ -311,10 +242,7 @@ class CalendarUseCase @Inject constructor(
     }
     
     /**
-     * LAZY LOADING: Lädt Events mit erweiterten Optionen für bessere Performance
-     * FIXED: Echtes Lazy Loading direkt an der API-Ebene
-     * 
-     * 🔧 OPTION 4 FIX: Defensive token validation before API calls
+     * Laedt Events seitenweise (offset/maxEvents).
      */
     override suspend fun getCalendarEventsLazy(
         calendarIds: Set<String>,
@@ -325,8 +253,7 @@ class CalendarUseCase @Inject constructor(
             
             val accessToken = resolveAccessToken(
                 ohneTokenText = "Calendar events require authorization. Please sign in.",
-                oauthLogZweck = "lazy events access",
-                legacyLogZusatz = "for events"
+                oauthLogZweck = "lazy events access"
             )
             
             if (calendarIds.isEmpty()) {
@@ -338,8 +265,6 @@ class CalendarUseCase @Inject constructor(
                 )
             }
             
-            // REAL LAZY LOADING: Load events from API with offset/limit instead of loading all
-            Logger.d(LogTags.CALENDAR, "Lazy loading events: offset=$offset, max=$maxEvents for ${calendarIds.size} calendars")
             
             val allEvents = mutableListOf<CalendarEvent>()
             var totalEventsAcrossCalendars = 0
@@ -377,8 +302,6 @@ class CalendarUseCase @Inject constructor(
 
                 // Add to our collection (we'll do offset/limit at the end for now)
                 allEvents.addAll(cachedEvents)
-
-                Logger.d(LogTags.CALENDAR_API, "Added ${cachedEvents.size} events from calendar ${calendarId.take(8)}...")
             }
             
             // Sort all events by start time first
@@ -408,24 +331,21 @@ class CalendarUseCase @Inject constructor(
     
     /**
      * Überprüft ob ein gültiges Access Token verfügbar ist
-     * ✅ PHASE 4 MODERNIZED: Uses OAuth2TokenManager
      */
     override suspend fun hasValidAccessToken(): Boolean = withContext(Dispatchers.IO) {
         try {
             // Try modern OAuth2 system first
-            if (oauth2TokenManager != null) {
-                val tokenResult = oauth2TokenManager.getValidToken()
-                if (tokenResult.isSuccess) {
-                    val tokenData = tokenResult.getOrNull()
-                    Logger.d(LogTags.TOKEN, "✅ MODERNIZED: Valid token available (${tokenData?.getRemainingLifetimeMinutes()}min remaining)")
-                    return@withContext true
-                }
-                
-                // Log specific error for debugging
-                val error = tokenResult.exceptionOrNull()
-                Logger.d(LogTags.TOKEN, "Token validation failed: ${error?.message}")
+            val tokenResult = oauth2TokenManager.getValidToken()
+            if (tokenResult.isSuccess) {
+                val tokenData = tokenResult.getOrNull()
+                Logger.d(LogTags.TOKEN, "✅ MODERNIZED: Valid token available (${tokenData?.getRemainingLifetimeMinutes()}min remaining)")
+                return@withContext true
             }
-            
+
+            // Log specific error for debugging
+            val error = tokenResult.exceptionOrNull()
+            Logger.d(LogTags.TOKEN, "Token validation failed: ${error?.message}")
+
             // Fallback to legacy system
             val authData = authDataStoreRepository.authData.first()
             val hasToken = authData.accessToken?.isNotEmpty() == true
@@ -454,9 +374,8 @@ class CalendarUseCase @Inject constructor(
      */
     private suspend fun resolveAccessToken(
         ohneTokenText: String,
-        oauthLogZweck: String,
-        legacyLogZusatz: String
-    ): String = if (oauth2TokenManager != null) {
+        oauthLogZweck: String
+    ): String {
         Logger.business(LogTags.CALENDAR, "🔐 MODERNIZED: Validating OAuth2 token before $oauthLogZweck...")
 
         val tokenResult = oauth2TokenManager.getValidToken()
@@ -476,31 +395,6 @@ class CalendarUseCase @Inject constructor(
 
         val tokenData = tokenResult.getOrThrow()
         Logger.business(LogTags.TOKEN, "✅ MODERNIZED: Token validated (${tokenData.getRemainingLifetimeMinutes()}min remaining)")
-        tokenData.accessToken
-
-    } else {
-        Logger.w(LogTags.CALENDAR, "⚠️ LEGACY-ONLY: Using legacy auth system $legacyLogZusatz...")
-
-        // Even in legacy mode, check if token is expired before using it
-        val legacyToken = getLegacyAccessToken()
-        val authData = authDataStoreRepository.authData.first()
-        val tokenExpiryTime = authData.tokenExpiryTime ?: 0L
-        val currentTime = System.currentTimeMillis()
-
-        if (currentTime >= tokenExpiryTime) {
-            Logger.e(LogTags.TOKEN, "❌ LEGACY: Token expired at ${java.util.Date(tokenExpiryTime)}, current time: ${java.util.Date(currentTime)}")
-            throw Exception("Calendar access token expired. Please sign out and sign in again to refresh authorization.")
-        }
-
-        Logger.business(LogTags.CALENDAR, "✅ LEGACY: Token validated")
-        legacyToken
-    }
-
-    /**
-     * Private helper: Gets access token from legacy auth system
-     */
-    private suspend fun getLegacyAccessToken(): String {
-        val authData = authDataStoreRepository.getCurrentAuthData().getOrThrow()
-        return authData.accessToken ?: throw Exception("No access token available in legacy system")
+        return tokenData.accessToken
     }
 }

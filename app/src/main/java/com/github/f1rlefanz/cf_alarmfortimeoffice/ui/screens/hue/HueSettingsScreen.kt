@@ -69,8 +69,6 @@ internal enum class HueSettingsNetzAktion { VALIDATE, LIGHT_TEST, RULE_TEST }
 
 /**
  * Hue Settings Screen - Bridge and Rules Management
- *
- * HILT MIGRATION: Now receives HueViewModel directly instead of ViewModelFactory
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,9 +79,6 @@ fun HueSettingsScreen(
     onCreateNewRule: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // collectAsStateWithLifecycle statt collectAsState: der Zustand speist nur diesen Bildschirm,
-    // das Abo darf unterhalb von STARTED ruhen. Kein Seiteneffekt haengt daran - die einmaligen
-    // Meldungen laufen ueber den LaunchedEffect auf `userMessages`.
     val uiState by hueViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -160,9 +155,6 @@ fun HueSettingsScreen(
                 }
             }
 
-            // Banner entfernt - siehe HueTabContent: die BridgeStatusCard direkt darunter sagt
-            // dasselbe (rote Karte, Fehler-Icon, "Nicht verbunden"). Die Folge steht jetzt dort.
-
             item {
                 BridgeStatusCard(
                     connectionInfo = uiState.bridgeConnectionInfo,
@@ -217,7 +209,7 @@ private fun BridgeStatusCard(
     onTest: () -> Unit,
     onForgetBridge: () -> Unit
 ) {
-    // UX FEATURE (B): confirmation dialog before actually disconnecting/forgetting the bridge.
+    // Confirmation dialog before actually disconnecting/forgetting the bridge.
     var showForgetDialog by rememberSaveable { mutableStateOf(false) }
 
     Card(
@@ -274,8 +266,6 @@ private fun BridgeStatusCard(
                 )
             }
 
-            // UX FEATURE (B): "Verbindung trennen / Bridge vergessen". Only offered once a
-            // bridge was actually paired (bridgeIp present) - nothing to forget otherwise.
             if (connectionInfo?.bridgeIp != null) {
                 OutlinedButton(
                     onClick = { showForgetDialog = true },

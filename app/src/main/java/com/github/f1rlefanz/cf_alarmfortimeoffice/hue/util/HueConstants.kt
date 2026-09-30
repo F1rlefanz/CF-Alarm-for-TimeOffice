@@ -46,10 +46,6 @@ object HueConstants {
         // Alert types
         const val ALERT_NONE = "none"
         const val ALERT_LSELECT = "lselect"    // Multiple flashes
-        
-        // XY color space limits (CIE 1931)
-        const val MIN_XY_VALUE = 0.0f
-        const val MAX_XY_VALUE = 1.0f
     }
     
     /**
@@ -90,14 +86,6 @@ object HueConstants {
         fun isValidTransitionTime(transitionTime: Int): Boolean {
             return transitionTime in Lights.MIN_TRANSITION_TIME..Lights.MAX_TRANSITION_TIME
         }
-        
-        /**
-         * Validates if XY color coordinates are within valid range
-         */
-        fun isValidXY(x: Float, y: Float): Boolean {
-            return x in Lights.MIN_XY_VALUE..Lights.MAX_XY_VALUE && 
-                   y in Lights.MIN_XY_VALUE..Lights.MAX_XY_VALUE
-        }
     }
     
     /**
@@ -109,44 +97,6 @@ object HueConstants {
          */
         fun clampBrightness(brightness: Int): Int {
             return brightness.coerceIn(Lights.MIN_BRIGHTNESS, Lights.MAX_BRIGHTNESS)
-        }
-        
-        /**
-         * Clamps hue to valid range
-         */
-        fun clampHue(hue: Int): Int {
-            return hue.coerceIn(Lights.MIN_HUE, Lights.MAX_HUE)
-        }
-        
-        /**
-         * Clamps saturation to valid range
-         */
-        fun clampSaturation(saturation: Int): Int {
-            return saturation.coerceIn(Lights.MIN_SATURATION, Lights.MAX_SATURATION)
-        }
-        
-        /**
-         * Clamps color temperature to valid range
-         */
-        fun clampColorTemperature(colorTemperature: Int): Int {
-            return colorTemperature.coerceIn(Lights.MIN_COLOR_TEMPERATURE, Lights.MAX_COLOR_TEMPERATURE)
-        }
-        
-        /**
-         * Converts percentage (0-100) to Hue brightness (1-254)
-         */
-        fun percentageToBrightness(percentage: Int): Int {
-            val clamped = percentage.coerceIn(0, 100)
-            return if (clamped == 0) Lights.MIN_BRIGHTNESS 
-                   else ((clamped / 100.0f) * (Lights.MAX_BRIGHTNESS - Lights.MIN_BRIGHTNESS) + Lights.MIN_BRIGHTNESS).toInt()
-        }
-        
-        /**
-         * Converts Hue brightness (1-254) to percentage (0-100)
-         */
-        fun brightnessToPercentage(brightness: Int): Int {
-            val clamped = clampBrightness(brightness)
-            return ((clamped - Lights.MIN_BRIGHTNESS).toFloat() / (Lights.MAX_BRIGHTNESS - Lights.MIN_BRIGHTNESS) * 100).toInt()
         }
     }
 }

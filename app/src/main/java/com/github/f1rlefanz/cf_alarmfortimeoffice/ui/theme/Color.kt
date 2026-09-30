@@ -5,7 +5,6 @@ import androidx.compose.ui.graphics.Color
 /**
  * Corporate Design — Farbpalette
  * Übernommen von der Unternehmenswebsite (Rot/Off-White/Anthrazit).
- * Ersetzt die generierten Material3-Defaultfarben (Purple80/40 etc.).
  */
 
 // ---- Brand ----

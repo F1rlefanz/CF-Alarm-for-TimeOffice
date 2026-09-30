@@ -196,13 +196,11 @@ fun HomeTabContent(
             .verticalScroll(rememberScrollState())
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL)
             // Zusaetzlicher Freiraum unten, damit der Manueller-Alarm-FAB nicht ueber der
-            // letzten Karte schwebt (der FAB liegt ausserhalb des Scaffold-innerPadding). Seit
-            // dem Wegfall der unteren Navigationsleiste (v1.38.0) sitzt der FAB tiefer; 88 dp
-            // decken seine 56 dp plus Rand weiterhin ab - am Geraet gegengesehen.
+            // letzten Karte schwebt (der FAB liegt ausserhalb des Scaffold-innerPadding); 88 dp
+            // decken seine 56 dp plus Rand.
             .padding(bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
-        // Nächste Schicht Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -245,9 +243,7 @@ fun HomeTabContent(
                     } else if (calendarState.isLoading || shiftState.isLoading) {
                         // Beim (ersten) Oeffnen synchronisiert die App den Kalender neu; bis die
                         // Events da sind, ist noch keine Schicht erkannt. Das ist ein LADEzustand,
-                        // kein Fehler - frueher stand hier sofort "Keine Schicht erkannt" (bzw. ein
-                        // Warnsymbol), was beim Aufschlagen fuer einen Sekundenbruchteil aussah, als
-                        // sei etwas kaputt. Neutraler Hinweis, solange geladen wird.
+                        // kein Fehler - neutraler Hinweis, solange geladen wird.
                         Text(
                             "Wird geladen …",
                             style = MaterialTheme.typography.bodyMedium,
@@ -294,7 +290,6 @@ fun HomeTabContent(
             }
         }
 
-        // Kompakte Alarm-Status Card - Details (inkl. Skip-Funktionalität) leben im Wecker-Tab
         Card(
             modifier = Modifier.fillMaxWidth(),
             onClick = onNavigateToWecker,
@@ -321,14 +316,12 @@ fun HomeTabContent(
             )
         }
 
-        // Kalender Events Summary
         val zugriffVerloren =
             !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty()
         Card(
             modifier = Modifier.fillMaxWidth(),
-            onClick = onShowEventList, // LAZY LOADING: Make card clickable for event list
+            onClick = onShowEventList,
             colors = CardDefaults.cardColors(
-                // PHASE 2 FIX: Show error color if authorization lost
                 containerColor = if (zugriffVerloren) {
                     MaterialTheme.colorScheme.errorContainer
                 } else {
@@ -368,7 +361,6 @@ fun HomeTabContent(
                 
                 HorizontalDivider()
                 
-                // PHASE 2 FIX: Show authorization error prominently
                 if (zugriffVerloren) {
                     Text(
                         "⚠️ Kalender-Autorisierung verloren",
@@ -392,7 +384,6 @@ fun HomeTabContent(
                         Text("Kalender-Zugriff erneuern")
                     }
                 } else if (calendarState.events.isNotEmpty()) {
-                    // LAZY LOADING: Show limited events overview in home tab
                     Text("${calendarState.events.size} Events in den nächsten 14 Tagen")
                     Text(
                         "${shiftState.recognizedShifts.size} Schichten erkannt",
@@ -400,7 +391,6 @@ fun HomeTabContent(
                         color = MaterialTheme.colorScheme.primary
                     )
                     
-                    // Show recognized shifts for today and tomorrow
                     val today = LocalDate.now()
                     val tomorrow = today.plusDays(1)
                     
@@ -430,13 +420,8 @@ fun HomeTabContent(
                         }
                     }
                     
-                    // LAZY LOADING: Hinweis, dass noch mehr geladen werden kann.
-                    //
-                    // Hier stand "Zeige $displayEventCount von N Events" - das war unwahr: diese
-                    // Karte listet ueberhaupt keine Events, sie zeigt Zahlen und die erkannten
-                    // Schichten fuer heute/morgen. Der Satz behauptete eine Anzeigemenge, die es
-                    // nicht gibt, blieb beim Nachladen konstant bei 5 und liess offen, ob die App
-                    // alle Termine kennt - bei einer Wecker-App genau die falsche Unsicherheit.
+                    // Die Karte listet selbst keine Events - also keine Anzeigemenge behaupten,
+                    // nur auf Nachladbares hinweisen (ui-texte-und-layout.md).
                     if (calendarState.hasMoreEvents) {
                         Text(
                             "Es gibt weitere Termine — in der Terminliste nachladbar",
@@ -445,18 +430,14 @@ fun HomeTabContent(
                         )
                     }
                     
-                    // Clickable hint
                     Text(
                         "Antippen für Details →",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )
 
-                    // WARUM DER ABGLEICH HIER STEHT UND NICHT IN DER KOPFZEILE: Bis v1.38.0 sass
-                    // er als blosses Kreispfeil-Symbol oben rechts. Dort sah er aus, als betreffe
-                    // er den ganzen Bildschirm, und ein Symbol kann nicht sagen, WAS es neu laedt
-                    // - der Eigentuemer hat mehrfach vergessen, wozu der Knopf da ist. Jetzt steht
-                    // er an der Karte, deren Inhalt er erneuert, und traegt Worte.
+                    // Der Abgleich steht an der Karte, deren Inhalt er erneuert, und traegt Worte
+                    // statt eines Symbols in der Kopfzeile (ui-texte-und-layout.md).
                     //
                     // Der Text nennt ausdruecklich den Google Kalender: die App gleicht mit IHM ab,
                     // nicht mit TimeOffice. Sie ist nur die Schnittstelle - was TimeOffice noch
@@ -496,7 +477,6 @@ fun HomeTabContent(
             }
         }
 
-        // Loading Indicator
         if (calendarState.isLoading || shiftState.isLoading || alarmState.isLoading) {
             Box(
                 modifier = Modifier

@@ -94,11 +94,7 @@ class DimNotificationService : Service() {
         // laufender DimScheduleUseCase.applyCurrentState()-Aufruf (Tick/6h-Wartung/Boot/Viewmodel)
         // denselben Ausgangsstand und eine der beiden Aenderungen wird beim Zurueckschreiben
         // stillschweigend ueberschrieben.
-        // withOverrideLock ist NICHT inline (anders als das vorherige direkte Mutex.withLock) -
-        // ein "return" aus der Lambda heraus waere daher kein gueltiger Non-Local-Return mehr.
-        // Stattdessen: unbekannte Aktion liefert "false" zurueck, und sowohl setOverride() als
-        // auch der abschliessende applyCurrentState()-Aufruf werden uebersprungen - identisches
-        // Verhalten zum vorherigen fruehen return.
+        // withOverrideLock ist nicht inline - kein return aus der Lambda; unbekannte Aktion liefert false.
         val handled = prefs.withOverrideLock {
             val current = prefs.overrideNow()
             val stale = DimWindowResolver.isOverrideStale(windowEnd, windowStrength, current.windowEnd, current.windowStrength)

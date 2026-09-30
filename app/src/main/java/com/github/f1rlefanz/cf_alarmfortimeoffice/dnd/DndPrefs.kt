@@ -221,14 +221,6 @@ class DndPrefs @Inject constructor(
      * Vorbild fuer Semantik und Fehlerbehandlung). Der Nachzug fuer Dimmer- und Hue-Regeln kam in
      * v1.30.0, diese Liste wurde dabei uebersehen.
      *
-     * Bis v1.40.8 hing hier ausserdem die Rufbereitschaft-Auswahl (`dnd_oncall_shifts`), und dort
-     * war die Folge unsichtbar und teuer: die Chips im DND-Bildschirm werden aus den AKTUELLEN
-     * Definitionsnamen gebaut, der gespeicherte ALT-Name tauchte dort gar nicht auf - der
-     * Rufbereitschaft-Cutoff ([DndOnCallCutoffResolver]) griff nicht mehr, "Nicht stoeren" blieb
-     * in der Nacht VOR der Rufbereitschaft ueber 05:00 hinaus an. Diese Liste gibt es nicht mehr:
-     * Rufbereitschaft ist ein Flag AM Schichttyp (`ShiftDefinition.isOnCall`) und reist bei einer
-     * Umbenennung von selbst mit. Der Nachzug hier bleibt fuer die Dienstzeit-Ausnahmen noetig.
-     *
      * EXAKTER VERGLEICH, und genau deshalb ist auch eine reine SCHREIBWEISEN-Aenderung eine
      * Umbenennung: der Konsument prueft Mengen-Zugehoerigkeit ohne Toleranz (`alarm.shiftName in
      * excludedShifts` in [DndShiftSpanResolver]). Korrigiert der Nutzer "abrufdienst" zu
@@ -283,7 +275,7 @@ class DndPrefs @Inject constructor(
      * WOFUER: der BLOCKIERTE Fall einer Umbenennung - der gespeicherte Name gehoert nach einem
      * Namenstausch inzwischen einer ANDEREN Schichtdefinition (siehe
      * `ShiftViewModel.zieheRegelmusterNach`). Fuer eine Dimm-/Hue-REGEL ist Nichtstun dort ehrlich:
-     * sie wird wirkungslos und steht sichtbar in ihrer Regelliste. Fuer diese beiden Listen ist
+     * sie wird wirkungslos und steht sichtbar in ihrer Regelliste. Fuer diese Liste ist
      * Nichtstun das GEGENTEIL von ehrlich - der Eintrag ist nicht tot, sondern ab sofort scharf
      * fuer die falsche Schicht, und im Bildschirm sieht er aus wie eine bewusste Auswahl.
      *
@@ -291,9 +283,7 @@ class DndPrefs @Inject constructor(
      * Schicht von "Nicht stoeren waehrend der Dienstzeit" AUS, ihr Telefon klingelt also mehr als
      * eingestellt. Das ist die harmlosere Richtung (im Zweifel klingeln), aber es bleibt eine
      * Einstellung, die der Nutzer fuer diese Schicht nie getroffen hat und im Bildschirm nicht
-     * als fremd erkennt. (Bis v1.40.8 galt dasselbe fuer die Rufbereitschaft-Namensliste, mit der
-     * gefaehrlicheren Wirkung eines vorzeitig beendeten "Nicht stoeren" vor der FALSCHEN Schicht -
-     * die Liste ist mit `ShiftDefinition.isOnCall` entfallen.)
+     * als fremd erkennt.
      *
      * WAS ENTFERNEN NICHT KOSTET: Die UMBENANNTE Schicht ist ohnehin schutzlos - ihr neuer Name
      * steht nirgends in der Liste, der Alt-Eintrag half ihr also auch vorher nicht.

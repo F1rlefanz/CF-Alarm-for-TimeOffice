@@ -7,7 +7,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -22,11 +21,7 @@ import javax.inject.Inject
  * Der Schalter verschiebt FENSTERGRENZEN (aus ist aus), deshalb zieht er beide Zeitketten nach —
  * Dimmer und DND; siehe [com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer].
  *
- * WAS HIER BEWUSST NICHT MEHR STEHT: Verdunkelung/Wärme-Setter, die Namen der Schichtdefinitionen
- * und die 5-Sekunden-Vorschau. Sie stammten aus der alten Drei-Karten-Oberfläche; seit die weg ist,
- * hatten sie keinen Aufrufer mehr. Die Vorschau lebt weiter in
- * [DimmerRulesViewModel.previewRule] — mit derselben Konstruktion und derselben Lehre
- * (eigener Scope, `NonCancellable` im `finally`, persistierter Ablaufzeitpunkt).
+ * Die Vorschau lebt in [DimmerRulesViewModel.previewRule] (Hergang im Dimmer-Skill, dimmer.md).
  */
 @HiltViewModel
 class DimmerViewModel @Inject constructor(

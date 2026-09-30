@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -34,15 +33,11 @@ import java.util.Locale
  * Scheduler ([DimScheduleUseCase.previewTimeline]), aber ohne jeden Seiteneffekt. Loest das
  * "ich muss die Anker-Logik im Kopf simulieren"-Problem: hier steht direkt, was passieren wird.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DimmerPreviewScreen(
     onNavigateBack: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
-    // collectAsStateWithLifecycle, nicht collectAsState: die Zeitleiste ist ein reiner
-    // Anzeige-Zustand ohne Seiteneffekt (berechnet wird sie ausschliesslich vom LaunchedEffect
-    // darunter) - das Abo darf unterhalb von STARTED ruhen.
     val timeline by viewModel.timeline.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.refreshTimeline() }

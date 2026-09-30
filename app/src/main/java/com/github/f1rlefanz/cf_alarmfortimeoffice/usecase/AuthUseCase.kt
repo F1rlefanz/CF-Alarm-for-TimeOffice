@@ -15,24 +15,6 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * UseCase für alle Authentication-bezogenen Operationen - implementiert IAuthUseCase
- * 
- * ✅ PHASE 4 MODERNIZED (2025):
- * - Verwendet OAuth2TokenManager statt deprecated ModernOAuth2TokenManager
- * - Smart Retry Logic mit TokenRefreshStrategy (via OAuth2TokenManager)
- * - Token Rotation Support
- * - Improved Exception Handling mit TokenException hierarchy
- * 
- * REFACTORED:
- * ✅ Implementiert IAuthUseCase Interface für bessere Testbarkeit
- * ✅ Verwendet Repository-Interface statt konkrete Implementierung
- * ✅ Kapselt Business Logic von Infrastructure
- * ✅ Result-basierte API für konsistente Fehlerbehandlung
- * ✅ Clean Architecture Compliance
- * ✅ MODERN: Integriert OAuth2TokenManager für Calendar-Autorisierung
- * ✅ FIXED: Added Activity-based authorization method for permission flow
- * 
- * AUTHENTICATION FLOW 2024/2025:
  * 1. Credential Manager für Benutzer-Authentifizierung (wer bist du?)
  * 2. OAuth2TokenManager für API-Autorisierung (was darfst du?)
  */
@@ -44,7 +26,7 @@ class AuthUseCase @Inject constructor(
     override val authData: Flow<AuthData> = authDataStoreRepository.authData
 
     /**
-     * MODERN: Requests Calendar API authorization for signed-in user
+     * Requests Calendar API authorization for signed-in user
      * 
      * @param userEmail Optional email address (uses current user if null)
      * @return Result with Boolean (true if authorized) or error
@@ -60,9 +42,7 @@ class AuthUseCase @Inject constructor(
             
             val calendarAuthResult = oauth2TokenManager.authorize(emailToUse)
             if (calendarAuthResult.isSuccess) {
-                val tokenData = calendarAuthResult.getOrThrow()
                 Logger.business(LogTags.AUTH, "✅ MODERN-TOKEN: Calendar authorization successful - real OAuth2 token obtained")
-                Logger.d(LogTags.AUTH, "📊 Token details: accessToken=${tokenData.accessToken.take(20)}..., expires=${tokenData.getRemainingLifetimeMinutes()}min")
                 true
             } else {
                 val error = calendarAuthResult.exceptionOrNull()
@@ -83,7 +63,7 @@ class AuthUseCase @Inject constructor(
     }
     
     /**
-     * CRITICAL FIX: Request Calendar authorization with Activity context for permission flow
+     * Request Calendar authorization with Activity context for permission flow
      * 
      * This method properly handles the UserRecoverableAuthException by launching the
      * permission intent when needed.
@@ -141,7 +121,7 @@ class AuthUseCase @Inject constructor(
     }
     
     /**
-     * MODERN: Checks if Calendar authorization is available
+     * Checks if Calendar authorization is available
      * 
      * @return Result with Boolean (true if calendar access authorized) or error
      */
@@ -155,64 +135,20 @@ class AuthUseCase @Inject constructor(
     /**
      * Meldet ab und lässt nichts zurück, womit die App weiter auf den Kalender käme.
      *
-     * WAS VORHER FEHLTE: Diese Methode (damals clearAuthData) räumte nur den
-     * authDataStoreRepository ab, und CredentialAuthManager.signOutLocally() ist eine reine
-     * Log-Zeile. Das OAuth-Token überlebte die Abmeldung also im verschlüsselten Token-DataStore
-     * — und im GMS-Cache, der ohnehin außerhalb des App-Speichers liegt. Zwei Folgen:
-     * der Maintenance-Service konnte weiter den Kalender des abgemeldeten Kontos lesen, und wer
-     * sich anschließend mit einem ANDEREN Google-Konto anmeldete, wurde von getValidToken() bis
-     * zur ersten Autorisierung noch aus dem Token des alten Kontos bedient.
+     * REIHENFOLGE: invalidate() zuerst - es braucht den noch gespeicherten Access-Token für
+     * GoogleAuthUtil.clearToken(). Scheitert das Verwerfen, wird das nur geloggt: die Abmeldung
+     * MUSS trotzdem durchlaufen.
      *
-     * REIHENFOLGE: invalidate() zuerst — es braucht den noch gespeicherten Access-Token, um
-     * damit GoogleAuthUtil.clearToken() zu rufen. Nach clearAuthData() wäre der Token zwar noch
-     * in seinem eigenen Store, aber die Reihenfolge so herum ist die, die auch dann hält, wenn
-     * jemand die Stores später zusammenlegt.
+     * Einzige Fehlerquelle ist `clearAuthData()`. Ein Failure heisst deshalb "Token weg,
+     * Auth-Daten noch da" - der Aufrufer MUSS ihn genauso behandeln wie den Erfolg.
      *
-     * Scheitert das Verwerfen (z.B. kein Netz für den GMS-Teil), wird das nur geloggt: die
-     * Abmeldung MUSS trotzdem durchlaufen. Ein Nutzer, der auf "Abmelden" tippt, darf nicht
-     * angemeldet bleiben, weil ein Cache-Aufruf schiefging.
+     * ALLEIN KEIN VOLLSTAENDIGES ABMELDEN: `AuthViewModel.signOut()` raeumt danach in beiden
+     * Zweigen Wecker und Hintergrundarbeit ab (`stopScheduledWorkForSignOut()`); jede neue
+     * Aufrufstelle muss ebenso raeumen. Aufruf UND Aufraeumen legt der Aufrufer zusammen in
+     * `withContext(NonCancellable)`. Das Aufraeumen liegt beim Aufrufer, weil `Result<Unit>`
+     * nur "die Abmeldung selbst ist gelungen" meldet und kein zweites Ergebnis traegt.
      *
-     * WAS EIN FAILURE DIESER FUNKTION BEDEUTET - und was es NICHT bedeutet: Es gibt genau eine
-     * Fehlerquelle, `clearAuthData().getOrThrow()`. Das Kalender-Token ist zu diesem Zeitpunkt
-     * bereits verworfen, denn `invalidate()` laeuft davor und meldet seinen eigenen Fehlschlag
-     * nie nach oben. Ein Failure heisst also NICHT "es ist nichts passiert", sondern: "Token
-     * weg, Auth-Daten noch da". Genau diese Lesart hat einmal gefehlt - die vorige Fassung
-     * dieses KDoc versprach, ein gescheitertes Abmelden lasse nichts zurueck, und der Aufrufer
-     * hat sich darauf verlassen (Pruefrunde 8 / Welle 5, Befund B). Der zurueckbleibende Nutzer
-     * gilt weiter als angemeldet, kommt aber an keinen Kalender mehr: die 6h-Wartung faellt in
-     * ihre fail-safe-Zweige, fuer neue Schichten entstehen keine Wecker, und der
-     * Token-Verlust-Waechter meldet sich je nach Timing auch nicht. Wer `signOut()` aufruft,
-     * MUSS deshalb den Fehlerzweig genauso behandeln wie den Erfolgszweig - siehe
-     * `AuthViewModel.signOut()`, Abschnitt "Punkt ohne Wiederkehr".
-     *
-     * DIESE FUNKTION ALLEIN IST KEIN VOLLSTAENDIGES ABMELDEN. Sie verwirft die Anmeldung -
-     * gestellte Wecker, Schichtspannen, 6h-Wartung, Dimmer-/DND-Tick, Hue-Planung und
-     * Pre-Alarm-Refresh raeumt `AuthViewModel.signOut()` weg, und zwar NACH diesem Aufruf, in
-     * beiden Zweigen (`stopScheduledWorkForSignOut()`, Pruefrunde 8 / Befund 3). Die umgekehrte
-     * Reihenfolge - erst raeumen, dann abmelden - ist erprobt und verworfen: sie erfindet den
-     * Zustand "angemeldet, aber saemtliche Wecker geloescht", den die App danach vollstaendig
-     * selbst wieder aufloesen muesste, und daran ist sie in drei aufeinanderfolgenden Reviews
-     * gescheitert (der manuelle Wecker steht in keiner Terminliste; der ShiftSpanStore blieb
-     * leer; die Warnkarte loeschte sich selbst). Die Begruendung im Volltext steht im KDoc von
-     * `AuthViewModel.signOut()` - hier steht sie nur, damit niemand sie erneut umdreht.
-     *
-     * Wer `signOut()` von einer neuen Stelle aus ruft, ohne dort ebenfalls aufzuraeumen, stellt
-     * Befund 3 wieder her: armierte Wecker eines abgemeldeten Kontos, die der `BootReceiver`
-     * nach jedem Neustart erneut scharf macht - und die App zeigt danach nur noch den
-     * Anmeldebildschirm, also keine Oberflaeche mehr, ueber die sich das abstellen liesse.
-     *
-     * NICHT ABBRECHBAR: Der Aufrufer muss diesen Aufruf UND sein Aufraeumen zusammen in einen
-     * `withContext(NonCancellable)`-Abschnitt legen. `invalidate()` ruft `GoogleAuthUtil
-     * .clearToken()`, einen Netzaufruf, der ohne Netz bis zum Timeout haengt - wird die
-     * Coroutine in diesem Fenster abgebrochen (der Nutzer verlaesst die App nach "Abmelden"),
-     * ist das Token weg und nichts geraeumt.
-     *
-     * WARUM DAS AUFRAEUMEN NICHT HIER LIEGT: Sein Ergebnis muss den Nutzer erreichen ("es
-     * koennen Wecker zurueckgeblieben sein"), ohne die Bedeutung des Rueckgabewerts zu
-     * verbiegen. `Result<Unit>` aus [IAuthUseCase.signOut] heisst "die Abmeldung selbst ist
-     * gelungen"; ein gescheitertes Aufraeumen darf daraus KEIN Failure machen, denn dann bliebe
-     * der Nutzer laut Aufrufer angemeldet. Ein zweites Ergebnis passt nicht in diese Signatur -
-     * also orchestriert die Schicht, die ohnehin den Fehlerzustand der Oberflaeche haelt.
+     * Hergang: Skill cfalarm-persistenz-und-auth, reference/auth-und-token.md.
      */
     override suspend fun signOut(): Result<Unit> = withContext(Dispatchers.IO) {
         SafeExecutor.safeExecute("AuthUseCase.signOut") {

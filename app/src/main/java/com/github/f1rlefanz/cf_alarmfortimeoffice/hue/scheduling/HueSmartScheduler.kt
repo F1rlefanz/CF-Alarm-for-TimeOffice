@@ -201,14 +201,17 @@ class HueSmartScheduler private constructor() {
      * Resolve the Hilt-managed alarm use case via EntryPoint.
      * Returns null only if the context/Hilt is not ready yet (should not happen post-startup).
      */
-    private fun resolveAlarmUseCase(): IAlarmUseCase? {
+    private fun resolveAlarmUseCase(): IAlarmUseCase? = ausEntryPoint("alarm use case") { alarmUseCase() }
+
+    /** Loest [hole] ueber den Hilt-EntryPoint auf; null, solange [appContext] fehlt oder die Aufloesung wirft. */
+    private fun <T> ausEntryPoint(was: String, hole: HueSmartSchedulerEntryPoint.() -> T): T? {
         if (!::appContext.isInitialized) return null
         return try {
             EntryPointAccessors
                 .fromApplication(appContext, HueSmartSchedulerEntryPoint::class.java)
-                .alarmUseCase()
+                .hole()
         } catch (e: Exception) {
-            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve alarm use case via EntryPoint", e)
+            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve $was via EntryPoint", e)
             null
         }
     }
@@ -235,33 +238,13 @@ class HueSmartScheduler private constructor() {
     /**
      * Resolve the Hilt-managed Hue rule use case via EntryPoint (for sunrise scheduling).
      */
-    private fun resolveHueRuleUseCase(): IHueRuleUseCase? {
-        if (!::appContext.isInitialized) return null
-        return try {
-            EntryPointAccessors
-                .fromApplication(appContext, HueSmartSchedulerEntryPoint::class.java)
-                .hueRuleUseCase()
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve Hue rule use case via EntryPoint", e)
-            null
-        }
-    }
+    private fun resolveHueRuleUseCase(): IHueRuleUseCase? = ausEntryPoint("Hue rule use case") { hueRuleUseCase() }
 
     /**
      * Resolve the Hilt-managed master-pause prefs via EntryPoint (gates all Hue background
      * WorkManager scheduling below).
      */
-    private fun resolveMasterPausePrefs(): com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs? {
-        if (!::appContext.isInitialized) return null
-        return try {
-            EntryPointAccessors
-                .fromApplication(appContext, HueSmartSchedulerEntryPoint::class.java)
-                .masterPausePrefs()
-        } catch (e: Exception) {
-            Logger.e(LogTags.HUE_BRIDGE, "Failed to resolve master-pause prefs via EntryPoint", e)
-            null
-        }
-    }
+    private fun resolveMasterPausePrefs(): com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs? = ausEntryPoint("master-pause prefs") { masterPausePrefs() }
 
     /**
      * Initialize smart scheduling system

@@ -73,10 +73,8 @@ class CalendarPreAlarmRefreshScheduler @Inject constructor(
     suspend fun reschedule() {
         val workManager = WorkManager.getInstance(context)
 
-        // ERST LESEN, DANN VERWERFEN. Umgekehrt (bis v1.22.1) stand die bestehende Planung schon
-        // geloescht da, wenn der Read danach fehlschlug: alte Jobs weg, keine neuen geplant, und
-        // Feature B bis zur naechsten qualifizierenden Wartung still. Der Read ist der Teil, der
-        // scheitern kann - er gehoert deshalb vor den irreversiblen Schritt.
+        // ERST LESEN, DANN VERWERFEN: schlaegt der Read fehl, bleibt die bestehende Planung stehen,
+        // statt geloescht und nicht ersetzt zu werden. Der Read ist der Teil, der scheitern kann.
         val alarms = alarmUseCase.getAllAlarms().getOrElse { error ->
             Logger.e(
                 LogTags.BACKGROUND_WORKER,

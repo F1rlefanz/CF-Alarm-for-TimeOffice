@@ -161,17 +161,7 @@ class CalendarViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _localUiState = MutableStateFlow(CalendarUiState())
-    
-    /**
-     * State-Update-Batching mit dynamischen Batch-Delays je nach Update-Frequenz.
-     */
-    @Volatile
-    private var pendingStateUpdate: CalendarUiState? = null
-    @Volatile
-    private var batchUpdateJob: kotlinx.coroutines.Job? = null
-    @Volatile
-    private var lastBatchTime = 0L
-    
+
     /**
      * Kombiniert lokalen State mit dem persistierten Selection State.
      */
@@ -198,10 +188,10 @@ class CalendarViewModel @Inject constructor(
     /**
      * RACE-GUARD: Monotonic generation counter für loadEventsForSelectedCalendars().
      *
-     * loadAvailableCalendars() (oben) wehrt sich mit einem simplen In-Flight-Flag gegen
+     * loadAvailableCalendars() wehrt sich mit einem simplen In-Flight-Flag gegen
      * Überlappung - das passt dort, weil ein zweiter Aufruf während des ersten schlicht
      * verworfen wird. Bei loadEventsForSelectedCalendars() geht das nicht: observeCalendarSelection()
-     * (Zeile ~249) UND refreshData(forceRefresh = true) (Zeile ~686, z.B. "Aktualisieren"-Button)
+     * UND refreshData(forceRefresh = true) (z.B. "Aktualisieren"-Button)
      * dürfen beide legitim feuern, und ein simples Boolean-Gate würde den zweiten Aufruf einfach
      * schlucken statt seine - eigentlich aktuelleren - Ergebnisse durchzulassen.
      *
@@ -282,12 +272,8 @@ class CalendarViewModel @Inject constructor(
     private fun observeFeedNeueinlesen() {
         viewModelScope.launch {
             feedNeueinlesenStore.beobachte().collect { stand ->
-                // ZWEITER RIEGEL vor `updateLocalStateImmediate`: das cancelt ein offenes
-                // Batch-Update BEDINGUNGSLOS, bevor es ueberhaupt vergleicht - eine Emission ohne
-                // Aenderung wuerde also ein gerade laufendes UI-Update verschlucken (z. B. das
-                // Leeren der Terminliste nach einer Kalender-Abwahl). Der Store filtert bereits
-                // per distinctUntilChanged; hier steht der Riegel trotzdem, weil diese Zeile
-                // Diagnostik ist und niemals einem echten Zustandswechsel im Weg stehen darf.
+                // Der Store filtert bereits per distinctUntilChanged; der Riegel bleibt, weil diese
+                // Zeile Diagnostik ist und niemals einem echten Zustandswechsel im Weg stehen darf.
                 if (_localUiState.value.feedNeueinlesen != stand) {
                     updateLocalStateImmediate { it.copy(feedNeueinlesen = stand) }
                 }
@@ -295,46 +281,7 @@ class CalendarViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Sammelt State-Updates und emittiert sie als Batch: 16ms normal, 33ms bei hoher Frequenz.
-     */
-    private fun updateLocalState(updateFunc: (CalendarUiState) -> CalendarUiState) {
-        batchUpdateJob?.cancel()
-        
-        val currentState = _localUiState.value
-        val newState = updateFunc(currentState)
-        
-        // PERFORMANCE: Nur Update wenn sich der State tatsächlich geändert hat
-        if (currentState != newState) {
-            pendingStateUpdate = newState
-            
-            // ADAPTIVE BATCHING: Dynamische Delays basierend auf Update-Frequenz
-            val currentTime = System.currentTimeMillis()
-            val timeSinceLastBatch = currentTime - lastBatchTime
-            val batchDelay = if (timeSinceLastBatch < 100) {
-                33L // 30fps bei häufigen Updates für Stabilität
-            } else {
-                16L // 60fps bei normaler Frequenz
-            }
-            
-            batchUpdateJob = viewModelScope.launch {
-                kotlinx.coroutines.delay(batchDelay)
-                pendingStateUpdate?.let { update ->
-                    _localUiState.value = update
-                    pendingStateUpdate = null
-                    lastBatchTime = System.currentTimeMillis()
-                }
-            }
-        }
-    }
-    
-    /**
-     * IMMEDIATE UPDATE: Für kritische State-Änderungen die sofort emmittiert werden müssen
-     */
     private fun updateLocalStateImmediate(updateFunc: (CalendarUiState) -> CalendarUiState) {
-        batchUpdateJob?.cancel()
-        pendingStateUpdate = null
-        
         val currentState = _localUiState.value
         val newState = updateFunc(currentState)
         
@@ -346,7 +293,7 @@ class CalendarViewModel @Inject constructor(
     private fun checkTokenValidity() {
         viewModelScope.launch {
             val hasValidToken = calendarUseCase.hasValidAccessToken()
-            updateLocalState { it.copy(hasValidToken = hasValidToken) }
+            updateLocalStateImmediate { it.copy(hasValidToken = hasValidToken) }
             
             if (hasValidToken && shouldLoadCalendars()) {
                 loadAvailableCalendars(resetPagination = true)
@@ -379,9 +326,6 @@ class CalendarViewModel @Inject constructor(
             // NOTE: distinctUntilChanged() entfernt - StateFlow ist bereits distinct by design
             calendarSelectionRepository.selectedCalendarIds
                 .collect { selectedIds ->
-                    val calendarCount = selectedIds.size
-                    Logger.d(LogTags.CALENDAR, "🔄 REACTIVE-CALENDAR: Calendar selection changed - $calendarCount calendars")
-                    
                     // LAZY LOADING: Auto-load events with lazy loading when selection changes
                     if (selectedIds.isNotEmpty()) {
                         hasSeenNonEmptySelection = true
@@ -410,7 +354,7 @@ class CalendarViewModel @Inject constructor(
                         val deselectGeneration = eventLoadGeneration.incrementAndGet()
 
                         // Clear events und reset pagination wenn keine Kalender ausgewählt
-                        updateLocalState {
+                        updateLocalStateImmediate {
                             it.copy(
                                 events = emptyList(),
                                 eventOffset = 0,
@@ -666,26 +610,13 @@ class CalendarViewModel @Inject constructor(
     }
 
     /**
-     * Schreibt den Zaehler - und schont dabei ein noch nicht ausgeliefertes Batch-Update.
-     *
-     * `updateLocalStateImmediate` statt `updateLocalState`: Letzteres schiebt das Schreiben in
-     * einen `viewModelScope.launch`-Batch. Der meldende Pfad laeuft aber gerade dann, wenn der
-     * Nutzer die App verlassen haben kann (NonCancellable) - im abgeraeumten Scope kaeme der Batch
-     * nie an, und die Meldung ginge verloren.
-     *
-     * FALLE: updateLocalStateImmediate verwirft dafuer ein noch offenes Batch-Update
-     * (pendingStateUpdate) und rechnet auf `_localUiState.value` weiter. Unmittelbar vor dem
-     * meldenden Pfad wurde aber genau so ein Batch geplant - das Leeren der Terminliste im
-     * else-Zweig von [observeCalendarSelection]. Ohne die Uebernahme unten kaeme die Meldung an,
-     * waehrend die Termine des abgewaehlten Kalenders weiter angezeigt wuerden.
+     * Schreibt den Zaehler synchron: der meldende Pfad laeuft gerade dann, wenn der Nutzer die App
+     * verlassen haben kann (NonCancellable) - ein im `viewModelScope` geplantes Schreiben kaeme im
+     * abgeraeumten Scope nie an, und die Meldung ginge verloren.
      */
     private fun updateDeselectionCleanupFailures(transform: (Int) -> Int) {
-        val pending = pendingStateUpdate
-        val base = pending ?: _localUiState.value
+        val base = _localUiState.value
         val next = transform(base.deselectionCleanupFailures)
-        // Aendert sich der Zaehler nicht, wird hier gar nichts angefasst. Sonst risse ein
-        // wirkungsloses Zuruecksetzen - und das laeuft bei JEDER Kalenderauswahl - den gerade
-        // geplanten Batch vorzeitig durch die Sofort-Zustellung.
         if (next == base.deselectionCleanupFailures) return
         updateLocalStateImmediate { base.copy(deselectionCleanupFailures = next) }
     }
@@ -798,13 +729,6 @@ class CalendarViewModel @Inject constructor(
                     // DIAGNOSTIC: Log special case when no calendars are found
                     if (resetPagination && totalCalendars == 0) {
                         Logger.w(LogTags.CALENDAR, "🔍 CALENDAR-DIAGNOSIS: Google account has no calendars accessible via Calendar API")
-                        Logger.i(LogTags.CALENDAR, "🔍 CALENDAR-DIAGNOSIS: This could mean:")
-                        Logger.i(LogTags.CALENDAR, "   - User's Google account has no calendars created")
-                        Logger.i(LogTags.CALENDAR, "   - Calendar access is restricted by organization policy")  
-                        Logger.i(LogTags.CALENDAR, "   - API permissions are insufficient")
-                        Logger.i(LogTags.CALENDAR, "💡 CALENDAR-DIAGNOSIS: User should create a calendar in Google Calendar first")
-                    } else if (resetPagination && totalCalendars > 0) {
-                        Logger.i(LogTags.CALENDAR, "✅ CALENDAR-DIAGNOSIS: Successfully found $totalCalendars calendars - user can proceed with calendar selection")
                     }
                     
                 }.onFailure { error ->
@@ -850,7 +774,7 @@ class CalendarViewModel @Inject constructor(
         val currentState = _localUiState.value
         if (currentState.hasMoreCalendars && !currentState.isLoadingMore) {
             viewModelScope.launch {
-                updateLocalState { it.copy(isLoadingMore = true, error = null) }
+                updateLocalStateImmediate { it.copy(isLoadingMore = true, error = null) }
                 
                 calendarUseCase.getAvailableCalendarsPaginated(
                     page = currentState.currentPage + 1,
@@ -861,7 +785,7 @@ class CalendarViewModel @Inject constructor(
                     val newCalendarCount = calendarPage.calendars.size
                     val totalCalendarCount = allCalendars.size
                     
-                    updateLocalState { 
+                    updateLocalStateImmediate { 
                         it.copy(
                             isLoadingMore = false,
                             availableCalendars = allCalendars,
@@ -872,7 +796,7 @@ class CalendarViewModel @Inject constructor(
                     
                     Logger.i(LogTags.CALENDAR, "Loaded more calendars page $currentPageNumber: $newCalendarCount new, total: $totalCalendarCount")
                 }.onFailure { error ->
-                    updateLocalState { 
+                    updateLocalStateImmediate { 
                         it.copy(
                             isLoadingMore = false,
                             error = errorHandler.getErrorMessage(error)
@@ -999,7 +923,7 @@ class CalendarViewModel @Inject constructor(
                                 events.size >= initialPageSize || totalEventCount > sortedEvents.size
                             }
                             
-                            updateLocalState { 
+                            updateLocalStateImmediate { 
                                 it.copy(
                                     events = sortedEvents,
                                     totalEvents = if (loadAll) sortedEvents.size else totalEventCount,
@@ -1109,9 +1033,6 @@ class CalendarViewModel @Inject constructor(
                 // [isEventListCompleteForAlarmSync]. Die ANZEIGE darf ein Praefix sein, die
                 // Grundlage einer Loeschentscheidung nicht.
                 if (finalSortedEvents.isNotEmpty()) {
-                    // DEBUGGING: Log current state before alarm creation
-                    logCurrentStateForDebugging(finalSortedEvents)
-
                     val eventsForAlarmSync = if (displayedListIsComplete) {
                         finalSortedEvents
                     } else {
@@ -1170,11 +1091,7 @@ class CalendarViewModel @Inject constructor(
                     }
                 }
                 
-                if (forceRefresh) {
-                    Logger.i(LogTags.CALENDAR, "Progressive calendar events force refreshed - ${finalSortedEvents.size} events loaded for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days${if (!loadAll) " (lazy loaded)" else ""}")
-                } else {
-                    Logger.d(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days${if (!loadAll) " (lazy loaded)" else ""}")
-                }
+                Logger.i(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, forceRefresh=$forceRefresh${if (!loadAll) " (lazy loaded)" else ""}")
                 
             } catch (e: Exception) {
                 updateLocalStateImmediate { 
@@ -1271,7 +1188,7 @@ class CalendarViewModel @Inject constructor(
     }
 
     fun clearError() {
-        updateLocalState { it.copy(error = null) }
+        updateLocalStateImmediate { it.copy(error = null) }
     }
 
     fun refreshData(forceRefresh: Boolean = false, useLazyLoading: Boolean = true) {
@@ -1284,7 +1201,7 @@ class CalendarViewModel @Inject constructor(
                 if (selectedIds.isNotEmpty()) {
                     calendarUseCase.invalidateCalendarCache(selectedIds)
                     // LAZY LOADING: Reset event pagination on refresh
-                    updateLocalState { 
+                    updateLocalStateImmediate { 
                         it.copy(
                             eventOffset = 0,
                             hasMoreEvents = false,
@@ -1378,15 +1295,8 @@ class CalendarViewModel @Inject constructor(
                     totalEvents = eventPage.totalEvents
                 )
 
-                // updateLocalStateImmediate, NICHT updateLocalState: der gebatchte Pfad legt das
-                // Ergebnis nur in pendingStateUpdate und plant einen Job 16-33 ms spaeter. Jeder
-                // dazwischenkommende updateLocalStateImmediate-Aufruf (z. B. der Start eines
-                // "Aktualisieren") cancelt diesen Job und verwirft das Pending ERSATZLOS. Genau
-                // daran haengt hier der einzige Ruecksetzpfad von isLoadingMoreEvents im
-                // Erfolgsfall - die Wache am Anfang von loadMoreEvents() haette danach jedes
-                // weitere Nachladen fuer die Lebensdauer des ViewModels blockiert (Dauer-Spinner).
-                // Die beiden anderen Ruecksetzstellen benutzen aus demselben Grund bereits
-                // updateLocalStateImmediate.
+                // Einziger Ruecksetzpfad von isLoadingMoreEvents im Erfolgsfall - bleibt er aus,
+                // blockiert die Wache am Anfang von loadMoreEvents() jedes weitere Nachladen.
                 updateLocalStateImmediate {
                     it.copy(
                         isLoadingMoreEvents = false,
@@ -1407,8 +1317,6 @@ class CalendarViewModel @Inject constructor(
 
                 Logger.i(LogTags.CALENDAR, "Loaded ${eventPage.events.size} union-prefix events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, total: ${merged.events.size}/${eventPage.totalEvents}")
             }.onFailure { error ->
-                // Ebenfalls immediate - gleiche Begruendung wie im Erfolgszweig: ein verworfener
-                // Batch liesse isLoadingMoreEvents dauerhaft auf true stehen.
                 updateLocalStateImmediate {
                     it.copy(
                         isLoadingMoreEvents = false,
@@ -1430,8 +1338,6 @@ class CalendarViewModel @Inject constructor(
     private fun createAlarmsFromLoadedEvents(events: List<CalendarEvent>) {
         viewModelScope.launch {
             try {
-                val eventCount = events.size
-                
                 // CRITICAL FIX: Don't create alarms if no events exist
                 if (events.isEmpty()) {
                     Logger.business(LogTags.ALARM, "✅ NO-EVENTS: No calendar events found - no alarms to create")
@@ -1445,13 +1351,6 @@ class CalendarViewModel @Inject constructor(
                     return@launch
                 }
 
-                Logger.business(LogTags.ALARM, "🚨 TIMING-FIX: Starting alarm creation for $eventCount loaded events")
-                
-                // 🔍 DEBUGGING: Log details about the events we found
-                events.forEach { event ->
-                    Logger.business(LogTags.ALARM, "🔍 FOUND-EVENT: '${event.title}' on ${event.startTime.toLocalDate()} at ${event.startTime.toLocalTime()} (Calendar: ${event.calendarId.take(8)}...)")
-                }
-                
                 // TIMING FIX: Wait for ShiftConfig with retry logic
                 var shiftConfig: com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig? = null
                 var attempts = 0
@@ -1462,7 +1361,6 @@ class CalendarViewModel @Inject constructor(
                     
                     if (shiftConfig == null) {
                         attempts++
-                        Logger.d(LogTags.ALARM, "⏳ TIMING-FIX: ShiftConfig not ready yet, attempt $attempts/$maxAttempts")
                         kotlinx.coroutines.delay(500) // Wait 500ms before next attempt
                     }
                 }
@@ -1480,8 +1378,6 @@ class CalendarViewModel @Inject constructor(
                 }
                 
                 if (shiftConfig?.autoAlarmEnabled == true) {
-                    Logger.business(LogTags.ALARM, "✅ TIMING-FIX: ShiftConfig available with autoAlarm enabled, creating alarms...")
-                    
                     // Orchestrator: syncAlarms fuehrt einen eventId-basierten Delta-Sync durch,
                     // der bestehende UND manuelle Alarme (eventId leer) schont, nur wirklich
                     // entfernte Events loescht und die System-Alarme INTERN setzt (inkl.
@@ -1511,34 +1407,6 @@ class CalendarViewModel @Inject constructor(
         }
     }
 
-    /**
-     * DEBUGGING: Logs current state to help diagnose timing issues
-     */
-    private suspend fun logCurrentStateForDebugging(events: List<CalendarEvent>) {
-        try {
-            val eventCount = events.size
-            Logger.business(LogTags.ALARM, "🔍 DEBUG-STATE: Starting alarm creation process")
-            Logger.business(LogTags.ALARM, "🔍 DEBUG-STATE: Events loaded: $eventCount")
-            
-            events.take(3).forEach { event ->
-                Logger.d(LogTags.ALARM, "🔍 DEBUG-STATE: Event: '${event.title}' at ${event.startTime}")
-            }
-            
-            val shiftConfig = shiftUseCase.getCurrentShiftConfig().getOrNull()
-            if (shiftConfig != null) {
-                val definitionCount = shiftConfig.definitions.size
-                Logger.business(LogTags.ALARM, "🔍 DEBUG-STATE: ShiftConfig available - autoAlarm=${shiftConfig.autoAlarmEnabled}, definitions=$definitionCount")
-                shiftConfig.definitions.forEach { def ->
-                    Logger.d(LogTags.ALARM, "🔍 DEBUG-STATE: ShiftDef: '${def.name}' enabled=${def.isEnabled}, keywords=${def.keywords}")
-                }
-            } else {
-                Logger.w(LogTags.ALARM, "🔍 DEBUG-STATE: ⚠️ ShiftConfig is NULL - this is the problem!")
-            }
-        } catch (e: Exception) {
-            Logger.e(LogTags.ALARM, "🔍 DEBUG-STATE: Exception during debugging", e)
-        }
-    }
-    
     /**
      * BACKGROUND SYNC: Intelligente Hintergrund-Synchronisation
      * Aktualisiert stale Cache-Einträge ohne die UI zu blockieren

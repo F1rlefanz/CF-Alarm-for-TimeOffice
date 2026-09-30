@@ -90,16 +90,7 @@ internal fun decodeShiftConfig(
 }
 
 /**
- * ShiftConfigRepository - implementiert IShiftConfigRepository Interface
- * 
- * REFACTORED + OPTIMIZED:
- * ✅ Implementiert IShiftConfigRepository für bessere Testbarkeit
- * ✅ Result-basierte API für konsistente Fehlerbehandlung
- * ✅ Flow-basierte reaktive Datenbeobachtung
- * ✅ Vollständige CRUD-Operationen mit Validierung
- * ✅ SINGLETON PATTERN: Eliminiert redundante Config-Loads durch intelligentes Caching
- * 
- * Verwaltet Schicht-Konfigurationen mit DataStore Preferences + Performance-Caching
+ * Verwaltet Schicht-Konfigurationen mit DataStore Preferences und einem 30-s-Cache.
  */
 @Singleton
 class ShiftConfigRepository @Inject constructor(
@@ -132,17 +123,13 @@ class ShiftConfigRepository @Inject constructor(
         encodeDefaults = true
     }
 
-    // SINGLETON PATTERN: Cached configuration with thread-safe access
     @Volatile
     private var cachedConfig: ShiftConfig? = null
     @Volatile
     private var cacheTimestamp: Long = 0L
-    @Volatile
-    private var configLoadInProgress: Boolean = false
     
     private companion object {
         const val CACHE_VALIDITY_MS = 30000L // 30 seconds cache validity
-        const val MAX_LOAD_WAIT_MS = 500L   // Max wait for concurrent loads
         const val BROKEN_CONFIG_KEY_NAME = "shift_config_broken"
     }
 
@@ -237,30 +224,19 @@ class ShiftConfigRepository @Inject constructor(
             }
         }
         .catch { e ->
-            // Faengt Upstream (unlesbare shift_prefs) UND alles, was aus dem `map{}` kaeme -
-            // deshalb steht es hier unten und nicht zwischen Quelle und `map`.
-            // Die ANZEIGE darf degradieren, die SCHREIBWAHRHEIT nicht: der Default geht direkt an
-            // den Collector, aber NICHT in den Cache. Zusaetzlich wird ein evtl. vorhandener
-            // Cache-Eintrag verworfen, damit `getCurrentShiftConfig()` auf den frischen Read
-            // durchfaellt und dort ehrlich scheitert, statt einen Cache-Hit zu melden.
-            // Nur `cachedConfig` wird genullt: alle Cache-Treffer sind mit `cachedConfig?.let`
-            // bewacht, `cacheTimestamp` ist ohne Eintrag bedeutungslos - und `configLoadInProgress`
-            // gehoert einem evtl. parallel laufenden Load und darf hier nicht angefasst werden.
-            // Schlimmster Fall der Nebenlaeufigkeit: ein zeitgleich gefuellter, gueltiger Cache
-            // wird verworfen und einmal frisch gelesen. Das ist die sichere Richtung.
+            // Steht hinter dem `map{}` (REIHENFOLGE IST TRAGEND). Die Anzeige degradiert, die
+            // Schreibwahrheit nicht: Default nur an den Collector, NICHT in den Cache. Nur `cachedConfig`
+            // wird genullt - alle Cache-Treffer sind mit `cachedConfig?.let` bewacht.
+            // Skill cfalarm-persistenz-und-auth (Kurzregel 1).
             cachedConfig = null
             Logger.e(LogTags.SHIFT_CONFIG, "shift_prefs nicht lesbar - Anzeige degradiert auf Standardkonfiguration, Cache verworfen", e)
             emit(ShiftConfig.getDefaultConfig())
         }
 
-    /**
-     * SINGLETON CACHE: Invalidates cached config to force fresh load
-     * Call this when configuration changes externally
-     */
+    /** Erzwingt beim naechsten Read ein frisches Laden (nach Aenderungen von aussen). */
     fun invalidateCache() {
         cachedConfig = null
         cacheTimestamp = 0L
-        configLoadInProgress = false
         Logger.d(LogTags.SHIFT_CONFIG, "🗑️ SINGLETON-CACHE: Config cache invalidated")
     }
 
@@ -279,12 +255,8 @@ class ShiftConfigRepository @Inject constructor(
                 preferences[shiftConfigKey] = jsonString
             }
             
-            // SINGLETON PATTERN: Update cache immediately after save + invalidate cache chains
             cachedConfig = config
             cacheTimestamp = System.currentTimeMillis()
-            
-            // PERFORMANCE: Clear dependent caches when config changes
-            Logger.d(LogTags.SHIFT_CONFIG, "🗑️ SINGLETON-INVALIDATE: All caches cleared due to config change")
             
             Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-SAVE: Shift config saved with ${config.definitions.size} definitions and cache updated")
         }
@@ -293,7 +265,6 @@ class ShiftConfigRepository @Inject constructor(
         SafeExecutor.safeExecute("ShiftConfigRepository.getCurrentShiftConfig") {
             val currentTime = System.currentTimeMillis()
             
-            // SINGLETON CACHE HIT: Return cached config if valid
             cachedConfig?.let { cached ->
                 val cacheAge = currentTime - cacheTimestamp
                 if (cacheAge < CACHE_VALIDITY_MS) {
@@ -301,29 +272,6 @@ class ShiftConfigRepository @Inject constructor(
                     return@safeExecute cached
                 } else {
                     Logger.d(LogTags.SHIFT_CONFIG, "⏰ SINGLETON-CACHE-EXPIRED: Cache is ${cacheAge}ms old, refreshing")
-                }
-            }
-            
-            // SINGLETON CONCURRENCY: Handle concurrent load attempts
-            if (configLoadInProgress) {
-                Logger.d(LogTags.SHIFT_CONFIG, "🔄 SINGLETON-WAIT: Config load in progress, waiting smartly...")
-                
-                val startWait = System.currentTimeMillis()
-                while (configLoadInProgress && (System.currentTimeMillis() - startWait) < MAX_LOAD_WAIT_MS) {
-                    kotlinx.coroutines.delay(25)
-                }
-                
-                // Check if concurrent load completed successfully
-                cachedConfig?.let { freshConfig ->
-                    val cacheAge = System.currentTimeMillis() - cacheTimestamp
-                    if (cacheAge < CACHE_VALIDITY_MS) {
-                        Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-CONCURRENT-SUCCESS: Using fresh config from concurrent load")
-                        return@safeExecute freshConfig
-                    }
-                }
-                
-                if (configLoadInProgress) {
-                    Logger.w(LogTags.SHIFT_CONFIG, "⚠️ SINGLETON-TIMEOUT: Concurrent load timed out, proceeding anyway")
                 }
             }
             
@@ -343,46 +291,39 @@ class ShiftConfigRepository @Inject constructor(
                 )
             }
 
-            configLoadInProgress = true
+            val preferences = dataStore.data.first()
+            val config = when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey], userUnlocked)) {
+                is ShiftConfigDecodeResult.Ok -> decoded.config
 
-            try {
-                val preferences = dataStore.data.first()
-                val config = when (val decoded = decodeShiftConfig(json, preferences[shiftConfigKey], userUnlocked)) {
-                    is ShiftConfigDecodeResult.Ok -> decoded.config
-
-                    // KEIN stiller Default: eine vorhandene, aber unlesbare Konfiguration wird als
-                    // FEHLER gemeldet. Sonst weckt die Pipeline zu Standardzeiten (statt zu den
-                    // gepflegten) und das naechste Bearbeiten schreibt den Default endgueltig
-                    // ueber die echte Konfiguration. Der bewusste Weg zum Default heisst
-                    // resetToDefaults() und gehoert dem Nutzer.
-                    is ShiftConfigDecodeResult.Broken -> {
-                        backupBrokenConfig(decoded.raw)
-                        throw AppError.DataStoreError(
-                            message = "Schicht-Konfiguration ist nicht lesbar (Sicherung unter '$BROKEN_CONFIG_KEY_NAME')",
-                            cause = decoded.cause
-                        )
-                    }
-
-                    ShiftConfigDecodeResult.NotConfigured -> ShiftConfig.getDefaultConfig()
-
-                    // Zweites Netz zum Gate oben: gaebe der UserManager zwischen Gate und Read
-                    // "gesperrt" zurueck, waere "leer" wieder keine Aussage. Auch hier KEIN
-                    // Default als Erfolg.
-                    ShiftConfigDecodeResult.LockedStorage -> throw AppError.DataStoreError(
-                        message = "Schicht-Konfiguration vor der ersten Entsperrung nicht lesbar " +
-                            "(CREDENTIAL-ENCRYPTED Storage) - es wird KEIN Default gemeldet"
+                // KEIN stiller Default: eine vorhandene, aber unlesbare Konfiguration wird als
+                // FEHLER gemeldet. Sonst weckt die Pipeline zu Standardzeiten (statt zu den
+                // gepflegten) und das naechste Bearbeiten schreibt den Default endgueltig
+                // ueber die echte Konfiguration. Der bewusste Weg zum Default heisst
+                // resetToDefaults() und gehoert dem Nutzer.
+                is ShiftConfigDecodeResult.Broken -> {
+                    backupBrokenConfig(decoded.raw)
+                    throw AppError.DataStoreError(
+                        message = "Schicht-Konfiguration ist nicht lesbar (Sicherung unter '$BROKEN_CONFIG_KEY_NAME')",
+                        cause = decoded.cause
                     )
                 }
 
-                // SINGLETON PATTERN: Update cache with fresh data
-                cachedConfig = config
-                cacheTimestamp = currentTime
+                ShiftConfigDecodeResult.NotConfigured -> ShiftConfig.getDefaultConfig()
 
-                Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-FRESH-LOAD: Config loaded with ${config.definitions.size} definitions and cached")
-                config
-            } finally {
-                configLoadInProgress = false
+                // Zweites Netz zum Gate oben: gaebe der UserManager zwischen Gate und Read
+                // "gesperrt" zurueck, waere "leer" wieder keine Aussage. Auch hier KEIN
+                // Default als Erfolg.
+                ShiftConfigDecodeResult.LockedStorage -> throw AppError.DataStoreError(
+                    message = "Schicht-Konfiguration vor der ersten Entsperrung nicht lesbar " +
+                        "(CREDENTIAL-ENCRYPTED Storage) - es wird KEIN Default gemeldet"
+                )
             }
+
+            cachedConfig = config
+            cacheTimestamp = currentTime
+
+            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-FRESH-LOAD: Config loaded with ${config.definitions.size} definitions and cached")
+            config
         }
     
     override suspend fun resetToDefaults(): Result<Unit> = 
@@ -394,35 +335,9 @@ class ShiftConfigRepository @Inject constructor(
                 preferences[shiftConfigKey] = jsonString
             }
             
-            // SINGLETON PATTERN: Update cache immediately after reset
             cachedConfig = defaultConfig
             cacheTimestamp = System.currentTimeMillis()
             
             Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-RESET: Shift config reset to defaults and cache updated")
-        }
-    
-    override suspend fun hasValidConfig(): Result<Boolean> = 
-        SafeExecutor.safeExecute("ShiftConfigRepository.hasValidConfig") {
-            // SINGLETON OPTIMIZATION: Try cache first for performance
-            cachedConfig?.let { cached ->
-                val cacheAge = System.currentTimeMillis() - cacheTimestamp
-                if (cacheAge < CACHE_VALIDITY_MS) {
-                    val isValid = cached.definitions.isNotEmpty() && 
-                                 cached.definitions.any { it.name.isNotBlank() }
-                    Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-VALID-CHECK: Using cached config for validation - valid=$isValid")
-                    return@safeExecute isValid
-                }
-            }
-            
-            val config = getCurrentShiftConfig().getOrElse { 
-                return@safeExecute false
-            }
-            
-            // Validierung: Mindestens eine Schichtdefinition mit gültigem Namen
-            val isValid = config.definitions.isNotEmpty() && 
-                         config.definitions.any { it.name.isNotBlank() }
-            
-            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-VALID-CHECK: Fresh validation completed - valid=$isValid")
-            isValid
         }
 }

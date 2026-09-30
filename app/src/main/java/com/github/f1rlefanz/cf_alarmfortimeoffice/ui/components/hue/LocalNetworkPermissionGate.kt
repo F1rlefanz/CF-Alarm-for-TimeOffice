@@ -1,14 +1,8 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.hue
 
 /*
- * WERKZEUG-FALLE, teuer bezahlt am 19.08.2026: Die Aktions-Enums der aufrufenden Bildschirme
- * muessen `internal` sein, nicht `private`. Mit einem top-level `private enum` als Typargument
- * dieser generischen Funktion bricht `hiltJavaCompileDebugUnitTest` mit der irrefuehrenden
- * Meldung "[Hilt] @HiltAndroidApp base class must extend Application. Found:
- * Hilt_CFAlarmApplication" ab - die App selbst baut weiter, nur die Unit-Tests lassen sich nicht
- * mehr uebersetzen. Ein KSP-Fehler ("PSI has changed since creation") liegt darunter, kein
- * Fehler dieses Projekts. Eingegrenzt wurde es durch Halbieren des Diffs ueber acht saubere
- * Builds; `clean` und ein frischer Daemon halfen nicht.
+ * Die Aktions-Enums der Aufrufer muessen `internal` sein, nicht `private` - sonst bricht KSP/Hilt
+ * die Unit-Test-Uebersetzung (umgebung-und-tests.md).
  */
 import android.content.pm.PackageManager
 import android.os.Build
@@ -27,11 +21,8 @@ import androidx.compose.ui.platform.LocalContext
 /** Die Berechtigung, ohne die ab Android 17 (API 37) kein Paket mehr ins lokale Netz darf. */
 const val ACCESS_LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
 
-/**
- * Ab dieser API-Ebene erzwingt Android die lokale Netzwerkberechtigung. Als Zahl und nicht als
- * `Build.VERSION_CODES`-Konstante, weil die Konstante erst mit einem neueren compileSdk existiert.
- */
-const val SDK_MIT_LOKALER_NETZWERKFREIGABE = 37
+/** Ab dieser API-Ebene erzwingt Android die lokale Netzwerkberechtigung. */
+const val SDK_MIT_LOKALER_NETZWERKFREIGABE = Build.VERSION_CODES.CINNAMON_BUN
 
 /**
  * Reine Entscheidung: Muss vor dieser Aktion erst der Systemdialog kommen?

@@ -65,20 +65,10 @@ class HueRuleUseCase @Inject constructor(
     }
     
     override suspend fun getAllRules(): Result<List<HueSchedule>> {
-        Logger.d(LogTags.HUE_USECASE, "Getting all schedule rules")
-        
         return try {
-            val rulesResult = configRepository.getScheduleRules()
-            
-            if (rulesResult.isSuccess) {
-                val rules = rulesResult.getOrNull() ?: emptyList()
-                Logger.i(LogTags.HUE_USECASE, "Retrieved ${rules.size} schedule rules")
-                Result.success(rules)
-            } else {
-                Logger.w(LogTags.HUE_USECASE, "Failed to get schedule rules", rulesResult.exceptionOrNull())
-                rulesResult
+            configRepository.getScheduleRules().onFailure {
+                Logger.w(LogTags.HUE_USECASE, "Failed to get schedule rules", it)
             }
-            
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to get all rules", e)
             Result.failure(Exception("Failed to retrieve schedule rules: ${e.message}", e))
@@ -131,15 +121,7 @@ class HueRuleUseCase @Inject constructor(
         Logger.d(LogTags.HUE_USECASE, "Finding applicable rules for shift: ${shift.shiftDefinition.name} at ${currentTime}")
         
         return try {
-            val allRulesResult = getAllRules()
-            if (allRulesResult.isFailure) {
-                return allRulesResult.fold(
-                    onSuccess = { Result.success(emptyList()) },
-                    onFailure = { Result.failure(it) }
-                )
-            }
-            
-            val allRules = allRulesResult.getOrNull() ?: emptyList()
+            val allRules = getAllRules().getOrElse { return Result.failure(it) }
 
             // `rule.shiftPattern` ist IMMER ein Definitionsname - exakter Vergleich, nie ueber
             // Keywords. Hergang: Skill cfalarm-hue, reference/hue-api-und-regeln.md
@@ -147,9 +129,7 @@ class HueRuleUseCase @Inject constructor(
 
             val matchingRules = allRules.filter { rule ->
                 // Vom Nutzer deaktivierte Regeln bleiben aussen vor.
-                rule.enabled &&
-                    (rule.shiftPattern.equals(shiftName, ignoreCase = true) ||
-                        rule.shiftPattern.equals(UNIVERSAL_SHIFT_PATTERN, ignoreCase = true))
+                rule.enabled && rule.passtAufSchicht(shiftName)
             }
 
             Logger.i(LogTags.HUE_USECASE, "Found ${matchingRules.size} rules matching shift '$shiftName'")
@@ -355,7 +335,6 @@ class HueRuleUseCase @Inject constructor(
                 actions.add(lightAction)
             }
             
-            Logger.d(LogTags.HUE_USECASE, "Converted rule ${rule.name} to ${actions.size} light actions")
             Result.success(actions)
             
         } catch (e: Exception) {
@@ -407,23 +386,11 @@ class HueRuleUseCase @Inject constructor(
     }
     
     override suspend fun getRule(ruleId: String): Result<HueSchedule> {
-        Logger.d(LogTags.HUE_USECASE, "Getting schedule rule: $ruleId")
-        
         return try {
-            val allRulesResult = getAllRules()
-            
-            if (allRulesResult.isFailure) {
-                return allRulesResult.fold(
-                    onSuccess = { Result.failure(Exception("Rule not found: $ruleId")) },
-                    onFailure = { Result.failure(it) }
-                )
-            }
-            
-            val allRules = allRulesResult.getOrNull() ?: emptyList()
+            val allRules = getAllRules().getOrElse { return Result.failure(it) }
             val rule = allRules.find { it.id == ruleId }
             
             if (rule != null) {
-                Logger.d(LogTags.HUE_USECASE, "Found rule: $ruleId")
                 Result.success(rule)
             } else {
                 Logger.w(LogTags.HUE_USECASE, "Rule not found: $ruleId")
@@ -460,8 +427,6 @@ class HueRuleUseCase @Inject constructor(
     }
 
     override suspend fun validateRule(rule: HueSchedule): Result<RuleValidationResult> {
-        Logger.d(LogTags.HUE_USECASE, "Validating rule: ${rule.id}")
-        
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
         
@@ -798,3 +763,12 @@ class HueRuleUseCase @Inject constructor(
         return "rule_${UUID.randomUUID().toString().take(8)}_${System.currentTimeMillis()}"
     }
 }
+
+/**
+ * Gilt die Regel fuer die Schicht [shiftName] (exakter Definitionsname, ohne Gross-/Kleinschreibung)
+ * oder fuer alle Schichten? Gemeinsamer Massstab von [HueRuleUseCase.findApplicableRules] und
+ * [HueSunriseExecutor]; `betrifftSchicht` schliesst das Universalmuster bewusst aus.
+ */
+internal fun HueSchedule.passtAufSchicht(shiftName: String): Boolean =
+    shiftPattern.equals(shiftName, ignoreCase = true) ||
+        shiftPattern.equals(HueRuleUseCase.UNIVERSAL_SHIFT_PATTERN, ignoreCase = true)

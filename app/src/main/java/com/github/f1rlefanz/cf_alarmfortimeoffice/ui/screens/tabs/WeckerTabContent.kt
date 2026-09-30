@@ -105,14 +105,9 @@ internal const val AUTO_ALARM_BESCHREIBUNG_PAUSIERT: String =
 /**
  * Kurzfassung der Abgrenzung "Ueberspringen" gegen "Tag freigeben" - immer sichtbar.
  *
- * WARUM DIE ERKLAERUNG SEIN MUSS: Bis v1.31.0 gab es nur das Ueberspringen, und die Oberflaeche
- * sagte nirgends, dass es AUSSCHLIESSLICH den Wecker betrifft. Am 24.08.2026 hat der Nutzer
- * deshalb einen Tag, an dem sein Chef ihm freigegeben hatte, per Ueberspringen behandelt - der
- * Wecker blieb korrekt stumm, und um 14:48 Uhr ging punktgenau zum Schichtbeginn "Nicht stoeren"
- * an. Das war kein Fehler, sondern die dokumentierte Absicht (ein uebersprungener Wecker aendert
- * nichts daran, dass der Dienst stattfindet) - nur konnte das aus der Oberflaeche niemand wissen.
  * Zwei Gesten, die sich fast gleich anfuehlen und verschieden wirken, brauchen den Unterschied
- * an genau der Stelle, an der man sich entscheidet.
+ * an genau der Stelle, an der man sich entscheidet - Hergang
+ * cfalarm-wecker-und-boot/reference/tag-freigeben.md.
  */
 internal const val FREIGEBEN_HINWEIS_KURZ: String =
     "„Überspringen“ betrifft nur den Wecker, „Tag freigeben“ den ganzen Dienst."
@@ -225,10 +220,7 @@ fun WeckerTabContent(
                         }
                     },
                     // Zwei Sperrgruende, beide mit sichtbarer Begruendung daneben - siehe
-                    // autoAlarmSchalterBedienbar(). Waehrend ShiftViewModel.loadShiftConfig()
-                    // noch laedt (kurzes Fenster beim Kaltstart) ist currentShiftConfig null:
-                    // der Tap wuerde sonst wortlos verpuffen (checked bleibt an "?: false"
-                    // haengen, onCheckedChange erreicht nie onUpdateShiftConfig).
+                    // autoAlarmSchalterBedienbar().
                     enabled = autoAlarmSchalterBedienbar(
                         shiftConfigGeladen = shiftState.currentShiftConfig != null,
                         masterPausePaused = masterPausePaused
@@ -254,7 +246,6 @@ fun WeckerTabContent(
             }
         }
 
-        // Enhanced Alarm Status Card mit Skip-Funktionalität
         EnhancedAlarmStatusCard(
             alarmState = alarmState,
             skipState = skipState,
@@ -300,7 +291,6 @@ private fun EnhancedAlarmStatusCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header Row (bestehend)
             AlarmStatusHeader(
                 alarmState = alarmState,
                 skipState = skipState,
@@ -338,7 +328,6 @@ private fun EnhancedAlarmStatusCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (skipState.isNextAlarmSkipped) {
-                        // Skip ist aktiv
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -377,7 +366,6 @@ private fun EnhancedAlarmStatusCard(
                             }
                         }
                     } else {
-                        // Skip nicht aktiv
                         Text(
                             "Nächsten Alarm einmalig überspringen:",
                             style = MaterialTheme.typography.bodyMedium,
@@ -563,12 +551,8 @@ private fun TagFreigabeAbschnitt(
 private fun UeberspringenOderFreigebenHinweis() {
     var ausgeklappt by rememberSaveable { mutableStateOf(false) }
 
-    // `surfaceVariant` ist in der hellen CSJR-Palette derselbe Farbwert wie `background`
-    // (beides `OffWhite`, siehe Theme.kt) - eine Karte in dieser Farbe hat auf dem Seiten-
-    // hintergrund gar keine sichtbare Flaeche mehr. Ein Hinweis, den man nicht als Hinweis
-    // erkennt, ist keiner. Deshalb weisse Flaeche und ein Rand aus der Marken-Randfarbe:
-    // dezent abgesetzt von den Inhaltskarten, aber vorhanden. Im dunklen Schema war es nie
-    // kaputt (`DarkSurfaceVariant` != `DarkBg`) - die Regel gilt trotzdem fuer beide.
+    // Weisse Flaeche mit Markenrand statt `surfaceVariant` (hell identisch mit dem Hintergrund,
+    // also unsichtbar) - ui-texte-und-layout.md.
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(

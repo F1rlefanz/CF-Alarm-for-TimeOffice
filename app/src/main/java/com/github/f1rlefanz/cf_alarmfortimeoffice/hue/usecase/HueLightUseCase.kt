@@ -58,8 +58,6 @@ class HueLightUseCase @Inject constructor(
     }
     
     override suspend fun getAllLightTargets(): Result<LightTargets> {
-        Logger.d(LogTags.HUE_USECASE, "Getting all light targets with business logic")
-        
         return try {
             coroutineScope {
                 val lightsDeferred = async { lightRepository.getLights() }
@@ -87,24 +85,18 @@ class HueLightUseCase @Inject constructor(
                     return@coroutineScope Result.failure(error)
                 }
 
-                val lights = if (lightsResult.isSuccess) {
-                    lightsResult.getOrNull() ?: emptyList()
-                } else {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to get lights", lightsResult.exceptionOrNull())
+                val lights = lightsResult.getOrElse {
+                    Logger.w(LogTags.HUE_USECASE, "Failed to get lights", it)
                     emptyList()
                 }
                 
-                val groups = if (groupsResult.isSuccess) {
-                    groupsResult.getOrNull() ?: emptyList()
-                } else {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to get groups", groupsResult.exceptionOrNull())
+                val groups = groupsResult.getOrElse {
+                    Logger.w(LogTags.HUE_USECASE, "Failed to get groups", it)
                     emptyList()
                 }
 
-                val scenes = if (scenesResult.isSuccess) {
-                    scenesResult.getOrNull() ?: emptyList()
-                } else {
-                    Logger.w(LogTags.HUE_USECASE, "Failed to get scenes", scenesResult.exceptionOrNull())
+                val scenes = scenesResult.getOrElse {
+                    Logger.w(LogTags.HUE_USECASE, "Failed to get scenes", it)
                     emptyList()
                 }
                 
@@ -134,8 +126,6 @@ class HueLightUseCase @Inject constructor(
     }
     
     override suspend fun executeLightAction(action: LightAction): Result<LightActionResult> {
-        Logger.d(LogTags.HUE_USECASE, "Executing light action for ${action.targetId}")
-        
         return try {
             val validationResult = validateLightAction(action)
             if (validationResult.isFailure) {
@@ -158,19 +148,10 @@ class HueLightUseCase @Inject constructor(
                         groupId = action.targetId,
                         sceneId = action.sceneId
                     )
-                } else if (action.isGroup) {
-                    lightRepository.controlGroup(
-                        groupId = action.targetId,
-                        on = action.on,
-                        brightness = action.brightness,
-                        hue = action.hue,
-                        saturation = action.saturation,
-                        colorTemperature = action.colorTemperature,
-                        transitionTime = action.transitionTime
-                    )
                 } else {
-                    lightRepository.controlLight(
-                        lightId = action.targetId,
+                    controlTarget(
+                        targetId = action.targetId,
+                        isGroup = action.isGroup,
                         on = action.on,
                         brightness = action.brightness,
                         hue = action.hue,
@@ -193,7 +174,6 @@ class HueLightUseCase @Inject constructor(
             }
             
             val actionResult = if (result.isSuccess) {
-                Logger.i(LogTags.HUE_USECASE, "Light action successful for ${action.targetId}")
                 LightActionResult(
                     success = true,
                     targetId = action.targetId
@@ -502,23 +482,14 @@ class HueLightUseCase @Inject constructor(
                 .coerceAtMost(HueConstants.Lights.MAX_TRANSITION_TIME)
 
             // Step 1: jump to dim + warm immediately.
-            val initial = if (isGroup) {
-                lightRepository.controlGroup(
-                    groupId = targetId,
-                    on = true,
-                    brightness = HueConstants.Lights.MIN_BRIGHTNESS,
-                    colorTemperature = startCt,
-                    transitionTime = 0
-                )
-            } else {
-                lightRepository.controlLight(
-                    lightId = targetId,
-                    on = true,
-                    brightness = HueConstants.Lights.MIN_BRIGHTNESS,
-                    colorTemperature = startCt,
-                    transitionTime = 0
-                )
-            }
+            val initial = controlTarget(
+                targetId = targetId,
+                isGroup = isGroup,
+                on = true,
+                brightness = HueConstants.Lights.MIN_BRIGHTNESS,
+                colorTemperature = startCt,
+                transitionTime = 0
+            )
 
             if (initial.isFailure) {
                 Logger.w(LogTags.HUE_USECASE, "Sunrise initial state failed for $targetId", initial.exceptionOrNull())
@@ -529,21 +500,13 @@ class HueLightUseCase @Inject constructor(
             delay(SUNRISE_STEP_DELAY_MS)
 
             // Step 2: long native transition to bright + cooler.
-            if (isGroup) {
-                lightRepository.controlGroup(
-                    groupId = targetId,
-                    brightness = targetBri,
-                    colorTemperature = endCt,
-                    transitionTime = transitionDs
-                )
-            } else {
-                lightRepository.controlLight(
-                    lightId = targetId,
-                    brightness = targetBri,
-                    colorTemperature = endCt,
-                    transitionTime = transitionDs
-                )
-            }
+            controlTarget(
+                targetId = targetId,
+                isGroup = isGroup,
+                brightness = targetBri,
+                colorTemperature = endCt,
+                transitionTime = transitionDs
+            )
 
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to start sunrise for $targetId", e)
@@ -551,75 +514,102 @@ class HueLightUseCase @Inject constructor(
         }
     }
 
+    /** Eine Weiche fuer Lampe/Gruppe; der Szenen-Zweig liegt beim Aufrufer davor. */
+    private suspend fun controlTarget(
+        targetId: String,
+        isGroup: Boolean,
+        on: Boolean? = null,
+        brightness: Int? = null,
+        hue: Int? = null,
+        saturation: Int? = null,
+        colorTemperature: Int? = null,
+        transitionTime: Int? = null
+    ): Result<Unit> = if (isGroup) {
+        lightRepository.controlGroup(
+            groupId = targetId,
+            on = on,
+            brightness = brightness,
+            hue = hue,
+            saturation = saturation,
+            colorTemperature = colorTemperature,
+            transitionTime = transitionTime
+        )
+    } else {
+        lightRepository.controlLight(
+            lightId = targetId,
+            on = on,
+            brightness = brightness,
+            hue = hue,
+            saturation = saturation,
+            colorTemperature = colorTemperature,
+            transitionTime = transitionTime
+        )
+    }
+
     /**
      * Validates a light action for business logic compliance
      */
     private fun validateLightAction(action: LightAction): Result<Unit> {
-        return try {
-            if (action.targetId.isBlank()) {
-                return Result.failure(IllegalArgumentException("Target ID cannot be empty"))
-            }
-            
-            action.brightness?.let { brightness ->
-                if (!HueConstants.Validation.isValidBrightness(brightness)) {
-                    return Result.failure(
-                        IllegalArgumentException("Brightness must be between ${HueConstants.Lights.MIN_BRIGHTNESS} and ${HueConstants.Lights.MAX_BRIGHTNESS}")
-                    )
-                }
-            }
-            
-            action.hue?.let { hue ->
-                if (!HueConstants.Validation.isValidHue(hue)) {
-                    return Result.failure(
-                        IllegalArgumentException("Hue must be between ${HueConstants.Lights.MIN_HUE} and ${HueConstants.Lights.MAX_HUE}")
-                    )
-                }
-            }
-            
-            action.saturation?.let { saturation ->
-                if (!HueConstants.Validation.isValidSaturation(saturation)) {
-                    return Result.failure(
-                        IllegalArgumentException("Saturation must be between ${HueConstants.Lights.MIN_SATURATION} and ${HueConstants.Lights.MAX_SATURATION}")
-                    )
-                }
-            }
-
-            action.colorTemperature?.let { ct ->
-                if (!HueConstants.Validation.isValidColorTemperature(ct)) {
-                    return Result.failure(
-                        IllegalArgumentException("Color temperature must be between ${HueConstants.Lights.MIN_COLOR_TEMPERATURE} and ${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds")
-                    )
-                }
-            }
-
-            // transition time in deciseconds
-            action.transitionTime?.let { tt ->
-                if (!HueConstants.Validation.isValidTransitionTime(tt)) {
-                    return Result.failure(
-                        IllegalArgumentException("Transition time must be between ${HueConstants.Lights.MIN_TRANSITION_TIME} and ${HueConstants.Lights.MAX_TRANSITION_TIME} deciseconds")
-                    )
-                }
-            }
-
-            // Ensure at least one action is specified.
-            //
-            // `sceneId` MUSS hier mitzaehlen: eine reine Szenen-Aktion setzt bewusst keine
-            // einzige dieser Eigenschaften (die Szene bringt sie selbst mit). Ohne diese
-            // Bedingung scheitert JEDE Szenenregel mit "At least one light property must be
-            // specified" - das Feature waere komplett tot, und zwar erst zur Weckzeit.
-            if (action.sceneId == null &&
-                action.on == null && action.brightness == null && action.hue == null &&
-                action.saturation == null && action.colorTemperature == null
-            ) {
+        if (action.targetId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Target ID cannot be empty"))
+        }
+        
+        action.brightness?.let { brightness ->
+            if (!HueConstants.Validation.isValidBrightness(brightness)) {
                 return Result.failure(
-                    IllegalArgumentException("At least one light property must be specified")
+                    IllegalArgumentException("Brightness must be between ${HueConstants.Lights.MIN_BRIGHTNESS} and ${HueConstants.Lights.MAX_BRIGHTNESS}")
                 )
             }
-            
-            Result.success(Unit)
-            
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+        
+        action.hue?.let { hue ->
+            if (!HueConstants.Validation.isValidHue(hue)) {
+                return Result.failure(
+                    IllegalArgumentException("Hue must be between ${HueConstants.Lights.MIN_HUE} and ${HueConstants.Lights.MAX_HUE}")
+                )
+            }
+        }
+        
+        action.saturation?.let { saturation ->
+            if (!HueConstants.Validation.isValidSaturation(saturation)) {
+                return Result.failure(
+                    IllegalArgumentException("Saturation must be between ${HueConstants.Lights.MIN_SATURATION} and ${HueConstants.Lights.MAX_SATURATION}")
+                )
+            }
+        }
+
+        action.colorTemperature?.let { ct ->
+            if (!HueConstants.Validation.isValidColorTemperature(ct)) {
+                return Result.failure(
+                    IllegalArgumentException("Color temperature must be between ${HueConstants.Lights.MIN_COLOR_TEMPERATURE} and ${HueConstants.Lights.MAX_COLOR_TEMPERATURE} mireds")
+                )
+            }
+        }
+
+        // transition time in deciseconds
+        action.transitionTime?.let { tt ->
+            if (!HueConstants.Validation.isValidTransitionTime(tt)) {
+                return Result.failure(
+                    IllegalArgumentException("Transition time must be between ${HueConstants.Lights.MIN_TRANSITION_TIME} and ${HueConstants.Lights.MAX_TRANSITION_TIME} deciseconds")
+                )
+            }
+        }
+
+        // Ensure at least one action is specified.
+        //
+        // `sceneId` MUSS hier mitzaehlen: eine reine Szenen-Aktion setzt bewusst keine
+        // einzige dieser Eigenschaften (die Szene bringt sie selbst mit). Ohne diese
+        // Bedingung scheitert JEDE Szenenregel mit "At least one light property must be
+        // specified" - das Feature waere komplett tot, und zwar erst zur Weckzeit.
+        if (action.sceneId == null &&
+            action.on == null && action.brightness == null && action.hue == null &&
+            action.saturation == null && action.colorTemperature == null
+        ) {
+            return Result.failure(
+                IllegalArgumentException("At least one light property must be specified")
+            )
+        }
+        
+        return Result.success(Unit)
     }
 }

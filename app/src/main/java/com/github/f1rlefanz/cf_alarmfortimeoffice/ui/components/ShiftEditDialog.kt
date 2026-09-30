@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +44,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShiftEditDialog(
     shift: ShiftDefinition?,
@@ -78,8 +76,10 @@ fun ShiftEditDialog(
         name.trim().isNotBlank() &&
         !name.trim().equals(shift.name, ignoreCase = true)
 
-    // Time formatter (siehe Hinweis oben: ANZEIGE-Format, nicht das Persistenzformat)
-    val timeFormatter = DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY)
+    val timeFormatter = remember { DateTimeFormatter.ofPattern(DateTimeFormats.TIME_ONLY) }
+    val parsedAlarmTime = remember(alarmTimeString) {
+        runCatching { LocalTime.parse(alarmTimeString, timeFormatter) }.getOrNull()
+    }
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -251,12 +251,7 @@ fun ShiftEditDialog(
                                 label = { Text("Zeit (HH:mm)") },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true,
-                                isError = try {
-                                    LocalTime.parse(alarmTimeString, timeFormatter)
-                                    false
-                                } catch (_: Exception) {
-                                    true
-                                }
+                                isError = parsedAlarmTime == null
                             )
                             
                             Text(
@@ -378,11 +373,6 @@ fun ShiftEditDialog(
                                 .map { it.trim() }
                                 .filter { it.isNotEmpty() }
                                 .distinct()
-                            val parsedAlarmTime = try {
-                                LocalTime.parse(alarmTimeString, timeFormatter)
-                            } catch (_: Exception) {
-                                null
-                            }
                             
                             if (name.isNotBlank() && validKeywords.isNotEmpty() && parsedAlarmTime != null) {
                                 onSave(
@@ -400,14 +390,9 @@ fun ShiftEditDialog(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = name.isNotBlank() && 
-                                 keywords.any { it.isNotBlank() } && 
-                                 try {
-                                     LocalTime.parse(alarmTimeString, timeFormatter)
-                                     true
-                                 } catch (_: Exception) {
-                                     false
-                                 }
+                        enabled = name.isNotBlank() &&
+                                 keywords.any { it.isNotBlank() } &&
+                                 parsedAlarmTime != null
                     ) {
                         Text(if (isNewShift) "Erstellen" else "Speichern")
                     }

@@ -18,7 +18,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -334,7 +333,6 @@ private fun SchlafzeitZeile(frage: String, minuten: Int, onClick: () -> Unit, hi
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DimmerSettingsScreen(
     onNavigateBack: () -> Unit,
@@ -342,8 +340,6 @@ fun DimmerSettingsScreen(
     onCreateRule: () -> Unit,
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
-    // collectAsStateWithLifecycle, nicht collectAsState: reine Listen-Anzeige ohne Seiteneffekt -
-    // das Abo darf unterhalb von STARTED ruhen (Speichern/Loeschen laeuft ueber das ViewModel).
     val rules by viewModel.rules.collectAsStateWithLifecycle()
 
     // Welche Regel an welchen Tagen hinter einer anderen zurueckstehen muss. Neu gerechnet, sobald

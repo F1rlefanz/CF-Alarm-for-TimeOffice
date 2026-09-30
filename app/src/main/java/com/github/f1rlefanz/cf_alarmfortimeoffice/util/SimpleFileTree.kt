@@ -36,8 +36,9 @@ class SimpleFileTree(
         // PII-Schutz: In Release nur WARN+ ins Datei-Log (siehe minPriority).
         if (priority < minPriority) return
         try {
-            val today = dateFormat.format(Date())
-            val logFile = File(logDir, "debug_logs_$today.txt")
+            val jetzt = Date()
+            val today = dateFormat.format(jetzt)
+            val logFile = File(logDir, fileNameFor(jetzt))
             val isNewFile = !logFile.exists()
 
             // Skip logging if file is too large (safety check, 20MB per day is plenty)
@@ -84,7 +85,13 @@ class SimpleFileTree(
     }
 
     companion object {
-        private const val DEFAULT_RETENTION_DAYS = 8
+        internal const val DEFAULT_RETENTION_DAYS = 8
+
+        internal fun isLogFile(name: String): Boolean = name.startsWith("debug_logs_") && name.endsWith(".txt")
+
+        /** Formatter pro Aufruf: SimpleDateFormat ist nicht threadsicher, und log() laeuft aus mehreren Threads. */
+        internal fun fileNameFor(day: Date): String =
+            "debug_logs_${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(day)}.txt"
 
         /** Reine, testbare Alters-Pruefung - strikt "<", ein Zeitstempel exakt an der Grenze
          * gilt NICHT als abgelaufen. */
@@ -103,7 +110,7 @@ class SimpleFileTree(
         fun cleanupOldLogs(logDir: File, retentionDays: Int = DEFAULT_RETENTION_DAYS) {
             try {
                 val now = System.currentTimeMillis()
-                logDir.listFiles { _, name -> name.startsWith("debug_logs_") && name.endsWith(".txt") }
+                logDir.listFiles { _, name -> isLogFile(name) }
                     ?.forEach { file ->
                         if (isExpired(file.lastModified(), now, retentionDays)) {
                             file.delete()

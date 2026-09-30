@@ -63,8 +63,6 @@ class AlarmUseCaseDeltaSyncTest {
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
         override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = Result.success(config)
         override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
-        override suspend fun hasValidConfig(): Result<Boolean> =
-            Result.success(config.definitions.isNotEmpty())
     }
 
     private class FakeAlarmRepository(initial: List<AlarmInfo> = emptyList()) : IAlarmRepository {

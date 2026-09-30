@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -289,6 +290,40 @@ class CalendarViewModelSyncWiringTest {
                 "am Anfang von loadMoreEvents() keinen weiteren Versuch mehr zu (Dauer-Spinner)",
             vm.uiState.value.isLoadingMoreEvents
         )
+    }
+
+    @Test
+    fun `Aktualisieren nach geladenem Stand endet konsistent`() = runTest(dispatcher) {
+        val page = (0 until 4).map { event("A$it", it) }
+        val vm = buildViewModel(pageEvents = page, totalEvents = 12)
+        backgroundScope.launch { vm.uiState.collect { } }
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        vm.refreshData(forceRefresh = true)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertFalse(state.isLoading)
+        assertEquals(page, state.events)
+        assertTrue(state.hasMoreEvents)
+        assertEquals(4, state.eventOffset)
+    }
+
+    @Test
+    fun `Abwahl leert die Terminanzeige`() = runTest(dispatcher) {
+        val vm = buildViewModel(pageEvents = (0 until 4).map { event("A$it", it) }, totalEvents = 12)
+        backgroundScope.launch { vm.uiState.collect { } }
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertTrue(state.events.isEmpty())
+        assertEquals(0, state.totalEvents)
+        assertFalse(state.hasMoreEvents)
     }
 
     @Test

@@ -22,7 +22,7 @@ object DndOnCallCutoffResolver {
 
     /**
      * Minimal-Info einer Schicht fuer die Cutoff-Berechnung (entkoppelt von Android). Name
-     * historisch - gefuellt wird sie seit v1.25.2 aus `ShiftSpan`, nicht mehr aus `AlarmInfo`.
+     * historisch - gefuellt aus `ShiftSpan`, nicht aus `AlarmInfo`.
      */
     data class AlarmSlot(val shiftName: String, val shiftStartTime: Long)
 

@@ -30,17 +30,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerViewModel
  * Dimmer-Tab: EIN Hauptschalter, und dahinter die einzige Fenster-Quelle, die es noch gibt - die
  * Regeln.
  *
- * WARUM SO KARG: bis v1.33.x standen hier drei gleichrangige Karten (Wellness/Wind-down,
- * Nacht-Standard, Schicht-Regeln) mit 13 Bedienelementen, obwohl zwei davon Sonderfaelle waren,
- * die sich seit dem Ende-Anker „Weckzeit, spaetestens" als gewoehnliche Regel ausdruecken lassen.
- * Drei Schalter, die einander ueberlagern, sind fuer den Nutzer nicht auseinanderzuhalten - und
- * jeder von ihnen konnte das Dimmen aus einem anderen Grund unterdruecken. Jetzt gilt: Schalter an
- * = die Regeln greifen, Schalter aus = nichts dimmt. Alles Weitere - wann, wie dunkel, wie warm -
- * steht in der jeweiligen Regel und nirgends sonst.
- *
- * Die globalen Verdunkelung-/Waerme-Regler sind mit der Wellness-Quelle entfallen: es gibt keine
- * Fenster mehr, die sie faerben wuerden. Jede Regel bringt ihre eigenen Werte mit (Regel-Editor),
- * und dort sitzt auch die kurze Probe-Verdunkelung.
+ * Ein Schalter: an = die Regeln greifen, aus = nichts dimmt. Alles Weitere steht in der jeweiligen
+ * Regel und nirgends sonst - Hergang Skill cfalarm-dimmer-und-dnd.
  *
  * Der Status des Bedienungshilfen-Dienstes samt Pflicht-Offenlegung liegt weiterhin im Status-Tab
  * (DimmerAccessibilityCard) - hier gibt es nur die Feature-Bedienung.
@@ -52,11 +43,7 @@ fun DimmerTabContent(
     modifier: Modifier = Modifier,
     viewModel: DimmerViewModel = hiltViewModel()
 ) {
-    // collectAsStateWithLifecycle, nicht collectAsState: der Flow ist
-    // `stateIn(SharingStarted.WhileSubscribed(5_000))` ueber mehrere DataStore-Quellen.
-    // `collectAsState` sammelt weiter, solange die Composition lebt - also auch, waehrend die App
-    // im Hintergrund ist; der 5s-Timeout lief dadurch NIE ab und war eine Attrappe. Mit der
-    // Lifecycle-Variante endet das Abo beim Verlassen des Vordergrunds und der Timeout wirkt.
+    // collectAsStateWithLifecycle: Grund wie im SettingsTab.
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     LazyColumn(
@@ -65,8 +52,6 @@ fun DimmerTabContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            // Die Ueberschrift stand hier bis v1.38.0 ein zweites Mal - sie steht jetzt in der
-            // Kopfzeile des Bildschirms (MainTabZiele: "Schicht-Dimmer").
             Text(
                 text = stringResource(R.string.dimmer_intro),
                 style = MaterialTheme.typography.bodyMedium,

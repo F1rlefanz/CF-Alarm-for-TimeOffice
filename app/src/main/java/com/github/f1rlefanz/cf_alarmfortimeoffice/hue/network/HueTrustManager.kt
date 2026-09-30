@@ -110,9 +110,7 @@ class HueTrustManager internal constructor(
         fun createHostnameVerifier(): HostnameVerifier {
             return HostnameVerifier { hostname, session ->
                 val isValid = validateHueHostname(hostname, session)
-                if (isValid) {
-                    Logger.d(LogTags.HUE_NETWORK, "🔒 Hue TLS: accepted host $hostname (private network + valid session)")
-                } else {
+                if (!isValid) {
                     Logger.w(LogTags.HUE_NETWORK, "🚨 Hue TLS: rejected host $hostname (not private network or invalid session)")
                 }
                 isValid
@@ -186,27 +184,24 @@ class HueTrustManager internal constructor(
     // ------------------------------------------------------------------
 
     override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
-        Logger.d(LogTags.HUE_NETWORK, "🔍 Hue TLS: validating client certificate chain (length=${chain.size}, authType=$authType)")
         try {
             systemTrustManager.checkClientTrusted(chain, authType)
             Logger.i(LogTags.HUE_NETWORK, "✅ Hue TLS: client certificate validated by system trust store")
         } catch (_: CertificateException) {
             Logger.d(LogTags.HUE_NETWORK, "⚠️ Hue TLS: system validation failed, trying Hue-specific fallback")
-            validateHueBridgeCertificate(chain, "client", authType)
+            validateHueBridgeCertificate(chain, "client")
             Logger.i(LogTags.HUE_NETWORK, "✅ Hue TLS: client certificate validated by Hue-specific fallback")
         }
     }
 
     override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-        Logger.d(LogTags.HUE_NETWORK, "🔍 Hue TLS: validating server certificate chain (length=${chain.size}, authType=$authType)")
-
         var acceptedVia = "system-trust-store"
         try {
             systemTrustManager.checkServerTrusted(chain, authType)
             Logger.i(LogTags.HUE_NETWORK, "✅ Hue TLS: server certificate validated by system trust store")
         } catch (_: CertificateException) {
             Logger.d(LogTags.HUE_NETWORK, "⚠️ Hue TLS: system validation failed, trying Hue-specific fallback for local bridge")
-            validateHueBridgeCertificate(chain, "server", authType)
+            validateHueBridgeCertificate(chain, "server")
             acceptedVia = "hue-pattern-fallback"
             Logger.i(LogTags.HUE_NETWORK, "✅ Hue TLS: server certificate validated by Hue-specific fallback")
         }
@@ -219,9 +214,7 @@ class HueTrustManager internal constructor(
 
     override fun getAcceptedIssuers(): Array<X509Certificate> {
         return try {
-            val systemIssuers = systemTrustManager.acceptedIssuers
-            Logger.d(LogTags.HUE_NETWORK, "🔍 Hue TLS: returning ${systemIssuers.size} accepted issuers from system trust store")
-            systemIssuers
+            systemTrustManager.acceptedIssuers
         } catch (e: Exception) {
             Logger.w(LogTags.HUE_NETWORK, "⚠️ Hue TLS: error getting system issuers, returning empty array", e)
             emptyArray()
@@ -287,8 +280,7 @@ class HueTrustManager internal constructor(
      */
     private fun validateHueBridgeCertificate(
         chain: Array<X509Certificate>,
-        type: String,
-        authType: String
+        type: String
     ) {
         if (chain.isEmpty()) {
             val error = "Empty certificate chain for $type validation"
@@ -298,23 +290,19 @@ class HueTrustManager internal constructor(
 
         val cert = chain[0]
         val subjectDN = cert.subjectDN?.toString() ?: "Unknown"
-        val issuerDN = cert.issuerDN?.toString() ?: "Unknown"
 
         try {
             cert.checkValidity()
-            Logger.d(LogTags.HUE_NETWORK, "✅ Hue TLS: certificate validity period check passed")
 
             if (!isValidHueBridgeCertificate(cert)) {
                 val error = "Certificate does not match Hue Bridge patterns: $subjectDN"
                 Logger.e(LogTags.HUE_NETWORK, "🚨 Hue TLS: $error")
                 throw CertificateException(error)
             }
-            Logger.d(LogTags.HUE_NETWORK, "✅ Hue TLS: Hue Bridge pattern validation passed")
 
             validateCertificateStrength(cert)
 
             Logger.i(LogTags.HUE_NETWORK, "🔒 Hue TLS: $type certificate validation successful (subject=$subjectDN)")
-            Logger.d(LogTags.HUE_NETWORK, "🔒 Hue TLS: issuer=$issuerDN, authType=$authType")
         } catch (e: CertificateException) {
             Logger.e(LogTags.HUE_NETWORK, "🚨 Hue TLS: certificate validation failed for $type", e)
             throw e
@@ -368,11 +356,8 @@ class HueTrustManager internal constructor(
                     if (keySize < 2048) {
                         throw CertificateException("RSA key size too small: $keySize bits (minimum: 2048)")
                     }
-                    Logger.d(LogTags.HUE_NETWORK, "✅ Hue TLS: RSA key strength acceptable: $keySize bits")
                 }
-                "EC", "ECDSA" -> {
-                    Logger.d(LogTags.HUE_NETWORK, "✅ Hue TLS: ECDSA key algorithm acceptable for local bridge")
-                }
+                "EC", "ECDSA" -> Unit
                 else -> {
                     Logger.w(LogTags.HUE_NETWORK, "⚠️ Hue TLS: unknown key algorithm: $keyAlgorithm")
                 }

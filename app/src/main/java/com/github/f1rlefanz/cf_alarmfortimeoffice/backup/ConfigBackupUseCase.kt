@@ -148,17 +148,9 @@ class ConfigBackupUseCase @Inject constructor(
             // (der sieht nur Preferences-Schluessel).
             // Der Wert des ZIELGERAETS gewinnt; ist er nicht lesbar, gilt "Alarme an" - im Zweifel
             // wecken.
-            // LEERE DEFINITIONSLISTE WIRD ABGELEHNT - dieselbe Ueberlegung wie
-            // `structuralRejection` fuer die beiden JSON-Regelwerke, nur fuer den wertvollsten und
-            // gefaehrlichsten Teil der Datei. kotlinx.serialization fuellt ein fehlendes
-            // `definitions`-Feld stillschweigend mit dem Default `emptyList()`; aus "Datei
-            // unvollstaendig oder von Hand verstuemmelt" wuerde damit lautlos "keine Schichten".
-            // Und das ist in diesem Projekt der dokumentierte Weg zu NULL ALARMEN: der Save
-            // invalidiert die Caches, `ShiftViewModel.observeExternalConfigChanges()` zieht nach,
-            // `syncAlarms()` erkennt mit 0 Definitionen keine Schicht und raeumt die
-            // kalenderbasierten Alarme ab - waehrend der Import "Erfolg: 0 Schichtdefinitionen"
-            // meldet. Eine Konfiguration ohne jede Schichtdefinition ist ausserdem fuer sich
-            // sinnlos: es gibt nichts zu importieren.
+            // LEERE DEFINITIONSLISTE WIRD ABGELEHNT: kotlinx.serialization fuellt ein fehlendes
+            // `definitions` still mit `emptyList()`, und 0 Definitionen raeumen ueber syncAlarms() die
+            // kalenderbasierten Alarme ab. Hergang reference/geraetewechsel-und-export.md.
             if (fromFile.definitions.isEmpty()) {
                 rejected += "shiftConfig (keine einzige Schichtdefinition in der Datei - " +
                     "unvollstaendig oder beschaedigt; bestehende Konfiguration bleibt unangetastet)"
@@ -289,18 +281,9 @@ class ConfigBackupUseCase @Inject constructor(
 
     companion object {
         /**
-         * Die zwei Schluessel, deren Wert ein ganzes JSON-Dokument ist - die aufwendigsten und
-         * wertvollsten Teile der Konfiguration (Dimmer-Regeln, Hue-Regeln).
-         *
-         * WARUM SIE GEPRUEFT WERDEN, obwohl beide Leser einen unlesbaren Wert bereits abfangen
-         * (`DimRuleRepository` per `runCatching`, `HueConfigRepository` per `try/catch`, beide mit
-         * Rueckfall auf eine leere Liste): genau dieser Rueckfall ist das Problem. Ein
-         * beschaedigter Wert wuerde als "keine Regeln" durchgehen - der Import meldet Erfolg, und
-         * der Nutzer sieht eine leere Regelliste, ohne zu wissen warum. Der Ort, an dem das noch
-         * SAGBAR ist, ist der Import. Danach ist die Information weg.
-         *
-         * Bewusst nur strukturell: es wird geprueft, ob sich der Wert ueberhaupt in die erwarteten
-         * Objekte lesen laesst - nicht, ob die Regeln fachlich sinnvoll sind.
+         * Die zwei Schluessel, deren Wert ein ganzes JSON-Dokument ist (Dimmer-, Hue-Regeln). Beide
+         * Leser fallen bei Unlesbarem still auf eine leere Liste zurueck - sagbar ist das nur beim
+         * Import. Nur strukturell geprueft. Hergang reference/geraetewechsel-und-export.md.
          */
         private val STRUCTURED_JSON_KEYS = setOf("dim_rules", "hue_schedule_rules")
 
@@ -329,13 +312,8 @@ class ConfigBackupUseCase @Inject constructor(
         /**
          * Der ERWARTETE Typ kommt vom SCHLUESSEL, nicht aus der Datei.
          *
-         * `applyValue` prueft nur, ob sich der Wert in den in der Datei BEHAUPTETEN Typ parsen
-         * laesst - damit entschied eine fremde Datei ueber den DataStore-Typ. Ein falsch
-         * typisierter Wert ist schlimmer als ein fehlender: er liegt reboot-fest in der
-         * `preferences_pb`, und der naechste Lesezugriff scheitert mit einer ClassCastException,
-         * BEVOR irgendein `?:`-Default oder `coerceIn` greifen kann. Bei `snooze_minutes` als
-         * String hiesse das: `AlarmPrefs.snoozeMinutes` wirft bei jedem Alarm-Feuern, und der
-         * `AlarmReceiver` verschluckt es in seinem try/catch - der Wecker bliebe stumm.
+         * Ein falsch typisierter Wert liegt reboot-fest in der `preferences_pb` und wirft beim naechsten
+         * Lesen eine ClassCastException vor jedem Default - Hergang reference/geraetewechsel-und-export.md.
          *
          * Zwei Quellen fuer die Erwartung, in dieser Reihenfolge:
          *  1. Der Wert, der HEUTE im Store steht (dessen Typ ist die Wahrheit dieses Geraets).

@@ -14,10 +14,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 
 /**
- * Date Picker Dialog Component
- * 
- * Ermöglicht die Auswahl eines Datums für manuelle Alarme.
- * Nutzt Material3 DatePickerDialog für konsistente UX.
+ * Datumsauswahl fuer manuelle Wecker und "Tag freigeben".
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,11 +26,8 @@ fun DatePickerDialog(
      * Frueheste waehlbare Tag - `null` heisst "keine Grenze" (bisheriges Verhalten, so nutzen es
      * die manuellen Wecker).
      *
-     * WARUM ES DIE GRENZE GIBT: "Tag freigeben" laesst sonst einen Tag in der VERGANGENHEIT
-     * waehlen. Der wird beim naechsten Lesen sofort weggeraeumt (Aufraeumgrenze heute-1) - der
-     * Nutzer tippt also einen Knopf, und nichts passiert. Ein Bedienelement, das sichtbar nichts
-     * tut, ist schlimmer als eines, das gar nicht erst anbietet. Am Emulator aufgefallen
-     * (24.08.2026), nachdem versehentlich der 10.08. freigegeben wurde.
+      * WARUM: ein Tag in der Vergangenheit wird sofort weggeraeumt - der Knopf taete sichtbar nichts.
+      * Hergang cfalarm-wecker-und-boot/reference/tag-freigeben.md.
      */
     fruehesterTag: LocalDate? = null
 ) {

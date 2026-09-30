@@ -15,10 +15,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel der "Benachrichtigungen"-Karte im Settings-Tab. Kombiniert die zwei bislang nicht an
- * einen Screen angebundenen Toggle-Keys aus Feature B ([ShiftChangeNotificationPrefs]) und
- * Feature C ([DimOverlayPrefs] Korrektur-Notification) - siehe Plan-Abschnitt "Gemeinsame
- * UI-Anbindung (Feature B + C)". Beide Prefs bleiben unabhaengige Quellen (kein gemeinsamer
+ * ViewModel der "Benachrichtigungen"-Karte im Settings-Tab. Kombiniert die Toggle-Keys aus
+ * [ShiftChangeNotificationPrefs], [CalendarUnavailablePrefs] und [DimOverlayPrefs]
+ * (Korrektur-Notification). Die Prefs bleiben unabhaengige Quellen (kein gemeinsamer
  * DataStore-Key), dieses ViewModel ist nur ein duenner UI-Zusammenschluss.
  */
 @HiltViewModel
@@ -66,7 +65,7 @@ class NotificationSettingsViewModel @Inject constructor(
             dimOverlayPrefs.setCorrectionNotificationEnabled(enabled)
             // Ohne diesen Aufruf wirkt der Toggle erst am naechsten Fenster-Tick (meist das
             // Fenster-ENDE) - der Nutzer sieht die Notification fuer das gerade laufende Fenster
-            // dann praktisch nie. Gleiches Muster wie jeder Setter in DimmerViewModel.
+            // dann praktisch nie. Regel: jeder DimOverlayPrefs-Setter ruft danach enable().
             dimSchedule.enable()
         }
     }

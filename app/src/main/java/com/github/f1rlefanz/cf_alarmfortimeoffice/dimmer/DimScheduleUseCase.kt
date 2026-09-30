@@ -29,13 +29,6 @@ import javax.inject.Singleton
  * Weckzeit, spätestens um X", leere Fensterliste = Unterdrückung. Details in
  * [DimWindowResolver.buildRuleSpans].
  *
- * Die früheren Sonderquellen „Wellness/Wind-down" und „Nacht-Standard" sind entfallen: seit dem
- * Ende-Anker [DimAnchor.ALARM_SONST_CLOCK] lässt sich beides als gewöhnliche Regel ausdrücken —
- * Wellness als `ALARM -X` → `ALARM +0`, der Nacht-Standard als `CLOCK 22:00` →
- * `ALARM_SONST_CLOCK 07:00`, das für jede Kalendernacht gilt und keinen Folgetag-Sonderfall
- * braucht. Damit gibt es nur noch EINE Stelle, an der ein Fenster entsteht, und nur noch EINEN
- * Schalter.
- *
  * Overlay ist an, wenn `now` in irgendeinem Fenster liegt (Vereinigung). Fail-open: lässt sich
  * der Alarm-Bestand nicht lesen, wird NICHT gedimmt.
  */
@@ -113,19 +106,8 @@ class DimScheduleUseCase @Inject constructor(
 
     /** Ist-Zustand anwenden + nächsten Wechsel planen. Self-cleaning, wenn nichts aktiv ist. */
     suspend fun enable() {
-        // EIN Schnappschuss fuer beide Schritte. Das spart nicht nur die zweite, identische
-        // Berechnung (am Emulator gemessen: 2 Laeufe je enable(), warm ~2 ms) - es beseitigt vor
-        // allem eine kleine, echte Unstimmigkeit: bisher rechneten beide Schritte unabhaengig,
-        // Millisekunden auseinander. Faellt eine Fenstergrenze genau dazwischen, sieht
-        // applyCurrentState() das Fenster noch als aktiv und schaltet das Overlay EIN, waehrend
-        // scheduleNextTransition() dieselbe Grenze schon als vergangen verwirft und erst die
-        // NAECHSTE plant - das Overlay bliebe bis dahin an. Mit einem gemeinsamen Schnappschuss
-        // kann das nicht mehr passieren.
-        //
-        // BEWUSST NUR HIER: Die beiden Funktionen bleiben einzeln aufrufbar und rechnen dann
-        // weiterhin selbst (DimNotificationService, die Vorschau-Pfade der ViewModels rufen
-        // applyCurrentState() allein). "Beide immer zusammen" gilt nur fuer enable() - das ist
-        // eine dokumentierte Zusicherung, keine Nachlaessigkeit.
+        // EIN Schnappschuss fuer beide Schritte, sonst koennte eine Fenstergrenze zwischen beide fallen
+        // und das Overlay bis zum naechsten Tick an bleiben. Nur hier gekoppelt - Hergang reference/dimmer.md.
         val schnappschuss = applyCurrentStateIntern()
         scheduleNextTransitionIntern(schnappschuss)
     }
@@ -205,10 +187,7 @@ class DimScheduleUseCase @Inject constructor(
         }
 
         if (active == null) {
-            // BIS 24.08.2026 KEHRTE DIESER ZWEIG KOMMENTARLOS ZURUECK - der haeufigste Aus-Weg
-            // ueberhaupt, und der einzige, nach dem man spaeter fragt ("warum war es hell?").
-            // Der Grund wird aus bereits gelesenen Werten bestimmt, kostet also keinen
-            // zusaetzlichen DataStore-Zugriff.
+            // Der haeufigste Aus-Weg meldet seinen Grund - aus bereits gelesenen Werten, ohne DataStore-Zugriff.
             meldeAbschaltung(
                 DimDiagnostik.abschaltGrund(
                     masterPause = false,
@@ -238,12 +217,7 @@ class DimScheduleUseCase @Inject constructor(
                 "accessibilityServiceBound=$dienstGebunden"
         )
 
-        // DEBUG REICHTE NICHT (Vorfall 29.08.2026): genau dieser Fall trat ein - Fenster aktiv,
-        // Dienst nach einer Neuinstallation nicht mehr gebunden - und war hinterher im
-        // Release-Log (nur WARN+) nicht auffindbar. Er gehoert in dieselbe Verdachtsklasse wie
-        // KEIN_FENSTER_TROTZ_REGELN: der Nutzer hat nichts falsch eingestellt, es wirkt nur
-        // nichts. Der Merker haelt es bei EINER Zeile je Zustandswechsel - applyCurrentState()
-        // laeuft auch bei jedem Setter, nicht nur beim Tick.
+        // WARN statt nur Debug (Release-Log); der Merker haelt es bei EINER Zeile je Zustandswechsel.
         val wirkungslos = DimDiagnostik.dimmenWirkungslos(
             fensterAktiv = true, overridePausiert = isPaused, dienstGebunden = dienstGebunden
         )
@@ -253,8 +227,7 @@ class DimScheduleUseCase @Inject constructor(
         if (wirkungsloseLage != zuletztGemeldeteWirkungsloseLage) {
             zuletztGemeldeteWirkungsloseLage = wirkungsloseLage
             if (wirkungsloseLage != null) {
-                // Die Klammer unterscheidet die beiden Ursachenklassen - am 26.09.2026 fehlte genau
-                // das: der Schalter stand auf "An", die Zeile riet "Dienst deaktiviert".
+                // Die Klammer unterscheidet die beiden Ursachenklassen (Schalter an vs. Dienst aus).
                 val ursache =
                     if (wirkungsloseLage == DimDiagnostik.DienstLage.EINGESCHALTET_NICHT_VERBUNDEN) {
                         "Schalter steht auf AN, aber das System hat den Dienst nicht gebunden - z. B. " +
@@ -420,10 +393,7 @@ class DimScheduleUseCase @Inject constructor(
         }
         val alarms = alarmsResult.getOrDefault(emptyList()).filter { it.isActive }
 
-        // Schichtspannen sind seit v1.25.2 die Quelle fuer alles SCHICHT-bezogene. Der
-        // Alarm-Bestand ueberlebt die Weckzeit nicht - ein SHIFT_END-verankertes Fenster
-        // verschwand deshalb mitten in der Schicht, sobald der Wecker geklingelt hatte und der
-        // naechste Sync ihn geraeumt hatte. Siehe ShiftSpanStore.
+        // Schichtspannen statt Alarm-Bestand (der ueberlebt die Weckzeit nicht) - siehe ShiftSpanStore, reference/dimmer.md.
         val spansResult = shiftSpanStore.spansNow()
         if (spansResult.isFailure) {
             Logger.w(LogTags.DIMMER, "Schichtspannen nicht lesbar - kein Dimming (fail-open)")
@@ -442,19 +412,9 @@ class DimScheduleUseCase @Inject constructor(
 
         val out = mutableListOf<DimWindowResolver.DimSpan>()
 
-        // DIE EINZIGE FENSTER-QUELLE: Regeln, pro Kalendertag GENAU eine (Anker-Semantik in
-        // DimWindowResolver.buildRuleSpans). CLOCK<->CLOCK = jede Nacht (lueckenlos, ermoeglicht
-        // "immer 22-7 ausser ND"), ALARM/SHIFT_END = schicht-relativ, ALARM_SONST_CLOCK als Ende =
-        // "bis zur Weckzeit, spaetestens um X", leere Fensterliste = ND-Ausnahme.
-        // Welche Regel das ist, entscheidet der Resolver seit Pruefrunde 8 aus ALLEN Schichten
-        // des Tages: `ruleForShift` wird pro Schicht gefragt (an einem Tag mit Fruehdienst UND
-        // Rufbereitschaft wurde die zweite Regel vorher nie gefragt). Unterdrueckung schlaegt
-        // dabei alles (leere Fensterliste = ausdrueckliche Nutzerentscheidung); bei zwei
-        // widersprechenden spezifischen Regeln gewinnt die Regel der fruehesten Schicht, und der
-        // Konflikt geht als WARN ins Log. Wichtig fuer diese Stelle: den Tag in so einem Fall
-        // einfach auszulassen waere KEIN "nur nicht dimmen" - seit dem Ein-Modell-Umbau gibt es
-        // keine zweite Quelle mehr, die einspringen koennte, der Tag bliebe also ganz ohne
-        // Dimmung, obwohl die Oberflaeche beide Regeln als aktiv zeigt.
+        // DIE EINZIGE FENSTER-QUELLE: eine Regel pro Kalendertag, gewaehlt aus ALLEN Schichten des Tages
+        // (DimWindowResolver.buildRuleSpans); Unterdrueckung schlaegt alles. Den Tag bei einem Konflikt
+        // auszulassen ist verboten - es gibt keine zweite Quelle, die einspringen koennte.
         val rules = dimRuleUseCase.getAllRules()
         // `triggerTime` MUSS hier die urspruenglich berechnete Weckzeit sein, auch wenn sie
         // laengst verstrichen ist: DimWindowResolver leitet daraus den KALENDERTAG des Slots ab

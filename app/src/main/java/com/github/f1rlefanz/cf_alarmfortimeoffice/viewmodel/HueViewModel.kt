@@ -87,8 +87,6 @@ class HueViewModel @Inject constructor(
         "Bridge nicht erreichbar – Lichter und Szenen nicht aktualisiert."
 
     init {
-        Logger.i(LogTags.HUE_VIEWMODEL, "HueViewModel initialized")
-        
         // Start observing discovery status
         viewModelScope.launch {
             hueBridgeUseCase.getDiscoveryStatus().collect { status ->
@@ -157,8 +155,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun discoverBridges() {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Starting bridge discovery")
-        
         _uiState.update { it.copy(isLoading = true, error = null) }
         
         viewModelScope.launch {
@@ -209,9 +205,7 @@ class HueViewModel @Inject constructor(
                             bridgeConnectionInfo = BridgeConnectionInfo(
                                 isConnected = true,
                                 bridgeIp = bridge.internalipaddress,
-                                bridgeName = bridge.name,
-                                username = result.getOrNull(),
-                                lastValidated = System.currentTimeMillis()
+                                bridgeName = bridge.name
                             )
                         )
                     }
@@ -232,8 +226,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun validateBridgeConnection() {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Validating bridge connection")
-
         viewModelScope.launch {
             try {
                 val result = hueBridgeUseCase.validateBridgeConnection()
@@ -245,10 +237,7 @@ class HueViewModel @Inject constructor(
                         // again, so any stale error banner (e.g. from a previous failed pairing
                         // attempt or a transient disconnect) no longer applies.
                         error = if (isValid) null else currentState.error,
-                        bridgeConnectionInfo = currentState.bridgeConnectionInfo?.copy(
-                            isConnected = isValid,
-                            lastValidated = System.currentTimeMillis()
-                        )
+                        bridgeConnectionInfo = currentState.bridgeConnectionInfo?.copy(isConnected = isValid)
                     )
                 }
 
@@ -327,8 +316,6 @@ class HueViewModel @Inject constructor(
      * Aussage darueber, welche Lampen es gibt (siehe getAllLightTargets).
      */
     fun refreshLightTargets(userInitiated: Boolean = false) {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Refreshing light targets")
-        
         viewModelScope.launch {
             try {
                 val result = hueLightUseCase.getAllLightTargets()
@@ -354,7 +341,7 @@ class HueViewModel @Inject constructor(
      *
      * Damit laeuft er genau dann, wenn er etwas aussagen kann - beim Oeffnen des Hue-Bereichs,
      * nach einer bestaetigten Verbindung, nach "Lichter aktualisieren". Bewusst NICHT im
-     * Weckpfad: der Hue-Zweig im `AlarmReceiver` ist auf 20 s gedeckelt, weil dahinter
+     * Weckpfad: der Hue-Zweig im `AlarmReceiver` ist durch `HUE_EXECUTION_BUDGET_MS` gedeckelt, weil dahinter
      * `pendingResult.finish()` kommt.
      *
      * ist ein Regel-Editor offen, wird NICHT abgeglichen. Das Formular haelt einen Schnappschuss
@@ -404,8 +391,6 @@ class HueViewModel @Inject constructor(
      * wie die Gruppen geschnitten sind.
      */
     fun runLightTest() {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Running visible light test")
-
         viewModelScope.launch {
             try {
                 // Die Lampenliste notfalls JETZT laden und DARAUF WARTEN.
@@ -447,8 +432,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun refreshRules() {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Refreshing schedule rules")
-        
         viewModelScope.launch {
             try {
                 val result = hueRuleUseCase.getAllRules()
@@ -498,7 +481,6 @@ class HueViewModel @Inject constructor(
     }
     
     fun clearEditingRule() {
-        Logger.d(LogTags.HUE_VIEWMODEL, "Clearing editing rule")
         _uiState.update { it.copy(editingRule = null) }
     }
     
@@ -642,8 +624,7 @@ data class HueUiState(
 
 /**
  * Simplified, UI-facing view of [HueBridgeConnectionManager.ConnectionState] (UX FIX E).
- * Collapses CONNECTING into UNKNOWN (no banner shown while a connection attempt is in
- * flight) and keeps DISCONNECTED/ERROR as the two "show a warning banner" states.
+ * Collapses CONNECTING into UNKNOWN.
  */
 enum class HueConnectionHealth {
     UNKNOWN,

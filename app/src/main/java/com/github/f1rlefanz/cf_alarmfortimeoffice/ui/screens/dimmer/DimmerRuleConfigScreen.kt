@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +52,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimWindow
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SimpleBackTopAppBar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.DimmerRulesViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DimmerRuleConfigScreen(
     ruleId: String?,
@@ -62,9 +60,6 @@ fun DimmerRuleConfigScreen(
     viewModel: DimmerRulesViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    // collectAsStateWithLifecycle, nicht collectAsState: reiner Anzeige-Zustand (Namen der
-    // Schicht-Definitionen fuers Dropdown). Das Abo darf im Hintergrund ruhen - es haengt kein
-    // Seiteneffekt daran, und `WhileSubscribed` kann den Upstream nur so wirklich freigeben.
     val shiftNames by viewModel.shiftNames.collectAsStateWithLifecycle()
     val existing = remember(ruleId) { viewModel.ruleById(ruleId) }
 
@@ -122,7 +117,7 @@ fun DimmerRuleConfigScreen(
                 }
             }
 
-            // Intensität pro Regel – gilt für die Fenster DIESER Regel (Wellness nutzt die globale Darstellung).
+            // Intensitaet pro Regel - gilt fuer die Fenster DIESER Regel.
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(

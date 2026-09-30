@@ -140,31 +140,12 @@ class DimOverlayPrefs @Inject constructor(
     /**
      * ALLE Lese-Flows dieser Klasse gehen hierueber, keiner mehr direkt auf `dataStore.data`.
      *
-     * Vorher war jeder Flow ein blankes `dataStore.data.map{}` ohne ein einziges `.catch` - waehrend
-     * AuthDataStoreRepository, ShiftConfigRepository und DataStoreTokenRepository fuer denselben
-     * Store-Typ alle eines haben. Der `ReplaceFileCorruptionHandler` des Stores faengt nur
-     * Korruption; eine IOException (voller Speicher, EACCES, transienter Lesefehler) reicht DataStore
-     * durch. Der gefaehrlichste Konsument ist [DimAccessibilityService]: er sammelt [renderState] in
-     * einem eigenen Scope, dessen SupervisorJob nur Geschwister isoliert - die Exception lief zum
-     * Thread-Default-Handler und beendete den PROZESS, der die Alarme haelt. Fuer eine WECKER-App ist
-     * das die falsche Reihenfolge der Wichtigkeit (dieselbe Ueberlegung wie bei
-     * HueBridgeConnectionManager.healthCheckScope).
-     *
-     * Degradiert wird auf LEERE Preferences, also auf die Defaults jedes einzelnen Flows. Fuer den
-     * Dimmer ist das die fail-safe Richtung: [renderState] faellt damit auf `overlayOn = false`, im
-     * Zweifel wird also NICHT verdunkelt. Ein unerwartet dunkler Bildschirm ist deutlich schlimmer
-     * als ein unerwartet heller - bei voller Verdunkelung kann der Nutzer sein Geraet nicht mehr
-     * bedienen und den Dimmer nicht mehr abschalten.
-     *
-     * Und die Notlage-Leere wird nicht zur Schreibwahrheit (die Invariante aus CLAUDE.md,
-     * "Persistenz"): jeder Setter geht ueber `dataStore.edit{}` mit eigenem Read, keiner speist
-     * einen dieser Flows zurueck. Die einzige Stelle, die einen gelesenen Wert weiterschreibt, ist
-     * `DimScheduleUseCase`s `setActiveOverlay(false, strengthNow(), warmthNow())` - dort landen die
-     * Defaults nur in den abgeleiteten RENDER-Schluesseln, die ohnehin bei jedem
-     * `applyCurrentState()` mit den Werten der aktiven Spanne neu geschrieben werden, und zwar
-     * zusammen mit `overlayOn = false`. Die vom Nutzer eingestellten Werte (KEY_STRENGTH/
-     * KEY_WARMTH und die Toggles) schreibt nur die UI mit ihren eigenen Eingaben - eine
-     * Nutzer-Einstellung kann durch diese Degradierung also nicht verloren gehen.
+     * Der corruptionHandler faengt nur Korruption; eine IOException reicht DataStore durch und
+     * beendete ueber den [renderState]-Collector des [DimAccessibilityService] den PROZESS.
+     * Degradiert wird auf LEERE Preferences = kein Dimmen (fail-safe: lieber hell als dunkel).
+     * Die Notlage-Leere wird nie Schreibwahrheit: jeder Setter liest in `dataStore.edit{}` selbst,
+     * `setActiveOverlay` schreibt nur die abgeleiteten Render-Schluessel. Hergang
+     * reference/persistenz.md.
      */
     private val safeData: Flow<Preferences> = dataStore.data
         .catch { e ->
@@ -291,12 +272,6 @@ class DimOverlayPrefs @Inject constructor(
         it[KEY_RENDER_WARMTH] = warmth.coerceIn(0, WARMTH_MAX)
         it[KEY_OVERLAY_PREVIEW_UNTIL] = expiresAtMillis
     }
-    // KEIN setStrength/setWarmth mehr: Mit dem Ein-Modell-Umbau hat die Oberflaeche keine globalen
-    // Verdunkelungs-/Waerme-Regler mehr - Intensitaet gehoert seither zur REGEL. Die Schluessel
-    // selbst bleiben und werden weiter GELESEN (`strengthNow()`/`warmthNow()`): sie sind der
-    // Fallback des Renderzustands und der Wert, mit dem `setActiveOverlay(false, …)` abschaltet.
-    // Ein Setter ohne Bedienelement waere dagegen genau die Altlast, die dieses Projekt am Ende
-    // eines Durchgangs entfernt.
 
     /**
      * Schreibt Delta/Pause/Fenster-Schlüssel ATOMAR zusammen. Ein Teil-Update (z. B. nur `paused`

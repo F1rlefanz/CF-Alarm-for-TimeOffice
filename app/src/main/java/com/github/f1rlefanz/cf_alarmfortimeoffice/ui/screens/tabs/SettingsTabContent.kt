@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
-// PHASE 2 CLEANUP: ShiftViewModel import removed (unused parameter)
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +27,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +57,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ConfigBackupViewMode
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MasterPauseViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NotificationSettingsViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsTabContent(
     authViewModel: AuthViewModel,
@@ -72,7 +69,7 @@ fun SettingsTabContent(
     // `stateIn(SharingStarted.WhileSubscribed(5_000))` ueber DataStore-Fluesse
     // (NotificationSettingsViewModel, MasterPauseViewModel) - mit collectAsState laeuft das Abo
     // weiter, solange die Composition lebt, also auch im Hintergrund, und der 5s-Timeout wird zur
-    // Attrappe. Gleiche Begruendung wie im DimmerTabContent.
+    // Attrappe.
     val authState by authViewModel.uiState.collectAsStateWithLifecycle()
     val notificationSettingsViewModel: NotificationSettingsViewModel = hiltViewModel()
     val notificationState by notificationSettingsViewModel.uiState.collectAsStateWithLifecycle()
@@ -91,7 +88,6 @@ fun SettingsTabContent(
             .padding(SpacingConstants.PADDING_SCREEN_HORIZONTAL),
         verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_LARGE)
     ) {
-        // Fehleranzeige am Anfang des Contents
         authState.error?.let { errorMessage ->
             ErrorMessage(
                 message = errorMessage,
@@ -99,7 +95,6 @@ fun SettingsTabContent(
             )
         }
 
-        
         // Kalender-Einstellungen
         WeiterKarte(
             icon = Icons.Default.CalendarMonth,
@@ -108,7 +103,6 @@ fun SettingsTabContent(
             onClick = onShowCalendarSelection
         )
 
-        // 🔧 STUFE 2 FIX: Calendar Authorization/Re-Authorization Card
         // Shows when user needs to authorize Calendar OR re-authorize due to invalid token
         if (authState.userAuth.isSignedIn &&
             (!authState.calendarOps.hasSelectedCalendars || authState.calendarOps.needsTokenReauthorization)
@@ -134,7 +128,6 @@ fun SettingsTabContent(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    // CRITICAL FIX: Pass Activity context for permission dialog
                     val activity = context as? android.app.Activity
                     authViewModel.requestCalendarAuthorization(activity)
                 },
@@ -249,9 +242,6 @@ fun SettingsTabContent(
             }
         }
 
-        // 🔄 Phase 1: Sync-Intervall and Offline-Puffer cards removed
-        // Fixed 6h maintenance interval via AlarmMaintenanceService
-        // Fixed 14-day lookahead with 7-day buffer check
 
         // Akku-Status & OEM-Warnungen (die "Letzter Sync"-Anzeige liegt jetzt im Status-Tab)
 

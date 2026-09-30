@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -36,7 +35,6 @@ import androidx.compose.ui.res.pluralStringResource
  * Kein eigener An/Aus-Schalter - der Modus gehoert der [RuleModeCard]; angezeigt wird dieser
  * Block nur im Modus SONNENAUFGANG.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SonnenaufgangInhalt(
     durationMinutes: Int,

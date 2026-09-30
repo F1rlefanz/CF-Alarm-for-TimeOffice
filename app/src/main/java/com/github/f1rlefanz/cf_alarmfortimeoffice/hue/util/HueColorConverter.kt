@@ -4,7 +4,6 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueColor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -13,7 +12,7 @@ import kotlin.math.sqrt
  * Color conversion utilities for Philips Hue lights
  * 
  * Provides conversion between different color spaces:
- * - RGB ↔ HSV
+ * - RGB → HSV
  * - RGB → XY (CIE 1931 color space)
  * - Color temperature calculations
  * - Hue-specific color mappings
@@ -39,8 +38,6 @@ object HueColorConverter {
      * @return HueColor with hue (0-65535), saturation (0-254), and RGB hex
      */
     fun rgbToHueColor(red: Int, green: Int, blue: Int): HueColor {
-        Logger.d(LogTags.HUE_LIGHTS, "Converting RGB($red, $green, $blue) to Hue color")
-        
         try {
             // Normalize RGB values to 0-1 range
             val r = red / 255.0f
@@ -67,7 +64,6 @@ object HueColorConverter {
                 rgb = rgbHex
             )
             
-            Logger.d(LogTags.HUE_LIGHTS, "RGB conversion result: hue=$hue, sat=$saturation, xy=[${xy.first}, ${xy.second}]")
             return hueColor
             
         } catch (e: Exception) {
@@ -83,14 +79,9 @@ object HueColorConverter {
     }
     
     /**
-     * Converts Hue color back to RGB
-     * 
-     * @param hueColor HueColor object with hue/saturation or XY values
-     * @return Triple of RGB values (0-255)
+     * Liest die RGB-Werte (0-255) aus dem RGB-Hex von [hueColor]; ohne gueltigen Hex Weiss.
      */
     fun hueColorToRgb(hueColor: HueColor): Triple<Int, Int, Int> {
-        Logger.d(LogTags.HUE_LIGHTS, "Converting Hue color to RGB")
-        
         try {
             // Parse RGB from hex if available
             hueColor.rgb?.let { rgbHex ->
@@ -101,25 +92,10 @@ object HueColorConverter {
                     return Triple(red, green, blue)
                 }
             }
-            
-            // Convert from XY if available
-            hueColor.xy?.let { xy ->
-                if (xy.size >= 2) {
-                    return xyToRgb(xy[0], xy[1])
-                }
-            }
-            
-            // Convert from HSV
-            val hue = (hueColor.hue ?: 0) * 360.0f / 65535.0f
-            val saturation = (hueColor.saturation ?: 0) / 254.0f
-            val value = 1.0f // Assume full brightness for color conversion
-            
-            return hsvToRgb(hue, saturation, value)
-            
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_LIGHTS, "Error converting Hue color to RGB", e)
-            return Triple(255, 255, 255) // White fallback
         }
+        return Triple(255, 255, 255) // White fallback
     }
     
     /**
@@ -145,31 +121,6 @@ object HueColorConverter {
         val value = max
         
         return HSV(hue, saturation, value)
-    }
-    
-    /**
-     * Converts HSV to RGB color space
-     */
-    private fun hsvToRgb(hue: Float, saturation: Float, value: Float): Triple<Int, Int, Int> {
-        val c = value * saturation
-        val x = c * (1 - abs(((hue / 60f) % 2) - 1))
-        val m = value - c
-        
-        val (r1, g1, b1) = when ((hue / 60f).toInt()) {
-            0 -> Triple(c, x, 0f)
-            1 -> Triple(x, c, 0f)
-            2 -> Triple(0f, c, x)
-            3 -> Triple(0f, x, c)
-            4 -> Triple(x, 0f, c)
-            5 -> Triple(c, 0f, x)
-            else -> Triple(0f, 0f, 0f)
-        }
-        
-        val red = ((r1 + m) * 255).roundToInt().coerceIn(0, 255)
-        val green = ((g1 + m) * 255).roundToInt().coerceIn(0, 255)
-        val blue = ((b1 + m) * 255).roundToInt().coerceIn(0, 255)
-        
-        return Triple(red, green, blue)
     }
     
     /**
@@ -203,36 +154,6 @@ object HueColorConverter {
     }
     
     /**
-     * Converts XY color space back to RGB
-     */
-    private fun xyToRgb(x: Float, y: Float): Triple<Int, Int, Int> {
-        // Calculate z coordinate
-        val z = 1.0f - x - y
-        
-        // Convert to XYZ (assuming Y = 1 for maximum brightness)
-        val xyzX = x / y
-        val xyzY = 1.0f
-        val xyzZ = z / y
-        
-        // Convert XYZ to RGB using inverse sRGB matrix
-        var red = xyzX * 1.656492f - xyzY * 0.354851f - xyzZ * 0.255038f
-        var green = -xyzX * 0.707196f + xyzY * 1.655397f + xyzZ * 0.036152f
-        var blue = xyzX * 0.051713f - xyzY * 0.121364f + xyzZ * 1.011530f
-        
-        // Apply reverse gamma correction
-        red = reverseGammaCorrection(red)
-        green = reverseGammaCorrection(green)
-        blue = reverseGammaCorrection(blue)
-        
-        // Convert to 0-255 range and clamp
-        val redInt = (red * 255).roundToInt().coerceIn(0, 255)
-        val greenInt = (green * 255).roundToInt().coerceIn(0, 255) 
-        val blueInt = (blue * 255).roundToInt().coerceIn(0, 255)
-        
-        return Triple(redInt, greenInt, blueInt)
-    }
-    
-    /**
      * Applies gamma correction for sRGB color space
      */
     private fun gammaCorrection(component: Float): Float {
@@ -240,18 +161,6 @@ object HueColorConverter {
             ((component + 0.055f) / 1.055f).pow(2.4f)
         } else {
             component / 12.92f
-        }
-    }
-    
-    /**
-     * Applies reverse gamma correction
-     */
-    private fun reverseGammaCorrection(component: Float): Float {
-        val clamped = component.coerceIn(0f, 1f)
-        return if (clamped > 0.0031308f) {
-            1.055f * clamped.pow(1.0f / 2.4f) - 0.055f
-        } else {
-            12.92f * clamped
         }
     }
     

@@ -23,7 +23,7 @@ import javax.inject.Singleton
 
 /**
  * Zeigt eine sichtbare Benachrichtigung, sobald [com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.AlarmUseCase.syncAlarms]
- * eine neue/geaenderte/geloeschte Schicht erkennt (Feature B) - der Nutzer muss nicht mehr
+ * eine neue/geaenderte/geloeschte Schicht erkennt - der Nutzer muss nicht mehr
  * raetseln, ob/wann die App eine TimeOffice-Aenderung mitbekommen hat.
  *
  * Eigener Channel [CHANNEL_ID], bewusst NICHT der bestehende Wartungs-Channel
@@ -39,30 +39,9 @@ import javax.inject.Singleton
  * Zustand + Zeit-/Namens-Schwelle + Sammlung mehrerer Aenderungen), entscheidet ausschliesslich
  * diese Klasse.
  *
- * ## Warum gesammelt wird (Pruefrunde 8, Befund 5)
- *
- * Bis v1.29.2 postete jede der drei Meldungsarten ihren Einzeltext unter derselben festen
- * [NOTIFICATION_ID] - und `notify()` mit gleicher ID ERSETZT die stehende Meldung. Die Aufrufer in
- * `AlarmUseCase.syncAlarms()` sind aber Schleifen ueber den GESAMTEN Bestand: ein Dienstplan-Block,
- * der drei Dienste streicht und zwei neue bringt, erzeugt sechs Aufrufe in Millisekunden, von denen
- * der Nutzer genau den letzten sah. Die uebrigen fuenf waren spurlos weg - schlimmer noch: die
- * stehengebliebene Meldung behauptete implizit, es habe genau diese eine Aenderung gegeben. Fuer
- * einen Schichtarbeiter ist die Sammelaenderung aber genau der Anlass, bei dem er die Meldung
- * braucht (drei gestrichene Dienste = drei geloeschte Wecker, von denen er zwei nie erfuhr).
- *
- * Gewaehlt wurde die **sammelnde** Variante (eine Meldung, InboxStyle, Zaehler im Titel) statt
- * pro-Alarm abgeleiteter IDs. Gruende:
- *  - Bei einem grossen Dienstplanwechsel hinterlaesst die ID-Variante ein Dutzend Einzelmeldungen
- *    in der Leiste; sie braeuchte zusaetzlich Gruppierung + Summary, die es in dieser App bisher
- *    nirgends gibt (`grep setGroup` findet nur Hue-Treffer).
- *  - Sie bliebe bei der einen, bereits vergebenen ID 2202. Kein neuer ID-Bereich, also auch keine
- *    Kollisionsgefahr mit 1001/1002 (Wartung), 2002 (Wecker), 2003 (Notausgang), 2101 (Dimm-
- *    Korrektur), 2203 (Kalender), 9999 (Skip-Bestaetigung).
- *  - Das mehrfache Alarmieren entfaellt gleich mit ([setOnlyAlertOnce]); vorher summte das Geraet
- *    n-mal fuer eine Meldung.
- *
- * Der Kanal bleibt unangetastet (`IMPORTANCE_DEFAULT`) - die Projektregel "wer die Wichtigkeit
- * eines Kanals aendert, braucht eine NEUE Kanal-ID" ist hier gar nicht beruehrt.
+ * Gesammelt wird in EINER Meldung (InboxStyle, Zaehler im Titel) unter der festen [NOTIFICATION_ID]:
+ * `syncAlarms()` ruft in Schleifen, Einzeltexte wuerden sich gegenseitig ersetzen. Hergang Skill
+ * cfalarm-kalender-und-schichten, reference/kalender-datenfluss.md, Abschnitt Eine feste Notification-ID.
  */
 @Singleton
 open class ShiftChangeNotifier @Inject constructor(

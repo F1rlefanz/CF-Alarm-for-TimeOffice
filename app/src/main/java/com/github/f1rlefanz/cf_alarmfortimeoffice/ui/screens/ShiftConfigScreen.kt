@@ -76,19 +76,10 @@ internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N")
 /**
  * Der erste Satz - die eigentliche Regel. Er steht IMMER da.
  *
- * WARUM GETEILT: der vollstaendige Hinweis fuellte auf einem Geraet mit grosser Schrift die halbe
- * Seite, und weil er ausserhalb der Liste verankert war, scrollte er nicht einmal weg - fuer die
- * Schichten selbst blieb kaum Platz (vom Nutzer gemeldet, 21.08.2026). Der Rest ist Beiwerk
- * (Beispiele, Stationswechsel) und liegt jetzt hinter "Mehr anzeigen".
+ * Warum geteilt: siehe [SchichterkennungsHinweis].
  *
- * WARUM ER SO GENAU FORMULIERT IST: Er beschrieb bis v1.22.2 zwei Dinge falsch, die derselbe
- * Arbeitsdurchgang geaendert hatte, der ihn eingefuehrt hat. (1) "Erkannt wird ueber die Muster,
- * nicht ueber den Schichtnamen allein" - [ShiftDefinition.matchesKeywords] zaehlt den Namen ab
- * zwei Zeichen ausdruecklich als zusaetzliches Muster, der [ShiftEditDialog] sagt das auch so; zwei
- * Bildschirme derselben App widersprachen sich. (2) "Die Standardmuster (IMCF, IMCS, IMCN, IMCZ)" -
- * die Vorgaben enthalten neben den Stationskuerzeln allgemeine Bezeichnungen, genau um die
- * Stationsabhaengigkeit aufzuloesen; wer nur die Kuerzel liest, haelt die neue
- * Stationsunabhaengigkeit fuer nicht vorhanden und sucht den Fehler an der falschen Stelle.
+ * Der Text muss sagen, was [ShiftDefinition.matchesKeywords] wirklich tut (der Name zaehlt ab zwei
+ * Zeichen als Muster mit) - Hergang ui-texte-und-layout.md.
  *
  * Der Text nennt deshalb KEINE vollstaendige Musterliste (die driftet mit jeder Aenderung der
  * Vorgaben), sondern verweist auf die Karten darunter - dort steht pro Schicht, welche Muster
@@ -315,12 +306,8 @@ fun ShiftConfigScreen(
                 }
             } else {
                 LazyColumn(
-                    // weight(1f) ist Pflicht: ohne sie misst die LazyColumn sich auf ihre
-                    // Inhaltshoehe und frisst bei genuegend Eintraegen die gesamte Resthoehe der
-                    // Column - der darunter liegende "Auf Standardwerte zuruecksetzen"-Knopf wird
-                    // dann aus dem Bildschirm geschoben und ist UNERREICHBAR (am Geraet mit fuenf
-                    // Schichten plus Kuerzel-Karte reproduziert, 11.08.2026). Mit weight bleibt die
-                    // Liste in ihrem Bereich scrollbar und der Knopf unten stehen.
+                    // weight(1f) ist Pflicht, sonst schiebt die Liste den Reset-Knopf aus dem
+                    // Bildschirm (ui-texte-und-layout.md).
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
@@ -336,12 +323,7 @@ fun ShiftConfigScreen(
                         }
                     }
 
-                    // Der Erkennungs-Hinweis steht IN der Liste, nicht darueber: fest verankert
-                    // fuellte er auf einem Geraet mit grosser Schrift die halbe Seite und liess
-                    // sich nicht einmal wegscrollen - fuer die Schichten selbst blieb kaum Platz
-                    // (vom Nutzer gemeldet, 21.08.2026). Wer auf einer anderen Station arbeitet,
-                    // braucht ihn trotzdem, sonst wird nichts erkannt und es klingelt kein Wecker;
-                    // deshalb steht der tragende erste Satz weiterhin sofort da.
+                    // Warum IN der Liste: siehe SchichterkennungsHinweis.
                     item(key = "erkennungs-hinweis") {
                         SchichterkennungsHinweis()
                     }
@@ -359,9 +341,8 @@ fun ShiftConfigScreen(
                 }
             }
 
-            // Reset Button - die Liste darueber traegt weight(1f), ein zweiter Spacer mit weight
-            // wuerde ihr Platz wegnehmen.
-            
+            // Die Liste darueber traegt weight(1f), ein zweiter Spacer mit weight wuerde ihr Platz
+            // wegnehmen.
             OutlinedButton(
                 onClick = { showResetConfirmation = true },
                 modifier = Modifier.fillMaxWidth()
@@ -488,14 +469,8 @@ fun ShiftConfigScreen(
             onDismissRequest = { assigningCode = null },
             title = { Text("Zu welcher Schicht gehört „$code\"?") },
             text = {
-                // SCROLLBAR, weil die Liste so lang ist wie der Nutzer Schichttypen hat.
-                //
-                // Bei fuenf Standard-Definitionen plus Erklaertext reicht die Dialoghoehe auf einem
-                // schmalen Geraet (oder bei groesserer Systemschrift) nicht mehr - der letzte Knopf
-                // war abgeschnitten und damit UNERREICHBAR. Genau die Fehlerklasse, die CLAUDE.md
-                // fuer den "Auf Standardwerte zuruecksetzen"-Knopf desselben Screens festhaelt. Und
-                // hier ist der Knopf der EINZIGE angebotene Weg fuer dieses Kuerzel: kein Muster,
-                // keine erkannte Schicht, kein Wecker.
+                // Scrollbar, sonst ist bei vielen Schichttypen der letzte Knopf unerreichbar - und
+                // er ist der einzige Weg fuer dieses Kuerzel (ui-texte-und-layout.md).
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
@@ -567,12 +542,8 @@ fun ShiftConfigScreen(
 private fun SchichterkennungsHinweis() {
     var ausgeklappt by rememberSaveable { mutableStateOf(false) }
 
-    // `surfaceVariant` ist in der hellen CSJR-Palette derselbe Farbwert wie `background`
-    // (beides `OffWhite`, siehe Theme.kt) - eine Karte in dieser Farbe hat auf dem Seiten-
-    // hintergrund gar keine sichtbare Flaeche mehr. Ein Hinweis, den man nicht als Hinweis
-    // erkennt, ist keiner. Deshalb weisse Flaeche und ein Rand aus der Marken-Randfarbe:
-    // dezent abgesetzt von den Inhaltskarten, aber vorhanden. Im dunklen Schema war es nie
-    // kaputt (`DarkSurfaceVariant` != `DarkBg`) - die Regel gilt trotzdem fuer beide.
+    // Weisse Flaeche mit Markenrand statt `surfaceVariant` (hell identisch mit dem Hintergrund,
+    // also unsichtbar) - ui-texte-und-layout.md.
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -697,7 +668,6 @@ private fun CodeSuggestionCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ShiftDefinitionCard(
     definition: ShiftDefinition,
@@ -727,13 +697,7 @@ private fun ShiftDefinitionCard(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // EINE ANGEZEIGTE WECKZEIT, DIE NIE GESTELLT WIRD, IST DIE GEFAEHRLICHSTE
-                    // ANZEIGE, DIE EINE WECKER-APP HABEN KANN.
-                    //
-                    // Seit v1.23.0 ueberspringt `ShiftRecognitionEngine.performRecognition()`
-                    // deaktivierte Definitionen vollstaendig - es entsteht kein Alarm. Die Karte
-                    // zeigte trotzdem unveraendert "Alarm: 05:30" in der Akzentfarbe, ohne jeden
-                    // Hinweis. Wer sich darauf verlaesst, verschlaeft. Das Gegenstueck `isSilent`
-                    // hat aus demselben Grund ein eigenes Icon.
+                    // ANZEIGE, DIE EINE WECKER-APP HABEN KANN (ui-texte-und-layout.md).
                     //
                     // Und der Text sagt seit v1.29.2, was "ausgeschaltet" WIRKLICH kostet: nicht
                     // nur den Wecker, sondern die ganze Erkennung - damit auch die Schichtspanne,

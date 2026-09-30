@@ -54,9 +54,7 @@ internal object HueTargetReconciler {
         val namesRefreshed: Int,
         /** Ziele, die auf dieser Bridge nicht zuzuordnen sind - sichtbar zu machen, nicht zu loeschen. */
         val unresolved: List<UnresolvedRuleTarget>
-    ) {
-        val changed: Boolean get() = remapped > 0 || namesRefreshed > 0
-    }
+    )
 
     fun reconcile(rules: List<HueSchedule>, targets: LightTargets): Outcome {
         val lights = targets.lights.map { Candidate(it.id, it.name) }

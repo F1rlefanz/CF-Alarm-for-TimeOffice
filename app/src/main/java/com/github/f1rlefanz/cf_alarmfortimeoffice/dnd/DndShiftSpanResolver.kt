@@ -12,9 +12,8 @@ object DndShiftSpanResolver {
     /**
      * Minimal-Info einer Schicht fuer die Spannen-Berechnung (entkoppelt von Android).
      *
-     * Der Name ist historisch: gefuellt wird das seit v1.25.2 aus `ShiftSpan` und NICHT mehr aus
-     * `AlarmInfo`. Wer hier wieder den Alarm-Bestand anzapft, baut den Fehler zurueck, dass das
-     * Dienstzeit-Fenster verschwindet, sobald der Wecker geklingelt hat - siehe `ShiftSpanStore`.
+     * Name historisch: gefuellt aus `ShiftSpan`, nicht aus `AlarmInfo`. Wer hier wieder den
+     * Alarm-Bestand anzapft, baut den Fehler zurueck (Dienstzeit-Fenster weg nach dem Wecken).
      */
     data class AlarmSlot(val shiftName: String, val shiftStartTime: Long, val shiftEndTime: Long)
 

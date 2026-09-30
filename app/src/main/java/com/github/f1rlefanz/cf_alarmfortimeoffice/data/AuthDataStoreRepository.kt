@@ -24,8 +24,6 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// Extension property for Context to create DataStore
-//
 // corruptionHandler: gleiche Begruendung wie DataModule/ShiftConfigRepository - ohne ihn blockiert
 // eine beschaedigte preferences_pb nicht nur jedes Lesen, sondern dauerhaft auch jedes Schreiben
 // (DataStore liest vor jedem Write erneut), reboot-fest und ohne Selbstheilung ausser
@@ -46,15 +44,7 @@ private val Context.authDataStore: DataStore<Preferences> by preferencesDataStor
 )
 
 /**
- * AuthDataStoreRepository - implementiert IAuthDataStoreRepository Interface
- *
- * REFACTORED:
- * ✅ Implementiert IAuthDataStoreRepository für bessere Testbarkeit
- * ✅ Result-basierte API für konsistente Fehlerbehandlung
- * ✅ Flow-basierte reaktive Datenbeobachtung
- * ✅ Batch-Updates für bessere Performance
- *
- * Verwaltet Authentifizierungsdaten mit DataStore Preferences
+ * Verwaltet Authentifizierungsdaten mit DataStore Preferences.
  */
 @Singleton
 class AuthDataStoreRepository @Inject constructor(
@@ -63,7 +53,6 @@ class AuthDataStoreRepository @Inject constructor(
 
     private val dataStore = context.authDataStore
 
-    // OPTIMIERUNG: Keys als companion object für bessere Performance
     companion object {
         private val LOGIN_STATUS_KEY = booleanPreferencesKey("login_status")
         private val USER_ID_KEY = stringPreferencesKey("user_id")
@@ -74,8 +63,6 @@ class AuthDataStoreRepository @Inject constructor(
         private val TOKEN_EXPIRY_KEY = longPreferencesKey("token_expiry_long")
     }
 
-    // Interface Implementation
-    //
     // .catch{}: derselbe Grund wie in ShiftConfigRepository.shiftConfig und
     // DataStoreTokenRepository.observe() - ein Upstream-Fehler (IO-Fehler, ein Defekt, den der
     // corruptionHandler nicht abfaengt) wuerde sonst ungefangen in die Collector der ViewModels
@@ -136,7 +123,6 @@ class AuthDataStoreRepository @Inject constructor(
             authData.first()
         }
 
-    // OPTIMIERUNG: Batch-Updates für bessere Performance mit Fehlerbehandlung
     private suspend fun updateAuthDataInternal(
         isLoggedIn: Boolean? = null,
         userId: String? = null,
@@ -147,7 +133,6 @@ class AuthDataStoreRepository @Inject constructor(
         tokenExpiry: Long? = null
     ): Result<Unit> = SafeExecutor.safeExecute("AuthDataStoreRepository.updateAuthDataInternal") {
         dataStore.edit { preferences ->
-            // BUGFIX: Nur updaten wenn sich wirklich etwas ändert
             isLoggedIn?.let { 
                 if (preferences[LOGIN_STATUS_KEY] != it) {
                     preferences[LOGIN_STATUS_KEY] = it
@@ -185,22 +170,4 @@ class AuthDataStoreRepository @Inject constructor(
             }
         }
     }
-
-    override suspend fun migrateTokenExpiryIfNeeded(): Result<Unit> = 
-        SafeExecutor.safeExecute("AuthDataStoreRepository.migrateTokenExpiry") {
-            dataStore.edit { preferences ->
-                // Clear any old token_expiry data to prevent conflicts
-                val keysToRemove = preferences.asMap().keys.filter { 
-                    it.name == "token_expiry" && it != TOKEN_EXPIRY_KEY 
-                }
-                keysToRemove.forEach { key ->
-                    @Suppress("UNCHECKED_CAST")
-                    preferences.remove(key as Preferences.Key<Any>)
-                }
-                
-                if (keysToRemove.isNotEmpty()) {
-                    Logger.d(LogTags.DATASTORE, "Cleared ${keysToRemove.size} legacy token_expiry keys")
-                }
-            }
-        }
 }

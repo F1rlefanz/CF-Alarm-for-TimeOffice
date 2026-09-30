@@ -49,8 +49,6 @@ class Pruefrunde6SkipSyncOrderTest {
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
         override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = Result.success(config)
         override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
-        override suspend fun hasValidConfig(): Result<Boolean> =
-            Result.success(config.definitions.isNotEmpty())
     }
 
     /** Schreibt jeden Repository-Schritt in [protokoll] - so wird die REIHENFOLGE pruefbar. */

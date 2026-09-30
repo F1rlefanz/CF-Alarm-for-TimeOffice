@@ -204,7 +204,6 @@ class ShiftViewModel @Inject constructor(
                 .debounce(400) // ENHANCED: Längeres Debouncing für teure Shift-Recognition (400ms)
                 .collect { events: List<CalendarEvent> ->
                     if (events.isNotEmpty()) {
-                        Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: Calendar events changed via StateHolder, triggering shift recognition for ${events.size} events")
                         processCalendarEvents(events)
                     } else {
                         // Clear recognized shifts wenn keine Events vorhanden
@@ -212,7 +211,6 @@ class ShiftViewModel @Inject constructor(
                             recognizedShifts = emptyList(),
                             upcomingShift = null
                         )
-                        Logger.d(LogTags.SHIFT_RECOGNITION, "🔄 UI-DEBOUNCE: No calendar events in StateHolder, clearing recognized shifts")
                     }
                 }
         }
@@ -220,8 +218,6 @@ class ShiftViewModel @Inject constructor(
 
     private fun loadShiftConfig() {
         viewModelScope.launch {
-            Logger.d(LogTags.SHIFT_CONFIG, "🔄 SINGLETON-STARTUP: Loading ShiftConfig with singleton pattern...")
-            
             shiftUseCase.getCurrentShiftConfig()
                 .onSuccess { config ->
                     _uiState.value = _uiState.value.copy(currentShiftConfig = config)
@@ -338,9 +334,6 @@ class ShiftViewModel @Inject constructor(
                     try {
                         val currentEvents = calendarStateHolder.events.value
                         if (currentEvents.isNotEmpty()) {
-                            val eventCount = currentEvents.size
-                            Logger.d(LogTags.SHIFT_RECOGNITION, "Shift config updated, re-processing $eventCount calendar events with new definitions")
-
                             // Small delay to ensure config is fully persisted
                             kotlinx.coroutines.delay(200)
 
@@ -350,16 +343,12 @@ class ShiftViewModel @Inject constructor(
                         // 🚨 CRITICAL FIX: Trigger automatic alarm creation after shift config update!
                         // Unconditional (auch ohne Events): ein Ausschalten von "Automatische Alarme"
                         // muss die Alarme sofort raeumen, nicht nur wenn gerade Events geladen sind.
-                        Logger.business(LogTags.ALARM, "🔄 CONFIG-UPDATE: Triggering alarm creation after shift config change")
                         triggerAlarmCreationFromConfigUpdate(config, nacharmieren)
                     } finally {
-                        // Im Normalfall laeuft das Nacharmieren dadurch ZWEIMAL: einmal im finally
-                        // von `triggerAlarmCreationFromConfigUpdate`, einmal hier. Das ist bewusst
-                        // in Kauf genommen und folgenlos - `enable()` rechnet den Zustand aus den
-                        // aktuellen Daten neu und setzt den naechsten Tick; zweimal dasselbe zu
-                        // rechnen kostet Arbeit, aendert aber nichts. Der Bedarf ist ein
-                        // unveraenderlicher Wert, es gibt also kein "schon erledigt"-Merken.
-                        // Der zweite Aufruf ist die Versicherung fuer den Fall, dass der Abbruch
+                        // Beide finally-Bloecke (dieser und der von
+                        // `triggerAlarmCreationFromConfigUpdate`) stossen das Nacharmieren an;
+                        // `NacharmierBedarf.beanspruche()` sorgt dafuer, dass genau einmal armiert
+                        // wird. Dieser Aufruf ist die Versicherung fuer den Fall, dass der Abbruch
                         // im `delay` darueber zuschlug und das erste finally nie erreicht wurde.
                         armiereZeitkettenNeu(nacharmieren)
                     }
@@ -545,10 +534,6 @@ class ShiftViewModel @Inject constructor(
         }
 
         // WAS NEU ARMIERT WERDEN MUSS - aber NICHT hier, siehe [armiereZeitkettenNeu].
-        //
-        // WARUM DIE AUSNAHMENLISTE DES NACHT-STANDARDS IN `dimmGeaendert` ZAEHLT: sie ist ein
-        // Eingang von `DimScheduleUseCase.computeWindows()` (`isExcluded`) - eine Aenderung daran
-        // verschiebt die Dimm-Fenster genauso wie eine geaenderte Regel.
         //
         // WARUM DIE DND-AUSWAHL NUR DIE DND-KETTE NACHARMIERT: `dnd_shift_excluded_shifts` (und
         // das Rufbereitschaft-Flag) liest ausschliesslich `DndScheduleUseCase` (Dienstzeit-Fenster
@@ -828,7 +813,7 @@ internal fun planeSchichtUmbenennungen(
         val neuerName = neu.name
         if (alterName.isBlank() || neuerName.isBlank()) return@forEach
         // EXAKT, nicht `ignoreCase`: siehe KDoc - eine reine Schreibweisenaenderung MUSS nachgezogen
-        // werden, weil die drei Namenslisten exakt vergleichen.
+        // werden, weil die Namensliste (Dienstzeit-Ausnahmen) exakt vergleicht.
         if (alterName == neuerName) return@forEach
 
         val andereJetzt = nachher.definitions.filter { it.id != neu.id }.map { it.name }

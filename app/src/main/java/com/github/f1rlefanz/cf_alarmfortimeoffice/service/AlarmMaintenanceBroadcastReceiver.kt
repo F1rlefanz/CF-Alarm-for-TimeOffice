@@ -8,14 +8,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.EntryPointAccessors
 
 /**
- * AlarmMaintenanceBroadcastReceiver
- *
- * Receives Exact Alarm triggers and starts AlarmMaintenanceService
- *
- * ARCHITECTURE:
- * - Triggered by AlarmManager every 6 hours
- * - Starts AlarmMaintenanceService as foreground service
- * - Minimal logic - just a bridge between AlarmManager and Service
+ * Empfaenger der 6h-Kette, des Nachhol-Alarms und des Wachhunds; startet [AlarmMaintenanceService],
+ * beim Wachhund zieht er vorher die Kette neu auf.
  */
 class AlarmMaintenanceBroadcastReceiver : BroadcastReceiver() {
 
@@ -38,16 +32,8 @@ class AlarmMaintenanceBroadcastReceiver : BroadcastReceiver() {
 
         // DER WACHHUND ZIEHT DIE KETTE ZUERST WIEDER AUF - und zwar bevor irgendein Dienststart
         // versucht wird.
-        //
-        // WELCHER ABLAUF SONST KAPUTT BLEIBT: Der Wachhund existiert fuer genau einen Zustand -
-        // der Nutzer hat auf API 31/32 "Alarme & Erinnerungen" entzogen, Android hat dabei den
-        // EINEN Alarm der 6h-Kette mitgeloescht. In diesem Zustand darf die App im Hintergrund
-        // aber gar keinen Vordergrunddienst starten: die Ausnahme gilt nur fuer das Feuern eines
-        // EXAKTEN Alarms, und der Wachhund ist notgedrungen inexakt gestellt (sonst waere er
-        // mitgeloescht worden). Sein startForegroundService() wird also abgewiesen - und damit
-        // lief frueher auch scheduleNext() nie, das sonst erst im `finally` des Dienstlaufs
-        // kommt. Der Wachhund-Slot war einmal verbraucht, die Kette blieb tot: genau der
-        // Zustand, gegen den er gebaut wurde.
+        // Der Wachhund feuert inexakt und darf deshalb keinen Vordergrunddienst starten - scheduleNext()
+        // MUSS zuerst laufen, sonst bliebe die Kette tot (Hergang Skill cfalarm-wecker-und-boot).
         //
         // scheduleNext() ist reine AlarmManager-Arbeit und aus dem Hintergrund immer erlaubt. Es
         // ist AUCH KEIN zweiter Planer (CLAUDE.md): es ist derselbe und einzige Planer, auf

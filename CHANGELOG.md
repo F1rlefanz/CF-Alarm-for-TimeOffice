@@ -27,7 +27,27 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.43.3 (Aktuell – interne Alpha)
+## 🆕 Version 1.43.4 (Aktuell – interne Alpha)
+
+**Stand:** September 2026
+
+_Hue-Szenen lassen sich wieder auswählen, Ladefehler der Terminliste bleiben sichtbar – und die App ist rund 40 % kleiner._
+
+### 🐛 Behoben
+
+- **Hue-Szenen ließen sich nicht mehr auswählen:** Seit Version 1.40.7 meldete der Regel-Editor bei „Szene" in der installierten App „Die Szenen konnten nicht von der Bridge geladen werden", obwohl die Bridge erreichbar war. Beim Verkleinern der App war ein Baustein weggefallen, der die Szenenliste der Bridge liest. Die Szenen laden wieder.
+- **Terminliste verschluckte Ladefehler:** Scheiterte das Aktualisieren in der Terminliste – zum Beispiel ohne Internet –, verschwand der Fehler nach drei Sekunden, ohne je angezeigt zu werden. Jetzt erscheint er als Hinweis am unteren Rand.
+
+### 🔧 Unter der Haube
+
+- **Rund 40 % kleiner:** Beim Bauen werden nicht mehr ganze Bibliotheken samt ungenutztem Code mitgenommen; die App ist dadurch deutlich kleiner und startet etwas schneller. Anmeldung, Kalender, Wecker, Neustart und Hue wurden vor der Auslieferung mit genau diesem Stand geprüft.
+- **Aufgeräumt:** Viel ungenutzter Code, veraltete Kommentare und überflüssige Protokollzeilen sind entfernt – für dich ändert sich dadurch nichts.
+
+### 🧰 Für Tester
+
+- **Neustart-Diagnose:** Das Protokoll nach einem Neustart zählt nur noch Wecker als wiederhergestellt, die tatsächlich gestellt wurden.
+
+## Version 1.43.3
 
 **Stand:** September 2026
 

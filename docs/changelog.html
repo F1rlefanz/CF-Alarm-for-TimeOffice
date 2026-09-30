@@ -51,7 +51,30 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.43.3 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.43.4 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> September 2026</p>
+            <p><em>Hue-Szenen lassen sich wieder auswählen, Ladefehler der Terminliste bleiben sichtbar – und die App ist rund 40 % kleiner.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Hue-Szenen ließen sich nicht mehr auswählen:</strong> Seit Version 1.40.7 meldete der Regel-Editor bei „Szene" in der installierten App „Die Szenen konnten nicht von der Bridge geladen werden", obwohl die Bridge erreichbar war. Beim Verkleinern der App war ein Baustein weggefallen, der die Szenenliste der Bridge liest. Die Szenen laden wieder.</li>
+                <li><strong>Terminliste verschluckte Ladefehler:</strong> Scheiterte das Aktualisieren in der Terminliste – zum Beispiel ohne Internet –, verschwand der Fehler nach drei Sekunden, ohne je angezeigt zu werden. Jetzt erscheint er als Hinweis am unteren Rand.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li><strong>Rund 40 % kleiner:</strong> Beim Bauen werden nicht mehr ganze Bibliotheken samt ungenutztem Code mitgenommen; die App ist dadurch deutlich kleiner und startet etwas schneller. Anmeldung, Kalender, Wecker, Neustart und Hue wurden vor der Auslieferung mit genau diesem Stand geprüft.</li>
+                <li><strong>Aufgeräumt:</strong> Viel ungenutzter Code, veraltete Kommentare und überflüssige Protokollzeilen sind entfernt – für dich ändert sich dadurch nichts.</li>
+            </ul>
+
+            <h4>🧰 Für Tester</h4>
+            <ul>
+                <li><strong>Neustart-Diagnose:</strong> Das Protokoll nach einem Neustart zählt nur noch Wecker als wiederhergestellt, die tatsächlich gestellt wurden.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.43.3</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Der Schicht-Dimmer sagt jetzt ehrlich, warum er nicht dimmt – auch wenn der Schalter in den Android-Einstellungen schon an ist.</em></p>
 

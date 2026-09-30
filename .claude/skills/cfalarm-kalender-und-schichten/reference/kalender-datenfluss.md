@@ -220,6 +220,16 @@ und in den Sperren selbst.
   (`resolveCalendarAuthorizationOutcome()` → `calendarAuthorizationValid = false`) mit eigener,
   handlungsfähiger Meldung. `CalendarUiState.unavailableCalendarIds` bleibt dann bewusst leer —
   zwei Warnungen für dieselbe Lage sind schlechter als eine.
+- **AUSSER alle scheiterten nur an der Verbindung (seit v1.43.5).** Dann ist es
+  `kalenderNichtErreichbar` („Google Kalender nicht erreichbar — die gestellten Wecker
+  bleiben"), der Zugriff gilt weiter als gültig. Am 30.09.2026 am Fairphone: Flugmodus plus
+  Abgleich ergab „Kalender-Autorisierung verloren", und „Kalender-Zugriff erneuern" erneuerte
+  einen Zugriff, der nie weg war. Die Einstufung ist dieselbe wie in der Wartung
+  (`WartungTokenFehler.istNetzursache`); ein offline gescheiterter Token-Refresh kommt deshalb
+  als `AppError.NetworkError` aus `CalendarUseCase.resolveAccessToken()`. Die rote Karte hängt am
+  letzten Terminabruf, NICHT am Token — nach jeder gelungenen Autorisierung lädt MainActivity
+  deshalb über `AuthViewModel.kalenderZugriffErneuert` neu; ohne das blieb sie nach dem
+  Erneuern stehen.
 - **Die IDs, nicht die Anzahl.** „Irgendein Kalender ist nicht abrufbar" lässt sich nicht abwählen.
   `failedCalendars` ist deshalb nur noch eine abgeleitete Property von `failedCalendarIds`.
 - **Der Name kann fehlen, und das ist in Ordnung.** `availableCalendars` lädt seitenweise (20 pro

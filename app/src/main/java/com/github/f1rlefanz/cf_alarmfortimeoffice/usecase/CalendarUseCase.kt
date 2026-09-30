@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarRepository
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WartungTokenFehler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.CalendarFetchOutcome
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.CalendarPage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.EventPage
@@ -371,6 +372,11 @@ class CalendarUseCase @Inject constructor(
     /**
      * Access-Token fuer einen Kalenderabruf. Wirft bei Token-Fehlern bewusst ein generisches
      * Exception(text), KEIN AppError.AuthenticationError - Skill cfalarm-persistenz-und-auth.
+     *
+     * AUSNAHME Funkloch: scheiterte der Refresh an der Verbindung (IOException in der Kette,
+     * dieselbe Einstufung wie [WartungTokenFehler]), wird daraus [AppError.NetworkError] MIT
+     * Ursache. Vorher wurde daraus "Please re-authorize" ohne Ursache: offline mit abgelaufenem
+     * Token (es lebt eine Stunde) meldete die Oberflaeche den Kalender-Zugriff als verloren.
      */
     private suspend fun resolveAccessToken(
         ohneTokenText: String,
@@ -381,6 +387,10 @@ class CalendarUseCase @Inject constructor(
         val tokenResult = oauth2TokenManager.getValidToken()
         if (tokenResult.isFailure) {
             val error = tokenResult.exceptionOrNull()
+            if (WartungTokenFehler.istNetzursache(error)) {
+                Logger.w(LogTags.TOKEN, "🌐 Token-Refresh ohne Verbindung gescheitert - voruebergehend, keine Neuanmeldung", error)
+                throw AppError.NetworkError("No internet connection", error)
+            }
             Logger.e(LogTags.TOKEN, "❌ MODERNIZED: No valid token available - authorization required!", error)
 
             val errorMessage = when (error) {

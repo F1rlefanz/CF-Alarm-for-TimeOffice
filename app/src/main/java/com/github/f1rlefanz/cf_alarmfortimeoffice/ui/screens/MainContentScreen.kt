@@ -26,6 +26,7 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -260,7 +261,12 @@ fun MainContentScreen(
     ) {
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        // Knopf UNTER dem Text statt daneben: bei 320 dp (Fairphone mit hochgestellter
+        // Anzeigegroesse) blieb neben "Wiederholen" nur eine schmale Spalte, und die
+        // Fehlermeldungen brachen dort fies um (Rueckmeldung des Eigentuemers, 30.09.2026).
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { daten -> Snackbar(daten, actionOnNewLine = true) }
+        },
         topBar = {
             TopAppBar(
                 title = { Text(ziel.titel) },

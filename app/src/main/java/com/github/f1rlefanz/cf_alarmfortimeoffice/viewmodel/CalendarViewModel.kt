@@ -8,12 +8,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.error.AppError
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AndroidCalendar
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.WartungTokenFehler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
@@ -36,12 +38,17 @@ import javax.inject.Inject
 
 /**
  * PURE, TESTBAR: Ergebnis von [CalendarViewModel.resolveCalendarAuthorizationOutcome].
- * Als eigenständiger Typ statt zweier loser Booleans, damit ein Test die Kombination
- * eindeutig gegen beide Felder prüfen kann.
+ * Als eigenständiger Typ statt loser Booleans, damit ein Test die Kombination
+ * eindeutig gegen alle Felder prüfen kann.
+ *
+ * [nichtErreichbar]: ALLE Kalender scheiterten, und zwar ausschliesslich an der Verbindung.
+ * Dann ist [everythingFailed] wahr (der Fehlschlag wird gemeldet), [authStillValid] aber AUCH -
+ * ein Funkloch belegt keinen verlorenen Zugriff.
  */
 internal data class CalendarAuthorizationOutcome(
     val everythingFailed: Boolean,
-    val authStillValid: Boolean
+    val authStillValid: Boolean,
+    val nichtErreichbar: Boolean
 )
 
 /**
@@ -66,6 +73,21 @@ data class CalendarUiState(
     val hasValidToken: Boolean = false,
     // PHASE 2 FIX: Track actual Calendar API authorization status
     val calendarAuthorizationValid: Boolean = false,
+    /**
+     * Der letzte Abgleich scheiterte bei ALLEN ausgewaehlten Kalendern, und zwar nur an der
+     * Verbindung (Flugmodus, Funkloch, Google nicht erreichbar).
+     *
+     * EIN EIGENER ZUSTAND, weil er sonst als ein anderer auftrat: bis v1.43.4 wurde daraus
+     * "Kalender-Autorisierung verloren" samt "Kalender-Zugriff erneuern" - ein Knopf, der an
+     * einem Funkloch nichts aendern kann. Und ohne ihn hiesse die leere Terminliste nach der
+     * Snackbar "im gewaehlten Kalender steht nichts", eine ungepruefte Behauptung ueber den
+     * Dienstplan. Die gestellten Wecker bleiben in dieser Lage unberuehrt: ein Fehlschlag ist nie
+     * eine Loeschgrundlage.
+     *
+     * Jeder abgeschlossene Ladevorgang setzt ihn neu - er verschwindet mit dem naechsten
+     * gelungenen Abgleich von selbst.
+     */
+    val kalenderNichtErreichbar: Boolean = false,
     val lastAuthorizationCheck: Long = 0L,
     // PAGINATION SUPPORT: Calendar pagination fields
     val currentPage: Int = 0,
@@ -877,6 +899,9 @@ class CalendarViewModel @Inject constructor(
                 // Kalender an einem toten Token gescheitert war - siehe unten.
                 var firstFailure: Throwable? = null
                 val failedCalendarIds = mutableSetOf<String>()
+                // Scheiterten ALLE nur an der Verbindung, ist das kein verlorener Zugriff - siehe
+                // resolveCalendarAuthorizationOutcome. Ein einziger anderer Fehlschlag kippt es.
+                var nurNetzbedingt = true
                 
                 // PERFORMANCE OPTIMIZATION: Process calendars sequentially but with proper async handling
                 selectedIds.forEach { calendarId ->
@@ -941,6 +966,7 @@ class CalendarViewModel @Inject constructor(
                         }.onFailure { error ->
                             Logger.e(LogTags.CALENDAR, "Failed to load events for calendar ${calendarId.take(8)}...", error)
                             if (firstFailure == null) firstFailure = error
+                            if (!istNetzbedingterFehlschlag(error)) nurNetzbedingt = false
                             failedCalendarIds += calendarId
                             processedCalendars++
                         }
@@ -948,6 +974,7 @@ class CalendarViewModel @Inject constructor(
                     } catch (e: Exception) {
                         Logger.e(LogTags.CALENDAR, "Exception loading calendar ${calendarId.take(8)}...", e)
                         if (firstFailure == null) firstFailure = e
+                        if (!istNetzbedingterFehlschlag(e)) nurNetzbedingt = false
                         failedCalendarIds += calendarId
                         processedCalendars++
                     }
@@ -964,11 +991,13 @@ class CalendarViewModel @Inject constructor(
                 
                 // calendarAuthorizationValid NIE bedingungslos true: HomeTabContent haengt daran
                 // Warnung und "Kalender-Zugriff erneuern". Nur wenn ALLE Kalender scheitern, gilt
-                // die Autorisierung als kaputt - Begruendung am KDoc von resolveCalendarAuthorizationOutcome.
+                // die Autorisierung als kaputt - und auch dann nicht, wenn es nur die Verbindung
+                // war. Begruendung am KDoc von resolveCalendarAuthorizationOutcome.
                 val failure = firstFailure
-                val (everythingFailed, authStillValid) = resolveCalendarAuthorizationOutcome(
+                val (everythingFailed, authStillValid, nichtErreichbar) = resolveCalendarAuthorizationOutcome(
                     failedCalendars = failedCalendarIds.size,
-                    totalSelectedCalendars = selectedIds.size
+                    totalSelectedCalendars = selectedIds.size,
+                    alleFehlschlaegeNetzbedingt = nurNetzbedingt
                 )
 
                 // Fehler sichtbar machen, statt eine leere Liste als Wahrheit zu verkaufen.
@@ -978,7 +1007,12 @@ class CalendarViewModel @Inject constructor(
                     null
                 }
 
-                if (everythingFailed) {
+                if (nichtErreichbar) {
+                    Logger.w(
+                        LogTags.CALENDAR,
+                        "🌐 Alle ${failedCalendarIds.size} Kalender nicht erreichbar (Verbindung) - Zugriff bleibt gueltig, Wecker bleiben"
+                    )
+                } else if (everythingFailed) {
                     Logger.e(
                         LogTags.CALENDAR,
                         "❌ Alle ${failedCalendarIds.size} Kalender fehlgeschlagen - Autorisierung wird als ungueltig gemeldet"
@@ -1006,6 +1040,7 @@ class CalendarViewModel @Inject constructor(
                         totalEvents = if (loadAll) finalSortedEvents.size else totalEventCount,
                         hasMoreEvents = finalHasMore,
                         calendarAuthorizationValid = authStillValid,
+                        kalenderNichtErreichbar = nichtErreichbar,
                         lastAuthorizationCheck = System.currentTimeMillis(),
                         error = failureMessage ?: state.error,
                         // Nur der TEILERFOLG. Bei everythingFailed uebernimmt
@@ -1094,12 +1129,16 @@ class CalendarViewModel @Inject constructor(
                 Logger.i(LogTags.CALENDAR, "Progressive calendar events loaded - ${finalSortedEvents.size} events for ${CalendarConstants.DEFAULT_DAYS_AHEAD} days, forceRefresh=$forceRefresh${if (!loadAll) " (lazy loaded)" else ""}")
                 
             } catch (e: Exception) {
+                // Dieselbe Regel wie oben (resolveCalendarAuthorizationOutcome): ein Funkloch ist
+                // kein verlorener Zugriff.
+                val nurVerbindung = istNetzbedingterFehlschlag(e)
                 updateLocalStateImmediate { 
                     it.copy(
                         isLoading = false,
                         error = errorHandler.getErrorMessage(e),
                         // PHASE 2 FIX: Mark authorization as invalid on error
-                        calendarAuthorizationValid = false,
+                        calendarAuthorizationValid = nurVerbindung,
+                        kalenderNichtErreichbar = nurVerbindung,
                         lastAuthorizationCheck = System.currentTimeMillis()
                     )
                 }
@@ -1493,17 +1532,40 @@ class CalendarViewModel @Inject constructor(
          * Regel: Nur wenn ALLE ausgewaehlten Kalender fehlgeschlagen sind, gilt die Autorisierung
          * als kaputt. Ein einzelner fehlschlagender Kalender (geloescht, nicht mehr freigegeben)
          * darf die Anmeldung nicht in Frage stellen.
+         *
+         * AUSNAHME, und zwar nur diese: scheiterten alle ausschliesslich an der VERBINDUNG
+         * ([istNetzbedingterFehlschlag]), ist das kein Beleg fuer einen verlorenen Zugriff.
+         * Am 30.09.2026 meldete die App im Flugmodus "Kalender-Autorisierung verloren"; der
+         * angebotene Knopf erneuerte einen Zugriff, der nie weg war, und die Karte blieb stehen.
+         * Der Fehlschlag selbst bleibt sichtbar ([CalendarAuthorizationOutcome.nichtErreichbar]).
          */
         internal fun resolveCalendarAuthorizationOutcome(
             failedCalendars: Int,
-            totalSelectedCalendars: Int
+            totalSelectedCalendars: Int,
+            alleFehlschlaegeNetzbedingt: Boolean
         ): CalendarAuthorizationOutcome {
             val everythingFailed = failedCalendars > 0 && failedCalendars == totalSelectedCalendars
+            val nichtErreichbar = everythingFailed && alleFehlschlaegeNetzbedingt
             return CalendarAuthorizationOutcome(
                 everythingFailed = everythingFailed,
-                authStillValid = !everythingFailed
+                authStillValid = !everythingFailed || nichtErreichbar,
+                nichtErreichbar = nichtErreichbar
             )
         }
+
+        /**
+         * PURE, TESTBAR: Scheiterte ein Kalenderabruf an der Verbindung (und nicht an der
+         * Anmeldung oder an einem einzelnen Kalender)?
+         *
+         * Zwei Wege fuehren hierher, beide als [AppError.NetworkError]: der Abruf selbst (das
+         * CalendarRepository gibt dabei die Ursache NICHT mit) und ein offline gescheiterter
+         * Token-Refresh (CalendarUseCase.resolveAccessToken). Die Suche nach einer IOException in
+         * der Ursachenkette faengt jede andere Verpackung; sie ist dieselbe Einstufung wie in der
+         * Wartung ([WartungTokenFehler.istNetzursache]) - zwei Stellen, die "Funkloch"
+         * verschieden verstehen, meldeten sonst Verschiedenes.
+         */
+        internal fun istNetzbedingterFehlschlag(fehler: Throwable?): Boolean =
+            fehler is AppError.NetworkError || WartungTokenFehler.istNetzursache(fehler)
 
         /**
          * PURE, TESTBAR: Darf die geladene Eventliste in die Alarm-Pipeline

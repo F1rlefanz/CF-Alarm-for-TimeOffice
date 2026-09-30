@@ -201,6 +201,21 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        // Nach JEDER gelungenen Kalender-Autorisierung die Termine neu abrufen: erst
+                        // dieser Abruf nimmt die Warnung "Kalender-Autorisierung verloren" zurueck
+                        // (sie haengt am letzten Terminabruf, nicht am Token). Ohne ihn blieb die Karte
+                        // nach "Kalender-Zugriff erneuern" rot - am Fairphone viermal getippt, viermal
+                        // "tut nichts". Hergang am KDoc von AuthViewModel.kalenderZugriffErneuert.
+                        //
+                        // STARTED genuegt: hier startet keine Activity, und das Signal ist gepuffert.
+                        LaunchedEffect(Unit) {
+                            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                                authViewModel.kalenderZugriffErneuert.collect {
+                                    calendarViewModel.refreshData(forceRefresh = true)
+                                }
+                            }
+                        }
+
                         // ONBOARDING GATE: A signed-in user without a valid Calendar token is routed to
                         // CalendarAuthorizationScreen instead of the (half-broken) main UI. tokenChecked
                         // guards against flashing the gate before the initial token check has completed.

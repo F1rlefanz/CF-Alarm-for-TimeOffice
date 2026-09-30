@@ -254,6 +254,12 @@ fun StatusTabContent(
                 calendarActionLabel = "Kalender wählen"
                 onCalendarAction = onShowCalendarSelection
             }
+            // Kein eigener Knopf: der Abgleich hat EINEN Namen an EINER Stelle, der Karte
+            // "Kalender-Events" in der Übersicht - der Text unten nennt sie.
+            calendarState.kalenderNichtErreichbar -> {
+                calendarActionLabel = null
+                onCalendarAction = null
+            }
             teilerfolg -> {
                 calendarActionLabel = "Aus Auswahl entfernen"
                 onCalendarAction = {
@@ -270,11 +276,16 @@ fun StatusTabContent(
             title = "Kalender",
             isOk = calendarState.selectedCalendarIds.isNotEmpty() &&
                 calendarState.calendarAuthorizationValid &&
+                !calendarState.kalenderNichtErreichbar &&
                 !teilerfolg,
             details = when {
                 !calendarState.calendarAuthorizationValid && calendarState.selectedCalendarIds.isNotEmpty() ->
                     "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
                 calendarState.selectedCalendarIds.isEmpty() -> "Kein Kalender ausgewählt"
+                calendarState.kalenderNichtErreichbar ->
+                    "Google Kalender nicht erreichbar – die gestellten Wecker bleiben. Mit Netz " +
+                        "in der Übersicht, Karte \"Kalender-Events\", auf \"Mit Google Kalender " +
+                        "abgleichen\" tippen."
                 teilerfolg -> unavailableCalendarDetails(
                     unavailableIds = calendarState.unavailableCalendarIds,
                     namesById = calendarState.availableCalendars.associate { it.id to it.name }

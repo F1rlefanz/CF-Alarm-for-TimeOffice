@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,6 +19,7 @@ class NoShiftReasonTest {
     private fun reason(
         hasSelectedCalendars: Boolean = true,
         calendarAuthorizationValid: Boolean = true,
+        kalenderNichtErreichbar: Boolean = false,
         unavailableCalendarCount: Int = 0,
         errorMessage: String? = null,
         eventCount: Int = 5,
@@ -27,6 +29,7 @@ class NoShiftReasonTest {
     ) = noShiftReason(
         hasSelectedCalendars = hasSelectedCalendars,
         calendarAuthorizationValid = calendarAuthorizationValid,
+        kalenderNichtErreichbar = kalenderNichtErreichbar,
         unavailableCalendarCount = unavailableCalendarCount,
         errorMessage = errorMessage,
         eventCount = eventCount,
@@ -170,6 +173,42 @@ class NoShiftReasonTest {
         assertTrue(
             "Bei eingeschalteter Automatik darf kein Hinweis erscheinen",
             !withAutomatic.contains("Automatische Alarme")
+        )
+    }
+
+    @Test
+    fun `nicht erreichbarer Kalender schlaegt Fehlermeldung und leere Terminliste`() {
+        // 30.09.2026, Fairphone im Flugmodus: nach dem Abgleich ist die Terminliste leer. Sobald
+        // die Snackbar den Fehler geraeumt hat, hiess es sonst "im gewaehlten Kalender steht
+        // nichts" - eine Behauptung ueber den Dienstplan, die niemand geprueft hat.
+        assertEquals(
+            NoShiftReason.KALENDER_NICHT_ERREICHBAR,
+            reason(kalenderNichtErreichbar = true, errorMessage = null, eventCount = 0)
+        )
+        assertEquals(
+            NoShiftReason.KALENDER_NICHT_ERREICHBAR,
+            reason(kalenderNichtErreichbar = true, errorMessage = "Keine Internetverbindung", eventCount = 0)
+        )
+    }
+
+    @Test
+    fun `ohne Kalenderauswahl ist auch die Erreichbarkeit belanglos`() {
+        assertEquals(
+            NoShiftReason.NO_CALENDAR_SELECTED,
+            reason(hasSelectedCalendars = false, kalenderNichtErreichbar = true)
+        )
+    }
+
+    @Test
+    fun `nicht erreichbar nennt Karte und Knopf wortgleich und behauptet keinen Zugriffsverlust`() {
+        val text = noShiftExplanation(NoShiftReason.KALENDER_NICHT_ERREICHBAR)
+        assertTrue("Kartenbeschriftung fehlt: $text", text.contains("\"Kalender-Events\""))
+        assertTrue("Knopfbeschriftung fehlt: $text", text.contains("\"Mit Google Kalender abgleichen\""))
+        assertTrue("Die Folge fuer die Wecker muss drinstehen: $text", text.contains("Wecker"))
+        assertFalse("Keine Positionsangabe: $text", text.contains("darunter"))
+        assertFalse(
+            "Das ist genau die Fehldiagnose, die behoben wird: $text",
+            text.contains("abgelaufen") || text.contains("Autorisierung") || text.contains("erneuern")
         )
     }
 

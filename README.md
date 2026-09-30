@@ -46,7 +46,7 @@ Die App hat sechs Tabs: **Home**, **Wecker**, **Dimmen**, **Hue**, **Status**, *
 - **Auffrischung 3 Stunden vor jeder Weckzeit**, damit kurzfristige Dienstplan-Änderungen den nächsten Wecker noch erreichen
 - **Nach Neustart und App-Update** werden alle Wecker wiederhergestellt
 - **Benachrichtigung bei Schicht-Änderungen** („Schicht-Änderung", abschaltbar in den Einstellungen)
-- **Status-Tab** zeigt, was den Wecker draußen aushebeln kann: Akku-Optimierung, Androids „App bei Nichtnutzung pausieren" – und eine eigene Karte für **TimeOffice** selbst, denn dessen Sync ist die vorgelagerte Datenquelle (fällt er aus, ist der Dienstplan-Kalender veraltet, ohne dass CF Alarm etwas merkt)
+- **System-Status** zeigt, was den Wecker draußen aushebeln kann: Akku-Optimierung, Androids „App bei Nichtnutzung pausieren" – und eine eigene Karte für **TimeOffice** selbst, denn dessen Sync ist die vorgelagerte Datenquelle (fällt er aus, ist der Dienstplan-Kalender veraltet, ohne dass CF Alarm etwas merkt)
 - **Hintergrunddienste pausieren** (Einstellungen): ein Schalter pausiert alles – Wecker, Dimmer, „Nicht stören", Hue-Automatik und die 6h-Wartung selbst – für längere Abwesenheit
 
 ### 🌙 Schicht-Dimmer (optional)

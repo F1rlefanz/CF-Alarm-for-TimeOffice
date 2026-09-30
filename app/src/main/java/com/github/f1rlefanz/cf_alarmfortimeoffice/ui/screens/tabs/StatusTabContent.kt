@@ -643,7 +643,7 @@ internal fun entfernenWuerdeAuswahlLeeren(
 internal const val ENTFERNEN_LEERT_AUSWAHL_TITEL: String = "Danach wäre kein Kalender ausgewählt"
 
 internal const val ENTFERNEN_LEERT_AUSWAHL_TEXT: String =
-    "Danach hat CF-Alarm keine Schichtquelle mehr: alle Wecker der nächsten zwei Wochen werden " +
+    "CF-Alarm hat dann keine Schichtquelle mehr: alle Wecker der nächsten zwei Wochen werden " +
         "gelöscht, und der Dimmer sowie \"Nicht stören\" schalten nicht mehr nach deinen " +
         "Dienstzeiten. Selbst gestellte Wecker bleiben.\n\n" +
         "Dass ein Kalender gerade nicht abrufbar ist, liegt oft an einer vorübergehenden Störung " +

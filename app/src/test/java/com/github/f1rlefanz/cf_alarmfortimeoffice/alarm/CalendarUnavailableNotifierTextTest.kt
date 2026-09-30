@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier.Ausfall
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier.Companion.meldung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.KALENDER_NICHT_GEFUNDEN_TEXT
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.KALENDER_NICHT_GEFUNDEN_TITEL
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,8 +81,39 @@ class CalendarUnavailableNotifierTextTest {
     fun `mehrere betroffene Kalender stehen im Plural`() {
         assertEquals("Ein Kalender ist nicht mehr abrufbar", meldung(Ausfall.EINZELNE, 1).titel)
         assertEquals("2 Kalender sind nicht mehr abrufbar", meldung(Ausfall.EINZELNE, 2).titel)
-        assertTrue("welche betroffen sind" in meldung(Ausfall.EINZELNE, 2).text)
-        assertTrue("2 ausgewählte Kalender" in meldung(Ausfall.ALLE_NICHT_GEFUNDEN, 2).text)
-        assertTrue("2 ausgewählte Kalender" in meldung(Ausfall.ALLE_NICHT_ABRUFBAR, 2).text)
+        assertTrue("lässt er sich" in meldung(Ausfall.EINZELNE, 1).text)
+        assertTrue("lassen sie sich" in meldung(Ausfall.EINZELNE, 2).text)
+    }
+
+    /**
+     * Die Karte "Kalender" nennt einen betroffenen Kalender nur, wenn Google ihn noch in der
+     * Kalenderliste fuehrt - ein geloeschter oder nicht mehr freigegebener steht dort nicht mehr,
+     * dann steht nur die Anzahl da (unavailableCalendarDetails). Gerade das ist der typische
+     * dauerhafte Anlass; ein Versprechen "dort steht, welcher" waere dann gebrochen (Review
+     * 30.09.2026, am Emulator gesehen). Der Ausweg "Aus Auswahl entfernen" funktioniert trotzdem.
+     */
+    @Test
+    fun `bei einzelnen Kalendern verspricht die Meldung keinen Namen`() {
+        for (anzahl in listOf(1, 2)) {
+            val text = meldung(Ausfall.EINZELNE, anzahl).text
+            assertFalse(text, "welche" in text)
+        }
+    }
+
+    /**
+     * Beim Totalausfall scheitern in DIESEM Lauf alle ausgewaehlten Kalender - "keinen" stimmt
+     * also fuer jede Anzahl, auch wenn die Entprellung erst einen Teil davon meldet. Und es ist
+     * wortgleich mit der Karte der Uebersicht (KALENDER_NICHT_GEFUNDEN_TEXT), die denselben
+     * Zustand beschreibt.
+     */
+    @Test
+    fun `beim Totalausfall haengt der Text nicht an der Anzahl`() {
+        for (ausfall in listOf(Ausfall.ALLE_NICHT_GEFUNDEN, Ausfall.ALLE_NICHT_ABRUFBAR)) {
+            assertEquals(meldung(ausfall, 1), meldung(ausfall, 2))
+            assertTrue("keinen ausgewählten Kalender" in meldung(ausfall, 1).text)
+        }
+        val gefunden = "Google findet keinen ausgewählten Kalender mehr"
+        assertTrue(meldung(Ausfall.ALLE_NICHT_GEFUNDEN, 1).text.startsWith(gefunden))
+        assertTrue(KALENDER_NICHT_GEFUNDEN_TEXT.startsWith(gefunden))
     }
 }

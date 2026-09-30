@@ -111,8 +111,10 @@ class WartungKalenderWarnungTest {
 
     /**
      * Ein Funkloch belegt nichts ueber den Kalender - und diese Warnung sagt "nicht mehr
-     * abrufbar". Dauerhafte Netzstoerungen meldet der Token-Schritt ("Kalender-Synchronisation
-     * gestoert"), denn ohne Netz scheitert spaetestens die stuendliche Token-Erneuerung.
+     * abrufbar". Faellt das Netz des ganzen Geraets aus, meldet das der Token-Schritt
+     * ("Kalender-Synchronisation gestoert"). Was er NICHT sieht - eine Netzsperre nur fuer
+     * CF-Alarm, dauerhafte Fehlerantworten von Google -, steht als bekannte Grenze am
+     * Fehlschlagzweig der Wartung.
      */
     @Test
     fun `Totalausfall ueber die Verbindung - keine Kalender-Warnung`() = runTest {

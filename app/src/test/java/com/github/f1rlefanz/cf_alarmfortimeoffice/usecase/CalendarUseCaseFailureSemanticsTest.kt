@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.mock
@@ -120,6 +121,44 @@ class CalendarUseCaseFailureSemanticsTest {
         val result = useCase.getCalendarEventsWithCache(setOf("cal-a", "cal-b"), forceRefresh = false)
 
         assertTrue(result.isFailure)
+    }
+
+    /**
+     * DER VERTRAG, AN DEM DIE 6h-WARTUNG HAENGT (seit 30.09.2026): Beim Totalausfall stuft sie
+     * genau diesen Fehler ein - "nicht gefunden", "nicht abrufbar" oder "nur die Verbindung, gar
+     * nicht melden" (AlarmMaintenanceService, Zweig eventsResult.isFailure). Verpackte ihn jemand
+     * fuer schoenere Logs (etwa in einen CalendarAccessError), hiesse jeder Totalausfall "nicht
+     * abrufbar", und ein Funkloch loeste die Kalender-Warnung aus - bei gruenen Wartungstests,
+     * denn dort ersetzt ein Mock genau diese Nahtstelle.
+     */
+    @Test
+    fun `Totalausfall reicht den Fehler des Kalenders unveraendert weiter`() = runTest {
+        for (fehler in listOf(
+            AppError.PermissionError(message = "Kalender nicht gefunden oder nicht mehr freigegeben"),
+            AppError.NetworkError("kein Netz"),
+            AppError.AuthenticationError("401")
+        )) {
+            val useCase = useCase(mapOf("cal-a" to Result.failure(fehler)))
+
+            val result = useCase.getCalendarEventsWithStatus(setOf("cal-a"), forceRefresh = true)
+
+            assertSame("$fehler", fehler, result.exceptionOrNull())
+        }
+    }
+
+    @Test
+    fun `scheitern mehrere, gilt der erste in der Reihenfolge der Auswahl`() = runTest {
+        val fehlt = AppError.PermissionError(message = "Kalender nicht gefunden oder nicht mehr freigegeben")
+        val useCase = useCase(
+            mapOf(
+                "cal-a" to Result.failure(fehlt),
+                "cal-b" to Result.failure(AppError.NetworkError("kein Netz"))
+            )
+        )
+
+        val result = useCase.getCalendarEventsWithStatus(setOf("cal-a", "cal-b"), forceRefresh = false)
+
+        assertSame(fehlt, result.exceptionOrNull())
     }
 
     @Test

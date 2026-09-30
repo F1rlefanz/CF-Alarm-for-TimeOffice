@@ -4,7 +4,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import androidx.core.app.NotificationCompat
+import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -91,19 +93,22 @@ open class CalendarUnavailableNotifier @Inject constructor(
          *
          * Jeder Text nennt WAS, die FOLGE und WOHIN - und das WOHIN muss in der App genau das
          * zeigen, was der Text verspricht (CalendarUnavailableNotifierTextTest):
-         *  - [Ausfall.EINZELNE]: die Karte "Kalender" nennt sie und bietet "Aus Auswahl
-         *    entfernen" an; danach bleibt mindestens ein Kalender, das Entfernen ist harmlos.
-         *  - [Ausfall.ALLE_NICHT_GEFUNDEN]: Titel wortgleich mit der Karte der Uebersicht
-         *    (`KALENDER_NICHT_GEFUNDEN_TITEL`, aus `alarm/` nicht lesbar). KEIN Entfernen-Rat: beim
-         *    letzten Kalender waere das eine Abwahl, die alle Wecker der naechsten zwei Wochen
-         *    raeumt - die App fragt dort nach und bietet zuerst einen anderen Kalender an.
+         *  - [Ausfall.EINZELNE]: die Karte "Kalender" bietet "Aus Auswahl entfernen" an; danach
+         *    bleibt mindestens ein Kalender, das Entfernen ist harmlos. KEIN Versprechen, dort
+         *    stehe WELCHER: den Namen kennt die Karte nur, solange Google den Kalender noch fuehrt -
+         *    ein geloeschter, der typische dauerhafte Anlass, steht dort nur als Anzahl.
+         *  - [Ausfall.ALLE_NICHT_GEFUNDEN]: Titel und erster Satz wortgleich mit der Karte der
+         *    Uebersicht (`KALENDER_NICHT_GEFUNDEN_TITEL`/`_TEXT`, aus `alarm/` nicht lesbar). KEIN
+         *    Entfernen-Rat: beim letzten Kalender waere das eine Abwahl, die alle Wecker der
+         *    naechsten zwei Wochen raeumt - die App fragt dort nach und bietet zuerst einen anderen
+         *    Kalender an.
          *  - [Ausfall.ALLE_NICHT_ABRUFBAR]: die Ursache ist gerade NICHT bekannt, also weder
          *    "nicht gefunden" noch "melde dich an". In der App steht dann die Anmeldung, kein
          *    Entfernen-Knopf.
          *
-         * "einen ausgewaehlten" statt "den ausgewaehlten": gezaehlt sind die GEMELDETEN, nicht die
-         * ausgewaehlten Kalender - bei zweien kann einer schon, der andere erst beim naechsten
-         * Lauf faellig sein.
+         * Beim Totalausfall haengt der Text nicht an [anzahl]: in DIESEM Lauf scheiterten alle
+         * ausgewaehlten Kalender, "keinen" stimmt also immer - auch wenn die Entprellung erst
+         * einen Teil davon meldet.
          */
         fun meldung(ausfall: Ausfall, anzahl: Int): Meldung = when (ausfall) {
             Ausfall.EINZELNE -> Meldung(
@@ -112,29 +117,21 @@ open class CalendarUnavailableNotifier @Inject constructor(
                 } else {
                     "$anzahl Kalender sind nicht mehr abrufbar"
                 },
-                text = "$FOLGE " + if (anzahl == 1) {
-                    "Im System-Status unter \"Kalender\" steht, welcher betroffen ist — dort lässt er " +
-                        "sich auch aus der Auswahl entfernen."
-                } else {
-                    "Im System-Status unter \"Kalender\" steht, welche betroffen sind — dort lassen sie " +
-                        "sich auch aus der Auswahl entfernen."
-                }
+                text = "$FOLGE Im System-Status unter \"Kalender\" " +
+                    (if (anzahl == 1) "lässt er sich" else "lassen sie sich") +
+                    " aus der Auswahl entfernen."
             )
 
             Ausfall.ALLE_NICHT_GEFUNDEN -> Meldung(
                 titel = "Kalender nicht gefunden",
-                text = "Google findet " +
-                    (if (anzahl == 1) "einen ausgewählten Kalender" else "$anzahl ausgewählte Kalender") +
-                    " nicht mehr — gelöscht oder nicht mehr freigegeben? $FOLGE Näheres im System-Status " +
-                    "unter \"Kalender\"."
+                text = "Google findet keinen ausgewählten Kalender mehr — gelöscht oder nicht mehr " +
+                    "freigegeben? $FOLGE Näheres im System-Status unter \"Kalender\"."
             )
 
             Ausfall.ALLE_NICHT_ABRUFBAR -> Meldung(
                 titel = "Kalender nicht abrufbar",
-                text = "CF-Alarm konnte " +
-                    (if (anzahl == 1) "einen ausgewählten Kalender" else "$anzahl ausgewählte Kalender") +
-                    " bei mehreren Versuchen in Folge nicht abrufen. $FOLGE Näheres im System-Status " +
-                    "unter \"Kalender\"."
+                text = "CF-Alarm konnte bei mehreren Versuchen in Folge keinen ausgewählten Kalender " +
+                    "abrufen. $FOLGE Näheres im System-Status unter \"Kalender\"."
             )
         }
     }
@@ -193,16 +190,26 @@ open class CalendarUnavailableNotifier @Inject constructor(
         // jeden Lauf, auch die stillen, um "dauerhaft" von "Aussetzer" zu unterscheiden und um zu
         // erkennen, dass sich ein Kalender erholt hat. Er darf sich durch die Zustell-Frage NICHT
         // mitaendern.
+        val neuBereitsGemeldet = if (wurdeGemeldet) {
+            entscheidung.neuerBereitsGemeldet
+        } else {
+            // Nur aufraeumen, nichts hinzufuegen: erholte Kalender fallen raus, aber kein
+            // ungemeldeter kommt hinein - beim naechsten Anlass wird erneut versucht.
+            zustand.bereitsGemeldet intersect gescheiterteKalenderIds
+        }
         prefs.setZustand(
             zuletztGescheitert = entscheidung.neuerZuletztGescheitert,
-            bereitsGemeldet = if (wurdeGemeldet) {
-                entscheidung.neuerBereitsGemeldet
-            } else {
-                // Nur aufraeumen, nichts hinzufuegen: erholte Kalender fallen raus, aber kein
-                // ungemeldeter kommt hinein - beim naechsten Anlass wird erneut versucht.
-                zustand.bereitsGemeldet intersect gescheiterteKalenderIds
-            }
+            bereitsGemeldet = neuBereitsGemeldet
         )
+
+        // ERHOLT: Stand eine Meldung, und scheitert keiner der gemeldeten Kalender mehr (wieder
+        // abrufbar oder aus der Auswahl genommen), wird sie wieder eingesammelt - eine Warnung
+        // ueber einer wieder funktionierenden App ist dieselbe Unwahrheit wie eine falsche. Die
+        // Wartung sammelt ihre Stoerungsmeldung nach derselben Regel ein (quittiereTokenErfolg).
+        // NUR bei vorher Gemeldetem: was nie dastand, gibt es nicht zurueckzunehmen.
+        if (zustand.bereitsGemeldet.isNotEmpty() && neuBereitsGemeldet.isEmpty()) {
+            nimmZurueck()
+        }
 
         if (entscheidung.zuMelden.isNotEmpty() && !darfMelden) {
             Logger.d(LogTags.CALENDAR, "Kalender-Warnung unterdrueckt (vom Nutzer abgeschaltet)")
@@ -229,15 +236,27 @@ open class CalendarUnavailableNotifier @Inject constructor(
             return false
         }
 
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        val pendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                context,
-                0,
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
+        // Der Tipp fuehrt in den System-Status und laedt den Kalender neu (MainActivity,
+        // EINSTIEG_KALENDER_WARNUNG) - der Text schickt genau dorthin. Der blosse Start-Intent
+        // holte eine laufende App mit ihrem LETZTEN Stand nach vorn: anderer Tab, und die Karte
+        // zeigte den Abruf von vor dem Ausfall. SINGLE_TOP, damit CLEAR_TOP die laufende
+        // MainActivity (standard) nicht neu anlegt, sondern ihr onNewIntent gibt.
+        //
+        // Eigener Request-Code: PendingIntents vergleichen sich OHNE Extras, und die
+        // Dimmer-Meldung haelt unter Code 3 einen gleich gebauten Intent (DimCorrectionNotifier).
+        // Mit demselben Code ueberschriebe FLAG_UPDATE_CURRENT deren Ziel.
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java)
+                .setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                .putExtra(MainActivity.EXTRA_EINSTIEG, MainActivity.EINSTIEG_KALENDER_WARNUNG),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
@@ -246,7 +265,7 @@ open class CalendarUnavailableNotifier @Inject constructor(
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
-            .apply { pendingIntent?.let { setContentIntent(it) } }
+            .setContentIntent(pendingIntent)
             .build()
 
         // notify() kann werfen (z.B. Kontingent ueberschritten, defekter RemoteViews-Zustand).
@@ -259,6 +278,20 @@ open class CalendarUnavailableNotifier @Inject constructor(
         } catch (e: Exception) {
             Logger.w(LogTags.CALENDAR, "⚠️ Kalender-Warnung konnte nicht gepostet werden: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * Raeumt die Warnung wieder ab (siehe [onFetchOutcome], "ERHOLT"). Die Kennung 2203 gehoert
+     * allein dieser Warnung - anders als die 1002 der Wartung, die sich mehrere Meldungen teilen.
+     * Ein Fehlschlag wird nur geloggt: die Wartung darf daran nicht scheitern.
+     */
+    protected open fun nimmZurueck() {
+        try {
+            context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+            Logger.business(LogTags.CALENDAR, "✅ Kalender-Warnung zurueckgenommen - der Abruf klappt wieder")
+        } catch (e: Exception) {
+            Logger.w(LogTags.CALENDAR, "⚠️ Kalender-Warnung konnte nicht zurueckgenommen werden: ${e.message}")
         }
     }
 

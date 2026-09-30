@@ -1491,9 +1491,15 @@ class AlarmMaintenanceService : Service() {
             //
             // AUSGENOMMEN ist nur die Verbindung: ein Funkloch belegt nichts ueber den Kalender,
             // und die Warnung sagt "nicht abrufbar". Sie wird dann gar nicht erst gefragt - eine
-            // leere Menge hiesse fuer sie "erholt" und raeumte ihr Gedaechtnis. Anhaltende
-            // Netzstoerungen meldet der Token-Schritt ("Kalender-Synchronisation gestoert") -
-            // das Token lebt eine Stunde, ein 6h-Lauf muss es also fast immer erst erneuern.
+            // leere Menge hiesse fuer sie "erholt" und raeumte ihr Gedaechtnis. Faellt das Netz des
+            // GANZEN Geraets aus, meldet das der Token-Schritt ("Kalender-Synchronisation
+            // gestoert"): das Token lebt eine Stunde, ein 6h-Lauf muss es fast immer erneuern.
+            //
+            // GRENZE, bekannt und nicht geschlossen (Review 30.09.2026): Die Erneuerung laeuft ueber
+            // die Play-Dienste, der Abruf ueber das Netz der App. Sperrt jemand nur CF-Alarm
+            // (Firewall-App, Netzschalter je App) oder antwortet Google dauerhaft mit 5xx, 429 oder
+            // Kontingent-403 (auch das kommt aus CalendarRepository als NetworkError), gelingt
+            // Schritt 1 in jedem Lauf - dann meldet weder er noch diese Warnung etwas.
             //
             // Nur die ERSTE Ursache ist bekannt (CalendarUseCase.getCalendarEventsWithStatus wirft
             // sie). Scheitern mehrere Kalender verschieden, entscheidet sie - schlimmstenfalls

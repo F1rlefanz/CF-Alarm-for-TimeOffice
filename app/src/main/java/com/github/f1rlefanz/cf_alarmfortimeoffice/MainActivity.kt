@@ -72,6 +72,14 @@ class MainActivity : ComponentActivity() {
          * Play-Pflicht-Offenlegung, die die Karte zeigt.
          */
         const val EINSTIEG_DIMMER_BEDIENUNGSHILFEN = "dimmer_bedienungshilfen"
+
+        /**
+         * „Kalender nicht gefunden / nicht abrufbar" - gesetzt von
+         * `CalendarUnavailableNotifier.zeige()`. Ziel ist der Status-Tab mit seiner Karte
+         * "Kalender", und zwar FRISCH geladen: die laufende App zeigte sonst den Abruf von vor
+         * dem Ausfall ("API-Zugriff OK"), und der Nutzer hielte die Warnung fuer einen Fehlalarm.
+         */
+        const val EINSTIEG_KALENDER_WARNUNG = "kalender_warnung"
     }
 
     // Hilt injected dependencies
@@ -307,6 +315,19 @@ class MainActivity : ComponentActivity() {
                 )
                 DimBedienungshilfenWunsch.stellen()
                 navigationViewModel.navigateToMainWithTab(MainTab.STATUS)
+            }
+
+            EINSTIEG_KALENDER_WARNUNG -> {
+                Logger.business(
+                    LogTags.NAVIGATION,
+                    "Einstieg aus der Kalender-Warnung -> Status-Tab, Kalender wird neu geladen"
+                )
+                navigationViewModel.navigateToMainWithTab(MainTab.STATUS)
+                // AUCH beim Kaltstart, nicht nur bei onNewIntent: das init-Laden des ViewModels
+                // bedient sich aus dem Terminzwischenspeicher (15 min), und der kann noch den
+                // Stand von vor dem Ausfall halten. Ein doppelter Abruf ist harmlos - der
+                // Generation-Counter laesst den neueren gewinnen.
+                calendarViewModel.refreshData(forceRefresh = true)
             }
 
             else -> Unit

@@ -97,7 +97,7 @@ class Pruefrunde8LetzterKalenderEntfernenTest {
     @Test
     fun `die Rueckfrage stimmt auch, wenn mehrere Kalender wegfallen`() {
         assertTrue(entfernenWuerdeAuswahlLeeren(ausgewaehlt = setOf("a", "b"), nichtAbrufbar = setOf("a", "b")))
-        assertTrue(ENTFERNEN_LEERT_AUSWAHL_TEXT.startsWith("Danach hat CF-Alarm keine Schichtquelle mehr"))
+        assertTrue(ENTFERNEN_LEERT_AUSWAHL_TEXT.startsWith("CF-Alarm hat dann keine Schichtquelle mehr"))
     }
 
     /**

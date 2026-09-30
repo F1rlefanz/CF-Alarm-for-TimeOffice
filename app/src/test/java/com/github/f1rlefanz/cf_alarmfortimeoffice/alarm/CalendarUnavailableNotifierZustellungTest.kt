@@ -63,6 +63,13 @@ class CalendarUnavailableNotifierZustellungTest {
             letzterTitel = title
             return zustellbar
         }
+
+        var zurueckgenommen = 0
+            private set
+
+        override fun nimmZurueck() {
+            zurueckgenommen++
+        }
     }
 
     private fun notifier(zustellbar: Boolean): Pair<TestNotifier, CalendarUnavailablePrefs> {
@@ -159,5 +166,50 @@ class CalendarUnavailableNotifierZustellungTest {
 
         assertEquals(1, notifier.versuche)
         assertEquals("Kalender nicht gefunden", notifier.letzterTitel)
+    }
+
+    // ------------------------------------------------ Die Meldung nach der Erholung zuruecknehmen
+
+    /**
+     * Eine Stoerungsmeldung ueber einer wieder funktionierenden App ist dieselbe Sorte Unwahrheit
+     * wie eine falsche - dieselbe Regel, nach der die Wartung ihre "Kalender-Synchronisation
+     * gestoert" wieder einsammelt (quittiereTokenErfolg). Besonders beim Totalausfall: wer den
+     * Kalender in Google wieder freigibt, statt die App zu oeffnen, behielte sonst "Kalender nicht
+     * gefunden" in der Leiste.
+     */
+    @Test
+    fun `nach der Erholung wird die Meldung zurueckgenommen`() = runTest {
+        val (notifier, _) = notifier(zustellbar = true)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+        assertEquals(1, notifier.versuche)
+
+        notifier.onFetchOutcome(emptySet(), Ausfall.EINZELNE)
+
+        assertEquals(1, notifier.zurueckgenommen)
+    }
+
+    @Test
+    fun `solange ein gemeldeter Kalender weiter scheitert, bleibt die Meldung stehen`() = runTest {
+        val (notifier, _) = notifier(zustellbar = true)
+        notifier.onFetchOutcome(setOf("dienstplan", "bereitschaft"), Ausfall.EINZELNE)
+        notifier.onFetchOutcome(setOf("dienstplan", "bereitschaft"), Ausfall.EINZELNE)
+
+        notifier.onFetchOutcome(setOf("bereitschaft"), Ausfall.EINZELNE)
+        assertEquals("Einer scheitert noch - die Meldung hat noch etwas zu sagen", 0, notifier.zurueckgenommen)
+
+        notifier.onFetchOutcome(emptySet(), Ausfall.EINZELNE)
+        assertEquals(1, notifier.zurueckgenommen)
+    }
+
+    @Test
+    fun `was nie gemeldet wurde, wird auch nicht zurueckgenommen`() = runTest {
+        // Ein einzelner Aussetzer meldet nichts - seine Erholung darf dann auch keine fremde
+        // Meldung abraeumen (2203 gehoert nur dieser Warnung, aber nichts stand da).
+        val (notifier, _) = notifier(zustellbar = true)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.EINZELNE)
+        notifier.onFetchOutcome(emptySet(), Ausfall.EINZELNE)
+
+        assertEquals(0, notifier.zurueckgenommen)
     }
 }

@@ -160,6 +160,28 @@ class CalendarViewModelErreichbarkeitTest {
     }
 
     @Test
+    fun `Kalender gibt es nicht mehr - nicht abrufbar statt Zugriffsverlust`() = runTest(dispatcher) {
+        // 404 heisst bei der Calendar-API: geloescht oder nicht mehr freigegeben. Frueher wurde
+        // daraus "Kalender-Autorisierung verloren" - ein Erneuern haette nichts geaendert.
+        terminAbruf = Result.failure(
+            AppError.PermissionError(message = "Kalender nicht gefunden oder nicht mehr freigegeben")
+        )
+        val vm = buildViewModel()
+        backgroundScope.launch { vm.uiState.collect { } }
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertTrue(state.calendarAuthorizationValid)
+        assertFalse(state.kalenderNichtErreichbar)
+        assertTrue(
+            "Der fehlende Kalender muss beim Namen auftauchen koennen (Status-Tab, Entfernen)",
+            state.unavailableCalendarIds == setOf("cal-a")
+        )
+    }
+
+    @Test
     fun `der naechste gelungene Abruf nimmt nicht erreichbar zurueck`() = runTest(dispatcher) {
         terminAbruf = Result.failure(AppError.NetworkError("No internet connection"))
         val vm = buildViewModel()

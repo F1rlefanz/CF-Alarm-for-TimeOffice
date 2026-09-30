@@ -220,6 +220,12 @@ und in den Sperren selbst.
   (`resolveCalendarAuthorizationOutcome()` → `calendarAuthorizationValid = false`) mit eigener,
   handlungsfähiger Meldung. `CalendarUiState.unavailableCalendarIds` bleibt dann bewusst leer —
   zwei Warnungen für dieselbe Lage sind schlechter als eine.
+- **AUSSER alle FEHLEN (seit v1.43.6)** — 404 oder 403 ohne Scope-Mangel, also gelöscht oder
+  nicht mehr freigegeben (`FehlschlagArt.KALENDER_FEHLT`). Dann stehen sie wie beim Teilerfolg in
+  `unavailableCalendarIds`: beim Namen, mit „Aus Auswahl entfernen" und der Rückfrage, wenn danach
+  keiner mehr bliebe; die Übersicht sagt „Kalender nicht gefunden". Vorher hieß das
+  „Autorisierung verloren", und „Kalender-Zugriff erneuern" änderte an einem gelöschten Kalender
+  nichts. Ein einziger Anmelde-Fehlschlag darunter macht es wieder zum Autorisierungsfall.
 - **AUSSER alle scheiterten nur an der Verbindung (seit v1.43.5).** Dann ist es
   `kalenderNichtErreichbar` („Google Kalender nicht erreichbar — die gestellten Wecker
   bleiben"), der Zugriff gilt weiter als gültig. Am 30.09.2026 am Fairphone: Flugmodus plus

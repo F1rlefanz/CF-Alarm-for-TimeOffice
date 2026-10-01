@@ -105,7 +105,6 @@ data class CalendarUiState(
      * der Beginn eines Neuladens sehen so aus. Setzt jeder abgeschlossene Ladevorgang neu.
      */
     val alleKalenderFehlen: Boolean = false,
-    val lastAuthorizationCheck: Long = 0L,
     // PAGINATION SUPPORT: Calendar pagination fields
     val currentPage: Int = 0,
     val hasMoreCalendars: Boolean = false,
@@ -1069,7 +1068,6 @@ class CalendarViewModel @Inject constructor(
                         calendarAuthorizationValid = authStillValid,
                         kalenderNichtErreichbar = nichtErreichbar,
                         alleKalenderFehlen = everythingFailed && nichtAbrufbareZeigen,
-                        lastAuthorizationCheck = System.currentTimeMillis(),
                         error = failureMessage ?: state.error,
                         // Der TEILERFOLG - und der Totalausfall, bei dem alle Kalender FEHLEN.
                         // Anmeldung und Funkloch haben ihre eigene Anzeige (oben) - siehe
@@ -1168,8 +1166,7 @@ class CalendarViewModel @Inject constructor(
                         // Zugriff nur bei einem NICHT netzbedingten Fehler als verloren melden.
                         calendarAuthorizationValid = nurVerbindung,
                         kalenderNichtErreichbar = nurVerbindung,
-                        alleKalenderFehlen = false,
-                        lastAuthorizationCheck = System.currentTimeMillis()
+                        alleKalenderFehlen = false
                     )
                 }
                 Logger.e(LogTags.CALENDAR, "Failed to load calendar events progressively", e)

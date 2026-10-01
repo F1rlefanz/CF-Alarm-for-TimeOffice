@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -54,6 +55,30 @@ data class ShiftSpan(
 )
 
 /**
+ * Was der Schichtspannen-Bestand zuletzt wusste, und WANN - fuer die ANZEIGE, wenn der Kalender
+ * gerade nicht erreichbar ist (Karte "Naechste Schicht").
+ *
+ * WARUM AUS DIESEM BESTAND und nicht aus den zuletzt geladenen Terminen: die Datenschutzerklaerung
+ * (docs/privacy.html, 3.1) sagt zu, dass Termininhalte NICHT dauerhaft gespeichert werden - nur die
+ * daraus abgeleiteten Schichten (Name + Uhrzeit). Genau das ist eine [ShiftSpan]. Ein eigener
+ * Termin-Speicher fuer die Offline-Anzeige haette diese Zusage gebrochen, und sie ist Grundlage der
+ * OAuth-Verifizierung.
+ *
+ * NUR ANZEIGE: Daraus wird nie ein Wecker gestellt oder geloescht. Loeschgrundlage bleiben
+ * ausschliesslich vollstaendige, frische Eventlisten (`CalendarFetchOutcome.isComplete`).
+ *
+ * @param stand Zeitpunkt des Syncs, der den Bestand zuletzt geschrieben hat - also des letzten
+ *   Abgleichs ueber einer vollstaendigen Terminliste. `null` bei einem Bestand, der vor dieser
+ *   Version geschrieben wurde (der Zeitpunkt ist dann unbekannt, nicht "jetzt").
+ */
+data class LetzterSchichtStand(val spans: List<ShiftSpan>, val stand: Long?) {
+
+    /** Die naechste noch nicht begonnene Schicht - dieselbe Regel wie `ShiftUiState.upcomingShift`. */
+    fun naechsteNach(now: Long): ShiftSpan? =
+        spans.filter { it.startTime > now }.minByOrNull { it.startTime }
+}
+
+/**
  * Persistenter Bestand der erkannten Schichtspannen im bestehenden [MainDataStore] (kein neuer
  * Namespace - die drei bestehenden bleiben getrennt).
  *
@@ -68,9 +93,16 @@ class ShiftSpanStore @Inject constructor(
 ) {
     companion object {
         private val KEY_SHIFT_SPANS = stringPreferencesKey(KEY_SHIFT_SPANS_NAME)
+        private val KEY_SHIFT_SPANS_STAND = longPreferencesKey(KEY_SHIFT_SPANS_STAND_NAME)
 
         /** Oeffentlich, damit `ConfigBackupFormat` denselben Namen ausschliesst statt eines Duplikats. */
         const val KEY_SHIFT_SPANS_NAME = "shift_spans"
+
+        /**
+         * Wann [replaceAll] den Bestand zuletzt geschrieben hat - siehe [LetzterSchichtStand.stand].
+         * Oeffentlich aus demselben Grund wie [KEY_SHIFT_SPANS_NAME]: der Export schliesst ihn aus.
+         */
+        const val KEY_SHIFT_SPANS_STAND_NAME = "shift_spans_stand"
 
         /**
          * Rueckschau beim Aufraeumen. Mindestens `DimWindowResolver.LOOKBACK_DAYS`: eine am
@@ -149,6 +181,23 @@ class ShiftSpanStore @Inject constructor(
     }
 
     /**
+     * Bestand UND Zeitpunkt in einem Read - fuer die Offline-Anzeige der naechsten Schicht.
+     * Ein Lesefehler bleibt ein Fehlschlag (siehe [spansNow]); die Anzeige zeigt dann den
+     * bisherigen Hinweis statt eines erfundenen Stands.
+     */
+    suspend fun letzterStand(): Result<LetzterSchichtStand> = try {
+        val prefs = dataStore.data.first()
+        val raw = prefs[KEY_SHIFT_SPANS]
+        val spans = if (raw.isNullOrBlank()) emptyList() else json.decodeFromString<List<ShiftSpan>>(raw)
+        Result.success(LetzterSchichtStand(spans, prefs[KEY_SHIFT_SPANS_STAND]))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Logger.w(LogTags.SHIFT, "Letzter Schichtstand nicht lesbar - Offline-Anzeige entfaellt", e)
+        Result.failure(e)
+    }
+
+    /**
      * Uebernimmt den frischen Kalenderstand: laufende und kuenftige Spannen werden vollstaendig
      * ersetzt (damit kein Rest einer geloeschten Schicht zurueckbleibt), BEENDETE Spannen des
      * bisherigen Bestands bleiben bis zur Rueckschau-Grenze [RETENTION_MS] erhalten - siehe
@@ -164,6 +213,8 @@ class ShiftSpanStore @Inject constructor(
             }.orEmpty()
             kept = mische(alt = alt, neu = spans, now = now)
             prefs[KEY_SHIFT_SPANS] = json.encodeToString(kept)
+            // Im SELBEN edit: Bestand und Zeitpunkt duerfen nie auseinanderlaufen.
+            prefs[KEY_SHIFT_SPANS_STAND] = now
         }
         Logger.d(LogTags.SHIFT, "Schichtspannen gespeichert: ${kept.size} (${spans.size} frisch, Rest beendete aus dem Altbestand)")
     }

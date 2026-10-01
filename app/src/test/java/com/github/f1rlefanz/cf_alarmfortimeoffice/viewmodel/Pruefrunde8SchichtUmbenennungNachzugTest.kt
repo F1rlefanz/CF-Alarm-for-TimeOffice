@@ -168,7 +168,8 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             dimRuleUseCase = dagger.Lazy { dim },
             hueRuleUseCase = dagger.Lazy { hue },
             armierer = armierer,
-            dndPrefs = dagger.Lazy { dnd }
+            dndPrefs = dagger.Lazy { dnd },
+            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() }
         )
         return Umgebung(vm, dim, hue, store, dnd, armierer, alarmUseCase)
     }
@@ -362,7 +363,8 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             dimRuleUseCase = dagger.Lazy { dim },
             hueRuleUseCase = dagger.Lazy { hue },
             armierer = mock<ZeitkettenArmierer>(),
-            dndPrefs = dagger.Lazy { mock<DndPrefs>() }
+            dndPrefs = dagger.Lazy { mock<DndPrefs>() },
+            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() }
         )
         advanceUntilIdle()
 

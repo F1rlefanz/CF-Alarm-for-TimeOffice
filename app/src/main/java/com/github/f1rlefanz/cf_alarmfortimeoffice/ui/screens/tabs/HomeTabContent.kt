@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
@@ -39,7 +41,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmSkipUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.AlarmUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftUiState
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
@@ -207,6 +211,40 @@ internal fun noShiftExplanation(
     }
 }
 
+/**
+ * PURE, TESTBAR: Welche Schicht die Karte zeigt, wenn der Kalender gerade nicht erreichbar ist.
+ *
+ * WARUM (Entscheidung des Eigentuemers, 01.10.2026): offline hiess die Karte "Keine Schicht
+ * erkannt", obwohl der Dienstplan bekannt war - die Terminliste ist ohne Verbindung zwangslaeufig
+ * leer. Gezeigt wird deshalb der letzte bekannte Stand, aber NUR in genau diesem Zustand
+ * ([NoShiftReason.KALENDER_NICHT_ERREICHBAR]): bei jedem anderen Grund ist der alte Stand keine
+ * Antwort (abgewaehlter Kalender, verlorener Zugriff, geaenderte Muster).
+ *
+ * NUR ANZEIGE: die Quelle ist [LetzterSchichtStand] (Name + Uhrzeit, keine Termininhalte - siehe
+ * dort). Kein Wecker entsteht oder verschwindet daraus.
+ */
+internal fun offlineAngezeigteSchicht(
+    reason: NoShiftReason,
+    letzterStand: LetzterSchichtStand?,
+    now: Long
+): ShiftSpan? =
+    if (reason == NoShiftReason.KALENDER_NICHT_ERREICHBAR) letzterStand?.naechsteNach(now) else null
+
+/**
+ * PURE, TESTBAR: Der Hinweis unter einer offline angezeigten Schicht. Er sagt, dass der Stand
+ * ALT ist, und WORAUF sich der Zeitpunkt bezieht (den letzten Abgleich, nicht die Schicht).
+ * Ohne bekannten Zeitpunkt (Bestand aus einer Version vor diesem Merker) wird keiner erfunden.
+ */
+internal fun offlineStandHinweis(stand: Long?, zone: ZoneId = ZoneId.systemDefault()): String {
+    val wann = stand?.let {
+        DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
+            .format(Instant.ofEpochMilli(it).atZone(zone))
+    }
+    val bezug = if (wann != null) "Stand des letzten Kalender-Abgleichs: $wann" else "Stand eines früheren Kalender-Abgleichs"
+    return "$bezug. Google Kalender ist gerade nicht erreichbar — spätere Änderungen fehlen hier, " +
+        "die gestellten Wecker bleiben."
+}
+
 @Composable
 fun HomeTabContent(
     calendarState: CalendarUiState,
@@ -294,27 +332,56 @@ fun HomeTabContent(
                             enabledShiftTypeCount = shiftConfig?.definitions?.count { it.isEnabled } ?: 0,
                             recognizedShiftCount = shiftState.recognizedShifts.size
                         )
-                        Text(
-                            "Keine Schicht erkannt",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        val offlineSchicht = offlineAngezeigteSchicht(
+                            reason = reason,
+                            letzterStand = shiftState.letzterSchichtStand,
+                            now = System.currentTimeMillis()
                         )
-                        Text(
-                            noShiftExplanation(
-                                reason = reason,
-                                errorMessage = ladeFehler,
-                                // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
-                                // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
-                                sampleEventTitles = calendarState.events
-                                    .map { it.title }
-                                    .distinct()
-                                    .take(3),
-                                autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
-                                masterPausePaused = masterPausePaused
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (offlineSchicht != null) {
+                            // Offline: der letzte bekannte Stand statt "Keine Schicht erkannt" -
+                            // als alt gekennzeichnet, siehe offlineAngezeigteSchicht().
+                            Text(
+                                offlineSchicht.shiftName,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
+                                    .format(Instant.ofEpochMilli(offlineSchicht.startTime).atZone(ZoneId.systemDefault())),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                if (masterPausePaused) {
+                                    offlineStandHinweis(shiftState.letzterSchichtStand?.stand) +
+                                        "\n" + NO_SHIFT_HINWEIS_PAUSIERT
+                                } else {
+                                    offlineStandHinweis(shiftState.letzterSchichtStand?.stand)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                "Keine Schicht erkannt",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                noShiftExplanation(
+                                    reason = reason,
+                                    errorMessage = ladeFehler,
+                                    // Nur eine kleine Kostprobe: die Karte soll erklaeren, nicht den
+                                    // Kalender abbilden (dafuer gibt es "Antippen fuer Details").
+                                    sampleEventTitles = calendarState.events
+                                        .map { it.title }
+                                        .distinct()
+                                        .take(3),
+                                    autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false,
+                                    masterPausePaused = masterPausePaused
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

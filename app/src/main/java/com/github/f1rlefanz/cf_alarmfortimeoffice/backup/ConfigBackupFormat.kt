@@ -99,6 +99,9 @@ object ConfigBackupFilter {
         // Dienstzeiten mitbringen und "Nicht stoeren" sowie den Dimmer auf einem anderen Geraet zu
         // falschen Zeiten schalten - bis der erste eigene Sync sie ueberschreibt.
         ShiftSpanStore.KEY_SHIFT_SPANS_NAME,
+        // ... und der Zeitpunkt, zu dem sie geschrieben wurden (Offline-Anzeige der naechsten
+        // Schicht). Ohne die Spannen sagt er nichts, und mit fremden Spannen waere er eine Luege.
+        ShiftSpanStore.KEY_SHIFT_SPANS_STAND_NAME,
         // Die vom Nutzer freigegebenen Tage (FreieTageStore). Eine Nutzerentscheidung, ja - aber
         // eine ueber KONKRETE Kalendertage dieses Dienstplans, die binnen Tagen verfaellt.
         // Importiert wuerde sie auf dem neuen Geraet Wecker unterdruecken, die dort zu einem ganz

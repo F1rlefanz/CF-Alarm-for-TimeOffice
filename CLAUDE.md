@@ -383,7 +383,10 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   nächsten Read-Modify-Write und überschreibt echte Nutzerdaten.
 - **Ein CE-DataStore-Read VOR der ersten Entsperrung wirft NICHT — er liefert still leere
   Preferences** und meldet Erfolg. Deshalb fragt `AlarmRepository` vorher den `UserManager` und lädt
-  nach dem Entsperren nach.
+  nach dem Entsperren nach. **DataStore hält dieses Leer für den GANZEN Store im Prozess** — EIN
+  fremder Leser im gesperrten Prozess genügt, und danach liest jeder „leer“ (bis 1.45.0 der
+  Hue-Manager: Alarm-Bestand weg). Wer beim Prozessstart einen CE-Store liest, fragt vorher
+  `NutzerEntsperrung.istEntsperrt()`.
 - **Der Direct-Boot-Spiegel wird bei JEDEM erfolgreichen Load abgeglichen.**
 - **Die REIHENFOLGE von `.catch` und `.map` in einem Preferences-Flow ist tragend** — `.catch`
   gehört **hinter** das `.map` und muss den Cache invalidieren.

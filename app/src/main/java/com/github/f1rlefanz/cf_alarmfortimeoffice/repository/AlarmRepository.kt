@@ -2,9 +2,9 @@
 
 package com.github.f1rlefanz.cf_alarmfortimeoffice.repository
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import kotlinx.coroutines.flow.onStart
 import dagger.hilt.android.qualifiers.ApplicationContext
-import android.os.UserManager
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -145,14 +145,7 @@ class AlarmRepository @Inject constructor(
     private var letzterSchreibvorgangGescheitert = false
 
     private val userUnlocked: Boolean
-        get() = try {
-            appContext.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
-        } catch (e: Exception) {
-            // Im Zweifel als entsperrt behandeln: ein falsch-positives "gesperrt" wuerde die
-            // Persistenz dauerhaft sperren.
-            Logger.w(LogTags.ALARM, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
-            true
-        }
+        get() = NutzerEntsperrung.istEntsperrt(appContext, LogTags.ALARM)
 
     init {
         loadAlarmsFromDataStore()
@@ -201,41 +194,7 @@ class AlarmRepository @Inject constructor(
                             )
                             return@withLock
                         }
-                        val alarms = alarmsData.map { it.toAlarmInfo() }
-
-                        // Cleanup: Entferne automatisch abgelaufene Alarme
-                        val currentTime = System.currentTimeMillis()
-                        val validAlarms = alarms.filter { it.triggerTime > currentTime }
-
-                        _activeAlarms.value = validAlarms
-                        loadedWhileUnlocked = true
-                        persistenceBlocked = false
-
-                        Logger.business(
-                            LogTags.ALARM,
-                            "✅ PERSISTENCE: Loaded ${validAlarms.size} alarms from DataStore (removed ${alarms.size - validAlarms.size} expired)"
-                        )
-
-                        // Wenn wir abgelaufene Alarme entfernt haben, speichere die bereinigte Liste
-                        if (validAlarms.size < alarms.size) {
-                            persistToDataStore(validAlarms)
-                        } else {
-                            // SPIEGEL-ABGLEICH bei JEDEM erfolgreichen Load: faellt nach dem
-                            // DataStore-Write der Spiegel-Write aus, bliebe die Divergenz sonst
-                            // dauerhaft (der haeufigste Sync-Zweig schreibt das Repository nicht).
-                            // `saveAll` ist idempotent und billig. Hergang: Skill
-                            // cfalarm-persistenz-und-auth, reference/persistenz.md.
-                            directBootAlarmStore.saveAll(
-                                validAlarms.map {
-                                    DirectBootAlarmEntry(
-                                        it.id,
-                                        it.shiftName,
-                                        it.triggerTime,
-                                        formatShiftStartTime(it.shiftStartTime)
-                                    )
-                                }
-                            )
-                        }
+                        uebernehmeGeladenenBestand(alarmsData.map { it.toAlarmInfo() }, "Loaded")
                     } else {
                         // Hier ist "leer" belastbar: der Nutzer IST entsperrt (oben geprueft), der
                         // Store also wirklich lesbar - es steht schlicht nichts drin.
@@ -335,20 +294,57 @@ class AlarmRepository @Inject constructor(
                     )
                     return@withLock
                 }
-                val valid = alarms.filter { it.triggerTime > System.currentTimeMillis() }
-                _activeAlarms.value = valid
-                loadedWhileUnlocked = true
-                persistenceBlocked = false
-                Logger.business(
-                    LogTags.ALARM,
-                    "✅ PERSISTENCE: ${valid.size} Alarme nachgeladen (${alarms.size - valid.size} abgelaufen)"
-                )
+                uebernehmeGeladenenBestand(alarms, "Nachgeladen")
             }
         } catch (e: Exception) {
             // NICHT `loadedWhileUnlocked` setzen: ein echter Lesefehler soll beim naechsten Zugriff
             // erneut versucht werden. Die Sperre bleibt, damit nichts ueberschrieben wird.
             persistenceBlocked = true
             Logger.e(LogTags.ALARM, "❌ PERSISTENCE: Nachladen fehlgeschlagen - Persistenz bleibt gesperrt", e)
+        }
+    }
+
+    /**
+     * Uebernimmt einen ERFOLGREICH gelesenen Bestand - der gemeinsame Abschluss beider Ladepfade
+     * (Erst-Load und [reloadFromDataStore] nach dem Entsperren).
+     *
+     * SPIEGEL-ABGLEICH bei JEDEM erfolgreichen Load (CLAUDE.md, "Persistenz"): faellt nach dem
+     * DataStore-Write der Spiegel-Write aus, bliebe die Divergenz sonst dauerhaft (der haeufigste
+     * Sync-Zweig schreibt das Repository nicht). `saveAll` ist idempotent und billig. Bis v1.45
+     * tat das nur der Erst-Load; das Nachladen - nach jedem Neustart MIT Bildschirmsperre der
+     * erste echte Load, weil der Prozess gesperrt startet - glich den Spiegel nicht ab und
+     * schrieb auch das Aufraeumen abgelaufener Eintraege nicht zurueck (#131, G8-20).
+     * Hergang: Skill cfalarm-persistenz-und-auth, reference/persistenz.md.
+     *
+     * ACHTUNG: nimmt [stateMutex] NICHT selbst - nur aus einem Lock-Halter rufen.
+     */
+    private suspend fun uebernehmeGeladenenBestand(alarms: List<AlarmInfo>, anlass: String) {
+        val validAlarms = alarms.filter { it.triggerTime > System.currentTimeMillis() }
+
+        _activeAlarms.value = validAlarms
+        loadedWhileUnlocked = true
+        persistenceBlocked = false
+
+        Logger.business(
+            LogTags.ALARM,
+            "✅ PERSISTENCE: $anlass ${validAlarms.size} alarms from DataStore (removed ${alarms.size - validAlarms.size} expired)"
+        )
+
+        // Abgelaufene entfernt: die bereinigte Liste speichern - persistToDataStore schreibt den
+        // Spiegel mit. Sonst nur den Spiegel abgleichen.
+        if (validAlarms.size < alarms.size) {
+            persistToDataStore(validAlarms)
+        } else {
+            directBootAlarmStore.saveAll(
+                validAlarms.map {
+                    DirectBootAlarmEntry(
+                        it.id,
+                        it.shiftName,
+                        it.triggerTime,
+                        formatShiftStartTime(it.shiftStartTime)
+                    )
+                }
+            )
         }
     }
 
@@ -583,7 +579,19 @@ class AlarmRepository @Inject constructor(
     }
 
     // Extension functions for conversion
-    private fun AlarmInfo.toAlarmInfoData() = AlarmInfoData(
+    private fun AlarmInfo.toAlarmInfoData() = alarmInfoDataVon(this)
+
+    private fun AlarmInfoData.toAlarmInfo() = alarmInfoVon(this)
+}
+
+/**
+ * Die EINE Abbildung [AlarmInfo] -> gespeichertes Format. Auch der Schnappschuss eines
+ * uebersprungenen MANUELLEN Weckers (`ManualAlarmSnapshot`) geht hierueber: bis v1.45 stand die
+ * Feldliste dort ein zweites Mal, und ein neues Feld waere im Schnappschuss still verloren
+ * gegangen (#131, G8-20).
+ */
+internal fun alarmInfoDataVon(alarm: AlarmInfo) = with(alarm) {
+    AlarmInfoData(
         id = id,
         shiftId = shiftId,
         shiftName = shiftName,
@@ -595,8 +603,11 @@ class AlarmRepository @Inject constructor(
         shiftStartTime = shiftStartTime,
         isSilent = isSilent
     )
+}
 
-    private fun AlarmInfoData.toAlarmInfo() = AlarmInfo(
+/** Gegenrichtung zu [alarmInfoDataVon]. */
+internal fun alarmInfoVon(data: AlarmInfoData) = with(data) {
+    AlarmInfo(
         id = id,
         shiftId = shiftId,
         shiftName = shiftName,

@@ -56,18 +56,9 @@ android {
         versionName = "1.44.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
-        
-        // CRITICAL: Remove AD_ID permission added by play-services-auth
-        // This must be done at build time via androidResources
-        androidResources {
-            ignoreAssetsPattern = "!.svn:!.git:.*:!CVS:!thumbs.db:!picasa.ini:!*.scc:*~"
-        }
-        
-        // Additional manifest placeholder (belt and suspenders approach)
-        manifestPlaceholders["excludeAdIdPermission"] = "true"
+        // AD_ID wird NICHT hier gesperrt, sondern im Manifest (maxSdkVersion="0", siehe CLAUDE.md).
+        // Bis v1.44 standen hier ein ignoreAssetsPattern und ein manifestPlaceholder, die das
+        // vorgaben - beide wirkungslos (kein Manifest las den Platzhalter; #133, G10-05).
 
         // SECURITY: OAuth Client ID must be configured in keystore.properties or environment variables
         // NO hardcoded fallback to prevent accidental credential leakage in version control
@@ -111,18 +102,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-
-            isDebuggable = false
-            isJniDebuggable = false
-
-            isPseudoLocalesEnabled = false
         }
 
         debug {
-            // Development settings
-            isMinifyEnabled = false
-            isDebuggable = true
-
             // APP IDENTIFICATION: Clear debug identification
             // kein applicationIdSuffix: Google-Anmeldung hängt am Paketnamen
             versionNameSuffix = "-DEBUG"

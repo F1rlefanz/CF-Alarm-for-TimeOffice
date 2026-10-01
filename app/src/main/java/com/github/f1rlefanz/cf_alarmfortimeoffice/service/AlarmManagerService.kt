@@ -335,7 +335,6 @@ class AlarmManagerService(
         val systemAlarmSet: Boolean,
         val canScheduleExactAlarms: Boolean,
         val alarmStatusMessage: String?,
-        val batteryOptimizationExempt: Boolean = false,
         val fehlgeschlagen: Boolean = false
     )
 
@@ -613,7 +612,6 @@ class AlarmManagerService(
             systemAlarmSet = systemAlarmSet,
             canScheduleExactAlarms = canScheduleExactAlarms(),
             alarmStatusMessage = message,
-            batteryOptimizationExempt = BatteryOptimizationHelper.isExempted(application),
             fehlgeschlagen = fehlgeschlagen
         )
     }
@@ -694,7 +692,6 @@ class AlarmManagerService(
         return AlarmPermissionStatus(
             level = overallStatus,
             canScheduleExactAlarms = canScheduleExact,
-            batteryOptimizationExempt = batteryExempt,
             canUseFullScreenIntent = canUseFullScreen
         )
     }
@@ -1423,7 +1420,6 @@ class AlarmManagerService(
 data class AlarmPermissionStatus(
     val level: AlarmPermissionLevel,
     val canScheduleExactAlarms: Boolean,
-    val batteryOptimizationExempt: Boolean,
     /**
      * false = der Weck-Screen kommt nicht von selbst hoch, der Wecker erscheint nur als Banner.
      * Ab Android 14 entzieht der Play Store diese Berechtigung nach der Installation, wenn er

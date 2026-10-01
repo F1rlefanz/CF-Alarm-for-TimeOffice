@@ -86,7 +86,6 @@ class AlarmSkipManualAlarmTest {
         override suspend fun setNextAlarmSkipped(
             alarmId: Int,
             triggerTime: Long,
-            reason: String,
             manualAlarmSnapshot: String?
         ): Result<Unit> {
             setSkippedFor = alarmId
@@ -95,7 +94,6 @@ class AlarmSkipManualAlarmTest {
                 isNextAlarmSkipped = true,
                 skippedAlarmId = alarmId,
                 skippedAlarmTriggerTime = triggerTime,
-                skipReason = reason,
                 skippedManualAlarm = manualAlarmSnapshot
             )
             return Result.success(Unit)

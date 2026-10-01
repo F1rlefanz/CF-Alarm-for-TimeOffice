@@ -37,8 +37,6 @@ class AlarmSkipRepository @Inject constructor(
         AlarmSkipState(
             isNextAlarmSkipped = preferences[AlarmSkipPreferences.IS_NEXT_ALARM_SKIPPED] ?: false,
             skippedAlarmId = preferences[AlarmSkipPreferences.SKIPPED_ALARM_ID],
-            skipActivatedAt = preferences[AlarmSkipPreferences.SKIP_ACTIVATED_AT] ?: 0L,
-            skipReason = preferences[AlarmSkipPreferences.SKIP_REASON] ?: "Manuell übersprungen",
             skippedAlarmTriggerTime = preferences[AlarmSkipPreferences.SKIPPED_ALARM_TRIGGER_TIME] ?: 0L,
             skippedManualAlarm = preferences[AlarmSkipPreferences.SKIPPED_MANUAL_ALARM]
         )
@@ -108,15 +106,12 @@ class AlarmSkipRepository @Inject constructor(
     override suspend fun setNextAlarmSkipped(
         alarmId: Int,
         triggerTime: Long,
-        reason: String,
         manualAlarmSnapshot: String?
     ): Result<Unit> =
         SafeExecutor.safeExecute("AlarmSkipRepository.setNextAlarmSkipped") {
             dataStore.edit { preferences ->
                 preferences[AlarmSkipPreferences.IS_NEXT_ALARM_SKIPPED] = true
                 preferences[AlarmSkipPreferences.SKIPPED_ALARM_ID] = alarmId
-                preferences[AlarmSkipPreferences.SKIP_ACTIVATED_AT] = System.currentTimeMillis()
-                preferences[AlarmSkipPreferences.SKIP_REASON] = reason
                 preferences[AlarmSkipPreferences.SKIPPED_ALARM_TRIGGER_TIME] = triggerTime
                 // Ohne das `remove` im else-Zweig ueberlebte der Schnappschuss eines FRUEHEREN
                 // manuellen Skips einen neuen Skip auf einen kalenderbasierten Alarm - und
@@ -138,8 +133,10 @@ class AlarmSkipRepository @Inject constructor(
             dataStore.edit { preferences ->
                 preferences.remove(AlarmSkipPreferences.IS_NEXT_ALARM_SKIPPED)
                 preferences.remove(AlarmSkipPreferences.SKIPPED_ALARM_ID)
-                preferences.remove(AlarmSkipPreferences.SKIP_ACTIVATED_AT)
-                preferences.remove(AlarmSkipPreferences.SKIP_REASON)
+                // Altschluessel bis v1.44: wurden geschrieben, aber nie gelesen (#111). Das
+                // Abraeumen bleibt, damit ein Skip aus einer aelteren Version keine Reste hinterlaesst.
+                preferences.remove(AlarmSkipPreferences.LEGACY_SKIP_ACTIVATED_AT)
+                preferences.remove(AlarmSkipPreferences.LEGACY_SKIP_REASON)
                 preferences.remove(AlarmSkipPreferences.SKIPPED_ALARM_TRIGGER_TIME)
                 preferences.remove(AlarmSkipPreferences.SKIPPED_MANUAL_ALARM)
             }

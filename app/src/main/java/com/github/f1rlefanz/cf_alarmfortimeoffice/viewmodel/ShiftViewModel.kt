@@ -14,7 +14,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -59,7 +62,13 @@ data class ShiftUiState(
      * Bewusst nur Vorschlaege: zugeordnet wird von Hand.
      */
     val codeSuggestions: ShiftCodeSuggester.SuggestionResult =
-        ShiftCodeSuggester.SuggestionResult(emptyList(), 0)
+        ShiftCodeSuggester.SuggestionResult(emptyList(), 0),
+    /**
+     * Was der letzte Abgleich ueber die Schichten wusste - NUR fuer die Anzeige, wenn der Kalender
+     * gerade nicht erreichbar ist (Karte "Naechste Schicht"). `null` = nicht lesbar oder noch nicht
+     * gelesen; die Karte zeigt dann den bisherigen Hinweis. Daraus entsteht nie ein Wecker.
+     */
+    val letzterSchichtStand: LetzterSchichtStand? = null
 )
 
 /**
@@ -104,7 +113,12 @@ class ShiftViewModel @Inject constructor(
      * Ebenfalls `dagger.Lazy`, aus demselben Grund wie oben: dieses ViewModel entsteht beim
      * App-Start, und die Klasse soll erst angefasst werden, wenn wirklich umbenannt wird.
      */
-    private val dndPrefs: dagger.Lazy<DndPrefs>
+    private val dndPrefs: dagger.Lazy<DndPrefs>,
+    /**
+     * Nur LESEND, fuer [ShiftUiState.letzterSchichtStand]. `dagger.Lazy` wie oben: der Read
+     * passiert erst nach der ersten Event-Emission, nicht beim Bauen des ViewModels.
+     */
+    private val shiftSpanStore: dagger.Lazy<ShiftSpanStore>
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShiftUiState())
@@ -203,6 +217,10 @@ class ShiftViewModel @Inject constructor(
             calendarStateHolder.events
                 .debounce(400) // ENHANCED: Längeres Debouncing für teure Shift-Recognition (400ms)
                 .collect { events: List<CalendarEvent> ->
+                    // Bei JEDER Emission, auch der leeren: offline ist die Liste leer, und genau
+                    // dann braucht die Karte den letzten bekannten Stand. Nach einem gelungenen
+                    // Abgleich holt die naechste Emission den frisch geschriebenen.
+                    aktualisiereLetztenSchichtStand()
                     if (events.isNotEmpty()) {
                         processCalendarEvents(events)
                     } else {
@@ -213,6 +231,25 @@ class ShiftViewModel @Inject constructor(
                         )
                     }
                 }
+        }
+    }
+
+    /**
+     * Liest [ShiftSpanStore.letzterStand] fuer die Offline-Anzeige. Ein Fehlschlag (oder ein
+     * fehlender Store) laesst den Wert auf `null` - die Karte faellt dann auf den bisherigen,
+     * wahren Hinweis zurueck, statt einen Stand zu erfinden.
+     */
+    private fun aktualisiereLetztenSchichtStand() {
+        viewModelScope.launch {
+            val stand = try {
+                shiftSpanStore.get().letzterStand().getOrNull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w(LogTags.SHIFT, "Letzter Schichtstand nicht lesbar", e)
+                null
+            }
+            _uiState.value = _uiState.value.copy(letzterSchichtStand = stand)
         }
     }
 

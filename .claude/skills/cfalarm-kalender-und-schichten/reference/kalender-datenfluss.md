@@ -429,3 +429,41 @@ hätten bei einem großen Wechsel die Leiste überschwemmt und mussten gegen die
 abgegrenzt werden (2002 ist der Wecker). Die Sammlung wird pro Lauf zurückgesetzt und darf über
 Prozessgrenzen hinweg nicht lügen; der Notifier darf den Sync weder ausbremsen noch werfen — er läuft
 mitten in der Alarm-Erzeugung.
+
+## Offline-Anzeige der naechsten Schicht (01.10.2026)
+
+**Was war.** Ohne Verbindung ist die Terminliste zwangslaeufig leer; die Karte „Naechste Schicht"
+hiess deshalb „Keine Schicht erkannt" (der Grund darunter stimmte), und der System-Status zeigte
+„Schicht-Erkennung" rot mit „Keine Schichten erkannt" - eine Aussage ueber die Erkennung, die
+offline niemand pruefen konnte. Entscheidung des Eigentuemers: den letzten bekannten Stand stehen
+lassen, als alt gekennzeichnet.
+
+**Warum aus dem `ShiftSpanStore` und nicht aus gespeicherten Terminen.** `docs/privacy.html` (3.1)
+sagt zu: Termininhalte nur kurzzeitig im Arbeitsspeicher, dauerhaft nur die abgeleiteten Schichten
+(Name + Uhrzeit). Ein Termin-Speicher fuer die Offline-Anzeige haette das gebrochen - und die
+Erklaerung ist Grundlage der OAuth-Verifizierung. Der Spannen-Bestand ist genau „Name + Uhrzeit",
+liegt schon persistent vor und wird nur aus `syncAlarms()` geschrieben.
+
+**Nur Anzeige.** `LetzterSchichtStand` wird im `ShiftViewModel` gelesen und nur von
+`HomeTabContent.offlineAngezeigteSchicht()` und `StatusTabContent.schichtErkennungDetails()`
+benutzt. Der `CalendarStateHolder` bekommt nichts davon; kein Sync sieht ihn.
+
+**Der Zeitstempel heisst „Schichtliste vom", nicht „letzter Kalender-Abgleich"** (adversariale
+Review 01.10.2026, vier bestaetigte Befunde): `replaceAll()` laeuft auch OHNE Abgleich (Abmelden,
+Abwahl des letzten Kalenders, ein Sync nach einer Schichttyp-Aenderung ueber die Termine im
+Arbeitsspeicher), und umgekehrt laufen Abgleiche, ohne dass geschrieben wird (Master-Pause und
+Automatik aus steigen vor `persistShiftSpans` aus). Wahr ist in allen Zweigen nur: so alt ist die
+LISTE. Eine nie geschriebene Liste (frische Installation) liefert `null` - kein erfundener Stand.
+
+**Der Satz ueber die Wecker haengt am Zustand**: „Die gestellten Wecker bleiben" nur ohne
+Master-Pause und mit eingeschalteter Automatik; sonst derselbe Zusatz wie in
+`noShiftExplanation()` (hoechstens einer, die Pause hat Vorrang).
+
+Ein Review-Befund wurde 3/3 widerlegt: „nach einem Kalenderwechsel A -> B zeigt die Karte offline
+Schichten aus A" - nicht als neuen Befund melden, ohne die Widerlegung gelesen zu haben (Journal
+der Review vom 01.10.2026).
+
+**Am Emulator belegt (01.10.2026):** Offline-Kaltstart (Karte zeigt die naechste Schicht samt
+Hinweis), Flugmodus waehrend die App offen ist, Rueckkehr online (normale Anzeige), 320 dp ohne
+Umbruch mitten im Wort, System-Status „nicht pruefbar".
+

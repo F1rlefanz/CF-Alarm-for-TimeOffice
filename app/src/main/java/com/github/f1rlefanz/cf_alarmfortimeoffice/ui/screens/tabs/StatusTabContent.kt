@@ -56,6 +56,8 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimBedienungshilfenWuns
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AuthState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.LetzterSchichtStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.SettingsLinkButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.theme.success
@@ -319,10 +321,14 @@ fun StatusTabContent(
         StatusCard(
             title = "Schicht-Erkennung",
             isOk = shiftState.recognizedShifts.isNotEmpty(),
-            details = when {
-                shiftState.recognizedShifts.isEmpty() -> "Keine Schichten erkannt"
-                else -> "${shiftState.recognizedShifts.size} Schichten erkannt"
-            }
+            details = schichtErkennungDetails(
+                erkannt = shiftState.recognizedShifts.size,
+                kalenderNichtErreichbar = calendarState.selectedCalendarIds.isNotEmpty() &&
+                    calendarState.calendarAuthorizationValid &&
+                    calendarState.kalenderNichtErreichbar,
+                letzterStand = shiftState.letzterSchichtStand,
+                now = System.currentTimeMillis()
+            )
         )
 
         // Vollbild-Berechtigung: ohne sie kommt der Weck-Screen nie hoch
@@ -1155,4 +1161,37 @@ private fun isNetworkAvailable(context: Context): Boolean {
 
     return networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
         networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
+/**
+ * PURE, TESTBAR: Text der Karte "Schicht-Erkennung".
+ *
+ * Offline ist die Terminliste leer, und "Keine Schichten erkannt" waere eine Aussage ueber die
+ * Erkennung, die niemand pruefen konnte - die Ursache steht schon in der Karte "Kalender" darueber.
+ * Genannt wird deshalb, was die letzte Schichtliste wusste, und von wann sie ist (Zeitstempel mit
+ * Bezug - es ist der Zeitpunkt der Liste, nicht eines Abgleichs, siehe [LetzterSchichtStand.stand]).
+ * Der Zustand bleibt trotzdem NICHT gruen: geprueft ist offline nichts.
+ */
+internal fun schichtErkennungDetails(
+    erkannt: Int,
+    kalenderNichtErreichbar: Boolean,
+    letzterStand: LetzterSchichtStand?,
+    now: Long,
+    zone: ZoneId = ZoneId.systemDefault()
+): String = when {
+    erkannt > 0 -> "$erkannt Schichten erkannt"
+    kalenderNichtErreichbar && letzterStand != null -> {
+        val kommende = letzterStand.spans.count { it.startTime > now }
+        val wann = letzterStand.stand?.let {
+            " vom " + DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
+                .format(Instant.ofEpochMilli(it).atZone(zone))
+        } ?: ""
+        val bekannt = when (kommende) {
+            0 -> "war keine kommende Schicht"
+            1 -> "war 1 kommende Schicht"
+            else -> "waren $kommende kommende Schichten"
+        }
+        "Ohne Verbindung nicht prüfbar. In der Schichtliste$wann $bekannt bekannt."
+    }
+    else -> "Keine Schichten erkannt"
 }

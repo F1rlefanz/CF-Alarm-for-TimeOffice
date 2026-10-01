@@ -22,9 +22,4 @@ interface IShiftConfigRepository {
      * Lädt die aktuelle Shift-Konfiguration (einmalig)
      */
     suspend fun getCurrentShiftConfig(): Result<ShiftConfig>
-    
-    /**
-     * Setzt die Shift-Konfiguration auf Standardwerte zurück
-     */
-    suspend fun resetToDefaults(): Result<Unit>
 }

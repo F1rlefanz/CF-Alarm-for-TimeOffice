@@ -229,7 +229,7 @@ class CalendarViewModelErreichbarkeitTest {
         val vm = buildViewModel(calendarUseCase = calendarUseCase)
         backgroundScope.launch { vm.uiState.collect { } }
 
-        vm.loadAvailableCalendars(resetPagination = true)
+        vm.loadAvailableCalendars()
         advanceUntilIdle()
 
         assertTrue(vm.uiState.value.hasValidToken)
@@ -245,7 +245,7 @@ class CalendarViewModelErreichbarkeitTest {
         val vm = buildViewModel(calendarUseCase = calendarUseCase)
         backgroundScope.launch { vm.uiState.collect { } }
 
-        vm.loadAvailableCalendars(resetPagination = true)
+        vm.loadAvailableCalendars()
         advanceUntilIdle()
 
         assertFalse(vm.uiState.value.hasValidToken)

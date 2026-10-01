@@ -36,10 +36,10 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 
 /**
- * OEM Warning Screen - Phase 1
- * 
- * Shows manufacturer-specific warnings for aggressive battery management
- * Xiaomi, OnePlus, Huawei, etc.
+ * Einmaliger Hinweis je Hersteller mit aggressivem Energiemanagement (Xiaomi, OnePlus, Huawei
+ * u. a.): welche Herstellereinstellungen zusaetzlich zur Android-Akku-Ausnahme zu pruefen sind,
+ * plus Link zur ausfuehrlichen Anleitung. Die Sperre gegen Wiederholung liegt in
+ * [BatteryOptimizationHelper.shouldNavigateToOemWarningScreen].
  */
 @Composable
 fun OEMWarningScreen(

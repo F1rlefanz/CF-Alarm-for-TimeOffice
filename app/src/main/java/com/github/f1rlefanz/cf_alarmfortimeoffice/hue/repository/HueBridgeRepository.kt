@@ -77,23 +77,23 @@ class HueBridgeRepository @Inject constructor(
     override suspend fun testBridgeConnection(bridge: HueBridge): Result<Boolean> {
         return try {
             withContext(Dispatchers.IO) {
-                apiClient.getBridgeConfig(bridge.internalipaddress)
-                Logger.d(LogTags.HUE_BRIDGE, "Bridge ${bridge.internalipaddress} test successful")
+                apiClient.getBridgeConfig(bridge.ipAddress)
+                Logger.d(LogTags.HUE_BRIDGE, "Bridge ${bridge.ipAddress} test successful")
                 Result.success(true)
             }
         } catch (e: Exception) {
-            Logger.d(LogTags.HUE_BRIDGE, "Bridge ${bridge.internalipaddress} test failed: ${e.message}")
+            Logger.d(LogTags.HUE_BRIDGE, "Bridge ${bridge.ipAddress} test failed: ${e.message}")
             Result.success(false)
         }
     }
     
     override suspend fun connectToBridge(bridge: HueBridge): Result<String> = withContext(Dispatchers.IO) {
-        Logger.i(LogTags.HUE_BRIDGE, "Attempting to connect to bridge ${bridge.internalipaddress}")
+        Logger.i(LogTags.HUE_BRIDGE, "Attempting to connect to bridge ${bridge.ipAddress}")
         
         try {
-            val username = apiClient.createUser(bridge.internalipaddress, APP_NAME)
+            val username = apiClient.createUser(bridge.ipAddress, APP_NAME)
             
-            val connectionResult = connectionManager.setConnection(bridge.internalipaddress, username)
+            val connectionResult = connectionManager.setConnection(bridge.ipAddress, username)
             
             if (connectionResult.isSuccess) {
                 Logger.i(LogTags.HUE_BRIDGE, "Successfully connected to bridge, username created and stored")

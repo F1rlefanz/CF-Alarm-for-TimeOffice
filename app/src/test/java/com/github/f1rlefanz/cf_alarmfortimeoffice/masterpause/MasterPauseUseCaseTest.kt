@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -46,6 +47,7 @@ class MasterPauseUseCaseTest {
         val hueSmartScheduler: HueSmartScheduler,
         val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
         val directBootAlarmStore: DirectBootAlarmStore,
+        val rufbereitschaftAbfrage: RufbereitschaftAbfrage,
         val alarmManager: AlarmManager,
         val context: Context
     )
@@ -61,6 +63,7 @@ class MasterPauseUseCaseTest {
         val hueSmartScheduler = mock<HueSmartScheduler>()
         val calendarPreAlarmRefreshScheduler = mock<CalendarPreAlarmRefreshScheduler>()
         val directBootAlarmStore = mock<DirectBootAlarmStore>()
+        val rufbereitschaftAbfrage = mock<RufbereitschaftAbfrage>()
         val alarmManager = mock<AlarmManager>()
         val context = mock<Context>()
         // AlarmMaintenanceService.cancelNext/scheduleNext() casten das Ergebnis auf AlarmManager -
@@ -75,6 +78,7 @@ class MasterPauseUseCaseTest {
             hueSmartScheduler = hueSmartScheduler,
             calendarPreAlarmRefreshScheduler = calendarPreAlarmRefreshScheduler,
             directBootAlarmStore = directBootAlarmStore,
+            rufbereitschaftAbfrage = rufbereitschaftAbfrage,
             context = context
         )
 
@@ -87,6 +91,7 @@ class MasterPauseUseCaseTest {
             hueSmartScheduler = hueSmartScheduler,
             calendarPreAlarmRefreshScheduler = calendarPreAlarmRefreshScheduler,
             directBootAlarmStore = directBootAlarmStore,
+            rufbereitschaftAbfrage = rufbereitschaftAbfrage,
             alarmManager = alarmManager,
             context = context
         )
@@ -105,6 +110,8 @@ class MasterPauseUseCaseTest {
         verify(f.dndSchedule, times(1)).disable()
         verify(f.hueSmartScheduler, times(1)).cleanup()
         verify(f.calendarPreAlarmRefreshScheduler, times(1)).cancelAll()
+        // #131 (G11-14): fehlte bis v1.45 - die stuendliche Abfrage blieb waehrend der Pause scharf.
+        verify(f.rufbereitschaftAbfrage, times(1)).cancel()
         // Stellvertretend fuer AlarmMaintenanceService.cancelNext(context): ZWEI Cancel auf dem
         // AlarmManager, den es sich ueber getSystemService(ALARM_SERVICE) besorgt - der regulaere
         // 6h-Slot UND der Wiederanlauf-Wachhund.
@@ -129,6 +136,7 @@ class MasterPauseUseCaseTest {
         verify(f.dndSchedule, times(1)).enable()
         verify(f.hueSmartScheduler, times(1)).initializeSmartScheduling()
         verify(f.calendarPreAlarmRefreshScheduler, times(1)).reschedule()
+        verify(f.rufbereitschaftAbfrage, times(1)).reschedule()
     }
 
     @Test

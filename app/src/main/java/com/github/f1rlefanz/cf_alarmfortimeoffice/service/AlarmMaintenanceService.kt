@@ -8,7 +8,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
@@ -16,6 +15,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
@@ -29,6 +29,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftRecognitionEngine
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.ICalendarUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.ExakteAlarme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.SimpleFileTree
@@ -48,7 +49,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.time.LocalDate
-import java.time.ZoneId
 import java.util.Collections
 import java.util.Date
 import java.util.IdentityHashMap
@@ -577,17 +577,11 @@ class AlarmMaintenanceService : Service() {
     @Inject @MainDataStore lateinit var mainDataStore: DataStore<Preferences>
 
     @Inject
-    lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
-
-    @Inject
     lateinit var dimmerModellMigration:
         com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimmerModellMigration
 
     @Inject
-    lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
-
-    @Inject
-    lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+    lateinit var zeitkettenArmierer: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 
     @Inject
     lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -605,8 +599,6 @@ class AlarmMaintenanceService : Service() {
     @Inject lateinit var wartungStoerungPrefs: WartungStoerungPrefs
 
     @Inject lateinit var wartungNetzNachholer: WartungNetzNachholer
-
-    @Inject lateinit var rufbereitschaftAbfrage: RufbereitschaftAbfrage
 
     @Inject
     lateinit var rufbereitschaftMigration:
@@ -753,11 +745,7 @@ class AlarmMaintenanceService : Service() {
         private fun scheduleCatchUp(context: Context, forceSync: Boolean, bisherigeVersuche: Int) {
             try {
                 val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
-                val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    alarmManager.canScheduleExactAlarms()
-                } else {
-                    true
-                }
+                val canBeExact = ExakteAlarme.erlaubt(alarmManager)
 
                 // NUR exakt und nur gedeckelt. Ein inexakt gestellter Nachholversuch traegt beim
                 // Feuern keine Vordergrunddienst-Startfreigabe und wuerde sich selbst endlos
@@ -805,30 +793,17 @@ class AlarmMaintenanceService : Service() {
             val zeitpunkte = WartungsKettenPlanung.zeitpunkte(System.currentTimeMillis())
             val pendingIntent = wartungsPendingIntent(context, WartungsKettenPlanung.REGULAER_REQUEST_CODE)
 
-            // Explizite SDK_INT-Verzweigung (nicht als ||-Kurzschluss): minSdk ist 26,
-            // canScheduleExactAlarms() gibt es erst ab 31 - diese Form versteht der Lint sicher.
-            val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                alarmManager.canScheduleExactAlarms()
-            } else {
-                true
-            }
-
-            if (canBeExact) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    zeitpunkte.regulaer,
-                    pendingIntent
-                )
+            // Hier bewusst nur die Frage ueber ExakteAlarme, das Stellen direkt: `wartungsPendingIntent`
+            // liefert einen Plattform-Typ, und die Charakterisierungstests (JVM, Android-Stubs)
+            // laufen mit einem null-PendingIntent durch die echte Kette.
+            if (ExakteAlarme.erlaubt(alarmManager)) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, zeitpunkte.regulaer, pendingIntent)
             } else {
                 Logger.w(
                     LogTags.MAINTENANCE,
                     "Keine Berechtigung fuer exakte Alarme - Wartung laeuft ungenau (setAndAllowWhileIdle)"
                 )
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    zeitpunkte.regulaer,
-                    pendingIntent
-                )
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, zeitpunkte.regulaer, pendingIntent)
             }
 
             armiereWiederanlauf(context, alarmManager, zeitpunkte.wiederanlauf)
@@ -1058,54 +1033,12 @@ class AlarmMaintenanceService : Service() {
             Logger.w(LogTags.SHIFT_CONFIG, "Wartung: Rufbereitschaft-Migration fehlgeschlagen", e)
         }
 
-        try {
-            if (paused) {
-                dimSchedule.disable()
-            } else {
-                dimSchedule.enable()
-            }
-        } catch (e: Exception) {
-            Logger.w(LogTags.DIMMER, "Wartung: Dimm-Reschedule fehlgeschlagen", e)
-        }
-
-        try {
-            if (paused) {
-                dndSchedule.disable()
-            } else {
-                dndSchedule.enable()
-            }
-        } catch (e: Exception) {
-            Logger.w(LogTags.DND, "Wartung: DND-Reschedule fehlgeschlagen", e)
-        }
-
-        try {
-            if (paused) {
-                calendarPreAlarmRefreshScheduler.cancelAll()
-            } else {
-                calendarPreAlarmRefreshScheduler.reschedule()
-            }
-        } catch (e: Exception) {
-            Logger.w(
-                LogTags.BACKGROUND_WORKER,
-                "Wartung: Pre-Alarm-Refresh-Reschedule fehlgeschlagen",
-                e
-            )
-        }
-
-        // Die stuendliche Rufbereitschafts-Abfrage: NACH dem Sync, denn sie liest die
-        // Schichtspannen, die syncAlarms() gerade geschrieben hat. Und hier im finally, damit
-        // auch ein uebersprungener oder gescheiterter Lauf sie weiterzieht - genau dieser Lauf
-        // hier IST an einem Rufbereitschaftstag der stuendliche Tick, und ohne Neuplanung an
-        // dieser Stelle risse die Kette nach dem ersten Tick ab.
-        try {
-            if (paused) {
-                rufbereitschaftAbfrage.cancel()
-            } else {
-                rufbereitschaftAbfrage.reschedule()
-            }
-        } catch (e: Exception) {
-            Logger.w(LogTags.MAINTENANCE, "Wartung: Rufbereitschafts-Abfrage nicht neu geplant", e)
-        }
+        // Die Nebenketten (Dimmer, DND, Pre-Alarm-Refresh, Rufbereitschafts-Abfrage) - Master-Pause
+        // raeumt statt zu planen. Die Rufbereitschafts-Abfrage liest die Schichtspannen, die
+        // syncAlarms() gerade geschrieben hat, deshalb NACH dem Sync; und hier im finally, damit auch
+        // ein uebersprungener oder gescheiterter Lauf sie weiterzieht - dieser Lauf IST an einem
+        // Rufbereitschaftstag der stuendliche Tick. Siehe ZeitkettenArmierer.armiereNebenketten.
+        zeitkettenArmierer.armiereNebenketten(anlass = "Wartung", pausiert = paused)
     }
     
     override fun onDestroy() {
@@ -1618,26 +1551,15 @@ class AlarmMaintenanceService : Service() {
             return
         }
 
-        val newShifts = shiftMatches.filter { match ->
-            // Use pre-calculated alarm time from ShiftMatch
-            val alarmTimeMillis = match.calculatedAlarmTime
-                .atZone(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-
-            alarmTimeMillis > now && futureAlarms.none { alarm ->
-                // Check if alarm already exists for this event
-                alarm.eventId == match.calendarEvent.id
-            }
-        }
-
-        // NUR LOGGING - kein Abbruch mehr. Frueher stand hier ein Early-Return bei
-        // newShifts.isEmpty(): damit erreichten geaenderte (gleiche Event-ID, neue Zeit) und
-        // gestrichene Schichten den Delta-Sync NIE, obwohl genau er Update/Delete beherrscht.
-        // Siehe MaintenanceLoadDecision.shouldSyncAfterLoad.
+        // NUR LOGGING - kein Abbruch. Frueher stand hier ein Early-Return bei "keine NEUEN
+        // Schichten": damit erreichten geaenderte (gleiche Event-ID, neue Zeit) und gestrichene
+        // Schichten den Delta-Sync NIE, obwohl genau er Update/Delete beherrscht. Siehe
+        // MaintenanceLoadDecision.shouldSyncAfterLoad. Die eigens dafuer berechnete Liste
+        // "neue Schichten" diente danach nur noch dieser Zeile und ist entfallen (#130, G5-16);
+        // der Erkennungsaufruf oben bleibt - er meldet eine defekte Schicht-Konfiguration.
         Logger.d(
             LogTags.MAINTENANCE,
-            "${newShifts.size} neue Schichten erkannt (Sync laeuft unabhaengig davon - erkennt auch Aenderungen/Streichungen)"
+            "${shiftMatches.size} Schichten erkannt (Sync laeuft unabhaengig davon - erkennt auch Aenderungen/Streichungen)"
         )
 
         // STEP 5: ALARM CREATION
@@ -1726,15 +1648,12 @@ class AlarmMaintenanceService : Service() {
         }
         notificationManager.createNotificationChannel(channel)
         
-        val launchIntent = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)
-        val pendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                applicationContext,
-                0,
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            0,
+            MainActivity.einstiegIntent(applicationContext),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle(title)
@@ -1743,7 +1662,7 @@ class AlarmMaintenanceService : Service() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
-            .apply { pendingIntent?.let { setContentIntent(it) } }
+            .setContentIntent(pendingIntent)
             .build()
             
         notificationManager.notify(ACTION_REQUIRED_NOTIFICATION_ID, notification)

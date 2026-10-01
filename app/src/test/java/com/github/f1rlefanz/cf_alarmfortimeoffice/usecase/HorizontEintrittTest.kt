@@ -69,7 +69,6 @@ class HorizontEintrittTest {
         override val shiftConfig: Flow<ShiftConfig> = flowOf(config)
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
         override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = Result.success(config)
-        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
     }
 
     /**

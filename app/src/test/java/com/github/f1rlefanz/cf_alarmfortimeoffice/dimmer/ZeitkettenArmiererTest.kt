@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import kotlinx.coroutines.test.runTest
@@ -27,14 +28,19 @@ class ZeitkettenArmiererTest {
         val armierer: ZeitkettenArmierer,
         val dim: DimScheduleUseCase,
         val dnd: DndScheduleUseCase,
-        val abfrage: RufbereitschaftAbfrage
+        val abfrage: RufbereitschaftAbfrage,
+        val preAlarm: CalendarPreAlarmRefreshScheduler
     )
 
     private fun fixture(): Fixture {
         val dim = mock<DimScheduleUseCase>()
         val dnd = mock<DndScheduleUseCase>()
         val abfrage = mock<RufbereitschaftAbfrage>()
-        return Fixture(ZeitkettenArmierer({ dim }, { dnd }, { abfrage }), dim, dnd, abfrage)
+        val preAlarm = mock<CalendarPreAlarmRefreshScheduler>()
+        return Fixture(
+            ZeitkettenArmierer({ dim }, { dnd }, { abfrage }, { preAlarm }),
+            dim, dnd, abfrage, preAlarm
+        )
     }
 
     /**
@@ -132,5 +138,48 @@ class ZeitkettenArmiererTest {
         f.dnd.stub { onBlocking { enable() } doAnswer { throw RuntimeException("DND kaputt") } }
 
         f.armierer.armiere("TEST") // darf nicht werfen
+    }
+
+    /** #131 (G11-14): Boot und Wartung armieren ALLE vier Nebenketten - Dimmer vor DND. */
+    @Test
+    fun `armiereNebenketten plant alle vier Ketten, Dimmer vor DND`() = runTest {
+        val f = fixture()
+
+        f.armierer.armiereNebenketten("TEST", pausiert = false)
+
+        val reihenfolge = inOrder(f.dim, f.dnd)
+        reihenfolge.verify(f.dim).enable()
+        reihenfolge.verify(f.dnd).enable()
+        verify(f.preAlarm).reschedule()
+        verify(f.abfrage).reschedule()
+        verify(f.dim, never()).disable()
+    }
+
+    /** Master-Pause: raeumen statt planen - fuer alle vier. */
+    @Test
+    fun `armiereNebenketten raeumt bei Pause alle vier Ketten ab`() = runTest {
+        val f = fixture()
+
+        f.armierer.armiereNebenketten("TEST", pausiert = true)
+
+        verify(f.dim).disable()
+        verify(f.dnd).disable()
+        verify(f.preAlarm).cancelAll()
+        verify(f.abfrage).cancel()
+        verify(f.dim, never()).enable()
+        verify(f.abfrage, never()).reschedule()
+    }
+
+    /** Ein Fehlschlag der einen Kette darf die anderen nicht mitreissen. */
+    @Test
+    fun `armiereNebenketten - ein Fehlschlag blockiert die anderen Ketten nicht`() = runTest {
+        val f = fixture()
+        f.dim.stub { onBlocking { enable() } doAnswer { throw RuntimeException("boom") } }
+
+        f.armierer.armiereNebenketten("TEST", pausiert = false)
+
+        verify(f.dnd).enable()
+        verify(f.preAlarm).reschedule()
+        verify(f.abfrage).reschedule()
     }
 }

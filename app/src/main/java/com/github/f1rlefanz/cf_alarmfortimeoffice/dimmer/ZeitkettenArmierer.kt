@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -45,7 +46,8 @@ import javax.inject.Singleton
 class ZeitkettenArmierer @Inject constructor(
     private val dimSchedule: dagger.Lazy<DimScheduleUseCase>,
     private val dndSchedule: dagger.Lazy<DndScheduleUseCase>,
-    private val rufbereitschaftAbfrage: dagger.Lazy<RufbereitschaftAbfrage>
+    private val rufbereitschaftAbfrage: dagger.Lazy<RufbereitschaftAbfrage>,
+    private val preAlarmRefresh: dagger.Lazy<CalendarPreAlarmRefreshScheduler>
 ) {
     /**
      * [anlass] steht als Präfix in der WARN-Zeile und ist die einzige Spur, aus der sich später
@@ -69,6 +71,37 @@ class ZeitkettenArmierer @Inject constructor(
                     .onFailure { Logger.w(LogTags.DND, "⚠️ $anlass: DND-Kette nicht neu armiert", it) }
                 runCatching { rufbereitschaftAbfrage.get().reschedule() }
                     .onFailure { Logger.w(LogTags.MAINTENANCE, "⚠️ $anlass: Rufbereitschafts-Abfrage nicht neu geplant", it) }
+            }
+        }
+    }
+
+    /**
+     * ALLE vier Nebenketten nach einem Neustart oder einem Wartungslauf: Dimmer, DND,
+     * Pre-Alarm-Refresh und Rufbereitschafts-Abfrage - bei [pausiert] stattdessen abgeraeumt.
+     *
+     * Bis v1.45 stand derselbe Block wortgleich in `BootReceiver` und `AlarmMaintenanceService`
+     * (#131, G11-14). Hier, weil dieselbe Reihenfolge-Zusicherung gilt wie in [armiere]: Dimmer
+     * vor DND. Ein Neustart loescht ALLE AlarmManager-Eintraege, und der Wartungslauf IST an einem
+     * Rufbereitschaftstag der stuendliche Tick - ohne Neuplanung risse jede dieser Ketten ab.
+     *
+     * Jeder Schritt einzeln gefangen und best-effort: er darf die Wecker-Wiederherstellung bzw.
+     * den Wartungslauf NIE stoeren. [anlass] ("Boot"/"Wartung") steht im WARN als Spur.
+     */
+    suspend fun armiereNebenketten(anlass: String, pausiert: Boolean) {
+        withContext(NonCancellable) {
+            runCatching { if (pausiert) dimSchedule.get().disable() else dimSchedule.get().enable() }
+                .onFailure { Logger.w(LogTags.DIMMER, "$anlass: Dimm-Reschedule fehlgeschlagen", it) }
+            runCatching { if (pausiert) dndSchedule.get().disable() else dndSchedule.get().enable() }
+                .onFailure { Logger.w(LogTags.DND, "$anlass: DND-Reschedule fehlgeschlagen", it) }
+            runCatching {
+                if (pausiert) preAlarmRefresh.get().cancelAll() else preAlarmRefresh.get().reschedule()
+            }.onFailure {
+                Logger.w(LogTags.BACKGROUND_WORKER, "$anlass: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", it)
+            }
+            runCatching {
+                if (pausiert) rufbereitschaftAbfrage.get().cancel() else rufbereitschaftAbfrage.get().reschedule()
+            }.onFailure {
+                Logger.w(LogTags.MAINTENANCE, "$anlass: Rufbereitschafts-Abfrage nicht neu geplant", it)
             }
         }
     }

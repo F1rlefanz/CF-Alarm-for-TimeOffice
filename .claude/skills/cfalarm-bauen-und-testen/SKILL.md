@@ -54,7 +54,10 @@ das baut man dieselbe Falle in neuer Form nach.
   er rebootet, und auf dem Fairphone wäre das der echte Wecker des Nutzers; einen
   Umgehungsschalter gibt es bewusst nicht. Am 17.08.2026 hat er beim ERSTEN Lauf einen echten
   Befund geliefert (CE-Zugriff in `BackgroundServiceManager` vor der Entsperrung, ERROR mit
-  Stacktrace im Release-Log).
+  Stacktrace im Release-Log). Er zählt NUR den Abschnitt „N pending alarms“ von `dumpsys alarm` —
+  bis 01.10.2026 zählte er auch „Removal history“ mit und meldete abgebrochene Wecker als
+  „fehlend“. **Was er NICHT sieht:** ob der Prozess nach dem Entsperren seine CE-Stores richtig
+  liest — dafür nach dem Entsperren das Log prüfen (Skill `cfalarm-persistenz-und-auth`).
 - **Ein Emulator OHNE Bildschirmsperre kann Direct Boot NICHT prüfen** — ohne Credential gilt der
   Nutzer beim `LOCKED_BOOT_COMPLETED` schon als entsperrt, die Exception bleibt aus und der Test
   belegt nichts. Deshalb bricht das Skript ohne gesetzte Sperre ab. Testdaten VORHER schreiben

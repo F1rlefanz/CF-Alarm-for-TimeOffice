@@ -1,7 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 
 import android.content.Context
-import android.os.UserManager
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -12,6 +11,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.qualifiers.MainDataStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
@@ -394,7 +394,7 @@ class DimmerModellMigration @Inject constructor(
      * Direct-Boot-Prozess, und dort GIBT es den Dienst.
      */
     private fun nutzerEntsperrt(): Boolean =
-        context.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+        NutzerEntsperrung.istEntsperrt(context, LogTags.DIMMER)
 
     /**
      * Führt die Migration aus, falls sie noch nicht gelaufen ist.

@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmSoundService
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -39,6 +40,7 @@ class MasterPauseUseCase @Inject constructor(
     private val hueSmartScheduler: HueSmartScheduler,
     private val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
     private val directBootAlarmStore: DirectBootAlarmStore,
+    private val rufbereitschaftAbfrage: RufbereitschaftAbfrage,
     @param:ApplicationContext private val context: Context
 ) {
     val paused: Flow<Boolean> = prefs.paused
@@ -102,6 +104,9 @@ class MasterPauseUseCase @Inject constructor(
         schritt("DND-Disable") { dndSchedule.disable() }
         schritt("Hue-Cleanup") { hueSmartScheduler.cleanup() }
         schritt("Pre-Alarm-Refresh-Cancel") { calendarPreAlarmRefreshScheduler.cancelAll() }
+        // Bis v1.45 fehlte diese Kette hier (#131, G11-14): ihr stuendlicher Wecker blieb scharf und
+        // stiess waehrend der Pause noch einen Wartungslauf an, der sie erst dann abraeumte.
+        schritt("Rufbereitschafts-Abfrage-Cancel") { rufbereitschaftAbfrage.cancel() }
         Logger.business(LogTags.MASTER_PAUSE, "Hintergrunddienste pausiert")
     }
 
@@ -117,6 +122,7 @@ class MasterPauseUseCase @Inject constructor(
         schritt("DND-Enable") { dndSchedule.enable() }
         schritt("Hue-Init") { hueSmartScheduler.initializeSmartScheduling() }
         schritt("Pre-Alarm-Refresh-Reschedule") { calendarPreAlarmRefreshScheduler.reschedule() }
+        schritt("Rufbereitschafts-Abfrage-Reschedule") { rufbereitschaftAbfrage.reschedule() }
         Logger.business(LogTags.MASTER_PAUSE, "Hintergrunddienste fortgesetzt")
     }
 

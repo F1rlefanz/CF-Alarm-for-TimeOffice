@@ -118,7 +118,9 @@ das baut man dieselbe Falle in neuer Form nach.
   Schichtspannen mit `ShiftDefinition.isOnCall`, freigegebene Tage, Master-Pause), Empfaenger
   `RufbereitschaftAbfrageReceiver`, und der startet NUR `AlarmMaintenanceService.start(forceSync =
   true)`. Neu geplant wird sie im `finally` der Wartung (nach dem Sync, denn sie liest die frisch
-  geschriebenen Spannen), im `BootReceiver` und in `ZeitkettenArmierer` zusammen mit DND. Ein
+  geschriebenen Spannen), im `BootReceiver` und in `ZeitkettenArmierer` zusammen mit DND (Boot und
+  Wartung über `ZeitkettenArmierer.armiereNebenketten()`, die EINE Stelle für alle vier
+  Nebenketten samt Pause-Abräumen; die Master-Pause räumt/plant sie in `pause()`/`resume()`). Ein
   Termin liegt mindestens eine Minute in der Zukunft (`MINDEST_ABSTAND_MS`), sonst plant der Tick
   sich bei Uhren-Schlupf selbst noch einmal. Exakte Alarme mit inexaktem Fallback wie
   `scheduleNext()`; kein WorkManager-Periodic, weil Doze den um Stunden schiebt. Hergang im

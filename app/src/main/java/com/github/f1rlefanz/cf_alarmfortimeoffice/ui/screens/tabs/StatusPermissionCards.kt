@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
+import android.app.Activity
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
@@ -78,9 +79,9 @@ import dagger.hilt.android.EntryPointAccessors
  * und Vibration laufen -, aber seine Benachrichtigung wird unterdrueckt UND der Full-Screen-Intent
  * abgelehnt. Der Nutzer hat damit KEINE Oberflaeche, um den Wecker zu stoppen oder zu schlummern:
  * kein Weck-Bildschirm, keine Knoepfe, nichts. Der einzige Ausweg ist "App beenden" in den
- * Systemeinstellungen. Genau dieser Zustand entsteht ohne Zutun, wenn der Nutzer die einmalige
- * Abfrage (MainActivity, beim ersten Erreichen des Hauptbereichs) ablehnt oder die Berechtigung
- * spaeter entzieht - danach fragt die App nie wieder.
+ * Systemeinstellungen. Genau dieser Zustand entsteht ohne Zutun, wenn der Nutzer die Abfrage
+ * (MainActivity, beim Erreichen des Hauptbereichs) wiederholt ablehnt oder die Berechtigung
+ * spaeter entzieht - danach zeigt Android den Abfragedialog nicht mehr an.
  *
  * Deshalb die Karte, und deshalb steht sie VOR der Vollbild-Karte: ohne Benachrichtigungen ist
  * deren Aussage bedeutungslos.
@@ -469,9 +470,9 @@ private fun oeffneExactAlarmEinstellung(context: Context) {
  * sobald man ausgenommen ist; hier ist der Zustand DAUERHAFT ablesbar (gruen = ok), genau wie
  * beim Vollbild-Wecker daneben.
  *
- * Wie [FullScreenIntentCard] wird der Zustand bei jedem ON_RESUME frisch gelesen (kein remember
- * ueber den Lebenszyklus hinweg), damit die Karte nach der Rueckkehr aus dem System-Dialog sofort
- * auf gruen springt. Der Knopf loest Androids System-Dialog aus ("Zulassen, dass die App immer im
+ * Wie [FullScreenIntentCard] wird der Zustand bei jedem ON_RESUME frisch gelesen (der
+ * `remember`-Wert ist nur der Startwert), damit die Karte nach der Rueckkehr aus dem
+ * System-Dialog sofort auf gruen springt. Der Knopf loest Androids System-Dialog aus ("Zulassen, dass die App immer im
  * Hintergrund laeuft?") — kein Einstellungs-Menue, deshalb verspricht der Text auch keinen Ablauf.
  */
 @Composable
@@ -479,8 +480,7 @@ internal fun BatteryOptimizationCard() {
     // ZWEI Karten aus diesem Aufruf, und das ist kein Versehen: die Exact-Alarm-Berechtigung ist
     // der Zwilling der Akku-Ausnahme, nicht ein beliebiger Nachbar. Auf API 31/32 ersetzt die
     // Akku-Ausnahme die Berechtigung sogar ("unless the app is exempt from battery restrictions",
-    // AlarmManager-Doku), und AlarmManagerService.checkAlarmPermissions() bewertet beide zusammen
-    // zu EINEM AlarmPermissionLevel. Sie gehoeren nebeneinander. Die Exact-Alarm-Karte rendert
+    // AlarmManager-Doku). Sie gehoeren nebeneinander. Die Exact-Alarm-Karte rendert
     // ausserdem nichts, wo die Berechtigung strukturell nie fehlen kann - dort entsteht also
     // nicht einmal ein Abstand.
     ExactAlarmPermissionCard()
@@ -502,7 +502,7 @@ internal fun BatteryOptimizationCard() {
         },
         actionLabel = "Ausnahme erlauben",
         onAction = {
-            (context as? android.app.Activity)?.let {
+            (context as? Activity)?.let {
                 BatteryOptimizationHelper.requestExemption(it)
             }
         }
@@ -932,7 +932,7 @@ internal fun StatusCard(
  * der App nicht - beides gemessen, Hergang: cfalarm-dimmer-und-dnd/reference/dimmer.md. Vor einem
  * erneuten Versuch aus der App messen, nicht aus der Shell.
  */
-private fun openAccessibilitySettings(context: android.content.Context) {
+private fun openAccessibilitySettings(context: Context) {
     try {
         context.startActivity(
             Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -942,7 +942,7 @@ private fun openAccessibilitySettings(context: android.content.Context) {
     }
 }
 
-private fun checkFullScreenIntentAllowed(context: android.content.Context): Boolean =
+private fun checkFullScreenIntentAllowed(context: Context): Boolean =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
     } else {
@@ -957,7 +957,7 @@ private fun checkFullScreenIntentAllowed(context: android.content.Context): Bool
  * System ignoriert den Full-Screen-Intent, wenn der Kanal darunter liegt (siehe
  * `AlarmSoundService.createNotificationChannel`) - der Wecker klingelt dann ohne Weck-Bildschirm.
  */
-private fun weckerZustellbarkeit(context: android.content.Context): NotificationDeliverability.Zustellbarkeit =
+private fun weckerZustellbarkeit(context: Context): NotificationDeliverability.Zustellbarkeit =
     NotificationDeliverability.bestimme(
         context = context,
         kanalId = NotificationDeliverability.WECKER_KANAL_ID,
@@ -969,7 +969,7 @@ private fun weckerZustellbarkeit(context: android.content.Context): Notification
  * ist - sonst zeigt Android die Kanalseite ausgegraut. Scheitert der Absprung (OEM ohne diese
  * Activity), bleibt die App-Uebersicht der Rueckfallweg.
  */
-private fun openChannelNotificationSettings(context: android.content.Context, channelId: String) {
+private fun openChannelNotificationSettings(context: Context, channelId: String) {
     try {
         context.startActivity(
             Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
@@ -984,10 +984,10 @@ private fun openChannelNotificationSettings(context: android.content.Context, ch
 
 /**
  * Fuehrt auf die Benachrichtigungs-Einstellungen DIESER App. Bewusst nicht die
- * Laufzeit-Berechtigungsabfrage: die zeigt Android nach einer Ablehnung gar nicht mehr an, der Weg
- * ueber die Einstellungen ist dann der einzige, der wirklich funktioniert.
+ * Laufzeit-Berechtigungsabfrage: die zeigt Android nach wiederholter Ablehnung gar nicht mehr an,
+ * der Weg ueber die Einstellungen ist dann der einzige, der wirklich funktioniert.
  */
-private fun openAppNotificationSettings(context: android.content.Context) {
+private fun openAppNotificationSettings(context: Context) {
     try {
         context.startActivity(
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -998,7 +998,7 @@ private fun openAppNotificationSettings(context: android.content.Context) {
     }
 }
 
-private fun openFullScreenIntentSettings(context: android.content.Context) {
+private fun openFullScreenIntentSettings(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
     try {
         context.startActivity(

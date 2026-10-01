@@ -25,10 +25,10 @@ object DimWindowResolver {
     /**
      * Horizont der Konflikt-Auskunft für die Regelliste ([findRuleConflicts]) in Kalendertagen.
      *
-     * Muss dem `HORIZON_DAYS` von `DimScheduleUseCase` entsprechen — die Oberfläche darf keinen
-     * Zeitraum behaupten, den der Scheduler gar nicht plant. Die Konstante liegt hier statt dort,
-     * weil sie der Aufrufer der Konflikt-Auskunft (das ViewModel der Regelliste) braucht und
-     * `DimScheduleUseCase.HORIZON_DAYS` privat ist; der Zahlenwert steht deshalb an zwei Stellen.
+     * Ist zugleich der Planungshorizont des Schedulers: `DimScheduleUseCase.HORIZON_DAYS` wird aus
+     * dieser Konstante gesetzt — die Oberfläche darf keinen Zeitraum behaupten, den der Scheduler
+     * gar nicht plant. Bis v1.45 stand der Zahlenwert an zwei Stellen, Gleichheit nur per KDoc
+     * (#130, G7-14).
      */
     const val KONFLIKT_HORIZONT_TAGE = 14
 

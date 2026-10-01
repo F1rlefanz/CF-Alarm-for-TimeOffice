@@ -904,16 +904,10 @@ private fun LastSyncCard(calendarViewModel: CalendarViewModel) {
 
     val terminabrufText = zeitAbstandInWorten(letzterTerminabruf)
 
-    val lastMaintenanceText = when {
-        lastMaintenanceTime == 0L -> "Noch nie ausgeführt"
-        timeSinceLastMaintenance < 0 -> "Unbekannt"
-        timeSinceLastMaintenance < TimeUnit.HOURS.toMillis(1) ->
-            "Vor ${TimeUnit.MILLISECONDS.toMinutes(timeSinceLastMaintenance)} Minuten"
-        timeSinceLastMaintenance < TimeUnit.DAYS.toMillis(1) ->
-            "Vor ${TimeUnit.MILLISECONDS.toHours(timeSinceLastMaintenance)} Stunden"
-        else ->
-            "Vor ${TimeUnit.MILLISECONDS.toDays(timeSinceLastMaintenance)} Tagen"
-    }
+    // Dieselbe Formulierung wie beim Terminabruf (#132, G1-05) - nur "noch nie" heisst hier
+    // ausfuehrlicher, weil es um einen Lauf geht, nicht um einen Abruf.
+    val lastMaintenanceText =
+        if (lastMaintenanceTime == 0L) "Noch nie ausgeführt" else zeitAbstandInWorten(lastMaintenanceTime)
 
     val statusColor = when {
         lastMaintenanceTime == 0L -> MaterialTheme.colorScheme.tertiary

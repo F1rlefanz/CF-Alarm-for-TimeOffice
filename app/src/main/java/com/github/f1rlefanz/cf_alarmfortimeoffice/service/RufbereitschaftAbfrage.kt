@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -15,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpan
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.ExakteAlarme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.EntryPointAccessors
@@ -201,18 +201,9 @@ class RufbereitschaftAbfrage @Inject constructor(
     private suspend fun stelle(zeitpunkt: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = pendingIntent(context)
-        // Explizite SDK_INT-Verzweigung wie in AlarmMaintenanceService.scheduleNext - der Lint
-        // versteht diese Form sicher.
-        val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            alarmManager.canScheduleExactAlarms()
-        } else {
-            true
-        }
-        if (canBeExact) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, zeitpunkt, pi)
-        } else {
+        val canBeExact = ExakteAlarme.stelle(alarmManager, zeitpunkt, pi)
+        if (!canBeExact) {
             Logger.w(LogTags.MAINTENANCE, "Keine Berechtigung fuer exakte Alarme - Rufbereitschafts-Abfrage laeuft ungenau")
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, zeitpunkt, pi)
         }
         merkeNaechste(zeitpunkt)
         Logger.business(LogTags.MAINTENANCE, "📞 Rufbereitschaft: naechste Kalender-Abfrage ${Date(zeitpunkt)} (exakt=$canBeExact)")

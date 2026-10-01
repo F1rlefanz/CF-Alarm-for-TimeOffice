@@ -1,12 +1,12 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.shift
 
 import android.content.Context
-import android.os.UserManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -79,7 +79,7 @@ class RufbereitschaftMigration @Inject constructor(
     }
 
     private fun nutzerEntsperrt(): Boolean =
-        context.getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+        NutzerEntsperrung.istEntsperrt(context, LogTags.SHIFT_CONFIG)
 
     /**
      * Uebernimmt die Altliste, falls vorhanden. Liefert `true`, wenn dabei eine Schichtdefinition

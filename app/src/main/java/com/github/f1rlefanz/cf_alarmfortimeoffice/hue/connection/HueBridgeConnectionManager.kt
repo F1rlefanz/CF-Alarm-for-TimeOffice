@@ -17,6 +17,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartSchedul
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -285,6 +286,20 @@ class HueBridgeConnectionManager private constructor(
      * cfalarm-hue, hue-api-und-regeln.md.
      */
     fun initialize() {
+        // VOR der ersten Entsperrung NICHTS lesen - und den Einmal-Waechter NICHT verbrauchen.
+        // Gemessen am 01.10.2026 (Emulator mit PIN, Stacktrace am settings-Store): die
+        // Gesundheitsschleife unten fragte im Direct-Boot-Prozess `MasterPausePrefs.pausedNow()`,
+        // und ein CE-DataStore-Read vor dem Entsperren liefert still LEER - DataStore haelt das im
+        // Speicher. Derselbe Prozess bedient danach die App: der ganze `settings`-Store las sich
+        // nach dem Entsperren leer (Alarm-Bestand "keiner gespeichert" -> manuelle Wecker weg,
+        // Master-Pause "nicht pausiert" -> der Spiegel-Abgleich setzt den Pausen-Spiegel auf false),
+        // dazu `hue_settings` (Bridge "nicht verbunden"). Nachgeholt wird ueber
+        // `CFAlarmApplication.runDeviceLocalStartupChecks()` nach dem Entsperren.
+        val appContext = contextRef.get()
+        if (appContext != null && !NutzerEntsperrung.istEntsperrt(appContext, LogTags.HUE_BRIDGE)) {
+            Logger.i(LogTags.HUE_BRIDGE, "🔒 BRIDGE-MANAGER: gesperrt - Initialisierung nach dem Entsperren")
+            return
+        }
         if (!initialized.compareAndSet(false, true)) {
             Logger.d(LogTags.HUE_BRIDGE, "🔄 BRIDGE-MANAGER: Bereits initialisiert - doppelter Aufruf ignoriert")
             // NICHT ganz ohne Wirkung: wurde dieser Prozess VOR der ersten Entsperrung gestartet

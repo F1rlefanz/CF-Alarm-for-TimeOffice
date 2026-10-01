@@ -4,12 +4,12 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.annotation.VisibleForTesting
 import com.github.f1rlefanz.cf_alarmfortimeoffice.freietage.FreieTageStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.ExakteAlarme
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -46,7 +46,8 @@ class DimScheduleUseCase @Inject constructor(
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
         private const val REQ_TICK = 7710
-        private const val HORIZON_DAYS = 14
+        /** EINE Quelle mit der Konflikt-Auskunft der Regelliste, siehe [DimWindowResolver.KONFLIKT_HORIZONT_TAGE]. */
+        private const val HORIZON_DAYS = DimWindowResolver.KONFLIKT_HORIZONT_TAGE
         /** Retry-Abstand, wenn der Alarm-Bestand gerade NICHT lesbar war (transienter Fehler). */
         private const val RETRY_MS = 15 * 60_000L
 
@@ -309,16 +310,7 @@ class DimScheduleUseCase @Inject constructor(
             am.cancel(pi)
             return
         }
-        val canBeExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            am.canScheduleExactAlarms()
-        } else {
-            true
-        }
-        if (canBeExact) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi)
-        } else {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi)
-        }
+        ExakteAlarme.stelle(am, next, pi)
         Logger.d(LogTags.DIMMER, "Naechster Dimm-Wechsel geplant: ${java.util.Date(next)}")
     }
 

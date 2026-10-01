@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -305,30 +306,34 @@ class AuthViewModel @Inject constructor(
 
     /**
      * Checks initial authentication state on ViewModel initialization.
+     *
+     * GENAU EINMAL (`first()`, #129). Bis v1.45 stand hier `collect { ...; return@collect }` mit
+     * dem Kommentar "nur einmal" - `return@collect` verlaesst aber nur das Lambda, der
+     * DataStore-Flow endet nie. Jede spaetere Emission (Anmelden, Abmelden) startete die
+     * Start-Pruefung erneut, und deren `checkInitialTokenValidity()` lief NEBEN der gerade
+     * laufenden Autorisierung: kam ihr Ergebnis nach dem Erfolg an, setzte es `hasValidToken`
+     * wieder auf `false`. Folge-Emissionen braucht hier niemand - [observeAuthState] fuehrt
+     * `userAuth` laufend nach, und Anmelden/Abmelden setzen den Token-Zustand selbst
+     * ([requestCalendarAuthorization], [signOut], [observeTokenLoss]).
      */
     private fun checkInitialAuthState() {
         viewModelScope.launch {
             try {
-                // Get current auth data from repository
-                authDataStoreRepository.authData.collect { authData ->
-                    updateAuthState { currentState ->
-                        currentState.copy(
-                            userAuth = UserAuthState(
-                                hasValidToken = authData.isLoggedIn,
-                                userEmail = authData.email,
-                                displayName = authData.displayName,
-                                isSignedIn = authData.isLoggedIn,
-                                accessToken = authData.accessToken
-                            )
+                val authData = authDataStoreRepository.authData.first()
+                updateAuthState { currentState ->
+                    currentState.copy(
+                        userAuth = UserAuthState(
+                            hasValidToken = authData.isLoggedIn,
+                            userEmail = authData.email,
+                            displayName = authData.displayName,
+                            isSignedIn = authData.isLoggedIn,
+                            accessToken = authData.accessToken
                         )
-                    }
-
-                    // REACTIVE CALENDAR: Check initial calendar selection status
-                    checkInitialCalendarSelection()
-
-                    // Only collect once for initial state, then return
-                    return@collect
+                    )
                 }
+
+                // REACTIVE CALENDAR: Check initial calendar selection status
+                checkInitialCalendarSelection()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Normal lifecycle cancellation - rethrow for proper structured concurrency
                 throw e

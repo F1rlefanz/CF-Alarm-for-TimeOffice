@@ -13,6 +13,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.error.SafeExecutor
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,12 +74,7 @@ class CalendarSelectionRepository @Inject constructor(
      * Kalenderauswahl dauerhaft als unlesbar melden.
      */
     private val userUnlocked: Boolean
-        get() = try {
-            context.getSystemService(android.os.UserManager::class.java)?.isUserUnlocked ?: true
-        } catch (e: Exception) {
-            Logger.w(LogTags.CALENDAR, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
-            true
-        }
+        get() = NutzerEntsperrung.istEntsperrt(context, LogTags.CALENDAR)
     
     /**
      * Repository-eigener CoroutineScope für DataStore-Synchronisation.

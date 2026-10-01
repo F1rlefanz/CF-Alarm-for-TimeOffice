@@ -3,6 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmSkipState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.AlarmInfoData
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.alarmInfoDataVon
+import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.alarmInfoVon
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 
@@ -40,21 +42,8 @@ object ManualAlarmSnapshot {
         encodeDefaults = true
     }
 
-    fun encode(alarmInfo: AlarmInfo): String = json.encodeToString(
-        AlarmInfoData.serializer(),
-        AlarmInfoData(
-            id = alarmInfo.id,
-            shiftId = alarmInfo.shiftId,
-            shiftName = alarmInfo.shiftName,
-            triggerTime = alarmInfo.triggerTime,
-            formattedTime = alarmInfo.formattedTime,
-            eventId = alarmInfo.eventId,
-            eventChecksum = alarmInfo.eventChecksum,
-            shiftEndTime = alarmInfo.shiftEndTime,
-            shiftStartTime = alarmInfo.shiftStartTime,
-            isSilent = alarmInfo.isSilent
-        )
-    )
+    fun encode(alarmInfo: AlarmInfo): String =
+        json.encodeToString(AlarmInfoData.serializer(), alarmInfoDataVon(alarmInfo))
 
     /**
      * `null` (kein Schnappschuss vorhanden) ist ein regulaeres Ergebnis - ein unlesbarer
@@ -63,19 +52,7 @@ object ManualAlarmSnapshot {
      */
     fun decode(raw: String?): Result<AlarmInfo?> = runCatching {
         if (raw.isNullOrBlank()) return@runCatching null
-        val data = json.decodeFromString(AlarmInfoData.serializer(), raw)
-        AlarmInfo(
-            id = data.id,
-            shiftId = data.shiftId,
-            shiftName = data.shiftName,
-            triggerTime = data.triggerTime,
-            formattedTime = data.formattedTime,
-            eventId = data.eventId,
-            eventChecksum = data.eventChecksum,
-            shiftEndTime = data.shiftEndTime,
-            shiftStartTime = data.shiftStartTime,
-            isSilent = data.isSilent
-        )
+        alarmInfoVon(json.decodeFromString(AlarmInfoData.serializer(), raw))
     }
 }
 

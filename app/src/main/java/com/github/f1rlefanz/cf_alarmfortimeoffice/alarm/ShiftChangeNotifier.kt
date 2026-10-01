@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.os.Bundle
 import androidx.core.app.NotificationCompat
+import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.R
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -287,15 +288,12 @@ open class ShiftChangeNotifier @Inject constructor(
         einzelTitel: String,
         einzelText: String
     ): Notification {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        val pendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                context,
-                0,
-                it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            MainActivity.einstiegIntent(context),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         val titel = titelFuer(sammlung.gesamt, einzelTitel)
         // Bei genau einer Aenderung bleibt alles wie bisher (Titel + ausformulierter Text). Erst ab
@@ -313,7 +311,7 @@ open class ShiftChangeNotifier @Inject constructor(
             // Meldung. Der Gegen-Effekt (eine spaetere, eigenstaendige Aenderung bliebe stumm) ist
             // durch das Wegnehmen bei begonnenNeu abgedeckt.
             .setOnlyAlertOnce(true)
-            .apply { pendingIntent?.let { setContentIntent(it) } }
+            .setContentIntent(pendingIntent)
 
         if (sammlung.gesamt <= 1) {
             builder.setStyle(NotificationCompat.BigTextStyle().bigText(einzelText))

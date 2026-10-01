@@ -56,7 +56,6 @@ class ShiftRecognitionEngineTest {
         }
 
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
-        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
     }
 
     /**
@@ -79,7 +78,6 @@ class ShiftRecognitionEngineTest {
         }
 
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
-        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
     }
 
     /**
@@ -394,7 +392,6 @@ class ShiftRecognitionEngineTest {
         override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> =
             Result.failure(IllegalStateException("Schicht-Konfiguration ist defekt"))
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
-        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
     }
 
     /**
@@ -534,7 +531,6 @@ class ShiftRecognitionEngineTest {
         }
 
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
-        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
     }
 
     /**

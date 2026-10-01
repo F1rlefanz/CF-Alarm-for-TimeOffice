@@ -11,12 +11,8 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
- * Enhanced Token Data Model with Token Rotation and Provider Support
- * 
- * Features (Modernisierung 2025):
- * - ✅ Explizites googleAccountEmail Feld
- * - ✅ Token Provider Enum (klar dokumentiert)
- * - ✅ Token Rotation Support (Security)
+ * Das gespeicherte Kalender-Token samt Rotationskette. Wird als JSON in den verschluesselten
+ * DataStore geschrieben - Felder umbenennen oder entfernen aendert das Format auf jedem Geraet.
  */
 @Serializable
 data class TokenData(
@@ -90,7 +86,8 @@ data class TokenData(
     }
     
     /**
-     * ✅ NEU: Creates rotated token with new access token
+     * Nachfolger mit neuem Access-Token: neue [rotationId], die bisherige wird
+     * [previousRotationId].
      */
     fun rotate(newAccessToken: String, newExpiresAt: Long = System.currentTimeMillis() + 3600000): TokenData {
         return copy(
@@ -104,7 +101,9 @@ data class TokenData(
     }
     
     /**
-     * ✅ NEU: Validates rotation chain for security
+     * Stammt DIESES Token direkt von dem mit [expectedPreviousId] ab? Also auf dem NEUEREN Token
+     * aufrufen, mit der `rotationId` des aelteren (Falle und Beleg: `TokenDataTest`). Teilpruefung
+     * von [isLegitimateSuccessorOf].
      */
     fun validateRotation(expectedPreviousId: String?): Boolean {
         return previousRotationId == expectedPreviousId
@@ -198,23 +197,11 @@ data class TokenData(
                 tokenProvider = tokenProvider
             )
         }
-        
-        /**
-         * Creates an empty/invalid token.
-         */
-        fun empty(): TokenData = TokenData(
-            accessToken = "",
-            refreshToken = null,
-            expiresAt = 0,
-            scope = ""
-        )
     }
 }
 
 /**
- * ✅ NEU: Token Provider Enum
- * 
- * Dokumentiert klar welcher OAuth2-Flow verwendet wird
+ * Ueber welchen Weg das Token erneuert wird. Der Wert steht im gespeicherten Token-JSON.
  */
 @Serializable
 enum class TokenProvider {
@@ -228,9 +215,9 @@ enum class TokenProvider {
     GOOGLE_PLAY_SERVICES,
     
     /**
-     * Standard OAuth2 Flow:
-     * - Verwendet Refresh Token
-     * - Standard-konform
+     * Standard-OAuth2 mit Refresh Token. NICHT umgesetzt: die App erzeugt solche Tokens nicht,
+     * und ein Refresh scheitert mit `TokenException.RefreshFailed` (siehe
+     * `OAuth2TokenManager.refreshViaOAuth2Standard`). Bleibt als Wert lesbar.
      */
     OAUTH2_STANDARD
 }

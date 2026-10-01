@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
-import android.os.UserManager
 import androidx.core.content.ContextCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -21,6 +20,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalFlagsGuard
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.DeviceLocalStartupGate
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.SimpleFileTree
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -76,12 +76,7 @@ class CFAlarmApplication : Application() {
      * `ACTION_USER_UNLOCKED` feuert dann nicht mehr, weil das Entsperren laengst passiert ist.
      */
     private val userUnlocked: Boolean
-        get() = try {
-            getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
-        } catch (e: Exception) {
-            Logger.w(LogTags.APP, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
-            true
-        }
+        get() = NutzerEntsperrung.istEntsperrt(this, LogTags.APP)
 
     /** Sorgt dafuer, dass der geraetelokale Startblock je Prozess hoechstens EINMAL laeuft. */
     private val startupGate = DeviceLocalStartupGate()
@@ -281,6 +276,13 @@ class CFAlarmApplication : Application() {
         if (!startupGate.claimRun()) {
             Logger.d(LogTags.APP, "STARTUP: geraetelokale Pruefungen liefen bereits - kein zweiter Lauf")
             return
+        }
+        // Hue-Verbindungsmanager: im gesperrten Prozess hat initialize() bewusst nichts gelesen
+        // (vergifteter DataStore-Cache) - hier, nach dem Entsperren, wird nachgeholt. Idempotent.
+        try {
+            HueBridgeConnectionManager.getInstance(this).initialize()
+        } catch (e: Exception) {
+            Logger.e(LogTags.HUE_BRIDGE, "❌ STARTUP: Hue-Initialisierung nach dem Entsperren fehlgeschlagen", e)
         }
         try {
             val deviceChanged = DeviceLocalFlagsGuard.resetIfDeviceChanged(mainDataStore)

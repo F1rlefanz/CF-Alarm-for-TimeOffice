@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BeachAccess
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
@@ -33,7 +31,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.WecktonAnstieg
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AlarmStatusHeader
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.CompactOutlinedButton
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.DatePickerDialog
@@ -540,54 +538,16 @@ private fun TagFreigabeAbschnitt(
 }
 
 /**
- * Erklaert den Unterschied zwischen "Ueberspringen" und "Tag freigeben".
- *
- * Aufbau wie `SchichterkennungsHinweis()` im ShiftConfigScreen, und aus denselben Gruenden:
- * der Kurzsatz bleibt immer sichtbar (der volle Text fuellt bei grosser Systemschrift die halbe
- * Seite), der Umschalter sagt, WAS er zeigt (nicht "Details" oder "i"), und `rememberSaveable`
- * verhindert, dass eine Drehung ihn wieder zuklappt.
+ * Erklaert den Unterschied zwischen "Ueberspringen" und "Tag freigeben". Aufbau und Gruende:
+ * [AufklappHinweis].
  */
 @Composable
 private fun UeberspringenOderFreigebenHinweis() {
-    var ausgeklappt by rememberSaveable { mutableStateOf(false) }
-
-    // Weisse Flaeche mit Markenrand statt `surfaceVariant` (hell identisch mit dem Hintergrund,
-    // also unsichtbar) - ui-texte-und-layout.md.
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(SpacingConstants.PADDING_CARD),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(
-                Icons.Default.Info,
-                // dekorativ: der Text daneben traegt die Aussage
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    if (ausgeklappt) FREIGEBEN_HINWEIS else FREIGEBEN_HINWEIS_KURZ,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                TextButton(onClick = { ausgeklappt = !ausgeklappt }) {
-                    Text(
-                        if (ausgeklappt) "Weniger anzeigen" else "Wann was benutzen?",
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            }
-        }
-    }
+    AufklappHinweis(
+        kurz = FREIGEBEN_HINWEIS_KURZ,
+        voll = FREIGEBEN_HINWEIS,
+        aufklappText = "Wann was benutzen?"
+    )
 }
 
 /**

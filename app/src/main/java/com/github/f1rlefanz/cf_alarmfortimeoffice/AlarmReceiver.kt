@@ -25,6 +25,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IShiftUseCa
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.SkipProcessResult
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
@@ -208,11 +209,7 @@ class AlarmReceiver : BroadcastReceiver() {
             try {
                 // DIRECT BOOT: Vor der ersten Entsperrung ist der Skip-Status (CE-DataStore) nicht
                 // lesbar - dann NICHT blockieren, sondern klingeln (lieber wecken als still skippen).
-                val userUnlocked = try {
-                    (context.getSystemService(Context.USER_SERVICE) as android.os.UserManager).isUserUnlocked
-                } catch (e: Exception) {
-                    true // im Zweifel wecken
-                }
+                val userUnlocked = NutzerEntsperrung.istEntsperrt(context, LogTags.ALARM_RECEIVER) // im Zweifel wecken
 
                 // CRITICAL: Skip-Check VOR Alarm-Trigger (nur bei entsperrtem Storage)
                 if (userUnlocked) {
@@ -681,12 +678,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // requestCode = alarmId. Derselbe Code plus FLAG_UPDATE_CURRENT wuerde dessen Intent
             // ueberschreiben, sobald der Dienst spaeter doch noch startet.
             alarmId + NOTAUSGANG_REQUEST_CODE_OFFSET,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra(EXTRA_ALARM_ID, alarmId)
-                putExtra(EXTRA_SHIFT_NAME, shiftName)
-                setPackage(context.packageName)
-            },
+            MainActivity.einstiegIntent(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 

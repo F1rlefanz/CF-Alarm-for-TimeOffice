@@ -93,8 +93,33 @@ def ziel_bestimmen():
     return emulatoren[0]
 
 
+PENDING_KOPF = re.compile(r"^\s+\d+ pending alarms:")
+ABSCHNITT_KOPF = re.compile(r"^  \S")
+
+
+def armierte_aus_dumpsys(text):
+    """Die IDs der SCHARFEN Wecker - nur aus dem Abschnitt "N pending alarms:".
+
+    Bis 01.10.2026 wurde die ganze `dumpsys alarm`-Ausgabe durchsucht. Dort stehen die Tags aber
+    auch in "Removal history", "Alarm Stats" und "Top Alarms" - also auch bereits ABGEBROCHENE
+    Wecker. Vor dem Neustart zaehlte das Skript sie mit, danach (Historie geleert) nicht mehr,
+    und meldete "REISST: 6 von 13 Weckern fehlen", obwohl alle 7 scharfen zurueckkamen.
+    """
+    ids = set()
+    im_abschnitt = False
+    for zeile in text.splitlines():
+        if PENDING_KOPF.match(zeile):
+            im_abschnitt = True
+            continue
+        if im_abschnitt and ABSCHNITT_KOPF.match(zeile):
+            break
+        if im_abschnitt:
+            ids.update(ALARM_MUSTER.findall(zeile))
+    return ids
+
+
 def alarme(serial):
-    return set(ALARM_MUSTER.findall(sh(serial, "shell", "dumpsys", "alarm")))
+    return armierte_aus_dumpsys(sh(serial, "shell", "dumpsys", "alarm"))
 
 
 def nutzer_zustand(serial):

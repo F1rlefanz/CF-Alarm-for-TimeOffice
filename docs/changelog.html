@@ -51,7 +51,24 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.43.6 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.43.7 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Fehlt dein einziger Kalender dauerhaft, sagt die App es jetzt auch, wenn sie geschlossen ist.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Kein Hinweis, wenn gar kein ausgewählter Kalender mehr abrufbar war:</strong> Die Benachrichtigung kam bisher nur, wenn einer von mehreren Kalendern fehlte. Fehlte der einzige – oder alle –, legte die App im Hintergrund still keine neuen Wecker mehr an. Jetzt meldet sie sich auch dann, ab dem zweiten Abgleich in Folge und nur einmal. Fehlt bloß die Internetverbindung, bleibt sie still.</li>
+                <li><strong>Die Kalender-Warnung führt jetzt an die richtige Stelle:</strong> Ein Tipp darauf öffnet den System-Status und lädt die Kalender neu. Ist der Kalender wieder erreichbar, verschwindet die Warnung von selbst.</li>
+            </ul>
+
+            <h4>🎨 Feinschliff</h4>
+            <ul>
+                <li><strong>Hinweise nennen den Bereich so, wie er im Menü heißt:</strong> „System-Status" statt „Status-Tab" – und sie stimmen jetzt auch, wenn mehrere Kalender betroffen sind.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.43.6</h3>
             <p><strong>Stand:</strong> September 2026</p>
             <p><em>Ein gelöschter Kalender heißt jetzt „nicht gefunden" statt „Zugriff verloren" – und ein Wecker, den Android nicht stellen konnte, gilt nicht mehr als gestellt.</em></p>
 

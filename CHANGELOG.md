@@ -27,7 +27,22 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.43.6 (Aktuell – interne Alpha)
+## 🆕 Version 1.43.7 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Fehlt dein einziger Kalender dauerhaft, sagt die App es jetzt auch, wenn sie geschlossen ist._
+
+### 🐛 Behoben
+
+- **Kein Hinweis, wenn gar kein ausgewählter Kalender mehr abrufbar war:** Die Benachrichtigung kam bisher nur, wenn einer von mehreren Kalendern fehlte. Fehlte der einzige – oder alle –, legte die App im Hintergrund still keine neuen Wecker mehr an. Jetzt meldet sie sich auch dann, ab dem zweiten Abgleich in Folge und nur einmal. Fehlt bloß die Internetverbindung, bleibt sie still.
+- **Die Kalender-Warnung führt jetzt an die richtige Stelle:** Ein Tipp darauf öffnet den System-Status und lädt die Kalender neu. Ist der Kalender wieder erreichbar, verschwindet die Warnung von selbst.
+
+### 🎨 Feinschliff
+
+- **Hinweise nennen den Bereich so, wie er im Menü heißt:** „System-Status" statt „Status-Tab" – und sie stimmen jetzt auch, wenn mehrere Kalender betroffen sind.
+
+## Version 1.43.6
 
 **Stand:** September 2026
 

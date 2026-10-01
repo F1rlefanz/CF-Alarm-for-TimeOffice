@@ -14,10 +14,19 @@ data class CalendarPage(
     val hasNextPage: Boolean
 )
 
+/**
+ * Eine Seite aus dem Lazy-Laden: [events] ist ein PRAEFIX der sortierten Gesamtliste, nie die
+ * vollstaendige Eventliste - und damit keine Loeschgrundlage (CLAUDE.md, "Kalender").
+ *
+ * Bewusst OHNE eigenes "es gibt mehr"-Feld: bis v1.44 stand hier `hasMore`, das niemand las
+ * (#112). Ob nachgeladen werden kann, entscheidet allein der Verbraucher
+ * (`CalendarViewModel.loadEventsForSelectedCalendars`) aus [totalEvents] und der Seitengroesse -
+ * eine zweite Rechnung daneben waere eine zweite Wahrheit. Wer die Vollstaendigkeit braucht,
+ * fragt `getCalendarEventsWithStatus()` nach `isComplete`, nicht diese Seite.
+ */
 data class EventPage(
     val events: List<CalendarEvent>,
-    val totalEvents: Int,
-    val hasMore: Boolean
+    val totalEvents: Int
 )
 
 /**

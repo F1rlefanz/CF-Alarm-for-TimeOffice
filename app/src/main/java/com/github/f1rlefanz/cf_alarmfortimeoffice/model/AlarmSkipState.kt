@@ -7,8 +7,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.model
 data class AlarmSkipState(
     val isNextAlarmSkipped: Boolean = false,
     val skippedAlarmId: Int? = null,
-    val skipActivatedAt: Long = 0L,
-    val skipReason: String = "Manuell übersprungen",
     // Urspruengliche triggerTime des uebersprungenen Alarms. Basis fuer clearExpiredSkip():
     // sobald dieser Zeitpunkt verstrichen ist, hat der Skip seinen Zweck erfuellt und das Flag
     // wird automatisch zurueckgesetzt - unabhaengig davon, ob der zugehoerige System-Alarm je

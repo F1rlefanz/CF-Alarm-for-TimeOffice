@@ -118,7 +118,7 @@ data class HueLightAction(
 
     // --- Szene ---------------------------------------------------------------------------
     // Additiv und nullbar, damit Bestands-JSON ohne Migration weiter dekodiert. Eine Szene ist
-    // KEIN vierter Zieltyp, sondern ein Zusatz zu einem GRUPPEN-Ziel: der Aufruf geht an
+    // KEIN weiterer Zieltyp, sondern ein Zusatz zu einem GRUPPEN-Ziel: der Aufruf geht an
     // `PUT /groups/<id>/action` mit `{"scene":"<id>"}` - genau den Pfad, den `isGroup = true`
     // ohnehin waehlt. Deshalb bleiben Ausfuehrung, `autoOffTargetsOf()` und `BridgeTimer`
     // unveraendert. [TargetType] wird bewusst NICHT um `SCENE` erweitert: `ignoreUnknownKeys`
@@ -128,8 +128,8 @@ data class HueLightAction(
     val sceneName: String? = null  // Anker Teil 1; Teil 2 ist [targetName] (die Gruppe)
 ) {
     /**
-     * Der EINE Diskriminator fuer ein Szenen-Ziel. Nicht [targetType] - der ist seit jeher
-     * dekorativ (`ZONE`/`ROOM` werden nirgends gesetzt, entschieden wird ueber [isGroup]).
+     * Der EINE Diskriminator fuer ein Szenen-Ziel. Nicht [targetType] - entschieden wird ueber
+     * [isGroup] (die nie gesetzten Werte `ZONE`/`ROOM` sind seit 01.10.2026 entfernt, #19).
      *
      * Fuer eine Szenen-Aktion gilt verbindlich: [targetType] = GROUP, [targetId]/[targetName] =
      * die Gruppe, [isGroup] = true, [on] = true und alle Helligkeits-/Farbfelder = null.
@@ -158,9 +158,7 @@ data class HueColor(
 @Serializable
 enum class TargetType {
     LIGHT,
-    GROUP,
-    ZONE,
-    ROOM
+    GROUP
 }
 
 /**
@@ -169,11 +167,5 @@ enum class TargetType {
 @Serializable
 enum class ActionType {
     TURN_ON,
-    TURN_OFF,
-    DIM,
-    BRIGHTEN,
-    SET_COLOR,
-    SET_TEMPERATURE,
-    PULSE,
-    COLOR_LOOP
+    TURN_OFF
 }

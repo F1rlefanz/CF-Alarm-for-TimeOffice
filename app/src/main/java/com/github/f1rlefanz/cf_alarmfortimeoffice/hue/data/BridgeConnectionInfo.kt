@@ -9,6 +9,5 @@ import androidx.compose.runtime.Immutable
 @Immutable
 data class BridgeConnectionInfo(
     val isConnected: Boolean = false,
-    val bridgeIp: String? = null,
-    val bridgeName: String? = null
+    val bridgeIp: String? = null
 )

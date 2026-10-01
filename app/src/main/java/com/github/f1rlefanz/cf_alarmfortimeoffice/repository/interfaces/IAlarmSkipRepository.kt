@@ -17,7 +17,6 @@ interface IAlarmSkipRepository {
     suspend fun setNextAlarmSkipped(
         alarmId: Int,
         triggerTime: Long,
-        reason: String = "Manuell übersprungen",
         manualAlarmSnapshot: String? = null
     ): Result<Unit>
     suspend fun clearSkipStatus(): Result<Unit>

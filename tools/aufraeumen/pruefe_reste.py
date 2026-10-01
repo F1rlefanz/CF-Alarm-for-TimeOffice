@@ -188,6 +188,20 @@ def _git(*args):
         return 1, ""
 
 
+def offener_merge():
+    """True, solange Git ungemergte Eintraege fuehrt (`git ls-files -u` nicht leer).
+
+    WARUM ZENTRAL UND VOR ALLEN PRUEFUNGEN (#60, 01.10.2026): Waehrend eines offenen Merge
+    stehen Konfliktmarker im Baum. Sie zerteilen Import-Bloecke und Deklarationen, und jede
+    Pruefung hier kann darauf FALSCH melden. Der Schleusen-Hook triggert auf `git merge` - eine
+    Falschmeldung sperrte also ausgerechnet `git merge --continue` und `git merge --abort`, die
+    beiden Rettungsbefehle (Runde-15-Lehre). Ein Waechter in `main()` deckt jede kuenftige
+    Pruefung mit ab; je Pruefung einzeln vergaesse ihn die naechste.
+    """
+    code, ausgabe = _git("ls-files", "-u")
+    return code == 0 and bool(ausgabe.strip())
+
+
 def _absaetze(zeilen):
     """Grenzen zusammenhaengender Bloecke: Leerzeile trennt, ein neuer Aufzaehlungspunkt auch.
 
@@ -492,6 +506,15 @@ def main():
         i = sys.argv.index("--basis")
         if i + 1 < len(sys.argv):
             basis = sys.argv[i + 1]
+
+    if offener_merge():
+        # Kein Befund und kein Fehler: ueber einen Baum mit Konfliktmarkern ist keine Aussage
+        # moeglich, und Exit 1 haette die Rettungsbefehle gesperrt. Nach dem Merge laeuft die
+        # Pruefung wieder ganz normal.
+        sys.stderr.write(
+            "pruefe_reste: offener Merge (git ls-files -u) - Pruefungen uebersprungen.\n"
+        )
+        return 0
 
     befunde = []
     pruefe_tote_importe(befunde)

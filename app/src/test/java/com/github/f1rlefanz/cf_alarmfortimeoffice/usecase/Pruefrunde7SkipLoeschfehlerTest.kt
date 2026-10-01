@@ -91,7 +91,6 @@ class Pruefrunde7SkipLoeschfehlerTest {
         override suspend fun setNextAlarmSkipped(
             alarmId: Int,
             triggerTime: Long,
-            reason: String,
             manualAlarmSnapshot: String?
         ): Result<Unit> {
             gesetztFuer = alarmId

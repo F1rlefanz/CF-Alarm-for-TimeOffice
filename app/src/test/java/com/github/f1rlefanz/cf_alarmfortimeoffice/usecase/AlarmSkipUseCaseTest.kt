@@ -87,7 +87,6 @@ class AlarmSkipUseCaseTest {
         override suspend fun setNextAlarmSkipped(
             alarmId: Int,
             triggerTime: Long,
-            reason: String,
             manualAlarmSnapshot: String?
         ): Result<Unit> {
             setSkippedFor = alarmId
@@ -96,7 +95,6 @@ class AlarmSkipUseCaseTest {
                 isNextAlarmSkipped = true,
                 skippedAlarmId = alarmId,
                 skippedAlarmTriggerTime = triggerTime,
-                skipReason = reason,
                 skippedManualAlarm = manualAlarmSnapshot
             )
             return Result.success(Unit)

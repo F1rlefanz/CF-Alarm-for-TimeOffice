@@ -114,10 +114,9 @@ class HueViewModel @Inject constructor(
                     // das ist der Onboarding-Fall, nicht "Verbindung verloren".
                     val info = current.bridgeConnectionInfo
                     if (health == HueConnectionHealth.UNKNOWN || info?.bridgeIp == null) {
-                        current.copy(connectionHealth = health)
+                        current
                     } else {
                         current.copy(
-                            connectionHealth = health,
                             bridgeConnectionInfo = info.copy(
                                 isConnected = health == HueConnectionHealth.CONNECTED
                             )
@@ -204,8 +203,7 @@ class HueViewModel @Inject constructor(
                             error = null,
                             bridgeConnectionInfo = BridgeConnectionInfo(
                                 isConnected = true,
-                                bridgeIp = bridge.internalipaddress,
-                                bridgeName = bridge.name
+                                bridgeIp = bridge.internalipaddress
                             )
                         )
                     }
@@ -600,11 +598,6 @@ data class HueUiState(
     // Bridge Management
     val bridgeConnectionInfo: BridgeConnectionInfo? = null,
     val discoveredBridges: List<HueBridge> = emptyList(),
-
-    // UX FIX (E): reactive bridge connection health, driven by
-    // HueBridgeConnectionManager.connectionStatus (independent from bridgeConnectionInfo,
-    // which only reflects the state as of the last explicit setup/validate call).
-    val connectionHealth: HueConnectionHealth = HueConnectionHealth.UNKNOWN,
 
     // Light Management
     val lightTargets: LightTargets = LightTargets(),

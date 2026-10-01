@@ -261,8 +261,7 @@ class CalendarUseCase @Inject constructor(
                 Logger.w(LogTags.CALENDAR, "No calendar IDs provided for lazy loading")
                 return@safeExecute EventPage(
                     events = emptyList(),
-                    totalEvents = 0,
-                    hasMore = false
+                    totalEvents = 0
                 )
             }
             
@@ -318,14 +317,11 @@ class CalendarUseCase @Inject constructor(
                 emptyList()
             }
             
-            val hasMore = endIndex < sortedEvents.size
-            
-            Logger.d(LogTags.CALENDAR, "Lazy loaded events: offset=$offset, max=$maxEvents, total=${sortedEvents.size}, returned=${pageEvents.size}, hasMore=$hasMore")
+            Logger.d(LogTags.CALENDAR, "Lazy loaded events: offset=$offset, max=$maxEvents, total=${sortedEvents.size}, returned=${pageEvents.size}")
             
             EventPage(
                 events = pageEvents,
-                totalEvents = sortedEvents.size,
-                hasMore = hasMore
+                totalEvents = sortedEvents.size
             )
         }
     }

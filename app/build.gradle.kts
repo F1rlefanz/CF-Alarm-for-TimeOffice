@@ -56,18 +56,9 @@ android {
         versionName = "1.44.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
-        
-        // CRITICAL: Remove AD_ID permission added by play-services-auth
-        // This must be done at build time via androidResources
-        androidResources {
-            ignoreAssetsPattern = "!.svn:!.git:.*:!CVS:!thumbs.db:!picasa.ini:!*.scc:*~"
-        }
-        
-        // Additional manifest placeholder (belt and suspenders approach)
-        manifestPlaceholders["excludeAdIdPermission"] = "true"
+        // AD_ID wird NICHT hier gesperrt, sondern im Manifest (maxSdkVersion="0", siehe CLAUDE.md).
+        // Bis v1.44 standen hier ein ignoreAssetsPattern und ein manifestPlaceholder, die das
+        // vorgaben - beide wirkungslos (kein Manifest las den Platzhalter; #133, G10-05).
 
         // SECURITY: OAuth Client ID must be configured in keystore.properties or environment variables
         // NO hardcoded fallback to prevent accidental credential leakage in version control
@@ -111,18 +102,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-
-            isDebuggable = false
-            isJniDebuggable = false
-
-            isPseudoLocalesEnabled = false
         }
 
         debug {
-            // Development settings
-            isMinifyEnabled = false
-            isDebuggable = true
-
             // APP IDENTIFICATION: Clear debug identification
             // kein applicationIdSuffix: Google-Anmeldung hängt am Paketnamen
             versionNameSuffix = "-DEBUG"
@@ -266,8 +248,8 @@ dependencies {
     // Android Studio meldet hier "Dependency 'platform(libs.androidx.compose.bom)' is declared
     // multiple times" - das ist ein FEHLALARM, die Zeile muss bleiben.
     // `androidTestImplementation` erbt NICHT von `implementation`, die BOM aus dem Block oben gilt
-    // hier also nicht. Und `androidx-ui-test-junit4` / `androidx-ui-test-manifest` stehen im
-    // Version-Catalog bewusst OHNE eigene Version - sie beziehen sie ausschliesslich von der BOM.
+    // hier also nicht. Und `androidx-ui-test-junit4` steht im
+    // Version-Catalog bewusst OHNE eigene Version - es bezieht sie ausschliesslich von der BOM.
     // Nachgemessen am 18.08.2026:
     //   ./gradlew app:dependencies --configuration debugAndroidTestCompileClasspath
     //   -> androidx.compose.ui:ui-test-junit4 -> 1.12.0   (aufgeloest ueber compose-bom:2026.08.00)
@@ -275,6 +257,4 @@ dependencies {
     // scheitert. Wer der IDE-Warnung folgt, macht die Tests kaputt, nicht den Build sauberer.
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
-
-    debugImplementation(libs.androidx.ui.test.manifest)
 }

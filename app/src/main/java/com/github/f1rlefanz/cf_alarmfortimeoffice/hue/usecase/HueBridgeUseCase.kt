@@ -179,14 +179,12 @@ class HueBridgeUseCase @Inject constructor(
                 
                 BridgeConnectionInfo(
                     isConnected = isConnected,
-                    bridgeIp = config.bridgeIp,
-                    bridgeName = "Philips Hue Bridge"
+                    bridgeIp = config.bridgeIp
                 )
             } else {
                 BridgeConnectionInfo(
                     isConnected = false,
-                    bridgeIp = null,
-                    bridgeName = null
+                    bridgeIp = null
                 )
             }
             
@@ -198,8 +196,7 @@ class HueBridgeUseCase @Inject constructor(
             // Return a default info object instead of failing
             val defaultInfo = BridgeConnectionInfo(
                 isConnected = false,
-                bridgeIp = null,
-                bridgeName = null
+                bridgeIp = null
             )
             
             Result.success(defaultInfo)

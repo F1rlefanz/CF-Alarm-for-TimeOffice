@@ -12,8 +12,10 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 object AlarmSkipPreferences {
     val IS_NEXT_ALARM_SKIPPED = booleanPreferencesKey("is_next_alarm_skipped")
     val SKIPPED_ALARM_ID = intPreferencesKey("skipped_alarm_id")
-    val SKIP_ACTIVATED_AT = longPreferencesKey("skip_activated_at")
-    val SKIP_REASON = stringPreferencesKey("skip_reason")
+    /** Nur noch zum Abraeumen in `clearSkipStatus()` - bis v1.44 geschrieben, nie gelesen (#111). */
+    val LEGACY_SKIP_ACTIVATED_AT = longPreferencesKey("skip_activated_at")
+    /** Nur noch zum Abraeumen in `clearSkipStatus()` - bis v1.44 geschrieben, nie gelesen (#111). */
+    val LEGACY_SKIP_REASON = stringPreferencesKey("skip_reason")
     val SKIPPED_ALARM_TRIGGER_TIME = longPreferencesKey("skipped_alarm_trigger_time")
 
     /**

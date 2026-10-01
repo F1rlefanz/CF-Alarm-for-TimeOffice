@@ -65,6 +65,11 @@ das baut man dieselbe Falle in neuer Form nach.
   (`gleicheAuswahlAb`, vor jedem Ausstieg der Wartung) und Master-Pause (`ruhen`); ihr Text muss
   wahr bleiben, solange sie steht („mindestens ein", nicht „keinen"). Hergang in
   `reference/kalender-datenfluss.md`, Abschnitt Totalausfall.
+- **Offline zeigt „Nächste Schicht" den letzten bekannten Stand — aus dem `ShiftSpanStore`, nie aus
+  gespeicherten Terminen** (die Datenschutzerklärung sagt zu, dass Termininhalte nicht dauerhaft
+  gespeichert werden). Nur bei `KALENDER_NICHT_ERREICHBAR`, nur Anzeige, kein Weg in den Sync. Der
+  Zeitstempel heißt „Schichtliste vom", NICHT „letzter Abgleich" — `replaceAll()` läuft auch ohne
+  Abgleich und umgekehrt. Hergang in `reference/kalender-datenfluss.md`, Abschnitt Offline-Anzeige.
 - **Schicht-Änderungs-Notification lebt INNERHALB von `syncAlarms()`**, nicht bei dessen Aufrufern;
   alle drei Notifier-Aufrufe in eigenem `try/catch`. Der allererste Sync flutet nicht
   (`isFirstSync`), `notifyUpdated()` hat eine eigene Schwelle (≥10 min oder Name geändert).

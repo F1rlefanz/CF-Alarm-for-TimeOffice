@@ -67,9 +67,13 @@ data class ShiftSpan(
  * NUR ANZEIGE: Daraus wird nie ein Wecker gestellt oder geloescht. Loeschgrundlage bleiben
  * ausschliesslich vollstaendige, frische Eventlisten (`CalendarFetchOutcome.isComplete`).
  *
- * @param stand Zeitpunkt des Syncs, der den Bestand zuletzt geschrieben hat - also des letzten
- *   Abgleichs ueber einer vollstaendigen Terminliste. `null` bei einem Bestand, der vor dieser
- *   Version geschrieben wurde (der Zeitpunkt ist dann unbekannt, nicht "jetzt").
+ * @param stand Zeitpunkt, zu dem [ShiftSpanStore.replaceAll] die Schichtliste zuletzt geschrieben
+ *   hat - und NUR das. Er heisst in der Oberflaeche deshalb "Schichtliste vom", nicht "letzter
+ *   Kalender-Abgleich": die adversariale Review vom 01.10.2026 hat vier Zweige gefunden, in denen
+ *   geschrieben wird, ohne dass ein Kalender gelesen wurde (Abmelden, Abwahl, ein Sync nach einer
+ *   Schichttyp-Aenderung ueber die Termine im Arbeitsspeicher) oder umgekehrt Abgleiche laufen,
+ *   ohne dass geschrieben wird (Master-Pause, Automatik aus). `null` bei einem Bestand aus einer
+ *   Version vor diesem Merker - der Zeitpunkt ist dann unbekannt, nicht "jetzt".
  */
 data class LetzterSchichtStand(val spans: List<ShiftSpan>, val stand: Long?) {
 
@@ -183,13 +187,19 @@ class ShiftSpanStore @Inject constructor(
     /**
      * Bestand UND Zeitpunkt in einem Read - fuer die Offline-Anzeige der naechsten Schicht.
      * Ein Lesefehler bleibt ein Fehlschlag (siehe [spansNow]); die Anzeige zeigt dann den
-     * bisherigen Hinweis statt eines erfundenen Stands.
+     * bisherigen Hinweis statt eines erfundenen Stands. `null`, wenn nie etwas geschrieben wurde
+     * (frische Installation) - dann gibt es keinen Stand, auf den sich etwas beziehen koennte.
      */
-    suspend fun letzterStand(): Result<LetzterSchichtStand> = try {
+    suspend fun letzterStand(): Result<LetzterSchichtStand?> = try {
         val prefs = dataStore.data.first()
         val raw = prefs[KEY_SHIFT_SPANS]
-        val spans = if (raw.isNullOrBlank()) emptyList() else json.decodeFromString<List<ShiftSpan>>(raw)
-        Result.success(LetzterSchichtStand(spans, prefs[KEY_SHIFT_SPANS_STAND]))
+        val stand = prefs[KEY_SHIFT_SPANS_STAND]
+        if (raw == null && stand == null) {
+            Result.success(null)
+        } else {
+            val spans = if (raw.isNullOrBlank()) emptyList() else json.decodeFromString<List<ShiftSpan>>(raw)
+            Result.success(LetzterSchichtStand(spans, stand))
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

@@ -232,17 +232,30 @@ internal fun offlineAngezeigteSchicht(
 
 /**
  * PURE, TESTBAR: Der Hinweis unter einer offline angezeigten Schicht. Er sagt, dass der Stand
- * ALT ist, und WORAUF sich der Zeitpunkt bezieht (den letzten Abgleich, nicht die Schicht).
- * Ohne bekannten Zeitpunkt (Bestand aus einer Version vor diesem Merker) wird keiner erfunden.
+ * ALT ist, und WORAUF sich der Zeitpunkt bezieht: die Schichtliste, nicht einen Kalender-Abgleich
+ * (warum, steht an [LetzterSchichtStand.stand]). Ohne bekannten Zeitpunkt wird keiner erfunden.
+ *
+ * Der Satz ueber die Wecker haengt am Zustand - "die gestellten Wecker bleiben" waere bei
+ * Master-Pause oder ausgeschalteter Automatik falsch, dort ist keiner gestellt (Review 01.10.2026).
+ * Wie bei [noShiftExplanation] hoechstens EIN Zusatz, die Master-Pause hat Vorrang.
  */
-internal fun offlineStandHinweis(stand: Long?, zone: ZoneId = ZoneId.systemDefault()): String {
+internal fun offlineStandHinweis(
+    stand: Long?,
+    masterPausePaused: Boolean,
+    autoAlarmEnabled: Boolean,
+    zone: ZoneId = ZoneId.systemDefault()
+): String {
     val wann = stand?.let {
         DateTimeFormatter.ofPattern(DateTimeFormats.STANDARD_DATETIME)
             .format(Instant.ofEpochMilli(it).atZone(zone))
     }
-    val bezug = if (wann != null) "Stand des letzten Kalender-Abgleichs: $wann" else "Stand eines früheren Kalender-Abgleichs"
-    return "$bezug. Google Kalender ist gerade nicht erreichbar — spätere Änderungen fehlen hier, " +
-        "die gestellten Wecker bleiben."
+    val bezug = if (wann != null) "Aus der Schichtliste vom $wann" else "Aus einer früheren Schichtliste"
+    val kern = "$bezug — Google Kalender ist gerade nicht erreichbar, spätere Änderungen fehlen hier."
+    return when {
+        masterPausePaused -> "$kern\n$NO_SHIFT_HINWEIS_PAUSIERT"
+        !autoAlarmEnabled -> "$kern\nHinweis: Automatische Alarme sind derzeit ausgeschaltet."
+        else -> "$kern Die gestellten Wecker bleiben."
+    }
 }
 
 @Composable
@@ -350,12 +363,11 @@ fun HomeTabContent(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                if (masterPausePaused) {
-                                    offlineStandHinweis(shiftState.letzterSchichtStand?.stand) +
-                                        "\n" + NO_SHIFT_HINWEIS_PAUSIERT
-                                } else {
-                                    offlineStandHinweis(shiftState.letzterSchichtStand?.stand)
-                                },
+                                offlineStandHinweis(
+                                    stand = shiftState.letzterSchichtStand?.stand,
+                                    masterPausePaused = masterPausePaused,
+                                    autoAlarmEnabled = shiftConfig?.autoAlarmEnabled != false
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -68,18 +68,35 @@ class NaechsteSchichtOfflineTest {
     }
 
     @Test
-    fun `der Hinweis nennt den Stand mit Bezug und sagt, dass er alt ist`() {
-        val text = offlineStandHinweis(stand.stand, zone)
-        assertTrue(text, text.contains("Stand des letzten Kalender-Abgleichs: 01.10.2026 14:47"))
+    fun `der Hinweis nennt die Schichtliste mit Zeitpunkt und sagt, dass sie alt ist`() {
+        val text = offlineStandHinweis(stand.stand, masterPausePaused = false, autoAlarmEnabled = true, zone = zone)
+        assertTrue(text, text.startsWith("Aus der Schichtliste vom 01.10.2026 14:47"))
         assertTrue(text, text.contains("nicht erreichbar"))
-        assertTrue(text, text.contains("die gestellten Wecker bleiben"))
+        assertTrue(text, text.endsWith("Die gestellten Wecker bleiben."))
+        // Kein behaupteter Kalender-Abgleich - der Zeitpunkt ist der der Liste.
+        assertFalse(text, text.contains("Abgleich"))
     }
 
     @Test
     fun `ohne bekannten Zeitpunkt wird keiner erfunden`() {
-        val text = offlineStandHinweis(null, zone)
-        assertTrue(text, text.startsWith("Stand eines früheren Kalender-Abgleichs."))
+        val text = offlineStandHinweis(null, masterPausePaused = false, autoAlarmEnabled = true, zone = zone)
+        assertTrue(text, text.startsWith("Aus einer früheren Schichtliste"))
         assertFalse(text, text.contains("2026"))
+    }
+
+    @Test
+    fun `bei Master-Pause oder Automatik aus wird kein gestellter Wecker behauptet`() {
+        val pause = offlineStandHinweis(stand.stand, masterPausePaused = true, autoAlarmEnabled = true, zone = zone)
+        assertFalse(pause, pause.contains("Wecker bleiben"))
+        assertTrue(pause, pause.endsWith(NO_SHIFT_HINWEIS_PAUSIERT))
+
+        val aus = offlineStandHinweis(stand.stand, masterPausePaused = false, autoAlarmEnabled = false, zone = zone)
+        assertFalse(aus, aus.contains("Wecker bleiben"))
+        assertTrue(aus, aus.endsWith("Automatische Alarme sind derzeit ausgeschaltet."))
+
+        // hoechstens EIN Zusatz, die Pause hat Vorrang
+        val beides = offlineStandHinweis(stand.stand, masterPausePaused = true, autoAlarmEnabled = false, zone = zone)
+        assertFalse(beides, beides.contains("Automatische Alarme"))
     }
 
     // --- System-Status, Karte "Schicht-Erkennung" ---
@@ -94,13 +111,13 @@ class NaechsteSchichtOfflineTest {
     @Test
     fun `Status offline nennt den letzten Stand statt keine Schichten`() {
         assertEquals(
-            "Ohne Verbindung nicht prüfbar. Beim letzten Kalender-Abgleich (01.10.2026 14:47) " +
+            "Ohne Verbindung nicht prüfbar. In der Schichtliste vom 01.10.2026 14:47 " +
                 "waren 2 kommende Schichten bekannt.",
             schichtErkennungDetails(0, true, stand, now, zone)
         )
         val eine = LetzterSchichtStand(listOf(span("Nacht", jetzt.plusDays(1))), null)
         assertEquals(
-            "Ohne Verbindung nicht prüfbar. Beim letzten Kalender-Abgleich war 1 kommende Schicht bekannt.",
+            "Ohne Verbindung nicht prüfbar. In der Schichtliste war 1 kommende Schicht bekannt.",
             schichtErkennungDetails(0, true, eine, now, zone)
         )
     }
@@ -118,9 +135,10 @@ class NaechsteSchichtOfflineTest {
     }
 
     @Test
-    fun `replaceAll schreibt den Stand im selben Schritt, vorher ist er unbekannt`() = runTest {
+    fun `replaceAll schreibt den Stand im selben Schritt, vorher gibt es keinen`() = runTest {
         val store = ShiftSpanStore(FakePreferencesDataStore())
-        assertEquals(LetzterSchichtStand(emptyList(), null), store.letzterStand().getOrThrow())
+        // Frische Installation: KEIN Stand - sonst behauptete die Status-Karte eine Liste, die es nie gab.
+        assertNull(store.letzterStand().getOrThrow())
 
         val spans = listOf(span("Frühschicht", jetzt.plusDays(1)))
         store.replaceAll(spans, now)

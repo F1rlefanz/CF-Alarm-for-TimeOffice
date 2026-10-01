@@ -111,7 +111,7 @@ class ShiftConfigSerializationTest {
         val decoded = json.decodeFromString(ShiftConfig.serializer(), encoded)
 
         assertEquals(original, decoded)
-        assertEquals(5, decoded.definitions.size)
+        assertEquals(4, decoded.definitions.size)
         assertTrue(decoded.autoAlarmEnabled)
     }
 
@@ -146,14 +146,14 @@ class ShiftConfigSerializationTest {
     }
 
     @Test
-    fun `getDefaultConfig liefert die erwarteten fuenf Schicht-Definitionen mit korrekten Weckzeiten`() {
+    fun `getDefaultConfig liefert die erwarteten vier Schicht-Definitionen mit korrekten Weckzeiten`() {
         val config = ShiftConfig.getDefaultConfig()
 
-        assertEquals(5, config.definitions.size)
+        assertEquals(4, config.definitions.size)
 
         val early = config.definitions.first { it.id == "early_shift" }
         assertEquals(LocalTime.of(5, 30), early.alarmTime)
-        assertEquals(listOf("F", "IMCF", "Frühdienst"), early.keywords)
+        assertEquals(listOf("F", "Frühdienst"), early.keywords)
 
         val late = config.definitions.first { it.id == "late_shift" }
         assertEquals(LocalTime.of(12, 30), late.alarmTime)
@@ -161,8 +161,8 @@ class ShiftConfigSerializationTest {
         val night = config.definitions.first { it.id == "night_shift" }
         assertEquals(LocalTime.of(20, 0), night.alarmTime)
 
-        val s2 = config.definitions.first { it.id == "s2_shift" }
-        assertEquals(LocalTime.of(14, 30), s2.alarmTime)
+        // "S2" war der Schichttyp EINER Station und ist seit #128 nicht mehr in den Vorgaben.
+        assertTrue(config.definitions.none { it.id == "s2_shift" })
 
         val intermediate = config.definitions.first { it.id == "intermediate_shift" }
         assertEquals(LocalTime.of(7, 0), intermediate.alarmTime)
@@ -204,7 +204,7 @@ class ShiftConfigSerializationTest {
         assertEquals("Nachtschicht", config.findDefinitionFor("Nachtschicht")?.name)
         assertEquals("Spätschicht", config.findDefinitionFor("Spätschicht")?.name)
         assertEquals("Zwischendienst", config.findDefinitionFor("Zwischendienst")?.name)
-        assertEquals("S2", config.findDefinitionFor("S2")?.name)
+        assertNull(config.findDefinitionFor("S2"))
 
         // Und ein Name, der zu KEINER Definition gehoert, darf nicht ueber einen einzelnen
         // Buchstaben eingefangen werden.
@@ -215,24 +215,23 @@ class ShiftConfigSerializationTest {
     }
 
     /**
-     * Jede Standard-Definition muss mindestens EIN Muster haben, das nicht das Kuerzel einer
-     * einzelnen Station ist.
+     * Die Vorgaben tragen KEIN Kuerzel einer einzelnen Station (#128).
      *
-     * Vorher hatte "Zwischendienst" genau ein Muster: "IMCZ". Auf jeder Station, die nicht "IMC"
-     * codiert, war diese Definition damit strukturell tot - der Kollege haette dafuer NIE einen
-     * Wecker bekommen und es erst nach dem Verschlafen gemerkt.
+     * Vorgeschichte: "Zwischendienst" hatte einmal genau ein Muster, "IMCZ" - auf jeder Station,
+     * die nicht "IMC" codiert, war die Definition damit strukturell tot. Danach bekam jede
+     * Definition zusaetzlich ein generisches Muster, die Stationskuerzel blieben aber als tote
+     * Muster stehen. Seit 01.10.2026 sind sie ganz raus; eigene Kuerzel liefert der Vorschlag.
      */
     @Test
-    fun `jede Standard-Definition hat ein Muster ohne Stationskuerzel`() {
-        val nurStationsspezifisch = ShiftConfig.getDefaultConfig().definitions
-            .filter { def ->
-                def.keywords.none { !it.startsWith("IMC", ignoreCase = true) }
-            }
+    fun `keine Standard-Definition traegt ein Stationskuerzel`() {
+        val mitStationskuerzel = ShiftConfig.getDefaultConfig().definitions
+            .filter { def -> def.keywords.any { it.startsWith("IMC", ignoreCase = true) } }
             .map { it.name }
 
+        assertTrue("Stationskuerzel in den Vorgaben: $mitStationskuerzel", mitStationskuerzel.isEmpty())
         assertTrue(
-            "Nur stationsspezifische Muster = auf jeder anderen Station tot: $nurStationsspezifisch",
-            nurStationsspezifisch.isEmpty()
+            "Jede Standard-Definition braucht mindestens ein Muster",
+            ShiftConfig.getDefaultConfig().definitions.all { it.keywords.isNotEmpty() }
         )
     }
 }

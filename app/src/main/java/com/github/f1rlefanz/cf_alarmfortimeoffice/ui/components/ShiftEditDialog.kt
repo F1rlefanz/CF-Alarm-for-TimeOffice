@@ -155,8 +155,8 @@ fun ShiftEditDialog(
                         )
                         Text(
                             text = "Ein Muster trifft, wenn es im Titel des Kalendertermins als " +
-                                "eigenes Wort vorkommt (\"IMCF\" trifft \"IMCF Dienst\", nicht " +
-                                "\"IMCF2\"). Der Schichtname oben zählt ab zwei Zeichen " +
+                                "eigenes Wort vorkommt (\"FD\" trifft \"FD Station 3\", nicht " +
+                                "\"FD2\"). Der Schichtname oben zählt ab zwei Zeichen " +
                                 "ebenfalls als Muster.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

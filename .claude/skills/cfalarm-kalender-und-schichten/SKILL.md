@@ -94,7 +94,8 @@ das baut man dieselbe Falle in neuer Form nach.
   die Semantik bei Umlauten/`ß`. Konstanten auf **Dateiebene** (`ShiftDefinition` ist `@Serializable`).
 - **Die einbuchstabigen Standard-Keywords „F"/"S"/"N" gehören in die Vorgaben** — ohne sie sank die
   Erkennung am echten Feed von 4 auf 1 Schicht. Restrisiko bewusst akzeptiert und testlich festgeschrieben.
-- **Jede Standard-Definition hat neben dem Stationskürzel ein generisches, mehrbuchstabiges Muster.**
+- **Die Vorgaben tragen KEINE Stationskürzel** (seit #128): „F"/"S"/"N" + ausgeschriebener Name,
+  Zwischendienst „ZD"; kein „S2". Fremde Kürzel liefert der Vorschlag, nicht die Vorgabe.
 - **`ShiftDefinition.isEnabled` wird in `performRecognition()` respektiert** — bewusst NICHT in
   `findDefinitionFor()`.
 - **Ein gescheiterter Konfigurations-Read darf NIE zur leeren Definitionsliste werden** (`getOrThrow()`).

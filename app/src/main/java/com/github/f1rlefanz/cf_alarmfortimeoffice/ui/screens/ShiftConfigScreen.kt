@@ -63,15 +63,12 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
  * [ShiftConfig.getDefaultConfig], und `ShiftConfigScreenTextTest` schlaegt fehl, sobald ein hier
  * genanntes Muster dort nicht mehr vorkommt. Genau diese Drift hatte der Text schon einmal: er
  * nannte nur die Stationskuerzel als "die Standardmuster", obwohl die Vorgaben laengst zusaetzlich
- * allgemeine Bezeichnungen enthalten.
+ * allgemeine Bezeichnungen enthielten. Seit #128 gibt es in den Vorgaben keine Stationskuerzel mehr.
  */
-internal val SHIFT_HINT_STATION_EXAMPLES = listOf("IMCF", "IMCS", "IMCN", "IMCZ")
+internal val SHIFT_HINT_GENERIC_EXAMPLES = listOf("Frühdienst", "Spätdienst", "Nachtdienst")
 
-/** Siehe [SHIFT_HINT_STATION_EXAMPLES]. */
-internal val SHIFT_HINT_GENERIC_EXAMPLES = listOf("Frühdienst", "Spätdienst", "Nachtdienst", "ZD")
-
-/** Siehe [SHIFT_HINT_STATION_EXAMPLES]. */
-internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N")
+/** Siehe [SHIFT_HINT_GENERIC_EXAMPLES]. */
+internal val SHIFT_HINT_SHORT_CODE_EXAMPLES = listOf("F", "S", "N", "ZD")
 
 /**
  * Der erste Satz - die eigentliche Regel. Er steht IMMER da.
@@ -92,13 +89,12 @@ internal val SHIFT_RECOGNITION_HINT_KURZ: String =
 /** Die Beispiele und der Stationshinweis - aufklappbar, siehe [SHIFT_RECOGNITION_HINT_KURZ]. */
 internal val SHIFT_RECOGNITION_HINT_DETAIL: String =
     "Welche Muster eine Schicht hat, " +
-        "steht in ihrer Karte in der Liste darunter – die Vorgaben mischen Stationskürzel (" +
-        SHIFT_HINT_STATION_EXAMPLES.joinToString(", ") +
-        ") mit allgemeinen Bezeichnungen (" +
-        SHIFT_HINT_GENERIC_EXAMPLES.joinToString(", ") +
-        ") und kurzen Codes (" +
+        "steht in ihrer Karte in der Liste darunter – die Vorgaben enthalten kurze Codes (" +
         SHIFT_HINT_SHORT_CODE_EXAMPLES.joinToString(", ") +
-        "). Arbeitest du auf einer anderen Station, trage dort deine eigenen Kürzel ein. Ohne " +
+        ") und ausgeschriebene Bezeichnungen (" +
+        SHIFT_HINT_GENERIC_EXAMPLES.joinToString(", ") +
+        "). Nutzt dein Dienstplan andere Kürzel, trage sie dort ein; Kürzel aus deinem Kalender, " +
+        "die noch keiner Schicht gehören, schlägt die App dir zum Zuordnen vor. Ohne " +
         "passendes Muster und ohne passenden Namen wird keine Schicht erkannt und es klingelt " +
         "kein Wecker."
 

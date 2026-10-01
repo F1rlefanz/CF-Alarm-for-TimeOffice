@@ -34,7 +34,7 @@
   nicht** — sie sagt nichts über die Handlungsrichtung; siehe „Wahrheit der Anzeige" unten.
 - **Beispiele in Hinweistexten aus deklarierten Listen zusammenführen, die ein Test gegen die echte
   Standardkonfiguration prüft** (`ShiftConfigScreenTextTest`) — der Konfigurations-Hinweis nannte
-  Muster („IMCF, IMCS, IMCN, IMCZ") und behauptete „erkannt wird über die Muster, nicht über den
+  Muster („IMCF, IMCS, IMCN, IMCZ" — seit #128 gar nicht mehr in den Vorgaben) und behauptete „erkannt wird über die Muster, nicht über den
   Schichtnamen allein"; beides hatte derselbe Arbeitsdurchgang unwahr gemacht, der den Text einführte.
   Zwei Bildschirme widersprachen sich (der `ShiftEditDialog` sagte es korrekt). Drift muss auffallen,
   nicht stumm bleiben.

@@ -92,17 +92,17 @@ class ShiftDefinitionPatternMatchingTest {
     }
 
     @Test
-    fun `Standardkonfiguration erkennt die eigenen Stationskuerzel weiterhin`() {
+    fun `Standardkonfiguration kennt keine Stationskuerzel mehr`() {
+        // Seit #128: ein fremdes Stationskuerzel bleibt unerkannt und landet im Vorschlag.
         val config = ShiftConfig.getDefaultConfig()
 
-        assertEquals(
-            listOf("Frühschicht"),
-            config.definitions.filter { it.matchesKeywords("IMCF Dienst") }.map { it.name }
-        )
-        assertEquals(
-            listOf("Zwischendienst"),
-            config.definitions.filter { it.matchesKeywords("IMCZ") }.map { it.name }
-        )
+        listOf("IMCF Dienst", "IMCZ", "S2").forEach { titel ->
+            assertEquals(
+                "Titel '$titel' darf von den Vorgaben nicht erkannt werden",
+                emptyList<String>(),
+                config.definitions.filter { it.matchesKeywords(titel) }.map { it.name }
+            )
+        }
     }
 
     @Test
@@ -131,8 +131,7 @@ class ShiftDefinitionPatternMatchingTest {
             "Spätschicht" to "Spätschicht",
             "Spätdienst" to "Spätschicht",
             "Nachtschicht" to "Nachtschicht",
-            "Nachtdienst" to "Nachtschicht",
-            "S2" to "S2"
+            "Nachtdienst" to "Nachtschicht"
         ).forEach { (titel, erwartet) ->
             assertEquals(
                 "Titel '$titel' muss genau '$erwartet' erkennen",

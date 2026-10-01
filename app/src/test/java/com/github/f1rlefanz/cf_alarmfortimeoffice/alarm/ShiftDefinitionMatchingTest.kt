@@ -79,9 +79,10 @@ class ShiftDefinitionMatchingTest {
     @Test
     fun `S2 landet nicht auf Spaetschicht`() {
         // Der konkrete Fall vom Emulator-Test: "S2" enthaelt das Keyword "S" der Spaetschicht,
-        // und Spaetschicht steht in der Liste VOR S2.
-        assertEquals("s2_shift", config.findDefinitionFor("S2")?.id)
+        // und Spaetschicht steht in der Liste VOR S2. Seit #128 kennen die Vorgaben S2 nicht mehr -
+        // dann darf "S2" auch NICHT ersatzweise auf Spaetschicht fallen.
         assertEquals("s2_shift", legacyConfig.findDefinitionFor("S2")?.id)
+        assertNull(config.findDefinitionFor("S2"))
     }
 
     @Test
@@ -108,14 +109,16 @@ class ShiftDefinitionMatchingTest {
 
     @Test
     fun `Gross-Kleinschreibung spielt keine Rolle`() {
-        assertEquals("s2_shift", config.findDefinitionFor("s2")?.id)
+        assertEquals("s2_shift", legacyConfig.findDefinitionFor("s2")?.id)
+        assertEquals("intermediate_shift", config.findDefinitionFor("zwischendienst")?.id)
         assertEquals("night_shift", config.findDefinitionFor("NACHTSCHICHT")?.id)
     }
 
     @Test
     fun `exaktes Keyword trifft, wenn kein Name passt`() {
         // Notnagel-Stufe 2: der Alarm traegt noch ein Keyword statt des Namens.
-        assertEquals("early_shift", config.findDefinitionFor("IMCF")?.id)
+        assertEquals("intermediate_shift", config.findDefinitionFor("ZD")?.id)
+        assertEquals("early_shift", legacyConfig.findDefinitionFor("IMCF")?.id)
     }
 
     @Test
@@ -139,7 +142,8 @@ class ShiftDefinitionMatchingTest {
     fun `laengere Keywords duerfen weiterhin unscharf treffen`() {
         // Stufe 3 bleibt fuer den Fall "Definition wurde umbenannt" erhalten - aber nur mit
         // Keywords, die lang genug sind, um etwas zu bedeuten.
-        assertEquals("early_shift", config.findDefinitionFor("IMCF Zusatzdienst")?.id)
+        assertEquals("early_shift", config.findDefinitionFor("Frühdienst Station 3")?.id)
+        assertEquals("early_shift", legacyConfig.findDefinitionFor("IMCF Zusatz")?.id)
     }
 
     @Test

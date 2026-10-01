@@ -46,14 +46,19 @@ class ShiftConfigDefaultsTest {
         assertEquals("Nachtschicht", recognize("N")?.name)
     }
 
-    /** Die Stationskuerzel dieser Station bleiben erhalten. */
+    /**
+     * Seit #128 (01.10.2026) tragen die Vorgaben KEINE Kuerzel einer bestimmten Station mehr.
+     * "IMCF"/"IMCS"/"IMCN"/"IMCZ" waren fuer jeden anderen Nutzer tote Muster, und "S2" war ein
+     * aktiver Schichttyp mit Wecker, den es auf seiner Station nicht gibt. Solche Kuerzel bleiben
+     * unerkannt und landen damit im Kuerzel-Vorschlag, statt still einer Vorgabe zugeschlagen zu
+     * werden.
+     */
     @Test
-    fun `Stationskuerzel werden weiterhin erkannt`() {
-        assertEquals("Frühschicht", recognize("IMCF")?.name)
-        assertEquals("Spätschicht", recognize("IMCS")?.name)
-        assertEquals("Nachtschicht", recognize("IMCN")?.name)
-        assertEquals("Zwischendienst", recognize("IMCZ")?.name)
-        assertEquals("S2", recognize("S2")?.name)
+    fun `Stationskuerzel stehen nicht in den Vorgaben`() {
+        listOf("IMCF", "IMCS", "IMCN", "IMCZ", "S2").forEach { kuerzel ->
+            assertNull("'$kuerzel' darf von den Vorgaben nicht erkannt werden", recognize(kuerzel))
+        }
+        assertTrue(defaults.definitions.none { it.name == "S2" })
     }
 
     /**
@@ -118,7 +123,9 @@ class ShiftConfigDefaultsTest {
     @Test
     fun `findDefinitionFor bleibt gegen einbuchstabige Teiltreffer geschuetzt`() {
         assertEquals("Nachtschicht", defaults.findDefinitionFor("Nachtschicht")?.name)
-        assertEquals("S2", defaults.findDefinitionFor("S2")?.name)
+        // "S2" gibt es in den Vorgaben nicht mehr - es darf auch nicht ueber das "S" der
+        // Spaetschicht unscharf dort landen.
+        assertNull(defaults.findDefinitionFor("S2"))
         assertEquals("Zwischendienst", defaults.findDefinitionFor("Zwischendienst")?.name)
         assertTrue(
             "MIN_FUZZY_KEYWORD_LENGTH muss die unscharfe Stufe von einzelnen Buchstaben freihalten",

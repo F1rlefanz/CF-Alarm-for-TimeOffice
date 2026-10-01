@@ -101,6 +101,12 @@ jobs:
       - name: Entscheidung des Sammel-Release testen
         run: python3 -m unittest discover -s tools/release -p "test_*.py"
 
+      # Der Direct-Boot-Test laeuft nur von Hand am Emulator - seine Auswertung von
+      # `dumpsys alarm` aber ist reine Textlogik und hat schon einmal falschen Alarm geschlagen
+      # (abgebrochene Wecker aus der Historie mitgezaehlt, 01.10.2026).
+      - name: Auswertung des Direct-Boot-Tests testen
+        run: python3 -m unittest discover -s tools/geraet -p "test_*.py"
+
       - name: Unit-Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

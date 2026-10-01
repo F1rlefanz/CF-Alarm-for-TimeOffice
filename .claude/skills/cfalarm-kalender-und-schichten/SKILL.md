@@ -103,8 +103,9 @@ das baut man dieselbe Falle in neuer Form nach.
   `shift_config_broken`, der Sync wird ausgelassen, bestehende Alarme bleiben — ein sichtbarer
   Hinweis fehlt noch, bewusst offengelassen.
 - **Kein stiller Default-Überschreiber der Schicht-Konfiguration** — alle drei Fallbacks sind entfernt.
-  Der bewusste Weg zum Default ist der Knopf „Auf Standardwerte zurücksetzen" und gehört dem Nutzer —
-  NICHT `resetToDefaults()`: das schreibt `autoAlarmEnabled = true` (ohne Aufrufer, Kandidat zum Entfernen).
+  Der bewusste Weg zum Default ist der Knopf „Auf Standardwerte zurücksetzen" und gehört dem Nutzer.
+  Das frühere `resetToDefaults()` (schrieb `autoAlarmEnabled = true`, ohne Aufrufer) ist seit
+  01.10.2026 entfernt — nicht zurückholen.
 - **„Auf Standardwerte zurücksetzen" rührt `autoAlarmEnabled` nicht an.**
 - **`ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter Volatile-Referenz, Prüfung UND
   Veröffentlichung hinter `recognitionMutex`, PLUS eine Epochen-Kennung** (der Mutex allein reicht

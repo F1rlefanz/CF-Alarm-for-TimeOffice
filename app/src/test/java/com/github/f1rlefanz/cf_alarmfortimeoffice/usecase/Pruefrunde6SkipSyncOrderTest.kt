@@ -48,7 +48,6 @@ class Pruefrunde6SkipSyncOrderTest {
         override val shiftConfig: Flow<ShiftConfig> = flowOf(config)
         override suspend fun saveShiftConfig(config: ShiftConfig): Result<Unit> = Result.success(Unit)
         override suspend fun getCurrentShiftConfig(): Result<ShiftConfig> = Result.success(config)
-        override suspend fun resetToDefaults(): Result<Unit> = Result.success(Unit)
     }
 
     /** Schreibt jeden Repository-Schritt in [protokoll] - so wird die REIHENFOLGE pruefbar. */

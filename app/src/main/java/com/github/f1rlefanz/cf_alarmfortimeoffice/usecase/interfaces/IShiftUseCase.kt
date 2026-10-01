@@ -12,8 +12,13 @@ import kotlinx.coroutines.flow.Flow
  * Durchreichen an `IShiftConfigRepository.hasValidConfig()`, das es inzwischen ebenfalls nicht
  * mehr gibt (auch dort ohne Aufrufer). Wer wissen will, ob eine
  * Konfiguration taugt, liest sie mit [getCurrentShiftConfig] und sieht ihre Definitionen an;
- * ein separates Ja/Nein war eine zweite Wahrheit ohne Leser. Nicht zu verwechseln mit
- * [resetToDefaults], das ebenfalls ohne Verwender ist - fuer den Knopf aber UNGEEIGNET, siehe dort.
+ * ein separates Ja/Nein war eine zweite Wahrheit ohne Leser.
+ *
+ * ENTFERNT (01.10.2026): `resetToDefaults()` samt `IShiftConfigRepository.resetToDefaults()` -
+ * ohne Aufrufer und fuer den Knopf "Auf Standardwerte zuruecksetzen" UNGEEIGNET: es schrieb
+ * `ShiftConfig.getDefaultConfig()` mit `autoAlarmEnabled = true` (hoebe eine bewusste Pause der
+ * automatischen Alarme auf) und fasste die System-Alarme nicht an. Der Knopf geht ueber
+ * `resetToDefaultsPreservingAutoAlarm()` + `ShiftViewModel.updateShiftConfig()`.
  */
 interface IShiftUseCase {
     
@@ -36,18 +41,4 @@ interface IShiftUseCase {
      * Erkennt Schichten in Kalender-Events basierend auf der aktuellen Konfiguration
      */
     suspend fun recognizeShiftsInEvents(events: List<CalendarEvent>): Result<List<ShiftMatch>>
-    
-    /**
-     * Setzt die Schicht-Konfiguration auf Standardwerte zurück
-     *
-     * OHNE VERWENDER - und NICHT an den Knopf anschliessen. Den Knopf "Auf Standardwerte
-     * zurücksetzen" gibt es (ShiftConfigScreen); er geht bewusst an dieser Funktion
-     * vorbei (`resetToDefaultsPreservingAutoAlarm()` + `ShiftViewModel.updateShiftConfig()`).
-     * Denn hier wird `ShiftConfig.getDefaultConfig()` geschrieben, und die traegt
-     * `autoAlarmEnabled = true`: das hoebe eine bewusste Pause der automatischen Alarme auf und
-     * zoege sofort wieder Wecker nach - ausserdem fasste es die System-Alarme nicht an. Ein
-     * Kandidat zum Entfernen (samt `IShiftConfigRepository.resetToDefaults()`), sobald das
-     * jemand ausdruecklich angeht.
-     */
-    suspend fun resetToDefaults(): Result<Unit>
 }

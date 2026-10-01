@@ -45,11 +45,4 @@ class ShiftUseCase @Inject constructor(
             Logger.d(LogTags.SHIFT_RECOGNITION, "Recognized ${shiftMatches.size} shifts from ${events.size} events")
             shiftMatches
         }
-    
-    override suspend fun resetToDefaults(): Result<Unit> = 
-        shiftConfigRepository.resetToDefaults().also { result ->
-            if (result.isSuccess) {
-                invalidateAllCaches()
-            }
-        }
 }

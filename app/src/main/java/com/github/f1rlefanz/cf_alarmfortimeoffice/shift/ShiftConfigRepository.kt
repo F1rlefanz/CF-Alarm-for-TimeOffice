@@ -325,19 +325,4 @@ class ShiftConfigRepository @Inject constructor(
             Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-FRESH-LOAD: Config loaded with ${config.definitions.size} definitions and cached")
             config
         }
-    
-    override suspend fun resetToDefaults(): Result<Unit> = 
-        SafeExecutor.safeExecute("ShiftConfigRepository.resetToDefaults") {
-            val defaultConfig = ShiftConfig.getDefaultConfig()
-            val jsonString = json.encodeToString(defaultConfig)
-            
-            dataStore.edit { preferences ->
-                preferences[shiftConfigKey] = jsonString
-            }
-            
-            cachedConfig = defaultConfig
-            cacheTimestamp = System.currentTimeMillis()
-            
-            Logger.d(LogTags.SHIFT_CONFIG, "✅ SINGLETON-RESET: Shift config reset to defaults and cache updated")
-        }
 }

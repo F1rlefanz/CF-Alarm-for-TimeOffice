@@ -98,37 +98,19 @@ internal fun ZielAuswahlInhalt(
                     )
                 } else {
                     lightTargets.groups.forEach { group ->
-                        // Ganze Zeile als Ziel, 48dp-Klemme Pflicht: MIN_TOUCH_TARGET, ui-texte-und-layout.md.
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = MIN_TOUCH_TARGET)
-                                .toggleable(
-                                    value = selectedGroupIds.contains(group.id),
-                                    onValueChange = { isChecked ->
-                                        onGroupSelectionChange(
-                                            if (isChecked) selectedGroupIds + group.id else selectedGroupIds - group.id
-                                        )
-                                    },
-                                    role = Role.Checkbox
-                                )
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = selectedGroupIds.contains(group.id),
-                                onCheckedChange = null
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text(group.name, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    stringResource(R.string.hue_targets_group_state, stringResource(if (group.state.any_on) R.string.hue_state_on else R.string.hue_state_off)),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                        ZielZeile(
+                            name = group.name,
+                            zustand = stringResource(
+                                R.string.hue_targets_group_state,
+                                stringResource(if (group.state.any_on) R.string.hue_state_on else R.string.hue_state_off)
+                            ),
+                            ausgewaehlt = selectedGroupIds.contains(group.id),
+                            onUmschalten = { isChecked ->
+                                onGroupSelectionChange(
+                                    if (isChecked) selectedGroupIds + group.id else selectedGroupIds - group.id
                                 )
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -141,37 +123,19 @@ internal fun ZielAuswahlInhalt(
                     )
                 } else {
                     lightTargets.lights.forEach { light ->
-                        // Ganze Zeile als Ziel, 48dp-Klemme Pflicht: MIN_TOUCH_TARGET, ui-texte-und-layout.md.
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = MIN_TOUCH_TARGET)
-                                .toggleable(
-                                    value = selectedLightIds.contains(light.id),
-                                    onValueChange = { isChecked ->
-                                        onLightSelectionChange(
-                                            if (isChecked) selectedLightIds + light.id else selectedLightIds - light.id
-                                        )
-                                    },
-                                    role = Role.Checkbox
-                                )
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = selectedLightIds.contains(light.id),
-                                onCheckedChange = null
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text(light.name, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    stringResource(R.string.hue_targets_light_state, stringResource(if (light.state.on) R.string.hue_state_on else R.string.hue_state_off)),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                        ZielZeile(
+                            name = light.name,
+                            zustand = stringResource(
+                                R.string.hue_targets_light_state,
+                                stringResource(if (light.state.on) R.string.hue_state_on else R.string.hue_state_off)
+                            ),
+                            ausgewaehlt = selectedLightIds.contains(light.id),
+                            onUmschalten = { isChecked ->
+                                onLightSelectionChange(
+                                    if (isChecked) selectedLightIds + light.id else selectedLightIds - light.id
                                 )
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -195,6 +159,45 @@ internal fun ZielAuswahlInhalt(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+/**
+ * Eine Zeile der Zielauswahl - fuer Gruppen und Lampen dieselbe (bis v1.45 zwei Kopien, #132,
+ * G2-15). Ganze Zeile als Ziel, 48dp-Klemme Pflicht: MIN_TOUCH_TARGET, ui-texte-und-layout.md.
+ */
+@Composable
+private fun ZielZeile(
+    name: String,
+    zustand: String,
+    ausgewaehlt: Boolean,
+    onUmschalten: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = MIN_TOUCH_TARGET)
+            .toggleable(
+                value = ausgewaehlt,
+                onValueChange = onUmschalten,
+                role = Role.Checkbox
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = ausgewaehlt,
+            onCheckedChange = null
+        )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                zustand,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

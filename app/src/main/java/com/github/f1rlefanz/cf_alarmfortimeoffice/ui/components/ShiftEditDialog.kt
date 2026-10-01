@@ -21,7 +21,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -262,94 +261,49 @@ fun ShiftEditDialog(
                         }
                     }
 
+                    // SwitchRow statt drei handgebauter Zeilen (#132, G2-05): weight(1f) am Text und
+                    // 12 dp Abstand - vorher stiess der Text am Schalter an (Bildvergleich 01.10.2026).
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // weight(1f): siehe Kommentar bei "Schichtdefinition aktiviert" -
-                            // ohne das schiebt der Text bei großer Systemschrift den Schalter raus.
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Stille Schicht",
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                Text(
-                                    text = "Kein Ton/Vibration/Vollbild-Wecker - die Zeit bleibt als Anker fuer Dimmer/DND erhalten",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = isSilent,
-                                onCheckedChange = { isSilent = it }
-                            )
-                        }
+                        SwitchRow(
+                            title = "Stille Schicht",
+                            description = "Kein Ton/Vibration/Vollbild-Wecker - die Zeit bleibt als Anker fuer Dimmer/DND erhalten",
+                            checked = isSilent,
+                            onCheckedChange = { isSilent = it },
+                            titleFontWeight = FontWeight.Normal
+                        )
                     }
 
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Der Text erklaert das WARUM, nicht nur das Was: welches Kuerzel eine
-                            // Rufbereitschaft ist, weiss nur der Nutzer seiner Station - die App
-                            // kann es nicht erraten, und ohne die Begruendung ("kein Stups vom
-                            // Kalender") wirkt der stuendliche Abruf wie Batterieverschwendung.
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Rufbereitschaft",
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                Text(
-                                    text = ShiftDefinitionTexte.RUFBEREITSCHAFT_HINWEIS,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = isOnCall,
-                                onCheckedChange = { isOnCall = it }
-                            )
-                        }
+                        // Der Text erklaert das WARUM, nicht nur das Was: welches Kuerzel eine
+                        // Rufbereitschaft ist, weiss nur der Nutzer seiner Station - die App
+                        // kann es nicht erraten, und ohne die Begruendung ("kein Stups vom
+                        // Kalender") wirkt der stuendliche Abruf wie Batterieverschwendung.
+                        SwitchRow(
+                            title = "Rufbereitschaft",
+                            description = ShiftDefinitionTexte.RUFBEREITSCHAFT_HINWEIS,
+                            checked = isOnCall,
+                            onCheckedChange = { isOnCall = it },
+                            titleFontWeight = FontWeight.Normal
+                        )
                     }
 
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // weight(1f): ohne das nimmt sich der Text bei großer Systemschrift die
-                            // ganze (ohnehin schmale) Dialogbreite und schiebt den Schalter aus dem
-                            // Bild - dieselbe Falle wie zuvor in den Hue-Karten.
-                            // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
-                            // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
-                            // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
-                            // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
-                            // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
-                            // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
-                            // Zeitfenster" will, braucht "Stille Schicht" daruber.
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Schichtdefinition aktiviert",
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                Text(
-                                    text = "Aus heißt: wird gar nicht erkannt — kein Wecker, aber " +
-                                        "auch kein Dimmer- und kein DND-Fenster. Für „kein Wecker, " +
-                                        "Zeitfenster trotzdem“ ist „Stille Schicht“ der richtige Schalter.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = isEnabled,
-                                onCheckedChange = { isEnabled = it }
-                            )
-                        }
+                        // Der Schalter daneben hat eine Erklaerung, dieser hatte keine - und
+                        // genau daran ist am 19.08.2026 eine Rufbereitschaft gescheitert: sie
+                        // wurde AUSGESCHALTET angelegt, damit sie nicht klingelt, sollte aber
+                        // weiterhin "Nicht stoeren" steuern. Ausschalten beendet jedoch die
+                        // ERKENNUNG, und ohne erkannte Schicht gibt es keine Schichtspanne -
+                        // also auch kein DND- und kein Dimmer-Fenster. Wer "kein Wecker, aber
+                        // Zeitfenster" will, braucht "Stille Schicht" daruber.
+                        SwitchRow(
+                            title = "Schichtdefinition aktiviert",
+                            description = "Aus heißt: wird gar nicht erkannt — kein Wecker, aber " +
+                                "auch kein Dimmer- und kein DND-Fenster. Für „kein Wecker, " +
+                                "Zeitfenster trotzdem“ ist „Stille Schicht“ der richtige Schalter.",
+                            checked = isEnabled,
+                            onCheckedChange = { isEnabled = it },
+                            titleFontWeight = FontWeight.Normal
+                        )
                     }
                 }
                 

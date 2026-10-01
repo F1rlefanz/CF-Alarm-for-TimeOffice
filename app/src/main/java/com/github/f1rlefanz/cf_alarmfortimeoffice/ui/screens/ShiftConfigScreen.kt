@@ -1,6 +1,5 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +41,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftDefinition
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
+import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
@@ -531,51 +530,15 @@ fun ShiftConfigScreen(
  *
  * Der erste Satz bleibt sichtbar: er ist die eigentliche Regel, und wer auf einer anderen Station
  * arbeitet, bekommt ohne sie gar keinen Wecker. Die Beispiele dahinter sind Nachschlagewerk und
- * stehen hinter "Mehr anzeigen". `rememberSaveable`, damit eine Drehung den aufgeklappten Zustand
- * nicht wieder zuklappt.
+ * stehen hinter dem Umschalter. Aufbau: [AufklappHinweis].
  */
 @Composable
 private fun SchichterkennungsHinweis() {
-    var ausgeklappt by rememberSaveable { mutableStateOf(false) }
-
-    // Weisse Flaeche mit Markenrand statt `surfaceVariant` (hell identisch mit dem Hintergrund,
-    // also unsichtbar) - ui-texte-und-layout.md.
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Row(
-            modifier = Modifier.padding(SpacingConstants.PADDING_CARD),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(
-                Icons.Default.Info,
-                // dekorativ: der Hinweistext daneben sagt es bereits
-                contentDescription = null,
-                modifier = Modifier.size(SpacingConstants.ICON_SIZE_MEDIUM),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(SpacingConstants.SPACING_SMALL))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    if (ausgeklappt) SHIFT_RECOGNITION_HINT else SHIFT_RECOGNITION_HINT_KURZ,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                // Der Umschalter sagt, was er zeigt - nicht "Details" oder "i". Material3 gibt
-                // einem TextButton von sich aus das 48dp-Beruehrungsziel, hier braucht es also
-                // keine eigene Klemme.
-                TextButton(onClick = { ausgeklappt = !ausgeklappt }) {
-                    Text(
-                        if (ausgeklappt) "Weniger anzeigen" else "Beispiele und eigene Kürzel",
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            }
-        }
-    }
+    AufklappHinweis(
+        kurz = SHIFT_RECOGNITION_HINT_KURZ,
+        voll = SHIFT_RECOGNITION_HINT,
+        aufklappText = "Beispiele und eigene Kürzel"
+    )
 }
 
 /**

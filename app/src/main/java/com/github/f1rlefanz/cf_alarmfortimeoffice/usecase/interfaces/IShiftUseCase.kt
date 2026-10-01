@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
  * mehr gibt (auch dort ohne Aufrufer). Wer wissen will, ob eine
  * Konfiguration taugt, liest sie mit [getCurrentShiftConfig] und sieht ihre Definitionen an;
  * ein separates Ja/Nein war eine zweite Wahrheit ohne Leser. Nicht zu verwechseln mit
- * [resetToDefaults], das bewusst ohne Verwender stehen bleibt - Begruendung dort.
+ * [resetToDefaults], das ebenfalls ohne Verwender ist - fuer den Knopf aber UNGEEIGNET, siehe dort.
  */
 interface IShiftUseCase {
     
@@ -40,13 +40,14 @@ interface IShiftUseCase {
     /**
      * Setzt die Schicht-Konfiguration auf Standardwerte zurück
      *
-     * OHNE VERWENDER, und das bleibt so, bis jemand die Oberflaeche dazu baut: Im ganzen Baum
-     * ruft diese Funktion niemand (Aufraeumrunde 24 hat es gemessen). Sie ist trotzdem KEINE
-     * Altlast - drei Stellen im Produktivcode benennen `resetToDefaults()` ausdruecklich als
-     * "den bewussten Weg zum Default", der "dem Nutzer gehoert"
-     * (`ShiftConfigRepository`, `ShiftViewModel`, `CalendarViewModel`): Genau WEIL kein
-     * Lesefehler mehr still auf die Standardkonfiguration zurueckfaellt, braucht es einen
-     * ausdruecklichen Weg dorthin. Was fehlt, ist der Knopf, nicht die Funktion.
+     * OHNE VERWENDER - und NICHT an den Knopf anschliessen. Den Knopf "Auf Standardwerte
+     * zurücksetzen" gibt es (ShiftConfigScreen); er geht bewusst an dieser Funktion
+     * vorbei (`resetToDefaultsPreservingAutoAlarm()` + `ShiftViewModel.updateShiftConfig()`).
+     * Denn hier wird `ShiftConfig.getDefaultConfig()` geschrieben, und die traegt
+     * `autoAlarmEnabled = true`: das hoebe eine bewusste Pause der automatischen Alarme auf und
+     * zoege sofort wieder Wecker nach - ausserdem fasste es die System-Alarme nicht an. Ein
+     * Kandidat zum Entfernen (samt `IShiftConfigRepository.resetToDefaults()`), sobald das
+     * jemand ausdruecklich angeht.
      */
     suspend fun resetToDefaults(): Result<Unit>
 }

@@ -23,13 +23,13 @@ Was das bedeutet:
 - Die App wird von **einer Einzelperson** in der Freizeit entwickelt, nicht von einem Unternehmen.
 - Es gibt (noch) keinen offiziellen Support-Kanal – Rückmeldungen bitte direkt an den Entwickler.
 
-> 💡 **Problem melden:** Im **Status**-Tab, Karte **„Debug-Informationen"** → **„Logs an Entwickler senden"**. Es öffnet sich der Teilen-Dialog, vorausgefüllt als E-Mail an **cfischer@csj.de** (eine andere App geht auch). Angehängt werden die Log-Dateien der letzten 8 Tage – das hilft enorm bei der Fehlersuche.
+> 💡 **Problem melden:** Im **System-Status**, Karte **„Debug-Informationen"** → **„Logs an Entwickler senden"**. Es öffnet sich der Teilen-Dialog, vorausgefüllt als E-Mail an **cfischer@csj.de** (eine andere App geht auch). Angehängt werden die Log-Dateien der letzten 8 Tage – das hilft enorm bei der Fehlersuche.
 
 ## 🚀 Was die App macht
 
 CF Alarm liest Schichttermine aus einem Google-Kalender (z. B. dem Dienstplan-Kalender „TimeOffice") und stellt daraus automatisch passende Wecker – ohne dass der Dienstplan manuell abgetippt werden muss.
 
-Die App hat sechs Tabs: **Home**, **Wecker**, **Dimmen**, **Hue**, **Status**, **Einstellungen**.
+Die App hat sechs Bereiche, erreichbar über das Menü: **Übersicht**, **Wecker**, **Schicht-Dimmer**, **Philips Hue**, **System-Status**, **Einstellungen**.
 
 ### 📅 Kalender & Schichterkennung
 - **Automatische Wecker** aus Kalenderterminen der selbst ausgewählten Kalender

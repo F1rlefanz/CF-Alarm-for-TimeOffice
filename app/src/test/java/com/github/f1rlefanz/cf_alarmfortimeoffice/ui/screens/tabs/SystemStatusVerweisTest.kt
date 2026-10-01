@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.KEIN_KALENDER_AUSGE
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * Jeder Nutzertext, der in den Status-Bereich schickt, nennt ihn so, wie er in der Schublade und
@@ -38,11 +39,47 @@ class SystemStatusVerweisTest {
         }
     }
 
+    /**
+     * Der Name als GANZES Wort: weder Buchstabe noch Bindestrich davor oder dahinter. Ein blosses
+     * `contains` hielte den Test gruen, wenn der Bereich etwa in "Status" umbenannt wird - das
+     * steckt in jedem "System-Status".
+     */
+    private fun nenntBereich(text: String): Boolean =
+        Regex("""(?<![\p{L}-])""" + Regex.escape(bereich) + """(?![\p{L}-])""").containsMatchIn(text)
+
     @Test
     fun `jeder Verweis nennt den Bereich wie Schublade und Titelzeile`() {
         verweise.forEach { (wo, text) ->
-            assertTrue("$wo nennt \"$bereich\" nicht: $text", text.contains(bereich))
+            assertTrue("$wo nennt \"$bereich\" nicht: $text", nenntBereich(text))
             assertFalse("$wo sagt noch \"Status-Tab\": $text", text.contains("Status-Tab"))
+        }
+    }
+
+    @Test
+    fun `die Wortgrenze faellt auf ein Teilwort nicht herein`() {
+        assertFalse(nenntBereich("im Ober-$bereich"))
+        assertFalse(nenntBereich("im ${bereich}bereich"))
+        assertTrue(nenntBereich("im $bereich unter"))
+    }
+
+    /**
+     * HERGANG (Review 30.09.2026): Der Text fuer eine unlesbare Schicht-Konfiguration sagte nur
+     * "hilft der System-Status weiter" - dort steht zu diesem Zustand aber nichts. Der einzige
+     * Weg ist, die Logs zu schicken; Karte und Knopf muessen so heissen wie im Bildschirm.
+     */
+    @Test
+    fun `eine unlesbare Schicht-Konfiguration schickt zu Karte und Knopf, die es gibt`() {
+        val text = noShiftExplanation(NoShiftReason.SHIFT_CONFIG_NOT_LOADED)
+        val statusTab = File(
+            "src/main/java/com/github/f1rlefanz/cf_alarmfortimeoffice/ui/screens/tabs/StatusTabContent.kt"
+        ).readText()
+
+        for (beschriftung in listOf("Debug-Informationen", "Logs an Entwickler senden")) {
+            assertTrue("Der Text nennt \"$beschriftung\" nicht: $text", text.contains("\"$beschriftung\""))
+            assertTrue(
+                "Im System-Status heisst nichts \"$beschriftung\" - der Text schickt ins Leere",
+                statusTab.contains("\"$beschriftung\"")
+            )
         }
     }
 }

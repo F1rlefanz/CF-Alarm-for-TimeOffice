@@ -298,8 +298,8 @@ class ShiftConfigRepository @Inject constructor(
                 // KEIN stiller Default: eine vorhandene, aber unlesbare Konfiguration wird als
                 // FEHLER gemeldet. Sonst weckt die Pipeline zu Standardzeiten (statt zu den
                 // gepflegten) und das naechste Bearbeiten schreibt den Default endgueltig
-                // ueber die echte Konfiguration. Der bewusste Weg zum Default heisst
-                // resetToDefaults() und gehoert dem Nutzer.
+                // ueber die echte Konfiguration. Der bewusste Weg zum Default ist der Knopf
+                // "Auf Standardwerte zurücksetzen" und gehoert dem Nutzer.
                 is ShiftConfigDecodeResult.Broken -> {
                     backupBrokenConfig(decoded.raw)
                     throw AppError.DataStoreError(

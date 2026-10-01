@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Der Text der Kalender-Karte im Teilerfolg-Fall.
+ * Der Text der Kalender-Karte, wenn ausgewaehlte Kalender nicht abrufbar sind - einer oder alle.
  *
  * WARUM GETESTET: Diese Zeile ist die einzige Stelle, an der ein Zustand sichtbar wird, der sonst
  * ausschliesslich im Log steht - ein dauerhaft nicht abrufbarer Kalender haelt jeden Alarm-Sync an,

@@ -225,7 +225,8 @@ class ShiftViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     // KEIN Default-Fallback, der SCHREIBT: Fehlschlag heisst "Konfiguration defekt",
-                    // Ueberschreiben waere Datenverlust; resetToDefaults() gehoert dem Nutzer.
+                    // Ueberschreiben waere Datenverlust; der Weg zum Default (Knopf "Auf
+                    // Standardwerte zurücksetzen") gehoert dem Nutzer.
                     // Hergang: schichterkennung.md.
                     _uiState.value = _uiState.value.copy(
                         error = errorHandler.getErrorMessage(error)

@@ -1436,8 +1436,9 @@ class CalendarViewModel @Inject constructor(
                 
                 if (shiftConfig == null) {
                     // Kein Default-Fallback (bis v1.22.1 ueberschrieb er die Nutzerzeiten); fail-safe:
-                    // Sync auslassen, Rohdaten in `shift_config_broken`; `resetToDefaults()` gehoert
-                    // dem Nutzer. Hergang: Skill cfalarm-kalender-und-schichten, schichterkennung.md.
+                    // Sync auslassen, Rohdaten in `shift_config_broken`; der Weg zum Default (Knopf
+                    // "Auf Standardwerte zurücksetzen") gehoert dem Nutzer. Hergang: Skill
+                    // cfalarm-kalender-und-schichten, schichterkennung.md.
                     Logger.e(
                         LogTags.ALARM,
                         "❌ SHIFT-CONFIG: nach $maxAttempts Versuchen nicht lesbar - Alarm-Sync wird " +

@@ -228,15 +228,15 @@ fun StatusTabContent(
         // verfuegbar" (leeres Google-Konto) bleibt ohne Button - nichts, wohin man von hier aus
         // springen koennte.
         //
-        // Der dritte Zustand (Teilerfolg) ist der stillste: die
-        // Autorisierung ist gueltig, Termine kommen an, nur EIN Kalender antwortet nicht. Die
-        // Vollstaendigkeits-Sperren halten dann jeden Alarm-Sync an - richtig, aber ohne diese
-        // Karte unsichtbar. Er steht bewusst NACH der Autorisierungs-Pruefung: fallen ALLE
-        // Kalender aus, ist das kein Teilerfolg, sondern der Autorisierungsfall darueber - oder,
-        // war es nur die Verbindung, "nicht erreichbar" (ohne eigene Aktion, siehe unten).
-        // FEHLEN alle (geloescht, nicht mehr freigegeben), landen sie seit v1.43.6 ebenfalls
-        // hier, und die Rueckfrage vor dem Entfernen greift zwingend, weil danach keiner mehr
-        // bliebe - deshalb heisst der Zustand nicht (mehr) "Teilerfolg".
+        // Der dritte Zustand, "nicht abrufbare Kalender", ist der stillste: die Autorisierung ist
+        // gueltig, aber ein Kalender - oder jeder - liefert nicht. Die Vollstaendigkeits-Sperren
+        // halten dann jeden Alarm-Sync an - richtig, aber ohne diese Karte unsichtbar. Er steht
+        // bewusst NACH der Autorisierungs- und der Verbindungs-Pruefung: scheitern alle an der
+        // Anmeldung, gilt der Autorisierungsfall darueber, war es nur die Verbindung, "nicht
+        // erreichbar" (ohne eigene Aktion, siehe unten). FEHLEN dagegen alle (geloescht, nicht
+        // mehr freigegeben), gehoeren sie seit v1.43.6 hierher - dann greift vor dem Entfernen
+        // die Rueckfrage, weil danach keiner mehr bliebe. Deshalb heisst der Zustand nicht
+        // "Teilerfolg": er umfasst den Totalausfall.
         val nichtAbrufbareKalender = calendarState.unavailableCalendarIds.isNotEmpty()
         // Wuerde "Aus Auswahl entfernen" die Auswahl LEEREN, ist es keine Bereinigung mehr,
         // sondern eine Abwahl - mit allen Folgen. Dann wird vorher gefragt (siehe Dialog unten).
@@ -658,7 +658,8 @@ internal const val ENTFERNEN_LEERT_AUSWAHL_BESTAETIGEN: String = "Trotzdem entfe
 internal const val ENTFERNEN_LEERT_AUSWAHL_ABBRECHEN: String = "Abbrechen"
 
 /**
- * Die Rueckfrage vor dem Entfernen des LETZTEN ausgewaehlten Kalenders.
+ * Die Rueckfrage, bevor "Aus Auswahl entfernen" die Auswahl LEEREN wuerde - ob dabei einer oder
+ * mehrere Kalender wegfallen.
  *
  * Der bestaetigende Knopf ist bewusst der unauffaellige (TextButton) und der harmlose Ausweg der
  * hervorgehobene: der Zustand, aus dem heraus getippt wird, sieht nach einem Defekt aus, ist aber
@@ -692,7 +693,8 @@ private fun LetzteAuswahlEntfernenDialog(
 }
 
 /**
- * PURE, TESTBAR: formuliert den Teilerfolg fuer die Kalender-Karte.
+ * PURE, TESTBAR: formuliert die nicht abrufbaren Kalender fuer die Kalender-Karte - einen, mehrere
+ * oder alle.
  *
  * Zwei Dinge muessen darin stehen, sonst ist die Meldung wertlos:
  *  - WELCHER Kalender. "Ein Kalender ist nicht abrufbar" laesst sich nicht abwaehlen. Der Name

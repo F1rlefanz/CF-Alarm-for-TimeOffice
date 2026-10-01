@@ -112,8 +112,10 @@ internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
 /**
  * Karte "Kalender-Events", wenn ALLE ausgewaehlten Kalender fehlen (geloescht, nicht mehr
  * freigegeben). Bis v1.43.5 hiess das "Kalender-Autorisierung verloren" samt "Kalender-Zugriff
- * erneuern" - ein Knopf, der an einem geloeschten Kalender nichts aendert. Der Ausweg (Name,
- * "Aus Auswahl entfernen", Rueckfrage) steht im Status-Tab; hier nur WAS, FOLGE, WOHIN.
+ * erneuern" - ein Knopf, der an einem geloeschten Kalender nichts aendert. Der Ausweg ("Aus
+ * Auswahl entfernen", Rueckfrage) steht im System-Status; hier nur WAS, FOLGE, WOHIN. Einen NAMEN
+ * nennt die Karte dort nur, solange Google den Kalender noch fuehrt - einen geloeschten kennt sie
+ * nur als Anzahl, und genau das ist hier der Normalfall.
  * Als Konstanten, damit ein Test die Nennung von Ort und Folge festhalten kann.
  */
 internal const val KALENDER_NICHT_GEFUNDEN_TITEL: String = "Kalender nicht gefunden"
@@ -164,9 +166,9 @@ internal fun noShiftExplanation(
             "Google Kalender gerade nicht erreichbar — die gestellten Wecker bleiben. Mit Netz " +
                 "in der Karte \"Kalender-Events\" auf \"Mit Google Kalender abgleichen\" tippen."
         NoShiftReason.CALENDAR_UNAVAILABLE ->
-            // Verweist auf die Karte, die den Namen des Kalenders UND den Entfernen-Knopf hat -
-            // hier stehen die IDs nicht zur Verfuegung, und ein halber Hinweis waere schlechter
-            // als der Weg zur vollstaendigen Auskunft.
+            // Verweist auf die Karte mit dem Entfernen-Knopf (und dem Namen, solange Google den
+            // Kalender noch fuehrt; sonst nur die Anzahl) - hier stehen die IDs nicht zur
+            // Verfuegung, und ein halber Hinweis waere schlechter als der Weg zur Auskunft.
             "Mindestens ein ausgewählter Kalender ist nicht abrufbar — solange werden keine neuen " +
                 "Wecker angelegt. Näheres im System-Status unter \"Kalender\"."
         NoShiftReason.LOAD_ERROR ->
@@ -179,8 +181,11 @@ internal fun noShiftExplanation(
             // liefert dann ein Result.failure und die Rohdaten liegen als `shift_config_broken`).
             // Diese Karte wurde ausdruecklich gebaut, um den WARUM-Zustand ehrlich zu benennen; ein
             // behaupteter laufender Ladevorgang, der nie endet, ist das Gegenteil davon.
-            "Schichttypen sind (noch) nicht lesbar. Bleibt das so, hilft der System-Status weiter — " +
-                "die Konfiguration liegt dann gesichert vor und wird NICHT überschrieben."
+            // Der System-Status zeigt zu diesem Zustand selbst NICHTS (Review 30.09.2026) - deshalb
+            // der Weg zu den Logs, Karte und Knopf wortgleich (StatusTabContent, DebugInfoCard).
+            "Schichttypen sind (noch) nicht lesbar. Bleibt das so, schick bitte die Logs: im " +
+                "System-Status unter \"Debug-Informationen\" auf \"Logs an Entwickler senden\" " +
+                "tippen. Die Konfiguration liegt gesichert vor und wird NICHT überschrieben."
         NoShiftReason.NO_SHIFT_TYPES ->
             "Keine aktiven Schichttypen — lege sie im Wecker-Tab unter \"Schichttypen verwalten\" an."
         NoShiftReason.NO_PATTERN_MATCH -> buildString {

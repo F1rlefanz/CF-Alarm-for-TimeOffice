@@ -56,7 +56,7 @@ class CalendarViewModelErreichbarkeitTest {
     private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
 
     /** Was der naechste Terminabruf liefert - zwischen zwei Ladevorgaengen umstellbar. */
-    private var terminAbruf: Result<EventPage> = Result.success(EventPage(emptyList(), 0, false))
+    private var terminAbruf: Result<EventPage> = Result.success(EventPage(emptyList(), 0))
 
     @Before
     fun setUp() {
@@ -208,7 +208,7 @@ class CalendarViewModelErreichbarkeitTest {
         advanceUntilIdle()
         assertTrue(vm.uiState.value.kalenderNichtErreichbar)
 
-        terminAbruf = Result.success(EventPage(listOf(einTermin), totalEvents = 1, hasMore = false))
+        terminAbruf = Result.success(EventPage(listOf(einTermin), totalEvents = 1))
         vm.loadEventsForSelectedCalendars()
         advanceUntilIdle()
 

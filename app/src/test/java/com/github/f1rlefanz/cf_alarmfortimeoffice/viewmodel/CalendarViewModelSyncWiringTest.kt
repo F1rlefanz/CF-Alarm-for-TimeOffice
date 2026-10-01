@@ -102,8 +102,7 @@ class CalendarViewModelSyncWiringTest {
             on { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
                 EventPage(
                     events = pageEvents,
-                    totalEvents = totalEvents,
-                    hasMore = totalEvents > pageEvents.size
+                    totalEvents = totalEvents
                 )
             )
             on { getCalendarEventsWithStatus(any(), any()) } doReturn
@@ -269,7 +268,7 @@ class CalendarViewModelSyncWiringTest {
         val all = (0 until 4).map { event("A$it", it) }
         val vm = buildViewModel(
             pageEvents = all,
-            totalEvents = 12 // hasMore = true, damit Nachladen ueberhaupt sinnvoll ist
+            totalEvents = 12 // mehr als geladen, damit Nachladen ueberhaupt sinnvoll ist
         )
         // uiState ist ein `stateIn(started = Lazily)` - ohne Sammler bleibt es auf dem Startwert.
         backgroundScope.launch { vm.uiState.collect { } }

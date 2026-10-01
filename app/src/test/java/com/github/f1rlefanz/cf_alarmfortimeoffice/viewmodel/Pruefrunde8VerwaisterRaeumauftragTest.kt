@@ -142,8 +142,7 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
                     EventPage(
                         events = geladeneEvents,
                         // nichts abgeschnitten -> vollstaendige Liste
-                        totalEvents = geladeneEvents.size,
-                        hasMore = false
+                        totalEvents = geladeneEvents.size
                     )
                 )
             }

@@ -569,7 +569,7 @@ private fun SchichterkennungsHinweis() {
                 // keine eigene Klemme.
                 TextButton(onClick = { ausgeklappt = !ausgeklappt }) {
                     Text(
-                        if (ausgeklappt) "Weniger anzeigen" else "Beispiele und Stationskürzel",
+                        if (ausgeklappt) "Weniger anzeigen" else "Beispiele und eigene Kürzel",
                         style = MaterialTheme.typography.labelLarge
                     )
                 }

@@ -263,7 +263,7 @@ internal fun BridgeConnectionCard(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = bridge.internalipaddress,
+                text = bridge.ipAddress,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
             )

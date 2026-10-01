@@ -22,16 +22,9 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 
 /**
- * Simplified OAuth2 Token Manager
- * 
- * Fokussiert auf OAuth2-Logic, delegiert Storage an TokenRepository.
- * 
- * Verbesserungen gegenüber ModernOAuth2TokenManager:
- * - ✅ Single Responsibility: Nur OAuth2-Operations
- * - ✅ Dependency Injection: TokenRepository wird injiziert
- * - ✅ Keine Workarounds: Saubere Implementation
- * - ✅ Proper Exception Handling: CancellationException wird propagiert
- * - ✅ Token Rotation: Security-Feature integriert
+ * Holt, erneuert und verwirft das Kalender-Token ueber die Play-Dienste ([KalenderAutorisierung]);
+ * gespeichert wird ueber [TokenRepository]. Jede Erneuerung rotiert das Token, und [refresh]
+ * prueft vorher die Rotationskette ([TokenData.isLegitimateSuccessorOf]).
  */
 class OAuth2TokenManager(
     private val context: Context,
@@ -105,7 +98,7 @@ class OAuth2TokenManager(
             }
             
         } catch (e: CancellationException) {
-            throw e  // ✅ KRITISCH: Propagieren!
+            throw e
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "Error getting valid token", e)
             Result.failure(e)
@@ -301,7 +294,7 @@ class OAuth2TokenManager(
             Result.success(rotatedToken)
 
         } catch (e: CancellationException) {
-            throw e  // ✅ KRITISCH: Propagieren!
+            throw e
         } catch (e: TokenException.ConsentRequired) {
             // Das gespeicherte Token ist endgueltig tot - Google akzeptiert es nicht mehr und
             // wird es auch beim naechsten Versuch nicht akzeptieren. Es MUSS weg, sonst laeuft

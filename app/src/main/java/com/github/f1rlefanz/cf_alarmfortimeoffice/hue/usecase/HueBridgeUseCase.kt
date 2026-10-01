@@ -65,10 +65,10 @@ class HueBridgeUseCase @Inject constructor(
     }
     
     override suspend fun setupBridge(bridge: HueBridge): Result<String> {
-        Logger.i(LogTags.HUE_USECASE, "Starting bridge setup process for ${bridge.internalipaddress}")
+        Logger.i(LogTags.HUE_USECASE, "Starting bridge setup process for ${bridge.ipAddress}")
         
         return try {
-            if (bridge.internalipaddress.isBlank()) {
+            if (bridge.ipAddress.isBlank()) {
                 Logger.w(LogTags.HUE_USECASE, "Invalid bridge IP address provided")
                 return Result.failure(IllegalArgumentException("Bridge IP address cannot be empty"))
             }
@@ -84,7 +84,7 @@ class HueBridgeUseCase @Inject constructor(
             
             if (connectivityResult.isFailure || connectivityResult.getOrNull() != true) {
                 Logger.w(LogTags.HUE_USECASE, "Bridge connectivity test failed")
-                return Result.failure(Exception("Cannot reach bridge at ${bridge.internalipaddress}. Please check your network."))
+                return Result.failure(Exception("Cannot reach bridge at ${bridge.ipAddress}. Please check your network."))
             }
             
             val connectionResult = bridgeRepository.connectToBridge(bridge)
@@ -112,7 +112,7 @@ class HueBridgeUseCase @Inject constructor(
                 return Result.failure(Exception("Failed to create user on bridge"))
             }
             
-            val saveResult = configRepository.saveBridgeConfig(bridge.internalipaddress, username)
+            val saveResult = configRepository.saveBridgeConfig(bridge.ipAddress, username)
             
             if (saveResult.isFailure) {
                 Logger.w(LogTags.HUE_USECASE, "Failed to save bridge configuration", saveResult.exceptionOrNull())

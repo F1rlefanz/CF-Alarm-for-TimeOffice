@@ -117,8 +117,8 @@ class OfficialHueDiscoveryService(private val context: Context) {
                     if (nUpnpBridges.isNotEmpty()) {
                         // Dedup gegen die lokal gefundenen (hier zwar leer, aber die Invariante
                         // soll halten, falls die Reihenfolge je wieder geaendert wird).
-                        val existingIPs = allBridges.map { it.internalipaddress }.toSet()
-                        val newBridges = nUpnpBridges.filter { it.internalipaddress !in existingIPs }
+                        val existingIPs = allBridges.map { it.ipAddress }.toSet()
+                        val newBridges = nUpnpBridges.filter { it.ipAddress !in existingIPs }
                         allBridges.addAll(newBridges)
 
                         Logger.i(LogTags.HUE_DISCOVERY, "N-UPnP discovery successful: ${nUpnpBridges.size} bridges found (${newBridges.size} new)")

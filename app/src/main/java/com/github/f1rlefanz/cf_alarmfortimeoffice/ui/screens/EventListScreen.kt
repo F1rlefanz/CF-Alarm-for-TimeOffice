@@ -47,16 +47,14 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.LoadingScreen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
+import java.time.Duration
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
- * EVENT DETAIL SCREEN: Neue UI mit Lazy Loading für viele Events
- *
- * OPTIMIZATION FEATURES:
- * ✅ Lazy Loading mit virtueller Scrolling-Performance
- * ✅ Load-More Button für progressive Event-Ladung
- * ✅ Refresh-Unterstützung für Cache-Invalidierung
- * ✅ Event-Kategorisierung nach Typ (Shift/Normal)
+ * Terminliste der ausgewaehlten Kalender. Laedt per Knopf und beim Scrollen ans Listenende nach
+ * ([CalendarViewModel.loadMoreEvents]); "Aktualisieren" verwirft den Termin-Cache und laedt neu.
+ * Termine, die nach einer Arbeitsschicht aussehen, sind per Symbol hervorgehoben.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,7 +147,6 @@ fun EventListScreen(
                 }
             }
         } else {
-            // LAZY LOADING: Event List mit Performance-Optimierung & Infinite Scroll
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -166,10 +163,9 @@ fun EventListScreen(
                     )
                 }
 
-                // LAZY LOADING: Virtualized Event List mit Performance-Optimierung
                 items(
                     items = calendarState.events,
-                    key = { event -> event.id } // PERFORMANCE: Stable keys für bessere Recomposition
+                    key = { event -> event.id } // stabiler Schluessel je Termin
                 ) { event ->
                     EventCard(
                         event = event
@@ -196,7 +192,8 @@ fun EventListScreen(
                     }
                 }
 
-                // LAZY LOADING: Event pagination implementation
+                // Nachlade-Knopf: sichtbar, solange mehr Termine erwartet werden ODER schon 50
+                // geladen sind
                 if (calendarState.hasMoreEvents || calendarState.events.size >= 50) {
                     item {
                         Box(
@@ -207,7 +204,8 @@ fun EventListScreen(
                         ) {
                             OutlinedButton(
                                 onClick = {
-                                    // IMPLEMENTED: Real event pagination using loadMoreEvents
+                                    // Keine Seite ab eventOffset: loadMoreEvents() laedt ein
+                                    // groesseres PRAEFIX neu, der Offset ist nur ein Hinweis
                                     calendarViewModel.loadMoreEvents(offset = calendarState.eventOffset)
                                 },
                                 enabled = !calendarState.isLoadingMoreEvents
@@ -243,8 +241,6 @@ fun EventListScreen(
                             !calendarState.isLoadingMoreEvents && 
                             calendarState.hasMoreEvents &&
                             lastVisibleItem.index >= totalItems - 4) {
-                            
-                            // PERFORMANCE: Auto-load more events for infinite scroll
                             calendarViewModel.loadMoreEvents(offset = calendarState.eventOffset)
                         }
                     }
@@ -302,10 +298,10 @@ private fun EventSummaryCard(
 
                     // Event statistics
                     val todayEvents = events.filter {
-                        it.startTime.toLocalDate() == java.time.LocalDate.now()
+                        it.startTime.toLocalDate() == LocalDate.now()
                     }
                     val tomorrowEvents = events.filter {
-                        it.startTime.toLocalDate() == java.time.LocalDate.now().plusDays(1)
+                        it.startTime.toLocalDate() == LocalDate.now().plusDays(1)
                     }
 
                     Text(
@@ -380,7 +376,7 @@ private fun EventCard(
 
                 // Duration if available
                 if (event.endTime != event.startTime) {
-                    val duration = java.time.Duration.between(event.startTime, event.endTime)
+                    val duration = Duration.between(event.startTime, event.endTime)
                     val hours = duration.toHours()
                     val minutes = duration.toMinutes() % 60
 
@@ -391,7 +387,7 @@ private fun EventCard(
                     )
                 }
 
-                // Calendar ID (for debugging)
+                // Gekuerzte Kalender-Kennung - steht in JEDER Build-Variante, nicht nur im Debug
                 Text(
                     "Kalender: ${event.calendarId.take(8)}...",
                     style = MaterialTheme.typography.labelSmall,

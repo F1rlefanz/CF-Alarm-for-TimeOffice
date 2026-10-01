@@ -16,25 +16,19 @@ import androidx.compose.ui.unit.dp
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.PermissionOnboardingScreen
 
 /**
- * Battery Onboarding Screen
- *
  * Bittet um die Akku-Freigabe, ohne die Android die App im Hintergrund einfrieren darf.
  *
- * WAS HIER FRÜHER STAND — UND WARUM ES WEG IST: Der Screen zeigte eine animierte Vier-Schritt-
- * Anleitung ("Einstellungen öffnen sich" → "CF Alarm in Liste finden" → "App antippen" →
- * "Uneingeschränkt wählen") und darunter "Die App öffnet gleich die Android-Einstellungen".
- * Nichts davon passiert. [MainScreen] feuert `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` mit
- * `package:`-Data — das ist Androids **Systemdialog** ("Zulassen, dass die App immer im
- * Hintergrund läuft?"), ein einziger Tipp, keine Einstellungen, keine Liste. Der Screen
- * beschrieb also einen Ablauf, den der Nutzer nie zu sehen bekommt, und der Knopf hiess
- * "Zu Einstellungen", obwohl er nirgendwohin führt.
- *
- * (Nur der Fallback in [MainScreen] — wenn der Dialog-Intent wirft — landet tatsächlich in den
- * Einstellungen. Ein Ausnahmefall, für den man den Regelfall nicht falsch beschriften sollte.)
+ * KEINE SCHRITT-FUER-SCHRITT-ANLEITUNG DURCH DIE EINSTELLUNGEN: [MainScreen] feuert
+ * `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` mit `package:`-Data — das ist Androids
+ * **Systemdialog** ("Zulassen, dass die App immer im Hintergrund läuft?"), ein einziger Tipp,
+ * keine Einstellungen, keine Liste. Frueher beschrieb dieser Screen eine Vier-Schritt-Anleitung
+ * durch die Einstellungen und einen Knopf "Zu Einstellungen" - einen Ablauf, den der Nutzer nie zu
+ * sehen bekam. Nur der Fallback in [MainScreen] (der Dialog-Intent wirft) landet in den
+ * Einstellungen; nach dem Ausnahmefall wird der Regelfall nicht beschriftet.
  *
  * TONALITÄT: Der Kernpunkt steht genau EINMAL und konkret — bei einer Wecker-App ist der Einsatz
- * nicht "Background-Jobs werden gestoppt", sondern "der Wecker bleibt still". Wer mehr wissen
- * will, tippt auf "Warum ist das nötig?"; das ist gestaffelte Auskunft, keine dritte Wiederholung.
+ * nicht "Background-Jobs werden gestoppt", sondern "der Wecker bleibt still". Mehr steht hinter
+ * "Warum ist das nötig?" (gestaffelte Auskunft, keine dritte Wiederholung).
  */
 @Composable
 fun BatteryOnboardingScreen(
@@ -58,7 +52,8 @@ fun BatteryOnboardingScreen(
 }
 
 /**
- * Shows educational dialog about battery exemption
+ * Erklaert die Akku-Freigabe - hinter "Warum ist das nötig?" und nach einer Ablehnung im
+ * Systemdialog.
  */
 @Composable
 fun BatteryEducationalDialog(

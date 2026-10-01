@@ -60,12 +60,9 @@ internal const val ERSTEINRICHTUNG_KALENDER_TEXT: String =
         "erkennt die App deine Schichten und stellt die Wecker."
 
 /**
- * CalendarSelectionScreen - REFACTORED für Single Source of Truth
- * 
- * ✅ CODE CLEANUP: Updated deprecated Material Icons
- * ✅ PERFORMANCE: Direct imports from theme package
- * ✅ STATE MANAGEMENT: Single Source of Truth pattern
- * ✅ MEMORY: Eliminated temporary state objects
+ * Kalenderauswahl. Jeder Tipp auf einen Kalender schreibt sofort ueber
+ * [CalendarViewModel.toggleCalendarSelection] ins Repository; einen lokalen Zwischenstand gibt es
+ * nicht.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,23 +102,20 @@ fun CalendarSelectionScreen(
                     }
                 },
                 actions = {
-                    // "Fertig", nicht "Speichern", und ohne `enabled`-Bedingung: der Knopf
-                    // speichert nichts - das ist beim Antippen des Kalenders laengst passiert.
-                    // Ausgegraut widersprach er ausserdem der Wirkung: wer den letzten Kalender
-                    // abwaehlte, sah einen toten Knopf und durfte glauben, nichts sei uebernommen
-                    // worden - die Raeumung war zu dem Zeitpunkt schon gelaufen (Issue #50).
-                    // Was der leere Zustand bedeutet, sagt jetzt die Warnkarte in der Liste.
+                    // "Fertig", nicht "Speichern", und ohne `enabled`-Bedingung (Issue #50): der
+                    // Knopf speichert nichts, das ist beim Antippen des Kalenders laengst passiert.
+                    // Ausgegraut sah er nach dem Abwaehlen des letzten Kalenders aus, als sei nichts
+                    // uebernommen - die Raeumung war da schon gelaufen. Den leeren Zustand erklaert
+                    // die Warnkarte in der Liste.
                     //
-                    // DAS KALENDER-GATE HAENGT NICHT AN DIESEM KNOPF, auch wenn es bis v1.39.0 so
-                    // aussah. Wer ohne Kalender auf "Fertig" tippt, laeuft durch die restlichen
-                    // Onboarding-Gates bis Home - dort steht "Noch kein Kalender ausgewählt" samt
-                    // Weg zurueck (`HomeTabContent`, `NoShiftReason.NO_CALENDAR_SELECTED`), im
-                    // Status-Tab ebenso, und beim naechsten App-Vordergrund schickt
-                    // `handleAuthenticationSuccess()` ihn wieder hierher. Der ausgegraute Knopf
-                    // hat das nie verhindert, sondern nur den Vorwaertsweg gesperrt - der
-                    // Zurueck-Pfeil fuehrte an derselben Stelle vorbei. Wer hier wieder ein
-                    // `enabled` ergaenzen will, baut den ausgegrauten Luegner neu und gewinnt
-                    // nichts: ein sichtbarer Zustand ist die Sperre, kein toter Knopf.
+                    // DAS KALENDER-GATE HAENGT NICHT AN DIESEM KNOPF (bis v1.39.0 sah es so aus).
+                    // Ohne Kalender fuehrt "Fertig" durch die restlichen Onboarding-Gates bis Home -
+                    // dort steht "Noch kein Kalender ausgewählt" samt Weg zurueck (`HomeTabContent`,
+                    // `NoShiftReason.NO_CALENDAR_SELECTED`), im Status-Tab ebenso, und beim
+                    // naechsten App-Vordergrund schickt `handleAuthenticationSuccess()` den Nutzer
+                    // wieder hierher. Ein `enabled` sperrte nur den Vorwaertsweg (der Zurueck-Pfeil
+                    // fuehrt an derselben Stelle vorbei) und baute den ausgegrauten Luegner neu: ein
+                    // sichtbarer Zustand ist die Sperre, kein toter Knopf.
                     TextButton(onClick = onDone) {
                         Text("Fertig")
                     }
@@ -205,11 +199,9 @@ fun CalendarSelectionScreen(
                 ) {
                     // Zwei leere Zustaende, zwei Karten (#127): beim ersten Einrichten ist "leer"
                     // wirklich "noch nichts getan" - dort steht ein neutraler Hinweis. Nach einer
-                    // ABWAHL dagegen ist der leere Zustand eine WIRKUNG: die
-                    // Abwahl des letzten Kalenders raeumt die Wecker der naechsten zwei Wochen
-                    // samt der Dienstzeit-Fenster (`clearAlarmsAfterCalendarDeselection`). Solange
-                    // der Knopf das nur durch Ausgrauen andeutete, sagte die Oberflaeche das
-                    // Gegenteil dessen, was geschehen war. Als `item` und nicht als Karte ueber
+                    // ABWAHL ist der leere Zustand eine WIRKUNG: die Abwahl des letzten Kalenders
+                    // raeumt die Wecker der naechsten zwei Wochen samt der Dienstzeit-Fenster
+                    // (`clearAlarmsAfterCalendarDeselection`). Als `item` und nicht als Karte ueber
                     // der Liste, damit die LazyColumn das einzige hoehenvariable Kind der Column
                     // bleibt.
                     if (calendarState.selectedCalendarIds.isEmpty() && !calendarState.auswahlAbgewaehlt) {
@@ -265,17 +257,14 @@ fun CalendarSelectionScreen(
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
-                                    // KEINE Vollzugsmeldung. "Bereits gestellte Wecker wurden
-                                    // entfernt" stand hier zuerst und waere eine Behauptung ueber
-                                    // etwas, das diese Karte nicht weiss: die Raeumung nach einer
-                                    // Abwahl hat vier bewusste Fail-safe-Ausstiege
+                                    // KEINE Vollzugsmeldung ("Bereits gestellte Wecker wurden
+                                    // entfernt" stand hier zuerst): die Raeumung nach einer Abwahl
+                                    // hat bewusste Fail-safe-Ausstiege
                                     // (`clearAlarmsAfterCalendarDeselection`), bei denen JEDER
-                                    // Wecker scharf stehen bleibt. Der Widerspruch wird gemeldet -
-                                    // aber im Status-Tab, nicht hier. Und von Hand gestellte
-                                    // Wecker bleiben ohnehin (`keepManualAlarms`), ebenso wie es
-                                    // bei einer Neuinstallation gar nichts zu entfernen gab.
-                                    // Deshalb steht hier, was die Abwahl TUT, nicht was sie
-                                    // getan hat.
+                                    // Wecker scharf stehen bleibt - gemeldet wird das im
+                                    // Status-Tab, nicht hier. Von Hand gestellte Wecker bleiben
+                                    // ohnehin (`keepManualAlarms`). Deshalb steht hier, was die
+                                    // Abwahl TUT, nicht was sie getan hat.
                                     Text(
                                         KEIN_KALENDER_AUSGEWAEHLT_TEXT,
                                         style = MaterialTheme.typography.bodyMedium,
@@ -292,8 +281,6 @@ fun CalendarSelectionScreen(
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = {
-                                // SINGLE SOURCE OF TRUTH: Direkte Aktualisierung über ViewModel
-                                // Kein lokaler State - alles geht durch Repository
                                 calendarViewModel.toggleCalendarSelection(calendar.id)
                             },
                             colors = CardDefaults.cardColors(

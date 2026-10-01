@@ -3,10 +3,8 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager
 import android.app.PendingIntent
 
 /**
- * Token Exception Hierarchy
- * 
- * Strukturierte Exception-Hierarchie für besseres Error-Handling
- * und intelligente Retry-Logic
+ * Die Fehler von [OAuth2TokenManager]. Ob ein Fehlschlag voruebergehend oder endgueltig ist,
+ * entscheidet `WartungTokenFehler` anhand von Typ und Ursache (siehe [RefreshFailed]).
  */
 sealed class TokenException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     

@@ -330,21 +330,13 @@ class ConfigBackupUseCase @Inject constructor(
             val expected = prefs.asMap().entries
                 .firstOrNull { it.key.name == name }
                 ?.let { typeNameOf(it.value) }
-                ?: KNOWN_INT_KEYS.takeIf { name in it }?.let { "int" }
+                ?: ConfigBackupFilter.knownIntKeys.takeIf { name in it }?.let { "int" }
                 ?: return null
 
             return if (expected == fileType) null
             else "Typ '$fileType' in der Datei, erwartet wird '$expected' - nicht uebernommen, " +
                 "ein falsch typisierter Wert laesst jeden Lesezugriff scheitern"
         }
-
-        /** Schluessel, deren Typ auch ohne lokalen Bestand feststeht (beide zusaetzlich geklemmt). */
-        private val KNOWN_INT_KEYS = setOf(
-            "snooze_minutes",
-            "dnd_oncall_cutoff_min",
-            "weckton_anstieg_sekunden",
-            "weckton_anstieg_start_prozent"
-        )
 
         private fun typeNameOf(value: Any?): String? = when (value) {
             is Boolean -> "boolean"

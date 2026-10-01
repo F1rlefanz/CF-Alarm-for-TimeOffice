@@ -276,6 +276,14 @@ object ConfigBackupFilter {
     )
 
     /**
+     * Die Schluessel, deren Typ (Int) auch ohne lokalen Bestand feststeht - genau die mit einem
+     * Plausibilitaetsbereich. Aus [PLAUSIBLE_INT_RANGES] abgeleitet statt als zweite Liste:
+     * bis v1.45 stand dieselbe Aufzaehlung zusaetzlich in `ConfigBackupUseCase` (#133, G9-07),
+     * und ein neuer Bereich haette dort vergessen werden koennen.
+     */
+    val knownIntKeys: Set<String> get() = PLAUSIBLE_INT_RANGES.keys
+
+    /**
      * REINE FUNKTION: liegt dieser Zahlenwert im plausiblen Bereich?
      *
      * @return `null`, wenn der Wert in Ordnung ist (oder kein Bereich hinterlegt ist), sonst die

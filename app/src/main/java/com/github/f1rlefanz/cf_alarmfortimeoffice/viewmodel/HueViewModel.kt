@@ -184,7 +184,7 @@ class HueViewModel @Inject constructor(
     }
     
     fun setupBridge(bridge: HueBridge) {
-        Logger.i(LogTags.HUE_VIEWMODEL, "Setting up bridge: ${bridge.internalipaddress}")
+        Logger.i(LogTags.HUE_VIEWMODEL, "Setting up bridge: ${bridge.ipAddress}")
         
         _uiState.update { it.copy(isLoading = true, error = null) }
         
@@ -203,7 +203,7 @@ class HueViewModel @Inject constructor(
                             error = null,
                             bridgeConnectionInfo = BridgeConnectionInfo(
                                 isConnected = true,
-                                bridgeIp = bridge.internalipaddress
+                                bridgeIp = bridge.ipAddress
                             )
                         )
                     }

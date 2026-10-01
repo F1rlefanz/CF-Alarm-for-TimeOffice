@@ -17,10 +17,10 @@ data class HueBridge(
     val id: String,
     val ipAddress: String,
     val name: String? = null
-) {
-    val internalipaddress: String
-        get() = ipAddress
-}
+)
+// Bis v1.45 gab es daneben `internalipaddress` als Alias auf [ipAddress] (zwei Namen fuer einen
+// Wert). Der Name lebt nur noch im Antwortmodell von `HueNUpnpDiscoveryService`, wo er das
+// Drahtformat der Hue-Discovery ist (#133, G4-23).
 
 /**
  * Antwort von `GET /api/<user>/config` bzw. `GET /api/config`.

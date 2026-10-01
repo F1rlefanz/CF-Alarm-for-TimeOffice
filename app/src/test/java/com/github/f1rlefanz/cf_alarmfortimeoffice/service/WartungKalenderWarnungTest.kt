@@ -49,11 +49,12 @@ class WartungKalenderWarnungTest {
     private fun wartung(
         abruf: Result<CalendarFetchOutcome>,
         auswahl: Set<String> = setOf(DIENSTPLAN),
-        token: Result<TokenData> = Result.success(GUELTIGES_TOKEN)
+        token: Result<TokenData> = Result.success(GUELTIGES_TOKEN),
+        pausiert: Boolean = false
     ): AlarmMaintenanceService = AlarmMaintenanceService().apply {
         freieTageStore = mock<FreieTageStore>()
         masterPausePrefs = mock<MasterPausePrefs> {
-            on { pausedNow() } doReturn false
+            on { pausedNow() } doReturn pausiert
         }
         pendingDeselectionCleanupStore = mock<PendingDeselectionCleanupStore> {
             on { pendingSince() } doReturn Result.success(null)
@@ -78,6 +79,46 @@ class WartungKalenderWarnungTest {
             on { getCalendarEventsWithStatus(any(), any()) } doReturn abruf
         }
         calendarUnavailableNotifier = mock<CalendarUnavailableNotifier>()
+    }
+
+    // ------------------------------------------------------ gegenstandslose Meldung (Review 2)
+    //
+    // Zurueckgenommen wurde nur nach einem Kalenderabruf. Nach einer Abwahl steigt die Wartung
+    // aber VOR dem Abruf aus - ohne Auswahl ohnehin, und meist schon am Lade-Gate (die verwaisten
+    // Wecker reichen 14 Tage weit). Deshalb gleicht sie die Auswahl ab, BEVOR etwas aussteigen
+    // kann - auch vor dem Token-Schritt, denn dafuer braucht es kein Netz.
+
+    @Test
+    fun `leere Auswahl - die Warnung gleicht ab und nimmt zurueck`() = runTest {
+        val w = wartung(abruf = Result.success(CalendarFetchOutcome(emptyList(), 0)), auswahl = emptySet())
+
+        // Danach postet der Zweig "Keine Kalender ausgewaehlt" - ohne echten NotificationManager
+        // wirft das hier. Geprueft wird nur, was VORHER geschehen sein muss.
+        runCatching { w.performMaintenance(forceSync = true) }
+
+        verifyBlocking(w.calendarUnavailableNotifier) { gleicheAuswahlAb(emptySet()) }
+    }
+
+    @Test
+    fun `der Abgleich laeuft auch, wenn das Token scheitert`() = runTest {
+        val w = wartung(
+            abruf = Result.success(CalendarFetchOutcome(emptyList(), 1)),
+            token = Result.failure(TokenException.RefreshFailed("weg", IOException("offline")))
+        )
+
+        w.performMaintenance(forceSync = true)
+
+        verifyBlocking(w.calendarUnavailableNotifier) { gleicheAuswahlAb(setOf(DIENSTPLAN)) }
+    }
+
+    @Test
+    fun `Master-Pause - die Warnung ruht, und nichts wird abgeglichen`() = runTest {
+        val w = wartung(abruf = Result.success(CalendarFetchOutcome(emptyList(), 1)), pausiert = true)
+
+        w.performMaintenance(forceSync = true)
+
+        verifyBlocking(w.calendarUnavailableNotifier) { ruhen() }
+        verifyBlocking(w.calendarUnavailableNotifier, never()) { gleicheAuswahlAb(any()) }
     }
 
     @Test

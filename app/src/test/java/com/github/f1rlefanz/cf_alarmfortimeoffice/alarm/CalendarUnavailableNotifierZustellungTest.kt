@@ -212,4 +212,63 @@ class CalendarUnavailableNotifierZustellungTest {
 
         assertEquals(0, notifier.zurueckgenommen)
     }
+
+    // ------------------------------------------------ gegenstandslos: Auswahl geaendert, Pause
+    //
+    // HERGANG (Review 30.09.2026): Zurueckgenommen wurde nur nach einem Kalenderabruf. Fehlte der
+    // EINZIGE Kalender und nahm der Nutzer ihn aus der Auswahl, stieg jede folgende Wartung vor
+    // dem Abruf aus (keine Auswahl - und nach einer Abwahl meist schon am Lade-Gate). Die Meldung
+    // "... die bereits gestellten bleiben" stand dann auf Dauer, obwohl die Abwahl die Wecker
+    // gerade geraeumt hatte. Dasselbe nach der Master-Pause, die alle Wecker loescht.
+
+    @Test
+    fun `ein aus der Auswahl genommener Kalender nimmt seine Meldung zurueck`() = runTest {
+        val (notifier, prefs) = notifier(zustellbar = true)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+        assertEquals(1, notifier.versuche)
+
+        notifier.gleicheAuswahlAb(ausgewaehlt = emptySet())
+
+        assertEquals("Die Meldung bleibt ueber einem entfernten Kalender stehen", 1, notifier.zurueckgenommen)
+        assertEquals(CalendarUnavailablePrefs.Zustand(), prefs.zustandNow())
+    }
+
+    @Test
+    fun `bleibt ein gemeldeter Kalender ausgewaehlt, bleibt die Meldung`() = runTest {
+        val (notifier, prefs) = notifier(zustellbar = true)
+        notifier.onFetchOutcome(setOf("a", "b"), Ausfall.EINZELNE)
+        notifier.onFetchOutcome(setOf("a", "b"), Ausfall.EINZELNE)
+
+        notifier.gleicheAuswahlAb(ausgewaehlt = setOf("b", "c"))
+
+        assertEquals(0, notifier.zurueckgenommen)
+        assertEquals(setOf("b"), prefs.zustandNow().bereitsGemeldet)
+        assertEquals(setOf("b"), prefs.zustandNow().zuletztGescheitert)
+    }
+
+    @Test
+    fun `ohne stehende Meldung nimmt der Abgleich nichts zurueck`() = runTest {
+        val (notifier, _) = notifier(zustellbar = true)
+        notifier.onFetchOutcome(setOf("a"), Ausfall.EINZELNE)
+
+        notifier.gleicheAuswahlAb(ausgewaehlt = emptySet())
+
+        assertEquals(0, notifier.zurueckgenommen)
+    }
+
+    @Test
+    fun `die Master-Pause nimmt die Meldung zurueck und beginnt die Entprellung neu`() = runTest {
+        val (notifier, prefs) = notifier(zustellbar = true)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+
+        notifier.ruhen()
+
+        assertEquals(1, notifier.zurueckgenommen)
+        assertEquals(CalendarUnavailablePrefs.Zustand(), prefs.zustandNow())
+        // Nach dem Fortsetzen meldet erst wieder der ZWEITE Fehlschlag in Folge.
+        notifier.onFetchOutcome(setOf("dienstplan"), Ausfall.ALLE_NICHT_GEFUNDEN)
+        assertEquals(1, notifier.versuche)
+    }
 }

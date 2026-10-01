@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -80,6 +81,32 @@ class MainActivity : ComponentActivity() {
          * dem Ausfall ("API-Zugriff OK"), und der Nutzer hielte die Warnung fuer einen Fehlalarm.
          */
         const val EINSTIEG_KALENDER_WARNUNG = "kalender_warnung"
+
+        /**
+         * Der Intent, mit dem eine Benachrichtigung die App an eine Stelle schickt - fuer JEDEN
+         * Absender eines [EXTRA_EINSTIEG] derselbe.
+         *
+         * `ACTION_MAIN` + `CATEGORY_LAUNCHER` sind Pflicht, nicht Zierde: laeuft beim Tipp noch
+         * kein Task, wird dieser Intent dessen Basis-Intent. Ist er nicht filtergleich mit dem
+         * Launcher-Intent (Extras zaehlen dabei nicht), legt JEDER spaetere Start ueber das
+         * Launcher-Symbol eine weitere MainActivity obendrauf - am Emulator gemessen (30.09.2026).
+         * Bewusst OHNE `setPackage()`: vor Android 14 gleicht der Vergleich das Paket nicht an,
+         * der Launcher setzt keins.
+         *
+         * `FLAG_ACTIVITY_SINGLE_TOP` gehoert zu `CLEAR_TOP`: ohne es wirft der Tipp eine laufende
+         * MainActivity (Start-Modus `standard`) weg und legt sie neu an; mit ihm bekommt sie
+         * `onNewIntent()`.
+         */
+        fun einstiegIntent(context: Context, einstieg: String): Intent =
+            Intent(context, MainActivity::class.java)
+                .setAction(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                .putExtra(EXTRA_EINSTIEG, einstieg)
     }
 
     // Hilt injected dependencies

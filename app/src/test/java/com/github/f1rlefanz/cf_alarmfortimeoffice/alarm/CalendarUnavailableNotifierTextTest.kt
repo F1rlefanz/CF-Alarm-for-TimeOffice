@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.alarm
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier.Ausfall
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarUnavailableNotifier.Companion.meldung
-import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.KALENDER_NICHT_GEFUNDEN_TEXT
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.tabs.KALENDER_NICHT_GEFUNDEN_TITEL
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,8 +15,8 @@ import org.junit.Test
  * App. Dort muss er finden, was sie ankuendigt: dieselbe Bezeichnung und denselben Ausweg. Seit
  * auch der TOTALAUSFALL gemeldet wird (30.09.2026), gibt es dafuer drei Lagen mit verschiedenen
  * Anzeigen in der App - ein einziger Text passte nicht mehr auf alle:
- *  - einzelne Kalender gescheitert: die Karte "Kalender" nennt sie und bietet "Aus Auswahl
- *    entfernen" an.
+ *  - einzelne Kalender gescheitert: die Karte "Kalender" bietet "Aus Auswahl entfernen" an
+ *    (beim Namen nennt sie einen Kalender nur, solange Google ihn noch fuehrt, sonst die Anzahl).
  *  - alle fehlen (404/403): die Uebersicht sagt "Kalender nicht gefunden".
  *  - alle scheitern anders (Anmeldung, abgeschnittene Liste, unbekannt): die Karte zeigt die
  *    Anmeldung ("Neu anmelden") - ein Entfernen-Knopf steht dort NICHT.
@@ -101,19 +100,26 @@ class CalendarUnavailableNotifierTextTest {
     }
 
     /**
-     * Beim Totalausfall scheitern in DIESEM Lauf alle ausgewaehlten Kalender - "keinen" stimmt
-     * also fuer jede Anzahl, auch wenn die Entprellung erst einen Teil davon meldet. Und es ist
-     * wortgleich mit der Karte der Uebersicht (KALENDER_NICHT_GEFUNDEN_TEXT), die denselben
-     * Zustand beschreibt.
+     * Eine Meldung ist ein SCHNAPPSCHUSS, der stehen bleibt, bis keiner der gemeldeten Kalender
+     * mehr scheitert. Ihr Text muss deshalb so lange wahr bleiben - auch wenn inzwischen ANDERE
+     * Kalender wieder liefern.
+     *
+     * HERGANG (Review 30.09.2026): Der Totalausfall-Text sagte "Google findet KEINEN ausgewählten
+     * Kalender mehr" bzw. "konnte bei mehreren Versuchen in Folge KEINEN abrufen". Kam danach ein
+     * funktionierender Kalender hinzu (oder erholte sich einer von mehreren), blieb die Meldung
+     * stehen - der gemeldete scheiterte ja weiter - und behauptete das Falsche. "Keinen" war nur
+     * fuer den Lauf belegt, in dem gemeldet wurde, "in Folge" nur fuer die gemeldete Kennung.
+     * Deshalb "mindestens ein": wahr, solange die Meldung steht. Unabhaengig von der Anzahl, weil
+     * die Entprellung beim Totalausfall auch nur einen Teil melden kann.
      */
     @Test
-    fun `beim Totalausfall haengt der Text nicht an der Anzahl`() {
+    fun `der Totalausfall-Text bleibt wahr, wenn ein anderer Kalender wieder liefert`() {
         for (ausfall in listOf(Ausfall.ALLE_NICHT_GEFUNDEN, Ausfall.ALLE_NICHT_ABRUFBAR)) {
             assertEquals(meldung(ausfall, 1), meldung(ausfall, 2))
-            assertTrue("keinen ausgewählten Kalender" in meldung(ausfall, 1).text)
+            val text = meldung(ausfall, 1).text
+            assertTrue("$ausfall: $text", text.startsWith("Mindestens ein ausgewählter Kalender"))
+            assertFalse("$ausfall behauptet, KEINER liefere: $text", "keinen" in text)
+            assertFalse("$ausfall behauptet eine Folge fuer alle: $text", "in Folge" in text)
         }
-        val gefunden = "Google findet keinen ausgewählten Kalender mehr"
-        assertTrue(meldung(Ausfall.ALLE_NICHT_GEFUNDEN, 1).text.startsWith(gefunden))
-        assertTrue(KALENDER_NICHT_GEFUNDEN_TEXT.startsWith(gefunden))
     }
 }

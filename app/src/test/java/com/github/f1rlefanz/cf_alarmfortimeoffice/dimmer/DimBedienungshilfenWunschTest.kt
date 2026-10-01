@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -83,23 +84,15 @@ class DimBedienungshilfenWunschTest {
     fun `die Benachrichtigung nennt ihr Ziel im Intent`() {
         val notifier = ohneKommentare("dimmer/DimCorrectionNotifier.kt")
 
+        // Flags (SINGLE_TOP: eine laufende App wird nicht weggeworfen) und MAIN/LAUNCHER (kein
+        // zweiter Task-Eintrag beim naechsten Launcher-Start) prueft EinstiegIntentTest am
+        // gemeinsamen Einstieg.
         assertTrue(
             "Ohne das Extra landet der Tipp auf dem zuletzt benutzten Tab - die Karte, um die es " +
                 "geht, bleibt ungesehen",
-            notifier.contains("MainActivity.EXTRA_EINSTIEG") &&
-                notifier.contains("MainActivity.EINSTIEG_DIMMER_BEDIENUNGSHILFEN")
-        )
-    }
-
-    @Test
-    fun `der Tipp wirft eine laufende App nicht weg`() {
-        val notifier = ohneKommentare("dimmer/DimCorrectionNotifier.kt")
-
-        // FLAG_ACTIVITY_CLEAR_TOP allein legt MainActivity (Start-Modus `standard`) neu an,
-        // statt ihr onNewIntent zu geben - der Nutzer verlaere seinen Stand.
-        assertTrue(
-            "FLAG_ACTIVITY_SINGLE_TOP fehlt - CLEAR_TOP legt MainActivity dann neu an",
-            notifier.contains("FLAG_ACTIVITY_SINGLE_TOP")
+            notifier.contains(
+                "MainActivity.einstiegIntent(context, MainActivity.EINSTIEG_DIMMER_BEDIENUNGSHILFEN)"
+            )
         )
     }
 
@@ -119,19 +112,23 @@ class DimBedienungshilfenWunschTest {
     @Test
     fun `MainActivity setzt den Einstieg in Navigation um`() {
         val activity = ohneKommentare("MainActivity.kt")
+        // Der ZWEIG, nicht die Datei: seit auch die Kalender-Warnung in den System-Status fuehrt,
+        // stuende ein Tab-Wechsel sonst schon in deren Zweig und hielte diesen Test gruen.
+        val zweig = Regex("""EINSTIEG_DIMMER_BEDIENUNGSHILFEN -> \{([\s\S]*?)\n {12}\}""")
+            .find(activity)?.groupValues?.get(1)
 
-        assertTrue(
+        assertNotNull(
             "MainActivity wertet das Einstiegs-Extra nicht aus - die Benachrichtigung fuehrt " +
                 "dann wieder irgendwohin",
-            activity.contains("EINSTIEG_DIMMER_BEDIENUNGSHILFEN ->")
+            zweig
         )
         assertTrue(
             "Der Wunsch wird nicht gestellt - die Karte zeigt ihre Offenlegung dann nicht",
-            activity.contains("DimBedienungshilfenWunsch.stellen()")
+            zweig!!.contains("DimBedienungshilfenWunsch.stellen()")
         )
         assertTrue(
-            "Ohne den Tab-Wechsel bleibt der Nutzer, wo er war - die Karte steht im Status-Tab",
-            activity.contains("navigateToMainWithTab(MainTab.STATUS)")
+            "Ohne den Tab-Wechsel bleibt der Nutzer, wo er war - die Karte steht im System-Status",
+            zweig.contains("navigateToMainWithTab(MainTab.STATUS)")
         )
     }
 

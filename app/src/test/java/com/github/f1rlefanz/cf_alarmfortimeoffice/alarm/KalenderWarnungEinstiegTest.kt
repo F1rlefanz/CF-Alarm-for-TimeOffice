@@ -36,18 +36,14 @@ class KalenderWarnungEinstiegTest {
     fun `die Warnung nennt ihr Ziel im Intent`() {
         val notifier = ohneKommentare("alarm/CalendarUnavailableNotifier.kt")
 
+        // Flags und MAIN/LAUNCHER des gemeinsamen Einstiegs prueft EinstiegIntentTest.
         assertTrue(
             "Ohne das Extra landet der Tipp auf dem zuletzt benutzten Tab",
-            notifier.contains("MainActivity.EXTRA_EINSTIEG") &&
-                notifier.contains("MainActivity.EINSTIEG_KALENDER_WARNUNG")
+            notifier.contains("MainActivity.einstiegIntent(context, MainActivity.EINSTIEG_KALENDER_WARNUNG)")
         )
         assertFalse(
             "Der blosse Start-Intent holt eine laufende App mit ihrem ALTEN Stand nach vorn",
             notifier.contains("getLaunchIntentForPackage")
-        )
-        assertTrue(
-            "FLAG_ACTIVITY_SINGLE_TOP fehlt - CLEAR_TOP legt MainActivity (standard) dann neu an",
-            notifier.contains("FLAG_ACTIVITY_SINGLE_TOP")
         )
     }
 

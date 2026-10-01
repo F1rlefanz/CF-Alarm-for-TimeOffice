@@ -342,8 +342,10 @@ Vollständige Regellisten und Belege in den Skills oben. Was hier steht, gilt im
   `isComplete`-Sperren verhindern nicht nur das Löschen, sondern auch jedes Anlegen; bleibt ein
   Kalender dauerhaft unerreichbar, versiegen die Wecker lautlos. Deshalb trägt
   `CalendarFetchOutcome` die `failedCalendarIds` (nicht nur ihre Zahl), die Status-Karte zeigt sie
-  mit Folge und Ausweg, und ab dem ZWEITEN Wartungslauf in Folge warnt eine Benachrichtigung.
-  **Ihr „schon gemeldet"-Gedächtnis endet an der Gerätegrenze**, auf BEIDEN Wegen —
+  mit Folge und Ausweg, und ab dem ZWEITEN Wartungslauf in Folge warnt eine Benachrichtigung —
+  **auch wenn ALLE Kalender scheitern**; nur ein reiner Verbindungsausfall fragt sie nicht (eine
+  leere Menge hieße „erholt"). **Ihr „schon gemeldet"-Gedächtnis endet an der Gerätegrenze**, auf
+  BEIDEN Wegen —
   `ConfigBackupFilter` (Export) und `DeviceLocalFlagsGuard` (Android-Backup). Mitgereist heilt es
   nicht, es hält sich selbst am Leben.
 - **Kein Fehler darf als leeres Erfolgsergebnis durchrutschen** — „leer" ist für eine Wecker-App die

@@ -1331,9 +1331,12 @@ class AlarmMaintenanceService : Service() {
     private suspend fun meldeKalenderWarnung(
         gescheitert: Set<String>,
         ausfall: CalendarUnavailableNotifier.Ausfall
-    ) {
+    ) = kalenderWarnung { onFetchOutcome(gescheitert, ausfall) }
+
+    /** Jeder Aufruf der Kalender-Warnung aus der Wartung - gefangen, siehe unten. */
+    private suspend fun kalenderWarnung(aufruf: suspend CalendarUnavailableNotifier.() -> Unit) {
         try {
-            calendarUnavailableNotifier.onFetchOutcome(gescheitert, ausfall)
+            calendarUnavailableNotifier.aufruf()
         } catch (e: CancellationException) {
             // KEIN runCatching hier: das faengt Throwable und damit auch die CancellationException,
             // was der Projekt-Invariante "eine Cancellation laeuft weiter" widerspricht. Wird die
@@ -1381,6 +1384,9 @@ class AlarmMaintenanceService : Service() {
         // MASTER-PAUSE: gesamte Wartung ueberspringen, wenn der Nutzer pausiert hat.
         if (masterPausePrefs.pausedNow()) {
             Logger.business(LogTags.MAINTENANCE, "Wartung uebersprungen (Master-Pause aktiv)")
+            // pause() hat die Wecker geloescht - eine stehende Kalender-Warnung ("die bereits
+            // gestellten bleiben") waere jetzt falsch.
+            kalenderWarnung { ruhen() }
             return
         }
 
@@ -1394,6 +1400,14 @@ class AlarmMaintenanceService : Service() {
         // hinter dem Gate, waere er in genau der Lage blind, fuer die es ihn gibt. Ein Token
         // braucht er ohnehin nicht - geraeumt wird ohne jede Netzabfrage.
         arbeiteOffenenRaeumauftragAb()
+
+        // STEP 0b: Kalender-Warnung gegen die AUSWAHL abgleichen - ebenfalls vor jedem Ausstieg
+        // und ohne Netz. Nach einer Abwahl kaeme die Wartung sonst nie bis zum Abruf (keine
+        // Auswahl, oder schon das Lade-Gate), und eine Warnung ueber den entfernten Kalender
+        // stuende auf Dauer. Unlesbare Auswahl: nichts abgleichen, der Abruf unten entscheidet.
+        calendarSelectionRepository.getCurrentSelectedCalendarIds().onSuccess { auswahl ->
+            kalenderWarnung { gleicheAuswahlAb(auswahl) }
+        }
 
         // STEP 1: TOKEN REFRESH
         Logger.d(LogTags.MAINTENANCE, "Step 1: Token refresh")

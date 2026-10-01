@@ -186,21 +186,14 @@ class DimCorrectionNotifier @Inject constructor(
      * Das Extra EINSTIEG sagt MainActivity, weshalb geoeffnet wurde: sie fuehrt auf den Status-Tab und
      * rollt die Bedienungshilfen-Karte ins Bild, statt auf dem zuletzt benutzten Tab zu enden.
      *
-     * `FLAG_ACTIVITY_SINGLE_TOP` gehoert zwingend dazu: ohne es wirft `FLAG_ACTIVITY_CLEAR_TOP` eine
-     * laufende MainActivity (Start-Modus `standard`) weg und legt sie neu an; mit dem Flag bekommt sie
-     * `onNewIntent()`.
+     * Flags und `ACTION_MAIN`/`CATEGORY_LAUNCHER` kommen aus [MainActivity.einstiegIntent] - ohne
+     * Letztere legte nach einem Tipp hierauf jeder Launcher-Start eine weitere MainActivity an.
      */
     private fun appIntent(): PendingIntent =
         PendingIntent.getActivity(
             context,
             3,
-            Intent(context, MainActivity::class.java)
-                .setFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                )
-                .putExtra(MainActivity.EXTRA_EINSTIEG, MainActivity.EINSTIEG_DIMMER_BEDIENUNGSHILFEN),
+            MainActivity.einstiegIntent(context, MainActivity.EINSTIEG_DIMMER_BEDIENUNGSHILFEN),
             // FLAG_UPDATE_CURRENT: PendingIntents vergleichen sich OHNE Extras - ein aelterer,
             // noch registrierter PendingIntent unter demselben Request-Code (aus einer Version
             // vor diesem Extra) wuerde sonst weiterverwendet und traege das Ziel nicht.

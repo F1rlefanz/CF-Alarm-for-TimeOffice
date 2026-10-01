@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.44.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.44.1 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Ohne Internet und bei pausierter App stimmt jetzt der Satz über deine Wecker._
+
+### 🐛 Behoben
+
+- **„Die gestellten Wecker bleiben“ stand auch da, wenn keiner gestellt war:** Ohne Internetverbindung sagten die Übersicht und der System-Status das auch bei pausierter App oder ausgeschalteten automatischen Alarmen – direkt neben dem Hinweis, dass kein Wecker gestellt wird. Jetzt steht der Satz nur noch, wenn er stimmt.
+
+## Version 1.44.0
 
 **Stand:** Oktober 2026
 

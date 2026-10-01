@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.44.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.45.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Neue Nutzer starten mit allgemeinen Schichttypen und einem freundlicheren ersten Schritt bei der Kalenderauswahl._
+
+### ✨ Neu
+
+- **Allgemeine Standard-Schichttypen:** Wer die App neu einrichtet, bekommt jetzt Früh-, Spät- und Nachtschicht mit den Kürzeln F, S und N sowie den Zwischendienst mit ZD. Die Kürzel einer einzelnen Station und die Schicht „S2“ sind aus den Vorgaben verschwunden. Stehen in deinem Kalender andere Kürzel, schlägt die App sie dir zum Zuordnen vor. Bereits eingerichtete Schichttypen bleiben unverändert.
+
+### 🎨 Feinschliff
+
+- **Kalenderauswahl beim ersten Einrichten:** Statt einer roten Warnung über abgewählte Kalender und gelöschte Wecker steht dort jetzt ein Hinweis, welchen Kalender du wählen sollst. Die Warnung erscheint nur noch, wenn du deinen letzten Kalender abwählst.
+
+## Version 1.44.1
 
 **Stand:** Oktober 2026
 

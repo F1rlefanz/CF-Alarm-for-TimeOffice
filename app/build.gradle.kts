@@ -52,8 +52,8 @@ android {
         applicationId = "com.github.f1rlefanz.cf_alarmfortimeoffice"
         minSdk = 26
         targetSdk = 37
-        versionCode = 157
-        versionName = "1.44.1"
+        versionCode = 158
+        versionName = "1.45.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AD_ID wird NICHT hier gesperrt, sondern im Manifest (maxSdkVersion="0", siehe CLAUDE.md).

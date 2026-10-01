@@ -15,6 +15,10 @@ und beide sind unauffaellig, wenn sie zurueckkommen:
      Hergang und muss stehenbleiben. Zeilenweise geprueft waren SECHS von neun Treffern
      genau solche Absaetze - das Signalwort steht selten in derselben Zeile wie das Symbol.
 
+Dazu der Konfliktzustand (#60): waehrend eines offenen Merge darf das Gatter NICHT melden, sonst
+sperrt es `git merge --continue`/`--abort`. Getestet an einem echten offenen Merge in einem
+Wegwerf-Repo, und zwar die Verdrahtung in `main()`, nicht nur die Hilfsfunktion.
+
 Aufruf:
     python -m unittest discover -s tools/aufraeumen -p "test_*.py"
     python tools/aufraeumen/test_pruefe_reste.py
@@ -22,11 +26,15 @@ Aufruf:
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import pruefe_reste  # noqa: E402
 from pruefe_reste import HISTORISCH, _absaetze, tote_importe_in  # noqa: E402
 
 
@@ -125,6 +133,64 @@ class DokuAbsaetze(unittest.TestCase):
         (a, b), = list(_absaetze(zeilen))
 
         self.assertTrue(HISTORISCH.search("\n".join(zeilen[a:b])))
+
+
+def _git_in(ordner, *args):
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        + list(args),
+        cwd=ordner, check=False, capture_output=True, text=True,
+    )
+
+
+class OffenerMerge(unittest.TestCase):
+    """Echter offener Merge statt Attrappe - `git ls-files -u` ist nur so wirklich befuellt."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = self._tmp.name
+        _git_in(self.repo, "init", "-q", "-b", "main")
+        datei = os.path.join(self.repo, "A.kt")
+
+        def schreibe(wert):
+            with open(datei, "w", encoding="utf-8") as f:
+                f.write("package a\n\nval x = %d\n" % wert)
+
+        schreibe(1)
+        _git_in(self.repo, "add", "A.kt")
+        _git_in(self.repo, "commit", "-q", "-m", "basis")
+        _git_in(self.repo, "switch", "-q", "-c", "zweig")
+        schreibe(2)
+        _git_in(self.repo, "commit", "-q", "-am", "zweig")
+        _git_in(self.repo, "switch", "-q", "main")
+        schreibe(3)
+        _git_in(self.repo, "commit", "-q", "-am", "main")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_sauberer_baum_ist_kein_offener_merge(self):
+        with mock.patch.object(pruefe_reste, "WURZEL", self.repo):
+            self.assertFalse(pruefe_reste.offener_merge())
+
+    def test_konflikt_wird_erkannt(self):
+        _git_in(self.repo, "merge", "zweig")
+        with mock.patch.object(pruefe_reste, "WURZEL", self.repo):
+            self.assertTrue(pruefe_reste.offener_merge())
+
+    def test_main_ueberspringt_alle_pruefungen_bei_offenem_merge(self):
+        _git_in(self.repo, "merge", "zweig")
+        explodiert = mock.Mock(side_effect=AssertionError("Pruefung lief trotz offenem Merge"))
+        with mock.patch.object(pruefe_reste, "WURZEL", self.repo),                 mock.patch.object(pruefe_reste, "pruefe_tote_importe", explodiert),                 mock.patch.object(sys, "argv", ["pruefe_reste.py", "--ci"]):
+            self.assertEqual(0, pruefe_reste.main())
+        explodiert.assert_not_called()
+
+    def test_main_prueft_ohne_offenen_merge(self):
+        """Gegenprobe: der Waechter darf das Gatter nicht dauerhaft abschalten."""
+        gerufen = mock.Mock()
+        with mock.patch.object(pruefe_reste, "WURZEL", self.repo),                 mock.patch.object(pruefe_reste, "pruefe_tote_importe", gerufen),                 mock.patch.object(pruefe_reste, "pruefe_verwaiste_strings"),                 mock.patch.object(pruefe_reste, "pruefe_composable_ohne_verbraucher"),                 mock.patch.object(pruefe_reste, "pruefe_haengende_kdocs"),                 mock.patch.object(pruefe_reste, "pruefe_ungenutzte_konstanten"),                 mock.patch.object(pruefe_reste, "pruefe_doku_verweise"),                 mock.patch.object(sys, "argv", ["pruefe_reste.py", "--ci"]):
+            pruefe_reste.main()
+        gerufen.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ ohne Grund.
   29 Tage lang kein wohlgeformtes XML (`--` im Kommentar), Lint nahm es klaglos hin.
 - **Jede neue Prüfung, die den Baum liest, muss den Konfliktzustand kennen.** Konfliktmarker sind
   nie wohlgeformt; eine blockierende Prüfung sperrt sonst ausgerechnet `git merge --abort`. Ausweg:
-  `git ls-files -u` nicht leer → überspringen (offener Punkt #60 für `pruefe_reste.py`).
+  `git ls-files -u` nicht leer → überspringen (in `pruefe_reste.py` zentral in `main()`, #60).
 - **Ein leeres Strukturergebnis ist meist ein Parserfehler, kein Befund.** Kommentare und Strings
   vor der Struktursuche zeichenlängentreu ausblenden, und das Inventar einmal ausdrucken und
   ansehen — eine Selbstprüfung auf Zahlen belegt nicht die Namen.

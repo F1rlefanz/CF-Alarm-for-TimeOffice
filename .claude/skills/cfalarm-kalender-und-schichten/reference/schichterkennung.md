@@ -94,7 +94,8 @@ Wecker gekostet:**
   ViewModel-Erzeugung) und `CFAlarmApplication.initializeApp()` (bei JEDEM Kaltstart, auch bei rein
   hintergrundgetriebenen Prozessstarts — unbemerkbar). Fail-safe stattdessen: Sync auslassen, Fehler
   loggen bzw. in den UI-State schreiben, bestehende Alarme bleiben gesetzt. Der bewusste Weg zum
-  Default heißt `resetToDefaults()` und gehört dem Nutzer.
+  Default ist der Knopf „Auf Standardwerte zurücksetzen" und gehört dem Nutzer (nicht
+  `resetToDefaults()`, siehe den nächsten Punkt — es höbe die Alarm-Pause auf).
 - **„Auf Standardwerte zurücksetzen" rührt `autoAlarmEnabled` nicht an**
   (`resetToDefaultsPreservingAutoAlarm()`). Vorher speicherte der Knopf die komplette
   `getDefaultConfig()`, und die enthält `autoAlarmEnabled = true`: wer die automatischen Alarme im

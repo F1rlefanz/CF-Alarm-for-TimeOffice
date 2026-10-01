@@ -216,7 +216,8 @@ und in den Sperren selbst.
 
 **Was daraus folgt, und was ausdrücklich NICHT:**
 
-- **Nur der Teilerfolg ist neu.** Fallen ALLE Kalender aus, ist das der Autorisierungsfall
+- **In der APP ist nur der Teilerfolg neu** (die Hintergrund-Warnung meldet seit v1.43.7 auch den
+  Totalausfall, siehe den nächsten Abschnitt). Fallen ALLE Kalender aus, ist das der Autorisierungsfall
   (`resolveCalendarAuthorizationOutcome()` → `calendarAuthorizationValid = false`) mit eigener,
   handlungsfähiger Meldung. `CalendarUiState.unavailableCalendarIds` bleibt dann bewusst leer —
   zwei Warnungen für dieselbe Lage sind schlechter als eine.
@@ -288,6 +289,68 @@ dem Tippen auf „Aus Auswahl entfernen" lief der Sync sofort wieder an (8 → 9
 nicht schon beim Entfernen des Kalenders. Wer denselben Kalender innerhalb dieses Fensters (max.
 6 h) wieder hinzufügt, während er noch kaputt ist, bekommt keine erneute Benachrichtigung — die
 Karte zeigt ihn trotzdem. Bewusst nicht behoben: der Aufwand stünde in keinem Verhältnis.
+
+## Die Hintergrund-Warnung auch beim Totalausfall (v1.43.7)
+
+**Die Lücke (Fairphone-Test 30.09.2026, am Code belegt):** Scheiterten ALLE ausgewählten Kalender,
+kehrte `performMaintenance()` zurück, BEVOR sie `CalendarUnavailableNotifier.onFetchOutcome()`
+fragte. Der Notifier sah nur Teilerfolge. Gerade der Hauptfall – der meist EINZIGE
+Dienstplan-Kalender fehlt dauerhaft – blieb im Hintergrund stumm; die App zeigte es nur beim
+Öffnen. Widersprach der CLAUDE.md-Regel „ein Zustand, der den Sync dauerhaft anhält, muss
+sichtbar sein".
+
+**Was jetzt gilt:**
+
+- **Totalausfall: alle angefragten Kennungen an den Notifier**, mit derselben Entprellung (zweiter
+  Lauf in Folge, einmal). Die Art (`Ausfall`) bestimmt NUR den Text, nie die Entprellung:
+  `KALENDER_FEHLT` → `ALLE_NICHT_GEFUNDEN`, jede andere Nicht-Netz-Ursache (abgelehnte Anmeldung,
+  abgeschnittene Liste, Unbekanntes) → `ALLE_NICHT_ABRUFBAR`. Die Einstufung (`fehlschlagArt()`,
+  `istNetzbedingterFehlschlag()`) liegt seither in `calendar/KalenderFehlschlag.kt` – vorher im
+  ViewModel, aus `service/` nicht importierbar.
+- **Ausnahme: reine Verbindung → der Notifier wird GAR NICHT gefragt.** Ein Aufruf mit Kennungen
+  meldete nach zwei Läufen „nicht abrufbar" für ein Funkloch, einer mit leerer Menge hieße „erholt"
+  und räumte das Gedächtnis. Anhaltende Netzstörungen des ganzen Geräts meldet der Token-Schritt.
+  **Bekannte, offene Grenze:** Der Refresh läuft über die Play-Dienste, der Abruf über das Netz der
+  App. Eine Netzsperre nur für CF-Alarm oder dauerhafte 5xx/429/Kontingent-403 (alles
+  `NetworkError`) bleiben deshalb still. Zwei Varianten liegen beim Eigentümer (Memory
+  `project_offene_punkte` §5).
+- **Mischfall entscheidet der ERSTE Fehler.** `getCalendarEventsWithStatus()` wirft beim
+  Totalausfall den `AppError` des ersten gescheiterten Kalenders, `SafeExecutor` lässt ihn
+  unverändert (`CalendarUseCaseFailureSemanticsTest` hält das fest). Keine Vertragsänderung.
+- **Der Tipp führt frisch in den System-Status** (`EINSTIEG_KALENDER_WARNUNG`: Tab wechseln UND
+  `refreshData(forceRefresh = true)`). Der bloße Start-Intent holte eine laufende App mit altem Tab
+  und dem Abruf von VOR dem Ausfall nach vorn („API-Zugriff OK") – der Nutzer hielt die Warnung
+  für einen Fehlalarm. Eigener Request-Code 2203.
+- **Der Intent MUSS filtergleich mit dem Launcher-Intent sein** (`MainActivity.einstiegIntent()`,
+  MAIN + LAUNCHER, ohne `setPackage`). Ohne das wurde der Meldungs-Intent zum Basis-Intent eines
+  neuen Tasks, und jeder spätere Launcher-Start legte eine WEITERE MainActivity obendrauf
+  (Emulator 30.09.2026: zwei Einträge im Task; danach eine). Die Dimmer-Meldung war genauso
+  gebaut und nutzt denselben Helfer. Weitere explizite MainActivity-Intents ohne MAIN/LAUNCHER
+  (AlarmClockInfo-Show-Intents, Notausgang, Pausen-Hinweis) sind älter und offen (Memory §5).
+- **Zurückgenommen wird, sobald keiner der GEMELDETEN Kalender mehr scheitert** – auf drei Wegen:
+  ein Abruf ohne sie (`onFetchOutcome`), ein Abgleich gegen die AUSWAHL (`gleicheAuswahlAb`, in der
+  Wartung VOR jedem Ausstieg, auch vor dem Token-Schritt) und die Master-Pause (`ruhen`, beginnt
+  die Entprellung neu). Der Abgleich war nötig, weil die Wartung nach einer Abwahl nie bis zum
+  Abruf kommt – ohne Auswahl ohnehin, und meist endet sie schon am Lade-Gate. Die Warnung „die
+  bereits gestellten bleiben" stand dann auf Dauer neben geräumten Weckern. Bewusst KEIN
+  `onFetchOutcome(emptySet())` dafür: das hieße „abgerufen und erholt". Bleibt eine Lücke von bis
+  zu 6 h, wenn der Nutzer über das Launcher-Symbol öffnet und abwählt (der Tipp auf die Meldung
+  räumt sie per autoCancel sofort).
+- **Der Text ist ein Schnappschuss und muss wahr bleiben, solange er steht.** Beim Totalausfall
+  hieß er erst „Google findet KEINEN ausgewählten Kalender mehr" bzw. „bei mehreren Versuchen in
+  Folge keinen". Liefert danach ein anderer Kalender wieder (Teilausfall), bleibt die Meldung
+  stehen – der gemeldete scheitert ja weiter – und behauptete das Falsche. Jetzt „Mindestens ein
+  ausgewählter Kalender …". Die Karte der Übersicht darf „keinen" sagen: sie wird bei jedem
+  Zeichnen neu berechnet. Verworfen: die Art der stehenden Meldung zu speichern und sie zu
+  ersetzen – ein neuer Merker müsste in `ConfigBackupFilter` UND `DeviceLocalFlagsGuard`.
+- **Kein Entfernen-Rat beim Totalausfall**: beim letzten Kalender wäre es eine Abwahl, die alle
+  Wecker der nächsten zwei Wochen räumt; die App fragt dort und bietet zuerst einen anderen an.
+
+**Am Emulator durchgemessen (30.09./01.10.2026)**, mit einer nicht existierenden Kalender-ID als
+EINZIGER Auswahl: Lauf 1 still, Lauf 2 „Kalender nicht gefunden", Lauf 3 ohne Wiederholung; im
+Flugmodus (Token noch gültig) keine Warnung; nach dem Zurückschreiben der echten Auswahl nahm der
+Abgleich die Warnung VOR dem Abruf zurück. Wartungsläufe auf Bestellung per Zeitzonenwechsel
+(Memory `env_emulator_trigger_alarm`).
 
 
 ## Den letzten Kalender abwählen IST eine Löschgrundlage — ein leeres Ladeergebnis nicht (v1.30.0)

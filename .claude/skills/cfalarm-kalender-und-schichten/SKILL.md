@@ -60,6 +60,11 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Neue Properties in ViewModels mit `init{}` gehören VOR den `init{}`-Block.** Kotlin initialisiert
   in Textreihenfolge, und ein `StateFlow`-Collector feuert synchron während der Konstruktion —
   reale `NullPointerException`, die 329 grüne Tests nicht gefangen haben.
+- **Die Kalender-Warnung im Hintergrund meldet auch den TOTALAUSFALL** (seit v1.43.7) — nur ein
+  reines Funkloch fragt sie nicht. Zurückgenommen wird nach Abruf, Auswahl-Abgleich
+  (`gleicheAuswahlAb`, vor jedem Ausstieg der Wartung) und Master-Pause (`ruhen`); ihr Text muss
+  wahr bleiben, solange sie steht („mindestens ein", nicht „keinen"). Hergang in
+  `reference/kalender-datenfluss.md`, Abschnitt Totalausfall.
 - **Schicht-Änderungs-Notification lebt INNERHALB von `syncAlarms()`**, nicht bei dessen Aufrufern;
   alle drei Notifier-Aufrufe in eigenem `try/catch`. Der allererste Sync flutet nicht
   (`isFirstSync`), `notifyUpdated()` hat eine eigene Schwelle (≥10 min oder Name geändert).
@@ -92,7 +97,8 @@ das baut man dieselbe Falle in neuer Form nach.
   `shift_config_broken`, der Sync wird ausgelassen, bestehende Alarme bleiben — ein sichtbarer
   Hinweis fehlt noch, bewusst offengelassen.
 - **Kein stiller Default-Überschreiber der Schicht-Konfiguration** — alle drei Fallbacks sind entfernt.
-  Der bewusste Weg zum Default heißt `resetToDefaults()` und gehört dem Nutzer.
+  Der bewusste Weg zum Default ist der Knopf „Auf Standardwerte zurücksetzen" und gehört dem Nutzer —
+  NICHT `resetToDefaults()`: das schreibt `autoAlarmEnabled = true` (ohne Aufrufer, Kandidat zum Entfernen).
 - **„Auf Standardwerte zurücksetzen" rührt `autoAlarmEnabled` nicht an.**
 - **`ShiftRecognitionEngine`: EIN unveränderliches Cache-Objekt hinter Volatile-Referenz, Prüfung UND
   Veröffentlichung hinter `recognitionMutex`, PLUS eine Epochen-Kennung** (der Mutex allein reicht

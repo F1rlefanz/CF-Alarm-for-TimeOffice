@@ -65,6 +65,11 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Chip-Reihen als `FlowRow`**, nicht `Row` mit `chunked(n)`.
 - **Eine modale Schublade laesst einen Streifen frei** (`min(360.dp, Bildschirmbreite - 56.dp)`) -
   sonst fehlt auf schmalen Anzeigen die Flaeche zum Danebentippen, der beworbene Schliessweg.
+- **Eine Benachrichtigung öffnet die App NUR über `MainActivity.einstiegIntent()`** (MAIN +
+  LAUNCHER, NEW_TASK|CLEAR_TOP|SINGLE_TOP, `EXTRA_EINSTIEG`). Ein expliziter Intent ohne
+  MAIN/LAUNCHER wird bei fehlendem Task dessen Basis-Intent, und jeder spätere Launcher-Start legt
+  eine weitere MainActivity obendrauf (Emulator 30.09.2026). `EinstiegIntentTest` hält beide
+  Absender daran.
 - **Ein Vorgang, ein Name, an der Stelle, deren Inhalt er veraendert.** Drei Beschriftungen fuer
   einen Aufruf sind drei Versprechen; ein blosses Symbol kann nicht sagen, WAS es tut.
 - **Ein Zeitstempel nennt, worauf er sich bezieht** - und wer eine Diagnose-Anzeige einbaut, prueft

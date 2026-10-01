@@ -16,6 +16,7 @@ import com.google.api.services.calendar.CalendarScopes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -48,6 +49,13 @@ class OAuth2TokenManager(
         // handlePermissionResult() und wurde als abgelehnte Kalender-Autorisierung gemeldet.
         // Ein neuer Legacy-Request-Code im Modul muss gegen beide Konstanten geprueft werden.
         const val REQUEST_CODE_CALENDAR_AUTHORIZATION = 1001
+
+        /**
+         * Abstand des Bestaetigungsabrufs, bevor eine Resolution im Hintergrund als Zustimmungsfall
+         * gilt - siehe [hole]. Lang genug, dass Android ein totes oder gerade gewechseltes Netz
+         * neu bewertet hat; kurz genug fuer einen Wartungslauf.
+         */
+        internal const val BESTAETIGUNG_MS = 5_000L
     }
     
     @Volatile
@@ -115,7 +123,9 @@ class OAuth2TokenManager(
         try {
             Logger.d(LogTags.TOKEN, "🔐 Starting Calendar authorization for: $userEmail")
             
-            val (ausgang, dialog) = hole(userEmail)
+            // Im Vordergrund OHNE Bestaetigungsabruf: der Nutzer hat getippt, und ein unnoetig
+            // gezeigter Dialog kostet nichts - fuenf Sekunden Warten vor dem Dialog schon.
+            val (ausgang, dialog) = hole(userEmail, resolutionBestaetigen = activity == null)
             val accessToken = when (ausgang) {
                 is AutorisierungsEinstufung.Ausgang.Token -> ausgang.accessToken
 
@@ -371,16 +381,45 @@ class OAuth2TokenManager(
     /**
      * Ein Abruf beim AuthorizationClient, eingestuft nach [AutorisierungsEinstufung].
      *
-     * Ein Abbruch der GMS-AUFGABE kommt als `java.util.concurrent.CancellationException` - dieselbe
+     * EINE RESOLUTION KOSTET IM HINTERGRUND ERST NACH BESTAETIGUNG DAS TOKEN (adversariale Review
+     * 01.10.2026): GMS meldet ein Funkloch als Resolution, und ob das Netz validiert ist, ist nur
+     * eine Momentaufnahme - Android nimmt `VALIDATED` verzoegert zurueck, und ein Netzwechsel kann
+     * genau in die Anfrage fallen. Als Zustimmungsfall gilt sie deshalb nur, wenn das Netz VOR und
+     * NACH dem Aufruf validiert war UND ein zweiter Abruf [BESTAETIGUNG_MS] spaeter dasselbe sagt.
+     * Bringt der zweite ein Token, ist alles gut; ist er ein Aussetzer, bleibt es voruebergehend.
+     */
+    private suspend fun hole(
+        email: String,
+        resolutionBestaetigen: Boolean = true
+    ): Pair<AutorisierungsEinstufung.Ausgang, PendingIntent?> {
+        val erster = holeEinmal(email)
+        if (!resolutionBestaetigen || erster.first !is AutorisierungsEinstufung.Ausgang.ZustimmungNoetig) {
+            return erster
+        }
+        Logger.w(LogTags.TOKEN, "🔐 Zustimmung verlangt - Bestaetigungsabruf in ${BESTAETIGUNG_MS / 1000} s, bevor das als Anmeldefall gilt")
+        delay(BESTAETIGUNG_MS)
+        val zweiter = holeEinmal(email)
+        if (zweiter.first !is AutorisierungsEinstufung.Ausgang.ZustimmungNoetig) {
+            Logger.w(LogTags.TOKEN, "🌐 Bestaetigungsabruf widerspricht der Resolution - kein Anmeldefall")
+        }
+        return zweiter
+    }
+
+    /**
+     * Ein einzelner Abruf. Ein Abbruch der GMS-AUFGABE kommt als `java.util.concurrent.CancellationException` - dieselbe
      * Klasse wie ein Coroutine-Abbruch. Weitergeworfen wird nur, wenn die Coroutine WIRKLICH
      * abgebrochen ist; sonst ist es ein Aussetzer der Play-Dienste und darf den Wartungslauf nicht
      * still beenden.
      */
-    private suspend fun hole(email: String): Pair<AutorisierungsEinstufung.Ausgang, PendingIntent?> {
+    private suspend fun holeEinmal(email: String): Pair<AutorisierungsEinstufung.Ausgang, PendingIntent?> {
         val netz = { runCatching { netzValidiert() }.getOrDefault(false) }
+        val netzVorher = netz()
         return try {
             val antwort = autorisierung.autorisiere(email)
-            AutorisierungsEinstufung.ausErgebnis(antwort.hatResolution, antwort.accessToken, netz()) to
+            // VOR und NACH: faellt der Aufruf in einen Netzwechsel, ist eine der beiden Messungen
+            // "nicht validiert", und die Resolution bleibt ein Aussetzer.
+            val netzValidiertDurchgehend = netzVorher && netz()
+            AutorisierungsEinstufung.ausErgebnis(antwort.hatResolution, antwort.accessToken, netzValidiertDurchgehend) to
                 antwort.zustimmungsDialog
         } catch (e: CancellationException) {
             currentCoroutineContext().ensureActive()

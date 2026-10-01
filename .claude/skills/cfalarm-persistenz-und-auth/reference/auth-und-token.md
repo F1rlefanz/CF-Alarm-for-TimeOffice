@@ -161,6 +161,16 @@ nach `clearToken` liefert keinen Fehler, sondern Erfolg mit `hasResolution = tru
 - **Ohne validiertes Netz ist nichts endgueltig** - weder Resolution noch Statuscode. Wer
   `hasResolution` ungeprueft als Anmeldung liest, baut den Fehlalarm vom 09.09.2026 nach, und der
   Refresh-Pfad verwirft bei `ConsentRequired` obendrein das Token.
+- **„Validiert" ist nur eine Momentaufnahme** (adversariale Review 01.10.2026, 3/3 bestaetigt):
+  Android nimmt `VALIDATED` verzoegert zurueck (am 09.09. kam „kein Internet" eine Sekunde NACH
+  dem Netzfehler), und ein Netzwechsel kann in die Anfrage fallen. Deshalb misst `holeEinmal()`
+  vor UND nach dem Aufruf, und im Hintergrund gilt eine Resolution erst nach einem zweiten Abruf
+  5 s spaeter als Zustimmungsfall. Im Vordergrund (Nutzer tippt) ohne diese Wartezeit - ein
+  unnoetiger Dialog kostet nichts. Restrisiko: ein Netz, das laenger als 5 s tot und trotzdem
+  „validiert" ist, kostet das Token; geheilt wird das beim naechsten Oeffnen der App (die
+  Zustimmung besteht, `authorize()` liefert ohne Dialog).
+- Statuscodes 14/16/19 (unterbrochen, abgebrochen, Verbindung zu den Play-Diensten verloren) sind
+  voruebergehend - GoogleAuthUtil meldete genau diese als `IOException`.
 - Voruebergehend wird als `IOException` in die Ursachenkette gesetzt. So blieben `WartungTokenFehler`,
   `AuthUseCase.hasCalendarAuthorization()` und `CalendarUseCase` unveraendert - sie kannten nur
   den GoogleAuthUtil-Vertrag.

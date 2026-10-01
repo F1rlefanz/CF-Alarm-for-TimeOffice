@@ -25,6 +25,13 @@ import java.util.concurrent.TimeoutException
  * ("Anmeldung erforderlich" im Funkloch) nach - diesmal bei JEDEM Offline-Refresh, und der
  * Refresh-Pfad verwirft bei "Zustimmung noetig" obendrein das Token.
  *
+ * WARUM "VALIDIERT" ALLEIN NICHT REICHT (adversariale Review 01.10.2026): Android nimmt
+ * `VALIDATED` verzoegert zurueck - am 09.09.2026 meldete der Netzbeobachter "kein Internet" erst
+ * eine Sekunde NACH dem Netzfehler, und ein Netzwechsel kann genau in die GMS-Anfrage fallen. Eine
+ * einzelne Momentaufnahme darf deshalb kein Token kosten: der Aufrufer (`OAuth2TokenManager.hole`)
+ * misst vor UND nach dem Aufruf und laesst eine Resolution im Hintergrund erst nach einem zweiten,
+ * zeitversetzten Abruf als Zustimmungsfall gelten.
+ *
  * DIE REGEL: **ohne validiertes Netz ist nichts endgueltig.** Weder eine Resolution noch ein
  * Statuscode taugt offline als Beleg gegen die Anmeldung; mit Netz kommt die Wahrheit beim
  * naechsten Versuch ohnehin. Mit Netz: Resolution = Zustimmung noetig; Netz-, Timeout- und
@@ -52,12 +59,18 @@ internal object AutorisierungsEinstufung {
     /**
      * Statuscodes, die einen Aussetzer der Verbindung oder der Play-Dienste melden - nicht des
      * Kontos. 20-22 sind die Wiederverbindungs-Faelle (u. a. "Play-Dienste aktualisieren sich").
+     * 14/16/19 (unterbrochen, abgebrochen, Verbindung zu den Play-Diensten verloren) stehen hier,
+     * weil GoogleAuthUtil genau diese Faelle als `IOException("Error on service connection.")`
+     * meldete - also voruebergehend (adversariale Review 01.10.2026).
      */
     private val VORUEBERGEHENDE_CODES = setOf(
         CommonStatusCodes.NETWORK_ERROR,
         CommonStatusCodes.INTERNAL_ERROR,
+        CommonStatusCodes.INTERRUPTED,
         CommonStatusCodes.TIMEOUT,
+        CommonStatusCodes.CANCELED,
         CommonStatusCodes.API_NOT_CONNECTED,
+        CommonStatusCodes.REMOTE_EXCEPTION,
         CommonStatusCodes.CONNECTION_SUSPENDED_DURING_CALL,
         CommonStatusCodes.RECONNECTION_TIMED_OUT_DURING_UPDATE,
         CommonStatusCodes.RECONNECTION_TIMED_OUT

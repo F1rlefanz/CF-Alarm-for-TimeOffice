@@ -117,6 +117,47 @@ class OAuth2AuthorizationClientRefreshTest {
     }
 
     @Test
+    fun `eine Resolution, die der Bestaetigungsabruf nicht wiederholt, kostet kein Token`() = runTest {
+        // Netzwechsel / verzoegert zurueckgenommenes VALIDATED: der erste Abruf sieht kein Netz,
+        // die App misst trotzdem "validiert". Der zweite Abruf bringt das Token.
+        val repo = FakeTokenRepository(abgelaufen())
+        val antworten = ArrayDeque(listOf(resolution, token("neu")))
+        val auth = FakeAutorisierung({ antworten.removeFirst() })
+
+        val ergebnis = manager(repo, auth, netz = true).getValidToken()
+
+        assertEquals("neu", ergebnis.getOrThrow().accessToken)
+        assertEquals(listOf("leere:alt", "autorisiere", "autorisiere"), auth.protokoll)
+    }
+
+    @Test
+    fun `faellt das Netz waehrend des Aufrufs weg, ist die Resolution ein Aussetzer`() = runTest {
+        val repo = FakeTokenRepository(abgelaufen())
+        var messungen = 0
+        // vor dem Aufruf validiert, danach nicht mehr
+        val manager = OAuth2TokenManager(mock<Context>(), repo, KeinMerker, FakeAutorisierung({ resolution })) {
+            messungen++ % 2 == 0
+        }
+
+        val fehler = manager.getValidToken().exceptionOrNull()
+
+        assertEquals(WartungTokenFehler.Art.VORUEBERGEHEND, WartungTokenFehler.einstufe(fehler))
+        assertNotNull(repo.token)
+    }
+
+    @Test
+    fun `verlorene Verbindung zu den Play-Diensten ist voruebergehend`() = runTest {
+        for (code in listOf(14, 16, 19)) {
+            val repo = FakeTokenRepository(abgelaufen())
+            val auth = FakeAutorisierung({ throw ExecutionException(com.google.android.gms.common.api.ApiException(com.google.android.gms.common.api.Status(code))) })
+
+            val fehler = manager(repo, auth, netz = true).getValidToken().exceptionOrNull()
+
+            assertEquals("Code $code", WartungTokenFehler.Art.VORUEBERGEHEND, WartungTokenFehler.einstufe(fehler))
+        }
+    }
+
+    @Test
     fun `Zeitueberschreitung beim Abruf ist voruebergehend - auch mit Netz`() = runTest {
         val repo = FakeTokenRepository(abgelaufen())
         val auth = FakeAutorisierung({ throw ExecutionException(TimeoutException()) })

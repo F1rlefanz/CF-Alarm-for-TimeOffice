@@ -72,7 +72,7 @@ class AutorisierungsEinstufungTest {
 
     @Test
     fun `Netz-, Timeout- und Verbindungs-Statuscodes sind voruebergehend - auch MIT Netz`() {
-        for (code in listOf(7, 8, 15, 17, 20, 21, 22)) {
+        for (code in listOf(7, 8, 14, 15, 16, 17, 19, 20, 21, 22)) {
             assertTrue("Code $code", fehler(FakeApiException(code)) is Ausgang.Voruebergehend)
         }
     }

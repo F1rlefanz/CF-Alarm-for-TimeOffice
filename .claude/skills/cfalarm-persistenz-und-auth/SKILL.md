@@ -100,8 +100,9 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Token kommen über den AuthorizationClient, und `hasResolution` ist OFFLINE kein Anmeldefall.**
   GMS meldet ein Funkloch nach geleertem Cache als ERFOLG mit `hasResolution = true` — dieselbe Form
   wie eine entzogene Zustimmung. Die Einstufung (`AutorisierungsEinstufung`, reine Funktion) sagt:
-  ohne validiertes Netz ist nichts endgültig; Statuscodes 7/8/15/17/20–22, Timeout und IOException
-  sind vorübergehend. Vorübergehend wird als `IOException` in die Kette gesetzt — daran hängen
+  ohne validiertes Netz ist nichts endgültig; Statuscodes 7/8/14/15/16/17/19/20–22, Timeout und
+  IOException sind vorübergehend. Im Hintergrund kostet eine Resolution das Token erst, wenn das Netz
+  VOR und NACH dem Aufruf validiert war UND ein zweiter Abruf 5 s später sie bestätigt. Vorübergehend wird als `IOException` in die Kette gesetzt — daran hängen
   `WartungTokenFehler`, `AuthUseCase` und `CalendarUseCase`. Offline startet `authorize()` keinen
   Zustimmungsdialog. Scheitert das Leeren des Caches vor dem Refresh, wird NICHT abgerufen.
 - **`auth_prefs` braucht `corruptionHandler` UND `.catch{}`**; Degradation auf „nicht angemeldet".

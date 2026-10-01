@@ -24,7 +24,9 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
      * Authorization fehlgeschlagen.
      *
      * [cause] traegt bei einem Aussetzer (offline, Zeitueberschreitung) eine `IOException` - wie
-     * bei [RefreshFailed], damit `WartungTokenFehler.istNetzursache` ihn erkennt.
+     * bei [RefreshFailed]. Heute wertet das nur das Log aus: `WartungTokenFehler.einstufe` stuft
+     * diesen Typ ohne Blick auf die Ursache als ANMELDUNG ein, und `authorize()` laeuft nie in der
+     * Wartung (die geht ueber `getValidToken()`).
      */
     class AuthorizationFailed(message: String, cause: Throwable? = null) : TokenException(message, cause)
     

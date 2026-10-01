@@ -114,6 +114,18 @@ internal const val NO_SHIFT_HINWEIS_PAUSIERT: String =
     "Hinweis: Alles ist pausiert — es wird kein Wecker gestellt."
 
 /**
+ * PURE, TESTBAR: Darf ein Text "die gestellten Wecker bleiben" sagen?
+ *
+ * Nur, wenn welche gestellt sind. Bei Master-Pause raeumt `syncAlarms()` alle Wecker, bei
+ * ausgeschalteter Automatik ebenso - der Satz stand trotzdem fest in drei Offline-Texten
+ * (Karte "Naechste Schicht", Karte "Kalender-Events", System-Status "Kalender") und widersprach
+ * auf derselben Karte dem Pausenhinweis (am Emulator gesehen, 01.10.2026). EINE Stelle, damit
+ * ein vierter Text nicht wieder fest verdrahtet wird.
+ */
+internal fun gestellteWeckerBleiben(masterPausePaused: Boolean, autoAlarmEnabled: Boolean): Boolean =
+    !masterPausePaused && autoAlarmEnabled
+
+/**
  * Karte "Kalender-Events", wenn ALLE ausgewaehlten Kalender fehlen (geloescht, nicht mehr
  * freigegeben). Bis v1.43.5 hiess das "Kalender-Autorisierung verloren" samt "Kalender-Zugriff
  * erneuern" - ein Knopf, der an einem geloeschten Kalender nichts aendert. Der Ausweg ("Aus
@@ -167,8 +179,13 @@ internal fun noShiftExplanation(
         NoShiftReason.KALENDER_NICHT_ERREICHBAR ->
             // Kein Wort von Zugriff oder Anmeldung - genau diese Fehldiagnose stand hier bis
             // v1.43.4 (Flugmodus = "Kalender-Zugriff abgelaufen"). Knopf und Karte wortgleich.
-            "Google Kalender gerade nicht erreichbar — die gestellten Wecker bleiben. Mit Netz " +
-                "in der Karte \"Kalender-Events\" auf \"Mit Google Kalender abgleichen\" tippen."
+            // "die gestellten Wecker bleiben" nur, wenn es welche gibt - sonst folgt unten der
+            // Pausen- bzw. Automatik-Zusatz, und der Satz stuende im Widerspruch dazu.
+            (if (gestellteWeckerBleiben(masterPausePaused, autoAlarmEnabled)) {
+                "Google Kalender gerade nicht erreichbar — die gestellten Wecker bleiben. "
+            } else {
+                "Google Kalender gerade nicht erreichbar. "
+            }) + "Mit Netz in der Karte \"Kalender-Events\" auf \"Mit Google Kalender abgleichen\" tippen."
         NoShiftReason.CALENDAR_UNAVAILABLE ->
             // Verweist auf die Karte mit dem Entfernen-Knopf (und dem Namen, solange Google den
             // Kalender noch fuehrt; sonst nur die Anzahl) - hier stehen die IDs nicht zur
@@ -508,7 +525,12 @@ fun HomeTabContent(
                     )
                     Text(
                         "Die Termine konnten gerade nicht abgerufen werden – meist fehlt die " +
-                            "Internetverbindung. Die gestellten Wecker bleiben bestehen.",
+                            "Internetverbindung." +
+                            if (gestellteWeckerBleiben(
+                                    masterPausePaused,
+                                    shiftState.currentShiftConfig?.autoAlarmEnabled != false
+                                )
+                            ) " Die gestellten Wecker bleiben bestehen." else "",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     KalenderAbgleichKnopf(enabled = !calendarState.isLoading, onClick = onJetztAbgleichen)

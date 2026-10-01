@@ -289,9 +289,16 @@ fun StatusTabContent(
                     "⚠️ Kalender-Autorisierung verloren - Bitte neu anmelden"
                 calendarState.selectedCalendarIds.isEmpty() -> "Kein Kalender ausgewählt"
                 calendarState.kalenderNichtErreichbar ->
-                    "Google Kalender nicht erreichbar – die gestellten Wecker bleiben. Mit Netz " +
-                        "in der Übersicht, Karte \"Kalender-Events\", auf \"Mit Google Kalender " +
-                        "abgleichen\" tippen."
+                    (if (gestellteWeckerBleiben(
+                            masterPausePaused,
+                            shiftState.currentShiftConfig?.autoAlarmEnabled != false
+                        )
+                    ) {
+                        "Google Kalender nicht erreichbar – die gestellten Wecker bleiben. "
+                    } else {
+                        "Google Kalender nicht erreichbar. "
+                    }) + "Mit Netz in der Übersicht, Karte \"Kalender-Events\", auf " +
+                        "\"Mit Google Kalender abgleichen\" tippen."
                 nichtAbrufbareKalender -> unavailableCalendarDetails(
                     unavailableIds = calendarState.unavailableCalendarIds,
                     namesById = calendarState.availableCalendars.associate { it.id to it.name }

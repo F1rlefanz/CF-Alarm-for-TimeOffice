@@ -44,6 +44,9 @@ das baut man dieselbe Falle in neuer Form nach.
   Standardkonfiguration prüft — Drift muss auffallen.
 - **Kein Text darf eine Anzeige behaupten, die es nicht gibt, und kein Zustand darf sich als anderer
   ausgeben.** Insbesondere: **eine deaktivierte Schichtdefinition darf keine Weckzeit anzeigen.**
+- **„Die gestellten Wecker bleiben" nur über `gestellteWeckerBleiben()`** — bei Master-Pause und
+  ausgeschalteter Automatik ist keiner gestellt. Drei Offline-Texte hatten den Satz fest verdrahtet
+  und widersprachen auf derselben Karte dem Pausenhinweis (Emulator, 01.10.2026).
 - **Ein Zustand, der die App dauerhaft nicht wecken lässt, MUSS dort stehen, wo der Nutzer
   nachsieht** — nicht nur an seinem Schalter. Die Master-Pause hat dabei **Vorrang vor „N aktive
   Alarme"**, und es steht höchstens EIN Zusatz-Hinweis gleichzeitig.

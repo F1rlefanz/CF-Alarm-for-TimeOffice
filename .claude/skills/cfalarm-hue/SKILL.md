@@ -77,7 +77,7 @@ das baut man dieselbe Falle in neuer Form nach.
 
 ### Szenen (seit v1.35.0)
 
-- **Eine Szene ist KEIN vierter Zieltyp, sondern ein Zusatz zu einem GRUPPEN-Ziel.** Sie traegt
+- **Eine Szene ist KEIN weiterer Zieltyp, sondern ein Zusatz zu einem GRUPPEN-Ziel.** Sie traegt
   `isGroup = true`, `targetId` = Gruppe und wird ueber `PUT /groups/<id>/action {"scene": ...}`
   angewendet — genau den Pfad, den `isGroup` ohnehin waehlt. Deshalb bleiben Ausfuehrung,
   `autoOffTargetsOf()` und `BridgeTimer` unveraendert.

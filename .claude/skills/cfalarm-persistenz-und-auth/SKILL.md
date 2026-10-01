@@ -50,6 +50,17 @@ das baut man dieselbe Falle in neuer Form nach.
   Preferences.** Deshalb fragt `AlarmRepository` VOR dem Read den `UserManager`, akzeptiert bei
   gesperrtem Nutzer KEIN Ergebnis und lädt beim ersten Zugriff nach dem Entsperren nach —
   aufgehängt an `awaitInitialLoad()` **und** `onStart` am `activeAlarms`-Flow.
+- **Und DataStore HÄLT dieses Leer im Speicher — für den GANZEN Store, für den ganzen Prozess.**
+  Es reicht EIN fremder Leser im gesperrten Prozess, und nach dem Entsperren liest JEDER Nutzer
+  desselben Stores „leer“: am 01.10.2026 gemessen (Emulator mit PIN, Stacktrace per
+  vorübergehendem Wrapper am `@MainDataStore`): `HueBridgeConnectionManager.initialize()` fragte
+  in seiner Gesundheitsschleife `MasterPausePrefs.pausedNow()`; danach meldete `AlarmRepository`
+  „kein Bestand gespeichert“ (manuelle Wecker verloren), „letzte Kalender-Abfrage: nie“, und
+  `hue_settings` las sich ebenso leer. **Steckte schon in 1.45.0.** Seit 1.45.1 initialisiert der
+  Hue-Manager erst nach dem Entsperren (`CFAlarmApplication.runDeviceLocalStartupChecks()`).
+  **Wer im Prozessstart einen CE-Store liest, fragt VORHER `NutzerEntsperrung.istEntsperrt()`** —
+  und prüft es mit `pruefe_direct_boot.py`, danach entsperren und im Log „Nachgeladen N alarms“
+  suchen, nicht „kein Bestand gespeichert“.
 - **Der Direct-Boot-Spiegel wird bei JEDEM erfolgreichen Load abgeglichen** (`saveAll` ist idempotent).
 - **Die Reads der Onboarding-/Gate-Kette gehen über `readOrEmpty()`** und degradieren auf „NICHT
   abgelehnt" — im Zweifel wird der Hinweis GEZEIGT.

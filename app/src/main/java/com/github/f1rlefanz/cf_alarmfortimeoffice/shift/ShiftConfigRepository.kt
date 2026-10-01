@@ -14,6 +14,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IShiftConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
+import com.github.f1rlefanz.cf_alarmfortimeoffice.util.NutzerEntsperrung
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -108,12 +109,7 @@ class ShiftConfigRepository @Inject constructor(
      * Konfiguration dauerhaft als unlesbar melden.
      */
     private val userUnlocked: Boolean
-        get() = try {
-            context.getSystemService(android.os.UserManager::class.java)?.isUserUnlocked ?: true
-        } catch (e: Exception) {
-            Logger.w(LogTags.SHIFT_CONFIG, "UserManager nicht abfragbar - Nutzer gilt als entsperrt", e)
-            true
-        }
+        get() = NutzerEntsperrung.istEntsperrt(context, LogTags.SHIFT_CONFIG)
 
     /** Sicherung der rohen, nicht dekodierbaren Konfiguration - siehe [backupBrokenConfig]. */
     private val brokenConfigKey = stringPreferencesKey(BROKEN_CONFIG_KEY_NAME)

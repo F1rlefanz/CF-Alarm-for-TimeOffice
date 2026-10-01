@@ -248,8 +248,8 @@ dependencies {
     // Android Studio meldet hier "Dependency 'platform(libs.androidx.compose.bom)' is declared
     // multiple times" - das ist ein FEHLALARM, die Zeile muss bleiben.
     // `androidTestImplementation` erbt NICHT von `implementation`, die BOM aus dem Block oben gilt
-    // hier also nicht. Und `androidx-ui-test-junit4` / `androidx-ui-test-manifest` stehen im
-    // Version-Catalog bewusst OHNE eigene Version - sie beziehen sie ausschliesslich von der BOM.
+    // hier also nicht. Und `androidx-ui-test-junit4` steht im
+    // Version-Catalog bewusst OHNE eigene Version - es bezieht sie ausschliesslich von der BOM.
     // Nachgemessen am 18.08.2026:
     //   ./gradlew app:dependencies --configuration debugAndroidTestCompileClasspath
     //   -> androidx.compose.ui:ui-test-junit4 -> 1.12.0   (aufgeloest ueber compose-bom:2026.08.00)
@@ -257,6 +257,4 @@ dependencies {
     // scheitert. Wer der IDE-Warnung folgt, macht die Tests kaputt, nicht den Build sauberer.
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
-
-    debugImplementation(libs.androidx.ui.test.manifest)
 }

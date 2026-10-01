@@ -190,7 +190,7 @@ fun CalendarSelectionScreen(
                                 if (needsAuthorization) {
                                     onRequestAuthorization()
                                 } else {
-                                    calendarViewModel.loadAvailableCalendars(resetPagination = true)
+                                    calendarViewModel.loadAvailableCalendars()
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()

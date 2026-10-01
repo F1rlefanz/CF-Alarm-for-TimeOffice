@@ -2,7 +2,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
 import android.app.AlarmManager
 import android.app.Application
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -12,7 +11,6 @@ import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.AlarmReceiver
 import com.github.f1rlefanz.cf_alarmfortimeoffice.MainActivity
 import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftMatch
-import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.business.DateTimeFormats
@@ -353,32 +351,6 @@ class AlarmManagerService(
         }
     }
 
-    /**
-     * Darf die App eine Vollbild-Benachrichtigung zeigen?
-     *
-     * Seit Android 14 (API 34) wird USE_FULL_SCREEN_INTENT zwar bei der Installation gewaehrt,
-     * der Play Store entzieht sie danach aber allen Apps, die er nicht als Wecker- oder
-     * Telefonie-App einstuft. Ohne die Berechtigung degradiert das System den Full-Screen-Intent
-     * stillschweigend zu einer Heads-up-Notification: der Wecker klingelt, aber der Weck-Screen
-     * kommt nie hoch - und nichts weist darauf hin.
-     *
-     * Wichtig fuer die Erwartungshaltung: Selbst MIT Berechtigung zeigt Android laut Doku bewusst
-     * nur ein Banner, solange das Geraet entsperrt und in Benutzung ist ("While the user is using
-     * the device, the system UI might display a heads-up notification instead of launching your
-     * full-screen intent"). Das Vollbild ist fuer das gesperrte/dunkle Geraet gedacht - also fuer
-     * den echten Weckfall. Ein Test mit entsperrtem Handy in der Hand beweist hier nichts.
-     */
-    fun canUseFullScreenIntent(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val notificationManager = application.getSystemService(NotificationManager::class.java)
-            notificationManager.canUseFullScreenIntent()
-        } else {
-            true // < API 34: Berechtigung wird mit der Installation gewaehrt
-        }
-    }
-
-
-
     fun getNextAlarmInfo(): NextAlarmInfo? {
         return try {
             val nextAlarmClockInfo = alarmManager.nextAlarmClock
@@ -428,11 +400,11 @@ class AlarmManagerService(
             )
         }
 
-        val permissionStatus = checkAlarmPermissions()
+        val darfExaktPlanen = canScheduleExactAlarms()
         Logger.business(
             LogTags.ALARM_MANAGER,
             "🔧 ALARM DEBUG: Permissions check",
-            "canScheduleExactAlarms=${permissionStatus.canScheduleExactAlarms}"
+            "canScheduleExactAlarms=$darfExaktPlanen"
         )
 
         // FEHLENDE EXACT-ALARM-BERECHTIGUNG IST KEIN ABBRUCHGRUND (Fix).
@@ -453,7 +425,7 @@ class AlarmManagerService(
         // das Feuern eines INEXAKTEN Alarms erlaubt keinen Vordergrunddienst-Start (Begruendung
         // an [setExactOrInexact]), der Weckton-Dienst kann also abgelehnt werden. Wer den
         // Notausgang dort entfernt, macht diesen Satz hier wieder zur Falschaussage.
-        if (!permissionStatus.canScheduleExactAlarms) {
+        if (!darfExaktPlanen) {
             Logger.w(
                 LogTags.ALARM_MANAGER,
                 "⚠️ Keine Exact-Alarm-Berechtigung - Wecker wird inexakt geplant statt uebersprungen"
@@ -671,28 +643,6 @@ class AlarmManagerService(
      * Weg haette den Snooze wieder mitgeloescht. Siehe [Companion.cancelAllSnoozes].
      */
     fun cancelAllSnoozes() = cancelAllSnoozes(application)
-
-    /**
-     * Enhanced permission check including battery optimization status
-     */
-    fun checkAlarmPermissions(): AlarmPermissionStatus {
-        val canScheduleExact = canScheduleExactAlarms()
-        val batteryExempt = BatteryOptimizationHelper.isExempted(application)
-        val canUseFullScreen = canUseFullScreenIntent()
-
-        val overallStatus = when {
-            canScheduleExact && batteryExempt -> AlarmPermissionLevel.OPTIMAL
-            canScheduleExact && !batteryExempt -> AlarmPermissionLevel.GOOD_BUT_RISKY
-            !canScheduleExact && batteryExempt -> AlarmPermissionLevel.MISSING_EXACT_ALARM
-            else -> AlarmPermissionLevel.CRITICAL_MISSING
-        }
-
-        return AlarmPermissionStatus(
-            level = overallStatus,
-            canScheduleExactAlarms = canScheduleExact,
-            canUseFullScreenIntent = canUseFullScreen
-        )
-    }
 
 
 
@@ -1409,28 +1359,4 @@ class AlarmManagerService(
             }
         }
     }
-}
-
-/**
- * Alarm permission status
- */
-data class AlarmPermissionStatus(
-    val level: AlarmPermissionLevel,
-    val canScheduleExactAlarms: Boolean,
-    /**
-     * false = der Weck-Screen kommt nicht von selbst hoch, der Wecker erscheint nur als Banner.
-     * Ab Android 14 entzieht der Play Store diese Berechtigung nach der Installation, wenn er
-     * die App nicht als Wecker-App einstuft.
-     */
-    val canUseFullScreenIntent: Boolean = true
-)
-
-/**
- * Alarm permission levels for user guidance
- */
-enum class AlarmPermissionLevel {
-    OPTIMAL,           // All permissions granted, battery optimization exempt
-    GOOD_BUT_RISKY,    // Exact alarms allowed but no battery optimization exemption
-    MISSING_EXACT_ALARM, // Battery exempt but no exact alarm permission
-    CRITICAL_MISSING   // Missing both critical permissions
 }

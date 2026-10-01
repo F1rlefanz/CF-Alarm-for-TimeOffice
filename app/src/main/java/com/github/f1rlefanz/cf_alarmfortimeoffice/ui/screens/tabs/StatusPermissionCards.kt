@@ -479,8 +479,7 @@ internal fun BatteryOptimizationCard() {
     // ZWEI Karten aus diesem Aufruf, und das ist kein Versehen: die Exact-Alarm-Berechtigung ist
     // der Zwilling der Akku-Ausnahme, nicht ein beliebiger Nachbar. Auf API 31/32 ersetzt die
     // Akku-Ausnahme die Berechtigung sogar ("unless the app is exempt from battery restrictions",
-    // AlarmManager-Doku), und AlarmManagerService.checkAlarmPermissions() bewertet beide zusammen
-    // zu EINEM AlarmPermissionLevel. Sie gehoeren nebeneinander. Die Exact-Alarm-Karte rendert
+    // AlarmManager-Doku). Sie gehoeren nebeneinander. Die Exact-Alarm-Karte rendert
     // ausserdem nichts, wo die Berechtigung strukturell nie fehlen kann - dort entsteht also
     // nicht einmal ein Abstand.
     ExactAlarmPermissionCard()

@@ -347,7 +347,7 @@ class CalendarViewModel @Inject constructor(
             updateLocalStateImmediate { it.copy(hasValidToken = hasValidToken) }
             
             if (hasValidToken && shouldLoadCalendars()) {
-                loadAvailableCalendars(resetPagination = true)
+                loadAvailableCalendars()
             }
         }
     }
@@ -708,35 +708,37 @@ class CalendarViewModel @Inject constructor(
     /**
      * Lädt die verfügbaren Kalender seitenweise.
      */
-    fun loadAvailableCalendars(pageSize: Int = 20, resetPagination: Boolean = true) {
+    /**
+     * Laedt die ERSTE Seite der Kalenderliste neu; weitere Seiten holt [loadMoreCalendars].
+     *
+     * Bis v1.45 trug die Funktion zusaetzlich `resetPagination`; der Zweig `false` (Seite
+     * anhaengen) hatte keinen Aufrufer - das Nachladen lief immer schon ueber
+     * [loadMoreCalendars] (#130, G3-12). Ebenso entfallen: ein `delay(16)` "Ein Frame Pause", das
+     * nichts entkoppelte (`updateLocalStateImmediate` schreibt nur einen StateFlow).
+     */
+    fun loadAvailableCalendars(pageSize: Int = 20) {
         viewModelScope.launch {
             // LAZY LOADING: Prevent duplicate loading operations
-            if (isCalendarLoadingInProgress && resetPagination) {
+            if (isCalendarLoadingInProgress) {
                 Logger.d(LogTags.CALENDAR, "Calendar loading already in progress, skipping duplicate request")
                 return@launch
             }
             
             // TIME-BASED GUARD: Prevent rapid successive calls
             val currentTime = System.currentTimeMillis()
-            if (resetPagination && (currentTime - lastCalendarLoadTime) < 1000) {
+            if ((currentTime - lastCalendarLoadTime) < 1000) {
                 Logger.d(LogTags.CALENDAR, "Calendar loading too frequent, throttling request")
                 return@launch
             }
             
-            val currentState = _localUiState.value
-            val isLoadingMore = !resetPagination && currentState.availableCalendars.isNotEmpty()
-            val targetPage = if (resetPagination) 0 else currentState.currentPage
-            
-            if (resetPagination) {
-                isCalendarLoadingInProgress = true
-                lastCalendarLoadTime = currentTime
-            }
+            isCalendarLoadingInProgress = true
+            lastCalendarLoadTime = currentTime
             
             // IMMEDIATE UI FEEDBACK: Show loading state instantly
             updateLocalStateImmediate { 
                 it.copy(
-                    isLoading = resetPagination,
-                    isLoadingMore = isLoadingMore,
+                    isLoading = true,
+                    isLoadingMore = false,
                     error = null
                 )
             }
@@ -744,21 +746,14 @@ class CalendarViewModel @Inject constructor(
             try {
                 // BACKGROUND LOADING: Load calendars in background
                 val calendarPageResult = calendarUseCase.getAvailableCalendarsPaginated(
-                    page = targetPage,
+                    page = 0,
                     pageSize = pageSize
                 )
                 
                 calendarPageResult.onSuccess { calendarPage ->
                     // PROGRESSIVE UPDATE: Update UI progressively as data becomes available
-                    val newCalendars = if (resetPagination) {
-                        calendarPage.calendars
-                    } else {
-                        currentState.availableCalendars + calendarPage.calendars
-                    }
-                    
-                    // YIELD TO UI: Allow UI thread to process updates
-                    kotlinx.coroutines.delay(16) // One frame at 60fps
-                    
+                    val newCalendars = calendarPage.calendars
+
                     val currentPage = calendarPage.page
                     val newCalendarCount = calendarPage.calendars.size
                     val totalCalendars = calendarPage.totalCalendars
@@ -775,14 +770,12 @@ class CalendarViewModel @Inject constructor(
                         )
                     }
                     
-                    if (resetPagination) {
-                        isCalendarLoadingInProgress = false
-                    }
+                    isCalendarLoadingInProgress = false
                     
                     Logger.i(LogTags.CALENDAR, "Progressive calendar loading completed - page $currentPage: $newCalendarCount calendars, total: $totalCalendars")
                     
                     // DIAGNOSTIC: Log special case when no calendars are found
-                    if (resetPagination && totalCalendars == 0) {
+                    if (totalCalendars == 0) {
                         Logger.w(LogTags.CALENDAR, "🔍 CALENDAR-DIAGNOSIS: Google account has no calendars accessible via Calendar API")
                     }
                     
@@ -798,9 +791,7 @@ class CalendarViewModel @Inject constructor(
                         )
                     }
                     
-                    if (resetPagination) {
-                        isCalendarLoadingInProgress = false
-                    }
+                    isCalendarLoadingInProgress = false
                     
                     Logger.e(LogTags.CALENDAR, "Progressive calendar loading failed", error)
                 }
@@ -815,9 +806,7 @@ class CalendarViewModel @Inject constructor(
                     )
                 }
                 
-                if (resetPagination) {
-                    isCalendarLoadingInProgress = false
-                }
+                isCalendarLoadingInProgress = false
                 
                 Logger.e(LogTags.CALENDAR, "Exception during progressive calendar loading", e)
             }
@@ -1298,7 +1287,7 @@ class CalendarViewModel @Inject constructor(
                     // BACKGROUND SYNC: Start background refresh for other calendars
                     startBackgroundSync()
                 } else {
-                    loadAvailableCalendars(resetPagination = true) // PAGINATION: Reset to first page on refresh
+                    loadAvailableCalendars() // PAGINATION: Reset to first page on refresh
                 }
             }
         } else {
@@ -1432,7 +1421,9 @@ class CalendarViewModel @Inject constructor(
                     return@launch
                 }
 
-                // TIMING FIX: Wait for ShiftConfig with retry logic
+                // Neuversuch bei VORUEBERGEHEND nicht lesbarer Schicht-Konfiguration (IO). Kein
+                // Timing-Workaround: ein dauerhafter Defekt kostet hier nur 5 s vor einem ohnehin
+                // ausgelassenen Sync. Bewusst behalten (#130, G3-14) - im Zweifel wecken.
                 var shiftConfig: com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig? = null
                 var attempts = 0
                 val maxAttempts = 10 // Try for up to 5 seconds (10 * 500ms)
@@ -1481,7 +1472,7 @@ class CalendarViewModel @Inject constructor(
                         }
                 } else {
                     val configStatus = shiftConfig?.let { "autoAlarmEnabled=${it.autoAlarmEnabled}" } ?: "ShiftConfig is null"
-                    Logger.w(LogTags.ALARM, "⚠️ TIMING-FIX: Cannot create alarms - $configStatus")
+                    Logger.w(LogTags.ALARM, "⚠️ AUTO-ALARM: keine Alarm-Erstellung - $configStatus")
                 }
             } catch (e: Exception) {
                 Logger.e(LogTags.ALARM, "❌ AUTO-ALARM: Exception during alarm creation", e)

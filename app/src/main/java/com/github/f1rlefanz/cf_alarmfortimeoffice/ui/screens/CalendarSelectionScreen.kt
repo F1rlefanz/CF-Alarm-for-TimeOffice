@@ -1,5 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,19 +30,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarViewModel
 
 /**
- * Hinweis der Karte "Kein Kalender ausgewählt". Als Konstante, damit ein Test den Verweis auf den
- * Status-Bereich gegen dessen echten Namen in der Schublade pruefen kann.
+ * Hinweis der Karte "Kein Kalender ausgewählt" - NUR nach einer Abwahl
+ * ([com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.CalendarUiState.auswahlAbgewaehlt]).
+ * Als Konstante, damit ein Test den Verweis auf den Status-Bereich gegen dessen echten Namen in
+ * der Schublade pruefen kann.
  */
 internal const val KEIN_KALENDER_AUSGEWAEHLT_TEXT: String =
     "Ohne Kalender erkennt die App keine Schichten und stellt keine Wecker. Beim Abwählen " +
         "entfernt sie auch die bereits gestellten; von Hand gestellte Wecker bleiben. Klappt " +
         "das Aufräumen nicht, sagt es der System-Status. Tippe einen Kalender an, um wieder " +
         "Schichten zu überwachen."
+
+/**
+ * Hinweis beim ERSTEN Einrichten (#127). Dort gibt es nichts abzuwaehlen, keine gestellten Wecker
+ * und nichts aufzuraeumen - die rote Warnkarte las sich wie ein Fehler, obwohl der Nutzer gerade
+ * alles richtig macht.
+ */
+internal const val ERSTEINRICHTUNG_KALENDER_TITEL: String = "Wähle deinen Dienstplan-Kalender"
+
+/** Siehe [ERSTEINRICHTUNG_KALENDER_TITEL]. */
+internal const val ERSTEINRICHTUNG_KALENDER_TEXT: String =
+    "Tippe den Kalender an, in den TimeOffice deinen Dienstplan schreibt. Aus seinen Terminen " +
+        "erkennt die App deine Schichten und stellt die Wecker."
 
 /**
  * CalendarSelectionScreen - REFACTORED für Single Source of Truth
@@ -187,14 +203,47 @@ fun CalendarSelectionScreen(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(SpacingConstants.SPACING_SMALL)
                 ) {
-                    // Der leere Zustand ist kein "noch nichts getan", sondern eine WIRKUNG: die
+                    // Zwei leere Zustaende, zwei Karten (#127): beim ersten Einrichten ist "leer"
+                    // wirklich "noch nichts getan" - dort steht ein neutraler Hinweis. Nach einer
+                    // ABWAHL dagegen ist der leere Zustand eine WIRKUNG: die
                     // Abwahl des letzten Kalenders raeumt die Wecker der naechsten zwei Wochen
                     // samt der Dienstzeit-Fenster (`clearAlarmsAfterCalendarDeselection`). Solange
                     // der Knopf das nur durch Ausgrauen andeutete, sagte die Oberflaeche das
                     // Gegenteil dessen, was geschehen war. Als `item` und nicht als Karte ueber
                     // der Liste, damit die LazyColumn das einzige hoehenvariable Kind der Column
                     // bleibt.
-                    if (calendarState.selectedCalendarIds.isEmpty()) {
+                    if (calendarState.selectedCalendarIds.isEmpty() && !calendarState.auswahlAbgewaehlt) {
+                        // Erstes Einrichten: neutral, dezente Karte (surface + Rand, nicht
+                        // surfaceVariant - siehe Skill cfalarm-ui-und-navigation).
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(SpacingConstants.SPACING_LARGE),
+                                    verticalArrangement = Arrangement.spacedBy(
+                                        SpacingConstants.SPACING_SMALL
+                                    )
+                                ) {
+                                    Text(
+                                        ERSTEINRICHTUNG_KALENDER_TITEL,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        ERSTEINRICHTUNG_KALENDER_TEXT,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                    } else if (calendarState.selectedCalendarIds.isEmpty()) {
                         item {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),

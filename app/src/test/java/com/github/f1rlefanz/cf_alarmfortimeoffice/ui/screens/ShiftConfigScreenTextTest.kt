@@ -74,8 +74,7 @@ class ShiftConfigScreenTextTest {
             .map { it.trim().lowercase() }
             .toSet()
 
-        val genannt = SHIFT_HINT_STATION_EXAMPLES +
-            SHIFT_HINT_GENERIC_EXAMPLES +
+        val genannt = SHIFT_HINT_GENERIC_EXAMPLES +
             SHIFT_HINT_SHORT_CODE_EXAMPLES
 
         genannt.forEach { beispiel ->

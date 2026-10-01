@@ -197,7 +197,8 @@ class ShiftCodeSuggesterTest {
     /**
      * Gegenprobe zur Standardkonfiguration: mit den echten Titeln des Dienstplans bleibt nur uebrig,
      * was wirklich unbekannt ist. "AD1" (Rufbereitschaft) ist bewusst nicht in den Vorgaben - genau
-     * dieses Kuerzel soll der Nutzer hier angeboten bekommen.
+     * dieses Kuerzel soll der Nutzer hier angeboten bekommen. Seit #128 gilt dasselbe fuer das
+     * Stationskuerzel "IMCF": die Vorgaben kennen es nicht mehr, also bietet der Vorschlag es an.
      */
     @Test
     fun `mit der Standardkonfiguration bleibt genau das Unbekannte uebrig`() {
@@ -207,6 +208,6 @@ class ShiftCodeSuggesterTest {
 
         val result = ShiftCodeSuggester.suggest(echteTitel, ShiftConfig.getDefaultConfig())
 
-        assertEquals(listOf("AD1", "FBE"), result.suggestions.map { it.code })
+        assertEquals(listOf("AD1", "FBE", "IMCF"), result.suggestions.map { it.code })
     }
 }

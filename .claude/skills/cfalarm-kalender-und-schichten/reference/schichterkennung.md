@@ -66,12 +66,19 @@ Wecker gekostet:**
   (`ShiftConfigDefaultsTest` fordert ausdrücklich, dass „F"/"S"/"N" treffen), damit es niemand für ein
   Versehen hält: die Erkennung liest nur selbst ausgewählte Kalender, und das Muster ist entfernbar.
   Der Editor warnt sichtbar bei einem einzeichigen Muster, verbietet es nicht.
-- **Jede Standard-Definition hat neben dem Stationskürzel ein generisches, mehrbuchstabiges
-  Muster** (Frühdienst/Spätdienst/Nachtdienst/ZD). „IMCF/IMCS/IMCN/IMCZ" sind die Kürzel EINER
-  Station; für einen Kollegen auf einer anderen war der Zwischendienst mit seinem einzigen Muster
-  „IMCZ" strukturell tot — kein Treffer, kein Wecker, keine Meldung. `ShiftConfigSerializationTest`
-  hält das fest („jede Standard-Definition hat ein Muster ohne Stationskuerzel") plus die Gegenprobe,
-  dass die einbuchstabigen Muster keinen unscharfen Teiltreffer gewinnen.
+- **Die Vorgaben tragen KEINE Stationskürzel** (seit 01.10.2026, #128): Früh/Spät/Nacht mit
+  „F"/"S"/"N" plus ausgeschriebenem Namen („Frühdienst"/„Spätdienst"/„Nachtdienst"), Zwischendienst
+  mit „ZD". Vorher standen dort „IMCF/IMCS/IMCN/IMCZ" und ein Schichttyp „S2" — die Kürzel EINER
+  Station, damit der Entwickler nach Test-Neuinstallationen nicht neu einrichten musste (dafür gibt
+  es inzwischen Export/Import). Für jeden anderen Nutzer waren das tote Muster, und „S2" ein aktiver
+  Wecker für eine Schicht, die es auf seiner Station nicht gibt. Davor schon war der Zwischendienst
+  mit seinem einzigen Muster „IMCZ" anderswo strukturell tot — kein Treffer, kein Wecker, keine
+  Meldung. Fremde Kürzel bleiben jetzt unerkannt und erscheinen im Kürzel-Vorschlag (Gegenprobe in
+  `ShiftCodeSuggesterTest`). **Bestandsnutzer sind nicht betroffen**: eine gespeicherte
+  Konfiguration wird nicht migriert, die Vorgaben greifen nur bei Neuinstallation oder „Auf
+  Standardwerte zurücksetzen". `ShiftConfigSerializationTest` hält fest, dass keine Vorgabe ein
+  Stationskürzel trägt, plus die Gegenprobe, dass die einbuchstabigen Muster keinen unscharfen
+  Teiltreffer gewinnen (auch „S2" fällt nicht auf das „S" der Spätschicht).
 - **Geraten wird nicht mehr — vorgeschlagen wird** (seit v1.23.0). `ShiftCodeSuggester` (rein, ohne
   Android) sammelt die Termintitel, die von KEINEM aktiven Muster getroffen werden, sortiert nach
   Häufigkeit (bei Gleichstand alphabetisch, damit die Reihenfolge nicht springt) und deckelt auf 8 —

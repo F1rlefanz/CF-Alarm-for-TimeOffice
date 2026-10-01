@@ -101,8 +101,11 @@ data class ShiftConfig(
         /**
          * Die Konfiguration, die ein Nutzer OHNE eigene Anpassung bekommt.
          *
-         * Die einbuchstabigen Keywords "F"/"S"/"N" gehoeren bewusst in die Vorgaben, und jede
-         * Definition hat neben dem Stationskuerzel ein generisches Muster. Das ersetzt KEINE
+         * Die einbuchstabigen Keywords "F"/"S"/"N" gehoeren bewusst in die Vorgaben, dazu je ein
+         * ausgeschriebener Name. Seit #128 (01.10.2026) stehen hier KEINE Stationskuerzel mehr
+         * (frueher "IMCF/IMCS/IMCN/IMCZ" und ein Schichttyp "S2" EINER Station - fuer jeden
+         * anderen Nutzer tote Muster bzw. ein Wecker fuer eine Schicht, die es nicht gibt). Eigene
+         * Kuerzel liefert der Vorschlag aus dem Kalender (`ShiftCodeSuggester`). Das ersetzt KEINE
          * Konfiguration. `ShiftConfigDefaultsTest` haelt es fest.
          * Hergang: Skill cfalarm-kalender-und-schichten, reference/schichterkennung.md.
          */
@@ -112,35 +115,28 @@ data class ShiftConfig(
                 ShiftDefinition(
                     id = "early_shift",
                     name = "Frühschicht",
-                    keywords = listOf("F", "IMCF", "Frühdienst"),
+                    keywords = listOf("F", "Frühdienst"),
                     alarmTime = LocalTime.of(5, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
                     id = "late_shift",
                     name = "Spätschicht",
-                    keywords = listOf("S", "IMCS", "Spätdienst"),
+                    keywords = listOf("S", "Spätdienst"),
                     alarmTime = LocalTime.of(12, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
                     id = "night_shift",
                     name = "Nachtschicht",
-                    keywords = listOf("N", "IMCN", "Nachtdienst"),
+                    keywords = listOf("N", "Nachtdienst"),
                     alarmTime = LocalTime.of(20, 0),
-                    isEnabled = true
-                ),
-                ShiftDefinition(
-                    id = "s2_shift",
-                    name = "S2",
-                    keywords = listOf("S2"),
-                    alarmTime = LocalTime.of(14, 30),
                     isEnabled = true
                 ),
                 ShiftDefinition(
                     id = "intermediate_shift",
                     name = "Zwischendienst",
-                    keywords = listOf("IMCZ", "ZD"),
+                    keywords = listOf("ZD"),
                     alarmTime = LocalTime.of(7, 0),
                     isEnabled = true
                 )

@@ -75,6 +75,17 @@ data class CalendarUiState(
     val isLoading: Boolean = false,
     val availableCalendars: List<AndroidCalendar> = emptyList(),
     val selectedCalendarIds: Set<String> = emptySet(),
+    /**
+     * Die leere Auswahl ist eine ABWAHL in diesem Prozess (es war ein Kalender gewaehlt), nicht
+     * das erste Einrichten. Nur Anzeige (#127): beim ersten Einrichten zeigt die Kalenderauswahl
+     * einen neutralen Hinweis statt der Warnkarte, die vom Abwaehlen und Aufraeumen spricht.
+     *
+     * Bewusst ein eigenes Feld und NICHT `hasSeenNonEmptySelection`: der Merker wird beim
+     * Abwaehlen sofort zurueckgesetzt (er beschreibt den naechsten UEBERGANG), die Karte muss die
+     * Abwahl aber zeigen, solange die Auswahl leer bleibt. Nach einem Neustart mit leerer Auswahl
+     * steht wieder der neutrale Hinweis - er behauptet nichts, was nicht stimmt.
+     */
+    val auswahlAbgewaehlt: Boolean = false,
     val events: List<CalendarEvent> = emptyList(),
     val error: String? = null,
     val hasValidToken: Boolean = false,
@@ -369,6 +380,9 @@ class CalendarViewModel @Inject constructor(
                     // LAZY LOADING: Auto-load events with lazy loading when selection changes
                     if (selectedIds.isNotEmpty()) {
                         hasSeenNonEmptySelection = true
+                        if (_localUiState.value.auswahlAbgewaehlt) {
+                            updateLocalStateImmediate { it.copy(auswahlAbgewaehlt = false) }
+                        }
                         // Hier nichts aufloesen (weder Hinweis noch Raeumauftrag): aufgeloest wird erst
                         // nach gelungenem Sync ueber vollstaendiger Liste (createAlarmsFromLoadedEvents);
                         // die Wartung verwirft hinfaellige Auftraege. Hergang: Skill
@@ -399,7 +413,8 @@ class CalendarViewModel @Inject constructor(
                                 events = emptyList(),
                                 eventOffset = 0,
                                 totalEvents = 0,
-                                hasMoreEvents = false
+                                hasMoreEvents = false,
+                                auswahlAbgewaehlt = wasDeselection || it.auswahlAbgewaehlt
                             )
                         }
                         // CRITICAL: Update CalendarStateHolder when clearing events

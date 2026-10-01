@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -337,6 +338,42 @@ class CalendarViewModelDeselectionCleanupTest {
      */
     private fun kotlinx.coroutines.test.TestScope.observeUiState(viewModel: CalendarViewModel) {
         backgroundScope.launch { viewModel.uiState.collect { } }
+    }
+
+    /**
+     * #127: Das erste Einrichten (Auswahl war nie gefuellt) ist KEINE Abwahl - die Kalenderauswahl
+     * zeigt dort den neutralen Hinweis, nicht die Warnkarte vom Abwaehlen und Aufraeumen.
+     */
+    @Test
+    fun `leere Auswahl beim ersten Einrichten gilt nicht als Abwahl`() = runTest(dispatcher) {
+        val viewModel = buildViewModel(alarmUseCase = mock())
+        observeUiState(viewModel)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.auswahlAbgewaehlt)
+    }
+
+    /**
+     * Gegenprobe zu #127: nach einer echten Abwahl bleibt die Warnkarte stehen, solange die Auswahl
+     * leer ist - auch wenn der Uebergangs-Merker im ViewModel sofort zurueckgesetzt wird - und
+     * verschwindet, sobald wieder ein Kalender gewaehlt ist.
+     */
+    @Test
+    fun `nach einer Abwahl bleibt die Warnkarte bis zur naechsten Auswahl`() = runTest(dispatcher) {
+        val viewModel = buildViewModel(alarmUseCase = mock())
+        observeUiState(viewModel)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.auswahlAbgewaehlt)
+
+        selectedIds.value = emptySet()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.auswahlAbgewaehlt)
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.auswahlAbgewaehlt)
     }
 
     @Test

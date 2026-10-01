@@ -1,8 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.service
 
 import android.content.Context
-import android.os.Build
-import androidx.core.content.edit
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -22,85 +20,21 @@ class BackgroundServiceManager @Inject constructor(
 ) {
 
     /**
-     * `by lazy`, NICHT als sofortiger Initializer - und das ist kein Stilentscheid.
+     * Markiert den Start der Hintergrunddienste - inzwischen NUR im Log.
      *
-     * Diese Klasse ist das ERSTE @Inject-Feld von [CFAlarmApplication] (im generierten
-     * Hilt-Code das erste `inject...`), sie entsteht also bei JEDEM Prozessstart in der
-     * Feld-Injektion - auch in dem, den Android VOR der ersten Entsperrung fuer den
-     * directBootAware BootReceiver startet. `getSharedPreferences()` auf dem normalen
-     * (CREDENTIAL-ENCRYPTED) Application-Context wirft dort ab targetSdk 26:
-     * "SharedPreferences in credential encrypted storage are not available until after user
-     * (id 0) is unlocked". Aus der Feld-Injektion heraus wird daraus "Unable to create
-     * application" - der Prozess stirbt, BEVOR `BootReceiver.onReceive()` laeuft, und der
-     * Direct-Boot-Restore der Alarme und der schwebenden Snoozes findet NIE statt.
-     *
-     * Das ist derselbe Absturz, der am 11.08.2026 ueber `HueSmartScheduler`/WorkManager
-     * gefunden wurde - dieselbe Fehlerklasse, zweite Stelle. Am EMULATOR ist er hier nicht
-     * sichtbar: ohne Bildschirmsperre gilt der Nutzer schon beim LOCKED_BOOT_COMPLETED als
-     * entsperrt, CE-Storage ist lesbar und die Exception bleibt aus. Auf einem Geraet MIT
-     * PIN (Fairphone) nicht. Wer hier wieder einen sofortigen Initializer hinschreibt, baut
-     * einen Absturz, den kein Emulator ohne Bildschirmsperre und kein Unit-Test zeigt.
-     *
-     * [initializeBackgroundServices] laeuft auch im Direct-Boot-Prozess - gemessen mit
-     * `tools/geraet/pruefe_direct_boot.py` (17.08.2026). `by lazy` rettet nur den Prozessstart; jeder
-     * ZUGRIFF fragt zusaetzlich [userUnlocked].
-     */
-    private val preferences by lazy {
-        context.getSharedPreferences("background_services", Context.MODE_PRIVATE)
-    }
-
-    /**
-     * Ist der Nutzer entsperrt, also CREDENTIAL-ENCRYPTED Storage lesbar?
-     *
-     * Gleiche Umsetzung wie in `AlarmRepository`, inklusive Fehlerrichtung: im Zweifel `true`.
-     * Ein ueberfluessiger Versuch landet im vorhandenen try/catch; ein faelschlich
-     * uebersprungener Schreibvorgang waere stiller Datenverlust.
-     */
-    private val userUnlocked: Boolean
-        get() = context.getSystemService(android.os.UserManager::class.java)?.isUserUnlocked ?: true
-
-    /**
-     * Schreibt Diagnose-Stempel (nur bei entsperrtem Nutzer).
+     * Bis v1.45 schrieb diese Funktion Diagnose-Stempel in die SharedPreferences
+     * `background_services` (Startzeit, Geraet, Version), die NIEMAND las (#130, G5-08). Der
+     * Schreibzugriff war die heikelste Zeile der Klasse: sie entsteht bei JEDEM Prozessstart, auch
+     * im Direct-Boot-Prozess vor der ersten Entsperrung, und ein CE-Zugriff dort hatte schon einmal
+     * "Unable to create application" ausgeloest (gefunden mit `tools/geraet/pruefe_direct_boot.py`,
+     * 17.08.2026). Ohne Leser gab es keinen Grund, das Risiko zu tragen. Eine alte Datei bleibt auf
+     * bestehenden Geraeten liegen; die Backup-Regeln schliessen sie weiter aus.
      */
     fun initializeBackgroundServices() {
         Logger.business(
             LogTags.TOKEN,
-            "🚀 Initializing background services (Phase 1 Migration - Worker removed)"
+            "🚀 Background services initialized (AlarmMaintenanceService via AuthViewModel)"
         )
-
-        // Vor der ersten Entsperrung ist CE-Storage nicht lesbar. Hier stehen ausschliesslich
-        // DIAGNOSE-Werte - die Wartungskette haengt nicht daran (die startet ueber
-        // AuthViewModel bzw. den Wartungs-Anker des BootReceivers). Ohne dieses Gate warf der
-        // Schreibvorgang im Direct-Boot-Prozess und landete als ERROR MIT STACKTRACE im Log;
-        // Release-Logs enthalten WARN+, also war es dort sichtbar. Genau solches Rauschen macht
-        // den naechsten echten Vorfall unauswertbar, und die Meldung "Failed to initialize
-        // background services" liest sich dramatischer, als der Sachverhalt ist.
-        // Gemessen am Emulator mit PIN via tools/geraet/pruefe_direct_boot.py (17.08.2026).
-        if (!userUnlocked) {
-            Logger.d(
-                LogTags.TOKEN,
-                "⏭️ Direct Boot: Diagnose-Werte uebersprungen (CE-Storage noch nicht lesbar). " +
-                    "Kein Funktionsverlust - die Wartungskette haengt nicht daran."
-            )
-            return
-        }
-
-        try {
-            // Mark services as started
-            preferences.edit {
-                putLong("services_started_at", System.currentTimeMillis())
-                putString("device_info", "${Build.MANUFACTURER} ${Build.MODEL}")
-                putString("version", "Phase1-ExactAlarm")
-            }
-
-            Logger.business(
-                LogTags.TOKEN,
-                "✅ Background services initialized (AlarmMaintenanceService via AuthViewModel)"
-            )
-
-        } catch (e: Exception) {
-            Logger.e(LogTags.TOKEN, "❌ Failed to initialize background services", e)
-        }
     }
     
     /**

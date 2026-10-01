@@ -57,7 +57,6 @@ class AuthDataStoreRepository @Inject constructor(
         private val LOGIN_STATUS_KEY = booleanPreferencesKey("login_status")
         private val USER_ID_KEY = stringPreferencesKey("user_id")
         private val USER_EMAIL_KEY = stringPreferencesKey("user_email")
-        private val CALENDAR_ID_KEY = stringPreferencesKey("calendar_id")
         private val ACCESS_TOKEN_KEY = stringPreferencesKey("access_token")
         private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
         private val TOKEN_EXPIRY_KEY = longPreferencesKey("token_expiry_long")
@@ -127,7 +126,6 @@ class AuthDataStoreRepository @Inject constructor(
         isLoggedIn: Boolean? = null,
         userId: String? = null,
         userEmail: String? = null,
-        calendarId: String? = null,
         accessToken: String? = null,
         refreshToken: String? = null,
         tokenExpiry: Long? = null
@@ -146,11 +144,6 @@ class AuthDataStoreRepository @Inject constructor(
             userEmail?.let { 
                 if (preferences[USER_EMAIL_KEY] != it) {
                     preferences[USER_EMAIL_KEY] = it
-                }
-            }
-            calendarId?.let { 
-                if (preferences[CALENDAR_ID_KEY] != it) {
-                    preferences[CALENDAR_ID_KEY] = it
                 }
             }
             accessToken?.let { 

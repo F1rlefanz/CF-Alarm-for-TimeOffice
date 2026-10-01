@@ -46,7 +46,8 @@ class DimScheduleUseCase @Inject constructor(
     companion object {
         const val ACTION_TICK = "com.github.f1rlefanz.cf_alarmfortimeoffice.DIM_SCHED_TICK"
         private const val REQ_TICK = 7710
-        private const val HORIZON_DAYS = 14
+        /** EINE Quelle mit der Konflikt-Auskunft der Regelliste, siehe [DimWindowResolver.KONFLIKT_HORIZONT_TAGE]. */
+        private const val HORIZON_DAYS = DimWindowResolver.KONFLIKT_HORIZONT_TAGE
         /** Retry-Abstand, wenn der Alarm-Bestand gerade NICHT lesbar war (transienter Fehler). */
         private const val RETRY_MS = 15 * 60_000L
 

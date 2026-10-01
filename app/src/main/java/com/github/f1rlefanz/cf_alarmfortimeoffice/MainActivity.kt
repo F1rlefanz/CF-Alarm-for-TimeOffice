@@ -306,9 +306,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        
-        // OPTIMIZATION: Initialize Hue Bridge lifecycle tracking
-        bridgeConnectionManager.onAppForeground()
     }
 
     /**
@@ -372,6 +369,9 @@ class MainActivity : ComponentActivity() {
     
     override fun onResume() {
         super.onResume()
+        // Der EINZIGE Aufruf: onResume folgt immer auf onCreate. Bis v1.45 stand er zusaetzlich am
+        // Ende von onCreate - beim Start liefen so zwei Health-Check-Coroutinen gegeneinander, und
+        // beide konnten das Zeitfenster noch offen sehen (#130, G6-07).
         bridgeConnectionManager.onAppForeground()
     }
     

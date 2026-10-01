@@ -1272,7 +1272,7 @@ class CalendarViewModel @Inject constructor(
         updateLocalStateImmediate { it.copy(error = null) }
     }
 
-    fun refreshData(forceRefresh: Boolean = false, useLazyLoading: Boolean = true) {
+    fun refreshData(forceRefresh: Boolean = false) {
         if (forceRefresh) {
             Logger.i(LogTags.CALENDAR, "Force refresh requested")
             // Cache für aktuelle Auswahl invalidieren
@@ -1291,8 +1291,8 @@ class CalendarViewModel @Inject constructor(
                     }
                     loadEventsForSelectedCalendars(
                         forceRefresh = true,
-                        loadAll = !useLazyLoading, // LAZY LOADING: Respect lazy loading preference
-                        initialPageSize = if (useLazyLoading) 10 else 50
+                        loadAll = false, // LAZY LOADING: Praefix, Nachladen ueber die Terminliste
+                        initialPageSize = 10
                     )
                     
                     // BACKGROUND SYNC: Start background refresh for other calendars

@@ -3,8 +3,6 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.ICalendarSelectionRepository
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
-import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAuthUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,17 +10,18 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
  * MainViewModel koordiniert den globalen App-Zustand - und NUR den.
  *
- * Es fasst Anmeldung, Kalender-Auswahl und aktive Alarme zu einem groben Ist-Zustand zusammen
- * ([MainUiState]), an dem die Navigation entscheiden kann. Es lädt selbst nichts.
+ * Es haelt fest, ob Kalender ausgewaehlt sind ([MainUiState]), woran die Navigation entscheidet.
+ * Es lädt selbst nichts. Bis v1.45 fasste es zusaetzlich Anmeldung und aktive Alarme zusammen -
+ * beide Felder ohne Leser, die trotzdem zwei Datenquellen abonniert hielten (#130, G3-16).
  *
  * KEIN ZWEITER LADEPFAD (Audit): Hier lagen früher refreshAll() und Geschwister, die Events
  * luden und nur in den CalendarStateHolder schrieben. Da die CalendarUiState nie aus dem
@@ -33,15 +32,11 @@ import javax.inject.Inject
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val authUseCase: IAuthUseCase,
-    private val alarmUseCase: IAlarmUseCase,
     private val calendarSelectionRepository: ICalendarSelectionRepository
 ) : ViewModel() {
 
     data class MainUiState(
-        val isAuthenticated: Boolean = false,
-        val hasSelectedCalendars: Boolean = false,
-        val hasActiveAlarms: Boolean = false
+        val hasSelectedCalendars: Boolean = false
     )
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -53,27 +48,17 @@ class MainViewModel @Inject constructor(
 
     private fun observeAppState() {
         viewModelScope.launch {
-            combine(
-                authUseCase.authData
-                    .distinctUntilChanged(),
-                alarmUseCase.activeAlarms
-                    .debounce(200)
-                    .distinctUntilChanged(),
-                calendarSelectionRepository.selectedCalendarIds
-                    .debounce(150)
-                    .distinctUntilChanged()
-            ) { authData, activeAlarms, selectedCalendarIds ->
-                MainUiState(
-                    isAuthenticated = authData.isLoggedIn,
-                    hasSelectedCalendars = selectedCalendarIds.isNotEmpty(),
-                    hasActiveAlarms = activeAlarms.isNotEmpty()
-                )
-            }.distinctUntilChanged()
+            calendarSelectionRepository.selectedCalendarIds
+                .debounce(150)
+                .map { selectedCalendarIds ->
+                    MainUiState(hasSelectedCalendars = selectedCalendarIds.isNotEmpty())
+                }
+                .distinctUntilChanged()
             .debounce(75)
             .collect { state ->
                 _uiState.value = state
 
-                Logger.d(LogTags.NAVIGATION, "🔄 UI-DEBOUNCE: Main state updated - authenticated=${state.isAuthenticated}, hasSelected=${state.hasSelectedCalendars}")
+                Logger.d(LogTags.NAVIGATION, "🔄 UI-DEBOUNCE: Main state updated - hasSelected=${state.hasSelectedCalendars}")
             }
         }
     }

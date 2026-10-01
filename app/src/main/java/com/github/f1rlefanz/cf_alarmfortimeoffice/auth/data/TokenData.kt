@@ -198,16 +198,6 @@ data class TokenData(
                 tokenProvider = tokenProvider
             )
         }
-        
-        /**
-         * Creates an empty/invalid token.
-         */
-        fun empty(): TokenData = TokenData(
-            accessToken = "",
-            refreshToken = null,
-            expiresAt = 0,
-            scope = ""
-        )
     }
 }
 

@@ -294,7 +294,7 @@
   seine Event-ID, ein gestrichenes erzeugt gar keinen Match. Folge real am 30.07.2026 (~4 Tage
   unbemerkt): Wecker zur alten Zeit bzw. für eine Schicht, die es nicht mehr gab. Jetzt lädt es bei
   Puffer < 7 Tage ODER letzter echter Kalender-Abfrage ≥ 12 h ODER nächster Alarm ≤ 48 h, und
-  synchronisiert **immer**, sobald Events vorliegen (`newShifts` ist nur noch Diagnose-Log). Eigener
+  synchronisiert **immer**, sobald Events vorliegen (die Schichterkennung davor meldet nur noch einen Konfigurationsdefekt und loggt die Zahl). Eigener
   Frische-Stempel `last_event_load_time` — `last_maintenance_time` wird auch im Skip-Zweig gesetzt
   und ließe die Daten dauerhaft frisch aussehen. Die Leerlisten-Sperre bleibt.
 - **`BootReceiver` liest die Kalenderauswahl über den DataStore und entscheidet nicht auf einem

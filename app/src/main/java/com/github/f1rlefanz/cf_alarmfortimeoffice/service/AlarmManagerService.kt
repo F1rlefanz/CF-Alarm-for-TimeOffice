@@ -555,8 +555,6 @@ class AlarmManagerService(
             putExtra("alarm_id", alarmId)
             putExtra("shift_name", shiftMatch.shiftDefinition.name)
             putExtra("shift_start_time_formatted", formatAlarmTime(shiftMatch.calendarEvent.startTime))
-            putExtra("shift_pattern", shiftMatch.shiftDefinition.id)
-            putExtra("alarm_type", "setAlarmClock") // Track which API was used
             setPackage(application.packageName)
             action = enhancedAlarmAction(alarmId)
         }
@@ -1366,7 +1364,6 @@ class AlarmManagerService(
                 putExtra("alarm_id", id)
                 putExtra("shift_name", shiftName)
                 putExtra("shift_start_time_formatted", shiftStartTimeFormatted)
-                putExtra("alarm_type", "directBootRestore")
                 setPackage(context.packageName)
                 action = enhancedAlarmAction(id)
             }

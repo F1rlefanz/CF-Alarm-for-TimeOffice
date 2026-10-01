@@ -48,7 +48,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.time.LocalDate
-import java.time.ZoneId
 import java.util.Collections
 import java.util.Date
 import java.util.IdentityHashMap
@@ -1618,26 +1617,15 @@ class AlarmMaintenanceService : Service() {
             return
         }
 
-        val newShifts = shiftMatches.filter { match ->
-            // Use pre-calculated alarm time from ShiftMatch
-            val alarmTimeMillis = match.calculatedAlarmTime
-                .atZone(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-
-            alarmTimeMillis > now && futureAlarms.none { alarm ->
-                // Check if alarm already exists for this event
-                alarm.eventId == match.calendarEvent.id
-            }
-        }
-
-        // NUR LOGGING - kein Abbruch mehr. Frueher stand hier ein Early-Return bei
-        // newShifts.isEmpty(): damit erreichten geaenderte (gleiche Event-ID, neue Zeit) und
-        // gestrichene Schichten den Delta-Sync NIE, obwohl genau er Update/Delete beherrscht.
-        // Siehe MaintenanceLoadDecision.shouldSyncAfterLoad.
+        // NUR LOGGING - kein Abbruch. Frueher stand hier ein Early-Return bei "keine NEUEN
+        // Schichten": damit erreichten geaenderte (gleiche Event-ID, neue Zeit) und gestrichene
+        // Schichten den Delta-Sync NIE, obwohl genau er Update/Delete beherrscht. Siehe
+        // MaintenanceLoadDecision.shouldSyncAfterLoad. Die eigens dafuer berechnete Liste
+        // "neue Schichten" diente danach nur noch dieser Zeile und ist entfallen (#130, G5-16);
+        // der Erkennungsaufruf oben bleibt - er meldet eine defekte Schicht-Konfiguration.
         Logger.d(
             LogTags.MAINTENANCE,
-            "${newShifts.size} neue Schichten erkannt (Sync laeuft unabhaengig davon - erkennt auch Aenderungen/Streichungen)"
+            "${shiftMatches.size} Schichten erkannt (Sync laeuft unabhaengig davon - erkennt auch Aenderungen/Streichungen)"
         )
 
         // STEP 5: ALARM CREATION

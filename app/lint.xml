@@ -146,12 +146,11 @@
     
     <!-- ================= RESSOURCEN ================= -->
     
-    <!-- 
-    UnusedResources: Ungenutzte Ressourcen
-    Begründung: Manche Ressourcen sind für zukünftige Features vorbereitet
-    (z.B. OnePlus-spezifische Strings). Severity reduziert.
+    <!--
+    UnusedResources: hier bewusst KEIN Eintrag mehr (Entscheidung des Eigentümers, Issue #106,
+    01.10.2026). Bis dahin stand der Check auf informational - eine verwaiste Ressource fiel so
+    nie auf. pruefe_reste.py deckt nur verwaiste Strings ab, nicht Layouts, Drawables und Farben.
     -->
-    <issue id="UnusedResources" severity="informational" />
     
     <!-- ================= CODE STYLE ================= -->
     
@@ -175,9 +174,11 @@
     -->
     <issue id="UseValueOf" severity="informational" />
     
-    <!-- 
-    UseSparseArrays: HashMap vs SparseArray
-    HashMap ist oft lesbarer, Performance-Unterschied minimal
+    <!--
+    UseSparseArrays: SparseArray<Integer>/SparseArray<Boolean> statt SparseIntArray/SparseBooleanArray
+    Seit lint 32.x (AGP 9.4) prueft der Detektor KEINE HashMap-Literale mehr (gemessen in
+    Aufraeum-Runde 27, Issue #103) - nur noch die beiden SparseArray-Boxing-Formen. Die
+    Absenkung bleibt (Entscheidung #106), die alte HashMap-Begruendung galt nicht mehr.
     -->
     <issue id="UseSparseArrays" severity="informational" />
     
@@ -203,8 +204,14 @@
     <!-- Memory Leaks als Error. -->
     <issue id="StaticFieldLeak" severity="error" />
     
-    <!-- Crash-Risiken als Error -->
-    <issue id="NullSafeMutableLiveData" severity="error" />
+    <!--
+    NullSafeMutableLiveData: hier bewusst KEIN Eintrag (Issue #103, 01.10.2026). Seine
+    Voreinstellung ist fatal; ein konfiguriertes severity="error" schaltete ihn in lintVital*
+    (fatalOnly) komplett AB - gemessen per A/B, EXIT 0 statt 1. Nicht wieder "verschaerfen".
+
+    FragmentLiveDataObserve: Voreinstellung ist bereits error, der Eintrag aendert heute nichts.
+    Er bleibt als WAECHTER: senkt androidx.fragment den Default, haelt er den Wert. Kein Rest.
+    -->
     <issue id="FragmentLiveDataObserve" severity="error" />
     
 </lint>

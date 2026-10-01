@@ -7,6 +7,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshS
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
@@ -44,7 +45,13 @@ class BootReceiverRecoveryCharakterisierungTest {
     private class Fixture(
         val receiver: BootReceiver,
         val context: Context,
-        val alarmManager: AlarmManager
+        val alarmManager: AlarmManager,
+        // Die Nebenketten haengen seit #131 (G11-14) am echten ZeitkettenArmierer - die Mocks
+        // dahinter sind dieselben, die Behauptungen also unveraendert.
+        val dimSchedule: DimScheduleUseCase,
+        val dndSchedule: DndScheduleUseCase,
+        val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
+        val rufbereitschaftAbfrage: RufbereitschaftAbfrage
     )
 
     /** @param paused `null` = der Pause-Read wirft. */
@@ -66,10 +73,11 @@ class BootReceiverRecoveryCharakterisierungTest {
             onBlocking { isAuthenticated() } doReturn Result.success(false)
         }
         r.directBootAlarmStore = mock<DirectBootAlarmStore>()
-        r.dimSchedule = mock<DimScheduleUseCase>()
-        r.dndSchedule = mock<DndScheduleUseCase>()
-        r.calendarPreAlarmRefreshScheduler = mock<CalendarPreAlarmRefreshScheduler>()
-        r.rufbereitschaftAbfrage = mock<RufbereitschaftAbfrage>()
+        val dim = mock<DimScheduleUseCase>()
+        val dnd = mock<DndScheduleUseCase>()
+        val preAlarm = mock<CalendarPreAlarmRefreshScheduler>()
+        val ruf = mock<RufbereitschaftAbfrage>()
+        r.zeitkettenArmierer = ZeitkettenArmierer({ dim }, { dnd }, { ruf }, { preAlarm })
         r.masterPausePrefs = mock<MasterPausePrefs> {
             if (paused == null) {
                 onBlocking { pausedNow() } doThrow IllegalStateException("DataStore")
@@ -77,7 +85,7 @@ class BootReceiverRecoveryCharakterisierungTest {
                 onBlocking { pausedNow() } doReturn paused
             }
         }
-        return Fixture(r, context, alarmManager)
+        return Fixture(r, context, alarmManager, dim, dnd, preAlarm, ruf)
     }
 
     private fun starteRecovery(f: Fixture) {
@@ -94,16 +102,16 @@ class BootReceiverRecoveryCharakterisierungTest {
         starteRecovery(f)
 
         val r = f.receiver
-        verifyBlocking(r.dimSchedule, timeout(WARTEZEIT_MS)) { disable() }
-        verifyBlocking(r.dndSchedule, timeout(WARTEZEIT_MS)) { disable() }
-        verify(r.calendarPreAlarmRefreshScheduler, timeout(WARTEZEIT_MS)).cancelAll()
-        verifyBlocking(r.rufbereitschaftAbfrage, timeout(WARTEZEIT_MS)) { cancel() }
+        verifyBlocking(f.dimSchedule, timeout(WARTEZEIT_MS)) { disable() }
+        verifyBlocking(f.dndSchedule, timeout(WARTEZEIT_MS)) { disable() }
+        verify(f.calendarPreAlarmRefreshScheduler, timeout(WARTEZEIT_MS)).cancelAll()
+        verifyBlocking(f.rufbereitschaftAbfrage, timeout(WARTEZEIT_MS)) { cancel() }
         // 6h-Kette gekappt (regulaer + Wachhund), nirgends neu gestellt.
         verify(f.alarmManager, atLeastOnce()).cancel(anyOrNull<PendingIntent>())
         verify(f.alarmManager, never()).setExactAndAllowWhileIdle(any(), any(), anyOrNull())
         verifyBlocking(r.alarmUseCase, never()) { syncAlarms(any(), any()) }
-        verifyBlocking(r.dimSchedule, never()) { enable() }
-        verifyBlocking(r.dndSchedule, never()) { enable() }
+        verifyBlocking(f.dimSchedule, never()) { enable() }
+        verifyBlocking(f.dndSchedule, never()) { enable() }
     }
 
     @Test
@@ -126,14 +134,14 @@ class BootReceiverRecoveryCharakterisierungTest {
 
     private fun assertKettenGeplant(f: Fixture) {
         val r = f.receiver
-        verifyBlocking(r.dimSchedule, timeout(WARTEZEIT_MS)) { enable() }
-        verifyBlocking(r.dndSchedule, timeout(WARTEZEIT_MS)) { enable() }
-        verifyBlocking(r.calendarPreAlarmRefreshScheduler, timeout(WARTEZEIT_MS)) { reschedule() }
-        verifyBlocking(r.rufbereitschaftAbfrage, timeout(WARTEZEIT_MS)) { reschedule() }
+        verifyBlocking(f.dimSchedule, timeout(WARTEZEIT_MS)) { enable() }
+        verifyBlocking(f.dndSchedule, timeout(WARTEZEIT_MS)) { enable() }
+        verifyBlocking(f.calendarPreAlarmRefreshScheduler, timeout(WARTEZEIT_MS)) { reschedule() }
+        verifyBlocking(f.rufbereitschaftAbfrage, timeout(WARTEZEIT_MS)) { reschedule() }
         verify(f.alarmManager, atLeastOnce())
             .setExactAndAllowWhileIdle(eq(AlarmManager.RTC_WAKEUP), any(), anyOrNull())
-        verifyBlocking(r.dimSchedule, never()) { disable() }
-        verifyBlocking(r.dndSchedule, never()) { disable() }
+        verifyBlocking(f.dimSchedule, never()) { disable() }
+        verifyBlocking(f.dndSchedule, never()) { disable() }
     }
 
     private companion object {

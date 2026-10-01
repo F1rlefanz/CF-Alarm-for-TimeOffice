@@ -96,8 +96,14 @@ class MainActivity : ComponentActivity() {
          * `FLAG_ACTIVITY_SINGLE_TOP` gehoert zu `CLEAR_TOP`: ohne es wirft der Tipp eine laufende
          * MainActivity (Start-Modus `standard`) weg und legt sie neu an; mit ihm bekommt sie
          * `onNewIntent()`.
+         *
+         * Ohne [einstieg] (`null`) oeffnet er die App einfach - so bei JEDEM "App oeffnen" aus einer
+         * Benachrichtigung oder der Wecker-Anzeige des Systems. Bis v1.45 bauten sieben Stellen
+         * diesen Intent selbst (explizit ohne MAIN/LAUNCHER bzw. ueber
+         * `getLaunchIntentForPackage` ohne SINGLE_TOP) - dieselbe Bauart wie der oben genannte
+         * Fehler der Kalender-Warnung (#131, G11-17).
          */
-        fun einstiegIntent(context: Context, einstieg: String): Intent =
+        fun einstiegIntent(context: Context, einstieg: String? = null): Intent =
             Intent(context, MainActivity::class.java)
                 .setAction(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LAUNCHER)
@@ -106,7 +112,7 @@ class MainActivity : ComponentActivity() {
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP
                 )
-                .putExtra(EXTRA_EINSTIEG, einstieg)
+                .apply { if (einstieg != null) putExtra(EXTRA_EINSTIEG, einstieg) }
     }
 
     // Hilt injected dependencies

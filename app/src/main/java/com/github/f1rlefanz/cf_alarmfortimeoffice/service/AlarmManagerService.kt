@@ -52,10 +52,8 @@ enum class SnoozeErgebnis {
  * Was der Rueckbau eines aufgegebenen Armierungsversuchs erreicht hat.
  *
  * WARUM DREI WERTE UND NICHT `Boolean`: Der Rueckbau darf nur wegraeumen, was DERSELBE Vorgang
- * gerade angelegt hat — und das ist je nach Anlass verschieden. Beim frischen Schlummern hat der
- * Vorgang den Alarm angelegt (also weg damit), bei der Wiederherstellung nach einem Neustart hat
- * er nur einen Alarm zu einem Merker-Eintrag nachgezogen, der schon vorher da war (also stehen
- * lassen). "Nicht abgeraeumt" und "bewusst behalten" sehen als `false` gleich aus, verlangen aber
+ * gerade angelegt hat — je nach Anlass verschieden, siehe [SchlummerEntscheidung.armiere].
+ * "Nicht abgeraeumt" und "bewusst behalten" sehen als `false` gleich aus, verlangen aber
  * verschiedene Log-Zeilen — und die eine Zeile ist der einzige Hinweis, den ein Vorfall spaeter
  * hinterlaesst.
  */
@@ -149,11 +147,8 @@ internal object SchlummerEntscheidung {
      * Der gemeinsame Kern jedes Armierens: erst der Master-Pause-Backstop, dann planen, dann
      * vormerken.
      *
-     * ZENTRAL statt ein Gate je Aufrufer: das Schlummern war der EINZIGE Armierungspfad ohne
-     * Master-Pause-Pruefung (jeder andere hat sie nachgeruestet), und es hat zwei gleichwertige
-     * Ausloeser (Vollbild und Notification). Ein Gate pro Aufrufer haette denselben Fehler nur auf
-     * zwei Stellen verteilt — dieselbe Ueberlegung wie beim Skip-Backstop in
-     * `AlarmUseCase.scheduleSystemAlarm()`.
+     * ZENTRAL statt ein Gate je Aufrufer - Hergang beim MASTER-PAUSE-BACKSTOP an
+     * [AlarmManagerService.armSnooze].
      *
      * REIHENFOLGE ist tragend: [merke] laeuft erst NACH [plane]. Der Merker ist die einzige Spur,
      * ueber die ein schwebender Schlummer spaeter abgebrochen oder nach einem Neustart
@@ -262,8 +257,7 @@ internal object SchlummerEntscheidung {
     /**
      * Der Text, den der Nutzer sehen MUSS — `null` nur im Erfolgsfall.
      *
-     * Ein stilles Nichts ist genau der Fehler, den die Pruefrunde 8 gefunden hat: der Wecker war
-     * weg, der Bildschirm zu, und nichts sagte, dass kein neuer Weckruf steht.
+     * Ein stilles Nichts ist genau der Fehler, der zu [SnoozeErgebnis] gefuehrt hat.
      */
     fun hinweisText(ergebnis: SnoozeErgebnis): String? = when (ergebnis) {
         SnoozeErgebnis.GEPLANT -> null
@@ -417,9 +411,8 @@ class AlarmManagerService(
         // nicht: dieser Pfad laeuft aus der 6h-Wartung/dem Worker, und ein
         // Background-Activity-Start wird verworfen (siehe [requestExactAlarmPermission]).
         //
-        // Dieselbe Fehlerklasse behandeln Snooze und Direct-Boot-Restore laengst zweistufig -
-        // ein inexakt geplanter Wecker (Minuten Verzug) ist unvergleichlich besser als keiner.
-        // Alle drei Aufrufstellen gehen deshalb jetzt ueber [setExactOrInexact].
+        // Ein inexakt geplanter Wecker (Minuten Verzug) ist unvergleichlich besser als keiner;
+        // alle drei Aufrufstellen gehen deshalb ueber [setExactOrInexact] (Hergang dort).
         //
         // "Besser als keiner" traegt allerdings erst, seit AlarmReceiver einen Notausgang hat:
         // das Feuern eines INEXAKTEN Alarms erlaubt keinen Vordergrunddienst-Start (Begruendung
@@ -524,9 +517,9 @@ class AlarmManagerService(
      */
     private fun createEnhancedAlarmIntent(alarmId: Int, shiftMatch: ShiftMatch): Intent {
         return Intent(application, AlarmReceiver::class.java).apply {
-            putExtra("alarm_id", alarmId)
-            putExtra("shift_name", shiftMatch.shiftDefinition.name)
-            putExtra("shift_start_time_formatted", formatAlarmTime(shiftMatch.calendarEvent.startTime))
+            putExtra(AlarmReceiver.EXTRA_ALARM_ID, alarmId)
+            putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftMatch.shiftDefinition.name)
+            putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, formatAlarmTime(shiftMatch.calendarEvent.startTime))
             setPackage(application.packageName)
             action = enhancedAlarmAction(alarmId)
         }
@@ -548,12 +541,7 @@ class AlarmManagerService(
      * Creates show intent for AlarmClockInfo (when user taps on system alarm)
      */
     private fun createShowAlarmIntent(alarmId: Int, shiftMatch: ShiftMatch): PendingIntent {
-        val showIntent = Intent(application, MainActivity::class.java).apply {
-            putExtra("alarm_id", alarmId)
-            putExtra("shift_name", shiftMatch.shiftDefinition.name)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            setPackage(application.packageName)
-        }
+        val showIntent = MainActivity.einstiegIntent(application)
 
         return PendingIntent.getActivity(
             application,
@@ -745,19 +733,12 @@ class AlarmManagerService(
          * "5 Min spaeter" im Vollbild UND der Snooze-Button der Sperrbildschirm-Benachrichtigung
          * (letzterer ist der Notausgang, wenn das Vollbild gar nicht erst sichtbar wird).
          *
-         * Nutzt bewusst [snoozeAlarmAction], NICHT [enhancedAlarmAction]: teilte sich der Snooze
-         * den PendingIntent-Slot mit seinem Ursprungsalarm, raeumte ihn der Maintenance-Sync beim
-         * Loeschen des gefeuerten Alarms mit ab - der Nutzer haette "schlummern" gedrueckt und waere
-         * nie wieder geweckt worden. requestCode = alarmId, damit ein zweiter Snooze denselben Slot
-         * ersetzt statt zu stapeln.
+         * Nutzt bewusst [snoozeAlarmAction], NICHT [enhancedAlarmAction] - Begruendung dort.
          *
-         * BERECHTIGUNG: setAlarmClock() ist NICHT von der Exact-Alarm-Berechtigung ausgenommen (das
-         * behauptete dieser Kommentar frueher). Auf API 31/32 haengt sie an SCHEDULE_EXACT_ALARM,
-         * das der Nutzer in den Systemeinstellungen entziehen kann - dann wirft AlarmManager eine
-         * SecurityException. Ungefangen riss die aus dem Snooze-Button der Notification den
-         * kompletten AlarmSoundService-Prozess mit: kein Snooze, kein Ton, keine Meldung. Deshalb
-         * hier zweistufig: bei fehlender Berechtigung inexakt per setAndAllowWhileIdle() planen
-         * (ein um Minuten verzoegerter Snooze ist besser als kein Snooze), und alles in try/catch.
+         * BERECHTIGUNG: geplant wird ueber [setExactOrInexact] (ohne Exact-Alarm-Berechtigung
+         * inexakt, Begruendung dort), und [armSnooze] faengt jeden Wurf. Ungefangen riss eine
+         * SecurityException aus dem Snooze-Button der Notification frueher den kompletten
+         * AlarmSoundService-Prozess mit: kein Snooze, kein Ton, keine Meldung.
          *
          * SHOW-INTENT: Der erste Parameter von [AlarmManager.AlarmClockInfo] ist der Intent, den
          * Uhr-Widgets/Sperrbildschirm ANZEIGEN bzw. per send() ausloesen - dort gehoert eine
@@ -766,10 +747,8 @@ class AlarmManagerService(
          * requestCode-Konvention (alarmId + 10000) wie [createShowAlarmIntent] und
          * [rescheduleFromDirectBoot].
          *
-         * RUECKGABE AUSWERTEN, IMMER: bis zur Pruefrunde 8 war diese Funktion `Unit` und verwarf
-         * das Ergebnis von [armSnooze] — ein gescheiterter Schlummer war von einem erfolgreichen
-         * nicht zu unterscheiden, beide Aufrufer beendeten den Wecker danach unbedingt. Wer den
-         * Rueckgabewert wieder ignoriert, baut genau diesen stillen Ausfall zurueck.
+         * RUECKGABE AUSWERTEN, IMMER: wer sie ignoriert, baut den stillen Ausfall zurueck, der
+         * zu [SnoozeErgebnis] gefuehrt hat.
          *
          * @return [SnoozeErgebnis.GEPLANT] nur, wenn der Wecker WIRKLICH steht und vorgemerkt ist.
          */
@@ -788,13 +767,10 @@ class AlarmManagerService(
                 shiftName = shiftName,
                 shiftStartTimeFormatted = shiftStartTimeFormatted,
                 logContext = "Snooze-Alarm gesetzt: $shiftName in $minutes Min",
-                // FRISCH SCHLUMMERN: Der Merker-Eintrag zu dieser ID ist gerade NICHT entstanden
-                // (sonst waeren wir nicht im Rueckbau). Ein Alarm ohne Merker ist durch nichts
-                // mehr abzuraeumen - weder durch die Master-Pause noch durch `deleteAllAlarms`
-                // noch durch das Abmelden -, also muss er weg. [cancelSnooze] baut denselben
-                // PendingIntent-Slot zeichengleich nach und ist damit die exakte Gegenoperation.
-                // Das darin enthaltene `forgetPendingSnooze()` laeuft ins Leere bzw. raeumt einen
-                // Alt-Eintrag derselben ID mit weg - hier beides richtig.
+                // FRISCH SCHLUMMERN RAEUMT AB (Begruendung: [SchlummerEntscheidung.armiere]).
+                // [cancelSnooze] baut denselben PendingIntent-Slot zeichengleich nach und ist damit
+                // die exakte Gegenoperation. Das darin enthaltene `forgetPendingSnooze()` laeuft
+                // ins Leere bzw. raeumt einen Alt-Eintrag derselben ID mit weg - hier beides richtig.
                 baueZurueck = {
                     if (cancelSnooze(context, alarmId)) {
                         RueckbauErgebnis.ABGERAEUMT
@@ -821,15 +797,13 @@ class AlarmManagerService(
          * schaltet die Pause ein -> Nutzer drueckt schlummern" armierte einen Wecker, den danach
          * nichts mehr abraeumte (die 6h-Kette ist gekappt, `syncAlarms()` laeuft nur bei
          * App-Interaktion) - waehrend die Oberflaeche "Hintergrunddienste pausiert" zeigte. Der
-         * Backstop deckt beide Ausloeser (Vollbild, Notification) UND jeden kuenftigen Aufrufer.
+         * Backstop deckt beide Ausloeser (Vollbild, Notification) UND jeden kuenftigen Aufrufer;
+         * ein Gate pro Aufrufer haette denselben Fehler nur auf zwei Stellen verteilt - dieselbe
+         * Ueberlegung wie beim Skip-Backstop in `AlarmUseCase.scheduleSystemAlarm()`.
          *
          * [baueZurueck] IST DER EINZIGE UNTERSCHIED zwischen den beiden Anlaessen und kommt
-         * deshalb vom Aufrufer, nicht aus einem Flag hier drin: Scheitert das Vormerken, ist der
-         * Alarm schon armiert, und was dann zu tun ist, haengt daran, ob der Merker-Eintrag
-         * gerade erst entstehen sollte (frisch schlummern -> Alarm abbrechen) oder ob er schon
-         * vorher da war (Wiederherstellung -> nichts anfassen, sonst loescht der Rueckbau die
-         * einzige Spur des Schlummers und der Weckruf ist endgueltig verloren). Details in
-         * [SchlummerEntscheidung.armiere].
+         * deshalb vom Aufrufer, nicht aus einem Flag hier drin. Was er je Anlass tun muss und
+         * warum: [SchlummerEntscheidung.armiere].
          */
         private fun armSnooze(
             context: Context,
@@ -862,12 +836,7 @@ class AlarmManagerService(
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
 
-                    val showIntent = Intent(context, MainActivity::class.java).apply {
-                        putExtra("alarm_id", alarmId)
-                        putExtra("shift_name", shiftName)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        setPackage(context.packageName)
-                    }
+                    val showIntent = MainActivity.einstiegIntent(context)
                     val showPendingIntent = PendingIntent.getActivity(
                         context, alarmId + 10000, showIntent,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -883,8 +852,7 @@ class AlarmManagerService(
                         logContext = "Snooze id=$alarmId"
                     )
                 },
-                // Erst NACH erfolgreicher Planung vormerken: der Eintrag ist die einzige Spur, ueber
-                // die ein schwebender Snooze spaeter noch abgebrochen werden kann.
+                // Laeuft erst NACH `plane` - Reihenfolge begruendet in [SchlummerEntscheidung.armiere].
                 merke = {
                     rememberPendingSnooze(context, alarmId, triggerTime, shiftName, shiftStartTimeFormatted)
                 },
@@ -1039,12 +1007,9 @@ class AlarmManagerService(
         internal fun snoozeIdsOf(entries: Set<String>): List<Int> =
             entries.mapNotNull { parseSnoozeEntry(it)?.id }.distinct()
 
-        // Der synchrone commit() ist eine Entscheidung, kein Versehen - siehe Kommentar am Write unten
-        // und Skill cfalarm-wecker-und-boot ("Der Snooze-Merker ist serialisiert
-        // (snoozeRegistryLock) und schreibt mit commit()"). apply() schreibt asynchron und verloere
-        // denselben Eintrag bei einem Prozess-Tod unmittelbar danach; der Snooze waere dann im
-        // AlarmManager scharf, aber der App unbekannt - weder abbrechbar noch nach einem Reboot
-        // wiederherstellbar.
+        // Der synchrone commit() ist eine Entscheidung, kein Versehen - Begruendung am Write unten
+        // und im Skill cfalarm-wecker-und-boot ("Der Snooze-Merker ist serialisiert
+        // (snoozeRegistryLock) und schreibt mit commit()").
         //
         // Hier stand bis zum 25.08.2026 ein @Suppress("ApplySharedPref") - es unterdrueckte
         // NICHTS. Der Detektor sieht nur ein direktes editor.commit(), nicht die KTX-Form
@@ -1092,14 +1057,10 @@ class AlarmManagerService(
             }
         }
 
-        // Der synchrone commit() ist auch hier Absicht - dieselbe Begruendung wie bei
-        // [rememberPendingSnooze] und im Skill cfalarm-wecker-und-boot:
-        // der Merker ist die einzige Spur eines schwebenden Snooze, und ein asynchroner Write kann
-        // bei einem Prozess-Tod unmittelbar danach verloren gehen. Beim Vergessen ist die Richtung
-        // gespiegelt, aber genauso wenig hinnehmbar: ein bereits abgebrochener Snooze bliebe im
-        // Merker stehen und wuerde beim naechsten Boot-Restore wieder scharf gesetzt.
-        // Auch das @Suppress("ApplySharedPref") ist am 25.08.2026 gefallen, aus demselben Grund
-        // wie bei [rememberPendingSnooze]: es unterdrueckte nichts.
+        // Der synchrone commit() ist auch hier Absicht - Begruendung bei [rememberPendingSnooze],
+        // nur in gespiegelter Richtung: ein bereits abgebrochener Snooze bliebe im Merker stehen
+        // und wuerde beim naechsten Boot-Restore wieder scharf gesetzt. Das
+        // @Suppress("ApplySharedPref") fiel am 25.08.2026 wie dort: es unterdrueckte nichts.
         private fun forgetPendingSnooze(context: Context, alarmId: Int) = synchronized(snoozeRegistryLock) {
             try {
                 val prefs = snoozePrefs(context)
@@ -1242,13 +1203,9 @@ class AlarmManagerService(
                     shiftName = entry.shiftName,
                     shiftStartTimeFormatted = entry.shiftStartTimeFormatted,
                     logContext = "Schwebender Snooze nach Neustart wiederhergestellt",
-                    // WIEDERHERSTELLEN RAEUMT NICHT AB: Der Merker-Eintrag zu dieser ID steht
-                    // schon - er ist die Vorlage dieses Laufs, `rememberPendingSnooze()` zieht ihn
-                    // nur nach. Ein Cancel wuerde ueber `forgetPendingSnooze()` genau diesen
-                    // Eintrag loeschen: Alarm gecancelt, einzige Spur weg, auch bei jedem weiteren
-                    // Neustart nicht mehr wiederherstellbar. Aus einem Schreibfehler wuerde ein
-                    // endgueltig verlorener Weckruf. Also stehen lassen - der Alarm klingelt und
-                    // bleibt ueber den bestehenden Eintrag abbrechbar.
+                    // WIEDERHERSTELLEN RAEUMT NICHT AB: der Merker-Eintrag ist die Vorlage dieses
+                    // Laufs, ein Cancel loeschte ueber `forgetPendingSnooze()` die einzige Spur
+                    // (Begruendung: [SchlummerEntscheidung.armiere]).
                     baueZurueck = { RueckbauErgebnis.BEWUSST_BEHALTEN }
                 )
                 when (ergebnis) {
@@ -1294,11 +1251,10 @@ class AlarmManagerService(
          * FLAG_UPDATE_CURRENT aktualisiert statt zu duplizieren. Braucht KEIN Hilt/CE/Kalender und
          * darf im Direct-Boot laufen. Nur fuer Alarme in der Zukunft.
          *
-         * setAlarmClock() ist NICHT von der Exact-Alarm-Berechtigung ausgenommen (das behauptete
-         * dieser Kommentar frueher): auf API 31/32 kann der Nutzer sie entziehen, dann fliegt eine
-         * SecurityException. Sie darf hier NIEMALS nach oben durchschlagen - der Aufrufer
-         * (BootReceiver) restauriert in derselben Schleife weitere Alarme, und ein Absturz im
-         * Boot-Fenster liesse alle folgenden ungesetzt. Fallback wie beim Snooze: inexakt planen.
+         * Geplant wird ueber [setExactOrInexact] (Exact-Alarm-Berechtigung: siehe dort). Eine
+         * SecurityException darf hier NIEMALS nach oben durchschlagen - der Aufrufer (BootReceiver)
+         * restauriert in derselben Schleife weitere Alarme, und ein Absturz im Boot-Fenster liesse
+         * alle folgenden ungesetzt.
          */
         fun rescheduleFromDirectBoot(
             context: Context,
@@ -1311,9 +1267,9 @@ class AlarmManagerService(
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
             val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
-                putExtra("alarm_id", id)
-                putExtra("shift_name", shiftName)
-                putExtra("shift_start_time_formatted", shiftStartTimeFormatted)
+                putExtra(AlarmReceiver.EXTRA_ALARM_ID, id)
+                putExtra(AlarmReceiver.EXTRA_SHIFT_NAME, shiftName)
+                putExtra(AlarmReceiver.EXTRA_SHIFT_START_TIME, shiftStartTimeFormatted)
                 setPackage(context.packageName)
                 action = enhancedAlarmAction(id)
             }
@@ -1322,15 +1278,8 @@ class AlarmManagerService(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val showIntent = Intent(context, MainActivity::class.java).apply {
-                putExtra("alarm_id", id)
-                putExtra("shift_name", shiftName)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                setPackage(context.packageName)
-            }
-            // Gleicher +10000-Offset wie createShowAlarmIntent() - siehe Kommentar dort, warum das
-            // kein aktiver Kollisionsschutz ist (getrennter PendingIntent-Namensraum getActivity()
-            // vs. getBroadcast()), sondern nur die requestCode-Konvention konsistent haelt.
+            val showIntent = MainActivity.einstiegIntent(context)
+            // Gleicher +10000-Offset wie createShowAlarmIntent() - Begruendung dort.
             val showPendingIntent = PendingIntent.getActivity(
                 context, id + 10000, showIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

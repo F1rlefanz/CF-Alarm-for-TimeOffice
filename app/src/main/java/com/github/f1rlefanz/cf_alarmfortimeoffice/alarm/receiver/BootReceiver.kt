@@ -141,10 +141,7 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var calendarSelectionRepository: CalendarSelectionRepository
     @Inject lateinit var authDataStoreRepository: IAuthDataStoreRepository
     @Inject lateinit var directBootAlarmStore: DirectBootAlarmStore
-    @Inject lateinit var dimSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
-    @Inject lateinit var dndSchedule: com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
-    @Inject lateinit var calendarPreAlarmRefreshScheduler: com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
-    @Inject lateinit var rufbereitschaftAbfrage: com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
+    @Inject lateinit var zeitkettenArmierer: com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
     @Inject lateinit var masterPausePrefs: com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
 
     companion object {
@@ -475,59 +472,11 @@ class BootReceiver : BroadcastReceiver() {
                         schedulePostRecoveryHealthCheck(context)
                     }
 
-                    // 8. Schicht-Dimmer: rollenden Dimm-Tick nach dem Boot neu setzen.
-                    //    Best-effort und eigenes try/catch – darf die Wecker-Recovery NIE stoeren.
-                    //    Master-Pause: statt neu zu planen, den Dimmer abschalten.
-                    try {
-                        if (paused) {
-                            dimSchedule.disable()
-                        } else {
-                            dimSchedule.enable()
-                        }
-                    } catch (e: Exception) {
-                        Logger.w(LogTags.DIMMER, "Boot: Dimm-Reschedule fehlgeschlagen", e)
-                    }
-
-                    // 9. DND-Steuerung: rollenden Tick nach dem Boot neu setzen. Gleiches
-                    //     Muster/gleicher try/catch-Gedanke wie beim Dimmer – Best-effort, darf
-                    //     die Wecker-Recovery NIE stoeren.
-                    //     Master-Pause: statt neu zu planen, die DND-Regel abschalten.
-                    try {
-                        if (paused) {
-                            dndSchedule.disable()
-                        } else {
-                            dndSchedule.enable()
-                        }
-                    } catch (e: Exception) {
-                        Logger.w(LogTags.DND, "Boot: DND-Reschedule fehlgeschlagen", e)
-                    }
-
-                    // 10. Feature B: Pre-Alarm-Refresh-Jobs (3h vor jedem Alarm) nach dem Boot neu
-                    //     planen. Gleiches Muster/gleicher try/catch-Gedanke wie Dimmer/DND –
-                    //     Best-effort, darf die Wecker-Recovery NIE stoeren.
-                    //     Master-Pause: statt neu zu planen, alle offenen Jobs canceln.
-                    try {
-                        if (paused) {
-                            calendarPreAlarmRefreshScheduler.cancelAll()
-                        } else {
-                            calendarPreAlarmRefreshScheduler.reschedule()
-                        }
-                    } catch (e: Exception) {
-                        Logger.w(LogTags.BACKGROUND_WORKER, "Boot: Pre-Alarm-Refresh-Reschedule fehlgeschlagen", e)
-                    }
-
-                    // 11. Stuendliche Rufbereitschafts-Abfrage: ein Neustart loescht alle
-                    //     AlarmManager-Eintraege, also auch diesen Slot. Gleiches Muster wie 8-10,
-                    //     Best-effort, Master-Pause raeumt statt zu planen.
-                    try {
-                        if (paused) {
-                            rufbereitschaftAbfrage.cancel()
-                        } else {
-                            rufbereitschaftAbfrage.reschedule()
-                        }
-                    } catch (e: Exception) {
-                        Logger.w(LogTags.MAINTENANCE, "Boot: Rufbereitschafts-Abfrage nicht neu geplant", e)
-                    }
+                    // 8.-11. Die Nebenketten (Dimmer, DND, Pre-Alarm-Refresh, Rufbereitschafts-
+                    //     Abfrage): ein Neustart loescht alle AlarmManager-Eintraege. Best-effort,
+                    //     jeder Schritt einzeln gefangen - darf die Wecker-Recovery NIE stoeren.
+                    //     Master-Pause: raeumen statt planen. Siehe ZeitkettenArmierer.
+                    zeitkettenArmierer.armiereNebenketten(anlass = "Boot", pausiert = paused)
 
                     recoverySuccessful = true
                     Logger.business(

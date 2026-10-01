@@ -76,6 +76,35 @@ class EinstiegIntentTest {
         )
     }
 
+    /**
+     * #131 (G11-17): JEDES "App oeffnen" geht ueber [MainActivity.einstiegIntent] - auch ohne
+     * Ziel. Bis v1.45 bauten sieben Stellen (Wecker-Notausgang, Wecker-Anzeige des Systems,
+     * Pausen-Hinweis, zwei Meldungen) ihren Intent selbst: explizit ohne MAIN/LAUNCHER oder ueber
+     * `getLaunchIntentForPackage` ohne SINGLE_TOP. Ausser MainActivity selbst darf deshalb niemand
+     * `Intent(..., MainActivity::class.java)` oder `getLaunchIntentForPackage` schreiben.
+     */
+    private val selbstGebauterIntent = Regex("""Intent\(\s*[\w.]+\s*,\s*MainActivity::class\.java""")
+
+    @Test
+    fun `niemand ausser MainActivity baut den Intent zur App selbst`() {
+        val wurzel = File("src/main/java/com/github/f1rlefanz/cf_alarmfortimeoffice")
+        val selbstGebaut = wurzel.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" && it.name != "MainActivity.kt" }
+            .filter { datei ->
+                val text = ohneKommentare(datei.relativeTo(wurzel).invariantSeparatorsPath)
+                // `ComponentName(context, MainActivity::class.java)` (Konfigurations-Activity der
+                // DND-Regel) ist kein Intent zum Oeffnen und bleibt erlaubt.
+                selbstGebauterIntent.containsMatchIn(text) || text.contains("getLaunchIntentForPackage")
+            }
+            .map { it.relativeTo(wurzel).invariantSeparatorsPath }
+            .toList()
+
+        assertTrue(
+            "Diese Dateien bauen den Intent zur App selbst statt ueber MainActivity.einstiegIntent(): $selbstGebaut",
+            selbstGebaut.isEmpty()
+        )
+    }
+
     @Test
     fun `ein Kaltstart wertet den Einstieg aus, eine Wiederherstellung nicht`() {
         val activity = ohneKommentare("MainActivity.kt")

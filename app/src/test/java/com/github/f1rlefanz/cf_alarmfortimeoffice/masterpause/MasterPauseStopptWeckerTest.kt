@@ -8,6 +8,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndScheduleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.HueSmartScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.service.RufbereitschaftAbfrage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -60,6 +61,7 @@ class MasterPauseStopptWeckerTest {
             hueSmartScheduler = mock<HueSmartScheduler>(),
             calendarPreAlarmRefreshScheduler = mock<CalendarPreAlarmRefreshScheduler>(),
             directBootAlarmStore = mock<DirectBootAlarmStore>(),
+            rufbereitschaftAbfrage = mock<RufbereitschaftAbfrage>(),
             context = context
         )
         return Fixture(useCase = useCase, context = context, alarmManager = alarmManager)

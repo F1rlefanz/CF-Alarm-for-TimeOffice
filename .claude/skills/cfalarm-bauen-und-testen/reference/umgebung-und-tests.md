@@ -221,7 +221,12 @@ unverändert. Aus dem Code allein war das nicht zu sehen.
 - Debug-Build, **ein File pro Tag**, 8 Tage Aufbewahrung.
 - Liegt unter `/sdcard/Android/data/<pkg>/files/`, erreichbar per `adb pull`.
 - **`run-as … cat` scheitert dort an den Rechten** — nicht als „Log fehlt" fehldeuten.
-- Gesicherte Stände liegen in `..Projektdateien/Logs/` (gitignored).
+- Wer einen Stand aufheben will, legt ihn unter `..Projektdateien/` ab (gitignored) und raeumt ihn
+  wieder weg, sobald er ausgewertet ist.
+- **Play-Builds (Fairphone seit 01.10.2026) loggen nur WARN+.** Im Datei-Log stehen dann z. B.
+  `Dimmen aus`, `Ruhezeit AN/AUS`, Token-Fehler, Feed-Rotation (`neue Kalender-Kennung`) - aber
+  NICHT die SYNC-Zusammenfassung (`Intelligent synchronization complete` ist INFO). Belegt am
+  FP6-Log vom 01.10.2026.
 
 ## Am Gerät belegt (19.–21.08.2026, Emulator, API 37)
 

@@ -10,7 +10,8 @@ einem Torwächter (`torwaechter.yml`), der jeden PR selbst baute und widerlegen 
 Runden, 12 gemergte PRs, **kein einziger `fix`-Commit** aus allen Runden zusammen. Eingestellt, weil
 der Ertrag zuletzt bei 1–3 Schnitten je Runde lag, die beiden Läufe aber täglich rund 40
 Opus-Minuten über das Abo des Eigentümers kosteten. **Aufräumen läuft seither als manuell
-gestartete Audit-Runde** (Auftrag und Ergebnisse lokal unter `..Projektdateien/audit-opus55*`).
+gestartete Audit-Runde**. Die Arbeitsordner der Runden 1 und 2 sind am 01.10.2026 geloescht; was
+davon noch offen war, steht als Issue (#128-#133, Label `aufraeumen`).
 Geblieben sind die Lehren unten — sie gelten für jeden Schnitt, egal wer ihn macht.
 
 **Es ist kein Verfall.** Diese App trägt Baugerüst aus einem Jahr Vibe-Coding: Code auf Vorrat,

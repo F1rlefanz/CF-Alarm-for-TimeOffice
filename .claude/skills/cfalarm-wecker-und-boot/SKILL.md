@@ -105,7 +105,9 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Ein fehlgeschlagener Token-Abruf ist NICHT pauschal ein Anmeldeproblem.** `WartungTokenFehler`
   stuft nach dem Vertrag von GoogleAuthUtil ein (`IOException` = voruebergehend,
   `GoogleAuthException` = endgueltig) und entscheidet deshalb an der URSACHE eines
-  `RefreshFailed`, nicht an seinem Typ — dafuer MUSS die `cause` durchgereicht werden. Das `when`
+  `RefreshFailed`, nicht an seinem Typ — dafuer MUSS die `cause` durchgereicht werden. Seit dem
+  Umstieg auf den AuthorizationClient (Oktober 2026) stellt `AutorisierungsEinstufung` diesen
+  Vertrag her; dort steht die Falle „offline = `hasResolution`" (Auth-Skill). Das `when`
   ueber die versiegelte `TokenException` bleibt exhaustiv.
 - **„Voruebergehend" heisst entprellt, nicht stumm.** Gemeldet wird ab dem ZWEITEN Fehlschlag in
   Folge, mit einem Text ohne Anmelde-Behauptung; ein gueltiges Token setzt Zaehler und

@@ -16,13 +16,14 @@
 - `DataStoreTokenRepository.observe()`: kein Signal statt falschem Signal
 - Der Rotation-Chain-Check von `refresh()`
 - `repeatOnLifecycle(RESUMED)` und der Weg zurueck ueber `calendarAuthorizationValid`
+- Der AuthorizationClient und die Falle „offline = Zustimmung noetig"
 
 ---
 
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.** Für eine Wecker-App ist
   „leer" die gefährlichste Lüge — nicht von „du hast frei" zu unterscheiden.
 - **GMS-Token-Cache liegt außerhalb des App-Speichers** und überlebt die Deinstallation. Nur
-  `GoogleAuthUtil.clearToken()` räumt ihn ab.
+  `clearToken()` der Play-Dienste räumt ihn ab (bis Oktober 2026 `GoogleAuthUtil.clearToken()`).
 - **`auth_prefs` braucht `corruptionHandler` UND `.catch{}` am `authData`-Flow.** Dort liegt der
   Zustand, der die ganze App gated (`login_status`/`user_email`): eine beschädigte `preferences_pb`
   wäre dauerhaft lese- UND schreib-tot gewesen, und ein Upstream-Fehler hätte in den
@@ -73,7 +74,7 @@
   Aufrufer den Fehlerzweig genauso wie den Erfolgszweig (Prüfrunde 8, Welle 5).
 - **Der gesamte Block ab dem Verwerfen des Tokens liegt in EINEM `withContext(NonCancellable)`** —
   nicht nur das Aufräumen. Der Punkt ohne Wiederkehr liegt früher als gedacht: `signOut()` ruft über
-  `invalidate()` `GoogleAuthUtil.clearToken()`, einen NETZaufruf, der ohne Netz bis zum Timeout
+  `invalidate()` das Leeren des GMS-Caches (damals `GoogleAuthUtil.clearToken()`), einen Aufruf, der bis zum Timeout
   hängt. Vorher lag die Sperre allein um das Aufräumen, erreicht wurde sie also erst danach: ein
   Wegwischen der App genau in diesem Fenster ließ Token weg und Wecker armiert zurück.
 - **Bewusst offene Restlücke: Prozesstod im Abmelde-Fenster.** `NonCancellable` schützt gegen Abbruch,
@@ -139,3 +140,41 @@
   `getValidToken()` prüft nur die LOKALE Ablaufzeit und merkt davon nichts. Nur
   `GoogleAuthUtil.clearToken()` räumt den Cache ab; er liegt außerhalb des App-Speichers und
   überlebt die Deinstallation.
+
+## Der AuthorizationClient und die Falle „offline = Zustimmung noetig" (Oktober 2026)
+
+**Warum umgestellt.** `GoogleAuthUtil.getToken/clearToken` sind seit play-services-auth 21.3.0
+(09.12.2024) abgekuendigt; Google hat im August 2026 die Sign-in-APIs bereits entfernt. Am Fairphone
+loggt GMS bei jeder Anfrage `[GetToken] The requested account is not visible to ...` (CF-Alarm
+steht in keiner Kontosichtbarkeit). Entschieden am 01.10.2026: Weg B, AuthorizationClient (Vorlage
+in `..Projektdateien/entscheidungsvorlage-authorizationclient-2026-09-30.md`; Weg A,
+Kontosichtbarkeit herstellen, verworfen als Symptombehandlung einer abgekuendigten API).
+
+**Was der Spike gemessen hat** (Emulator API 37, 30.09.2026, in der 6h-Wartung ohne Activity):
+die per GoogleAuthUtil erteilte Zustimmung wird erkannt, das Token ist IDENTISCH (ein Cache fuer
+beide Wege); gesperrt und dunkel kommt ein frisches Token in ~330 ms; `tokenResponseParams` ist
+immer `null` (kein Ablaufdatum - die App bucht weiter pauschal 3600 s). Und die Falle: **Flugmodus
+nach `clearToken` liefert keinen Fehler, sondern Erfolg mit `hasResolution = true`, `token = null`**
+- wieder online kam ohne Zutun ein Token, die Zustimmung bestand die ganze Zeit.
+
+**Was daraus folgt** (`AutorisierungsEinstufung`, `KalenderAutorisierung`, `OAuth2TokenManager`):
+- **Ohne validiertes Netz ist nichts endgueltig** - weder Resolution noch Statuscode. Wer
+  `hasResolution` ungeprueft als Anmeldung liest, baut den Fehlalarm vom 09.09.2026 nach, und der
+  Refresh-Pfad verwirft bei `ConsentRequired` obendrein das Token.
+- Voruebergehend wird als `IOException` in die Ursachenkette gesetzt. So blieben `WartungTokenFehler`,
+  `AuthUseCase.hasCalendarAuthorization()` und `CalendarUseCase` unveraendert - sie kannten nur
+  den GoogleAuthUtil-Vertrag.
+- **Vor dem Refresh wird weiter der Cache geleert**, und scheitert das, bricht der Refresh
+  VORUEBERGEHEND ab: sonst kaeme dasselbe Token mit Restlaufzeit zurueck, die App buchte 3600 s,
+  und der fruehe 401 fuehrte ueber `invalidate()` in die Neuanmeldung.
+- Ein Abbruch der GMS-AUFGABE kommt als `java.util.concurrent.CancellationException` (dieselbe
+  Klasse wie ein Coroutine-Abbruch). Weitergeworfen wird nur, wenn die Coroutine wirklich
+  abgebrochen ist (`ensureActive()`), sonst waere ein GMS-Aussetzer ein stilles Ende der Wartung.
+- `Tasks.await` mit eigenem Deckel (20 s): ohne Frist wartet es unbegrenzt, etwa waehrend sich die
+  Play-Dienste aktualisieren.
+- Der Client wird erst im Aufruf geholt, nie beim Bauen (Singleton am Application-Graphen, der auch
+  im Direct-Boot-Prozess entsteht).
+- Im Vordergrund oeffnet der `PendingIntent` per `startIntentSenderForResult` denselben
+  Request-Code wie frueher; `handlePermissionResult()` holt das Token mit einem zweiten
+  `authorize()`. Offline wird KEIN Dialog gestartet - die Meldung nennt die Verbindung.
+

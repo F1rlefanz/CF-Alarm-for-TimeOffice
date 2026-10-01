@@ -95,7 +95,15 @@ das baut man dieselbe Falle in neuer Form nach.
 ## Auth — Kurzregeln
 
 - **Kein `getOrElse { emptyList() }` auf Auth-behafteten Ergebnissen.**
-- **GMS-Token-Cache liegt außerhalb des App-Speichers** — nur `GoogleAuthUtil.clearToken()` räumt ihn ab.
+- **GMS-Token-Cache liegt außerhalb des App-Speichers** — nur `clearToken()` der Play-Dienste räumt
+  ihn ab (seit Oktober 2026 über den AuthorizationClient; EIN Cache für beide Wege).
+- **Token kommen über den AuthorizationClient, und `hasResolution` ist OFFLINE kein Anmeldefall.**
+  GMS meldet ein Funkloch nach geleertem Cache als ERFOLG mit `hasResolution = true` — dieselbe Form
+  wie eine entzogene Zustimmung. Die Einstufung (`AutorisierungsEinstufung`, reine Funktion) sagt:
+  ohne validiertes Netz ist nichts endgültig; Statuscodes 7/8/15/17/20–22, Timeout und IOException
+  sind vorübergehend. Vorübergehend wird als `IOException` in die Kette gesetzt — daran hängen
+  `WartungTokenFehler`, `AuthUseCase` und `CalendarUseCase`. Offline startet `authorize()` keinen
+  Zustimmungsdialog. Scheitert das Leeren des Caches vor dem Refresh, wird NICHT abgerufen.
 - **`auth_prefs` braucht `corruptionHandler` UND `.catch{}`**; Degradation auf „nicht angemeldet".
 - **`onResult` gehört `OAuth2TokenManager.authorize()`** — es feuert auf jedem Weg genau einmal.
 - **`observeTokenLoss()` nimmt nur das NEGATIVE Signal**; `drop(1)` ist Pflicht.
@@ -106,7 +114,7 @@ das baut man dieselbe Falle in neuer Form nach.
 - **Reihenfolge: erst abmelden, dann aufräumen** — umgekehrt entsteht „angemeldet, aber alle Wecker
   weg“, und der Rückbau dagegen ist dreimal gescheitert. Nicht wieder umdrehen.
 - **Der ganze Block ab dem Verwerfen des Tokens liegt in EINEM `withContext(NonCancellable)`** —
-  `GoogleAuthUtil.clearToken()` ist ein Netzaufruf und hängt ohne Netz bis zum Timeout.
+  das Leeren des GMS-Caches blockiert (gedeckelt auf 20 s, `PlayDiensteKalenderAutorisierung`).
 - **Ein Failure aus `signOut()` heißt „Token weg, Auth-Daten noch da“**, nicht „nichts passiert“ —
   der Aufrufer behandelt den Fehlerzweig wie den Erfolgszweig.
 - **Prozesstod im Abmelde-Fenster ist eine BEWUSST offene Lücke** (dauerhafter Merker nach Messung

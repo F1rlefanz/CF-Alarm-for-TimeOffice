@@ -143,7 +143,7 @@ Alle injizierten `Service`/`BroadcastReceiver` sind
 `@AndroidEntryPoint`.
 
 **Auth** (`auth/`): `CredentialAuthManager` (Google Sign-In via `androidx.credentials`),
-`OAuth2TokenManager` (Token holen/refreshen via `GoogleAuthUtil`), `DataStoreTokenRepository`
+`OAuth2TokenManager` (Token holen/refreshen via AuthorizationClient; offline ist `hasResolution` KEIN Anmeldefall), `DataStoreTokenRepository`
 (Tink/AES-256-GCM). Der Token liegt im DataStore `token_data_v2_encrypted`, den sich
 `DataStoreTokenRepository` per `EncryptedDataStoreFactory` **selbst** baut.
 

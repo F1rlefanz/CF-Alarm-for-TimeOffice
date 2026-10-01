@@ -540,6 +540,12 @@ beim dritten Mal nicht mehr — und beim dritten Mal ist der Zugriff dann wirkli
 
 ### Die Einstufung folgt dem Vertrag von GoogleAuthUtil
 
+> **Seit Oktober 2026 holt die App das Token über den AuthorizationClient**, der diesen Vertrag
+> nicht hat (keine `IOException`, ein Funkloch kommt als `hasResolution`). `AutorisierungsEinstufung`
+> stellt ihn her und setzt für jeden vorübergehenden Fehlschlag eine `IOException` in die Kette —
+> `WartungTokenFehler` blieb deshalb unverändert. Hergang im Auth-Skill (`auth-und-token.md`,
+> Abschnitt AuthorizationClient).
+
 `WartungTokenFehler.einstufe()` rät nicht, sondern liest die zugesicherte Semantik ab:
 `IOException` heißt bei `GoogleAuthUtil` ausdrücklich „vorübergehend, später erneut versuchen",
 `GoogleAuthException` heißt „endgültig, ohne Zutun des Nutzers wird das nichts". Entscheidend ist

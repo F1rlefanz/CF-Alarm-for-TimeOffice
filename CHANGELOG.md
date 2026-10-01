@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.43.7 (Aktuell – interne Alpha)
+## 🆕 Version 1.44.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Ohne Internet zeigt die Übersicht jetzt deine nächste Schicht weiter an._
+
+### ✨ Neu
+
+- **„Nächste Schicht“ auch ohne Internet:** Ohne Verbindung zeigt die Übersicht jetzt die zuletzt bekannte nächste Schicht statt „Keine Schicht erkannt“ – mit dem Hinweis, von wann die Schichtliste stammt. Im System-Status steht offline „nicht prüfbar“ statt „Keine Schichten erkannt“.
+
+### 🔧 Unter der Haube
+
+- **Kalender-Zugriff auf dem neuen Weg der Google-Play-Dienste:** Google kündigt den bisherigen Weg ab. Für dich ändert sich nichts – eine bestehende Freigabe gilt weiter, ohne neue Anmeldung. Ein Funkloch wird weiterhin nicht als „Anmeldung erforderlich“ gemeldet.
+
+## Version 1.43.7
 
 **Stand:** Oktober 2026
 

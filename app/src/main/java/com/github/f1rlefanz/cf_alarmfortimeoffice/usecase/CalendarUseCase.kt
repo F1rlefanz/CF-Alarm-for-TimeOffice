@@ -69,16 +69,16 @@ class CalendarUseCase @Inject constructor(
      * Ein 401 heisst: das Token ist serverseitig tot - egal, was unsere eigene Ablaufzeit sagt.
      * Und genau da lag die Falle: getValidToken() prueft nur die LOKAL gespeicherte
      * Ablaufzeit ("noch 59 Min gueltig") und laesst das Token deshalb durch, ohne je den
-     * Refresh-Pfad (und damit GoogleAuthUtil.clearToken) anzustossen. Das tote Token blieb
+     * Refresh-Pfad (und damit das Leeren des GMS-Token-Caches) anzustossen. Das tote Token blieb
      * liegen, jeder Versuch lief erneut in denselben 401, und die UI lud endlos nach.
      *
-     * Typischer Ausloeser: Zugriff im Google-Konto entzogen. Der GoogleAuthUtil-Cache in den
+     * Typischer Ausloeser: Zugriff im Google-Konto entzogen. Der Token-Cache in den
      * Play Services ueberlebt sogar eine App-Neuinstallation und liefert das tote Token
      * weiter aus - ohne Zustimmungsdialog, weil es fuer GMS gueltig aussieht.
      *
      * Nach dem Verwerfen meldet getValidToken() sauber NoTokenAvailable; die App faellt in den
-     * regulaeren Sign-in-Pfad, GoogleAuthUtil hat keinen Cache mehr und fordert die Zustimmung
-     * neu an.
+     * regulaeren Sign-in-Pfad, die Play-Dienste haben keinen Cache mehr und fordern die
+     * Zustimmung neu an.
      */
     private suspend fun invalidateTokenIfRejectedByGoogle(error: Throwable) {
         if (error !is AppError.AuthenticationError) return

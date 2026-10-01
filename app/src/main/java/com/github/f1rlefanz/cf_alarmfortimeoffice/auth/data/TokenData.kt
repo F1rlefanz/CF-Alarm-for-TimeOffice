@@ -220,7 +220,8 @@ data class TokenData(
 enum class TokenProvider {
     /**
      * Google Play Services Flow:
-     * - GoogleAuthUtil.clearToken() + getToken()
+     * - AuthorizationClient: clearToken() + authorize() (bis Oktober 2026 GoogleAuthUtil;
+     *   Name bleibt, der Wert steht im persistierten Token-JSON)
      * - Kein separater Refresh Token
      * - Benötigt googleAccountEmail
      */

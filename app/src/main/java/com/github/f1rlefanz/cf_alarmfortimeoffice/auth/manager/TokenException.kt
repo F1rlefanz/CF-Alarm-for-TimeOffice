@@ -1,6 +1,6 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager
 
-import android.content.Intent
+import android.app.PendingIntent
 
 /**
  * Token Exception Hierarchy
@@ -21,9 +21,12 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
     class AuthorizationExpired(message: String) : TokenException(message)
     
     /**
-     * Authorization fehlgeschlagen
+     * Authorization fehlgeschlagen.
+     *
+     * [cause] traegt bei einem Aussetzer (offline, Zeitueberschreitung) eine `IOException` - wie
+     * bei [RefreshFailed], damit `WartungTokenFehler.istNetzursache` ihn erkennt.
      */
-    class AuthorizationFailed(message: String) : TokenException(message)
+    class AuthorizationFailed(message: String, cause: Throwable? = null) : TokenException(message, cause)
     
     /**
      * Token Refresh fehlgeschlagen.
@@ -32,7 +35,9 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
      * nur die Lesbarkeit des Logs: `WartungTokenFehler` unterscheidet den voruebergehenden vom
      * endgueltigen Fehlschlag genau an dieser Ursache. GoogleAuthUtil sichert dafuer einen
      * klaren Vertrag zu — `IOException` heisst "voruebergehend, spaeter erneut versuchen",
-     * `GoogleAuthException` heisst "endgueltig, der Nutzer muss handeln". Bis v1.40.2 wurde nur
+     * `GoogleAuthException` heisst "endgueltig, der Nutzer muss handeln". Der seit Oktober 2026
+     * genutzte AuthorizationClient hat diesen Vertrag NICHT; `AutorisierungsEinstufung` stellt ihn
+     * her und setzt die `IOException` fuer jeden voruebergehenden Fehlschlag. Bis v1.40.2 wurde nur
      * `e.message` in den Text uebernommen und die Ursache verworfen; ein Funkloch war danach
      * nicht mehr von einem entzogenen Zugriff zu unterscheiden, und die Wartung meldete beides
      * als "Anmeldung erforderlich".
@@ -40,15 +45,17 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
     class RefreshFailed(message: String, cause: Throwable? = null) : TokenException(message, cause)
 
     /**
-     * Der Nutzer muss der App erneut zustimmen (GoogleAuthUtil: "NeedRemoteConsent").
+     * Der Nutzer muss der App erneut zustimmen (AuthorizationClient: `hasResolution()` MIT
+     * validiertem Netz - ohne Netz ist dieselbe Antwort ein Funkloch, siehe
+     * `AutorisierungsEinstufung`).
      *
-     * Tritt auf, wenn der Zugriff im Google-Konto entzogen wurde. Wichtig: der GoogleAuthUtil-
+     * Tritt auf, wenn der Zugriff im Google-Konto entzogen wurde. Wichtig: der
      * Token-Cache liegt in den Play Services, NICHT im App-Speicher - "Speicher loeschen"
      * raeumt ihn also nicht mit weg, und die App versucht danach weiter, mit einem toten
      * Token zu refreshen.
      *
-     * [intent] ist der von [UserRecoverableAuthException] mitgelieferte Recovery-Intent, der zum
-     * Zustimmungsdialog fuehren wuerde. **Er wird derzeit von NIEMANDEM gelesen**, und das ist
+     * [intent] ist der vom AuthorizationClient mitgelieferte Zustimmungsdialog (bis Oktober 2026 der
+     * Intent einer `UserRecoverableAuthException`). **Er wird derzeit von NIEMANDEM gelesen**, und das ist
      * Absicht - der Satz "der einzige Weg zurueck in einen gueltigen Zustand" stand hier bis zum
      * 18.08.2026 und war zu diesem Zeitpunkt bereits widerlegt.
      *
@@ -63,7 +70,7 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
      * Zustimmungsdialog einmal direkt angeboten werden soll (ein Dialog ist angenehmer als eine
      * Neuanmeldung). Wer ihn verwendet, korrigiert bitte diesen Absatz mit.
      */
-    class ConsentRequired(message: String, val intent: Intent? = null) : TokenException(message)
+    class ConsentRequired(message: String, val intent: PendingIntent? = null) : TokenException(message)
     
     /**
      * Storage Operation fehlgeschlagen
@@ -78,7 +85,7 @@ sealed class TokenException(message: String, cause: Throwable? = null) : Excepti
     /**
      * Kein Activity Context verfügbar für Permission Dialog
      */
-    class NoActivityContext(message: String, val intent: Intent? = null) : TokenException(message)
+    class NoActivityContext(message: String, val intent: PendingIntent? = null) : TokenException(message)
     
     /**
      * Security Violation (z.B. Token Rotation Chain broken)

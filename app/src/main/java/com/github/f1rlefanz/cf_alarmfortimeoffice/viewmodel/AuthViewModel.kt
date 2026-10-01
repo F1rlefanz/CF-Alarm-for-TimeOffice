@@ -124,7 +124,7 @@ class AuthViewModel @Inject constructor(
      * Einmal-Signal: "Das Token ist zur Laufzeit weggefallen, hol die Zustimmung neu ein."
      *
      * WARUM EIN EVENT UND KEIN STATE-FLAG: Den Zustimmungsdialog kann nur eine Activity starten
-     * (GoogleAuthUtil liefert einen Intent, kein Ergebnis) - hier unten gibt es keine. Ein
+     * (die Play-Dienste liefern einen PendingIntent, kein Ergebnis) - hier unten gibt es keine. Ein
      * State-Flag würde bei jeder Recomposition erneut ausgelöst; das Event wird genau einmal
      * konsumiert.
      *
@@ -642,7 +642,7 @@ class AuthViewModel @Inject constructor(
      * DER PUNKT OHNE WIEDERKEHR IST DAS VERWERFEN DES TOKENS, NICHT DAS ENDE VON
      * [IAuthUseCase.signOut] - und daran ist alles Weitere ausgerichtet (Pruefrunde 8, Welle 5).
      * `AuthUseCase.signOut()` verwirft ZUERST das Kalender-Token (`invalidate()`, inkl.
-     * `GoogleAuthUtil.clearToken()`) und loescht ERST DANACH die Auth-Daten. Ab dem ersten
+     * Leeren des GMS-Token-Caches) und loescht ERST DANACH die Auth-Daten. Ab dem ersten
      * Schritt ist die Anmeldung praktisch verloren: das Token ist aus dem Store und aus dem
      * GMS-Cache raus, und es kommt durch keinen Fehlerzweig zurueck. Zwei Konsequenzen:
      *

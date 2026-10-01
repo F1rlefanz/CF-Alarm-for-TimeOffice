@@ -118,16 +118,11 @@ den Stand vor dem Bump zeigt.
 
 ## Verifikation der Umstellung selbst
 
-`tools/changelog/pruefe_treue.py` vergleicht den reinen Text zweier Seiten (Tags raus, Entities
-aufgelöst, Leerraum normalisiert). Gegen die handgeschriebene Originalseite gefahren am
-17.08.2026: **55 Versionskarten, 65.995 Textzeichen, textgleich.**
+Einmalig am 17.08.2026 gegen die handgeschriebene Originalseite (`git show 0f8bd81:docs/changelog.html`)
+geprüft: **55 Versionskarten, 65.995 Textzeichen, textgleich.** Das Prüfskript dafür
+(`tools/changelog/pruefe_treue.py`) hat seinen Zweck erfüllt und ist am 01.10.2026 entfernt
+(#77); es liegt in der Git-Historie.
 
-```bash
-python tools/changelog/pruefe_treue.py <original.html> [docs/changelog.html]
-```
-
-## Offener Vorschlag
-
-Ein CI-Schritt `python tools/changelog/build_changelog.py --pruefen` würde den Fall abfangen, dass
-jemand `CHANGELOG.md` ändert und die erzeugte Seite vergisst (oder umgekehrt das HTML von Hand
-editiert). Kein Gradle nötig, läuft in Sekunden. Noch nicht eingebaut.
+Dass `CHANGELOG.md` und die erzeugte Seite zusammenpassen, prüft laufend
+`build_changelog.py --pruefen` — in `ci.yml`, `sammel-release.yml`, `veroeffentlichen.yml` und
+in der Schleuse.

@@ -362,7 +362,10 @@ internal object WartungsKettenPlanung {
  * DIE EINSTUFUNG FOLGT DEM VERTRAG VON GoogleAuthUtil, nicht einem Bauchgefuehl: dort heisst
  * `IOException` ausdruecklich "voruebergehend, spaeter erneut versuchen" und `GoogleAuthException`
  * "endgueltig, ohne Zutun des Nutzers wird das nichts". Deshalb entscheidet die URSACHE eines
- * [TokenException.RefreshFailed] und nicht sein Typ.
+ * [TokenException.RefreshFailed] und nicht sein Typ. Seit dem Umstieg auf den AuthorizationClient
+ * (Oktober 2026), der diesen Vertrag nicht hat, stellt ihn
+ * [com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.AutorisierungsEinstufung] her - inkl.
+ * der Falle, dass GMS ein Funkloch als "Zustimmung noetig" meldet.
  *
  * WARUM "VORUEBERGEHEND" TROTZDEM NICHT STILL BLEIBT: Ein Zustand, der den Alarm-Sync dauerhaft
  * anhaelt, muss sichtbar sein - sonst versiegen die Wecker lautlos. Gemeldet wird deshalb ab dem

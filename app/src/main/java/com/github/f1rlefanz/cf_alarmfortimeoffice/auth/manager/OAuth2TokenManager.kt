@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager
 
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.annotation.VisibleForTesting
@@ -10,12 +11,15 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.data.TokenProvider
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import com.google.android.gms.auth.GoogleAuthUtil
-import com.google.android.gms.auth.UserRecoverableAuthException
+import com.google.android.gms.common.api.ApiException
 import com.google.api.services.calendar.CalendarScopes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /**
  * Simplified OAuth2 Token Manager
@@ -32,7 +36,9 @@ import kotlinx.coroutines.withContext
 class OAuth2TokenManager(
     private val context: Context,
     private val tokenRepository: TokenRepository,
-    private val pendingAuthStore: PendingAuthStore = SharedPrefsPendingAuthStore(context)
+    private val pendingAuthStore: PendingAuthStore = SharedPrefsPendingAuthStore(context),
+    private val autorisierung: KalenderAutorisierung = PlayDiensteKalenderAutorisierung(context),
+    private val netzValidiert: () -> Boolean = { istNetzValidiert(context) }
 ) {
     
     companion object {
@@ -43,13 +49,20 @@ class OAuth2TokenManager(
         // handlePermissionResult() und wurde als abgelehnte Kalender-Autorisierung gemeldet.
         // Ein neuer Legacy-Request-Code im Modul muss gegen beide Konstanten geprueft werden.
         const val REQUEST_CODE_CALENDAR_AUTHORIZATION = 1001
+
+        /**
+         * Abstand des Bestaetigungsabrufs, bevor eine Resolution im Hintergrund als Zustimmungsfall
+         * gilt - siehe [hole]. Lang genug, dass Android ein totes oder gerade gewechseltes Netz
+         * neu bewertet hat; kurz genug fuer einen Wartungslauf.
+         */
+        internal const val BESTAETIGUNG_MS = 5_000L
     }
     
     @Volatile
     private var pendingAuthCallback: ((Boolean) -> Unit)? = null
 
     // Email der schwebenden Autorisierung: nötig, um nach erteilter Zustimmung den Token
-    // per erneutem getToken()-Aufruf tatsächlich abzuholen (siehe handlePermissionResult).
+    // per erneutem authorize()-Aufruf tatsächlich abzuholen (siehe handlePermissionResult).
     //
     // NUR DER SCHNELLE WEG: Waehrend der Zustimmungsdialog vorne steht, ist CF-Alarm im
     // Hintergrund und darf beendet werden. Android stellt Activity und Activity-Result danach
@@ -110,41 +123,60 @@ class OAuth2TokenManager(
         try {
             Logger.d(LogTags.TOKEN, "🔐 Starting Calendar authorization for: $userEmail")
             
-            val account = android.accounts.Account(userEmail, "com.google")
-            val scope = "oauth2:${CalendarScopes.CALENDAR_READONLY}"
-            
-            val accessToken = try {
-                GoogleAuthUtil.getToken(context, account, scope)
-            } catch (e: UserRecoverableAuthException) {
-                // User Permission required
-                if (activity != null) {
-                    Logger.i(LogTags.TOKEN, "🚀 Launching permission dialog...")
-                    pendingAuthCallback = onResult
-                    rememberPendingAuth(userEmail)
+            // Im Vordergrund OHNE Bestaetigungsabruf: der Nutzer hat getippt, und ein unnoetig
+            // gezeigter Dialog kostet nichts - fuenf Sekunden Warten vor dem Dialog schon.
+            val (ausgang, dialog) = hole(userEmail, resolutionBestaetigen = activity == null)
+            val accessToken = when (ausgang) {
+                is AutorisierungsEinstufung.Ausgang.Token -> ausgang.accessToken
 
-                    withContext(Dispatchers.Main) {
-                        activity.startActivityForResult(
-                            e.intent,
-                            REQUEST_CODE_CALENDAR_AUTHORIZATION
+                is AutorisierungsEinstufung.Ausgang.ZustimmungNoetig -> {
+                    if (activity != null && dialog != null) {
+                        Logger.i(LogTags.TOKEN, "🚀 Launching permission dialog...")
+                        pendingAuthCallback = onResult
+                        rememberPendingAuth(userEmail)
+
+                        // Das Ergebnis kommt wie frueher in MainActivity.onActivityResult an
+                        // (startIntentSenderForResult nutzt denselben Weg) und weiter in
+                        // handlePermissionResult().
+                        withContext(Dispatchers.Main) {
+                            activity.startIntentSenderForResult(
+                                dialog.intentSender,
+                                REQUEST_CODE_CALENDAR_AUTHORIZATION,
+                                null, 0, 0, 0
+                            )
+                        }
+
+                        return@withContext Result.failure(
+                            TokenException.PendingAuthorization("Permission dialog launched")
                         )
                     }
-                    
-                    return@withContext Result.failure(
-                        TokenException.PendingAuthorization("Permission dialog launched")
-                    )
-                } else {
                     Logger.e(LogTags.TOKEN, "❌ No activity context for permission dialog")
                     return@withContext Result.failure(
-                        TokenException.NoActivityContext("Activity required for authorization", e.intent)
+                        TokenException.NoActivityContext("Activity required for authorization", dialog)
                     )
                 }
+
+                // Offline oder Aussetzer: KEIN Dialog - ohne Netz meldet GMS ein Funkloch als
+                // "Zustimmung noetig" (siehe AutorisierungsEinstufung). Die Ursache bleibt als
+                // IOException in der Kette, wie frueher bei GoogleAuthUtil.
+                is AutorisierungsEinstufung.Ausgang.Voruebergehend -> {
+                    Logger.w(LogTags.TOKEN, "🌐 Kalender-Autorisierung voruebergehend gescheitert: ${ausgang.grund}")
+                    onResult?.invoke(false)
+                    return@withContext Result.failure(
+                        TokenException.AuthorizationFailed(
+                            "Keine Verbindung zu Google - bitte später erneut versuchen",
+                            IOException(ausgang.grund)
+                        )
+                    )
+                }
+
+                is AutorisierungsEinstufung.Ausgang.Endgueltig -> {
+                    Logger.e(LogTags.TOKEN, "❌ Kalender-Autorisierung gescheitert: ${ausgang.grund}")
+                    onResult?.invoke(false)
+                    return@withContext Result.failure(TokenException.AuthorizationFailed(ausgang.grund))
+                }
             }
-            
-            if (accessToken.isBlank()) {
-                Logger.e(LogTags.TOKEN, "❌ Empty access token received")
-                return@withContext Result.failure(TokenException.AuthorizationFailed("Empty token"))
-            }
-            
+
             Logger.i(LogTags.TOKEN, "✅ Access token obtained successfully")
             
             // Create TokenData
@@ -181,14 +213,14 @@ class OAuth2TokenManager(
     }
     
     /**
-     * Verwirft das Token ENDGUELTIG - lokal UND im GoogleAuthUtil-Cache der Play Services.
+     * Verwirft das Token ENDGUELTIG - lokal UND im Token-Cache der Play-Dienste.
      *
-     * WARUM BEIDES: Der GoogleAuthUtil-Cache liegt in den Play Services, nicht im App-Speicher.
-     * Er wird ohne Server-Rueckfrage bedient. Wurde der Zugriff serverseitig entzogen, merkt
-     * GMS davon nichts und gibt weiter munter das tote Token heraus - ohne
-     * Zustimmungsdialog, weil es fuer GMS ja gueltig aussieht. Nur clearToken() raeumt diesen
-     * Cache ab. Danach liefert der naechste getToken() NEED_REMOTE_CONSENT, der Dialog kommt,
-     * und der Nutzer landet wieder in einem funktionierenden Zustand.
+     * WARUM BEIDES: Der Token-Cache liegt in den Play-Diensten, nicht im App-Speicher (einer fuer
+     * GoogleAuthUtil und AuthorizationClient, Spike S1). Er wird ohne Server-Rueckfrage bedient.
+     * Wurde der Zugriff serverseitig entzogen, merkt GMS davon nichts und gibt weiter munter das
+     * tote Token heraus - ohne Zustimmungsdialog, weil es fuer GMS ja gueltig aussieht. Nur
+     * clearToken() raeumt diesen Cache ab. Danach verlangt der naechste authorize() die
+     * Zustimmung, der Dialog kommt, und der Nutzer landet wieder in einem funktionierenden Zustand.
      *
      * Ohne diesen Aufruf dreht sich die App im Kreis: 401 -> neu laden -> dasselbe tote Token
      * aus dem Cache -> 401 -> ...
@@ -201,11 +233,12 @@ class OAuth2TokenManager(
             val current = tokenRepository.get()
             if (current != null && current.accessToken.isNotBlank()) {
                 try {
-                    GoogleAuthUtil.clearToken(context, current.accessToken)
-                    Logger.i(LogTags.TOKEN, "🧹 GoogleAuthUtil-Cache geleert (Play Services)")
+                    autorisierung.leereCache(current.accessToken)
+                    Logger.i(LogTags.TOKEN, "🧹 Token-Cache der Play-Dienste geleert")
                 } catch (e: Exception) {
-                    // z.B. kein Netz: der lokale Teil muss trotzdem laufen.
-                    Logger.w(LogTags.TOKEN, "⚠️ GoogleAuthUtil-Cache konnte nicht geleert werden", e)
+                    // z.B. Play-Dienste haengen: der lokale Teil muss trotzdem laufen. Auch ein
+                    // Abbruch der GMS-Aufgabe (CancellationException) landet bewusst hier.
+                    Logger.w(LogTags.TOKEN, "⚠️ Token-Cache der Play-Dienste konnte nicht geleert werden", e)
                 }
             }
             tokenRepository.clear()
@@ -284,57 +317,118 @@ class OAuth2TokenManager(
         } catch (e: Exception) {
             Logger.e(LogTags.TOKEN, "❌ Token refresh failed", e)
             // Ursache DURCHREICHEN, nicht nur die Meldung: an ihr haengt die Einstufung in
-            // WartungTokenFehler (IOException = voruebergehend, sonst endgueltig).
+            // WartungTokenFehler (IOException = voruebergehend, sonst endgueltig). Die
+            // IOException setzt refreshViaGooglePlayServices() nach AutorisierungsEinstufung.
             Result.failure(TokenException.RefreshFailed(e.message ?: "Unknown error", e))
         }
     }
     
     /**
-     * Refresh via Google Play Services
-     * NOTE: GoogleAuthUtil.getToken() is a blocking call, not a suspend function
+     * Refresh ueber die Play-Dienste (AuthorizationClient).
+     *
+     * ERST DEN CACHE LEEREN: GMS fuehrt einen gemeinsamen Cache und gaebe sonst dasselbe Token mit
+     * RESTlaufzeit zurueck, waehrend die App pauschal 3600 s bucht - es liefe vor der lokalen Frist
+     * ab, und der 401 fuehrt ueber invalidate() in die Neuanmeldung. Scheitert das Leeren, wird
+     * deshalb NICHT weitergemacht, sondern voruebergehend abgebrochen.
+     *
+     * Abbildung auf die bestehenden Ausnahmen, damit kein Aufrufer etwas aendern muss:
+     *  - voruebergehend -> [TokenException.RefreshFailed] MIT [IOException] in der Kette,
+     *  - Zustimmung noetig -> [TokenException.ConsentRequired] (refresh() verwirft dann das Token),
+     *  - endgueltig -> [TokenException.RefreshFailed] OHNE IOException.
      */
-    private fun refreshViaGooglePlayServices(token: TokenData): String {
+    private suspend fun refreshViaGooglePlayServices(token: TokenData): String {
         require(token.tokenProvider == TokenProvider.GOOGLE_PLAY_SERVICES) {
             "Token provider must be GOOGLE_PLAY_SERVICES"
         }
-        require(!token.googleAccountEmail.isNullOrBlank()) {
+        val email = token.googleAccountEmail
+        require(!email.isNullOrBlank()) {
             "googleAccountEmail is required for Google Play Services refresh"
         }
 
         try {
-            // Clear old token
-            GoogleAuthUtil.clearToken(context, token.accessToken)
+            autorisierung.leereCache(token.accessToken)
             Logger.d(LogTags.TOKEN, "Old token cleared")
-
-            // Get fresh token
-            val account = android.accounts.Account(token.googleAccountEmail, "com.google")
-            val scope = "oauth2:${CalendarScopes.CALENDAR_READONLY}"
-
-            val newToken = GoogleAuthUtil.getToken(context, account, scope)
-
-            if (newToken.isBlank()) {
-                throw TokenException.RefreshFailed("Empty token received")
-            }
-
-            return newToken
-
-        } catch (e: UserRecoverableAuthException) {
-            // "Recoverable" ist woertlich zu nehmen: die Exception traegt einen Intent, der zum
-            // Zustimmungsdialog fuehrt. Frueher fing der generische catch-Block unten sie mit ab
-            // und warf sie als RefreshFailed weiter - der Intent ging verloren und die App hatte
-            // keinen Weg zurueck. Typischer Ausloeser: Zugriff im Google-Konto entzogen
-            // ("NeedRemoteConsent").
-            Logger.w(LogTags.TOKEN, "🔐 Google verlangt erneute Zustimmung: ${e.message}")
-            throw TokenException.ConsentRequired(
-                "Erneute Zustimmung erforderlich: ${e.message}",
-                e.intent
-            )
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            throw TokenException.RefreshFailed("Token-Cache nicht leerbar", IOException("GMS-Aufgabe abgebrochen", e))
         } catch (e: Exception) {
-            Logger.e(LogTags.TOKEN, "Google Play Services refresh failed", e)
-            throw TokenException.RefreshFailed("Google refresh failed: ${e.message}", e)
+            Logger.w(LogTags.TOKEN, "Token-Cache der Play-Dienste nicht leerbar - Refresh verschoben", e)
+            throw TokenException.RefreshFailed("Token-Cache nicht leerbar", IOException(e.message, e))
+        }
+
+        val (ausgang, dialog) = hole(email)
+        return when (ausgang) {
+            is AutorisierungsEinstufung.Ausgang.Token -> ausgang.accessToken
+            is AutorisierungsEinstufung.Ausgang.Voruebergehend -> {
+                Logger.w(LogTags.TOKEN, "🌐 Refresh voruebergehend gescheitert: ${ausgang.grund}")
+                throw TokenException.RefreshFailed(
+                    "Google refresh failed: ${ausgang.grund}",
+                    IOException(ausgang.grund)
+                )
+            }
+            is AutorisierungsEinstufung.Ausgang.ZustimmungNoetig -> {
+                // Typischer Ausloeser: Zugriff im Google-Konto entzogen.
+                Logger.w(LogTags.TOKEN, "🔐 Google verlangt erneute Zustimmung: ${ausgang.grund}")
+                throw TokenException.ConsentRequired("Erneute Zustimmung erforderlich: ${ausgang.grund}", dialog)
+            }
+            is AutorisierungsEinstufung.Ausgang.Endgueltig -> {
+                Logger.e(LogTags.TOKEN, "Google Play Services refresh failed: ${ausgang.grund}")
+                throw TokenException.RefreshFailed("Google refresh failed: ${ausgang.grund}")
+            }
         }
     }
-    
+
+    /**
+     * Ein Abruf beim AuthorizationClient, eingestuft nach [AutorisierungsEinstufung].
+     *
+     * EINE RESOLUTION KOSTET IM HINTERGRUND ERST NACH BESTAETIGUNG DAS TOKEN (adversariale Review
+     * 01.10.2026): GMS meldet ein Funkloch als Resolution, und ob das Netz validiert ist, ist nur
+     * eine Momentaufnahme - Android nimmt `VALIDATED` verzoegert zurueck, und ein Netzwechsel kann
+     * genau in die Anfrage fallen. Als Zustimmungsfall gilt sie deshalb nur, wenn das Netz VOR und
+     * NACH dem Aufruf validiert war UND ein zweiter Abruf [BESTAETIGUNG_MS] spaeter dasselbe sagt.
+     * Bringt der zweite ein Token, ist alles gut; ist er ein Aussetzer, bleibt es voruebergehend.
+     */
+    private suspend fun hole(
+        email: String,
+        resolutionBestaetigen: Boolean = true
+    ): Pair<AutorisierungsEinstufung.Ausgang, PendingIntent?> {
+        val erster = holeEinmal(email)
+        if (!resolutionBestaetigen || erster.first !is AutorisierungsEinstufung.Ausgang.ZustimmungNoetig) {
+            return erster
+        }
+        Logger.w(LogTags.TOKEN, "🔐 Zustimmung verlangt - Bestaetigungsabruf in ${BESTAETIGUNG_MS / 1000} s, bevor das als Anmeldefall gilt")
+        delay(BESTAETIGUNG_MS)
+        val zweiter = holeEinmal(email)
+        if (zweiter.first !is AutorisierungsEinstufung.Ausgang.ZustimmungNoetig) {
+            Logger.w(LogTags.TOKEN, "🌐 Bestaetigungsabruf widerspricht der Resolution - kein Anmeldefall")
+        }
+        return zweiter
+    }
+
+    /**
+     * Ein einzelner Abruf. Ein Abbruch der GMS-AUFGABE kommt als `java.util.concurrent.CancellationException` - dieselbe
+     * Klasse wie ein Coroutine-Abbruch. Weitergeworfen wird nur, wenn die Coroutine WIRKLICH
+     * abgebrochen ist; sonst ist es ein Aussetzer der Play-Dienste und darf den Wartungslauf nicht
+     * still beenden.
+     */
+    private suspend fun holeEinmal(email: String): Pair<AutorisierungsEinstufung.Ausgang, PendingIntent?> {
+        val netz = { runCatching { netzValidiert() }.getOrDefault(false) }
+        val netzVorher = netz()
+        return try {
+            val antwort = autorisierung.autorisiere(email)
+            // VOR und NACH: faellt der Aufruf in einen Netzwechsel, ist eine der beiden Messungen
+            // "nicht validiert", und die Resolution bleibt ein Aussetzer.
+            val netzValidiertDurchgehend = netzVorher && netz()
+            AutorisierungsEinstufung.ausErgebnis(antwort.hatResolution, antwort.accessToken, netzValidiertDurchgehend) to
+                antwort.zustimmungsDialog
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            AutorisierungsEinstufung.Ausgang.Voruebergehend("GMS-Aufgabe abgebrochen") to null
+        } catch (e: Exception) {
+            AutorisierungsEinstufung.ausFehler(e, netz()) { (it as? ApiException)?.statusCode } to null
+        }
+    }
+
     /**
      * Refresh via standard OAuth2 (not needed - using Google Play Services)
      */
@@ -354,10 +448,9 @@ class OAuth2TokenManager(
     /**
      * Handles activity result from permission dialog.
      *
-     * KRITISCH: Eine erteilte Zustimmung (RESULT_OK) liefert noch KEINEN Token. Der erste
-     * GoogleAuthUtil.getToken()-Aufruf warf UserRecoverableAuthException nur, um den Consent-Screen
-     * auszulösen – der Token entsteht erst, wenn getToken() JETZT (mit vorliegender Zustimmung)
-     * erneut aufgerufen wird. Deshalb starten wir authorize() hier noch einmal (activity = null,
+     * KRITISCH: Eine erteilte Zustimmung (RESULT_OK) liefert hier noch KEINEN Token. Der erste
+     * authorize()-Aufruf lieferte nur den Zustimmungsdialog – der Token wird abgeholt, indem
+     * authorize() JETZT (mit vorliegender Zustimmung) erneut aufgerufen wird. Deshalb starten wir authorize() hier noch einmal (activity = null,
      * damit kein weiterer Dialog aufpoppen kann) und melden Erfolg erst, wenn der Token wirklich
      * abgeholt und gespeichert wurde. Ohne diesen zweiten Aufruf bliebe der Token-Store leer und
      * jeder folgende getValidToken() scheiterte mit "No token available".
@@ -441,8 +534,8 @@ class OAuth2TokenManager(
      * damit kein verwaister persistenter Rest den naechsten Durchlauf faelschlich beantwortet.
      *
      * `internal` + [VisibleForTesting] statt `private`: die Wiederaufnahme nach Prozesstod ist die
-     * eigentliche Zusicherung dieser Klasse und laesst sich sonst nur ueber GoogleAuthUtil pruefen,
-     * das im JVM-Test nicht erreichbar ist.
+     * eigentliche Zusicherung dieser Klasse und laesst sich sonst nur ueber die Play-Dienste
+     * pruefen, die im JVM-Test nicht erreichbar sind.
      */
     @VisibleForTesting
     internal fun consumePendingAuthEmail(): String? {

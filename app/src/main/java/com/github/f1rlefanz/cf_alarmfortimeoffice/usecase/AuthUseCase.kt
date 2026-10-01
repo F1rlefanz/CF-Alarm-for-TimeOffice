@@ -152,7 +152,7 @@ class AuthUseCase @Inject constructor(
      * Meldet ab und lässt nichts zurück, womit die App weiter auf den Kalender käme.
      *
      * REIHENFOLGE: invalidate() zuerst - es braucht den noch gespeicherten Access-Token für
-     * GoogleAuthUtil.clearToken(). Scheitert das Verwerfen, wird das nur geloggt: die Abmeldung
+     * das Leeren des GMS-Token-Caches. Scheitert das Verwerfen, wird das nur geloggt: die Abmeldung
      * MUSS trotzdem durchlaufen.
      *
      * Einzige Fehlerquelle ist `clearAuthData()`. Ein Failure heisst deshalb "Token weg,

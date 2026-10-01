@@ -214,7 +214,7 @@ class MainActivity : ComponentActivity() {
 
                         // AUTO-RE-AUTH: Verliert die App das Token zur Laufzeit (401/403 -> invalidate),
                         // meldet das AuthViewModel das hier - denn den Zustimmungsdialog kann nur eine
-                        // Activity starten (GoogleAuthUtil liefert einen Intent). Ohne diesen Weg musste
+                        // Activity starten (die Play-Dienste liefern einen PendingIntent). Ohne diesen Weg musste
                         // der Nutzer die Rückkehr selbst antippen.
                         //
                         // RESUMED, nicht STARTED: Einen Activity-Start aus dem Hintergrund verwirft

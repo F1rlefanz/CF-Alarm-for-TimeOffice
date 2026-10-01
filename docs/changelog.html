@@ -51,7 +51,26 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.45.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.45.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Nach einem Neustart mit Bildschirmsperre behält die App wieder alle Einstellungen und Wecker.</em></p>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Neustart mit PIN oder Muster:</strong> Startete das Handy neu und wurde die App schon vor dem ersten Entsperren aktiv, las sie danach ihre gespeicherten Einstellungen als leer. Wecker aus dem Kalender stellte sie zwar von selbst wieder, ein von Hand gestellter Wecker konnte aber verloren gehen, eine pausierte App galt als nicht pausiert, und die Hue-Bridge erschien als nicht verbunden. Jetzt wartet die App mit diesem Teil bis nach dem Entsperren.</li>
+                <li><strong>Pausierte App fragte bei Rufbereitschaft weiter den Kalender ab:</strong> Während „Hintergrunddienste pausieren“ lief die stündliche Abfrage an Rufbereitschaftstagen noch einmal an. Jetzt ruht sie mit der Pause und kommt mit dem Fortsetzen zurück.</li>
+                <li><strong>Kalender-Zugriff nach dem Anmelden:</strong> Eine Prüfung vom App-Start lief bei jeder An- und Abmeldung erneut und konnte einen gerade erteilten Kalender-Zugriff kurz als fehlend melden.</li>
+            </ul>
+
+            <h4>🎨 Feinschliff</h4>
+            <ul>
+                <li><strong>„App öffnen“ aus Meldungen und der Wecker-Anzeige:</strong> Tippen auf eine Benachrichtigung oder auf den Wecker in der Systemanzeige öffnet jetzt immer die laufende App, statt eine zweite Kopie darüberzulegen.</li>
+                <li><strong>Schicht bearbeiten:</strong> Die Erklärtexte neben den Schaltern „Stille Schicht“, „Rufbereitschaft“ und „Schichtdefinition aktiviert“ stoßen nicht mehr an den Schalter.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.45.0</h3>
             <p><strong>Stand:</strong> Oktober 2026</p>
             <p><em>Neue Nutzer starten mit allgemeinen Schichttypen und einem freundlicheren ersten Schritt bei der Kalenderauswahl.</em></p>
 

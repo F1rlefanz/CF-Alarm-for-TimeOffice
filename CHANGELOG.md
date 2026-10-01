@@ -27,7 +27,24 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.45.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.45.1 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Nach einem Neustart mit Bildschirmsperre behält die App wieder alle Einstellungen und Wecker._
+
+### 🐛 Behoben
+
+- **Neustart mit PIN oder Muster:** Startete das Handy neu und wurde die App schon vor dem ersten Entsperren aktiv, las sie danach ihre gespeicherten Einstellungen als leer. Wecker aus dem Kalender stellte sie zwar von selbst wieder, ein von Hand gestellter Wecker konnte aber verloren gehen, eine pausierte App galt als nicht pausiert, und die Hue-Bridge erschien als nicht verbunden. Jetzt wartet die App mit diesem Teil bis nach dem Entsperren.
+- **Pausierte App fragte bei Rufbereitschaft weiter den Kalender ab:** Während „Hintergrunddienste pausieren“ lief die stündliche Abfrage an Rufbereitschaftstagen noch einmal an. Jetzt ruht sie mit der Pause und kommt mit dem Fortsetzen zurück.
+- **Kalender-Zugriff nach dem Anmelden:** Eine Prüfung vom App-Start lief bei jeder An- und Abmeldung erneut und konnte einen gerade erteilten Kalender-Zugriff kurz als fehlend melden.
+
+### 🎨 Feinschliff
+
+- **„App öffnen“ aus Meldungen und der Wecker-Anzeige:** Tippen auf eine Benachrichtigung oder auf den Wecker in der Systemanzeige öffnet jetzt immer die laufende App, statt eine zweite Kopie darüberzulegen.
+- **Schicht bearbeiten:** Die Erklärtexte neben den Schaltern „Stille Schicht“, „Rufbereitschaft“ und „Schichtdefinition aktiviert“ stoßen nicht mehr an den Schalter.
+
+## Version 1.45.0
 
 **Stand:** Oktober 2026
 

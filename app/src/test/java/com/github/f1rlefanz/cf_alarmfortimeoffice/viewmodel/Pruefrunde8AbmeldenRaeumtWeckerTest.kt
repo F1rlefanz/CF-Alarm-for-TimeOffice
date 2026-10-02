@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.AnmeldeWiederherstellung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
@@ -171,7 +172,8 @@ class Pruefrunde8AbmeldenRaeumtWeckerTest {
             dndSchedule = dndSchedule,
             hueSmartScheduler = hueSmartScheduler,
             calendarPreAlarmRefreshScheduler = calendarPreAlarmRefreshScheduler,
-            appContext = context
+            appContext = context,
+            anmeldeWiederherstellung = AnmeldeWiederherstellung.Aus
         )
 
         return Fixture(

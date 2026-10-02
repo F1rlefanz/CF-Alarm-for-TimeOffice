@@ -115,6 +115,9 @@ den Stand vor dem Bump zeigt.
   darf von Hand gearbeitet werden.
 - **Das Original ist die Wahrheit, nicht die Prüfung.** Weicht etwas ab, wird die Konvertierung
   korrigiert, niemals das Prüfskript weichgespült.
+- **Kein `mappingFile:` am Upload-Schritt** (#54): AGP bettet die Mapping-Datei selbst ins Bundle
+  ein, Play lehnt eine zweite ab. `tools/release/r8_kennzahlen.py` bricht vor dem Upload ab, wenn sie
+  fehlt; `test_r8_kennzahlen.py` sichert, dass kein aktives `mappingFile:` dazukommt.
 
 ## Verifikation der Umstellung selbst
 

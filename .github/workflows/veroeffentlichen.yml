@@ -206,6 +206,14 @@ jobs:
             exit 1
           fi
 
+      # Issue #54: Play verlangt ab Februar 2027 bei mehr als 10 MB DEX je mindestens 25 %
+      # Obfuskation, Optimierung und Shrinking - abgelesen aus r8.json IM Bundle. Die Werte landen
+      # im Job-Summary; verfehlt sind sie nur eine Warnung. HART ist dagegen die eingebettete
+      # Mapping-Datei (proguard.map): seit die App obfuskiert, uebersetzt Play damit die
+      # Absturzberichte zurueck. Fehlt sie, wird nicht hochgeladen.
+      - name: R8-Kennzahlen und eingebettete Mapping-Datei pruefen
+        run: python3 tools/release/r8_kennzahlen.py app/build/outputs/bundle/release/app-release.aab
+
       - name: Version aus dem Build lesen
         id: version
         run: |
@@ -228,6 +236,10 @@ jobs:
           # Bei einem Push ohne Eingaben: veroeffentlichen, nicht als Entwurf liegen lassen.
           status: ${{ inputs.status || 'completed' }}
           releaseName: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
+          # BEWUSST KEIN `mappingFile:` (Issue #54). AGP bettet die Mapping-Datei selbst ins
+          # Bundle ein (BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map, geprueft
+          # im Schritt "R8-Kennzahlen ..."), und Play lehnt eine zweite ab, wenn das Bundle schon
+          # eine traegt. Abgesichert in tools/release/test_r8_kennzahlen.py.
 
       # Der Schluessel darf den Runner nicht ueberleben. GitHub raeumt den Arbeitsbereich zwar
       # ohnehin ab, aber "ohnehin" ist bei einem Signierschluessel keine Begruendung.
@@ -244,9 +256,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      # Die mapping.txt gehoert archiviert, sobald Obfuskation je eingeschaltet wird (Issue #54).
-      # Heute ist -dontobfuscate gesetzt, die Datei ist also duenn - sie hier trotzdem zu sichern
-      # kostet nichts und macht den Schritt nicht zur Nachruestung, wenn es soweit ist.
+      # DIE MAPPING-DATEI IST SEIT ISSUE #54 TRAGEND: R8 benennt den App-Code um, und ein
+      # Absturzprotokoll eines Testers (last_crash.txt, "Logs senden") zeigt nur noch
+      # `a.b.c(SourceFile:412)`. Zurueckuebersetzt wird mit der mapping.txt GENAU DIESES Builds -
+      # zuordnen laesst sie sich ueber die Zeile "Version: <name> (<code>)" im Protokoll, die
+      # dem Artefaktnamen unten entspricht. Befehl (R8 steckt im AGP-builder-JAR im Gradle-Cache):
+      #   JAR=$(ls ~/.gradle/caches/modules-2/files-2.1/com.android.tools.build/builder/<AGP>/*/builder-<AGP>.jar)
+      #   java -cp "$JAR" com.android.tools.r8.retrace.Retrace mapping.txt last_crash.txt
+      # (<AGP> = Version aus gradle/libs.versions.toml; Einzelheiten in app/proguard-rules.pro.)
+      # Play haelt zusaetzlich die im Bundle eingebettete Kopie; dieses Artefakt ist die lokale.
       - name: R8-Mapping sichern
         if: always()
         uses: actions/upload-artifact@v7

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.DirectBootAlarmStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.SyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.data.CalendarSelectionRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.repository.interfaces.IAuthDataStoreRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmManagerService
@@ -71,7 +72,14 @@ internal object BootAlarmValidation {
         LOESCHEN_TERMIN_WEG,
 
         /** Termin da, aber inhaltlich geaendert - der naechste Sync legt ihn neu an. */
-        LOESCHEN_TERMIN_GEAENDERT
+        LOESCHEN_TERMIN_GEAENDERT,
+
+        /**
+         * Kennung nicht in der Lesung, aber der Schichtbeginn liegt HINTER dem Abruf-Horizont:
+         * die Liste konnte den Termin gar nicht enthalten (#51, verkleinerte Vorausschau).
+         * Wiederherstellen, nichts loeschen, nichts melden - wie im Delta-Sync.
+         */
+        JENSEITS_DES_ABRUFS
     }
 
     /**
@@ -105,14 +113,28 @@ internal object BootAlarmValidation {
      * @param weckpunkte Weckpunkte der aktuellen Lesung, oder `null`, wenn sie sich nicht
      *   ermitteln liessen (Schichterkennung fehlgeschlagen). `null` heisst: wegen einer fehlenden
      *   Kennung wird NIE geloescht.
+     * @param alarmSchichtBeginn Schichtbeginn des Alarms (Fallback Weckzeit) - danach filtert die
+     *   Kalender-Abfrage, nicht nach der Weckzeit.
+     * @param abrufHorizontEnde Ende des Abruf-Fensters der Lesung (`CalendarFetchOutcome.horizontEnde`).
+     *   Ein Alarm DAHINTER ohne Termin ist "nicht gelesen", nicht "Termin weg" -
+     *   [AlarmUrteil.JENSEITS_DES_ABRUFS]. Dieselbe Regel wie `AlarmUseCase.syncAlarms()` Schritt 1
+     *   (`SyncHorizonStore.istJenseitsDesAbrufs`); ohne sie raeumte ein Neustart nach einer
+     *   verkleinerten Vorausschau alle Wecker hinter dem neuen Fenster ab. `null` = unbekannt,
+     *   dann gilt nichts als jenseits.
      */
     fun beurteile(
         alarmTriggerTime: Long,
         alarmShiftId: String,
         alarmChecksum: String,
         terminChecksum: String?,
-        weckpunkte: Set<Weckpunkt>?
+        weckpunkte: Set<Weckpunkt>?,
+        alarmSchichtBeginn: Long = alarmTriggerTime,
+        abrufHorizontEnde: Long? = null
     ): AlarmUrteil = when {
+        terminChecksum == null &&
+            SyncHorizonStore.istJenseitsDesAbrufs(alarmSchichtBeginn, abrufHorizontEnde) ->
+            AlarmUrteil.JENSEITS_DES_ABRUFS
+
         terminChecksum == null ->
             if (weckpunkte != null && Weckpunkt(alarmTriggerTime, alarmShiftId) !in weckpunkte) {
                 AlarmUrteil.LOESCHEN_TERMIN_WEG
@@ -550,6 +572,8 @@ class BootReceiver : BroadcastReceiver() {
             // ein grosser Wert hier ist der Fingerabdruck eines Feed-Neueinlesens - genau der
             // Vorgang, der bis v1.29.x den ganzen Bestand geloescht hat.
             var neueKennungCount = 0
+            // Wecker hinter dem Abruf-Horizont (#51) - behalten, nicht geprueft.
+            var jenseitsCount = 0
             var nichtArmiertCount = 0
 
             // Get current calendar events for validation
@@ -660,7 +684,9 @@ class BootReceiver : BroadcastReceiver() {
                             alarmShiftId = alarm.shiftId,
                             alarmChecksum = alarm.eventChecksum,
                             terminChecksum = currentEvent?.let { calculateEventChecksum(it) },
-                            weckpunkte = weckpunkte
+                            weckpunkte = weckpunkte,
+                            alarmSchichtBeginn = alarm.shiftStartTime.takeIf { it > 0 } ?: alarm.triggerTime,
+                            abrufHorizontEnde = fetchOutcome?.horizontEnde
                         )
 
                         when (urteil) {
@@ -695,6 +721,16 @@ class BootReceiver : BroadcastReceiver() {
                                     "🆔 LEVEL 4: Nur die Kalender-Kennung hat gewechselt - Wecker bleibt: ${alarm.shiftName} (eventId: ${alarm.eventId})"
                                 )
                                 neueKennungCount++
+                            }
+
+                            BootAlarmValidation.AlarmUrteil.JENSEITS_DES_ABRUFS -> {
+                                // Nicht gelesen ist nicht geloescht (#51): die Liste reicht
+                                // nicht bis zu diesem Termin. Re-armen wie unten, nichts melden.
+                                Logger.d(
+                                    LogTags.MAINTENANCE_L4,
+                                    "🔭 LEVEL 4: Hinter dem Abruf-Horizont - Wecker bleibt: ${alarm.shiftName}"
+                                )
+                                jenseitsCount++
                             }
 
                             BootAlarmValidation.AlarmUrteil.WIEDERHERSTELLEN -> {
@@ -743,6 +779,7 @@ class BootReceiver : BroadcastReceiver() {
                 LogTags.MAINTENANCE_L4,
                 "📊 LEVEL 4: Alarm recovery stats - Restored: $restoredCount, Validated: $validatedCount, " +
                     "Deleted: $deletedCount, neue Kennung: $neueKennungCount, " +
+                    "hinter Abruf-Horizont: $jenseitsCount, " +
                     "NICHT armiert: $nichtArmiertCount, " +
                     "parallel geaendert: $concurrentlyChangedCount"
             )
@@ -775,7 +812,7 @@ class BootReceiver : BroadcastReceiver() {
                     // scheduleSystemAlarm ist idempotentes Re-Arming und dient hier zusaetzlich
                     // dem Zaehlen der wiederhergestellten Alarme im Boot-Recovery-Pfad.
                     val newAlarmsResult =
-                        alarmUseCase.syncAlarms(currentEvents, shiftConfig)
+                        alarmUseCase.syncAlarms(currentEvents, shiftConfig, fetchOutcome?.horizontEnde)
                     val newAlarms = newAlarmsResult.getOrNull() ?: emptyList()
 
                     for (newAlarm in newAlarms) {

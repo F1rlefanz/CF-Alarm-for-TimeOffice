@@ -27,11 +27,17 @@ interface IAlarmUseCase {
      *
      * @param events Vollständige Liste der Kalender-Events (der Soll-Zustand)
      * @param shiftConfig Aktuelle Schicht-Konfiguration
+     * @param abrufHorizontEnde Bis wohin (Epoch-Millis, exklusiv) die Liste [events] den Kalender
+     *   überhaupt gelesen hat - `CalendarFetchOutcome.horizontEnde`. Ein bestehender Wecker DAHINTER
+     *   ist "nicht gelesen", nicht "Termin gelöscht": er bleibt und wird nicht gemeldet (#51, die
+     *   verkleinerte Vorausschau). `null` = unbekannt; dann gilt Sync-Beginn + aktuelle Einstellung.
+     *   Der Horizont reist mit der Liste - wer eine Liste weiterreicht, reicht ihn mit.
      * @return Result mit dem resultierenden Alarm-Bestand oder Fehler
      */
     suspend fun syncAlarms(
         events: List<CalendarEvent>,
-        shiftConfig: ShiftConfig
+        shiftConfig: ShiftConfig,
+        abrufHorizontEnde: Long? = null
     ): Result<List<AlarmInfo>>
     
     /** Speichert oder aktualisiert einen Alarm */

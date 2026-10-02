@@ -1,5 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.di.modules
 
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.AnmeldeWiederherstellung
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.PlayDiensteAnmeldeWiederherstellung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.DataStoreTokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.CalendarRepository
@@ -28,7 +30,9 @@ import dagger.hilt.components.SingletonComponent
 /**
  * Hilt Module für Repository Bindings
  * 
- * Bindet alle Repository-Implementierungen an ihre Interfaces
+ * Bindet alle Repository-Implementierungen an ihre Interfaces - dazu den Restore-Schluessel der
+ * Anmeldung (#55), der wie ein Repository einen Wert ablegt, liest und loescht (nur eben im
+ * Credential-Speicher der Play-Dienste statt im DataStore).
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -83,4 +87,9 @@ abstract class RepositoryModule {
     abstract fun bindHueConfigRepository(
         impl: HueConfigRepository
     ): IHueConfigRepository
+
+    @Binds
+    abstract fun bindAnmeldeWiederherstellung(
+        impl: PlayDiensteAnmeldeWiederherstellung
+    ): AnmeldeWiederherstellung
 }

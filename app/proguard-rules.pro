@@ -11,34 +11,45 @@
 -renamesourcefileattribute SourceFile
 
 # ==============================
-# KEINE UMBENENNUNG - SHRINKING JA, OBFUSKATION NEIN
+# UMBENENNUNG (OBFUSKATION) IST AN - SEIT ISSUE #54
 # ==============================
 #
-# WELCHER ABLAUF SONST KAPUTT GEHT: Bis v1.27.0 standen weiter unten zwei Regeln der Form
-# `-keep class * { ... }`. Die Klassenspezifikation `*` machte JEDE uebersetzte Klasse zur
-# Keep-Wurzel, R8 hat also seit dem Einschalten am 10.08.2026 nichts entfernt und NICHTS
-# umbenannt (nachgemessen: 1828 mapping.txt-Eintraege des eigenen Pakets, kein einziger
-# verschleiert). Mit der Korrektur auf `-keepclasseswithmembers`/`-keepclassmembers` faellt diese
-# Wurzelwirkung weg - der Release-Build wuerde ab sofort ZUM ERSTEN MAL den gesamten App-Code
-# umbenennen.
+# WARUM: Play prueft ab Februar 2027 bei Apps mit mehr als 10 MB DEX, dass Obfuskation,
+# Optimierung UND Shrinking je mindestens 25 % erreichen. Gemessen am 01.10.2026 (r8-metadata.dat,
+# R8 9.4.14): DEX 10 096 720 Byte, Optimierung 77,9 %, Shrinking 78,4 % - aber Obfuskation
+# 0,01 %, weil hier bis dahin `-dontobfuscate` stand. Die Zeile ist deshalb entfernt.
+# `tools/release/r8_kennzahlen.py` liest die Werte bei jedem CI- und Auslieferungslauf aus dem
+# Bundle (BUNDLE-METADATA/com.android.tools/r8.json) und warnt, wenn sie wieder abrutschen.
 #
-# Das kollidiert frontal mit der einzigen Diagnosequelle dieser App: Absturzprotokolle und
-# WARN/ERROR-Zeilen, die ein Alpha-Tester per "Logs senden" schickt (last_crash.txt bzw. der
-# SimpleFileTree). Dafuer haelt die Zeile oben ausdruecklich SourceFile und LineNumberTable - die
-# Zeilennummern blieben also, Klassen- und Methodennamen aber nicht, und
-# `-renamesourcefileattribute` ersetzt zusaetzlich den Dateinamen. Uebrig bliebe `a.b.c(SourceFile:412)`.
-# Zurueckuebersetzen liesse sich das nur mit der mapping.txt DIESES Builds - und die wird nirgends
-# archiviert (weder ci.yml noch build.gradle.kts sichern app/build/outputs/mapping/release/).
+# WAS ES KOSTET UND WIE ES BEZAHLT IST: Absturzprotokolle (last_crash.txt) und WARN/ERROR-Zeilen,
+# die ein Tester per "Logs senden" schickt, zeigen jetzt `a.b.c(SourceFile:412)` statt Klassen-
+# und Methodennamen. Die Zeilennummern bleiben (SourceFile/LineNumberTable oben), der Rest wird
+# mit der mapping.txt DESSELBEN Builds zurueckuebersetzt. Die liegt an zwei Stellen:
+#  - eingebettet im Bundle (BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map) -
+#    Play uebersetzt damit Abstuerze in der Console selbst. Deshalb KEIN `mappingFile:` beim
+#    Upload: Play lehnt eine zweite Mapping-Datei ab, wenn das Bundle schon eine traegt. Fehlt
+#    die eingebettete, bricht die Auslieferung ab (r8_kennzahlen.py).
+#  - als CI-Artefakt `mapping-<versionName>` (veroeffentlichen.yml, 90 Tage) fuer den lokalen
+#    Blick; zuordnen ueber die Zeile "Version: <name> (<code>)" in last_crash.txt.
+# Zurueckuebersetzen (R8 steckt im AGP-builder-JAR, die cmdline-tools braucht es nicht):
+#   JAR=$(ls ~/.gradle/caches/modules-2/files-2.1/com.android.tools.build/builder/9.4.0/*/builder-9.4.0.jar)
+#   java -cp "$JAR" com.android.tools.r8.retrace.Retrace mapping.txt last_crash.txt
+# (AGP-Version an gradle/libs.versions.toml anpassen; am 02.10.2026 mit 9.4.0 ausprobiert.)
 #
-# Das Shrinking bleibt eingeschaltet und ist der eigentliche Gewinn (Groesse); das Umbenennen
-# bringt hier fast nichts und kostet die Fehlersuche. Ausserdem hat noch nie ein Release-Build mit
-# wirksamem Shrinking auf einem Geraet gelaufen - eine Umbenennung obendrauf waere in derselben
-# Version die zweite unerprobte Aenderung, und reflexionsbedingte Ausfaelle sieht die CI nicht
-# (sie baut die Release-APK, fuehrt sie aber nicht aus).
-#
-# WANN DIESE ZEILE WEG DARF: sobald die mapping.txt je Release archiviert wird (CI-Artefakt oder
-# Play-Console-Upload) UND ein Release-Build am Geraet durchgespielt wurde. Vorher nicht.
--dontobfuscate
+# WAS BEIM UMBENENNEN BRECHEN KANN - und welche Regel es haelt (Inventur 02.10.2026). Alles, was
+# zur Laufzeit ueber einen NAMEN gefunden wird, braucht eine Regel ohne `allowobfuscation`:
+#  - Gson (Hue-Antworten, Feldname = JSON-Schluessel): `hue.data.** { *; }` unten. NICHT anfassen.
+#  - google-http-client (Kalender-Modelle, `@Key` ohne Wert = Feldname): `@Key <fields>` unten.
+#  - WorkManager speichert den Worker-Klassennamen in seiner Datenbank: `-keepnames ... ListenableWorker`.
+#  - Hilt (`@HiltViewModel`, `@EarlyEntryPoint`, LazyClassKey): eigene + generierte Regeln.
+#  - Manifest-Komponenten (Activity, Service, Receiver, der Dimm-Dienst als Bedienungshilfe):
+#    aapt-Regeln aus dem Manifest.
+#  - kotlinx.serialization und Enum.name: Namen sind Compile-Zeit-Literale, keine Regel noetig.
+#  - Protobuf-lite in Tink und DataStore: Consumer-Regeln der Bibliotheken (Feldnamen-Reflexion).
+#  - `javaClass.simpleName` steht nur noch in Logzeilen (rein kosmetisch, Retrace hilft dort nicht).
+# Eine Regel, die nur `-dontobfuscate` verdeckt haette, hat die Inventur nicht gefunden. Der
+# Gegenbeweis ist der Release-Build am Geraet (Kalender laden, Hue, Export/Import, Wecker,
+# pruefe_direct_boot.py) - kein Unit-Test sieht einen Namens-Fehler.
 
 # ==============================
 # BIBLIOTHEKEN: KEINE KEEP-ALLES-REGELN
@@ -163,6 +174,9 @@
 # google-http-client liest und befuellt die Modelle (Event, EventDateTime, Request-Parameter,
 # Fehlerantworten) per Reflexion ueber ihre @Key-Felder und erzeugt sie ueber den parameterlosen
 # Konstruktor. Eigene Consumer-Regeln dafuer bringt die Bibliothek nicht mit.
+# Seit die Obfuskation an ist (Issue #54), traegt diese Regel ZUSAETZLICH den Feldnamen: ein
+# `@Key` ohne Wert nimmt den Java-Feldnamen als JSON-Schluessel (`summary`, `start`, `items`).
+# Deshalb `-keepclassmembers` OHNE `allowobfuscation` - umbenannt kaeme jedes Kalender-Event leer an.
 -keepclassmembers class * {
     @com.google.api.client.util.Key <fields>;
 }
@@ -321,9 +335,9 @@
 # (je eine im damaligen Compose- und ashmem-Block), die jede Klasse zur Wurzel machten. Wer die
 # Wirksamkeit von R8 pruefen will, prueft deshalb das ARTEFAKT, nicht die Konfiguration:
 #   mapping/release/seeds.txt darf nicht annaehernd so viele Klassen fuehren wie mapping.txt.
-# NICHT mehr ueber Umbenennungen pruefen: seit `-dontobfuscate` (siehe Begruendung ganz oben)
-# benennt R8 bewusst nichts mehr um - eine mapping.txt ohne verschleierte Namen ist hier also
-# der SOLL-Zustand und kein Hinweis auf eine Attrappe.
+# Seit Issue #54 benennt R8 wieder um - eine mapping.txt, in der das eigene Paket NICHT
+# verschleiert ist, ist damit wieder ein Warnsignal. Der schnellste Blick darauf ist der
+# Obfuskations-Wert, den tools/release/r8_kennzahlen.py aus dem Bundle liest.
 
 # ==============================
 # TINK CRYPTO ENCRYPTION (AES-256-GCM)

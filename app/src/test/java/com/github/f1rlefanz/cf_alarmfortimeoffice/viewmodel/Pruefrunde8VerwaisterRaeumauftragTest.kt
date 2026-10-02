@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
@@ -29,6 +30,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doSuspendableAnswer
@@ -160,7 +162,7 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
         }
 
         alarmUseCase.stub {
-            on { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any(), anyOrNull()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val uebergeben = invocation.arguments[0] as List<CalendarEvent>
                 if (uebergeben.isEmpty()) {
@@ -198,7 +200,8 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
             masterPausePrefs = masterPausePrefs,
             pendingDeselectionCleanupStore = store,
             // Nur fuer die stille Statuszeile - fuer diesen Test ohne Belang.
-            feedNeueinlesenStore = FakeFeedNeueinlesenStore()
+            feedNeueinlesenStore = FakeFeedNeueinlesenStore(),
+            kalenderVorausschauPrefs = FakeKalenderVorausschauPrefs()
         )
     }
 
@@ -421,7 +424,7 @@ class Pruefrunde8VerwaisterRaeumauftragTest {
                 "folgenloser Knopfdruck alle Termine und Wecker: $protokoll",
             protokoll.contains(ANGELEGT)
         )
-        verify(alarmUseCase).syncAlarms(eq(events), any())
+        verify(alarmUseCase).syncAlarms(eq(events), any(), anyOrNull())
     }
 
     /**

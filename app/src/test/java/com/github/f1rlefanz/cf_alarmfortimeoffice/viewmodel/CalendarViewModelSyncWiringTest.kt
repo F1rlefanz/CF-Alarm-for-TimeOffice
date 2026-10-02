@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
@@ -31,6 +32,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -95,14 +97,17 @@ class CalendarViewModelSyncWiringTest {
         completeFetch: CalendarFetchOutcome? = null,
         alarmUseCase: IAlarmUseCase = mock(),
         stateHolder: CalendarStateHolder = CalendarStateHolder(),
-        calendarUseCase: ICalendarUseCase = mock()
+        calendarUseCase: ICalendarUseCase = mock(),
+        vorausschauPrefs: FakeKalenderVorausschauPrefs = FakeKalenderVorausschauPrefs(),
+        pageHorizontEnde: Long? = null
     ): CalendarViewModel {
         calendarUseCase.stub {
             on { hasValidAccessToken() } doReturn true
             on { getCalendarEventsLazy(any(), any(), any()) } doReturn Result.success(
                 EventPage(
                     events = pageEvents,
-                    totalEvents = totalEvents
+                    totalEvents = totalEvents,
+                    horizontEnde = pageHorizontEnde
                 )
             )
             on { getCalendarEventsWithStatus(any(), any()) } doReturn
@@ -146,7 +151,8 @@ class CalendarViewModelSyncWiringTest {
             masterPausePrefs = masterPausePrefs,
             pendingDeselectionCleanupStore = pendingCleanupStore,
             // Nur fuer die stille Statuszeile - fuer diesen Test ohne Belang.
-            feedNeueinlesenStore = FakeFeedNeueinlesenStore()
+            feedNeueinlesenStore = FakeFeedNeueinlesenStore(),
+            kalenderVorausschauPrefs = vorausschauPrefs
         )
     }
 
@@ -165,7 +171,7 @@ class CalendarViewModelSyncWiringTest {
         selectedIds.value = setOf("cal-a")
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
     }
 
     @Test
@@ -183,7 +189,7 @@ class CalendarViewModelSyncWiringTest {
         advanceUntilIdle()
 
         // Synchronisiert wird mit ALLEN 13, nie mit den 10 der Anzeige.
-        verify(alarmUseCase).syncAlarms(eq(complete), any())
+        verify(alarmUseCase).syncAlarms(eq(complete), any(), anyOrNull())
     }
 
     @Test
@@ -201,7 +207,7 @@ class CalendarViewModelSyncWiringTest {
         selectedIds.value = setOf("cal-a")
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
     }
 
     @Test
@@ -219,7 +225,7 @@ class CalendarViewModelSyncWiringTest {
         selectedIds.value = setOf("cal-a")
         advanceUntilIdle()
 
-        verify(alarmUseCase).syncAlarms(eq(all), any())
+        verify(alarmUseCase).syncAlarms(eq(all), any(), anyOrNull())
         assertTrue(
             "Der Holder muss als vollstaendig gelten - ShiftViewModel gibt seine Liste an syncAlarms weiter",
             holder.eventsComplete.value
@@ -249,7 +255,7 @@ class CalendarViewModelSyncWiringTest {
         selectedIds.value = emptySet()
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
         assertTrue(
             "Nach dem Abwaehlen darf kein zurueckkehrender Ladevorgang die Events wieder einsetzen",
             holder.events.value.isEmpty()
@@ -342,5 +348,61 @@ class CalendarViewModelSyncWiringTest {
                 "syncAlarms() - und die spaetesten Wecker werden geloescht",
             holder.eventsComplete.value
         )
+    }
+
+    /**
+     * #51: Der Abruf-Horizont reist mit der Liste - vom nachgeforderten vollstaendigen Abruf in den
+     * CalendarStateHolder UND in syncAlarms(). Ohne ihn hielte der Sync nach einer verkleinerten
+     * Vorausschau jeden Wecker dahinter fuer einen geloeschten Termin.
+     */
+    @Test
+    fun `der Abruf-Horizont der nachgeforderten Liste geht an Holder und Alarm-Sync`() = runTest(dispatcher) {
+        val alarmUseCase = mock<IAlarmUseCase>()
+        val holder = CalendarStateHolder()
+        val complete = (0 until 13).map { event("A$it", it) }
+        buildViewModel(
+            pageEvents = complete.take(10),
+            totalEvents = 13,
+            completeFetch = CalendarFetchOutcome(complete, requestedCalendars = 1, horizontEnde = 777_000L),
+            alarmUseCase = alarmUseCase,
+            stateHolder = holder
+        )
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+
+        verify(alarmUseCase).syncAlarms(eq(complete), any(), eq(777_000L))
+        assertEquals(777_000L, holder.horizontEnde.value)
+    }
+
+    /**
+     * #51: Eine UMGESTELLTE Vorausschau laedt neu - ueber den einen Ladeweg des CalendarViewModel
+     * (mit Vollstaendigkeits-Sperre und Alarm-Sync). Der Startwert selbst ist keine Umstellung und
+     * loest keinen zweiten Ladevorgang aus.
+     */
+    @Test
+    fun `eine umgestellte Vorausschau laedt die Termine neu`() = runTest(dispatcher) {
+        val calendarUseCase = mock<ICalendarUseCase>()
+        val prefs = FakeKalenderVorausschauPrefs(tage = 14)
+        val events = (0 until 3).map { event("A$it", it) }
+        buildViewModel(
+            pageEvents = events,
+            totalEvents = 3,
+            calendarUseCase = calendarUseCase,
+            vorausschauPrefs = prefs
+        )
+
+        selectedIds.value = setOf("cal-a")
+        advanceUntilIdle()
+        org.mockito.kotlin.verifyBlocking(calendarUseCase, org.mockito.kotlin.times(1)) {
+            getCalendarEventsLazy(any(), any(), any())
+        }
+
+        prefs.setTage(28)
+        advanceUntilIdle()
+
+        org.mockito.kotlin.verifyBlocking(calendarUseCase, org.mockito.kotlin.times(2)) {
+            getCalendarEventsLazy(any(), any(), any())
+        }
     }
 }

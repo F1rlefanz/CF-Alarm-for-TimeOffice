@@ -32,4 +32,23 @@ interface IAuthDataStoreRepository {
      * Lädt aktuelle Authentifizierungsdaten (einmalig)
      */
     suspend fun getCurrentAuthData(): Result<AuthData>
+
+    /**
+     * Ob fuer die aktuelle Anmeldung schon ein Restore-Schluessel angelegt wurde (#55). Liegt
+     * absichtlich in `auth_prefs`: die Datei reist weder per Backup noch per Geraetetransfer mit
+     * (auf dem neuen Geraet fehlt der Merker also, und der Schluessel wird dort neu angelegt), und
+     * [clearAuthData] raeumt ihn beim Abmelden mit ab. Ein Lesefehler ist ein Failure - der
+     * Aufrufer legt dann NICHTS an, statt aus "unlesbar" ein "fehlt" zu machen.
+     */
+    suspend fun istWiederherstellungsSchluesselAngelegt(): Result<Boolean>
+
+    /** Merkt sich, dass der Restore-Schluessel angelegt ist (siehe oben). */
+    suspend fun merkeWiederherstellungsSchluesselAngelegt(): Result<Unit>
+
+    /**
+     * Nimmt NUR diesen Merker zurueck - fuer die halbe Abmeldung, in der der Schluessel schon
+     * geloescht ist, [clearAuthData] aber scheiterte und der Nutzer angemeldet bleibt. Ohne das
+     * behauptete der Merker "angelegt", und es entstuende nie wieder ein Schluessel.
+     */
+    suspend fun vergissWiederherstellungsSchluesselAngelegt(): Result<Unit>
 }

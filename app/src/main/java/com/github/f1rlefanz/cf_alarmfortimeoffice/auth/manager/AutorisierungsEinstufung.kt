@@ -118,12 +118,30 @@ internal object AutorisierungsEinstufung {
             }
             aktuell = aktuell.cause
         }
-        val ergebnis = urteil ?: Ausgang.Endgueltig("Unbekannter Fehler: ${fehler.javaClass.simpleName}")
+        val ergebnis = urteil ?: Ausgang.Endgueltig(unbekannterFehlerGrund(fehler))
         // Offline ist nichts endgueltig - siehe Klassenkommentar.
         return if (!netzValidiert && ergebnis !is Ausgang.Voruebergehend) {
             Ausgang.Voruebergehend("Ohne validiertes Netz nicht beurteilbar (${grundVon(ergebnis)})")
         } else {
             ergebnis
+        }
+    }
+
+    /**
+     * Der Grund fuer einen Fehler, den keine Regel einordnet. Er landet als Meldung in
+     * `TokenException.AuthorizationFailed` und damit bis in die Oberflaeche.
+     *
+     * WARUM KEIN KLASSENNAME: hier stand bis Issue #54 `fehler.javaClass.simpleName`. Seit R8 den
+     * Code umbenennt, waere das fuer jede nicht eigens gehaltene Klasse ein Kuerzel wie `a` - der
+     * Nutzer laese "Unbekannter Fehler: a", und auch im Log stuende nur das Kuerzel. Die Meldung
+     * des Fehlers ist dagegen ein String und ueberlebt die Umbenennung.
+     */
+    private fun unbekannterFehlerGrund(fehler: Throwable): String {
+        val meldung = fehler.message?.trim()
+        return if (meldung.isNullOrEmpty()) {
+            "Unbekannter Fehler bei der Google-Autorisierung"
+        } else {
+            "Unbekannter Fehler bei der Google-Autorisierung: $meldung"
         }
     }
 

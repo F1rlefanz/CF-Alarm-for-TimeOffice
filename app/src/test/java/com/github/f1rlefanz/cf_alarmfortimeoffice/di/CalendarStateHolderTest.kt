@@ -4,6 +4,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
@@ -72,5 +73,31 @@ class CalendarStateHolderTest {
                 "leere Liste als 'keine Schichten' und loescht alle Alarme",
             holder.eventsComplete.value
         )
+    }
+
+    /**
+     * #51: Der Abruf-Horizont reist mit der Liste - auch durch den Holder. Der Leser
+     * (`ShiftViewModel`) gibt ihn an `syncAlarms()` weiter; ohne ihn hielte der Sync nach einer
+     * verkleinerten Vorausschau jeden Wecker dahinter fuer einen geloeschten Termin.
+     */
+    @Test
+    fun `der Abruf-Horizont wird mit der Liste gesetzt und nie von einer frueheren uebernommen`() {
+        val holder = CalendarStateHolder()
+        holder.updateEvents(listOf(event("A")), complete = true, horizontEnde = 5_000L)
+        assertEquals(5_000L, holder.horizontEnde.value)
+
+        // Eine neue Liste OHNE Horizont darf den alten nicht erben - er gehoerte zur alten Liste.
+        holder.updateEvents(listOf(event("B")), complete = true)
+        assertNull(holder.horizontEnde.value)
+    }
+
+    @Test
+    fun `clearEvents setzt auch den Abruf-Horizont zurueck`() {
+        val holder = CalendarStateHolder()
+        holder.updateEvents(listOf(event("A")), complete = true, horizontEnde = 5_000L)
+
+        holder.clearEvents()
+
+        assertNull(holder.horizontEnde.value)
     }
 }

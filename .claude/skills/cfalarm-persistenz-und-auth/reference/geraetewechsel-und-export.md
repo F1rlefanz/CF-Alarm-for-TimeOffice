@@ -173,3 +173,13 @@
   nimmt den ersten Treffer, und die LISTENREIHENFOLGE entscheidet still über die Weckzeit). Reine
   Funktion im Modell, damit alle drei Fallen testbar festgehalten sind.
 
+- **Restore-Schlüssel (#55):** reist bewusst mit (E2E-verschlüsselt im Google-Backup bzw. Transfer).
+  Der Merker `restore_key_angelegt` liegt in `auth_prefs` und reist NICHT mit (Export:
+  `DEVICE_OR_SECRET_KEYS`) — mitgereist hieße er auf dem neuen Gerät „schon erledigt“, und dort
+  entstünde nie ein eigener Schlüssel. Der Abmelde-Vermerk liegt in `noBackupFilesDir`.
+- **`kalender_vorausschau_tage` (#51)** ist Nutzerkonfiguration und reist mit; der Import prüft 7..90.
+  `last_successful_sync_window_days` ist Laufzeitzustand (`RUNTIME_KEYS`): ein fremdes Fenster neben
+  dem eigenen Zeitpunkt behauptete einen Abruf, den es nie gab.
+- **Lücke im Inventurtest:** `Pruefrunde6BackupSchluesselInventurTest` findet nur Schlüssel als
+  Text-Literal; über `const` deklarierte rutschen durch. Bei neuen Schlüsseln die Entscheidung
+  trotzdem treffen.

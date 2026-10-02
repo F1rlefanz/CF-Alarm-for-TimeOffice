@@ -1,9 +1,11 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
+import android.app.Activity
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.AnmeldeWiederherstellung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
@@ -41,7 +43,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -67,7 +72,9 @@ class AuthViewModel @Inject constructor(
     private val dndSchedule: DndScheduleUseCase,
     private val hueSmartScheduler: HueSmartScheduler,
     private val calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
-    @param:ApplicationContext private val appContext: Context
+    @param:ApplicationContext private val appContext: Context,
+    // Zero-Tap-Wiederherstellung der Anmeldung (#55) - siehe [starteAnmeldeWiederherstellung].
+    private val anmeldeWiederherstellung: AnmeldeWiederherstellung
 ) : ViewModel() {
 
     companion object {
@@ -114,6 +121,33 @@ class AuthViewModel @Inject constructor(
                 "Wecker entfernen - einzelne koennten noch klingeln. Tippe unten auf \"Mit " +
                 "anderem Konto anmelden\": das schliesst die Abmeldung ab und raeumt die Wecker " +
                 "erneut weg."
+
+        /**
+         * Ladetext, solange beim Start ein Restore-Schluessel gesucht wird (#55).
+         *
+         * Bewusst "Suche nach", nicht "wird uebernommen": der Text steht auch bei JEDER frischen
+         * Installation ohne Vorgaenger-Geraet da - das ist sogar der haeufigste Fall. Er darf
+         * nichts behaupten, was es nicht gibt.
+         */
+        const val TEXT_WIEDERHERSTELLUNG_LAEUFT: String =
+            "Suche nach einer Anmeldung vom alten Gerät …"
+
+        /**
+         * Deckel fuer das Lesen beim Start (Entscheidung 02.10.2026). Solange gelesen wird, sieht
+         * der Nutzer nur den Ladetext - laenger darf die Funktion die normale Anmeldung nicht
+         * aufhalten.
+         */
+        internal const val LESEN_DECKEL_MS: Long = 5_000L
+
+        /**
+         * Deckel fuer das Anlegen. Laeuft im Hintergrund, haelt aber eine Activity-Referenz und
+         * die Schluessel-Sperre, auf die ein gleichzeitiges Abmelden wartet - deshalb begrenzt.
+         * Doppelt so lang wie das Lesen, weil ohne Ende-zu-Ende-Backup ein zweiter Versuch folgt.
+         */
+        internal const val ANLEGEN_DECKEL_MS: Long = 10_000L
+
+        /** Deckel fuer das Loeschen beim Abmelden - das Abmelden laeuft nicht abbrechbar. */
+        internal const val LOESCHEN_DECKEL_MS: Long = 5_000L
     }
 
     private val _authState = MutableStateFlow(AuthState.EMPTY)
@@ -168,6 +202,28 @@ class AuthViewModel @Inject constructor(
      */
     @Volatile
     private var signOutInProgress = false
+
+    /**
+     * Die Start-Pruefung der Wiederherstellung laeuft hoechstens EINMAL je ViewModel (also nicht
+     * nach jeder Drehung erneut). Auf dem alten Geraet meldet ein spaeterer Versuch nach dem
+     * Abmelden nicht still wieder an: nicht weil der Schluessel sicher geloescht waere (das
+     * Loeschen darf scheitern), sondern weil der Abmelde-Vermerk
+     * ([AnmeldeWiederherstellung.merkeAbmeldung]) das Lesen dort sperrt.
+     *
+     * Steht VOR dem init{}-Block (CLAUDE.md: sonst ist sie beim ersten Zugriff noch nicht belegt).
+     */
+    private var wiederherstellungAngestossen = false
+
+    /**
+     * Sperre zwischen ANLEGEN und LOESCHEN des Restore-Schluessels.
+     *
+     * WARUM: Ein Abmelden, waehrend das Anlegen noch laeuft, loeschte sonst zuerst, und das
+     * Anlegen schriebe danach einen frischen Schluessel - ein verwaister Schluessel, der nach
+     * einer Neuinstallation STILL wieder anmeldet ("Abmelden heisst: nichts bleibt zurueck").
+     * Mit der Sperre wartet das Loeschen auf das Ende des Anlegens (gedeckelt auf
+     * [ANLEGEN_DECKEL_MS]) und kommt damit garantiert danach.
+     */
+    private val wiederherstellungsSchluesselSperre = Mutex()
 
     private fun updateAuthState(updateFunc: (AuthState) -> AuthState) {
         val currentState = _authState.value
@@ -499,6 +555,11 @@ class AuthViewModel @Inject constructor(
                                 )
                                 val activity = context as? android.app.Activity
                                 requestCalendarAuthorization(activity)
+
+                                // Zero-Tap-Wiederherstellung fuer ein kuenftiges neues Geraet
+                                // (#55). Danach, nicht davor: ein Fehlschlag hier darf die
+                                // Anmeldung nie aufhalten - er wird nur geloggt.
+                                legeWiederherstellungsSchluesselAn(context, initialEmail)
                             }
                             .onFailure { error ->
                                 updateAuthState { currentState ->
@@ -736,6 +797,16 @@ class AuthViewModel @Inject constructor(
                     // Local sign-out using CredentialAuthManager
                     credentialAuthManager.signOutLocally()
 
+                    // #55, VOR dem Verwerfen der Anmeldung: erst den Abmelde-Vermerk setzen, dann
+                    // den Restore-Schluessel loeschen. Andersherum (bis 02.10.2026) liess jedes
+                    // gescheiterte, abgelaufene oder durch Prozesstod nie angekommene Loeschen
+                    // "abgemeldet, Schluessel noch da" zurueck - der naechste Kaltstart las ihn
+                    // und meldete auf DIESEM Geraet still wieder an, samt Wartung und Weckern.
+                    // Jetzt sperrt der Vermerk das Lesen hier, und ein Abbruch vor dem Abmelden
+                    // laesst den Nutzer angemeldet (wiederholbar). Beides wirft nie und ist
+                    // gedeckelt - es darf das Abmelden weder aufhalten noch scheitern lassen.
+                    sperreUndLoescheWiederherstellungsSchluessel()
+
                     // Über die UseCase statt direkt aufs Repository: nur dort wird auch das
                     // Kalender-Token verworfen. Der frühere Direktzugriff auf
                     // authDataStoreRepository.clearAuthData() ging daran vorbei - das Token
@@ -751,6 +822,20 @@ class AuthViewModel @Inject constructor(
                         // Re-Autorisierung dauerhaft stumm, obwohl sie hier sogar der richtige
                         // Ausweg waere.
                         signOutInProgress = false
+
+                        // Der Restore-Schluessel ist oben schon geloescht, der Merker "angelegt"
+                        // in auth_prefs aber nicht - den raeumt nur clearAuthData(), und das ist
+                        // hier gescheitert. Bliebe er stehen, legte der naechste Start fuer den
+                        // weiter Angemeldeten nie wieder einen Schluessel an. Dieses Anlegen
+                        // raeumt zugleich den Abmelde-Vermerk.
+                        authDataStoreRepository.vergissWiederherstellungsSchluesselAngelegt()
+                            .onFailure {
+                                Logger.w(
+                                    LogTags.AUTH,
+                                    "Restore-Schluessel: Merker nach halber Abmeldung nicht zurueckgesetzt",
+                                    it
+                                )
+                            }
 
                         // UND DIE OBERFLAECHE MUSS DASSELBE SAGEN wie der Weckbestand (Welle 6,
                         // Befund B). Ohne diese zwei Felder blieb `hasValidToken` auf dem alten
@@ -839,6 +924,186 @@ class AuthViewModel @Inject constructor(
                     Logger.e(LogTags.AUTH, "Error during sign-out", e)
                 }
             }
+        }
+    }
+
+    /**
+     * Zero-Tap-Wiederherstellung beim Start (#55, Play-Pflicht ab April 2027). Wird aus
+     * `MainActivity.onCreate` angestossen, weil der `CredentialManager` einen Activity-Kontext
+     * braucht - nicht aus dem init{}.
+     *
+     * - NICHT ANGEMELDET: sucht einen Restore-Schluessel vom alten Geraet (hoechstens
+     *   [LESEN_DECKEL_MS]); waehrenddessen zeigt die Oberflaeche [TEXT_WIEDERHERSTELLUNG_LAEUFT].
+     *   Bei einem Treffer laeuft derselbe Weg wie nach "Mit Google anmelden": Auth-Daten
+     *   schreiben, dann [requestCalendarAuthorization]. Braucht die Zustimmung einen Dialog oder
+     *   ist das Geraet offline, fuehrt das bestehende Gate auf den Kalender-Autorisierungs-
+     *   bildschirm - keine Sackgasse. Jeder Fehlschlag und jeder Zeitablauf heisst: normaler
+     *   Anmeldebildschirm. Wurde auf DIESEM Geraet abgemeldet (Abmelde-Vermerk), wird gar nicht
+     *   gelesen, sondern nur das Loeschen nachgeholt.
+     * - ANGEMELDET OHNE MERKER: legt den Schluessel einmal an, damit auch Bestandsnutzer ihn
+     *   bekommen, ohne sich neu anzumelden.
+     *
+     * Der Schluessel ist kein Anmeldenachweis, nur der Hinweis "dieses Google-Konto" - den
+     * Kalenderzugriff gewaehrt weiter allein Googles `authorize()`.
+     */
+    fun starteAnmeldeWiederherstellung(activity: Activity) {
+        if (wiederherstellungAngestossen) return
+        wiederherstellungAngestossen = true
+
+        viewModelScope.launch {
+            val authData = authDataStoreRepository.getCurrentAuthData().getOrNull()
+            if (authData == null) {
+                Logger.w(LogTags.AUTH, "Restore-Schluessel: Anmeldestatus nicht lesbar - uebersprungen")
+                return@launch
+            }
+
+            if (authData.isLoggedIn) {
+                val email = authData.email
+                if (email.isNullOrBlank()) return@launch
+                // Nur bei einem SICHEREN "fehlt": ein Lesefehler (null) legt nichts an.
+                val angelegt = authDataStoreRepository.istWiederherstellungsSchluesselAngelegt().getOrNull()
+                if (angelegt == false) {
+                    legeWiederherstellungsSchluesselAn(activity, email)
+                }
+            } else {
+                versucheWiederherstellung(activity)
+            }
+        }
+    }
+
+    private suspend fun versucheWiederherstellung(activity: Activity) {
+        // Hier wurde ausdruecklich abgemeldet: nicht still wieder anmelden, auch wenn das
+        // Loeschen damals nicht durchkam. Stattdessen wird es nachgeholt - sonst reiste der
+        // verwaiste Schluessel im Backup zu einem kuenftigen Geraet mit.
+        val hierAbgemeldet = try {
+            anmeldeWiederherstellung.istAbmeldungVermerkt()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Vertrag "wirft nie" gebrochen: im Zweifel nicht still anmelden (normaler Login).
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Abmelde-Vermerk nicht lesbar", e)
+            true
+        }
+        if (hierAbgemeldet) {
+            Logger.d(LogTags.AUTH, "Restore-Schluessel: hier abgemeldet - keine Wiederherstellung, Loeschen nachgeholt")
+            loescheWiederherstellungsSchluessel()
+            return
+        }
+        updateAuthState { it.copy(wiederherstellungLaeuft = true) }
+        try {
+            val email = try {
+                withTimeoutOrNull(LESEN_DECKEL_MS) { anmeldeWiederherstellung.lesen(activity) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Der Vertrag sagt "wirft nie" - dieser Zweig ist das Netz dafuer.
+                Logger.w(LogTags.AUTH, "Restore-Schluessel: Lesen gescheitert - normaler Login", e)
+                null
+            }
+            if (email == null) {
+                Logger.d(LogTags.AUTH, "Keine Anmeldung vom alten Geraet - normaler Login")
+                return
+            }
+
+            // Hat sich der Nutzer in der Zwischenzeit selbst angemeldet, gilt seine Wahl.
+            if (authDataStoreRepository.getCurrentAuthData().getOrNull()?.isLoggedIn == true) {
+                Logger.d(LogTags.AUTH, "Restore-Schluessel verworfen - inzwischen angemeldet")
+                return
+            }
+
+            authDataStoreRepository.updateAuthData(AuthData(isLoggedIn = true, email = email))
+                .onSuccess {
+                    Logger.business(LogTags.AUTH, "Anmeldung vom alten Geraet uebernommen")
+                    signOutInProgress = false
+                    // In EINEM Schritt mit dem Ende des Ladezustands: dazwischen blitzte sonst
+                    // der Anmeldebildschirm auf.
+                    updateAuthState { currentState ->
+                        currentState.copy(
+                            userAuth = UserAuthState.authenticated(email, "", null),
+                            wiederherstellungLaeuft = false
+                        )
+                    }
+                    requestCalendarAuthorization(activity)
+                    // Der mitgereiste Schluessel wird durch einen eigenen ersetzt, und der
+                    // (nicht mitgereiste) Merker entsteht dabei.
+                    legeWiederherstellungsSchluesselAn(activity, email)
+                }
+                .onFailure { error ->
+                    Logger.w(
+                        LogTags.AUTH,
+                        "Restore-Schluessel gefunden, Anmeldung aber nicht speicherbar - normaler Login",
+                        error
+                    )
+                }
+        } finally {
+            updateAuthState { it.copy(wiederherstellungLaeuft = false) }
+        }
+    }
+
+    /**
+     * Legt den Restore-Schluessel an und merkt es sich. Wirft nie: die Anmeldung haengt nicht
+     * daran. Ein Abmelden, das schon begonnen hat, gewinnt (siehe
+     * [wiederherstellungsSchluesselSperre]).
+     */
+    private suspend fun legeWiederherstellungsSchluesselAn(activityContext: Context, email: String) {
+        try {
+            wiederherstellungsSchluesselSperre.withLock {
+                if (signOutInProgress) return
+                // Wer einen Schluessel anlegt, ist angemeldet - der Abmelde-Vermerk ist damit
+                // hinfaellig (seine Gegenfrage). Unter der Sperre und hinter der Pruefung oben,
+                // damit er einem gleichzeitigen Abmelden nicht weggeraeumt wird; VOR dem
+                // Anlegen, damit auch ein abgelaufenes Anlegen ihn nicht stehen laesst.
+                anmeldeWiederherstellung.vergissAbmeldung()
+                val angelegt = withTimeoutOrNull(ANLEGEN_DECKEL_MS) {
+                    anmeldeWiederherstellung.anlegen(activityContext, email)
+                } == true
+                if (!angelegt) return
+                authDataStoreRepository.merkeWiederherstellungsSchluesselAngelegt()
+                    .onFailure {
+                        // Folge nur: beim naechsten Start wird er noch einmal angelegt.
+                        Logger.w(LogTags.AUTH, "Restore-Schluessel: Merker nicht gespeichert", it)
+                    }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Anlegen gescheitert", e)
+        }
+    }
+
+    /**
+     * Abmelden, Teil #55: Abmelde-Vermerk setzen, dann den Schluessel loeschen. Der Vermerk
+     * kommt ZUERST, weil er auch dann wirkt, wenn das Loeschen scheitert oder ein abgelaufenes
+     * Anlegen in den Play-Diensten verspaetet noch schreibt. Wirft nie.
+     */
+    private suspend fun sperreUndLoescheWiederherstellungsSchluessel() {
+        try {
+            anmeldeWiederherstellung.merkeAbmeldung()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Abmelde-Vermerk gescheitert", e)
+        }
+        loescheWiederherstellungsSchluessel()
+    }
+
+    /**
+     * Loescht den Restore-Schluessel beim Abmelden (und holt es beim Start nach, wenn hier
+     * abgemeldet wurde). Wirft nie. Wartet auf ein laufendes Anlegen (ohne eigenen Deckel - das
+     * Anlegen ist selbst gedeckelt), damit nichts NACH dem Loeschen noch entsteht. Der Merker
+     * in `auth_prefs` geht mit `clearAuthData()` - im halben Zweig, wo das scheitert, nimmt
+     * `signOut()` ihn gezielt zurueck.
+     */
+    private suspend fun loescheWiederherstellungsSchluessel() {
+        try {
+            wiederherstellungsSchluesselSperre.withLock {
+                withTimeoutOrNull(LOESCHEN_DECKEL_MS) { anmeldeWiederherstellung.loeschen() }
+                    ?: Logger.w(LogTags.AUTH, "Restore-Schluessel: Loeschen nach $LOESCHEN_DECKEL_MS ms abgebrochen")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Loeschen gescheitert", e)
         }
     }
 

@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
@@ -30,6 +31,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
@@ -122,7 +124,8 @@ class CalendarViewModelErreichbarkeitTest {
             alarmUseCase = alarmUseCase,
             masterPausePrefs = masterPausePrefs,
             pendingDeselectionCleanupStore = pendingCleanupStore,
-            feedNeueinlesenStore = FakeFeedNeueinlesenStore()
+            feedNeueinlesenStore = FakeFeedNeueinlesenStore(),
+            kalenderVorausschauPrefs = FakeKalenderVorausschauPrefs()
         )
     }
 
@@ -139,7 +142,7 @@ class CalendarViewModelErreichbarkeitTest {
         val state = vm.uiState.value
         assertTrue("Ein Funkloch belegt keinen verlorenen Zugriff", state.calendarAuthorizationValid)
         assertTrue("Der Zustand muss sichtbar werden", state.kalenderNichtErreichbar)
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
     }
 
     @Test

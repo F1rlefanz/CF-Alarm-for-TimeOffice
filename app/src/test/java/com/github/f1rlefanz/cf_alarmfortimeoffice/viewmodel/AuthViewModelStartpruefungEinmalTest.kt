@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.CalendarPreAlarmRefreshScheduler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.AnmeldeWiederherstellung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.CredentialAuthManager
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.storage.TokenRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimScheduleUseCase
@@ -94,7 +95,8 @@ class AuthViewModelStartpruefungEinmalTest {
             dndSchedule = mock<DndScheduleUseCase>(),
             hueSmartScheduler = mock<HueSmartScheduler>(),
             calendarPreAlarmRefreshScheduler = mock<CalendarPreAlarmRefreshScheduler>(),
-            appContext = mock<Context>()
+            appContext = mock<Context>(),
+            anmeldeWiederherstellung = AnmeldeWiederherstellung.Aus
         )
         advanceUntilIdle()
         assertTrue(viewModel.authState.value.calendarOps.tokenChecked)

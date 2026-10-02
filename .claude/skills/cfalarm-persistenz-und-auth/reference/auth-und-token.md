@@ -188,3 +188,34 @@ nach `clearToken` liefert keinen Fehler, sondern Erfolg mit `hasResolution = tru
   Request-Code wie frueher; `handlePermissionResult()` holt das Token mit einem zweiten
   `authorize()`. Offline wird KEIN Dialog gestartet - die Meldung nennt die Verbindung.
 
+## Zero-Tap-Wiederherstellung über Restore Credentials (#55, 1.46.0)
+
+**Warum.** Play verlangt ab April 2027 für JEDE App mit Anmeldung eine Zero-Tap-Wiederherstellung;
+der Ausweg über Block Store galt nur für Integrationen bis 30.09.2026.
+
+**Was der Schlüssel ist.** Ein WebAuthn-Restore-Schlüssel, dessen `user.id` die E-Mail trägt (beim
+Lesen als `response.userHandle`). KEIN Anmeldenachweis — es gibt keinen Server, der Challenge oder
+Signatur prüfen könnte, und es braucht keinen: Zugriff gibt weiter `authorize()` mit `setAccount()`.
+E-Mail statt Googles `sub`, weil nur sie `setAccount()` ohne Oberfläche erlaubt. Über 64 Byte → kein
+Schlüssel (nicht kürzen: eine gekürzte Adresse ist ein fremdes Konto).
+
+**Ablauf.** Anlegen nach `signIn()` und einmal beim Start für Bestandsnutzer (Merker fehlt SICHER).
+Lesen beim Start nur abgemeldet, aus `MainActivity` (Activity-Kontext), `withTimeoutOrNull(5 s)`.
+Ohne Ende-zu-Ende-Backup (`E2eeUnavailableException`) wird lokal angelegt — hilft beim Kabel-Transfer.
+Kein eigener `BackupAgent`. API < 28: still aus. Das Interface `AnmeldeWiederherstellung` bleibt, weil
+`CredentialManager.create()` statisch ist; der Konstruktor hält nur den App-Kontext (Direct Boot).
+
+**Die Falle beim Abmelden (Review 02.10.2026, 3:0 bestätigt).** Scheiterte das Löschen (GMS-Fehler,
+Timeout, Prozessende direkt nach dem Tipp), meldete der nächste Kaltstart auf DEMSELBEN Gerät still
+wieder an. Deshalb der Abmelde-Vermerk in `noBackupFilesDir` (reist nicht mit, `clearAuthData()` löscht
+ihn nicht): gesetzt VOR dem Löschen, unlesbar gilt als gesetzt, geräumt erst durch eine neue Anmeldung
+unter der Schlüssel-Sperre. Zweite Falle: eine HALBE Abmeldung löschte den Schlüssel, ließ den Merker
+aber stehen — es entstand nie wieder einer; `vergissWiederherstellungsSchluesselAngelegt()` räumt ihn.
+Eine Mutex um Anlegen und Löschen verhindert, dass ein laufendes Anlegen nach dem Löschen schreibt.
+
+**Am Emulator belegt (02.10.2026):** Bestandsnutzer-Update und Neuanmeldung legen den Schlüssel an
+(„nur lokal“, Emulator ohne E2E-Backup — damit auch gemessen: das Anlegen braucht `assetlinks.json`
+nicht). Kaltstart nach `pm clear` findet keinen (wie dokumentiert gelöscht) und zeigt sofort den
+Login. **Nicht belegt:** die eigentliche Wiederherstellung auf einem neuen Gerät — das geht nur mit
+echtem Gerätewechsel (Google-Backup mit Bildschirmsperre). `docs/.well-known/assetlinks.json` trägt
+Play-Signatur-, Upload- und Debug-Schlüssel.

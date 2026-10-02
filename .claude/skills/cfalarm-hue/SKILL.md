@@ -160,3 +160,10 @@ das baut man dieselbe Falle in neuer Form nach.
   STRUKTURELL**: `HueRuleFormState.toRule()` liest nur die Felder des aktiven Modus. Der Modus
   wird an genau EINER Stelle hergeleitet (`HueScheduleRule.modus`) — Editor, Regel-Liste und Tab
   lesen dort, drei eigene Herleitungen waeren drei Wahrheiten.
+- **Stille Schicht = kein Hue, auf BEIDEN Wegen.** Der `AlarmReceiver` überspringt Hue für `isSilent`;
+  bis 1.45 plante `HueSmartScheduler` den Sonnenaufgangs-Worker trotzdem 15 min vor der Weckzeit —
+  das Licht fuhr nachts hoch, und weil der Wecker still blieb, entstand kein Auto-Aus. Gefunden über
+  die Statuszeile (#70). Ein dritter Hue-Pfad muss die Stille ebenfalls prüfen.
+- **`IHueConfigRepository.getConfiguration()` emittiert bei JEDER Änderung des @HueDataStore** — die
+  Statuszeile je Schicht liest geänderte Regeln darüber nach. Ein `distinctUntilChanged` dort macht sie
+  für Regeländerungen blind.

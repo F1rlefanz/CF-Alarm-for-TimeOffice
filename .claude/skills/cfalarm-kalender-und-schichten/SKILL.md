@@ -83,6 +83,18 @@ das baut man dieselbe Falle in neuer Form nach.
   wird (kein Stups vom Kalender). Die alte DND-Namensliste `dnd_oncall_shifts` übernimmt
   `RufbereitschaftMigration` einmalig (App-Start, 6h-Wartung, Import einer alten Datei);
   idempotent über die Existenz des Altschlüssels, gelöscht erst nach belegtem Erfolg.
+- **Die Vorausschau ist eine Nutzereinstellung** (`KalenderVorausschauPrefs`, `kalender_vorausschau_tage`
+  im @MainDataStore, 7..90, Standard 14 — NICHT in `ShiftConfig`, ein Alt-JSON mit dem längst entfernten
+  Feld `daysAhead` belebte sonst einen vergessenen Wert). Ersatzwert 14 bei Lesefehler, nie geschrieben. EINMAL pro Abruf
+  gelesen (`CalendarUseCase`), nie getrennt für Abruf und Sync.
+- **Der Horizont reist mit der Liste**: `KalenderEventAbruf.horizontEnde` → `CalendarFetchOutcome.horizontEnde`
+  (kleinstes der Kalender) → `CalendarStateHolder` → `syncAlarms(..., abrufHorizontEnde)`. Wer eine Liste
+  weiterreicht, reicht den Horizont mit.
+- **Verkleinern löscht nichts dahinter** (`SyncHorizonStore.istJenseitsDesAbrufs`, `>=`, `timeMax` ist
+  exklusiv) — in Schritt 1, im Zweig ohne Schichttreffer und in `BootAlarmValidation`. **Vergrößern
+  meldet nichts**: der Sync-Merker speichert das Fenster des Abrufs; Altbestand = 14. Der Cache-Eintrag
+  trägt seine Fenstertage. Pre-Alarm-Refresh, Dimmer- und Hue-Horizont sind bewusst NICHT gekoppelt.
+  Hergang in `reference/kalender-datenfluss.md`.
 
 ## Schichterkennung — Kurzregeln
 
@@ -153,5 +165,6 @@ das baut man dieselbe Falle in neuer Form nach.
 - **`<queries>` im Manifest ist Pflicht** für `isInstalled()` (Package-Visibility ab Android 11).
 - **Kein Unit-Test für `TimeOfficeHealthHelper`** — bewusst, gleiche Konvention wie die
   Schwester-Helper (dünne Wrapper ohne eigene Logik).
-- **Das Onboarding-Gate hängt an `handleAuthenticationSuccess()`, nicht nur an `proceedPastGates()`** —
+- **Das Onboarding-Gate hängt am automatischen Weg (`naechsterGateSchritt(…, GateEinstieg.AUTO)` →
+  `handleAuthenticationSuccess()`), nicht nur am aktiven (`setzeGateKetteFort`, früher `proceedPastGates()`)** —
   sonst sehen Bestandsnutzer den Prompt nie automatisch.

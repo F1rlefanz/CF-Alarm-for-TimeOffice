@@ -192,6 +192,12 @@ class MainActivity : ComponentActivity() {
             verarbeiteEinstieg(intent)
         }
 
+        // ZERO-TAP-WIEDERHERSTELLUNG (#55): Abgemeldet -> Restore-Schluessel vom alten Geraet
+        // suchen (gedeckelt auf 5 s), angemeldet ohne Schluessel -> einmal anlegen. Von HIER, weil
+        // der CredentialManager einen Activity-Kontext braucht; das ViewModel laesst nur den
+        // ersten Aufruf durch, eine Drehung loest also keinen zweiten Versuch aus.
+        authViewModel.starteAnmeldeWiederherstellung(this)
+
         // POST_NOTIFICATIONS wird erst im Hauptbereich abgefragt (LaunchedEffect im "main"-Screen).
 
         setContent {
@@ -261,12 +267,16 @@ class MainActivity : ComponentActivity() {
                         // CalendarAuthorizationScreen instead of the (half-broken) main UI. tokenChecked
                         // guards against flashing the gate before the initial token check has completed.
                         val screenContent = remember(
+                            authState.wiederherstellungLaeuft,
                             authState.isSignedIn,
                             authState.calendarOps.calendarsLoading,
                             authState.calendarOps.tokenChecked,
                             authState.calendarOps.hasValidToken
                         ) {
                             when {
+                                // Vor "login": solange der Restore-Schluessel gesucht wird, soll
+                                // nicht der Anmeldeknopf zum Tippen einladen.
+                                authState.wiederherstellungLaeuft -> "restore"
                                 authState.calendarOps.calendarsLoading && !authState.isSignedIn -> "loading"
                                 !authState.isSignedIn -> "login"
                                 !authState.calendarOps.tokenChecked -> "loading"
@@ -278,6 +288,9 @@ class MainActivity : ComponentActivity() {
                         when (screenContent) {
                             "loading" -> {
                                 LoadingScreen(message = "Lade Anmeldestatus...")
+                            }
+                            "restore" -> {
+                                LoadingScreen(message = AuthViewModel.TEXT_WIEDERHERSTELLUNG_LAEUFT)
                             }
                             "calendar_auth" -> {
                                 CalendarAuthorizationScreen(

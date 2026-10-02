@@ -202,3 +202,115 @@ class BootAlarmKennungswechselTest {
         )
     }
 }
+
+/**
+ * #51: Nach einer VERKLEINERTEN Vorausschau ist die Kalenderlesung vollstaendig - aber nur fuer
+ * das kleinere Fenster. Ein gespeicherter Wecker dahinter hat in der Lesung weder Kennung noch
+ * Weckpunkt; ohne die Horizont-Frage galt er als "Termin weg" und ein Neustart raeumte alle Wecker
+ * hinter dem neuen Fenster ab. Dieselbe Regel wie `AlarmUseCase.syncAlarms()` Schritt 1.
+ */
+class BootAlarmHorizontTest {
+
+    private val lesung = setOf(BootAlarmValidation.Weckpunkt(triggerTime = 4_000L, shiftId = "frueh"))
+    private val horizont = 100_000L
+
+    @Test
+    fun `Wecker hinter dem Abruf-Horizont bleibt - er wurde nur nicht gelesen`() {
+        assertEquals(
+            BootAlarmValidation.AlarmUrteil.JENSEITS_DES_ABRUFS,
+            BootAlarmValidation.beurteile(
+                alarmTriggerTime = 150_000L,
+                alarmShiftId = "spaet",
+                alarmChecksum = "chk-alt",
+                terminChecksum = null,
+                weckpunkte = lesung,
+                alarmSchichtBeginn = 160_000L,
+                abrufHorizontEnde = horizont
+            )
+        )
+    }
+
+    @Test
+    fun `Grenze - ein Schichtbeginn genau auf dem Horizont ist nicht gelesen`() {
+        // Die Kalender-API filtert timeMax EXKLUSIV auf den Terminbeginn.
+        assertEquals(
+            BootAlarmValidation.AlarmUrteil.JENSEITS_DES_ABRUFS,
+            BootAlarmValidation.beurteile(
+                alarmTriggerTime = horizont - 1_000L,
+                alarmShiftId = "spaet",
+                alarmChecksum = "chk-alt",
+                terminChecksum = null,
+                weckpunkte = lesung,
+                alarmSchichtBeginn = horizont,
+                abrufHorizontEnde = horizont
+            )
+        )
+    }
+
+    @Test
+    fun `innerhalb des Horizonts bleibt eine fehlende Schicht eine Streichung`() {
+        assertEquals(
+            BootAlarmValidation.AlarmUrteil.LOESCHEN_TERMIN_WEG,
+            BootAlarmValidation.beurteile(
+                alarmTriggerTime = 50_000L,
+                alarmShiftId = "spaet",
+                alarmChecksum = "chk-alt",
+                terminChecksum = null,
+                weckpunkte = lesung,
+                alarmSchichtBeginn = 60_000L,
+                abrufHorizontEnde = horizont
+            )
+        )
+    }
+
+    @Test
+    fun `entscheidend ist der Schichtbeginn, nicht die Weckzeit`() {
+        // Weckzeit vor, Schichtbeginn hinter dem Horizont: die Abfrage filtert nach dem Beginn -
+        // der Termin konnte nicht in der Lesung stehen.
+        assertEquals(
+            BootAlarmValidation.AlarmUrteil.JENSEITS_DES_ABRUFS,
+            BootAlarmValidation.beurteile(
+                alarmTriggerTime = horizont - 10_000L,
+                alarmShiftId = "nacht",
+                alarmChecksum = "chk-alt",
+                terminChecksum = null,
+                weckpunkte = lesung,
+                alarmSchichtBeginn = horizont + 10_000L,
+                abrufHorizontEnde = horizont
+            )
+        )
+    }
+
+    @Test
+    fun `ohne bekannten Horizont gilt das bisherige Urteil`() {
+        assertEquals(
+            BootAlarmValidation.AlarmUrteil.LOESCHEN_TERMIN_WEG,
+            BootAlarmValidation.beurteile(
+                alarmTriggerTime = 150_000L,
+                alarmShiftId = "spaet",
+                alarmChecksum = "chk-alt",
+                terminChecksum = null,
+                weckpunkte = lesung,
+                alarmSchichtBeginn = 160_000L,
+                abrufHorizontEnde = null
+            )
+        )
+    }
+
+    @Test
+    fun `ein vorhandener Termin wird auch hinter dem Horizont normal beurteilt`() {
+        // Steht die Kennung in der Lesung, war der Termin gelesen - der Inhaltsvergleich gilt.
+        assertEquals(
+            BootAlarmValidation.AlarmUrteil.LOESCHEN_TERMIN_GEAENDERT,
+            BootAlarmValidation.beurteile(
+                alarmTriggerTime = 150_000L,
+                alarmShiftId = "spaet",
+                alarmChecksum = "chk-alt",
+                terminChecksum = "chk-neu",
+                weckpunkte = lesung,
+                alarmSchichtBeginn = 160_000L,
+                abrufHorizontEnde = horizont
+            )
+        )
+    }
+}

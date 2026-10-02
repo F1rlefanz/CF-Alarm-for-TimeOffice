@@ -135,7 +135,7 @@ class CalendarPreAlarmRefreshWorker(
                 return@withContext Result.success()
             }
 
-            val syncResult = entryPoint.alarmUseCase().syncAlarms(events, shiftConfig)
+            val syncResult = entryPoint.alarmUseCase().syncAlarms(events, shiftConfig, fetchOutcome.horizontEnde)
             if (syncResult.isSuccess) {
                 Logger.i(
                     LogTags.BACKGROUND_WORKER,

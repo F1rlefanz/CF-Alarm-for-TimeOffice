@@ -27,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
@@ -109,7 +110,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
          */
         vollstaendig: Boolean = false,
         alarmUseCase: IAlarmUseCase = mock<IAlarmUseCase>().apply {
-            stub { on { syncAlarms(any(), any()) } doReturn Result.success(emptyList()) }
+            stub { on { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList()) }
         }
     ): Umgebung {
         val store = MutableStateFlow(bestand)
@@ -169,7 +170,12 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             hueRuleUseCase = dagger.Lazy { hue },
             armierer = armierer,
             dndPrefs = dagger.Lazy { dnd },
-            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() }
+            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() },
+            // Nur fuer die Statuszeile je Schicht (#70) - die liest erst beim Abo, dieser Test abonniert sie nicht.
+            dimOverlayPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs>() },
+            hueConfigRepository = dagger.Lazy {
+                mock<com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository>()
+            }
         )
         return Umgebung(vm, dim, hue, store, dnd, armierer, alarmUseCase)
     }
@@ -364,7 +370,12 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             hueRuleUseCase = dagger.Lazy { hue },
             armierer = mock<ZeitkettenArmierer>(),
             dndPrefs = dagger.Lazy { mock<DndPrefs>() },
-            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() }
+            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() },
+            // Nur fuer die Statuszeile je Schicht (#70) - die liest erst beim Abo, dieser Test abonniert sie nicht.
+            dimOverlayPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs>() },
+            hueConfigRepository = dagger.Lazy {
+                mock<com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository>()
+            }
         )
         advanceUntilIdle()
 
@@ -545,7 +556,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         val spanne = arrayOf("AD1")
         val alarm = mock<IAlarmUseCase>()
         alarm.stub {
-            on { syncAlarms(any(), any()) } doAnswer {
+            on { syncAlarms(any(), any(), anyOrNull()) } doAnswer {
                 spanne[0] = "Abrufdienst"
                 Result.success(emptyList())
             }
@@ -570,7 +581,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
         advanceUntilIdle()
 
-        verifyBlocking(u.alarm) { syncAlarms(any(), any()) }
+        verifyBlocking(u.alarm) { syncAlarms(any(), any(), anyOrNull()) }
         assertEquals(listOf("Abrufdienst"), gesehen)
     }
 
@@ -594,7 +605,7 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
         u.vm.updateShiftConfig(ShiftConfig(definitions = listOf(def("1", "Abrufdienst"))))
         advanceUntilIdle()
 
-        verifyBlocking(u.alarm, never()) { syncAlarms(any(), any()) }
+        verifyBlocking(u.alarm, never()) { syncAlarms(any(), any(), anyOrNull()) }
         verifyBlocking(u.armierer) { armiere(any(), any(), any()) }
     }
 

@@ -4,6 +4,12 @@
 > Regel erzwungen hat, welche Messung sie belegt, welche Alternative verworfen wurde.
 > Jede Zeile hier hat einmal echten Schaden verhindert — im Zweifel gilt sie, nicht die Intuition.
 
+## Inhalt
+
+- Zurueck, BackHandler und die Onboarding-Gates
+- Navigationsschublade statt unterer Leiste (v1.38.0)
+- Gate-Kette als reine Funktion, „Später“ führt weiter (#132, 1.46.0)
+
 - **Zurueck gehoert dem `BackHandler` in `MainScreen`.** Die App navigiert ueber einen eigenen
   `NavigationState`, nicht ueber Navigation-Compose — es gibt **keinen Backstack**, der Zurueck
   von allein behandelt. Ohne Handler landet jeder Druck beim Activity-Default und **beendet die
@@ -12,7 +18,7 @@
   der `else`-Zweig faengt jeden Unterscreen ab, die Sonderfaelle stehen davor. **VIER Gates sind
   nicht optional:** `BatteryExemption`, `UnusedAppRestrictions` und `TimeOfficeHealthCheck` muessen
   wie „Spaeter" wirken, also ihr jeweiliges Dismissed-Flag schreiben
-  (`dismissBatteryPrompt()` bzw. `UnusedAppRestrictionsHelper.setDismissed`/
+  (über `ueberspringe(gate)` → `schreibeUebersprungen()`, früher `dismissBatteryPrompt()` bzw. `UnusedAppRestrictionsHelper.setDismissed`/
   `TimeOfficeHealthHelper.setPromptDismissed`) — sonst schickt `handleAuthenticationSuccess()` den
   Nutzer sofort zurueck und Zurueck sieht wirkungslos aus; `OEMWarning` muss wie „Verstanden" die
   Wartungskette anstossen (`finishOnboarding()`), sonst steht ein Nutzer ohne 6h-Wartung da.
@@ -22,14 +28,14 @@
   Predictive-Back besser.
 - **„Später" beim Akku-Gate heißt ERLEDIGT, nicht abgebrochen.** Die Gate-Kette in
   `handleAuthenticationSuccess()` geht weiter, sobald das Akku-Gate **aufgelöst** ist —
-  Ausnahme erteilt ODER vom Nutzer abgelehnt (`batteryGateResolved`). Vorher verlangten die Zweige
+  Ausnahme erteilt ODER vom Nutzer abgelehnt (`GateLage.akkuGateErledigt` (früher `batteryGateResolved`)). Vorher verlangten die Zweige
   3 und 4 beide `hasBatteryExemption`: wer „Später" tippte (ein ausdrücklich vorgesehener,
   persistierter Weg), fiel aus JEDEM Zweig heraus — Zweig 2 durch das Dismissed-Flag, Zweig 3/4
-  durch die fehlende Ausnahme —, und `proceedPastGates()` erreicht diesen Nutzer nie wieder. Der
+  durch die fehlende Ausnahme —, und `setzeGateKetteFort()` (früher `proceedPastGates()`) erreicht diesen Nutzer nie wieder. Der
   Schritt „App bei Nichtnutzung pausieren" wurde ihm damit NIE angeboten, obwohl genau dieser
   Schalter am 20.07.2026 die App force-gestoppt und dabei alle AlarmManager-Alarme gelöscht hat.
   Der Kurzschluss in `MainScreen` (spart den Async-Call, solange das Gate noch offen ist) rechnet
-  mit demselben `batteryGateResolved`. Eine Ablehnung des Akku-Gates ist eine Aussage über die
+  mit demselben `GateLage.akkuGateErledigt` (früher `batteryGateResolved`). Eine Ablehnung des Akku-Gates ist eine Aussage über die
   Akku-Ausnahme, keine über die davon unabhängigen Gates dahinter.
 - **`NavigationState.HueRuleConfig`/`DimmerRuleConfig` brauchen `cameFromSettingsList`, nicht nur
   `returnToTab`.** `HueRuleConfig` ist auf zwei Wegen erreichbar (direkt vom **HUE-Tab** „Neue
@@ -96,3 +102,27 @@
   Boolean, das an drei Stellen dupliziert ist. Ein dritter Einstiegspfad sprengt es und
   braeuchte erst einen `Herkunft`-Enum. Die Schublade enthaelt genau die sechs Bereiche.
 
+## Gate-Kette als reine Funktion, „Später“ führt weiter (#132, 1.46.0)
+
+**Schritt 1, verhaltensgleich.** Der Rückweg aus `HueRuleConfig`/`DimmerRuleConfig` stand dreimal im
+Code (BackHandler, zwei Screen-Lambdas, `navigateBackToMain()`) — die Falle von v1.22.0 in neuer Form.
+Heute löst nur `navigateBackFrom(state)` auf; Screens übergeben den GERENDERTEN Zustand, damit ein
+zweiter Tipp auf Speichern zum selben Ziel führt. Die Gate-Entscheidung liegt in
+`naechsterGateSchritt(GateLage, GateEinstieg)`; gelesen wird lazy in Kettenreihenfolge in
+`leseGateLage()`. Wer einen Einstieg ein weiteres Feld befragen lässt, muss es dort auch lesen, sonst
+sieht die Funktion den Neutralwert. `ueberspringe(GateSchritt.Ueberspringbar)` ist ein erschöpfendes
+`when`: ein viertes überspringbares Gate zwingt den Compiler, sein Dismissed-Flag zu ergänzen.
+
+**Schritt 2, Verhaltensänderung.** Bis 1.45 führte „Später“/Zurück nach Home; der Gate-Effekt hängt
+nur an Anmeldung und Kalendern, also kam pro App-Start höchstens EIN Gate. Der OEM-Hinweis war nur
+über den aktiven Weg erreichbar und blieb nach „Später“ für immer aus; nach erneuter Kalenderauswahl
+kam das Akku-Gate trotz „Später“ wieder. Heute setzt `GateEinstieg.SPAETER_*` die Kette sofort fort.
+Das Flag wird VORHER abgewartet geschrieben, weil der automatische Weg es liest. Schleifenfreiheit
+hängt bewusst NICHT am Flag: `SPAETER_*` schaut in der festen Reihenfolge Kalender → Akku → Unused →
+TimeOffice → OEM nur nach vorne. Der OEM-Merker-Write fängt Schreibfehler selbst (Review 3:0: eine
+IOException hätte die App sonst bei jedem Start abstürzen lassen).
+
+**Am Emulator belegt (02.10.2026):** Neukunden-Durchlauf mit `pm clear`: „Später“ beim Akku → sofort
+Unused-Gate; Zurück dort → Home, 6h-Kette gestellt. Damit das Unused-Gate offen ist, muss die
+Ausnahme auf Uid- UND Paketebene stehen: `cmd appops set --uid <pkg> AUTO_REVOKE_PERMISSIONS_IF_UNUSED
+allow` (der Uid-Modus hat Vorrang). TimeOffice-Gate erscheint nur, wenn TimeOffice installiert ist.

@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 
 import android.content.Context
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.calendar.PendingDeselectionCleanupStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
@@ -30,6 +31,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
@@ -168,7 +170,8 @@ class CalendarViewModelDeselectionCleanupTest {
             masterPausePrefs = masterPausePrefs,
             pendingDeselectionCleanupStore = pendingCleanupStore,
             // Nur fuer die stille Statuszeile - fuer diesen Test ohne Belang.
-            feedNeueinlesenStore = FakeFeedNeueinlesenStore()
+            feedNeueinlesenStore = FakeFeedNeueinlesenStore(),
+            kalenderVorausschauPrefs = FakeKalenderVorausschauPrefs()
         )
     }
 
@@ -184,7 +187,7 @@ class CalendarViewModelDeselectionCleanupTest {
         selectedIds.value = setOf("cal-a")
         advanceUntilIdle()
         // Vorbedingung: aus dem Kalender sind Wecker entstanden.
-        verify(alarmUseCase).syncAlarms(eq(events), any())
+        verify(alarmUseCase).syncAlarms(eq(events), any(), anyOrNull())
 
         selectedIds.value = emptySet()
         advanceUntilIdle()
@@ -192,7 +195,7 @@ class CalendarViewModelDeselectionCleanupTest {
         // Die leere Liste ist hier die Nutzerentscheidung: syncAlarms raeumt in diesem Zweig die
         // kalenderbasierten Alarme UND die Schichtspannen (Dimmer-/DND-Fenster), schont aber
         // manuelle Wecker (keepManualAlarms).
-        verify(alarmUseCase).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        verify(alarmUseCase).syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
     }
 
     /**
@@ -207,7 +210,7 @@ class CalendarViewModelDeselectionCleanupTest {
 
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
     }
 
     /**
@@ -226,7 +229,7 @@ class CalendarViewModelDeselectionCleanupTest {
         selectedIds.value = emptySet()
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
     }
 
     /**
@@ -245,7 +248,7 @@ class CalendarViewModelDeselectionCleanupTest {
         selectedIds.value = emptySet()
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
     }
 
     /**
@@ -266,7 +269,7 @@ class CalendarViewModelDeselectionCleanupTest {
             selectedIds.value = emptySet()
             advanceUntilIdle()
 
-            verify(alarmUseCase, never()).syncAlarms(any(), any())
+            verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
         }
 
     /**
@@ -284,7 +287,7 @@ class CalendarViewModelDeselectionCleanupTest {
         selectedIds.value = emptySet()
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(any(), any())
+        verify(alarmUseCase, never()).syncAlarms(any(), any(), anyOrNull())
     }
 
     /**
@@ -308,7 +311,7 @@ class CalendarViewModelDeselectionCleanupTest {
         selectedIds.value = setOf("cal-a")
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
     }
 
     // ------------------------------------------------------------------------------------------
@@ -381,7 +384,7 @@ class CalendarViewModelDeselectionCleanupTest {
         runTest(dispatcher) {
             val alarmUseCase = mock<IAlarmUseCase>()
             alarmUseCase.stub {
-                on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+                on { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
             }
             val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
             observeUiState(viewModel)
@@ -407,7 +410,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `bei nicht lesbarer Schicht-Konfiguration erfaehrt der Nutzer es`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+            on { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
         }
         val viewModel = buildViewModel(alarmUseCase = alarmUseCase, shiftConfigReadFails = true)
         observeUiState(viewModel)
@@ -418,7 +421,7 @@ class CalendarViewModelDeselectionCleanupTest {
         advanceUntilIdle()
 
         // Nicht geraeumt (fail-safe, richtig so) - aber eben nicht stillschweigend.
-        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
         assertEquals(1, viewModel.uiState.value.deselectionCleanupFailures)
     }
 
@@ -428,7 +431,7 @@ class CalendarViewModelDeselectionCleanupTest {
         alarmUseCase.stub {
             // Nur das Raeumen scheitert; das erste Anlegen aus den Events gelingt, sonst haenge
             // die Meldung womoeglich am falschen Vorgang.
-            on { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any(), anyOrNull()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 if (passedEvents.isEmpty()) {
@@ -470,7 +473,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `ein gelungenes Aufraeumen meldet keinen Fehler`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            on { syncAlarms(any(), any()) } doReturn Result.success(emptyList())
+            on { syncAlarms(any(), any(), anyOrNull()) } doReturn Result.success(emptyList())
         }
         val viewModel = buildViewModel(alarmUseCase = alarmUseCase)
         observeUiState(viewModel)
@@ -480,7 +483,7 @@ class CalendarViewModelDeselectionCleanupTest {
         selectedIds.value = emptySet()
         advanceUntilIdle()
 
-        verify(alarmUseCase).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        verify(alarmUseCase).syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
         // Haelt zugleich fest, dass der Zeitstempel-Schreiber (AlarmMaintenanceService, hier mit
         // einem Context-Mock nicht erreichbar) den Erfolg NICHT in eine Fehlermeldung verwandelt:
         // die Wecker sind geraeumt, egal ob die Buchhaltung dahinter gelingt.
@@ -529,7 +532,7 @@ class CalendarViewModelDeselectionCleanupTest {
         val alarmUseCase = mock<IAlarmUseCase>()
         var raeumenScheitert = true
         alarmUseCase.stub {
-            on { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any(), anyOrNull()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 when {
@@ -559,7 +562,7 @@ class CalendarViewModelDeselectionCleanupTest {
 
         // Zweimal geraeumt - der Retry hat den Lauf wirklich noch einmal angestossen.
         verify(alarmUseCase, times(2))
-            .syncAlarms(eq(emptyList<CalendarEvent>()), any())
+            .syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
         assertEquals(
             "Nach dem gelungenen zweiten Anlauf ist der Zustand behoben",
             0,
@@ -575,7 +578,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `ein gescheiterter zweiter Anlauf meldet sich erneut`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            on { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any(), anyOrNull()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 if (passedEvents.isEmpty()) {
@@ -619,7 +622,7 @@ class CalendarViewModelDeselectionCleanupTest {
         viewModel.retryDeselectionCleanup()
         advanceUntilIdle()
 
-        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any())
+        verify(alarmUseCase, never()).syncAlarms(eq(emptyList<CalendarEvent>()), any(), anyOrNull())
         assertEquals(2, viewModel.uiState.value.deselectionCleanupFailures)
     }
 
@@ -632,7 +635,7 @@ class CalendarViewModelDeselectionCleanupTest {
     fun `eine neue Kalenderauswahl loest den Hinweis auf`() = runTest(dispatcher) {
         val alarmUseCase = mock<IAlarmUseCase>()
         alarmUseCase.stub {
-            on { syncAlarms(any(), any()) } doAnswer { invocation ->
+            on { syncAlarms(any(), any(), anyOrNull()) } doAnswer { invocation ->
                 @Suppress("UNCHECKED_CAST")
                 val passedEvents = invocation.arguments[0] as List<CalendarEvent>
                 if (passedEvents.isEmpty()) {

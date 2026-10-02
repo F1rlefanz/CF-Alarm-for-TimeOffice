@@ -656,3 +656,8 @@ Zwei Fallen, die beim Nachstellen Zeit gekostet haben und beim nächsten Mal Zei
   so abgeschnittenen Dump ist kein Befund — gezielt greppen statt filtern und blättern.
 - **Ein großer Zeitsprung lässt regulären Lauf UND Wiederanlauf-Wachhund gemeinsam fällig werden**;
   jede Zeile steht dann doppelt im Log. Das ist der `ServiceRunTracker`-Fall, kein Doppel-Planer.
+
+- **`BootAlarmValidation.beurteile` kennt seit #51 den Abruf-Horizont.** Fehlt die Kennung UND liegt
+  der Schichtbeginn `>=` Horizont, lautet das Urteil `JENSEITS_DES_ABRUFS`: wiederherstellen, nichts
+  löschen, nichts melden. Ohne das räumte ein Neustart nach einer verkleinerten Vorausschau alle
+  Wecker hinter dem neuen Fenster ab — dieselbe Regel wie `syncAlarms()` Schritt 1.

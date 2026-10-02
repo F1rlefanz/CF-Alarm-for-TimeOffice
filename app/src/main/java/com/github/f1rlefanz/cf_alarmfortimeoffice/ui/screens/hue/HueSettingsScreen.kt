@@ -187,7 +187,12 @@ fun HueSettingsScreen(
                     EmptyRulesCard(onCreateNewRule)
                 }
             } else {
-                items(uiState.scheduleRules) { rule ->
+                // key = id, nicht die Position: HueRuleCard haelt seinen Loeschdialog per
+                // rememberSaveable. Ohne Schluessel gehoert ein offener Dialog nach dem Wegfall
+                // einer Regel davor ploetzlich zur NAECHSTEN Regel - "Loeschen" traefe die
+                // falsche. Doppelte ids lehnt HueRuleUseCase beim Anlegen ab (gleiches Muster
+                // wie DimmerSettingsScreen).
+                items(uiState.scheduleRules, key = { it.id }) { rule ->
                     HueRuleCard(
                         rule = rule,
                         unresolvedTargets = uiState.unresolvedTargets.filter { it.ruleId == rule.id },

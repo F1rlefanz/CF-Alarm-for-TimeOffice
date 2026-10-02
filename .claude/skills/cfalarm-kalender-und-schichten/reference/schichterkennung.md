@@ -251,3 +251,6 @@ Stufen: `observeAvailableShifts()` hält die Liste reaktiv (bei gleicher `id` wi
 übernommen, die angezeigte Weckzeit immer nachgerechnet), und unmittelbar vor dem Armieren wird die
 Definition über `getCurrentShiftConfig()` frisch aufgelöst — die armierte Zeit stammt aus dieser
 Lesung, nicht aus dem Anzeigezustand.
+
+**Statuszeile je Schicht (#70):** bindet über `definition.name` (nie Keywords) an Dimm-, Hue- und
+DND-Regeln, rein lesend — kein Eintrag im Umbenennungs-Nachzug nötig, weil nichts gespeichert wird.

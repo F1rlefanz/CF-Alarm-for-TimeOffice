@@ -1,6 +1,7 @@
 package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -185,7 +186,11 @@ class AlarmUseCaseDeltaSyncTest {
         // Voreinstellung "noch kein vollstaendiger Sync bekannt" = die meldende Richtung, also
         // genau das Verhalten von vor der Horizont-Unterscheidung.
         horizonStore: FakeSyncHorizonStore = FakeSyncHorizonStore(),
-        feedStore: FakeFeedNeueinlesenStore = FakeFeedNeueinlesenStore()
+        feedStore: FakeFeedNeueinlesenStore = FakeFeedNeueinlesenStore(),
+        // Rueckfall-Vorausschau, wenn ein Test syncAlarms() OHNE Abruf-Horizont ruft. Die Termine
+        // hier liegen 2035 - die Voreinstellung muss sie abdecken (siehe Fake).
+        vorausschauPrefs: FakeKalenderVorausschauPrefs =
+            FakeKalenderVorausschauPrefs(FakeKalenderVorausschauPrefs.UEBER_ALLE_TESTDATEN_TAGE)
     ): AlarmUseCase =
         AlarmUseCase(
             repo,
@@ -200,7 +205,8 @@ class AlarmUseCaseDeltaSyncTest {
             spanStore,
             horizonStore,
             feedStore,
-            keineFreienTage()
+            keineFreienTage(),
+            vorausschauPrefs
         )
 
     private fun mockManager(): AlarmManagerService {
@@ -754,6 +760,150 @@ class AlarmUseCaseDeltaSyncTest {
 
         assertTrue("bei ausdruecklicher Abschaltung bleibt nichts", repo.current.isEmpty())
         verify(manager).cancelSystemAlarm(77)
+    }
+
+    // --- #51: verkleinerte Vorausschau - nicht gelesen ist nicht geloescht ---
+
+    private fun millis(t: LocalDateTime): Long = t.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    /** Ein bestehender Kalenderwecker mit echtem Schichtbeginn (danach filtert der Abruf). */
+    private fun alarmAm(id: Int, eventId: String, schichtBeginn: LocalDateTime) = AlarmInfo(
+        id = id,
+        shiftId = "early",
+        shiftName = "Frueh",
+        triggerTime = millis(schichtBeginn.minusMinutes(30)),
+        formattedTime = "x",
+        eventId = eventId,
+        eventChecksum = "old",
+        shiftStartTime = millis(schichtBeginn),
+        shiftEndTime = millis(schichtBeginn.plusHours(8))
+    )
+
+    /**
+     * DER KERNFALL VON #51: Der Nutzer verkleinert die Vorausschau (28 -> 9 Tage). Die neue Liste
+     * ist VOLLSTAENDIG - aber nur fuer 9 Tage. Ein bestehender Wecker an Tag 20 hat darin keinen
+     * Kandidaten; ohne die Horizont-Sperre galt er als "Termin geloescht": abgebrochen, geloescht
+     * und als "Schicht entfernt" gemeldet. Er muss bleiben - unberuehrt, ungemeldet. Ein Wecker
+     * INNERHALB des Fensters ohne Termin ist dagegen weiter eine echte Streichung.
+     */
+    @Test
+    fun `verkleinerte Vorausschau - Wecker hinter dem Abruf-Horizont bleiben und werden nicht gemeldet`() = runTest {
+        val evA = futureEvent("evA", "F", 1)
+        val innerhalb = alarmAm(id = 301, eventId = "evGestrichen", schichtBeginn = LocalDateTime.of(2035, 6, 3, 6, 0))
+        val dahinter = alarmAm(id = 302, eventId = "evTag20", schichtBeginn = LocalDateTime.of(2035, 6, 20, 6, 0))
+        val repo = FakeAlarmRepository(listOf(existingAlarm(id = evA.id.hashCode(), eventId = "evA"), innerhalb, dahinter))
+        val manager = mockManager()
+        val notifier = FakeShiftChangeNotifier()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val horizont = millis(LocalDateTime.of(2035, 6, 10, 0, 0))
+
+        val result = useCase(repo, manager, config, notifier = notifier)
+            .syncAlarms(listOf(evA), config, abrufHorizontEnde = horizont)
+
+        assertTrue(result.isSuccess)
+        assertNotNull("Der Wecker hinter dem Horizont muss bleiben", repo.current.find { it.id == 302 })
+        verify(manager, never()).cancelSystemAlarm(302)
+        assertTrue(
+            "Er gehoert weiter zum Bestand, den syncAlarms() zurueckgibt",
+            result.getOrThrow().any { it.id == 302 }
+        )
+        assertNull("Die echte Streichung INNERHALB des Fensters wird weiter geloescht", repo.current.find { it.id == 301 })
+        verify(manager).cancelSystemAlarm(301)
+        assertEquals("Gemeldet wird nur die echte Streichung", 1, notifier.deletedCount)
+    }
+
+    /** Grenze: die API filtert `timeMax` exklusiv - ein Beginn GENAU auf dem Horizont ist nicht gelesen. */
+    @Test
+    fun `ein Wecker genau auf dem Abruf-Horizont gilt als nicht gelesen`() = runTest {
+        val evA = futureEvent("evA", "F", 1)
+        val beginn = LocalDateTime.of(2035, 6, 10, 6, 0)
+        val aufDerGrenze = alarmAm(id = 401, eventId = "evGrenze", schichtBeginn = beginn)
+        val repo = FakeAlarmRepository(listOf(existingAlarm(id = evA.id.hashCode(), eventId = "evA"), aufDerGrenze))
+        val manager = mockManager()
+        val notifier = FakeShiftChangeNotifier()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        useCase(repo, manager, config, notifier = notifier)
+            .syncAlarms(listOf(evA), config, abrufHorizontEnde = millis(beginn))
+
+        assertNotNull(repo.current.find { it.id == 401 })
+        assertEquals(0, notifier.deletedCount)
+    }
+
+    /**
+     * Auch der Raeumzweig "keine passende Schicht" schont, was hinter dem Abruf liegt: nach einer
+     * verkleinerten Vorausschau reichen ein paar schichtfreie Tage im kleinen Fenster (hier nur ein
+     * Arzttermin), und ohne die Sperre waeren alle Wecker dahinter lautlos geloescht worden.
+     */
+    @Test
+    fun `kein Schichttreffer im kleinen Fenster raeumt nur innerhalb des Abruf-Horizonts`() = runTest {
+        val innerhalb = alarmAm(id = 501, eventId = "evInnen", schichtBeginn = LocalDateTime.of(2035, 6, 3, 6, 0))
+        val dahinter = alarmAm(id = 502, eventId = "evDahinter", schichtBeginn = LocalDateTime.of(2035, 6, 20, 6, 0))
+        val repo = FakeAlarmRepository(listOf(innerhalb, dahinter))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        val result = useCase(repo, manager, config).syncAlarms(
+            listOf(futureEvent("evArzt", "Zahnarzt", 2)),
+            config,
+            abrufHorizontEnde = millis(LocalDateTime.of(2035, 6, 10, 0, 0))
+        )
+
+        assertTrue(result.isSuccess)
+        assertNull(repo.current.find { it.id == 501 })
+        assertNotNull("Hinter dem Horizont bleibt der Wecker", repo.current.find { it.id == 502 })
+        verify(manager, never()).cancelSystemAlarm(502)
+    }
+
+    /**
+     * Die ausdrueckliche Kalender-ABWAHL (leere Liste) raeumt dagegen weiter ALLES Kalenderbasierte -
+     * auch hinter dem Horizont. Dort gibt es keine Liste, die etwas "nicht gelesen" haben koennte.
+     */
+    @Test
+    fun `leere Liste raeumt auch Wecker hinter dem Abruf-Horizont`() = runTest {
+        val dahinter = alarmAm(id = 601, eventId = "evDahinter", schichtBeginn = LocalDateTime.of(2035, 6, 20, 6, 0))
+        val repo = FakeAlarmRepository(listOf(dahinter))
+        val manager = mockManager()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+
+        useCase(repo, manager, config).syncAlarms(
+            emptyList(),
+            config,
+            abrufHorizontEnde = millis(LocalDateTime.of(2035, 6, 10, 0, 0))
+        )
+
+        assertTrue(repo.current.isEmpty())
+        verify(manager).cancelSystemAlarm(601)
+    }
+
+    /**
+     * Ohne mitgelieferten Horizont gilt "Sync-Beginn + eingestellte Vorausschau" - dieselbe
+     * Rechnung wie beim Abruf. Mit 7 Tagen liegt ein Wecker in drei Wochen dahinter und bleibt.
+     */
+    @Test
+    fun `ohne Abruf-Horizont gilt die eingestellte Vorausschau als Grenze`() = runTest {
+        val inDreiWochen = LocalDateTime.now().plusDays(21).withHour(6).withMinute(0).withSecond(0).withNano(0)
+        val dahinter = alarmAm(id = 701, eventId = "evDreiWochen", schichtBeginn = inDreiWochen)
+        val morgen = LocalDateTime.now().plusDays(1).withHour(6).withMinute(0).withSecond(0).withNano(0)
+        val evMorgen = CalendarEvent(
+            id = "evMorgen",
+            title = "F",
+            startTime = morgen,
+            endTime = morgen.plusHours(8),
+            calendarId = "test"
+        )
+        val repo = FakeAlarmRepository(listOf(dahinter))
+        val manager = mockManager()
+        val notifier = FakeShiftChangeNotifier()
+        val config = ShiftConfig(autoAlarmEnabled = true, definitions = listOf(earlyShift))
+        val prefs = FakeKalenderVorausschauPrefs(tage = 7)
+
+        useCase(repo, manager, config, notifier = notifier, vorausschauPrefs = prefs)
+            .syncAlarms(listOf(evMorgen), config)
+
+        assertNotNull(repo.current.find { it.id == 701 })
+        assertEquals(0, notifier.deletedCount)
+        assertEquals("Die Einstellung wird fuer den Rueckfall genau einmal gelesen", 1, prefs.leseAufrufe)
     }
 
 }

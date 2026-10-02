@@ -3,11 +3,14 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.f1rlefanz.cf_alarmfortimeoffice.di.state.CalendarStateHolder
+import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRule
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.ZeitkettenArmierer
 import com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.error.ErrorHandler
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.HueSchedule
+import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.HueRuleUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.CalendarEvent
 import com.github.f1rlefanz.cf_alarmfortimeoffice.model.ShiftConfig
@@ -22,11 +25,20 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,7 +94,10 @@ class ShiftViewModel @Inject constructor(
     private val calendarStateHolder: CalendarStateHolder,
     private val errorHandler: ErrorHandler,
     /**
-     * Nur fuer den Muster-Nachzug beim Umbenennen einer Schicht ([zieheRegelmusterNach]).
+     * Fuer den Muster-Nachzug beim Umbenennen einer Schicht ([zieheRegelmusterNach]); der
+     * Dimm-Teil zusaetzlich LESEND fuer die Statuszeile [schichtFolgen] (Regelliste und
+     * `findRuleForShift` - dieselbe Auswahl wie zur Laufzeit). [hueRuleUseCase] bleibt der
+     * Statuszeile bewusst fern, siehe [hueConfigRepository].
      *
      * BEWUSST `dagger.Lazy`, wie in `CFAlarmApplication`: dieses ViewModel entsteht beim
      * App-Start. Direkt injiziert wuerde damit der komplette Hue-Graph (ApiClient/OkHttp mit
@@ -110,15 +125,31 @@ class ShiftViewModel @Inject constructor(
      * eingebauten Nacht-Standard ist auch seine Namensliste entfallen. Der Dimmer bindet nur
      * noch ueber `DimRule.shiftPattern`, und das zieht `dimRuleUseCase` oben nach.
      *
+     * Zusaetzlich LESEND fuer die Statuszeile [schichtFolgen]: die beiden Quellen-Schalter und
+     * die Dienstzeit-Ausnahmen.
+     *
      * Ebenfalls `dagger.Lazy`, aus demselben Grund wie oben: dieses ViewModel entsteht beim
-     * App-Start, und die Klasse soll erst angefasst werden, wenn wirklich umbenannt wird.
+     * App-Start, und die Klasse soll erst angefasst werden, wenn wirklich umbenannt wird oder
+     * jemand die Statuszeile abonniert.
      */
     private val dndPrefs: dagger.Lazy<DndPrefs>,
     /**
      * Nur LESEND, fuer [ShiftUiState.letzterSchichtStand]. `dagger.Lazy` wie oben: der Read
      * passiert erst nach der ersten Event-Emission, nicht beim Bauen des ViewModels.
      */
-    private val shiftSpanStore: dagger.Lazy<ShiftSpanStore>
+    private val shiftSpanStore: dagger.Lazy<ShiftSpanStore>,
+    /**
+     * Nur LESEND, fuer die Statuszeile [schichtFolgen]: der Dimmer-Hauptschalter (`dim_enabled`).
+     * `dagger.Lazy` wie oben - angefasst erst beim Abo.
+     */
+    private val dimOverlayPrefs: dagger.Lazy<DimOverlayPrefs>,
+    /**
+     * Nur LESEND, fuer die Statuszeile [schichtFolgen]: Hue-Regeln und ob eine Bridge
+     * eingerichtet ist. BEWUSST das Repository und NICHT `hueRuleUseCase.get()`: das Repository
+     * liest nur den `@HueDataStore`, der Use-Case dagegen baut den Lampen- und HTTP-Graphen
+     * (OkHttp) - fuer eine Anzeige, die keine Bridge braucht.
+     */
+    private val hueConfigRepository: dagger.Lazy<IHueConfigRepository>
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShiftUiState())
@@ -134,6 +165,50 @@ class ShiftViewModel @Inject constructor(
      */
     @Volatile
     private var selfWrittenConfig: ShiftConfig? = null
+
+    /**
+     * Was jede AKTIVE Schicht ausserhalb des Weckers ausloest - die Statuszeile
+     * "Dimmen: … · Licht: … · DND: …" im `ShiftConfigScreen` (Issue #70). Schluessel ist die
+     * `ShiftDefinition.id`; eine DEAKTIVIERTE Definition fehlt bewusst (ihre Karte sagt schon
+     * "kein Dimmer- und kein DND-Fenster", "Dimmen: eigene Regel" widerspraeche dem).
+     *
+     * GELESEN WIRD NUR BEIM ABO (`WhileSubscribed`), nichts beim Bauen: jede Quelle steckt in
+     * einem `flow {}`, das sein `dagger.Lazy` erst beim Sammeln anfasst. Dieses ViewModel entsteht
+     * beim App-Start, und ein frueher CE-Store-Read waere genau der fremde Leser, vor dem
+     * CLAUDE.md ("Persistenz") warnt.
+     *
+     * Lesefehler: Dimm-Regeln und DND degradieren in ihren Stores auf "leer"/"aus" - dasselbe,
+     * was die Laufzeit dann tut. Hue liefert ein `Result`; ein Fehlschlag wird "nicht lesbar".
+     *
+     * MUSS VOR dem `init{}`-Block stehen (wie [selfWrittenConfig]) und nach [_uiState].
+     */
+    val schichtFolgen: StateFlow<Map<String, SchichtFolgen>> = combine(
+        _uiState.map { it.currentShiftConfig }.distinctUntilChanged(),
+        dimmerStand(),
+        hueStand(),
+        dndStand()
+    ) { config, dim, hue, dnd ->
+        config?.definitions.orEmpty()
+            .filter { it.isEnabled }
+            .associate { definition ->
+                definition.id to ermittleSchichtFolgen(
+                    definition = definition,
+                    dimAn = dim.an,
+                    dimRegeln = dim.regeln,
+                    ruleForShift = dim.ruleForShift,
+                    hueRegeln = hue.regeln,
+                    hueKonfiguriert = hue.konfiguriert,
+                    dndToggles = dnd.toggles,
+                    dndAusgenommen = dnd.ausgenommen
+                )
+            }
+    }
+        .catch { e ->
+            // Reine Anzeige: lieber keine Zeile als ein abgestuerzter Screen. Kein Wecker haengt daran.
+            Logger.w(LogTags.SHIFT, "Statuszeile je Schicht nicht berechenbar", e)
+            emit(emptyMap())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     init {
         loadShiftConfig()
@@ -705,6 +780,8 @@ class ShiftViewModel @Inject constructor(
             // Events aus dem CalendarStateHolder - aber NUR, wenn sie nachweislich der vollstaendige
             // Bestand sind (dort liegt oft das Lazy-Praefix). Hergang: kalender-datenfluss.md.
             val currentEvents = calendarStateHolder.events.value
+            // Der Horizont reist mit der Liste (#51) - zusammen mit ihr gelesen, nicht spaeter.
+            val currentHorizontEnde = calendarStateHolder.horizontEnde.value
 
             if (currentEvents.isEmpty()) {
                 Logger.w(LogTags.ALARM, "⚠️ CONFIG-UPDATE: No events available for alarm sync")
@@ -726,7 +803,7 @@ class ShiftViewModel @Inject constructor(
             // Orchestrator: syncAlarms erkennt die Schichten selbst (frische Engine dank
             // Cache-Invalidierung in saveShiftConfig) und setzt die System-Alarme intern.
             // Kein Vor-Recognize und kein delay()-Hack mehr noetig.
-            alarmUseCase.syncAlarms(currentEvents, config)
+            alarmUseCase.syncAlarms(currentEvents, config, currentHorizontEnde)
                 .onSuccess { alarms ->
                     Logger.business(LogTags.ALARM, "✅ CONFIG-UPDATE: Alarm-Sync erfolgreich - ${alarms.size} Alarme aktiv")
                 }
@@ -742,6 +819,51 @@ class ShiftViewModel @Inject constructor(
             // Scope.
             armiereZeitkettenNeu(nacharmieren)
         }
+    }
+
+    // --- Quellen der Statuszeile [schichtFolgen] ---
+    //
+    // Jede Quelle ist ein kaltes `flow {}`: das `dagger.Lazy` wird erst beim SAMMELN angefasst,
+    // also erst, wenn der ShiftConfigScreen die Zeile abonniert - nie beim Bauen des ViewModels.
+
+    private class DimmerStand(
+        val an: Boolean,
+        val regeln: List<DimRule>,
+        val ruleForShift: (String) -> DimRule?
+    )
+
+    private class HueStand(val konfiguriert: Boolean, val regeln: Result<List<HueSchedule>>)
+
+    private class DndStand(val toggles: DndPrefs.Toggles, val ausgenommen: Set<String>)
+
+    /** Hauptschalter + Regeln; `ruleForShift` ist `findRuleForShift` ueber genau diese Liste. */
+    private fun dimmerStand(): Flow<DimmerStand> = flow {
+        val useCase = dimRuleUseCase.get()
+        emitAll(
+            combine(dimOverlayPrefs.get().toggles, useCase.rules) { toggles, regeln ->
+                DimmerStand(toggles.dimEnabled, regeln) { name -> useCase.findRuleForShift(name, regeln) }
+            }
+        )
+    }
+
+    /**
+     * Bridge-Konfiguration + Regeln. Fuer die Regeln gibt es keinen Flow; sie liegen aber im
+     * SELBEN `@HueDataStore` wie die Konfiguration, und `getConfiguration()` emittiert bei jeder
+     * Aenderung dieses Stores (dort steht kein `distinctUntilChanged`) - eine gespeicherte oder
+     * nachgezogene Regel liest sich damit von selbst neu ein, ohne Ausloeser vom Screen.
+     */
+    private fun hueStand(): Flow<HueStand> = flow {
+        val repo = hueConfigRepository.get()
+        emitAll(
+            repo.getConfiguration().map { config ->
+                HueStand(config.isConfigured, repo.getScheduleRules())
+            }
+        )
+    }
+
+    private fun dndStand(): Flow<DndStand> = flow {
+        val prefs = dndPrefs.get()
+        emitAll(combine(prefs.toggles, prefs.shiftExcludedShifts) { t, a -> DndStand(t, a) })
     }
 
     fun clearError() {

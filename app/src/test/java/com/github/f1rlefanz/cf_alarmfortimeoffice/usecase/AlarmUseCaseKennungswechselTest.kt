@@ -2,6 +2,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.usecase
 
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeFeedNeueinlesenStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FeedNeueinlesenStand
+import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeKalenderVorausschauPrefs
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.FakeSyncHorizonStore
 import com.github.f1rlefanz.cf_alarmfortimeoffice.alarm.ShiftChangeNotifier
 import com.github.f1rlefanz.cf_alarmfortimeoffice.masterpause.MasterPausePrefs
@@ -272,7 +273,8 @@ class AlarmUseCaseKennungswechselTest {
         mock<ShiftSpanStore>(),
         FakeSyncHorizonStore(),
         feedStore,
-        keineFreienTage()
+        keineFreienTage(),
+        FakeKalenderVorausschauPrefs(FakeKalenderVorausschauPrefs.UEBER_ALLE_TESTDATEN_TAGE)
     )
 
     // --- Tests ---

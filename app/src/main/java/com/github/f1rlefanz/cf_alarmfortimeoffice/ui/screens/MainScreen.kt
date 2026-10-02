@@ -18,8 +18,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateEinstieg
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateLage
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.einstiegNachSpaeter
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.naechsterGateSchritt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.wirdAngezeigtIn
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -34,43 +40,177 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Gemeinsamer Abschluss, sobald Akku-Ausnahme UND Unused-App-Restrictions erledigt oder
- * uebersprungen sind: zum vollflaechigen OEM-Warnscreen navigieren (falls das Geraet betroffen
- * UND der Screen fuer diesen Herstellertyp noch nie gezeigt wurde) oder direkt die Wartungskette
-  * anstossen. Einziger verbliebener OEM-Hinweis-Weg: die herstellerspezifischen Schritte gibt es
-  * nur im Screen (siehe [OEMWarningScreen]), daher konvergiert alles hierher.
- * Aufgerufen von jeder Stelle, die "von einem Gate zurueckgekehrt" ist: Battery-Settings-Result,
- * Unused-App-Restrictions-Settings-Result, und CalendarSelectionScreen.onDone.
+ * Liest die [GateLage] fuer [einstieg] - die EINZIGE Stelle, an der die Gate-Bedingungen gelesen
+ * werden (vorher stand die Unused-App-Bedingung dreimal, die TimeOffice-Bedingung zweimal im
+ * Code). Entschieden wird in [naechsterGateSchritt], nicht hier.
+ *
+ * Bewusst LAZY und in derselben Reihenfolge wie die Kette selbst (Kalender -> Akku -> Unused ->
+ * TimeOffice -> OEM): es wird nur gelesen, was der Einstieg bis zu seiner Entscheidung
+ * tatsaechlich braucht.
+ *  - Solange das Kalender- oder Akku-Gate offen ist, unterbleibt der asynchrone
+ *    Unused-App-Check (ListenableFuture).
+ *  - Nach der Kalenderauswahl ohne Akku-Ausnahme wird zuerst nur das "Spaeter"-Flag gelesen.
+ *  - Der OEM-Merker wird erst gelesen, wenn TimeOffice nichts mehr will.
+ *  - Ein `SPAETER_*`-Einstieg liest erst AB dem Gate hinter dem uebersprungenen (siehe
+ *    [naechsterGateSchritt]) - dessen eigenes Flag spielt fuer die laufende Kette keine Rolle.
+ * Ein ungelesenes Feld steht auf seinem Neutralwert und wird fuer diesen Einstieg von
+ * [naechsterGateSchritt] nicht ausgewertet (siehe [GateLage]). Wer einen Einstieg ein weiteres
+ * Feld befragen laesst, muss es hier auch lesen.
+ *
+ * @param kalenderGewaehlt nur fuer [GateEinstieg.AUTO]; die uebrigen Einstiege fragen es nicht.
  */
-private suspend fun proceedPastGates(
+private suspend fun leseGateLage(
     context: Context,
-    navigationViewModel: NavigationViewModel
-) {
-    // TimeOffice-Gate: CFAlarms Alarme haengen an einem Kalender, den TimeOffice lokal befuellt
-    // (siehe TimeOfficeHealthHelper). Nur pruefbar (Akku-Ausnahme fuer ein fremdes Package), wenn
-    // TimeOffice ueberhaupt installiert ist - sonst irrelevant fuer diesen Nutzer.
-    if (TimeOfficeHealthHelper.isInstalled(context) &&
-        !TimeOfficeHealthHelper.isBatteryExempted(context) &&
-        !TimeOfficeHealthHelper.isPromptDismissed(context)
-    ) {
-        Logger.business(LogTags.NAVIGATION, "Gates resolved -> TimeOffice Health Check")
-        navigationViewModel.navigateToTimeOfficeHealthCheck()
-        return
+    einstieg: GateEinstieg,
+    kalenderGewaehlt: Boolean = true
+): GateLage = when (einstieg) {
+    GateEinstieg.AUTO -> {
+        val akku = GateLage(
+            kalenderGewaehlt = kalenderGewaehlt,
+            akkuAusnahme = BatteryOptimizationHelper.isExempted(context),
+            akkuAbgelehnt = BatteryOptimizationHelper.isBatteryPromptDismissed(context)
+        )
+        // Kurzschluss, solange Kalender- oder Akku-Gate noch OFFEN ist - dann kommt eines davon
+        // zuerst, und alles Weitere waere ein unnoetiger Read (beim Unused-App-Check ein
+        // Async-Call). Erledigt ist das Akku-Gate auch nach "Spaeter" (GateLage.akkuGateErledigt).
+        if (!akku.kalenderGewaehlt || !akku.akkuGateErledigt) {
+            akku
+        } else {
+            leseAbUnused(context).copy(
+                akkuAusnahme = akku.akkuAusnahme,
+                akkuAbgelehnt = akku.akkuAbgelehnt
+            )
+        }
     }
 
-    val oemType = BatteryOptimizationHelper.getOEMType()
-    if (BatteryOptimizationHelper.shouldNavigateToOemWarningScreen(context, oemType)) {
-        Logger.business(LogTags.NAVIGATION, "Gates resolved -> OEM Warning screen for $oemType")
-        BatteryOptimizationHelper.markOemWarningScreenShown(context, oemType)
-        navigationViewModel.navigateToOEMWarning(oemType)
+    GateEinstieg.NACH_KALENDER ->
+        if (BatteryOptimizationHelper.isExempted(context)) {
+            leseAbUnused(context).copy(akkuAusnahme = true)
+        } else if (BatteryOptimizationHelper.isBatteryPromptDismissed(context)) {
+            // "Spaeter" heisst ERLEDIGT - auch hier, nicht nur auf dem automatischen Weg.
+            leseAbUnused(context).copy(akkuAbgelehnt = true)
+        } else {
+            GateLage(akkuAusnahme = false, akkuAbgelehnt = false)
+        }
+
+    // Der Aufrufer (Ergebnis des Akku-Dialogs) kommt nur hierher, wenn die Ausnahme erteilt ist.
+    GateEinstieg.NACH_AKKU -> leseAbUnused(context).copy(akkuAusnahme = true)
+
+    GateEinstieg.SPAETER_AKKU -> leseAbUnused(context).copy(akkuAbgelehnt = true)
+
+    GateEinstieg.NACH_EINSTELLUNGEN, GateEinstieg.SPAETER_UNUSED -> leseAbTimeOffice(context)
+
+    GateEinstieg.SPAETER_TIMEOFFICE -> GateLage(oemFaellig = faelligerOemTyp(context))
+}
+
+/** Liest ab dem Unused-App-Gate: Unused, sonst TimeOffice, sonst OEM. */
+private suspend fun leseAbUnused(context: Context): GateLage =
+    if (unusedAppGateNoetig(context)) GateLage(unusedNoetig = true) else leseAbTimeOffice(context)
+
+/** Liest ab dem TimeOffice-Gate: TimeOffice, sonst OEM. */
+private suspend fun leseAbTimeOffice(context: Context): GateLage =
+    if (timeOfficeGateNoetig(context)) {
+        GateLage(timeOfficeNoetig = true)
     } else {
-        Logger.business(LogTags.NAVIGATION, "Onboarding complete -> Main")
-        AlarmMaintenanceService.scheduleNext(context)
-        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+        GateLage(oemFaellig = faelligerOemTyp(context))
+    }
+
+/** Der Herstellertyp, dessen OEM-Warnscreen noch nie gezeigt wurde - sonst `null`. */
+private suspend fun faelligerOemTyp(context: Context): BatteryOptimizationHelper.OEMType? {
+    val oemTyp = BatteryOptimizationHelper.getOEMType()
+    return if (BatteryOptimizationHelper.shouldNavigateToOemWarningScreen(context, oemTyp)) oemTyp else null
+}
+
+private suspend fun unusedAppGateNoetig(context: Context): Boolean =
+    UnusedAppRestrictionsHelper.isRestricted(context) &&
+        !UnusedAppRestrictionsHelper.isDismissed(context)
+
+/**
+ * TimeOffice-Gate: CFAlarms Alarme haengen an einem Kalender, den TimeOffice lokal befuellt
+ * (siehe TimeOfficeHealthHelper). Nur pruefbar (Akku-Ausnahme fuer ein fremdes Package), wenn
+ * TimeOffice ueberhaupt installiert ist - sonst irrelevant fuer diesen Nutzer.
+ */
+private suspend fun timeOfficeGateNoetig(context: Context): Boolean =
+    TimeOfficeHealthHelper.isInstalled(context) &&
+        !TimeOfficeHealthHelper.isBatteryExempted(context) &&
+        !TimeOfficeHealthHelper.isPromptDismissed(context)
+
+/**
+ * Setzt die Gate-Kette auf einem AKTIVEN Weg fort - nach der Kalenderauswahl, nach erteilter
+ * Akku-Ausnahme, nach der Rueckkehr aus einer Einstellungsseite und nach "Spaeter"/Zurueck an
+ * einem Gate (frueher `proceedPastGates()` plus zwei fast wortgleiche Kopien davor; "Spaeter"
+ * fuehrte bis Issue #132 nach Home). Der automatische Weg laeuft dagegen ueber
+ * [NavigationViewModel.handleAuthenticationSuccess], weil nur er den `MainContent`-Waechter
+ * braucht.
+ *
+ * Nur die aktiven Wege enden in `Fertig` (Abschluss mit `scheduleNext()`); der automatische Weg
+ * laesst den Nutzer ohne offenes Gate, wo er ist.
+ */
+private suspend fun setzeGateKetteFort(
+    context: Context,
+    navigationViewModel: NavigationViewModel,
+    einstieg: GateEinstieg
+) {
+    when (val schritt = naechsterGateSchritt(leseGateLage(context, einstieg), einstieg)) {
+        GateSchritt.Akku -> {
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> Battery Exemption needed")
+            navigationViewModel.navigateToBatteryExemption()
+        }
+
+        GateSchritt.Unused -> {
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> Unused App Restrictions needed")
+            navigationViewModel.navigateToUnusedAppRestrictions()
+        }
+
+        GateSchritt.TimeOffice -> {
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> TimeOffice Health Check")
+            navigationViewModel.navigateToTimeOfficeHealthCheck()
+        }
+
+        is GateSchritt.Oem -> {
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> OEM Warning screen for ${schritt.typ}")
+            BatteryOptimizationHelper.markOemWarningScreenShown(context, schritt.typ)
+            navigationViewModel.navigateToOEMWarning(schritt.typ)
+        }
+
+        GateSchritt.Fertig -> {
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> Onboarding complete -> Main")
+            AlarmMaintenanceService.scheduleNext(context)
+            navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+        }
+
+        // Liefert nur der automatische Weg (GateEinstieg.AUTO), nie ein aktiver.
+        GateSchritt.Kalender, GateSchritt.Nichts -> Unit
+    }
+}
+
+/**
+ * Schreibt das Dismissed-Flag von [gate] und WARTET, bis es geschrieben ist. Erst danach darf die
+ * Kette weiterlesen: der automatische Weg (`leseGateLage(AUTO)`) liest das Flag, und kaeme er vor
+ * dem Schreiben zum Zug, schickte er den Nutzer auf dasselbe Gate zurueck.
+ *
+ * Ein Schreibfehler haelt die Kette NICHT an (sie schaut ohnehin nur nach vorne, siehe
+ * [naechsterGateSchritt]) und reisst die App nicht mit - frueher lief der Write in einem
+ * unbewachten `launch`. Folge eines Fehlers ist nur, dass das Gate beim naechsten Start wieder
+ * angeboten wird: ehrlich, denn "Spaeter" wurde ja nicht gespeichert.
+ */
+private suspend fun schreibeUebersprungen(context: Context, gate: GateSchritt.Ueberspringbar) {
+    try {
+        when (gate) {
+            GateSchritt.Akku -> BatteryOptimizationHelper.setBatteryPromptDismissed(context)
+            GateSchritt.Unused -> UnusedAppRestrictionsHelper.setDismissed(context)
+            GateSchritt.TimeOffice -> TimeOfficeHealthHelper.setPromptDismissed(context)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Logger.w(LogTags.NAVIGATION, "Dismissed-Flag fuer $gate nicht geschrieben - Gate kommt beim naechsten Start wieder", e)
     }
 }
 
@@ -151,32 +291,19 @@ fun MainScreen(
         // NAVIGATION: Handle after data operations complete
         if (calendarState.availableCalendars.isNotEmpty()) {
             delay(100) // Minimal delay for UI stability
-            val hasBatteryExemption = BatteryOptimizationHelper.isExempted(context)
-            val batteryPromptDismissed = BatteryOptimizationHelper.isBatteryPromptDismissed(context)
-            // Kurzschluss nur, solange das Akku-Gate noch OFFEN ist - dann kommt es zuerst und der
-            // Unused-App-Check waere ein unnoetiger Async-Call. Erledigt ist es aber auch dann,
-            // wenn der Nutzer "Spaeter" getippt hat: `hasBatteryExemption` allein als Bedingung
-            // liess den Unused-App-Schritt fuer jeden Nutzer, der die Akku-Ausnahme abgelehnt hat,
-            // dauerhaft ausfallen (siehe handleAuthenticationSuccess).
-            val batteryGateResolved = hasBatteryExemption || batteryPromptDismissed
-            val needsUnusedAppRestrictionsPrompt = batteryGateResolved &&
-                UnusedAppRestrictionsHelper.isRestricted(context) &&
-                !UnusedAppRestrictionsHelper.isDismissed(context)
-            // Gleiche Pruefung wie proceedPastGates() (siehe oben) - dort nur erreichbar,
-            // wenn der Nutzer gerade aktiv durch Battery/UnusedAppRestrictions zurueckkommt.
-            // handleAuthenticationSuccess() laeuft dagegen bei JEDEM App-Vordergrund und ist
-            // der einzige Weg, Bestandsnutzer zu erreichen, die die frueheren Gates schon vor
-            // diesem Feature durchlaufen hatten.
-            val needsTimeOfficeHealthPrompt = TimeOfficeHealthHelper.isInstalled(context) &&
-                !TimeOfficeHealthHelper.isBatteryExempted(context) &&
-                !TimeOfficeHealthHelper.isPromptDismissed(context)
-            navigationViewModel.handleAuthenticationSuccess(
-                mainState.hasSelectedCalendars,
-                hasBatteryExemption,
-                batteryPromptDismissed,
-                needsUnusedAppRestrictionsPrompt,
-                needsTimeOfficeHealthPrompt
+            val lage = leseGateLage(
+                context,
+                GateEinstieg.AUTO,
+                kalenderGewaehlt = mainState.hasSelectedCalendars
             )
+            val schritt = naechsterGateSchritt(lage, GateEinstieg.AUTO)
+            // Den OEM-Merker erst schreiben, wenn der Screen wirklich angesteuert wurde - der
+            // MainContent-Waechter im ViewModel kann ablehnen, und ein Merker ohne gezeigten
+            // Hinweis hiesse: er kommt nie. Der Write wirft nicht (Fehler -> WARN, Hinweis kommt
+            // beim naechsten Start wieder) - eine Exception hier beendete die App bei jedem Start.
+            if (navigationViewModel.handleAuthenticationSuccess(schritt) && schritt is GateSchritt.Oem) {
+                BatteryOptimizationHelper.markOemWarningScreenShown(context, schritt.typ)
+            }
         }
     }
 
@@ -193,6 +320,30 @@ fun MainScreen(
         navigationViewModel.navigateToMainWithTab(MainTab.HOME)
     }
 
+    // "Spaeter" an genau einer Stelle - BackHandler und der "Spaeter"-Knopf jedes Gates rufen
+    // hierher. Jedes der drei Gates MUSS dabei sein Dismissed-Flag schreiben: sonst schickt der
+    // automatische Weg den Nutzer beim naechsten Vordergrund sofort zurueck, und Zurueck saehe
+    // aus, als passiere nichts.
+    //
+    // Danach geht die Kette SOFORT zum naechsten offenen Gate weiter (Issue #132) - frueher
+    // fuehrte "Spaeter" nach Home, und das naechste Gate kam erst beim naechsten App-Start. Die
+    // Reihenfolge ist tragend: erst das Flag ABGEWARTET schreiben, dann weiterlesen. Dass das
+    // uebersprungene Gate nicht sofort wiederkommt, sichert zusaetzlich die Kette selbst (ein
+    // SPAETER_*-Einstieg schaut nur nach vorne, siehe naechsterGateSchritt).
+    //
+    // Weitergemacht wird nur, solange noch genau dieses Gate angezeigt wird: ein zweiter Tipp
+    // auf "Spaeter" oder Zurueck, waehrend das Flag noch geschrieben wird, startet eine zweite
+    // Coroutine - die darf den Nutzer nicht aus dem schon erreichten naechsten Gate holen.
+    fun ueberspringe(gate: GateSchritt.Ueberspringbar) {
+        Logger.business(LogTags.NAVIGATION, "Gate $gate vom Nutzer uebersprungen (Spaeter/Zurueck)")
+        coroutineScope.launch {
+            schreibeUebersprungen(context, gate)
+            if (gate.wirdAngezeigtIn(navigationViewModel.navigationState.value)) {
+                setzeGateKetteFort(context, navigationViewModel, einstiegNachSpaeter(gate))
+            }
+        }
+    }
+
     // ANDROID-ZURUECK: Die App navigiert ueber einen eigenen NavigationState, nicht ueber
     // Navigation-Compose - es gibt also keinen Backstack, der Zurueck von allein eine Ebene
     // hoch fuehren wuerde. Ohne BackHandler landet jeder Druck beim Default der Activity und
@@ -205,61 +356,28 @@ fun MainScreen(
     // als jeder Nachbau.
     val onHomeTab = (navigationState as? NavigationState.MainContent)?.selectedTab == MainTab.HOME
     BackHandler(enabled = !onHomeTab) {
-        when (navigationState) {
+        when (val state = navigationState) {
             // Ein Nicht-Home-Tab ist eine Ebene tiefer: Zurueck fuehrt auf Home, nicht aus der
             // App (Android-Konvention fuer Bottom-Navigation).
             is NavigationState.MainContent -> navigationViewModel.changeTab(MainTab.HOME)
 
-            // Zurueck heisst hier dasselbe wie "Spaeter": ein blosses navigateBackToMain()
-            // wuerde handleAuthenticationSuccess() sofort wieder hierher schicken - Zurueck
-            // saehe aus, als passiere nichts.
-            is NavigationState.BatteryExemption -> {
-                coroutineScope.launch { BatteryOptimizationHelper.setBatteryPromptDismissed(context) }
-                navigationViewModel.dismissBatteryPrompt()
-            }
-
-            // Gleiche Semantik wie Battery, NICHT wie OEM: der Nutzer hat hier ggf. nichts
-            // geaendert (reiner Settings-Screen, kein Bestaetigungs-Dialog), Zurueck muss also
-            // wie "Spaeter" wirken, nicht wie "Verstanden".
-            is NavigationState.UnusedAppRestrictions -> {
-                coroutineScope.launch { UnusedAppRestrictionsHelper.setDismissed(context) }
-                navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-            }
-
-            // Gleiche Semantik wie die beiden Gates oben.
-            is NavigationState.TimeOfficeHealthCheck -> {
-                coroutineScope.launch { TimeOfficeHealthHelper.setPromptDismissed(context) }
-                navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-            }
+            // Zurueck heisst bei allen drei Gates dasselbe wie "Spaeter": ein blosses
+            // navigateBackToMain() wuerde handleAuthenticationSuccess() sofort wieder hierher
+            // schicken. Bei Unused-App und TimeOffice gilt das auch, obwohl der Nutzer dort ggf.
+            // nichts geaendert hat (reiner Settings-Screen, kein Bestaetigungs-Dialog) - Zurueck
+            // wirkt wie "Spaeter", NICHT wie "Verstanden".
+            is NavigationState.BatteryExemption -> ueberspringe(GateSchritt.Akku)
+            is NavigationState.UnusedAppRestrictions -> ueberspringe(GateSchritt.Unused)
+            is NavigationState.TimeOfficeHealthCheck -> ueberspringe(GateSchritt.TimeOffice)
 
             // Wie "Verstanden" - siehe finishOnboarding.
             is NavigationState.OEMWarning -> finishOnboarding()
 
-            // Zwei Einstiegspfade mit unterschiedlichem Rueckziel (siehe
-            // NavigationState.HueRuleConfig.cameFromSettingsList): navigateBackToMain() alleine
-            // wuerde IMMER direkt zu MainContent aufloesen und damit HueSettings ueberspringen,
-            // wenn der Nutzer tatsaechlich ueber die Regel-Liste hierher kam. Muss mit dem
-            // Save/Zurueck-Verhalten im HueRuleConfig-Screen-Block unten konsistent bleiben.
-            is NavigationState.HueRuleConfig -> {
-                val state = navigationState as NavigationState.HueRuleConfig
-                if (state.cameFromSettingsList) {
-                    navigationViewModel.navigateToHueSettings(state.returnToTab)
-                } else {
-                    navigationViewModel.navigateToMainWithTab(state.returnToTab)
-                }
-            }
-
-            // Gleiche Semantik wie HueRuleConfig oben.
-            is NavigationState.DimmerRuleConfig -> {
-                val state = navigationState as NavigationState.DimmerRuleConfig
-                if (state.cameFromSettingsList) {
-                    navigationViewModel.navigateToDimmerSettings(state.returnToTab)
-                } else {
-                    navigationViewModel.navigateToMainWithTab(state.returnToTab)
-                }
-            }
-
-            else -> navigationViewModel.navigateBackToMain()
+            // Alle uebrigen Unterscreens, auch HueRuleConfig/DimmerRuleConfig mit ihren zwei
+            // Einstiegspfaden (cameFromSettingsList): der Rueckweg ist in navigateBackFrom()
+            // EINMAL aufgeloest - dieselbe Aufloesung, die auch Zurueck-Pfeil und Speichern der
+            // Regel-Editoren unten nehmen.
+            else -> navigationViewModel.navigateBackFrom(state)
         }
     }
 
@@ -267,7 +385,7 @@ fun MainScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        when (navigationState) {
+        when (val state = navigationState) {
             is NavigationState.ShiftConfig -> {
                 ShiftConfigScreen(
                     shiftViewModel = shiftViewModel,
@@ -284,28 +402,12 @@ fun MainScreen(
                         authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
                     },
                     onDone = {
-                        if (!BatteryOptimizationHelper.isExempted(context)) {
-                            Logger.business(
-                                LogTags.NAVIGATION,
-                                "Kalenderauswahl verlassen -> Battery Exemption needed"
-                            )
-                            navigationViewModel.navigateToBatteryExemption()
-                        } else {
-                            // Unused-App-Restrictions-Check ist async (ListenableFuture) -
-                            // deshalb ab hier in eine Coroutine.
-                            coroutineScope.launch {
-                                if (UnusedAppRestrictionsHelper.isRestricted(context) &&
-                                    !UnusedAppRestrictionsHelper.isDismissed(context)
-                                ) {
-                                    Logger.business(
-                                        LogTags.NAVIGATION,
-                                        "Battery exempted -> Unused App Restrictions needed"
-                                    )
-                                    navigationViewModel.navigateToUnusedAppRestrictions()
-                                } else {
-                                    proceedPastGates(context, navigationViewModel)
-                                }
-                            }
+                        // UNDISPATCHED: die Akku-Ausnahme wird synchron gelesen, die Kette
+                        // startet also noch im selben Tipp. Seit Issue #132 zaehlt hier auch
+                        // "Spaeter" beim Akku-Gate als ERLEDIGT - dafuer wird das Flag aus dem
+                        // DataStore gelesen (kurz suspendierend), bevor das Akku-Gate kommt.
+                        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                            setzeGateKetteFort(context, navigationViewModel, GateEinstieg.NACH_KALENDER)
                         }
                     },
                     onCancel = {
@@ -325,17 +427,7 @@ fun MainScreen(
 
                     if (isExempted) {
                         coroutineScope.launch {
-                            if (UnusedAppRestrictionsHelper.isRestricted(context) &&
-                                !UnusedAppRestrictionsHelper.isDismissed(context)
-                            ) {
-                                Logger.business(
-                                    LogTags.NAVIGATION,
-                                    "Battery exempted -> Unused App Restrictions needed"
-                                )
-                                navigationViewModel.navigateToUnusedAppRestrictions()
-                            } else {
-                                proceedPastGates(context, navigationViewModel)
-                            }
+                            setzeGateKetteFort(context, navigationViewModel, GateEinstieg.NACH_AKKU)
                         }
                     } else {
                         showEducationalDialog = true
@@ -354,10 +446,7 @@ fun MainScreen(
                     onExplain = {
                         showEducationalDialog = true
                     },
-                    onSkip = {
-                        coroutineScope.launch { BatteryOptimizationHelper.setBatteryPromptDismissed(context) }
-                        navigationViewModel.dismissBatteryPrompt()
-                    },
+                    onSkip = { ueberspringe(GateSchritt.Akku) },
                     onRequestExemption = {
                         try {
                             // BatteryLife unterdrueckt: Lint haelt jedes
@@ -400,8 +489,10 @@ fun MainScreen(
                     contract = ActivityResultContracts.StartActivityForResult()
                 ) { _ ->
                     // Kein strukturiertes Ergebnis (reiner Settings-Screen) - immer neu pruefen,
-                    // was als naechstes kommt (OEM-Screen oder fertig).
-                    coroutineScope.launch { proceedPastGates(context, navigationViewModel) }
+                    // was als naechstes kommt (TimeOffice, OEM-Screen oder fertig).
+                    coroutineScope.launch {
+                        setzeGateKetteFort(context, navigationViewModel, GateEinstieg.NACH_EINSTELLUNGEN)
+                    }
                 }
 
                 UnusedAppRestrictionsOnboardingScreen(
@@ -418,16 +509,7 @@ fun MainScreen(
                             )
                         }
                     },
-                    onSkip = {
-                        coroutineScope.launch {
-                            UnusedAppRestrictionsHelper.setDismissed(context)
-                        }
-                        Logger.business(
-                            LogTags.NAVIGATION,
-                            "Unused-App-Restrictions prompt skipped (Spaeter) -> Home"
-                        )
-                        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-                    }
+                    onSkip = { ueberspringe(GateSchritt.Unused) }
                 )
             }
 
@@ -436,8 +518,11 @@ fun MainScreen(
                     contract = ActivityResultContracts.StartActivityForResult()
                 ) { _ ->
                     // Kein strukturiertes Ergebnis (reiner Settings-Screen einer fremden App) -
-                    // immer neu pruefen, was als naechstes kommt (OEM-Screen oder fertig).
-                    coroutineScope.launch { proceedPastGates(context, navigationViewModel) }
+                    // immer neu pruefen, was als naechstes kommt (TimeOffice, OEM-Screen oder
+                    // fertig).
+                    coroutineScope.launch {
+                        setzeGateKetteFort(context, navigationViewModel, GateEinstieg.NACH_EINSTELLUNGEN)
+                    }
                 }
 
                 TimeOfficeHealthOnboardingScreen(
@@ -454,24 +539,13 @@ fun MainScreen(
                             )
                         }
                     },
-                    onSkip = {
-                        coroutineScope.launch {
-                            TimeOfficeHealthHelper.setPromptDismissed(context)
-                        }
-                        Logger.business(
-                            LogTags.NAVIGATION,
-                            "TimeOffice-Health prompt skipped (Spaeter) -> Home"
-                        )
-                        navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-                    }
+                    onSkip = { ueberspringe(GateSchritt.TimeOffice) }
                 )
             }
 
             is NavigationState.OEMWarning -> {
-                val oemWarningState = navigationState as NavigationState.OEMWarning
-
                 OEMWarningScreen(
-                    oemType = oemWarningState.oemType,
+                    oemType = state.oemType,
                     onComplete = finishOnboarding
                 )
             }
@@ -484,43 +558,34 @@ fun MainScreen(
             }
 
             is NavigationState.HueRuleConfig -> {
-                val hueRuleState = navigationState as NavigationState.HueRuleConfig
-                // Zurueck UND Speichern muessen zum tatsaechlichen Einstiegspunkt fuehren: kam
-                // der Nutzer direkt vom Hue-Tab (kein HueSettings dazwischen), landet er wieder
-                // dort - nicht auf einer Liste, die er nie geoeffnet hat. Kam er ueber
-                // HueSettings, geht es dorthin zurueck. Muss mit dem BackHandler-Fall fuer
-                // HueRuleConfig oben konsistent bleiben.
-                val backToEntryPoint: () -> Unit = {
-                    if (hueRuleState.cameFromSettingsList) {
-                        navigationViewModel.navigateToHueSettings(hueRuleState.returnToTab)
-                    } else {
-                        navigationViewModel.navigateToMainWithTab(hueRuleState.returnToTab)
-                    }
-                }
+                // Zurueck UND Speichern fuehren zum tatsaechlichen Einstiegspunkt (Hue-Tab oder
+                // HueSettings, siehe cameFromSettingsList) - aufgeloest in navigateBackFrom(),
+                // derselben Stelle wie der BackHandler oben. Der gerenderte Zustand wird
+                // uebergeben, damit ein zweiter Tipp auf Speichern zum selben Ziel fuehrt.
+                val zurueckZumEinstieg: () -> Unit = { navigationViewModel.navigateBackFrom(state) }
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueRuleConfigScreen(
-                    ruleId = hueRuleState.ruleId,
+                    ruleId = state.ruleId,
                     hueViewModel = hueViewModel,
                     shiftViewModel = shiftViewModel,
-                    onNavigateBack = backToEntryPoint,
-                    onSaveComplete = backToEntryPoint
+                    onNavigateBack = zurueckZumEinstieg,
+                    onSaveComplete = zurueckZumEinstieg
                 )
             }
 
             is NavigationState.HueSettings -> {
-                val hueSettingsState = navigationState as NavigationState.HueSettings
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.hue.HueSettingsScreen(
                     hueViewModel = hueViewModel,
                     onNavigateBack = { navigationViewModel.navigateBackToMain() },
                     onEditRule = { ruleId ->
                         navigationViewModel.navigateToHueRuleConfig(
                             ruleId = ruleId,
-                            fromTab = hueSettingsState.returnToTab,
+                            fromTab = state.returnToTab,
                             cameFromSettingsList = true
                         )
                     },
                     onCreateNewRule = {
                         navigationViewModel.navigateToHueRuleConfig(
-                            fromTab = hueSettingsState.returnToTab,
+                            fromTab = state.returnToTab,
                             cameFromSettingsList = true
                         )
                     }
@@ -528,19 +593,18 @@ fun MainScreen(
             }
 
             is NavigationState.DimmerSettings -> {
-                val dimmerSettingsState = navigationState as NavigationState.DimmerSettings
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerSettingsScreen(
                     onNavigateBack = { navigationViewModel.navigateBackToMain() },
                     onEditRule = { ruleId ->
                         navigationViewModel.navigateToDimmerRuleConfig(
                             ruleId = ruleId,
-                            fromTab = dimmerSettingsState.returnToTab,
+                            fromTab = state.returnToTab,
                             cameFromSettingsList = true
                         )
                     },
                     onCreateRule = {
                         navigationViewModel.navigateToDimmerRuleConfig(
-                            fromTab = dimmerSettingsState.returnToTab,
+                            fromTab = state.returnToTab,
                             cameFromSettingsList = true
                         )
                     }
@@ -548,31 +612,22 @@ fun MainScreen(
             }
 
             is NavigationState.DimmerRuleConfig -> {
-                val dimRuleState = navigationState as NavigationState.DimmerRuleConfig
                 // Gleiche Semantik wie HueRuleConfig oben - aktuell fuehrt nur der Pfad ueber
-                // DimmerSettings hierher (cameFromSettingsList defaultet auf true), aber der
-                // Verzweig deckt auch einen kuenftigen Direktpfad korrekt ab.
-                val backToEntryPoint: () -> Unit = {
-                    if (dimRuleState.cameFromSettingsList) {
-                        navigationViewModel.navigateToDimmerSettings(dimRuleState.returnToTab)
-                    } else {
-                        navigationViewModel.navigateToMainWithTab(dimRuleState.returnToTab)
-                    }
-                }
+                // DimmerSettings hierher (cameFromSettingsList defaultet auf true), aber
+                // navigateBackFrom() deckt auch einen kuenftigen Direktpfad korrekt ab.
+                val zurueckZumEinstieg: () -> Unit = { navigationViewModel.navigateBackFrom(state) }
                 com.github.f1rlefanz.cf_alarmfortimeoffice.ui.screens.dimmer.DimmerRuleConfigScreen(
-                    ruleId = dimRuleState.ruleId,
-                    onNavigateBack = backToEntryPoint,
-                    onSaveComplete = backToEntryPoint
+                    ruleId = state.ruleId,
+                    onNavigateBack = zurueckZumEinstieg,
+                    onSaveComplete = zurueckZumEinstieg
                 )
             }
 
             is NavigationState.MainContent -> {
-                val mainContentState = navigationState as NavigationState.MainContent
-
                 // DIE 6h-WARTUNGSKETTE WIRD HIER GESTELLT, NICHT AN DEN GATE-AUSGAENGEN.
                 //
-                // Bis v1.26.2 stand scheduleNext() nur in zwei der Ausgaenge (proceedPastGates()
-                // und finishOnboarding()). Wer ein Gate mit "Spaeter" oder Zurueck verliess - ein
+                // Bis v1.26.2 stand scheduleNext() nur in zwei der Ausgaenge (proceedPastGates(),
+                // heute setzeGateKetteFort(), und finishOnboarding()). Wer ein Gate mit "Spaeter" oder Zurueck verliess - ein
                 // ausdruecklich vorgesehener, persistierter Weg - bekam die Kette NIE gestellt.
                 // Danach entstanden Alarme nur noch, solange der Nutzer die App selbst oeffnete;
                 // neue Schichten aus dem Dienstplan wurden nicht verweckert, und erst ein Reboot
@@ -595,21 +650,21 @@ fun MainScreen(
                     shiftViewModel = shiftViewModel,
                     alarmViewModel = alarmViewModel,
                     hueViewModel = hueViewModel,
-                    selectedTab = mainContentState.selectedTab,
+                    selectedTab = state.selectedTab,
                     onSelectedTabChange = { tab -> navigationViewModel.changeTab(tab) },
-                    onShowShiftConfig = { navigationViewModel.navigateToShiftConfig(mainContentState.selectedTab) },
+                    onShowShiftConfig = { navigationViewModel.navigateToShiftConfig(state.selectedTab) },
                     onShowCalendarSelection = {
                         navigationViewModel.navigateToCalendarSelection(
-                            mainContentState.selectedTab
+                            state.selectedTab
                         )
                     },
-                    onShowEventList = { navigationViewModel.navigateToEventList(mainContentState.selectedTab) },
+                    onShowEventList = { navigationViewModel.navigateToEventList(state.selectedTab) },
                     // Direkter Einstieg vom Hue-Tab (kein HueSettings dazwischen) -
                     // cameFromSettingsList = false, damit Zurueck/Speichern spaeter wieder
                     // hierher fuehrt statt auf die nie geoeffnete Regel-Liste.
                     onShowHueRuleConfig = {
                         navigationViewModel.navigateToHueRuleConfig(
-                            fromTab = mainContentState.selectedTab,
+                            fromTab = state.selectedTab,
                             cameFromSettingsList = false
                         )
                     },

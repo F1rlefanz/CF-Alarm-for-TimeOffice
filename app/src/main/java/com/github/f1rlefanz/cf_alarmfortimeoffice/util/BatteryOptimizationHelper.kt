@@ -16,6 +16,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CancellationException
 
 /**
  * Hilt EntryPoint that lets the plain [BatteryOptimizationHelper] object reach the
@@ -224,10 +225,33 @@ object BatteryOptimizationHelper {
         return mainDataStore(context).readOrEmpty(LogTags.BATTERY, "OEM-Hinweis-Merker")[oemHintKey(oemType)] != true
     }
 
-    /** Markiert den OEM-Warnscreen fuer diesen Typ als gezeigt (einmalig, dauerhaft). */
-    suspend fun markOemWarningScreenShown(context: Context, oemType: OEMType) {
-        mainDataStore(context).edit { it[oemHintKey(oemType)] = true }
-    }
+    /**
+     * Markiert den OEM-Warnscreen fuer diesen Typ als gezeigt (einmalig, dauerhaft).
+     *
+     * Wirft NICHT (ausser [CancellationException]): beide Aufrufer stehen in der Gate-Kette von
+     * `MainScreen`, einer davon direkt im `LaunchedEffect` des automatischen Wegs. Ein blankes
+     * `edit()` liess dort eine IOException (volle Platte, I/O-Fehler) bis in den Prozess durch -
+     * und weil der Merker dann nie geschrieben ist, war der OEM-Hinweis beim naechsten Start
+     * wieder faellig: Absturz bei JEDEM Start, solange der Zustand anhielt. Folge eines
+     * Schreibfehlers ist jetzt nur, dass der Hinweis beim naechsten Start noch einmal kommt -
+     * dieselbe Richtung wie `schreibeUebersprungen()` fuer die Spaeter-Flags.
+     *
+     * @return `true`, wenn der Merker geschrieben wurde.
+     */
+    suspend fun markOemWarningScreenShown(context: Context, oemType: OEMType): Boolean =
+        markOemWarningScreenShown(mainDataStore(context), oemType)
+
+    /** Testbarer Kern von [markOemWarningScreenShown] - ohne Hilt-EntryPoint. */
+    internal suspend fun markOemWarningScreenShown(store: DataStore<Preferences>, oemType: OEMType): Boolean =
+        try {
+            store.edit { it[oemHintKey(oemType)] = true }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.BATTERY, "OEM-Hinweis-Merker ($oemType) nicht geschrieben - Hinweis kommt beim naechsten Start wieder", e)
+            false
+        }
 
     /**
      * Akku-Prompt-Skip: der Nutzer kann den Akku-Ausnahme-Screen mit "Spaeter" ueberspringen.

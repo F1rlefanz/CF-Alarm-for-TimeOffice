@@ -43,12 +43,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -62,7 +61,10 @@ fun AnimatedDiscoveryCard(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val pulseScale by rememberInfiniteTransition(label = "pulse").animateFloat(
+    // State<Float> OHNE `by`: gelesen wird erst im graphicsLayer-Block unten, also in der
+    // Zeichenphase. Mit `by` las die Komposition den Wert selbst, und die GANZE Karte (Texte,
+    // Fortschrittsbalken) komponierte etwa 60-mal pro Sekunde neu, solange die Suche lief.
+    val pulseScale = rememberInfiniteTransition(label = "pulse").animateFloat(
         initialValue = 1f,
         targetValue = 1.1f,
         animationSpec = infiniteRepeatable(
@@ -101,7 +103,10 @@ fun AnimatedDiscoveryCard(
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
-                                .scale(pulseScale)
+                                .graphicsLayer {
+                                    scaleX = pulseScale.value
+                                    scaleY = pulseScale.value
+                                }
                                 .background(
                                     brush = Brush.radialGradient(
                                         colors = listOf(

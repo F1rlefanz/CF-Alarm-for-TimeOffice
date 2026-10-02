@@ -26,7 +26,9 @@ data class CalendarPage(
  */
 data class EventPage(
     val events: List<CalendarEvent>,
-    val totalEvents: Int
+    val totalEvents: Int,
+    /** Ende des Abruf-Fensters der zugrunde liegenden Gesamtliste - siehe [CalendarFetchOutcome.horizontEnde]. */
+    val horizontEnde: Long? = null
 )
 
 /**
@@ -51,7 +53,20 @@ data class CalendarFetchOutcome(
      * [failedCalendars] bleibt als ABGELEITETE Property bestehen: eine Wahrheit, kein zweites
      * Feld, das auseinanderlaufen kann.
      */
-    val failedCalendarIds: Set<String> = emptySet()
+    val failedCalendarIds: Set<String> = emptySet(),
+    /**
+     * Bis wohin (Epoch-Millis, exklusiv) diese Liste den Kalender gelesen hat - das KLEINSTE
+     * Abruf-Ende der beteiligten Kalender (ein Cache-Eintrag kann einige Minuten aelter sein als
+     * ein frischer Abruf). `null` = unbekannt (kein Kalender angefragt, oder ein Test-Doppel).
+     *
+     * WARUM DER HORIZONT MIT DER LISTE REIST (#51): Die Vorausschau ist einstellbar. "Vollstaendig"
+     * ([isComplete]) heisst nur "vollstaendig fuer DIESES Fenster" - nach einer verkleinerten
+     * Vorausschau (28 -> 7 Tage) sagt die Liste ueber Tag 8..28 nichts. Ein loeschender Konsument
+     * muss deshalb wissen, bis wohin sie reicht (`syncAlarms(..., abrufHorizontEnde)`,
+     * `BootAlarmValidation.beurteile`). Ihn getrennt aus der Einstellung zu lesen, waere eine
+     * zweite Wahrheit: zwischen Abruf und Sync kann der Nutzer umgestellt haben.
+     */
+    val horizontEnde: Long? = null
 ) {
     val failedCalendars: Int get() = failedCalendarIds.size
 

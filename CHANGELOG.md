@@ -27,7 +27,17 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.46.0 (Aktuell – interne Alpha)
+## 🆕 Version 1.46.1 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Wartung: aktualisierte Bibliotheken, keine sichtbare Änderung._
+
+### 🔧 Unter der Haube
+
+- **Bibliotheken aktualisiert:** Unter anderem die Hintergrundplanung (WorkManager), die Oberflächenbibliothek und die Google-Anmeldung sind auf dem neuesten Stand.
+
+## Version 1.46.0
 
 **Stand:** Oktober 2026
 

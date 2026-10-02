@@ -51,7 +51,31 @@
              Dieser Kommentar steht bewusst VOR dem BEGIN-Marker und ueberlebt deshalb. -->
         <!-- CHANGELOG:BEGIN -->
         <div class="content-card">
-            <h3>🆕 Version 1.45.1 <small>(Aktuell – interne Alpha)</small></h3>
+            <h3>🆕 Version 1.46.0 <small>(Aktuell – interne Alpha)</small></h3>
+            <p><strong>Stand:</strong> Oktober 2026</p>
+            <p><em>Wie weit die App im Kalender vorausschaut, stellst du jetzt selbst ein — und jede Schicht zeigt, was sie außer dem Wecker auslöst.</em></p>
+
+            <h4>✨ Neu</h4>
+            <ul>
+                <li><strong>Kalender-Vorausschau einstellbar:</strong> Unter „Einstellungen“ wählst du, wie viele Tage CF-Alarm im Kalender vorausliest — von 7 bis 90 Tagen, per Schnellwahl (14, 28, 42, 56) oder als eigene Zahl. Bisher waren es fest 14 Tage. Verkürzt du den Zeitraum, bleiben schon gestellte Wecker dahinter erhalten; verlängerst du ihn, kommen die neuen Wecker ohne eine Flut von „Neue Schicht“-Meldungen dazu.</li>
+                <li><strong>Was bei einer Schicht passiert, steht jetzt an der Schicht:</strong> In „Schichttypen verwalten“ zeigt jede Schicht unter der Weckzeit eine Zeile wie „Dimmen: eigene Regel · Licht: allgemeine Regel · DND: Dienstzeit“. Doppelte Dimm-Regeln, die nie greifen, sind dort als „ohne Wirkung“ erkennbar.</li>
+                <li><strong>Neues Handy:</strong> Ab Android 9 meldet dich CF-Alarm nach einem Gerätewechsel mit Google-Datensicherung automatisch mit demselben Konto wieder an. Gespeichert wird dafür nur die E-Mail-Adresse deines Google-Kontos, verschlüsselt im Google-Backup; beim Abmelden wird sie gelöscht.</li>
+            </ul>
+
+            <h4>🐛 Behoben</h4>
+            <ul>
+                <li><strong>Licht bei stillen Schichten:</strong> Für eine Schicht ohne Weckton ging das Hue-Licht trotzdem kurz vor der Weckzeit per Sonnenaufgang an — und weil kein Wecker klingelte, auch nicht wieder aus. Stille Schichten schalten jetzt kein Licht mehr.</li>
+                <li><strong>Einrichtung: „Später“ führt weiter:</strong> Wer einen Schritt der Ersteinrichtung mit „Später“ überspringt, kommt jetzt direkt zum nächsten offenen Schritt statt erst beim nächsten App-Start. Der Hinweis zu herstellerspezifischen Energiesparern erscheint jetzt auch dann, und eine übersprungene Akku-Freigabe wird nach einer erneuten Kalenderauswahl nicht noch einmal abgefragt.</li>
+            </ul>
+
+            <h4>🔧 Unter der Haube</h4>
+            <ul>
+                <li><strong>Kleinere App:</strong> Der Programmcode wird jetzt vollständig optimiert; die App ist dadurch rund 40 % kleiner und erfüllt eine kommende Google-Play-Vorgabe.</li>
+            </ul>
+        </div>
+
+        <div class="content-card">
+            <h3>Version 1.45.1</h3>
             <p><strong>Stand:</strong> Oktober 2026</p>
             <p><em>Nach einem Neustart mit Bildschirmsperre behält die App wieder alle Einstellungen und Wecker.</em></p>
 

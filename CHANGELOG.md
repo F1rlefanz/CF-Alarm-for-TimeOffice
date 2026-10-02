@@ -27,7 +27,28 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.45.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.46.0 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Wie weit die App im Kalender vorausschaut, stellst du jetzt selbst ein — und jede Schicht zeigt, was sie außer dem Wecker auslöst._
+
+### ✨ Neu
+
+- **Kalender-Vorausschau einstellbar:** Unter „Einstellungen“ wählst du, wie viele Tage CF-Alarm im Kalender vorausliest — von 7 bis 90 Tagen, per Schnellwahl (14, 28, 42, 56) oder als eigene Zahl. Bisher waren es fest 14 Tage. Verkürzt du den Zeitraum, bleiben schon gestellte Wecker dahinter erhalten; verlängerst du ihn, kommen die neuen Wecker ohne eine Flut von „Neue Schicht“-Meldungen dazu.
+- **Was bei einer Schicht passiert, steht jetzt an der Schicht:** In „Schichttypen verwalten“ zeigt jede Schicht unter der Weckzeit eine Zeile wie „Dimmen: eigene Regel · Licht: allgemeine Regel · DND: Dienstzeit“. Doppelte Dimm-Regeln, die nie greifen, sind dort als „ohne Wirkung“ erkennbar.
+- **Neues Handy:** Ab Android 9 meldet dich CF-Alarm nach einem Gerätewechsel mit Google-Datensicherung automatisch mit demselben Konto wieder an. Gespeichert wird dafür nur die E-Mail-Adresse deines Google-Kontos, verschlüsselt im Google-Backup; beim Abmelden wird sie gelöscht.
+
+### 🐛 Behoben
+
+- **Licht bei stillen Schichten:** Für eine Schicht ohne Weckton ging das Hue-Licht trotzdem kurz vor der Weckzeit per Sonnenaufgang an — und weil kein Wecker klingelte, auch nicht wieder aus. Stille Schichten schalten jetzt kein Licht mehr.
+- **Einrichtung: „Später“ führt weiter:** Wer einen Schritt der Ersteinrichtung mit „Später“ überspringt, kommt jetzt direkt zum nächsten offenen Schritt statt erst beim nächsten App-Start. Der Hinweis zu herstellerspezifischen Energiesparern erscheint jetzt auch dann, und eine übersprungene Akku-Freigabe wird nach einer erneuten Kalenderauswahl nicht noch einmal abgefragt.
+
+### 🔧 Unter der Haube
+
+- **Kleinere App:** Der Programmcode wird jetzt vollständig optimiert; die App ist dadurch rund 40 % kleiner und erfüllt eine kommende Google-Play-Vorgabe.
+
+## Version 1.45.1
 
 **Stand:** Oktober 2026
 

@@ -266,7 +266,7 @@ fun ShiftEditDialog(
                     item {
                         SwitchRow(
                             title = "Stille Schicht",
-                            description = "Kein Ton/Vibration/Vollbild-Wecker - die Zeit bleibt als Anker fuer Dimmer/DND erhalten",
+                            description = "Kein Ton/Vibration/Vollbild-Wecker - die Zeit bleibt als Anker für Dimmer/DND erhalten",
                             checked = isSilent,
                             onCheckedChange = { isSilent = it },
                             titleFontWeight = FontWeight.Normal

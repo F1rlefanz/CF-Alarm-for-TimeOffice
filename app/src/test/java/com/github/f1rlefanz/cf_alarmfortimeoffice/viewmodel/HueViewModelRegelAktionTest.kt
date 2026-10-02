@@ -198,7 +198,7 @@ class HueViewModelRegelAktionTest {
         f.viewModel.createRule(regel)
         advanceUntilIdle()
 
-        assertEquals("Failed to create rule", f.viewModel.uiState.value.error)
+        assertEquals("Die Regel konnte nicht angelegt werden.", f.viewModel.uiState.value.error)
     }
 
     @Test
@@ -209,7 +209,7 @@ class HueViewModelRegelAktionTest {
         f.viewModel.updateRule(regel)
         advanceUntilIdle()
 
-        assertEquals("Failed to update rule", f.viewModel.uiState.value.error)
+        assertEquals("Die Regel konnte nicht geändert werden.", f.viewModel.uiState.value.error)
     }
 
     @Test
@@ -220,6 +220,6 @@ class HueViewModelRegelAktionTest {
         f.viewModel.deleteRule("rule_1")
         advanceUntilIdle()
 
-        assertEquals("Failed to delete rule", f.viewModel.uiState.value.error)
+        assertEquals("Die Regel konnte nicht gelöscht werden.", f.viewModel.uiState.value.error)
     }
 }

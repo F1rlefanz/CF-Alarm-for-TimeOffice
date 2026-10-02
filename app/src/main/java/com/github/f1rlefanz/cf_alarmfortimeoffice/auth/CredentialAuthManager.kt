@@ -98,7 +98,7 @@ class CredentialAuthManager(context: Context) {
 
             val detailedError = when {
                 e.message?.contains("Developer console") == true -> {
-                    "Google Sign-In Konfigurationsfehler. Bitte überprüfen Sie die SHA-1 Fingerprints in der Google Cloud Console."
+                    "Die Google-Anmeldung ist in dieser App-Version falsch eingerichtet. Bitte melde das dem Entwickler."
                 }
                 // Beide Ursachen sind moeglich und nicht unterscheidbar - der Text nennt
                 // deshalb beide, siehe FEHLER_KEIN_CREDENTIAL.
@@ -108,7 +108,7 @@ class CredentialAuthManager(context: Context) {
         } catch (e: GetCredentialException) {
             Logger.e(LogTags.AUTH, "GetCredentialException (Type: ${e.type})", e)
             val errorMessage = when {
-                e.message?.contains("10:") == true -> "Google Play Services Fehler. Bitte aktualisieren Sie Google Play Services."
+                e.message?.contains("10:") == true -> "Fehler in den Google-Play-Diensten. Bitte aktualisiere die Google-Play-Dienste."
                 e.message?.contains("Developer console") == true -> "Google Sign-In Konfigurationsfehler. Bitte Entwickler kontaktieren."
                 else -> e.message ?: "Fehler bei der Anmeldung (${e.type})"
             }

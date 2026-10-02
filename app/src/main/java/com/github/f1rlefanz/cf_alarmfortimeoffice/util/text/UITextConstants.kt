@@ -9,10 +9,10 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.util.text
  */
 object UIText {
     const val APP_TITLE = "CF-Alarm for TimeOffice"
-    const val APP_SUBTITLE = "Automatische Alarmverwaltung für Ihre Schichten"
+    const val APP_SUBTITLE = "Wecker aus deinem Dienstplan"
 
-    const val PERMISSION_EXPLANATION = "Diese App benötigt Zugriff auf Ihren Google Kalender, " +
-            "um Schichten zu erkennen und Alarme zu setzen."
+    const val PERMISSION_EXPLANATION = "Diese App braucht Lesezugriff auf deinen Google Kalender, " +
+            "um deine Schichten zu erkennen und Wecker zu stellen."
 
     /** Sprung in die Android-Kontoverwaltung, neben der Anmelde-Fehlermeldung. */
     const val ADD_GOOGLE_ACCOUNT = "Google-Konto in den Einstellungen hinzufügen"

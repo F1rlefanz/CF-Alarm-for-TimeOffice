@@ -435,7 +435,7 @@ fun ShiftConfigScreen(
                         "Namen, Erkennungsmuster, Weckzeiten und die Einstellung \"Stille " +
                         "Schicht\" gehen verloren. Alle kommenden Wecker werden mit den " +
                         "Standard-Weckzeiten neu gesetzt. Der Schalter \"Automatische Alarme\" " +
-                        "im Wecker-Tab bleibt dabei unverändert. Das lässt sich nicht rückgängig " +
+                        "im Bereich „Wecker“ bleibt dabei unverändert. Das lässt sich nicht rückgängig " +
                         "machen."
                 )
             },

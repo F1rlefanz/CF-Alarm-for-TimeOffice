@@ -43,7 +43,7 @@ fun ShiftSelectorDialog(
         text = {
             if (availableShifts.isEmpty()) {
                 Text(
-                    text = "Keine Schichtmuster konfiguriert. Bitte konfigurieren Sie zuerst Ihre Schichtmuster in den Einstellungen.",
+                    text = "Noch keine Schichttypen angelegt. Das geht im Bereich „Wecker“ unter „Schichttypen verwalten“.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

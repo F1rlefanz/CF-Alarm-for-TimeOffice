@@ -37,7 +37,7 @@ class HueBridgeUseCase @Inject constructor(
             
             if (discoveryResult == null) {
                 Logger.w(LogTags.HUE_USECASE, "Bridge discovery timed out after ${DISCOVERY_TIMEOUT_MS}ms")
-                return Result.failure(Exception("Discovery timed out. Please check your network connection."))
+                return Result.failure(Exception("Die Suche hat zu lange gedauert. Prüfe die WLAN-Verbindung und versuche es erneut."))
             }
             
             if (discoveryResult.isFailure) {
@@ -56,7 +56,7 @@ class HueBridgeUseCase @Inject constructor(
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Bridge discovery failed with exception", e)
-            Result.failure(Exception("Bridge discovery failed: ${e.message}", e))
+            Result.failure(Exception("Die Suche nach der Bridge ist fehlgeschlagen. Prüfe die WLAN-Verbindung und versuche es erneut.", e))
         }
     }
     
@@ -79,12 +79,12 @@ class HueBridgeUseCase @Inject constructor(
             
             if (connectivityResult == null) {
                 Logger.w(LogTags.HUE_USECASE, "Bridge connectivity test timed out")
-                return Result.failure(Exception("Bridge connection timed out. Please check if the bridge is reachable."))
+                return Result.failure(Exception("Die Bridge hat nicht rechtzeitig geantwortet. Ist sie eingeschaltet und im selben WLAN wie dein Handy?"))
             }
             
             if (connectivityResult.isFailure || connectivityResult.getOrNull() != true) {
                 Logger.w(LogTags.HUE_USECASE, "Bridge connectivity test failed")
-                return Result.failure(Exception("Cannot reach bridge at ${bridge.ipAddress}. Please check your network."))
+                return Result.failure(Exception("Die Bridge unter ${bridge.ipAddress} ist nicht erreichbar. Ist dein Handy im selben WLAN?"))
             }
             
             val connectionResult = bridgeRepository.connectToBridge(bridge)
@@ -95,11 +95,11 @@ class HueBridgeUseCase @Inject constructor(
                 
                 val userMessage = when {
                     error?.message?.contains("link button", ignoreCase = true) == true ->
-                        "Please press the link button on your Hue bridge and try again."
+                        "Drücke die Link-Taste auf der Hue-Bridge und tippe dann erneut auf „Jetzt verbinden“."
                     error?.message?.contains("unauthorized", ignoreCase = true) == true ->
-                        "Authorization failed. Please press the link button on your bridge."
+                        "Die Bridge hat die Verbindung abgelehnt. Drücke die Link-Taste und versuche es erneut."
                     else ->
-                        "Failed to connect to bridge: ${error?.message}"
+                        "Die Verbindung zur Bridge ist fehlgeschlagen. Bitte versuche es erneut."
                 }
                 
                 return Result.failure(Exception(userMessage, error))
@@ -109,7 +109,7 @@ class HueBridgeUseCase @Inject constructor(
             
             if (username.isNullOrBlank()) {
                 Logger.w(LogTags.HUE_USECASE, "Bridge connection returned empty username")
-                return Result.failure(Exception("Failed to create user on bridge"))
+                return Result.failure(Exception("Die Bridge hat keinen Zugang für die App angelegt. Bitte versuche es erneut."))
             }
             
             val saveResult = configRepository.saveBridgeConfig(bridge.ipAddress, username)
@@ -123,7 +123,7 @@ class HueBridgeUseCase @Inject constructor(
             
             if (validationResult.isFailure || validationResult.getOrNull() != true) {
                 Logger.w(LogTags.HUE_USECASE, "Bridge connection validation failed")
-                return Result.failure(Exception("Bridge setup completed but validation failed. Please try again."))
+                return Result.failure(Exception("Die Bridge ist gekoppelt, antwortet aber nicht wie erwartet. Bitte versuche es erneut."))
             }
             
             Logger.i(LogTags.HUE_USECASE, "Bridge setup completed successfully")
@@ -131,7 +131,7 @@ class HueBridgeUseCase @Inject constructor(
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Bridge setup failed with exception", e)
-            Result.failure(Exception("Bridge setup failed: ${e.message}", e))
+            Result.failure(Exception("Die Einrichtung der Bridge ist fehlgeschlagen. Bitte versuche es erneut.", e))
         }
     }
     
@@ -223,7 +223,7 @@ class HueBridgeUseCase @Inject constructor(
             Result.success(Unit)
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to forget bridge connection", e)
-            Result.failure(Exception("Failed to forget bridge: ${e.message}", e))
+            Result.failure(Exception("Die Bridge konnte nicht vergessen werden. Bitte versuche es erneut.", e))
         }
     }
 }

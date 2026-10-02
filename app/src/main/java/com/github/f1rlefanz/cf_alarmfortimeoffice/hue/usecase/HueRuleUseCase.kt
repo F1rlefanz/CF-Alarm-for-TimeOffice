@@ -71,7 +71,7 @@ class HueRuleUseCase @Inject constructor(
             }
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to get all rules", e)
-            Result.failure(Exception("Failed to retrieve schedule rules: ${e.message}", e))
+            Result.failure(Exception("Die Hue-Regeln konnten nicht geladen werden.", e))
         }
     }
     
@@ -84,14 +84,14 @@ class HueRuleUseCase @Inject constructor(
             val existingRules = configRepository.getScheduleRules().getOrNull() ?: emptyList()
             if (existingRules.any { it.id == rule.id }) {
                 Logger.w(LogTags.HUE_USECASE, "Rule with ID ${rule.id} already exists")
-                return Result.failure(IllegalArgumentException("Rule with ID ${rule.id} already exists"))
+                return Result.failure(IllegalArgumentException("Diese Regel gibt es bereits."))
             }
             
             val shiftRuleCount = existingRules.count { it.shiftPattern == rule.shiftPattern }
             if (shiftRuleCount >= MAX_RULES_PER_SHIFT) {
                 Logger.w(LogTags.HUE_USECASE, "Maximum rules per shift exceeded for ${rule.shiftPattern}")
                 return Result.failure(
-                    IllegalArgumentException("Maximum of $MAX_RULES_PER_SHIFT rules per shift pattern allowed")
+                    IllegalArgumentException("Für ein Schichtmuster sind höchstens $MAX_RULES_PER_SHIFT Regeln möglich.")
                 )
             }
             
@@ -108,12 +108,12 @@ class HueRuleUseCase @Inject constructor(
                 Result.success(ruleToSave)
             } else {
                 Logger.w(LogTags.HUE_USECASE, "Failed to save rule: ${ruleToSave.id}", saveResult.exceptionOrNull())
-                Result.failure(saveResult.exceptionOrNull() ?: Exception("Failed to save rule"))
+                Result.failure(saveResult.exceptionOrNull() ?: Exception("Die Regel konnte nicht gespeichert werden."))
             }
             
         } catch (e: Exception) {
             Logger.e(LogTags.HUE_USECASE, "Failed to create rule", e)
-            Result.failure(Exception("Failed to create rule: ${e.message}", e))
+            Result.failure(Exception("Die Regel konnte nicht angelegt werden.", e))
         }
     }
     
@@ -356,7 +356,7 @@ class HueRuleUseCase @Inject constructor(
                 Result.success(rule)
             } else {
                 Logger.w(LogTags.HUE_USECASE, "Failed to update rule: ${rule.id}", updateResult.exceptionOrNull())
-                Result.failure(updateResult.exceptionOrNull() ?: Exception("Failed to update rule"))
+                Result.failure(updateResult.exceptionOrNull() ?: Exception("Die Regel konnte nicht geändert werden."))
             }
             
         } catch (e: Exception) {
@@ -394,7 +394,7 @@ class HueRuleUseCase @Inject constructor(
                 Result.success(rule)
             } else {
                 Logger.w(LogTags.HUE_USECASE, "Rule not found: $ruleId")
-                Result.failure(Exception("Rule not found: $ruleId"))
+                Result.failure(Exception("Diese Regel gibt es nicht mehr."))
             }
             
         } catch (e: Exception) {

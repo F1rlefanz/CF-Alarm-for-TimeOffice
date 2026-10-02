@@ -113,7 +113,7 @@ internal object SchlummerEntscheidung {
             "App fort, wenn du wieder geweckt werden willst."
 
     const val HINWEIS_FEHLER =
-        "Der Schlummer-Wecker liess sich nicht stellen. Es ist KEIN weiterer Weckruf geplant - " +
+        "Der Schlummer-Wecker ließ sich nicht stellen. Es ist KEIN weiterer Weckruf geplant – " +
             "stelle dir bitte selbst einen."
 
     /**
@@ -123,8 +123,8 @@ internal object SchlummerEntscheidung {
      * (dann verliesse sich jemand darauf). Er sagt die Wirkung und was zu tun ist.
      */
     const val HINWEIS_UNKLAR =
-        "Der Schlummer-Wecker liess sich nicht zuverlaessig stellen. Moeglicherweise klingelt es " +
-            "spaeter trotzdem noch einmal - verlass dich nicht darauf und stelle dir bitte selbst " +
+        "Der Schlummer-Wecker ließ sich nicht zuverlässig stellen. Möglicherweise klingelt es " +
+            "später trotzdem noch einmal – verlass dich nicht darauf und stelle dir bitte selbst " +
             "einen Wecker."
 
     /** Loggt den misslungenen Rueckbau eines bereits armierten Schlummer-Weckers. */

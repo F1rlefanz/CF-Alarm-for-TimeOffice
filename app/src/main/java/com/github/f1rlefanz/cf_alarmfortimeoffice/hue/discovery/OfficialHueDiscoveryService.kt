@@ -34,6 +34,10 @@ class OfficialHueDiscoveryService(private val context: Context) {
     companion object {
         private const val NUPNP_TIMEOUT_MS = 15000L // 15 seconds for N-UPnP
         private const val MDNS_TIMEOUT_MS = 25000L // Obergrenze; mDNS bricht selbst frueher ab
+
+        /** "1 Bridge" / "2 Bridges" - die Suchmeldungen stehen so in der Oberflaeche. */
+        internal fun bridgeAnzahl(anzahl: Int): String =
+            if (anzahl == 1) "1 Bridge" else "$anzahl Bridges"
     }
     
     private val nUpnpService = HueNUpnpDiscoveryService()
@@ -57,7 +61,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
             // Emit starting status
             _discoveryStatus.emit(DiscoveryStatus(
                 stage = "STARTING",
-                message = "Starting bridge discovery...",
+                message = "Suche nach der Hue-Bridge startet …",
                 progress = 0.0f
             ))
             
@@ -69,7 +73,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
 
             _discoveryStatus.emit(DiscoveryStatus(
                 stage = "MDNS_SEARCH",
-                message = "Scanning local network via mDNS...",
+                message = "Suche im lokalen Netzwerk …",
                 progress = 0.1f,
                 currentMethod = "mDNS"
             ))
@@ -86,7 +90,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
 
                     _discoveryStatus.emit(DiscoveryStatus(
                         stage = "COMPLETED",
-                        message = "Found ${mdnsBridges.size} bridge(s) on local network",
+                        message = "${bridgeAnzahl(mdnsBridges.size)} im lokalen Netzwerk gefunden",
                         progress = 0.5f
                     ))
                 } else {
@@ -103,7 +107,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
             if (allBridges.isEmpty()) {
                 _discoveryStatus.emit(DiscoveryStatus(
                     stage = "N_UPNP_SEARCH",
-                    message = "Nothing found locally, contacting Philips discovery service...",
+                    message = "Im lokalen Netzwerk nichts gefunden – frage den Suchdienst von Philips Hue …",
                     progress = 0.5f,
                     currentMethod = "N-UPnP"
                 ))
@@ -130,7 +134,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
 
                     _discoveryStatus.emit(DiscoveryStatus(
                         stage = "FAILED",
-                        message = "Philips discovery service unavailable",
+                        message = "Suchdienst von Philips Hue nicht erreichbar",
                         progress = 0.8f
                     ))
                 }
@@ -144,7 +148,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
             if (totalBridges > 0) {
                 _discoveryStatus.emit(DiscoveryStatus(
                     stage = "COMPLETED",
-                    message = "Discovery completed: $totalBridges bridge(s) found",
+                    message = "Suche abgeschlossen: ${bridgeAnzahl(totalBridges)} gefunden",
                     progress = 1.0f,
                     isComplete = true
                 ))
@@ -153,7 +157,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
             } else {
                 _discoveryStatus.emit(DiscoveryStatus(
                     stage = "COMPLETED",
-                    message = "No bridges found. Please check your network connection and ensure bridges are powered on.",
+                    message = "Keine Bridge gefunden. Ist dein Handy im selben WLAN wie die Bridge, und ist sie eingeschaltet?",
                     progress = 1.0f,
                     isComplete = true
                 ))
@@ -168,7 +172,7 @@ class OfficialHueDiscoveryService(private val context: Context) {
             
             _discoveryStatus.emit(DiscoveryStatus(
                 stage = "FAILED",
-                message = "Discovery failed: ${e.message}",
+                message = "Die Suche ist fehlgeschlagen. Prüfe die WLAN-Verbindung und versuche es erneut.",
                 isComplete = true
             ))
             

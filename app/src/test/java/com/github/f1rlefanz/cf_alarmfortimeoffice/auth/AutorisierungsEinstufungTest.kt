@@ -3,6 +3,7 @@ package com.github.f1rlefanz.cf_alarmfortimeoffice.auth
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.AutorisierungsEinstufung
 import com.github.f1rlefanz.cf_alarmfortimeoffice.auth.manager.AutorisierungsEinstufung.Ausgang
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -107,6 +108,27 @@ class AutorisierungsEinstufungTest {
     fun `unbekannte Fehler und Codes sind mit Netz endgueltig - wie frueher GoogleAuthException`() {
         assertTrue(fehler(FakeApiException(10)) is Ausgang.Endgueltig) // DEVELOPER_ERROR
         assertTrue(fehler(IllegalStateException("x")) is Ausgang.Endgueltig)
+    }
+
+    /** Ein Name, den R8 im Release zu `a` machen wuerde - er darf nicht im Grund auftauchen. */
+    private class SehrEigenerAutorisierungsFehler(meldung: String?) : RuntimeException(meldung)
+
+    @Test
+    fun `unbekannter Fehler nennt die Meldung, nicht den Klassennamen`() {
+        // Issue #54: seit R8 umbenennt, waere ein simpleName fuer den Nutzer nur ein Kuerzel.
+        val ausgang = fehler(SehrEigenerAutorisierungsFehler("Konto gesperrt"))
+        assertTrue(ausgang is Ausgang.Endgueltig)
+        val grund = (ausgang as Ausgang.Endgueltig).grund
+        assertFalse(grund, grund.contains("SehrEigenerAutorisierungsFehler"))
+        assertTrue(grund, grund.contains("Konto gesperrt"))
+    }
+
+    @Test
+    fun `unbekannter Fehler ohne Meldung bekommt einen festen Text`() {
+        for (meldung in listOf(null, "", "   ")) {
+            val grund = (fehler(SehrEigenerAutorisierungsFehler(meldung)) as Ausgang.Endgueltig).grund
+            assertEquals("Unbekannter Fehler bei der Google-Autorisierung", grund)
+        }
     }
 
     @Test

@@ -172,6 +172,16 @@ jobs:
       - name: Release-Build mit R8 (unsigniert, prueft Shrinking/Optimierung)
         run: ./gradlew assembleRelease --stacktrace
 
+      # Issue #54: dieselbe Messung wie vor dem Upload in veroeffentlichen.yml, aber schon am
+      # Zweig - ein Regel-Umbau, der die Obfuskation unter 25 % drueckt, soll VOR dem Merge
+      # auffallen, nicht erst beim Ausliefern. Das Bundle teilt sich den R8-Lauf mit dem
+      # assembleRelease davor (minifyReleaseWithR8 ist dann aktuell) und bleibt unsigniert.
+      - name: Release-Bundle (unsigniert, fuer die R8-Kennzahlen)
+        run: ./gradlew bundleRelease --stacktrace
+
+      - name: R8-Kennzahlen und eingebettete Mapping-Datei pruefen
+        run: python3 tools/release/r8_kennzahlen.py app/build/outputs/bundle/release/app-release.aab
+
       - name: Test-/Lint-Reports bei Fehler
         if: failure()
         uses: actions/upload-artifact@v7

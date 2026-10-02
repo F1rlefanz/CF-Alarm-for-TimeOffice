@@ -6,20 +6,20 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Haelt die drei R8-Entscheidungen fest, die man nicht am Build sieht, sondern erst am ersten
- * Fehlerbericht eines Alpha-Testers.
+ * Haelt die R8-Entscheidungen fest, die man nicht am Build sieht, sondern erst am ersten
+ * Fehlerbericht eines Alpha-Testers - oder an der Ablehnung durch Play.
  *
  * DER ABLAUF, DER DAZU GEFUEHRT HAT: Bis v1.27.0 standen in `proguard-rules.pro` zwei Regeln der
  * Form `-keep class * { ... }`. Die Klassenspezifikation `*` macht JEDE Klasse zur Keep-Wurzel -
- * R8 hat deshalb seit dem Einschalten von Minify nichts entfernt und nichts umbenannt. Die
- * Korrektur auf `-keepclasseswithmembers`/`-keepclassmembers` nimmt diese Wurzelwirkung weg und
- * haette damit als Nebenwirkung ZUM ERSTEN MAL echte Obfuskation eingeschaltet.
+ * R8 hat deshalb seit dem Einschalten von Minify nichts entfernt und nichts umbenannt. Mit der
+ * Korrektur kam `-dontobfuscate` dazu, weil es damals keine archivierte mapping.txt gab.
  *
- * Das kollidiert mit der einzigen Diagnosequelle dieser App: `last_crash.txt` und die WARN/ERROR-
- * Zeilen, die ein Tester per "Logs senden" schickt. Die Datei haelt eigens `SourceFile` und
- * `LineNumberTable` dafuer - die Zeilennummern blieben also, Klassen- und Methodennamen nicht,
- * und eine mapping.txt zum Zurueckuebersetzen wird nirgends archiviert. Deshalb `-dontobfuscate`:
- * Shrinking ja (das ist der Groessengewinn), Umbenennen nein.
+ * SEIT ISSUE #54 IST ES UMGEKEHRT: Play verlangt ab Februar 2027 bei mehr als 10 MB DEX je
+ * mindestens 25 % Obfuskation, Optimierung und Shrinking; mit `-dontobfuscate` stand die
+ * Obfuskation bei 0,01 % (gemessen 01.10.2026, DEX 10,1 MB). Die mapping.txt ist inzwischen
+ * doppelt gesichert (im Bundle eingebettet + CI-Artefakt), zurueckuebersetzt wird mit R8-Retrace.
+ * Umbenennen ist damit Pflicht - und jede Regel, die einen zur Laufzeit per NAMEN gesuchten
+ * Bestandteil haelt, wird tragend.
  *
  * Geprueft wird die Regeldatei selbst, weil die Wirkung erst im Release-Artefakt sichtbar wird -
  * und dort niemand hinsieht, bevor es zu spaet ist.
@@ -38,21 +38,56 @@ class Pruefrunde6R8RegelnTest {
         regeln.any { it == direktive || it.startsWith("$direktive ") }
 
     @Test
-    fun `Umbenennung bleibt aus, solange keine mapping-Datei archiviert wird`() {
-        assertTrue(
-            "Ohne '-dontobfuscate' benennt R8 den gesamten App-Code um. Das erste " +
-                "Absturzprotokoll eines Testers enthielte dann nur noch a.b.c(SourceFile:412), " +
-                "und es gibt keine archivierte mapping.txt, mit der sich das zurueckuebersetzen " +
-                "liesse. Diese Zeile darf erst weg, wenn die mapping.txt je Release gesichert " +
-                "wird UND ein Release-Build am Geraet durchgespielt wurde.",
+    fun `Umbenennung ist an - Play verlangt sie ab 10 MB DEX`() {
+        assertFalse(
+            "'-dontobfuscate' druckt die Obfuskation auf 0 %. Play lehnt ab Februar 2027 ein " +
+                "Bundle mit mehr als 10 MB DEX und weniger als 25 % Obfuskation ab (Issue #54). " +
+                "Die mapping.txt ist im Bundle eingebettet und als CI-Artefakt gesichert; " +
+                "zurueckuebersetzt wird mit R8-Retrace (Befehl in proguard-rules.pro).",
             istAktiv("-dontobfuscate")
         )
     }
 
     @Test
+    fun `Zeilennummern bleiben im Stacktrace - ohne sie hilft auch Retrace nicht`() {
+        // Retrace bildet umbenannte Namen zurueck, aber die Zeile kann es nur aufloesen, wenn
+        // LineNumberTable erhalten ist. SourceFile haelt `(SourceFile:412)` statt `(Unknown Source)`.
+        val attribute = regeln
+            .filter { it.startsWith("-keepattributes ") }
+            .flatMap { it.removePrefix("-keepattributes ").split(',').map(String::trim) }
+        assertTrue("SourceFile fehlt in -keepattributes", "SourceFile" in attribute)
+        assertTrue("LineNumberTable fehlt in -keepattributes", "LineNumberTable" in attribute)
+    }
+
+    @Test
+    fun `Regeln fuer per Namen gesuchte Bestandteile stehen weiter`() {
+        // Ohne -dontobfuscate halten NUR noch diese Regeln die Namen, die zur Laufzeit gesucht
+        // werden. Faellt eine, bricht der Release-Build still - kein Unit-Test sieht das.
+        val tragend = mapOf(
+            // Gson: Feldname = JSON-Schluessel der Hue-Antworten.
+            "-keep class com.github.f1rlefanz.cf_alarmfortimeoffice.hue.data.** { *; }" to
+                "Hue-Antworten kaemen leer an (Gson liest Feldnamen)",
+            // WorkManager speichert den Klassennamen des Workers in seiner Datenbank.
+            "-keepnames class * extends androidx.work.ListenableWorker" to
+                "eingeplante Worker liessen sich nach einem Update nicht mehr finden"
+        )
+        for ((regel, folge) in tragend) {
+            assertTrue("Regel fehlt: '$regel' - $folge", regel in regeln)
+        }
+
+        // google-http-client: `@Key` ohne Wert nimmt den Feldnamen als JSON-Schluessel. Die
+        // Member-Zeile muss in einem -keepclassmembers OHNE allowobfuscation stehen.
+        val keyZeile = regeln.indexOf("@com.google.api.client.util.Key <fields>;")
+        assertTrue(
+            "Kalender-Events kaemen leer an: keine Keep-Regel fuer @Key-Felder",
+            keyZeile > 0 && regeln[keyZeile - 1] == "-keepclassmembers class * {"
+        )
+    }
+
+    @Test
     fun `Shrinking und Optimierung bleiben eingeschaltet`() {
-        // Die Gegenprobe: `-dontobfuscate` darf nicht zum Einfallstor werden, die beiden anderen
-        // gleich mit abzuschalten - dann waere isMinifyEnabled=true wieder eine Attrappe.
+        // Alle drei R8-Stufen zaehlen fuer Play einzeln (je >= 25 %), und mit einer dieser
+        // Zeilen waere isMinifyEnabled=true wieder eine Attrappe.
         assertFalse("-dontshrink macht isMinifyEnabled=true zur Attrappe", istAktiv("-dontshrink"))
         assertFalse("-dontoptimize war 'temporarily disabled' und bleibt aus", istAktiv("-dontoptimize"))
     }

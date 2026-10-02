@@ -23,7 +23,7 @@ import java.util.Base64
  * hat bewusst keinen. Geprueft wird hier nichts kryptografisch (Challenge, Signatur) - es gibt
  * niemanden, der es pruefen koennte, und der Hinweis braucht es nicht (siehe oben).
  *
- * WARUM DIE E-MAIL IN `user.id` (Entscheidung 02.10.2026, recherche-55.md): nur mit ihr laesst
+ * WARUM DIE E-MAIL IN `user.id` (Issue #55, entschieden 02.10.2026): nur mit ihr laesst
  * sich `calendar.readonly` per `setAccount()` ganz ohne Oberflaeche holen. Die numerische
  * Google-Konto-ID braeuchte auf dem neuen Geraet einen Kontowaehler und versagt bei mehreren
  * Konten. `name`/`displayName` tragen deshalb bewusst NICHT noch einmal die Adresse.

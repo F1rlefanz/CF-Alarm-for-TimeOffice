@@ -47,8 +47,8 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 /**
- * #55, Zero-Tap-Wiederherstellung im [AuthViewModel]: die Zusicherungen aus
- * ENTSCHEIDUNGEN.md, ohne Play-Dienste (die Plattform steckt hinter [AnmeldeWiederherstellung]).
+ * #55, Zero-Tap-Wiederherstellung im [AuthViewModel]: die Zusicherungen aus Issue #55,
+ * ohne Play-Dienste (die Plattform steckt hinter [AnmeldeWiederherstellung]).
  *
  * - Treffer: dieselbe Kette wie nach "Mit Google anmelden" (Auth-Daten, Kalender-Autorisierung,
  *   neuer eigener Schluessel samt Merker).

@@ -91,7 +91,12 @@ class ShiftViewModelSyncGateTest {
             hueRuleUseCase = dagger.Lazy { mock<HueRuleUseCase>() },
             armierer = mock<ZeitkettenArmierer>(),
             dndPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dnd.DndPrefs>() },
-            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() }
+            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() },
+            // Nur fuer die Statuszeile je Schicht (#70) - die liest erst beim Abo, dieser Test abonniert sie nicht.
+            dimOverlayPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs>() },
+            hueConfigRepository = dagger.Lazy {
+                mock<com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository>()
+            }
         )
     }
 

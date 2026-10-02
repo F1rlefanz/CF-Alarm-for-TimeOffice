@@ -54,7 +54,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftCodeSuggester
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.AufklappHinweis
 import com.github.f1rlefanz.cf_alarmfortimeoffice.ui.components.ShiftEditDialog
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.theme.SpacingConstants
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.SchichtFolgen
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.alsText
 
 /**
  * Die Beispiele, die [SHIFT_RECOGNITION_HINT] nennt - bewusst als Listen und nicht als Prosa im
@@ -135,6 +137,9 @@ fun ShiftConfigScreen(
     // unterhalb von STARTED, es haengt also kein Seiteneffekt daran - der Zustand ist ein heisser
     // StateFlow im ViewModel und liegt beim Zurueckkehren sofort wieder aktuell an.
     val shiftState by shiftViewModel.uiState.collectAsStateWithLifecycle()
+    // Statuszeile je Schicht (#70). Das Abo HIER startet das Lesen der Dimmer-/Hue-/DND-Stores
+    // (WhileSubscribed) - nicht schon der App-Start, an dem das ViewModel entsteht.
+    val schichtFolgen by shiftViewModel.schichtFolgen.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingDefinition by remember { mutableStateOf<ShiftDefinition?>(null) }
 
@@ -329,6 +334,7 @@ fun ShiftConfigScreen(
                     ) { definition ->
                         ShiftDefinitionCard(
                             definition = definition,
+                            folgen = schichtFolgen[definition.id],
                             onEdit = { editingDefinition = definition },
                             onDelete = { pendingDelete = definition }
                         )
@@ -630,6 +636,11 @@ private fun CodeSuggestionCard(
 @Composable
 private fun ShiftDefinitionCard(
     definition: ShiftDefinition,
+    /**
+     * Was die Schicht ausserhalb des Weckers ausloest; `null` = (noch) nicht gelesen oder
+     * Schicht deaktiviert. BEWUSST ohne Default (Skill cfalarm-ui-und-navigation: Anzeigepfad).
+     */
+    folgen: SchichtFolgen?,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -696,6 +707,16 @@ private fun ShiftDefinitionCard(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+                // Statuszeile (#70): rein lesend, nicht eigens tippbar, keine Warnfarbe - sie
+                // beschreibt die Konfiguration, sie mahnt nicht. Eine DEAKTIVIERTE Schicht zeigt
+                // keine: ihr Text darueber sagt schon "kein Dimmer- und kein DND-Fenster".
+                if (definition.isEnabled && folgen != null) {
+                    Text(
+                        folgen.alsText(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             

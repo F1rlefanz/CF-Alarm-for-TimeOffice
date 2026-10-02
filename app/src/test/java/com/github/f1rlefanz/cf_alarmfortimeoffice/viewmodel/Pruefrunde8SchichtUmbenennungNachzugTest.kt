@@ -170,7 +170,12 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             hueRuleUseCase = dagger.Lazy { hue },
             armierer = armierer,
             dndPrefs = dagger.Lazy { dnd },
-            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() }
+            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() },
+            // Nur fuer die Statuszeile je Schicht (#70) - die liest erst beim Abo, dieser Test abonniert sie nicht.
+            dimOverlayPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs>() },
+            hueConfigRepository = dagger.Lazy {
+                mock<com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository>()
+            }
         )
         return Umgebung(vm, dim, hue, store, dnd, armierer, alarmUseCase)
     }
@@ -365,7 +370,12 @@ class Pruefrunde8SchichtUmbenennungNachzugTest {
             hueRuleUseCase = dagger.Lazy { hue },
             armierer = mock<ZeitkettenArmierer>(),
             dndPrefs = dagger.Lazy { mock<DndPrefs>() },
-            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() }
+            shiftSpanStore = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.shift.ShiftSpanStore>() },
+            // Nur fuer die Statuszeile je Schicht (#70) - die liest erst beim Abo, dieser Test abonniert sie nicht.
+            dimOverlayPrefs = dagger.Lazy { mock<com.github.f1rlefanz.cf_alarmfortimeoffice.dimmer.DimOverlayPrefs>() },
+            hueConfigRepository = dagger.Lazy {
+                mock<com.github.f1rlefanz.cf_alarmfortimeoffice.hue.repository.interfaces.IHueConfigRepository>()
+            }
         )
         advanceUntilIdle()
 

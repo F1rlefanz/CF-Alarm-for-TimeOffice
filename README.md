@@ -1,158 +1,120 @@
-# CF Alarm for Time Office
+# CF-Alarm for TimeOffice
 
 <div align="center">
 
-![CF Alarm Logo](https://img.shields.io/badge/CF%20Alarm-Time%20Office-blue?style=for-the-badge)
+<img src="docs/assets/img/icon-192.png" alt="CF-Alarm-Logo" width="96" height="96">
+
 ![Android](https://img.shields.io/badge/Android-8.0+-green?style=for-the-badge&logo=android)
-![Status](https://img.shields.io/badge/Status-Interner%20Alpha--Test-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Test-orange?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
-**Automatische Wecker aus dem Google-Dienstplan-Kalender – mit Schicht-Dimmer, „Nicht stören" und optionaler Philips-Hue-Sonnenaufgangssimulation**
+**Wecker aus dem Dienstplan: CF-Alarm erkennt deine Schichten im Google Kalender und stellt die passenden Wecker – mit Schicht-Dimmer, „Nicht stören“-Automatik und Philips Hue.**
 
-[📖 Dokumentation & Support](https://cf-alarm.duckdns.org) • [📲 Play Store (interner Test)](https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice)
+[Website mit Anleitung und Hilfe](https://cf-alarm.duckdns.org) • [Changelog](https://cf-alarm.duckdns.org/changelog.html) • [Datenschutz](https://cf-alarm.duckdns.org/privacy.html)
 
 </div>
 
-## ⚠️ Alpha-Test-Status
+<p align="center">
+  <img src="docs/assets/img/screen-uebersicht.webp" alt="Übersicht" width="180">
+  <img src="docs/assets/img/screen-wecker.webp" alt="Wecker-Bereich" width="180">
+  <img src="docs/assets/img/screen-schichttypen.webp" alt="Schichttypen" width="180">
+  <img src="docs/assets/img/screen-vollbild-wecker.webp" alt="Weckbildschirm" width="180">
+</p>
 
-Die App wird im **internen Alpha-Test** verteilt. Sie ist **nicht** öffentlich im Play Store veröffentlicht und geht ausschließlich an eine kleine Gruppe eingeladener Tester (aktuell: Kolleginnen und Kollegen aus der Pflege). Welche Version gerade aktuell ist, steht im [Changelog](https://cf-alarm.duckdns.org/changelog.html) — hier stand die Nummer bis September 2026 fest im Text und war irgendwann fünfzehn Versionen alt.
+## Was die App macht
 
-Was das bedeutet:
-- Es kann Bugs geben – Feedback ist ausdrücklich erwünscht.
-- Funktionsumfang und Bedienung können sich noch ändern.
-- Die App wird von **einer Einzelperson** in der Freizeit entwickelt, nicht von einem Unternehmen.
-- Es gibt (noch) keinen offiziellen Support-Kanal – Rückmeldungen bitte direkt an den Entwickler.
+Wer im Schichtdienst arbeitet und seinen Dienstplan im Google Kalender hat – zum Beispiel, weil TimeOffice ihn dort einträgt –, muss keine Wecker mehr von Hand stellen. CF-Alarm liest den Kalender, erkennt die Schichten an ihren Kürzeln im Termintitel und stellt für jeden Schichttyp den Wecker zur eingestellten Zeit. Ändert sich der Plan, zieht der Wecker nach.
 
-> 💡 **Problem melden:** Im **System-Status**, Karte **„Debug-Informationen"** → **„Logs an Entwickler senden"**. Es öffnet sich der Teilen-Dialog, vorausgefüllt als E-Mail an **cfischer@csj.de** (eine andere App geht auch). Angehängt werden die Log-Dateien der letzten 8 Tage – das hilft enorm bei der Fehlersuche.
-
-## 🚀 Was die App macht
-
-CF Alarm liest Schichttermine aus einem Google-Kalender (z. B. dem Dienstplan-Kalender „TimeOffice") und stellt daraus automatisch passende Wecker – ohne dass der Dienstplan manuell abgetippt werden muss.
+CF-Alarm erkennt **Schichten**, keine beliebigen Termine. Für einen Kalender mit Arztterminen und Geburtstagen ist sie nicht gedacht.
 
 Die App hat sechs Bereiche, erreichbar über das Menü: **Übersicht**, **Wecker**, **Schicht-Dimmer**, **Philips Hue**, **System-Status**, **Einstellungen**.
 
-### 📅 Kalender & Schichterkennung
-- **Automatische Wecker** aus Kalenderterminen der selbst ausgewählten Kalender
-- **OAuth 2.0** für die Google-Anmeldung (Google Sign-In), nur Lesezugriff auf Kalender
-- **Schichttypen mit eigenen Mustern**: pro Schichttyp eine feste Weckzeit (z. B. Frühschicht 05:30) und beliebig viele Erkennungsmuster; der Name des Schichttyps zählt ab zwei Zeichen selbst als Muster. Gematcht wird auf **Wortgrenzen** – „F" trifft einen Termin „F", nicht „Fortbildung".
-- **Kürzel-Vorschläge aus dem echten Kalender** (neu in 1.23.0): die Karte „Diese Kürzel stehen in deinem Kalender" zeigt die Termintitel, die von keinem aktiven Muster getroffen werden, sortiert nach Häufigkeit. Antippen ordnet das Kürzel einem Schichttyp zu. Die App ordnet **nichts** von selbst zu – ein falsch geratenes Kürzel wäre ein Wecker zur falschen Zeit.
-- **Stille Schicht**: kein Ton/keine Vibration/kein Vollbild, die Weckzeit bleibt aber als Anker für Dimmer und „Nicht stören" erhalten (z. B. Rufbereitschaft)
-- **Nächsten Alarm einmalig überspringen** (Wecker-Tab), zeitbasiert und wieder aufhebbar
-- **Schlummer-Dauer** global einstellbar (3/5/10/15 Minuten, Wecker-Tab) – ein Wert für Vollbild- und Benachrichtigungs-Knopf
-- **Manueller Alarm** als Fallback, wenn der Dienstplan mal nicht aktuell oder die Calendar-API nicht erreichbar ist
+### Wecker aus dem Dienstplan
+- **Schichttypen** mit eigener Weckzeit und beliebig vielen Erkennungsmustern. Ein Muster trifft nur als eigenes Wort – „F“ erkennt den Termin „F“, nicht „Fortbildung“. Vorgabe für neue Installationen: Früh-, Spät- und Nachtschicht (F, S, N) und Zwischendienst (ZD).
+- **Kürzel-Vorschläge** aus dem echten Kalender: Termintitel ohne passendes Muster stehen in einer eigenen Karte und lassen sich mit einem Tipp einer Schicht zuordnen. Die App ordnet nichts von selbst zu.
+- **Statuszeile je Schicht**: was eine Schicht außer dem Wecker auslöst (Dimmen, Licht, „Nicht stören“).
+- **Kalender-Vorausschau** von 7 bis 90 Tagen, einstellbar.
+- **Überspringen** lässt den nächsten Wecker einmal aus; **Tag freigeben** streicht einen ausgefallenen Dienst – kein Wecker, kein „Nicht stören“.
+- **Manueller Alarm** für Tage, die nicht im Plan stehen.
+- **Schlummer-Dauer** 3/5/10/15 Minuten und auf Wunsch **sanft lauter werdender** Weckton.
+- **Stille Schicht**: kein Weckton, Dimmen und „Nicht stören“ richten sich trotzdem nach ihr.
+- **Rufbereitschaft** als Eigenschaft eines Schichttyps: an solchen Tagen schaut die App stündlich in den Kalender.
+- **Hinweis bei Dienstplan-Änderungen** (abschaltbar).
 
-### 🛡️ Zuverlässigkeit im Hintergrund
-- **Wartungskette alle 6 Stunden**: Token erneuern, Kalender abfragen, Wecker neu setzen – erkennt auch **geänderte und gestrichene** Schichten, nicht nur neue
-- **Auffrischung 3 Stunden vor jeder Weckzeit**, damit kurzfristige Dienstplan-Änderungen den nächsten Wecker noch erreichen
-- **Nach Neustart und App-Update** werden alle Wecker wiederhergestellt
-- **Benachrichtigung bei Schicht-Änderungen** („Schicht-Änderung", abschaltbar in den Einstellungen)
-- **System-Status** zeigt, was den Wecker draußen aushebeln kann: Akku-Optimierung, Androids „App bei Nichtnutzung pausieren" – und eine eigene Karte für **TimeOffice** selbst, denn dessen Sync ist die vorgelagerte Datenquelle (fällt er aus, ist der Dienstplan-Kalender veraltet, ohne dass CF Alarm etwas merkt)
-- **Hintergrunddienste pausieren** (Einstellungen): ein Schalter pausiert alles – Wecker, Dimmer, „Nicht stören", Hue-Automatik und die 6h-Wartung selbst – für längere Abwesenheit
+### Zuverlässigkeit im Hintergrund
+- Abgleich mit dem Kalender alle 6 Stunden und 3 Stunden vor jedem Wecker; erkennt neue, geänderte und gestrichene Schichten.
+- Nach Neustart und Update stellt die App ihre Wecker selbst wieder her.
+- Ohne Internet zeigt die Übersicht die zuletzt bekannte nächste Schicht; die gestellten Wecker bleiben.
+- Der **System-Status** zeigt, was einen Wecker verhindern kann – Akku-Optimierung, „App bei Nichtnutzung pausieren“, blockierte Benachrichtigungen, ein nicht abrufbarer Kalender und die Zuverlässigkeit von TimeOffice selbst.
+- **Hintergrunddienste pausieren** hält alles gemeinsam an – Wecker, Dimmer, „Nicht stören“ und Hue-Automatik –, auch über einen Neustart hinweg.
 
-### 🌙 Schicht-Dimmer (optional)
-- **Nacht-Standard**: dimmt ab einer festen Uhrzeit bis zum nächsten CF-Alarm-Wecker, ohne dass dafür eine Regel angelegt werden muss; einzelne Schichten lassen sich per Chip ausnehmen
-- **Wellness (Wind-down)**: dunkelt eine Weile vor jeder Weckzeit ab
-- **Schicht-Regeln**: frei definierbare Zeitfenster, gekoppelt an die erkannten Schichten (z. B. nachts dimmen, aber nicht an Nachtdienst-Nächten), mit Vorschau für die nächsten Tage
-- **Korrektur direkt aus der Benachrichtigung**: „Heller", „Dunkler", „Pause" für das laufende Fenster
-- Abgedunkelt wird über einen **Bedienungshilfe-Dienst**, der in Androids Einstellungen selbst aktiviert werden muss. Er legt ausschließlich eine dunkle Schicht über den Bildschirm – er liest keine Bildschirminhalte und wertet keine Eingaben aus.
+### Schicht-Dimmer (optional)
+- Dunkelt den Bildschirm zu deinen Schlafzeiten ab, auch unter die kleinste Helligkeit, die Android erlaubt.
+- Ein Hauptschalter; wann gedimmt wird, steht ausschließlich in **Regeln** – für alle Tage oder je Schicht, mit Zeitfenstern relativ zu Uhrzeit, Weckzeit oder Schichtende und auf Wunsch abhängig von der Position in einer Dienstfolge (erster, mittlerer, letzter Tag).
+- Vorlagen: **Nacht-Dimmen**, **Nachtdienst-Rhythmus** und **Schicht ausnehmen**; dazu eine Vorschau der nächsten Tage.
+- Korrektur aus der Benachrichtigung: „Heller“, „Dunkler“, „Pause“.
+- Abgedunkelt wird über einen **Bedienungshilfen-Dienst**, den du selbst einschaltest. Er legt nur eine dunkle Fläche über den Bildschirm und liest keine Inhalte.
 
-### 🔕 Nicht stören automatisch (optional, ab Android 11)
-- Zwei unabhängig schaltbare Auslöser: **„Schlaf-Fenster folgt dem Dimmer"** und **„Während der Dienstzeit"** (einzelne Schichten ausnehmbar)
-- **Rufbereitschaft**: an Tagen mit einer so markierten Schicht endet „Nicht stören" schon zu einer festen Uhrzeit (Standard 05:00) – ab dann bist du erreichbar
-- Frei einstellbar, was stummgeschaltet wird (Anrufe, Nachrichten, Erinnerungen, Termine, Medien, Wecker anderer Apps …). Der eigene Wecker klingelt immer, dafür ist keine Ausnahme nötig.
-- Umgesetzt als eigener Eintrag unter *Einstellungen → Ton → Nicht stören → Zeitpläne*, damit manuelles DND und fremde Automatisierungen unberührt bleiben
+### „Nicht stören“ automatisch (optional, ab Android 11)
+- Zwei Auslöser: **Schlaf-Fenster folgt dem Dimmer** und **Während der Dienstzeit** (einzelne Schichten ausnehmbar).
+- An Rufbereitschaftstagen endet „Nicht stören“ zu einer festen Uhrzeit.
+- Frei wählbar, was stumm bleibt. Der eigene Wecker klingelt immer.
+- Ein eigener Zeitplan in den Android-Einstellungen; manuelles „Nicht stören“ bleibt unberührt.
 
-### 💡 Philips Hue Integration (optional)
-- **Sonnenaufgangs-Simulation** zum sanften Wecken
-- **Automatische Bridge-Erkennung** im lokalen Netzwerk (mDNS, N-UPnP, offizieller Endpunkt)
-- **Regeln je Schichttyp** (oder für alle Schichten) mit Vorschau und Lampen-Test
-- Das **Auto-Aus liegt als Zeitplan auf der Bridge**, nicht auf dem Handy – es greift also auch, wenn das Handy längst nicht mehr im Heim-WLAN ist
+### Philips Hue (optional)
+- Bridge-Suche im lokalen Netzwerk, Kopplung per Link-Taste.
+- Regeln je Schichttyp oder für alle Schichten, auf eine von drei Arten: **Szene** aus der Hue-App (auch mehrere Räume), **manuell** mit eigener Helligkeit und Farbe oder **Sonnenaufgang**.
+- Das automatische Ausschalten liegt als Zeitplan auf der Bridge und greift auch, wenn das Handy nicht mehr im WLAN ist.
 
-### 💾 Konfiguration exportieren / importieren (neu in 1.23.0)
-- Einstellungen → **Konfiguration** → „Exportieren" / „Importieren" schreibt bzw. liest eine JSON-Datei über den System-Dateidialog
-- Enthalten sind Schichttypen, Hue-Regeln, Dimmer-Regeln und die „Nicht stören"-Einstellungen – die Datei lässt sich weitergeben und funktioniert auch bei einer Neuinstallation auf demselben Gerät
-- **Absichtlich nicht enthalten**: Anmeldung, Tokens, Kalenderauswahl, die Hue-Bridge-Zugangsdaten sowie Laufzeitzustand wie die Pause-Schalter. Das richtet man auf jedem Gerät selbst ein; ein importierter Pausenzustand hätte den Wecker stumm gelassen.
-- Der Import fragt vorher nach, überschreibt die aktuelle Konfiguration und setzt danach alle Wecker neu
+### Sichern und Gerätewechsel
+- **Exportieren / Importieren** von Schichttypen, Hue-, Dimmer- und „Nicht stören“-Einstellungen als Datei.
+- Mit Androids Datensicherung kommen die Einstellungen aufs neue Handy mit; ab Android 9 meldet die App dich dort selbst wieder an.
 
-### 🔒 Sicherheit & Datenhaltung
-- Tokens werden lokal mit **AES-256-GCM** (Google Tink) verschlüsselt gespeichert
-- Keine eigene Cloud-Anbindung – Daten bleiben auf dem Gerät bzw. bei Google/Hue direkt
-- Kalender-, Hue- und Token-Daten liegen in getrennten lokalen Speichern
+### Datenschutz
+- Der Kalender wird nur **gelesen** (`calendar.readonly`).
+- Keine eigenen Server, keine Werbung, keine Analyse-Dienste.
+- Gespeichert werden die erkannten Schichten mit ihren Uhrzeiten, keine Termininhalte; das Google-Token liegt mit AES-256-GCM verschlüsselt auf dem Gerät.
+- Einzelheiten: [Datenschutzerklärung](https://cf-alarm.duckdns.org/privacy.html).
 
-## 📱 Voraussetzungen
+## Voraussetzungen
 
-- **Android 8.0** (API Level 26) oder höher; „Nicht stören"-Automatik ab **Android 11**
-- Ein **Google-Konto** mit Zugriff auf den Dienstplan-Kalender
-- Optional: eine **Philips Hue Bridge** im selben WLAN, falls die Lichtsteuerung genutzt werden soll
+- **Android 8.0** oder neuer; „Nicht stören“-Automatik ab **Android 11**
+- Ein **Google-Konto** mit einem Kalender, in dem die Dienste als Termine stehen
+- Optional eine **Philips Hue Bridge** im selben WLAN
 
-## ✅ So nimmst du am Alpha-Test teil
+## Am Test teilnehmen
 
-1. **Kurze Nachricht an den Entwickler** – per E-Mail an **cfischer@csj.de** oder via GitHub ([@F1rlefanz](https://github.com/F1rlefanz)) – mit der Bitte um Zugang zum internen Test.
-2. Du erhältst einen **Installationslink** (Play-Store-Track für eingeladene Tester oder direkte APK).
-3. **App installieren** und öffnen.
-4. **Google-Konto verbinden** und die auszuwertenden Kalender auswählen.
-5. **Schichttypen prüfen**: Weckzeiten anpassen und die Kürzel deiner Station zuordnen – dafür ist die Karte „Diese Kürzel stehen in deinem Kalender" da. Ohne passendes Muster klingelt kein Wecker.
-6. Optional: **Schicht-Dimmer**, **„Nicht stören"** und **Philips Hue** einrichten.
-7. **Manuellen Alarm auslösen** und prüfen, ob Verhalten und Lautstärke passen.
+Die App ist noch nicht öffentlich im Play Store; sie geht über einen Testzugang an eine kleine Gruppe, derzeit vor allem Kolleginnen und Kollegen aus der Pflege. Entwickelt wird sie von einer Einzelperson in der Freizeit.
 
-Rückmeldungen, Abstürze und ungewöhnliches Verhalten bitte direkt an den Entwickler melden – dafür ist der Alpha-Test da.
+1. Kurze Nachricht an **cfischer@csj.de** oder über GitHub ([@F1rlefanz](https://github.com/F1rlefanz)).
+2. Über den Link, den du bekommst, die App bei Google Play installieren.
+3. Der [Anleitung](https://cf-alarm.duckdns.org/advanced-setup.html) folgen: anmelden, Kalender wählen, Hintergrund freigeben, Kürzel zuordnen.
 
-## 🔧 Konfiguration im Überblick
+**Problem melden:** In der App unter **System-Status** → Karte „Debug-Informationen“ → **„Logs an Entwickler senden“**. Es öffnet sich der Teilen-Dialog, vorausgefüllt als E-Mail; angehängt werden die Protokolle der letzten Tage.
 
-- **Kalenderauswahl** – welche Kalender (z. B. „TimeOffice") ausgewertet werden
-- **Schichttypen** – Weckzeit, Erkennungsmuster, aktiv/inaktiv, „Stille Schicht"
-- **Schlummer-Dauer** – global 3/5/10/15 Minuten (Wecker-Tab)
-- **Automatische Alarme** – Hauptschalter im Wecker-Tab; „Nächsten Alarm überspringen" für den Einzelfall
-- **Schicht-Dimmer** – Nacht-Standard, Wellness-Wind-down, eigene Regeln
-- **Nicht stören** – zwei Auslöser, Rufbereitschaft-Cutoff, frei wählbare Ausnahmen
-- **Hue-Regeln** – Lichtprofile je Schichttyp, mit oder ohne Sonnenaufgang
-- **Benachrichtigungen** – Schicht-Änderungen, Dimmer-Korrektur
-- **Hintergrunddienste pausieren** – alles aus für längere Abwesenheit
-- **Konfiguration exportieren/importieren** – als Datei
+## Für Entwickler
 
-## 👨‍💻 Für Entwickler
-
-Der Code folgt Clean Architecture + MVVM mit Hilt als DI-Framework (Details siehe [`CLAUDE.md`](./CLAUDE.md)): Jetpack Compose (Material 3) → ViewModels mit StateFlow → Use Cases → Repositories → DataStore/Google-APIs/Hue-Bridge. Hintergrundarbeit läuft über AlarmManager (exakte Alarme) und WorkManager.
+Kotlin, Jetpack Compose (Material 3), MVVM mit Hilt. Hintergrundarbeit über AlarmManager (exakte Alarme) und WorkManager, Einstellungen in DataStore, Kalender über die Google Calendar API, Hue über die lokale Bridge-API.
 
 - `minSdk = 26`, `targetSdk = 37`, `compileSdk = 37`, Java 17 mit Core Library Desugaring
-- **Release-Builds laufen durch R8** (`isMinifyEnabled`/`isShrinkResources = true`, seit 10.08.2026 wieder aktiv, nachdem AGP 9.3.1 den R8-NPE behoben hat); `debug` und `staging` bleiben unminifiziert. `assembleRelease` braucht **Netzzugang** – mit `--offline` scheitert es an einer nur im Minify-Pfad benötigten Abhängigkeit.
-- Über 550 Unit-Tests in `app/src/test` plus Instrumentation-Smoke-Tests, die Application und MainActivity gegen den echten, unveränderten Hilt-Graphen hochfahren (fängt Konstruktions-Fehler, die kein Unit-Test nachbildet)
-- CI (`.github/workflows/ci.yml`) baut `testDebugUnitTest`, `lintDebug`, `assembleDebug` **und** den Release-Pfad (`lintVitalRelease`, `assembleRelease`); ohne Keystore-Secret entsteht dabei bewusst eine unsignierte APK
+- Release-Builds laufen durch R8.
+- Unit-Tests in `app/src/test`, Instrumentation-Tests in `app/src/androidTest`; die CI baut Tests, Lint, Debug- und Release-Build.
 
-**Build-Voraussetzung:** Eine `keystore.properties`-Datei im Projekt-Root mit u. a. `googleWebClientId` (Google OAuth Client-ID). Ohne diesen Wert bricht der Build bewusst mit einer `GradleException` ab – es gibt keinen hardcodierten Fallback.
+**Build-Voraussetzung:** eine `keystore.properties` im Projekt-Root mit mindestens `googleWebClientId` (Google-OAuth-Client-ID). Ohne diesen Wert bricht der Build ab.
 
 ```bash
-# Debug-Build
-./gradlew assembleDebug
-
-# Unit-Tests
-./gradlew test
-
-# Lint
-./gradlew lint
-
-# Release-Build (braucht keystore.properties und Netzzugang)
-./gradlew assembleRelease
+./gradlew assembleDebug        # Debug-Build
+./gradlew testDebugUnitTest    # Unit-Tests
+./gradlew lint                 # Lint
+./gradlew assembleRelease      # Release-Build (braucht Netzzugang)
 ```
 
-Eigene `SETUP.md`/`SECURITY.md`-Dokumente gibt es aktuell nicht – die relevanten Hinweise stehen in `CLAUDE.md` und in diesem README. Wer zum Projekt beitragen möchte, meldet sich am einfachsten direkt beim Entwickler.
+Wer beitragen möchte, meldet sich am einfachsten direkt beim Entwickler oder legt ein Issue an.
 
-## 📄 Lizenz
+## Lizenz
 
-Dieses Projekt steht unter der **MIT License** – siehe [LICENSE](LICENSE).
+MIT License – siehe [LICENSE](LICENSE).
 
-## 🌟 Credits
+## Credits
 
-<div align="center">
-
-**Entwickelt von einer Einzelperson für Kolleginnen und Kollegen im Schichtdienst**
-
-Gebaut mit Android Studio, unterstützt durch Claude und Gemini als Entwicklungswerkzeuge.
-
-⭐ **Feedback und Sternchen sind willkommen!** ⭐
-
----
-
-**Entwickelt mit ❤️ in Deutschland von [F1rlefanz](https://github.com/F1rlefanz)**
-
-</div>
+Entwickelt von [F1rlefanz](https://github.com/F1rlefanz) für Kolleginnen und Kollegen im Schichtdienst – gebaut mit Android Studio, unterstützt durch Claude und Gemini als Entwicklungswerkzeuge.

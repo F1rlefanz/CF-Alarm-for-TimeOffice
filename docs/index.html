@@ -3,176 +3,161 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="CF Alarm for Time Office - Smart Wecker-App mit Google Calendar und Philips Hue Integration. Dokumentation & Support.">
+    <meta name="description" content="CF-Alarm stellt Wecker für den Schichtdienst automatisch aus dem Dienstplan im Google Kalender – mit Schicht-Dimmer, „Nicht stören“-Automatik und Philips Hue.">
     <meta name="google-site-verification" content="_kGhd-xlvoFns825LYmcj9gd7SuiqzHc5F8urKdvr1I" />
-    <title>CF Alarm for Time Office - Documentation & Support</title>
-    
-    <!-- Modern Web Standards -->
+    <title>CF-Alarm – Wecker aus dem Dienstplan</title>
     <link rel="stylesheet" href="assets/css/main.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏰</text></svg>">
-    <link rel="canonical" href="https://cf-alarm.duckdns.org/">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
     <link rel="manifest" href="manifest.json">
-    
-    <!-- Open Graph / Social Media -->
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="CF Alarm for Time Office">
-    <meta property="og:description" content="Smart Wecker-App mit Google Calendar & Philips Hue Integration">
-    <meta property="og:url" content="https://cf-alarm.duckdns.org/">
-    <meta property="og:site_name" content="CF Alarm for Time Office">
-    
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="CF Alarm for Time Office">
-    <meta name="twitter:description" content="Smart Wecker-App mit Google Calendar & Philips Hue Integration">
-    
-    <!-- App Information -->
-    <meta name="application-name" content="CF Alarm for Time Office">
-    <meta name="theme-color" content="#667eea">
+    <link rel="canonical" href="https://cf-alarm.duckdns.org/">
+    <meta name="theme-color" content="#e2001a">
     <meta name="color-scheme" content="light dark">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="CF Alarm Docs">
-    
-    <!-- Performance & SEO -->
-    <meta name="robots" content="index, follow">
-    <meta name="googlebot" content="index, follow">
-    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-    
-    <!-- Structured Data -->
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="CF-Alarm – Wecker aus dem Dienstplan">
+    <meta property="og:description" content="Stellt Wecker für den Schichtdienst automatisch aus dem Dienstplan im Google Kalender.">
+    <meta property="og:url" content="https://cf-alarm.duckdns.org/">
+    <meta property="og:image" content="https://cf-alarm.duckdns.org/assets/img/icon-512.png">
+    <meta property="og:locale" content="de_DE">
+
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        "name": "CF Alarm for Time Office",
-        "description": "Smart Wecker-App mit Google Calendar & Philips Hue Integration",
-        "applicationCategory": "Utility",
-        "operatingSystem": "Android",
-        "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "EUR"
-        },
-        "author": {
-            "@type": "Person",
-            "name": "Christoph F."
-        },
+        "name": "CF-Alarm for TimeOffice",
+        "description": "Stellt Wecker für den Schichtdienst automatisch aus dem Dienstplan im Google Kalender.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Android 8.0 oder neuer",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
         "url": "https://cf-alarm.duckdns.org/"
     }
     </script>
 </head>
 <body>
-    <!-- Skip to main content for accessibility -->
-    <a href="#main-content" class="sr-only">Zum Hauptinhalt springen</a>
+    <a href="#main-content" class="skip-link">Zum Inhalt springen</a>
 
-    <!-- Navigation with Hide-on-Scroll -->
-    <nav class="nav" id="main-nav" role="navigation" aria-label="Hauptnavigation">
-        <div class="nav-content container">
-            <div class="app-logo" aria-label="CF Alarm Logo">⏰</div>
-            <h1>CF Alarm for Time Office</h1>
-            <p class="subtitle">Smart Wecker-App mit Google Calendar & Philips Hue Integration</p>
-            
-            <div class="nav-links">
-                <a href="index.html" class="active" aria-current="page">🏠 Startseite</a>
-                <a href="privacy.html">🔒 Datenschutz</a>
-                <a href="troubleshooting.html">🆘 Support</a>
-
-                <a href="advanced-setup.html">⚙️ Konfiguration</a>
-                <a href="changelog.html">📋 Changelog</a>
-
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">📱 GitHub</a>
-                <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice" rel="external noopener" target="_blank">📲 Play Store</a>
-            </div>
+    <header class="site-header">
+        <div class="container">
+            <a class="brand" href="index.html"><img src="assets/img/logo-96.png" alt="" width="40" height="40">CF-Alarm</a>
+            <nav class="site-nav" aria-label="Hauptnavigation">
+                <a href="index.html" aria-current="page">Startseite</a>
+                <a href="advanced-setup.html">Anleitung</a>
+                <a href="troubleshooting.html">Hilfe</a>
+                <a href="changelog.html">Changelog</a>
+                <a href="privacy.html">Datenschutz</a>
+            </nav>
         </div>
-    </nav>
+    </header>
 
-    <!-- Main Content -->
     <main id="main-content" class="container">
-        <header class="page-header">
-            <h2>Dokumentation & Support</h2>
-            <p>Willkommen zur offiziellen Dokumentation von CF Alarm for Time Office. Hier finden Sie alles für die optimale Nutzung der App.</p>
-        </header>
+        <section class="hero">
+            <div>
+                <span class="badge">Im Test · Android 8.0 oder neuer</span>
+                <h1>Wecker aus deinem Dienstplan</h1>
+                <p>CF-Alarm liest den Dienstplan in deinem Google Kalender und stellt dir für jede Schicht den passenden Wecker. Ändert sich der Plan, zieht der Wecker nach – du musst nichts abtippen.</p>
+                <p>Gemacht für den Schichtdienst, zum Beispiel in der Pflege: Wer seinen Dienstplan über <strong>TimeOffice</strong> in den Google Kalender bekommt, ist hier richtig.</p>
+                <div class="button-row">
+                    <a class="button primary" href="advanced-setup.html">Zur Anleitung</a>
+                    <a class="button" href="#mitmachen">Am Test teilnehmen</a>
+                </div>
+            </div>
+            <img class="hero-shot" src="assets/img/screen-uebersicht.webp" width="540" height="960" alt="Übersicht der App: nächste Schicht, Alarm-Status und Kalender-Abgleich">
+        </section>
 
-        <!-- App Description -->
-        <article class="content-card">
-            <h3>🚀 Features</h3>
-            
-            <section>
-                <h4>⏰ Wecker aus dem Dienstplan</h4>
-                <ul>
-                    <li><strong>Automatische Wecker</strong> aus den Terminen deines TimeOffice-Kalenders – pro Schichttyp eine eigene Weckzeit.</li>
-                    <li><strong>Kürzel-Vorschläge aus deinem Kalender:</strong> Die App zeigt die Termin-Kürzel, für die noch kein Erkennungsmuster existiert (also auch kein Wecker), nach Häufigkeit sortiert. Ein Antippen ordnet ein Kürzel einer Schicht zu. Wichtig für Stationen mit eigenen Kürzeln – geraten wird nichts.</li>
-                    <li><strong>Sagt, warum nichts erkannt wurde:</strong> Statt einer leeren Liste nennt die Startseite den konkreten Grund und den nächsten Schritt.</li>
-                    <li><strong>Nächsten Alarm überspringen</strong> für einen einzelnen Tag, ohne die Automatik abzuschalten.</li>
-                    <li><strong>Stille Schicht:</strong> Schichten wie Rufbereitschaft ohne Ton, Vibration und Vollbild-Wecker – die Weckzeit bleibt aber als Anker für Dimmer und „Nicht stören".</li>
-                    <li><strong>Benachrichtigung bei Schichtänderung,</strong> wenn TimeOffice eine Schicht verschiebt, streicht oder ergänzt.</li>
-                    <li><strong>Schlummer-Dauer</strong> einstellbar (3/5/10/15 Minuten).</li>
-                </ul>
-            </section>
+        <section class="content-card">
+            <h2>So funktioniert es</h2>
+            <ol class="steps">
+                <li><strong>Dein Dienstplan steht im Google Kalender</strong> – zum Beispiel, weil TimeOffice ihn dort einträgt. Jeder Dienst ist ein Termin, im Titel steht sein Kürzel, etwa „F“ oder „Frühdienst“.</li>
+                <li><strong>CF-Alarm erkennt die Schichten an diesen Kürzeln.</strong> Jeder Schichttyp hat eine eigene Weckzeit. Kürzel, die die App noch nicht kennt, schlägt sie dir zum Zuordnen vor – geraten wird nichts.</li>
+                <li><strong>Die Wecker stellen sich selbst</strong> – für so viele Tage im Voraus, wie du einstellst (7 bis 90). Im Hintergrund gleicht die App regelmäßig ab und drei Stunden vor jedem Wecker noch einmal.</li>
+            </ol>
+            <p>CF-Alarm erkennt <strong>Schichten</strong>, keine beliebigen Termine. Für einen Kalender mit Arztterminen und Geburtstagen ist sie nicht gedacht.</p>
+        </section>
 
-            <section>
-                <h4>🌙 Schicht-Dimmer (Reiter „Dimmen")</h4>
-                <ul>
-                    <li><strong>Dunkelt den Bildschirm rund um deine Schichten ab</strong> – warm und einstellbar, als Herunterfahr-Hilfe vor dem Schlafen, und blendet zur Weckzeit wieder auf.</li>
-                    <li><strong>Kennt deine Schichten:</strong> z. B. „jede Nacht 22–7 Uhr dimmen, außer in Nachtdienst-Nächten", oder ein Fenster relativ zum Schichtende für den Tagschlaf. Dazu ein Nacht-Standard, der ohne eigene Regel funktioniert, und eine Vorschau-Zeitleiste.</li>
-                    <li><strong>Optionaler Bedienungshilfen-Dienst:</strong> Android erlaubt das Abdunkeln nur so. Der Dienst dient <em>ausschließlich</em> dem Dimmen – er liest keine Bildschirminhalte und erfasst keine Eingaben. Du aktivierst ihn selbst und kannst ihn jederzeit abschalten (<a href="privacy.html">Details im Datenschutz</a>).</li>
-                </ul>
-            </section>
+        <section class="content-card">
+            <h2>Was die App kann</h2>
+            <div class="feature-grid">
+                <div>
+                    <h3>⏰ Wecken</h3>
+                    <ul>
+                        <li>Automatische Wecker je Schichttyp, mit Kürzel-Vorschlägen aus deinem echten Kalender</li>
+                        <li><strong>Überspringen</strong> lässt den nächsten Wecker einmal aus, <strong>Tag freigeben</strong> streicht einen ausgefallenen Dienst</li>
+                        <li><strong>Manueller Alarm</strong> für Tage, die nicht im Plan stehen</li>
+                        <li>Schlummer-Dauer wählbar, auf Wunsch <strong>sanft lauter werdender</strong> Weckton</li>
+                        <li><strong>Stille Schicht</strong>: kein Weckton, aber Dimmen und „Nicht stören“ richten sich trotzdem nach ihr</li>
+                        <li>Hinweis, wenn eine Schicht dazukommt, sich verschiebt oder wegfällt</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>🌙 Ruhe</h3>
+                    <ul>
+                        <li><strong>Schicht-Dimmer</strong>: dunkelt den Bildschirm zu deinen Schlafzeiten ab, über Regeln je Schicht – mit Vorlagen wie „Nacht-Dimmen“ und „Nachtdienst-Rhythmus“</li>
+                        <li><strong>„Nicht stören“ automatisch</strong> (ab Android 11): während der Schlafzeit oder der Dienstzeit, was stumm bleibt, entscheidest du</li>
+                        <li><strong>Rufbereitschaft</strong>: an solchen Tagen endet „Nicht stören“ zu einer festen Uhrzeit, und die App schaut stündlich in den Kalender</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>💡 Licht</h3>
+                    <ul>
+                        <li><strong>Philips Hue</strong>: eine Szene aus deiner Hue-App, eigene Farben oder ein langsamer Sonnenaufgang – je Schichttyp</li>
+                        <li>Das automatische Ausschalten liegt auf der Bridge und greift auch, wenn du schon aus dem Haus bist</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>✅ Verlässlichkeit</h3>
+                    <ul>
+                        <li>Der <strong>System-Status</strong> zeigt, was einen Wecker verhindern kann, und führt zur passenden Einstellung</li>
+                        <li>Nach Neustart und Update stellt die App ihre Wecker selbst wieder her</li>
+                        <li><strong>Hintergrunddienste pausieren</strong>: ein Schalter für den Urlaub</li>
+                        <li>Einstellungen als Datei sichern und einspielen; auf einem neuen Handy meldet die App dich ab Android 9 selbst wieder an</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
 
-            <section>
-                <h4>🔕 „Nicht stören" automatisch (ab Android 11)</h4>
-                <ul>
-                    <li><strong>Zwei unabhängige Auslöser:</strong> „Schlaf-Fenster folgt dem Dimmer" und „Während der Dienstzeit" (Schichtbeginn bis Schichtende laut Kalender).</li>
-                    <li><strong>Rufbereitschaft:</strong> Markierte Schichten beenden „Nicht stören" spätestens zu einer festen Uhrzeit, damit du erreichbar bist.</li>
-                    <li><strong>Was stummgeschaltet wird, entscheidest du</strong> – und dein eigener Wecker klingelt immer. Die App legt dafür einen eigenen, für dich sichtbaren Zeitplan an, statt deine Einstellungen zu überschreiben.</li>
-                </ul>
-            </section>
+        <section class="content-card">
+            <h2>Einblicke</h2>
+            <ul class="gallery">
+                <li><figure><img src="assets/img/screen-wecker.webp" width="540" height="960" loading="lazy" alt="Wecker-Bereich mit Überspringen und Tag freigeben"><figcaption>Wecker</figcaption></figure></li>
+                <li><figure><img src="assets/img/screen-schichttypen.webp" width="540" height="960" loading="lazy" alt="Schichttypen mit Weckzeit und einer Zeile, was jede Schicht auslöst"><figcaption>Schichttypen</figcaption></figure></li>
+                <li><figure><img src="assets/img/screen-schicht-dimmer.webp" width="540" height="960" loading="lazy" alt="Dimm-Regeln mit Vorlagen"><figcaption>Schicht-Dimmer</figcaption></figure></li>
+                <li><figure><img src="assets/img/screen-philips-hue.webp" width="540" height="960" loading="lazy" alt="Philips-Hue-Bereich mit einer Sonnenaufgangs-Regel"><figcaption>Philips Hue</figcaption></figure></li>
+                <li><figure><img src="assets/img/screen-vollbild-wecker.webp" width="540" height="960" loading="lazy" alt="Weckbildschirm mit Alarm stoppen und Schlummern"><figcaption>Weckbildschirm</figcaption></figure></li>
+            </ul>
+        </section>
 
-            <section>
-                <h4>💡 Philips Hue Integration</h4>
-                <ul>
-                    <li><strong>Licht zum Wecken</strong> mit optionalem Sonnenaufgang (Helligkeit und Farbtemperatur fahren über eine einstellbare Dauer hoch).</li>
-                    <li><strong>Bridge-Auto-Discovery</strong> für einfache Einrichtung</li>
-                    <li><strong>Auto-Aus als Zeitplan auf der Bridge</strong> – das Licht geht auch aus, wenn das Handy nicht mehr im Heim-WLAN ist.</li>
-                </ul>
-            </section>
+        <section class="content-card">
+            <h2>Daten und Datenschutz</h2>
+            <ul>
+                <li>Die App <strong>liest</strong> deinen Kalender nur – sie ändert und löscht nichts darin.</li>
+                <li>Keine Werbung, keine Analyse-Dienste, keine eigenen Server.</li>
+                <li>Auf dem Gerät gespeichert werden die erkannten Schichten mit ihren Uhrzeiten, keine Termininhalte. Der Zugang zum Google-Konto liegt verschlüsselt auf dem Gerät.</li>
+            </ul>
+            <p>Alles Weitere steht in der <a href="privacy.html">Datenschutzerklärung</a>.</p>
+        </section>
 
-            <section>
-                <h4>🔒 Zuverlässigkeit & Sicherheit</h4>
-                <ul>
-                    <li><strong>System-Status als Kontrollstelle:</strong> Karten für Akku-Ausnahme, Androids „App bei Nichtnutzung pausieren", den Schicht-Dimmer-Dienst und die TimeOffice-Zuverlässigkeit – die drei nachgewiesenen Gründe, aus denen ein Wecker ausfällt, sind damit sichtbar statt still.</li>
-                    <li><strong>„Hintergrunddienste pausieren"</strong> (Einstellungen-Tab): ein Schalter für längere Abwesenheit – pausiert Wecker, Dimmer, „Nicht stören" und Hue-Automatik gemeinsam, auch über einen Geräte-Neustart hinweg.</li>
-                    <li><strong>Konfiguration exportieren/importieren:</strong> Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören" als Datei – überlebt eine Neuinstallation und lässt sich an Kolleginnen und Kollegen weitergeben. Anmeldedaten, Token und Hue-Zugangsdaten sind bewusst nicht enthalten.</li>
-                    <li><strong>AES-256-GCM Verschlüsselung</strong> für die gespeicherten Google-Token</li>
-                    <li><strong>Lokale Datenspeicherung</strong> – keine eigenen Server, keine Analytics</li>
-                </ul>
-            </section>
-
-            <section>
-                <h4>📱 Installation</h4>
-                <ul>
-                    <li><strong>Google Account</strong> für Calendar-Integration</li>
-                    <li><strong>TimeOffice:</strong> Dienstplan an Google Kalender aktivieren</li>
-                    <li><strong>Ersteinrichtung</strong> durchführen – die App führt durch Akku-Ausnahme und die weiteren Hintergrund-Einstellungen</li>
-                </ul>
-            </section>
-        </article>
+        <section class="content-card" id="mitmachen">
+            <h2>Am Test teilnehmen</h2>
+            <p>CF-Alarm wird von einer Einzelperson in der Freizeit entwickelt und ist noch nicht öffentlich im Play Store. Wer mittesten möchte, schreibt eine kurze Nachricht an <a href="mailto:cfischer@csj.de">cfischer@csj.de</a> und bekommt einen Link für den Testzugang bei Google Play.</p>
+            <p><strong>Das brauchst du:</strong> ein Android-Handy ab Version 8.0, ein Google-Konto mit einem Kalender, in dem deine Dienste stehen, und für die Lichtsteuerung eine Philips Hue Bridge im selben WLAN.</p>
+            <p>Probleme und Wünsche gehen am einfachsten direkt aus der App: <strong>System-Status</strong> → Karte „Debug-Informationen“ → <strong>„Logs an Entwickler senden“</strong>. Mehr dazu unter <a href="troubleshooting.html">Hilfe</a>.</p>
+        </section>
     </main>
 
-    <footer class="footer" role="contentinfo">
-        <div class="footer-content container">
-            <nav class="footer-links" aria-label="Footer Navigation">
+    <footer class="site-footer">
+        <div class="container">
+            <nav class="footer-links" aria-label="Weitere Links">
                 <a href="privacy.html">Datenschutz</a>
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
                 <a href="mailto:cfischer@csj.de">Kontakt</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice">Quellcode auf GitHub</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE">Lizenz (MIT)</a>
             </nav>
-            <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
-            <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>
+            <p>© 2025–2026 CF-Alarm for TimeOffice · ein Freizeitprojekt, Open Source</p>
         </div>
     </footer>
 
-    <!-- Central JavaScript -->
     <script src="assets/js/main.js"></script>
 </body>
 </html>

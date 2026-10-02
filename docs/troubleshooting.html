@@ -3,137 +3,151 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Support & Troubleshooting für CF Alarm for Time Office">
-    <title>Support & Troubleshooting - CF Alarm for Time Office</title>
+    <meta name="description" content="Hilfe zu CF-Alarm: wenn der Wecker nicht klingelt, keine Schicht erkannt wird, der Kalender nicht erreichbar ist oder der Bildschirm nicht dimmt.">
+    <title>Hilfe – CF-Alarm</title>
     <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e2001a">
+    <meta name="color-scheme" content="light dark">
 </head>
 <body>
-    <!-- Skip to main content for accessibility -->
-    <a href="#main-content" class="sr-only">Zum Hauptinhalt springen</a>
+    <a href="#main-content" class="skip-link">Zum Inhalt springen</a>
 
-    <!-- Navigation -->
-    <nav class="nav" id="main-nav" role="navigation" aria-label="Hauptnavigation">
-        <div class="nav-content container">
-            <div class="app-logo" aria-label="CF Alarm Logo">⏰</div>
-            <h1>CF Alarm for Time Office</h1>
-            <p class="subtitle">Smart Wecker-App mit Google Calendar & Philips Hue Integration</p>
-            
-            <div class="nav-links">
-                <a href="index.html">🏠 Startseite</a>
-                <a href="privacy.html">🔒 Datenschutz</a>
-                <a href="troubleshooting.html" class="active" aria-current="page">🆘 Support</a>
-
-                <a href="advanced-setup.html">⚙️ Konfiguration</a>
-
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">📱 GitHub</a>
-                <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice" rel="external noopener" target="_blank">📲 Play Store</a>
-            </div>
+    <header class="site-header">
+        <div class="container">
+            <a class="brand" href="index.html"><img src="assets/img/logo-96.png" alt="" width="40" height="40">CF-Alarm</a>
+            <nav class="site-nav" aria-label="Hauptnavigation">
+                <a href="index.html">Startseite</a>
+                <a href="advanced-setup.html">Anleitung</a>
+                <a href="troubleshooting.html" aria-current="page">Hilfe</a>
+                <a href="changelog.html">Changelog</a>
+                <a href="privacy.html">Datenschutz</a>
+            </nav>
         </div>
-    </nav>
+    </header>
 
-    <!-- Breadcrumb -->
-    <div class="breadcrumb">
-        <div class="breadcrumb-content container">
-            <a href="index.html">🏠 Startseite</a> → <span>🆘 Support & Troubleshooting</span>
-        </div>
-    </div>
-
-    <!-- Main Content -->
     <main id="main-content" class="container">
-        <div class="page-header">
-            <h2>🆘 Support & Troubleshooting</h2>
-            <p>Hilfe bei Problemen und häufig gestellte Fragen zu CF Alarm for Time Office</p>
-        </div>
+        <header class="page-header">
+            <h1>Hilfe</h1>
+            <p>Der erste Blick gehört immer dem Bereich <strong>System-Status</strong>: Dort steht für jede bekannte Ursache eine eigene Karte – grün heißt in Ordnung, rot nennt das Problem und den Weg zur Lösung.</p>
+        </header>
 
-        <div class="content-card">
-            <h3>📱 Häufige Probleme</h3>
-            
-            <h4>🔐 Google Calendar Integration</h4>
+        <nav class="content-card" aria-label="Inhalt dieser Seite">
+            <ul class="toc">
+                <li><a href="#klingelt-nicht">Wecker klingelt nicht</a></li>
+                <li><a href="#absichtlich-still">Absichtlich still</a></li>
+                <li><a href="#keine-schicht">Keine Schicht erkannt</a></li>
+                <li><a href="#kalender">Kalender-Meldungen</a></li>
+                <li><a href="#dimmer">Bildschirm dimmt nicht</a></li>
+                <li><a href="#hue">Philips Hue</a></li>
+                <li><a href="#melden">Problem melden</a></li>
+            </ul>
+        </nav>
+
+        <section class="content-card" id="klingelt-nicht">
+            <h2>Der Wecker klingelt nicht – die drei häufigsten Ursachen</h2>
+            <p>Alle drei liegen außerhalb der App, und alle drei sind in der Praxis wirklich aufgetreten.</p>
+
+            <h3>1. Akku-Optimierung</h3>
             <ul>
-                <li><strong>Problem:</strong> App kann nicht auf Google Calendar zugreifen</li>
-                <li><strong>Lösung:</strong> Überprüfen Sie die Google-Berechtigung in den Android-Einstellungen</li>
-                <li><strong>Zusätzlich:</strong> Stellen Sie sicher, dass das Google-Konto aktiv ist</li>
+                <li><strong>Anzeichen:</strong> Wecker klingeln unregelmäßig oder gar nicht, obwohl die App sie anzeigt.</li>
+                <li><strong>Prüfen:</strong> System-Status → Karte „Akku-Ausnahme“.</li>
+                <li><strong>Lösung:</strong> Android-Einstellungen → Apps → CF-Alarm → Akku → „Uneingeschränkt“ bzw. „Nicht optimieren“. Manche Hersteller haben zusätzlich eigene Energiesparer (etwa „Autostart“); die App weist bei solchen Geräten darauf hin.</li>
             </ul>
 
-            <h4>💡 Philips Hue Verbindung</h4>
+            <h3>2. „App bei Nichtnutzung pausieren“</h3>
             <ul>
-                <li><strong>Problem:</strong> Hue Bridge wird nicht gefunden</li>
-                <li><strong>Lösung:</strong> Überprüfen Sie, ob sich Gerät und Bridge im gleichen WLAN befinden</li>
-                <li><strong>Tipp:</strong> Drücken Sie den Bridge-Button vor der Koppelung</li>
+                <li><strong>Anzeichen:</strong> Nachdem die App einige Zeit nicht geöffnet wurde, klingelt gar nichts mehr. Android hält die App dann an und <strong>löscht dabei ihre Wecker</strong>, ohne Meldung.</li>
+                <li><strong>Prüfen:</strong> System-Status → Karte „Nicht verwendete Apps“.</li>
+                <li><strong>Lösung:</strong> Android-Einstellungen → Apps → CF-Alarm → „App bei Nichtnutzung pausieren“ ausschalten.</li>
             </ul>
 
-            <h4>⏰ Wecker klingelt nicht – die drei nachgewiesenen Ursachen</h4>
-            <p>Alle drei sind in der Praxis wirklich aufgetreten, und alle drei liegen <em>außerhalb</em> der App selbst. Der System-Status der App zeigt für jede eine eigene Karte – dort zuerst nachsehen.</p>
-
+            <h3>3. TimeOffice überträgt nicht mehr</h3>
             <ul>
-                <li>
-                    <strong>Ursache 1 – Akku-Optimierung</strong>
-                    <ul>
-                        <li><strong>Symptom:</strong> Wecker klingeln unregelmäßig oder gar nicht, obwohl die App Alarme anzeigt.</li>
-                        <li><strong>Prüfen:</strong> System-Status → Karte „Akku-Ausnahme". Rot heißt: keine Ausnahme erteilt.</li>
-                        <li><strong>Tun:</strong> Android-Einstellungen → Apps → CF Alarm → Akku → „Uneingeschränkt" bzw. nicht optimieren. Bei OnePlus/Xiaomi/Huawei zusätzlich Autostart bzw. „Geschützte Apps".</li>
-                    </ul>
-                </li>
-                <li>
-                    <strong>Ursache 2 – Androids „App bei Nichtnutzung pausieren"</strong>
-                    <ul>
-                        <li><strong>Symptom:</strong> Nach einigen Tagen, in denen die App nicht geöffnet wurde, klingelt gar nichts mehr. Das ist die tückischste Ursache: Android stoppt die App zwangsweise und <strong>löscht dabei die schon gesetzten Wecker</strong>, ohne Meldung.</li>
-                        <li><strong>Prüfen:</strong> System-Status → Karte „Nicht verwendete Apps". Alternativ Android-Einstellungen → Apps → CF Alarm – dort steht der Schalter.</li>
-                        <li><strong>Tun:</strong> „App bei Nichtnutzung pausieren" ausschalten. Die App fragt bei der Ersteinrichtung danach; wer das übersprungen hat, holt es hier nach.</li>
-                    </ul>
-                </li>
-                <li>
-                    <strong>Ursache 3 – TimeOffice selbst, die Kette davor</strong>
-                    <ul>
-                        <li><strong>Symptom:</strong> Der Wecker klingelt zuverlässig, aber zur <em>alten</em> Schicht: eine Änderung oder Krankschreibung, die in TimeOffice längst steht, kommt nicht an. CF Alarm liest den Dienstplan aus einem Kalender, den TimeOffice füllt – bleibt dieser Sync stehen, arbeitet CF Alarm korrekt mit veralteten Daten.</li>
-                        <li><strong>Prüfen:</strong> System-Status → Karte „TimeOffice-Zuverlässigkeit" (zeigt die Akku-Ausnahme von TimeOffice). Gegenprobe: Steht die Änderung in der Google-Kalender-App im TimeOffice-Kalender? Wenn nicht, liegt es an TimeOffice, nicht an CF Alarm.</li>
-                        <li><strong>Tun:</strong> Über den Knopf „TimeOffice-Einstellungen öffnen" (oder Android-Einstellungen → Apps → TimeOffice) dort „Akkunutzung" auf „Uneingeschränkt" stellen und „App bei Nichtnutzung pausieren" ausschalten. TimeOffice danach einmal öffnen, damit es synchronisiert.</li>
-                    </ul>
-                </li>
+                <li><strong>Anzeichen:</strong> Der Wecker klingelt zuverlässig, aber zur <em>alten</em> Schicht. Eine Änderung, die in TimeOffice schon steht, kommt nicht an – CF-Alarm arbeitet dann korrekt mit einem veralteten Kalender.</li>
+                <li><strong>Prüfen:</strong> System-Status → Karte „TimeOffice-Zuverlässigkeit“. Gegenprobe: Steht die Änderung in der Google-Kalender-App? Wenn nicht, liegt es an der Übertragung von TimeOffice.</li>
+                <li><strong>Lösung:</strong> Über „TimeOffice-Einstellungen öffnen“ bei TimeOffice die Akku-Nutzung auf „Uneingeschränkt“ stellen und „App bei Nichtnutzung pausieren“ ausschalten. Danach TimeOffice einmal öffnen.</li>
             </ul>
 
-            <h4>🔎 „Keine Schicht erkannt"</h4>
+            <h3>Außerdem prüfen</h3>
             <ul>
-                <li><strong>Die App nennt den Grund selbst:</strong> In der Übersicht steht statt einer leeren Liste, woran es liegt – kein Kalender gewählt, Kalender-Zugriff abgelaufen, keine Termine, keine aktiven Schichttypen, oder: Termine gefunden, aber kein Erkennungsmuster passt (dann werden die Termintitel genannt, die wirklich im Kalender stehen).</li>
-                <li><strong>Passt kein Muster</strong> (der Normalfall auf einer anderen Station als der, für die die Vorgaben gedacht sind): Wecker-Tab → „Schichttypen verwalten". Ganz oben steht die Karte „Diese Kürzel stehen in deinem Kalender" – die App zeigt dort die Kürzel deines echten Dienstplans, für die es noch kein Muster gibt. Antippen, Schicht auswählen, fertig; das Kürzel wird als Erkennungsmuster ergänzt und die Wecker werden sofort neu gesetzt.</li>
-                <li><strong>Erkannt wird über die Muster oder den Schichtnamen</strong> (ab zwei Zeichen), und das jeweils als eigenes Wort im Termintitel. Welche Muster eine Schicht hat, steht in ihrer Karte in der Liste.</li>
+                <li>System-Status → „Benachrichtigungen“ und „Vollbild-Wecker“: Sind Benachrichtigungen blockiert, kann der Weckbildschirm nicht erscheinen.</li>
+                <li>Das Handy war <strong>aus</strong>: Ein ausgeschaltetes Handy weckt nicht. Nach dem Einschalten stellt die App ihre Wecker selbst wieder her.</li>
             </ul>
+        </section>
 
-            <h4>🌙 Bildschirm wird nicht abgedunkelt</h4>
+        <section class="content-card" id="absichtlich-still">
+            <h2>Es klingelt nicht – aber mit Absicht</h2>
             <ul>
-                <li><strong>Problem:</strong> Der Schicht-Dimmer dimmt nicht, obwohl der Bedienungshilfen-Dienst auf „An" steht.</li>
-                <li><strong>Prüfen:</strong> System-Status → Karte „Schicht-Dimmer".</li>
-                <li><strong>Tun:</strong> Bei einer außerhalb des Play Stores installierten APK blockiert Android 13+ Bedienungshilfen-Dienste, bis man sie ausdrücklich freigibt: Android-Einstellungen → Apps → CF Alarm → ⋮ (Menü oben rechts) → „Eingeschränkte Einstellungen zulassen", danach den Dienst erneut einschalten.</li>
+                <li><strong>Hintergrunddienste pausieren</strong> (Einstellungen) ist eingeschaltet – das hält alle Wecker an, auch über einen Neustart hinweg.</li>
+                <li><strong>Automatische Alarme</strong> (Bereich Wecker) sind ausgeschaltet.</li>
+                <li>Der Wecker wurde <strong>übersprungen</strong> oder der Tag <strong>freigegeben</strong> (Bereich Wecker).</li>
+                <li>Die Schicht ist als <strong>Stille Schicht</strong> markiert oder als Schichttyp ausgeschaltet (Wecker → „Schichttypen verwalten“ → Schicht antippen).</li>
             </ul>
+        </section>
 
-            <h4>🤫 Es klingelt nichts, obwohl alles richtig eingestellt ist</h4>
+        <section class="content-card" id="keine-schicht">
+            <h2>„Keine Schicht erkannt“</h2>
             <ul>
-                <li><strong>Prüfen:</strong> Ist im Einstellungen-Tab „Hintergrunddienste pausieren" noch aktiv? Dieser Schalter pausiert absichtlich alles, auch über einen Neustart hinweg.</li>
-                <li><strong>Ebenfalls prüfen (Wecker-Tab):</strong> War für diesen Tag „Nächsten Alarm überspringen" gesetzt? Und ist die betroffene Schicht als still markiert – unter „Schichttypen verwalten" → Schicht antippen? Eine stille Schicht klingelt bewusst nicht.</li>
+                <li><strong>Die App nennt den Grund selbst:</strong> In der Übersicht steht, woran es liegt – kein Kalender ausgewählt, keine Termine im Vorausschau-Zeitraum, keine aktiven Schichttypen oder Termine, auf die kein Muster passt.</li>
+                <li><strong>Kein Muster passt:</strong> Wecker → „Schichttypen verwalten“. Die Karte „Diese Kürzel stehen in deinem Kalender“ zeigt die Kürzel deines Dienstplans, für die es noch kein Muster gibt. Antippen, Schicht wählen, fertig.</li>
+                <li><strong>Erkannt wird ein Muster nur als eigenes Wort</strong> im Termintitel. Welche Muster eine Schicht hat, steht in ihrer Karte.</li>
+                <li><strong>Die Schicht liegt weiter in der Zukunft:</strong> Einstellungen → „Kalender-Vorausschau“ verlängern.</li>
             </ul>
+        </section>
 
-            <h3>📞 Support Kontakte</h3>
-            <p>Benötigen Sie weitere Hilfe? Kontaktieren Sie uns über:</p>
+        <section class="content-card" id="kalender">
+            <h2>Meldungen zum Kalender</h2>
             <ul>
-                <li><strong>GitHub Issues:</strong> <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues" rel="external">Neues Issue erstellen</a></li>
+                <li><strong>„Google Kalender nicht erreichbar“</strong> – meist fehlt nur die Internetverbindung. Die gestellten Wecker bleiben; die Übersicht zeigt die zuletzt bekannte nächste Schicht. Sobald wieder Netz da ist, gleicht die App von selbst ab.</li>
+                <li><strong>„Kalender nicht abrufbar“</strong> – ein ausgewählter Kalender antwortet dauerhaft nicht. Solange legt die App keine neuen Wecker an; deshalb meldet sie sich ab dem zweiten erfolglosen Abgleich auch per Benachrichtigung.</li>
+                <li><strong>„Kalender nicht gefunden“</strong> – der Kalender wurde gelöscht oder nicht mehr freigegeben. Im System-Status unter „Kalender“ entfernst du ihn aus der Auswahl und wählst unter Einstellungen → „Kalender auswählen“ den richtigen.</li>
+                <li><strong>„Kalender-Zugriff erneuern“</strong> – Google verlangt eine neue Zustimmung. Tippe auf den Knopf und bestätige.</li>
             </ul>
-        </div>
+        </section>
+
+        <section class="content-card" id="dimmer">
+            <h2>Der Bildschirm wird nicht abgedunkelt</h2>
+            <ul>
+                <li><strong>Prüfen:</strong> System-Status → Karte „Schicht-Dimmer“, und im Bereich Schicht-Dimmer: Ist „Dimmen“ eingeschaltet, gibt es eine Regel, und zeigt die „Vorschau (nächste Tage)“ ein Fenster für jetzt?</li>
+                <li><strong>„Bedienungshilfen-Dienst nicht aktiv“:</strong> Über „Bedienungshilfen-Dienst aktivieren“ zu den Android-Einstellungen und den Dienst einschalten.</li>
+                <li><strong>„eingeschaltet, aber nicht verbunden“:</strong> Android hat den Dienst nicht gestartet. Schalte ihn in den Android-Bedienungshilfen aus und wieder ein; hilft das nicht, das Handy neu starten.</li>
+                <li><strong>App nicht aus dem Play Store installiert:</strong> Ab Android 13 sperrt Android Bedienungshilfen für solche Apps zunächst. Android-Einstellungen → Apps → CF-Alarm → ⋮ (oben rechts) → „Eingeschränkte Einstellungen zulassen“, danach den Dienst einschalten.</li>
+            </ul>
+        </section>
+
+        <section class="content-card" id="hue">
+            <h2>Philips Hue</h2>
+            <ul>
+                <li><strong>Bridge wird nicht gefunden:</strong> Handy und Bridge müssen im selben WLAN sein. Erlaube Android den Zugriff auf Geräte in der Nähe bzw. im lokalen Netzwerk, wenn es danach fragt, und versuche es mit „Erneut suchen“.</li>
+                <li><strong>Verbindung schlägt fehl:</strong> Erst die Link-Taste auf der Bridge drücken, dann innerhalb von etwa 30 Sekunden „Jetzt verbinden“ antippen.</li>
+                <li><strong>„Bridge nicht erreichbar“:</strong> Unterwegs ist das normal. Zuhause verbindet sich die App von selbst wieder; „Prüfen“ testet sofort.</li>
+                <li><strong>Licht geht nicht an:</strong> Steht der Wandschalter der Lampen auf „an“? Mit „Test“ an der Regel lässt sich das direkt ausprobieren.</li>
+            </ul>
+        </section>
+
+        <section class="content-card" id="melden">
+            <h2>Problem melden</h2>
+            <p>Am meisten hilft ein Bericht direkt aus der App: <strong>System-Status</strong> → Karte „Debug-Informationen“ → <strong>„Logs an Entwickler senden“</strong>. Es öffnet sich der Teilen-Dialog, vorausgefüllt als E-Mail an <a href="mailto:cfischer@csj.de">cfischer@csj.de</a> – du kannst auch eine andere App wählen. Angehängt werden die Protokolle der letzten Tage; was darin steht, erklärt die <a href="privacy.html#protokoll">Datenschutzerklärung</a>.</p>
+            <p>Ohne App geht es per E-Mail oder als <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues">Issue auf GitHub</a>. Bitte nenne Handy-Modell, Android-Version und was du erwartet hast.</p>
+        </section>
     </main>
 
-    <footer class="footer" role="contentinfo">
-        <div class="footer-content container">
-            <div class="footer-links">
+    <footer class="site-footer">
+        <div class="container">
+            <nav class="footer-links" aria-label="Weitere Links">
                 <a href="privacy.html">Datenschutz</a>
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
                 <a href="mailto:cfischer@csj.de">Kontakt</a>
-            </div>
-            <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
-            <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice">Quellcode auf GitHub</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE">Lizenz (MIT)</a>
+            </nav>
+            <p>© 2025–2026 CF-Alarm for TimeOffice · ein Freizeitprojekt, Open Source</p>
         </div>
     </footer>
 
-    <!-- Central JavaScript -->
     <script src="assets/js/main.js"></script>
 </body>
 </html>

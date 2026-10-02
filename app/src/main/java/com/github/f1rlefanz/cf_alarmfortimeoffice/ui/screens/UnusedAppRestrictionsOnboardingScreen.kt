@@ -31,9 +31,11 @@ fun UnusedAppRestrictionsOnboardingScreen(
             "bereits gestellten Wecker verloren, ohne jeden Hinweis. CF Alarm ist bewusst so " +
             "gebaut, dass du sie nicht täglich öffnen musst — genau das kann diesen " +
             "Mechanismus auslösen.",
-        infoText = "Android öffnet jetzt eine Einstellungsseite (kein einzelner Bestätigungs-" +
-            "Dialog wie eben bei der Akku-Freigabe). Schalte dort „App bei Nichtnutzung " +
-            "pausieren“ aus und geh zurück in die App.",
+        // Kein Verweis auf die Akku-Freigabe: seit "Später" sofort zum nächsten Gate führt,
+        // kommt dieser Schritt auch direkt nach einer ABGELEHNTEN Akku-Freigabe (#132).
+        infoText = "Android öffnet jetzt eine Einstellungsseite, keinen einzelnen " +
+            "Bestätigungs-Dialog. Schalte dort „App bei Nichtnutzung pausieren“ aus und " +
+            "geh zurück in die App.",
         primaryLabel = "Einstellung öffnen",
         onPrimaryAction = onOpenSettings,
         onSkip = onSkip

@@ -299,7 +299,8 @@ fun MainScreen(
             val schritt = naechsterGateSchritt(lage, GateEinstieg.AUTO)
             // Den OEM-Merker erst schreiben, wenn der Screen wirklich angesteuert wurde - der
             // MainContent-Waechter im ViewModel kann ablehnen, und ein Merker ohne gezeigten
-            // Hinweis hiesse: er kommt nie.
+            // Hinweis hiesse: er kommt nie. Der Write wirft nicht (Fehler -> WARN, Hinweis kommt
+            // beim naechsten Start wieder) - eine Exception hier beendete die App bei jedem Start.
             if (navigationViewModel.handleAuthenticationSuccess(schritt) && schritt is GateSchritt.Oem) {
                 BatteryOptimizationHelper.markOemWarningScreenShown(context, schritt.typ)
             }

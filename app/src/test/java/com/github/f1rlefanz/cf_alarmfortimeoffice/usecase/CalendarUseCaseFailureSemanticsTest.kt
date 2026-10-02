@@ -53,6 +53,7 @@ class CalendarUseCaseFailureSemanticsTest {
         override suspend fun getCurrentAuthData(): Result<AuthData> = Result.success(data)
         override suspend fun istWiederherstellungsSchluesselAngelegt(): Result<Boolean> = Result.success(false)
         override suspend fun merkeWiederherstellungsSchluesselAngelegt(): Result<Unit> = Result.success(Unit)
+        override suspend fun vergissWiederherstellungsSchluesselAngelegt(): Result<Unit> = Result.success(Unit)
     }
 
     /**

@@ -205,8 +205,10 @@ class AuthViewModel @Inject constructor(
 
     /**
      * Die Start-Pruefung der Wiederherstellung laeuft hoechstens EINMAL je ViewModel (also nicht
-     * nach jeder Drehung erneut). Auf dem alten Geraet findet ein spaeterer Versuch nach dem
-     * Abmelden ohnehin nichts - der Schluessel ist dann geloescht.
+     * nach jeder Drehung erneut). Auf dem alten Geraet meldet ein spaeterer Versuch nach dem
+     * Abmelden nicht still wieder an: nicht weil der Schluessel sicher geloescht waere (das
+     * Loeschen darf scheitern), sondern weil der Abmelde-Vermerk
+     * ([AnmeldeWiederherstellung.merkeAbmeldung]) das Lesen dort sperrt.
      *
      * Steht VOR dem init{}-Block (CLAUDE.md: sonst ist sie beim ersten Zugriff noch nicht belegt).
      */
@@ -795,16 +797,21 @@ class AuthViewModel @Inject constructor(
                     // Local sign-out using CredentialAuthManager
                     credentialAuthManager.signOutLocally()
 
+                    // #55, VOR dem Verwerfen der Anmeldung: erst den Abmelde-Vermerk setzen, dann
+                    // den Restore-Schluessel loeschen. Andersherum (bis 02.10.2026) liess jedes
+                    // gescheiterte, abgelaufene oder durch Prozesstod nie angekommene Loeschen
+                    // "abgemeldet, Schluessel noch da" zurueck - der naechste Kaltstart las ihn
+                    // und meldete auf DIESEM Geraet still wieder an, samt Wartung und Weckern.
+                    // Jetzt sperrt der Vermerk das Lesen hier, und ein Abbruch vor dem Abmelden
+                    // laesst den Nutzer angemeldet (wiederholbar). Beides wirft nie und ist
+                    // gedeckelt - es darf das Abmelden weder aufhalten noch scheitern lassen.
+                    sperreUndLoescheWiederherstellungsSchluessel()
+
                     // Über die UseCase statt direkt aufs Repository: nur dort wird auch das
                     // Kalender-Token verworfen. Der frühere Direktzugriff auf
                     // authDataStoreRepository.clearAuthData() ging daran vorbei - das Token
                     // überlebte die Abmeldung.
                     val abmelden = authUseCase.signOut()
-
-                    // BEIDE ZWEIGE (#55): der Restore-Schluessel muss weg, sonst meldet eine
-                    // Neuinstallation den Nutzer STILL wieder an. Wirft nie und ist gedeckelt -
-                    // es darf das Abmelden weder aufhalten noch scheitern lassen.
-                    loescheWiederherstellungsSchluessel()
 
                     if (abmelden.isSuccess) {
                         updateAuthState { AuthState.EMPTY }
@@ -815,6 +822,20 @@ class AuthViewModel @Inject constructor(
                         // Re-Autorisierung dauerhaft stumm, obwohl sie hier sogar der richtige
                         // Ausweg waere.
                         signOutInProgress = false
+
+                        // Der Restore-Schluessel ist oben schon geloescht, der Merker "angelegt"
+                        // in auth_prefs aber nicht - den raeumt nur clearAuthData(), und das ist
+                        // hier gescheitert. Bliebe er stehen, legte der naechste Start fuer den
+                        // weiter Angemeldeten nie wieder einen Schluessel an. Dieses Anlegen
+                        // raeumt zugleich den Abmelde-Vermerk.
+                        authDataStoreRepository.vergissWiederherstellungsSchluesselAngelegt()
+                            .onFailure {
+                                Logger.w(
+                                    LogTags.AUTH,
+                                    "Restore-Schluessel: Merker nach halber Abmeldung nicht zurueckgesetzt",
+                                    it
+                                )
+                            }
 
                         // UND DIE OBERFLAECHE MUSS DASSELBE SAGEN wie der Weckbestand (Welle 6,
                         // Befund B). Ohne diese zwei Felder blieb `hasValidToken` auf dem alten
@@ -917,7 +938,8 @@ class AuthViewModel @Inject constructor(
      *   schreiben, dann [requestCalendarAuthorization]. Braucht die Zustimmung einen Dialog oder
      *   ist das Geraet offline, fuehrt das bestehende Gate auf den Kalender-Autorisierungs-
      *   bildschirm - keine Sackgasse. Jeder Fehlschlag und jeder Zeitablauf heisst: normaler
-     *   Anmeldebildschirm.
+     *   Anmeldebildschirm. Wurde auf DIESEM Geraet abgemeldet (Abmelde-Vermerk), wird gar nicht
+     *   gelesen, sondern nur das Loeschen nachgeholt.
      * - ANGEMELDET OHNE MERKER: legt den Schluessel einmal an, damit auch Bestandsnutzer ihn
      *   bekommen, ohne sich neu anzumelden.
      *
@@ -950,6 +972,23 @@ class AuthViewModel @Inject constructor(
     }
 
     private suspend fun versucheWiederherstellung(activity: Activity) {
+        // Hier wurde ausdruecklich abgemeldet: nicht still wieder anmelden, auch wenn das
+        // Loeschen damals nicht durchkam. Stattdessen wird es nachgeholt - sonst reiste der
+        // verwaiste Schluessel im Backup zu einem kuenftigen Geraet mit.
+        val hierAbgemeldet = try {
+            anmeldeWiederherstellung.istAbmeldungVermerkt()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Vertrag "wirft nie" gebrochen: im Zweifel nicht still anmelden (normaler Login).
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Abmelde-Vermerk nicht lesbar", e)
+            true
+        }
+        if (hierAbgemeldet) {
+            Logger.d(LogTags.AUTH, "Restore-Schluessel: hier abgemeldet - keine Wiederherstellung, Loeschen nachgeholt")
+            loescheWiederherstellungsSchluessel()
+            return
+        }
         updateAuthState { it.copy(wiederherstellungLaeuft = true) }
         try {
             val email = try {
@@ -1010,6 +1049,11 @@ class AuthViewModel @Inject constructor(
         try {
             wiederherstellungsSchluesselSperre.withLock {
                 if (signOutInProgress) return
+                // Wer einen Schluessel anlegt, ist angemeldet - der Abmelde-Vermerk ist damit
+                // hinfaellig (seine Gegenfrage). Unter der Sperre und hinter der Pruefung oben,
+                // damit er einem gleichzeitigen Abmelden nicht weggeraeumt wird; VOR dem
+                // Anlegen, damit auch ein abgelaufenes Anlegen ihn nicht stehen laesst.
+                anmeldeWiederherstellung.vergissAbmeldung()
                 val angelegt = withTimeoutOrNull(ANLEGEN_DECKEL_MS) {
                     anmeldeWiederherstellung.anlegen(activityContext, email)
                 } == true
@@ -1028,9 +1072,27 @@ class AuthViewModel @Inject constructor(
     }
 
     /**
-     * Loescht den Restore-Schluessel beim Abmelden. Wirft nie. Wartet auf ein laufendes Anlegen
-     * (ohne eigenen Deckel - das Anlegen ist selbst gedeckelt), damit nichts NACH dem Loeschen
-     * noch entsteht. Der Merker in `auth_prefs` geht mit `clearAuthData()`.
+     * Abmelden, Teil #55: Abmelde-Vermerk setzen, dann den Schluessel loeschen. Der Vermerk
+     * kommt ZUERST, weil er auch dann wirkt, wenn das Loeschen scheitert oder ein abgelaufenes
+     * Anlegen in den Play-Diensten verspaetet noch schreibt. Wirft nie.
+     */
+    private suspend fun sperreUndLoescheWiederherstellungsSchluessel() {
+        try {
+            anmeldeWiederherstellung.merkeAbmeldung()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Abmelde-Vermerk gescheitert", e)
+        }
+        loescheWiederherstellungsSchluessel()
+    }
+
+    /**
+     * Loescht den Restore-Schluessel beim Abmelden (und holt es beim Start nach, wenn hier
+     * abgemeldet wurde). Wirft nie. Wartet auf ein laufendes Anlegen (ohne eigenen Deckel - das
+     * Anlegen ist selbst gedeckelt), damit nichts NACH dem Loeschen noch entsteht. Der Merker
+     * in `auth_prefs` geht mit `clearAuthData()` - im halben Zweig, wo das scheitert, nimmt
+     * `signOut()` ihn gezielt zurueck.
      */
     private suspend fun loescheWiederherstellungsSchluessel() {
         try {

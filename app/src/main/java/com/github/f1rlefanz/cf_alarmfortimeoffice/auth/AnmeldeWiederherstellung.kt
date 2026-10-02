@@ -14,6 +14,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -44,6 +47,27 @@ interface AnmeldeWiederherstellung {
     suspend fun loeschen()
 
     /**
+     * Geraetelokaler Vermerk "auf DIESEM Geraet wurde ausdruecklich abgemeldet". Solange er
+     * steht, darf ein abgemeldeter Start nicht still wieder anmelden - auch wenn noch ein
+     * Schluessel da ist, weil [loeschen] gescheitert, abgelaufen oder durch Prozesstod nie
+     * angekommen ist, oder weil ein abgelaufenes [anlegen] in den Play-Diensten verspaetet
+     * geschrieben hat.
+     *
+     * Er reist NICHT mit (weder Backup noch Geraetetransfer): auf einem neuen Geraet soll die
+     * Wiederherstellung ja gerade greifen. Und er hat eine Gegenfrage, anders als der 2026
+     * verworfene dauerhafte Abmelde-Merker (Skill `cfalarm-persistenz-und-auth`): er wird
+     * geraeumt, sobald wieder jemand angemeldet ist ([vergissAbmeldung] vor jedem Anlegen),
+     * und er sperrt NUR das Lesen des Schluessels - keine Wartung, keinen Wecker.
+     */
+    suspend fun merkeAbmeldung()
+
+    /** Ob [merkeAbmeldung] gilt. Nicht lesbar heisst `true`: im Zweifel nicht still anmelden. */
+    suspend fun istAbmeldungVermerkt(): Boolean
+
+    /** Raeumt den Vermerk - es ist wieder jemand angemeldet. */
+    suspend fun vergissAbmeldung()
+
+    /**
      * Die abgeschaltete Variante: legt nichts an, findet nichts, loescht nichts. Fuer Unit-Tests,
      * die die Funktion nicht betrachten - sie reichen sie dem `AuthViewModel` AUSDRUECKLICH
      * herein (es gibt bewusst keinen Konstruktor, der sie still einsetzt).
@@ -52,6 +76,9 @@ interface AnmeldeWiederherstellung {
         override suspend fun anlegen(activityContext: Context, email: String): Boolean = false
         override suspend fun lesen(activityContext: Context): String? = null
         override suspend fun loeschen() = Unit
+        override suspend fun merkeAbmeldung() = Unit
+        override suspend fun istAbmeldungVermerkt(): Boolean = false
+        override suspend fun vergissAbmeldung() = Unit
     }
 }
 
@@ -166,6 +193,46 @@ class PlayDiensteAnmeldeWiederherstellung @Inject constructor(
         }
     }
 
+    // Der Vermerk liegt als leere Datei in `noBackupFilesDir`: dieses Verzeichnis nimmt Android
+    // weder ins Auto-Backup noch in den Geraetetransfer auf - also KEINE Regel in den beiden
+    // Backup-Dateien noetig, und nicht `auth_prefs`, das `clearAuthData()` beim Abmelden leert.
+    // Der Pfad wird erst IM AUFRUF aufgeloest (CE-Storage, siehe Klassen-KDoc zu Direct Boot).
+    private fun abmeldeVermerk(): File = File(appContext.noBackupFilesDir, ABMELDE_VERMERK_DATEI)
+
+    override suspend fun merkeAbmeldung() {
+        try {
+            withContext(Dispatchers.IO) { abmeldeVermerk().createNewFile() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Abmelde-Vermerk nicht gespeichert", e)
+        }
+    }
+
+    override suspend fun istAbmeldungVermerkt(): Boolean =
+        try {
+            withContext(Dispatchers.IO) { abmeldeVermerk().exists() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Abmelde-Vermerk nicht lesbar - keine Wiederherstellung", e)
+            true
+        }
+
+    override suspend fun vergissAbmeldung() {
+        try {
+            withContext(Dispatchers.IO) { abmeldeVermerk().delete() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(LogTags.AUTH, "Restore-Schluessel: Abmelde-Vermerk nicht geraeumt", e)
+        }
+    }
+
     private fun challenge(): ByteArray =
         ByteArray(AnmeldeWiederherstellungJson.CHALLENGE_BYTES).also { zufall.nextBytes(it) }
+
+    private companion object {
+        const val ABMELDE_VERMERK_DATEI = "restore_nach_abmelden_gesperrt"
+    }
 }

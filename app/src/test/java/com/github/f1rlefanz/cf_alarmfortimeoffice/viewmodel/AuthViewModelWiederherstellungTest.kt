@@ -38,6 +38,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -56,6 +57,8 @@ import org.mockito.kotlin.whenever
  * - Abmelden loescht den Schluessel in BEIDEN Zweigen, wirft dabei nie, und kommt auch dann
  *   NACH einem gleichzeitig laufenden Anlegen (sonst bliebe ein verwaister Schluessel, der nach
  *   einer Neuinstallation still wieder anmeldet).
+ * - Vermerk und Loeschen kommen VOR dem Verwerfen der Anmeldung, und ein gescheitertes Loeschen
+ *   meldet auf DIESEM Geraet beim naechsten Kaltstart nicht still wieder an.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AuthViewModelWiederherstellungTest {
@@ -79,6 +82,7 @@ class AuthViewModelWiederherstellungTest {
     ) : IAuthDataStoreRepository {
         val geschrieben = mutableListOf<AuthData>()
         var merkerGeschrieben = 0
+        var merkerVergessen = 0
 
         // Leer: die Beobachter im init{} sollen nichts einspielen, was die Zusicherungen hier
         // ueberschreibt.
@@ -97,17 +101,28 @@ class AuthViewModelWiederherstellungTest {
         override suspend fun istWiederherstellungsSchluesselAngelegt(): Result<Boolean> = merkerAngelegt
         override suspend fun merkeWiederherstellungsSchluesselAngelegt(): Result<Unit> {
             merkerGeschrieben++
+            merkerAngelegt = Result.success(true)
+            return Result.success(Unit)
+        }
+        override suspend fun vergissWiederherstellungsSchluesselAngelegt(): Result<Unit> {
+            merkerVergessen++
+            merkerAngelegt = Result.success(false)
             return Result.success(Unit)
         }
     }
 
-    /** Plattform-Attrappe: protokolliert die Reihenfolge der Aufrufe. */
+    /**
+     * Plattform-Attrappe: protokolliert die Reihenfolge der Aufrufe. Ein gelungenes Loeschen
+     * nimmt den Schluessel wirklich weg; [lesen] kennt den Abmelde-Vermerk bewusst NICHT - ihn
+     * zu beachten ist Sache des ViewModels.
+     */
     private class FakeWiederherstellung(
         var gefunden: String? = null,
         var leseDauerMs: Long = 0,
         var lesenWirft: Boolean = false,
         var anlegeDauerMs: Long = 0,
-        var loeschenWirft: Boolean = false
+        var loeschenWirft: Boolean = false,
+        var abmeldungVermerkt: Boolean = false
     ) : AnmeldeWiederherstellung {
         val ereignisse = mutableListOf<String>()
         var leseVersuche = 0
@@ -129,6 +144,18 @@ class AuthViewModelWiederherstellungTest {
         override suspend fun loeschen() {
             ereignisse += "loeschen"
             if (loeschenWirft) throw IllegalStateException("Vertrag gebrochen")
+            gefunden = null
+        }
+
+        override suspend fun merkeAbmeldung() {
+            ereignisse += "vermerk"
+            abmeldungVermerkt = true
+        }
+
+        override suspend fun istAbmeldungVermerkt(): Boolean = abmeldungVermerkt
+
+        override suspend fun vergissAbmeldung() {
+            abmeldungVermerkt = false
         }
     }
 
@@ -292,7 +319,7 @@ class AuthViewModelWiederherstellungTest {
         vm.signOut()
         advanceUntilIdle()
 
-        assertEquals(listOf("loeschen"), plattform.ereignisse)
+        assertEquals(listOf("vermerk", "loeschen"), plattform.ereignisse)
         assertFalse(vm.authState.value.isSignedIn)
     }
 
@@ -308,7 +335,7 @@ class AuthViewModelWiederherstellungTest {
         vm.signOut()
         advanceUntilIdle()
 
-        assertEquals(listOf("loeschen"), plattform.ereignisse)
+        assertEquals(listOf("vermerk", "loeschen"), plattform.ereignisse)
         // Der halbe Zweig selbst laeuft unveraendert weiter (welcher der beiden Texte, haengt am
         // Aufraeumen, das hier nicht betrachtet wird).
         assertTrue(
@@ -330,7 +357,7 @@ class AuthViewModelWiederherstellungTest {
         advanceUntilIdle()
 
         verify(authUseCase).signOut()
-        assertEquals(listOf("loeschen"), plattform.ereignisse)
+        assertEquals(listOf("vermerk", "loeschen"), plattform.ereignisse)
         assertFalse(vm.authState.value.isSignedIn)
         assertFalse(vm.authState.value.calendarOps.calendarsLoading)
     }
@@ -350,8 +377,103 @@ class AuthViewModelWiederherstellungTest {
         advanceUntilIdle()
 
         assertEquals(
-            listOf("anlegen-start:da@example.org", "anlegen-ende:da@example.org", "loeschen"),
+            listOf("anlegen-start:da@example.org", "vermerk", "anlegen-ende:da@example.org", "loeschen"),
             plattform.ereignisse
         )
+        assertTrue("das laufende Anlegen raeumt den Vermerk nicht weg", plattform.abmeldungVermerkt)
+    }
+
+    @Test
+    fun `Vermerk und Loeschen kommen VOR dem Verwerfen der Anmeldung`() = runTest(dispatcher) {
+        val daten = FakeAuthDaten(AuthData(isLoggedIn = true, email = "da@example.org"))
+        val plattform = FakeWiederherstellung(gefunden = "da@example.org")
+        val authUseCase = authUseCase().apply {
+            stub {
+                onBlocking { signOut() } doAnswer {
+                    plattform.ereignisse += "abmelden"
+                    Result.success(Unit)
+                }
+            }
+        }
+        val vm = baue(daten, plattform, authUseCase)
+
+        vm.signOut()
+        advanceUntilIdle()
+
+        // Andersherum hinterliess ein Abbruch dazwischen "abgemeldet, Schluessel noch da".
+        assertEquals(listOf("vermerk", "loeschen", "abmelden"), plattform.ereignisse)
+    }
+
+    @Test
+    fun `scheitert das Loeschen, meldet der naechste Kaltstart auf DIESEM Geraet nicht still wieder an`() = runTest(dispatcher) {
+        val daten = FakeAuthDaten(AuthData(isLoggedIn = true, email = "da@example.org"))
+        // Der Schluessel bleibt liegen: das Loeschen scheitert (GMS-Fehler, Deckel, Prozesstod).
+        val plattform = FakeWiederherstellung(gefunden = "da@example.org", loeschenWirft = true)
+        val authUseCase = authUseCase().apply {
+            // Wie der echte AuthUseCase: das Abmelden leert auth_prefs.
+            stub {
+                onBlocking { signOut() } doAnswer {
+                    daten.gespeichert = AuthData()
+                    Result.success(Unit)
+                }
+            }
+        }
+        baue(daten, plattform, authUseCase).signOut()
+        advanceUntilIdle()
+        assertFalse(daten.gespeichert.isLoggedIn)
+        assertEquals("da@example.org", plattform.gefunden)
+
+        // Naechster Kaltstart: frisches ViewModel, abgemeldet, der alte Schluessel ist noch da.
+        val neuerStart = baue(daten, plattform, authUseCase)
+        neuerStart.starteAnmeldeWiederherstellung(mock<Activity>())
+        advanceUntilIdle()
+
+        assertFalse(neuerStart.authState.value.isSignedIn)
+        assertFalse(neuerStart.authState.value.wiederherstellungLaeuft)
+        assertTrue("nichts geschrieben", daten.geschrieben.isEmpty())
+        assertEquals("gar nicht erst gelesen", 0, plattform.leseVersuche)
+        verify(authUseCase, never()).requestCalendarAuthorization(anyOrNull())
+        assertEquals(
+            "das Loeschen wird beim Start nachgeholt",
+            listOf("vermerk", "loeschen", "loeschen"),
+            plattform.ereignisse
+        )
+    }
+
+    @Test
+    fun `wer wieder angemeldet ist, verliert den Abmelde-Vermerk beim Anlegen - er sperrt nicht auf Dauer`() = runTest(dispatcher) {
+        // Hier abgemeldet, inzwischen wieder angemeldet (Knopf oder halbe Abmeldung).
+        val daten = FakeAuthDaten(AuthData(isLoggedIn = true, email = "da@example.org"), Result.success(false))
+        val plattform = FakeWiederherstellung(abmeldungVermerkt = true)
+        baue(daten, plattform).starteAnmeldeWiederherstellung(mock<Activity>())
+        advanceUntilIdle()
+
+        assertFalse(plattform.abmeldungVermerkt)
+        assertEquals(listOf("anlegen-start:da@example.org", "anlegen-ende:da@example.org"), plattform.ereignisse)
+    }
+
+    @Test
+    fun `halbe Abmeldung nimmt den Merker angelegt zurueck - der naechste Start legt neu an`() = runTest(dispatcher) {
+        // Schluessel angelegt und gemerkt; das Abmelden loescht den Schluessel, clearAuthData
+        // scheitert, der Nutzer bleibt angemeldet.
+        val daten = FakeAuthDaten(AuthData(isLoggedIn = true, email = "da@example.org"), Result.success(true))
+        val plattform = FakeWiederherstellung()
+        val authUseCase = authUseCase().apply {
+            stub { onBlocking { signOut() } doReturn Result.failure(IllegalStateException("clearAuthData")) }
+        }
+        baue(daten, plattform, authUseCase).signOut()
+        advanceUntilIdle()
+
+        assertEquals(1, daten.merkerVergessen)
+
+        val neuerStart = baue(daten, plattform, authUseCase)
+        neuerStart.starteAnmeldeWiederherstellung(mock<Activity>())
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("vermerk", "loeschen", "anlegen-start:da@example.org", "anlegen-ende:da@example.org"),
+            plattform.ereignisse
+        )
+        assertFalse("der weiter Angemeldete traegt keinen Abmelde-Vermerk", plattform.abmeldungVermerkt)
     }
 }

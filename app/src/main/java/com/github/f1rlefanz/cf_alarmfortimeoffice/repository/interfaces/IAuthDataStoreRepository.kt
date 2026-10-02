@@ -44,4 +44,11 @@ interface IAuthDataStoreRepository {
 
     /** Merkt sich, dass der Restore-Schluessel angelegt ist (siehe oben). */
     suspend fun merkeWiederherstellungsSchluesselAngelegt(): Result<Unit>
+
+    /**
+     * Nimmt NUR diesen Merker zurueck - fuer die halbe Abmeldung, in der der Schluessel schon
+     * geloescht ist, [clearAuthData] aber scheiterte und der Nutzer angemeldet bleibt. Ohne das
+     * behauptete der Merker "angelegt", und es entstuende nie wieder ein Schluessel.
+     */
+    suspend fun vergissWiederherstellungsSchluesselAngelegt(): Result<Unit>
 }

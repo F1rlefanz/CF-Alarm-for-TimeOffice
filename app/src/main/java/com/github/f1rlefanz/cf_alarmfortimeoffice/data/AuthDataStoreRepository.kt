@@ -143,6 +143,13 @@ class AuthDataStoreRepository @Inject constructor(
             }
         }
 
+    override suspend fun vergissWiederherstellungsSchluesselAngelegt(): Result<Unit> =
+        SafeExecutor.safeExecute("AuthDataStoreRepository.vergissWiederherstellungsSchluesselAngelegt") {
+            dataStore.edit { preferences ->
+                preferences.remove(RESTORE_KEY_ANGELEGT_KEY)
+            }
+        }
+
     private suspend fun updateAuthDataInternal(
         isLoggedIn: Boolean? = null,
         userId: String? = null,

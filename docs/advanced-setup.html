@@ -3,200 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Setup-Anleitung für CF Alarm for Time Office - Schritt für Schritt zur perfekten Konfiguration">
-    <title>Setup-Anleitung - CF Alarm for Time Office</title>
+    <meta name="description" content="Anleitung zu CF-Alarm: einrichten, Schichten zuordnen, Wecker, Schicht-Dimmer, „Nicht stören“ und Philips Hue.">
+    <title>Anleitung – CF-Alarm</title>
     <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e2001a">
+    <meta name="color-scheme" content="light dark">
 </head>
 <body>
-    <!-- Skip to main content for accessibility -->
-    <a href="#main-content" class="sr-only">Zum Hauptinhalt springen</a>
+    <a href="#main-content" class="skip-link">Zum Inhalt springen</a>
 
-    <!-- Navigation -->
-    <nav class="nav" id="main-nav" role="navigation" aria-label="Hauptnavigation">
-        <div class="nav-content container">
-            <div class="app-logo" aria-label="CF Alarm Logo">⏰</div>
-            <h1>CF Alarm for Time Office</h1>
-            <p class="subtitle">Smart Wecker-App mit Google Calendar & Philips Hue Integration</p>
-            
-            <div class="nav-links">
-                <a href="index.html">🏠 Startseite</a>
-                <a href="privacy.html">🔒 Datenschutz</a>
-                <a href="troubleshooting.html">🆘 Support</a>
-                <a href="advanced-setup.html" class="active" aria-current="page">⚙️ Setup</a>
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">📱 GitHub</a>
-                <a href="https://play.google.com/store/apps/details?id=com.github.f1rlefanz.cf_alarmfortimeoffice" rel="external noopener" target="_blank">📲 Play Store</a>
-            </div>
+    <header class="site-header">
+        <div class="container">
+            <a class="brand" href="index.html"><img src="assets/img/logo-96.png" alt="" width="40" height="40">CF-Alarm</a>
+            <nav class="site-nav" aria-label="Hauptnavigation">
+                <a href="index.html">Startseite</a>
+                <a href="advanced-setup.html" aria-current="page">Anleitung</a>
+                <a href="troubleshooting.html">Hilfe</a>
+                <a href="changelog.html">Changelog</a>
+                <a href="privacy.html">Datenschutz</a>
+            </nav>
         </div>
-    </nav>
+    </header>
 
-    <!-- Breadcrumb -->
-    <div class="breadcrumb">
-        <div class="breadcrumb-content container">
-            <a href="index.html">🏠 Startseite</a> → <span>⚙️ Setup-Anleitung</span>
-        </div>
-    </div>
-
-    <!-- Main Content -->
     <main id="main-content" class="container">
-        <div class="page-header">
-            <h2>⚙️ Setup-Anleitung</h2>
-            <p>Schritt-für-Schritt Anleitung zur optimalen Einrichtung von CF Alarm for Time Office</p>
-        </div>
+        <header class="page-header">
+            <h1>Anleitung</h1>
+            <p>Von der Anmeldung bis zum ersten Wecker – und was die einzelnen Bereiche der App können. Die Bereiche öffnest du über das Menü-Symbol oben links oder indem du vom linken Bildschirmrand nach innen wischst.</p>
+        </header>
 
-        <!-- Schnellstart -->
-        <div class="content-card">
-            <h3>🚀 Schnellstart (5 Minuten)</h3>
-
-            <h4>1. TimeOffice Kalender aktivieren</h4>
-            <ul>
-                <li><strong>In TimeOffice:</strong> Einstellungen → Google Kalender aktivieren</li>
-                <li><strong>Dienstplan synchronisieren lassen</strong> (dauert ein paar Minuten)</li>
-                <li><strong>In CF Alarm:</strong> TimeOffice-Kalender auswählen</li>
+        <nav class="content-card" aria-label="Inhalt dieser Seite">
+            <ul class="toc">
+                <li><a href="#vorbereitung">Vorbereitung</a></li>
+                <li><a href="#einrichtung">Einrichtung</a></li>
+                <li><a href="#schichten">Schichttypen</a></li>
+                <li><a href="#wecker">Wecker</a></li>
+                <li><a href="#dimmer">Schicht-Dimmer</a></li>
+                <li><a href="#nicht-stoeren">„Nicht stören“</a></li>
+                <li><a href="#hue">Philips Hue</a></li>
+                <li><a href="#sichern">Sichern und Gerätewechsel</a></li>
+                <li><a href="#urlaub">Urlaub</a></li>
             </ul>
-            
-            <h4>2. App installieren & erste Anmeldung</h4>
-            <ul>
-                <li><strong>App herunterladen</strong> über den bereitgestellten Link</li>
-                <li><strong>Bei erstem Start:</strong> Google Account auswählen für Calendar-Zugriff</li>
-                <li><strong>Berechtigungen gewähren:</strong> Kalender und Benachrichtigungen</li>
-            </ul>
+        </nav>
 
-            <h4>3. Grundeinstellungen</h4>
+        <section class="content-card" id="vorbereitung">
+            <h2>Vorbereitung: der Dienstplan im Google Kalender</h2>
+            <p>CF-Alarm liest deinen Dienstplan aus einem Google Kalender. Wie er dorthin kommt, ist der App gleich – meist erledigt das TimeOffice:</p>
             <ul>
-                <li><strong>Schichttypen prüfen:</strong> Wecker-Tab → „Schichttypen verwalten". Jeder Schichttyp hat eine <strong>feste Weckzeit</strong> (keine Vorlaufzeit-Rechnung) und ein oder mehrere Erkennungsmuster.</li>
-                <li><strong>Kürzel zuordnen:</strong> Ganz oben zeigt die Karte „Diese Kürzel stehen in deinem Kalender" die Termin-Kürzel deines echten Dienstplans, für die noch kein Muster existiert. Antippen, Schicht wählen – ohne diesen Schritt bleiben Schichten anderer Stationen unerkannt und es klingelt kein Wecker.</li>
+                <li>Schalte in <strong>TimeOffice</strong> die Übertragung des Dienstplans in deinen Google Kalender ein und warte, bis die Dienste in der Google-Kalender-App erscheinen.</li>
+                <li>Jeder Dienst sollte ein eigener Termin sein, in dessen Titel sein Kürzel steht, etwa „F“, „S“, „N“ oder „Frühdienst“.</li>
             </ul>
+            <div class="hint"><p>CF-Alarm sieht nur, was im Google Kalender steht. Was TimeOffice dort noch nicht eingetragen hat, kann auch in der App nicht auftauchen.</p></div>
+        </section>
 
-            <blockquote>
-                <strong>✅ Fertig!</strong> CF Alarm erstellt automatisch Wecker basierend auf Ihren TimeOffice-Terminen.
-            </blockquote>
-        </div>
+        <section class="content-card" id="einrichtung">
+            <h2>Einrichtung</h2>
+            <ol class="steps">
+                <li><strong>Anmelden:</strong> Tippe auf „Mit Google anmelden“ und wähle das Konto, in dem dein Dienstplan-Kalender liegt. Danach fragt Google, ob die App deinen Kalender <em>lesen</em> darf („Kalender-Zugriff erlauben“). Eine Android-Kalenderberechtigung braucht die App nicht.</li>
+                <li><strong>Kalender auswählen:</strong> Tippe den Kalender an, in den TimeOffice deinen Dienstplan schreibt. Später änderst du die Auswahl unter <strong>Einstellungen</strong> → „Kalender auswählen“.</li>
+                <li><strong>Hintergrund freigeben:</strong> Die App führt dich durch ein paar Schritte, damit Android den Wecker nicht ausbremst – die Akku-Ausnahme, das Ausschalten von „App bei Nichtnutzung pausieren“ und einen Hinweis zu TimeOffice. Diese Schritte kannst du mit „Später“ verschieben; was dann noch fehlt, zeigt der Bereich <strong>System-Status</strong>.</li>
+                <li><strong>Benachrichtigungen erlauben</strong>, wenn Android danach fragt. Ohne sie kann der Weckbildschirm nicht erscheinen.</li>
+                <li><strong>Schichttypen prüfen</strong> – siehe nächster Abschnitt. Erst wenn ein Kürzel einer Schicht zugeordnet ist, gibt es dafür einen Wecker.</li>
+                <li><strong>Ausprobieren:</strong> Lege in der <strong>Übersicht</strong> über „Manueller Alarm“ einen Wecker für heute an und prüfe Weckton und Lautstärke.</li>
+            </ol>
+            <p>Wie weit die App vorausschaut, stellst du unter <strong>Einstellungen</strong> → „Kalender-Vorausschau“ ein: 14, 28, 42 oder 56 Tage oder eine eigene Zahl von 7 bis 90. Mit „Mit Google Kalender abgleichen“ in der Übersicht holst du die Termine sofort neu.</p>
+        </section>
 
-        <!-- Häufige Stolperfallen -->
-        <div class="content-card">
-            <h3>⚠️ Häufige Stolperfallen vermeiden</h3>
-            
-            <h4>🔋 Batterieoptimierung (WICHTIG!)</h4>
+        <section class="content-card" id="schichten">
+            <h2>Schichttypen: woran die App deine Dienste erkennt</h2>
+            <p>Zu finden im Bereich <strong>Wecker</strong> → „Schichttypen verwalten“. Neue Installationen beginnen mit Früh-, Spät- und Nachtschicht (Kürzel F, S, N) und dem Zwischendienst (ZD).</p>
             <ul>
-                <li><strong>Problem:</strong> Android "optimiert" CF Alarm weg → keine Alarme</li>
-                <li><strong>Lösung:</strong> Android Einstellungen → Apps → CF Alarm → Akku → "Nicht optimieren"</li>
-                <li><strong>OnePlus/Xiaomi:</strong> Zusätzlich "Autostart" aktivieren</li>
-                <li><strong>Test:</strong> Mit manuellen Alarm testen</li>
+                <li><strong>Weckzeit:</strong> Jeder Schichttyp hat eine feste Weckzeit, zum Beispiel 05:30 für die Frühschicht.</li>
+                <li><strong>Erkennungsmuster:</strong> Ein Muster trifft, wenn es im Termintitel als eigenes Wort vorkommt – „F“ erkennt den Termin „F“, aber nicht „Fortbildung“. Auch der Name des Schichttyps zählt ab zwei Zeichen als Muster.</li>
+                <li><strong>„Diese Kürzel stehen in deinem Kalender“:</strong> Diese Karte zeigt die Termintitel, für die es noch kein Muster gibt. Tippe ein Kürzel an und ordne es einer Schicht zu; die Wecker werden sofort neu gestellt.</li>
+                <li><strong>Statuszeile:</strong> Unter jeder Schicht steht, was sie außer dem Wecker auslöst, etwa „Dimmen: eigene Regel · Licht: 1 Regel · DND: aus“.</li>
+                <li><strong>Stille Schicht:</strong> Kein Weckton, keine Vibration, kein Weckbildschirm – Dimmen und „Nicht stören“ richten sich aber weiter nach ihr.</li>
+                <li><strong>Rufbereitschaft:</strong> Markiert eine Schicht als Rufbereitschaft. An solchen Tagen schaut die App jede Stunde in den Kalender, und „Nicht stören“ endet zu einer festen Uhrzeit.</li>
+                <li><strong>Schichtdefinition aktiviert:</strong> Ausgeschaltet bekommt diese Schicht keinen Wecker mehr.</li>
             </ul>
+        </section>
 
-            <h4>📅 TimeOffice Kalender-Probleme</h4>
+        <section class="content-card" id="wecker">
+            <h2>Wecker</h2>
+            <p>Im Bereich <strong>Wecker</strong>:</p>
             <ul>
-                <li><strong>Kalender nicht sichtbar?</strong> TimeOffice → Google Kalender erst aktivieren, dann 10 Min warten</li>
-                <li><strong>Alte Termine?</strong> Google Calendar App öffnen → Aktualisieren</li>
-                <li><strong>Keine Termine?</strong> In Google Calendar prüfen ob TimeOffice-Kalender sichtbar ist</li>
+                <li><strong>Automatische Alarme:</strong> der Hauptschalter für alle Wecker aus dem Kalender. Ausschalten entfernt die gestellten Wecker sofort.</li>
+                <li><strong>Schlummer-Dauer:</strong> 3, 5, 10 oder 15 Minuten – gilt für den Weckbildschirm und die Benachrichtigung.</li>
+                <li><strong>Sanft lauter werden:</strong> Der Wecker beginnt leise und wird bis zu deiner Alarm-Lautstärke lauter. Ab Werk ist das aus.</li>
+                <li><strong>Überspringen:</strong> lässt genau den nächsten Wecker aus. Der Dienst bleibt bestehen – Dimmen und „Nicht stören“ richten sich weiter nach ihm.</li>
+                <li><strong>Freigeben:</strong> für einen Tag, an dem der Dienst ausfällt. Dann gibt es keinen Wecker und kein „Nicht stören“ zur Dienstzeit; dein Kalender bleibt unverändert. Über das Kalender-Symbol daneben gibst du einen anderen Tag frei. Freigegebene Tage lassen sich wieder aufheben.</li>
             </ul>
+            <p>Den <strong>manuellen Alarm</strong> findest du in der <strong>Übersicht</strong> unten rechts. Er nimmt die Weckzeit des gewählten Schichttyps.</p>
+            <p>Der Weckbildschirm erscheint, wenn das Handy gesperrt ist. Benutzt du es gerade, zeigt Android stattdessen eine Benachrichtigung mit denselben Knöpfen.</p>
+        </section>
 
-            <h4>🔔 Benachrichtigungs-Probleme</h4>
+        <section class="content-card" id="dimmer">
+            <h2>Schicht-Dimmer (optional)</h2>
+            <p>Der Bereich <strong>Schicht-Dimmer</strong> dunkelt den Bildschirm zu deinen Schlafzeiten ab – auch unter die kleinste Helligkeit, die Android erlaubt, und auf Wunsch wärmer.</p>
             <ul>
-                <li><strong>Stille Alarme?</strong> Android Einstellungen → Apps → CF Alarm → Benachrichtigungen → alle aktivieren</li>
-                <li><strong>Nicht-Stören-Modus:</strong> Keine Ausnahme nötig – der CF-Alarm-Wecker klingelt auch bei aktivem „Nicht stören", unabhängig von jeder Einstellung.</li>
-                <li><strong>Kein Vollbild-Alarm?</strong> Android Einstellungen → Apps → CF Alarm → Benachrichtigungen → „Vollbild-Benachrichtigungen" erlauben. Hinweis: Das Vollbild ist für das gesperrte/dunkle Gerät gedacht – benutzt man das Handy gerade aktiv, erscheint bewusst nur ein Banner.</li>
+                <li><strong>Dimmen:</strong> der Hauptschalter. Ist er aus, dimmt nichts.</li>
+                <li><strong>Regeln verwalten:</strong> Wann gedimmt wird, steht ausschließlich in Regeln. Eine Regel gilt für alle Tage oder für eine Schicht und hat eigene Zeitfenster, Verdunkelung und Wärme. Ein Fenster kann zu einer festen Uhrzeit, zur Weckzeit oder zum Schichtende beginnen bzw. enden.</li>
+                <li><strong>Vorlagen:</strong> „Nacht-Dimmen anlegen“ (22:00 bis zur Weckzeit, spätestens 07:00), „Nachtdienst-Rhythmus anlegen“ (fragt in drei Sätzen, wann du rund um den Nachtdienst schläfst) und „Schicht ausnehmen“ (an Tagen dieser Schicht wird nicht gedimmt).</li>
+                <li><strong>Vorschau (nächste Tage):</strong> zeigt, wann tatsächlich gedimmt wird.</li>
+                <li>Während gedimmt wird, kannst du in der Benachrichtigung „Heller“, „Dunkler“ oder „Pause“ wählen.</li>
             </ul>
+            <div class="hint"><p>Android erlaubt das Abdunkeln nur über einen <strong>Bedienungshilfen-Dienst</strong>. Du schaltest ihn selbst in den Android-Einstellungen ein; der System-Status führt dorthin. Der Dienst legt nur eine dunkle Fläche über den Bildschirm und liest keine Inhalte. Mehr dazu in der <a href="privacy.html#bedienungshilfe">Datenschutzerklärung</a>.</p></div>
+        </section>
 
-            <h4>📱 Verschiedene Android-Versionen</h4>
+        <section class="content-card" id="nicht-stoeren">
+            <h2>„Nicht stören“ automatisch (optional, ab Android 11)</h2>
+            <p>Unter <strong>Einstellungen</strong> → „Nicht stören“. Die App braucht dafür eine Freigabe, die der System-Status anbietet.</p>
             <ul>
-                <li><strong>Android 12+:</strong> "Exakte Alarme" Berechtigung gewähren</li>
-                <li><strong>Samsung:</strong> "App im Hintergrund laufen lassen" aktivieren</li>
-                <li><strong>Huawei:</strong> CF Alarm in "Geschützte Apps" hinzufügen</li>
+                <li><strong>Schlaf-Fenster folgt dem Dimmer:</strong> „Nicht stören“ ist an, solange der Schicht-Dimmer dimmt.</li>
+                <li><strong>Während der Dienstzeit:</strong> von Schichtbeginn bis Schichtende laut Kalender. Einzelne Schichten nimmst du als Ausnahme heraus.</li>
+                <li><strong>Rufbereitschaft:</strong> An Tagen mit einer als Rufbereitschaft markierten Schicht endet „Nicht stören“ zur eingestellten Uhrzeit.</li>
+                <li><strong>Was wird stummgeschaltet?</strong> Anrufe, wiederholte Anrufer, Nachrichten, Gespräche, Erinnerungen, Termine, System-Töne, Medien und Wecker anderer Apps – jeweils einzeln wählbar.</li>
             </ul>
-        </div>
+            <p>Dein CF-Alarm-Wecker klingelt immer, dafür ist keine Ausnahme nötig. Die App legt einen eigenen Zeitplan unter Android-Einstellungen → Ton → Nicht stören an und lässt dein übriges „Nicht stören“ unangetastet.</p>
+        </section>
 
-        <!-- Philips Hue Setup -->
-        <div class="content-card">
-            <h3>💡 Philips Hue Setup (Optional)</h3>
-            
-            <h4>🌉 Hue Bridge verbinden</h4>
+        <section class="content-card" id="hue">
+            <h2>Philips Hue (optional)</h2>
+            <ol class="steps">
+                <li>Handy und Hue Bridge müssen im selben WLAN sein. Im Bereich <strong>Philips Hue</strong> tippst du auf „Bridges suchen“. Fragt Android nach dem Zugriff auf Geräte in der Nähe bzw. im lokalen Netzwerk, erlaube ihn – sonst findet die App die Bridge nicht.</li>
+                <li>Drücke die runde Link-Taste oben auf der Bridge und tippe dann auf „Jetzt verbinden“.</li>
+                <li>Lege mit „Neue Regel“ eine Regel an: für welche Schicht (oder „Alle Schichten“) und wie das Licht gesetzt wird.</li>
+            </ol>
             <ul>
-                <li><strong>Voraussetzung:</strong> Handy und Hue Bridge im gleichen WLAN</li>
-                <li><strong>CF Alarm:</strong> Hue Tab → "Bridge suchen"</li>
-                <li><strong>Bridge-Taste drücken</strong> wenn CF Alarm danach fragt</li>
-                <li><strong>Automatische Erkennung</strong> dauert 10-30 Sekunden</li>
+                <li><strong>Szene:</strong> eine Szene aus deiner Hue-App. Du wählst erst den Raum, dann die Szene, und kannst mehrere Räume kombinieren.</li>
+                <li><strong>Manuell:</strong> einzelne Lampen oder Gruppen mit eigener Helligkeit und Farbe.</li>
+                <li><strong>Sonnenaufgang:</strong> das Licht wird über eine einstellbare Dauer von warm nach kühl heller – standardmäßig so, dass es zur Weckzeit seinen Zielwert erreicht („Vor dem Alarm“), oder ab der Weckzeit („Ab Alarmzeit“).</li>
+                <li><strong>Automatisch ausschalten:</strong> Liegt als Zeitplan auf der Bridge und greift auch, wenn dein Handy nicht mehr im WLAN ist. Bei einer Szene wird der ganze Raum ausgeschaltet.</li>
+                <li><strong>Regel testen</strong> im Editor bzw. „Test“ in der Liste schaltet sofort und räumt nach ein paar Sekunden wieder auf.</li>
             </ul>
+            <p>Geht die Verbindung verloren, verbindet sich die App von selbst wieder, sobald das Heim-WLAN zurück ist. „Prüfen“ testet die Verbindung von Hand.</p>
+        </section>
 
-            <h4>🌅 Licht-Szenarien</h4>
-            <p>Jede Regel setzt das Licht auf genau eine von drei Arten – du wählst sie im Regel-Editor unter „Wie soll das Licht gesetzt werden?“.</p>
+        <section class="content-card" id="sichern">
+            <h2>Sichern und Gerätewechsel</h2>
             <ul>
-                <li><strong>Szene:</strong> Eine Szene aus deiner Hue-App („Nachtlicht“, „Entspannen“). Sie bringt Helligkeit und Farbe je Lampe selbst mit – du musst nichts nachbauen. Du wählst erst den Raum, dann die Szene darin, und kannst mehrere Räume kombinieren (pro Raum eine Szene). Szenen ohne Raum oder Zone werden nicht angeboten; ordne sie in der Hue-App einem Raum zu, dann erscheinen sie.</li>
-                <li><strong>Manuell:</strong> Einzelne Lampen oder Gruppen/Zonen auswählen und Helligkeit und Farbe selbst einstellen.</li>
-                <li><strong>Sanftes Aufwachen (Sonnenaufgang):</strong> Die Rampe endet standardmäßig zur Weckzeit und startet entsprechend früher – Dauer einstellbar (Vorgabe 15 Minuten). Die Farbtemperatur fährt von warm nach kühler (Vorgabe 2000 K → 4000 K), die Helligkeit bis zum eingestellten Zielwert.</li>
+                <li><strong>Einstellungen</strong> → „Exportieren“ legt Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören“ als Datei ab; „Importieren“ spielt sie wieder ein. Anmeldung, Kalenderauswahl und Hue-Bridge-Zugang sind nicht in der Datei und werden auf jedem Gerät neu eingerichtet.</li>
+                <li>Ist die Android-Datensicherung eingeschaltet, kommen deine Einstellungen beim Umzug auf ein neues Handy mit. Ab Android 9 meldet dich die App dort auch selbst wieder mit demselben Google-Konto an.</li>
             </ul>
-            <ul>
-                <li><strong>Auto-Aus:</strong> Wird als Zeitplan auf der Bridge selbst angelegt – das Licht geht deshalb auch aus, wenn das Handy inzwischen nicht mehr im Heim-WLAN ist. Bei einer Szene schaltet es den ganzen Raum aus: zu einer Szene gibt es keinen Gegenbefehl.</li>
-                <li><strong>Regel testen:</strong> Der Knopf im Regel-Editor schaltet sofort und räumt nach ein paar Sekunden wieder auf – auch dann, wenn für die Regel selbst kein Auto-Aus eingestellt ist.</li>
-            </ul>
+        </section>
 
-            <h4>🔧 Hue-Probleme beheben</h4>
+        <section class="content-card" id="urlaub">
+            <h2>Urlaub und längere Abwesenheit</h2>
             <ul>
-                <li><strong>Bridge nicht gefunden?</strong> WLAN prüfen, Bridge neustarten</li>
-                <li><strong>Verbindung verloren?</strong> CF Alarm verbindet sich selbst wieder, sobald das Heim-WLAN zurück ist – spätestens beim nächsten Öffnen der App. Manuell geht es über „Erneut versuchen" im Hue-Tab.</li>
-                <li><strong>Licht geht nicht an?</strong> Hue-Lampen an regulärem Schalter prüfen</li>
+                <li>Für ein paar freie Tage reicht <strong>Freigeben</strong> im Bereich Wecker.</li>
+                <li>Für länger: <strong>Einstellungen</strong> → „Hintergrunddienste pausieren“. Das hält Wecker, Dimmer, „Nicht stören“ und Hue-Automatik gemeinsam an, auch über einen Neustart hinweg. Die Übersicht und der System-Status zeigen an, dass pausiert ist.</li>
             </ul>
-        </div>
-
-        <!-- Profi-Tipps -->
-        <div class="content-card">
-            <h3>🏆 Profi-Tipps</h3>
-            
-            <h4>📊 Optimal nutzen</h4>
-            <ul>
-                <li><strong>Konfiguration sichern:</strong> Einstellungen-Tab → „Konfiguration" → „Exportieren" legt Schichttypen, Hue-Regeln, Dimmer-Regeln und „Nicht stören" als Datei ab. „Importieren" holt sie zurück – nach einer Neuinstallation oder auf einem neuen Gerät. Anmeldung, Kalenderauswahl und Hue-Bridge-Verbindung sind bewusst nicht in der Datei und werden auf jedem Gerät neu eingerichtet.</li>
-                <li><strong>Kürzel zuordnen statt raten:</strong> Wecker-Tab → „Schichttypen verwalten". Oben zeigt die Karte „Diese Kürzel stehen in deinem Kalender" die Termin-Kürzel ohne Erkennungsmuster – antippen und der passenden Schicht zuordnen.</li>
-                <li><strong>Urlaub:</strong> „Automatische Alarme" im Wecker-Tab ausschalten – oder für längere Abwesenheit „Hintergrunddienste pausieren" im Einstellungen-Tab, das pausiert zusätzlich Dimmer, „Nicht stören" und Hue-Automatik.</li>
-                <li><strong>Diensttausch:</strong> „Manueller Alarm" (Knopf unten rechts in der Übersicht) als Absicherung.</li>
-            </ul>
-
-            <h4>🚨 Notfall-Funktionen</h4>
-            <ul>
-                <li><strong>Nächsten Alarm überspringen:</strong> Einen einzelnen Wecker aussetzen, ohne die Automatik abzuschalten (Wecker-Tab). Der Hinweis setzt sich von selbst zurück, sobald der Zeitpunkt vorbei ist.</li>
-                <li><strong>Schlummer-Dauer:</strong> Im Wecker-Tab wählbar (3/5/10/15 Minuten) – ein Wert, der für den Vollbild- und den Benachrichtigungs-Knopf gleichermaßen gilt. Eine Obergrenze für die Anzahl der Schlummer-Durchgänge gibt es nicht.</li>
-                <li><strong>Fallback-Wecker:</strong> Zusätzlicher Handy-Wecker zur Sicherheit</li>
-            </ul>
-
-            <blockquote>
-                <strong>💡 Pro-Tipp:</strong> CF Alarm läuft am zuverlässigsten wenn Sie die Batterieoptimierung deaktivieren und die App regelmäßig (1x pro Woche) kurz öffnen.
-            </blockquote>
-        </div>
-
-        <!-- Support -->
-        <div class="content-card">
-            <h3>🆘 Wenn etwas nicht funktioniert</h3>
-            
-            <h4>🔍 Erste Hilfe</h4>
-            <ul>
-                <li><strong>App neustarten:</strong> CF Alarm komplett schließen und neu öffnen</li>
-                <li><strong>Berechtigungen prüfen:</strong> Android Einstellungen → Apps → CF Alarm</li>
-                <li><strong>Google Account:</strong> In Google Calendar App an-/abmelden</li>
-                <li><strong>TimeOffice:</strong> Google Kalender deaktivieren → aktivieren</li>
-            </ul>
-
-            <h4>📞 Support kontaktieren</h4>
-            <p>Problem nicht gelöst? Kontaktieren Sie uns über:</p>
-            <ul>
-                <li><strong>GitHub Issues:</strong> <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/issues" rel="external">Detaillierten Fehlerbericht erstellen</a></li>
-                <li><strong>Infos bereithalten:</strong> Android-Version, Handy-Modell, Fehlerbeschreibung</li>
-            </ul>
-        </div>
+        </section>
     </main>
 
-    <footer class="footer" role="contentinfo">
-        <div class="footer-content container">
-            <div class="footer-links">
+    <footer class="site-footer">
+        <div class="container">
+            <nav class="footer-links" aria-label="Weitere Links">
                 <a href="privacy.html">Datenschutz</a>
-                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE" rel="external noopener" target="_blank">MIT License</a>
                 <a href="changelog.html">Changelog</a>
                 <a href="mailto:cfischer@csj.de">Kontakt</a>
-            </div>
-            <p>&copy; 2025 CF Alarm for Time Office. Made with ❤️ in Germany.</p>
-            <p>Open Source Project • <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice" rel="external noopener" target="_blank">View on GitHub</a></p>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice">Quellcode auf GitHub</a>
+                <a href="https://github.com/F1rlefanz/CF-Alarm-for-TimeOffice/blob/main/LICENSE">Lizenz (MIT)</a>
+            </nav>
+            <p>© 2025–2026 CF-Alarm for TimeOffice · ein Freizeitprojekt, Open Source</p>
         </div>
     </footer>
 
-    <!-- Central JavaScript -->
     <script src="assets/js/main.js"></script>
 </body>
 </html>

@@ -1,20 +1,14 @@
 {
-    "name": "CF Alarm for Time Office - Documentation",
-    "short_name": "CF Alarm Docs",
-    "description": "Smart Wecker-App mit Google Calendar & Philips Hue Integration - Dokumentation & Support",
+    "name": "CF-Alarm – Anleitung und Hilfe",
+    "short_name": "CF-Alarm",
+    "description": "Anleitung, Hilfe und Datenschutz zu CF-Alarm, dem Wecker aus dem Dienstplan.",
     "start_url": "./",
-    "display": "standalone",
-    "theme_color": "#667eea",
-    "background_color": "#f8fafc",
-    "orientation": "portrait-primary",
-    "categories": ["productivity", "utilities", "documentation"],
+    "display": "browser",
+    "theme_color": "#e2001a",
+    "background_color": "#f0edea",
     "lang": "de",
     "icons": [
-        {
-            "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏰</text></svg>",
-            "sizes": "any",
-            "type": "image/svg+xml",
-            "purpose": "any maskable"
-        }
+        { "src": "assets/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+        { "src": "assets/img/icon-512.png", "sizes": "512x512", "type": "image/png" }
     ]
 }

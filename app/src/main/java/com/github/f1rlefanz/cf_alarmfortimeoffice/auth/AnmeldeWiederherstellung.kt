@@ -12,11 +12,7 @@ import androidx.credentials.exceptions.NoCredentialException
 import androidx.credentials.exceptions.restorecredential.E2eeUnavailableException
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
-import dagger.Binds
-import dagger.Module
-import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CancellationException
 import java.security.SecureRandom
 import javax.inject.Inject
@@ -48,8 +44,9 @@ interface AnmeldeWiederherstellung {
     suspend fun loeschen()
 
     /**
-     * Die abgeschaltete Variante: legt nichts an, findet nichts, loescht nichts. Vorgabe fuer
-     * Aufrufer ohne Plattform (Unit-Tests, die die Funktion nicht betrachten).
+     * Die abgeschaltete Variante: legt nichts an, findet nichts, loescht nichts. Fuer Unit-Tests,
+     * die die Funktion nicht betrachten - sie reichen sie dem `AuthViewModel` AUSDRUECKLICH
+     * herein (es gibt bewusst keinen Konstruktor, der sie still einsetzt).
      */
     object Aus : AnmeldeWiederherstellung {
         override suspend fun anlegen(activityContext: Context, email: String): Boolean = false
@@ -59,7 +56,8 @@ interface AnmeldeWiederherstellung {
 }
 
 /**
- * Umsetzung ueber den `CredentialManager` der Play-Dienste.
+ * Umsetzung ueber den `CredentialManager` der Play-Dienste. Gebunden an die Schnittstelle in
+ * `di/modules/RepositoryModule`.
  *
  * DIRECT BOOT: Der `CredentialManager` wird erst IM AUFRUF geholt, nie beim Bauen - diese Klasse
  * haengt als Singleton am Application-Graphen, der auch im Direct-Boot-Prozess entsteht (gleiche
@@ -170,18 +168,4 @@ class PlayDiensteAnmeldeWiederherstellung @Inject constructor(
 
     private fun challenge(): ByteArray =
         ByteArray(AnmeldeWiederherstellungJson.CHALLENGE_BYTES).also { zufall.nextBytes(it) }
-}
-
-/**
- * Bindet die Schnittstelle an die Play-Dienste-Umsetzung. Steht hier und nicht in
- * `di/modules/`, damit die Funktion in einer Datei beisammen bleibt; beim naechsten Aufraeumen
- * der Module darf sie dorthin wandern.
- */
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class AnmeldeWiederherstellungModul {
-    @Binds
-    abstract fun bindeAnmeldeWiederherstellung(
-        umsetzung: PlayDiensteAnmeldeWiederherstellung
-    ): AnmeldeWiederherstellung
 }

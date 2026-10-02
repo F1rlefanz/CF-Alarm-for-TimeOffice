@@ -77,47 +77,6 @@ class AuthViewModel @Inject constructor(
     private val anmeldeWiederherstellung: AnmeldeWiederherstellung
 ) : ViewModel() {
 
-    /**
-     * Fuer Aufrufer, die die Zero-Tap-Wiederherstellung nicht betrachten (bestehende Unit-Tests):
-     * dieselbe Klasse mit abgeschalteter Wiederherstellung ([AnmeldeWiederherstellung.Aus]).
-     *
-     * WARUM EIN ZWEITER KONSTRUKTOR STATT EINES DEFAULT-WERTS: Hilt/Dagger sieht nur den
-     * `@Inject`-Konstruktor; ob ein Kotlin-Default-Wert dort auf dem KSP-Weg sauber ignoriert
-     * wird, ist nicht belegt. So bleibt der Produktionsweg eindeutig.
-     */
-    constructor(
-        authDataStoreRepository: IAuthDataStoreRepository,
-        credentialAuthManager: CredentialAuthManager,
-        errorHandler: ErrorHandler,
-        authUseCase: IAuthUseCase,
-        calendarSelectionRepository: ICalendarSelectionRepository,
-        backgroundServiceManager: BackgroundServiceManager,
-        tokenRepository: TokenRepository,
-        alarmUseCase: IAlarmUseCase,
-        shiftSpanStore: ShiftSpanStore,
-        dimSchedule: DimScheduleUseCase,
-        dndSchedule: DndScheduleUseCase,
-        hueSmartScheduler: HueSmartScheduler,
-        calendarPreAlarmRefreshScheduler: CalendarPreAlarmRefreshScheduler,
-        appContext: Context
-    ) : this(
-        authDataStoreRepository = authDataStoreRepository,
-        credentialAuthManager = credentialAuthManager,
-        errorHandler = errorHandler,
-        authUseCase = authUseCase,
-        calendarSelectionRepository = calendarSelectionRepository,
-        backgroundServiceManager = backgroundServiceManager,
-        tokenRepository = tokenRepository,
-        alarmUseCase = alarmUseCase,
-        shiftSpanStore = shiftSpanStore,
-        dimSchedule = dimSchedule,
-        dndSchedule = dndSchedule,
-        hueSmartScheduler = hueSmartScheduler,
-        calendarPreAlarmRefreshScheduler = calendarPreAlarmRefreshScheduler,
-        appContext = appContext,
-        anmeldeWiederherstellung = AnmeldeWiederherstellung.Aus
-    )
-
     companion object {
         /**
          * Nutzertext fuer den Fall, dass beim Abmelden nicht alle Wecker weggeraeumt werden

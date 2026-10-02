@@ -27,7 +27,21 @@ Schreibkonventionen (der Generator verlässt sich darauf):
 - `### 🐛 Behoben` — Rubrik, mit Emoji wie bisher.
 - `- **Kurzfassung:** Erklärung` — ein Eintrag.
 
-## 🆕 Version 1.46.1 (Aktuell – interne Alpha)
+## 🆕 Version 1.46.2 (Aktuell – interne Alpha)
+
+**Stand:** Oktober 2026
+
+_Die App spricht jetzt überall Deutsch, duzt durchgehend und nennt die Bereiche so, wie sie im Menü heißen._
+
+### 🎨 Feinschliff
+
+- **Hue-Bridge suchen und koppeln auf Deutsch:** Die Suche meldete sich mit englischen Texten („Nothing found locally …“, „Cancel“), und auch die Hinweise beim Koppeln – etwa die Bitte, die Link-Taste zu drücken – waren englisch. Jetzt ist alles deutsch, und statt technischer Fehlermeldungen steht da, was du tun kannst.
+- **Du statt Sie:** Der Bildschirm nach dem Koppeln der Bridge, der Hue-Regel-Editor und einige Fehlermeldungen haben noch gesiezt. Jetzt duzt die App überall.
+- **Hinweise nennen den richtigen Ort:** Wo „im Wecker-Tab“ oder „im Einstellungen-Tab“ stand, steht jetzt der Bereich, wie er im Menü heißt. Zwei Hinweise schickten dich zum Anlegen von Schichttypen in die Einstellungen – die liegen aber im Bereich „Wecker“ unter „Schichttypen verwalten“.
+- **Umlaute:** Die Meldung, wenn sich ein Schlummer-Wecker nicht stellen ließ, und der Erklärtext zur stillen Schicht schrieben „liess“, „fuer“ und „spaeter“.
+- **System-Status, „Debug-Informationen“:** Der Erklärtext zum Protokoll ist jetzt in Alltagssprache statt mit Dateinamen und Datum.
+
+## Version 1.46.1
 
 **Stand:** Oktober 2026
 

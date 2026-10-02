@@ -14,16 +14,27 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
  * einer Stelle und ist ohne Geraet pruefbar (`OnboardingGatesTest`). Gelesen wird in der
  * UI-Schicht (`leseGateLage` in `MainScreen.kt`), navigiert ebenfalls dort bzw. im ViewModel.
  *
- * ACHTUNG, bewusst verhaltensgleich zum Stand vor dem Umbau - die Einstiege sind NICHT
- * symmetrisch, und das ist hier abgebildet, nicht korrigiert:
- *  - [GateEinstieg.AUTO] kennt kein OEM-Gate und endet in [GateSchritt.Nichts] (kein
- *    `scheduleNext()` an dieser Stelle; die Wartungskette stellt der Eintritt in `MainContent`).
- *  - [GateEinstieg.NACH_KALENDER] fragt NUR die Akku-Ausnahme, nicht das "Spaeter"-Flag - wer
- *    die Kalenderauswahl erneut abschliesst, bekommt das Akku-Gate erneut angeboten.
- *  - [GateEinstieg.NACH_EINSTELLUNGEN] entspricht dem frueheren `proceedPastGates()`: nur noch
- *    TimeOffice und OEM, danach fertig.
- * Wer eine dieser Asymmetrien aufhebt, aendert Verhalten (Issue #132, Schritt 2) und muss die
- * zugehoerigen Tests in `OnboardingGatesTest` bewusst umdrehen.
+ * Die Kette hat EINE feste Reihenfolge: Kalender -> Akku -> Unused -> TimeOffice -> OEM. Jeder
+ * Einstieg ausser AUTO setzt an einer Stelle dieser Reihenfolge an und schaut nur nach VORNE.
+ *
+ * Bis Issue #132 (Schritt 2) waren die Einstiege nicht symmetrisch, und jede Asymmetrie hat
+ * einen Nutzer um einen Schritt gebracht:
+ *  - "Spaeter"/Zurueck an einem Gate fuehrte nach Home statt zum naechsten offenen Gate. Der
+ *    Gate-Effekt in `MainScreen` haengt nur an Anmeldung und Kalendern - beides aendert sich
+ *    dadurch nicht, also kam das naechste Gate erst beim naechsten App-Start: hoechstens EIN Gate
+ *    pro Start. Heute setzen die [GateEinstieg]-Werte `SPAETER_*` die Kette sofort fort.
+ *  - Den OEM-Hinweis gab es nur auf den aktiven Wegen. Wer ein Gate mit "Spaeter" verliess oder
+ *    die Gates schon vor dem OEM-Hinweis durchlaufen hatte, sah ihn NIE. Heute fragt jeder
+ *    Einstieg den OEM-Merker, auch [GateEinstieg.AUTO].
+ *  - Nach der Kalenderauswahl zaehlte nur die Akku-Ausnahme, nicht das "Spaeter"-Flag: wer die
+ *    Auswahl erneut abschloss, bekam das Akku-Gate erneut. Heute gilt auch dort
+ *    [GateLage.akkuGateErledigt].
+ *
+ * KEINE SCHLEIFE: ein `SPAETER_*`-Einstieg schaut nur auf die Gates HINTER dem uebersprungenen.
+ * Das haengt bewusst NICHT daran, dass das eben geschriebene Dismissed-Flag beim Neulesen schon
+ * sichtbar ist - ein degradierter Read (leer statt Fehler) liesse dasselbe Gate sonst sofort
+ * wieder erscheinen. Das Flag muss trotzdem vorher abgewartet geschrieben sein: der automatische
+ * Weg liest es beim naechsten Vordergrund.
  */
 
 /**
@@ -54,7 +65,8 @@ data class GateLage(
      * die Ausnahme erteilt ODER vom Nutzer abgelehnt ist. Vorher verlangten die nachfolgenden
      * Zweige die Ausnahme selbst - wer "Spaeter" tippte, fiel aus JEDEM Zweig heraus, und der
      * Schritt "App bei Nichtnutzung pausieren" wurde ihm NIE angeboten (genau dieser Schalter hat
-     * am 20.07.2026 die App force-gestoppt und alle Alarme geloescht).
+     * am 20.07.2026 die App force-gestoppt und alle Alarme geloescht). Gilt fuer JEDEN Einstieg,
+     * der das Akku-Gate befragt (AUTO und NACH_KALENDER).
      */
     val akkuGateErledigt: Boolean get() = akkuAusnahme || akkuAbgelehnt
 }
@@ -71,7 +83,16 @@ enum class GateEinstieg {
     NACH_AKKU,
 
     /** Aus einer Einstellungsseite zurueck (Unused-App bzw. TimeOffice) - frueher `proceedPastGates()`. */
-    NACH_EINSTELLUNGEN
+    NACH_EINSTELLUNGEN,
+
+    /** Akku-Gate mit "Spaeter"/Zurueck verlassen (Flag geschrieben): weiter ab Unused. */
+    SPAETER_AKKU,
+
+    /** Unused-App-Gate mit "Spaeter"/Zurueck verlassen: weiter ab TimeOffice. */
+    SPAETER_UNUSED,
+
+    /** TimeOffice-Gate mit "Spaeter"/Zurueck verlassen: weiter mit dem OEM-Hinweis. */
+    SPAETER_TIMEOFFICE
 }
 
 /** Der naechste Schritt der Gate-Kette. */
@@ -96,32 +117,53 @@ sealed interface GateSchritt {
     data object Nichts : GateSchritt
 }
 
+/** Der Einstieg, mit dem die Kette nach "Spaeter"/Zurueck an [gate] weitergeht. */
+fun einstiegNachSpaeter(gate: GateSchritt.Ueberspringbar): GateEinstieg = when (gate) {
+    GateSchritt.Akku -> GateEinstieg.SPAETER_AKKU
+    GateSchritt.Unused -> GateEinstieg.SPAETER_UNUSED
+    GateSchritt.TimeOffice -> GateEinstieg.SPAETER_TIMEOFFICE
+}
+
+/**
+ * Zeigt [state] gerade [gate]? Damit setzt `ueberspringe()` in `MainScreen` die Kette nur fort,
+ * solange der Nutzer noch auf dem uebersprungenen Gate steht: ein zweiter Tipp auf "Spaeter"
+ * (oder Zurueck), waehrend das Flag noch geschrieben wird, darf den Nutzer nicht aus dem schon
+ * erreichten NAECHSTEN Gate wieder herausnavigieren.
+ */
+fun GateSchritt.Ueberspringbar.wirdAngezeigtIn(state: NavigationState): Boolean = when (this) {
+    GateSchritt.Akku -> state is NavigationState.BatteryExemption
+    GateSchritt.Unused -> state is NavigationState.UnusedAppRestrictions
+    GateSchritt.TimeOffice -> state is NavigationState.TimeOfficeHealthCheck
+}
+
 /**
  * Bildet [lage] und [einstieg] auf den naechsten Schritt ab. Reine Funktion - siehe den
- * Dateikopf fuer die bewusst erhaltenen Asymmetrien zwischen den Einstiegen.
+ * Dateikopf fuer die Reihenfolge und warum ein `SPAETER_*`-Einstieg nie zurueckschaut.
  */
 fun naechsterGateSchritt(lage: GateLage, einstieg: GateEinstieg): GateSchritt = when (einstieg) {
     GateEinstieg.AUTO -> when {
         !lage.kalenderGewaehlt -> GateSchritt.Kalender
         !lage.akkuGateErledigt -> GateSchritt.Akku
-        lage.unusedNoetig -> GateSchritt.Unused
-        lage.timeOfficeNoetig -> GateSchritt.TimeOffice
-        else -> GateSchritt.Nichts
+        // Kein Fertig auf dem automatischen Weg: die Wartungskette stellt der Eintritt in
+        // MainContent, und ohne offenes Gate bleibt der Nutzer, wo er ist.
+        else -> abUnused(lage).takeUnless { it == GateSchritt.Fertig } ?: GateSchritt.Nichts
     }
 
     GateEinstieg.NACH_KALENDER ->
-        if (!lage.akkuAusnahme) GateSchritt.Akku else nachErteilterAkkuAusnahme(lage)
+        if (!lage.akkuGateErledigt) GateSchritt.Akku else abUnused(lage)
 
-    GateEinstieg.NACH_AKKU -> nachErteilterAkkuAusnahme(lage)
+    GateEinstieg.NACH_AKKU, GateEinstieg.SPAETER_AKKU -> abUnused(lage)
 
-    GateEinstieg.NACH_EINSTELLUNGEN -> nachDenEinstellungen(lage)
+    GateEinstieg.NACH_EINSTELLUNGEN, GateEinstieg.SPAETER_UNUSED -> abTimeOffice(lage)
+
+    GateEinstieg.SPAETER_TIMEOFFICE -> abOem(lage)
 }
 
-private fun nachErteilterAkkuAusnahme(lage: GateLage): GateSchritt =
-    if (lage.unusedNoetig) GateSchritt.Unused else nachDenEinstellungen(lage)
+private fun abUnused(lage: GateLage): GateSchritt =
+    if (lage.unusedNoetig) GateSchritt.Unused else abTimeOffice(lage)
 
-private fun nachDenEinstellungen(lage: GateLage): GateSchritt = when {
-    lage.timeOfficeNoetig -> GateSchritt.TimeOffice
-    lage.oemFaellig != null -> GateSchritt.Oem(lage.oemFaellig)
-    else -> GateSchritt.Fertig
-}
+private fun abTimeOffice(lage: GateLage): GateSchritt =
+    if (lage.timeOfficeNoetig) GateSchritt.TimeOffice else abOem(lage)
+
+private fun abOem(lage: GateLage): GateSchritt =
+    lage.oemFaellig?.let { GateSchritt.Oem(it) } ?: GateSchritt.Fertig

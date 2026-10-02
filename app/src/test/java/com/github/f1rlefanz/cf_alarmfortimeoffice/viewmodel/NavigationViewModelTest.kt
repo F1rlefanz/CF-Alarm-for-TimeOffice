@@ -9,6 +9,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.naechsterGateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -20,7 +21,7 @@ import org.junit.Test
  *  - handleAuthenticationSuccess(): Ende-zu-Ende mit der reinen Gate-Entscheidung
  *    (naechsterGateSchritt mit GateEinstieg.AUTO, siehe autoSchritt) - nur EIN Gate pro Aufruf
  *    (Reihenfolge: CalendarSelection -> BatteryExemption -> UnusedAppRestrictions ->
- *    TimeOfficeHealthCheck), und nur solange der aktuelle Zustand MainContent ist (kein
+ *    TimeOfficeHealthCheck -> OEMWarning), und nur solange der aktuelle Zustand MainContent ist (kein
  *    Wegnavigieren aus einem bereits offenen Screen). Die Entscheidung selbst fuer ALLE
  *    Einstiege prueft OnboardingGatesTest.
  *  - navigateBackFrom()/navigateBackToMain(): der Rueckweg aus den Regel-Editoren.
@@ -116,14 +117,6 @@ class NavigationViewModelTest {
         vm.handleNavigationAction(NavigationAction.ChangeTab(MainTab.HUE))
         // Bleibt im ShiftConfig-Screen, der Tab-Wechsel-Versuch aendert nichts.
         assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
-    }
-
-    @Test
-    fun `dismissBatteryPrompt navigiert direkt nach Home`() {
-        val vm = newViewModel()
-        vm.handleNavigationAction(NavigationAction.NavigateToBatteryExemption(MainTab.HOME))
-        vm.dismissBatteryPrompt()
-        assertEquals(NavigationState.MainContent(MainTab.HOME), vm.navigationState.value)
     }
 
     // ---- handleAuthenticationSuccess: Gate-Reihenfolge & Exklusivitaet -------------------
@@ -309,15 +302,45 @@ class NavigationViewModelTest {
     }
 
     @Test
-    fun `handleAuthenticationSuccess ignoriert Oem, Fertig und Nichts`() {
-        // Der automatische Weg liefert diese drei nie; kaemen sie doch an, darf er weder den
-        // OEM-Screen zeigen (dessen "gezeigt"-Merker schreibt nur der aktive Weg) noch irgendwohin
-        // navigieren.
+    fun `handleAuthenticationSuccess ignoriert Fertig und Nichts und meldet keine Navigation`() {
         val vm = newViewModel()
-        vm.handleAuthenticationSuccess(GateSchritt.Oem(BatteryOptimizationHelper.OEMType.XIAOMI))
-        vm.handleAuthenticationSuccess(GateSchritt.Fertig)
-        vm.handleAuthenticationSuccess(GateSchritt.Nichts)
+        assertFalse(vm.handleAuthenticationSuccess(GateSchritt.Fertig))
+        assertFalse(vm.handleAuthenticationSuccess(GateSchritt.Nichts))
         assertEquals(NavigationState.MainContent(MainTab.HOME), vm.navigationState.value)
+    }
+
+    @Test
+    fun `alle Gates erledigt und OEM-Hinweis faellig fuehrt auf dem automatischen Weg zum OEM-Screen`() {
+        // Issue #132, Schritt 2: vorher gab es den OEM-Hinweis nur auf den aktiven Wegen - wer
+        // ein Gate mit "Spaeter" verlassen hatte, sah ihn nie. Der Rueckgabewert sagt MainScreen,
+        // dass es den "gezeigt"-Merker jetzt schreiben darf.
+        val vm = newViewModel()
+        val schritt = naechsterGateSchritt(
+            GateLage(akkuAbgelehnt = true, oemFaellig = BatteryOptimizationHelper.OEMType.XIAOMI),
+            GateEinstieg.AUTO
+        )
+        assertTrue(vm.handleAuthenticationSuccess(schritt))
+        assertEquals(
+            NavigationState.OEMWarning(BatteryOptimizationHelper.OEMType.XIAOMI, MainTab.HOME),
+            vm.navigationState.value
+        )
+    }
+
+    @Test
+    fun `OEM-Hinweis wird aus einem offenen Unterscreen nicht angesteuert und meldet keine Navigation`() {
+        // Sonst schriebe MainScreen den "gezeigt"-Merker fuer einen Hinweis, den niemand sah -
+        // und er kaeme nie wieder.
+        val vm = newViewModel()
+        vm.handleNavigationAction(NavigationAction.NavigateToShiftConfig(MainTab.WECKER))
+        assertFalse(vm.handleAuthenticationSuccess(GateSchritt.Oem(BatteryOptimizationHelper.OEMType.XIAOMI)))
+        assertEquals(NavigationState.ShiftConfig(MainTab.WECKER), vm.navigationState.value)
+    }
+
+    @Test
+    fun `handleAuthenticationSuccess meldet eine Gate-Navigation mit true`() {
+        val vm = newViewModel()
+        assertTrue(vm.handleAuthenticationSuccess(GateSchritt.Unused))
+        assertEquals(NavigationState.UnusedAppRestrictions(MainTab.HOME), vm.navigationState.value)
     }
 
     // ---- Rueckweg aus den Regel-Editoren: navigateBackFrom / navigateBackToMain ---------

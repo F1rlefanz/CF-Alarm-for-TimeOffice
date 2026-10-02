@@ -226,16 +226,6 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
     fun changeTab(tab: MainTab) = 
         handleNavigationAction(NavigationAction.ChangeTab(tab))
     
-    // Battery-Prompt: Der Nutzer kann den Akku-Ausnahme-Screen mit "Spaeter" ueberspringen.
-    // Das Dismiss-Flag ist DataStore-persistiert (BatteryOptimizationHelper.isBatteryPromptDismissed/
-    // setBatteryPromptDismissed) und wird in MainScreen gelesen (leseGateLage) - dieses ViewModel bleibt
-    // Android-frei (bestehende Konvention: kein ViewModel im Projekt injiziert Context/DataStore
-    // direkt).
-    fun dismissBatteryPrompt() {
-        Logger.business(LogTags.NAVIGATION, "Battery-Prompt vom Nutzer uebersprungen (Spaeter) -> Home")
-        navigateToMainWithTab(MainTab.HOME)
-    }
-
     /**
      * Automatischer Gate-Schritt bei jedem App-Vordergrund. WELCHER Schritt dran ist, entscheidet
      * `naechsterGateSchritt(lage, GateEinstieg.AUTO)` in `navigation/OnboardingGates.kt` (dort
@@ -245,12 +235,19 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
      * bereits offenen Screen weg (etwa waehrend der Nutzer gerade in der Schichtkonfiguration
      * ist). Er prueft den Zustand zum Zeitpunkt der Navigation, nicht zum Zeitpunkt des Lesens.
      *
-     * `GateEinstieg.AUTO` liefert nie [GateSchritt.Oem] oder [GateSchritt.Fertig]: den
-     * OEM-Hinweis gibt es nur auf den aktiven Wegen in `MainScreen`, und die Wartungskette stellt
-     * der Eintritt in `MainContent`. Beide bleiben hier ohne Wirkung.
+     * Auch der OEM-Hinweis kommt seit Issue #132 auf diesem Weg - sonst sah ihn nie, wer ein Gate
+     * mit "Spaeter" verlassen oder die Gates vor dem Hinweis durchlaufen hatte. Seinen
+     * "gezeigt"-Merker schreibt der Aufrufer (Datenschicht, dieses ViewModel bleibt Android-frei)
+     * - und zwar NUR, wenn hier wirklich navigiert wurde: deshalb der Rueckgabewert. Ein Merker
+     * ohne angezeigten Screen hiesse, der Hinweis kaeme nie.
+     *
+     * `GateEinstieg.AUTO` liefert nie [GateSchritt.Fertig]: die Wartungskette stellt der Eintritt
+     * in `MainContent`. [GateSchritt.Fertig] und [GateSchritt.Nichts] bleiben hier ohne Wirkung.
+     *
+     * @return `true`, wenn zu einem Gate navigiert wurde
      */
-    fun handleAuthenticationSuccess(schritt: GateSchritt) {
-        if (!_navigationState.value.isMainContent()) return
+    fun handleAuthenticationSuccess(schritt: GateSchritt): Boolean {
+        if (!_navigationState.value.isMainContent()) return false
         when (schritt) {
             GateSchritt.Kalender -> {
                 Logger.i(LogTags.NAVIGATION, "Auto-navigation: User authenticated but no calendars selected")
@@ -265,13 +262,17 @@ class NavigationViewModel @Inject constructor() : ViewModel() {
                 navigateToUnusedAppRestrictions()
             }
             GateSchritt.TimeOffice -> {
-                // Letzter automatischer Gate-Zweig - noetig fuer Nutzer, die die vorherigen Gates
-                // schon VOR diesem Feature durchlaufen hatten und darum nie wieder ueber den
-                // aktiven Weg (GateEinstieg.NACH_EINSTELLUNGEN) hierher kamen.
+                // Noetig fuer Nutzer, die die vorherigen Gates schon VOR diesem Feature
+                // durchlaufen hatten und darum nie wieder ueber einen aktiven Weg hierher kamen.
                 Logger.i(LogTags.NAVIGATION, "Auto-navigation: Battery/Unused-App gates cleared but TimeOffice health check still needed")
                 navigateToTimeOfficeHealthCheck()
             }
-            is GateSchritt.Oem, GateSchritt.Fertig, GateSchritt.Nichts -> Unit
+            is GateSchritt.Oem -> {
+                Logger.i(LogTags.NAVIGATION, "Auto-navigation: all gates cleared, OEM warning for ${schritt.typ} never shown")
+                navigateToOEMWarning(schritt.typ)
+            }
+            GateSchritt.Fertig, GateSchritt.Nichts -> return false
         }
+        return true
     }
 }

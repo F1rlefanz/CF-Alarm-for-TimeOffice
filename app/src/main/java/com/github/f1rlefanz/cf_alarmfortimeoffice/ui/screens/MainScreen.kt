@@ -23,7 +23,9 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateLage
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.GateSchritt
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.MainTab
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.NavigationState
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.einstiegNachSpaeter
 import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.naechsterGateSchritt
+import com.github.f1rlefanz.cf_alarmfortimeoffice.navigation.wirdAngezeigtIn
 import com.github.f1rlefanz.cf_alarmfortimeoffice.service.AlarmMaintenanceService
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.BatteryOptimizationHelper
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
@@ -38,6 +40,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.HueViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.MainViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.NavigationViewModel
 import com.github.f1rlefanz.cf_alarmfortimeoffice.viewmodel.ShiftViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -47,14 +50,15 @@ import kotlinx.coroutines.launch
  * werden (vorher stand die Unused-App-Bedingung dreimal, die TimeOffice-Bedingung zweimal im
  * Code). Entschieden wird in [naechsterGateSchritt], nicht hier.
  *
- * Bewusst LAZY und in derselben Reihenfolge wie die Kette selbst: es wird nur gelesen, was der
- * Einstieg bis zu seiner Entscheidung tatsaechlich braucht. Das haelt den Umbau verhaltensgleich:
- *  - solange das Akku-Gate offen ist, unterbleibt der asynchrone Unused-App-Check
- *    (ListenableFuture) wie bisher;
- *  - nach der Kalenderauswahl ohne Akku-Ausnahme wird NICHTS Suspendierendes gelesen, das
- *    Akku-Gate erscheint also so unmittelbar wie vorher (siehe `CoroutineStart.UNDISPATCHED`
- *    am Aufrufer);
- *  - der OEM-Merker wird erst gelesen, wenn TimeOffice nichts mehr will.
+ * Bewusst LAZY und in derselben Reihenfolge wie die Kette selbst (Kalender -> Akku -> Unused ->
+ * TimeOffice -> OEM): es wird nur gelesen, was der Einstieg bis zu seiner Entscheidung
+ * tatsaechlich braucht.
+ *  - Solange das Kalender- oder Akku-Gate offen ist, unterbleibt der asynchrone
+ *    Unused-App-Check (ListenableFuture).
+ *  - Nach der Kalenderauswahl ohne Akku-Ausnahme wird zuerst nur das "Spaeter"-Flag gelesen.
+ *  - Der OEM-Merker wird erst gelesen, wenn TimeOffice nichts mehr will.
+ *  - Ein `SPAETER_*`-Einstieg liest erst AB dem Gate hinter dem uebersprungenen (siehe
+ *    [naechsterGateSchritt]) - dessen eigenes Flag spielt fuer die laufende Kette keine Rolle.
  * Ein ungelesenes Feld steht auf seinem Neutralwert und wird fuer diesen Einstieg von
  * [naechsterGateSchritt] nicht ausgewertet (siehe [GateLage]). Wer einen Einstieg ein weiteres
  * Feld befragen laesst, muss es hier auch lesen.
@@ -72,41 +76,55 @@ private suspend fun leseGateLage(
             akkuAusnahme = BatteryOptimizationHelper.isExempted(context),
             akkuAbgelehnt = BatteryOptimizationHelper.isBatteryPromptDismissed(context)
         )
-        akku.copy(
-            // Kurzschluss nur, solange das Akku-Gate noch OFFEN ist - dann kommt es zuerst und
-            // der Unused-App-Check waere ein unnoetiger Async-Call. Erledigt ist es auch nach
-            // "Spaeter" (siehe GateLage.akkuGateErledigt).
-            unusedNoetig = akku.akkuGateErledigt && unusedAppGateNoetig(context),
-            // Auch bei offenem Akku-Gate gelesen, wie bisher: der automatische Weg ist der
-            // einzige, der Bestandsnutzer erreicht, die die frueheren Gates schon vor dem
-            // TimeOffice-Gate durchlaufen hatten.
-            timeOfficeNoetig = timeOfficeGateNoetig(context)
-        )
+        // Kurzschluss, solange Kalender- oder Akku-Gate noch OFFEN ist - dann kommt eines davon
+        // zuerst, und alles Weitere waere ein unnoetiger Read (beim Unused-App-Check ein
+        // Async-Call). Erledigt ist das Akku-Gate auch nach "Spaeter" (GateLage.akkuGateErledigt).
+        if (!akku.kalenderGewaehlt || !akku.akkuGateErledigt) {
+            akku
+        } else {
+            leseAbUnused(context).copy(
+                akkuAusnahme = akku.akkuAusnahme,
+                akkuAbgelehnt = akku.akkuAbgelehnt
+            )
+        }
     }
 
     GateEinstieg.NACH_KALENDER ->
-        if (!BatteryOptimizationHelper.isExempted(context)) {
-            GateLage(akkuAusnahme = false)
+        if (BatteryOptimizationHelper.isExempted(context)) {
+            leseAbUnused(context).copy(akkuAusnahme = true)
+        } else if (BatteryOptimizationHelper.isBatteryPromptDismissed(context)) {
+            // "Spaeter" heisst ERLEDIGT - auch hier, nicht nur auf dem automatischen Weg.
+            leseAbUnused(context).copy(akkuAbgelehnt = true)
         } else {
-            leseGateLage(context, GateEinstieg.NACH_AKKU)
+            GateLage(akkuAusnahme = false, akkuAbgelehnt = false)
         }
 
     // Der Aufrufer (Ergebnis des Akku-Dialogs) kommt nur hierher, wenn die Ausnahme erteilt ist.
-    GateEinstieg.NACH_AKKU ->
-        if (unusedAppGateNoetig(context)) {
-            GateLage(akkuAusnahme = true, unusedNoetig = true)
-        } else {
-            leseGateLage(context, GateEinstieg.NACH_EINSTELLUNGEN).copy(akkuAusnahme = true)
-        }
+    GateEinstieg.NACH_AKKU -> leseAbUnused(context).copy(akkuAusnahme = true)
 
-    GateEinstieg.NACH_EINSTELLUNGEN ->
-        if (timeOfficeGateNoetig(context)) {
-            GateLage(timeOfficeNoetig = true)
-        } else {
-            val oemTyp = BatteryOptimizationHelper.getOEMType()
-            val oemFaellig = BatteryOptimizationHelper.shouldNavigateToOemWarningScreen(context, oemTyp)
-            GateLage(oemFaellig = if (oemFaellig) oemTyp else null)
-        }
+    GateEinstieg.SPAETER_AKKU -> leseAbUnused(context).copy(akkuAbgelehnt = true)
+
+    GateEinstieg.NACH_EINSTELLUNGEN, GateEinstieg.SPAETER_UNUSED -> leseAbTimeOffice(context)
+
+    GateEinstieg.SPAETER_TIMEOFFICE -> GateLage(oemFaellig = faelligerOemTyp(context))
+}
+
+/** Liest ab dem Unused-App-Gate: Unused, sonst TimeOffice, sonst OEM. */
+private suspend fun leseAbUnused(context: Context): GateLage =
+    if (unusedAppGateNoetig(context)) GateLage(unusedNoetig = true) else leseAbTimeOffice(context)
+
+/** Liest ab dem TimeOffice-Gate: TimeOffice, sonst OEM. */
+private suspend fun leseAbTimeOffice(context: Context): GateLage =
+    if (timeOfficeGateNoetig(context)) {
+        GateLage(timeOfficeNoetig = true)
+    } else {
+        GateLage(oemFaellig = faelligerOemTyp(context))
+    }
+
+/** Der Herstellertyp, dessen OEM-Warnscreen noch nie gezeigt wurde - sonst `null`. */
+private suspend fun faelligerOemTyp(context: Context): BatteryOptimizationHelper.OEMType? {
+    val oemTyp = BatteryOptimizationHelper.getOEMType()
+    return if (BatteryOptimizationHelper.shouldNavigateToOemWarningScreen(context, oemTyp)) oemTyp else null
 }
 
 private suspend fun unusedAppGateNoetig(context: Context): Boolean =
@@ -125,13 +143,14 @@ private suspend fun timeOfficeGateNoetig(context: Context): Boolean =
 
 /**
  * Setzt die Gate-Kette auf einem AKTIVEN Weg fort - nach der Kalenderauswahl, nach erteilter
- * Akku-Ausnahme und nach der Rueckkehr aus einer Einstellungsseite (frueher
- * `proceedPastGates()` plus zwei fast wortgleiche Kopien davor). Der automatische Weg laeuft
- * dagegen ueber [NavigationViewModel.handleAuthenticationSuccess], weil nur er den
- * `MainContent`-Waechter braucht.
+ * Akku-Ausnahme, nach der Rueckkehr aus einer Einstellungsseite und nach "Spaeter"/Zurueck an
+ * einem Gate (frueher `proceedPastGates()` plus zwei fast wortgleiche Kopien davor; "Spaeter"
+ * fuehrte bis Issue #132 nach Home). Der automatische Weg laeuft dagegen ueber
+ * [NavigationViewModel.handleAuthenticationSuccess], weil nur er den `MainContent`-Waechter
+ * braucht.
  *
- * Nur hier gibt es den OEM-Warnscreen (die herstellerspezifischen Schritte stehen nur dort,
- * siehe [OEMWarningScreen]) und den Abschluss mit `scheduleNext()`.
+ * Nur die aktiven Wege enden in `Fertig` (Abschluss mit `scheduleNext()`); der automatische Weg
+ * laesst den Nutzer ohne offenes Gate, wo er ist.
  */
 private suspend fun setzeGateKetteFort(
     context: Context,
@@ -140,34 +159,58 @@ private suspend fun setzeGateKetteFort(
 ) {
     when (val schritt = naechsterGateSchritt(leseGateLage(context, einstieg), einstieg)) {
         GateSchritt.Akku -> {
-            Logger.business(LogTags.NAVIGATION, "Kalenderauswahl verlassen -> Battery Exemption needed")
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> Battery Exemption needed")
             navigationViewModel.navigateToBatteryExemption()
         }
 
         GateSchritt.Unused -> {
-            Logger.business(LogTags.NAVIGATION, "Battery exempted -> Unused App Restrictions needed")
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> Unused App Restrictions needed")
             navigationViewModel.navigateToUnusedAppRestrictions()
         }
 
         GateSchritt.TimeOffice -> {
-            Logger.business(LogTags.NAVIGATION, "Gates resolved -> TimeOffice Health Check")
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> TimeOffice Health Check")
             navigationViewModel.navigateToTimeOfficeHealthCheck()
         }
 
         is GateSchritt.Oem -> {
-            Logger.business(LogTags.NAVIGATION, "Gates resolved -> OEM Warning screen for ${schritt.typ}")
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> OEM Warning screen for ${schritt.typ}")
             BatteryOptimizationHelper.markOemWarningScreenShown(context, schritt.typ)
             navigationViewModel.navigateToOEMWarning(schritt.typ)
         }
 
         GateSchritt.Fertig -> {
-            Logger.business(LogTags.NAVIGATION, "Onboarding complete -> Main")
+            Logger.business(LogTags.NAVIGATION, "Gate-Kette ($einstieg) -> Onboarding complete -> Main")
             AlarmMaintenanceService.scheduleNext(context)
             navigationViewModel.navigateToMainWithTab(MainTab.HOME)
         }
 
         // Liefert nur der automatische Weg (GateEinstieg.AUTO), nie ein aktiver.
         GateSchritt.Kalender, GateSchritt.Nichts -> Unit
+    }
+}
+
+/**
+ * Schreibt das Dismissed-Flag von [gate] und WARTET, bis es geschrieben ist. Erst danach darf die
+ * Kette weiterlesen: der automatische Weg (`leseGateLage(AUTO)`) liest das Flag, und kaeme er vor
+ * dem Schreiben zum Zug, schickte er den Nutzer auf dasselbe Gate zurueck.
+ *
+ * Ein Schreibfehler haelt die Kette NICHT an (sie schaut ohnehin nur nach vorne, siehe
+ * [naechsterGateSchritt]) und reisst die App nicht mit - frueher lief der Write in einem
+ * unbewachten `launch`. Folge eines Fehlers ist nur, dass das Gate beim naechsten Start wieder
+ * angeboten wird: ehrlich, denn "Spaeter" wurde ja nicht gespeichert.
+ */
+private suspend fun schreibeUebersprungen(context: Context, gate: GateSchritt.Ueberspringbar) {
+    try {
+        when (gate) {
+            GateSchritt.Akku -> BatteryOptimizationHelper.setBatteryPromptDismissed(context)
+            GateSchritt.Unused -> UnusedAppRestrictionsHelper.setDismissed(context)
+            GateSchritt.TimeOffice -> TimeOfficeHealthHelper.setPromptDismissed(context)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Logger.w(LogTags.NAVIGATION, "Dismissed-Flag fuer $gate nicht geschrieben - Gate kommt beim naechsten Start wieder", e)
     }
 }
 
@@ -253,9 +296,13 @@ fun MainScreen(
                 GateEinstieg.AUTO,
                 kalenderGewaehlt = mainState.hasSelectedCalendars
             )
-            navigationViewModel.handleAuthenticationSuccess(
-                naechsterGateSchritt(lage, GateEinstieg.AUTO)
-            )
+            val schritt = naechsterGateSchritt(lage, GateEinstieg.AUTO)
+            // Den OEM-Merker erst schreiben, wenn der Screen wirklich angesteuert wurde - der
+            // MainContent-Waechter im ViewModel kann ablehnen, und ein Merker ohne gezeigten
+            // Hinweis hiesse: er kommt nie.
+            if (navigationViewModel.handleAuthenticationSuccess(schritt) && schritt is GateSchritt.Oem) {
+                BatteryOptimizationHelper.markOemWarningScreenShown(context, schritt.typ)
+            }
         }
     }
 
@@ -275,31 +322,23 @@ fun MainScreen(
     // "Spaeter" an genau einer Stelle - BackHandler und der "Spaeter"-Knopf jedes Gates rufen
     // hierher. Jedes der drei Gates MUSS dabei sein Dismissed-Flag schreiben: sonst schickt der
     // automatische Weg den Nutzer beim naechsten Vordergrund sofort zurueck, und Zurueck saehe
-    // aus, als passiere nichts. Das Akku-Gate geht weiter ueber dismissBatteryPrompt() (dort
-    // steht sein Log).
+    // aus, als passiere nichts.
+    //
+    // Danach geht die Kette SOFORT zum naechsten offenen Gate weiter (Issue #132) - frueher
+    // fuehrte "Spaeter" nach Home, und das naechste Gate kam erst beim naechsten App-Start. Die
+    // Reihenfolge ist tragend: erst das Flag ABGEWARTET schreiben, dann weiterlesen. Dass das
+    // uebersprungene Gate nicht sofort wiederkommt, sichert zusaetzlich die Kette selbst (ein
+    // SPAETER_*-Einstieg schaut nur nach vorne, siehe naechsterGateSchritt).
+    //
+    // Weitergemacht wird nur, solange noch genau dieses Gate angezeigt wird: ein zweiter Tipp
+    // auf "Spaeter" oder Zurueck, waehrend das Flag noch geschrieben wird, startet eine zweite
+    // Coroutine - die darf den Nutzer nicht aus dem schon erreichten naechsten Gate holen.
     fun ueberspringe(gate: GateSchritt.Ueberspringbar) {
-        when (gate) {
-            GateSchritt.Akku -> {
-                coroutineScope.launch { BatteryOptimizationHelper.setBatteryPromptDismissed(context) }
-                navigationViewModel.dismissBatteryPrompt()
-            }
-
-            GateSchritt.Unused -> {
-                coroutineScope.launch { UnusedAppRestrictionsHelper.setDismissed(context) }
-                Logger.business(
-                    LogTags.NAVIGATION,
-                    "Unused-App-Restrictions prompt skipped (Spaeter) -> Home"
-                )
-                navigationViewModel.navigateToMainWithTab(MainTab.HOME)
-            }
-
-            GateSchritt.TimeOffice -> {
-                coroutineScope.launch { TimeOfficeHealthHelper.setPromptDismissed(context) }
-                Logger.business(
-                    LogTags.NAVIGATION,
-                    "TimeOffice-Health prompt skipped (Spaeter) -> Home"
-                )
-                navigationViewModel.navigateToMainWithTab(MainTab.HOME)
+        Logger.business(LogTags.NAVIGATION, "Gate $gate vom Nutzer uebersprungen (Spaeter/Zurueck)")
+        coroutineScope.launch {
+            schreibeUebersprungen(context, gate)
+            if (gate.wirdAngezeigtIn(navigationViewModel.navigationState.value)) {
+                setzeGateKetteFort(context, navigationViewModel, einstiegNachSpaeter(gate))
             }
         }
     }
@@ -362,9 +401,10 @@ fun MainScreen(
                         authViewModel.requestCalendarAuthorization(context as? android.app.Activity)
                     },
                     onDone = {
-                        // UNDISPATCHED: ohne Akku-Ausnahme liest leseGateLage nichts
-                        // Suspendierendes, das Akku-Gate erscheint also noch im selben Tipp -
-                        // wie vor dem Umbau, als dieser Zweig gar keine Coroutine brauchte.
+                        // UNDISPATCHED: die Akku-Ausnahme wird synchron gelesen, die Kette
+                        // startet also noch im selben Tipp. Seit Issue #132 zaehlt hier auch
+                        // "Spaeter" beim Akku-Gate als ERLEDIGT - dafuer wird das Flag aus dem
+                        // DataStore gelesen (kurz suspendierend), bevor das Akku-Gate kommt.
                         coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
                             setzeGateKetteFort(context, navigationViewModel, GateEinstieg.NACH_KALENDER)
                         }

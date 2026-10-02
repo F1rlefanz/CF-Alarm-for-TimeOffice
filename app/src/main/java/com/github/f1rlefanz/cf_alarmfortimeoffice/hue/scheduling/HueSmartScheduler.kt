@@ -15,6 +15,7 @@ import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.Generic
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.PreAlarmHealthCheckWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.scheduling.workers.SunriseStartWorker
 import com.github.f1rlefanz.cf_alarmfortimeoffice.hue.usecase.interfaces.IHueRuleUseCase
+import com.github.f1rlefanz.cf_alarmfortimeoffice.model.AlarmInfo
 import com.github.f1rlefanz.cf_alarmfortimeoffice.usecase.interfaces.IAlarmUseCase
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.LogTags
 import com.github.f1rlefanz.cf_alarmfortimeoffice.util.Logger
@@ -126,6 +127,34 @@ class HueSmartScheduler private constructor() {
          * Test - und am Geraet ist der DST-Fall nicht erreichbar, ohne die Systemuhr um Monate zu
          * verstellen (was die OAuth-Sitzung zerlegt). Hier ist sie ohne Android pruefbar.
          */
+        /**
+         * Welche Wecker einen Vorab-Sonnenaufgang bekommen duerfen: aktiv, im Vorschaufenster und
+         * NICHT still.
+         *
+         * WARUM `!isSilent`: der `AlarmReceiver` ueberspringt bei einer stillen Schicht saemtliche
+         * Hue-Regeln, und die Statuszeile je Schicht (`SchichtFolgen`, #70) sagt deshalb „Licht:
+         * aus (stille Schicht)". Dieser Vorab-Pfad kannte die Stille bis dahin nicht: der
+         * `SunriseStartWorker` fuhr das Licht 15 min vor der Weckzeit trotzdem hoch - und weil der
+         * Weckzeit-Pfad bei Stille ausfaellt, entstand auch kein Auto-Aus, das Licht blieb an.
+         * Die Zusicherung „stille Schicht: kein Hue" gilt damit auf BEIDEN Pfaden.
+         *
+         * Im Companion und `internal` aus demselben Grund wie [realeVerzoegerungMillis]: ohne
+         * Instanz testbar.
+         */
+        internal fun sonnenaufgangsKandidaten(
+            alarms: List<AlarmInfo>,
+            now: LocalDateTime,
+            maxTime: LocalDateTime
+        ): List<Pair<String, LocalDateTime>> = alarms
+            .filter { it.isActive && !it.isSilent }
+            .map {
+                it.shiftName to Instant.ofEpochMilli(it.triggerTime)
+                    .atZone(ZoneId.systemDefault()).toLocalDateTime()
+            }
+            .filter { it.second.isAfter(now) && it.second.isBefore(maxTime) }
+            .sortedBy { it.second }
+            .take(10)
+
         internal fun realeVerzoegerungMillis(von: LocalDateTime, bis: LocalDateTime): Long {
             val zone = ZoneId.systemDefault()
             return bis.atZone(zone).toInstant().toEpochMilli() -
@@ -529,12 +558,7 @@ class HueSmartScheduler private constructor() {
         val now = LocalDateTime.now()
         val maxTime = now.plusDays(MAX_LOOKAHEAD_DAYS.toLong())
 
-        val upcoming = alarms
-            .filter { it.isActive }
-            .map { it.shiftName to it.triggerTime.toLocalDateTime() }
-            .filter { it.second.isAfter(now) && it.second.isBefore(maxTime) }
-            .sortedBy { it.second }
-            .take(10)
+        val upcoming = sonnenaufgangsKandidaten(alarms, now, maxTime)
 
         var scheduled = 0
         upcoming.forEachIndexed { index, (shiftName, alarmTime) ->

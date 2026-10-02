@@ -66,7 +66,11 @@ sealed interface LichtStatus {
     /** Die Hue-Regeln liessen sich nicht lesen - "keine" waere hier eine Behauptung. */
     data object NichtLesbar : LichtStatus
 
-    /** Stille Schicht: `AlarmReceiver` fuehrt bei ihr gar keine Hue-Regel aus. */
+    /**
+     * Stille Schicht: kein Hue auf BEIDEN Pfaden - der `AlarmReceiver` ueberspringt die Regeln zur
+     * Weckzeit, und `HueSmartScheduler.sonnenaufgangsKandidaten` plant keinen Vorab-Sonnenaufgang.
+     * Wer einen dritten Hue-Pfad baut, muss die Stille dort ebenfalls pruefen, sonst luegt diese Zeile.
+     */
     data object StilleSchicht : LichtStatus
 
     /** Keine Bridge eingerichtet - es geht kein Licht an, egal wie viele Regeln es gibt. */
